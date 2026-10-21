@@ -1,3 +1,22 @@
+# SECURITY
+
+If you discover a security vulnerability in this project, please follow the steps below to report it.
+
+## For "non-critical" issues
+
+Create a GitHub issue for the vulnerability and ask the maintainer to reach out to you. Avoid putting sensitive information in the issue.
+
+### For "critical" and time sensitive issues
+
+Send email to [it-security@equinor.com](mailto:it-security@equinor.com) or phone the Equinor helpdesk:
+
+- Norway (+47) 51 999 222
+- US/Canada (+1) 713 878 6970
+
+## Upstream
+
+This repository is a fork of [TahirRiaz/osdu-delivery](https://github.com/TahirRiaz/osdu-delivery). Vulnerabilities in the upstream project itself are reported as described in the upstream policy below.
+
 # Security Policy
 
 ## Supported Versions
