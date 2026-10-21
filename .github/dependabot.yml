@@ -14,16 +14,20 @@ updates:
   # The actions the workflows in .github/workflows use.
   - package-ecosystem: github-actions
     directory: /
-    schedule:
-      interval: weekly
-      day: monday
-    open-pull-requests-limit: 5
-    commit-message:
-      prefix: osdu
     groups:
       github-actions:
         patterns:
-          - "*"
+        - '*'
+    schedule:
+      interval: weekly
+      day: sunday
+      time: '03:00'
+      timezone: Europe/Oslo
+    cooldown:
+      default-days: 7
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: ci(github-actions)
 
   # The OSDU GUI. It compiles the vendored sqlflow/gui sources in place with these packages, so CI builds both GUIs on
   # every update. A major version opens a pull request of its own, except TypeScript's: its lint workspace
@@ -33,10 +37,14 @@ updates:
     directory: /osdu/gui
     schedule:
       interval: weekly
-      day: monday
+      day: sunday
+      time: '03:00'
+      timezone: Europe/Oslo
+    cooldown:
+      default-days: 7
     open-pull-requests-limit: 5
     commit-message:
-      prefix: osdu
+      prefix: deps(npm)
     ignore:
       - dependency-name: typescript
         update-types:
@@ -57,10 +65,14 @@ updates:
     directory: /
     schedule:
       interval: weekly
-      day: monday
+      day: sunday
+      time: '03:00'
+      timezone: Europe/Oslo
+    cooldown:
+      default-days: 7
     open-pull-requests-limit: 5
     commit-message:
-      prefix: osdu
+      prefix: deps(nuget)
     allow:
       - dependency-name: OpenTelemetry.Extensions.Hosting
       - dependency-name: OpenTelemetry.Exporter.OpenTelemetryProtocol
@@ -78,11 +90,15 @@ updates:
     directory: /osdu/hosts/osdu-delivery-mcp
     schedule:
       interval: weekly
-      day: monday
+      day: sunday
+      time: '03:00'
+      timezone: Europe/Oslo
+    cooldown:
+      default-days: 7
     open-pull-requests-limit: 5
     versioning-strategy: lockfile-only
     commit-message:
-      prefix: osdu
+      prefix: deps(cargo)
     groups:
       mcp-host:
         patterns:
