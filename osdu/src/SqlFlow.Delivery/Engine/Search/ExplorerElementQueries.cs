@@ -113,7 +113,7 @@ public static partial class ExplorerElementQueries
 {
     /// <summary>The queries of <paramref name="request"/>'s element, its kind's template read from <paramref name="templates"/>.</summary>
     /// <exception cref="DeliveryException">The request cannot be read.</exception>
-    public static async Task<ExplorerElementAnswer> DescribeAsync(ExplorerElementRequest request, ITemplateStore templates, CancellationToken ct)
+    public static async Task<ExplorerElementAnswer> DescribeAsync(ExplorerElementRequest request, ITemplateSource templates, CancellationToken ct)
     {
         ArgumentNullException.ThrowIfNull(request);
         ArgumentNullException.ThrowIfNull(templates);
@@ -123,22 +123,21 @@ public static partial class ExplorerElementQueries
         }
 
         var kind = request.Kind.Trim();
-        var saved = await templates.ListAsync(ct).ConfigureAwait(false);
         var notes = new List<string>();
-        static TemplateInfo? Newest(IReadOnlyList<TemplateInfo> matching) => matching.Count > 0 ? matching[0] : null;
-        var match = Newest(DimensionBlueprints.Matching(kind, saved));
+        var (matching, _) = await DimensionBlueprints.MatchingAsync(kind, templates, document: null, ct).ConfigureAwait(false);
+        var match = matching.Count > 0 ? matching[0] : null;
         if (match is null && ExplorerKinds.EntityTypeOf(kind) is { } type)
         {
             // Another version of the type describes the property as near as anything saved does, and says so.
-            match = Newest(DimensionBlueprints.Matching($"*:*:{type}:*", saved));
+            var (ofType, _) = await DimensionBlueprints.MatchingAsync($"*:*:{type}:*", templates, document: null, ct).ConfigureAwait(false);
+            match = ofType.Count > 0 ? ofType[0] : null;
             if (match is not null)
             {
-                notes.Add($"No template of {kind} is saved, so it is read by {match.Kind}, the newest saved of its type.");
+                notes.Add($"No template of {kind} is saved, so it is read by {match.Template.Kind}, the newest saved of its type.");
             }
         }
 
-        var schema = match is null ? null : await templates.LoadAsync(match.Reference, ct).ConfigureAwait(false);
-        return Describe(request, schema, notes);
+        return Describe(request, match?.Schema, notes);
     }
 
     /// <summary>The queries of <paramref name="request"/>'s element by <paramref name="schema"/>, or by its values where no template is saved.</summary>

@@ -868,7 +868,7 @@ internal sealed class MappingSearchYaml
     /// <summary>The OSDU kind searched, as a flow writes a kind (<c>osdu:wks:master-data--Wellbore:*</c>).</summary>
     public string? Kind { get; set; }
 
-    /// <summary>The saved template whose schema says how the kind's properties are indexed, pinned like the mapping's own.</summary>
+    /// <summary>The template whose schema says how the kind's properties are indexed, named like the mapping's own.</summary>
     public MappingTemplateYaml? Schema { get; set; }
 
     /// <summary>What this set is, shown wherever the mapping is listed.</summary>

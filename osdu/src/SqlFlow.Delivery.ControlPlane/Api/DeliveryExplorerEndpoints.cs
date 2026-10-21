@@ -155,19 +155,19 @@ public static partial class DeliveryExplorerEndpoints
     private static Task<Results<ContentHttpResult, ProblemHttpResult>> TypesAsync(
         DeliveryExplorerSearchRequest? body, [FromQuery] string? partition, CatalogDbContext db, DeliveryDocumentLoader documents, IPartitionRegistry partitions,
         ILedger ledger, DeliveryConfigStore config, DirectOperations direct, ILoggerFactory loggers, HttpRequest request, ClaimsPrincipal user,
-        OsduDbContext osdu, ITemplateStore templates, TimeProvider clock, CancellationToken ct)
+        OsduDbContext osdu, TimeProvider clock, CancellationToken ct)
         => QueueSearchAsync(
             ExploreOperation.TypesAction, body, partition, db, documents, partitions, ledger, config, direct, loggers, request, user,
-            new SearchTermDirectory(osdu, templates, documents, clock), ct);
+            new SearchTermDirectory(osdu, documents, clock), ct);
 
     /// <summary>One page of the records a search finds.</summary>
     private static Task<Results<ContentHttpResult, ProblemHttpResult>> SearchAsync(
         DeliveryExplorerSearchRequest? body, [FromQuery] string? partition, CatalogDbContext db, DeliveryDocumentLoader documents, IPartitionRegistry partitions,
         ILedger ledger, DeliveryConfigStore config, DirectOperations direct, ILoggerFactory loggers, HttpRequest request, ClaimsPrincipal user,
-        OsduDbContext osdu, ITemplateStore templates, TimeProvider clock, CancellationToken ct)
+        OsduDbContext osdu, TimeProvider clock, CancellationToken ct)
         => QueueSearchAsync(
             ExploreOperation.SearchAction, body, partition, db, documents, partitions, ledger, config, direct, loggers, request, user,
-            new SearchTermDirectory(osdu, templates, documents, clock), ct);
+            new SearchTermDirectory(osdu, documents, clock), ct);
 
     /// <summary>The properties the records of a kind hold: the record's own, those its schema declares, and those its records hold beyond them.</summary>
     private static async Task<Results<ContentHttpResult, ProblemHttpResult>> FieldsAsync(

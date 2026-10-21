@@ -122,6 +122,8 @@ interface MappingPropertiesViewProps {
   path: string;
   /** The document's content hash, so a mapping synced with new content is read again. */
   contentHash: string;
+  /** The synced repository the mapping is a document of, whose template folders settle a template it names by kind alone. */
+  repoId?: string | null;
 }
 
 /**
@@ -130,11 +132,11 @@ interface MappingPropertiesViewProps {
  * modifiers where there are any, how many assertions it states, and the whole of a property behind its row. Nothing is
  * rendered and no data is read; this is the document as written.
  */
-export function MappingPropertiesView({ yaml, path, contentHash }: MappingPropertiesViewProps) {
+export function MappingPropertiesView({ yaml, path, contentHash, repoId }: MappingPropertiesViewProps) {
   const [filter, setFilter] = useState("");
   const [onlyDerived, setOnlyDerived] = useState(false);
   const [opened, setOpened] = useState<string | null>(null);
-  const parsed = useParsedMapping(yaml, path, contentHash);
+  const parsed = useParsedMapping(yaml, path, contentHash, repoId);
 
   const draft = parsed.data?.draft ?? null;
   const rows = useMemo(() => (draft === null ? [] : draft.entries.map(propertyRow)), [draft]);

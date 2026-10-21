@@ -30,7 +30,7 @@ related:
   - delivery-concept-removal-and-reversal
   - delivery-concept-artifacts-and-undo
   - delivery-guide-bulk-data
-  - delivery-guide-pattern-catalog
+  - delivery-wiki-pattern-catalog
 sourceRefs:
   - osdu/src/SqlFlow.Delivery/Protocols/DeliveryProtocol.cs
   - osdu/src/SqlFlow.Delivery/Documents/DeliveryDocumentLoader.cs

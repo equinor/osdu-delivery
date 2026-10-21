@@ -11,10 +11,11 @@ namespace SqlFlow.Delivery.Cli;
 /// <param name="Services">The command's service provider.</param>
 /// <param name="Arguments">The command line, parsed with the verb's value-taking options.</param>
 /// <param name="Out">Where the verb's own output goes.</param>
+/// <param name="Error">Where the verb notes what it did beside its output, such as a file it wrote.</param>
 /// <param name="ReportUsageError">Prints a reason and the verb's usage, and answers the exit code; see <see cref="CliVerbContext.UsageError"/>.</param>
 /// <param name="CancellationToken">Stops the verb.</param>
 internal sealed record ModuleCommand(
-    IServiceProvider Services, CliArguments Arguments, TextWriter Out, Func<string?, int> ReportUsageError, CancellationToken CancellationToken)
+    IServiceProvider Services, CliArguments Arguments, TextWriter Out, TextWriter Error, Func<string?, int> ReportUsageError, CancellationToken CancellationToken)
 {
     /// <summary>True when <c>--json</c> was given: stdout then carries exactly one JSON document.</summary>
     public bool Json => Arguments.HasFlag("--json");
@@ -26,6 +27,6 @@ internal sealed record ModuleCommand(
     public static ModuleCommand Of(CliVerbContext context)
     {
         ArgumentNullException.ThrowIfNull(context);
-        return new ModuleCommand(context.Services, context.Arguments, context.Out, context.UsageError, context.CancellationToken);
+        return new ModuleCommand(context.Services, context.Arguments, context.Out, context.Error, context.UsageError, context.CancellationToken);
     }
 }

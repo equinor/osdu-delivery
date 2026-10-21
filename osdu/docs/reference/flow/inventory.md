@@ -455,7 +455,7 @@ an `inventory-remove` activity of the audit trail.
 A `missing` id is a record a ledger delivered that OSDU no longer holds: a cleanup or an accident soft deleted or purged
 it. On the **missing** tab, pick ids or **Select all**, and **Deliver again**: each record is delivered again through the
 flow that delivered it, and a deliver run of each such flow is queued
-([decision 0015](../../decisions/0015-lost-records.md)).
+([decision 0015](../../wiki/decisions/0015-lost-records.md)).
 
 - **Under their own ids** (the default). Each record is marked as OSDU having lost it and asked to be planned again, as
   a verify with `reconcile` marks one. The storage route brings a soft-deleted record back before writing it (`PATCH
@@ -527,17 +527,19 @@ works in partitions) before it reads anything. Every table is keyed by the parti
 apart, and no table has a foreign key into another. The comparison with the ledgers reads the delivery ledgers'
 `osdu.Record` (by the id each record claims), `osdu.Artifact` and `osdu.PurgedRecord` (by OSDU id), and never writes them.
 
-| Table | One row per | Key, and the indexes beside it | Written by | Read by |
-| --- | --- | --- | --- | --- |
-| `osdu.Inventory` | inventory of a flow in a partition | `(PartitionId, InventoryId)`; unique on `(PartitionId, FlowId, Name)` | every build and reconcile, which registers it and rewrites its kind, query, read mode and versions from the document; a completed run, which sets its last build, last reconcile and the owners that reconcile used | the inventories listing and an inventory's page, `GET /api/v1/delivery/inventories`, `sqlflow inventory` |
-| `osdu.InventoryRun` | build or reconcile of one inventory | `(PartitionId, InventoryRunId)`; `(PartitionId, InventoryId, InventoryRunId)` | the run, opened `running` when the inventory's turn comes and closed `completed` or `failed` with its counts | the **Runs** tab, `.../{inventoryId}/runs` |
-| `osdu.InventoryScan` | id one build's read listed, while the build runs | `(PartitionId, ScanId)`; `(PartitionId, InventoryRunId, TargetId)` | the read, a chunk at a time | the merge, and nothing else |
-| `osdu.InventoryRecord` | id an inventory holds, or a ledger of the partition expects it to hold | `(PartitionId, InventoryRecordId)`; unique on `(PartitionId, InventoryId, TargetId)`; `(PartitionId, InventoryId, InventoryRecordId)`; `(PartitionId, InventoryId, Finding, InventoryRecordId)`; `(PartitionId, TargetId)` including the inventory, finding and `GoneUtc` | the merge, the reconcile, the storage checks, a removal (which marks ids gone) and a removal of gone ids (which deletes rows) | the counts by finding, the **Ids** grid and its tabs, the CSV export, the lookup by OSDU id, a removal and a repair |
-| `osdu.InventoryVersion` | version storage keeps of a record (`versions: all`) | `(PartitionId, InventoryRecordId, Version)` | the versions step of a build, which replaces the versions of each record it reads; a removal of gone ids, which deletes them with their row | no page, verb or route reads it; the record's `VersionsAt` says which version its list was read at |
-| `osdu.InventoryRemoval` | removal an operator asked for | `(PartitionId, InventoryRemovalId)`; `(PartitionId, InventoryId, InventoryRemovalId)` | a `remove` run: opened `running`, its tallies added to by every chunk or round, closed `completed` or `failed`; it keeps the selection it took its ids from (`InventorySelectionId`) | the **Removals** tab, `.../{inventoryId}/removals`, `.../removals/{removalId}` |
-| `osdu.InventorySelection` | selection an operator's conditions opened | `(PartitionId, InventorySelectionId)`; `(PartitionId, InventoryId, ConditionsKey, InventorySelectionId)`; `(PartitionId, CreatedUtc)` | the control plane, which opens it `queued` with the conditions as written (`ConditionsJson`, and their hash `ConditionsKey`) and as the search is asked them (`FiltersJson`); the `match` run, which starts it against the inventory's last build (`BuildRunId`), adds to its counts with every page and closes it `completed` or `failed`; a read of it, which closes one whose run ended without finishing it; the next match of the partition, which retires those older than a week | the report's selection, `.../selections/{selectionId}`, a removal by the selection, the **Removals** tab |
-| `osdu.InventorySelectionItem` | id of an inventory a match found | `(PartitionId, InventorySelectionId, InventoryRecordId)` | each page or chunk of a match, joined with `osdu.InventoryRecord` by the OSDU id in one transaction, with the version the index holds (`MatchedVersion`) and the values at the conditions' properties (`ValuesJson`); deleted with a failed match and when the selection retires | the grid and counts of a selection, its CSV export, a removal by the selection |
-| `osdu.InventoryRemovalItem` | id a removal reached; for a removal of gone ids, only each id it kept | `(PartitionId, InventoryRemovalItemId)`; `(PartitionId, InventoryRemovalId, InventoryRemovalItemId)`; `(PartitionId, InventoryRemovalId, Outcome, InventoryRemovalItemId)`; `(PartitionId, TargetId)` including the removal and outcome | each chunk or round of a removal, in the transaction that acts on the inventory's rows | a removal's items, `.../removals/{removalId}/items`, and the lookup by OSDU id, which shows the latest 100 outcomes of an id |
+| Table | One row per |
+| --- | --- |
+| [`osdu.Inventory`](../tables/inventory.md) | inventory of a flow in a partition |
+| [`osdu.InventoryRun`](../tables/inventory-run.md) | build or reconcile of one inventory |
+| [`osdu.InventoryScan`](../tables/inventory-scan.md) | id one build's read listed, while the build runs |
+| [`osdu.InventoryRecord`](../tables/inventory-record.md) | id an inventory holds, or a ledger of the partition expects it to hold |
+| [`osdu.InventoryVersion`](../tables/inventory-version.md) | version storage keeps of a record (`versions: all`) |
+| [`osdu.InventoryRemoval`](../tables/inventory-removal.md) | removal an operator asked for |
+| [`osdu.InventoryRemovalItem`](../tables/inventory-removal-item.md) | id a removal reached; for a removal of gone ids, only each id it kept |
+| [`osdu.InventorySelection`](../tables/inventory-selection.md) | selection an operator's conditions opened |
+| [`osdu.InventorySelectionItem`](../tables/inventory-selection-item.md) | id of an inventory a match found |
+
+Each table's page says what every column holds, what each index serves, and what writes and reads it.
 
 A repair keeps no table of its own: it reads the inventory's `missing` rows (each with the ledger and record that claims
 it) and is an `inventory-repair` activity of the inventory flow's ledger, while each delivery ledger records the marking
@@ -547,17 +549,9 @@ compares them.
 
 ### What a row of an inventory holds
 
-| Columns | What they say |
-| --- | --- |
-| `TargetId`, `Kind`, `Version`, `CreateUser`, `CreateTime`, `ModifyUser`, `ModifyTime` | The id and its system properties as OSDU last served them (or, for an id never listed, as storage answered when it was asked). A kind longer than 300 characters or an identity longer than 256 is cut to its column. |
-| `FirstSeenUtc` | When a build first listed it; empty for an id a ledger expects that no build has listed. |
-| `ChangedUtc` | When a build last saw its version or system properties change, or listed it again. |
-| `GoneUtc` | When a complete build first did not list it; empty while OSDU serves it. |
-| `VersionsAt` | The version its versions were read at (`versions: all`), so a build reads them again only for a record whose version moved. |
-| `CheckedUtc` | When a reconcile last asked storage for it while a ledger expected it and the read did not list it; the order `maxMissingChecks` takes ids in. |
-| `Finding`, `FindingUtc`, `Detail` | Its [finding](#the-findings), when the finding last changed (rewriting the same finding keeps the time), and what it rests on, in a line of at most 1,000 characters. |
-| `LedgerFlowId`, `DeliveryKey`, `LedgerStatus`, `LedgerVersion` | The ledger and record that claim it, with the record's status and the version it holds. |
-| `ArtifactId`, `ArtifactState` | The id a delivery minted (a dataset, an input of a workflow) and its state, when the ledgers know it as one. |
+An id's system properties as OSDU last served them, when a build first listed it, last saw it change and first found it
+gone, when a reconcile last asked storage for it, its finding with when it last changed and what it rests on, and the
+ledger, record and artifact that claim it. Every column: [`osdu.InventoryRecord`](../tables/inventory-record.md).
 
 ### How a build moves rows through the scan
 

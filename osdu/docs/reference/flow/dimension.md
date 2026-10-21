@@ -291,9 +291,10 @@ A path is segments of letters, digits and underscores separated by dots. It goes
   `kind`, `type`, `namespace`, `authority`, `source`, `version`, `createUser`, `modifyUser`, `createTime`,
   `modifyTime`, `collaborationId`, `acl.viewers`, `acl.owners`, `legal.legaltags`, `legal.otherRelevantDataCountries`,
   `legal.status`, `ancestry.parents`, `index.statusCode`, and one tag as `tags.<name>`.
-- **A property of data** (`data.Curves.Mnemonic`), whose shape is read from the saved template of every kind the
-  pattern matches in the partition. Each such kind needs its template saved ([templates](../concepts/templates.md)), and
-  all of them must index the path the same way.
+- **A property of data** (`data.Curves.Mnemonic`), whose shape is read from the template of every kind the pattern
+  matches in the partition, as the template folders on the flow's path give it. Each such kind needs its template in one
+  of those folders ([template folders](../concepts/templates.md#template-folders)), and all of them must index the path
+  the same way.
 
 How the index stores the path decides how keys are read and compared: text through its `keyword` sub-field (the whole
 value, up to 256 characters), a keyword, number, boolean or date as it is, and a property inside a nested array through
@@ -499,7 +500,7 @@ value's column, `id`).
 A view puts dimensions of one flow side by side at the grain of one of them, so a pipeline, a report or a person reads
 one table instead of writing the joins. A build writes each as `osdu.v_dim_<name>` after the flow's dimensions, checks it,
 and drops a view the flow no longer declares. The `target` and `views` keys, how a view joins and types its columns, how
-it is written and checked, and what the saved templates say of its joins are on [Dimension views](dimension-views.md).
+it is written and checked, and what the templates say of its joins are on [Dimension views](dimension-views.md).
 
 ## Full and incremental loads
 
@@ -575,16 +576,17 @@ sqlflow run flows/welldb-welllog-05-dimensions.yaml --set partition=dev --payloa
 sqlflow run flows/welldb-welllog-05-dimensions.yaml --set partition=dev --operation plan
 ```
 
-Both operations read the saved templates in the module's database, and a build keeps what it read there. See
-[running an OSDU flow](../cli/run.md) for the run options.
+Both operations read the templates from the template folders on the flow's path, and a build keeps the version of each
+it read. See [running an OSDU flow](../cli/run.md) for the run options.
 
 ## What a build does
 
 For each dimension, in the run's partition:
 
 1. **Kinds and the field.** For a `data` path, one aggregation by `kind` lists the concrete kinds the pattern and query
-   match, and the newest saved template of each says how the index stores the path. A kind without a saved template
-   fails the dimension. A partition holding no record of the kind leaves the dimension with no value and says so.
+   match, and the template of each, the one version the nearest template folder holding that kind holds, says how the
+   index stores the path. A kind no folder on the flow's path holds fails the dimension. A partition holding no record of
+   the kind leaves the dimension with no value and says so.
 2. **Every distinct key.** The search aggregates the field over the whole query. A range answered with fewer groups
    than `aggregationSize` is complete; one answered with that many is split at a key it returned and each half is asked
    again, until every range answers whole. A range that cannot be split is read record by record through the search
@@ -688,7 +690,7 @@ A view the flow no longer declares is dropped by its next build. One whose flow 
 
 | Message (abridged) | What to do |
 | --- | --- |
-| `Dimension Wellbore reads data.WellboreID of <kind>, and no template is saved for <kind> (<n> record(s)), so how the index stores the field there is not known. Capture each on the Templates page, or with 'sqlflow template capture --kind <kind>'.` | Save the template of every kind the pattern matches. |
+| `Dimension Wellbore reads data.WellboreID of <pattern>, and the flow reads no template of <kind> (<n> record(s)), so how the index stores the field there is not known: no template folder on the path of ... holds template <kind>. ...` | Put the template of every kind the pattern matches in a template folder on the flow's path (`sqlflow template capture --kind <kind> --out <folder>/<file>.json`), or narrow `kind`. |
 | `Dimension <name> reads <path>, which the kinds its pattern matches index differently: ... One field is read one way; narrow the kind to the versions that agree.` | Narrow `kind`. |
 | `<path> holds more than <n> distinct values, the most this dimension keeps (maxValues). Narrow the dimension's query, or raise maxValues if the partition really holds that many.` | Narrow or raise `maxValues`. |
 | `Dimension <name> of <flow> would write the table osdu.dim_<name>, which dimension <name> of <other flow> writes: ... Rename one of them.` | Dimension names are unique across the flows of a database. |

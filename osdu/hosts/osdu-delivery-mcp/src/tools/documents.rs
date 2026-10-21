@@ -1,5 +1,6 @@
-//! The documents a delivery renders with: mappings, the saved templates they pin, and the OSDU data definitions the
-//! templates are saved from. All of it is definition, not data: a document, a schema, a check of one against the other.
+//! The documents a delivery renders with: mappings, the templates they fill (held in their repository's template folders
+//! and saved in the library), and the OSDU data definitions templates are saved from. All of it is definition, not data:
+//! a document, a schema, a check of one against the other.
 
 use std::collections::HashMap;
 
@@ -30,6 +31,10 @@ pub struct CheckMappingInput {
     pub yaml: String,
     /// The file's repo-relative path, used in messages (default "mapping.yaml").
     pub path: Option<String>,
+    /// The synced repository the mapping is a document of (delivery_mapping gives it): its template folders settle a
+    /// template the mapping names by kind alone. Without it the mapping must name its template's version.
+    #[serde(rename = "repoId")]
+    pub repo_id: Option<String>,
     /// true also returns the shape of the record the mapping renders, with a placeholder for every value that
     /// comes from a row or the cache.
     pub shape: Option<bool>,
@@ -138,19 +143,21 @@ proposing a changed mapping, run delivery_check_mapping on it."
     }
 
     #[tool(
-        description = "Check a mapping document against the template it pins. Returns whether it loads, every issue \
+        description = "Check a mapping document against the template it fills. Returns whether it loads, every issue \
 found (error or warning, with the variable it concerns), the variables it fills, and requiredAndEmpty: properties the \
 schema requires that nothing fills, which is what makes OSDU refuse a record. Run it on every mapping YAML you write \
 or edit, and fix every error, before showing or proposing it (it is to a mapping what validate_flow is to a flow). \
-shape=true also returns the record's structure with placeholders for row and cache values. It checks the document \
-against the saved schema only: no row is read and nothing is rendered."
+Give repoId for a mapping of a synced repository: its template folders settle the template, as its runs do. \
+shape=true also returns the record's structure with placeholders for row and cache values. No row is read and \
+nothing is rendered."
     )]
     async fn delivery_check_mapping(&self, Parameters(i): Parameters<CheckMappingInput>) -> String {
         if i.yaml.trim().is_empty() {
             return refuse("Give the mapping document's YAML text.");
         }
         let path = text(i.path);
-        let request = json!({ "yaml": i.yaml, "path": path });
+        let repo_id = text(i.repo_id);
+        let request = json!({ "yaml": i.yaml, "path": path, "repoId": repo_id });
         let coverage = match self.ctx.send("/api/v1/delivery/mapping-builder/coverage", request).await {
             Ok(coverage) => coverage,
             Err(error) => return refuse(format!("{error:#}")),
@@ -160,7 +167,7 @@ against the saved schema only: no row is read and nothing is rendered."
         let variables = coverage["variables"].as_array().unwrap_or(&empty);
         let issues = coverage["issues"].as_array().cloned().unwrap_or_default();
         let has_error = issues.iter().any(|issue| issue["severity"] == json!("error"));
-        // A document that did not load, or pins an unsaved template, answers with an error and no variables.
+        // A document that did not load, or whose template cannot be read, answers with an error and no variables.
         let loads = !(variables.is_empty() && has_error);
 
         let state_is = |variable: &Value, state: &str| {
@@ -187,7 +194,7 @@ against the saved schema only: no row is read and nothing is rendered."
         answer.insert("templateVariables".to_string(), json!(variables.len()));
 
         if i.shape.unwrap_or(false) {
-            let request = json!({ "yaml": i.yaml, "path": path, "parameters": i.parameters.unwrap_or_default() });
+            let request = json!({ "yaml": i.yaml, "path": path, "parameters": i.parameters.unwrap_or_default(), "repoId": repo_id });
             let shape = self.ctx.send("/api/v1/delivery/mapping-builder/shape", request).await;
             answer.insert("shape".to_string(), section(shape));
         }
@@ -209,7 +216,8 @@ fill and, when a partition is named, a cache lookup for each single-valued refer
 with the issues still to resolve. This is how a new mapping starts; do not write one from scratch. A fresh scaffold \
 is not valid yet: add the properties the template requires from the source's columns (delivery_templates lists \
 them), fill the ACL and legal lists, and finish the lookups. Run delivery_check_mapping until valid, then propose it \
-with propose_pipelines beside the flow that pins it. The template must be saved. Writes nothing."
+with propose_pipelines beside the flow that pins it, with the template's file in a templates folder on its path \
+when none holds it (delivery_check_mapping with repoId tells). Writes nothing."
     )]
     async fn delivery_scaffold_mapping(&self, Parameters(i): Parameters<ScaffoldMappingInput>) -> String {
         let required = [
@@ -259,7 +267,7 @@ with propose_pipelines beside the flow that pins it. The template must be saved.
                 "nextSteps": [
                     "Add the properties the template requires from the source's columns, fill the ACL and legal lists, and finish each lookup's findBy column.",
                     "Run delivery_check_mapping on the edited YAML until valid is true.",
-                    "Propose it with propose_pipelines, beside the delivery flow that pins it as name@version."
+                    "Propose it with propose_pipelines, beside the delivery flow that pins it as name@version, and with the template's file (the Templates page downloads it) in the repository's templates folder when none of its template folders holds this version."
                 ],
             })),
             Err(error) => refuse(format!("{error:#}")),
@@ -267,8 +275,9 @@ with propose_pipelines beside the flow that pins it. The template must be saved.
     }
 
     #[tool(
-        description = "Saved templates: the OSDU record schemas mappings pin and deliveries are checked against. Without \
-arguments, lists them: kind, version, origin, and how many mappings pin each. With kind and version, lays one out \
+        description = "Saved templates: the OSDU record schemas mappings fill, as the library holds them (a repository's \
+documents read theirs from its template folders, and the library is not linked to them). Without arguments, lists \
+them: kind, version, origin and who saved each. With kind and version, lays one out \
 variable by variable: path (osdu.data.FacilityName), type, format, whether it is required, the entity types an id in \
 it refers to, pattern and description. Use it for 'which properties does a Wellbore require', 'what type is this \
 field', and whenever you write or review a mapping: a variable that is not in the template cannot be filled. A \

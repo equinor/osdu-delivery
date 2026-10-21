@@ -138,14 +138,11 @@ public sealed class DeliveryOrderApiTests
             mastersEstate.Delivery("wells", $"master-data--Well{suffix}", partition: partition);
             estateEstate.Delivery("wellbores", $"master-data--Wellbore{suffix}", columns: ["WellID"], partition: partition);
 
+            // Each repository holds the templates its mappings fill, which its sync saves.
+            mastersEstate.Hold();
+            estateEstate.Hold();
             await using (var osdu = SampleEstate.Context(cs))
             {
-                var store = new OsduTemplateStore(() => SampleEstate.Context(cs), TimeProvider.System);
-                foreach (var schema in templates.All)
-                {
-                    await store.SaveAsync(schema, "tests", "tests");
-                }
-
                 var sync = new DeliveryCatalogSync(new DeliveryDocumentLoader());
                 await sync.ReconcileAsync(osdu, masters, rootMasters, now, new List<string>(), CancellationToken.None);
                 await sync.ReconcileAsync(osdu, estate, rootEstate, now, new List<string>(), CancellationToken.None);
@@ -202,6 +199,7 @@ public sealed class DeliveryOrderApiTests
                 await osdu.DeliveryInterfaces.Where(i => i.RepoId == masters || i.RepoId == estate).ExecuteDeleteAsync();
                 await osdu.DeliveryMappings.Where(m => m.RepoId == masters || m.RepoId == estate).ExecuteDeleteAsync();
                 await osdu.DeliverySearchTerms.Where(t => t.RepoId == masters || t.RepoId == estate).ExecuteDeleteAsync();
+                await osdu.DeliveryRepositoryTemplates.Where(t => t.RepoId == masters || t.RepoId == estate).ExecuteDeleteAsync();
                 await osdu.DeliveryTemplates.Where(t => kinds.Contains(t.Kind)).ExecuteDeleteAsync();
             }
 

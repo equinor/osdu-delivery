@@ -38,7 +38,7 @@ sourceRefs:
   - osdu/src/SqlFlow.Delivery/Identity/TargetId.cs
   - osdu/src/SqlFlow.Delivery/Ledger/OsduLedger.Waits.cs
   - osdu/src/SqlFlow.Delivery.Cli/DeliveryVerbs.cs
-  - osdu/samples/templates/osdu_wks_work-product-component--WellLog_1.4.0.json
+  - osdu/samples/welldb/templates/osdu_wks_work-product-component--WellLog_1.4.0.json
 ---
 
 # Delivering wellbores and their well logs from one source: several OSDU kinds with interfaces
@@ -331,7 +331,7 @@ OK      mappings\WellLog@1.0.0.yaml  (mapping 'WellLog@1.0.0 -> osdu:wks:work-pr
 
 ## 5. See the order before anything runs
 
-`sqlflow check` resolves each interface's mapping against its saved template and works out the order the run will take
+`sqlflow check` resolves each interface's mapping against the template its template folders hold and works out the order the run will take
 ([sqlflow check](../cli/check.md)):
 
 ```bash

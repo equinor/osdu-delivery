@@ -70,8 +70,8 @@ reads the documents OSDU Delivery adds as well. This page says what each of them
 Validation is offline: no catalog, no module database, no OSDU, and no secret resolution (`${env:...}` and
 `${keyvault:...}` stay references). It does read the files a flow names beside it, from disk and the way a run finds
 them: the mapping a delivery flow pins, and the dictionaries a cache or dimension flow names (see each kind below). What
-needs the database (the template a mapping pins, the cache it reads, the partition registry) is
-[`sqlflow check`](check.md); what needs OSDU or the ingestion tables is the run.
+needs the template folders or the database (the template a mapping fills, the cache it reads, the partition registry)
+is [`sqlflow check`](check.md); what needs OSDU or the ingestion tables is the run.
 
 ## The documents it recognises
 
@@ -185,11 +185,13 @@ Waits that come from the relationships a mapping fills, which need the templates
 
 ## Mapping
 
-- `name`, `version`, `template.kind`, `template.version`, `dataset.system`, `dataset.key`, the `dataPartition` parameter
-  and the `record` tree are required
+- `name`, `version`, `template.kind`, `dataset.system`, `dataset.key`, the `dataPartition` parameter and the `record`
+  tree are required
   (`the mapping must declare the 'dataPartition' parameter; record ids and references are minted in that partition.`).
-- `template.kind` is one type in one version, `authority:source:entityType:major.minor.patch`; `template.version` is the
-  16 hexadecimal characters of a saved template. The template itself is not loaded.
+- `template.kind` is one type in one version, `authority:source:entityType:major.minor.patch`; `template.version`, when
+  written, is the 16 hexadecimal characters of a template version, and left out, the version is settled from the
+  [template folders](../concepts/templates.md#template-folders) on the mapping's path when it is read for a run. The
+  template itself is not loaded.
 - `dataset.key` and `dataset.identity` name columns of the dataset's own row, each once.
 - `record` is laid out as the record is. Every word of the mapping language starts with `$`, and a word the language
   does not have is refused with the one it most likely meant:
@@ -256,7 +258,8 @@ The mapping's vocabulary is on [The mapping document](../flow/mapping.md) and th
 - A bulk read's `columns`, when listed, include every column the test's assertions name:
   `<file>: tests[2] 'log-curves': bulk.columns lists the only columns the test reads, and leaves out 'GR' (assert[4]); add it to bulk.columns, or leave bulk.columns out to read exactly the columns the assertions name.`
 
-Whether each path is a property of the kind is checked against the saved template when the tests run, or with
+Whether each path is a property of the kind is checked against the template the template folders on the flow's path
+hold when the tests run, or with
 `sqlflow run <flow.yaml> --operation plan`.
 
 ## Dimension flow
@@ -335,7 +338,7 @@ SQLFlow's: 0 when the document (or every document of the folder) is valid, 1 oth
 ## See also
 
 - [sqlflow validate](../../../../sqlflow/docs/reference/cli/validate.md): the verb, its folder mode and `--json` report.
-- [sqlflow check](check.md): the mapping against its saved template and the cache, which needs the module database.
+- [sqlflow check](check.md): the mapping against the template its template folders hold and the cache, which needs the module database.
 - [The documents OSDU Delivery adds](../flow/overview.md): the six flow kinds, the mapping and the dictionary.
 - [Delivery flow](../flow/delivery.md), [The mapping document](../flow/mapping.md), [Cache flow](../flow/cache.md),
   [Dictionary](../flow/dictionary.md): every key each document takes.

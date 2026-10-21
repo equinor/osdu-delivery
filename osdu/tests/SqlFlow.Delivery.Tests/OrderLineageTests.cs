@@ -243,7 +243,8 @@ public sealed class OrderLineageTests : IDisposable
         var (collected, report) = ScanWithWarnings();
         Assert.True(WaveOf(report, "wells") < WaveOf(report, "wellbores"));
         Assert.Contains(collected.Warnings, w => w.Contains("delivery flow 'logs' is not ordered by what its records refer to", StringComparison.Ordinal)
-            && w.Contains("whose template is not saved", StringComparison.Ordinal));
+            && w.Contains("Its template is not read: template osdu:wks:work-product-component--WellLog:1.0.0 version", StringComparison.Ordinal)
+            && w.Contains("is not saved", StringComparison.Ordinal));
     }
 
     [Fact]

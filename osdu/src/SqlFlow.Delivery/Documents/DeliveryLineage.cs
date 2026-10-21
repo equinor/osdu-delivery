@@ -25,9 +25,9 @@ namespace SqlFlow.Delivery.Documents;
 /// inherits them: the cache flow filling a type, and the flow delivering the records a search looks for, are ordered
 /// before it.
 /// </para>
-/// The mapping is the one the flow pins, read from the checkout being scanned; the template it pins is read from the
-/// module database where the host has one (<see cref="MappingTemplateSource"/>). A mapping that cannot be read costs the
-/// flow its OSDU nodes with a warning, never the rest of its lineage.
+/// The mapping is the one the flow pins, read from the checkout being scanned; the template it fills is read from the
+/// template folders on the mapping's path in the same checkout (<see cref="MappingTemplateSource"/>). A mapping that cannot
+/// be read costs the flow its OSDU nodes with a warning, never the rest of its lineage.
 /// </summary>
 public static class DeliveryLineage
 {
@@ -142,7 +142,7 @@ public static class DeliveryLineage
 
                 if (!flow.Cache.Before.IsEmpty)
                 {
-                    var cacheReads = MappingCacheReads.Of(mapping, scan.Template(mapping.Template).Schema);
+                    var cacheReads = MappingCacheReads.Of(mapping, scan.Template(mapping).Schema);
                     foreach (var type in scan.StepTypes(
                                  partition,
                                  flow.Cache.Before,
@@ -219,7 +219,7 @@ public static class DeliveryLineage
     private static List<DeclaredDataset> MappingReads(
         MappingDefinition mapping, string endpoint, string partition, Scan scan, string who, List<string> warnings)
     {
-        var template = scan.Template(mapping.Template);
+        var template = scan.Template(mapping);
         var cache = MappingCacheReads.Of(mapping, template.Schema);
         var reads = new List<DeclaredDataset>();
         var named = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
@@ -258,8 +258,8 @@ public static class DeliveryLineage
                 + (cache.Untold.Count > MaxNamedVariables ? $" and {cache.Untold.Count - MaxNamedVariables} more" : string.Empty);
             warnings.Add(
                 $"{who} shows fewer cache types in lineage than its mapping reads: mapping '{mapping.Reference}' builds a reference with ref at {listed}, "
-                + $"and the entity type of each is told by its template ({mapping.Template}), which {template.Missing}, "
-                + "so the cache types those references are checked against are left out.");
+                + $"and the entity type of each is told by its template ({mapping.Template}), so the cache types those references are checked against are left out. "
+                + $"Its template is not read: {template.Missing}");
         }
 
         return reads.Distinct().ToList();
@@ -304,12 +304,11 @@ public static class DeliveryLineage
             }
         }
 
-        if (plan.Unknown.Any(u => SameDelivery(u, me)) && scan.Template(mapping.Template).Missing is { } missing
-            && scan.Template(mapping.Template).Outcome != MappingTemplateOutcome.NoStore)
+        if (plan.Unknown.Any(u => SameDelivery(u, me)) && scan.Template(mapping).Missing is { } missing)
         {
             warnings.Add(
-                $"{who} is not ordered by what its records refer to: mapping '{mapping.Reference}' fills {mapping.Template}, whose template {missing}, "
-                + "so the OSDU order cannot tell which of the partition's deliveries it waits for.");
+                $"{who} is not ordered by what its records refer to: mapping '{mapping.Reference}' fills {mapping.Template}, "
+                + $"and without that template the OSDU order cannot tell which of the partition's deliveries it waits for. Its template is not read: {missing}");
         }
 
         var entity = me.EntityType;
@@ -388,7 +387,8 @@ public static class DeliveryLineage
     private sealed class Scan(RegisteredLineageContext context, DeliveryDocumentLoader documents, MappingTemplateSource? templates, Func<IOrderCatalog?>? order)
     {
         private readonly Dictionary<(string Directory, string Reference), (MappingDefinition? Mapping, string? Reason)> _mappings = [];
-        private readonly Dictionary<TemplateReference, MappingTemplateRead> _templates = [];
+        private readonly Dictionary<(string? Document, TemplateReference Reference), MappingTemplateRead> _templates = [];
+        private readonly MappingTemplateSource _source = templates ?? new MappingTemplateSource();
         private IReadOnlyList<CacheLineage.HeldType>? _held;
         private OrderLineage? _order;
         private IReadOnlyList<(string Flow, IReadOnlyList<CacheLineage.HeldType> Held)>? _heldByFlow;
@@ -488,7 +488,7 @@ public static class DeliveryLineage
             (MappingDefinition?, string?) read;
             try
             {
-                read = (new MappingCatalog(directory, documents).Load(reference, Shown), null);
+                read = (new MappingCatalog(directory, documents, new FolderTemplates(context.EstateRoot)).Load(reference, Shown), null);
             }
             catch (Exception ex) when (ex is SqlFlowException or IOException or UnauthorizedAccessException)
             {
@@ -499,13 +499,17 @@ public static class DeliveryLineage
             return read;
         }
 
-        /// <summary>The template <paramref name="reference"/> names, or why lineage has none to read.</summary>
-        public MappingTemplateRead Template(TemplateReference reference)
+        /// <summary>
+        /// The template <paramref name="mapping"/> fills, read from the template folders on its path up to the top of the
+        /// checkout, or why lineage has none to read.
+        /// </summary>
+        public MappingTemplateRead Template(MappingDefinition mapping)
         {
-            if (!_templates.TryGetValue(reference, out var read))
+            var key = (mapping.TemplateDocument, mapping.Template);
+            if (!_templates.TryGetValue(key, out var read))
             {
-                read = templates?.Read(reference) ?? new MappingTemplateRead(MappingTemplateOutcome.NoStore);
-                _templates[reference] = read;
+                read = _source.Read(mapping, context.EstateRoot);
+                _templates[key] = read;
             }
 
             return read;

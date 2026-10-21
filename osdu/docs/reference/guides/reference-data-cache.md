@@ -37,7 +37,7 @@ sourceRefs:
   - osdu/src/SqlFlow.Delivery/Rendering/EntryValues.cs
   - osdu/src/SqlFlow.Delivery/Validation/Preflight.cs
   - osdu/src/SqlFlow.Delivery.Cli/DeliveryVerbs.cs
-  - osdu/samples/templates/osdu_wks_work-product-component--WellLog_1.4.0.json
+  - osdu/samples/welldb/templates/osdu_wks_work-product-component--WellLog_1.4.0.json
 ---
 
 # Caching OSDU reference data (units, curve types) so a mapping can resolve reference ids

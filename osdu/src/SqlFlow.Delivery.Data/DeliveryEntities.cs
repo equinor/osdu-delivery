@@ -1430,8 +1430,17 @@ public sealed class DeliveryMapping
     /// <summary>The OSDU kind of the template the mapping fills.</summary>
     public string Kind { get; set; } = string.Empty;
 
-    /// <summary>The template version the mapping pins, also for a document that fails to load; empty when it names none.</summary>
+    /// <summary>
+    /// The template version the mapping fills: the one it names, or the one the template folders on its path settle a kind
+    /// named alone to. Kept for a document that fails to load when it names a version; empty when there is none.
+    /// </summary>
     public string TemplateVersion { get; set; } = string.Empty;
+
+    /// <summary>
+    /// The file of the repository the template was settled from, in the template folder on the mapping's path that holds it
+    /// (osdu/docs/reference/concepts/templates.md, Template folders); empty when no folder on its path holds it.
+    /// </summary>
+    public string TemplatePath { get; set; } = string.Empty;
 
     public string RelativePath { get; set; } = string.Empty;
 
@@ -1538,10 +1547,11 @@ public sealed class DeliveryInterface
 }
 
 /// <summary>
-/// A template: the OSDU schema of one kind, captured from OSDU or imported from a file, which every mapping for that
-/// kind is checked and rendered against (osdu/docs/reference/concepts/templates.md). Templates are owned by OSDU
-/// Delivery. A version is identified by the kind and the hash of its schema, and never changes; a mapping pins the
-/// version it fills.
+/// A saved template, the library (osdu/docs/reference/concepts/templates.md): the OSDU schema of one kind, captured from the
+/// OSDU data definitions or imported from a file, by a person, on the Templates page or the command line. A version is
+/// identified by the kind and the hash of its schema, and never changes. The explorer, the mapping builder and the
+/// assistant read the library; a repository's documents read their templates from their template folders, and the
+/// repositories never write here.
 /// </summary>
 public sealed class DeliveryTemplate
 {
@@ -1564,6 +1574,53 @@ public sealed class DeliveryTemplate
     public string CapturedBy { get; set; } = string.Empty;
 
     public DateTime CapturedUtc { get; set; }
+}
+
+/// <summary>
+/// A file of a template folder of a repository, as the last sync found it (osdu/docs/reference/concepts/templates.md,
+/// Template folders): which template it holds with a copy of its schema, or why it holds none. A template folder is a
+/// directory named <c>templates</c>, and a document reads those on its path; the control plane's pages settle a document's
+/// template from these rows by the same rule a run settles it by from the files, and read its schema from the copy here,
+/// since they have no working copy. The copy is the repository's own: the library of saved templates
+/// (<see cref="DeliveryTemplate"/>) never holds it. A file the repository no longer holds loses its row.
+/// </summary>
+public sealed class DeliveryRepositoryTemplate
+{
+    /// <summary>The longest path of a template file, or of its folder, in its repository.</summary>
+    public const int MaxPathLength = 400;
+
+    /// <summary>The longest reason a file holds no template.</summary>
+    public const int MaxProblemLength = 2000;
+
+    /// <summary>Stable id: derived from the repo id and the file's path.</summary>
+    public Guid Id { get; set; }
+
+    public Guid RepoId { get; set; }
+
+    /// <summary>The file's path in the repository, with forward slashes (Welllog/templates/osdu_wks_work-product-component--WellLog_1.4.0.json).</summary>
+    public string Path { get; set; } = string.Empty;
+
+    /// <summary>The template folder the file is in, its path in the repository (Welllog/templates).</summary>
+    public string Folder { get; set; } = string.Empty;
+
+    /// <summary>The kind the file's schema declares (x-osdu-schema-source); empty when the file holds no template.</summary>
+    public string Kind { get; set; } = string.Empty;
+
+    /// <summary>The template version the file holds, the hash of its canonical schema; empty when it holds no template.</summary>
+    public string Version { get; set; } = string.Empty;
+
+    /// <summary>Why the file holds no template; null when it holds one.</summary>
+    public string? Problem { get; set; }
+
+    /// <summary>
+    /// The schema the file holds as the sync read it, compact JSON whose canonical form hashes to <see cref="Version"/>; null
+    /// when the file holds no template.
+    /// </summary>
+    public string? SchemaJson { get; set; }
+
+    public DateTime FirstSeenUtc { get; set; }
+
+    public DateTime LastSeenUtc { get; set; }
 }
 
 /// <summary>
@@ -1897,7 +1954,11 @@ public sealed class DeliveryCacheSetEntry
     /// <summary>What the mapping read: <c>id</c>, <c>Name</c>, <c>NameAlias.AliasName</c>.</summary>
     public string Path { get; set; } = string.Empty;
 
-    /// <summary>match (the value the source resolved by) or value (a value written into the document).</summary>
+    /// <summary>
+    /// How the render used it: match (the value the source resolved by), value (a value written into the document), empty
+    /// (a path that held no value), unlisted (a key a lookup table listed no row under), listed (the rows a $findAll found
+    /// by a key), unverified (an id written as an unverified reference) or missing (an id the cache did not hold).
+    /// </summary>
     public string Kind { get; set; } = "value";
 
     public string ValueHash { get; set; } = string.Empty;
@@ -1931,7 +1992,9 @@ public sealed class DeliveryUpdateTag
 
     /// <summary>
     /// changed (the value moved, or a path that gave none gives one), removed (the cached record is gone), unmatched (what it
-    /// matched by is gone) or listed (a lookup table now lists a key records looked up and found no row under).
+    /// matched by is gone), listed (a lookup table now lists a key records looked up and found no row under, or a type now
+    /// holds a record by a value records found none by), relisted (the rows a key finds are no longer the ones records read)
+    /// or found (the cache now holds a record records reference as an unverified id).
     /// </summary>
     public string Change { get; set; } = "changed";
 
@@ -2919,7 +2982,7 @@ public sealed class DeliveryLedger
     /// <summary>The ledger identity every row of the ledger carries.</summary>
     public Guid FlowId { get; set; }
 
-    /// <summary>delivery, retrieval or assertion: the kind of flow whose ledger this is.</summary>
+    /// <summary>delivery, retrieval, assertion, dimension or inventory: the kind of flow whose ledger this is.</summary>
     public string Kind { get; set; } = string.Empty;
 
     /// <summary>The flow (for a source with interfaces, the source) the ledger belongs to.</summary>
@@ -3934,6 +3997,7 @@ public static class DeliveryModel
             e.Property(m => m.Version).HasMaxLength(50).IsRequired();
             e.Property(m => m.Kind).HasMaxLength(200).IsRequired();
             e.Property(m => m.TemplateVersion).HasMaxLength(64).IsRequired();
+            e.Property(m => m.TemplatePath).HasMaxLength(DeliveryRepositoryTemplate.MaxPathLength).IsRequired().HasDefaultValue(string.Empty);
             e.Property(m => m.RelativePath).HasMaxLength(1000).IsRequired();
             e.Property(m => m.ContentHash).HasMaxLength(64).IsRequired();
             e.Property(m => m.Yaml).IsRequired();
@@ -4007,6 +4071,21 @@ public static class DeliveryModel
             e.Property(t => t.Origin).HasMaxLength(1000).IsRequired();
             e.Property(t => t.CapturedBy).HasMaxLength(200).IsRequired();
             e.HasIndex(t => new { t.Kind, t.Version }).IsUnique();
+        });
+
+        modelBuilder.Entity<DeliveryRepositoryTemplate>(e =>
+        {
+            e.ToTable("RepositoryTemplate", SchemaName);
+            e.HasKey(t => t.Id);
+            e.Property(t => t.Path).HasMaxLength(DeliveryRepositoryTemplate.MaxPathLength).IsRequired();
+            e.Property(t => t.Folder).HasMaxLength(DeliveryRepositoryTemplate.MaxPathLength).IsRequired();
+            e.Property(t => t.Kind).HasMaxLength(200).IsRequired();
+            e.Property(t => t.Version).HasMaxLength(64).IsRequired();
+            e.Property(t => t.Problem).HasMaxLength(DeliveryRepositoryTemplate.MaxProblemLength);
+            e.Property(t => t.SchemaJson);
+            // A sync reconciles one repository's files, and a page reads them, and the copy of the one it settles on, to
+            // settle that repository's documents.
+            e.HasIndex(t => new { t.RepoId, t.Path }).IsUnique();
         });
 
         modelBuilder.Entity<DeliveryCacheVersion>(e =>

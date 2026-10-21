@@ -22,6 +22,8 @@ interface MappingCoverageViewProps {
   path: string;
   /** The document's content hash, so a mapping synced with new content is measured again. */
   contentHash: string;
+  /** The synced repository the mapping is a document of, whose template folders settle a template it names by kind alone. */
+  repoId?: string | null;
 }
 
 /**
@@ -31,13 +33,13 @@ interface MappingCoverageViewProps {
  * cache is read; this is the document against the schema alone, until a data check renders the rows of a flow that
  * uses the mapping and says, attribute by attribute, which rows will not give it the value its template expects.
  */
-export function MappingCoverageView({ mappingId, reference, yaml, path, contentHash }: MappingCoverageViewProps) {
+export function MappingCoverageView({ mappingId, reference, yaml, path, contentHash, repoId }: MappingCoverageViewProps) {
   const valueCheck = useValueCheckSession(mappingId, reference);
   const coverage = useQuery({
-    queryKey: ["delivery", "mapping-coverage", path, contentHash],
-    queryFn: () => deliveryApi.mappingCoverage(yaml, path),
+    queryKey: ["delivery", "mapping-coverage", repoId ?? null, path, contentHash],
+    queryFn: () => deliveryApi.mappingCoverage(yaml, path, repoId),
   });
-  const parsed = useParsedMapping(yaml, path, contentHash);
+  const parsed = useParsedMapping(yaml, path, contentHash, repoId);
 
   const kind = coverage.data?.kind ?? null;
   const version = coverage.data?.version ?? null;
@@ -109,7 +111,7 @@ export function MappingCoverageView({ mappingId, reference, yaml, path, contentH
         * is listed as it is written: a mapping pinning a version nobody saved is exactly when one wants to read it.
         */}
       {coverage.isSuccess && coverage.data.variables.length === 0 && (
-        <MappingPropertiesView yaml={yaml} path={path} contentHash={contentHash} />
+        <MappingPropertiesView yaml={yaml} path={path} contentHash={contentHash} repoId={repoId} />
       )}
     </div>
   );

@@ -269,11 +269,13 @@ public sealed class AssertionValueTests
     public async Task A_test_of_a_kind_no_template_is_saved_for_is_told_how_to_capture_one()
     {
         var fit = await FitAsync("- { field: data.X, exists: true }", kind: "osdu:wks:master-data--Rig:1.0.0");
-        Assert.Contains("No template of osdu:wks:master-data--Rig:1.0.0 is saved", Assert.Single(fit.Problems));
+        Assert.Contains(
+            "The test's fields are checked against the template of osdu:wks:master-data--Rig:1.0.0, and no template of osdu:wks:master-data--Rig:1.0.0 is saved",
+            Assert.Single(fit.Problems));
         Assert.Contains("sqlflow template capture --kind osdu:wks:master-data--Rig:1.0.0", fit.Problems[0]);
 
         var pinned = await FitAsync("- { field: data.FacilityName, exists: true }", "template: 0000000000000000");
-        Assert.Contains("Template version '0000000000000000' of osdu:wks:master-data--Wellbore:1.3.0 is not saved", Assert.Single(pinned.Problems));
+        Assert.Contains("template osdu:wks:master-data--Wellbore:1.3.0 version 0000000000000000 is not saved", Assert.Single(pinned.Problems));
 
         var countOnly = await FitAsync("- count: 1", kind: "osdu:wks:master-data--Rig:1.0.0");
         Assert.Empty(countOnly.Problems);
@@ -316,10 +318,10 @@ public sealed class AssertionValueTests
         Assert.Empty(fits["logs"].Problems);
         Assert.Equal(mapping.Template.Version, fits["logs"].Version);
         Assert.Equal(
-            "The test is checked against the template mapping WellLog@9.9.9 pins, and no mapping WellLog@9.9.9 is synced; sync the repository that declares it, then run again.",
+            "The test is checked against the template mapping WellLog@9.9.9 fills, and no mapping WellLog@9.9.9 is synced; sync the repository that declares it, then run again.",
             Assert.Single(fits["unsynced"].Problems));
         Assert.Equal(
-            $"Mapping WellLog@1.4.0 pins a template of {Samples.WellLogKind}, and the test reads {Samples.WellboreKind}; name the mapping of {Samples.WellboreKind}, or a template version of it.",
+            $"Mapping WellLog@1.4.0 fills a template of {Samples.WellLogKind}, and the test reads {Samples.WellboreKind}; name the mapping of {Samples.WellboreKind}, or a template version of it.",
             Assert.Single(fits["other-kind"].Problems));
 
         // Where no mapping can be read, the test says so rather than taking another template.

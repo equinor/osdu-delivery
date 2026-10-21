@@ -503,10 +503,7 @@ public static class Samples
     /// <summary>The connection reference the suites give a flow whose source is the in-memory ingestion tables.</summary>
     public const string MemoryConnection = "mem://ingestion";
 
-    /// <summary>
-    /// The samples directory as the repository lays it out: a folder per source, and beside them the bundled schemas
-    /// that are not repository content at all (see <see cref="TemplateFiles"/>).
-    /// </summary>
+    /// <summary>The samples directory as the repository lays it out: a folder per source, and beside them the sample cache records.</summary>
     public static string Root => Path.Combine(AppContext.BaseDirectory, "samples");
 
     /// <summary>
@@ -519,11 +516,10 @@ public static class Samples
     public static string Mappings => Path.Combine(Source, "mappings");
 
     /// <summary>
-    /// The bundled OSDU schemas the sample mapping pins, as a template import reads them. They sit beside the source
-    /// folders rather than inside one, because a template is a catalog object captured from OSDU's schema service, not
-    /// a file a repository sync reads; these copies exist so a suite can save templates with no OSDU to capture from.
+    /// The welldb source's template folder: the bundled OSDU schemas its mappings fill and its flows read, which a run reads
+    /// from here (osdu/docs/reference/concepts/templates.md, Template folders) and a suite saves into the library.
     /// </summary>
-    public static string TemplateFiles => Path.Combine(Root, "templates");
+    public static string TemplateFiles => Path.Combine(Source, "templates");
 
     /// <summary>
     /// The documents of the kinds the sample estate does not deliver (wellbores, trajectories, documents, several interfaces
@@ -535,7 +531,11 @@ public static class Samples
     /// <summary>The mappings of <see cref="FixtureDocuments"/>: Wellbore, WellboreTrajectory and Document.</summary>
     public static string FixtureMappings => Path.Combine(FixtureDocuments, "mappings");
 
-    /// <summary>The schemas the fixture mappings pin, and the ones the schema-version suites compare against.</summary>
+    /// <summary>
+    /// The template folder above the fixture documents: the schemas of the kinds the sample does not carry that the fixture
+    /// mappings fill, and the ones the schema-version suites compare against. The build links the sample's own templates
+    /// into the fixture documents' template folder, nearer to them.
+    /// </summary>
     public static string FixtureTemplateFiles => Path.Combine(AppContext.BaseDirectory, "Fixtures", "templates");
 
     public static string Flow => Path.Combine(Source, "flows", "welldb-welllog-03-header-delivery.yaml");
@@ -823,7 +823,10 @@ public static class Samples
 
     /// <summary>
     /// The engine as a host composes it, over the in-memory ingestion tables: everything a run needs except a target,
-    /// which the suites supply as a fake protocol.
+    /// which the suites supply as a fake protocol. A host reads a document's templates from the template folders on its
+    /// path; the suites that test what renders read them from <paramref name="templates"/> (the sample templates by
+    /// default) whatever a document's path, and a suite of the folders themselves passes
+    /// <paramref name="documentTemplates"/> (<see cref="FolderTemplates.Default"/>, as every host composes it).
     /// </summary>
     public static EngineContext Engine(
         ILedger? ledger,
@@ -834,8 +837,10 @@ public static class Samples
         IIngestionSourceFactory? sources = null,
         IPayloadFiles? payloads = null,
         IRecordSearchFactory? searches = null,
-        IPartitionRegistry? partitions = null)
+        IPartitionRegistry? partitions = null,
+        ITemplateSource? documentTemplates = null)
     {
+        var library = templates ?? SampleTemplates;
         var stores = Stores();
         var loader = new DeliveryDocumentLoader();
         return new EngineContext(
@@ -849,10 +854,13 @@ public static class Samples
             NullLoggerFactory.Instance,
             protocols ?? new DefaultProtocolFactory(),
             CompositeDeliveryListener.Empty,
-            Templates: templates ?? SampleTemplates,
+            Templates: library,
             Cache: cache ?? SampleCache,
             Searches: searches ?? FixedRecordSearchFactory.SampleWellbores(),
-            Partitions: partitions ?? FixedPartitionRegistry.Empty);
+            Partitions: partitions ?? FixedPartitionRegistry.Empty)
+        {
+            DocumentTemplates = documentTemplates ?? library,
+        };
     }
 
     /// <summary>

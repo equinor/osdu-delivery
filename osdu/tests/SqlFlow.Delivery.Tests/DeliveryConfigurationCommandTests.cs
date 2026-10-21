@@ -231,6 +231,7 @@ public sealed class DeliveryConfigurationCommandTests : IDisposable
             services,
             new CliArguments([verb, .. args], declared.ValueOptions),
             output,
+            TextWriter.Null,
             reason => throw new InvalidOperationException($"'{verb} {string.Join(' ', args)}' was refused as a usage error: {reason}"),
             CancellationToken.None);
         var exit = await handler(command);

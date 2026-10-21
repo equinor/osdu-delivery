@@ -1,5 +1,5 @@
 import { useEffect, useId, useState } from "react";
-import { useMutation } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { GitPullRequest, Loader2, TriangleAlert } from "lucide-react";
 import { toast } from "sonner";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
@@ -8,10 +8,11 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Sheet, SheetContent, SheetDescription, SheetFooter, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { Textarea } from "@/components/ui/textarea";
-import type { DeliveryBuilderRepo } from "../../api/delivery";
+import { deliveryApi, type DeliveryBuilderRepo } from "../../api/delivery";
 import { repoSourceApi } from "@/api/endpoints";
 import { LinkRef } from "@/components/LinkRef";
 import { problemText } from "./problemText";
+import { templateSchemaQuery } from "./templateFormat";
 import { ProblemView } from "./TemplateSheet";
 
 interface MappingProposeSheetProps {
@@ -24,28 +25,48 @@ interface MappingProposeSheetProps {
   version: string;
   /** The checked YAML, exactly as the last check wrote it. */
   yaml: string;
+  /** The template the mapping fills: its kind and the saved version the builder started it from. */
+  templateKind: string;
+  templateVersion: string;
 }
 
 /**
  * Proposes the mapping to its repository as a pull request, through the same proposal path flows use: the control plane
  * pushes a branch with the source's own credential and opens the pull request. Nothing reaches the catalog until a person
- * merges it and the repository syncs.
+ * merges it and the repository syncs. A mapping reads its template from the template folders on its path, so when no
+ * folder there holds the version the mapping fills, the pull request also writes the saved version's file into the
+ * repository's top template folder, where the mapping reads it.
  */
-export function MappingProposeSheet({ open, onClose, repo, sourceId, name, version, yaml }: MappingProposeSheetProps) {
+export function MappingProposeSheet({ open, onClose, repo, sourceId, name, version, yaml, templateKind, templateVersion }: MappingProposeSheetProps) {
   const ids = useId();
+  const queryClient = useQueryClient();
   const path = `mappings/${name}@${version}.yaml`;
   const defaultTitle = `Mapping ${name}@${version}`;
   const [title, setTitle] = useState(defaultTitle);
   const [body, setBody] = useState("");
 
+  const held = useQuery({
+    queryKey: ["delivery", "templates", "resolve", repo.repoId, path, templateKind, templateVersion],
+    queryFn: () => deliveryApi.resolveTemplate(repo.repoId, path, templateKind, templateVersion),
+    enabled: open,
+  });
+  const resolution = held.data;
+
   const propose = useMutation({
-    mutationFn: () => repoSourceApi.propose(sourceId, {
-      title: title.trim(),
-      body: body.trim() === "" ? null : body.trim(),
-      baseBranch: null,
-      headBranch: null,
-      files: [{ path, content: yaml }],
-    }),
+    mutationFn: async () => {
+      const files = [{ path, content: yaml }];
+      if (resolution !== undefined && !resolution.found) {
+        files.push({ path: resolution.suggestedPath, content: await queryClient.fetchQuery(templateSchemaQuery(templateKind, templateVersion)) });
+      }
+
+      return repoSourceApi.propose(sourceId, {
+        title: title.trim(),
+        body: body.trim() === "" ? null : body.trim(),
+        baseBranch: null,
+        headBranch: null,
+        files,
+      });
+    },
     onSuccess: (created) => toast.success(`Pull request #${created.pullRequestNumber} opened on ${repo.name}.`),
     onError: (error) => toast.error(problemText(error)),
   });
@@ -138,8 +159,21 @@ export function MappingProposeSheet({ open, onClose, repo, sourceId, name, versi
                   data-testid="mapping-builder-propose-body"
                 />
               </div>
+              {held.isError && <ProblemView error={held.error} testId="mapping-builder-propose-template-error" />}
+              {resolution !== undefined && (resolution.found ? (
+                <p className="text-xs text-muted-foreground" data-testid="mapping-builder-propose-template">
+                  The mapping reads template version <span className="font-mono">{templateVersion}</span> from{" "}
+                  <span className="font-mono">{resolution.file}</span>, which the repository already holds.
+                </p>
+              ) : (
+                <p className="text-xs text-muted-foreground" data-testid="mapping-builder-propose-template">
+                  No template folder on the mapping's path holds template version <span className="font-mono">{templateVersion}</span>,
+                  so the pull request also writes the saved version as <span className="font-mono">{resolution.suggestedPath}</span>,
+                  where the mapping reads it.
+                </p>
+              ))}
               <p className="text-xs text-muted-foreground">
-                The file is <span className="font-mono">{path}</span>. An existing file at that path is revised, and a new one is added.
+                The mapping is <span className="font-mono">{path}</span>. An existing file at a path is revised, and a new one is added.
               </p>
             </>
           )}
@@ -155,7 +189,7 @@ export function MappingProposeSheet({ open, onClose, repo, sourceId, name, versi
               <Button
                 size="sm"
                 onClick={() => propose.mutate()}
-                disabled={title.trim() === "" || propose.isPending}
+                disabled={title.trim() === "" || propose.isPending || resolution === undefined}
                 data-testid="mapping-builder-propose-submit"
               >
                 {propose.isPending ? <Loader2 className="animate-spin" /> : <GitPullRequest />}

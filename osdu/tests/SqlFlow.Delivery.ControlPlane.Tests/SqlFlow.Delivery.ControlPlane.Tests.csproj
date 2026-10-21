@@ -45,6 +45,7 @@
     <Compile Include="..\SqlFlow.Delivery.Tests\MetricsCapture.cs" Link="Fixtures\MetricsCapture.cs" />
     <Compile Include="..\SqlFlow.Delivery.Tests\RepositoryRoot.cs" Link="Fixtures\RepositoryRoot.cs" />
     <Compile Include="..\SqlFlow.Delivery.Tests\OrderEstate.cs" Link="Fixtures\OrderEstate.cs" />
+    <Compile Include="..\SqlFlow.Delivery.Tests\TemplateFolderFixtures.cs" Link="Fixtures\TemplateFolderFixtures.cs" />
   </ItemGroup>
 
   <ItemGroup>
@@ -63,9 +64,10 @@
     <Content Include="..\..\samples\welldb\dictionaries\**" Link="samples\welldb\dictionaries\%(RecursiveDir)%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
     <Content Include="..\..\samples\welldb\data\**" Link="samples\welldb\data\%(RecursiveDir)%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
     <Content Include="..\..\samples\welldb\schedules.yaml" Link="samples\welldb\schedules.yaml" CopyToOutputDirectory="PreserveNewest" />
-    <!-- Beside the source folder, not inside it: a template and a cache both live in the module's database, so neither
-         is repository content. These files stand in for what a capture against OSDU would have written. -->
-    <Content Include="..\..\samples\templates\**" Link="samples\templates\%(RecursiveDir)%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
+    <!-- The source's template folder, which its mappings and flows read their templates from. The cache records sit
+         beside the source folder, not inside it: a cache lives in the module's database, so they stand in for what a
+         capture against OSDU would have written. -->
+    <Content Include="..\..\samples\welldb\templates\**" Link="samples\welldb\templates\%(RecursiveDir)%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
     <Content Include="..\..\samples\cache-records\**" Link="samples\cache-records\%(RecursiveDir)%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
     <!-- The delivery suite's test-only documents, schemas and cache records for the kinds the sample estate does not
          deliver, which the shared sample cache and templates include. -->
@@ -73,6 +75,8 @@
     <!-- Linked a second time, into the fixture mappings folder, for MappingYaml's fallback; a None item copies the same
          way a Content item does, and the SDK only flags two Content items sharing a source as duplicates. -->
     <None Include="..\..\samples\welldb\mappings\**" Link="Fixtures\documents\mappings\%(RecursiveDir)%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
+    <!-- And the sample's templates, into the fixture documents' own template folder, which the sample mapping reads there. -->
+    <None Include="..\..\samples\welldb\templates\**" Link="Fixtures\documents\templates\%(RecursiveDir)%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 
 </Project>

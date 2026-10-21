@@ -3,6 +3,7 @@ using System.Text.Json.Nodes;
 using SqlFlow.Core;
 using SqlFlow.Delivery.Documents;
 using SqlFlow.Delivery.Engine.Snapshots;
+using SqlFlow.Delivery.Json;
 using SqlFlow.Delivery.Snapshots;
 
 namespace SqlFlow.Delivery.Templates;
@@ -48,6 +49,31 @@ public static class TemplateSources
     }
 
     /// <summary>
+    /// A template as a file: the bundled schema indented, its keys in the order the schema was written, which is the form
+    /// <c>osdu/samples/welldb/templates</c> keeps the sample schemas in. <see cref="FromBundledJson"/> reads it back as the same
+    /// version, since a version is the hash of the canonical form, so a copy kept in a repository can be checked against
+    /// the version its mappings pin by importing it. The control plane answers it as the file <see cref="FileName"/> names,
+    /// which the Templates page downloads, and <c>sqlflow template</c> writes it with <c>--out</c>.
+    /// </summary>
+    public static string FileText(SchemaSnapshot schema)
+    {
+        ArgumentNullException.ThrowIfNull(schema);
+        return DocumentJson.Indented(schema.Root);
+    }
+
+    /// <summary>
+    /// The name a template's file goes by: its kind, each colon an underscore
+    /// (<c>osdu_wks_work-product-component--WellLog_1.4.0.json</c>), as <c>osdu/samples/welldb/templates</c> names the sample
+    /// schemas. A record kind holds only letters, digits, underscores, dots and dashes between its colons, so every file
+    /// system takes the name as it is.
+    /// </summary>
+    public static string FileName(string kind)
+    {
+        RequireKind(kind);
+        return kind.Replace(':', '_') + ".json";
+    }
+
+    /// <summary>
     /// Whether the schema declares the <c>data</c> property every OSDU record carries, itself or in an <c>allOf</c> branch
     /// it holds. This is the rule <see cref="Validated"/> enforces on a bundled schema, asked of a file that is not bundled
     /// yet, so a branch that is a <c>$ref</c> to another file is left alone: a published record schema declares <c>data</c>
@@ -81,6 +107,52 @@ public static class TemplateSources
         {
             throw new DeliveryException($"{where}: the schema is not valid JSON ({ex.Message}).", ex);
         }
+    }
+
+    /// <summary>Whether a schema names the kind it describes in its own <c>x-osdu-schema-source</c>.</summary>
+    public static bool DeclaresKind(JsonObject schema)
+    {
+        ArgumentNullException.ThrowIfNull(schema);
+        return schema["x-osdu-schema-source"] is JsonValue declared && declared.TryGetValue<string>(out var kind) && !string.IsNullOrWhiteSpace(kind);
+    }
+
+    /// <summary>
+    /// <paramref name="schema"/> naming <paramref name="kind"/> in <c>x-osdu-schema-source</c> when it names none: what an
+    /// import does to a schema of one's own, so the file it keeps in a template folder says which kind it holds, as every
+    /// schema of the OSDU data definitions does. A schema that names a kind is left as it is.
+    /// </summary>
+    internal static JsonObject WithKind(JsonObject schema, string kind)
+    {
+        ArgumentNullException.ThrowIfNull(schema);
+        if (!DeclaresKind(schema))
+        {
+            schema["x-osdu-schema-source"] = kind;
+        }
+
+        return schema;
+    }
+
+    /// <summary>
+    /// The kind a schema says it describes, its own <c>x-osdu-schema-source</c>: how a template file in a repository's template
+    /// folder names the kind it holds, as every schema of the OSDU data definitions does. The file's name is never read for it.
+    /// </summary>
+    /// <exception cref="DeliveryException">The schema names no kind there, or names something that is not a record kind.</exception>
+    internal static string KindDeclaredBy(JsonObject schema, string where)
+    {
+        ArgumentNullException.ThrowIfNull(schema);
+        if (schema["x-osdu-schema-source"] is not JsonValue declared || !declared.TryGetValue<string>(out var kind) || string.IsNullOrWhiteSpace(kind))
+        {
+            throw new DeliveryException(
+                $"{where}: the schema names no kind. A template file declares the kind it holds in x-osdu-schema-source (authority:source:entityType:major.minor.patch), as every schema of the OSDU data definitions does.");
+        }
+
+        if (!FlowMapper.IsRecordKind(kind))
+        {
+            throw new DeliveryException(
+                $"{where}: x-osdu-schema-source '{kind}' is not a record kind; it must be 'authority:source:entityType:major.minor.patch'.");
+        }
+
+        return kind;
     }
 
     /// <summary>A bundled schema as a template is saved from it: it describes the kind, refers to nothing outside itself, and declares <c>data</c>.</summary>

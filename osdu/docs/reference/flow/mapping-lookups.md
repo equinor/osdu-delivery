@@ -27,7 +27,7 @@ related:
   - delivery-concept-partition-cache
   - delivery-concept-change-detection
   - delivery-concept-preflight
-  - delivery-guide-pattern-catalog
+  - delivery-wiki-pattern-catalog
 sourceRefs:
   - osdu/src/SqlFlow.Delivery/Documents/MappingMapper.cs
   - osdu/src/SqlFlow.Delivery/Documents/MappingMapper.Record.cs
@@ -370,7 +370,7 @@ record:
 | --- | --- |
 | `searches.<name>` | The name nodes read the search by, as `$search: <name>`: letters, digits, underscores and hyphens. |
 | `kind` | The kind searched: one entity type, at one version or every version (`*`); only the version may be `*`. |
-| `schema.kind`, `schema.version` | Required. The [saved template](../concepts/templates.md) whose schema says how the kind's properties are indexed: the same entity type, and the same version when `kind` names one. |
+| `schema.kind`, `schema.version` | `schema.kind` is required. The [template](../concepts/templates.md) whose schema says how the kind's properties are indexed: the same entity type, and the same version when `kind` names one, read from the template folders on the mapping's path. `schema.version` names its version exactly; left out, the search reads the one version the nearest folder holding the kind holds ([template folders](../concepts/templates.md#template-folders)). |
 | `description` | Free text. |
 
 Every `$search` node names a declared search, every declared search is read by a node (an unread one is refused, since
@@ -392,7 +392,7 @@ The query follows how the pinned schema has the platform index the property, nev
 
 The preflight refuses a property the platform cannot match exactly, naming why: a date or a number, an object, an
 array of objects with no indexing hint (not indexed inside), a nested array inside a nested array, a property the schema
-does not have, or a pinned schema that is not saved.
+does not have, or a schema no template folder on the mapping's path holds.
 
 A value that cannot be asked for is not sent: an empty value, a value longer than the 256 characters the keyword
 sub-field keeps, the text `null` (what the keyword holds for a property without a value), a control character, the text
@@ -451,9 +451,9 @@ may view in the partition it delivers to. `sqlflow values` and `sqlflow preview`
 | `$search` with no `searches` block | `... searches Wellbore, and the mapping declares no searches; add a 'searches' block naming the kind each one looks in.` |
 | `$findBy: FacilityName = ...` on a search | `... a search compares a property under data, named by dotted names of letters, digits and underscores, ...` |
 | `$search: Wellbore.id` | `$search names one of the mapping's searches, such as $search: Wellbore, and gives the id of the record it finds; 'Wellbore.id' is not a search name.` |
-| a search without `schema` | `search 'Wellbore' pins no schema; a search pins the saved template of the kind it searches ...` |
+| a search without `schema` | `search 'Wellbore' pins no schema; a search pins the template of the kind it searches ...` |
 | a schema of another entity type | `search 'Wellbore' searches osdu:wks:master-data--Wellbore:* and pins the schema of osdu:wks:master-data--Well:1.3.0, another entity type; ...` |
 
-What needs the cache or the saved templates (a type the cache version does not hold, a field it does not cache, a
+What needs the cache or the templates (a type the cache version does not hold, a field it does not cache, a
 cached id of the wrong entity type, a search property that cannot be matched) is the preflight's to find, before any row
 is rendered: `sqlflow check`, the mapping builder, and every run report it ([the preflight](../concepts/preflight.md)).

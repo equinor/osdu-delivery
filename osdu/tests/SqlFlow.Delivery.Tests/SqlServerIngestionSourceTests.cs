@@ -308,6 +308,46 @@ public sealed class SqlServerIngestionSourceTests
     }
 
     /// <summary>The sample flow, reading one of this test's tables by its item key and its identity primary key.</summary>
+    // SQL Server keeps a session's isolation level when the pool lends the connection again: a session a page read left at
+    // snapshot read the next borrower's statements at snapshot too, and failed every one on a database that refuses it.
+    [Fact]
+    public async Task A_page_read_under_snapshot_hands_its_connection_back_at_read_committed()
+    {
+        await using var estate = await SqlServerIngestionFixture.StartAsync();
+        var table = await CreateTableAsync(
+            estate,
+            "Pooled",
+            "[RecId] bigint IDENTITY(1, 1) NOT NULL CONSTRAINT [PK_Pooled] PRIMARY KEY CLUSTERED, [item_key] nvarchar(50) NOT NULL, [UpdatedDate_DW] datetime NULL",
+            "CREATE UNIQUE NONCLUSTERED INDEX [NCI_KeyColumn] ON {0} ([item_key]);");
+        await ExecuteAsync(estate, $"INSERT INTO {table} ([item_key], [UpdatedDate_DW]) VALUES (N'one', @loaded), (N'two', @loaded);");
+
+        // The flow reads over a pool of one session, so the borrower after the read is the read's own session.
+        var variable = "SQLFLOW_POOLED_SOURCE_" + estate.Suffix;
+        var pooled = new SqlConnectionStringBuilder(estate.ConnectionString) { ApplicationName = "pooled-source-" + estate.Suffix, MaxPoolSize = 1 }.ConnectionString;
+        var item = ItemFlow(estate, "Pooled");
+        var flow = item with { Source = item.Source with { Connection = $"${{env:{variable}}}" } };
+        var opened = IngestionConnection.Canonicalize(pooled, flow.Name);
+        Environment.SetEnvironmentVariable(variable, pooled);
+        try
+        {
+            Assert.Equal(SourceIsolation.Snapshot, flow.Source.Incremental.Isolation);
+            var source = estate.Engine.Sources.Open(flow, NoValues, NullLoggerFactory.Instance);
+            var header = await source.OpenAsync(SourceSelection.Full(), null);
+            Assert.Equal([1L, 2L], await ReadIdsAsync(source, header, null));
+
+            await using var next = new SqlConnection(opened);
+            await next.OpenAsync();
+            await using var level = new SqlCommand("SELECT transaction_isolation_level FROM sys.dm_exec_sessions WHERE session_id = @@SPID;", next);
+            Assert.Equal((short)2, await level.ExecuteScalarAsync());
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable(variable, null);
+            await using var pool = new SqlConnection(opened);
+            SqlConnection.ClearPool(pool);
+        }
+    }
+
     private static FlowDefinition ItemFlow(SqlServerIngestionFixture estate, string table, int pageSize = FlowIncremental.DefaultPageSize)
     {
         var sample = estate.DeliveryFlow();

@@ -9,6 +9,37 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Every table of the osdu schema has a reference page.** Each says what one row is, what every column holds, what
+  each key and index serves and what writes and reads the table, and
+  [The osdu schema](osdu/docs/reference/concepts/database.md) lists them by what they serve; the MCP server's
+  `search_docs` searches them when its `type` is `table`.
+- **A saved template downloads as a file.** **Download** in a saved version's sheet on the Templates page,
+  `sqlflow template show --out <file.json>`, or `GET /api/v1/delivery/templates/schema`, which now answers a file to save
+  named after the kind, gives its bundled schema as a template folder keeps it, for a repository to keep beside the
+  mappings that fill it; importing the file saves the same version. `sqlflow template capture --out` now writes that form
+  too, with the keys in the order the schema was written rather than sorted.
+  ([Templates](osdu/docs/reference/concepts/templates.md#a-template-as-a-file))
+- **A repository's template folders hold the templates its documents fill.** A folder named `templates`, anywhere in a
+  repository and as many as it needs, holds the templates of the mappings, searches, assertion tests and dimensions
+  beside and below it, read nearest first, so two projects of one repository can fill different versions of one kind.
+  The control plane's pages about a synced repository read the copy its last sync kept of each file
+  ([Template folders](osdu/docs/reference/concepts/templates.md#template-folders)).
+- **A mapping can name its template's kind alone.** Leave `template.version`, or a search's `schema.version`, out and the
+  mapping fills the one version of the kind the nearest template folder holding it holds; a folder holding two versions of
+  the kind asks for the version ([How documents name their template](osdu/docs/reference/concepts/templates.md#how-documents-name-their-template)).
+- **A template of one's own is used as it is committed.** `sqlflow template import <file> --kind <kind> --out
+  <folder>/<file>.json` writes the schema of any record kind into a template folder, naming its kind, and the next sync
+  uses it with no step in the GUI; `capture` and `import` with `--out` need no database
+  ([Templates of one's own](osdu/docs/reference/concepts/templates.md#templates-of-ones-own)).
+- **`sqlflow template folders`** lists a working copy's template folders, and with `--for <document>` the templates a
+  document reads and what a kind named alone settles to, with no database
+  ([sqlflow template](osdu/docs/reference/cli/template.md#folders)).
+- **The template a repository's document reads, from the API and the builder.** `GET /api/v1/delivery/templates/resolve`
+  answers the template a document of a synced repository reads, or why none, and the mapping builder's proposal adds the
+  template's file to the pull request when no folder on the mapping's path holds it yet
+  ([API](osdu/docs/reference/concepts/api.md#mappings-templates-and-the-mapping-builder),
+  [The GUI](osdu/docs/reference/concepts/gui.md#mapping-builder)).
+
 - **The sample is a complete package.** Beside its well logs, the welldb sample delivers the wells and wellbores they
   are logged in, each wellbore's directional survey (its stations to the Wellbore DDMS) and formation tops, and every
   OSDU reference value its records refer to, OSDU's own published values and the well database's own curve types, so it
@@ -49,6 +80,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Documents read their templates from the repository, not from the saved templates.** A mapping, its searches, an
+  assertion test and a dimension read the template they fill from the template folders on their path, and a run,
+  `sqlflow check`, lineage and the sync do too; a mapping whose template no folder on its path holds no longer loads,
+  and the sync says where it looked. Before syncing an estate whose templates were saved only in the module's
+  database, write each version its mappings pin into a folder with
+  `sqlflow template show --kind <kind> --version <version> --out <folder>/<file>.json`; every pin keeps its version
+  ([Upgrading an estate](osdu/docs/reference/concepts/templates.md#upgrading-an-estate-whose-templates-were-saved-only-in-the-library)).
+- **The saved templates are a library of their own, not linked to the repositories.** The Templates page no longer says
+  how many mappings pin a version, `GET /api/v1/delivery/templates` no longer answers `pinnedBy`, and a saved version is
+  deleted whatever a mapping names, since no repository document reads the library; `DELETE` no longer answers 409
+  ([The library](osdu/docs/reference/concepts/templates.md#the-library-saved-templates)).
+- **The decision records and the pattern catalog are pages of the wiki.** They moved to
+  [osdu/docs/wiki](osdu/docs/wiki/index.md), in SQLFlow's wiki format, and the MCP server knows them by new ids:
+  `delivery-wiki-0014-inventory-removals` for what was `delivery-decision-0014`, and `delivery-wiki-pattern-catalog` for
+  `delivery-guide-pattern-catalog`; an old id finds nothing, so search for the page instead.
 - **A repository's waves can change at its next sync.** Flows that referred to each other only by ids written from
   columns or literals now run in the order of what they refer to, and a delivery checked against a cache whose flow also
   captures what it delivers now runs before that cache flow rather than unordered against it. Schedules keep their
@@ -107,13 +153,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   rather than failed, and the result says by how much it missed
   ([A warning band](osdu/docs/reference/flow/assertion.md#a-warning-band)).
 - **A test names its template by the mapping.** `template: WellLog@1.5.0` checks a test against the template that
-  mapping pins, so a test reads as the delivery does and follows the mapping when it is pinned to another capture; a
+  mapping fills, so a test reads as the delivery does and follows the mapping when it moves to another version; a
   template version (`template: 2f8a99cb38d32480`) is taken as before ([Tests](osdu/docs/reference/flow/assertion.md#tests)).
 - **Aggregates that leave values out.** An aggregate's `except` lists values it does not count, such as a log's index
   curve `MD` among its curves ([Assertions](osdu/docs/reference/flow/assertion.md#assertions)).
 
 ### Fixed
 
+- **Runs that finish together no longer deadlock in the catalog.** When a schedule's members ended at once, as a set
+  of failing assertion flows does, each completion waited on the others and the control plane's log filled with failed
+  commands and deadlock victims. Every read on a connection a catalog or ledger write had used also ran serializable,
+  so the dispatcher's checks and the GUI's reads became victims too. Each connection now goes back to the pool at read
+  committed, and a completion writes what follows from it once it has committed
+  ([The control plane](sqlflow/docs/reference/concepts/control-plane.md#the-dispatcher)).
+- **A page left while it loads is not logged as a failure.** A request the browser abandoned while its database read
+  ran was logged as three errors, the first "A severe error occurred on the current command"; it now ends as the
+  client's cancellation, logged at debug ([The control plane](sqlflow/docs/reference/concepts/control-plane.md)).
 - **An inventory's grid keeps its footer in view when ids are picked.** The bar that says what is picked made the grid
   taller than the window, so its last rows and its footer went below the page's edge; the grid now shrinks to make room.
 - **A cache flow's run dialog no longer offers Force,** which a cache run refuses: a refresh captures every type it is

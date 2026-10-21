@@ -2,6 +2,7 @@ using SqlFlow.Core.Runs;
 using SqlFlow.Delivery.Engine;
 using SqlFlow.Delivery.Model;
 using SqlFlow.Yaml;
+using SqlFlow.Delivery.Templates;
 
 namespace SqlFlow.Delivery.Documents;
 
@@ -114,10 +115,15 @@ public sealed class DeliveryFlowKind : IFlowDocumentKind, ICompanionDocumentKind
     /// </summary>
     string ICompanionDocumentKind.Description => "how a delivery flow renders the rows of an ingestion table into records of one OSDU kind";
 
+    /// <summary>
+    /// Checks a mapping document by itself, as validating a repository and a proposal's preflight do: everything the
+    /// document says is read and checked, and a template named by kind alone is taken as named, since the template folders
+    /// that settle it are the repository's, which the sync and <c>sqlflow check</c> read.
+    /// </summary>
     public string ParseCompanion(string yaml, string source)
     {
         ArgumentNullException.ThrowIfNull(yaml);
-        var mapping = _loader.ParseMapping(yaml, source);
+        var mapping = _loader.ParseMapping(yaml, source, TemplatePins.DocumentAlone);
         return $"{mapping.Reference} -> {mapping.Kind}";
     }
 

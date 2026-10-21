@@ -7,6 +7,7 @@ using SqlFlow.Core;
 using SqlFlow.Delivery.Catalog;
 using SqlFlow.Delivery.Documents;
 using SqlFlow.Delivery.Engine.Snapshots;
+using SqlFlow.Delivery.Json;
 using SqlFlow.Delivery.Snapshots;
 using SqlFlow.Delivery.Templates;
 using Xunit;
@@ -356,5 +357,48 @@ public class TemplateSourcesTests
         Assert.Contains(reason, ex.Message, StringComparison.Ordinal);
     }
 
+    public static TheoryData<string> SampleKinds
+    {
+        get
+        {
+            var kinds = new TheoryData<string>();
+            foreach (var kind in Samples.TemplateKinds())
+            {
+                kinds.Add(kind);
+            }
+
+            return kinds;
+        }
+    }
+
+    [Theory]
+    [MemberData(nameof(SampleKinds))]
+    public void A_template_as_a_file_is_the_form_the_samples_keep_and_imports_as_the_same_version(string kind)
+    {
+        var name = kind.Replace(':', '_') + ".json";
+        var file = File.Exists(Path.Combine(Samples.TemplateFiles, name))
+            ? Path.Combine(Samples.TemplateFiles, name)
+            : Path.Combine(Samples.FixtureTemplateFiles, name);
+        var saved = Samples.SampleTemplate(kind);
+        var text = TemplateSources.FileText(saved);
+        Assert.Equal(name, TemplateSources.FileName(kind));
+
+        // The file keeps the keys in the order the schema was written, so a sample schema comes back as its own file. A
+        // checkout may have changed its line endings, and a few fixtures end in a newline the samples leave out; neither
+        // says anything about the schema.
+        Assert.Equal(File.ReadAllText(file).ReplaceLineEndings("\n").TrimEnd('\n'), text.ReplaceLineEndings("\n"));
+        Assert.Equal(saved.Version, TemplateSources.FromBundledJson(text, kind, DateTimeOffset.UnixEpoch, name).Version);
+    }
+
+    [Fact]
+    public void A_file_whose_keys_are_in_another_order_imports_as_the_same_version()
+    {
+        // capture --out wrote the canonical form before it wrote this one; a copy a repository kept from then still
+        // imports as the version its mappings pin.
+        var saved = Samples.SampleTemplate(Samples.WellLogKind);
+        var canonical = CanonicalJson.Pretty(saved.Root);
+        Assert.NotEqual(TemplateSources.FileText(saved), canonical);
+        Assert.Equal(saved.Version, TemplateSources.FromBundledJson(canonical, Samples.WellLogKind, DateTimeOffset.UnixEpoch, "canonical").Version);
+    }
 }
 

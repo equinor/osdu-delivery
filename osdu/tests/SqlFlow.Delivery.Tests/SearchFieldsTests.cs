@@ -232,20 +232,26 @@ public class SearchFieldsTests
     }
 
     [Fact]
-    public void A_search_whose_pinned_schema_is_not_saved_is_named_with_where_to_save_it()
+    public void A_search_whose_pinned_schema_is_not_read_is_named_with_why()
     {
         var mapping = SearchSourceTests.Mapping("""
               WellboreID:
                 $search: Wellbore
                 $findBy: data.FacilityName = wb
             """);
+        var schema = mapping.Searches["Wellbore"].Schema;
 
-        var resolved = ResolvedSearches.Resolve(mapping, new Dictionary<Templates.TemplateReference, Snapshots.SchemaSnapshot>());
-
+        // Why it was not read is what the source of templates said: the folders on the mapping's path, or the library.
+        var why = "no template folder on the path of mappings/Thing@1.0.0.yaml holds template it. Put the template's file in one of them.";
+        var resolved = ResolvedSearches.Resolve(
+            mapping, new Dictionary<Templates.TemplateReference, Snapshots.SchemaSnapshot>(), new Dictionary<Templates.TemplateReference, string> { [schema] = why });
         var problem = Assert.Single(resolved.Problems);
-        Assert.Contains("which is not saved", problem, StringComparison.Ordinal);
-        Assert.Contains("sqlflow template import", problem, StringComparison.Ordinal);
+        Assert.EndsWith($"search 'Wellbore' cannot read the template it pins, {schema}: {why}", problem, StringComparison.Ordinal);
         Assert.Empty(resolved.Searches);
+
+        // Given no reason, it still says which template it could not read.
+        var unexplained = Assert.Single(ResolvedSearches.Resolve(mapping, new Dictionary<Templates.TemplateReference, Snapshots.SchemaSnapshot>()).Problems);
+        Assert.EndsWith($"search 'Wellbore' cannot read the template it pins, {schema}.", unexplained, StringComparison.Ordinal);
     }
 
     /// <summary>The sample estate's saved wellbore template, as OSDU publishes it: GeoContexts a nested list of a choice of contexts.</summary>

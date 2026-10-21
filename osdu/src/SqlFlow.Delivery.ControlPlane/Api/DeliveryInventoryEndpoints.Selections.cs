@@ -63,7 +63,7 @@ public static partial class DeliveryInventoryEndpoints
     /// </summary>
     private static async Task<Results<Ok<DeliveryInventorySelectionDto>, Accepted<DeliveryInventorySelectionDto>, ProblemHttpResult>> SelectAsync(
         string partition, int inventoryId, DeliveryInventorySelectionRequest? request, CatalogDbContext db, OsduDbContext osdu, DeliveryDocumentLoader documents,
-        ITemplateStore templates, ILedger ledger, IRunDispatcher dispatcher, TimeProvider clock, ClaimsPrincipal user, CancellationToken ct)
+        ILedger ledger, IRunDispatcher dispatcher, TimeProvider clock, ClaimsPrincipal user, CancellationToken ct)
     {
         var (inventory, problem) = await InventoryAsync(ledger, partition, inventoryId, ct).ConfigureAwait(false);
         if (inventory is null)
@@ -104,7 +104,7 @@ public static partial class DeliveryInventoryEndpoints
 
         // The conditions as the explorer would ask them of the inventory's kind: a term carried through its mapping in the
         // inventory's partition, every condition checked as a page of the explorer checks it.
-        var directory = new SearchTermDirectory(osdu, templates, documents, clock);
+        var directory = new SearchTermDirectory(osdu, documents, clock);
         var (terms, unresolved) = await DeliveryExplorerEndpoints.ResolveTermsAsync(conditions, inventory.Partition, inventory.Kind, directory, ct).ConfigureAwait(false);
         if (unresolved is not null)
         {

@@ -118,7 +118,7 @@ public static class SearchTermResolver
 
         if (found is null)
         {
-            return SearchRouteFields.Refused($"no saved template of {find.Kind} says how its records are indexed; save one on the Templates page to search through {find.Name}");
+            return SearchRouteFields.Refused($"no template the mapping reads of {find.Kind} says how its records are indexed; put one in a template folder on the mapping's path to search through {find.Name}");
         }
 
         var match = new List<OsduField>(find.Lines.Count);
@@ -282,7 +282,7 @@ public static class SearchTermResolver
 
         if (schema is null)
         {
-            return (null, "is described by no saved template, which says how it is indexed");
+            return (null, "is described by no template the mapping reads, which says how it is indexed");
         }
 
         var typed = SearchFields.ClassifyValue(schema, path);

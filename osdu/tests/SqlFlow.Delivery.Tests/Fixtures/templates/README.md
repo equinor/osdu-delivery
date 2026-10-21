@@ -1,7 +1,9 @@
 # Test templates
 
-Schemas the suites save as templates beside the sample estate's own (`osdu/samples/templates`), for the
-cases the sample estate does not carry.
+The template folder of the fixture documents (`Fixtures/documents`, below it), holding the templates of the kinds the
+sample estate's own template folder (`osdu/samples/welldb/templates`) does not carry. The fixture documents read both:
+the build links the sample's templates into `Fixtures/documents/templates`, the folder nearest them, and this one is
+above it ([templates](../../../../docs/reference/concepts/templates.md#template-folders)).
 
 | File | Kind | Template version | Origin |
 | --- | --- | --- | --- |

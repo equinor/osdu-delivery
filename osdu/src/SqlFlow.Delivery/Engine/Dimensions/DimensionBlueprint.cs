@@ -5,7 +5,7 @@ using SqlFlow.Delivery.Templates;
 
 namespace SqlFlow.Delivery.Engine.Dimensions;
 
-/// <summary>A saved template a blueprint describes a part of the dimension by: its kind and content version.</summary>
+/// <summary>A template a blueprint describes a part of the dimension by: its kind and content version.</summary>
 public sealed record BlueprintTemplate(string Kind, string Version);
 
 /// <summary>
@@ -36,12 +36,12 @@ public sealed record BlueprintRead(
 public sealed record BlueprintRecords(
     string Id, int Depth, IReadOnlyList<string> EntityTypes, string From, BlueprintTemplate? Template, string? Missing, IReadOnlyList<BlueprintRead> Reads);
 
-/// <summary>A kind of the dimension's own records: the kind, its records where a build counted them, and the version of its saved template.</summary>
+/// <summary>A kind of the dimension's own records: the kind, its records where a build counted them, and the version of its template.</summary>
 public sealed record BlueprintKind(string Kind, long? Records, string? Template);
 
 /// <summary>
 /// The dimension's own records: the kind pattern and query that choose them, whether the kinds are those its last build read
-/// or the saved templates the pattern matches, the template the reads are described by, why there is none, and the reads:
+/// or the templates the pattern matches, the template the reads are described by, why there is none, and the reads:
 /// the key, then each collected attribute.
 /// </summary>
 public sealed record BlueprintSource(
@@ -51,7 +51,7 @@ public sealed record BlueprintSource(
 public sealed record BlueprintColumn(string Name, string Role, string? Attribute, IReadOnlyList<string> From);
 
 /// <summary>
-/// How a dimension is built, as its declaration and the saved templates of the records it reads say
+/// How a dimension is built, as its declaration and the templates of the records it reads say
 /// (osdu/docs/reference/concepts/dimension-blueprint.md): the dimension's own records and the paths read from them, the
 /// records read through each key by id, step by step, grouped as a build's searches group them (one entity type at one
 /// depth), and the table's columns with the reads each is written from.
@@ -81,44 +81,73 @@ public static class BlueprintRoles
 }
 
 /// <summary>
-/// Lays out a dimension's blueprint. It reads the declaration and the saved templates only, never OSDU and never a record:
-/// the key and a collected attribute are described as a build's search reads them (<see cref="SearchFields"/>, the same
-/// classification the build settles its field by), and each step of a label or an attribute in the template of the
-/// entity type the step before names (<c>x-osdu-relationship</c>), the newest saved of it, the way a person reads it
-/// (<see cref="SchemaPathReader"/>). A template that is not saved leaves its records undescribed and says so; nothing is
-/// refused here, since a build reads a label's records as they are.
+/// Lays out a dimension's blueprint. It reads the declaration and the templates the dimension's flow reads only, never OSDU
+/// and never a record: the template folders on the flow's path for a flow of a repository, and the saved templates for a
+/// draft no flow holds yet (osdu/docs/reference/concepts/templates.md). The key and a collected attribute are described as
+/// a build's search reads them (<see cref="SearchFields"/>, the same classification the build settles its field by), and
+/// each step of a label or an attribute in the template of the entity type the step before names
+/// (<c>x-osdu-relationship</c>), the newest version of it the flow reads, the way a person reads it
+/// (<see cref="SchemaPathReader"/>). A template the flow does not read leaves its records undescribed and says so; nothing
+/// is refused here, since a build reads a label's records as they are.
 /// </summary>
 public static class DimensionBlueprints
 {
     /// <summary>
-    /// The blueprint of <paramref name="dimension"/>, its own records described by the kinds its last build read
-    /// (<paramref name="built"/>, with the template each was read against) or, before a build, by the saved templates its
-    /// kind pattern matches.
+    /// The blueprint of <paramref name="dimension"/> as <paramref name="templates"/> describes it for a draft no flow holds:
+    /// what the saved templates give.
+    /// </summary>
+    public static Task<DimensionBlueprint> DescribeAsync(
+        DimensionSpec dimension, ITemplateSource templates, IReadOnlyList<DimensionKind> built, CancellationToken ct = default)
+        => DescribeAsync(dimension, templates, document: null, built, ct);
+
+    /// <summary>
+    /// The blueprint of <paramref name="dimension"/>, declared by the flow at <paramref name="document"/>: its own records
+    /// described by the kinds its last build read (<paramref name="built"/>, with the template each was read against) or,
+    /// before a build, by the templates the flow reads that its kind pattern matches.
     /// </summary>
     public static async Task<DimensionBlueprint> DescribeAsync(
-        DimensionSpec dimension, ITemplateStore templates, IReadOnlyList<DimensionKind> built, CancellationToken ct = default)
+        DimensionSpec dimension, ITemplateSource templates, string? document, IReadOnlyList<DimensionKind> built, CancellationToken ct = default)
     {
         ArgumentNullException.ThrowIfNull(dimension);
         ArgumentNullException.ThrowIfNull(templates);
         ArgumentNullException.ThrowIfNull(built);
-        var saved = await templates.ListAsync(ct).ConfigureAwait(false);
-        var schemas = new Dictionary<BlueprintTemplate, SchemaSnapshot?>();
+        var schemas = new Dictionary<BlueprintTemplate, TemplateResolution>();
+        IReadOnlyList<TemplateInfo>? readable = null;
 
-        async Task<SchemaSnapshot?> LoadAsync(BlueprintTemplate template)
+        async Task<TemplateResolution> LoadAsync(BlueprintTemplate template)
         {
-            if (!schemas.TryGetValue(template, out var schema))
+            if (!schemas.TryGetValue(template, out var resolved))
             {
-                schema = await templates.LoadAsync(new TemplateReference(template.Kind, template.Version), ct).ConfigureAwait(false);
-                schemas[template] = schema;
+                resolved = await templates.ResolveAsync(document, template.Kind, template.Version, ct).ConfigureAwait(false);
+                schemas[template] = resolved;
             }
 
-            return schema;
+            return resolved;
         }
 
-        // The dimension's own records: the kinds its last build read, or the saved kinds its pattern matches.
+        async Task<(BlueprintTemplate? Template, SchemaSnapshot? Schema)> NewestOfAsync(string entityType)
+        {
+            readable ??= await templates.ListForAsync(document, ct).ConfigureAwait(false);
+            var kind = readable
+                .Where(t => string.Equals(KindPatterns.EntityTypeOf(t.Kind), entityType, StringComparison.OrdinalIgnoreCase))
+                .Select((t, order) => (t.Kind, Order: order))
+                .OrderByDescending(t => KindPatterns.VersionOf(t.Kind)).ThenBy(t => t.Order)
+                .Select(t => t.Kind)
+                .FirstOrDefault();
+            if (kind is null)
+            {
+                return (null, null);
+            }
+
+            var resolved = await templates.ResolveAsync(document, kind, null, ct).ConfigureAwait(false);
+            return resolved.Found ? (new BlueprintTemplate(resolved.Template!.Kind, resolved.Template.Version), resolved.Schema) : (null, null);
+        }
+
+        // The dimension's own records: the kinds its last build read, or the kinds the flow reads that its pattern matches.
         List<BlueprintKind> kinds;
         BlueprintTemplate? sourceTemplate;
         string? sourceMissing = null;
+        SchemaSnapshot? sourceSchema = null;
         if (built.Count > 0)
         {
             kinds = built.OrderByDescending(k => k.Records).ThenBy(k => k.Kind, StringComparer.Ordinal)
@@ -126,27 +155,38 @@ public static class DimensionBlueprints
             sourceTemplate = kinds.Where(k => k.Template is not null).Select(k => new BlueprintTemplate(k.Kind, k.Template!)).FirstOrDefault();
             if (sourceTemplate is null)
             {
-                sourceMissing = $"The last build read {dimension.Path} without a saved template of {string.Join(", ", kinds.Select(k => k.Kind).Take(5))}.";
+                sourceMissing = $"The last build read {dimension.Path} without a template of {string.Join(", ", kinds.Select(k => k.Kind).Take(5))}.";
+            }
+            else
+            {
+                var resolved = await LoadAsync(sourceTemplate).ConfigureAwait(false);
+                sourceSchema = resolved.Schema;
+                if (sourceSchema is null)
+                {
+                    sourceMissing = $"The last build read template {sourceTemplate.Kind} version {sourceTemplate.Version}, which the flow no longer reads, so the paths read from the records are not described until it builds again: {resolved.Problem}";
+                    sourceTemplate = null;
+                }
             }
         }
         else
         {
-            var matching = Matching(dimension.Kind, saved);
-            kinds = matching.Select(t => new BlueprintKind(t.Kind, null, t.Version)).ToList();
-            sourceTemplate = matching.Select(t => new BlueprintTemplate(t.Kind, t.Version)).FirstOrDefault();
+            var (matching, problems) = await MatchingAsync(dimension.Kind, templates, document, ct).ConfigureAwait(false);
+            kinds = matching.Select(t => new BlueprintKind(t.Template.Kind, null, t.Template.Version)).ToList();
+            sourceTemplate = matching.Select(t => new BlueprintTemplate(t.Template.Kind, t.Template.Version)).FirstOrDefault();
+            sourceSchema = matching.Count > 0 ? matching[0].Schema : null;
             if (sourceTemplate is null)
             {
-                sourceMissing = SearchFields.IsDataPath(dimension.Path)
-                    ? $"No saved template matches {dimension.Kind}, and a build reads a path of data only by the template of every kind it matches. Save the kind's template on the Templates page."
-                    : $"No saved template matches {dimension.Kind}; the paths read from its records are not described.";
+                // A draft no flow holds yet is described by the saved templates; a flow's dimension by the template folders on
+                // its path, which are what its build reads.
+                var why = problems.Count > 0 ? $" {string.Join(" ", problems.Take(3))}" : string.Empty;
+                sourceMissing = (document is null, SearchFields.IsDataPath(dimension.Path)) switch
+                {
+                    (true, true) => $"No saved template matches {dimension.Kind}, and a build reads a path of data only by the template of every kind it matches. Save the kind's template on the Templates page, and keep it in a template folder on the flow's path once the flow is written.{why}",
+                    (true, false) => $"No saved template matches {dimension.Kind}; the paths read from its records are not described.{why}",
+                    (false, true) => $"No template the flow reads matches {dimension.Kind}, and a build reads a path of data only by the template of every kind it matches. Put the kind's template in a template folder on the flow's path.{why}",
+                    (false, false) => $"No template the flow reads matches {dimension.Kind}; the paths read from its records are not described.{why}",
+                };
             }
-        }
-
-        var sourceSchema = sourceTemplate is null ? null : await LoadAsync(sourceTemplate).ConfigureAwait(false);
-        if (sourceTemplate is not null && sourceSchema is null)
-        {
-            sourceMissing = $"The template {sourceTemplate.Kind} version {sourceTemplate.Version} is no longer saved, so the paths read from the records are not described.";
-            sourceTemplate = null;
         }
 
         var follows = dimension.Label.Count > 0 || dimension.Attributes.Any(a => !a.IsCollected);
@@ -185,7 +225,7 @@ public static class DimensionBlueprints
                 var node = nodes.FirstOrDefault(n => n.Id == nodeId);
                 if (node is null)
                 {
-                    node = await NodeAsync(nodeId, depth, types, parent, saved, LoadAsync).ConfigureAwait(false);
+                    node = await NodeAsync(nodeId, depth, types, parent, NewestOfAsync, drafted: document is null).ConfigureAwait(false);
                     nodes.Add(node);
                 }
 
@@ -229,18 +269,40 @@ public static class DimensionBlueprints
     }
 
     /// <summary>
-    /// The saved templates a dimension's kind pattern matches, each kind's newest saved first and the newest version of the
-    /// kind first: the first is the template a dimension's own records are described by before a build.
+    /// The templates the document at <paramref name="document"/> reads that the kind pattern <paramref name="kind"/> matches:
+    /// for each kind it matches, the one version the document reads (the one the nearest template folder holding the kind
+    /// holds, or the newest saved where the source is the library), the newest version of the kind first. The first is the
+    /// template a dimension's own records are described by before a build. A kind whose version cannot be settled (its
+    /// nearest folder holds two) is left out, and why is among the problems.
     /// </summary>
-    public static IReadOnlyList<TemplateInfo> Matching(string kind, IReadOnlyList<TemplateInfo> saved)
+    public static async Task<(IReadOnlyList<TemplateMatch> Found, IReadOnlyList<string> Problems)> MatchingAsync(
+        string kind, ITemplateSource templates, string? document, CancellationToken ct = default)
     {
         ArgumentNullException.ThrowIfNull(kind);
-        ArgumentNullException.ThrowIfNull(saved);
-        return saved.Where(t => KindPatterns.Matches(kind, t.Kind))
-            .GroupBy(t => t.Kind, StringComparer.OrdinalIgnoreCase)
-            .Select(g => g.OrderByDescending(t => t.CapturedUtc).First())
-            .OrderByDescending(t => KindPatterns.VersionOf(t.Kind)).ThenBy(t => t.Kind, StringComparer.Ordinal)
+        ArgumentNullException.ThrowIfNull(templates);
+        var kinds = (await templates.ListForAsync(document, ct).ConfigureAwait(false))
+            .Where(t => KindPatterns.Matches(kind, t.Kind))
+            .Select(t => t.Kind)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
             .ToList();
+        var found = new List<TemplateMatch>(kinds.Count);
+        var problems = new List<string>();
+        foreach (var matched in kinds)
+        {
+            var resolved = await templates.ResolveAsync(document, matched, null, ct).ConfigureAwait(false);
+            if (resolved.Found)
+            {
+                found.Add(new TemplateMatch(resolved.Template!, resolved.Schema!));
+            }
+            else
+            {
+                problems.Add(resolved.Problem!);
+            }
+        }
+
+        return (found
+            .OrderByDescending(t => KindPatterns.VersionOf(t.Template.Kind)).ThenBy(t => t.Template.Kind, StringComparer.Ordinal)
+            .ToList(), problems);
     }
 
     /// <summary>A path of the dimension's own records, described by their template and classified as the build's search reads it.</summary>
@@ -272,11 +334,13 @@ public static class DimensionBlueprints
     }
 
     /// <summary>
-    /// The records a read's ids name at <paramref name="depth"/>, described by the newest saved template of the first of their
-    /// entity types that has one.
+    /// The records a read's ids name at <paramref name="depth"/>, described by the newest template of the first of their
+    /// entity types that has one: of those the flow reads, or of the saved templates for a <paramref name="drafted"/>
+    /// dimension no flow holds.
     /// </summary>
     private static async Task<NodeDraft> NodeAsync(
-        string id, int depth, IReadOnlyList<string> types, ReadDraft from, IReadOnlyList<TemplateInfo> saved, Func<BlueprintTemplate, Task<SchemaSnapshot?>> load)
+        string id, int depth, IReadOnlyList<string> types, ReadDraft from, Func<string, Task<(BlueprintTemplate? Template, SchemaSnapshot? Schema)>> newestOf,
+        bool drafted)
     {
         if (types.Count == 0)
         {
@@ -288,16 +352,7 @@ public static class DimensionBlueprints
 
         foreach (var type in types)
         {
-            var newest = saved.Where(t => string.Equals(KindPatterns.EntityTypeOf(t.Kind), type, StringComparison.OrdinalIgnoreCase))
-                .OrderByDescending(t => KindPatterns.VersionOf(t.Kind)).ThenByDescending(t => t.CapturedUtc)
-                .FirstOrDefault();
-            if (newest is null)
-            {
-                continue;
-            }
-
-            var template = new BlueprintTemplate(newest.Kind, newest.Version);
-            if (await load(template).ConfigureAwait(false) is { } schema)
+            if (await newestOf(type).ConfigureAwait(false) is { Template: { } template, Schema: { } schema })
             {
                 return new NodeDraft(id, depth, types, from.Id, template, schema, null);
             }
@@ -305,7 +360,9 @@ public static class DimensionBlueprints
 
         return new NodeDraft(
             id, depth, types, from.Id, null, null,
-            $"No template of {string.Join(" or ", types)} is saved, so the paths read from these records are read as written, unchecked. Save one on the Templates page to check them.");
+            drafted
+                ? $"No template of {string.Join(" or ", types)} is saved, so the paths read from these records are read as written, unchecked. Save one on the Templates page to check them."
+                : $"The flow reads no template of {string.Join(" or ", types)}, so the paths read from these records are read as written, unchecked. Put one in a template folder on the flow's path to check them.");
     }
 
     /// <summary>A read while the blueprint is laid out: what it is for and where it leads gather as chains reach it.</summary>

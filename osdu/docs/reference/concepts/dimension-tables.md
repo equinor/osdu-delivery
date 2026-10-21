@@ -46,21 +46,23 @@ are joined on numbers, never on text, with no foreign keys. Text a filter or a k
 value, a collected text) is held in a binary collation and compared exactly. The tables keep the names they were made
 with: a **member** (`DimensionMember`) is a dimension's value, and an **original** (`DimensionValue`) is a key.
 
-| Table | One row per | Unique by | Holds |
-| --- | --- | --- | --- |
-| `Dimension` | dimension of a flow in a partition | `DimensionId`; `PartitionId`, `FlowId`, `Name` | The declaration its last build read with (kind, query, path, the label's paths, the attributes, the elements, the clean steps and their hash), the field the index was asked for, what each collected attribute was read from, its table's name and the names of its key's and value's columns, how many values and keys it holds, its last build and its last full load. |
-| `DimensionRun` | build | `DimensionRunId` | The platform run, who started it, its status (`running`, `completed`, `failed`, `cancelled`), how it loaded (`full` or `incremental`, its window, the records it found changed and the keys it read again), the query run, the kinds read and the template each was read against, its counts and requests, up to 100 lines of notes, and its error. |
-| `DimensionMember` | value | `PartitionId`, `DimensionId`, `Value` | The value, the records holding any of its keys (and whether that count is exact), its keys, its keys no query can carry, its filter and how many queries it takes, the build that first found it, and the build that no longer did. |
-| `DimensionValue` | key | `PartitionId`, `DimensionId`, `OriginalHash` (SHA-256 of the key) | The key exactly as the index holds it, its value or why it has none (`empty`, `tooLong`, `dropped`, `failed`), what cleaning said of it, the label read and the record it was read from, its filter, its records, whether a query can carry it, the build that first found it, the one that no longer did, and the build since which it is under its value. |
-| `DimensionAttributeName` | attribute or element field of a dimension | `PartitionId`, `DimensionId`, `Name` | Its number, its name, whether it is collected, and its place among those the dimension declares now (null once it is declared no more, its number kept). |
-| `DimensionAttribute` | key, attribute and value | `PartitionId`, `DimensionId`, `ValueId`, `AttributeId`, `Value` | The value read for the key, where it was read (the record's id, or for a collected attribute the text the records hold; null for the `unlabelled` value), and for a collected value how many of the key's records hold it. Indexed by attribute and value, so the keys of a value (`Country` is `Norway`) are one seek. |
-| `DimensionCollectedText` | collected attribute and text | `PartitionId`, `DimensionId`, `AttributeId`, `TextHash` | A text the records hold at the collected path, exactly as the index holds it, the value it is shown as, and the records holding it: what a search picking a collected value asks for. |
-| `DimensionElement` | field of an object of a key's elements | `PartitionId`, `DimensionId`, `ValueId`, `Seq`, `AttributeId` | The object's place among the key's (from 1), the field by its number, and the value read (up to 4,000 characters). |
-| `DimensionKeyRecord` | key and record its label and attributes were read through | `PartitionId`, `DimensionId`, `ValueId`, `RecordHash` | The SHA-256 of the record's id without its version, and the entity type it names: how an incremental load finds the keys to read again when such a record changes, and the types to ask what changed in (`osdu.DimensionKeyRecord` in [Full and incremental loads](../flow/dimension.md#full-and-incremental-loads)). |
-| `DimensionRecord` | record and key it held | `PartitionId`, `DimensionId`, `RecordHash`, `ValueId` | The SHA-256 of the record's unique key (`incremental.keyColumns`): the keys a record held when a load last read it. Only a flow with an `incremental` block keeps them. |
-| `DimensionChange` | change to a key | `ChangeId` | The build, the key, the change (`added` after the first build, `removed`, `moved`, `restored`), and the values it moved from and to. |
-| `DimensionView` | view in the database | `Name`; `ViewName` | The flow that declares it, the ledger of the build that last wrote it, its declaration, the statement it was written with and that statement's hash (null when a build dropped it to be written again), the tables it reads, its columns, why it is not in the database when it is not, and the run and person that wrote it. A view spans every partition its tables hold, so it belongs to no ledger partition. |
-| `DimensionViewCheck` | check of a view in a partition | `CheckId` | The run, `passed` or `failed`, the rows, what each join found, what each converted column could not read with examples, and the error. A view keeps its 50 newest checks of each partition. |
+| Table | One row per | Unique by |
+| --- | --- | --- |
+| [`Dimension`](../tables/dimension.md) | dimension of a flow in a partition | `DimensionId`; `PartitionId`, `FlowId`, `Name` |
+| [`DimensionRun`](../tables/dimension-run.md) | build | `DimensionRunId` |
+| [`DimensionMember`](../tables/dimension-member.md) | value | `PartitionId`, `DimensionId`, `Value` |
+| [`DimensionValue`](../tables/dimension-value.md) | key | `PartitionId`, `DimensionId`, `OriginalHash` (SHA-256 of the key) |
+| [`DimensionAttributeName`](../tables/dimension-attribute-name.md) | attribute or element field of a dimension | `PartitionId`, `DimensionId`, `Name` |
+| [`DimensionAttribute`](../tables/dimension-attribute.md) | key, attribute and value | `PartitionId`, `DimensionId`, `ValueId`, `AttributeId`, `Value` |
+| [`DimensionCollectedText`](../tables/dimension-collected-text.md) | collected attribute and text | `PartitionId`, `DimensionId`, `AttributeId`, `TextHash` |
+| [`DimensionElement`](../tables/dimension-element.md) | field of an object of a key's elements | `PartitionId`, `DimensionId`, `ValueId`, `Seq`, `AttributeId` |
+| [`DimensionKeyRecord`](../tables/dimension-key-record.md) | key and record its label and attributes were read through | `PartitionId`, `DimensionId`, `ValueId`, `RecordHash` |
+| [`DimensionRecord`](../tables/dimension-record.md) | record and key it held | `PartitionId`, `DimensionId`, `RecordHash`, `ValueId` |
+| [`DimensionChange`](../tables/dimension-change.md) | change to a key | `ChangeId` |
+| [`DimensionView`](../tables/dimension-view.md) | view in the database | `Name`; `ViewName` |
+| [`DimensionViewCheck`](../tables/dimension-view-check.md) | check of a view in a partition | `CheckId` |
+
+What every column holds, and what each index serves, is on each table's page.
 
 **What writes them.** A build registers its dimension and its build when it starts, and writes the rest when it has read
 everything: in one transaction, under an application lock per dimension (`osdu-dimension:<partition number>:<dimension

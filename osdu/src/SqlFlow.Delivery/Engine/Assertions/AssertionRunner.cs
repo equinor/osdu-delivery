@@ -159,7 +159,7 @@ public sealed class AssertionRunner
         var runnable = await BindMappingsAsync(selected.Where(t => t.RunsIn(partition) && AssertionActivity.Disabled(t) is null && !AssertionActivity.Stale(t, now)).Select(t => AssertionBinding.Bind(t, Values(partition))).ToList(), ct).ConfigureAwait(false);
         var skipped = selected.Where(t => !t.RunsIn(partition) || AssertionActivity.Disabled(t) is not null).ToList();
         var flagged = selected.Where(t => t.RunsIn(partition) && AssertionActivity.Disabled(t) is null && AssertionActivity.Stale(t, now)).ToList();
-        var fits = await AssertionTemplates.FitAsync(runnable, _context.Templates, Mappings, ct).ConfigureAwait(false);
+        var fits = await AssertionTemplates.FitAsync(runnable, _context.DocumentTemplates, _flow.SourcePath, Mappings, ct).ConfigureAwait(false);
         var run = await ledger.StartAssertionRunAsync(
             new AssertionRunState
             {
@@ -348,7 +348,7 @@ public sealed class AssertionRunner
         var selected = _flow.Select(tests, tags);
         var now = _context.Time.GetUtcNow();
         var runnable = await BindMappingsAsync(selected.Where(t => t.RunsIn(partition) && AssertionActivity.Disabled(t) is null && !AssertionActivity.Stale(t, now)).Select(t => AssertionBinding.Bind(t, Values(partition))).ToList(), ct).ConfigureAwait(false);
-        var fits = await AssertionTemplates.FitAsync(runnable, _context.Templates, Mappings, ct).ConfigureAwait(false);
+        var fits = await AssertionTemplates.FitAsync(runnable, _context.DocumentTemplates, _flow.SourcePath, Mappings, ct).ConfigureAwait(false);
         using var http = new HttpRuntime(_flow.Reliability, _context.Secrets, _context.Time, _transport, _allowLoopback, observer: _context.HttpObserver);
         var client = await ProtocolFactory.ClientAsync(http, _flow.Source.Endpoint, _flow.Source.Auth, _flow.Source.Headers, _context.Secrets, ct).ConfigureAwait(false);
         var search = new OsduSearch(client, _flow.Source.QueryPath, _flow.Source.SearchPath, _log, _flow.Source.Paging);

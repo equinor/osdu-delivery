@@ -1,6 +1,7 @@
 using System.Data.SqlTypes;
 using System.Globalization;
 using Microsoft.EntityFrameworkCore;
+using SqlFlow.Catalog;
 using SqlFlow.Delivery.Data;
 using SqlFlow.Delivery.Identity;
 using SqlFlow.Delivery.Model;
@@ -2470,12 +2471,10 @@ public sealed partial class OsduLedger : ILedger
     {
         var delivered = StatusText.Of(RecordStatus.Delivered);
         await using var db = Open();
-        var strategy = db.Database.CreateExecutionStrategy();
-        return await strategy.ExecuteAsync(async () =>
+        // A retried run of this block starts from the database, not from what a rolled back one left tracked, and the
+        // connection leaves it at read committed, so the next read on it does not hold repeatable read locks.
+        return await PooledIsolation.InTransactionAsync(db, System.Data.IsolationLevel.RepeatableRead, async () =>
         {
-            // A retried run of this block starts from the database, not from what a rolled back one left tracked.
-            db.ChangeTracker.Clear();
-            await using var tx = await db.Database.BeginTransactionAsync(System.Data.IsolationLevel.RepeatableRead, ct).ConfigureAwait(false);
             var entities = await db.DeliveryRecords
                 .Where(r => r.PartitionId == partition && r.FlowId == flowId && ids.Contains(r.DeliveryKey)
                     && r.Status == delivered && r.ClaimedTargetId != null && r.LeaseOwner == null)
@@ -2551,9 +2550,8 @@ public sealed partial class OsduLedger : ILedger
 
             await db.SaveChangesAsync(ct).ConfigureAwait(false);
             await WriteIdentitiesAsync(db, partition, flowId, states, ct).ConfigureAwait(false);
-            await tx.CommitAsync(ct).ConfigureAwait(false);
             return (IReadOnlyList<TargetIdReassignment>)done;
-        }).ConfigureAwait(false);
+        }, ct).ConfigureAwait(false);
     }
 
     public async Task<IReadOnlyList<DeliveryKey>> MarkRestoredAsync(
@@ -2590,12 +2588,10 @@ public sealed partial class OsduLedger : ILedger
         var busy = new[] { StatusText.Of(RecordStatus.Pending), StatusText.Of(RecordStatus.Delivering), StatusText.Of(RecordStatus.Waiting), StatusText.Of(RecordStatus.Deleted) };
         var reverted = StatusText.Of(RecordStatus.Reverted);
         await using var db = Open();
-        var strategy = db.Database.CreateExecutionStrategy();
-        return await strategy.ExecuteAsync(async () =>
+        // A retried run of this block starts from the database, not from what a rolled back one left tracked, and the
+        // connection leaves it at read committed, so the next read on it does not hold repeatable read locks.
+        return await PooledIsolation.InTransactionAsync(db, System.Data.IsolationLevel.RepeatableRead, async () =>
         {
-            // A retried run of this block starts from the database, not from what a rolled back one left tracked.
-            db.ChangeTracker.Clear();
-            await using var tx = await db.Database.BeginTransactionAsync(System.Data.IsolationLevel.RepeatableRead, ct).ConfigureAwait(false);
             var entities = await db.DeliveryRecords
                 .Where(r => r.PartitionId == partition && r.FlowId == flowId && ids.Contains(r.DeliveryKey))
                 .ToDictionaryAsync(r => r.DeliveryKey, ct)
@@ -2696,9 +2692,8 @@ public sealed partial class OsduLedger : ILedger
             }
 
             await db.SaveChangesAsync(ct).ConfigureAwait(false);
-            await tx.CommitAsync(ct).ConfigureAwait(false);
             return (IReadOnlyList<DeliveryKey>)moved;
-        }).ConfigureAwait(false);
+        }, ct).ConfigureAwait(false);
     }
 
     public async Task<long> EnsureCacheSetAsync(string scope, IReadOnlyList<Snapshots.CacheUsage> usages, CancellationToken ct = default)

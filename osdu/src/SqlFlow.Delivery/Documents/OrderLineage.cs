@@ -123,7 +123,7 @@ internal sealed class OrderLineage
     private static OrderLineage Build(RegisteredLineageContext context, MappingTemplateSource? fallback, IOrderCatalog? catalog)
     {
         var mappings = new Dictionary<(string Directory, string Reference), MappingDefinition?>();
-        var templates = new Dictionary<TemplateReference, OsduTemplate?>();
+        var templates = new Dictionary<(string? Document, TemplateReference Reference), OsduTemplate?>();
         var nodes = new Dictionary<string, SchemaNode>(StringComparer.OrdinalIgnoreCase);
         var deliveries = new List<OrderDelivery>();
         var released = new Dictionary<string, SchemaNode?>(StringComparer.OrdinalIgnoreCase);
@@ -140,13 +140,13 @@ internal sealed class OrderLineage
             {
                 if (PartitionOf(flow) is not { } partition
                     || DeliveryLayout.ResolveWithin(flow, where.DocumentFolder, where.Contains) is not { } layout
-                    || Mapping(mappings, layout.MappingsDirectory, flow.Render.Mapping) is not { } mapping)
+                    || Mapping(mappings, layout.MappingsDirectory, flow.Render.Mapping, context.EstateRoot) is not { } mapping)
                 {
                     // Its own description says why it has no OSDU nodes; with none it orders nothing either.
                     continue;
                 }
 
-                var template = Template(templates, document.Templates ?? fallback, mapping.Template);
+                var template = Template(templates, document.Templates ?? fallback ?? FolderSource, mapping, context.EstateRoot);
                 var node = template is not null ? OrderDeliveries.Node(template) : Released(released, catalog, mapping.Kind);
                 if (node is not null)
                 {
@@ -188,7 +188,7 @@ internal sealed class OrderLineage
     /// <summary>The partition a flow is described in, as its own description binds it; null when it cannot be bound.</summary>
     private static string? PartitionOf(FlowDefinition flow) => OrderDeliveries.PartitionOf(flow);
 
-    private static MappingDefinition? Mapping(Dictionary<(string, string), MappingDefinition?> cache, string directory, string reference)
+    private static MappingDefinition? Mapping(Dictionary<(string, string), MappingDefinition?> cache, string directory, string reference, string root)
     {
         if (cache.TryGetValue((directory, reference), out var known))
         {
@@ -198,7 +198,7 @@ internal sealed class OrderLineage
         MappingDefinition? mapping;
         try
         {
-            mapping = new MappingCatalog(directory, Documents).Load(reference, path => path);
+            mapping = new MappingCatalog(directory, Documents, new FolderTemplates(root)).Load(reference, path => path);
         }
         catch (Exception ex) when (ex is SqlFlowException or IOException or UnauthorizedAccessException)
         {
@@ -209,15 +209,20 @@ internal sealed class OrderLineage
         return mapping;
     }
 
-    private static OsduTemplate? Template(Dictionary<TemplateReference, OsduTemplate?> cache, MappingTemplateSource? source, TemplateReference reference)
+    /// <summary>The template folders on each mapping's path, which the order reads a template from when it was given no other source.</summary>
+    private static readonly MappingTemplateSource FolderSource = new();
+
+    private static OsduTemplate? Template(
+        Dictionary<(string? Document, TemplateReference Reference), OsduTemplate?> cache, MappingTemplateSource source, MappingDefinition mapping, string root)
     {
-        if (cache.TryGetValue(reference, out var known))
+        var key = (mapping.TemplateDocument, mapping.Template);
+        if (cache.TryGetValue(key, out var known))
         {
             return known;
         }
 
         OsduTemplate? template = null;
-        if (source?.Read(reference) is { Outcome: MappingTemplateOutcome.Found, Schema: { } schema })
+        if (source.Read(mapping, root) is { Outcome: MappingTemplateOutcome.Found, Schema: { } schema })
         {
             try
             {
@@ -229,7 +234,7 @@ internal sealed class OrderLineage
             }
         }
 
-        cache[reference] = template;
+        cache[key] = template;
         return template;
     }
 }

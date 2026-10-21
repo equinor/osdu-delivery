@@ -32,11 +32,13 @@ sourceRefs:
 
 # The dimension blueprint: how a dimension is built, line by line, from its YAML to its columns
 
-The blueprint says how a build makes each column of a dimension's table, from the flow's YAML and the saved templates of
-the records it reads, before any build and after one. The dimension's **Definition** tab draws it, and
+The blueprint says how a build makes each column of a dimension's table, from the flow's YAML and the templates of the
+records it reads, before any build and after one. The dimension's **Definition** tab draws it, and
 `GET /api/v1/delivery/flows/{pipelineId}/dimensions/{name}/blueprint?partition=<partition>` answers it
-([API](api.md#assertions-dimensions-and-inventories)). It reads the catalog's copy of the flow, the saved
-templates and the ledger; nothing is sent to OSDU and no record is read. The explorer's
+([API](api.md#assertions-dimensions-and-inventories)). It reads the catalog's copy of the flow, the templates the
+[template folders](templates.md#template-folders) on its path held at the repository's last sync, and the ledger; nothing
+is sent to OSDU and no record is read. A dimension the explorer drafts, which no flow holds yet, is described by the
+saved templates. The explorer's
 [dimension builder](explorer.md#building-a-dimension) describes the item it writes with the same blueprint.
 
 | Field | Holds |
@@ -107,7 +109,7 @@ refers to (`x-osdu-relationship`, on the property or on an array's items), so th
 | `depth` | 1 for the records the keys name, 2 for those they name, and so on, up to 3. |
 | `entityTypes` | The entity types the records are of; empty where no template says. |
 | `from` | The read whose ids name them. |
-| `template` | The newest saved template of the first of those entity types that has one (the newest kind version, then the newest captured). |
+| `template` | The newest template the flow reads of the first of those entity types that has one (the newest kind version), or the newest saved for a draft. |
 | `missing` | Why no template describes them. |
 | `reads` | The paths read from them, each with its `uses`: the role (`label` or `attribute`), the attribute, the step from 0, and whether it is the step whose value is kept. |
 
@@ -132,17 +134,17 @@ an array of objects (`nested` or `flattened`), and the entity types it refers to
 
 **What is wrong is said, not refused.** A build reads a label's records as they are, so the blueprint refuses nothing and
 marks what would read nothing or the wrong thing (`problem` on a read, `missing` on a set of records). A build still
-fails where [What a build does](../flow/dimension.md#what-a-build-does) says, such as a `data` path of a kind without a saved template.
+fails where [What a build does](../flow/dimension.md#what-a-build-does) says, such as a `data` path of a kind no template folder on the flow's path holds.
 
 | Said | When |
 | --- | --- |
-| `No saved template matches <kind>, and a build reads a path of data only by the template of every kind it matches. Save the kind's template on the Templates page.` | The dimension's path is a path of `data` and no saved template matches its kind. |
+| `No template the flow reads matches <kind>, and a build reads a path of data only by the template of every kind it matches. Put the kind's template in a template folder on the flow's path.` (for a draft: `No saved template matches <kind>, ...`) | The dimension's path is a path of `data` and no template it reads matches its kind. |
 | `The template does not declare <path> a reference to another record: a key's label and attributes are read only where the key is a record id.` | The dimension reads a label or attributes through a key the template declares no reference. |
 | `The template does not declare <path> a reference to another record, so the next step reads records only where it holds a record id.` | A step before the last. |
 | `<path> holds an object, not a value; a build keeps only text it finds there, so name one of its properties.` | The last step of a label or an attribute. |
-| `No template of <entity types> is saved, so the paths read from these records are read as written, unchecked. Save one on the Templates page to check them.` | Records of a type no saved template describes; the Definition tab repeats it under the diagram. |
+| `The flow reads no template of <entity types>, so the paths read from these records are read as written, unchecked. Put one in a template folder on the flow's path to check them.` (for a draft: `No template of <entity types> is saved, ...`) | Records of a type no template it reads describes; the Definition tab repeats it under the diagram. |
 | `The template does not say which records <path> names: a build reads whatever records its ids name.` | A read whose template names no entity type. |
-| `The template <kind> version <version> is no longer saved, ...` and `The last build read <path> without a saved template of <kinds>.` | The template the dimension's own records were read against is gone, or never was. |
+| `The last build read template <kind> version <version>, which the flow no longer reads, ...` and `The last build read <path> without a template of <kinds>.` | The template the dimension's own records were read against is no longer in a folder on its path, or never was. |
 
 ## The columns and what was read for them
 

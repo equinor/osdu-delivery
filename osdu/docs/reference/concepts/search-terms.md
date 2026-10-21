@@ -234,16 +234,18 @@ words them:
 | `the cached type <Type> does not capture <field>` | a `$findBy` field, or the field read, is not captured |
 | `the mapping declares no search <Name>` | a `$search` naming no `searches:` entry |
 
-Whether a route can be compared is then decided against the saved [templates](templates.md), each time the terms are
-read: the property the route writes is compared as the template the mapping pins says the platform indexes it (text, a
-keyword, a number, a boolean or a date, inside a nested list through it), and for a lookup or a search, the properties
-the records are found by as the schema of those records says (the search's pinned schema, or the newest saved template
-of the cached type's kind). A template not saved makes the route not searchable:
+Whether a route can be compared is then decided against the [templates](templates.md) the mapping reads, as the
+template folders on its path held them at the repository's last sync, each time the terms are read: the property the
+route writes is compared as the template the mapping fills says the platform indexes it (text, a keyword, a number, a
+boolean or a date, inside a nested list through it), and for a lookup or a search, the properties the records are found
+by as the schema of those records says (the search's pinned schema, or the newest template the mapping reads of the
+cached type's kind). A template the mapping does not read makes the route not searchable:
 
-- `the template <kind> version <version> that <mapping> pins is not saved; save it on the Templates page`
-- `no saved template of <kind> says how its records are indexed; save one on the Templates page to search through <Type>`
+- `the template of <Name@version> cannot be read: ...`
+- `no template the mapping reads of <kind> says how its records are indexed; put one in a template folder on the mapping's path to search through <Type>`
 
-Saving the template makes the routes it describes searchable at the next read, with no sync.
+A template's file put in a folder on the mapping's path makes the routes it describes searchable once the repository is
+synced again.
 
 ### The conditions a route takes
 
@@ -380,8 +382,8 @@ Both tables are in the module's `osdu` schema (see [the ledger](ledger.md) for t
 
 | Table | What it holds |
 | --- | --- |
-| `osdu.SearchTerm` | One row per repository, term and entity type: the term's id (`TermId`) and key (`TermKey`, with `Source` and `Column`), the `EntityType` its routes fill, its routes as JSON (`RoutesJson`), the active delivery flows that read its table (`FlowsJson`), and when a sync first and last found it. Unique on (`RepoId`, `TermId`, `EntityType`); indexed on (`EntityType`, `TermId`), which the page and the explorer read by. Written only by the sync and the control plane's start. |
-| `osdu.SearchTermRefinement` | One row per term a person refined, keyed by `TermId`: the `TermKey` and `EntityType` it was made for (so it is listed when no sync gives the term), `Name`, `Note`, `Excluded` (deleted), `Route`, `UpdatedBy`, `UpdatedUtc`. Indexed on (`EntityType`, `Name`). Never written by a sync. |
+| [`osdu.SearchTerm`](../tables/search-term.md) | One row per repository, term and entity type: the term's identity and key, the entity type its routes fill, its routes, and the active delivery flows that read its table. Written only by the sync and the control plane's start. |
+| [`osdu.SearchTermRefinement`](../tables/search-term-refinement.md) | One row per term a person refined, keyed by `TermId`: its name, note, whether it is deleted, and its route. A sync changes none of it, except to move a refinement made while terms were keyed by their mapping's source system onto the term that column is now. |
 
 The tables came with the migration `20261008170839_SearchTerms`; `20261008204608_SearchTermSources` keyed the terms by
 their table, emptying the read model for the control plane to write again and keeping every refinement.

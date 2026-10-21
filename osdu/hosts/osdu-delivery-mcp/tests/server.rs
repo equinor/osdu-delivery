@@ -457,7 +457,7 @@ async fn the_instructions_name_only_what_the_server_has() {
         .split(|c: char| !c.is_ascii_alphanumeric() && c != '-')
         .filter(|word| word.starts_with("delivery-") && !word.ends_with('-'))
         .collect();
-    assert!(named.contains("delivery-guide-pattern-catalog") && named.contains("delivery-cli-run"), "{named:?}");
+    assert!(named.contains("delivery-wiki-pattern-catalog") && named.contains("delivery-cli-run"), "{named:?}");
     for id in &named {
         assert!(ids.contains(*id), "the instructions name the page {id}, which is not indexed");
     }
@@ -593,7 +593,7 @@ const QUESTIONS: &[(&str, &[&str])] = &[
     ("one source delivers several kinds", &["delivery-flow-interfaces", "delivery-guide-multi-kind-source"]),
     ("save an osdu schema as a template", &["delivery-cli-template", "delivery-concept-templates"]),
     ("register a partition", &["delivery-cli-partition", "delivery-concept-partitions"]),
-    ("which route should a delivery flow use", &["delivery-flow-routes", "delivery-guide-pattern-catalog"]),
+    ("which route should a delivery flow use", &["delivery-flow-routes", "delivery-wiki-pattern-catalog"]),
     ("run payload recordKeys redeliver", &["delivery-cli-run"]),
     ("mapping expression when condition", &["delivery-flow-mapping-expressions", "delivery-flow-mapping-values"]),
     ("hold a record whose value breaks a business rule in the mapping", &["delivery-flow-mapping-assertions"]),
@@ -617,10 +617,45 @@ const QUESTIONS: &[(&str, &[&str])] = &[
     ("in which order are wells, wellbores and well logs delivered", &["delivery-concept-osdu-order"]),
     ("which schedule must run before another schedule", &["delivery-concept-osdu-order"]),
     ("build osdu lineage of a data definitions release", &["delivery-concept-osdu-order"]),
-    ("update the cache during a schedule after a delivery", &["delivery-concept-partition-cache", "delivery-decision-0017"]),
+    ("update the cache during a schedule after a delivery", &["delivery-concept-partition-cache", "delivery-wiki-0017-pipelines-update-the-cache"]),
     ("update the cache before running a pipeline", &["delivery-concept-partition-cache", "delivery-flow-delivery"]),
     ("refresh only one type of a cache flow", &["delivery-flow-cache"]),
+    ("which table holds what in the osdu schema", &["delivery-concept-database"]),
+    ("which database table holds a record's attempts", &["delivery-concept-database", "delivery-concept-ledger"]),
 ];
+
+/// Questions about what a table of the osdu schema holds, asked with `type: table`, and the table page that answers each.
+const TABLE_QUESTIONS: &[(&str, &str)] = &[
+    ("the source file and row a delivery attempt was built from", "delivery-table-attempt"),
+    ("which cache flow captured a cached record", "delivery-table-cache-member"),
+    ("the orphan ids an inventory found", "delivery-table-inventory-record"),
+    ("what a worker appended under its lease", "delivery-table-record-event"),
+    ("who approved a cache change and its rollout", "delivery-table-update-tag"),
+    ("the audit trail of interventions", "delivery-table-activity"),
+];
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_table_question_finds_its_table_when_the_search_asks_for_tables() {
+    let estate = Estate::start(vec![]).await;
+    let mut session = Session::open(&estate).await;
+
+    let mut missed = Vec::new();
+    for (question, answer) in TABLE_QUESTIONS {
+        let found = session.json("search_docs", json!({ "query": question, "type": "table", "limit": 5 })).await;
+        let results = found["results"].as_array().expect("search results");
+        assert!(results.iter().all(|hit| hit["type"] == "table"), "'{question}' found a page that is no table: {results:?}");
+        if !results.iter().any(|hit| hit["id"] == *answer) {
+            let top: Vec<&str> = results.iter().filter_map(|hit| hit["id"].as_str()).collect();
+            missed.push(format!("'{question}' found {top:?}, not {answer}"));
+        }
+    }
+    assert!(missed.is_empty(), "table questions whose table is not in the top five:\n{}", missed.join("\n"));
+
+    // Without the type, a task question is answered by the pages that explain the task, never by a table page.
+    let untyped = session.json("search_docs", json!({ "query": "replace a value from the cache", "limit": 50 })).await;
+    let results = untyped["results"].as_array().expect("search results");
+    assert!(results.iter().all(|hit| hit["type"] != "table"), "{results:?}");
+}
 
 #[tokio::test(flavor = "multi_thread")]
 async fn a_question_finds_the_page_that_answers_it() {

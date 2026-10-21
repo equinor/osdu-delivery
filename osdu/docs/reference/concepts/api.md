@@ -194,16 +194,17 @@ See [removal and reversal](removal-and-reversal.md) for what each scope does.
 
 | Route | Policy | Parameters | Answers |
 | --- | --- | --- | --- |
-| `GET /mappings` | read | `repoId`, `status` | The mapping documents the repositories hold, as the last sync read them. |
+| `GET /mappings` | read | `repoId`, `status` | The mapping documents the repositories hold, as the last sync read them, each with the template version it fills (`templateVersion`) and the template folder file it was settled from (`templatePath`, empty when no folder on its path holds it). |
 | `GET /mappings/{mappingId}` | read | | One mapping with its YAML. |
 | `GET /mappings/{mappingId}/flows` | read | | The interfaces of delivery flows that render with the mapping, in every partition. |
 | `POST /flows/{pipelineId}/check-values` | operate | body `targets` (template paths, at most 200), `values`, `maxRows` (10,000; 0 for the whole scope), `samples` (20), `skipSamples`, `mapping`; `interface`, `partition` | 202 with a compute task that finds the rows whose values the mapping's template will not take. |
-| `GET /templates` | read | | The saved template versions, with origin, who saved each and how many mappings pin it. |
+| `GET /templates` | read | | The saved template versions of the library, with origin and who saved each. The library is not linked to the repositories, so nothing here says which repository holds a version. |
 | `GET /templates/detail` | read | `kind`, `version`, `scope` | One saved version laid out variable by variable; with `scope`, the cached types each variable can read. |
-| `GET /templates/schema` | read | `kind`, `version` | The bundled schema of a saved version. |
+| `GET /templates/schema` | read | `kind`, `version` | The bundled schema of a saved version, as a file to save named after its kind ([a template as a file](templates.md#a-template-as-a-file)). |
+| `GET /templates/resolve` | read | `repoId`, `path`, `kind`, `version` | The template a document at `path` in a synced repository reads for `kind` (exactly `version` when given), as the template folders on its path held them at the last sync ([template folders](templates.md#template-folders)): `found`, `kind`, `version`, the file (`file`) or why there is none (`problem`), and `suggestedPath`, where the nearest folder would keep the template's file. |
 | `POST /templates/preview` | read | body `kind`, `schema`, `scope`, `release` | A bundled schema laid out without saving it. |
 | `POST /templates` | author | body `kind`, `schema`, `origin`, `release` | Saves a template version; `outcome` is `created` or `unchanged`. |
-| `DELETE /templates` | author | `kind`, `version` | Deletes a version; 409 `Template in use` while a synced mapping pins it. |
+| `DELETE /templates` | author | `kind`, `version` | Deletes a saved version; nothing a repository holds refuses it. 404 when it is not saved. |
 | `GET /templates/osdu/releases` | read | | The releases of the OSDU data definitions, newest first, and which are in the local copy. |
 | `GET /templates/osdu/schemas` | read | `release` (newest when left out) | Every record kind a release publishes. |
 | `GET /templates/osdu/schema` | read | `release`, `kind` | One kind's schema from a release, bundled, with the template version it saves as. |
@@ -213,11 +214,13 @@ See [removal and reversal](removal-and-reversal.md) for what each scope does.
 | `GET /mapping-builder/caches` | read | | Every partition cache, its flows, current version and types. |
 | `POST /mapping-builder/draft` | read | body `scope`, `kind`, `version`, `name`, `mappingVersion`, `system` | A new mapping draft for a saved template. |
 | `POST /mapping-builder/compose` | read | body `scope`, `draft`, `parameters` | The draft as YAML, its issues, and whether it loads and passes the preflight. |
-| `POST /mapping-builder/parse` | read | body `yaml`, `path` | A mapping document as a draft the builder edits. |
-| `POST /mapping-builder/shape` | read | body `yaml`, `path`, `parameters` | The shape of the records the mapping renders, drawn against its template without a row or a cache. |
-| `POST /mapping-builder/coverage` | read | body `yaml`, `path` | What the mapping fills of its template and what it leaves required and empty. |
+| `POST /mapping-builder/parse` | read | body `yaml`, `path`, `repoId` | A mapping document as a draft the builder edits. |
+| `POST /mapping-builder/shape` | read | body `yaml`, `path`, `parameters`, `repoId` | The shape of the records the mapping renders, drawn against its template without a row or a cache. |
+| `POST /mapping-builder/coverage` | read | body `yaml`, `path`, `repoId` | What the mapping fills of its template and what it leaves required and empty. |
 
-A document that does not load, or pins a template that is not saved, is an answer with its issue on `shape` and
+With `repoId`, a document of that synced repository reads its template from the template folders on its `path`, as the
+last sync recorded them, from the copy that sync kept of the file, and may name its template's kind alone; without it,
+from the saved templates, and it names the version. A document that does not load, or whose template cannot be read, is an answer with its issue on `shape` and
 `coverage`, not an HTTP error. See [templates](templates.md) and [preflight](preflight.md).
 
 ## Caches

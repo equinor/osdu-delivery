@@ -6,8 +6,8 @@ namespace SqlFlow.Delivery.Tests;
 
 /// <summary>
 /// An estate written for an OSDU order test: delivery flows, sources, cache flows and their mappings in a folder of its own,
-/// and schemas made for the case (the relationships a test needs, nothing else) saved in a <see cref="Templates"/> store
-/// several estates may share, as several repositories share one module database.
+/// and schemas made for the case (the relationships a test needs, nothing else) kept in a <see cref="Templates"/> store
+/// several estates may share, which a test puts in an estate's template folder with <see cref="Hold"/>.
 /// </summary>
 internal sealed class OrderEstate
 {
@@ -59,6 +59,20 @@ internal sealed class OrderEstate
             },
         };
         Templates.Save(TemplateSources.FromBundledJson(schema.ToJsonString(), kind, new DateTimeOffset(Utc), $"{entityType}.json"));
+    }
+
+    /// <summary>
+    /// Puts the schemas made for the case in the estate's template folder, <c>templates</c> at its top, as a repository holds
+    /// the templates its mappings fill; with entity types named, those alone.
+    /// </summary>
+    public void Hold(params string[] entityTypes)
+    {
+        var folder = Path.Combine(Root, "templates");
+        Directory.CreateDirectory(folder);
+        foreach (var schema in Templates.All.Where(s => entityTypes.Length == 0 || entityTypes.Any(e => s.Kind.Contains($":{e}:", StringComparison.Ordinal))))
+        {
+            File.WriteAllText(Path.Combine(folder, TemplateSources.FileName(schema.Kind)), TemplateSources.FileText(schema));
+        }
     }
 
     /// <summary>
@@ -281,8 +295,12 @@ internal sealed class OrderEstate
         public Task<TemplateSaved> SaveAsync(SchemaSnapshot schema, string origin, string actor, CancellationToken ct = default)
             => throw new NotSupportedException("The order tests save their schemas directly.");
 
+        /// <summary>Every schema saved and not forgotten, as a host's store lists its saved templates.</summary>
         public Task<IReadOnlyList<TemplateInfo>> ListAsync(CancellationToken ct = default)
-            => throw new NotSupportedException("The order tests list no templates.");
+            => Task.FromResult<IReadOnlyList<TemplateInfo>>([.. _byKind.Values
+                .Where(s => !_forgotten.Contains(s.Kind))
+                .OrderBy(s => s.Kind, StringComparer.Ordinal)
+                .Select(s => new TemplateInfo(s.Kind, s.Version, s.CapturedUtc.UtcDateTime, "tests", "the order estate"))]);
 
         public Task DeleteAsync(TemplateReference reference, CancellationToken ct = default)
             => throw new NotSupportedException("The order tests delete no template.");
