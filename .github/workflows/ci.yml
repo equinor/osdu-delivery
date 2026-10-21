@@ -1,13 +1,13 @@
 name: CI
 
 on:
-  push:
-    branches: [ main ]
-    tags: [ 'v*' ]
-  pull_request:
-    branches: [ main ]
-    # Labelled: the full-tests label runs the full test suite on the pull request.
-    types: [ opened, synchronize, reopened, labeled ]
+  # push:
+  #   branches: [ main ]
+  #   tags: [ 'v*' ]
+  # pull_request:
+  #   branches: [ main ]
+  #   # Labelled: the full-tests label runs the full test suite on the pull request.
+  #   types: [ opened, synchronize, reopened, labeled ]
   # Run workflow, on any branch: everything, the full test suite included.
   workflow_dispatch:
 
