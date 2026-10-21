@@ -1,0 +1,23 @@
+name: Check Vendored SQLFlow
+
+on:
+  workflow_call: {}
+  workflow_dispatch: {}
+
+permissions: {}
+
+jobs:
+  check-vendored-sqlflow:
+    name: Check Vendored SQLFlow
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read # Required to checkout the repository
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0 # Required to read the subtree history
+          persist-credentials: false
+
+      - name: Check vendored SQLFlow
+        run: bash tools/check-vendored-sqlflow.sh
