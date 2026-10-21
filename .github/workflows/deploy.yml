@@ -1,159 +1,159 @@
-# Builds and deploys OSDU Delivery to an Azure Container Apps environment made with the Terraform (osdu/deploy/terraform),
-# through deploy.ps1: the same script, environment files and checks a deploy from a workstation uses (deploy-dev.ps1,
-# deploy-test.ps1, deploy-prod.ps1). Images are built in the environment's registry once per commit and app, the apps
-# are rolled forward to them, each new revision is checked to serve, and one that does not is rolled back.
+# # Builds and deploys OSDU Delivery to an Azure Container Apps environment made with the Terraform (osdu/deploy/terraform),
+# # through deploy.ps1: the same script, environment files and checks a deploy from a workstation uses (deploy-dev.ps1,
+# # deploy-test.ps1, deploy-prod.ps1). Images are built in the environment's registry once per commit and app, the apps
+# # are rolled forward to them, each new revision is checked to serve, and one that does not is rolled back.
+# #
+# # A repository deploys one way, chosen by the repository variable DEPLOY_METHOD: this workflow does nothing unless it is
+# # `terraform`. (Radix's workflow is a sample under osdu/deploy/radix; Bicep, compose and Kubernetes deploy by hand.)
+# #
+# #   - A push to main deploys to dev once CI has passed on it.
+# #   - test and prod are promoted by running this workflow by hand (Actions > Deploy > Run workflow), from main; prod waits
+# #     for the reviewers its GitHub environment names.
+# #   - "infrastructure" plans and applies the environment's Terraform first (its state and variables:
+# #     osdu/deploy/terraform/environments/<env>.tfvars and .backend.hcl, or the GitHub environment's copies of them).
+# #
+# # Each GitHub environment (dev, test, prod) holds:
+# #   variables  AZURE_CLIENT_ID, AZURE_TENANT_ID: an identity with a federated credential for
+# #              repo:<owner>/<repo>:environment:<env> and the roles osdu/deploy/README.md lists (Deploying from GitHub);
+# #              OSDU_ENVIRONMENT_TFVARS, OSDU_ENVIRONMENT_BACKEND (optional, both or neither): the environment's
+# #              <env>.tfvars and <env>.backend.hcl whole, for an environment whose values are kept out of the repository
+# #              (whose copies then keep their placeholders); tools/github/connect-environment.ps1 sets them;
+# #   secrets    TF_VAR_OSDU_PARTITIONS: the OSDU partitions the environment delivers to (a JSON object by partition id,
+# #              with no secret in it), read only by "infrastructure". No other secret reaches Terraform: the deployment
+# #              generates its own into the estate's vault, and a person puts the rest there (each partition's client
+# #              secret, a repository's token).
+# name: Deploy
 #
-# A repository deploys one way, chosen by the repository variable DEPLOY_METHOD: this workflow does nothing unless it is
-# `terraform`. (Radix's workflow is a sample under osdu/deploy/radix; Bicep, compose and Kubernetes deploy by hand.)
+# on:
+#   # workflow_run:
+#   #   workflows: [CI]
+#   #   types: [completed]
+#   #   branches: [main]
+#   workflow_dispatch:
+#     inputs:
+#       environment:
+#         description: The environment to deploy to.
+#         type: choice
+#         options:
+#           - dev
+#           - test
+#           - prod
+#         default: dev
+#       apps:
+#         description: The apps to deploy, space separated (control-plane worker gui mcp, or all). Empty deploys those whose images changed.
+#         type: string
+#         default: ''
+#       infrastructure:
+#         description: Plan and apply the environment's Terraform before deploying the images.
+#         type: boolean
+#         default: false
 #
-#   - A push to main deploys to dev once CI has passed on it.
-#   - test and prod are promoted by running this workflow by hand (Actions > Deploy > Run workflow), from main; prod waits
-#     for the reviewers its GitHub environment names.
-#   - "infrastructure" plans and applies the environment's Terraform first (its state and variables:
-#     osdu/deploy/terraform/environments/<env>.tfvars and .backend.hcl, or the GitHub environment's copies of them).
+# permissions: {}
 #
-# Each GitHub environment (dev, test, prod) holds:
-#   variables  AZURE_CLIENT_ID, AZURE_TENANT_ID: an identity with a federated credential for
-#              repo:<owner>/<repo>:environment:<env> and the roles osdu/deploy/README.md lists (Deploying from GitHub);
-#              OSDU_ENVIRONMENT_TFVARS, OSDU_ENVIRONMENT_BACKEND (optional, both or neither): the environment's
-#              <env>.tfvars and <env>.backend.hcl whole, for an environment whose values are kept out of the repository
-#              (whose copies then keep their placeholders); tools/github/connect-environment.ps1 sets them;
-#   secrets    TF_VAR_OSDU_PARTITIONS: the OSDU partitions the environment delivers to (a JSON object by partition id,
-#              with no secret in it), read only by "infrastructure". No other secret reaches Terraform: the deployment
-#              generates its own into the estate's vault, and a person puts the rest there (each partition's client
-#              secret, a repository's token).
-name: Deploy
-
-on:
-  # workflow_run:
-  #   workflows: [CI]
-  #   types: [completed]
-  #   branches: [main]
-  workflow_dispatch:
-    inputs:
-      environment:
-        description: The environment to deploy to.
-        type: choice
-        options:
-          - dev
-          - test
-          - prod
-        default: dev
-      apps:
-        description: The apps to deploy, space separated (control-plane worker gui mcp, or all). Empty deploys those whose images changed.
-        type: string
-        default: ''
-      infrastructure:
-        description: Plan and apply the environment's Terraform before deploying the images.
-        type: boolean
-        default: false
-
-permissions: {}
-
-concurrency:
-  group: deploy-${{ github.event_name == 'workflow_dispatch' && inputs.environment || 'dev' }}
-  cancel-in-progress: false
-
-jobs:
-  deploy:
-    name: Deploy to ${{ github.event_name == 'workflow_dispatch' && inputs.environment || 'dev' }}
-    # Only the chosen deploy method runs. After CI, only a push to main that passed deploys (never a pull request, whose
-    # head may be a fork's branch named main); by hand, only from main.
-    if: >-
-      vars.DEPLOY_METHOD == 'terraform' &&
-      ((github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'push') ||
-       (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main'))
-    runs-on: ubuntu-24.04
-    environment: ${{ github.event_name == 'workflow_dispatch' && inputs.environment || 'dev' }}
-    permissions:
-      contents: read # Required to checkout the repository
-      id-token: write # Required to login to Azure using OIDC
-    env:
-      DEPLOY_ENVIRONMENT: ${{ github.event_name == 'workflow_dispatch' && inputs.environment || 'dev' }}
-      AZURE_CORE_OUTPUT: none
-      # Terraform signs in as the same identity, with the workflow's OIDC token.
-      ARM_USE_OIDC: 'true'
-      ARM_CLIENT_ID: ${{ vars.AZURE_CLIENT_ID }}
-      ARM_TENANT_ID: ${{ vars.AZURE_TENANT_ID }}
-    steps:
-      - name: Checkout
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          # After CI: exactly the commit CI passed. Change detection compares it with what each app serves, so the history
-          # is fetched in full.
-          ref: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_sha || github.sha }}
-          fetch-depth: 0
-          persist-credentials: false
-
-      - name: Check the environment's identity
-        env:
-          CLIENT_ID: ${{ vars.AZURE_CLIENT_ID }}
-          TENANT_ID: ${{ vars.AZURE_TENANT_ID }}
-        run: |
-          if [ -z "$CLIENT_ID" ] || [ -z "$TENANT_ID" ]; then
-            echo "::error::The GitHub environment '$DEPLOY_ENVIRONMENT' has no AZURE_CLIENT_ID or AZURE_TENANT_ID variable; see osdu/deploy/README.md, Deploying from GitHub."
-            exit 1
-          fi
-
-      - name: The environment's files
-        env:
-          TFVARS: ${{ vars.OSDU_ENVIRONMENT_TFVARS }}
-          BACKEND: ${{ vars.OSDU_ENVIRONMENT_BACKEND }}
-        run: |
-          # The GitHub environment's copies of <env>.tfvars and <env>.backend.hcl, when it has them, are written where
-          # deploy.ps1 reads an environment kept out of the repository (OSDU_ENVIRONMENT_DIR); otherwise it reads the
-          # repository's.
-          if [ -z "$TFVARS" ] && [ -z "$BACKEND" ]; then
-            echo "The environment's files are the repository's (osdu/deploy/terraform/environments)."
-            exit 0
-          fi
-          if [ -z "$TFVARS" ] || [ -z "$BACKEND" ]; then
-            echo "::error::The GitHub environment '$DEPLOY_ENVIRONMENT' sets only one of OSDU_ENVIRONMENT_TFVARS and OSDU_ENVIRONMENT_BACKEND; set both, or neither to use the repository's files."
-            exit 1
-          fi
-          dir="$RUNNER_TEMP/osdu-environment"
-          mkdir -p "$dir"
-          printf '%s\n' "$TFVARS" > "$dir/$DEPLOY_ENVIRONMENT.tfvars"
-          printf '%s\n' "$BACKEND" > "$dir/$DEPLOY_ENVIRONMENT.backend.hcl"
-          echo "OSDU_ENVIRONMENT_DIR=$dir" >> "$GITHUB_ENV"
-          echo "The environment's files are the GitHub environment's OSDU_ENVIRONMENT_TFVARS and OSDU_ENVIRONMENT_BACKEND."
-
-      - name: Login to Azure
-        uses: azure/login@a641126d1b8aa4d1fa005f4f92df94a3a4c4c906 # v3.1.0
-        with:
-          client-id: ${{ vars.AZURE_CLIENT_ID }}
-          tenant-id: ${{ vars.AZURE_TENANT_ID }}
-          # deploy.ps1 selects the subscription the environment file names.
-          allow-no-subscriptions: true
-
-      - name: Install the Container Apps extension
-        run: az extension add --name containerapp --upgrade --only-show-errors
-
-      - name: Setup Terraform
-        if: github.event_name == 'workflow_dispatch' && inputs.infrastructure
-        uses: hashicorp/setup-terraform@dfe3c3f87815947d99a8997f908cb6525fc44e9e # v4.0.1
-        with:
-          terraform_version: 1.8.5
-          # deploy.ps1 reads terraform's exit codes and output itself.
-          terraform_wrapper: false
-
-      - name: Infrastructure
-        if: github.event_name == 'workflow_dispatch' && inputs.infrastructure
-        shell: pwsh
-        env:
-          OSDU_PARTITIONS: ${{ secrets.TF_VAR_OSDU_PARTITIONS }}
-        run: |
-          # Terraform reads TF_VAR_osdu_partitions only when it is set: an unset secret stops the plan, which needs at least
-          # one partition, never an empty value in its place.
-          if (-not [string]::IsNullOrEmpty($env:OSDU_PARTITIONS)) {
-            $env:TF_VAR_osdu_partitions = $env:OSDU_PARTITIONS
-          }
-          ./deploy.ps1 -Environment $env:DEPLOY_ENVIRONMENT -Infrastructure -AutoApprove
-
-      - name: Deploy the images
-        shell: pwsh
-        env:
-          APPS: ${{ github.event_name == 'workflow_dispatch' && inputs.apps || '' }}
-        run: |
-          $apps = @("$env:APPS" -split '\s+' | Where-Object { $_ })
-          ./deploy.ps1 -Environment $env:DEPLOY_ENVIRONMENT @apps
+# concurrency:
+#   group: deploy-${{ github.event_name == 'workflow_dispatch' && inputs.environment || 'dev' }}
+#   cancel-in-progress: false
+#
+# jobs:
+#   deploy:
+#     name: Deploy to ${{ github.event_name == 'workflow_dispatch' && inputs.environment || 'dev' }}
+#     # Only the chosen deploy method runs. After CI, only a push to main that passed deploys (never a pull request, whose
+#     # head may be a fork's branch named main); by hand, only from main.
+#     if: >-
+#       vars.DEPLOY_METHOD == 'terraform' &&
+#       ((github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'push') ||
+#        (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main'))
+#     runs-on: ubuntu-24.04
+#     environment: ${{ github.event_name == 'workflow_dispatch' && inputs.environment || 'dev' }}
+#     permissions:
+#       contents: read # Required to checkout the repository
+#       id-token: write # Required to login to Azure using OIDC
+#     env:
+#       DEPLOY_ENVIRONMENT: ${{ github.event_name == 'workflow_dispatch' && inputs.environment || 'dev' }}
+#       AZURE_CORE_OUTPUT: none
+#       # Terraform signs in as the same identity, with the workflow's OIDC token.
+#       ARM_USE_OIDC: 'true'
+#       ARM_CLIENT_ID: ${{ vars.AZURE_CLIENT_ID }}
+#       ARM_TENANT_ID: ${{ vars.AZURE_TENANT_ID }}
+#     steps:
+#       - name: Checkout
+#         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+#         with:
+#           # After CI: exactly the commit CI passed. Change detection compares it with what each app serves, so the history
+#           # is fetched in full.
+#           ref: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_sha || github.sha }}
+#           fetch-depth: 0
+#           persist-credentials: false
+#
+#       - name: Check the environment's identity
+#         env:
+#           CLIENT_ID: ${{ vars.AZURE_CLIENT_ID }}
+#           TENANT_ID: ${{ vars.AZURE_TENANT_ID }}
+#         run: |
+#           if [ -z "$CLIENT_ID" ] || [ -z "$TENANT_ID" ]; then
+#             echo "::error::The GitHub environment '$DEPLOY_ENVIRONMENT' has no AZURE_CLIENT_ID or AZURE_TENANT_ID variable; see osdu/deploy/README.md, Deploying from GitHub."
+#             exit 1
+#           fi
+#
+#       - name: The environment's files
+#         env:
+#           TFVARS: ${{ vars.OSDU_ENVIRONMENT_TFVARS }}
+#           BACKEND: ${{ vars.OSDU_ENVIRONMENT_BACKEND }}
+#         run: |
+#           # The GitHub environment's copies of <env>.tfvars and <env>.backend.hcl, when it has them, are written where
+#           # deploy.ps1 reads an environment kept out of the repository (OSDU_ENVIRONMENT_DIR); otherwise it reads the
+#           # repository's.
+#           if [ -z "$TFVARS" ] && [ -z "$BACKEND" ]; then
+#             echo "The environment's files are the repository's (osdu/deploy/terraform/environments)."
+#             exit 0
+#           fi
+#           if [ -z "$TFVARS" ] || [ -z "$BACKEND" ]; then
+#             echo "::error::The GitHub environment '$DEPLOY_ENVIRONMENT' sets only one of OSDU_ENVIRONMENT_TFVARS and OSDU_ENVIRONMENT_BACKEND; set both, or neither to use the repository's files."
+#             exit 1
+#           fi
+#           dir="$RUNNER_TEMP/osdu-environment"
+#           mkdir -p "$dir"
+#           printf '%s\n' "$TFVARS" > "$dir/$DEPLOY_ENVIRONMENT.tfvars"
+#           printf '%s\n' "$BACKEND" > "$dir/$DEPLOY_ENVIRONMENT.backend.hcl"
+#           echo "OSDU_ENVIRONMENT_DIR=$dir" >> "$GITHUB_ENV"
+#           echo "The environment's files are the GitHub environment's OSDU_ENVIRONMENT_TFVARS and OSDU_ENVIRONMENT_BACKEND."
+#
+#       - name: Login to Azure
+#         uses: azure/login@a641126d1b8aa4d1fa005f4f92df94a3a4c4c906 # v3.1.0
+#         with:
+#           client-id: ${{ vars.AZURE_CLIENT_ID }}
+#           tenant-id: ${{ vars.AZURE_TENANT_ID }}
+#           # deploy.ps1 selects the subscription the environment file names.
+#           allow-no-subscriptions: true
+#
+#       - name: Install the Container Apps extension
+#         run: az extension add --name containerapp --upgrade --only-show-errors
+#
+#       - name: Setup Terraform
+#         if: github.event_name == 'workflow_dispatch' && inputs.infrastructure
+#         uses: hashicorp/setup-terraform@dfe3c3f87815947d99a8997f908cb6525fc44e9e # v4.0.1
+#         with:
+#           terraform_version: 1.8.5
+#           # deploy.ps1 reads terraform's exit codes and output itself.
+#           terraform_wrapper: false
+#
+#       - name: Infrastructure
+#         if: github.event_name == 'workflow_dispatch' && inputs.infrastructure
+#         shell: pwsh
+#         env:
+#           OSDU_PARTITIONS: ${{ secrets.TF_VAR_OSDU_PARTITIONS }}
+#         run: |
+#           # Terraform reads TF_VAR_osdu_partitions only when it is set: an unset secret stops the plan, which needs at least
+#           # one partition, never an empty value in its place.
+#           if (-not [string]::IsNullOrEmpty($env:OSDU_PARTITIONS)) {
+#             $env:TF_VAR_osdu_partitions = $env:OSDU_PARTITIONS
+#           }
+#           ./deploy.ps1 -Environment $env:DEPLOY_ENVIRONMENT -Infrastructure -AutoApprove
+#
+#       - name: Deploy the images
+#         shell: pwsh
+#         env:
+#           APPS: ${{ github.event_name == 'workflow_dispatch' && inputs.apps || '' }}
+#         run: |
+#           $apps = @("$env:APPS" -split '\s+' | Where-Object { $_ })
+#           ./deploy.ps1 -Environment $env:DEPLOY_ENVIRONMENT @apps

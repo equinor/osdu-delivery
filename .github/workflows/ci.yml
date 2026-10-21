@@ -1,652 +1,652 @@
-name: CI
-
-on:
-  # push:
-  #   branches: [ main ]
-  #   tags: [ 'v*' ]
-  # pull_request:
-  #   branches: [ main ]
-  #   # Labelled: the full-tests label runs the full test suite on the pull request.
-  #   types: [ opened, synchronize, reopened, labeled ]
-  # Run workflow, on any branch: everything, the full test suite included.
-  workflow_dispatch:
-
-permissions:
-  contents: read
-
-# A newer push to a pull request's branch makes the older run moot. On main every commit's run completes: the Deploy
-# workflow deploys a commit to dev once its CI run has passed, and a cancelled run would deploy nothing.
-concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
-
-# The tests run in two tiers (CONTRIBUTING.md, Tests). Build and test runs the unit tier on every pull request and push:
-# the build, every .NET test that needs no SQL Server, host or other process, and the GUI's build, lint and unit tests.
-# Full test suite runs everything (the SQL Server suites, the hosts, the MCP server, the GUI end-to-end suite) on a v* tag,
-# before its release is made, on a pull request labelled full-tests, and when the workflow is run by hand; a developer runs
-# the same with bash tools/test.sh --full before opening a pull request. Container images runs on a pull request only
-# when what the images are built from changes.
+# name: CI
 #
-# Conventions, Power BI extractor, Build and test, Container images and Terraform checks are the checks the main ruleset
-# requires (.github/rulesets/main.json): renaming a job renames its check, so a rename changes both files together. A
-# required job its condition skips counts as passed.
-jobs:
-  # The repository's own rules, checked on what a push or a pull request brings: sqlflow/ gains only generic
-  # extension points, each in a commit of its own (tools/check-vendored-sqlflow.sh), and no added line carries an
-  # em dash and no commit is attributed to an AI assistant (tools/check-conventions.sh).
-  conventions:
-    name: Conventions
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v7
-        with:
-          # The guard walks back to the squashed subtree commit and the checks compare the change with what it is
-          # based on, so both need the full history, not the default shallow clone.
-          fetch-depth: 0
-
-      # On a pull request the checkout is the merge GitHub would make, so the guard walks the pull request's own
-      # commits as well as main's; on a push it walks main as it now is.
-      - name: Vendored SQLFlow guard
-        run: bash tools/check-vendored-sqlflow.sh
-
-      # A pull request brings what its head has and its base does not. A push brings what its new tip has and its
-      # previous tip did not; a new ref (a release tag) or a previous tip this clone does not hold (a forced push)
-      # brings what the default branch does not already have, and a branch with nothing beyond it is checked on its
-      # tip commit.
-      - name: Find what the change brings
-        id: range
-        env:
-          EVENT: ${{ github.event_name }}
-          PR_BASE: ${{ github.event.pull_request.base.sha }}
-          PR_HEAD: ${{ github.event.pull_request.head.sha }}
-          BEFORE: ${{ github.event.before }}
-          AFTER: ${{ github.sha }}
-          REF: ${{ github.ref }}
-          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
-        run: |
-          set -euo pipefail
-          if [ "$EVENT" = pull_request ]; then
-            base="$PR_BASE"
-            head="$PR_HEAD"
-          else
-            head="$AFTER"
-            if [ -n "$BEFORE" ] && [ "$BEFORE" != 0000000000000000000000000000000000000000 ] \
-               && git cat-file -e "$BEFORE^{commit}" 2> /dev/null; then
-              base="$BEFORE"
-            else
-              base="$(git merge-base "$head" "origin/$DEFAULT_BRANCH")"
-              if [ "$base" = "$head" ]; then
-                case "$REF" in
-                  refs/heads/*) base="$(git rev-parse --verify --quiet "$head^" || true)" ;;
-                  *) base="" ;;
-                esac
-              fi
-            fi
-          fi
-          if [ -z "$base" ]; then
-            echo "$REF brings no commit the default branch does not already hold; nothing to check."
-          else
-            echo "Checking $base..$head"
-          fi
-          echo "base=$base" >> "$GITHUB_OUTPUT"
-          echo "head=$head" >> "$GITHUB_OUTPUT"
-
-      - name: Writing and attribution rules
-        if: steps.range.outputs.base != ''
-        env:
-          BASE: ${{ steps.range.outputs.base }}
-          HEAD_SHA: ${{ steps.range.outputs.head }}
-        run: bash tools/check-conventions.sh "$BASE" "$HEAD_SHA"
-
-  # The Power BI extractor is a standalone C binary built outside the solution, so nothing in the .NET
-  # build would catch it breaking. It parses untrusted report files, so it is tested under the
-  # sanitizers too: a leak or an out-of-bounds read fails the build.
-  pbix-extract:
-    name: Power BI extractor
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v7
-
-      - name: Install build dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y --no-install-recommends \
-            build-essential libzip-dev libexpat1-dev libsqlite3-dev libjansson-dev
-
-      - name: Build
-        run: make -C sqlflow/tools/pbix-extract
-
-      - name: Test
-        run: make -C sqlflow/tools/pbix-extract test
-
-      - name: Test under AddressSanitizer and UndefinedBehaviorSanitizer
-        run: make -C sqlflow/tools/pbix-extract test-asan
-
-  # The unit tier (bash tools/test.sh runs the same): the build with warnings as errors, every .NET test but the ones
-  # that carry Category=Integration, and both GUIs. No SQL Server runs here, so a test that needs one and does not carry
-  # the category fails, naming the trait.
-  build-test:
-    name: Build and test
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v7
-
-      # A clean build fills the runner's disk unless the runner's unused toolchains go first.
-      - name: Free disk space
-        run: bash tools/github/free-runner-disk.sh
-
-      - name: Setup .NET
-        uses: actions/setup-dotnet@v6
-        with:
-          dotnet-version: '9.0.x'
-
-      - name: Setup Node
-        uses: actions/setup-node@v7
-        with:
-          node-version: '22'
-          cache: npm
-          cache-dependency-path: |
-            osdu/gui/package-lock.json
-            sqlflow/gui/package-lock.json
-
-      - name: Restore
-        run: dotnet restore OsduDelivery.sln
-
-      # Zero warnings is a project rule, so a warning fails the build. The SSH.NET advisory in vendored
-      # SQLFlow stays a warning until SQLFlow takes the fix.
-      - name: Build
-        run: dotnet build OsduDelivery.sln --no-restore -c Release -warnaserror -warnnotaserror:NU1903
-
-      - name: Unit tests
-        run: dotnet test OsduDelivery.sln --no-build -c Release --filter "Category!=Integration"
-
-      - name: Install OSDU GUI dependencies
-        working-directory: osdu/gui
-        run: npm ci
-
-      # The OSDU GUI compiles the vendored sqlflow/gui sources in place, so this build covers
-      # both trees' TypeScript.
-      - name: Build OSDU GUI
-        working-directory: osdu/gui
-        run: npm run build
-
-      - name: Lint OSDU GUI
-        working-directory: osdu/gui
-        run: npm run lint
-
-      - name: Install SQLFlow GUI dependencies
-        working-directory: sqlflow/gui
-        run: npm ci
-
-      # SQLFlow's GUI is built on its own as well, so an extension point added to sqlflow/gui is
-      # proven to keep SQLFlow's own build working.
-      - name: Build SQLFlow GUI
-        working-directory: sqlflow/gui
-        run: npm run build
-
-      # The chat's answer reading, result charting and report naming are plain modules with suites of their own,
-      # run by Node's test runner on the sources as they are.
-      - name: Unit test SQLFlow GUI
-        working-directory: sqlflow/gui
-        run: npm run test:unit
-
-  # Everything the unit tier leaves out, and the unit tier again with it (bash tools/test.sh --full runs the same): the
-  # whole .NET suite against SQL Server, the MCP server's crates and the GUI end-to-end suite. It runs on a v* tag, whose
-  # release waits for it, on a pull request labelled full-tests, and when the workflow is run by hand.
-  full-tests:
-    name: Full test suite
-    if: >-
-      github.event_name == 'workflow_dispatch'
-      || (github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v'))
-      || (github.event_name == 'pull_request' && contains(github.event.pull_request.labels.*.name, 'full-tests'))
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v7
-
-      # A clean build and the SQL Server image fill the runner's disk unless the runner's unused toolchains go first.
-      - name: Free disk space
-        run: bash tools/github/free-runner-disk.sh
-
-      - name: Setup .NET
-        uses: actions/setup-dotnet@v6
-        with:
-          dotnet-version: '9.0.x'
-
-      - name: Setup Node
-        uses: actions/setup-node@v7
-        with:
-          node-version: '22'
-          cache: npm
-          cache-dependency-path: osdu/gui/package-lock.json
-
-      # The report extraction suites shell out to this binary and skip without it, so it is built here
-      # too: a skip would quietly drop that coverage.
-      - name: Install pbix-extract build dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y --no-install-recommends \
-            build-essential libzip-dev libexpat1-dev libsqlite3-dev libjansson-dev
-
-      - name: Build pbix-extract
-        run: make -C sqlflow/tools/pbix-extract
-
-      - name: Restore
-        run: dotnet restore OsduDelivery.sln
-
-      - name: Build
-        run: dotnet build OsduDelivery.sln --no-restore -c Release -warnaserror -warnnotaserror:NU1903
-
-      # The DB-backed suites run against a SQL Server started for this job, whose password is made
-      # here and masked, so no credential lives in the repository. The suites' database allows
-      # snapshot isolation, which the delivery chain reads under; the GUI end-to-end suite creates
-      # a database of its own on the same server.
-      - name: Start SQL Server
-        run: |
-          password="Ci-$(openssl rand -hex 16)-Aa1"
-          echo "::add-mask::$password"
-          docker run --detach --name mssql --env ACCEPT_EULA=Y --env "MSSQL_SA_PASSWORD=$password" \
-            --publish 1433:1433 mcr.microsoft.com/mssql/server:2022-latest
-          ready=false
-          for attempt in $(seq 1 90); do
-            if docker exec --env "SQLCMDPASSWORD=$password" mssql \
-                 /opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -C -Q "SELECT 1" > /dev/null 2>&1; then
-              ready=true
-              break
-            fi
-            sleep 2
-          done
-          if [ "$ready" != true ]; then
-            docker logs mssql
-            echo "SQL Server did not accept a connection in three minutes." >&2
-            exit 1
-          fi
-          docker exec --env "SQLCMDPASSWORD=$password" mssql /opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -C -b \
-            -Q "CREATE DATABASE SqlFlowCi; ALTER DATABASE SqlFlowCi SET ALLOW_SNAPSHOT_ISOLATION ON;"
-          echo "SQLFLOW_TEST_DB=Server=localhost,1433;Database=SqlFlowCi;User ID=sa;Password=$password;TrustServerCertificate=True" >> "$GITHUB_ENV"
-          # The e2e suite's one database: the catalog, the module's schema and the sample tables, as a local run keeps them.
-          echo "SQLFLOW_E2E_CATALOG_DB=Server=localhost,1433;Database=OsduDeliveryE2E;User ID=sa;Password=$password;TrustServerCertificate=True" >> "$GITHUB_ENV"
-
-      # SQLFlow's own suites and the OSDU module's suites, every category, in one run over the solution, one
-      # project at a time: the DB-backed suites share the database above and migrate and seed it.
-      - name: Test
-        env:
-          SQLFLOW_PBIX_EXTRACT: ${{ github.workspace }}/sqlflow/tools/pbix-extract/build/pbix-extract
-        run: dotnet test OsduDelivery.sln --no-build -c Release -m:1 --verbosity normal
-
-      # The MCP server is Rust: SQLFlow's server as a library, and the product's host that composes it with the
-      # delivery module. Their suites call control planes of their own, so they need nothing this job started. Zero
-      # warnings holds here as it does for the solution, and each build is the one its committed lock file names.
-      - name: Test the MCP server
-        run: |
-          cargo clippy --locked --manifest-path sqlflow/tools/Cargo.toml -p sqlflow-mcp --all-targets -- -D warnings
-          cargo test --locked --manifest-path sqlflow/tools/Cargo.toml -p sqlflow-mcp
-          cargo clippy --locked --manifest-path osdu/hosts/osdu-delivery-mcp/Cargo.toml --all-targets -- -D warnings
-          cargo test --locked --manifest-path osdu/hosts/osdu-delivery-mcp/Cargo.toml
-
-      - name: Install OSDU GUI dependencies
-        working-directory: osdu/gui
-        run: npm ci
-
-      # The suite's setup batches call sqlcmd, which the runner image does not carry; the one in the
-      # SQL Server container serves them, reached through a wrapper on the PATH.
-      - name: Prepare the OSDU GUI end-to-end suite
-        working-directory: osdu/gui
-        run: |
-          wrapper="$RUNNER_TEMP/sqlcmd-wrapper"
-          mkdir -p "$wrapper"
-          printf '%s\n' '#!/usr/bin/env bash' \
-            'exec docker exec --env SQLCMDPASSWORD mssql /opt/mssql-tools18/bin/sqlcmd "$@"' > "$wrapper/sqlcmd"
-          chmod +x "$wrapper/sqlcmd"
-          echo "$wrapper" >> "$GITHUB_PATH"
-          npx playwright install --with-deps chromium
-
-      # The suite starts the control plane, the GUI and a stand-in for the OSDU platform itself, signs in
-      # and drives the pages over the sample estate. Its runs only plan, and a plan's wellbore searches are
-      # answered by the stand-in, so nothing reaches an OSDU. The hosts run from the Release build above.
-      - name: OSDU GUI end-to-end suite
-        working-directory: osdu/gui
-        env:
-          SQLFLOW_E2E_DOTNET_CONFIGURATION: Release
-        run: npm run e2e
-
-      - name: Keep the end-to-end report
-        if: failure()
-        uses: actions/upload-artifact@v7
-        with:
-          name: osdu-gui-e2e-report
-          path: |
-            osdu/gui/playwright-report
-            osdu/gui/test-results
-          retention-days: 7
-          if-no-files-found: ignore
-
-  # Whether a pull request reaches what the images are built from: their Dockerfiles and the deploy folder, the hosts,
-  # both GUIs, the MCP server's crates and the documentation it compiles in, the build's own settings, and this
-  # workflow. A push, a tag and a run by hand always build them.
-  changes:
-    name: What the change touches
-    runs-on: ubuntu-latest
-    outputs:
-      images: ${{ steps.paths.outputs.images }}
-    steps:
-      - uses: actions/checkout@v7
-        with:
-          fetch-depth: 0
-
-      - name: Compare the pull request with its base
-        id: paths
-        env:
-          EVENT: ${{ github.event_name }}
-          BASE: ${{ github.event.pull_request.base.sha }}
-          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
-        run: |
-          set -euo pipefail
-          if [ "$EVENT" != pull_request ]; then
-            echo "A $EVENT builds the images."
-            echo "images=true" >> "$GITHUB_OUTPUT"
-            exit 0
-          fi
-          pattern='^(osdu/deploy/|osdu/hosts/|osdu/gui/|sqlflow/gui/|sqlflow/tools/|osdu/docs/|sqlflow/docs/reference/|sqlflow/docs/wiki/|\.dockerignore$|global\.json$|NuGet\.config$|(.*/)?Directory\.(Build|Packages)\.props$|\.github/workflows/ci\.yml$)'
-          reaching="$(git diff --name-only "$BASE...$HEAD_SHA" | grep -E "$pattern" || true)"
-          if [ -n "$reaching" ]; then
-            echo "The images are built: the pull request changes"
-            # sed reads every line it is given, so a long list never stops printf with a broken pipe.
-            printf '%s\n' "$reaching" | sed -e '21,$d' -e 's/^/  /'
-            echo "images=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "Nothing the images are built from changes, so they are not built."
-            echo "images=false" >> "$GITHUB_OUTPUT"
-          fi
-
-  # The images build from the repository root, as a deployment builds them; nothing is
-  # pushed. The control plane image then starts against a SQL Server of its own and has to report
-  # ready (its catalog created, SQLFlow's and the OSDU module's migrations applied) and sign in the
-  # admin it provisions; the GUI image has to serve its pages and the runtime configuration it is
-  # given; the MCP image has to answer its probe and turn away a request without a token. The
-  # worker image needs a control plane token to start, so it is only built.
-  images:
-    name: Container images
-    needs: [ changes ]
-    if: needs.changes.outputs.images == 'true'
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v7
-
-      # A clean build and the images fill the runner's disk unless the runner's unused toolchains go first.
-      - name: Free disk space
-        run: bash tools/github/free-runner-disk.sh
-
-      - name: Build the control plane image
-        run: docker build -f osdu/deploy/docker/control-plane.Dockerfile -t osdu-delivery-control-plane:ci .
-
-      - name: Build the worker image
-        run: docker build -f osdu/deploy/docker/worker.Dockerfile -t osdu-delivery-worker:ci .
-
-      - name: Build the GUI image
-        run: docker build -f osdu/deploy/docker/gui.Dockerfile -t osdu-delivery-gui:ci .
-
-      - name: Start the control plane image
-        run: |
-          sa_password="Ci-$(openssl rand -hex 16)-Aa1"
-          admin_password="$(openssl rand -hex 24)"
-          signing_key="$(openssl rand -hex 32)"
-          bootstrap_secret="$(openssl rand -hex 32)"
-          for secret in "$sa_password" "$admin_password" "$signing_key" "$bootstrap_secret"; do
-            echo "::add-mask::$secret"
-          done
-
-          docker network create images
-          docker run --detach --name mssql --network images --env ACCEPT_EULA=Y \
-            --env "MSSQL_SA_PASSWORD=$sa_password" mcr.microsoft.com/mssql/server:2022-latest
-          ready=false
-          for attempt in $(seq 1 90); do
-            if docker exec --env "SQLCMDPASSWORD=$sa_password" mssql \
-                 /opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -C -Q "SELECT 1" > /dev/null 2>&1; then
-              ready=true
-              break
-            fi
-            sleep 2
-          done
-          if [ "$ready" != true ]; then
-            docker logs mssql
-            echo "SQL Server did not accept a connection in three minutes." >&2
-            exit 1
-          fi
-
-          # The catalog connection and the admin password reach the host as values of the variables
-          # its references name, never as literals in its configuration. No module database connection is
-          # given, so this run is the estate that keeps the `osdu` schema in the catalog's own database.
-          docker run --detach --name control-plane --network images --publish 8080:8080 \
-            --env "SQLFLOW_CATALOG_DB=Server=mssql,1433;Database=SQLFlow_Image;User ID=sa;Password=$sa_password;TrustServerCertificate=True" \
-            --env "ControlPlane__Jwt__SigningKey=$signing_key" \
-            --env "ControlPlane__Jwt__BootstrapSecret=$bootstrap_secret" \
-            --env ControlPlane__Bootstrap__AllowCreate=true \
-            --env ControlPlane__Bootstrap__AdminUsername=ci-admin \
-            --env 'ControlPlane__Bootstrap__AdminPasswordReference=${env:CI_ADMIN_PASSWORD}' \
-            --env "CI_ADMIN_PASSWORD=$admin_password" \
-            --env ControlPlane__Worker__Enabled=false \
-            --env 'Osdu__Partitions__ci__Description=The partition the image smoke test configures' \
-            osdu-delivery-control-plane:ci
-          # The start-up probe answers once every step of the start-up pass is done (the migrations, the admin, the
-          # configured partition), which readiness does not wait for.
-          started=false
-          for attempt in $(seq 1 90); do
-            if curl --silent --fail --max-time 5 http://localhost:8080/health/startup > /dev/null; then
-              started=true
-              break
-            fi
-            sleep 2
-          done
-          if [ "$started" != true ]; then
-            docker logs control-plane
-            echo "The control plane image did not finish its start-up in three minutes." >&2
-            exit 1
-          fi
-
-          # The start-up pass has made the admin by now; the sign-in is still retried briefly, so a slow first login does
-          # not fail the job.
-          body="$(jq -n --arg username ci-admin --arg password "$admin_password" '{username: $username, password: $password}')"
-          signed_in=false
-          for attempt in $(seq 1 30); do
-            if curl --silent --fail --max-time 5 --header 'Content-Type: application/json' --data "$body" \
-                 http://localhost:8080/api/v1/auth/login | jq --exit-status '.accessToken | length > 0' > /dev/null; then
-              signed_in=true
-              break
-            fi
-            sleep 2
-          done
-          if [ "$signed_in" != true ]; then
-            docker logs control-plane
-            echo "The control plane image did not sign in the admin it provisions." >&2
-            exit 1
-          fi
-
-      - name: Start the GUI image
-        run: |
-          docker run --detach --name gui --publish 8081:8080 \
-            --env SQLFLOW_API_BASE_URL=https://api.example.test osdu-delivery-gui:ci
-          served=false
-          for attempt in $(seq 1 30); do
-            if curl --silent --fail --max-time 5 http://localhost:8081/config.json > "$RUNNER_TEMP/config.json"; then
-              served=true
-              break
-            fi
-            sleep 1
-          done
-          if [ "$served" != true ] \
-             || ! jq --exit-status '.apiBaseUrl == "https://api.example.test"' "$RUNNER_TEMP/config.json" > /dev/null \
-             || ! curl --silent --fail --max-time 5 http://localhost:8081/ | grep --quiet '<div id="root">'; then
-            docker logs gui
-            echo "The GUI image did not serve its pages with the runtime configuration it was given." >&2
-            exit 1
-          fi
-
-      # The MCP image compiles the documentation into its binary, so building it is also what proves the context
-      # still carries the pages the root .dockerignore re-includes for it.
-      - name: Build the MCP image
-        run: docker build -f osdu/deploy/docker/mcp.Dockerfile -t osdu-delivery-mcp:ci .
-
-      # It holds no credential and reaches the control plane only when a tool is called, so it starts on its own:
-      # the probe answers, and the MCP endpoint refuses a request that carries no token, naming the program.
-      - name: Start the MCP image
-        run: |
-          docker run --detach --name mcp --publish 8787:8080 \
-            --env SQLFLOW_CONTROL_PLANE_URL=http://controlplane.example.test osdu-delivery-mcp:ci
-          served=false
-          for attempt in $(seq 1 30); do
-            if curl --silent --fail --max-time 5 http://localhost:8787/healthz > /dev/null; then
-              served=true
-              break
-            fi
-            sleep 1
-          done
-          curl --silent --max-time 5 --request POST --output /dev/null --dump-header "$RUNNER_TEMP/mcp-headers" \
-            --header 'Content-Type: application/json' --data '{"jsonrpc":"2.0","id":1,"method":"tools/list"}' \
-            http://localhost:8787/mcp || true
-          if [ "$served" != true ] \
-             || ! grep --quiet '^HTTP/[0-9.]* 401' "$RUNNER_TEMP/mcp-headers" \
-             || ! grep --ignore-case '^www-authenticate:' "$RUNNER_TEMP/mcp-headers" | grep --quiet 'realm="osdu-delivery-mcp"'; then
-            docker logs mcp
-            echo "The MCP image did not answer its probe and refuse a request that carries no token." >&2
-            exit 1
-          fi
-
-  # The Terraform estate (osdu/deploy/terraform) is checked without Azure: its formatting, an init against the
-  # committed lock file with no backend, validation, and its tests, which run against the mocked providers they
-  # declare. The CLI is the 1.8 line, the floor versions.tf names, so the checks prove the floor holds.
-  terraform:
-    name: Terraform checks
-    runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: osdu/deploy/terraform
-    steps:
-      - uses: actions/checkout@v7
-
-      - name: Setup Terraform
-        uses: hashicorp/setup-terraform@v4
-        with:
-          terraform_version: 1.8.5
-          terraform_wrapper: false
-
-      - name: Format
-        run: terraform fmt -check -recursive -diff
-
-      - name: Init
-        run: terraform init -backend=false -input=false -lockfile=readonly
-
-      - name: Validate
-        run: terraform validate
-
-      - name: Test
-        run: terraform test
-
-  publish:
-    name: Publish images
-    # The images CI just built and started, pushed to the registry the repository names. Off until it names one: set
-    # the IMAGE_REGISTRY variable and this job runs, leave it unset and CI behaves exactly as before. Any registry that
-    # speaks the Docker protocol works, which is why the registry is a variable rather than a choice made here:
-    #   IMAGE_REGISTRY = ghcr.io/<owner> | <name>.azurecr.io | docker.io/<org> | a private mirror
-    # ghcr.io signs in with the workflow's own token; every other registry uses the REGISTRY_USERNAME and
-    # REGISTRY_PASSWORD secrets (for Azure Container Registry, a token or a service principal).
-    #
-    # What is pushed: the commit sha always, 'latest' from main, and the version when the ref is a v* tag, so a
-    # deployment can name an exact build and a rollback has something to name.
-    # A tag's images wait for its full test suite too; on main, which runs no full suite, they wait for the rest.
-    needs: [ pbix-extract, build-test, images, full-tests ]
-    if: ${{ !cancelled() && !failure() && github.event_name == 'push' && vars.IMAGE_REGISTRY != '' }}
-    runs-on: ubuntu-latest
-    permissions:
-      contents: read
-      packages: write
-    steps:
-      - uses: actions/checkout@v7
-
-      - name: Sign in to the registry
-        env:
-          REGISTRY: ${{ vars.IMAGE_REGISTRY }}
-          USERNAME: ${{ secrets.REGISTRY_USERNAME }}
-          PASSWORD: ${{ secrets.REGISTRY_PASSWORD }}
-          GITHUB_ACTOR: ${{ github.actor }}
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          host="${REGISTRY%%/*}"
-          if [ "$host" = "ghcr.io" ] && [ -z "$USERNAME" ]; then
-            echo "$GITHUB_TOKEN" | docker login ghcr.io --username "$GITHUB_ACTOR" --password-stdin
-          elif [ -n "$USERNAME" ] && [ -n "$PASSWORD" ]; then
-            echo "$PASSWORD" | docker login "$host" --username "$USERNAME" --password-stdin
-          else
-            echo "IMAGE_REGISTRY is '$REGISTRY' and no REGISTRY_USERNAME/REGISTRY_PASSWORD secrets are set." >&2
-            echo "Set them, or point IMAGE_REGISTRY at ghcr.io/<owner>, which signs in with this workflow's own token." >&2
-            exit 1
-          fi
-
-      - name: Build and push the images
-        env:
-          REGISTRY: ${{ vars.IMAGE_REGISTRY }}
-          SHA: ${{ github.sha }}
-          REF: ${{ github.ref }}
-        run: |
-          set -euo pipefail
-          version=""
-          case "$REF" in
-            refs/tags/v*) version="${REF#refs/tags/}" ;;
-          esac
-
-          for image in control-plane worker gui mcp; do
-            repository="${REGISTRY}/osdu-delivery-${image}"
-            tags="--tag ${repository}:${SHA}"
-            if [ "$REF" = "refs/heads/main" ]; then
-              tags="$tags --tag ${repository}:latest"
-            fi
-            if [ -n "$version" ]; then
-              tags="$tags --tag ${repository}:${version}"
-            fi
-
-            # Built again rather than reloaded: the images job proves they build and start, this one produces what is
-            # pushed, from the same Dockerfile and the same commit.
-            docker build -f "osdu/deploy/docker/${image}.Dockerfile" $tags .
-            docker push --all-tags "$repository"
-            echo "pushed ${repository} (${SHA}${version:+, $version})"
-          done
-
-  # The release of a v* tag: the version's section of CHANGELOG.md as its notes, made once the full test suite has
-  # passed, so a release names only a commit every test passed on. A tag with a pre-release suffix (v1.2.0-rc.1) makes
-  # a pre-release with the version's notes. A release carries no binaries: the launchers build the setup, and the
-  # images are published by the job above.
-  release:
-    name: Release
-    needs: [ build-test, full-tests ]
-    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
-    runs-on: ubuntu-latest
-    permissions:
-      contents: write
-    steps:
-      - uses: actions/checkout@v7
-
-      - name: Create the release
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          TAG: ${{ github.ref_name }}
-        run: |
-          set -euo pipefail
-          if gh release view "$TAG" > /dev/null 2>&1; then
-            echo "The release $TAG exists already."
-            exit 0
-          fi
-          version="${TAG#v}"
-          base="${version%%-*}"
-          awk -v heading="## [$base]" '
-            index($0, heading) == 1 { found = 1; next }
-            found && /^## \[/ { exit }
-            found { print }
-          ' CHANGELOG.md > notes.md
-          if [ ! -s notes.md ]; then
-            echo "::error::CHANGELOG.md has no section for $base, so $TAG has no notes and no release is made (CONTRIBUTING.md, Releases)."
-            exit 1
-          fi
-          prerelease=""
-          case "$version" in
-            *-*) prerelease="--prerelease" ;;
-          esac
-          gh release create "$TAG" --verify-tag $prerelease --title "OSDU Delivery $TAG" --notes-file notes.md
+# on:
+#   # push:
+#   #   branches: [ main ]
+#   #   tags: [ 'v*' ]
+#   # pull_request:
+#   #   branches: [ main ]
+#   #   # Labelled: the full-tests label runs the full test suite on the pull request.
+#   #   types: [ opened, synchronize, reopened, labeled ]
+#   # Run workflow, on any branch: everything, the full test suite included.
+#   workflow_dispatch:
+#
+# permissions:
+#   contents: read
+#
+# # A newer push to a pull request's branch makes the older run moot. On main every commit's run completes: the Deploy
+# # workflow deploys a commit to dev once its CI run has passed, and a cancelled run would deploy nothing.
+# concurrency:
+#   group: ${{ github.workflow }}-${{ github.ref }}
+#   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+#
+# # The tests run in two tiers (CONTRIBUTING.md, Tests). Build and test runs the unit tier on every pull request and push:
+# # the build, every .NET test that needs no SQL Server, host or other process, and the GUI's build, lint and unit tests.
+# # Full test suite runs everything (the SQL Server suites, the hosts, the MCP server, the GUI end-to-end suite) on a v* tag,
+# # before its release is made, on a pull request labelled full-tests, and when the workflow is run by hand; a developer runs
+# # the same with bash tools/test.sh --full before opening a pull request. Container images runs on a pull request only
+# # when what the images are built from changes.
+# #
+# # Conventions, Power BI extractor, Build and test, Container images and Terraform checks are the checks the main ruleset
+# # requires (.github/rulesets/main.json): renaming a job renames its check, so a rename changes both files together. A
+# # required job its condition skips counts as passed.
+# jobs:
+#   # The repository's own rules, checked on what a push or a pull request brings: sqlflow/ gains only generic
+#   # extension points, each in a commit of its own (tools/check-vendored-sqlflow.sh), and no added line carries an
+#   # em dash and no commit is attributed to an AI assistant (tools/check-conventions.sh).
+#   conventions:
+#     name: Conventions
+#     runs-on: ubuntu-latest
+#     steps:
+#       - uses: actions/checkout@v7
+#         with:
+#           # The guard walks back to the squashed subtree commit and the checks compare the change with what it is
+#           # based on, so both need the full history, not the default shallow clone.
+#           fetch-depth: 0
+#
+#       # On a pull request the checkout is the merge GitHub would make, so the guard walks the pull request's own
+#       # commits as well as main's; on a push it walks main as it now is.
+#       - name: Vendored SQLFlow guard
+#         run: bash tools/check-vendored-sqlflow.sh
+#
+#       # A pull request brings what its head has and its base does not. A push brings what its new tip has and its
+#       # previous tip did not; a new ref (a release tag) or a previous tip this clone does not hold (a forced push)
+#       # brings what the default branch does not already have, and a branch with nothing beyond it is checked on its
+#       # tip commit.
+#       - name: Find what the change brings
+#         id: range
+#         env:
+#           EVENT: ${{ github.event_name }}
+#           PR_BASE: ${{ github.event.pull_request.base.sha }}
+#           PR_HEAD: ${{ github.event.pull_request.head.sha }}
+#           BEFORE: ${{ github.event.before }}
+#           AFTER: ${{ github.sha }}
+#           REF: ${{ github.ref }}
+#           DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+#         run: |
+#           set -euo pipefail
+#           if [ "$EVENT" = pull_request ]; then
+#             base="$PR_BASE"
+#             head="$PR_HEAD"
+#           else
+#             head="$AFTER"
+#             if [ -n "$BEFORE" ] && [ "$BEFORE" != 0000000000000000000000000000000000000000 ] \
+#                && git cat-file -e "$BEFORE^{commit}" 2> /dev/null; then
+#               base="$BEFORE"
+#             else
+#               base="$(git merge-base "$head" "origin/$DEFAULT_BRANCH")"
+#               if [ "$base" = "$head" ]; then
+#                 case "$REF" in
+#                   refs/heads/*) base="$(git rev-parse --verify --quiet "$head^" || true)" ;;
+#                   *) base="" ;;
+#                 esac
+#               fi
+#             fi
+#           fi
+#           if [ -z "$base" ]; then
+#             echo "$REF brings no commit the default branch does not already hold; nothing to check."
+#           else
+#             echo "Checking $base..$head"
+#           fi
+#           echo "base=$base" >> "$GITHUB_OUTPUT"
+#           echo "head=$head" >> "$GITHUB_OUTPUT"
+#
+#       - name: Writing and attribution rules
+#         if: steps.range.outputs.base != ''
+#         env:
+#           BASE: ${{ steps.range.outputs.base }}
+#           HEAD_SHA: ${{ steps.range.outputs.head }}
+#         run: bash tools/check-conventions.sh "$BASE" "$HEAD_SHA"
+#
+#   # The Power BI extractor is a standalone C binary built outside the solution, so nothing in the .NET
+#   # build would catch it breaking. It parses untrusted report files, so it is tested under the
+#   # sanitizers too: a leak or an out-of-bounds read fails the build.
+#   pbix-extract:
+#     name: Power BI extractor
+#     runs-on: ubuntu-latest
+#     steps:
+#       - uses: actions/checkout@v7
+#
+#       - name: Install build dependencies
+#         run: |
+#           sudo apt-get update
+#           sudo apt-get install -y --no-install-recommends \
+#             build-essential libzip-dev libexpat1-dev libsqlite3-dev libjansson-dev
+#
+#       - name: Build
+#         run: make -C sqlflow/tools/pbix-extract
+#
+#       - name: Test
+#         run: make -C sqlflow/tools/pbix-extract test
+#
+#       - name: Test under AddressSanitizer and UndefinedBehaviorSanitizer
+#         run: make -C sqlflow/tools/pbix-extract test-asan
+#
+#   # The unit tier (bash tools/test.sh runs the same): the build with warnings as errors, every .NET test but the ones
+#   # that carry Category=Integration, and both GUIs. No SQL Server runs here, so a test that needs one and does not carry
+#   # the category fails, naming the trait.
+#   build-test:
+#     name: Build and test
+#     runs-on: ubuntu-latest
+#     steps:
+#       - uses: actions/checkout@v7
+#
+#       # A clean build fills the runner's disk unless the runner's unused toolchains go first.
+#       - name: Free disk space
+#         run: bash tools/github/free-runner-disk.sh
+#
+#       - name: Setup .NET
+#         uses: actions/setup-dotnet@v6
+#         with:
+#           dotnet-version: '9.0.x'
+#
+#       - name: Setup Node
+#         uses: actions/setup-node@v7
+#         with:
+#           node-version: '22'
+#           cache: npm
+#           cache-dependency-path: |
+#             osdu/gui/package-lock.json
+#             sqlflow/gui/package-lock.json
+#
+#       - name: Restore
+#         run: dotnet restore OsduDelivery.sln
+#
+#       # Zero warnings is a project rule, so a warning fails the build. The SSH.NET advisory in vendored
+#       # SQLFlow stays a warning until SQLFlow takes the fix.
+#       - name: Build
+#         run: dotnet build OsduDelivery.sln --no-restore -c Release -warnaserror -warnnotaserror:NU1903
+#
+#       - name: Unit tests
+#         run: dotnet test OsduDelivery.sln --no-build -c Release --filter "Category!=Integration"
+#
+#       - name: Install OSDU GUI dependencies
+#         working-directory: osdu/gui
+#         run: npm ci
+#
+#       # The OSDU GUI compiles the vendored sqlflow/gui sources in place, so this build covers
+#       # both trees' TypeScript.
+#       - name: Build OSDU GUI
+#         working-directory: osdu/gui
+#         run: npm run build
+#
+#       - name: Lint OSDU GUI
+#         working-directory: osdu/gui
+#         run: npm run lint
+#
+#       - name: Install SQLFlow GUI dependencies
+#         working-directory: sqlflow/gui
+#         run: npm ci
+#
+#       # SQLFlow's GUI is built on its own as well, so an extension point added to sqlflow/gui is
+#       # proven to keep SQLFlow's own build working.
+#       - name: Build SQLFlow GUI
+#         working-directory: sqlflow/gui
+#         run: npm run build
+#
+#       # The chat's answer reading, result charting and report naming are plain modules with suites of their own,
+#       # run by Node's test runner on the sources as they are.
+#       - name: Unit test SQLFlow GUI
+#         working-directory: sqlflow/gui
+#         run: npm run test:unit
+#
+#   # Everything the unit tier leaves out, and the unit tier again with it (bash tools/test.sh --full runs the same): the
+#   # whole .NET suite against SQL Server, the MCP server's crates and the GUI end-to-end suite. It runs on a v* tag, whose
+#   # release waits for it, on a pull request labelled full-tests, and when the workflow is run by hand.
+#   full-tests:
+#     name: Full test suite
+#     if: >-
+#       github.event_name == 'workflow_dispatch'
+#       || (github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v'))
+#       || (github.event_name == 'pull_request' && contains(github.event.pull_request.labels.*.name, 'full-tests'))
+#     runs-on: ubuntu-latest
+#     steps:
+#       - uses: actions/checkout@v7
+#
+#       # A clean build and the SQL Server image fill the runner's disk unless the runner's unused toolchains go first.
+#       - name: Free disk space
+#         run: bash tools/github/free-runner-disk.sh
+#
+#       - name: Setup .NET
+#         uses: actions/setup-dotnet@v6
+#         with:
+#           dotnet-version: '9.0.x'
+#
+#       - name: Setup Node
+#         uses: actions/setup-node@v7
+#         with:
+#           node-version: '22'
+#           cache: npm
+#           cache-dependency-path: osdu/gui/package-lock.json
+#
+#       # The report extraction suites shell out to this binary and skip without it, so it is built here
+#       # too: a skip would quietly drop that coverage.
+#       - name: Install pbix-extract build dependencies
+#         run: |
+#           sudo apt-get update
+#           sudo apt-get install -y --no-install-recommends \
+#             build-essential libzip-dev libexpat1-dev libsqlite3-dev libjansson-dev
+#
+#       - name: Build pbix-extract
+#         run: make -C sqlflow/tools/pbix-extract
+#
+#       - name: Restore
+#         run: dotnet restore OsduDelivery.sln
+#
+#       - name: Build
+#         run: dotnet build OsduDelivery.sln --no-restore -c Release -warnaserror -warnnotaserror:NU1903
+#
+#       # The DB-backed suites run against a SQL Server started for this job, whose password is made
+#       # here and masked, so no credential lives in the repository. The suites' database allows
+#       # snapshot isolation, which the delivery chain reads under; the GUI end-to-end suite creates
+#       # a database of its own on the same server.
+#       - name: Start SQL Server
+#         run: |
+#           password="Ci-$(openssl rand -hex 16)-Aa1"
+#           echo "::add-mask::$password"
+#           docker run --detach --name mssql --env ACCEPT_EULA=Y --env "MSSQL_SA_PASSWORD=$password" \
+#             --publish 1433:1433 mcr.microsoft.com/mssql/server:2022-latest
+#           ready=false
+#           for attempt in $(seq 1 90); do
+#             if docker exec --env "SQLCMDPASSWORD=$password" mssql \
+#                  /opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -C -Q "SELECT 1" > /dev/null 2>&1; then
+#               ready=true
+#               break
+#             fi
+#             sleep 2
+#           done
+#           if [ "$ready" != true ]; then
+#             docker logs mssql
+#             echo "SQL Server did not accept a connection in three minutes." >&2
+#             exit 1
+#           fi
+#           docker exec --env "SQLCMDPASSWORD=$password" mssql /opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -C -b \
+#             -Q "CREATE DATABASE SqlFlowCi; ALTER DATABASE SqlFlowCi SET ALLOW_SNAPSHOT_ISOLATION ON;"
+#           echo "SQLFLOW_TEST_DB=Server=localhost,1433;Database=SqlFlowCi;User ID=sa;Password=$password;TrustServerCertificate=True" >> "$GITHUB_ENV"
+#           # The e2e suite's one database: the catalog, the module's schema and the sample tables, as a local run keeps them.
+#           echo "SQLFLOW_E2E_CATALOG_DB=Server=localhost,1433;Database=OsduDeliveryE2E;User ID=sa;Password=$password;TrustServerCertificate=True" >> "$GITHUB_ENV"
+#
+#       # SQLFlow's own suites and the OSDU module's suites, every category, in one run over the solution, one
+#       # project at a time: the DB-backed suites share the database above and migrate and seed it.
+#       - name: Test
+#         env:
+#           SQLFLOW_PBIX_EXTRACT: ${{ github.workspace }}/sqlflow/tools/pbix-extract/build/pbix-extract
+#         run: dotnet test OsduDelivery.sln --no-build -c Release -m:1 --verbosity normal
+#
+#       # The MCP server is Rust: SQLFlow's server as a library, and the product's host that composes it with the
+#       # delivery module. Their suites call control planes of their own, so they need nothing this job started. Zero
+#       # warnings holds here as it does for the solution, and each build is the one its committed lock file names.
+#       - name: Test the MCP server
+#         run: |
+#           cargo clippy --locked --manifest-path sqlflow/tools/Cargo.toml -p sqlflow-mcp --all-targets -- -D warnings
+#           cargo test --locked --manifest-path sqlflow/tools/Cargo.toml -p sqlflow-mcp
+#           cargo clippy --locked --manifest-path osdu/hosts/osdu-delivery-mcp/Cargo.toml --all-targets -- -D warnings
+#           cargo test --locked --manifest-path osdu/hosts/osdu-delivery-mcp/Cargo.toml
+#
+#       - name: Install OSDU GUI dependencies
+#         working-directory: osdu/gui
+#         run: npm ci
+#
+#       # The suite's setup batches call sqlcmd, which the runner image does not carry; the one in the
+#       # SQL Server container serves them, reached through a wrapper on the PATH.
+#       - name: Prepare the OSDU GUI end-to-end suite
+#         working-directory: osdu/gui
+#         run: |
+#           wrapper="$RUNNER_TEMP/sqlcmd-wrapper"
+#           mkdir -p "$wrapper"
+#           printf '%s\n' '#!/usr/bin/env bash' \
+#             'exec docker exec --env SQLCMDPASSWORD mssql /opt/mssql-tools18/bin/sqlcmd "$@"' > "$wrapper/sqlcmd"
+#           chmod +x "$wrapper/sqlcmd"
+#           echo "$wrapper" >> "$GITHUB_PATH"
+#           npx playwright install --with-deps chromium
+#
+#       # The suite starts the control plane, the GUI and a stand-in for the OSDU platform itself, signs in
+#       # and drives the pages over the sample estate. Its runs only plan, and a plan's wellbore searches are
+#       # answered by the stand-in, so nothing reaches an OSDU. The hosts run from the Release build above.
+#       - name: OSDU GUI end-to-end suite
+#         working-directory: osdu/gui
+#         env:
+#           SQLFLOW_E2E_DOTNET_CONFIGURATION: Release
+#         run: npm run e2e
+#
+#       - name: Keep the end-to-end report
+#         if: failure()
+#         uses: actions/upload-artifact@v7
+#         with:
+#           name: osdu-gui-e2e-report
+#           path: |
+#             osdu/gui/playwright-report
+#             osdu/gui/test-results
+#           retention-days: 7
+#           if-no-files-found: ignore
+#
+#   # Whether a pull request reaches what the images are built from: their Dockerfiles and the deploy folder, the hosts,
+#   # both GUIs, the MCP server's crates and the documentation it compiles in, the build's own settings, and this
+#   # workflow. A push, a tag and a run by hand always build them.
+#   changes:
+#     name: What the change touches
+#     runs-on: ubuntu-latest
+#     outputs:
+#       images: ${{ steps.paths.outputs.images }}
+#     steps:
+#       - uses: actions/checkout@v7
+#         with:
+#           fetch-depth: 0
+#
+#       - name: Compare the pull request with its base
+#         id: paths
+#         env:
+#           EVENT: ${{ github.event_name }}
+#           BASE: ${{ github.event.pull_request.base.sha }}
+#           HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+#         run: |
+#           set -euo pipefail
+#           if [ "$EVENT" != pull_request ]; then
+#             echo "A $EVENT builds the images."
+#             echo "images=true" >> "$GITHUB_OUTPUT"
+#             exit 0
+#           fi
+#           pattern='^(osdu/deploy/|osdu/hosts/|osdu/gui/|sqlflow/gui/|sqlflow/tools/|osdu/docs/|sqlflow/docs/reference/|sqlflow/docs/wiki/|\.dockerignore$|global\.json$|NuGet\.config$|(.*/)?Directory\.(Build|Packages)\.props$|\.github/workflows/ci\.yml$)'
+#           reaching="$(git diff --name-only "$BASE...$HEAD_SHA" | grep -E "$pattern" || true)"
+#           if [ -n "$reaching" ]; then
+#             echo "The images are built: the pull request changes"
+#             # sed reads every line it is given, so a long list never stops printf with a broken pipe.
+#             printf '%s\n' "$reaching" | sed -e '21,$d' -e 's/^/  /'
+#             echo "images=true" >> "$GITHUB_OUTPUT"
+#           else
+#             echo "Nothing the images are built from changes, so they are not built."
+#             echo "images=false" >> "$GITHUB_OUTPUT"
+#           fi
+#
+#   # The images build from the repository root, as a deployment builds them; nothing is
+#   # pushed. The control plane image then starts against a SQL Server of its own and has to report
+#   # ready (its catalog created, SQLFlow's and the OSDU module's migrations applied) and sign in the
+#   # admin it provisions; the GUI image has to serve its pages and the runtime configuration it is
+#   # given; the MCP image has to answer its probe and turn away a request without a token. The
+#   # worker image needs a control plane token to start, so it is only built.
+#   images:
+#     name: Container images
+#     needs: [ changes ]
+#     if: needs.changes.outputs.images == 'true'
+#     runs-on: ubuntu-latest
+#     steps:
+#       - uses: actions/checkout@v7
+#
+#       # A clean build and the images fill the runner's disk unless the runner's unused toolchains go first.
+#       - name: Free disk space
+#         run: bash tools/github/free-runner-disk.sh
+#
+#       - name: Build the control plane image
+#         run: docker build -f osdu/deploy/docker/control-plane.Dockerfile -t osdu-delivery-control-plane:ci .
+#
+#       - name: Build the worker image
+#         run: docker build -f osdu/deploy/docker/worker.Dockerfile -t osdu-delivery-worker:ci .
+#
+#       - name: Build the GUI image
+#         run: docker build -f osdu/deploy/docker/gui.Dockerfile -t osdu-delivery-gui:ci .
+#
+#       - name: Start the control plane image
+#         run: |
+#           sa_password="Ci-$(openssl rand -hex 16)-Aa1"
+#           admin_password="$(openssl rand -hex 24)"
+#           signing_key="$(openssl rand -hex 32)"
+#           bootstrap_secret="$(openssl rand -hex 32)"
+#           for secret in "$sa_password" "$admin_password" "$signing_key" "$bootstrap_secret"; do
+#             echo "::add-mask::$secret"
+#           done
+#
+#           docker network create images
+#           docker run --detach --name mssql --network images --env ACCEPT_EULA=Y \
+#             --env "MSSQL_SA_PASSWORD=$sa_password" mcr.microsoft.com/mssql/server:2022-latest
+#           ready=false
+#           for attempt in $(seq 1 90); do
+#             if docker exec --env "SQLCMDPASSWORD=$sa_password" mssql \
+#                  /opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -C -Q "SELECT 1" > /dev/null 2>&1; then
+#               ready=true
+#               break
+#             fi
+#             sleep 2
+#           done
+#           if [ "$ready" != true ]; then
+#             docker logs mssql
+#             echo "SQL Server did not accept a connection in three minutes." >&2
+#             exit 1
+#           fi
+#
+#           # The catalog connection and the admin password reach the host as values of the variables
+#           # its references name, never as literals in its configuration. No module database connection is
+#           # given, so this run is the estate that keeps the `osdu` schema in the catalog's own database.
+#           docker run --detach --name control-plane --network images --publish 8080:8080 \
+#             --env "SQLFLOW_CATALOG_DB=Server=mssql,1433;Database=SQLFlow_Image;User ID=sa;Password=$sa_password;TrustServerCertificate=True" \
+#             --env "ControlPlane__Jwt__SigningKey=$signing_key" \
+#             --env "ControlPlane__Jwt__BootstrapSecret=$bootstrap_secret" \
+#             --env ControlPlane__Bootstrap__AllowCreate=true \
+#             --env ControlPlane__Bootstrap__AdminUsername=ci-admin \
+#             --env 'ControlPlane__Bootstrap__AdminPasswordReference=${env:CI_ADMIN_PASSWORD}' \
+#             --env "CI_ADMIN_PASSWORD=$admin_password" \
+#             --env ControlPlane__Worker__Enabled=false \
+#             --env 'Osdu__Partitions__ci__Description=The partition the image smoke test configures' \
+#             osdu-delivery-control-plane:ci
+#           # The start-up probe answers once every step of the start-up pass is done (the migrations, the admin, the
+#           # configured partition), which readiness does not wait for.
+#           started=false
+#           for attempt in $(seq 1 90); do
+#             if curl --silent --fail --max-time 5 http://localhost:8080/health/startup > /dev/null; then
+#               started=true
+#               break
+#             fi
+#             sleep 2
+#           done
+#           if [ "$started" != true ]; then
+#             docker logs control-plane
+#             echo "The control plane image did not finish its start-up in three minutes." >&2
+#             exit 1
+#           fi
+#
+#           # The start-up pass has made the admin by now; the sign-in is still retried briefly, so a slow first login does
+#           # not fail the job.
+#           body="$(jq -n --arg username ci-admin --arg password "$admin_password" '{username: $username, password: $password}')"
+#           signed_in=false
+#           for attempt in $(seq 1 30); do
+#             if curl --silent --fail --max-time 5 --header 'Content-Type: application/json' --data "$body" \
+#                  http://localhost:8080/api/v1/auth/login | jq --exit-status '.accessToken | length > 0' > /dev/null; then
+#               signed_in=true
+#               break
+#             fi
+#             sleep 2
+#           done
+#           if [ "$signed_in" != true ]; then
+#             docker logs control-plane
+#             echo "The control plane image did not sign in the admin it provisions." >&2
+#             exit 1
+#           fi
+#
+#       - name: Start the GUI image
+#         run: |
+#           docker run --detach --name gui --publish 8081:8080 \
+#             --env SQLFLOW_API_BASE_URL=https://api.example.test osdu-delivery-gui:ci
+#           served=false
+#           for attempt in $(seq 1 30); do
+#             if curl --silent --fail --max-time 5 http://localhost:8081/config.json > "$RUNNER_TEMP/config.json"; then
+#               served=true
+#               break
+#             fi
+#             sleep 1
+#           done
+#           if [ "$served" != true ] \
+#              || ! jq --exit-status '.apiBaseUrl == "https://api.example.test"' "$RUNNER_TEMP/config.json" > /dev/null \
+#              || ! curl --silent --fail --max-time 5 http://localhost:8081/ | grep --quiet '<div id="root">'; then
+#             docker logs gui
+#             echo "The GUI image did not serve its pages with the runtime configuration it was given." >&2
+#             exit 1
+#           fi
+#
+#       # The MCP image compiles the documentation into its binary, so building it is also what proves the context
+#       # still carries the pages the root .dockerignore re-includes for it.
+#       - name: Build the MCP image
+#         run: docker build -f osdu/deploy/docker/mcp.Dockerfile -t osdu-delivery-mcp:ci .
+#
+#       # It holds no credential and reaches the control plane only when a tool is called, so it starts on its own:
+#       # the probe answers, and the MCP endpoint refuses a request that carries no token, naming the program.
+#       - name: Start the MCP image
+#         run: |
+#           docker run --detach --name mcp --publish 8787:8080 \
+#             --env SQLFLOW_CONTROL_PLANE_URL=http://controlplane.example.test osdu-delivery-mcp:ci
+#           served=false
+#           for attempt in $(seq 1 30); do
+#             if curl --silent --fail --max-time 5 http://localhost:8787/healthz > /dev/null; then
+#               served=true
+#               break
+#             fi
+#             sleep 1
+#           done
+#           curl --silent --max-time 5 --request POST --output /dev/null --dump-header "$RUNNER_TEMP/mcp-headers" \
+#             --header 'Content-Type: application/json' --data '{"jsonrpc":"2.0","id":1,"method":"tools/list"}' \
+#             http://localhost:8787/mcp || true
+#           if [ "$served" != true ] \
+#              || ! grep --quiet '^HTTP/[0-9.]* 401' "$RUNNER_TEMP/mcp-headers" \
+#              || ! grep --ignore-case '^www-authenticate:' "$RUNNER_TEMP/mcp-headers" | grep --quiet 'realm="osdu-delivery-mcp"'; then
+#             docker logs mcp
+#             echo "The MCP image did not answer its probe and refuse a request that carries no token." >&2
+#             exit 1
+#           fi
+#
+#   # The Terraform estate (osdu/deploy/terraform) is checked without Azure: its formatting, an init against the
+#   # committed lock file with no backend, validation, and its tests, which run against the mocked providers they
+#   # declare. The CLI is the 1.8 line, the floor versions.tf names, so the checks prove the floor holds.
+#   terraform:
+#     name: Terraform checks
+#     runs-on: ubuntu-latest
+#     defaults:
+#       run:
+#         working-directory: osdu/deploy/terraform
+#     steps:
+#       - uses: actions/checkout@v7
+#
+#       - name: Setup Terraform
+#         uses: hashicorp/setup-terraform@v4
+#         with:
+#           terraform_version: 1.8.5
+#           terraform_wrapper: false
+#
+#       - name: Format
+#         run: terraform fmt -check -recursive -diff
+#
+#       - name: Init
+#         run: terraform init -backend=false -input=false -lockfile=readonly
+#
+#       - name: Validate
+#         run: terraform validate
+#
+#       - name: Test
+#         run: terraform test
+#
+#   publish:
+#     name: Publish images
+#     # The images CI just built and started, pushed to the registry the repository names. Off until it names one: set
+#     # the IMAGE_REGISTRY variable and this job runs, leave it unset and CI behaves exactly as before. Any registry that
+#     # speaks the Docker protocol works, which is why the registry is a variable rather than a choice made here:
+#     #   IMAGE_REGISTRY = ghcr.io/<owner> | <name>.azurecr.io | docker.io/<org> | a private mirror
+#     # ghcr.io signs in with the workflow's own token; every other registry uses the REGISTRY_USERNAME and
+#     # REGISTRY_PASSWORD secrets (for Azure Container Registry, a token or a service principal).
+#     #
+#     # What is pushed: the commit sha always, 'latest' from main, and the version when the ref is a v* tag, so a
+#     # deployment can name an exact build and a rollback has something to name.
+#     # A tag's images wait for its full test suite too; on main, which runs no full suite, they wait for the rest.
+#     needs: [ pbix-extract, build-test, images, full-tests ]
+#     if: ${{ !cancelled() && !failure() && github.event_name == 'push' && vars.IMAGE_REGISTRY != '' }}
+#     runs-on: ubuntu-latest
+#     permissions:
+#       contents: read
+#       packages: write
+#     steps:
+#       - uses: actions/checkout@v7
+#
+#       - name: Sign in to the registry
+#         env:
+#           REGISTRY: ${{ vars.IMAGE_REGISTRY }}
+#           USERNAME: ${{ secrets.REGISTRY_USERNAME }}
+#           PASSWORD: ${{ secrets.REGISTRY_PASSWORD }}
+#           GITHUB_ACTOR: ${{ github.actor }}
+#           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+#         run: |
+#           host="${REGISTRY%%/*}"
+#           if [ "$host" = "ghcr.io" ] && [ -z "$USERNAME" ]; then
+#             echo "$GITHUB_TOKEN" | docker login ghcr.io --username "$GITHUB_ACTOR" --password-stdin
+#           elif [ -n "$USERNAME" ] && [ -n "$PASSWORD" ]; then
+#             echo "$PASSWORD" | docker login "$host" --username "$USERNAME" --password-stdin
+#           else
+#             echo "IMAGE_REGISTRY is '$REGISTRY' and no REGISTRY_USERNAME/REGISTRY_PASSWORD secrets are set." >&2
+#             echo "Set them, or point IMAGE_REGISTRY at ghcr.io/<owner>, which signs in with this workflow's own token." >&2
+#             exit 1
+#           fi
+#
+#       - name: Build and push the images
+#         env:
+#           REGISTRY: ${{ vars.IMAGE_REGISTRY }}
+#           SHA: ${{ github.sha }}
+#           REF: ${{ github.ref }}
+#         run: |
+#           set -euo pipefail
+#           version=""
+#           case "$REF" in
+#             refs/tags/v*) version="${REF#refs/tags/}" ;;
+#           esac
+#
+#           for image in control-plane worker gui mcp; do
+#             repository="${REGISTRY}/osdu-delivery-${image}"
+#             tags="--tag ${repository}:${SHA}"
+#             if [ "$REF" = "refs/heads/main" ]; then
+#               tags="$tags --tag ${repository}:latest"
+#             fi
+#             if [ -n "$version" ]; then
+#               tags="$tags --tag ${repository}:${version}"
+#             fi
+#
+#             # Built again rather than reloaded: the images job proves they build and start, this one produces what is
+#             # pushed, from the same Dockerfile and the same commit.
+#             docker build -f "osdu/deploy/docker/${image}.Dockerfile" $tags .
+#             docker push --all-tags "$repository"
+#             echo "pushed ${repository} (${SHA}${version:+, $version})"
+#           done
+#
+#   # The release of a v* tag: the version's section of CHANGELOG.md as its notes, made once the full test suite has
+#   # passed, so a release names only a commit every test passed on. A tag with a pre-release suffix (v1.2.0-rc.1) makes
+#   # a pre-release with the version's notes. A release carries no binaries: the launchers build the setup, and the
+#   # images are published by the job above.
+#   release:
+#     name: Release
+#     needs: [ build-test, full-tests ]
+#     if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
+#     runs-on: ubuntu-latest
+#     permissions:
+#       contents: write
+#     steps:
+#       - uses: actions/checkout@v7
+#
+#       - name: Create the release
+#         env:
+#           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+#           TAG: ${{ github.ref_name }}
+#         run: |
+#           set -euo pipefail
+#           if gh release view "$TAG" > /dev/null 2>&1; then
+#             echo "The release $TAG exists already."
+#             exit 0
+#           fi
+#           version="${TAG#v}"
+#           base="${version%%-*}"
+#           awk -v heading="## [$base]" '
+#             index($0, heading) == 1 { found = 1; next }
+#             found && /^## \[/ { exit }
+#             found { print }
+#           ' CHANGELOG.md > notes.md
+#           if [ ! -s notes.md ]; then
+#             echo "::error::CHANGELOG.md has no section for $base, so $TAG has no notes and no release is made (CONTRIBUTING.md, Releases)."
+#             exit 1
+#           fi
+#           prerelease=""
+#           case "$version" in
+#             *-*) prerelease="--prerelease" ;;
+#           esac
+#           gh release create "$TAG" --verify-tag $prerelease --title "OSDU Delivery $TAG" --notes-file notes.md
