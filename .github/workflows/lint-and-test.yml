@@ -1,0 +1,33 @@
+name: Lint and Test
+
+on:
+  pull_request:
+    branches: [main]
+
+permissions: {}
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  lint:
+    name: Lint
+    permissions:
+      contents: read
+      packages: read
+      issues: write # Required to write results as pull request comments
+      pull-requests: write # Required to write results as pull request comments
+    uses: equinor/ops-actions/.github/workflows/super-linter.yml@af5bad1a47ab8f8c333f8910f06c1938dd962dac # v9.43.0
+
+  dotnet-tests:
+    name: .NET Tests
+    permissions:
+      contents: read
+    uses: ./.github/workflows/run-dotnet-tests.yml
+
+  gui-tests:
+    name: GUI Tests
+    permissions:
+      contents: read
+    uses: ./.github/workflows/run-gui-tests.yml

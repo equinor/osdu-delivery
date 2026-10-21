@@ -1,0 +1,33 @@
+name: Run .NET Tests
+
+on:
+  workflow_call: {}
+  workflow_dispatch: {}
+
+permissions: {}
+
+jobs:
+  dotnet-tests:
+    name: .NET Tests
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read # Required to checkout the repository
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
+        with:
+          global-json-file: global.json
+
+      - name: Restore
+        run: dotnet restore OsduDelivery.sln
+
+      - name: Build
+        run: dotnet build OsduDelivery.sln --no-restore --configuration Release -warnaserror -warnnotaserror:NU1903
+
+      - name: Test
+        run: dotnet test OsduDelivery.sln --no-build --configuration Release --filter "Category!=Integration"

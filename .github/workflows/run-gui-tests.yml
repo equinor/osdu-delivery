@@ -1,0 +1,52 @@
+name: Run GUI Tests
+
+on:
+  workflow_call: {}
+  workflow_dispatch: {}
+
+permissions: {}
+
+jobs:
+  gui-tests:
+    name: GUI Tests
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read # Required to checkout the repository
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Setup Node.js
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: |
+            osdu/gui/package-lock.json
+            sqlflow/gui/package-lock.json
+
+      - name: Install OSDU GUI dependencies
+        working-directory: osdu/gui
+        run: npm ci
+
+      - name: Build OSDU GUI
+        working-directory: osdu/gui
+        run: npm run build
+
+      - name: Lint OSDU GUI
+        working-directory: osdu/gui
+        run: npm run lint
+
+      - name: Install SQLFlow GUI dependencies
+        working-directory: sqlflow/gui
+        run: npm ci
+
+      - name: Build SQLFlow GUI
+        working-directory: sqlflow/gui
+        run: npm run build
+
+      - name: Test SQLFlow GUI
+        working-directory: sqlflow/gui
+        run: npm run test:unit
