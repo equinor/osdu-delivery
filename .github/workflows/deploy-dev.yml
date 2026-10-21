@@ -16,7 +16,7 @@ concurrency:
 jobs:
   build-and-push:
     name: Build and Push ${{ matrix.image }}
-    runs-on: ubuntu-static # Required to bypass network ACLs for the shared container registry
+    runs-on: ubuntu-latest
     environment:
       name: dev
       deployment: false
