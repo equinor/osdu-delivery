@@ -6,6 +6,7 @@ using Microsoft.AspNetCore.Routing;
 using Microsoft.EntityFrameworkCore;
 using SqlFlow.Catalog;
 using SqlFlow.ControlPlane.Api;
+using SqlFlow.Delivery.Catalog;
 using SqlFlow.Delivery.Data;
 using SqlFlow.Delivery.Order;
 using SqlFlow.Delivery.Ordering;
@@ -232,17 +233,19 @@ public static class DeliveryOrderEndpoints
         return TypedResults.Ok(new DeliveryOrderGraphDto(Release(built.Info), start, steps, way, [.. nodes.Select(lineage.Entity)], edges, truncated));
     }
 
-    private static async Task<Ok<DeliveryOrderPartitionsDto>> ListPartitionsAsync(OsduDbContext osdu, CatalogDbContext catalog, CancellationToken ct)
+    private static async Task<Ok<DeliveryOrderPartitionsDto>> ListPartitionsAsync(
+        OsduDbContext osdu, CatalogDbContext catalog, IRepositoryFolders folders, CancellationToken ct)
     {
-        var read = await OrderCatalog.ReadAsync(osdu, null, ct).ConfigureAwait(false);
+        var read = await OrderCatalog.ReadAsync(osdu, folders, null, ct).ConfigureAwait(false);
         var names = await catalog.Repos.AsNoTracking().Select(r => new { r.Id, r.Name }).ToDictionaryAsync(r => r.Id, r => r.Name, ct).ConfigureAwait(false);
         var plans = RepositoryOrder.Plan(read, names);
         return TypedResults.Ok(new DeliveryOrderPartitionsDto([.. plans.Select(Partition)], read.Problems));
     }
 
-    private static async Task<Ok<DeliveryOrderSchedulesDto>> ListSchedulesAsync(OsduDbContext osdu, CatalogDbContext catalog, CancellationToken ct)
+    private static async Task<Ok<DeliveryOrderSchedulesDto>> ListSchedulesAsync(
+        OsduDbContext osdu, CatalogDbContext catalog, IRepositoryFolders folders, CancellationToken ct)
     {
-        var overview = await ScheduleOrders.ReadAsync(catalog, osdu, ct).ConfigureAwait(false);
+        var overview = await ScheduleOrders.ReadAsync(catalog, osdu, folders, ct).ConfigureAwait(false);
         return TypedResults.Ok(new DeliveryOrderSchedulesDto(
             [.. overview.Schedules.Select(o => new DeliveryOrderScheduleOrderDto(
                 Schedule(o.Schedule),

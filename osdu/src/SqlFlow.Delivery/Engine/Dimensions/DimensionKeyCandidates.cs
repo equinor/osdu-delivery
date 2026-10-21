@@ -18,14 +18,14 @@ public sealed record DimensionKeyCandidate(string Path, IReadOnlyList<string> Na
 /// there are none to suggest.
 /// </summary>
 /// <param name="Kind">The kind, or kind pattern, asked about.</param>
-/// <param name="Template">The saved template the suggestions are read from, as a blueprint reads the same kind; null where none is saved.</param>
+/// <param name="Template">The template the suggestions are read from, as a blueprint reads the same kind; null where no synced repository holds one.</param>
 /// <param name="Keys">The suggestions, the likeliest first.</param>
 /// <param name="Missing">Why nothing could be suggested; null where the template was read.</param>
 public sealed record DimensionKeySuggestions(string Kind, BlueprintTemplate? Template, IReadOnlyList<DimensionKeyCandidate> Keys, string? Missing);
 
 /// <summary>
 /// The keys a kind's records suggest for a dimension (osdu/docs/reference/concepts/explorer.md, Building a dimension),
-/// read from the saved template a dimension of that kind is described by: every property of <c>data</c> whose value
+/// read from the template a dimension of that kind is described by: every property of <c>data</c> whose value
 /// names another record, since a dimension's key is most often the record its records belong to (a log's wellbore, a
 /// wellbore's well), whose name is the value. They are ordered the way a person picks one: a single value before a list
 /// of them, a property of <c>data</c> itself before one nested in an object of it, master data before work products and
@@ -36,8 +36,8 @@ public static class DimensionKeyCandidates
 {
     /// <summary>
     /// The suggestions for <paramref name="kind"/> (wildcards allowed per segment), from the templates
-    /// <paramref name="templates"/> offers: the saved templates for a dimension drafted in the explorer, before any flow
-    /// holds it.
+    /// <paramref name="templates"/> offers: the templates the synced repositories hold, for a dimension drafted in the
+    /// explorer before any flow holds it.
     /// </summary>
     public static async Task<DimensionKeySuggestions> SuggestAsync(string kind, ITemplateSource templates, CancellationToken ct)
     {
@@ -50,7 +50,7 @@ public static class DimensionKeyCandidates
                 kind, null, [],
                 problems.Count > 0
                     ? $"No key can be suggested for {kind}: {problems[0]}"
-                    : $"No saved template matches {kind}, so no key can be suggested. Pick a property of one of its records, or save the kind's template on the Templates page.");
+                    : $"No template a synced repository holds matches {kind}, so no key can be suggested. Pick a property of one of its records, or put the kind's template in a template folder and sync the repository.");
         }
 
         var newest = matching[0];

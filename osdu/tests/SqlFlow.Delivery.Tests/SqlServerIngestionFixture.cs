@@ -464,16 +464,13 @@ public sealed class SqlServerIngestionFixture : IAsyncDisposable
     }
 
     /// <summary>
-    /// Saves the templates the sample mappings pin and the sample partition's cache into the fixture's database, which
-    /// starts empty. A render reads the cache from that database and its template from the estate's template folder; the
-    /// templates are saved as a repository sync saves what its folders hold, which the validation gate reads a version from
-    /// when a folder no longer holds it.
+    /// Imports the sample partition's cache into the fixture's database, which starts empty. A render reads the cache from
+    /// that database and its template from the estate's template folder, which holds the templates the sample mappings pin.
     /// </summary>
     private static async Task ImportRenderInputsAsync(string connectionString, CancellationToken ct)
     {
         ct.ThrowIfCancellationRequested();
         OsduDbContext Contexts() => new(OsduDbContext.SqlServerOptions(connectionString));
-        await Samples.ImportSampleTemplatesAsync(new OsduTemplateStore(Contexts, TimeProvider.System)).ConfigureAwait(false);
         await Samples.ImportSampleCacheAsync(new OsduCacheStore(Contexts)).ConfigureAwait(false);
     }
 

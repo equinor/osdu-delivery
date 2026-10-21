@@ -58,7 +58,6 @@ public sealed class DeliveryPlanRunApiTests
 
         try
         {
-            await SampleEstate.SaveTemplatesAsync(cs);
             await using var factory = new ControlPlaneAppFactory()
                 .WithCatalog(cs)
                 .WithModules(new DeliveryControlPlaneModule())
@@ -168,7 +167,6 @@ public sealed class DeliveryPlanRunApiTests
             };
             await ledger.UpsertPendingAsync(flowId, [Staged(present, "OSDU-DEV-1-A"), Staged(gone, "OSDU-DEV-9-Z")]);
 
-            await SampleEstate.SaveTemplatesAsync(cs);
             await using var factory = new ControlPlaneAppFactory()
                 .WithCatalog(cs)
                 .WithModules(new DeliveryControlPlaneModule())

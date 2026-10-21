@@ -424,7 +424,7 @@ function Heading({ name, group, version, templateKind, missing }: { name: string
       {group !== "" && <span className="min-w-0 truncate text-[11px] text-muted-foreground">{group}</span>}
       <span className="ml-auto flex shrink-0 items-center gap-1">
         {version !== null && templateKind !== null && (
-          <RichTooltip title="Template" body={`Described by the saved template ${templateKind}.`} mono>
+          <RichTooltip title="Template" body={`Described by the template ${templateKind}.`} mono>
             <span className="rounded-sm border border-border bg-background px-1 font-mono text-[11px] text-muted-foreground">{version}</span>
           </RichTooltip>
         )}

@@ -94,10 +94,8 @@ public sealed class TemplateFolderRunTests : IDisposable
             refused.Message,
             StringComparison.Ordinal);
 
-        // A version saved in the library, and not in a folder, renders nothing either: the folders decide.
+        // A version no folder holds renders nothing, wherever else it might be kept: the folders decide.
         Write("mappings/Thing@1.0.0.yaml", TemplateFolderFixtures.KindAloneMapping(TestSchema.Build().Version));
-        var library = new MemoryTemplateStore();
-        library.Add(TestSchema.Build());
         Assert.False((await FolderTemplates.Default.ResolveAsync(Path.Combine(_root, "mappings", "Thing@1.0.0.yaml"), Thing, TestSchema.Build().Version)).Found);
         await Assert.ThrowsAsync<FlowValidationException>(() => Resolver().ResolveAsync(Flow()));
     }

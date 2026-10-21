@@ -35,7 +35,7 @@ public sealed record SchemaLineageGraph(SchemaLineageInfo Info, IReadOnlyList<Sc
 /// <c>[osdu].[SchemaLineageKind]</c>; osdu/docs/reference/concepts/osdu-order.md, OSDU's lineage by release): every kind a
 /// release of the OSDU data definitions publishes, with the properties of its schema that refer to other records. A
 /// release is built once and kept, so any release can be read back without reading the data definitions again, and the
-/// OSDU order reads a kind's relationships from the newest built release holding it when no template of it is saved.
+/// OSDU order reads a kind's relationships from the newest built release holding it when no template folder holds its template.
 /// </summary>
 public sealed class SchemaLineageStore
 {

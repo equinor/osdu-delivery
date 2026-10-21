@@ -103,15 +103,15 @@ pub fn delivery_links(links: &GuiLinks, row: &Map<String, Value>) -> Option<Map<
         return Some(found);
     }
 
-    // A saved template: its kind and version, with when, by whom and from where it was saved.
-    if let (Some(kind), Some(version), true) = (text(row, "kind"), text(row, "version"), row.contains_key("capturedBy")) {
-        if row.contains_key("origin") && row.contains_key("capturedUtc") {
-            put(
-                "page",
-                links.route(&format!("/delivery/templates?kind={}&version={}", encode(kind), encode(version))),
-            );
-            return Some(found);
-        }
+    // A file of a repository's template folder, as its sync recorded it: the Templates page opens it, and the repository
+    // that holds it is linked beside. Claimed here, or its repo id would be all SQLFlow's rules see of it.
+    if let (Some(repo), Some(path), true, true) = (text(row, "repoId"), text(row, "path"), row.contains_key("folder"), row.contains_key("seenUtc")) {
+        put(
+            "page",
+            links.route(&format!("/delivery/templates?repoId={}&path={}", encode(repo), encode(path))),
+        );
+        put("repo", links.repo(repo));
+        return Some(found);
     }
 
     // A partition of the registry (it says whether it is registered and the default).
@@ -247,13 +247,15 @@ mod tests {
         assert_eq!(build["links"]["run"], json!("https://delivery.example.com/runs/run-7"));
 
         let template = decorated(json!({
-            "kind": "osdu:wks:master-data--Wellbore:1.5.1", "version": "1.5.1", "capturedUtc": "2026-09-01T00:00:00Z",
-            "capturedBy": "user:alice", "origin": "release 0.28"
+            "repoId": "repo-1", "repository": "welldb", "path": "welldb/templates/osdu_wks_master-data--Wellbore_1.5.1.json",
+            "folder": "welldb/templates", "kind": "osdu:wks:master-data--Wellbore:1.5.1", "version": "2f8a99cb38d32480",
+            "problem": null, "seenUtc": "2026-09-01T00:00:00Z"
         }));
         assert_eq!(
             template["links"]["page"],
-            json!("https://delivery.example.com/delivery/templates?kind=osdu%3Awks%3Amaster-data--Wellbore%3A1.5.1&version=1.5.1")
+            json!("https://delivery.example.com/delivery/templates?repoId=repo-1&path=welldb%2Ftemplates%2Fosdu_wks_master-data--Wellbore_1.5.1.json")
         );
+        assert_eq!(template["links"]["repo"], json!("https://delivery.example.com/repos/repo-1"));
 
         let partition = decorated(json!({ "name": "dev", "registered": true, "isDefault": true, "items": 10 }));
         assert_eq!(partition["links"]["page"], json!("https://delivery.example.com/delivery/partitions"));

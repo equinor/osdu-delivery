@@ -186,7 +186,7 @@ function JoinUnmatched({ join, check, rows }: { join: DeliveryDimensionViewJoin;
 
 /**
  * The view's joins in order: each one's alias and the dimension it joins (its table on hover), the column joined on, and
- * what the saved templates say of it, with what the newest check found: the rows that found their row, and those whose
+ * what the flow's templates say of it, with what the newest check found: the rows that found their row, and those whose
  * value named none, with the first of those values.
  */
 export function ViewJoins({ view, verdicts, onOpenDimension }: {
@@ -394,7 +394,7 @@ interface DeclaredEntry {
   name: string;
   makes: string;
   found: { text: string; warn: boolean } | null;
-  /** What the saved templates say of a join. */
+  /** What the flow's templates say of a join. */
   verdict?: DeliveryDimensionViewJoinVerdict;
 }
 

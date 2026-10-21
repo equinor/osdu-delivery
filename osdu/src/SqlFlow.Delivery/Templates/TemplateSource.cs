@@ -3,6 +3,21 @@ using SqlFlow.Delivery.Snapshots;
 
 namespace SqlFlow.Delivery.Templates;
 
+/// <summary>The identity a document pins a template by: the OSDU kind and the content version of its schema.</summary>
+public readonly record struct TemplateReference(string Kind, string Version)
+{
+    public override string ToString() => $"{Kind} version {Version}";
+}
+
+/// <summary>A template as a listing shows it: its kind and version, and the file it is read from.</summary>
+/// <param name="Kind">The OSDU kind the schema describes.</param>
+/// <param name="Version">The content version, the hash of the canonical schema.</param>
+/// <param name="File">The file holding it: its path in its repository, or on disk for a working copy.</param>
+public sealed record TemplateInfo(string Kind, string Version, string File)
+{
+    public TemplateReference Reference => new(Kind, Version);
+}
+
 /// <summary>A template a document reads, found for a kind pattern, with its schema.</summary>
 public sealed record TemplateMatch(TemplateInfo Template, SchemaSnapshot Schema);
 
@@ -29,17 +44,17 @@ public sealed record TemplateResolution(TemplateInfo? Template, SchemaSnapshot? 
 }
 
 /// <summary>
-/// Where the templates a document fills or reads come from (osdu/docs/reference/concepts/templates.md). For the documents of
-/// a repository it is the template folders on the document's path, read from disk (<see cref="FolderTemplates"/>) or as the
-/// catalog recorded them at the last sync; for what no repository document asks (the explorer, the Templates page, the
-/// mapping builder) it is the saved templates, the library, which only assists.
+/// Where the templates a document fills or reads come from (osdu/docs/reference/concepts/templates.md): always the files of
+/// the template folders of a repository. For the documents of a repository it is the template folders on the document's
+/// path, read from disk (<see cref="FolderTemplates"/>) or as the catalog recorded them at the last sync; for what no
+/// repository document asks (the explorer, the mapping builder) it is every template the synced repositories hold.
 /// </summary>
 public interface ITemplateSource
 {
     /// <summary>
     /// The template <paramref name="kind"/> the document at <paramref name="document"/> names: version
     /// <paramref name="version"/> exactly when it names one, and otherwise the one the source takes for the kind. A source of
-    /// template folders reads the folders on the document's path; the library ignores the path.
+    /// template folders reads the folders on the document's path; the templates of every repository ignore the path.
     /// </summary>
     Task<TemplateResolution> ResolveAsync(string? document, string kind, string? version, CancellationToken ct = default);
 
@@ -138,7 +153,7 @@ public sealed class FolderTemplates : ITemplateSource
         {
             if (seen.Add(file.Reference))
             {
-                templates.Add(new TemplateInfo(file.Kind!, file.Version!, DateTime.MinValue, FolderCapturedBy, file.Shown));
+                templates.Add(new TemplateInfo(file.Kind!, file.Version!, file.Shown));
             }
         }
 
@@ -154,11 +169,8 @@ public sealed class FolderTemplates : ITemplateSource
     /// </summary>
     public ITemplatePins ForKindsAlone(string document) => new DocumentPins(this, document, checkVersions: false);
 
-    /// <summary>Who a template read from a folder was saved by, as a listing shows it.</summary>
-    public const string FolderCapturedBy = "template folder";
-
     private static TemplateInfo Info(TemplateFolderFile file, SchemaSnapshot schema)
-        => new(schema.Kind, schema.Version, schema.CapturedUtc.UtcDateTime, FolderCapturedBy, file.Shown);
+        => new(schema.Kind, schema.Version, file.Shown);
 
     private sealed class DocumentPins(FolderTemplates source, string document, bool checkVersions) : ITemplatePins
     {
@@ -175,49 +187,5 @@ public sealed class FolderTemplates : ITemplateSource
                 ? pick.File!.Reference
                 : throw new FlowValidationException($"{where}: {pick.Problem}");
         }
-    }
-}
-
-/// <summary>How the library of saved templates settles a name: a version exactly, and a kind alone by the newest saved.</summary>
-public static class TemplateLibrary
-{
-    /// <summary>What a template read from the library by its exact version says it came from.</summary>
-    public const string LibraryOrigin = "read from the saved templates";
-
-    /// <summary>The saved template <paramref name="kind"/> version <paramref name="version"/>, or the newest saved of the kind.</summary>
-    public static async Task<TemplateResolution> ResolveAsync(ITemplateStore store, string kind, string? version, CancellationToken ct)
-    {
-        ArgumentNullException.ThrowIfNull(store);
-        ArgumentException.ThrowIfNullOrWhiteSpace(kind);
-        if (!string.IsNullOrWhiteSpace(version))
-        {
-            // A version never changes, so the store's copy of it answers without listing the library; the listing below
-            // only words why an exact version is not there.
-            var exact = await store.LoadAsync(new TemplateReference(kind.Trim(), version.Trim()), ct).ConfigureAwait(false);
-            if (exact is not null)
-            {
-                return TemplateResolution.Of(
-                    new TemplateInfo(exact.Kind, exact.Version, exact.CapturedUtc.UtcDateTime, LibraryOrigin, LibraryOrigin), exact);
-            }
-        }
-
-        var versions = (await store.ListAsync(ct).ConfigureAwait(false))
-            .Where(t => string.Equals(t.Kind, kind, StringComparison.OrdinalIgnoreCase))
-            .OrderByDescending(t => t.CapturedUtc)
-            .ToList();
-        var chosen = string.IsNullOrWhiteSpace(version)
-            ? versions.FirstOrDefault()
-            : versions.FirstOrDefault(t => string.Equals(t.Version, version.Trim(), StringComparison.OrdinalIgnoreCase));
-        if (chosen is null)
-        {
-            return TemplateResolution.Missing(string.IsNullOrWhiteSpace(version)
-                ? $"no template of {kind} is saved. Save it on the Templates page, or with 'sqlflow template capture --kind {kind}'."
-                : $"template {kind} version {version} is not saved{(versions.Count == 0 ? string.Empty : $"; the saved versions of the kind are {TemplateChain.Listed(versions.Select(v => v.Version))}")}. Save it on the Templates page, or with 'sqlflow template import'.");
-        }
-
-        var schema = await store.LoadAsync(chosen.Reference, ct).ConfigureAwait(false);
-        return schema is null
-            ? TemplateResolution.Missing($"template {chosen.Reference} was listed and is no longer saved.")
-            : TemplateResolution.Of(chosen, schema);
     }
 }

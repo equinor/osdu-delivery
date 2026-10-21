@@ -38,7 +38,7 @@ function TypeCard({ entityType, plan }: { entityType: string; plan: OrderPartiti
           <ExplainTip
             title="Not ordered by its references"
             testId={`order-type-${entityType}-unknown`}
-            text="No saved template and no built release holds this kind, so what its records refer to cannot be read: it waits for nothing in the order. Save its template, or build a release of OSDU's lineage that holds it."
+            text="No template folder and no built release holds this kind, so what its records refer to cannot be read: it waits for nothing in the order. Put its template in a template folder on the mapping's path, or build a release of OSDU's lineage that holds it."
           >
             <AlertTriangle className="size-3.5 shrink-0 self-center text-warning" aria-label="Not ordered by its references" />
           </ExplainTip>

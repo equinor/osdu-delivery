@@ -4,7 +4,7 @@ import { expect, test } from "./helpers";
 // The run lifecycle from the GUI: trigger a plan of the delivery flow, watch the in-process worker execute it, and
 // check the run page records what was asked.
 //
-// The plan operation renders the flow's records against the saved templates, the partition cache and the ledger,
+// The plan operation renders the flow's records against the templates of the flow's template folders, the partition cache and the ledger,
 // and asks the platform's search for the wellbore each log names, which the suite's OSDU stand-in answers; nothing here
 // writes to OSDU. It does read the flow's ingestion tables through the connection its document declares
 // (source.connection), so the sample database the pre and ingestion flows load has to be reachable from the control

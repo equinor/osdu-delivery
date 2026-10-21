@@ -276,8 +276,8 @@ those whose ids go on from it (a paste cut short) and the same unique part under
 finds the records holding exactly that element, with **Copy** and **Search**: a value by its exact form (a text by its
 `keyword` sub-field), its words, and whether a record holds one; an item of a nested list as one `nested(...)` clause
 with all its values; a list or an object as every value it holds (up to 48). How each value is indexed is read from the
-saved template of the record's kind; where no template says, the query is marked **guessed**. Nothing is read from OSDU
-to write it.
+template of the record's kind a synced repository holds (of a version no repository holds, the newest of its type they
+hold); where no template says, the query is marked **guessed**. Nothing is read from OSDU to write it.
 
 Every record opened is remembered in this browser (the last 20). An [inventory](../flow/inventory.md) report opens one of
 its ids in this same record view, in the workbench's bottom panel, with **Open in the explorer** to come here.
@@ -293,7 +293,9 @@ document would be held for.
 - **OSDU schema** (the default): what the partition's Schema service holds for the kind, with every schema it refers to
   bundled in (at most 200 for a kind). A reference that cannot be followed is named, and the values it describes are
   counted as not checked rather than passed.
-- **Saved template**: a [template](templates.md) saved in OSDU Delivery, the kind's newest or a version picked.
+- **Repository template**: a [template](templates.md) a synced repository holds in a template folder, read from its
+  file: the version the repository synced most recently holds, or a version picked among those the repositories hold.
+  A kind no repository holds says so, and how to put its file in a template folder.
 
 The answer is the verdict a delivered record carries in its history: **valid**, **invalid** with the number of
 problems, or **unverified** when a part could not be checked and nothing else is wrong. Under it: **Problems** (where,
@@ -436,7 +438,7 @@ to read 50 kinds, more than it read, stops, since the service is failing rather 
 meanwhile). The key, the value and the attributes of a [dimension](../flow/dimension.md) are picked on the values
 themselves as records are browsed and their links followed: beside each value a menu offers **Make it the key**,
 **Collect it**, **Read it as the value** or **Read it as an attribute**, depending on where the record sits on the trail.
-The builder suggests keys from the kind's saved template (the values that name other records), fills an example row with
+The builder suggests keys from the kind's template a synced repository holds (the values that name other records), fills an example row with
 what one key reads, and writes the `dimensions:` item a dimension flow lists, checked by the loader a flow is read by.
 **Copy the YAML** takes it. The builder saves nothing: no flow, no dimension, nothing in OSDU or the database. The draft
 lives in the page's address (`dim`), so a link or a refresh brings it back; closing the builder drops it. See
@@ -465,8 +467,8 @@ the workbench's partition, else the registry's default, is read.
 | `POST /api/v1/delivery/explorer/validate-list` | operate | The records a search finds checked (`max` 1 to 1,000), with `mapping` as above. |
 | `POST /api/v1/delivery/flows/{pipelineId}/osdu/validate` | operate | The same check of one record through a flow's own route, judging the flow's own mapping's assertions unless `mapping` names another; 409 for a `dspdm` or `etp` flow. |
 | `POST /api/v1/delivery/explorer/referenced-by` | operate | The types whose schemas name records of a `type`; `refresh` reads the schemas again. |
-| `POST /api/v1/delivery/explorer/element-queries` | operate | The query that finds an element of a record, from the saved templates alone. |
-| `GET /api/v1/delivery/explorer/dimension/candidates?kind=` | operate | The keys a kind's saved template suggests for a dimension. |
+| `POST /api/v1/delivery/explorer/element-queries` | operate | The query that finds an element of a record, from the templates the synced repositories hold alone. |
+| `GET /api/v1/delivery/explorer/dimension/candidates?kind=` | operate | The keys a kind's template suggests for a dimension. |
 | `POST /api/v1/delivery/explorer/dimension/keys` | operate | The commonest keys of a drafted dimension's path. |
 | `POST /api/v1/delivery/explorer/dimension/compose` | operate | A draft written as a dimension flow's item, and checked. |
 

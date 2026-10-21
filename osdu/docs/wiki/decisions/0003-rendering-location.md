@@ -16,7 +16,7 @@ referenceRefs:
 related:
   - delivery-wiki-0009-searched-references
   - delivery-wiki-0018-template-folders
-updated: 2026-10-21
+updated: 2026-10-22
 ---
 # 0003: Rendering runs in the delivery service
 
@@ -24,7 +24,7 @@ Status: proposed. Documented in [templates](../../reference/concepts/templates.m
 
 > **Amended by [0018](0018-template-folders.md).** The decision stands: the delivery renders the mapping against a
 > template and a cache version. The template is no longer read from the catalog: it is the version the template folders
-> on the mapping's path hold, and the catalog's saved templates only assist.
+> on the mapping's path hold, read from the file, and the database keeps no copy of it.
 
 ## Context
 

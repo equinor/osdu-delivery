@@ -21,9 +21,10 @@ namespace SqlFlow.ControlPlane.Tests;
 /// <summary>
 /// The explorer's dimension builder as the API serves it (osdu/docs/reference/concepts/explorer.md, Building a
 /// dimension): a draft written as the item a dimension flow lists and read back by the loader a flow is read by;
-/// checked against the saved templates as a flow's own dimension is, a missing template said with what to save; every
-/// mistake pointed at the part it is about; a name whose table another flow's dimension writes warned of; the keys a
-/// kind's saved template suggests; and an example key made into its row, and the commonest keys of a path, through the
+/// checked against the templates the synced repositories hold as a flow's own dimension is against its folders, a missing
+/// template said with where to put one; every mistake pointed at the part it is about; a name whose table another flow's
+/// dimension writes warned of; the keys a kind's template suggests; and an example key made into its row, and the
+/// commonest keys of a path, through the
 /// connection the explorer reads the partition by, given exactly what the operation reads back. Nothing here reaches an
 /// OSDU: the operations are stood in for (<see cref="RecordedOperations"/>), and what each was given is read back.
 /// </summary>
@@ -75,7 +76,9 @@ public sealed class DeliveryExplorerDimensionApiTests
         var cs = OsduTestServer.Require();
         await CatalogDatabase.MigrateAsync(cs);
         await SampleEstate.MigrateModuleAsync(cs);
-        await SampleEstate.SaveTemplatesAsync(cs);
+        // The sample templates, held by a synced repository whose folder this host reads, as the builder reads every
+        // repository's.
+        await SampleEstate.HoldTemplateRepositoryAsync(cs, DateTime.UtcNow);
 
         var suffix = Guid.NewGuid().ToString("N")[..10];
         var estate = new Estate(cs, suffix, "h" + suffix, FlowIdentity.FromName("repo/cp-dimension-builder-" + suffix), "builder-c-" + suffix, "builder-d-" + suffix, "Taken" + suffix);
@@ -149,7 +152,7 @@ public sealed class DeliveryExplorerDimensionApiTests
         .WithServices(services => services.AddSingleton(operations.Registry()));
 
     [Fact]
-    public async Task A_draft_is_written_checked_against_the_saved_templates_and_its_example_made_through_the_connection()
+    public async Task A_draft_is_written_checked_against_the_repositories_templates_and_its_example_made_through_the_connection()
     {
         var estate = await SeedAsync();
         var operations = new RecordedOperations { Answer = _ => Example };
@@ -162,7 +165,7 @@ public sealed class DeliveryExplorerDimensionApiTests
 
             var composed = await ComposeAsync(client, token, estate.Headed, new { draft = Draft(name), example = "dev:master-data--Wellbore:W1:" });
 
-            // The YAML is the builder's writer's, and it loads: the logs' and the wellbores' templates are saved, so the key and
+            // The YAML is the builder's writer's, and it loads: a repository holds the logs' and the wellbores' templates, so the key and
             // the wellbore's reads are checked; the countries' are not, which reads them as written and says so.
             var yaml = composed.GetProperty("yaml").GetString()!;
             Assert.StartsWith($"  - name: {name}\n    kind: {WellLog}\n    path: data.WellboreID\n    label: data.FacilityName\n", yaml, StringComparison.Ordinal);
@@ -194,7 +197,7 @@ public sealed class DeliveryExplorerDimensionApiTests
             Assert.Equal(JsonValueKind.Null, composed.GetProperty("exampleProblem").ValueKind);
 
             // The operation was given the item exactly as written, the key, and how the key and the collected path are indexed,
-            // as the saved template says, through the connection that reaches the partition.
+            // as the repository's template says, through the connection that reaches the partition.
             var ran = operations.Last();
             Assert.Equal((ExploreOperation.OperationName, estate.ConnectionFlow), (ran.Operation, ran.SourceRef));
             Assert.Equal(ExploreOperation.DimensionExampleAction, ran.Argument(ExploreOperation.ActionArgument));
@@ -211,7 +214,7 @@ public sealed class DeliveryExplorerDimensionApiTests
     }
 
     [Fact]
-    public async Task A_kind_no_saved_template_describes_is_refused_with_what_to_save()
+    public async Task A_kind_no_repository_holds_a_template_of_is_refused_with_where_to_put_one()
     {
         var estate = await SeedAsync();
         var operations = new RecordedOperations();
@@ -226,7 +229,7 @@ public sealed class DeliveryExplorerDimensionApiTests
             Assert.False(composed.GetProperty("valid").GetBoolean());
             var issue = composed.GetProperty("issues").EnumerateArray().Single(i => i.GetProperty("severity").GetString() == "error");
             Assert.Equal(("kind", "template"), (issue.GetProperty("target").GetString(), issue.GetProperty("code").GetString()));
-            Assert.Contains("No saved template matches", issue.GetProperty("message").GetString(), StringComparison.Ordinal);
+            Assert.Contains("No template a synced repository holds matches", issue.GetProperty("message").GetString(), StringComparison.Ordinal);
 
             // It still loads, so it is still described, and no example was asked for.
             Assert.NotEqual(JsonValueKind.Null, composed.GetProperty("blueprint").ValueKind);
@@ -366,7 +369,7 @@ public sealed class DeliveryExplorerDimensionApiTests
             Assert.Equal(new DimensionFieldWire("data.WellboreID", "text", null), request.KeyField);
             Assert.False(request.KeyFieldGuessed);
 
-            // A kind no saved template describes is read with the key read as text, said to be a guess.
+            // A kind no repository holds a template of is read with the key read as text, said to be a guess.
             using (var guessed = await SendAsync(client, token, HttpMethod.Post, "/api/v1/delivery/explorer/dimension/keys", new
             {
                 kind = "osdu:wks:work-product-component--WellLog:9.9.9",
@@ -404,7 +407,7 @@ public sealed class DeliveryExplorerDimensionApiTests
     }
 
     [Fact]
-    public async Task The_keys_a_kinds_saved_template_suggests_are_answered_from_the_templates_alone()
+    public async Task The_keys_a_kinds_template_suggests_are_answered_from_the_repositories_templates_alone()
     {
         var estate = await SeedAsync();
         var operations = new RecordedOperations();
@@ -421,18 +424,18 @@ public sealed class DeliveryExplorerDimensionApiTests
                 var answer = JsonDocument.Parse(text).RootElement;
                 Assert.Equal("*:*:work-product-component--WellLog:*", answer.GetProperty("kind").GetString());
 
-                // The newest kind the library saves of the pattern answers. The library is the shared test database's, which
-                // other suites' syncs save into too, so the newest is read from it rather than assumed.
+                // A kind of the pattern a synced repository holds answers, read from its file. The shared test database holds
+                // other suites' repositories too, some of whose folders are gone, so which kind is read from what they hold
+                // rather than assumed; which of several is newest is the blueprint's own suite's to say.
                 await using (var osdu = SampleEstate.Context(estate.Cs))
                 {
-                    var saved = await osdu.DeliveryTemplates.AsNoTracking()
+                    var held = await osdu.DeliveryRepositoryTemplates.AsNoTracking()
                         .Where(t => t.Kind.StartsWith("osdu:wks:work-product-component--WellLog:"))
                         .Select(t => t.Kind)
                         .Distinct()
                         .ToListAsync();
-                    Assert.Contains(WellLog, saved);
-                    var newest = saved.OrderByDescending(k => Version.Parse(k[(k.LastIndexOf(':') + 1)..])).First();
-                    Assert.Equal(newest, answer.GetProperty("template").GetProperty("kind").GetString());
+                    Assert.Contains(WellLog, held);
+                    Assert.Contains(answer.GetProperty("template").GetProperty("kind").GetString(), held);
                 }
 
                 var first = answer.GetProperty("keys")[0];
@@ -446,7 +449,7 @@ public sealed class DeliveryExplorerDimensionApiTests
                 var answer = JsonDocument.Parse(await unsaved.Content.ReadAsStringAsync()).RootElement;
                 Assert.Equal(HttpStatusCode.OK, unsaved.StatusCode);
                 Assert.Empty(answer.GetProperty("keys").EnumerateArray());
-                Assert.Contains("No saved template matches", answer.GetProperty("missing").GetString(), StringComparison.Ordinal);
+                Assert.Contains("No template a synced repository holds matches", answer.GetProperty("missing").GetString(), StringComparison.Ordinal);
             }
 
             foreach (var (kind, why) in new[] { ("", "Name the kind"), ("osdu:wks:WellLog", "osdu:wks:WellLog") })

@@ -3,8 +3,9 @@ using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Http.HttpResults;
 using Microsoft.AspNetCore.Routing;
+using SqlFlow.Delivery.Catalog;
+using SqlFlow.Delivery.Data;
 using SqlFlow.Delivery.Engine.Search;
-using SqlFlow.Delivery.Templates;
 
 namespace SqlFlow.Delivery.ControlPlane.Api;
 
@@ -28,11 +29,12 @@ public static partial class DeliveryExplorerEndpoints
     /// <summary>
     /// The Lucene query that finds the records holding exactly an element of a record
     /// (osdu/docs/reference/concepts/explorer.md, A record): a value, a list, an object or a nested list's item,
-    /// written by how the saved template of the record's kind has the platform index each value it holds, or from the
-    /// values where the template cannot say. Read from the saved templates alone; nothing is asked of OSDU.
+    /// written by how the template of the record's kind has the platform index each value it holds, or from the
+    /// values where the template cannot say. Read from the templates the synced repositories hold, from their files, alone;
+    /// nothing is asked of OSDU.
     /// </summary>
     private static async Task<Results<Ok<ExplorerElementAnswer>, ProblemHttpResult>> ElementQueriesAsync(
-        DeliveryExplorerElementRequest? body, ITemplateStore templates, CancellationToken ct)
+        DeliveryExplorerElementRequest? body, OsduDbContext osdu, IRepositoryFolders folders, CancellationToken ct)
     {
         if (body is null)
         {
@@ -54,6 +56,7 @@ public static partial class DeliveryExplorerEndpoints
             return DeliveryEndpoints.Invalid(problem);
         }
 
+        var templates = await RepositoryTemplates.ReadAsync(osdu, folders, ct).ConfigureAwait(false);
         return TypedResults.Ok(await ExplorerElementQueries.DescribeAsync(request, templates, ct).ConfigureAwait(false));
     }
 }

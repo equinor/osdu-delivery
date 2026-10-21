@@ -24,6 +24,8 @@ interface MappingCoverageViewProps {
   contentHash: string;
   /** The synced repository the mapping is a document of, whose template folders settle a template it names by kind alone. */
   repoId?: string | null;
+  /** The file of the repository's template folders the sync settled the mapping's template to, which the tree is read from. */
+  templatePath?: string | null;
 }
 
 /**
@@ -33,7 +35,7 @@ interface MappingCoverageViewProps {
  * cache is read; this is the document against the schema alone, until a data check renders the rows of a flow that
  * uses the mapping and says, attribute by attribute, which rows will not give it the value its template expects.
  */
-export function MappingCoverageView({ mappingId, reference, yaml, path, contentHash, repoId }: MappingCoverageViewProps) {
+export function MappingCoverageView({ mappingId, reference, yaml, path, contentHash, repoId, templatePath }: MappingCoverageViewProps) {
   const valueCheck = useValueCheckSession(mappingId, reference);
   const coverage = useQuery({
     queryKey: ["delivery", "mapping-coverage", repoId ?? null, path, contentHash],
@@ -41,12 +43,11 @@ export function MappingCoverageView({ mappingId, reference, yaml, path, contentH
   });
   const parsed = useParsedMapping(yaml, path, contentHash, repoId);
 
-  const kind = coverage.data?.kind ?? null;
-  const version = coverage.data?.version ?? null;
+  // The template is read from the repository's file the mapping's template settled to, as the coverage read it.
   const template = useQuery({
-    queryKey: ["delivery", "template-detail", kind, version],
-    queryFn: () => deliveryApi.templateDetail(kind!, version!),
-    enabled: kind !== null && version !== null && (coverage.data?.variables.length ?? 0) > 0,
+    queryKey: ["delivery", "template-detail", repoId ?? null, templatePath ?? null],
+    queryFn: () => deliveryApi.templateDetail(repoId!, templatePath!),
+    enabled: repoId != null && templatePath != null && (coverage.data?.variables.length ?? 0) > 0,
   });
 
   // A finding on a variable is shown on the variable itself; what is left here is about the document as a whole.

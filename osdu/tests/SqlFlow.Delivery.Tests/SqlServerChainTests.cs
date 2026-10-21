@@ -356,7 +356,6 @@ public class SqlServerChainTests
         var next = WellLogVersions.OnNextVersion(current, estate.DeliveryFlowName + "-next", partition, estate.Root);
         try
         {
-            await WellLogVersions.SaveNextTemplateAsync(new OsduTemplateStore(estate.Context, TimeProvider.System));
             await WellLogVersions.ImportPartitionCacheAsync(new OsduCacheStore(estate.Context), partition, estate.DeliveryFlowName + "-cache");
 
             // Each push takes a moment, so the pushes a node makes at once overlap.

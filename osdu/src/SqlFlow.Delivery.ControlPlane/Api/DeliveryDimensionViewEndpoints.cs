@@ -124,7 +124,7 @@ public static class DeliveryDimensionViewEndpoints
 
     /// <summary>One view, with its newest checks, its SQL as written and as declared, its YAML, and what the templates say of its joins.</summary>
     private static async Task<Results<Ok<DeliveryDimensionViewDetailDto>, ProblemHttpResult>> GetAsync(
-        string name, CatalogDbContext db, DeliveryDocumentLoader documents, ILedger ledger, CancellationToken ct)
+        string name, CatalogDbContext db, DeliveryDocumentLoader documents, ILedger ledger, IRepositoryFolders repositories, CancellationToken ct)
     {
         var detail = await ledger.GetDimensionViewAsync(name, ct).ConfigureAwait(false);
         var flowName = detail?.View.FlowName;
@@ -134,7 +134,7 @@ public static class DeliveryDimensionViewEndpoints
         IReadOnlyList<DimensionViewJoinVerdict> joinChecks = [];
         if (pipeline is not null && declared is not null)
         {
-            var folders = await SyncedTemplates.ReadAsync(ledger, pipeline.RepoId, ct).ConfigureAwait(false);
+            var folders = await SyncedTemplates.ReadAsync(ledger, repositories, pipeline.RepoId, ct).ConfigureAwait(false);
             joinChecks = await DimensionViewTemplates.CheckAsync(documents.ParseDimension(pipeline.Yaml, pipeline.RelativePath), declared, folders, ct).ConfigureAwait(false);
         }
         if (detail is null && declared is null)
@@ -158,7 +158,7 @@ public static class DeliveryDimensionViewEndpoints
     /// what a person keeps or changes in the flow's YAML; nothing is written.
     /// </summary>
     private static async Task<Results<Ok<DeliveryDimensionViewSuggestionDto>, ProblemHttpResult>> SuggestAsync(
-        Guid pipelineId, string? from, CatalogDbContext db, DeliveryDocumentLoader documents, ILedger ledger, CancellationToken ct)
+        Guid pipelineId, string? from, CatalogDbContext db, DeliveryDocumentLoader documents, ILedger ledger, IRepositoryFolders repositories, CancellationToken ct)
     {
         var pipeline = await db.Pipelines.AsNoTracking().FirstOrDefaultAsync(p => p.Id == pipelineId, ct).ConfigureAwait(false);
         if (pipeline is null)
@@ -191,7 +191,7 @@ public static class DeliveryDimensionViewEndpoints
             return Problem(StatusCodes.Status404NotFound, "Not found", $"Dimension flow '{flow.Name}' has no dimension named '{from.Trim()}'.");
         }
 
-        var folders = await SyncedTemplates.ReadAsync(ledger, pipeline.RepoId, ct).ConfigureAwait(false);
+        var folders = await SyncedTemplates.ReadAsync(ledger, repositories, pipeline.RepoId, ct).ConfigureAwait(false);
         var joins = await DimensionViewTemplates.SuggestAsync(flow, dimension.Name, folders, ct).ConfigureAwait(false);
         var yaml = joins.Count == 0
             ? "join: []"

@@ -82,7 +82,7 @@ function Suggestion({ suggestion }: { suggestion: DeliveryDimensionViewSuggestio
 
 /**
  * The joins a view could make, offered for a flow's Views section: pick the dimension whose rows the view's rows are, and
- * the dialog lists the joins the flow's dimensions and the saved templates allow, each with why, and the `join:` block to
+ * the dialog lists the joins the flow's dimensions and its templates allow, each with why, and the `join:` block to
  * paste into the view's item of the flow's YAML. It reads the catalog and the templates; nothing is written.
  */
 export function DimensionViewSuggestButton({ pipelineId, dimensions }: {
@@ -104,7 +104,7 @@ export function DimensionViewSuggestButton({ pipelineId, dimensions }: {
 
   return (
     <>
-      <RichTooltip body="The joins a view could make from one of the flow's dimensions, as the flow's dimensions and the saved templates allow, with the join block to paste into its YAML. Nothing is written.">
+      <RichTooltip body="The joins a view could make from one of the flow's dimensions, as the flow's dimensions and its templates allow, with the join block to paste into its YAML. Nothing is written.">
         <Button variant="ghost" size="xs" onClick={() => setOpen(true)} data-testid="dimension-view-suggest">
           <Sparkles />
           Suggest joins

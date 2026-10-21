@@ -29,10 +29,11 @@ public static class DeliverySearchTermCatalog
     /// a person made of a term while terms were keyed by their mapping's source system is moved to the term it is now.
     /// </summary>
     public static async Task<(int Added, int Updated, int Unchanged, int Removed)> ReconcileAsync(
-        OsduDbContext context, Guid repoId, IReadOnlyList<RepositorySource> sources, DeliveryDocumentLoader documents, DateTime nowUtc,
-        ICollection<string> warnings, CancellationToken ct)
+        OsduDbContext context, IRepositoryFolders repositoryFolders, Guid repoId, IReadOnlyList<RepositorySource> sources, DeliveryDocumentLoader documents,
+        DateTime nowUtc, ICollection<string> warnings, CancellationToken ct)
     {
         ArgumentNullException.ThrowIfNull(context);
+        ArgumentNullException.ThrowIfNull(repositoryFolders);
         ArgumentNullException.ThrowIfNull(sources);
         ArgumentNullException.ThrowIfNull(documents);
         ArgumentNullException.ThrowIfNull(warnings);
@@ -53,7 +54,7 @@ public static class DeliverySearchTermCatalog
             .ToListAsync(ct).ConfigureAwait(false);
 
         // The template folders this sync has just recorded, which settle a mapping that names its template's kind alone.
-        var folders = await SyncedTemplates.ReadAsync(context, repoId, ct).ConfigureAwait(false);
+        var folders = await SyncedTemplates.ReadAsync(context, repositoryFolders, repoId, ct).ConfigureAwait(false);
         var mappings = new Dictionary<string, MappingDefinition>(StringComparer.Ordinal);
         foreach (var row in rows.OrderBy(r => r.Reference, StringComparer.Ordinal))
         {

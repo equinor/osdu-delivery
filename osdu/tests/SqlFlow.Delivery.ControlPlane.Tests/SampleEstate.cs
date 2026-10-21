@@ -18,7 +18,7 @@ namespace SqlFlow.ControlPlane.Tests;
 /// schedule library, and the drop-off folder the pre flows read. The wellbore fixture flow and its mapping are copied in
 /// beside them, for the suites that need a second flow with no payload files. The copy keeps the shape a repository has,
 /// one folder per source, so a path the catalog records here is the path it would record for a customer's repo. The
-/// templates the mappings fill are in the source's template folder, which a sync of the copy records and saves; the
+/// templates the mappings fill are in the source's template folder, which a sync of the copy records; the
 /// partition cache lives in the module's database, so a test saves it rather than inventing a second estate that would
 /// drift from the real one.
 /// </summary>
@@ -40,7 +40,7 @@ internal static class SampleEstate
 
     public const string WellboreTemplateVersion = "58d6bdbd9d066a06";
 
-    /// <summary>The templates the sample and fixture mappings pin, by kind, and the bundled schema file each is saved from.</summary>
+    /// <summary>The templates the sample and fixture mappings pin, by kind, and the file of the sample's template folder holding each.</summary>
     private static readonly (string Kind, string File)[] Templates =
     [
         ("osdu:wks:work-product-component--WellLog:1.4.0", "osdu_wks_work-product-component--WellLog_1.4.0.json"),
@@ -141,29 +141,20 @@ internal static class SampleEstate
     private static readonly SemaphoreSlim ModuleMigrate = new(1, 1);
 
     /// <summary>
-    /// Saves the templates the sample mappings fill into the library of the module's database at
-    /// <paramref name="connectionString"/>, exactly as saving them on the Templates page does: what the explorer and the
-    /// pages read without a repository. A run and a synced repository's pages read them from the source's template folder.
+    /// The folder a repository holding the sample templates is synced into, as the catalog records its root: the sample
+    /// source, whose template folder holds the files <see cref="HoldTemplatesAsync"/> records, at the paths it records them.
     /// </summary>
-    public static async Task SaveTemplatesAsync(string connectionString)
-    {
-        ArgumentException.ThrowIfNullOrWhiteSpace(connectionString);
-        await MigrateModuleAsync(connectionString);
-        var store = new OsduTemplateStore(() => Context(connectionString));
-        foreach (var (kind, file) in Templates)
-        {
-            var path = Path.Combine(SourceRoot(), "templates", file);
-            var schema = TemplateSources.FromBundledJson(await File.ReadAllTextAsync(path), kind, DateTimeOffset.UtcNow, path);
-            await store.SaveAsync(schema, "file " + file, "tests");
-        }
-    }
+    public static string TemplateRoot => SourceRoot();
+
+    /// <summary>The repository every suite of this process reads the sample templates through, where no repository of its own is at hand.</summary>
+    public const string TemplateRepositoryName = "cp-sample-templates";
 
     /// <summary>
     /// Records the templates the sample mappings fill as the files of a template folder at the top of repository
-    /// <paramref name="repoId"/>, each with the copy of its schema, as a sync of the sample estate records its
-    /// <c>templates</c> folder: what the pages of a synced repository settle its documents' templates from. A test that
-    /// writes a repository's mapping rows itself, as a sync would, records its template folder with them. The library is
-    /// left as it is, as a sync leaves it.
+    /// <paramref name="repoId"/>, as a sync of the sample estate records its <c>templates</c> folder: which file holds which
+    /// template, and nothing of its content, which is read from the file. The repository's catalog row names
+    /// <see cref="TemplateRoot"/> as its root, so a page reads the files there. A test that writes a repository's mapping
+    /// rows itself, as a sync would, records its template folder with them.
     /// </summary>
     public static async Task HoldTemplatesAsync(string connectionString, Guid repoId, DateTime nowUtc)
     {
@@ -172,7 +163,7 @@ internal static class SampleEstate
         foreach (var (kind, file) in Templates)
         {
             var path = "templates/" + file;
-            var schema = TemplateSources.FromBundledJson(await File.ReadAllTextAsync(Path.Combine(SourceRoot(), "templates", file)), kind, DateTimeOffset.UtcNow, file);
+            var schema = TemplateSources.FromBundledJson(await File.ReadAllTextAsync(Path.Combine(TemplateRoot, "templates", file)), kind, DateTimeOffset.UtcNow, file);
             var row = db.DeliveryRepositoryTemplates.FirstOrDefault(t => t.RepoId == repoId && t.Path == path);
             if (row is null)
             {
@@ -190,11 +181,43 @@ internal static class SampleEstate
             row.Kind = schema.Kind;
             row.Version = schema.Version;
             row.Problem = null;
-            row.SchemaJson = SqlFlow.Delivery.Json.DocumentJson.Compact(schema.Root);
             row.LastSeenUtc = nowUtc;
         }
 
         await db.SaveChangesAsync();
+    }
+
+    /// <summary>
+    /// The repository <see cref="TemplateRepositoryName"/>, synced into <see cref="TemplateRoot"/> and holding the sample
+    /// templates in its template folder, as a sync of it records them: the catalog's row of it and the rows of its template
+    /// files, seen <paramref name="nowUtc"/>. What the Templates page, the explorer and the mapping builder read the sample
+    /// templates through. Recorded again whenever asked, so it is the repository synced last.
+    /// </summary>
+    public static async Task<Guid> HoldTemplateRepositoryAsync(string connectionString, DateTime nowUtc)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(connectionString);
+        var repoId = SqlFlow.Core.Identity.FlowIdentity.FromName("repo/" + TemplateRepositoryName);
+        await using (var catalog = CatalogDatabase.Create(connectionString))
+        {
+            var repo = await catalog.Repos.FindAsync(repoId);
+            if (repo is null)
+            {
+                catalog.Repos.Add(new CatalogRepo
+                {
+                    Id = repoId, Name = TemplateRepositoryName, RootPath = TemplateRoot, FirstSeenUtc = nowUtc, LastSyncUtc = nowUtc,
+                });
+            }
+            else
+            {
+                repo.RootPath = TemplateRoot;
+                repo.LastSyncUtc = nowUtc;
+            }
+
+            await catalog.SaveChangesAsync();
+        }
+
+        await HoldTemplatesAsync(connectionString, repoId, nowUtc);
+        return repoId;
     }
 
     /// <summary>

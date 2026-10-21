@@ -12,7 +12,7 @@ namespace SqlFlow.Delivery.Tests;
 
 /// <summary>
 /// A dimension flow's build end to end (osdu/docs/reference/flow/dimension.md, What a build does): the field settled
-/// from the saved templates or the record's own mapping, every distinct value read from a platform whose aggregation
+/// from the templates of the flow's template folders or the record's own mapping, every distinct value read from a platform whose aggregation
 /// returns few groups at a time, cleaned into members with their filters, and kept in the ledger on SQL Server; a
 /// dimension that cannot be built failing alone; and the plan. Every request the build makes is held to the pinned
 /// search contract.
@@ -49,9 +49,7 @@ public sealed class DimensionRunTests : IDisposable
     private async Task<(DimensionRunner Runner, OsduLedger Ledger, DimensionFlowDefinition Flow)> RunnerAsync(string yaml, string source = "flows/dims.yaml")
     {
         var ledger = _db.Ledger(_clock);
-        var templates = _db.Templates(_clock);
-        await Samples.ImportSampleTemplatesAsync(templates);
-        var engine = Samples.Engine(ledger, _clock, templates: templates);
+        var engine = Samples.Engine(ledger, _clock);
         var flow = new DeliveryDocumentLoader().ParseDimension(yaml, source).ForPartition("dev");
         return (new DimensionRunner(engine, flow, new Dictionary<string, string>(), Samples.Logger<DimensionRunner>(), _platform, allowLoopback: true), ledger, flow);
     }

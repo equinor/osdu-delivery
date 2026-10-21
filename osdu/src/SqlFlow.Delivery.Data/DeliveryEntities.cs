@@ -1547,42 +1547,12 @@ public sealed class DeliveryInterface
 }
 
 /// <summary>
-/// A saved template, the library (osdu/docs/reference/concepts/templates.md): the OSDU schema of one kind, captured from the
-/// OSDU data definitions or imported from a file, by a person, on the Templates page or the command line. A version is
-/// identified by the kind and the hash of its schema, and never changes. The explorer, the mapping builder and the
-/// assistant read the library; a repository's documents read their templates from their template folders, and the
-/// repositories never write here.
-/// </summary>
-public sealed class DeliveryTemplate
-{
-    /// <summary>Stable id: derived from the kind and the version.</summary>
-    public Guid Id { get; set; }
-
-    /// <summary>The OSDU kind the schema describes (osdu:wks:work-product-component--WellLog:1.4.0).</summary>
-    public string Kind { get; set; } = string.Empty;
-
-    /// <summary>The content version: the hash prefix of the canonical bundled schema.</summary>
-    public string Version { get; set; } = string.Empty;
-
-    /// <summary>The bundled JSON Schema, every reference resolved into its definitions.</summary>
-    public string SchemaJson { get; set; } = string.Empty;
-
-    /// <summary>Where the schema came from: the flow and endpoint reference it was captured through, or the imported file.</summary>
-    public string Origin { get; set; } = string.Empty;
-
-    /// <summary>Who captured or imported it.</summary>
-    public string CapturedBy { get; set; } = string.Empty;
-
-    public DateTime CapturedUtc { get; set; }
-}
-
-/// <summary>
 /// A file of a template folder of a repository, as the last sync found it (osdu/docs/reference/concepts/templates.md,
-/// Template folders): which template it holds with a copy of its schema, or why it holds none. A template folder is a
-/// directory named <c>templates</c>, and a document reads those on its path; the control plane's pages settle a document's
-/// template from these rows by the same rule a run settles it by from the files, and read its schema from the copy here,
-/// since they have no working copy. The copy is the repository's own: the library of saved templates
-/// (<see cref="DeliveryTemplate"/>) never holds it. A file the repository no longer holds loses its row.
+/// Template folders): which template it holds, or why it holds none. A template folder is a directory named
+/// <c>templates</c>, and a document reads those on its path; the control plane's pages settle a document's template from
+/// these rows by the same rule a run settles it by from the files, and the Templates page lists them. The row indexes the
+/// file and holds none of it: whoever reads the template reads the file, in the folder the repository was synced into. A
+/// file the repository no longer holds loses its row.
 /// </summary>
 public sealed class DeliveryRepositoryTemplate
 {
@@ -1611,12 +1581,6 @@ public sealed class DeliveryRepositoryTemplate
 
     /// <summary>Why the file holds no template; null when it holds one.</summary>
     public string? Problem { get; set; }
-
-    /// <summary>
-    /// The schema the file holds as the sync read it, compact JSON whose canonical form hashes to <see cref="Version"/>; null
-    /// when the file holds no template.
-    /// </summary>
-    public string? SchemaJson { get; set; }
 
     public DateTime FirstSeenUtc { get; set; }
 
@@ -4006,8 +3970,6 @@ public static class DeliveryModel
             e.Property(m => m.Message).HasMaxLength(4000);
             e.HasIndex(m => new { m.RepoId, m.Reference }).IsUnique();
             e.HasIndex(m => new { m.RepoId, m.Kind });
-            // A template delete asks which mappings pin the version.
-            e.HasIndex(m => new { m.Kind, m.TemplateVersion });
         });
 
         modelBuilder.Entity<DeliverySearchTerm>(e =>
@@ -4061,18 +4023,6 @@ public static class DeliveryModel
             e.HasIndex(i => i.LedgerFlowId);
         });
 
-        modelBuilder.Entity<DeliveryTemplate>(e =>
-        {
-            e.ToTable("Template", SchemaName);
-            e.HasKey(t => t.Id);
-            e.Property(t => t.Kind).HasMaxLength(200).IsRequired();
-            e.Property(t => t.Version).HasMaxLength(64).IsRequired();
-            e.Property(t => t.SchemaJson).IsRequired();
-            e.Property(t => t.Origin).HasMaxLength(1000).IsRequired();
-            e.Property(t => t.CapturedBy).HasMaxLength(200).IsRequired();
-            e.HasIndex(t => new { t.Kind, t.Version }).IsUnique();
-        });
-
         modelBuilder.Entity<DeliveryRepositoryTemplate>(e =>
         {
             e.ToTable("RepositoryTemplate", SchemaName);
@@ -4082,9 +4032,7 @@ public static class DeliveryModel
             e.Property(t => t.Kind).HasMaxLength(200).IsRequired();
             e.Property(t => t.Version).HasMaxLength(64).IsRequired();
             e.Property(t => t.Problem).HasMaxLength(DeliveryRepositoryTemplate.MaxProblemLength);
-            e.Property(t => t.SchemaJson);
-            // A sync reconciles one repository's files, and a page reads them, and the copy of the one it settles on, to
-            // settle that repository's documents.
+            // A sync reconciles one repository's files, and a page reads them to settle that repository's documents.
             e.HasIndex(t => new { t.RepoId, t.Path }).IsUnique();
         });
 

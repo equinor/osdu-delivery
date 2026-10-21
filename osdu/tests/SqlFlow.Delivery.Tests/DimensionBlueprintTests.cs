@@ -13,7 +13,7 @@ namespace SqlFlow.Delivery.Tests;
 /// path read through the template of the records it is read from (the forms of a <c>oneOf</c> looked into, a filter's
 /// property looked up), the records each key names reached step by step and grouped as a build's searches group them,
 /// and the table's columns with the reads each is written from. The templates are held in memory, so each case says
-/// exactly which are saved.
+/// exactly which a repository holds.
 /// </summary>
 public class DimensionBlueprintTests
 {
@@ -141,7 +141,7 @@ public class DimensionBlueprintTests
 
         var blueprint = await DimensionBlueprints.DescribeAsync(Wellbore, templates, []);
 
-        // Before a build, the kinds are the saved templates the pattern matches.
+        // Before a build, the kinds are the templates the repositories hold that the pattern matches.
         var source = blueprint.Source;
         Assert.False(source.Built);
         Assert.Equal(WellLogKind, Assert.Single(source.Kinds).Kind);
@@ -172,7 +172,7 @@ public class DimensionBlueprintTests
         Assert.Equal("AbstractGeoFieldContext", wellbore.Reads[2].Schema!.Leaf!.Branch);
         Assert.All(wellbore.Reads, r => Assert.Null(r.Problem));
 
-        // No template of a field is saved: its records are read as written, and the blueprint says so.
+        // No repository holds a template of a field: its records are read as written, and the blueprint says so.
         var field = blueprint.Records.Single(r => r.Id == "2:master-data--Field");
         Assert.Null(field.Template);
         Assert.Contains("master-data--Field", field.Missing, StringComparison.Ordinal);
@@ -220,13 +220,13 @@ public class DimensionBlueprintTests
     }
 
     [Fact]
-    public async Task With_no_template_saved_the_blueprint_lays_out_the_reads_and_says_what_it_cannot_describe()
+    public async Task With_no_template_held_the_blueprint_lays_out_the_reads_and_says_what_it_cannot_describe()
     {
-        // A dimension the explorer drafts, which no flow holds yet, is described by the saved templates.
+        // A dimension the explorer drafts, which no flow holds yet, is described by the templates the repositories hold.
         var blueprint = await DimensionBlueprints.DescribeAsync(Wellbore, new MemoryTemplates(), []);
 
         Assert.Null(blueprint.Source.Template);
-        Assert.Contains("No saved template matches", blueprint.Source.Missing, StringComparison.Ordinal);
+        Assert.Contains("No template a synced repository holds matches", blueprint.Source.Missing, StringComparison.Ordinal);
         Assert.Null(blueprint.Source.Reads[0].Index);
         Assert.Null(blueprint.Source.Reads[0].Schema);
 
@@ -358,7 +358,7 @@ public class DimensionBlueprintTests
     }
 
     [Fact]
-    public async Task A_type_is_suggested_for_by_its_newest_saved_template_as_a_blueprint_describes_it()
+    public async Task A_type_is_suggested_for_by_its_newest_template_as_a_blueprint_describes_it()
     {
         var logs = Schema(WellLogKind);
         var suggested = await DimensionKeyCandidates.SuggestAsync("*:*:work-product-component--WellLog:*", new MemoryTemplates(Schema(WellboreKind), logs), CancellationToken.None);
@@ -368,14 +368,14 @@ public class DimensionBlueprintTests
     }
 
     [Fact]
-    public async Task A_kind_no_saved_template_matches_suggests_nothing_and_says_what_to_save()
+    public async Task A_kind_no_template_matches_suggests_nothing_and_says_where_to_put_one()
     {
         var suggested = await DimensionKeyCandidates.SuggestAsync("osdu:wks:master-data--Field:1.0.0", new MemoryTemplates(Schema(WellLogKind)), CancellationToken.None);
 
         Assert.Empty(suggested.Keys);
         Assert.Null(suggested.Template);
-        Assert.Contains("No saved template matches osdu:wks:master-data--Field:1.0.0", suggested.Missing, StringComparison.Ordinal);
-        Assert.Contains("Templates page", suggested.Missing, StringComparison.Ordinal);
+        Assert.Contains("No template a synced repository holds matches osdu:wks:master-data--Field:1.0.0", suggested.Missing, StringComparison.Ordinal);
+        Assert.Contains("template folder", suggested.Missing, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -455,35 +455,4 @@ public class DimensionBlueprintTests
           }
         }
         """)!.AsObject(), DateTimeOffset.UnixEpoch);
-
-    /// <summary>Templates held in memory: the saved versions a case names, and no others.</summary>
-    private sealed class MemoryTemplates(params SchemaSnapshot[] schemas) : ITemplateStore
-    {
-        private readonly List<SchemaSnapshot> _schemas = [.. schemas];
-
-        public Task<SchemaSnapshot?> LoadAsync(TemplateReference reference, CancellationToken ct = default)
-            => Task.FromResult(_schemas.FirstOrDefault(s => s.Kind == reference.Kind && s.Version == reference.Version));
-
-        public Task<TemplateSaved> SaveAsync(SchemaSnapshot schema, string origin, string actor, CancellationToken ct = default)
-        {
-            var known = _schemas.Any(s => s.Kind == schema.Kind && s.Version == schema.Version);
-            if (!known)
-            {
-                _schemas.Add(schema);
-            }
-
-            return Task.FromResult(new TemplateSaved(Info(schema), known ? TemplateSaveOutcome.Unchanged : TemplateSaveOutcome.Created));
-        }
-
-        public Task<IReadOnlyList<TemplateInfo>> ListAsync(CancellationToken ct = default)
-            => Task.FromResult<IReadOnlyList<TemplateInfo>>(_schemas.Select(Info).ToList());
-
-        public Task DeleteAsync(TemplateReference reference, CancellationToken ct = default)
-        {
-            _schemas.RemoveAll(s => s.Kind == reference.Kind && s.Version == reference.Version);
-            return Task.CompletedTask;
-        }
-
-        private static TemplateInfo Info(SchemaSnapshot schema) => new(schema.Kind, schema.Version, schema.CapturedUtc.UtcDateTime, "tests", "memory");
-    }
 }

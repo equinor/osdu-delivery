@@ -161,8 +161,8 @@ deliveries that read it; the other four read what OSDU holds and run after the d
 
 - It does not change where a flow reads or delivers. The source location, the OSDU endpoint and partition, the legal
   tags and ACLs and the credential references are the flow author's, in the flow and the mapping.
-- It only reads the repository. Templates and cache versions live in the module database, saved through the Templates
-  page or `sqlflow template`, and captured by cache flow runs.
+- It only reads the repository. Templates are files of the repository's template folders, which its sync records and
+  every reader reads from the file; cache versions live in the module database, captured by cache flow runs.
 - It does not read source files itself. Landing and keying are SQLFlow's file and `ing` flows.
 
 ## See also

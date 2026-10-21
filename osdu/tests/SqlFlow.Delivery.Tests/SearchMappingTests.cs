@@ -145,7 +145,7 @@ public class SearchMappingTests
 
         var issues = MappingBuilder.Incomplete(draft);
 
-        Assert.Contains(issues, i => i.Message.Contains("pick the saved template whose schema says how the kind it searches is indexed", StringComparison.Ordinal));
+        Assert.Contains(issues, i => i.Message.Contains("pick the template whose schema says how the kind it searches is indexed", StringComparison.Ordinal));
         Assert.Contains(issues, i => i.Target == "osdu.data.WellboreID" && i.Message.Contains("choose one of the mapping's searches", StringComparison.Ordinal));
         Assert.Contains(issues, i => i.Target == "osdu.data.WellboreID" && i.Message.Contains("reads the id of the record it finds", StringComparison.Ordinal));
         Assert.Contains(issues, i => i.Target == "osdu.data.WellboreID" && i.Message.Contains("compares a property under data", StringComparison.Ordinal));

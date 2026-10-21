@@ -129,12 +129,10 @@ public sealed class DeliveryOrderApiTests
         // Days ahead of the clock, so both schedules' next fires are still to come when the control plane reads them: one
         // already due would be fired and timed again by its scheduler, and the two would no longer fire an hour apart.
         var now = DateTime.UtcNow.Date.AddDays(2);
-        var kinds = new List<string>();
         try
         {
             mastersEstate.Schema($"master-data--Well{suffix}");
             mastersEstate.Schema($"master-data--Wellbore{suffix}", ("WellID", $"master-data--Well{suffix}"));
-            kinds.AddRange(templates.All.Select(s => s.Kind));
             mastersEstate.Delivery("wells", $"master-data--Well{suffix}", partition: partition);
             estateEstate.Delivery("wellbores", $"master-data--Wellbore{suffix}", columns: ["WellID"], partition: partition);
 
@@ -200,7 +198,6 @@ public sealed class DeliveryOrderApiTests
                 await osdu.DeliveryMappings.Where(m => m.RepoId == masters || m.RepoId == estate).ExecuteDeleteAsync();
                 await osdu.DeliverySearchTerms.Where(t => t.RepoId == masters || t.RepoId == estate).ExecuteDeleteAsync();
                 await osdu.DeliveryRepositoryTemplates.Where(t => t.RepoId == masters || t.RepoId == estate).ExecuteDeleteAsync();
-                await osdu.DeliveryTemplates.Where(t => kinds.Contains(t.Kind)).ExecuteDeleteAsync();
             }
 
             Directory.Delete(rootMasters, recursive: true);

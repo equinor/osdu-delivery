@@ -6,7 +6,7 @@ using Xunit;
 namespace SqlFlow.Delivery.Tests;
 
 /// <summary>
-/// The saved templates as a view's joins are checked and offered by (osdu/docs/reference/flow/dimension-views.md, What
+/// The flow's templates as a view's joins are checked and offered by (osdu/docs/reference/flow/dimension-views.md, What
 /// the templates say of a view's joins): the template of the records a joined column is read from says which records it
 /// names, so a join to a dimension of another entity type is marked, and the joins a view could make are offered,
 /// through a joined dimension too. The sample WellLog 1.4.0 template names a curve's unit a unit of measure and a log's

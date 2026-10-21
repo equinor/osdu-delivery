@@ -28,6 +28,7 @@ const FLOW: &str = "5f0f8c1e-58a5-4d6f-9d1e-0a4b6f1c2d3e";
 const KEY: &str = "6a1b2c3d-0000-4000-8000-0123456789ab";
 const PIPELINE: &str = "11111111-2222-4333-8444-555555555555";
 const SUBMISSION: &str = "22222222-3333-4444-8555-666666666666";
+const REPO: &str = "33333333-4444-4555-8666-777777777777";
 
 /// The delivery tools this server offers. A tool added to the module is added here, which is also where it is
 /// decided whether it returns metadata alone.
@@ -591,7 +592,7 @@ const QUESTIONS: &[(&str, &[&str])] = &[
     ("check a flow before running it", &["delivery-cli-check", "delivery-concept-preflight"]),
     ("getting started first delivery", &["delivery-guide-getting-started"]),
     ("one source delivers several kinds", &["delivery-flow-interfaces", "delivery-guide-multi-kind-source"]),
-    ("save an osdu schema as a template", &["delivery-cli-template", "delivery-concept-templates"]),
+    ("download an osdu schema as a template file", &["delivery-cli-template", "delivery-concept-templates"]),
     ("register a partition", &["delivery-cli-partition", "delivery-concept-partitions"]),
     ("which route should a delivery flow use", &["delivery-flow-routes", "delivery-wiki-pattern-catalog"]),
     ("run payload recordKeys redeliver", &["delivery-cli-run"]),
@@ -990,7 +991,7 @@ async fn a_document_that_does_not_load_is_said_not_to() {
 async fn a_scaffold_sends_the_builders_draft_back_exactly_as_it_came() {
     // The draft carries fields this server's link rules would recognise; none may be added to it on the way back.
     let draft = json!({
-        "name": "wellbore", "version": "1.0.0", "templateKind": "osdu:wks:master-data--Wellbore:1.5.1", "templateVersion": "1.5.1",
+        "name": "wellbore", "version": "1.0.0", "templateKind": "osdu:wks:master-data--Wellbore:1.5.1", "templateVersion": "2f8a99cb38d32480",
         "entries": [{ "target": "osdu.data.FacilityName", "runId": "not-a-run", "pipelineId": "not-a-pipeline", "flowName": "x" }]
     });
     let estate = Estate::start(vec![
@@ -1007,13 +1008,18 @@ async fn a_scaffold_sends_the_builders_draft_back_exactly_as_it_came() {
     let scaffold = session
         .json(
             "delivery_scaffold_mapping",
-            json!({ "kind": " osdu:wks:master-data--Wellbore:1.5.1 ", "version": "1.5.1", "name": "wellbore", "mappingVersion": "1.0.0", "system": "welldb", "partition": "dev" }),
+            json!({ "repoId": REPO, "templatePath": " welldb/templates/osdu_wks_master-data--Wellbore_1.5.1.json ", "name": "wellbore", "mappingVersion": "1.0.0", "system": "welldb", "partition": "dev" }),
         )
         .await;
 
     assert_eq!(
         estate.only("POST", "/api/v1/delivery/mapping-builder/draft").body,
-        json!({ "scope": "dev", "kind": "osdu:wks:master-data--Wellbore:1.5.1", "version": "1.5.1", "name": "wellbore", "mappingVersion": "1.0.0", "system": "welldb" })
+        json!({ "scope": "dev", "repoId": REPO, "templatePath": "welldb/templates/osdu_wks_master-data--Wellbore_1.5.1.json", "name": "wellbore", "mappingVersion": "1.0.0", "system": "welldb" })
+    );
+    // The template is named as the builder read it from the file, with the file it was read from.
+    assert_eq!(
+        scaffold["template"],
+        json!({ "kind": "osdu:wks:master-data--Wellbore:1.5.1", "version": "2f8a99cb38d32480", "repoId": REPO, "path": "welldb/templates/osdu_wks_master-data--Wellbore_1.5.1.json" })
     );
     let composed = estate.only("POST", "/api/v1/delivery/mapping-builder/compose").body;
     assert_eq!(composed["draft"], draft, "the draft went back unchanged");
@@ -1023,9 +1029,17 @@ async fn a_scaffold_sends_the_builders_draft_back_exactly_as_it_came() {
     assert_eq!(scaffold["nextSteps"].as_array().map(Vec::len), Some(3));
 
     let refused = session
-        .call("delivery_scaffold_mapping", json!({ "kind": "k", "version": "1", "name": " ", "mappingVersion": "1.0.0", "system": "s" }))
+        .call("delivery_scaffold_mapping", json!({ "repoId": REPO, "templatePath": "t.json", "name": " ", "mappingVersion": "1.0.0", "system": "s" }))
         .await;
     assert_eq!(refused, "Error: name is required to scaffold a mapping.");
+    let unnamed = session
+        .call("delivery_scaffold_mapping", json!({ "repoId": " ", "templatePath": "t.json", "name": "n", "mappingVersion": "1.0.0", "system": "s" }))
+        .await;
+    assert!(unnamed.starts_with("Error: repoId is required"), "{unnamed}");
+    let malformed = session
+        .call("delivery_scaffold_mapping", json!({ "repoId": "welldb", "templatePath": "t.json", "name": "n", "mappingVersion": "1.0.0", "system": "s" }))
+        .await;
+    assert!(malformed.starts_with("Error:") && malformed.contains("repoId"), "{malformed}");
 }
 
 #[tokio::test(flavor = "multi_thread")]
@@ -1048,24 +1062,26 @@ async fn a_template_is_narrowed_to_the_variables_asked_about() {
     let template = session
         .json(
             "delivery_templates",
-            json!({ "kind": "osdu:wks:master-data--Wellbore:1.5.1", "version": "1.5.1", "search": "verticalmeasurement", "requiredOnly": true, "partition": "dev" }),
+            json!({ "repoId": REPO, "path": "welldb/templates/osdu_wks_master-data--Wellbore_1.5.1.json", "search": "verticalmeasurement", "requiredOnly": true, "partition": "dev" }),
         )
         .await;
 
     assert_eq!(
         estate.only("GET", "/api/v1/delivery/templates/detail").query,
-        "kind=osdu%3Awks%3Amaster-data--Wellbore%3A1.5.1&version=1.5.1&scope=dev"
+        format!("repoId={REPO}&path=welldb%2Ftemplates%2Fosdu_wks_master-data--Wellbore_1.5.1.json&scope=dev")
     );
     assert_eq!(template["variablesInTemplate"], json!(3));
     assert_eq!(template["variablesShown"], json!(1));
     assert_eq!(template["variables"][0]["path"], json!("osdu.data.VerticalMeasurements[].VerticalMeasurementPathID"));
     assert_eq!(
         template["links"]["page"],
-        json!("https://delivery.example.com/delivery/templates?kind=osdu%3Awks%3Amaster-data--Wellbore%3A1.5.1&version=1.5.1")
+        json!(format!("https://delivery.example.com/delivery/templates?repoId={REPO}&path=welldb%2Ftemplates%2Fosdu_wks_master-data--Wellbore_1.5.1.json"))
     );
 
-    let half = session.call("delivery_templates", json!({ "kind": "osdu:wks:master-data--Wellbore:1.5.1" })).await;
-    assert!(half.starts_with("Error: Give both kind and version"), "{half}");
+    let half = session.call("delivery_templates", json!({ "repoId": REPO })).await;
+    assert!(half.starts_with("Error: Give both repoId and path"), "{half}");
+    let pathless = session.call("delivery_templates", json!({ "path": "welldb/templates/x.json" })).await;
+    assert!(pathless.starts_with("Error: Give both repoId and path"), "{pathless}");
 }
 
 #[tokio::test(flavor = "multi_thread")]

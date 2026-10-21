@@ -209,9 +209,7 @@ public sealed class KnownValuesRunTests : IDisposable
     private async Task<(AssertionRunner Runner, OsduLedger Ledger)> RunnerAsync()
     {
         var ledger = _db.Ledger(_clock);
-        var templates = _db.Templates(_clock);
-        await Samples.ImportSampleTemplatesAsync(templates);
-        var engine = Samples.Engine(ledger, _clock, templates: templates);
+        var engine = Samples.Engine(ledger, _clock);
         var flow = new DeliveryDocumentLoader().ParseAssertion(Flow, "flow.yaml").ForPartition("dev");
         return (new AssertionRunner(engine, flow, new Dictionary<string, string>(), Samples.Logger<AssertionRunner>(), _platform, allowLoopback: true), ledger);
     }

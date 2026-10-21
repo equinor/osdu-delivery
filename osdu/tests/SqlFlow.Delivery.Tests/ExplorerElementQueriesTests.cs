@@ -10,7 +10,7 @@ namespace SqlFlow.Delivery.Tests;
 /// <summary>
 /// The query the explorer shows for an element of a record (osdu/docs/reference/concepts/explorer.md, A record): the
 /// one that finds the records holding exactly that value, list, object or nested item, written as the module's own
-/// searches are, by how the saved template of the record's kind has the platform index each value (text by its keyword
+/// searches are, by how the template of the record's kind has the platform index each value (text by its keyword
 /// sub-field, a keyword, a number; in a nested list inside nested(...), an item's values together; in a flattened
 /// list); written from the value and said to be a guess where the template cannot say, so there is always a query to
 /// see.
@@ -245,7 +245,7 @@ public class ExplorerElementQueriesTests
         var text = ExplorerElementQueries.Describe(Value("data.Remark", "deep"), null);
         Assert.Null(text.Template);
         Assert.Equal("data.Remark.keyword:\"deep\"", Queries(text)["exact"]);
-        Assert.StartsWith("No saved template of", text.Guess, StringComparison.Ordinal);
+        Assert.StartsWith("No template a synced repository holds of", text.Guess, StringComparison.Ordinal);
 
         Assert.Equal("number", ExplorerElementQueries.Describe(Value("data.Depth", 1200), null).Field!.Index);
         Assert.Equal("date", ExplorerElementQueries.Describe(Value("data.Spudded", "2024-03-01T12:00:00Z"), null).Field!.Index);
@@ -308,35 +308,19 @@ public class ExplorerElementQueriesTests
     }
 
     [Fact]
-    public async Task A_kind_with_no_template_saved_is_read_by_the_newest_saved_of_its_type_and_says_so()
+    public async Task A_kind_no_repository_holds_a_template_of_is_read_by_the_newest_of_its_type_and_says_so()
     {
         var answer = await ExplorerElementQueries.DescribeAsync(
-            Value("data.FacilityName", "WELLBORE A/2-9 S", "osdu:wks:master-data--Wellbore:1.1.0"), new Templates(Wellbore), CancellationToken.None);
+            Value("data.FacilityName", "WELLBORE A/2-9 S", "osdu:wks:master-data--Wellbore:1.1.0"), new MemoryTemplates(Wellbore), CancellationToken.None);
 
         Assert.Equal(WellboreKind, answer.Template!.Kind);
-        Assert.Contains(answer.Notes, n => n.Contains("No template of osdu:wks:master-data--Wellbore:1.1.0 is saved, so it is read by osdu:wks:master-data--Wellbore:1.3.0", StringComparison.Ordinal));
+        Assert.Contains(answer.Notes, n => n.Contains("No synced repository holds a template of osdu:wks:master-data--Wellbore:1.1.0, so it is read by osdu:wks:master-data--Wellbore:1.3.0", StringComparison.Ordinal));
         Assert.Equal("data.FacilityName.keyword:\"WELLBORE A/2-9 S\"", Queries(answer)["exact"]);
 
-        var none = await ExplorerElementQueries.DescribeAsync(Value("data.FacilityName", "x", "osdu:wks:master-data--Field:1.0.0"), new Templates(Wellbore), CancellationToken.None);
+        var none = await ExplorerElementQueries.DescribeAsync(Value("data.FacilityName", "x", "osdu:wks:master-data--Field:1.0.0"), new MemoryTemplates(Wellbore), CancellationToken.None);
         Assert.Null(none.Template);
-        Assert.StartsWith("No saved template of osdu:wks:master-data--Field:1.0.0", none.Guess, StringComparison.Ordinal);
+        Assert.StartsWith("No template a synced repository holds of osdu:wks:master-data--Field:1.0.0", none.Guess, StringComparison.Ordinal);
 
-        await Assert.ThrowsAsync<DeliveryException>(() => ExplorerElementQueries.DescribeAsync(Value("data.X", "x", "bad"), new Templates(), CancellationToken.None));
-    }
-
-    /// <summary>Templates held in memory: the saved versions a case names, and no others.</summary>
-    private sealed class Templates(params SchemaSnapshot[] schemas) : ITemplateStore
-    {
-        public Task<SchemaSnapshot?> LoadAsync(TemplateReference reference, CancellationToken ct = default)
-            => Task.FromResult(schemas.FirstOrDefault(s => s.Kind == reference.Kind && s.Version == reference.Version));
-
-        public Task<TemplateSaved> SaveAsync(SchemaSnapshot schema, string origin, string actor, CancellationToken ct = default)
-            => throw new NotSupportedException("The element queries only read templates.");
-
-        public Task<IReadOnlyList<TemplateInfo>> ListAsync(CancellationToken ct = default)
-            => Task.FromResult<IReadOnlyList<TemplateInfo>>(schemas.Select(s => new TemplateInfo(s.Kind, s.Version, s.CapturedUtc.UtcDateTime, "tests", "memory")).ToList());
-
-        public Task DeleteAsync(TemplateReference reference, CancellationToken ct = default)
-            => throw new NotSupportedException("The element queries only read templates.");
+        await Assert.ThrowsAsync<DeliveryException>(() => ExplorerElementQueries.DescribeAsync(Value("data.X", "x", "bad"), new MemoryTemplates(), CancellationToken.None));
     }
 }

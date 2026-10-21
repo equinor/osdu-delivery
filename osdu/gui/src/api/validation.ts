@@ -266,5 +266,5 @@ export function whereOf(finding: { at: string; path: string }): string {
 
 /** How a source of a schema reads to a person. */
 export function schemaSourceName(source: string | undefined): string {
-  return source === "schema-service" ? "the Schema service" : source === "template" ? "a saved template" : "no schema";
+  return source === "schema-service" ? "the Schema service" : source === "template" ? "a template" : "no schema";
 }

@@ -1790,7 +1790,7 @@
       "path": "tests[].template",
       "type": "string",
       "required": false,
-      "description": "The template the test's fields are checked against: the mapping that renders the records as Name@version (`WellLog@1.5.0`), whose pinned template.kind and template.version are read from the synced mapping, or a saved template version itself (`2f8a99cb38d32480`); left out, the newest saved for the kind. A test that reads fields of a kind with no saved template is not evaluated, and says how to capture one."
+      "description": "The template the test's fields are checked against, read from the template folders on the flow's path: the mapping that renders the records as Name@version (`WellLog@1.5.0`), whose template kind and version are read from the synced mapping, or a template version itself (`2f8a99cb38d32480`) a folder there holds; left out, the one version of the kind the nearest template folder holding the kind holds. A test that reads fields of a kind no folder there holds is not evaluated, and says how to get its file."
     }
   ]
 }

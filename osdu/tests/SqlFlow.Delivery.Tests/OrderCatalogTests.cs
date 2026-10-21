@@ -14,7 +14,7 @@ namespace SqlFlow.Delivery.Tests;
 
 /// <summary>
 /// The OSDU order the module database holds (osdu/docs/reference/concepts/osdu-order.md): the catalog read of the synced
-/// deliveries with the partition each one's records reach, a kind with no saved template read from a built release of
+/// deliveries with the partition each one's records reach, a kind no template folder holds read from a built release of
 /// OSDU's lineage, a sync that orders a repository by its own deliveries and computes it again once a release it reads is
 /// built, and the schedules that run best before each schedule.
 /// </summary>
@@ -84,7 +84,7 @@ public sealed class OrderCatalogTests : IDisposable
     }
 
     [Fact]
-    public async Task A_kind_whose_template_copy_is_missing_is_read_from_the_newest_built_release_holding_it()
+    public async Task A_kind_whose_template_file_is_gone_is_read_from_the_newest_built_release_holding_it()
     {
         WellsAndWellbores();
         _a.Delivery("wells", "master-data--Well");
@@ -92,20 +92,16 @@ public sealed class OrderCatalogTests : IDisposable
         HoldTemplates();
         await ReconcileAsync(_repoA, _rootA);
 
-        // The order reads a template from the copy the sync kept of the file its folder holds. Without that copy (a row
-        // recorded before copies were kept), and with no release knowing the wellbores' kind, what the mapping fills cannot
-        // be told, and the order says why.
-        await using (var db = _database.CreateDbContext())
-        {
-            await db.DeliveryRepositoryTemplates.Where(t => t.Kind == "osdu:wks:master-data--Wellbore:1.0.0")
-                .ExecuteUpdateAsync(set => set.SetProperty(t => t.SchemaJson, (string?)null));
-        }
+        // The order reads a template from the file its folder holds, where the repository was synced. With the file gone
+        // since the sync, and no release knowing the wellbores' kind, what the mapping fills cannot be told, and the order
+        // says why.
+        File.Delete(Path.Combine(_rootA, "templates", TemplateSources.FileName("osdu:wks:master-data--Wellbore:1.0.0")));
 
         var unread = await ReadAsync();
         var unknown = unread.Deliveries.Single(d => d.Delivery.Flow == "wellbores");
         Assert.Null(unknown.Schema);
         Assert.Null(unknown.Delivery.Filled);
-        Assert.Contains(unread.Problems, p => p.Contains("the copy the sync keeps of it is missing; sync the repository again", StringComparison.Ordinal));
+        Assert.Contains(unread.Problems, p => p.Contains("no longer reads: the file no longer exists; sync the repository again", StringComparison.Ordinal));
 
         var store = new SchemaLineageStore(_database.CreateDbContext);
         await store.SaveAsync("v0.28.0", "aaaa", null, [Entry("master-data--Wellbore")], [], "tests", Utc);
@@ -117,23 +113,19 @@ public sealed class OrderCatalogTests : IDisposable
     }
 
     [Fact]
-    public async Task A_template_copy_that_does_not_read_as_one_is_said_and_the_release_is_asked_instead()
+    public async Task A_template_file_that_no_longer_reads_as_one_is_said_and_the_release_is_asked_instead()
     {
         WellsAndWellbores();
         _a.Delivery("wellbores", "master-data--Wellbore", columns: ["WellID"]);
         HoldTemplates();
         await ReconcileAsync(_repoA, _rootA);
-        await using (var db = _database.CreateDbContext())
-        {
-            await db.DeliveryRepositoryTemplates.Where(t => t.Kind == "osdu:wks:master-data--Wellbore:1.0.0")
-                .ExecuteUpdateAsync(set => set.SetProperty(t => t.SchemaJson, "{ not json"));
-        }
+        await File.WriteAllTextAsync(Path.Combine(_rootA, "templates", TemplateSources.FileName("osdu:wks:master-data--Wellbore:1.0.0")), "{ not json");
 
         var read = await ReadAsync();
         var problem = Assert.Single(read.Problems);
         Assert.StartsWith("The template osdu:wks:master-data--Wellbore:1.0.0 version ", problem, StringComparison.Ordinal);
         Assert.Contains("that mappings/Wellbores@1.0.0.yaml fills cannot be read", problem, StringComparison.Ordinal);
-        Assert.Contains("does not read as a schema", problem, StringComparison.Ordinal);
+        Assert.Contains("no longer reads: the schema is not valid JSON", problem, StringComparison.Ordinal);
         Assert.Null(Assert.Single(read.Deliveries).Schema);
     }
 
@@ -246,7 +238,7 @@ public sealed class OrderCatalogTests : IDisposable
             await using (var catalog = _database.CreateCatalogContext())
             await using (var module = _database.CreateDbContext())
             {
-                var orders = (await ScheduleOrders.ReadAsync(catalog, module)).Schedules;
+                var orders = (await ScheduleOrders.ReadAsync(catalog, module, Folders())).Schedules;
                 var nightly = orders.Single(o => o.Schedule.Name == "estate-nightly");
                 var first = Assert.Single(nightly.RunFirst);
                 Assert.Equal(("masters-nightly", nameB, false, false), (first.Schedule.Name, first.Schedule.Repository, first.SameRepository, first.Chained));
@@ -320,8 +312,11 @@ public sealed class OrderCatalogTests : IDisposable
     private async Task<CatalogDeliveries> ReadAsync(Guid? repo = null)
     {
         await using var db = _database.CreateDbContext();
-        return await OrderCatalog.ReadAsync(db, repo);
+        return await OrderCatalog.ReadAsync(db, Folders(), repo);
     }
+
+    /// <summary>The two estates' repositories, read where their syncs read them, as the control plane finds them.</summary>
+    private IRepositoryFolders Folders() => RepositoryFolders.Of(_repoA, _rootA, RepositoryFolders.Of(_repoB, _rootB));
 
     private async Task<bool> ReleaseBuiltSinceAsync()
     {

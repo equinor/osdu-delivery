@@ -1057,10 +1057,6 @@ public sealed class LineageTests : IDisposable
         await ReconcileAsync(Utc);
         Assert.False(await ChangedAsync());
 
-        // A template saved in the library, not in a folder, is no input of a repository's lineage.
-        await WellLogVersions.SaveNextTemplateAsync(catalog.Templates(new TestClock(Utc.AddHours(1))));
-        Assert.False(await ChangedAsync());
-
         // A file that now holds another version is a change, until the sync records it.
         var file = PathOf("templates/osdu_wks_work-product-component--WellLog_1.4.0.json");
         File.WriteAllText(file, File.ReadAllText(file).Replace("\"description\":", "\"$comment\": \"changed\", \"description\":", StringComparison.Ordinal));

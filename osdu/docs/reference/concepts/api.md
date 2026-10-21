@@ -158,7 +158,7 @@ Each runs in the control plane with the flow's credentials and answers JSON; not
 | `POST /flows/{pipelineId}/probe` | operate | `interface`, `partition` | Whether the target answers under the flow's credentials: reachable, status, the path asked. A refusal is an answer. Recorded as a `probe` activity under the caller and counted on the probe metric; 422 `The probe could not be recorded` for a flow whose ledger cannot be placed, which is then not probed. |
 | `POST /records/{flowId}/{key}/read` | operate | body `version` | The OSDU record the ledger's record claimed, at its latest or at `version`, with its version list; a record that never queued a document has none to read. |
 | `POST /flows/{pipelineId}/osdu/read` | operate | body `targetId`; `interface`, `partition` | Any OSDU record by id through the flow's route, at its latest version. |
-| `POST /flows/{pipelineId}/osdu/validate` | operate | body `targetId`, `version`, `schema` (`osdu` or `saved`), `templateVersion`, `mapping`; `interface`, `partition` | One record checked against the schema of its kind, and against the assertions of the flow's own mapping, or of the synced mapping whose id `mapping` names. 409 for a route that keeps no record in storage (`dspdm`, `etp`). |
+| `POST /flows/{pipelineId}/osdu/validate` | operate | body `targetId`, `version`, `schema` (`osdu` or `template`), `templateVersion`, `mapping`; `interface`, `partition` | One record checked against the schema of its kind, and against the assertions of the flow's own mapping, or of the synced mapping whose id `mapping` names. 409 for a route that keeps no record in storage (`dspdm`, `etp`). |
 | `POST /records/{flowId}/{key}/source` | operate | | The record's rows as the ingestion tables hold them now: the record row with its system columns, child datasets, origin file and row. |
 | `POST /records/{flowId}/{key}/preview` | operate | | The record rendered now from its current row, in the scope it was last planned under. |
 | `POST /flows/{pipelineId}/preview` | operate | body `key`, `values`; `interface`, `partition` | One record rendered as a delivery would render it: the scope's first, or the one `key` names. A key that names no row is an answer (`found` false). |
@@ -198,29 +198,29 @@ See [removal and reversal](removal-and-reversal.md) for what each scope does.
 | `GET /mappings/{mappingId}` | read | | One mapping with its YAML. |
 | `GET /mappings/{mappingId}/flows` | read | | The interfaces of delivery flows that render with the mapping, in every partition. |
 | `POST /flows/{pipelineId}/check-values` | operate | body `targets` (template paths, at most 200), `values`, `maxRows` (10,000; 0 for the whole scope), `samples` (20), `skipSamples`, `mapping`; `interface`, `partition` | 202 with a compute task that finds the rows whose values the mapping's template will not take. |
-| `GET /templates` | read | | The saved template versions of the library, with origin and who saved each. The library is not linked to the repositories, so nothing here says which repository holds a version. |
-| `GET /templates/detail` | read | `kind`, `version`, `scope` | One saved version laid out variable by variable; with `scope`, the cached types each variable can read. |
-| `GET /templates/schema` | read | `kind`, `version` | The bundled schema of a saved version, as a file to save named after its kind ([a template as a file](templates.md#a-template-as-a-file)). |
+| `GET /templates` | read | | Every file of every synced repository's template folders, as its last sync recorded it: `repoId`, `repository`, `path`, `folder`, the `kind` and `version` it holds or the `problem` why it holds none, and `seenUtc` ([what the sync records](templates.md#what-the-sync-records)). |
+| `GET /templates/detail` | read | `repoId`, `path`, `scope` | The template one repository's file holds, read from the file and laid out variable by variable, with the file it was read from (`file`); with `scope`, the cached types each variable can read. 404 for a file the sync did not record; 422 for one that holds no template, has changed since the sync, or whose repository's folder cannot be had on this host. |
+| `GET /templates/schema` | read | `repoId`, `path` | The template one repository's file holds, as a template file to save under the file's own name ([a template as a file](templates.md#a-template-as-a-file)); 404 and 422 as for `detail`. |
 | `GET /templates/resolve` | read | `repoId`, `path`, `kind`, `version` | The template a document at `path` in a synced repository reads for `kind` (exactly `version` when given), as the template folders on its path held them at the last sync ([template folders](templates.md#template-folders)): `found`, `kind`, `version`, the file (`file`) or why there is none (`problem`), and `suggestedPath`, where the nearest folder would keep the template's file. |
-| `POST /templates/preview` | read | body `kind`, `schema`, `scope`, `release` | A bundled schema laid out without saving it. |
-| `POST /templates` | author | body `kind`, `schema`, `origin`, `release` | Saves a template version; `outcome` is `created` or `unchanged`. |
-| `DELETE /templates` | author | `kind`, `version` | Deletes a saved version; nothing a repository holds refuses it. 404 when it is not saved. |
+| `POST /templates/preview` | read | body `kind`, `schema`, `scope`, `release` | A schema laid out without keeping it, bundled with the shared schemas it refers to from `release`. |
 | `GET /templates/osdu/releases` | read | | The releases of the OSDU data definitions, newest first, and which are in the local copy. |
 | `GET /templates/osdu/schemas` | read | `release` (newest when left out) | Every record kind a release publishes. |
-| `GET /templates/osdu/schema` | read | `release`, `kind` | One kind's schema from a release, bundled, with the template version it saves as. |
+| `GET /templates/osdu/schema` | read | `release`, `kind` | One kind's schema from a release, bundled, with the template version its file holds. |
+| `GET /templates/osdu/file` | read | `release`, `kind` | One kind's schema from a release as the template file a template folder keeps, bundled and naming its kind, to save under the kind's file name ([the OSDU data definitions](templates.md#the-osdu-data-definitions)). |
 | `GET /templates/osdu/compare` | read | `fromRelease`, `fromKind`, `toRelease`, `toKind` | Two versions of one kind compared: breaking, additive and wording changes, variable by variable. |
 | `POST /templates/osdu/sync` | operate | body `release` | Reads the release list again and downloads the release when it is not on disk. |
 | `GET /mapping-builder/repos` | read | | The repositories a mapping can be written for, with their delivery flows and the parameters each renders with. |
 | `GET /mapping-builder/caches` | read | | Every partition cache, its flows, current version and types. |
-| `POST /mapping-builder/draft` | read | body `scope`, `kind`, `version`, `name`, `mappingVersion`, `system` | A new mapping draft for a saved template. |
-| `POST /mapping-builder/compose` | read | body `scope`, `draft`, `parameters` | The draft as YAML, its issues, and whether it loads and passes the preflight. |
+| `POST /mapping-builder/draft` | read | body `scope`, `repoId`, `templatePath`, `name`, `mappingVersion`, `system` | A new mapping draft for the template a synced repository's file holds. |
+| `POST /mapping-builder/compose` | read | body `scope`, `draft`, `parameters`, `repoId`, `path` | The draft as YAML, its issues, and whether it loads and passes the preflight. |
 | `POST /mapping-builder/parse` | read | body `yaml`, `path`, `repoId` | A mapping document as a draft the builder edits. |
 | `POST /mapping-builder/shape` | read | body `yaml`, `path`, `parameters`, `repoId` | The shape of the records the mapping renders, drawn against its template without a row or a cache. |
 | `POST /mapping-builder/coverage` | read | body `yaml`, `path`, `repoId` | What the mapping fills of its template and what it leaves required and empty. |
 
 With `repoId`, a document of that synced repository reads its template from the template folders on its `path`, as the
-last sync recorded them, from the copy that sync kept of the file, and may name its template's kind alone; without it,
-from the saved templates, and it names the version. A document that does not load, or whose template cannot be read, is an answer with its issue on `shape` and
+last sync recorded them, each read from its file in the repository's synced folder; without it, from the templates every
+synced repository holds: the version it names, or for a kind named alone the one the repository synced most recently
+holds. A document that does not load, or whose template cannot be read, is an answer with its issue on `shape` and
 `coverage`, not an HTTP error. See [templates](templates.md) and [preflight](preflight.md).
 
 ## Caches
@@ -297,9 +297,9 @@ workbench header.
 | `POST /explorer/read` | operate | body `targetId`, `version`; `partition` | One record from the storage service, with its version list. |
 | `POST /explorer/validate` | operate | body `targetId`, `version`, `schema`, `templateVersion`, `mapping`; `partition` | One record checked against its kind's schema, and with `mapping` (a synced mapping's id, as `GET /mappings` lists it) against that mapping's record-stage assertions, under the verdict's `assertions`. |
 | `POST /explorer/validate-list` | operate | body `search`, `max` (1 to 1,000), `schema`, `mapping`; `partition` | The records a search finds checked and counted by the rules they break, and with `mapping` by the assertions they fail (`mapping`, `asserted`, `failingAssertions`, `assertions`, and each record's `assertionFailures`). |
-| `POST /explorer/element-queries` | operate | body `kind`, `path`, `section`, `value`, `values` | The Lucene query finding records that hold an element, from the saved template alone. |
+| `POST /explorer/element-queries` | operate | body `kind`, `path`, `section`, `value`, `values` | The Lucene query finding records that hold an element, from the template of the kind a synced repository holds alone. |
 | `POST /explorer/referenced-by` | operate | body `type`, `refresh`; `partition` | The types whose records name records of a type, from the partition's schemas. |
-| `GET /explorer/dimension/candidates` | operate | `kind` | The keys a kind's saved template suggests for a dimension. |
+| `GET /explorer/dimension/candidates` | operate | `kind` | The keys the template of a kind a synced repository holds suggests for a dimension. |
 | `POST /explorer/dimension/keys` | operate | body `kind`, `query`, `path`; `partition` | The commonest keys of a drafted dimension's path. |
 | `POST /explorer/dimension/compose` | operate | body `draft`, `example`; `partition` | A drafted dimension as YAML, checked; nothing is saved. |
 | `GET /search-terms` | read | `entityType`, `kind`, `orphans` | The search terms of an entity type, or of every one. |

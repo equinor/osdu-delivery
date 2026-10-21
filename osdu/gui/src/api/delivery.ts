@@ -1875,15 +1875,32 @@ export type DeliveryTemplateShape = "Value" | "ValueList" | "Group" | "GroupList
 export type DeliveryTemplateRole = "Mapping" | "Engine" | "Osdu";
 
 /**
- * A saved template version of the library: the OSDU kind, its content version, and when, by whom and from where it was
- * saved. The library is not linked to the repositories, whose documents read their templates from their template folders.
+ * A file of a synced repository's template folder, as the repository's last sync found it: the template it holds, or why it
+ * holds none. The file is the template; the control plane reads it where the repository was synced, and keeps none of it.
  */
 export interface DeliveryTemplate {
-  kind: string;
-  version: string;
-  capturedUtc: string;
-  capturedBy: string;
-  origin: string;
+  repoId: string;
+  /** The repository's name. */
+  repository: string;
+  /** The file's path in the repository, such as welldb/templates/osdu_wks_work-product-component--WellLog_1.4.0.json. */
+  path: string;
+  /** The template folder it is in, such as welldb/templates. */
+  folder: string;
+  /** The kind it holds; null when it holds no template. */
+  kind: string | null;
+  /** The template version it holds, the hash of its schema; null when it holds none. */
+  version: string | null;
+  /** Why it holds no template; null when it holds one. */
+  problem: string | null;
+  /** When the repository's last sync saw it. */
+  seenUtc: string;
+}
+
+/** The repository file a template laid out was read from. */
+export interface DeliveryTemplateFile {
+  repoId: string;
+  repository: string;
+  path: string;
 }
 
 /**
@@ -1924,20 +1941,17 @@ export interface DeliveryTemplateVariable {
   open: boolean;
 }
 
-/** A template laid out variable by variable, parents before their children in schema order. `saved` is null for a schema not saved yet. */
+/**
+ * A template laid out variable by variable, parents before their children in schema order. `file` is the repository file it
+ * was read from; null for a schema of the OSDU data definitions being looked at.
+ */
 export interface DeliveryTemplateDetail {
   kind: string;
   version: string;
   title: string | null;
   description: string | null;
-  saved: DeliveryTemplate | null;
+  file: DeliveryTemplateFile | null;
   variables: DeliveryTemplateVariable[];
-}
-
-/** What saving a schema did: `created` for a new version, `unchanged` for one already saved. */
-export interface DeliveryTemplateSaved {
-  template: DeliveryTemplate;
-  outcome: "created" | "unchanged";
 }
 
 /**
@@ -1984,7 +1998,7 @@ export interface DeliveryOsduSchemaIndex {
   schemas: DeliveryOsduSchema[];
 }
 
-/** A kind's schema bundled from a release: the template version it saves as, and the origin a save records. Nothing is saved. */
+/** A kind's schema bundled from a release: the template version its file holds, and where it came from. Nothing is kept. */
 export interface DeliveryOsduSchemaFile {
   kind: string;
   version: string;
@@ -2292,7 +2306,7 @@ export interface MappingDraftLookup {
 
 /**
  * One record set the mapping searches the platform for as a record needs one, rather than capturing it into the cache:
- * the name entries read it by, the kind it looks in, and the saved template whose schema says how that kind is indexed.
+ * the name entries read it by, the kind it looks in, and the template whose schema says how that kind is indexed.
  */
 export interface MappingDraftSearch {
   name: string;
@@ -2336,12 +2350,14 @@ export interface MappingDraftIssue {
   target: string | null;
 }
 
-/** Starts a mapping for a repository and a saved template version. */
+/** Starts a mapping for the template a synced repository's file holds. */
 export interface DeliveryMappingDraftRequest {
   /** The partition whose cache the draft's cache entries are prefilled from; null prefills none. */
   scope: string | null;
-  kind: string;
-  version: string;
+  /** The repository holding the template. */
+  repoId: string;
+  /** The template file's path in the repository. */
+  templatePath: string;
   name: string;
   mappingVersion: string;
   system: string;
@@ -2385,8 +2401,8 @@ export interface DeliveryMappingCoverageVariable {
 /**
  * What a mapping fills of the template version it pins: every variable a mapping may fill with how the document reaches
  * it, and what it leaves required and empty. The errors are the ones the delivery gate raises; the warnings are the
- * required variables the gate does not check. `variables` is empty when the document does not load or its template is
- * not saved, and `issues` says which.
+ * required variables the gate does not check. `variables` is empty when the document does not load or its template
+ * cannot be read, and `issues` says which.
  */
 export interface DeliveryMappingCoverage {
   kind: string | null;
@@ -2593,7 +2609,7 @@ export interface DeliveryAssertionTest {
   /** False when the test names partitions and the board's partition is not one of them. */
   runsHere: boolean;
   partitions: string[];
-  /** The version of the saved template of its kind its fields are checked against; null when it reads no field of an exact kind. */
+  /** The version of the template of its kind its fields are checked against; null when it reads no field of an exact kind. */
   template: string | null;
   /** The mapping (`Name@version`) whose pinned template it is checked against (`template: WellLog@1.5.0`). */
   templateMapping?: string | null;
@@ -3116,7 +3132,7 @@ export type BlueprintRole = "key" | "label" | "attribute" | "collect";
 /** What a column of a dimension's table holds. */
 export type BlueprintColumnRole = "id" | "partition" | "keyId" | "key" | "value" | "records" | "filter" | "attribute";
 
-/** A saved template a blueprint describes a part of the dimension by. */
+/** A template a blueprint describes a part of the dimension by. */
 export interface BlueprintTemplate {
   kind: string;
   version: string;
@@ -3200,7 +3216,7 @@ export interface BlueprintRecords {
   reads: BlueprintRead[];
 }
 
-/** A kind of the dimension's own records: its records where a build counted them, and its saved template's version. */
+/** A kind of the dimension's own records: its records where a build counted them, and its template's version. */
 export interface BlueprintKind {
   kind: string;
   records: number | null;
@@ -3211,7 +3227,7 @@ export interface BlueprintKind {
 export interface BlueprintSource {
   kind: string;
   query: string | null;
-  /** True when the kinds are those the last build read; false when they are the saved templates the pattern matches. */
+  /** True when the kinds are those the last build read; false when they are the templates the flow reads that the pattern matches. */
   built: boolean;
   kinds: BlueprintKind[];
   template: BlueprintTemplate | null;
@@ -3262,7 +3278,7 @@ export interface DeliveryDimensionCoverage {
 
 /**
  * How a dimension is built: its flow and partition, whether the flow declares it, its number once built, its YAML (or why
- * it is not shown), the blueprint the declaration and the saved templates make, and how much of each attribute was read.
+ * it is not shown), the blueprint the declaration and the flow's templates make, and how much of each attribute was read.
  */
 export interface DeliveryDimensionBlueprint {
   flow: string;
@@ -3511,11 +3527,11 @@ export interface DeliveryDimensionView {
   lastCheck?: DeliveryDimensionViewCheck | null;
 }
 
-/** What the saved templates say of a join: it agrees, it joins a dimension of another entity type (and finds nothing), or no template says. */
+/** What the flow's templates say of a join: it agrees, it joins a dimension of another entity type (and finds nothing), or no template says. */
 export type DimensionViewJoinVerdictKind = "agrees" | "differs" | "unchecked";
 
 /**
- * What the saved templates say of one join a view declares: the entity types the joined column names (its template's
+ * What the flow's templates say of one join a view declares: the entity types the joined column names (its template's
  * `x-osdu-relationship`, or an id's pattern), the entity type the joined dimension's kind names, and the verdict.
  */
 export interface DeliveryDimensionViewJoinVerdict {
@@ -3657,7 +3673,7 @@ export const deliveryApi = {
   /**
    * How a dimension of a flow is built, in `partition` (the workbench's when none is named): its YAML line by line, the
    * records it reads step by step with the template describing each, and the table's columns with the reads each is
-   * written from. Read from the catalog, the saved templates and the ledger; nothing reaches OSDU.
+   * written from. Read from the catalog, the template files on the flow's path and the ledger; nothing reaches OSDU.
    */
   dimensionBlueprint: (pipelineId: string, name: string, partition?: string | null) =>
     get<DeliveryDimensionBlueprint>(
@@ -3708,7 +3724,7 @@ export const deliveryApi = {
   /** One dimension flow's views: those it declares, and those a build of it wrote that it no longer declares. */
   dimensionFlowViews: (pipelineId: string) => get<DeliveryDimensionView[]>(`/api/v1/delivery/flows/${pipelineId}/dimensions/views`),
   /**
-   * The joins a view whose rows are the dimension `from`'s could make, from the flow's dimensions and the saved templates,
+   * The joins a view whose rows are the dimension `from`'s could make, from the flow's dimensions and its templates,
    * with the `join:` block to paste into the view's YAML. Reads the catalog and the templates; nothing is written.
    */
   suggestDimensionViewJoins: (pipelineId: string, from: string) =>
@@ -3738,16 +3754,20 @@ export const deliveryApi = {
   mappings: (repoId?: string, status?: string) =>
     get<DeliveryMapping[]>("/api/v1/delivery/mappings", { repoId, status }),
   mapping: (mappingId: string) => get<DeliveryMappingDetail>(`/api/v1/delivery/mappings/${mappingId}`),
-  /** The saved template versions, with how many synced mappings pin each. */
+  /** Every file of every synced repository's template folders, as each repository's last sync found it. */
   templates: () => get<DeliveryTemplate[]>("/api/v1/delivery/templates"),
-  /** A saved template laid out variable by variable; with `scope`, each variable names the types of that partition's cache it can be read from. */
-  templateDetail: (kind: string, version: string, scope?: string) =>
-    get<DeliveryTemplateDetail>("/api/v1/delivery/templates/detail", { kind, version, scope }),
-  /** The saved template's bundled schema, which the control plane answers as a file to save, read as its JSON text. */
-  templateSchema: (kind: string, version: string) =>
-    getText(`/api/v1/delivery/templates/schema?${new URLSearchParams({ kind, version }).toString()}`),
   /**
-   * Lays out a schema as a template without saving it; a 400 says why the JSON is not a record schema. A schema that refers
+   * The template a repository's file holds, read from the file and laid out variable by variable; with `scope`, each
+   * variable names the types of that partition's cache it can be read from. A 404 for a file the sync did not record, a 422
+   * for one that holds no template or no longer holds what the sync recorded.
+   */
+  templateDetail: (repoId: string, path: string, scope?: string) =>
+    get<DeliveryTemplateDetail>("/api/v1/delivery/templates/detail", { repoId, path, scope }),
+  /** The template a repository's file holds, read from the file, as the file it is, read as its JSON text. */
+  templateSchema: (repoId: string, path: string) =>
+    getText(`/api/v1/delivery/templates/schema?${new URLSearchParams({ repoId, path }).toString()}`),
+  /**
+   * Lays out a schema as a template, keeping nothing; a 400 says why the JSON is not a record schema. A schema that refers
    * to the shared schemas of the OSDU data definitions has them read from `release` (the newest when omitted).
    */
   previewTemplate: (kind: string, schema: Record<string, unknown>, scope?: string | null, release?: string | null) =>
@@ -3760,9 +3780,15 @@ export const deliveryApi = {
   /** Every record kind a release of the OSDU data definitions publishes; a 404 for a release it does not have. */
   osduSchemas: (release: string) =>
     get<DeliveryOsduSchemaIndex>("/api/v1/delivery/templates/osdu/schemas", { release }),
-  /** One kind's schema from a release, bundled with every schema it refers to. Nothing is saved; a 404 for a kind the release does not publish. */
+  /** One kind's schema from a release, bundled with every schema it refers to. Nothing is kept; a 404 for a kind the release does not publish. */
   osduSchema: (release: string, kind: string) =>
     get<DeliveryOsduSchemaFile>("/api/v1/delivery/templates/osdu/schema", { release, kind }),
+  /**
+   * One kind's schema from a release, as the file a repository's template folder keeps (bundled, naming its kind), read as
+   * its JSON text: what Download saves. Nothing is kept on the control plane.
+   */
+  osduSchemaFile: (release: string, kind: string) =>
+    getText(`/api/v1/delivery/templates/osdu/file?${new URLSearchParams({ release, kind }).toString()}`),
   /** Two versions of one kind, each from a release, compared as published files and variable by variable; a 400 for two different kinds. */
   osduCompare: (from: { release: string; kind: string }, to: { release: string; kind: string }) =>
     get<DeliveryOsduComparison>("/api/v1/delivery/templates/osdu/compare", {
@@ -3771,25 +3797,20 @@ export const deliveryApi = {
       toRelease: to.release,
       toKind: to.kind,
     }),
-  /**
-   * Saves a schema as a template version; saving one already saved changes nothing. References to the OSDU data definitions
-   * are read from `release`, as a preview reads them, and the saved origin names the release.
-   */
-  saveTemplate: (kind: string, schema: Record<string, unknown>, origin: string, release?: string | null) =>
-    post<DeliveryTemplateSaved>("/api/v1/delivery/templates", { kind, schema, origin, release: release ?? null }),
-  /** Deletes a saved template version; refused with a 409 while a synced mapping pins it. */
-  deleteTemplate: (kind: string, version: string) =>
-    del<void>(`/api/v1/delivery/templates?${new URLSearchParams({ kind, version }).toString()}`),
   /** The repositories the mapping builder offers, with their git source and delivery flows. */
   builderRepos: () => get<DeliveryBuilderRepo[]>("/api/v1/delivery/mapping-builder/repos"),
   /** The partition caches the mapping builder offers, with the flows filling each, their current version and their types. */
   builderCaches: () => get<DeliveryBuilderCache[]>("/api/v1/delivery/mapping-builder/caches"),
-  /** A new draft for a saved template version, prefilled from the named partition's cache; a 404 when the template is not saved. */
+  /** A new draft for the template a repository's file holds, prefilled from the named partition's cache; a 404 when the sync recorded no such file. */
   draftMapping: (request: DeliveryMappingDraftRequest) =>
     post<MappingDraft>("/api/v1/delivery/mapping-builder/draft", request),
-  /** Writes a draft as YAML and checks it against its template and the named partition cache's current version, rendering with `parameters`. */
-  composeMapping: (scope: string | null, draft: MappingDraft, parameters: Record<string, string> | null) =>
-    post<DeliveryMappingComposeResult>("/api/v1/delivery/mapping-builder/compose", { scope, draft, parameters }),
+  /**
+   * Writes a draft as YAML and checks it against its template and the named partition cache's current version, rendering with
+   * `parameters`: at `path` in repository `repoId` when named, whose template folders settle its templates as they will once
+   * it is there.
+   */
+  composeMapping: (scope: string | null, draft: MappingDraft, parameters: Record<string, string> | null, repoId?: string | null, path?: string | null) =>
+    post<DeliveryMappingComposeResult>("/api/v1/delivery/mapping-builder/compose", { scope, draft, parameters, repoId: repoId ?? null, path: path ?? null }),
   /** What a mapping document fills of the template version it pins, variable by variable; nothing is rendered and no cache is read. */
   /**
    * `repoId` names the synced repository the document is a mapping of, whose template folders settle a template it names

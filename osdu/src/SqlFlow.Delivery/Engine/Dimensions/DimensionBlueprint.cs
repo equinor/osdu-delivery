@@ -82,8 +82,8 @@ public static class BlueprintRoles
 
 /// <summary>
 /// Lays out a dimension's blueprint. It reads the declaration and the templates the dimension's flow reads only, never OSDU
-/// and never a record: the template folders on the flow's path for a flow of a repository, and the saved templates for a
-/// draft no flow holds yet (osdu/docs/reference/concepts/templates.md). The key and a collected attribute are described as
+/// and never a record: the template folders on the flow's path for a flow of a repository, and the templates every synced
+/// repository holds for a draft no flow holds yet (osdu/docs/reference/concepts/templates.md). The key and a collected attribute are described as
 /// a build's search reads them (<see cref="SearchFields"/>, the same classification the build settles its field by), and
 /// each step of a label or an attribute in the template of the entity type the step before names
 /// (<c>x-osdu-relationship</c>), the newest version of it the flow reads, the way a person reads it
@@ -94,7 +94,7 @@ public static class DimensionBlueprints
 {
     /// <summary>
     /// The blueprint of <paramref name="dimension"/> as <paramref name="templates"/> describes it for a draft no flow holds:
-    /// what the saved templates give.
+    /// what the templates the synced repositories hold give.
     /// </summary>
     public static Task<DimensionBlueprint> DescribeAsync(
         DimensionSpec dimension, ITemplateSource templates, IReadOnlyList<DimensionKind> built, CancellationToken ct = default)
@@ -176,13 +176,13 @@ public static class DimensionBlueprints
             sourceSchema = matching.Count > 0 ? matching[0].Schema : null;
             if (sourceTemplate is null)
             {
-                // A draft no flow holds yet is described by the saved templates; a flow's dimension by the template folders on
-                // its path, which are what its build reads.
+                // A draft no flow holds yet is described by the templates the synced repositories hold; a flow's dimension by
+                // the template folders on its path, which are what its build reads.
                 var why = problems.Count > 0 ? $" {string.Join(" ", problems.Take(3))}" : string.Empty;
                 sourceMissing = (document is null, SearchFields.IsDataPath(dimension.Path)) switch
                 {
-                    (true, true) => $"No saved template matches {dimension.Kind}, and a build reads a path of data only by the template of every kind it matches. Save the kind's template on the Templates page, and keep it in a template folder on the flow's path once the flow is written.{why}",
-                    (true, false) => $"No saved template matches {dimension.Kind}; the paths read from its records are not described.{why}",
+                    (true, true) => $"No template a synced repository holds matches {dimension.Kind}, and a build reads a path of data only by the template of every kind it matches. Put the kind's template in a template folder on the path the flow will have (the Templates page downloads it from the OSDU data definitions), and sync the repository.{why}",
+                    (true, false) => $"No template a synced repository holds matches {dimension.Kind}; the paths read from its records are not described.{why}",
                     (false, true) => $"No template the flow reads matches {dimension.Kind}, and a build reads a path of data only by the template of every kind it matches. Put the kind's template in a template folder on the flow's path.{why}",
                     (false, false) => $"No template the flow reads matches {dimension.Kind}; the paths read from its records are not described.{why}",
                 };
@@ -271,7 +271,7 @@ public static class DimensionBlueprints
     /// <summary>
     /// The templates the document at <paramref name="document"/> reads that the kind pattern <paramref name="kind"/> matches:
     /// for each kind it matches, the one version the document reads (the one the nearest template folder holding the kind
-    /// holds, or the newest saved where the source is the library), the newest version of the kind first. The first is the
+    /// holds, or the version the most recently synced repository holds where no document asks), the newest version of the kind first. The first is the
     /// template a dimension's own records are described by before a build. A kind whose version cannot be settled (its
     /// nearest folder holds two) is left out, and why is among the problems.
     /// </summary>
@@ -335,8 +335,8 @@ public static class DimensionBlueprints
 
     /// <summary>
     /// The records a read's ids name at <paramref name="depth"/>, described by the newest template of the first of their
-    /// entity types that has one: of those the flow reads, or of the saved templates for a <paramref name="drafted"/>
-    /// dimension no flow holds.
+    /// entity types that has one: of those the flow reads, or of those the synced repositories hold for a
+    /// <paramref name="drafted"/> dimension no flow holds.
     /// </summary>
     private static async Task<NodeDraft> NodeAsync(
         string id, int depth, IReadOnlyList<string> types, ReadDraft from, Func<string, Task<(BlueprintTemplate? Template, SchemaSnapshot? Schema)>> newestOf,
@@ -361,7 +361,7 @@ public static class DimensionBlueprints
         return new NodeDraft(
             id, depth, types, from.Id, null, null,
             drafted
-                ? $"No template of {string.Join(" or ", types)} is saved, so the paths read from these records are read as written, unchecked. Save one on the Templates page to check them."
+                ? $"No synced repository holds a template of {string.Join(" or ", types)}, so the paths read from these records are read as written, unchecked. Put one in a template folder and sync the repository to check them."
                 : $"The flow reads no template of {string.Join(" or ", types)}, so the paths read from these records are read as written, unchecked. Put one in a template folder on the flow's path to check them.");
     }
 

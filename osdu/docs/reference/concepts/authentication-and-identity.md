@@ -68,7 +68,7 @@ remove records from OSDU, delete a flow's ledger, approve cache changes, probe a
 | Policy | Delivery routes behind it |
 | --- | --- |
 | `admin` (the `admin` scope) | Setting and removing central configuration properties (`PUT`, `DELETE /config/{name}`); registering, describing, defaulting and removing partitions; the ledger's retention pass (`POST /ledger/prune`); removing a dimension (`DELETE /dimensions/{id}`). |
-| `author` (any signed-in user) | Saving and deleting template versions (`POST`, `DELETE /templates`); refining, resetting, deleting and restoring search terms. |
+| `author` (any signed-in user) | Refining, resetting, deleting and restoring search terms. |
 | `operate` (any signed-in user) | Every intervention, every removal, every in-process read of OSDU or the source, the explorer, value checks, reversals, ledger deletion, the data definitions sync. |
 | `read` (any signed-in user) | Every listing and detail of the ledger, mappings, templates, caches, partitions, configuration, assertions, dimensions and inventories. |
 
@@ -114,7 +114,7 @@ or renaming an account later does not rewrite what it did.
 
 The run row itself carries the requester and the trigger source (`schedule`, `manual` or `cli`) as SQLFlow records them,
 so a delivery run's activities and its run agree on who asked. Outside the audit trail, a cache change records who
-approved or rejected it, and a configuration property, a partition, a saved template and a refined search term record
+approved or rejected it, and a configuration property, a partition and a refined search term record
 who last set them, each as `user:<subject>` (or `cli:<user>@<machine>` when a command line verb set it) except the cache
 decision, which records the subject alone.
 

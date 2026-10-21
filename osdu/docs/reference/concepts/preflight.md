@@ -232,7 +232,7 @@ else in the cache version the flow renders with, for the entity types it capture
 | --- | --- |
 | `valid` | every rule that applies was checked and met |
 | `invalid` | a rule is broken, or the document refers to a record that the cache (or storage, when asked) does not hold |
-| `unverified` | nothing is broken and some part could not be checked: a pattern no regular expression dialect reads, a check that ran out of time or walked past its bounds, a reference nothing could answer for, or no template of the kind at the version the document was rendered for, neither in a template folder on the mapping's path nor saved |
+| `unverified` | nothing is broken and some part could not be checked: a pattern no regular expression dialect reads, a check that ran out of time or walked past its bounds, a reference nothing could answer for, or no template of the kind at the version the document was rendered for in a template folder on the mapping's path |
 | `notValidated` | the try sends the payload alone, so nothing of the document is sent or checked |
 
 `target.validation` decides which verdicts hold the record; every verdict is recorded on the try's attempt, and the record
@@ -268,7 +268,7 @@ order they are written:
 | Field | What it holds |
 | --- | --- |
 | `outcome` | `valid`, `invalid`, `unverified` or `notValidated`, as the table above says. |
-| `schema` | What the record was checked against: `kind`, `version` (the schema's content version, as [templates](templates.md) name it) and `source`, which is `template` for a template OSDU Delivery holds and `schema-service` for the partition's Schema service. The gate before sending always checks against the template version the document was rendered for, read from the template folders on the mapping's path, or from the saved templates once no folder holds that version any longer and someone saved it there; the explorer checks against a saved template or the Schema service's. Absent when no schema could be had. |
+| `schema` | What the record was checked against: `kind`, `version` (the schema's content version, as [templates](templates.md) name it) and `source`, which is `template` for a template OSDU Delivery holds and `schema-service` for the partition's Schema service. The gate before sending always checks against the template version the document was rendered for, read from the template folders on the mapping's path; once no folder there holds that version any longer, the record is `unverified`. The explorer checks against a template a synced repository holds or the Schema service's. Absent when no schema could be had. |
 | `rules` | How many rules were applied. |
 | `problemCount`, `problems` | Every problem found is counted; the first 50 the check finds are listed, and each reference nothing holds is added as a problem of the rule `reference`, at most 20 of those listed. |
 | `unverifiedCount`, `unverified` | Every part not checked is counted; the first 20 are listed. |

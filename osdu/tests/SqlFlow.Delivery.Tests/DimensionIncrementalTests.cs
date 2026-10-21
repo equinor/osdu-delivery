@@ -54,7 +54,6 @@ public sealed class DimensionIncrementalTests : IDisposable
     private readonly OsduTestDatabase _db = new();
     private readonly TestClock _clock = new();
     private readonly FakeDimensionPlatform _platform = new() { AggregationSize = 50 };
-    private bool _templates;
 
     public void Dispose()
     {
@@ -67,14 +66,7 @@ public sealed class DimensionIncrementalTests : IDisposable
     private async Task<(DimensionRunner Runner, OsduLedger Ledger, DimensionFlowDefinition Flow)> RunnerAsync(string yaml)
     {
         var ledger = _db.Ledger(_clock);
-        var templates = _db.Templates(_clock);
-        if (!_templates)
-        {
-            await Samples.ImportSampleTemplatesAsync(templates);
-            _templates = true;
-        }
-
-        var engine = Samples.Engine(ledger, _clock, templates: templates);
+        var engine = Samples.Engine(ledger, _clock);
         var flow = new DeliveryDocumentLoader().ParseDimension(yaml, "flows/dims.yaml").ForPartition("dev");
         return (new DimensionRunner(engine, flow, new Dictionary<string, string>(), Samples.Logger<DimensionRunner>(), _platform, allowLoopback: true), ledger, flow);
     }

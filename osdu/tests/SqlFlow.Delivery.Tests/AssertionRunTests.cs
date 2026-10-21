@@ -170,9 +170,7 @@ public sealed class AssertionRunTests : IDisposable
     private async Task<(AssertionRunner Runner, OsduLedger Ledger, AssertionFlowDefinition Flow)> RunnerAsync(string yaml = Flow, string partition = "dev")
     {
         var ledger = _db.Ledger(_clock);
-        var templates = _db.Templates(_clock);
-        await Samples.ImportSampleTemplatesAsync(templates);
-        var engine = Samples.Engine(ledger, _clock, templates: templates);
+        var engine = Samples.Engine(ledger, _clock);
         var flow = new DeliveryDocumentLoader().ParseAssertion(yaml, "flow.yaml").ForPartition(partition);
         return (new AssertionRunner(engine, flow, new Dictionary<string, string>(), Samples.Logger<AssertionRunner>(), _platform, allowLoopback: true), ledger, flow);
     }

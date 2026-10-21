@@ -153,14 +153,14 @@ public sealed class DeliveryExplorerApiTests
             var fields = await RanAsync(client, token, $"/api/v1/delivery/explorer/fields?partition={named}", new { kind = "osdu:wks:master-data--Wellbore:1.1.0" });
             Assert.Equal((ExploreOperation.FieldsAction, "osdu:wks:master-data--Wellbore:1.1.0"), (fields.Argument(ExploreOperation.ActionArgument), fields.Argument(ExploreOperation.KindArgument)));
 
-            // A record is checked against what the Schema service holds by default, or a saved template's version asked for.
+            // A record is checked against what the Schema service holds by default, or a repository template's version asked for.
             var validated = await RanAsync(client, token, $"/api/v1/delivery/explorer/validate?partition={named}", new { targetId = "dev:master-data--Wellbore:Wellbore-B:", version = 7L });
             Assert.Equal(
                 (ExploreOperation.ValidateAction, "dev:master-data--Wellbore:Wellbore-B", "7", (string?)null, (string?)null),
                 (validated.Argument(ExploreOperation.ActionArgument), validated.Argument("targetId"), validated.Argument("version"),
                     validated.Argument(ExploreOperation.SchemaArgument), validated.Argument(ExploreOperation.TemplateVersionArgument)));
-            var againstSaved = await RanAsync(client, token, $"/api/v1/delivery/explorer/validate?partition={named}", new { targetId = "dev:master-data--Wellbore:Wellbore-B", schema = " Saved ", templateVersion = " 9f3c41d07a2b88e1 " });
-            Assert.Equal(("saved", "9f3c41d07a2b88e1"), (againstSaved.Argument(ExploreOperation.SchemaArgument), againstSaved.Argument(ExploreOperation.TemplateVersionArgument)));
+            var againstTemplate = await RanAsync(client, token, $"/api/v1/delivery/explorer/validate?partition={named}", new { targetId = "dev:master-data--Wellbore:Wellbore-B", schema = " Template ", templateVersion = " 9f3c41d07a2b88e1 " });
+            Assert.Equal(("template", "9f3c41d07a2b88e1"), (againstTemplate.Argument(ExploreOperation.SchemaArgument), againstTemplate.Argument(ExploreOperation.TemplateVersionArgument)));
 
             // The explorer judges a mapping's assertions only when the request names one, by its synced id.
             Assert.Null(validated.Argument(ExploreOperation.MappingArgument));
@@ -187,7 +187,8 @@ public sealed class DeliveryExplorerApiTests
             var validate400 = $"/api/v1/delivery/explorer/validate?partition={named}";
             await RefusedAsync(client, token, validate400, new { targetId = "dev:master-data--Wellbore:Wellbore-B", schema = "remote" }, HttpStatusCode.BadRequest, "is not a schema a record is checked against");
             await RefusedAsync(client, token, validate400, new { targetId = "Wellbore B-2 B" }, HttpStatusCode.BadRequest, "is not an OSDU record id");
-            await RefusedAsync(client, token, validate400, new { targetId = "dev:master-data--Wellbore:Wellbore-B", schema = "saved", templateVersion = new string('v', 65) }, HttpStatusCode.BadRequest, "saved template version");
+            await RefusedAsync(client, token, validate400, new { targetId = "dev:master-data--Wellbore:Wellbore-B", schema = "saved" }, HttpStatusCode.BadRequest, "osdu (what the Schema service holds) or template");
+            await RefusedAsync(client, token, validate400, new { targetId = "dev:master-data--Wellbore:Wellbore-B", schema = "template", templateVersion = new string('v', 65) }, HttpStatusCode.BadRequest, "template version as the Templates page shows it");
             var list400 = $"/api/v1/delivery/explorer/validate-list?partition={named}";
             await RefusedAsync(client, token, list400, new { max = 1001 }, HttpStatusCode.BadRequest, "A check reads 1 to 1000 records");
             await RefusedAsync(client, token, list400, new { max = 0 }, HttpStatusCode.BadRequest, "A check reads 1 to 1000 records");
@@ -220,10 +221,10 @@ public sealed class DeliveryExplorerApiTests
             // A record page checks a record it shows as the explorer checks one, read through the record's own flow and the
             // partition its ledger names, whichever flow the explorer would pick there; a bad ask is refused as the explorer's is.
             var onPage = $"/api/v1/delivery/flows/{CatalogIdentity.Pipeline(repoId, ddms.Name):D}/osdu/validate?partition={named}";
-            var pageChecked = await RanAsync(client, token, onPage, new { targetId = " dev:master-data--Wellbore:Wellbore-B: ", version = 7L, schema = " Saved ", templateVersion = " 9f3c41d07a2b88e1 " });
+            var pageChecked = await RanAsync(client, token, onPage, new { targetId = " dev:master-data--Wellbore:Wellbore-B: ", version = 7L, schema = " Template ", templateVersion = " 9f3c41d07a2b88e1 " });
             Assert.Equal((ExploreOperation.OperationName, ddms.Name, named), (pageChecked.Operation, pageChecked.SourceRef, pageChecked.Argument(DeliveryOperation.PartitionArgument)));
             Assert.Equal(
-                (ExploreOperation.ValidateAction, "dev:master-data--Wellbore:Wellbore-B", "7", "saved", "9f3c41d07a2b88e1"),
+                (ExploreOperation.ValidateAction, "dev:master-data--Wellbore:Wellbore-B", "7", "template", "9f3c41d07a2b88e1"),
                 (pageChecked.Argument(ExploreOperation.ActionArgument), pageChecked.Argument("targetId"), pageChecked.Argument("version"),
                     pageChecked.Argument(ExploreOperation.SchemaArgument), pageChecked.Argument(ExploreOperation.TemplateVersionArgument)));
             // A record page judges the assertions of the record's own flow's mapping, unless the request names another.
@@ -310,11 +311,11 @@ public sealed class DeliveryExplorerApiTests
     }
 
     [Fact]
-    public async Task The_queries_of_an_element_are_read_from_the_saved_template_and_nothing_is_asked_of_OSDU()
+    public async Task The_queries_of_an_element_are_read_from_a_repositorys_template_file_and_nothing_is_asked_of_OSDU()
     {
         var cs = OsduTestServer.Require();
         await CatalogDatabase.MigrateAsync(cs);
-        await SampleEstate.SaveTemplatesAsync(cs);
+        await SampleEstate.HoldTemplateRepositoryAsync(cs, DateTime.UtcNow);
         var operations = new RecordedOperations();
         await using var factory = new ControlPlaneAppFactory()
             .WithCatalog(cs)

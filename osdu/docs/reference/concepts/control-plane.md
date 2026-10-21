@@ -84,7 +84,7 @@ themselves are listed in [the delivery API](api.md).
 | A `records` search category | The delivery records category of SQLFlow's `GET /api/v1/search/all`, answered from the ledger's indexed lookup. |
 | The assistant's tools | The product's MCP server decides them: its instructions are the chat's rules, and a run's session lists the tools of the conversation's mode, SQLFlow's metadata tools and the `delivery_*` tools in estate mode, the semantic layer and the query tools in data mode ([the MCP server](../guides/mcp.md)). The module sets no list of its own; `ControlPlane:Assistant:Mcp:AllowedTools` narrows the tools when a deployment wants fewer. |
 | The assistant's routes | A chat run calls the control plane with a token delegated for that run, and a call the MCP server marks as the assistant's is held the same way whatever its credential; SQLFlow refuses both on every route not opened to an assistant run. The module opens exactly the delivery routes its readers read, and the four mapping-builder previews (`DeliveryAssistantAccess`); every other delivery route, an operator action's included, stays closed to it ([authentication and identity](authentication-and-identity.md)). |
-| The OSDU data definitions | A local copy of the Open Group's public schema repository, which the Templates page browses and saves templates from. |
+| The OSDU data definitions | A local copy of the Open Group's public schema repository, which the Templates page browses and downloads template files from. |
 | Metrics export | Where the module's meter goes, when a deployment names an exporter ([run trace and metrics](run-trace-and-metrics.md)). |
 
 ### The module database and its connection

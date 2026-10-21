@@ -181,9 +181,8 @@ public sealed class SchemaVersionPipelinesTests : IDisposable
     private async Task<Estate> EstateAsync()
     {
         var tables = await SampleEstate.BuildAsync(_root, Now.AddMinutes(-5), time: _clock);
-        var templates = _db.Templates(_clock);
-        await Samples.ImportSampleTemplatesAsync(templates);
-        await WellLogVersions.SaveNextTemplateAsync(templates);
+        // The sample templates hold both versions: WellLog 1.5.0 is among the fixtures' template files.
+        var templates = Samples.SampleTemplates;
         var caches = _db.Caches();
         await Samples.ImportSampleCacheAsync(caches);
         await WellLogVersions.ImportPartitionCacheAsync(caches, NextPartition, NextFlowName);
@@ -235,7 +234,7 @@ public sealed class SchemaVersionPipelinesTests : IDisposable
     private static string Text(JsonNode? node, string name)
         => node?[name]?.GetValue<string>() ?? throw new InvalidOperationException($"The document has no '{name}'.");
 
-    private sealed record Estate(MemoryIngestionTables Tables, ITemplateStore Templates, ICacheStore Caches, OsduLedger Ledger);
+    private sealed record Estate(MemoryIngestionTables Tables, ITemplateSource Templates, ICacheStore Caches, OsduLedger Ledger);
 
     private sealed record Pipeline(FlowRuntime Runtime, FakeProtocol Protocol) : IDisposable
     {

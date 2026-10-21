@@ -2660,8 +2660,6 @@ namespace SqlFlow.Delivery.Data.Migrations
 
                     b.HasKey("Id");
 
-                    b.HasIndex("Kind", "TemplateVersion");
-
                     b.HasIndex("RepoId", "Kind");
 
                     b.HasIndex("RepoId", "Reference")
@@ -3289,9 +3287,6 @@ namespace SqlFlow.Delivery.Data.Migrations
                     b.Property<Guid>("RepoId")
                         .HasColumnType("uniqueidentifier");
 
-                    b.Property<string>("SchemaJson")
-                        .HasColumnType("nvarchar(max)");
-
                     b.Property<string>("Version")
                         .IsRequired()
                         .HasMaxLength(64)
@@ -3810,47 +3805,6 @@ namespace SqlFlow.Delivery.Data.Migrations
                     b.HasIndex("PartitionId", "FlowId", "Kind", "ReceivedUtc");
 
                     b.ToTable("Submission", "osdu");
-                });
-
-            modelBuilder.Entity("SqlFlow.Delivery.Data.DeliveryTemplate", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("uniqueidentifier");
-
-                    b.Property<string>("CapturedBy")
-                        .IsRequired()
-                        .HasMaxLength(200)
-                        .HasColumnType("nvarchar(200)");
-
-                    b.Property<DateTime>("CapturedUtc")
-                        .HasColumnType("datetime2");
-
-                    b.Property<string>("Kind")
-                        .IsRequired()
-                        .HasMaxLength(200)
-                        .HasColumnType("nvarchar(200)");
-
-                    b.Property<string>("Origin")
-                        .IsRequired()
-                        .HasMaxLength(1000)
-                        .HasColumnType("nvarchar(1000)");
-
-                    b.Property<string>("SchemaJson")
-                        .IsRequired()
-                        .HasColumnType("nvarchar(max)");
-
-                    b.Property<string>("Version")
-                        .IsRequired()
-                        .HasMaxLength(64)
-                        .HasColumnType("nvarchar(64)");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("Kind", "Version")
-                        .IsUnique();
-
-                    b.ToTable("Template", "osdu");
                 });
 
             modelBuilder.Entity("SqlFlow.Delivery.Data.DeliveryUpdateTag", b =>

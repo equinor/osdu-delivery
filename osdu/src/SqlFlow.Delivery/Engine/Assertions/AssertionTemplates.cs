@@ -16,7 +16,7 @@ public sealed record TemplateFit(OsduTemplate? Template, string? Version, IReadO
 
     /// <summary>
     /// The templates of the records the test reads through references (known values' <c>[data.WellboreID, data.FacilityName]</c>),
-    /// by entity type: the newest saved of each, which the test's paths into those records are checked against and its searches
+    /// by entity type: the newest the flow's template folders hold of each, which the test's paths into those records are checked against and its searches
     /// of them ask.
     /// </summary>
     public IReadOnlyDictionary<string, OsduTemplate> Referenced { get; init; } = new Dictionary<string, OsduTemplate>(StringComparer.OrdinalIgnoreCase);
@@ -36,7 +36,7 @@ public static partial class AssertionTemplates
 {
     /// <summary>
     /// The template each test's fields are checked against, as the overload with a document reads it for a flow that names
-    /// none: what a library of templates gives.
+    /// none: what the templates of every synced repository give.
     /// </summary>
     public static Task<IReadOnlyDictionary<string, TemplateFit>> FitAsync(
         IReadOnlyList<AssertionTest> tests, ITemplateSource templates, CancellationToken ct)
@@ -171,7 +171,7 @@ public static partial class AssertionTemplates
 
     /// <summary>
     /// The newest kind of <paramref name="entityType"/> among <paramref name="readable"/>: the highest version of the type,
-    /// and among templates of one kind the first listed (the nearest folder's, or the newest saved).
+    /// and among templates of one kind the first listed (the nearest folder's).
     /// </summary>
     private static string? NewestKindOf(IReadOnlyList<TemplateInfo> readable, string entityType)
         => readable

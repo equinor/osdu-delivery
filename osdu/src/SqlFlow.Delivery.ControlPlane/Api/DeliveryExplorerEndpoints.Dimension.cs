@@ -74,11 +74,11 @@ public static partial class DeliveryExplorerEndpoints
     }
 
     /// <summary>
-    /// The keys the saved template of a kind suggests for a dimension, the likeliest first: the properties whose values name
-    /// other records. Read from the templates alone; nothing is asked of OSDU.
+    /// The keys the template of a kind suggests for a dimension, the likeliest first: the properties whose values name
+    /// other records. Read from the templates the synced repositories hold, from their files, alone; nothing is asked of OSDU.
     /// </summary>
     private static async Task<Results<Ok<DimensionKeySuggestions>, ProblemHttpResult>> DimensionCandidatesAsync(
-        [FromQuery] string? kind, ITemplateStore templates, CancellationToken ct)
+        [FromQuery] string? kind, OsduDbContext osdu, IRepositoryFolders folders, CancellationToken ct)
     {
         var trimmed = kind?.Trim();
         if (string.IsNullOrEmpty(trimmed))
@@ -91,13 +91,14 @@ public static partial class DeliveryExplorerEndpoints
             return DeliveryEndpoints.Invalid(wrong);
         }
 
+        var templates = await RepositoryTemplates.ReadAsync(osdu, folders, ct).ConfigureAwait(false);
         return TypedResults.Ok(await DimensionKeyCandidates.SuggestAsync(trimmed, templates, ct).ConfigureAwait(false));
     }
 
     /// <summary>The commonest keys of a drafted dimension's path, with the records holding each, which the builder's example steps through.</summary>
     private static async Task<Results<ContentHttpResult, ProblemHttpResult>> DimensionKeysAsync(
         DeliveryDimensionKeysRequest? body, [FromQuery] string? partition, CatalogDbContext db, DeliveryDocumentLoader documents, IPartitionRegistry partitions,
-        ILedger ledger, DeliveryConfigStore config, DirectOperations direct, ITemplateStore templates, ILoggerFactory loggers, HttpRequest request, ClaimsPrincipal user,
+        ILedger ledger, DeliveryConfigStore config, DirectOperations direct, IRepositoryFolders folders, ILoggerFactory loggers, HttpRequest request, ClaimsPrincipal user,
         CancellationToken ct)
     {
         if (KeysProblem(body) is { } invalid)
@@ -107,6 +108,7 @@ public static partial class DeliveryExplorerEndpoints
 
         var kind = body!.Kind!.Trim();
         var path = body.Path!.Trim();
+        var templates = await RepositoryTemplates.ReadAsync(ledger, folders, ct).ConfigureAwait(false);
         var (field, guessed) = await KeyFieldAsync(templates, kind, path, ct).ConfigureAwait(false);
         var keys = new DimensionKeysRequest
         {
@@ -125,12 +127,12 @@ public static partial class DeliveryExplorerEndpoints
 
     /// <summary>
     /// A drafted dimension written as YAML and checked: by the document loader, as a flow's own item is read, then against the
-    /// saved templates as its blueprint describes it, and against the dimensions of the database, whose tables it must not
+    /// templates the synced repositories hold as its blueprint describes it, and against the dimensions of the database, whose tables it must not
     /// share; with one key made into its row through the connection the explorer reads the partition by.
     /// </summary>
     private static async Task<Results<Ok<DeliveryDimensionComposeDto>, ProblemHttpResult>> ComposeDimensionAsync(
         DeliveryDimensionComposeRequest? body, [FromQuery] string? partition, CatalogDbContext db, OsduDbContext osdu, DeliveryDocumentLoader documents,
-        IPartitionRegistry partitions, ILedger ledger, DeliveryConfigStore config, DirectOperations direct, ITemplateStore templates, ILoggerFactory loggers,
+        IPartitionRegistry partitions, ILedger ledger, DeliveryConfigStore config, DirectOperations direct, IRepositoryFolders folders, ILoggerFactory loggers,
         HttpRequest request, ClaimsPrincipal user, CancellationToken ct)
     {
         if (body?.Draft is not { } draft)
@@ -162,7 +164,7 @@ public static partial class DeliveryExplorerEndpoints
         DimensionBlueprint? blueprint = null;
         if (spec is not null)
         {
-            blueprint = await DimensionBlueprints.DescribeAsync(spec, templates, [], ct).ConfigureAwait(false);
+            blueprint = await DimensionBlueprints.DescribeAsync(spec, await RepositoryTemplates.ReadAsync(ledger, folders, ct).ConfigureAwait(false), [], ct).ConfigureAwait(false);
             issues.AddRange(BlueprintIssues(spec, blueprint));
             if (await CollisionAsync(spec, db, osdu, documents, ct).ConfigureAwait(false) is { } collision)
             {
@@ -267,11 +269,11 @@ public static partial class DeliveryExplorerEndpoints
     }
 
     /// <summary>
-    /// How the platform indexes the key's path, as a build settles it: by the saved template of the kind (a dimension's
-    /// blueprint picks it the same way), or by the indexer's own mapping for a property of the record itself. A path of data
-    /// no saved template describes is read as text, which most are, and said to be a guess.
+    /// How the platform indexes the key's path, as a build settles it: by the template of the kind a synced repository holds
+    /// (a dimension's blueprint picks it the same way), or by the indexer's own mapping for a property of the record itself.
+    /// A path of data no such template describes is read as text, which most are, and said to be a guess.
     /// </summary>
-    private static async Task<(OsduField? Field, bool Guessed)> KeyFieldAsync(ITemplateStore templates, string kind, string path, CancellationToken ct)
+    private static async Task<(OsduField? Field, bool Guessed)> KeyFieldAsync(ITemplateSource templates, string kind, string path, CancellationToken ct)
     {
         var described = await DimensionBlueprints.DescribeAsync(new DimensionSpec { Name = "key", Kind = kind, Path = path }, templates, [], ct).ConfigureAwait(false);
         var key = described.Source.Reads.First(r => r.Id == BlueprintRoles.KeyRead);
@@ -284,9 +286,9 @@ public static partial class DeliveryExplorerEndpoints
     }
 
     /// <summary>
-    /// What the blueprint finds wrong with a draft, as issues: a key or a collected path a build cannot read, and no saved
-    /// template to read a path of data by, stop a build and are errors; a path of the records read by id that a template does
-    /// not declare, or records no saved template describes, are read as written and are warnings.
+    /// What the blueprint finds wrong with a draft, as issues: a key or a collected path a build cannot read, and no template
+    /// to read a path of data by, stop a build and are errors; a path of the records read by id that a template does not
+    /// declare, or records no template a synced repository holds describes, are read as written and are warnings.
     /// </summary>
     internal static IEnumerable<DimensionDraftIssue> BlueprintIssues(DimensionSpec spec, DimensionBlueprint blueprint)
     {
@@ -440,7 +442,7 @@ public static partial class DeliveryExplorerEndpoints
         }
     }
 
-    /// <summary>How the key and each collected path are indexed, as the blueprint settled them from the saved templates; none where no template says.</summary>
+    /// <summary>How the key and each collected path are indexed, as the blueprint settled them from the templates the synced repositories hold; none where no template says.</summary>
     private static DimensionExampleFields FieldsOf(DimensionSpec spec, DimensionBlueprint blueprint)
     {
         DimensionFieldWire? WireOf(string id, string path)

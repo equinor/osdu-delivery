@@ -11,13 +11,17 @@ import { templateKey, templateSchemaQuery } from "./templateFormat";
 
 interface TemplateViewProps {
   detail: DeliveryTemplateDetail;
-  /** The schema being looked at before it is saved, for the Schema JSON tab. Without it, the saved template's schema is loaded. */
+  /** The schema being looked at from the OSDU data definitions, for the Schema JSON tab. Without it, the repository's file is read. */
   previewSchema?: Record<string, unknown>;
 }
 
-/** The schema as JSON: the one being previewed, or the saved template's, loaded when the tab opens. */
+/** The schema as JSON: the one being looked at, or the repository's file, read when the tab opens. */
 function SchemaJson({ detail, previewSchema }: { detail: DeliveryTemplateDetail; previewSchema?: Record<string, unknown> }) {
-  const saved = useQuery({ ...templateSchemaQuery(detail.kind, detail.version), enabled: previewSchema === undefined });
+  const file = detail.file;
+  const saved = useQuery({
+    ...templateSchemaQuery(file?.repoId ?? "", file?.path ?? ""),
+    enabled: previewSchema === undefined && file !== null,
+  });
   const previewText = useMemo(
     () => (previewSchema === undefined ? null : JSON.stringify(previewSchema, null, 2)),
     [previewSchema],
@@ -43,8 +47,8 @@ function SchemaJson({ detail, previewSchema }: { detail: DeliveryTemplateDetail;
 /**
  * A template laid out for reading, under the header its sheet gives it: its variables as the record's tree with the
  * selected variable's shape, requiredness, relationships, unit context and OSDU's description beside it, and the schema
- * itself. The Templates page shows a saved version, an OSDU schema fetched for a look, and an imported file through this
- * one view.
+ * itself. The Templates page shows a repository's template, read from its file, and an OSDU schema fetched for a look
+ * through this one view.
  */
 export function TemplateView({ detail, previewSchema }: TemplateViewProps) {
   return (

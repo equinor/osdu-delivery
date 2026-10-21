@@ -13,32 +13,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   each key and index serves and what writes and reads the table, and
   [The osdu schema](osdu/docs/reference/concepts/database.md) lists them by what they serve; the MCP server's
   `search_docs` searches them when its `type` is `table`.
-- **A saved template downloads as a file.** **Download** in a saved version's sheet on the Templates page,
-  `sqlflow template show --out <file.json>`, or `GET /api/v1/delivery/templates/schema`, which now answers a file to save
-  named after the kind, gives its bundled schema as a template folder keeps it, for a repository to keep beside the
-  mappings that fill it; importing the file saves the same version. `sqlflow template capture --out` now writes that form
-  too, with the keys in the order the schema was written rather than sorted.
-  ([Templates](osdu/docs/reference/concepts/templates.md#a-template-as-a-file))
+- **A kind of the OSDU data definitions downloads as a template file.** **Download** on the Templates page's Browse
+  OSDU tab, on a kind's row or in its sheet (`GET /api/v1/delivery/templates/osdu/file`), gives the kind's bundled schema,
+  naming its kind, as the file a template folder keeps, under the kind's file name; **Download** in a repository
+  template's sheet copies one a repository holds. `sqlflow template capture --out` writes the same form, with the keys in
+  the order the schema was written rather than sorted ([Templates](osdu/docs/reference/concepts/templates.md#a-template-as-a-file)).
 - **A repository's template folders hold the templates its documents fill.** A folder named `templates`, anywhere in a
   repository and as many as it needs, holds the templates of the mappings, searches, assertion tests and dimensions
   beside and below it, read nearest first, so two projects of one repository can fill different versions of one kind.
-  The control plane's pages about a synced repository read the copy its last sync kept of each file
-  ([Template folders](osdu/docs/reference/concepts/templates.md#template-folders)).
+  A repository adds and removes a template by committing and deleting its file; its sync records which file holds which
+  template, and every reader reads the file ([Template folders](osdu/docs/reference/concepts/templates.md#template-folders)).
 - **A mapping can name its template's kind alone.** Leave `template.version`, or a search's `schema.version`, out and the
   mapping fills the one version of the kind the nearest template folder holding it holds; a folder holding two versions of
   the kind asks for the version ([How documents name their template](osdu/docs/reference/concepts/templates.md#how-documents-name-their-template)).
 - **A template of one's own is used as it is committed.** `sqlflow template import <file> --kind <kind> --out
   <folder>/<file>.json` writes the schema of any record kind into a template folder, naming its kind, and the next sync
-  uses it with no step in the GUI; `capture` and `import` with `--out` need no database
+  uses it with no step in the GUI; `capture` and `import` need no database
   ([Templates of one's own](osdu/docs/reference/concepts/templates.md#templates-of-ones-own)).
 - **`sqlflow template folders`** lists a working copy's template folders, and with `--for <document>` the templates a
   document reads and what a kind named alone settles to, with no database
   ([sqlflow template](osdu/docs/reference/cli/template.md#folders)).
-- **The template a repository's document reads, from the API and the builder.** `GET /api/v1/delivery/templates/resolve`
-  answers the template a document of a synced repository reads, or why none, and the mapping builder's proposal adds the
-  template's file to the pull request when no folder on the mapping's path holds it yet
-  ([API](osdu/docs/reference/concepts/api.md#mappings-templates-and-the-mapping-builder),
-  [The GUI](osdu/docs/reference/concepts/gui.md#mapping-builder)).
+- **The template a repository's document reads, from the API.** `GET /api/v1/delivery/templates/resolve` answers the
+  template a document of a synced repository reads, or why none
+  ([API](osdu/docs/reference/concepts/api.md#mappings-templates-and-the-mapping-builder)).
 
 - **The sample is a complete package.** Beside its well logs, the welldb sample delivers the wells and wellbores they
   are logged in, each wellbore's directional survey (its stations to the Wellbore DDMS) and formation tops, and every
@@ -83,14 +80,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Documents read their templates from the repository, not from the saved templates.** A mapping, its searches, an
   assertion test and a dimension read the template they fill from the template folders on their path, and a run,
   `sqlflow check`, lineage and the sync do too; a mapping whose template no folder on its path holds no longer loads,
-  and the sync says where it looked. Before syncing an estate whose templates were saved only in the module's
-  database, write each version its mappings pin into a folder with
-  `sqlflow template show --kind <kind> --version <version> --out <folder>/<file>.json`; every pin keeps its version
-  ([Upgrading an estate](osdu/docs/reference/concepts/templates.md#upgrading-an-estate-whose-templates-were-saved-only-in-the-library)).
-- **The saved templates are a library of their own, not linked to the repositories.** The Templates page no longer says
-  how many mappings pin a version, `GET /api/v1/delivery/templates` no longer answers `pinnedBy`, and a saved version is
-  deleted whatever a mapping names, since no repository document reads the library; `DELETE` no longer answers 409
-  ([The library](osdu/docs/reference/concepts/templates.md#the-library-saved-templates)).
+  and the sync says where it looked, and a record rendered for a version no folder holds any longer is `unverified`.
+  For an estate whose templates were saved in the module's
+  database, make each version its documents pin a file in a template folder before upgrading: download a version a
+  release publishes on Browse OSDU, or write it with `sqlflow template capture --release <tag> --out <folder>/<file>.json`;
+  read one of your own from the running control plane with `GET /api/v1/delivery/templates/schema?kind=&version=` and
+  write it with `sqlflow template import <file> --kind <kind> --out <folder>/<file>.json`; every pin keeps its version
+  ([Upgrading an estate](osdu/docs/reference/concepts/templates.md#upgrading-an-estate-that-saved-templates-in-the-database)).
+- **The Templates page lists the templates the synced repositories hold.** Its Repositories tab lists every file of
+  every synced repository's template folders, read from the file, in place of the saved versions; a link naming a kind
+  and version opens the file holding it. `GET /api/v1/delivery/templates` answers those files, and
+  `GET /api/v1/delivery/templates/detail` and `/schema` name one by `repoId` and `path` instead of `kind` and `version`
+  ([The GUI](osdu/docs/reference/concepts/gui.md#templates), [API](osdu/docs/reference/concepts/api.md#mappings-templates-and-the-mapping-builder)).
+- **The mapping builder starts from a template a repository holds.** It offers the files of the picked repository's
+  template folders and proposes the mapping alone, into the `mappings` folder beside the one holding its template;
+  `POST /api/v1/delivery/mapping-builder/draft` takes `repoId` and `templatePath` instead of `kind` and `version`
+  ([The GUI](osdu/docs/reference/concepts/gui.md#mapping-builder)).
+- **The explorer checks a record against a repository's template.** Validation's **Saved template** is now
+  **Repository template**: `schema` takes `template` instead of `saved` on the validate routes, and an answer lists the
+  versions the repositories hold in `templateVersions` instead of `savedVersions`
+  ([Explorer](osdu/docs/reference/concepts/explorer.md#validate)).
+- **The MCP server's template tools read the repositories.** `delivery_templates` lists the template files and lays one
+  out by `repoId` and `path` instead of `kind` and `version`, and `delivery_scaffold_mapping` takes `repoId` and
+  `templatePath` ([The MCP server](osdu/docs/reference/guides/mcp.md)).
+- **`sqlflow template capture` and `import` require `--out`.** A template is a file, so both write one and save nothing
+  in a database ([sqlflow template](osdu/docs/reference/cli/template.md)).
 - **The decision records and the pattern catalog are pages of the wiki.** They moved to
   [osdu/docs/wiki](osdu/docs/wiki/index.md), in SQLFlow's wiki format, and the MCP server knows them by new ids:
   `delivery-wiki-0014-inventory-removals` for what was `delivery-decision-0014`, and `delivery-wiki-pattern-catalog` for
@@ -157,6 +171,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   template version (`template: 2f8a99cb38d32480`) is taken as before ([Tests](osdu/docs/reference/flow/assertion.md#tests)).
 - **Aggregates that leave values out.** An aggregate's `except` lists values it does not count, such as a log's index
   curve `MD` among its curves ([Assertions](osdu/docs/reference/flow/assertion.md#assertions)).
+
+### Removed
+
+- **The library of saved templates.** The Templates page's Saved and Import file tabs, **Save template** and **Delete**,
+  `POST` and `DELETE /api/v1/delivery/templates`, and `sqlflow template list`, `show` and `delete` are gone, and the
+  upgrade's migration drops `[osdu].[Template]` with every version saved in it. Make each version an estate's documents
+  pin a file in a template folder before upgrading, as **Documents read their templates from the repository** above
+  says ([Upgrading an estate](osdu/docs/reference/concepts/templates.md#upgrading-an-estate-that-saved-templates-in-the-database)).
 
 ### Fixed
 

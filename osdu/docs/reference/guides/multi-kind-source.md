@@ -50,7 +50,7 @@ source: one document, one connection and target, one schedule and one run, with 
 down that logs go after wellbores; the run works it out from the reference the well log mapping makes to the wellbore,
 and a log whose wellbore has not landed yet waits for it.
 
-It assumes the [first delivery](getting-started.md) is familiar: the pre and ing flows, saving a template, the partition
+It assumes the [first delivery](getting-started.md) is familiar: the pre and ing flows, a template folder, the partition
 `dev`, `sqlflow check` and `sqlflow run`.
 
 ## 1. The ingestion tables

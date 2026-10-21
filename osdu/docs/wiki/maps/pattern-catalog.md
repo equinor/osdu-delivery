@@ -52,7 +52,7 @@ referenceRefs:
 related:
   - wiki-pattern-catalog
   - delivery-wiki-0018-template-folders
-updated: 2026-10-21
+updated: 2026-10-22
 ---
 
 # Pattern catalog: which delivery problem maps to which OSDU Delivery shape
@@ -106,7 +106,7 @@ it is.
 
 | Problem | Shape | Page |
 | --- | --- | --- |
-| Start a mapping from an OSDU schema | Put the template in a `templates` folder on the mapping's path (`sqlflow template capture --out`, or **Download** on the Templates page), then the mapping builder | [templates](../../reference/concepts/templates.md#template-folders), [writing a mapping](../../reference/guides/writing-a-mapping.md) |
+| Start a mapping from an OSDU schema | Put the template in a `templates` folder on the mapping's path (`sqlflow template capture --out`, or **Download** on the Templates page's Browse OSDU tab), sync the repository, then the mapping builder | [templates](../../reference/concepts/templates.md#template-folders), [writing a mapping](../../reference/guides/writing-a-mapping.md) |
 | Two projects of one repository fill different versions of one kind | A `templates` folder in each project: a document reads the nearest folder holding the kind, and may name its kind alone | [templates](../../reference/concepts/templates.md#template-folders) |
 | A kind of one's own, or one extended for a project | `sqlflow template import <file> --kind <kind> --out <folder>/<file>.json`, committed with the mappings; the next sync uses it | [templates](../../reference/concepts/templates.md#templates-of-ones-own), [sqlflow template](../../reference/cli/template.md) |
 | A property only applies to some rows | `$when: <condition>` on the node | [mapping values](../../reference/flow/mapping-values.md), [expressions](../../reference/flow/mapping-expressions.md) |

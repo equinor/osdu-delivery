@@ -23,35 +23,35 @@ import { ExplorerMappingPicker } from "./ExplorerMappingPicker";
 import { ExplorerProblem } from "./ExplorerProblem";
 import { counted, kindParts, useExplorerRead } from "./explorerModel";
 
-/** Which schema a check reads: the Schema service's, or a saved template (its version, or the kind's newest). */
+/** Which schema a check reads: the Schema service's, or a template a synced repository holds (its version, or the one synced last). */
 interface SchemaChoice {
   schema: ExplorerSchemaChoice;
   templateVersion?: string;
 }
 
-/** The schema picker of a check: OSDU's own, or a saved template, with the saved versions to pick from where they are known. */
-function SchemaPicker({ choice, saved, onChoose }: { choice: SchemaChoice; saved: string[]; onChoose: (choice: SchemaChoice) => void }) {
+/** The schema picker of a check: OSDU's own, or a repository's template, with the versions the repositories hold to pick from where they are known. */
+function SchemaPicker({ choice, held, onChoose }: { choice: SchemaChoice; held: string[]; onChoose: (choice: SchemaChoice) => void }) {
   return (
     <span className="inline-flex flex-wrap items-center gap-2">
       <ToggleGroup
         type="single"
         value={choice.schema}
-        onValueChange={(value) => { if (value === "osdu" || value === "saved") { onChoose({ schema: value }); } }}
+        onValueChange={(value) => { if (value === "osdu" || value === "template") { onChoose({ schema: value }); } }}
         variant="outline"
         size="sm"
         data-testid="explorer-validate-schema"
       >
         <ToggleGroupItem value="osdu" className="h-7 px-2.5 text-xs" title="What the partition's Schema service holds for the kind" data-testid="explorer-validate-osdu">OSDU schema</ToggleGroupItem>
-        <ToggleGroupItem value="saved" className="h-7 px-2.5 text-xs" title="A template saved in OSDU Delivery" data-testid="explorer-validate-saved">Saved template</ToggleGroupItem>
+        <ToggleGroupItem value="template" className="h-7 px-2.5 text-xs" title="A template a synced repository holds in a template folder, read from its file" data-testid="explorer-validate-template">Repository template</ToggleGroupItem>
       </ToggleGroup>
-      {choice.schema === "saved" && saved.length > 0 && (
-        <Select value={choice.templateVersion ?? saved[0]} onValueChange={(templateVersion) => onChoose({ schema: "saved", templateVersion })}>
+      {choice.schema === "template" && held.length > 0 && (
+        <Select value={choice.templateVersion ?? held[0]} onValueChange={(templateVersion) => onChoose({ schema: "template", templateVersion })}>
           <SelectTrigger size="sm" className="h-7 w-[190px] font-mono text-[11px]" data-testid="explorer-validate-version">
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
-            {saved.map((version, index) => (
-              <SelectItem key={version} value={version} className="font-mono text-[11px]">{index === 0 ? `${version} (newest)` : version}</SelectItem>
+            {held.map((version, index) => (
+              <SelectItem key={version} value={version} className="font-mono text-[11px]">{index === 0 ? `${version} (synced last)` : version}</SelectItem>
             ))}
           </SelectContent>
         </Select>
@@ -72,7 +72,7 @@ export interface ValidationSource {
 /**
  * A record OSDU holds checked against the schema of its kind (osdu/docs/reference/concepts/explorer.md, Validate), in
  * the explorer or on a record page's OSDU tab: by default what the partition's Schema service holds, which is what OSDU
- * expects of the record; or a template saved in OSDU Delivery. The problems open their element in the record. What was
+ * expects of the record; or a template a synced repository holds, read from its file. The problems open their element in the record. What was
  * read to make the schema, and what could not be resolved, is in the tooltip beside the schema. In the explorer a mapping
  * can be picked whose assertions are judged on the record too (osdu/docs/reference/flow/mapping-assertions.md); a record
  * page's check judges those of the flow's own mapping. The answer is handed up, so the record's fields can carry its marks.
@@ -98,7 +98,7 @@ export function ExplorerValidationView({ source, id, version, onOpenPath, onResu
 
   const schemaNotes = answer?.schema
     ? [
-      `${answer.schema.kind}, content version ${answer.schema.version}, from ${answer.schema.source === "schema-service" ? "the partition's Schema service" : "a template saved in OSDU Delivery"}.`,
+      `${answer.schema.kind}, content version ${answer.schema.version}, from ${answer.schema.source === "schema-service" ? "the partition's Schema service" : "a template a synced repository holds"}.`,
       answer.schema.read.length > 1 ? `Read from the Schema service to make it: ${answer.schema.read.join(", ")}.` : null,
       ...answer.schema.unresolved.map((why) => `Not resolved: ${why}.`),
     ].filter((line): line is string => line !== null)
@@ -109,7 +109,7 @@ export function ExplorerValidationView({ source, id, version, onOpenPath, onResu
       <div className="flex flex-wrap items-center gap-2 text-[12px]">
         <ShieldCheck className="size-4 text-muted-foreground" aria-hidden />
         <span className="font-medium">Checked against</span>
-        <SchemaPicker choice={choice} saved={answer?.savedVersions ?? []} onChoose={setChoice} />
+        <SchemaPicker choice={choice} held={answer?.templateVersions ?? []} onChoose={setChoice} />
         {schemaNotes.length > 0 && (
           <RichTooltip title="The schema" body={schemaNotes.join("\n\n")}>
             <Info className="size-3.5 text-muted-foreground" aria-label="The schema" data-testid="explorer-validate-schema-info" />
@@ -139,9 +139,9 @@ export function ExplorerValidationView({ source, id, version, onOpenPath, onResu
           <AlertTitle>The record was not checked</AlertTitle>
           <AlertDescription>
             <span className="text-[12px]">{answer.problem}</span>
-            {choice.schema === "osdu" && answer.savedVersions.length > 0 && (
-              <Button variant="outline" size="sm" className="mt-1 h-7 w-fit" onClick={() => setChoice({ schema: "saved", templateVersion: answer.savedVersions[0] })} title={`The saved template of content version ${answer.savedVersions[0]}`} data-testid="explorer-validate-use-saved">
-                Check against the saved template
+            {choice.schema === "osdu" && answer.templateVersions.length > 0 && (
+              <Button variant="outline" size="sm" className="mt-1 h-7 w-fit" onClick={() => setChoice({ schema: "template", templateVersion: answer.templateVersions[0] })} title={`The repository's template of content version ${answer.templateVersions[0]}`} data-testid="explorer-validate-use-template">
+                Check against the repository's template
               </Button>
             )}
           </AlertDescription>
@@ -241,7 +241,7 @@ export function ExplorerValidateDialog({ partition, request, open, onOpenChange,
         </DialogHeader>
         <div className="flex flex-wrap items-center gap-2 text-[12px]">
           <span className="font-medium">Checked against</span>
-          <SchemaPicker choice={{ schema }} saved={[]} onChoose={(choice) => setSchema(choice.schema)} />
+          <SchemaPicker choice={{ schema }} held={[]} onChoose={(choice) => setSchema(choice.schema)} />
           <span className="font-medium">and</span>
           <ExplorerMappingPicker kind={request.kind ?? null} value={mapping} onChoose={setMapping} />
           <IconAction label="Check again" icon={<RefreshCw className={read.isFetching ? "animate-spin" : undefined} />} variant="ghost" className="ml-auto size-7" disabled={read.isFetching} onClick={() => void read.refetch()} data-testid="explorer-validate-list-again" />

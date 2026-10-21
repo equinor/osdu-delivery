@@ -1,13 +1,11 @@
 import { useLayoutEffect, useRef, useState, type ReactNode } from "react";
-import { Clock3, FileJson, Save, Tag, TriangleAlert, type LucideIcon } from "lucide-react";
+import { FileJson, FolderGit2, Tag, type LucideIcon } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { SheetDescription, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { cn } from "@/lib/utils";
 import type { DeliveryTemplateDetail } from "../../api/delivery";
 import { CopyButton } from "@/components/CopyButton";
-import { RelativeTime } from "@/components/RelativeTime";
-import { StatePill } from "@/components/StatusBadge";
-import { entityName, originText } from "./templateFormat";
+import { entityName } from "./templateFormat";
 
 /** One fact about the template: a glyph, the value, and its name for assistive tech. */
 function Fact({ icon: Icon, label, children, testId }: { icon: LucideIcon; label: string; children: ReactNode; testId?: string }) {
@@ -59,28 +57,24 @@ interface TemplateHeaderProps {
   kind: string;
   /** The template once it is laid out. */
   detail: DeliveryTemplateDetail | undefined;
-  /** Where a template not yet saved is read from; a saved version names its own origin. */
+  /** Where a schema of the OSDU data definitions is read from; a repository's template names its own file. */
   source: ReactNode | null;
-  /** Save, compare or delete. */
+  /** Download or compare. */
   actions?: ReactNode;
 }
 
 /**
- * A template's header: its name, whether it is saved and the actions on it beside that, the kind it is, OSDU's description, and one
- * row of facts (the version, where it comes from, when and by whom it was saved, which repositories' template folders hold
- * it, and how many synced mappings fill it).
+ * A template's header: its name and the actions on it beside that, the kind it is, OSDU's description, and one row of facts
+ * (the version, and where it is read from: the repository and the file of its template folder, or the release of the OSDU
+ * data definitions).
  */
 export function TemplateHeader({ kind, detail, source, actions }: TemplateHeaderProps) {
-  const saved = detail?.saved ?? null;
-  const origin = source ?? (saved === null ? null : <span className="min-w-0 break-all">{originText(saved.origin)}</span>);
+  const file = detail?.file ?? null;
   return (
     <SheetHeader className="gap-3 border-b" data-testid="templates-view-header">
       <div className="flex min-w-0 flex-col gap-1 pr-8">
         <div className="flex min-w-0 flex-wrap items-center gap-2">
           <SheetTitle className="text-lg leading-7">{detail?.title ?? entityName(kind)}</SheetTitle>
-          {detail !== undefined && (saved !== null
-            ? <StatePill tone="success" label="saved" icon={Save} testId="templates-view-state" />
-            : <StatePill tone="warning" label="not saved" icon={TriangleAlert} testId="templates-view-state" />)}
           {actions !== undefined && <div className="flex flex-wrap items-center gap-2" data-testid="templates-view-actions">{actions}</div>}
         </div>
         <SheetDescription asChild>
@@ -99,12 +93,18 @@ export function TemplateHeader({ kind, detail, source, actions }: TemplateHeader
             <span className="font-mono" data-testid="templates-view-version">{detail.version}</span>
             <CopyButton iconOnly label="Copy the version" text={detail.version} testId="templates-view-version-copy" />
           </Fact>
-          {origin !== null && <Fact icon={FileJson} label="Source">{origin}</Fact>}
-          {saved !== null && (
-            <Fact icon={Clock3} label="Saved">
-              <span>Saved <RelativeTime value={saved.capturedUtc} /> by {saved.capturedBy}</span>
-            </Fact>
+          {file !== null && (
+            <>
+              <Fact icon={FolderGit2} label="Repository" testId="templates-view-repository">
+                <span className="min-w-0 break-all">{file.repository}</span>
+              </Fact>
+              <Fact icon={FileJson} label="File" testId="templates-view-file">
+                <span className="min-w-0 break-all font-mono">{file.path}</span>
+                <CopyButton iconOnly label="Copy the file's path" text={file.path} testId="templates-view-file-copy" />
+              </Fact>
+            </>
           )}
+          {file === null && source !== null && <Fact icon={FileJson} label="Source">{source}</Fact>}
         </dl>
       )}
     </SheetHeader>

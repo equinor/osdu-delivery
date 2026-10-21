@@ -194,8 +194,8 @@ public sealed class TemplateChain
         var nearest = Folders.Count > 0 ? Folders[0].Shown : Looked.Count > 0 ? Looked[0] : "templates";
         var file = Documents.FlowMapper.IsRecordKind(kind) ? TemplateSources.FileName(kind) : "<kind>.json";
         return version is null
-            ? $"Put the template's file in one of them: the Templates page downloads a saved version, and 'sqlflow template capture --kind {kind} --out {nearest}/{file}' writes the newest release's."
-            : $"Put the template's file in one of them: the Templates page downloads a saved version, and 'sqlflow template show --kind {kind} --version {version} --out {nearest}/{file}' writes it from the saved templates.";
+            ? $"Put the template's file in one of them: the Templates page downloads it from the OSDU data definitions, and 'sqlflow template capture --kind {kind} --out {nearest}/{file}' writes the newest release's."
+            : $"Put the file holding version {version} in one of them: copy it from where the repository holds it, or, for a version a release of the OSDU data definitions publishes, download it on the Templates page or write it with 'sqlflow template capture --kind {kind} --release <tag> --out {nearest}/{file}'.";
     }
 
     /// <summary>Up to <see cref="MaxListed"/> items, and how many more there are.</summary>

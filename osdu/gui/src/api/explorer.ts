@@ -179,7 +179,7 @@ export const explorerApi = {
   /** One record from the storage service, at its latest or at one version. */
   read: (partition: string | null, targetId: string, version?: number) =>
     post<DeliveryOsduRead>(`/api/v1/delivery/explorer/read${partitionQuery(partition)}`, version === undefined ? { targetId } : { targetId, version }),
-  /** One record checked against the schema of its kind: the Schema service's, or a saved template's. */
+  /** One record checked against the schema of its kind: the Schema service's, or a template a synced repository holds. */
   validate: async (partition: string | null, request: ExplorerValidateRequest) => {
     const answered = await post<ExplorerAnswer<ExplorerValidation>>(`/api/v1/delivery/explorer/validate${partitionQuery(partition)}`, request);
     return { ...answered, answer: validationOf(answered.answer) };
@@ -304,7 +304,7 @@ function validationOf(answer: ExplorerValidation): ExplorerValidation {
     schema: answer.schema ?? null,
     verdict: answer.verdict ?? null,
     problem: answer.problem ?? null,
-    savedVersions: answer.savedVersions ?? [],
+    templateVersions: answer.templateVersions ?? [],
     guidance: guidanceOf(answer.guidance),
   };
 }
@@ -324,14 +324,14 @@ function listValidationOf(answer: ExplorerListValidation): ExplorerListValidatio
 
 // ---- Validation (osdu/docs/reference/concepts/explorer.md, Validate) ----
 
-/** Which schema a record is checked against: what the partition's Schema service holds, or a saved template. */
-export type ExplorerSchemaChoice = "osdu" | "saved";
+/** Which schema a record is checked against: what the partition's Schema service holds, or a template a synced repository holds. */
+export type ExplorerSchemaChoice = "osdu" | "template";
 
 export interface ExplorerValidateRequest {
   targetId: string;
   version?: number;
   schema?: ExplorerSchemaChoice;
-  /** With `saved`, the template version; the kind's newest when left out. */
+  /** With `template`, the template version, among those the synced repositories hold; the one the repository synced last holds when left out. */
   templateVersion?: string;
   /** The synced mapping (its id) whose assertions are judged on the record; none when left out. */
   mapping?: string;
@@ -356,8 +356,8 @@ export interface ExplorerValidation {
   schema: ExplorerSchema | null;
   verdict: ValidationVerdict | null;
   problem: string | null;
-  /** The template versions saved for the kind, newest first, to check against instead. */
-  savedVersions: string[];
+  /** The template versions the synced repositories hold for the kind, the one synced last first, to check against instead. */
+  templateVersions: string[];
   /** What each finding of the verdict comes to for the person fixing it. */
   guidance: ValidationGuidance | null;
 }
@@ -497,7 +497,7 @@ export interface ExplorerElementRequest {
   values?: ExplorerElementLeaf[];
 }
 
-/** The Lucene queries that find records by an element of a record, read from the saved template of its kind. */
+/** The Lucene queries that find records by an element of a record, read from the template of its kind a synced repository holds. */
 export function elementQueries(request: ExplorerElementRequest) {
   return post<ExplorerElementAnswer>("/api/v1/delivery/explorer/element-queries", request);
 }
@@ -541,7 +541,7 @@ export interface DimensionDraftIssue {
   message: string;
   /** The part it is about, as the YAML's spans name them (`path`, `attributes.Country`); null for the whole. */
   target: string | null;
-  /** `template` (a saved template is missing) or `name` (another flow's dimension writes the table); null otherwise. */
+  /** `template` (no synced repository holds a template) or `name` (another flow's dimension writes the table); null otherwise. */
   code: string | null;
 }
 
@@ -589,7 +589,7 @@ export interface DimensionKeyCandidate {
   description: string | null;
 }
 
-/** The keys a kind's saved template suggests, the likeliest first, or why there are none. */
+/** The keys a kind's template suggests, the likeliest first, or why there are none. */
 export interface DimensionKeySuggestions {
   kind: string;
   template: { kind: string; version: string } | null;
@@ -626,7 +626,7 @@ export interface DimensionCompose {
   exampleProblem: string | null;
 }
 
-/** The keys the saved template of `kind` suggests for a dimension, the likeliest first; read from the templates alone. */
+/** The keys the template of `kind` a synced repository holds suggests for a dimension, the likeliest first; read from the templates alone. */
 export function dimensionKeyCandidates(kind: string) {
   return get<DimensionKeySuggestions>(`/api/v1/delivery/explorer/dimension/candidates?kind=${encodeURIComponent(kind)}`);
 }

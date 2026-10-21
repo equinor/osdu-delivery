@@ -230,7 +230,7 @@ public sealed class OrderLineageTests : IDisposable
     }
 
     [Fact]
-    public void A_delivery_whose_template_is_not_saved_says_it_is_not_ordered_and_the_others_still_are()
+    public void A_delivery_whose_template_no_folder_holds_says_it_is_not_ordered_and_the_others_still_are()
     {
         Schema("master-data--Well");
         Schema("master-data--Wellbore", ("WellID", "master-data--Well"));
@@ -243,8 +243,7 @@ public sealed class OrderLineageTests : IDisposable
         var (collected, report) = ScanWithWarnings();
         Assert.True(WaveOf(report, "wells") < WaveOf(report, "wellbores"));
         Assert.Contains(collected.Warnings, w => w.Contains("delivery flow 'logs' is not ordered by what its records refer to", StringComparison.Ordinal)
-            && w.Contains("Its template is not read: template osdu:wks:work-product-component--WellLog:1.0.0 version", StringComparison.Ordinal)
-            && w.Contains("is not saved", StringComparison.Ordinal));
+            && w.Contains("Its template is not read: no template folder holds template osdu:wks:work-product-component--WellLog:1.0.0 version", StringComparison.Ordinal));
     }
 
     [Fact]
@@ -280,7 +279,7 @@ public sealed class OrderLineageTests : IDisposable
     }
 
     [Fact]
-    public void A_kind_whose_template_is_not_saved_is_ordered_by_the_relationships_a_built_release_of_OSDU_s_lineage_holds()
+    public void A_kind_whose_template_no_folder_holds_is_ordered_by_the_relationships_a_built_release_of_OSDU_s_lineage_holds()
     {
         Schema("master-data--Well");
         Schema("master-data--Wellbore", ("WellID", "master-data--Well"));

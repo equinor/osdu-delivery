@@ -1,6 +1,6 @@
 import { useDeferredValue, useMemo, useState, type ReactNode } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Archive, ExternalLink, Eye, FlaskConical, GitCompareArrows, Loader2, RefreshCw, Save } from "lucide-react";
+import { Archive, Download, ExternalLink, Eye, FlaskConical, GitCompareArrows, Loader2, RefreshCw } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -8,6 +8,7 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Switch } from "@/components/ui/switch";
+import { downloadText } from "@/lib/download";
 import { deliveryApi, type DeliveryOsduSchema } from "../../api/delivery";
 import { DataTable, type Column } from "@/components/DataTable";
 import { FilterBar } from "@/components/FilterBar";
@@ -18,7 +19,7 @@ import { SearchInput } from "@/components/SearchInput";
 import { StatePill } from "@/components/StatusBadge";
 import { KindText } from "./KindText";
 import { TemplateCompareSheet, type CompareStart } from "./TemplateCompareSheet";
-import { kindStem } from "./templateFormat";
+import { kindStem, osduTemplateFileQuery, templateFileName } from "./templateFormat";
 import { problemText } from "./problemText";
 import { ProblemView, TaskProgress, TemplateSheet } from "./TemplateSheet";
 
@@ -68,10 +69,12 @@ function RepositoryLink({ href, children, testId }: { href: string; children: Re
 
 /**
  * Browse OSDU: the OSDU data definitions, the Open Group's public repository of OSDU schemas and the canonical source of
- * every OSDU kind. Pick a release (the newest by default), find a kind with one search, look at it laid out as a template
- * and save it. The control plane reads the repository; the schemas are public, so no flow, credential or node is involved.
+ * every OSDU kind. Pick a release (the newest by default), find a kind with one search, look at it laid out as a template,
+ * and download it as the file a repository's template folder keeps: committed beside the documents that fill it, the
+ * repository's next sync records it. The control plane reads the repository; the schemas are public, so no flow,
+ * credential or node is involved, and nothing is kept.
  */
-export function TemplatesBrowseTab({ canAuthor, canOperate }: { canAuthor: boolean; canOperate: boolean }) {
+export function TemplatesBrowseTab({ canOperate }: { canOperate: boolean }) {
   const queryClient = useQueryClient();
   const [pickedRelease, setPickedRelease] = useState<string | null>(null);
   const [search, setSearch] = useState("");
@@ -115,22 +118,21 @@ export function TemplatesBrowseTab({ canAuthor, canOperate }: { canAuthor: boole
     staleTime: Infinity,
   });
 
-  // Under the templates key, so a save refreshes it and the sheet shows the version as saved.
   const preview = useQuery({
     queryKey: ["delivery", "templates", "preview", "osdu", file.data?.release.commit ?? null, file.data?.kind ?? null],
     queryFn: () => deliveryApi.previewTemplate(file.data!.kind, file.data!.schema),
     enabled: viewing !== null && file.data !== undefined,
   });
 
-  const save = useMutation({
-    mutationFn: () => deliveryApi.saveTemplate(file.data!.kind, file.data!.schema, file.data!.origin),
-    onSuccess: (saved) => {
-      toast.success(saved.outcome === "created"
-        ? `Saved template ${saved.template.kind} version ${saved.template.version}.`
-        : `Template ${saved.template.kind} version ${saved.template.version} was already saved, so nothing changed.`);
-      void queryClient.invalidateQueries({ queryKey: ["delivery", "templates"] });
+  // A kind of a release as the file a template folder keeps, named after its kind: bundled, and naming the kind it holds.
+  const download = useMutation({
+    mutationFn: async (target: Viewing) => {
+      const text = await queryClient.fetchQuery(osduTemplateFileQuery(target.release, target.kind));
+      downloadText(templateFileName(target.kind), text, "application/json");
     },
-    onError: (error) => toast.error(problemText(error)),
+    onSuccess: (_result, target) => toast.success(
+      `Downloaded ${templateFileName(target.kind)}. Put it in a folder named templates beside the documents that fill it, commit it, and sync the repository.`),
+    onError: (error) => toast.error(`The template could not be downloaded: ${problemText(error)}`),
   });
 
   const counts = useMemo(() => {
@@ -174,7 +176,6 @@ export function TemplatesBrowseTab({ canAuthor, canOperate }: { canAuthor: boole
       return;
     }
 
-    save.reset();
     setViewing({ release: index.data.release.name, kind });
   };
 
@@ -226,6 +227,18 @@ export function TemplatesBrowseTab({ canAuthor, canOperate }: { canAuthor: boole
             onClick={(event) => { event.stopPropagation(); compare(row.schema.kind); }}
             data-testid={`templates-browse-compare-${row.schema.kind}`}
           />
+          <IconAction
+            label={`Download ${templateFileName(row.schema.kind)} for a repository's template folder`}
+            icon={download.isPending && download.variables?.kind === row.schema.kind ? <Loader2 className="animate-spin" /> : <Download />}
+            onClick={(event) => {
+              event.stopPropagation();
+              if (index.data !== undefined) {
+                download.mutate({ release: index.data.release.name, kind: row.schema.kind });
+              }
+            }}
+            disabled={download.isPending}
+            data-testid={`templates-browse-download-${row.schema.kind}`}
+          />
           <Button
             variant="outline"
             size="xs"
@@ -257,8 +270,6 @@ export function TemplatesBrowseTab({ canAuthor, canOperate }: { canAuthor: boole
       problem = <ProblemView error={preview.error} testId="templates-browse-preview-error" />;
     } else if (preview.data === undefined) {
       progress = <TaskProgress label="Laying the schema out as a template" testId="templates-browse-preview-progress" />;
-    } else if (save.isError) {
-      problem = <ProblemView error={save.error} testId="templates-browse-save-error" />;
     }
   }
 
@@ -414,15 +425,20 @@ export function TemplatesBrowseTab({ canAuthor, canOperate }: { canAuthor: boole
               <GitCompareArrows />
               Compare versions
             </Button>
-            {canAuthor && (
-              <Button variant="outline" size="xs" onClick={() => save.mutate()} disabled={save.isPending} data-testid="templates-browse-save">
-                {save.isPending ? <Loader2 className="animate-spin" /> : <Save />}
-                Save template
-              </Button>
-            )}
+            <Button
+              variant="outline"
+              size="xs"
+              onClick={() => { if (viewing !== null) { download.mutate(viewing); } }}
+              disabled={download.isPending}
+              title={`The bundled schema as ${templateFileName(file.data.kind)}, for a folder named templates beside the documents that fill it`}
+              data-testid="templates-browse-download"
+            >
+              {download.isPending ? <Loader2 className="animate-spin" /> : <Download />}
+              Download
+            </Button>
           </span>
         ) : undefined}
-        busy={save.isPending}
+        busy={download.isPending}
         testId="templates-browse-sheet"
       />
     </div>

@@ -305,8 +305,8 @@ test.describe.serial("explorer", () => {
     await expect(exact.getByTestId("explorer-element-lucene")).toHaveText('data.FacilityName.keyword:"Wellbore B-2 B"', { timeout: 30_000 });
     await expect(panel.locator('[data-testid="explorer-element-query-item"][data-purpose="exists"]').getByTestId("explorer-element-lucene")).toHaveText("_exists_:data.FacilityName");
 
-    // How it was written is a tooltip away: the stand-in's wellbores are of a version no template is saved of, so the
-    // newest saved of the type reads them.
+    // How it was written is a tooltip away: the stand-in's wellbores are of a version no synced repository holds a template
+    // of, so the newest of the type the repository's template folder holds reads them.
     await panel.getByTestId("explorer-element-about").hover();
     await expect(adminPage.getByRole("tooltip")).toContainText("osdu:wks:master-data--Wellbore:1.3.0");
 

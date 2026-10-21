@@ -16,9 +16,9 @@ using Xunit;
 namespace SqlFlow.Delivery.Tests;
 
 /// <summary>
-/// <c>sqlflow template</c> on a host with no module database, as a developer runs it in a working copy: <c>folders</c> reads
-/// a repository's template folders from disk, and <c>import --out</c> writes a template of one's own into one
-/// (osdu/docs/reference/cli/template.md).
+/// <c>sqlflow template</c> on a host with no module database, as a developer runs it in a working copy, which is all it needs:
+/// <c>folders</c> reads a repository's template folders from disk, and <c>import --out</c> writes a template of one's own
+/// into one (osdu/docs/reference/cli/template.md). A template is a file; no subcommand writes one anywhere else.
 /// </summary>
 public sealed class TemplateFolderCommandTests : IDisposable
 {
@@ -95,7 +95,7 @@ public sealed class TemplateFolderCommandTests : IDisposable
     }
 
     [Fact]
-    public async Task Import_with_out_writes_a_template_of_ones_own_into_a_folder_naming_its_kind_without_a_database()
+    public async Task Import_writes_a_template_of_ones_own_into_a_folder_naming_its_kind()
     {
         const string Custom = "acme:wks:master-data--Thing:1.0.0";
         var source = Write("drafts/thing.json", TemplateFolderFixtures.Schema(Custom, declareKind: false));
@@ -105,14 +105,54 @@ public sealed class TemplateFolderCommandTests : IDisposable
         Assert.Equal(0, exit);
         var file = Assert.Single(TemplateFolders.Read(Path.Combine(_root, "templates"), path => path).Files);
         Assert.Equal(Custom, file.Kind);
-        Assert.Equal($"wrote template {Custom} version {file.Version}; it is not saved in the library, since no module database is configured", output.Trim());
-        Assert.Contains($"Wrote the bundled schema of template {Custom} version {file.Version} to {target}", notes, StringComparison.Ordinal);
-        Assert.DoesNotContain("names no kind", notes, StringComparison.Ordinal);
+        Assert.Equal($"wrote template {Custom} version {file.Version} to {target}", output.Trim());
+        Assert.Equal(string.Empty, notes);
 
-        // Without --out, a host with no database has nowhere to save it, and says where templates are read instead.
-        var refused = await Assert.ThrowsAsync<FlowValidationException>(() => RunAsync("import", source, "--kind", Custom));
-        Assert.Contains("'sqlflow template folders' reads a repository's template folders without one", refused.Message, StringComparison.Ordinal);
-        await Assert.ThrowsAsync<FlowValidationException>(() => RunAsync("list"));
+        (exit, output, _) = await RunAsync("import", source, "--kind", Custom, "--out", target, "--json");
+        Assert.Equal(0, exit);
+        var written = JsonNode.Parse(output)!.AsObject();
+        Assert.Equal((Custom, file.Version, target, "written"), (
+            written["kind"]!.GetValue<string>(), written["version"]!.GetValue<string>(), written["file"]!.GetValue<string>(), written["outcome"]!.GetValue<string>()));
+
+        // A template is a file the repository holds, so there is nothing to do without --out: the database keeps none.
+        var refused = await Assert.ThrowsAsync<InvalidOperationException>(() => RunAsync("import", source, "--kind", Custom));
+        Assert.Contains("name the template file to write with --out", refused.Message, StringComparison.Ordinal);
+        refused = await Assert.ThrowsAsync<InvalidOperationException>(() => RunAsync("capture", "--kind", Custom));
+        Assert.Contains("name the template file to write with --out", refused.Message, StringComparison.Ordinal);
+        foreach (var gone in new[] { "list", "show", "delete" })
+        {
+            refused = await Assert.ThrowsAsync<InvalidOperationException>(() => RunAsync(gone));
+            Assert.Contains($"'{gone}' is not a template subcommand: folders, capture or import", refused.Message, StringComparison.Ordinal);
+        }
+    }
+
+    [Fact]
+    public async Task A_file_written_outside_a_template_folder_is_written_and_said_to_be_read_by_no_document()
+    {
+        const string Custom = "acme:wks:master-data--Thing:1.0.0";
+        var source = Write("drafts/thing.json", TemplateFolderFixtures.Schema(Custom, declareKind: false));
+        var target = Path.Combine(_root, "drafts", "acme_wks_master-data--Thing_1.0.0.json");
+
+        var (exit, _, notes) = await RunAsync("import", source, "--kind", Custom, "--out", target);
+        Assert.Equal(0, exit);
+        Assert.True(File.Exists(target));
+        Assert.Contains($"{target} is not in a folder named templates, so no document reads it there", notes, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task A_path_that_cannot_be_written_is_refused_with_the_version_and_the_reason()
+    {
+        const string Custom = "acme:wks:master-data--Thing:1.0.0";
+        var source = Write("drafts/thing.json", TemplateFolderFixtures.Schema(Custom, declareKind: true));
+
+        // A file stands where the folder would have to be, so no folder can be made there.
+        var blocker = Write("templates", "not a folder");
+        var path = Path.Combine(blocker, "thing.json");
+
+        var refused = await Assert.ThrowsAsync<DeliveryException>(() => RunAsync("import", source, "--kind", Custom, "--out", path));
+        Assert.StartsWith($"The bundled schema of template {Custom} version ", refused.Message, StringComparison.Ordinal);
+        Assert.Contains($" could not be written to '{path}': ", refused.Message, StringComparison.Ordinal);
+        Assert.False(File.Exists(path));
     }
 
     /// <summary>
@@ -122,7 +162,7 @@ public sealed class TemplateFolderCommandTests : IDisposable
     private static async Task<(int Exit, string Output, string Notes)> RunAsync(string subcommand, params string[] options)
     {
         var declared = new DeliveryCliModule().Verbs.Single(v => v.Name == "template");
-        // A host started without the module's database: no ledger, no saved templates, no cache.
+        // A host started without the module's database: no ledger and no cache, which a template command never needs.
         var stores = Samples.Stores();
         var engine = new EngineContext(
             new DeliveryDocumentLoader(),

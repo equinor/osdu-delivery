@@ -241,7 +241,7 @@ public class SearchFieldsTests
             """);
         var schema = mapping.Searches["Wellbore"].Schema;
 
-        // Why it was not read is what the source of templates said: the folders on the mapping's path, or the library.
+        // Why it was not read is what the source of templates said: the folders on the mapping's path, or the synced repositories.
         var why = "no template folder on the path of mappings/Thing@1.0.0.yaml holds template it. Put the template's file in one of them.";
         var resolved = ResolvedSearches.Resolve(
             mapping, new Dictionary<Templates.TemplateReference, Snapshots.SchemaSnapshot>(), new Dictionary<Templates.TemplateReference, string> { [schema] = why });

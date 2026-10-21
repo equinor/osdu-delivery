@@ -16,15 +16,15 @@ public enum ExplorerSchemaSource
     /// <summary>What the partition's Schema service holds for the record's kind: what OSDU expects of it.</summary>
     Osdu,
 
-    /// <summary>A template saved in the delivery system: the kind's newest, or the version named.</summary>
-    Saved,
+    /// <summary>A template a synced repository holds in a template folder: the kind's, or the version named.</summary>
+    Template,
 }
 
 /// <summary>The schema a record was checked against, and where it came from.</summary>
 /// <param name="Kind">The kind whose schema it is.</param>
 /// <param name="Version">Its content version.</param>
 /// <param name="Source"><c>schema-service</c> or <c>template</c>.</param>
-/// <param name="Read">The schema ids read from the Schema service to bundle it; empty for a saved template.</param>
+/// <param name="Read">The schema ids read from the Schema service to bundle it; empty for a repository's template.</param>
 /// <param name="Unresolved">The references bundling could not resolve, each with why.</param>
 /// <param name="Notes">What the schema states that no check asserts (<see cref="SchemaRules.Notes"/>).</param>
 public sealed record ExplorerSchema(string Kind, string Version, string Source, IReadOnlyList<string> Read, IReadOnlyList<string> Unresolved, IReadOnlyList<string> Notes);
@@ -32,7 +32,7 @@ public sealed record ExplorerSchema(string Kind, string Version, string Source, 
 /// <summary>
 /// A record OSDU holds checked against a schema (osdu/docs/reference/concepts/explorer.md, Validate): the record's id,
 /// version and kind, the schema, the verdict (<see cref="ValidationVerdict.ToJson"/>), or why nothing could be checked,
-/// with the template versions saved for the kind a reader can check it against instead.
+/// with the template versions the synced repositories hold for the kind, which a reader can check it against instead.
 /// </summary>
 public sealed record ExplorerValidation
 {
@@ -53,8 +53,8 @@ public sealed record ExplorerValidation
     /// <summary>Why the record was not checked; null when it was.</summary>
     public string? Problem { get; init; }
 
-    /// <summary>The template versions saved for the record's kind, newest first.</summary>
-    public IReadOnlyList<string> SavedVersions { get; init; } = [];
+    /// <summary>The template versions the synced repositories hold for the record's kind, the most recently synced first.</summary>
+    public IReadOnlyList<string> TemplateVersions { get; init; } = [];
 
     /// <summary>What each finding of the verdict comes to for the person fixing it (<see cref="ValidationGuide"/>); null when the record was not checked.</summary>
     public ValidationGuidance? Guidance { get; init; }
@@ -152,10 +152,10 @@ public sealed record ExplorerListValidation
 /// The explorer's checks of what OSDU holds against what OSDU expects (osdu/docs/reference/concepts/explorer.md,
 /// Validate): one record, at its latest or at a version, or the records a search finds, up to <see cref="MaxRecords"/>.
 /// A record is checked by the module every validation shares (<see cref="RecordValidator"/>) against the schema the
-/// partition's Schema service holds for its kind (<see cref="SchemaServiceReader"/>), or a saved template the reader
-/// picks, and the records it refers to are looked up in OSDU's storage service, in one batch. Nothing the delivery
-/// system keeps of a record (its ledger, its mapping, its cache) is read; a saved template is the one exception, and
-/// only when the reader asks for it.
+/// partition's Schema service holds for its kind (<see cref="SchemaServiceReader"/>), or a template a synced repository
+/// holds that the reader picks, and the records it refers to are looked up in OSDU's storage service, in one batch.
+/// Nothing the delivery system keeps of a record (its ledger, its mapping, its cache) is read; a repository's template is
+/// the one exception, read from its file, and only when the reader asks for it.
 /// </summary>
 public sealed class ExplorerChecks
 {
@@ -168,7 +168,7 @@ public sealed class ExplorerChecks
     private readonly OsduHttpClient _client;
     private readonly OsduRecordProtocol _storage;
     private readonly string _batchPath;
-    private readonly ITemplateStore? _templates;
+    private readonly Catalog.RepositoryTemplates? _templates;
     private readonly TimeProvider _time;
     private readonly ValidationLimits _limits;
     private readonly IOfficialExamples? _examples;
@@ -178,12 +178,12 @@ public sealed class ExplorerChecks
     /// <param name="client">The connection OSDU is read through.</param>
     /// <param name="storage">The storage protocol a record is read back with, as the explorer reads one.</param>
     /// <param name="batchPath">Storage's batch read, which the records of a list and the ids a record refers to are read through.</param>
-    /// <param name="templates">The saved templates, read when a reader picks one; null where none can be read.</param>
+    /// <param name="templates">The templates the synced repositories hold, read when a reader picks one; null where none can be read.</param>
     /// <param name="time">The clock a verdict is stamped with.</param>
     /// <param name="limits">The bounds a check of one record keeps to; <see cref="ValidationLimits.Default"/> when null.</param>
     /// <param name="examples">Where the OSDU data definitions' example records are read, which guidance quotes; null where none is kept.</param>
     public ExplorerChecks(
-        OsduHttpClient client, OsduRecordProtocol storage, string batchPath, ITemplateStore? templates, TimeProvider time, ValidationLimits? limits = null,
+        OsduHttpClient client, OsduRecordProtocol storage, string batchPath, Catalog.RepositoryTemplates? templates, TimeProvider time, ValidationLimits? limits = null,
         IOfficialExamples? examples = null)
     {
         ArgumentNullException.ThrowIfNull(client);
@@ -224,7 +224,7 @@ public sealed class ExplorerChecks
         }
 
         var kind = KindOf(record);
-        var saved = kind is null ? [] : await SavedVersionsAsync(kind, ct).ConfigureAwait(false);
+        var versions = kind is null ? [] : await TemplateVersionsAsync(kind, ct).ConfigureAwait(false);
         var read = version ?? (record["version"] is JsonValue v && v.TryGetValue<long>(out var held) ? held : null);
         if (kind is null)
         {
@@ -236,7 +236,7 @@ public sealed class ExplorerChecks
         {
             // Nothing to check the record against, but a mapping's assertions need no schema: they are judged, as a list's are.
             var judged = assertions?.Mapping is null ? null : Asserted(ValidationVerdict.NotChecked(why!, _time.GetUtcNow().UtcDateTime), record, assertions);
-            return new ExplorerValidation { TargetId = targetId, Version = read, Found = true, Kind = kind, Problem = why, SavedVersions = saved, Verdict = judged?.ToJson() };
+            return new ExplorerValidation { TargetId = targetId, Version = read, Found = true, Kind = kind, Problem = why, TemplateVersions = versions, Verdict = judged?.ToJson() };
         }
 
         var rules = SchemaRules.Of(schema);
@@ -252,7 +252,7 @@ public sealed class ExplorerChecks
             Kind = kind,
             Schema = described,
             Verdict = verdict.ToJson(),
-            SavedVersions = saved,
+            TemplateVersions = versions,
             Guidance = ValidationGuide.Of(rules, verdict, record, example, exampleNote),
         };
     }
@@ -481,8 +481,8 @@ public sealed class ExplorerChecks
 
     /// <summary>
     /// The schema a record of <paramref name="kind"/> is checked against, read once per kind and source: the Schema
-    /// service's, or a saved template's (the version named, else the newest saved for the kind). Null, with why, when there
-    /// is none.
+    /// service's, or a template a synced repository holds (the version named, else the one the most recently synced
+    /// repository holds), read from its file. Null, with why, when there is none.
     /// </summary>
     /// <summary>
     /// The OSDU data definitions' example record of <paramref name="kind"/>, read once per check, and why none is quoted when
@@ -544,49 +544,41 @@ public sealed class ExplorerChecks
         }
         else
         {
-            found = await SavedAsync(kind, templateVersion, ct).ConfigureAwait(false);
+            found = await TemplateAsync(kind, templateVersion, ct).ConfigureAwait(false);
         }
 
         _schemas[key] = found;
         return found;
     }
 
-    private async Task<(SchemaSnapshot?, ExplorerSchema?, string?)> SavedAsync(string kind, string? templateVersion, CancellationToken ct)
+    /// <summary>The template of <paramref name="kind"/> a synced repository holds, the version named or the kind's, read from its file.</summary>
+    private async Task<(SchemaSnapshot?, ExplorerSchema?, string?)> TemplateAsync(string kind, string? templateVersion, CancellationToken ct)
     {
         if (_templates is null)
         {
-            return (null, null, "No saved template can be read here.");
+            return (null, null, "No repository's template can be read here: this host keeps no module database.");
         }
 
-        var version = templateVersion;
-        if (string.IsNullOrWhiteSpace(version))
-        {
-            var saved = await SavedVersionsAsync(kind, ct).ConfigureAwait(false);
-            if (saved.Count == 0)
-            {
-                return (null, null, $"No template of {kind} is saved. Save one on the Templates page, or check the record against the Schema service's.");
-            }
-
-            version = saved[0];
-        }
-
-        var schema = await _templates.LoadAsync(new TemplateReference(kind, version.Trim()), ct).ConfigureAwait(false);
-        return schema is null
-            ? (null, null, $"Template {kind} version {version.Trim()} is not saved.")
-            : (schema, new ExplorerSchema(kind, schema.Version, VerdictSchema.Template, [], [], SchemaRules.Of(schema).Notes), null);
+        var version = string.IsNullOrWhiteSpace(templateVersion) ? null : templateVersion.Trim();
+        var resolved = await _templates.ResolveAsync(null, kind, version, ct).ConfigureAwait(false);
+        return resolved.Schema is { } schema
+            ? (schema, new ExplorerSchema(kind, schema.Version, VerdictSchema.Template, [], [], SchemaRules.Of(schema).Notes), null)
+            : (null, null, $"{Capitalized(resolved.Problem!)}, or check the record against the Schema service's.");
     }
 
-    /// <summary>The template versions saved for <paramref name="kind"/>, newest first; none when no store can be read.</summary>
-    private async Task<IReadOnlyList<string>> SavedVersionsAsync(string kind, CancellationToken ct)
+    /// <summary>The template versions the synced repositories hold for <paramref name="kind"/>, the most recently synced first; none when they cannot be read.</summary>
+    private async Task<IReadOnlyList<string>> TemplateVersionsAsync(string kind, CancellationToken ct)
     {
         if (_templates is null)
         {
             return [];
         }
 
-        var all = await _templates.ListAsync(ct).ConfigureAwait(false);
-        return all.Where(t => string.Equals(t.Kind, kind, StringComparison.Ordinal)).Select(t => t.Version).ToList();
+        var all = await _templates.ListForAsync(null, ct).ConfigureAwait(false);
+        return all.Where(t => string.Equals(t.Kind, kind, StringComparison.OrdinalIgnoreCase)).Select(t => t.Version).ToList();
     }
+
+    private static string Capitalized(string text) => text.Length == 0 ? text : char.ToUpperInvariant(text[0]) + text[1..];
 
     private static string Key(string kind, ExplorerSchemaSource source, string? templateVersion)
         => $"{source}|{kind}|{templateVersion?.Trim()}";

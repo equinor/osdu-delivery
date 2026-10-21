@@ -70,16 +70,16 @@ The language itself is on [the mapping document](../flow/mapping.md), [mapping v
   delivers to, filled by cache flows: [OSDU reference data](reference-data-cache.md) (`UnitOfMeasure`,
   `LogCurveType`...) and [your own lookup tables](lookup-table-cache.md) (`UnitAlias`, `CurveDictionary`, the
   `SamplingDomain` dictionary).
-- **The command line with the module's database.** `template`, `check`, `values` and `preview` read templates and
-  caches from the module's database: `--db <reference>`, else `SQLFLOW_CATALOG_DB`, unless the module has a connection
-  of its own in `SQLFLOW_OSDU_DB`. `values` and `preview` also open the flow's ingestion tables on your machine through
+- **The command line with the module's database.** `check`, `values` and `preview` read the template from the template
+  folders of your working copy, and the cache from the module's database: `--db <reference>`, else
+  `SQLFLOW_CATALOG_DB`, unless the module has a connection of its own in `SQLFLOW_OSDU_DB`. `values` and `preview` also open the flow's ingestion tables on your machine through
   the flow's own connection reference, and ask the platform whatever the mapping's searches ask.
 
 ## 1. Put the template in a template folder
 
 A mapping fills a template that a template folder on its path holds: a folder named `templates` beside the mappings or
 above them, committed with them ([template folders](../concepts/templates.md#template-folders)). Write the kind's schema
-into one from the OSDU data definitions, or download a saved version on the GUI's Templates page
+into one from the OSDU data definitions, or download it on the Browse OSDU tab of the GUI's Templates page
 ([sqlflow template](../cli/template.md)):
 
 ```bash
@@ -87,21 +87,18 @@ sqlflow template capture --kind osdu:wks:work-product-component--WellLog:1.4.0 -
 ```
 
 ```text
-saved template osdu:wks:work-product-component--WellLog:1.4.0 version 26a3c3441882db4f
+wrote template osdu:wks:work-product-component--WellLog:1.4.0 version 26a3c3441882db4f to <repo>/welldb/templates/osdu_wks_work-product-component--WellLog_1.4.0.json
 ```
 
 The 16 hexadecimal characters are the template version. The mapping may name it (`template.version`), which pins that
-version exactly, or name the kind alone and fill the one version the nearest folder holding the kind holds. Given the
-module database, the command also saves the version in the library, which the builder, the explorer and the MCP tools
-read (the repository's documents read only the file); on a host without it, `--out` writes the file alone. `sqlflow template folders --for
-welldb/mappings/WellLog@1.4.0.yaml` lists the templates the mapping will read. To see what can be filled:
+version exactly, or name the kind alone and fill the one version the nearest folder holding the kind holds. The file is
+the template: commit it, and the repository's sync records it; nothing of it is kept in a database. `sqlflow template
+folders --for welldb/mappings/WellLog@1.4.0.yaml` lists the templates the mapping will read.
 
-```bash
-sqlflow template show --kind osdu:wks:work-product-component--WellLog:1.4.0
-```
-
-It lists every variable (`osdu.data.WellboreID`, `osdu.data.Curves[].CurveUnit`...) with its shape, whether the schema
-requires it, who writes it (a mapping, OSDU Delivery, or OSDU), the entity types it points to and its unit context.
+To see what can be filled, open the kind on the Templates page: **View** on the Browse OSDU tab before the file is
+committed, or the file's row on the Repositories tab once the repository has synced. It lists every variable
+(`osdu.data.WellboreID`, `osdu.data.Curves[].CurveUnit`...) with its shape, whether the schema requires it, who writes
+it (a mapping, OSDU Delivery, or OSDU), the entity types it points to and its unit context.
 
 ## 2. Start from a scaffold
 
@@ -113,9 +110,11 @@ partition's cache to prefill and check. Then, under Setup:
 
 1. Pick the **Repository** the mapping will live in. Its delivery flow supplies the parameter values the check renders
    with (shown under Check values, and never written into the mapping).
-2. Pick the saved **Template**, and give the **Name**, **Mapping version** and **Source system**. The file will be
-   `mappings/<Name>@<version>.yaml`. Press **Start mapping**. The builder offers the saved versions of the library; when
-   the repository's folders do not hold the one picked, proposing the mapping writes its file there too.
+2. Pick the **Template**, one of the files the repository's template folders hold, and give the **Name**, **Mapping
+   version** and **Source system**. The file will be `<Name>@<version>.yaml` in the `mappings` folder beside the
+   template folder holding the template, which is then on its path. Press **Start mapping**. A repository whose folders
+   hold no template yet says so: download the kind on Browse OSDU, commit it to a template folder, and sync the
+   repository.
 3. Under **Dataset**, add the key columns, choose how the OSDU id is made, and write the label.
 4. Every template variable is listed. Open one to choose its input (Dataset column, Repeat child rows, Cache, Lookup,
    Platform search, Static value, Expression, First value of, List of values or List of objects), with its modifiers,
@@ -124,14 +123,14 @@ partition's cache to prefill and check. Then, under Setup:
 5. The right side shows the check (`loads and passes`, or the errors and warnings, each opening the variable it is
    about) and the YAML, checked again as you edit. **Copy YAML**, or, once the check finds no error, **Propose to
    repository**: for a repository tracked from git, the control plane pushes a branch and opens a pull request with
-   the file, and with the template's file in the nearest template folder the mapping reads when none on its path holds
-   that version yet. Nothing reaches the catalog until it is merged and synced.
+   the file. Nothing reaches the catalog until it is merged and synced.
 
 **The MCP server.** An assistant connected to the OSDU Delivery MCP server calls `delivery_scaffold_mapping` with the
-template's kind and version, the mapping's name, version and source system, and optionally a partition. It returns the
-YAML and the issues still to resolve, and writes nothing. `delivery_check_mapping` then checks each edit against the
-template until `valid` is true: the one the template folders on the mapping's path hold when it is given the synced
-repository's `repoId`, else the saved version ([the MCP server](mcp.md)).
+synced repository's id and the path of its template file (as `delivery_templates` lists them), the mapping's name,
+version and source system, and optionally a partition. It returns the YAML and the issues still to resolve, and writes
+nothing. `delivery_check_mapping` then checks each edit against the template until `valid` is true: the one the
+template folders on the mapping's path hold when it is given the synced repository's `repoId`, else the version it
+names among those the synced repositories hold ([the MCP server](mcp.md)).
 
 Either way, a fresh scaffold holds the header filled from what you gave, the `dataPartition` parameter, the four access
 and legal lists to fill, and a `$cache` entry for every relationship property outside a repeated array whose entity
@@ -299,7 +298,7 @@ every search property against its schema, every parameter against what the flow 
 ```text
 OK  welldb-welllog-03-delivery (<flow id>)
     mapping     WellLog@1.1.0
-    template    osdu:wks:work-product-component--WellLog:1.4.0 version 26a3c3441882db4f (saved 2026-10-09 08:00:00Z)
+    template    osdu:wks:work-product-component--WellLog:1.4.0 version 26a3c3441882db4f (welldb/templates/osdu_wks_work-product-component--WellLog_1.4.0.json)
     cache       partition dev version <cache version> (5 type(s))
     searches    exact only (indexer featureFlag.keywordLower.enabled unknown)
     context     <render context hash>

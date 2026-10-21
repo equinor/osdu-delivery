@@ -197,7 +197,7 @@ export default function DeliveryDocumentsPage() {
                       <TabsTrigger value="shape" data-testid="delivery-mapping-tab-shape">Record shape</TabsTrigger>
                     </TabsList>
                     <div className="ml-auto flex items-center gap-1">
-                      {templateVersion !== "-" && (
+                      {templateVersion !== "-" && detail.mapping.templatePath !== "" && (
                         <Button
                           asChild
                           size="sm"
@@ -206,7 +206,7 @@ export default function DeliveryDocumentsPage() {
                           data-testid="delivery-mapping-template"
                         >
                           <RouterLink
-                            to={`/delivery/templates?${new URLSearchParams({ kind: detail.mapping.kind, version: templateVersion }).toString()}`}
+                            to={`/delivery/templates?${new URLSearchParams({ repoId: detail.mapping.repoId, path: detail.mapping.templatePath }).toString()}`}
                           >
                             <LayoutTemplate />
                             <span className="font-mono text-[12px]">{templateVersion}</span>
@@ -229,6 +229,7 @@ export default function DeliveryDocumentsPage() {
                       path={detail.mapping.relativePath}
                       contentHash={detail.mapping.contentHash}
                       repoId={detail.mapping.repoId}
+                      templatePath={detail.mapping.templatePath === "" ? null : detail.mapping.templatePath}
                     />
                   </TabsContent>
                   <TabsContent value="yaml" className="flex min-h-0 flex-col">

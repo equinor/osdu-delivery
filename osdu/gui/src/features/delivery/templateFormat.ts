@@ -1,13 +1,25 @@
 import { deliveryApi, type DeliveryTemplateRole, type DeliveryTemplateVariable } from "../../api/delivery";
 
 /**
- * How a saved version's bundled schema is read, by the Schema JSON tab and by the download alike, so the file is the text
- * the tab shows. A saved version never changes, so its schema, once read, is not read again.
+ * How the template a repository's file holds is read as JSON text, by the Schema JSON tab and by the download alike, so the
+ * file is the text the tab shows. The file is read where the repository was synced, so a page opened after the repository
+ * changed reads it again.
  */
-export function templateSchemaQuery(kind: string, version: string) {
+export function templateSchemaQuery(repoId: string, path: string) {
   return {
-    queryKey: ["delivery", "templates", "schema", kind, version] as const,
-    queryFn: () => deliveryApi.templateSchema(kind, version),
+    queryKey: ["delivery", "templates", "schema", repoId, path] as const,
+    queryFn: () => deliveryApi.templateSchema(repoId, path),
+  };
+}
+
+/**
+ * How a kind's template file is read from a release of the OSDU data definitions, by the download: a release is a tag at a
+ * fixed commit, so what it holds never changes.
+ */
+export function osduTemplateFileQuery(release: string, kind: string) {
+  return {
+    queryKey: ["delivery", "osdu-definitions", "file", release, kind] as const,
+    queryFn: () => deliveryApi.osduSchemaFile(release, kind),
     staleTime: Infinity,
   };
 }
@@ -114,7 +126,7 @@ export function kindStem(kind: string): string {
   return kind.split(":").slice(0, 3).join(":");
 }
 
-/** Where a template was read from, as a fact reads it: "file Wellbore.json" becomes "File Wellbore.json". */
-export function originText(origin: string): string {
-  return origin === "" ? origin : `${origin[0].toUpperCase()}${origin.slice(1)}`;
+/** The last part of a path: the file's own name. */
+export function fileName(path: string): string {
+  return path.slice(path.lastIndexOf("/") + 1);
 }

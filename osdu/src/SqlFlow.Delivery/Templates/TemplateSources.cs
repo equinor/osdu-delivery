@@ -51,9 +51,8 @@ public static class TemplateSources
     /// <summary>
     /// A template as a file: the bundled schema indented, its keys in the order the schema was written, which is the form
     /// <c>osdu/samples/welldb/templates</c> keeps the sample schemas in. <see cref="FromBundledJson"/> reads it back as the same
-    /// version, since a version is the hash of the canonical form, so a copy kept in a repository can be checked against
-    /// the version its mappings pin by importing it. The control plane answers it as the file <see cref="FileName"/> names,
-    /// which the Templates page downloads, and <c>sqlflow template</c> writes it with <c>--out</c>.
+    /// version, since a version is the hash of the canonical form. The control plane answers a release's schema as the file
+    /// <see cref="FileName"/> names, which the Templates page downloads, and <c>sqlflow template</c> writes it with <c>--out</c>.
     /// </summary>
     public static string FileText(SchemaSnapshot schema)
     {
@@ -155,7 +154,7 @@ public static class TemplateSources
         return kind;
     }
 
-    /// <summary>A bundled schema as a template is saved from it: it describes the kind, refers to nothing outside itself, and declares <c>data</c>.</summary>
+    /// <summary>A bundled schema as a template file holds it: it describes the kind, refers to nothing outside itself, and declares <c>data</c>.</summary>
     internal static SchemaSnapshot Validated(string kind, JsonObject bundled, DateTimeOffset capturedUtc, string where)
     {
         if (bundled["x-osdu-schema-source"] is JsonValue declared && declared.TryGetValue<string>(out var source)
@@ -173,7 +172,7 @@ public static class TemplateSources
             if (name is null)
             {
                 throw new DeliveryException(
-                    $"{where}: the schema refers to '{reference}' outside itself. A template is saved from a bundled schema, where every reference is resolved into its definitions.");
+                    $"{where}: the schema refers to '{reference}' outside itself. A template file holds a bundled schema, where every reference is resolved into its definitions.");
             }
 
             if (definitions?[name] is not JsonObject)

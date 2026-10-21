@@ -12,7 +12,7 @@ import { expect, test } from "./helpers";
 
 const PARTITION = E2E.osdu.OSDU_DATA_PARTITION;
 
-/** The kind the stand-in's wellbores are of; no template of it is saved, so the Schema service's is the only schema. */
+/** The kind the stand-in's wellbores are of; no synced repository holds a template of it, so the Schema service's is the only schema. */
 const KIND = "osdu:wks:master-data--Wellbore:1.1.0";
 
 /** The schema the wellbore's refers to by id for its facility: a name that starts with "Wellbore ", as the platform's wellbores do but two. */
@@ -152,10 +152,11 @@ test.describe.serial("explorer validation", () => {
     await expect(adminPage.getByRole("tooltip")).toContainText("data.FacilityName (pattern)");
     await expect(adminPage.getByRole("tooltip")).toContainText("Fix: Change FacilityName so it matches ^Wellbore");
 
-    // No template of the kind is saved, so a check against a saved one says so rather than passing the record.
+    // No synced repository holds a template of the kind, so a check against a repository's template says so rather than
+    // passing the record.
     await record.getByTestId("osdu-outline-validation").click();
-    await record.getByTestId("explorer-validate-saved").click();
-    await expect(record.getByTestId("explorer-validate-problem")).toContainText(`No template of ${KIND} is saved`, { timeout: 60_000 });
+    await record.getByTestId("explorer-validate-template").click();
+    await expect(record.getByTestId("explorer-validate-problem")).toContainText(`No synced repository holds a template of ${KIND}`, { timeout: 60_000 });
     await expect(record.getByTestId("validation-verdict")).toHaveCount(0);
 
     // Back on the Schema service's schema, the verdict read before is shown again.

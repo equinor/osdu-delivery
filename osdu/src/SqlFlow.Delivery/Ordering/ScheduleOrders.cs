@@ -107,13 +107,15 @@ public static class ScheduleOrders
     /// <summary>
     /// Reads the catalog and the module database and answers for every schedule that runs a delivery: the deliveries from
     /// the module's interfaces, the schedules and the flows they run (active, and run by a fire) from the catalog. The two
-    /// may be in different databases; nothing here writes.
+    /// may be in different databases; nothing here writes. A mapping's template is read from its file, in the folder
+    /// <paramref name="folders"/> finds its repository in.
     /// </summary>
-    public static async Task<ScheduleOverview> ReadAsync(CatalogDbContext catalog, OsduDbContext module, CancellationToken ct = default)
+    public static async Task<ScheduleOverview> ReadAsync(
+        CatalogDbContext catalog, OsduDbContext module, Catalog.IRepositoryFolders folders, CancellationToken ct = default)
     {
         ArgumentNullException.ThrowIfNull(catalog);
         ArgumentNullException.ThrowIfNull(module);
-        var read = await OrderCatalog.ReadAsync(module, null, ct).ConfigureAwait(false);
+        var read = await OrderCatalog.ReadAsync(module, folders, null, ct).ConfigureAwait(false);
         var repositories = await catalog.Repos.AsNoTracking()
             .Select(r => new { r.Id, r.Name })
             .ToDictionaryAsync(r => r.Id, r => r.Name, ct)

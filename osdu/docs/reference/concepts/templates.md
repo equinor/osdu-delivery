@@ -2,7 +2,7 @@
 id: delivery-concept-templates
 title: "Templates: OSDU schemas a repository's template folders hold, settled for each document by the folders on its path"
 type: concept
-summary: "What a template is, the template folders a repository keeps them in, how a document's template is settled, the library, and comparing versions."
+summary: "Templates as files of a repository's template folders: what the sync records, how a document's template is settled, downloading one, comparing versions."
 keywords:
   - template
   - template folder
@@ -23,10 +23,10 @@ keywords:
   - template of one's own
   - sqlflow template
   - osdu:schemarepository
-  - save template
   - download template
   - template file
-  - library
+  - repository sync
+  - browse osdu
 related:
   - delivery-flow-mapping
   - delivery-cli-template
@@ -35,14 +35,12 @@ related:
   - delivery-guide-writing-a-mapping
   - delivery-concept-lineage
   - delivery-concept-architecture
-  - delivery-table-template
   - delivery-table-repository-template
 sourceRefs:
   - osdu/src/SqlFlow.Delivery/Templates/OsduTemplate.cs
   - osdu/src/SqlFlow.Delivery/Templates/TemplateChain.cs
   - osdu/src/SqlFlow.Delivery/Templates/TemplateFolders.cs
   - osdu/src/SqlFlow.Delivery/Templates/TemplateSource.cs
-  - osdu/src/SqlFlow.Delivery/Templates/TemplateStore.cs
   - osdu/src/SqlFlow.Delivery/Templates/TemplateSources.cs
   - osdu/src/SqlFlow.Delivery/Templates/OsduDataDefinitions.cs
   - osdu/src/SqlFlow.Delivery/Templates/TemplateComparison.cs
@@ -58,8 +56,11 @@ sourceRefs:
   - osdu/src/SqlFlow.Delivery/Documents/DeliveryDocumentLoader.cs
   - osdu/src/SqlFlow.Delivery/Catalog/DeliveryCatalogSync.cs
   - osdu/src/SqlFlow.Delivery/Catalog/SyncedTemplates.cs
+  - osdu/src/SqlFlow.Delivery/Catalog/RepositoryTemplates.cs
+  - osdu/src/SqlFlow.Delivery/Catalog/RepositoryFolders.cs
   - osdu/src/SqlFlow.Delivery/Engine/Assertions/AssertionTemplates.cs
   - osdu/src/SqlFlow.Delivery/Engine/Dimensions/DimensionBlueprint.cs
+  - osdu/src/SqlFlow.Delivery/Engine/Search/ExplorerChecks.cs
   - osdu/src/SqlFlow.Delivery.Data/DeliveryEntities.cs
   - osdu/src/SqlFlow.Delivery.Cli/DeliveryVerbs.cs
   - osdu/src/SqlFlow.Delivery.ControlPlane/Api/DeliveryTemplateEndpoints.cs
@@ -67,7 +68,7 @@ sourceRefs:
   - osdu/src/SqlFlow.Delivery.ControlPlane/DeliveryControlPlaneModule.cs
   - osdu/gui/src/features/delivery/TemplatesPage.tsx
   - osdu/gui/src/features/delivery/TemplatesBrowseTab.tsx
-  - osdu/gui/src/features/delivery/MappingProposeSheet.tsx
+  - osdu/gui/src/features/delivery/MappingBuilderPage.tsx
   - osdu/gui/src/features/delivery/templateFormat.ts
   - osdu/samples/welldb/templates/osdu_wks_work-product-component--WellLog_1.4.0.json
   - osdu/samples/welldb/templates/osdu_wks_master-data--Wellbore_1.3.0.json
@@ -80,17 +81,15 @@ A [mapping](../flow/mapping.md) fills one template: it names the template's kind
 variable it fills where the value comes from. Nobody edits a template; it is the schema, and a version of it never
 changes.
 
-A repository keeps the templates its documents fill in **template folders**, folders named `templates`, beside the
-mappings and flows that read them or above them. A document reads the template folders on its path, and the one it
-names settles to a version there ([Template folders](#template-folders)): a run, `sqlflow check`, lineage and the sync
-all read the files. A template is put in a folder as a file: downloaded from the Templates page, written by `sqlflow
-template capture --out`, or proposed with a mapping by the mapping builder. A template of one's own is a file like any
-other ([Templates of one's own](#templates-of-ones-own)).
-
-The **library** of saved templates (`[osdu].[Template]`) is for what reads templates where no repository is at hand: the
-Templates page browses the OSDU data definitions, compares versions and saves them there, and the explorer, the mapping
-builder and the MCP tools read it. It is not linked to the repositories: a sync saves nothing in it, nothing a repository
-holds keeps a version from being deleted, and a version the library holds is never a document's template.
+A repository keeps the templates its documents fill as files in **template folders**, folders named `templates`, beside
+the mappings and flows that read them or above them. A document reads the template folders on its path, and the one it
+names settles to a version there ([Template folders](#template-folders)). The repository is the only place a template
+lives: its sync records which file holds which template ([What the sync records](#what-the-sync-records)), and whoever
+reads a template (a run, `sqlflow check`, lineage, the GUI, the MCP server) reads the file. The database keeps no copy
+of any template. Adding a template is committing its file to a template folder, and removing one is deleting the file;
+the next sync records either. A file is downloaded from the OSDU data definitions on the Templates page, or written by
+`sqlflow template capture --out`; a template of one's own is a file like any other
+([Templates of one's own](#templates-of-ones-own)).
 
 ```yaml
 template:
@@ -144,7 +143,7 @@ the full rules are in [change detection](change-detection.md#the-canonical-json-
 consequences follow.
 
 - **A version never changes.** A file whose content changes holds another version; every copy of one content, in any
-  folder, file or repository, is the same version, and the library saves it once.
+  folder, file or repository, is the same version.
 - **The version identifies the schema exactly**, whatever release, file or folder it came from, so a record is always
   checked against the schema it was rendered for. Indentation, key order and line endings do not move it.
 - **A render records it.** The template version enters every record's render context, and the ledger keeps the context
@@ -154,8 +153,8 @@ consequences follow.
 ## Template folders
 
 A template folder is a folder named exactly `templates` (lower case, on every system: a folder named `Templates`, or
-`template` holding `.json` files, is not read, and the sync warns of it), anywhere in a repository; a repository holds as many as its projects need. Its template
-files are the `.json` files in it and in the folders under it, except:
+`template` holding `.json` files, is not read, and the sync warns of it), anywhere in a repository; a repository holds
+as many as its projects need. Its template files are the `.json` files in it and in the folders under it, except:
 
 - a folder named `templates` inside it, which is a template folder of its own;
 - the folders a repository sync skips: a name starting with a dot, `bin`, `obj`, `node_modules` and `runs`;
@@ -168,15 +167,15 @@ of more than 8 MB is not read.
 A template file is a bundled record schema: every `$ref` resolved into its own `definitions`, a `data` property
 declared, and its kind named in its own `x-osdu-schema-source`, as every schema of the OSDU data definitions names it.
 The file's name is never read for the kind; the convention is the kind with each colon an underscore
-(`osdu_wks_work-product-component--WellLog_1.4.0.json`), which is what a download, `capture --out` and the builder name
-it. A file that is not one is reported by the sync with the reason, and holds no template:
+(`osdu_wks_work-product-component--WellLog_1.4.0.json`), which is what a download and `capture --out` name it. A file
+that is not one is reported by the sync with the reason, and holds no template:
 
 | Problem | What is said |
 | --- | --- |
 | Not JSON, or not an object | `the schema is not valid JSON (...)`, `the schema is not a JSON object.` |
 | No kind | `the schema names no kind. A template file declares the kind it holds in x-osdu-schema-source (...)` |
 | Not a record kind | `x-osdu-schema-source '<value>' is not a record kind; it must be 'authority:source:entityType:major.minor.patch'.` |
-| Not bundled | `the schema refers to '<ref>' outside itself. A template is saved from a bundled schema, where every reference is resolved into its definitions.` |
+| Not bundled | `the schema refers to '<ref>' outside itself. A template file holds a bundled schema, where every reference is resolved into its definitions.` |
 | A missing definition | `the schema refers to definition '<name>', which it does not contain.` |
 | No `data` | `the schema declares no 'data' property, so it does not describe an OSDU record.` |
 | Too large | `the file is <n> bytes, and a template file holds one bundled schema of at most 8388608 bytes` |
@@ -205,7 +204,7 @@ The template a document names settles by one rule:
 
 So a repository of several projects keeps each project's templates beside them, and two projects may hold different
 versions of one kind without a document of either reading the other's; a template every project fills sits once, in a
-folder above them. A version saved in the library, or held by a folder off the document's path, is never its template.
+folder above them. A version held by a folder off the document's path, or by another repository, is never its template.
 
 A template that does not settle says where the document looked, what its path holds of the kind, which files on its path
 could not be read (one of them may be the one meant), where else the repository holds it, and how to put it there:
@@ -215,10 +214,10 @@ no template folder on the path of welldb/mappings/WellLog@1.4.0.yaml holds templ
 osdu:wks:work-product-component--WellLog:1.4.0 version 26a3c3441882db4f. On its path welldb/templates/
 osdu_wks_work-product-component--WellLog_1.4.0.json holds version 0f21b6a0c3d89e14. It reads welldb/templates.
 The repository holds version 26a3c3441882db4f of osdu:wks:work-product-component--WellLog:1.4.0 at
-archive/templates/WellLog.json, which is not on its path. Put the template's file in one of them: the Templates page
-downloads a saved version, and 'sqlflow template show --kind osdu:wks:work-product-component--WellLog:1.4.0 --version
-26a3c3441882db4f --out welldb/templates/osdu_wks_work-product-component--WellLog_1.4.0.json' writes it from the saved
-templates.
+archive/templates/WellLog.json, which is not on its path. Put the file holding version 26a3c3441882db4f in one of them:
+copy it from where the repository holds it, or, for a version a release of the OSDU data definitions publishes, download
+it on the Templates page or write it with 'sqlflow template capture --kind osdu:wks:work-product-component--WellLog:1.4.0
+--release <tag> --out welldb/templates/osdu_wks_work-product-component--WellLog_1.4.0.json'.
 ```
 
 ```text
@@ -233,8 +232,7 @@ one version of the kind in the folder.
 - **A mapping** names its template under `template`: its `kind`, and its `version` when it means one exactly. Without a
   version it fills the one version its nearest folder holding the kind holds, and follows the file: a changed file is a
   new version, which the next sync records and the next run renders against. With a version it fills exactly that one,
-  and a folder that no longer holds it leaves the mapping unable to load until it does, whatever the library holds
-  ([mapping](../flow/mapping.md)).
+  and a folder that no longer holds it leaves the mapping unable to load until it does ([mapping](../flow/mapping.md)).
 - **A search** names the schema of the kind it searches the same way, `schema.kind` and an optional `schema.version`,
   settled from the folders on the mapping's path ([mapping lookups](../flow/mapping-lookups.md)).
 - **An assertion test** reads the template of its `kind` from the folders on its flow's path: the version its `template`
@@ -245,37 +243,39 @@ one version of the kind in the folder.
   of that kind they settle to, and describes the records it reaches by id by the newest version of their type
   ([dimension](../flow/dimension.md)).
 
-The sync records, for every mapping, the version it settled to and the file it read (`TemplateVersion` and
-`TemplatePath` of [`osdu.Mapping`](../tables/mapping.md)); a mapping whose template does not settle is invalid, keeps
-the reference it is known by, and its message is the one above. A mapping that names a version keeps that pin while it
-is invalid, so the library will not delete the version from under it.
+## What the sync records
+
+A repository sync scans every template folder of the repository it reads and records each file as one row of
+[`osdu.RepositoryTemplate`](../tables/repository-template.md): its path, the template folder it is in, the kind and
+version it holds or why it holds none, and when a sync first and last saw it. That row is all the database keeps of a
+template: an index of which file holds what, never the schema. A file added to a folder is a new row at the next sync,
+a file changed has its row's version moved, and a file deleted has its row removed, so the index is always what the
+repository's last sync read.
+
+The same sync settles every mapping against the files it is scanning, and records the version each settled to and the
+file it read (`TemplateVersion` and `TemplatePath` of [`osdu.Mapping`](../tables/mapping.md)). A mapping whose template
+does not settle is invalid, keeps the reference it is known by, and its message is the one above.
 
 ## Where templates are read
 
+Every reader reads the file. What tells readers apart is where the file is:
+
 | Who | Reads |
 | --- | --- |
-| A run: the render, its preflight, the validation gate; `sqlflow check`, `preview` and `values`; an assertion or dimension run | The files of the template folders on the document's path. A record rendered for an exact version no folder holds any longer is checked against that version where the library holds it, someone having saved it there (one content, wherever it is kept); otherwise it is `unverified`. |
+| A run: the render, its preflight, the validation gate; `sqlflow check`, `preview` and `values`; an assertion or dimension run | The files of the template folders on the document's path, in the checkout the run reads. A record rendered for an exact version is checked against that version while a folder on the mapping's path holds it, and is `unverified` once none does. |
 | Lineage and the OSDU order it takes | The files, on the mapping's path, in the checkout being scanned ([lineage](lineage.md)). |
-| The repository sync | Every template folder of the repository: each file is a row of [`osdu.RepositoryTemplate`](../tables/repository-template.md) with a copy of the template it holds, and every mapping is settled from them. |
-| The control plane's pages about a repository's documents: an assertion flow's board, a dimension's blueprint and views, a source's interface order, the search terms, a mapping's properties, shape and coverage, the mapping builder opening a mapping, and `GET /api/v1/delivery/templates/resolve` | The files the repository's last sync recorded, settled by the same rule, each schema read from the copy that sync kept of the file. A row recorded before copies were kept says to sync the repository again until the next sync keeps its copy. |
-| The explorer, the Templates page, the mapping builder's drafts, the MCP server's template tools | The library. |
+| The repository sync | Every template folder of the repository it is reading, as [above](#what-the-sync-records). |
+| The control plane's pages about a repository's documents: an assertion flow's board, a dimension's blueprint and views, a source's interface order, the search terms, a mapping's properties, shape and coverage, the mapping builder, and `GET /api/v1/delivery/templates/resolve` | The files the repository's last sync recorded, settled by the same rule, each read from the repository's synced folder. |
+| The Templates page, the explorer's checks against a repository's template, and the MCP server's template tools | Every file every synced repository's last sync recorded, each read from its repository's synced folder. A kind named without a version (the explorer's default) is the version the repository synced most recently holds. |
 | `sqlflow template folders` | The files, in a working copy, with no database ([template](../cli/template.md)). |
 
-## The library: saved templates
-
-The library is `[osdu].[Template]` ([table](../tables/template.md)): every version a person saved, from the Templates page
-or by `sqlflow template capture` or `import`. A version's origin says where it came from: `OSDU data definitions <release>
-(<commit>) Generated/<path>`, or `file <name>`. It serves what reads templates where no repository is at hand: the
-explorer checks a record against a saved template, the mapping builder starts a draft from one, and the MCP server's
-template tools lay one out.
-
-It is not linked to the repositories. A repository sync saves nothing in it, and keeps the templates a repository's
-folders hold as copies of its own, with each file's row ([`osdu.RepositoryTemplate`](../tables/repository-template.md)),
-which only the pages about that repository's documents read. So the Templates page says nothing of which repositories hold
-a version or which mappings fill it, and any saved version can be deleted (**Delete** on the Templates page,
-`sqlflow template delete`, or `DELETE /api/v1/delivery/templates`, an author action): no repository document reads it. A
-mapping drafted from a saved version is proposed with that version's file when the repository's folders do not hold it,
-so the repository reads its own copy from then on.
+A repository's synced folder is found the way a node finds a run's checkout: a source that reads a local path is read
+where it lives; any other repository is read in the folder its last sync read when this host sees it (the control plane
+that synced it, or a node on the same machine), and otherwise the commit its last sync pulled is checked out from its
+remote, with its source's credential, into the cache a run's commit is checked out into. A file read this way must
+still hold what the sync recorded: one that changed since is refused, saying to sync the repository again, and one whose
+repository cannot be had on this host says why. A host with no catalog, such as the command line without `--db`, reads
+templates only from a working copy.
 
 ## Where templates come from
 
@@ -304,39 +304,36 @@ On the GUI's Templates page, the **Browse OSDU** tab:
 
 1. **Picks a release and searches the record kinds it publishes.**
 2. **Looks at a schema**: a kind laid out as a template, every variable with its type, requiredness, relationships, unit
-   context and OSDU's description, read from the release and bundled; nothing is stored yet. The kind links to its file
-   in the repository.
+   context and OSDU's description, read from the release and bundled. The kind links to its file in the repository.
 3. **Compares versions** of a kind ([below](#comparing-versions)).
-4. **Saves it** (**Save template**, any signed-in user) in the library: exactly the schema that was shown. Its origin
-   names the release, the first 12 characters of its commit and the file:
-   `OSDU data definitions <release> (<commit>) Generated/<path of the kind's file>`. A saved version's **Download** gives
-   the file a repository's template folder keeps.
+4. **Downloads it** (**Download**, on its row or in its sheet, any signed-in user) as the file a template folder keeps:
+   the kind's schema bundled with every shared schema it refers to, naming its kind, under the kind's file name
+   (`GET /api/v1/delivery/templates/osdu/file?release=&kind=`, answered as a file to save). Nothing is kept: the
+   template is the repository's once the file is committed to a template folder and the repository syncs.
 
-`sqlflow template capture --kind <kind> [--release <tag>] --out <folder>/<file>` writes a kind's schema straight into a
-template folder of a working copy, and saves it in the library when a module database is configured
-([template](../cli/template.md)).
+`sqlflow template capture --kind <kind> [--release <tag>] --out <folder>/<file>` writes the same file into a template
+folder of a working copy ([template](../cli/template.md)).
 
 ### A schema file
 
-A schema the data definitions do not publish (a kind of your own, or a version not released yet) is imported as a
-file, on the Templates page's **Import file** tab or with `sqlflow template import <schema.json> --kind <kind>`:
+A schema the data definitions do not publish (a kind of your own, or a version not released yet) is written into a
+template folder with `sqlflow template import <schema.json> --kind <kind> --out <file>`:
 
-- A bundled file, every `$ref` pointing into its own `definitions` (or `$defs`), is saved as it is. That is the form
+- A bundled file, every `$ref` pointing into its own `definitions` (or `$defs`), is written as it is. That is the form
   `capture --out` writes, and the form a template folder keeps.
 - A file as the data definitions publish it refers to the shared schemas beside it (`../abstract/...`). Those are read
-  from a release (`--release`, the newest by default) and bundled in exactly as a capture bundles them; the origin then
-  also names that release.
-- `sqlflow template import --from-dir <dir> --kind <kind>` bundles the kind from a local checkout of the data definitions
-  (its `Generated` folder).
+  from a release (`--release`, the newest by default) and bundled in exactly as a capture bundles them.
+- `sqlflow template import --from-dir <dir> --kind <kind> --out <file>` bundles the kind from a local checkout of the
+  data definitions (its `Generated` folder).
 
-A schema that names no kind in `x-osdu-schema-source` is given the kind it is imported as, so the template saved, and the
-file `--out` writes, say which kind they hold. Whatever the source, a schema is saved only when it describes the kind
-named, refers to nothing outside itself once bundled, and declares the `data` property every OSDU record carries:
+A schema that names no kind in `x-osdu-schema-source` is given the kind it is imported as, so the file says which kind it
+holds. Whatever the source, a schema is written only when it describes the kind named, refers to nothing outside itself
+once bundled, and declares the `data` property every OSDU record carries:
 
 | Problem | Message |
 | --- | --- |
 | Another kind | `<where>: the schema describes '<source>', not '<kind>'.` |
-| A reference outside the file | `<where>: the schema refers to '<ref>' outside itself. A template is saved from a bundled schema, where every reference is resolved into its definitions.` |
+| A reference outside the file | `<where>: the schema refers to '<ref>' outside itself. A template file holds a bundled schema, where every reference is resolved into its definitions.` |
 | A missing definition | `<where>: the schema refers to definition '<name>', which it does not contain.` |
 | No `data` | `<where>: the schema declares no 'data' property, so it does not describe an OSDU record.` |
 | Not JSON | `<where>: the schema is not valid JSON (...).` |
@@ -353,27 +350,24 @@ sqlflow template import drafts/Facility.1.0.0.json --kind acme:wks:master-data--
   --out welldb/templates/acme_wks_master-data--Facility_1.0.0.json
 ```
 
-The file `--out` writes is bundled, names its kind, and holds the version a mapping fills; a host with no module database
-writes the file alone. A mapping that names the kind alone follows each edit of the file from the next sync and run, and
-each edit is a version of its own, which the ledger records with every record it renders. Check it from the working copy
-with `sqlflow template folders --for <mapping>` and `sqlflow check <flow>`, before a sync ever reads it.
+The file `--out` writes is bundled, names its kind, and holds the version a mapping fills. A mapping that names the kind
+alone follows each edit of the file from the next sync and run, and each edit is a version of its own, which the ledger
+records with every record it renders. Check it from the working copy with `sqlflow template folders --for <mapping>` and
+`sqlflow check <flow>`, before a sync ever reads it.
 
 ## A template as a file
 
-Any saved version can be written out as the file a template folder keeps:
+A template file is the bundled schema, indented, with its keys in the order the schema was written, named after the
+kind, each colon an underscore (`osdu_wks_work-product-component--WellLog_1.4.0.json`). It is written:
 
-- **Download** in a saved version's sheet on the Templates page (any signed-in user);
-- `sqlflow template show --kind <kind> --version <v> --out <file.json>` ([template](../cli/template.md));
-- `GET /api/v1/delivery/templates/schema?kind=&version=`, which answers it as a file to save
-  (`Content-Disposition: attachment`), so a browser or `curl -OJ` saves it under its name;
-- **Propose to repository** in the mapping builder, which writes the file the mapping fills into the repository's top
-  template folder, beside the mapping, when no folder on the mapping's path holds it.
+- by **Download** on the Templates page's Browse OSDU tab, from a release of the data definitions;
+- by **Download** in a repository template's sheet on the Templates page, which gives the schema the repository's file
+  holds, written as a template file under the file's own name, to keep in another repository's template folder
+  (`GET /api/v1/delivery/templates/schema?repoId=&path=`, answered as a file to save, so a browser or `curl -OJ` saves it);
+- by `sqlflow template capture --out` and `sqlflow template import --out` ([template](../cli/template.md)).
 
-The file is the bundled schema, indented, with its keys in the order the schema was written. It is named after the kind,
-each colon an underscore (`osdu_wks_work-product-component--WellLog_1.4.0.json`). Importing it saves the same version,
-because a version is the hash of the canonical form, which indentation and key order do not change. A version saved
-before a template named its kind in `x-osdu-schema-source` is written as it was saved, and `show --out` says that a
-template folder will not read it: import that file again with `--out`, which writes it naming its kind, as a new version.
+Writing the same schema twice writes the same version, because a version is the hash of the canonical form, which
+indentation and key order do not change.
 
 ## Comparing versions
 
@@ -381,7 +375,7 @@ Before moving a mapping to a newer version of its kind, compare the two. On the 
 picks two versions of one kind, each from any release of the data definitions
 (`GET /api/v1/delivery/templates/osdu/compare?fromRelease=&fromKind=&toRelease=&toKind=`). The verdict comes first: the
 same file, files that differ only in the version identifiers each carries (`x-osdu-schema-source` and `$id`), whether
-the two save as the same template version, and how many variables changed of each impact:
+the two are the same template version, and how many variables changed of each impact:
 
 | Impact | Means | Changes of this impact |
 | --- | --- | --- |
@@ -395,26 +389,28 @@ across versions (`AbstractFacility` 1.0.0 against 1.1.0): a kind's own file can 
 schema it refers to changed, and that is where its template's changes come from. A release's statuses are shown but
 judge nothing.
 
-Moving a mapping to the newer version: put the newer file in the template folder its mapping reads, fix what the
+Moving a mapping to the newer version: download the newer file into the template folder its mapping reads, fix what the
 comparison calls breaking, and check it ([check](../cli/check.md)). A mapping that names its version is moved by naming
 the new one (give it a new mapping version when both are to run side by side, each pinning its own); one that names the
 kind alone moves with the file. Run the flow's `plan` operation to see which records would be delivered again before
 delivering ([running an OSDU flow](../cli/run.md)).
 
-## Upgrading an estate whose templates were saved only in the library
+## Upgrading an estate that saved templates in the database
 
-A mapping used to read its template from the library. A repository now has to hold the templates its documents read:
-until its folders hold them, its mappings are invalid with the message above, and its assertion and dimension flows read
-no template. Write each version a mapping pins into a template folder on its path, from the library the estate already
-has, and commit it:
+Templates used to be saved in the module's database as well, in a library (`[osdu].[Template]`) the Templates page, the
+explorer and the mapping builder read, and the sync kept a copy of each template folder file's schema on its row. Module
+schema 1.54.0 drops both: the migration `TemplatesReadFromRepositoryFiles` deletes the library's table and the copies,
+and every reader reads the files. Before upgrading, make sure every version the estate's documents pin is a file in a
+template folder of a synced repository, since a version saved only in the library is gone after the migration:
 
-```bash
-sqlflow template show --kind osdu:wks:work-product-component--WellLog:1.4.0 --version 26a3c3441882db4f \
-  --out welldb/templates/osdu_wks_work-product-component--WellLog_1.4.0.json
-```
+- a version a release of the OSDU data definitions publishes is downloaded on Browse OSDU, or written with
+  `sqlflow template capture --kind <kind> --release <tag> --out <folder>/<file>.json`;
+- a version of one's own is read from the control plane before it is upgraded, with
+  `GET /api/v1/delivery/templates/schema?kind=<kind>&version=<version>`, and written into a folder with
+  `sqlflow template import <file> --kind <kind> --out <folder>/<file>.json`, which names its kind in the file.
 
-`sqlflow template folders --for welldb/mappings/WellLog@1.4.0.yaml` says what a mapping now reads before the repository is
-synced.
+A pin keeps its version when the file holds the same schema. `sqlflow template folders --for <mapping>` says what a
+mapping reads before the repository is synced.
 
 ## Where to work with templates
 
@@ -422,21 +418,21 @@ synced.
 | --- | --- | --- | --- |
 | See what a working copy's template folders hold, and what a document settles to | | `sqlflow template folders [<dir>] [--for <document>]` | |
 | See what a synced document settles to | A mapping's properties | | `GET /templates/resolve?repoId=&path=&kind=[&version=]` |
-| List saved versions, with the folders holding and the mappings filling each | Templates, Saved | `sqlflow template list` | `GET /templates` |
-| Lay one version out as variables | Saved tab, a row | `sqlflow template show --kind <kind> [--version <v>]` | `GET /templates/detail?kind=&version=` |
-| Write a version into a template folder | Saved tab, a row: Download; the builder's Propose to repository | `sqlflow template show ... --out`, `capture ... --out`, `import ... --out` | `GET /templates/schema?kind=&version=` (a file to save) |
+| List every synced repository's template files | Templates, Repositories | | `GET /templates` |
+| Lay one file's template out as variables | Repositories tab, a row | | `GET /templates/detail?repoId=&path=[&scope=]` |
+| Copy a repository's template file | Repositories tab, a row: Download | | `GET /templates/schema?repoId=&path=` (a file to save) |
 | List releases, list a release's record kinds | Browse OSDU | | `GET /templates/osdu/releases`, `GET /templates/osdu/schemas?release=` |
-| Read a kind from a release | Browse OSDU | | `GET /templates/osdu/schema?release=&kind=` |
-| Lay out a schema without saving it | Browse OSDU, Import file | | `POST /templates/preview` |
+| Read a kind from a release | Browse OSDU, View | | `GET /templates/osdu/schema?release=&kind=` |
+| Download a kind as a template file | Browse OSDU, Download | `sqlflow template capture --kind <kind> --out <file>` | `GET /templates/osdu/file?release=&kind=` (a file to save) |
+| Write a schema of one's own as a template file | | `sqlflow template import <schema.json> --kind <kind> --out <file>` | |
+| Lay out a schema without keeping it | Browse OSDU, View | | `POST /templates/preview` |
 | Compare two versions of a kind | Browse OSDU, Compare versions | | `GET /templates/osdu/compare` |
 | Read the release list again and download a release | Sync with the repository | | `POST /templates/osdu/sync` |
-| Save a version in the library | Save template | `sqlflow template capture`, `sqlflow template import` | `POST /templates` |
-| Delete a version from the library | Delete | `sqlflow template delete` | `DELETE /templates?kind=&version=` |
+| Add or remove a template | Commit its file to, or delete it from, a template folder, and sync the repository | | |
 
-Reading is open to any signed-in user; syncing the data definitions is an operate action; saving and deleting change
-the library, so they are author actions ([authentication and identity](authentication-and-identity.md)). The CLI's
-`folders`, and `capture` and `import` with `--out`, need no database; its other forms need the module's database
-(`--db <conn-ref>`, or the catalog variable). The mapping builder starts a mapping from a saved template
+Reading is open to any signed-in user, and syncing the data definitions is an operate action
+([authentication and identity](authentication-and-identity.md)). The CLI's `template` subcommands read and write files
+and need no database. The mapping builder starts a mapping from a template file a repository holds
 ([writing a mapping](../guides/writing-a-mapping.md)).
 
 ## Configuration: Osdu:SchemaRepository
@@ -461,7 +457,7 @@ a 404 (`The OSDU data definitions have no release '<tag>'; the latest is <tag>.`
 ## Related
 
 - [Mapping](../flow/mapping.md): the `template` block and what a mapping fills.
-- [`sqlflow template`](../cli/template.md): folders, capture, import, list, show and delete.
+- [`sqlflow template`](../cli/template.md): folders, capture and import.
 - [Preflight](preflight.md): checking a mapping against its template.
 - [Writing a mapping](../guides/writing-a-mapping.md): from a template to a mapping.
-- [`osdu.RepositoryTemplate`](../tables/repository-template.md) and [`osdu.Template`](../tables/template.md): what the sync records and the library.
+- [`osdu.RepositoryTemplate`](../tables/repository-template.md): what the sync records of each template folder file.

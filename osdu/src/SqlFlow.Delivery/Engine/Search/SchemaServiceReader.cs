@@ -64,7 +64,7 @@ public sealed class SchemaServiceTexts
 
 /// <summary>
 /// Reads a kind's schema from the Schema service (openapi schema_service, <c>GET /schema/{id}</c>) and bundles it as a
-/// saved template is bundled: a reference to another schema by its id (<c>osdu:wks:AbstractCommonResources:1.0.0</c>,
+/// template file is bundled: a reference to another schema by its id (<c>osdu:wks:AbstractCommonResources:1.0.0</c>,
 /// with or without a fragment into it) is read from the service too and placed among the bundle's definitions, so every
 /// reference the bundle holds is local. The OpenAPI description does not say whether the service answers with references
 /// already resolved; a schema that comes back bundled needs nothing more, and one that does not is bundled here.
@@ -328,7 +328,7 @@ public sealed partial class SchemaServiceReader
         {
             Root = root;
 
-            // Draft 2019 writes $defs where draft-07 writes definitions: the bundle keeps one, as a saved template does.
+            // Draft 2019 writes $defs where draft-07 writes definitions: the bundle keeps one, as a template file does.
             if (root["definitions"] is null && root["$defs"] is JsonObject defs)
             {
                 root.Remove("$defs");

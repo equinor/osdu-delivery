@@ -110,7 +110,8 @@ public sealed partial class SearchTermCatalogRefreshService : BackgroundService
                 }
             }
 
-            var counts = await DeliverySearchTermCatalog.ReconcileAsync(osdu, repoId, sources, documents, _clock.GetUtcNow().UtcDateTime, warnings, ct).ConfigureAwait(false);
+            var counts = await DeliverySearchTermCatalog.ReconcileAsync(
+                osdu, scope.ServiceProvider.GetRequiredService<IRepositoryFolders>(), repoId, sources, documents, _clock.GetUtcNow().UtcDateTime, warnings, ct).ConfigureAwait(false);
             osdu.ChangeTracker.Clear();
             LogRefreshed(repoId, counts.Added, counts.Updated, counts.Removed, counts.Unchanged);
             foreach (var warning in warnings)

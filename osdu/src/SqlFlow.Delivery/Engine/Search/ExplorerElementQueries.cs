@@ -92,8 +92,8 @@ public sealed record ExplorerElementQuery(string Purpose, string Query, string S
 public sealed record ExplorerElementField(string Path, string Index, string? NestedPath, string? FlattenedPath);
 
 /// <summary>
-/// The queries that find records by an element of a record, the exact one first; how the index holds it, in words; the saved
-/// template read (null where none is saved); why a query is a guess, where the template could not say how a value is
+/// The queries that find records by an element of a record, the exact one first; how the index holds it, in words; the
+/// template read (null where no synced repository holds one); why a query is a guess, where the template could not say how a value is
 /// indexed and it is written from the value; why no query can be written, where none can; and notes.
 /// </summary>
 public sealed record ExplorerElementAnswer(
@@ -103,7 +103,7 @@ public sealed record ExplorerElementAnswer(
 /// <summary>
 /// The Lucene query that finds the records holding exactly an element of a record the explorer shows
 /// (osdu/docs/reference/concepts/explorer.md, A record): a value, a list of values, an object, a nested list's item or
-/// a whole list of them. How each value is indexed is read from the saved template of the record's kind, as every
+/// a whole list of them. How each value is indexed is read from the template of the record's kind a synced repository holds, as every
 /// search the module writes reads it (<see cref="SearchFields"/>): text by its keyword sub-field, a keyword, a number,
 /// a boolean or a date, a value of a nested list inside <c>nested(...)</c> with the other values of its item. Where the
 /// template cannot say, the query is written from the value and said to be a guess, so there is always a query to see.
@@ -128,19 +128,19 @@ public static partial class ExplorerElementQueries
         var match = matching.Count > 0 ? matching[0] : null;
         if (match is null && ExplorerKinds.EntityTypeOf(kind) is { } type)
         {
-            // Another version of the type describes the property as near as anything saved does, and says so.
+            // Another version of the type describes the property as near as any template the repositories hold does, and says so.
             var (ofType, _) = await DimensionBlueprints.MatchingAsync($"*:*:{type}:*", templates, document: null, ct).ConfigureAwait(false);
             match = ofType.Count > 0 ? ofType[0] : null;
             if (match is not null)
             {
-                notes.Add($"No template of {kind} is saved, so it is read by {match.Template.Kind}, the newest saved of its type.");
+                notes.Add($"No synced repository holds a template of {kind}, so it is read by {match.Template.Kind}, the newest of its type they hold.");
             }
         }
 
         return Describe(request, match?.Schema, notes);
     }
 
-    /// <summary>The queries of <paramref name="request"/>'s element by <paramref name="schema"/>, or by its values where no template is saved.</summary>
+    /// <summary>The queries of <paramref name="request"/>'s element by <paramref name="schema"/>, or by its values where no repository holds the template.</summary>
     public static ExplorerElementAnswer Describe(ExplorerElementRequest request, SchemaSnapshot? schema, IReadOnlyList<string>? notesSoFar = null)
     {
         ArgumentNullException.ThrowIfNull(request);
@@ -249,7 +249,7 @@ public static partial class ExplorerElementQueries
         }
         else if (SearchFields.IsDataPath(path))
         {
-            sectionGuess = $"No saved template of {kind} says how {path} is indexed, so a list in it is read as a plain object; the platform may index it nested, flattened or not at all.";
+            sectionGuess = $"No template a synced repository holds of {kind} says how {path} is indexed, so a list in it is read as a plain object; the platform may index it nested, flattened or not at all.";
         }
 
         // Every value, compared exactly: those outside any nested list each alone, those of a nested list's item together.
@@ -384,7 +384,7 @@ public static partial class ExplorerElementQueries
         }
         else
         {
-            why = $"No saved template of {kind} says how {path} is indexed.";
+            why = $"No template a synced repository holds of {kind} says how {path} is indexed.";
             if (element.ObjectList is { } list)
             {
                 why += $" {list} is a list of objects, which the platform may index nested, flattened or not at all.";

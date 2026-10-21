@@ -706,10 +706,15 @@ public sealed record SyncedMapping(
 /// <param name="Problem">Why it holds no template; null when it holds one.</param>
 public sealed record SyncedTemplateFile(string Path, string Folder, string Kind, string Version, string? Problem);
 
-/// <summary>The copy the last sync kept of the schema a template folder file holds.</summary>
-/// <param name="SchemaJson">The schema as the sync read it, compact JSON.</param>
-/// <param name="SeenUtc">When the sync last saw the file.</param>
-public sealed record RecordedTemplateCopy(string SchemaJson, DateTime SeenUtc);
+/// <summary>A file of a template folder of any synced repository, as that repository's last sync found it.</summary>
+/// <param name="RepoId">The repository that holds it.</param>
+/// <param name="Path">The file's path in the repository.</param>
+/// <param name="Folder">The template folder it is in, its path in the repository.</param>
+/// <param name="Kind">The kind its schema declares; empty when it holds no template.</param>
+/// <param name="Version">The template version it holds; empty when it holds none.</param>
+/// <param name="Problem">Why it holds no template; null when it holds one.</param>
+/// <param name="SeenUtc">When the repository's last sync saw it.</param>
+public sealed record RepositoryTemplateFile(Guid RepoId, string Path, string Folder, string Kind, string Version, string? Problem, DateTime SeenUtc);
 
 /// <summary>What a check of a record's document came to, as the record keeps it: the outcome, the problems, and when.</summary>
 /// <param name="Outcome">What the check against the schema came to (<see cref="Validation.ValidationOutcomes"/>).</param>
@@ -2302,10 +2307,10 @@ public interface ILedger
     Task<IReadOnlyList<SyncedTemplateFile>> RepositoryTemplatesAsync(Guid repoId, CancellationToken ct = default);
 
     /// <summary>
-    /// The copy the last sync of repository <paramref name="repoId"/> kept of the schema its template folder file at
-    /// <paramref name="path"/> holds; null when it recorded no such file, or no template in it.
+    /// The files of the template folders of every synced repository as each one's last sync found them, by repository and
+    /// path, at most <c>50000</c>: what the explorer and the mapping builder read templates from where no document asks.
     /// </summary>
-    Task<RecordedTemplateCopy?> RepositoryTemplateCopyAsync(Guid repoId, string path, CancellationToken ct = default);
+    Task<IReadOnlyList<RepositoryTemplateFile>> RepositoryTemplatesAsync(CancellationToken ct = default);
 
     /// <summary>
     /// The records that hold <paramref name="targetId"/> as the id they are delivered to, in any flow of the partition of

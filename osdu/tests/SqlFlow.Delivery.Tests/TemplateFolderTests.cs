@@ -111,8 +111,9 @@ public sealed class TemplateChainTests
             + $"On its path p/templates/a.json holds version {V1}. It reads p/templates. "
             + "A file on its path could not be read as a template: p/templates/broken.json (the schema is not valid JSON). "
             + $"The repository holds version {V2} of {WellLog} at other/templates/x.json, which is not on its path. "
-            + $"Put the template's file in one of them: the Templates page downloads a saved version, and 'sqlflow template show --kind {WellLog} --version {V2} "
-            + "--out p/templates/osdu_wks_work-product-component--WellLog_1.4.0.json' writes it from the saved templates.",
+            + $"Put the file holding version {V2} in one of them: copy it from where the repository holds it, or, for a version a release of the OSDU data "
+            + $"definitions publishes, download it on the Templates page or write it with 'sqlflow template capture --kind {WellLog} --release <tag> "
+            + "--out p/templates/osdu_wks_work-product-component--WellLog_1.4.0.json'.",
             pick.Problem);
     }
 
@@ -122,7 +123,7 @@ public sealed class TemplateChainTests
         var pick = Chain(Folder("p/templates", File("p/templates/a.json", "osdu:wks:master-data--Well:1.2.0", V1))).Pick(WellLog, null);
         Assert.Equal(
             $"no template folder on the path of p/m/doc.yaml holds a template of {WellLog}. It reads p/templates. "
-            + $"Put the template's file in one of them: the Templates page downloads a saved version, and 'sqlflow template capture --kind {WellLog} "
+            + $"Put the template's file in one of them: the Templates page downloads it from the OSDU data definitions, and 'sqlflow template capture --kind {WellLog} "
             + "--out p/templates/osdu_wks_work-product-component--WellLog_1.4.0.json' writes the newest release's.",
             pick.Problem);
     }
@@ -133,7 +134,7 @@ public sealed class TemplateChainTests
         var pick = Chain().Pick(WellLog, V1);
         Assert.StartsWith(
             $"no template folder on the path of p/m/doc.yaml holds template {WellLog} version {V1}. A document reads the folder named templates beside it "
-            + "and those above it, up to the top of its repository, and there is none: p/m/templates, p/templates, templates. Put the template's file in one of them",
+            + $"and those above it, up to the top of its repository, and there is none: p/m/templates, p/templates, templates. Put the file holding version {V1} in one of them",
             pick.Problem,
             StringComparison.Ordinal);
         Assert.Contains("--out p/m/templates/osdu_wks_", pick.Problem, StringComparison.Ordinal);
@@ -509,10 +510,10 @@ public sealed class TemplateFoldersTests : IDisposable
 
         var alone = await source.ResolveAsync(document, Thing, null);
         Assert.True(alone.Found);
-        Assert.Equal((VersionOf(Thing, near), "p/templates/thing.json", FolderTemplates.FolderCapturedBy), (alone.Template!.Version, alone.Template.Origin, alone.Template.CapturedBy));
+        Assert.Equal((VersionOf(Thing, near), "p/templates/thing.json"), (alone.Template!.Version, alone.Template.File));
         Assert.Equal(VersionOf(Thing, near), alone.Schema!.Version);
 
-        Assert.Equal("templates/thing.json", (await source.ResolveAsync(document, Thing, VersionOf(Thing, far))).Template!.Origin);
+        Assert.Equal("templates/thing.json", (await source.ResolveAsync(document, Thing, VersionOf(Thing, far))).Template!.File);
 
         var missing = await source.ResolveAsync(document, Thing, "0123456789abcdef");
         Assert.False(missing.Found);
@@ -626,70 +627,78 @@ public sealed class TemplateFoldersTests : IDisposable
     }
 
     [Fact]
-    public async Task Folders_the_catalog_recorded_settle_a_document_by_the_same_rule()
+    public async Task Folders_the_catalog_recorded_settle_a_document_by_the_same_rule_and_read_each_template_from_its_file()
     {
         var near = Schema(Thing, "Near");
         var far = Schema(Thing, "Far");
         var stale = Schema(Thing, "Stale");
-        // The copies the sync kept, by file: one of them missing, one damaged, one of another version than its row says.
-        var copies = new Dictionary<string, RecordedTemplateCopy>(StringComparer.Ordinal)
+
+        // The folder the repository was synced into, as it stands now: of the files its last sync recorded, one has been
+        // deleted since, one damaged and one changed to another version.
+        var synced = At("synced");
+        Write("synced/templates/thing.json", far);
+        Write("synced/p/templates/thing.json", near);
+        Write("synced/q/templates/thing.json", "{ not json");
+        Write("synced/r/templates/thing.json", stale);
+        var asked = 0;
+        Task<RepositoryFolder> FolderAsync(CancellationToken ct)
         {
-            ["p/templates/thing.json"] = new(near, DateTime.UnixEpoch),
-            ["q/templates/thing.json"] = new("{ not json", DateTime.UnixEpoch),
-            ["r/templates/thing.json"] = new(stale, DateTime.UnixEpoch),
-        };
-        var asked = new List<string>();
-        Task<RecordedTemplateCopy?> CopyAsync(string path, CancellationToken ct)
-        {
-            asked.Add(path);
-            return Task.FromResult(copies.GetValueOrDefault(path));
+            asked++;
+            return Task.FromResult(RepositoryFolder.At(synced));
         }
 
         SyncedTemplateFile Row(string path, string json)
             => new(path, path[..path.LastIndexOf('/')], Thing, VersionOf(Thing, json), null);
         var folders = SyncedTemplates.Of(
             [
-                Row("templates/thing.json", far), Row("p/templates/thing.json", near),
-                Row("q/templates/thing.json", near), Row("r/templates/thing.json", near),
+                Row("templates/thing.json", far), Row("p/templates/thing.json", near), Row("q/templates/thing.json", near),
+                Row("r/templates/thing.json", near), Row("s/templates/thing.json", near),
                 new SyncedTemplateFile("p/templates/broken.json", "p/templates", string.Empty, string.Empty, "the schema is not valid JSON"),
             ],
-            CopyAsync);
+            FolderAsync);
 
         var chain = folders.ChainFor(".\\p\\m\\doc.yaml");
         Assert.Equal("p/m/doc.yaml", chain.Document);
         Assert.Equal(["p/m/templates", "p/templates", "templates"], chain.Looked);
         Assert.Equal(VersionOf(Thing, near), folders.For("p/m/doc.yaml").Pin(Thing, null, "where").Version);
+        Assert.Equal(0, asked);
 
+        // The template is read from its file, in the folder the repository was synced into.
         var read = await folders.ResolveAsync("p/m/doc.yaml", Thing, null);
         Assert.True(read.Found);
-        Assert.Equal("p/templates/thing.json", read.Template!.Origin);
+        Assert.Equal(("p/templates/thing.json", VersionOf(Thing, near)), (read.Template!.File, read.Schema!.Version));
 
-        // A file's copy is read once, however often a page settles on it.
+        // The folder is asked for once, and a file read once, however often a page settles on it.
         await folders.ResolveAsync("p/m/doc.yaml", Thing, null);
-        Assert.Equal(["p/templates/thing.json"], asked);
+        Assert.Equal(1, asked);
 
-        // A copy that is missing, does not read as a schema, or reads as another version: the page says to sync again.
-        string Problem(string folder) => $"{folder}/templates/thing.json holds template {Thing} version ";
-        var missing = await folders.ResolveAsync("p/m/doc.yaml", Thing, VersionOf(Thing, far));
+        // A file that is gone, does not read as a schema, or holds another version than the sync recorded: sync again.
+        const string Again = "; sync the repository again, as its last sync read the file before it changed.";
         Assert.Equal(
-            $"templates/thing.json holds template {Thing} version {VersionOf(Thing, far)}, and the copy the sync keeps of it is missing; sync the repository again.",
-            missing.Problem);
+            $"s/templates/thing.json held template {Thing} version {VersionOf(Thing, near)} and no longer reads: the file no longer exists{Again}",
+            (await folders.ResolveAsync("s/doc.yaml", Thing, null)).Problem);
+        var damaged = (await folders.ResolveAsync("q/doc.yaml", Thing, null)).Problem!;
+        Assert.StartsWith($"q/templates/thing.json held template {Thing} version {VersionOf(Thing, near)} and no longer reads: the schema is not valid JSON", damaged, StringComparison.Ordinal);
+        Assert.EndsWith(Again, damaged, StringComparison.Ordinal);
         Assert.Equal(
-            $"{Problem("q")}{VersionOf(Thing, near)}, and the copy the sync keeps of it does not read as a schema; sync the repository again.",
-            (await folders.ResolveAsync("q/doc.yaml", Thing, null)).Problem);
-        Assert.Equal(
-            $"{Problem("r")}{VersionOf(Thing, near)}, and the copy the sync keeps of it reads as version {VersionOf(Thing, stale)}; sync the repository again.",
+            $"r/templates/thing.json held template {Thing} version {VersionOf(Thing, near)} and now holds {Thing} version {VersionOf(Thing, stale)}{Again}",
             (await folders.ResolveAsync("r/doc.yaml", Thing, null)).Problem);
 
-        // Settling needs no schema; with no copies to read, reading one says so.
-        var pinsOnly = SyncedTemplates.Of([Row("templates/thing.json", far)], copies: null);
+        // Settling needs no file; where no folder of the repository is to be had, reading a template says why.
+        var pinsOnly = SyncedTemplates.Of(
+            [Row("templates/thing.json", far)],
+            _ => Task.FromResult(RepositoryFolder.Unavailable("this host has no catalog to find where repository x was synced")));
         Assert.Equal(VersionOf(Thing, far), pinsOnly.For("doc.yaml").Pin(Thing, null, "where").Version);
         Assert.Equal(
-            $"templates/thing.json holds template {Thing} version {VersionOf(Thing, far)}, and the copy the sync keeps of it is not read here.",
+            $"templates/thing.json holds template {Thing} version {VersionOf(Thing, far)}, and this host has no catalog to find where repository x was synced.",
             (await pinsOnly.ResolveAsync("doc.yaml", Thing, null)).Problem);
 
+        // A recorded path never leads out of the folder the repository was synced into.
+        Assert.Null(SyncedTemplates.RepositoryFile(synced, "../outside/templates/thing.json"));
+        Assert.Equal(Path.Combine(synced, "p", "templates", "thing.json"), SyncedTemplates.RepositoryFile(synced, "p/templates/thing.json"));
+
         Assert.Equal([VersionOf(Thing, near), VersionOf(Thing, far)], (await folders.ListForAsync("p/m/doc.yaml")).Select(t => t.Version));
-        Assert.Equal(5, folders.Files.Count);
+        Assert.Equal(6, folders.Files.Count);
     }
 
     [Fact]
@@ -699,7 +708,7 @@ public sealed class TemplateFoldersTests : IDisposable
         Write("p/templates/thing.json", json);
         var folders = SyncedTemplates.Of(TemplateFolders.Scan(_root, CancellationToken.None));
         var read = await folders.ResolveAsync("p/m/doc.yaml", Thing, null);
-        Assert.Equal((VersionOf(Thing, json), "p/templates/thing.json"), (read.Schema!.Version, read.Template!.Origin));
+        Assert.Equal((VersionOf(Thing, json), "p/templates/thing.json"), (read.Schema!.Version, read.Template!.File));
 
         // The file changed after the scan: what it held is not taken for what it holds now.
         Write("p/templates/thing.json", Schema(Thing, "Changed"));
@@ -719,7 +728,7 @@ public sealed class TemplateFoldersTests : IDisposable
         var named = JsonNode.Parse(Schema("acme:wks:master-data--Other:1.0.0"))!.AsObject();
         Assert.Equal("acme:wks:master-data--Other:1.0.0", TemplateSources.WithKind(named, "acme:wks:master-data--Thing:1.0.0")["x-osdu-schema-source"]!.GetValue<string>());
 
-        // Imported without the network, a bundled file of one's own is saved naming its kind, so a template folder can hold it.
+        // Imported without the network, a bundled file of one's own is written naming its kind, so a template folder can hold it.
         var definitions = new OsduDataDefinitions(
             () => throw new InvalidOperationException("a bundled file reads nothing from the network"),
             new Uri("https://example.invalid/api/"), new Uri("https://example.invalid/"),
@@ -729,37 +738,5 @@ public sealed class TemplateFoldersTests : IDisposable
         Write("templates/thing.json", TemplateSources.FileText(imported.Schema));
         var file = Assert.Single(TemplateFolders.Read(At("templates"), path => path).Files);
         Assert.Equal(("acme:wks:master-data--Thing:1.0.0", imported.Schema.Version), (file.Kind, file.Version));
-    }
-}
-
-/// <summary>A library of templates in memory, as a store lists and loads them.</summary>
-internal sealed class MemoryTemplateStore : ITemplateStore
-{
-    private readonly List<SchemaSnapshot> _schemas = [];
-
-    public void Add(SchemaSnapshot schema) => _schemas.Add(schema);
-
-    public Task<SchemaSnapshot?> LoadAsync(TemplateReference reference, CancellationToken ct = default)
-        => Task.FromResult(_schemas.FirstOrDefault(s => s.Kind == reference.Kind && s.Version == reference.Version));
-
-    public Task<TemplateSaved> SaveAsync(SchemaSnapshot schema, string origin, string actor, CancellationToken ct = default)
-    {
-        var info = new TemplateInfo(schema.Kind, schema.Version, schema.CapturedUtc.UtcDateTime, actor, origin);
-        if (_schemas.Any(s => s.Kind == schema.Kind && s.Version == schema.Version))
-        {
-            return Task.FromResult(new TemplateSaved(info, TemplateSaveOutcome.Unchanged));
-        }
-
-        _schemas.Add(schema);
-        return Task.FromResult(new TemplateSaved(info, TemplateSaveOutcome.Created));
-    }
-
-    public Task<IReadOnlyList<TemplateInfo>> ListAsync(CancellationToken ct = default)
-        => Task.FromResult<IReadOnlyList<TemplateInfo>>([.. _schemas.Select(s => new TemplateInfo(s.Kind, s.Version, s.CapturedUtc.UtcDateTime, "tests", "memory"))]);
-
-    public Task DeleteAsync(TemplateReference reference, CancellationToken ct = default)
-    {
-        _schemas.RemoveAll(s => s.Kind == reference.Kind && s.Version == reference.Version);
-        return Task.CompletedTask;
     }
 }

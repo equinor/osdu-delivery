@@ -24,7 +24,7 @@ public static class SyncedMappings
         }
 
         return await ledger.SyncedMappingAsync(id, ct).ConfigureAwait(false) is { } synced
-            ? await ParseAsync(ledger, context.Documents, synced, ct).ConfigureAwait(false)
+            ? await ParseAsync(ledger, context.RepositoryFolders, context.Documents, synced, ct).ConfigureAwait(false)
             : (null, $"no mapping is synced under {id:D}; its repository may no longer declare it");
     }
 
@@ -35,16 +35,18 @@ public static class SyncedMappings
     public static Task<(MappingDefinition? Mapping, string? Problem)> ByReferenceAsync(EngineContext context, string reference, CancellationToken ct)
     {
         ArgumentNullException.ThrowIfNull(context);
-        return ByReferenceAsync(context.Ledger, context.Documents, reference, ct);
+        return ByReferenceAsync(context.Ledger, context.RepositoryFolders, context.Documents, reference, ct);
     }
 
     /// <summary>
-    /// The mapping synced under <paramref name="reference"/> in <paramref name="ledger"/>, read by <paramref name="loader"/>:
-    /// what a page reads where it has the module database and no engine.
+    /// The mapping synced under <paramref name="reference"/> in <paramref name="ledger"/>, read by <paramref name="loader"/>,
+    /// its template read from its file in the folder <paramref name="folders"/> finds its repository in: what a page reads
+    /// where it has the module database and no engine.
     /// </summary>
     public static async Task<(MappingDefinition? Mapping, string? Problem)> ByReferenceAsync(
-        ILedger? ledger, DeliveryDocumentLoader loader, string reference, CancellationToken ct)
+        ILedger? ledger, Catalog.IRepositoryFolders folders, DeliveryDocumentLoader loader, string reference, CancellationToken ct)
     {
+        ArgumentNullException.ThrowIfNull(folders);
         ArgumentNullException.ThrowIfNull(loader);
         ArgumentException.ThrowIfNullOrWhiteSpace(reference);
         if (ledger is null)
@@ -69,15 +71,16 @@ public static class SyncedMappings
                 + $"({string.Join(", ", documents.Select(d => d.First().RelativePath + (d.Key.Template.Length == 0 ? string.Empty : $" (template {d.First().TemplateVersion})")))}), so there is no one mapping to read; give each its own version");
         }
 
-        return await ParseAsync(ledger, loader, synced[0], ct).ConfigureAwait(false);
+        return await ParseAsync(ledger, folders, loader, synced[0], ct).ConfigureAwait(false);
     }
 
     /// <summary>
     /// The synced mapping read again, its templates settled from the template folders its repository's last sync recorded on
-    /// its path, as the sync settled them (osdu/docs/reference/concepts/templates.md, Template folders).
+    /// its path, as the sync settled them, and read from their files (osdu/docs/reference/concepts/templates.md, Template
+    /// folders).
     /// </summary>
     private static async Task<(MappingDefinition? Mapping, string? Problem)> ParseAsync(
-        ILedger ledger, DeliveryDocumentLoader loader, SyncedMapping synced, CancellationToken ct)
+        ILedger ledger, Catalog.IRepositoryFolders folders, DeliveryDocumentLoader loader, SyncedMapping synced, CancellationToken ct)
     {
         if (!synced.Valid)
         {
@@ -86,8 +89,8 @@ public static class SyncedMappings
 
         try
         {
-            var folders = await Catalog.SyncedTemplates.ReadAsync(ledger, synced.RepoId, ct).ConfigureAwait(false);
-            return (loader.ParseMapping(synced.Yaml, synced.RelativePath, folders.For(synced.RelativePath)), null);
+            var held = await Catalog.SyncedTemplates.ReadAsync(ledger, folders, synced.RepoId, ct).ConfigureAwait(false);
+            return (loader.ParseMapping(synced.Yaml, synced.RelativePath, held.For(synced.RelativePath)), null);
         }
         catch (FlowValidationException ex)
         {

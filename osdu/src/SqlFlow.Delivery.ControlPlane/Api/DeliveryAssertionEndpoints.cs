@@ -114,7 +114,7 @@ public static class DeliveryAssertionEndpoints
     /// <summary>Every active assertion flow of the catalog, each in the partition the request reads.</summary>
     private static async Task<Ok<DeliveryAssertionBoardDto>> GetBoardAsync(
         string? partition, HttpRequest request, CatalogDbContext db, DeliveryDocumentLoader documents, ILedger ledger,
-        IPartitionRegistry registry, TimeProvider time, CancellationToken ct)
+        IPartitionRegistry registry, IRepositoryFolders folders, TimeProvider time, CancellationToken ct)
     {
         var pipelines = await db.Pipelines.AsNoTracking()
             .Where(p => p.Kind == AssertionFlowDefinition.FlowTypeName && p.Active)
@@ -122,14 +122,14 @@ public static class DeliveryAssertionEndpoints
             .Take(MaxFlows)
             .ToListAsync(ct).ConfigureAwait(false);
         var named = WorkbenchPartition.Named(partition, request);
-        var flows = await BoardAsync(pipelines, named, documents, ledger, registry, time.GetUtcNow(), ct).ConfigureAwait(false);
+        var flows = await BoardAsync(pipelines, named, documents, ledger, registry, folders, time.GetUtcNow(), ct).ConfigureAwait(false);
         return TypedResults.Ok(new DeliveryAssertionBoardDto(named, Totals(flows), flows));
     }
 
     /// <summary>One assertion flow's board.</summary>
     private static async Task<Results<Ok<DeliveryAssertionBoardDto>, ProblemHttpResult>> GetFlowBoardAsync(
         Guid pipelineId, string? partition, HttpRequest request, CatalogDbContext db, DeliveryDocumentLoader documents, ILedger ledger,
-        IPartitionRegistry registry, TimeProvider time, CancellationToken ct)
+        IPartitionRegistry registry, IRepositoryFolders folders, TimeProvider time, CancellationToken ct)
     {
         var (pipeline, problem) = await PipelineAsync(db, pipelineId, ct).ConfigureAwait(false);
         if (pipeline is null)
@@ -138,7 +138,7 @@ public static class DeliveryAssertionEndpoints
         }
 
         var named = WorkbenchPartition.Named(partition, request);
-        var flows = await BoardAsync([pipeline], named, documents, ledger, registry, time.GetUtcNow(), ct).ConfigureAwait(false);
+        var flows = await BoardAsync([pipeline], named, documents, ledger, registry, folders, time.GetUtcNow(), ct).ConfigureAwait(false);
         return TypedResults.Ok(new DeliveryAssertionBoardDto(flows[0].Partition ?? named, Totals(flows), flows));
     }
 
@@ -344,7 +344,7 @@ public static class DeliveryAssertionEndpoints
 
     private static async Task<IReadOnlyList<DeliveryAssertionFlowDto>> BoardAsync(
         IReadOnlyList<CatalogPipeline> pipelines, string? partition, DeliveryDocumentLoader documents, ILedger ledger,
-        IPartitionRegistry registry, DateTimeOffset now, CancellationToken ct)
+        IPartitionRegistry registry, IRepositoryFolders repositories, DateTimeOffset now, CancellationToken ct)
     {
         var registered = await registry.ReadAsync(ct).ConfigureAwait(false);
         var parsed = new List<(CatalogPipeline Pipeline, AssertionFlowDefinition? Flow, AssertionFlowDefinition? Bound, string? Problem)>();
@@ -383,9 +383,9 @@ public static class DeliveryAssertionEndpoints
                 .ToDictionary(g => g.Key, g => g.Select(Point).ToList(), StringComparer.OrdinalIgnoreCase);
             // Each test's template as the flow reads it: from the template folders its repository's last sync recorded on the
             // flow's path, as its run reads them from the files.
-            var folders = await SyncedTemplates.ReadAsync(ledger, pipeline.RepoId, ct).ConfigureAwait(false);
+            var folders = await SyncedTemplates.ReadAsync(ledger, repositories, pipeline.RepoId, ct).ConfigureAwait(false);
             var fits = await AssertionTemplates.FitAsync(
-                bound.Tests, folders, pipeline.RelativePath, (reference, token) => SyncedMappings.ByReferenceAsync(ledger, documents, reference, token), ct).ConfigureAwait(false);
+                bound.Tests, folders, pipeline.RelativePath, (reference, token) => SyncedMappings.ByReferenceAsync(ledger, repositories, documents, reference, token), ct).ConfigureAwait(false);
             var runs = await ledger.ListAssertionRunsAsync(bound.LedgerId, 1, ct).ConfigureAwait(false);
             var lastRun = runs.Count > 0 ? runs[0] : null;
             var ofFlow = latest.TryGetValue(bound.LedgerId, out var found) ? found : new Dictionary<string, AssertionResultState>(StringComparer.OrdinalIgnoreCase);

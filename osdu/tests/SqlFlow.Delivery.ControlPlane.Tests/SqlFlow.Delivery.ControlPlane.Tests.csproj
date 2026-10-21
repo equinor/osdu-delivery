@@ -35,6 +35,7 @@
          (xUnit reads a collection's definition only from the assembly whose tests join it, so it is compiled in here too).
          One fixture, two suites, so the API tests run a flow against exactly what the engine tests run it against. -->
     <Compile Include="..\SqlFlow.Delivery.Tests\TestSupport.cs" Link="Fixtures\TestSupport.cs" />
+    <Compile Include="..\SqlFlow.Delivery.Tests\MemoryTemplates.cs" Link="Fixtures\MemoryTemplates.cs" />
     <Compile Include="..\SqlFlow.Delivery.Tests\OsduTestDatabase.cs" Link="Fixtures\OsduTestDatabase.cs" />
     <Compile Include="..\SqlFlow.Delivery.Tests\SqlServerSuite.cs" Link="Fixtures\SqlServerSuite.cs" />
     <Compile Include="..\SqlFlow.Delivery.Tests\TestTierTests.cs" Link="Fixtures\TestTierTests.cs" />

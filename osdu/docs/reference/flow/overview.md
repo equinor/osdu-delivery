@@ -506,7 +506,7 @@ How a flow finds what it reads:
 | --- | --- |
 | A mapping a delivery flow pins | `render.mappings` (relative to the flow file) when set; otherwise the nearest `mappings/` folder walking up from the flow file, at most 16 levels. The file is `<Name>@<version>.yaml` (or `.yml`), or `<Name>/<version>.yaml`. |
 | A dictionary a cache or dimension flow names | The nearest `dictionaries/` folder walking up from the flow file. The file is `<name>.yaml` or `<name>.yml`. |
-| The template a mapping pins | Not in the repository: saved in the module's database ([templates](../concepts/templates.md)). |
+| The template a mapping fills | The [template folders](../concepts/templates.md#template-folders) on the mapping's path, folders named `templates`, nearest first. |
 | A partition's cache | Not in the repository: written into the module's database by the runs of cache flows ([partition cache](../concepts/partition-cache.md)). |
 
 A mapping or dictionary file must declare the name (and, for a mapping, the version) it is filed under, so a reference

@@ -132,8 +132,7 @@ Nothing in the vendored `sqlflow/` names OSDU. Each point below is generic, and 
 ## What runs where
 
 **The control plane** holds the delivery API under `/api/v1/delivery` on SQLFlow's authorization groups: reads in
-`read`, running something (a redelivery, a removal) in `operate`, saving a template or refining a search term in
-`author`. All three admit any signed-in user; only the `admin` routes (partitions, central configuration, the ledger's
+`read`, running something (a redelivery, a removal) in `operate`, refining a search term in `author`. All three admit any signed-in user; only the `admin` routes (partitions, central configuration, the ledger's
 retention pass, removing a dimension) check a scope ([authentication and identity](authentication-and-identity.md)).
 It runs the module's background services: the cache update rollout
 (`Osdu:CacheRollout`, on by default), the scheduled target probe (`Osdu:TargetProbe`, off by default), the OSDU data

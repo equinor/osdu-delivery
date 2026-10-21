@@ -123,7 +123,7 @@ function IssueItem({ issue, onPoint }: { issue: DimensionDraftIssue; onPoint: (t
         {issue.code === "template" && (
           <>
             {" "}
-            <Link to="/delivery/templates" className="whitespace-nowrap text-primary hover:underline" data-testid="builder-issue-templates">Open the Templates page</Link>
+            <Link to="/delivery/templates" className="whitespace-nowrap text-primary hover:underline" data-testid="builder-issue-templates">Download it on the Templates page</Link>
           </>
         )}
       </Item>

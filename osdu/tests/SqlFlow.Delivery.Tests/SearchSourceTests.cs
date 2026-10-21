@@ -678,9 +678,7 @@ public class SearchSourceTests
     public async Task A_mapping_that_only_searches_is_pinned_to_the_partitions_system_properties_and_not_to_a_cache_version()
     {
         using var catalog = new OsduTestDatabase();
-        var templates = catalog.Templates();
-        await templates.SaveAsync(TestSchema.Build(), "tests", "tests");
-        await templates.SaveAsync(WellboreSchema(), "tests", "tests");
+        var templates = new MemoryTemplates(TestSchema.Build(), WellboreSchema());
         var caches = catalog.Caches();
         var directory = Samples.NewTempDirectory();
         await File.WriteAllTextAsync(Path.Combine(directory, "Thing@1.0.0.yaml"), Document(ByNameThenAlias));

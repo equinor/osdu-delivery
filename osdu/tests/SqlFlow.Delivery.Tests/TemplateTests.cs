@@ -130,85 +130,14 @@ public class OsduTemplateTests
     }
 }
 
-/// <summary>The template store over the catalog: immutable versions, pinned by mappings.</summary>
+/// <summary>What the repository sync records of the template a mapping names, whether the mapping loads or not.</summary>
 [Collection(SqlServerSuite.Name)]
 [Trait("Category", "Integration")]
-public sealed class OsduTemplateStoreTests : IDisposable
+public sealed class MappingTemplateRecordTests : IDisposable
 {
     private readonly OsduTestDatabase _db = new();
 
     public void Dispose() => _db.Dispose();
-
-    private static SchemaSnapshot Variant(string property)
-        => SchemaSnapshot.Parse(TestSchema.Kind, TestSchema.Build().Root.ToJsonString().Replace("\"Symbol\"", "\"" + property + "\"", StringComparison.Ordinal), DateTimeOffset.UnixEpoch);
-
-    [Fact]
-    public async Task Saving_the_same_schema_again_changes_nothing_and_a_different_schema_is_a_new_version()
-    {
-        var store = _db.Templates();
-        var first = await store.SaveAsync(TestSchema.Build(), "file thing.json", "tests");
-        Assert.Equal(TemplateSaveOutcome.Created, first.Outcome);
-        Assert.Equal(TestSchema.Template, first.Template.Reference);
-
-        var again = await store.SaveAsync(TestSchema.Build(), "file thing.json", "someone else");
-        Assert.Equal(TemplateSaveOutcome.Unchanged, again.Outcome);
-        Assert.Equal("tests", again.Template.CapturedBy);
-
-        var changed = Variant("Mark");
-        var second = await store.SaveAsync(changed, "OSDU https://osdu.example.test", "tests");
-        Assert.Equal(TemplateSaveOutcome.Created, second.Outcome);
-        Assert.NotEqual(first.Template.Version, second.Template.Version);
-
-        var listed = await store.ListAsync();
-        Assert.Equal(2, listed.Count);
-        Assert.All(listed, t => Assert.Equal(TestSchema.Kind, t.Kind));
-
-        var loaded = await _db.Templates().LoadAsync(TestSchema.Template);
-        Assert.NotNull(loaded);
-        Assert.Equal(TestSchema.Build().Version, loaded.Version);
-        Assert.Equal(SchemaType.Number, loaded.Resolve("data.Depth")!.Type);
-        Assert.Null(await store.LoadAsync(new TemplateReference(TestSchema.Kind, "0000000000000000")));
-    }
-
-    [Fact]
-    public async Task A_saved_version_is_deleted_whatever_a_synced_mapping_names()
-    {
-        var store = _db.Templates();
-        await store.SaveAsync(TestSchema.Build(), "file thing.json", "tests");
-        await using (var db = _db.CreateDbContext())
-        {
-            db.DeliveryMappings.Add(new DeliveryMapping
-            {
-                Id = Guid.NewGuid(),
-                RepoId = Guid.NewGuid(),
-                Reference = "Thing@1.0.0",
-                Name = "Thing",
-                Version = "1.0.0",
-                Kind = TestSchema.Kind,
-                TemplateVersion = TestSchema.Build().Version,
-                RelativePath = "mappings/Thing@1.0.0.yaml",
-                ContentHash = new string('0', 64),
-                Yaml = "documentType: mapping",
-                SummaryJson = "{}",
-                Status = "valid",
-                FirstSeenUtc = DateTime.UtcNow,
-                LastSeenUtc = DateTime.UtcNow,
-            });
-            await db.SaveChangesAsync();
-        }
-
-        // The mapping reads its template from its repository's template folder, never from the library, so nothing refuses
-        // the delete and the mapping's row is left as it is.
-        await store.DeleteAsync(TestSchema.Template);
-        Assert.Null(await store.LoadAsync(TestSchema.Template));
-        await using (var db = _db.CreateDbContext())
-        {
-            Assert.Equal(TestSchema.Build().Version, (await db.DeliveryMappings.AsNoTracking().SingleAsync()).TemplateVersion);
-        }
-
-        // A version no longer saved has nothing to delete.
-        await Assert.ThrowsAsync<DeliveryException>(() => store.DeleteAsync(TestSchema.Template));
-    }
 
     [Fact]
     public async Task A_mapping_document_that_fails_to_load_still_records_the_template_it_names()
@@ -242,7 +171,6 @@ public sealed class OsduTemplateStoreTests : IDisposable
                 Assert.Equal(TestSchema.Template.Version, rows[1].TemplateVersion);
             }
 
-
             // A second sync of the unchanged documents keeps what the row records.
             await SyncAsync(repoId, root);
             await using (var db = _db.CreateDbContext())
@@ -273,45 +201,6 @@ public sealed class OsduTemplateStoreTests : IDisposable
         await using var db = _db.CreateDbContext();
         await new DeliveryCatalogSync(new DeliveryDocumentLoader())
             .ReconcileAsync(db, repoId, root, DateTime.UtcNow, new List<string>(), CancellationToken.None);
-    }
-
-    [Fact]
-    public async Task A_saved_schema_is_stored_and_read_back_in_the_order_it_was_written()
-    {
-        // Neither the top-level keys, the properties nor the data properties are in alphabetical order.
-        const string json = """{"type":"object","title":"Thing","properties":{"kind":{"type":"string"},"data":{"type":"object","properties":{"Zeta":{"type":"string"},"Name":{"type":"string","description":"café"},"Alpha":{"type":"number"}}},"acl":{"type":"object","properties":{"viewers":{"type":"array","items":{"type":"string"}}}}}}""";
-        var schema = SchemaSnapshot.Parse(TestSchema.Kind, json, DateTimeOffset.UnixEpoch);
-        var saved = await _db.Templates().SaveAsync(schema, "file ordered.json", "tests");
-
-        await using (var db = _db.CreateDbContext())
-        {
-            Assert.Equal(json, (await db.DeliveryTemplates.SingleAsync()).SchemaJson);
-        }
-
-        // A new store reads the catalog row rather than the schema it was handed, as a restarted control plane does.
-        var loaded = await _db.Templates().LoadAsync(saved.Template.Reference);
-        Assert.NotNull(loaded);
-        Assert.Equal(schema.Version, loaded.Version);
-        Assert.Equal(["type", "title", "properties"], loaded.Root.Select(p => p.Key));
-        Assert.Equal(
-            ["osdu.kind", "osdu.data", "osdu.data.Zeta", "osdu.data.Name", "osdu.data.Alpha", "osdu.acl", "osdu.acl.viewers"],
-            OsduTemplate.From(loaded).Variables.Select(v => v.Path.Text));
-        Assert.Equal(OsduTemplate.From(schema).Variables.Select(v => v.Path.Text), OsduTemplate.From(loaded).Variables.Select(v => v.Path.Text));
-    }
-
-    [Fact]
-    public async Task A_template_whose_stored_schema_no_longer_hashes_to_its_version_is_refused()
-    {
-        await _db.Templates().SaveAsync(TestSchema.Build(), "file thing.json", "tests");
-        await using (var db = _db.CreateDbContext())
-        {
-            var row = await db.DeliveryTemplates.AsTracking().SingleAsync();
-            row.SchemaJson = row.SchemaJson.Replace("\"Symbol\"", "\"Tampered\"", StringComparison.Ordinal);
-            await db.SaveChangesAsync();
-        }
-
-        var ex = await Assert.ThrowsAsync<DeliveryException>(() => _db.Templates().LoadAsync(TestSchema.Template));
-        Assert.Contains("damaged", ex.Message, StringComparison.Ordinal);
     }
 }
 

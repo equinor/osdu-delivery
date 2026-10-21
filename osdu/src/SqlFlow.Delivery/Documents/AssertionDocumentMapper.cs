@@ -276,7 +276,7 @@ internal static partial class AssertionMapper
             }
         }
 
-        // A template names a saved version (2f8a99cb38d32480), or a mapping by Name@version: the template that mapping pins.
+        // A template names a template version (2f8a99cb38d32480), or a mapping by Name@version: the template that mapping pins.
         var template = Optional(t.Template);
         string? templateMapping = null;
         if (template is not null && template.Contains('@', StringComparison.Ordinal))

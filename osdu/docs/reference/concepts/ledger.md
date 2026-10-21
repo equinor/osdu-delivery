@@ -114,7 +114,7 @@ other tables of the schema are explained with what they serve:
 
 - `osdu.CacheVersion`, `osdu.CacheItem`, `osdu.CacheMember`, `osdu.CacheSet`, `osdu.CacheSetEntry`, `osdu.UpdateTag`,
   `osdu.CacheDefinition`: the partition cache and its changes, in [The partition cache](partition-cache.md).
-- `osdu.Template`: saved OSDU schemas, in [Templates](templates.md). `osdu.Mapping`: the synced mappings, in
+- `osdu.RepositoryTemplate`: the files of the repositories' template folders, in [Templates](templates.md). `osdu.Mapping`: the synced mappings, in
   [The mapping document](../flow/mapping.md). `osdu.Interface`: the read model of sources and interfaces, in
   [The interface read model](../flow/interfaces.md#the-interface-read-model).
 - `osdu.Partition` and `osdu.ConfigProperty`: the partition registry and central configuration, in

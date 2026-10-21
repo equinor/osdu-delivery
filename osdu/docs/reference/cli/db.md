@@ -173,9 +173,10 @@ OK   synced '<dir>': pipelines ...; lineage ...; documents +A added, U updated, 
 ```
 
 The module's rows commit with the catalog's when the `osdu` schema is in the catalog's database, and on their own
-connection otherwise. `sync` migrates the catalog only: run `migrate` first so the `osdu` tables exist. Templates and
-cache contents are not in a repository, so the sync writes neither: templates are saved with
-[sqlflow template](template.md), and a partition's cache versions by the runs of its cache flows.
+connection otherwise. `sync` migrates the catalog only: run `migrate` first so the `osdu` tables exist. The sync
+records which file of the repository's template folders holds which template, and keeps none of them: a template is read
+from its file ([templates](../concepts/templates.md#what-the-sync-records)). Cache contents are not in a repository, so
+the sync writes none: a partition's cache versions are written by the runs of its cache flows.
 
 ## The hosts refuse a mismatch
 

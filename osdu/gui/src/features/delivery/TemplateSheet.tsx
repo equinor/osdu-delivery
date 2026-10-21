@@ -34,7 +34,7 @@ interface TemplateSheetProps {
   onClose: () => void;
   /** The kind the sheet is about, known before the template is laid out. */
   title: string;
-  /** Where a template not yet saved is read from, for the header's facts; null for a saved version, which names its own origin. */
+  /** Where a schema of the OSDU data definitions is read from, for the header's facts; null for a repository's template, which names its own file. */
   source: ReactNode | null;
   /** Progress while the schema is fetched or laid out. */
   progress: ReactNode;
@@ -42,15 +42,15 @@ interface TemplateSheetProps {
   problem: ReactNode;
   /** The template once it is laid out. */
   detail: DeliveryTemplateDetail | undefined;
-  /** The schema being looked at before it is saved. */
+  /** The schema being looked at from the OSDU data definitions. */
   previewSchema?: Record<string, unknown>;
   actions?: ReactNode;
-  /** Holds the sheet open while a save or a delete is in flight. */
+  /** Holds the sheet open while a download is in flight. */
   busy?: boolean;
   testId: string;
 }
 
-/** The side sheet every template opens in on the Templates page: a saved version, a schema fetched from OSDU, or an imported file. */
+/** The side sheet every template opens in on the Templates page: a repository's template, or a schema fetched from the OSDU data definitions. */
 export function TemplateSheet({
   open, onClose, title, source, progress, problem, detail, previewSchema, actions, busy = false, testId,
 }: TemplateSheetProps) {

@@ -1,6 +1,6 @@
-//! The documents a delivery renders with: mappings, the templates they fill (held in their repository's template folders
-//! and saved in the library), and the OSDU data definitions templates are saved from. All of it is definition, not data:
-//! a document, a schema, a check of one against the other.
+//! The documents a delivery renders with: mappings, the templates they fill (files of their repository's template folders,
+//! read from the file), and the OSDU data definitions a template's file is downloaded from. All of it is definition, not
+//! data: a document, a schema, a check of one against the other.
 
 use std::collections::HashMap;
 
@@ -44,10 +44,12 @@ pub struct CheckMappingInput {
 
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
 pub struct ScaffoldMappingInput {
-    /// The saved template's OSDU kind, for example "osdu:wks:master-data--Wellbore:1.5.1" (see delivery_templates).
-    pub kind: String,
-    /// The saved template's version.
-    pub version: String,
+    /// The synced repository whose template file the mapping fills (a `repoId` from delivery_templates).
+    #[serde(rename = "repoId")]
+    pub repo_id: String,
+    /// The template file's path in that repository, for example "welldb/templates/osdu_wks_master-data--Wellbore_1.5.1.json".
+    #[serde(rename = "templatePath")]
+    pub template_path: String,
     /// The mapping's name: flows pin it as `name@mappingVersion`.
     pub name: String,
     /// The mapping's own version, for example "1.0.0".
@@ -61,9 +63,11 @@ pub struct ScaffoldMappingInput {
 
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
 pub struct TemplatesInput {
-    /// With `version`: read one saved template variable by variable. Omit both to list the saved templates.
-    pub kind: Option<String>,
-    pub version: Option<String>,
+    /// With `path`: read the template one repository's file holds, variable by variable. Omit both to list the files.
+    #[serde(rename = "repoId")]
+    pub repo_id: Option<String>,
+    /// The file's path in the repository, as a listing gives it.
+    pub path: Option<String>,
     /// A partition, so each variable names the cached types of it that can supply it.
     pub partition: Option<String>,
     /// Keep variables whose path contains this text, for example "VerticalMeasurement".
@@ -211,18 +215,16 @@ nothing is rendered."
     }
 
     #[tool(
-        description = "Scaffold a mapping for a saved template: returns mapping YAML holding the ACL and legal entries to \
-fill and, when a partition is named, a cache lookup for each single-valued reference its cached types can answer, \
-with the issues still to resolve. This is how a new mapping starts; do not write one from scratch. A fresh scaffold \
-is not valid yet: add the properties the template requires from the source's columns (delivery_templates lists \
-them), fill the ACL and legal lists, and finish the lookups. Run delivery_check_mapping until valid, then propose it \
-with propose_pipelines beside the flow that pins it, with the template's file in a templates folder on its path \
-when none holds it (delivery_check_mapping with repoId tells). Writes nothing."
+        description = "Scaffold a mapping for a template file a synced repository holds (repoId and path from \
+delivery_templates). Returns mapping YAML holding the ACL and legal entries to fill and, when a partition is named, a \
+cache lookup for each single-valued reference its cached types can answer, with the issues still to resolve. This is \
+how a new mapping starts; do not write one from scratch. Then add the properties the template requires from the \
+source's columns, fill the ACL and legal lists, finish the lookups, run delivery_check_mapping with the repoId until \
+valid, and propose it with propose_pipelines into the mappings folder beside the template's folder. Writes nothing."
     )]
     async fn delivery_scaffold_mapping(&self, Parameters(i): Parameters<ScaffoldMappingInput>) -> String {
         let required = [
-            ("kind", &i.kind),
-            ("version", &i.version),
+            ("templatePath", &i.template_path),
             ("name", &i.name),
             ("mappingVersion", &i.mapping_version),
             ("system", &i.system),
@@ -230,6 +232,12 @@ when none holds it (delivery_check_mapping with repoId tells). Writes nothing."
         if let Some((name, _)) = required.iter().find(|(_, value)| value.trim().is_empty()) {
             return refuse(format!("{name} is required to scaffold a mapping."));
         }
+        let repo_id = match optional_guid("repoId", Some(i.repo_id.as_str()), "A repository id is the `repoId` of a file delivery_templates lists.") {
+            Ok(Some(repo_id)) => repo_id,
+            Ok(None) => return refuse("repoId is required to scaffold a mapping: the repository whose template file it fills."),
+            Err(refused) => return refused,
+        };
+        let template_path = i.template_path.trim().to_string();
         let partition = text(i.partition);
         // The draft goes back to the control plane exactly as the builder returned it, so both calls are made on
         // the client itself: nothing of this server's (a link on a row) may end up inside a draft.
@@ -239,8 +247,8 @@ when none holds it (delivery_check_mapping with repoId tells). Writes nothing."
                 "/api/v1/delivery/mapping-builder/draft",
                 json!({
                     "scope": partition,
-                    "kind": i.kind.trim(),
-                    "version": i.version.trim(),
+                    "repoId": repo_id,
+                    "templatePath": template_path,
                     "name": i.name.trim(),
                     "mappingVersion": i.mapping_version.trim(),
                     "system": i.system.trim(),
@@ -251,6 +259,13 @@ when none holds it (delivery_check_mapping with repoId tells). Writes nothing."
             Ok(draft) => draft,
             Err(error) => return refuse(format!("{error:#}")),
         };
+        // The template the draft fills, as the builder read it from the file.
+        let template = json!({
+            "kind": draft["templateKind"],
+            "version": draft["templateVersion"],
+            "repoId": repo_id,
+            "path": template_path,
+        });
         let composed = builder
             .post(
                 "/api/v1/delivery/mapping-builder/compose",
@@ -262,12 +277,12 @@ when none holds it (delivery_check_mapping with repoId tells). Writes nothing."
                 "yaml": result["yaml"],
                 "valid": result["valid"],
                 "issues": result["issues"],
-                "template": { "kind": i.kind.trim(), "version": i.version.trim() },
+                "template": template,
                 "partition": partition,
                 "nextSteps": [
                     "Add the properties the template requires from the source's columns, fill the ACL and legal lists, and finish each lookup's findBy column.",
-                    "Run delivery_check_mapping on the edited YAML until valid is true.",
-                    "Propose it with propose_pipelines, beside the delivery flow that pins it as name@version, and with the template's file (the Templates page downloads it) in the repository's templates folder when none of its template folders holds this version."
+                    "Run delivery_check_mapping with this repoId on the edited YAML until valid is true.",
+                    "Propose it with propose_pipelines as name@version.yaml in the mappings folder beside the template folder holding the template's file, so that folder is on its path, and pin it from the delivery flow as name@version."
                 ],
             })),
             Err(error) => refuse(format!("{error:#}")),
@@ -275,17 +290,19 @@ when none holds it (delivery_check_mapping with repoId tells). Writes nothing."
     }
 
     #[tool(
-        description = "Saved templates: the OSDU record schemas mappings fill, as the library holds them (a repository's \
-documents read theirs from its template folders, and the library is not linked to them). Without arguments, lists \
-them: kind, version, origin and who saved each. With kind and version, lays one out \
-variable by variable: path (osdu.data.FacilityName), type, format, whether it is required, the entity types an id in \
-it refers to, pattern and description. Use it for 'which properties does a Wellbore require', 'what type is this \
-field', and whenever you write or review a mapping: a variable that is not in the template cannot be filled. A \
-template has hundreds of variables, so narrow with search or requiredOnly."
+        description = "Templates: the OSDU record schemas mappings fill, held as files in the synced repositories' \
+folders named templates. Without arguments, lists every file: repoId, repository, path, and the kind and version it \
+holds or why none. With repoId and path, lays that file's template out variable by variable: path \
+(osdu.data.FacilityName), type, format, whether required, the entity types an id refers to, pattern and description. \
+Use it for 'which properties does a Wellbore require' and whenever you write or review a mapping: a variable not in \
+the template cannot be filled. Narrow with search or requiredOnly. A kind no repository holds: delivery_osdu_schemas."
     )]
     async fn delivery_templates(&self, Parameters(i): Parameters<TemplatesInput>) -> String {
-        let (kind, version) = (text(i.kind), text(i.version));
-        let (kind, version) = match (kind, version) {
+        let repo = match optional_guid("repoId", i.repo_id.as_deref(), "A repository id is the `repoId` of a listed template file.") {
+            Ok(repo) => repo,
+            Err(refused) => return refused,
+        };
+        let (repo, path) = match (repo, text(i.path)) {
             (None, None) => {
                 let links = json!({ "page": self.ctx.links().route("/delivery/templates") });
                 return self
@@ -293,13 +310,13 @@ template has hundreds of variables, so narrow with search or requiredOnly."
                     .get_about("/api/v1/delivery/templates", &[], ("listing", "templates"), links)
                     .await;
             }
-            (Some(kind), Some(version)) => (kind, version),
-            _ => return refuse("Give both kind and version to read one template, or neither to list the saved ones."),
+            (Some(repo), Some(path)) => (repo, path),
+            _ => return refuse("Give both repoId and path to read one template file, or neither to list them."),
         };
 
         let query = Query::new()
-            .text("kind", Some(kind.clone()))
-            .text("version", Some(version.clone()))
+            .text("repoId", Some(repo.clone()))
+            .text("path", Some(path.clone()))
             .text("scope", i.partition);
         let mut detail = match self.ctx.read("/api/v1/delivery/templates/detail", query.pairs()).await {
             Ok(detail) => detail,
@@ -325,7 +342,7 @@ template has hundreds of variables, so narrow with search or requiredOnly."
             map.insert(
                 "links".to_string(),
                 json!({ "page": self.ctx.links().route(&format!(
-                    "/delivery/templates?kind={}&version={}", encode(&kind), encode(&version)
+                    "/delivery/templates?repoId={}&path={}", encode(&repo), encode(&path)
                 )) }),
             );
         }
@@ -335,9 +352,10 @@ template has hundreds of variables, so narrow with search or requiredOnly."
     #[tool(
         description = "Browse the OSDU data definitions (the public repository of OSDU schemas) through the control \
 plane's local copy. No argument lists the releases. A release lists the record schemas it publishes (narrow with \
-search). A release and a kind return that kind's bundled schema and the template version it would save as. Use it \
-for 'which WellLog versions does this release publish', 'is there a newer version than the template we saved'. To \
-see what changed between two versions use delivery_osdu_schema_compare. Reading saves nothing."
+search). A release and a kind return that kind's bundled schema and the template version its file holds: the file a \
+repository's template folder keeps, which the Templates page downloads. Use it for 'which WellLog versions does this \
+release publish', 'is there a newer version than the template our repository holds'. To see what changed between two \
+versions use delivery_osdu_schema_compare. Reading writes nothing."
     )]
     async fn delivery_osdu_schemas(&self, Parameters(i): Parameters<OsduSchemasInput>) -> String {
         let (release, kind) = (text(i.release), text(i.kind));

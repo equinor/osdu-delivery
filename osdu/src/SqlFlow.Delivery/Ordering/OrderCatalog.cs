@@ -19,14 +19,14 @@ public sealed record CatalogDelivery(Guid RepoId, string RelativePath, OrderDeli
 
 /// <summary>
 /// The deliveries the catalog holds (<see cref="OrderCatalog.ReadAsync"/>), and what could not be read as the order needs
-/// it: a mapping that no longer loads, or a template whose copy cannot be read. Each problem names what it is about.
+/// it: a mapping that no longer loads, or a template whose file cannot be read. Each problem names what it is about.
 /// </summary>
 public sealed record CatalogDeliveries(IReadOnlyList<CatalogDelivery> Deliveries, IReadOnlyList<string> Problems);
 
 /// <summary>
 /// What the catalog knows for the OSDU order beyond the folder a lineage scan reads (osdu/docs/reference/concepts/
 /// osdu-order.md, OSDU's lineage by release): a kind's relationships from a built release of OSDU's lineage, for a kind
-/// whose template is not saved.
+/// no template folder holds.
 /// </summary>
 public interface IOrderCatalog
 {
@@ -78,14 +78,16 @@ public sealed class OrderCatalog : IOrderCatalog
     /// The active delivery interfaces the catalog holds, on <paramref name="db"/>: those of repository
     /// <paramref name="repoId"/>, or of every repository when none is named. Each is read as the OSDU order reads it: the
     /// partition its records reach, and the mapping it pins, read for the properties it fills against the template the sync
-    /// settled that mapping to from the template folders on its path (the copy the same sync kept of the file), or against
-    /// the newest built release of OSDU's lineage holding the kind when that copy cannot be read. An interface whose mapping
-    /// is not valid (a mapping whose template no folder on its path holds is not), names no OSDU kind, or whose partition
-    /// cannot be read is left out; its own repository's sync reports why.
+    /// settled that mapping to from the template folders on its path (the file itself, in the folder
+    /// <paramref name="folders"/> finds its repository in), or against the newest built release of OSDU's lineage holding
+    /// the kind when that file cannot be read. An interface whose mapping is not valid (a mapping whose template no folder on
+    /// its path holds is not), names no OSDU kind, or whose partition cannot be read is left out; its own repository's sync
+    /// reports why.
     /// </summary>
-    public static async Task<CatalogDeliveries> ReadAsync(OsduDbContext db, Guid? repoId = null, CancellationToken ct = default)
+    public static async Task<CatalogDeliveries> ReadAsync(OsduDbContext db, Catalog.IRepositoryFolders folders, Guid? repoId = null, CancellationToken ct = default)
     {
         ArgumentNullException.ThrowIfNull(db);
+        ArgumentNullException.ThrowIfNull(folders);
         var interfaces = db.DeliveryInterfaces.AsNoTracking().Where(i => i.Active && i.TargetPartition != string.Empty);
         if (repoId is { } only)
         {
@@ -114,14 +116,14 @@ public sealed class OrderCatalog : IOrderCatalog
         // A mapping that names its template's kind alone settles to what its repository's folders hold, so one document reads
         // as one mapping per repository.
         var mappings = new Dictionary<(Guid Repo, string Yaml), MappingDefinition?>();
-        var folders = new Dictionary<Guid, Catalog.SyncedTemplates>();
+        var synced = new Dictionary<Guid, Catalog.SyncedTemplates>();
         var schemas = new Dictionary<(Guid Repo, string Kind, string Version), (OsduTemplate? Template, SchemaNode? Node)>();
         foreach (var row in distinct)
         {
-            if (!folders.TryGetValue(row.RepoId, out var held))
+            if (!synced.TryGetValue(row.RepoId, out var held))
             {
-                held = await Catalog.SyncedTemplates.ReadAsync(db, row.RepoId, ct).ConfigureAwait(false);
-                folders[row.RepoId] = held;
+                held = await Catalog.SyncedTemplates.ReadAsync(db, folders, row.RepoId, ct).ConfigureAwait(false);
+                synced[row.RepoId] = held;
             }
 
             if (!mappings.TryGetValue((row.RepoId, row.Yaml), out var mapping))
@@ -161,8 +163,8 @@ public sealed class OrderCatalog : IOrderCatalog
     }
 
     /// <summary>
-    /// The template the mapping at <paramref name="mappingPath"/> fills, as its repository's last sync kept a copy of it,
-    /// or the kind from a built release of OSDU's lineage when that copy cannot be read.
+    /// The template the mapping at <paramref name="mappingPath"/> fills, read from the file its repository's last sync
+    /// settled it to, or the kind from a built release of OSDU's lineage when that file cannot be read.
     /// </summary>
     private static async Task<(OsduTemplate? Template, SchemaNode? Node)> SchemaAsync(
         OsduDbContext db, Catalog.SyncedTemplates held, string mappingPath, TemplateReference template, List<string> problems, CancellationToken ct)

@@ -108,14 +108,14 @@ function PickLink({ element, children, onPick }: { element: BlueprintElement; ch
   );
 }
 
-/** A saved template, opening on the Templates page; or why none describes the records, with the way to save one. */
+/** A template, opening on the Templates page at the file holding it; or why none describes the records, with where templates are found. */
 function TemplateFact({ template, missing }: { template: BlueprintTemplate | null; missing: string | null }) {
   if (template === null) {
     return (
       <span className="flex min-w-0 items-start gap-1.5">
         <TriangleAlert className="mt-0.5 size-3.5 shrink-0 text-warning" aria-hidden />
         <span className="min-w-0">
-          {missing ?? "No saved template describes these records."}{" "}
+          {missing ?? "No template describes these records."}{" "}
           <Link to="/delivery/templates" className="text-primary hover:underline">Templates</Link>
         </span>
       </span>
@@ -186,11 +186,11 @@ function ReadFacts({ read, layout, examples, onPick }: InspectorProps & { read: 
           )
           : node !== null
             ? `Found by id, ${IDS_PER_SEARCH} ids a search, the search returning only this path; read from the records as they are.`
-            : "Settled by the template of the kind, which is not saved."}
+            : "Settled by the template of the kind, which no template folder holds."}
       </Row>
       <Row label="Template says" testId="blueprint-inspector-schema">
         {read.schema === null
-          ? <span className="text-muted-foreground">Nothing: no saved template describes these records.</span>
+          ? <span className="text-muted-foreground">Nothing: no template describes these records.</span>
           : <Segments segments={read.schema.segments} />}
       </Row>
       {read.references.length > 0 && (
@@ -286,12 +286,12 @@ function SourceFacts({ layout, dimension }: InspectorProps) {
       {dimension.builtQuery !== null && dimension.builtQuery !== source.query && <Row label="Query as built"><Code>{dimension.builtQuery}</Code></Row>}
       <Row label={source.built ? "Kinds read" : "Kinds matched"} testId="blueprint-inspector-kinds">
         {source.kinds.length === 0
-          ? <span className="text-muted-foreground">No saved template matches the kind.</span>
+          ? <span className="text-muted-foreground">No template matches the kind.</span>
           : (
             <ul className="flex flex-col gap-1">
               {source.kinds.slice(0, KINDS_LISTED).map((kind) => (
                 <li key={kind.kind} className="flex min-w-0 items-baseline gap-2">
-                  <span className="min-w-0 flex-1"><TemplateFact template={kind.template === null ? null : { kind: kind.kind, version: kind.template }} missing={`No template of ${kind.kind} was saved.`} /></span>
+                  <span className="min-w-0 flex-1"><TemplateFact template={kind.template === null ? null : { kind: kind.kind, version: kind.template }} missing={`No template folder holds a template of ${kind.kind}.`} /></span>
                   {kind.records !== null && <span className="shrink-0 font-mono text-[12px] tabular-nums text-muted-foreground">{kind.records.toLocaleString("en-US")}</span>}
                 </li>
               ))}
@@ -302,7 +302,7 @@ function SourceFacts({ layout, dimension }: InspectorProps) {
           )}
       </Row>
       {!source.built && source.kinds.length > 0 && (
-        <Row label="Read">The saved templates the kind matches; a build reads every kind the partition holds of it, each by its own template.</Row>
+        <Row label="Read">The templates the kind matches; a build reads every kind the partition holds of it, each by its own template.</Row>
       )}
       <Row label="How">One search by kind lists the kinds; each path is read by aggregating its field, paged by value ranges past the search's limit on values.</Row>
       <Row label="Records a value">{dimension.countRecords ? "Counted exactly, a search per value." : "Exact where a record holds one key, else summed."}</Row>

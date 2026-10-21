@@ -240,22 +240,21 @@ sqlflow template capture --kind osdu:wks:master-data--Wellbore:1.3.0 --out welld
 ```
 
 ```text
-saved template osdu:wks:master-data--Wellbore:1.3.0 version 58d6bdbd9d066a06
+wrote template osdu:wks:master-data--Wellbore:1.3.0 version 58d6bdbd9d066a06 to <repo>/welldb/templates/osdu_wks_master-data--Wellbore_1.3.0.json
 ```
 
 The version is a 16-character hash of the schema. A mapping can pin it (`template.version`), or name the kind alone and
-fill the one version the nearest folder holding the kind holds. Given the module's database, the command also saves the
-version in the library, which the GUI's builder and explorer and the MCP server read; the repository's documents read
-only the file, and on a machine without the database the command writes the file alone. The Templates page of the GUI downloads a saved version as the same file.
-`sqlflow template folders` lists what the repository's template folders hold:
+fill the one version the nearest folder holding the kind holds. The file is the template: commit it with the mappings,
+and the repository's sync records it; nothing of it is kept in a database. **Download** on the Browse OSDU tab of the
+GUI's Templates page gives the same file. `sqlflow template folders` lists what the repository's template folders hold:
 
 ```text
 welldb/templates
   welldb/templates/osdu_wks_master-data--Wellbore_1.3.0.json  osdu:wks:master-data--Wellbore:1.3.0  58d6bdbd9d066a06
 ```
 
-Copy the version your save printed into the mapping in the next step: a different release can bundle a different schema
-and give a different version. More on [templates](../concepts/templates.md).
+Copy the version the capture printed into the mapping in the next step: a different release can bundle a different
+schema and give a different version. More on [templates](../concepts/templates.md).
 
 ## Step 5: write the mapping
 
@@ -405,7 +404,7 @@ sqlflow check welldb/flows/welldb-wellbore-03-delivery.yaml
 ```text
 OK  welldb-wellbore-03-delivery (<flow id>)
     mapping     Wellbore@1.0.0
-    template    osdu:wks:master-data--Wellbore:1.3.0 version 58d6bdbd9d066a06 (saved 2026-10-09 09:12:44Z)
+    template    osdu:wks:master-data--Wellbore:1.3.0 version 58d6bdbd9d066a06 (welldb/templates/osdu_wks_master-data--Wellbore_1.3.0.json)
     cache       none (the mapping reads nothing from a cache)
     context     <render context hash>
     mappings    <repo>/welldb/mappings

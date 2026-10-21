@@ -215,7 +215,7 @@ function Facts({ view, differs, onTab }: { view: DeliveryDimensionView; differs:
         <>
           {dot}
           <Fact
-            hint="Joins to a dimension of another entity type than the saved template says their column names: such a join finds nothing. The Joins tab says which, and what the template names."
+            hint="Joins to a dimension of another entity type than the template says their column names: such a join finds nothing. The Joins tab says which, and what the template names."
             tone="warning"
             onClick={() => onTab("joins")}
             testId="dimension-view-summary-differs"

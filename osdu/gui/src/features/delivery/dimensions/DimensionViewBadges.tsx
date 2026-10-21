@@ -52,7 +52,7 @@ export function ViewStandingMark({ view, testId }: { view: DeliveryDimensionView
 }
 
 /**
- * What the saved templates say of a join, as a neutral chip led by a glyph in its tone: it agrees, it joins a dimension of
+ * What the flow's templates say of a join, as a neutral chip led by a glyph in its tone: it agrees, it joins a dimension of
  * another entity type than its column names (so it finds nothing), or no template says. The sentence on hover, with Copy.
  */
 export function JoinVerdictBadge({ verdict, testId }: { verdict: DeliveryDimensionViewJoinVerdict; testId: string }) {

@@ -26,7 +26,7 @@ namespace SqlFlow.Delivery.Engine.Operations;
 /// <item><description><c>read</c>: one record from the storage service by its <c>targetId</c>, at its latest or at a <c>version</c>, with its version list.</description></item>
 /// <item><description><c>dimension-keys</c>: the commonest keys of a drafted dimension's path, which the builder's example steps through (<see cref="DimensionSampler.KeysAsync"/>), asked by the <c>keys</c> long argument.</description></item>
 /// <item><description><c>dimension-example</c>: one key of a drafted dimension made into its row as a build makes it (<see cref="DimensionSampler.ExampleAsync"/>): the dimension's item as YAML (<c>item</c>), the <c>key</c>, and how the key and each collected path are indexed (<c>fields</c>).</description></item>
-/// <item><description><c>validate</c>: one record (<c>targetId</c>, at its latest or a <c>version</c>) checked against the schema of its kind, the Schema service's or a saved template's (<c>schema</c>, <c>templateVersion</c>), with the records it refers to looked up in storage, and the assertions of the synced <c>mapping</c> named by its id judged on it (<see cref="ExplorerChecks.RecordAsync"/>).</description></item>
+/// <item><description><c>validate</c>: one record (<c>targetId</c>, at its latest or a <c>version</c>) checked against the schema of its kind, the Schema service's or a template a synced repository holds (<c>schema</c>, <c>templateVersion</c>), with the records it refers to looked up in storage, and the assertions of the synced <c>mapping</c> named by its id judged on it (<see cref="ExplorerChecks.RecordAsync"/>).</description></item>
 /// <item><description><c>validate-list</c>: the records a <c>search</c> finds, up to <c>max</c>, checked the same way and counted by rule and by assertion (<see cref="ExplorerChecks.ListAsync"/>).</description></item>
 /// <item><description><c>referenced-by</c>: the types whose schemas name records of a <c>type</c> (<see cref="ExplorerReferences"/>), answered from what the partition's Schema service holds, read once and kept (<see cref="PartitionSchemaIndex"/>); <c>refresh</c> reads it again.</description></item>
 /// </list>
@@ -79,10 +79,13 @@ public sealed class ExploreOperation : DeliveryOperation
     /// </summary>
     public static readonly TimeSpan ReferencesWait = TimeSpan.FromSeconds(5);
 
-    /// <summary>The task argument naming the schema a check reads: <c>osdu</c> (the Schema service's, the default) or <c>saved</c>.</summary>
+    /// <summary>The task argument naming the schema a check reads: <c>osdu</c> (the Schema service's, the default) or <c>template</c>.</summary>
     public const string SchemaArgument = "schema";
 
-    /// <summary>The task argument naming the saved template version a check reads; the kind's newest when left out.</summary>
+    /// <summary>
+    /// The task argument naming the version of the template a check reads, among those the synced repositories hold; the
+    /// version the most recently synced repository holds when left out.
+    /// </summary>
     public const string TemplateVersionArgument = "templateVersion";
 
     /// <summary>The task argument naming how many records a check of a search reads at most.</summary>
@@ -145,10 +148,10 @@ public sealed class ExploreOperation : DeliveryOperation
         using var correlation = OsduCorrelation.Begin();
         object answer = action switch
         {
-            ValidateAction => await Checks(context, flow, client).RecordAsync(
+            ValidateAction => await (await ChecksAsync(context, flow, client, ct).ConfigureAwait(false)).RecordAsync(
                 TargetId.WithoutVersion(payload.RequireArgument("targetId").Trim()), ReadRecordOperation.VersionOf(payload), SchemaSourceOf(payload),
                 payload.Argument(TemplateVersionArgument), await AssertionsAsync(context, payload, ct).ConfigureAwait(false), ct).ConfigureAwait(false),
-            ValidateListAction => await Checks(context, flow, client).ListAsync(
+            ValidateListAction => await (await ChecksAsync(context, flow, client, ct).ConfigureAwait(false)).ListAsync(
                 explorer, ExplorerSearch.Parse(payload.Argument(SearchArgument)), MaxOf(payload), SchemaSourceOf(payload),
                 await AssertionsAsync(context, payload, ct).ConfigureAwait(false), ct).ConfigureAwait(false),
             TypesAction => await explorer.TypesAsync(ExplorerSearch.Parse(payload.Argument(SearchArgument)), ct).ConfigureAwait(false),
@@ -169,13 +172,17 @@ public sealed class ExploreOperation : DeliveryOperation
         };
     }
 
-    /// <summary>The explorer's checks through the connection, reading storage where the explorer reads it, the saved templates the engine keeps, and the data definitions' example records where the host keeps them.</summary>
-    private static ExplorerChecks Checks(EngineContext context, FlowDefinition flow, OsduHttpClient client)
+    /// <summary>
+    /// The explorer's checks through the connection, reading storage where the explorer reads it, the templates the synced
+    /// repositories hold (from their files) where the host keeps the module database, and the data definitions' example
+    /// records where the host keeps them.
+    /// </summary>
+    private static async Task<ExplorerChecks> ChecksAsync(EngineContext context, FlowDefinition flow, OsduHttpClient client, CancellationToken ct)
         => new(
             client,
             new OsduRecordProtocol(client, new ProtocolOptions { VerifyPath = ReadPathOf(flow) }, context.Time),
             flow.Target.ProtocolOptions.VerifyBatchPath ?? OsduRecordProtocol.DefaultVerifyBatchPath,
-            context.Templates,
+            context.Ledger is { } ledger ? await Catalog.RepositoryTemplates.ReadAsync(ledger, context.RepositoryFolders, ct).ConfigureAwait(false) : null,
             context.Time,
             examples: context.Examples);
 
@@ -247,15 +254,15 @@ public sealed class ExploreOperation : DeliveryOperation
         return new ExplorerAssertions(mapping, problem);
     }
 
-    /// <summary>The schema a check reads, as the task names it: <c>osdu</c> (the default) or <c>saved</c>.</summary>
+    /// <summary>The schema a check reads, as the task names it: <c>osdu</c> (the default) or <c>template</c>.</summary>
     internal static ExplorerSchemaSource SchemaSourceOf(ComputeTaskPayload payload)
     {
         ArgumentNullException.ThrowIfNull(payload);
         return payload.Argument(SchemaArgument)?.Trim().ToLowerInvariant() switch
         {
             null or "" or "osdu" => ExplorerSchemaSource.Osdu,
-            "saved" => ExplorerSchemaSource.Saved,
-            var other => throw new SqlFlowException($"'{other}' is not a schema a record is checked against: osdu or saved."),
+            "template" => ExplorerSchemaSource.Template,
+            var other => throw new SqlFlowException($"'{other}' is not a schema a record is checked against: osdu or template."),
         };
     }
 
@@ -389,5 +396,5 @@ public sealed class ExploreOperation : DeliveryOperation
     }
 }
 
-/// <summary>How a drafted dimension's key and each of its collected paths are indexed, as the control plane settled them from the saved templates.</summary>
+/// <summary>How a drafted dimension's key and each of its collected paths are indexed, as the control plane settled them from the templates the synced repositories hold.</summary>
 public sealed record DimensionExampleFields(DimensionFieldWire? Key, IReadOnlyDictionary<string, DimensionFieldWire>? Collected);

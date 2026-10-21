@@ -1,8 +1,8 @@
 ---
 id: delivery-wiki-0018-template-folders
-title: "Decision 0018: A repository's template folders settle the template each document fills, and the library stands apart"
+title: "Decision 0018: A repository's template folders hold the templates, and every reader reads the file"
 type: decision
-summary: "Why templates live as files in a repository's template folders, how a document's template is settled, and why the saved templates stay a separate library."
+summary: "Why templates live only as files in template folders, how a document's template is settled, and why the database keeps an index and no copy."
 keywords:
   - template folder
   - templates folder
@@ -12,13 +12,14 @@ keywords:
   - custom template
   - template library
   - repository templates
+  - download template
 referenceRefs:
   - delivery-concept-templates
   - delivery-cli-template
   - delivery-table-repository-template
-  - delivery-table-template
   - delivery-flow-mapping
   - delivery-concept-preflight
+  - delivery-concept-gui
 related:
   - delivery-wiki-0003-rendering-location
   - delivery-wiki-0009-searched-references
@@ -29,15 +30,19 @@ sourceRefs:
   - osdu/src/SqlFlow.Delivery/Templates/TemplateFolders.cs
   - osdu/src/SqlFlow.Delivery/Templates/TemplateChain.cs
   - osdu/src/SqlFlow.Delivery/Templates/TemplateSource.cs
-  - osdu/src/SqlFlow.Delivery/Templates/TemplateStore.cs
   - osdu/src/SqlFlow.Delivery/Catalog/SyncedTemplates.cs
+  - osdu/src/SqlFlow.Delivery/Catalog/RepositoryTemplates.cs
+  - osdu/src/SqlFlow.Delivery/Catalog/RepositoryFolders.cs
   - osdu/src/SqlFlow.Delivery/Catalog/DeliveryCatalogSync.cs
   - osdu/src/SqlFlow.Delivery/Engine/FlowRuntime.cs
   - osdu/src/SqlFlow.Delivery/Documents/MappingMapper.cs
   - osdu/src/SqlFlow.Delivery/Ordering/OrderCatalog.cs
-updated: 2026-10-21
+  - osdu/src/SqlFlow.Delivery.ControlPlane/Api/DeliveryTemplateEndpoints.cs
+  - osdu/gui/src/features/delivery/TemplatesPage.tsx
+  - osdu/gui/src/features/delivery/TemplatesBrowseTab.tsx
+updated: 2026-10-22
 ---
-# 0018: A repository's template folders settle the template each document fills, and the library stands apart
+# 0018: A repository's template folders hold the templates, and every reader reads the file
 
 Status: proposed. Documented in [templates](../../reference/concepts/templates.md#template-folders) and
 [sqlflow template](../../reference/cli/template.md). Amends [0003](0003-rendering-location.md),
@@ -57,9 +62,6 @@ or `sqlflow template`. Three things followed from that:
 - Several projects in one repository may fill different versions of one kind. A version is exact, so pinning by hash
   already told them apart, but nothing said which version a project holds as its own.
 
-The database stays useful: the explorer, the mapping builder, the language assistance of the MCP tools and the runtime
-suggestions read the library without a working copy.
-
 ## Decision
 
 - **A template folder is a folder named exactly `templates`**, anywhere in a repository, holding template files: bundled
@@ -71,46 +73,53 @@ suggestions read the library without a working copy.
   exactly: the nearest folder holding that version answers. **A document that names the kind alone** fills the one
   version the nearest folder holding the kind holds; a folder holding two versions of that kind is an error naming both,
   never a guess.
-- **The folders are the only thing that settles a document's template.** A version the library holds and no folder on
-  the path holds is never a document's template. A mapping whose template no folder on its path holds does not load,
-  and the sync says where it looked. The one exception is the validation gate: a record already rendered for an exact
-  version is still checked against that version from the library once its file has changed, when someone saved it
-  there, since every copy of a version is the same schema.
-- **The library stands apart.** `[osdu].[Template]` holds only what a person saves, from the Templates page or the
-  command line, for what reads templates where no repository is at hand: the explorer, the mapping builder and the
-  assistant. A sync saves nothing in it. It records each file in `[osdu].[RepositoryTemplate]` with a copy of the
-  file's schema, which the control plane's pages read to settle a synced repository's documents without its working
-  copy. Nothing a repository holds keeps a saved version from being deleted, and the Templates page says nothing of
-  repositories or of the mappings that fill a version.
-- **Any kind is a template**, OSDU's or one's own: importing a schema writes it as a file of a folder (`--out`),
-  declaring its kind when the schema did not, and the next sync uses it with no GUI step.
+- **The repository is the only place a template lives.** A repository adds a template by committing its file and removes
+  one by deleting it. The sync records each file of each template folder in `[osdu].[RepositoryTemplate]`: its path,
+  folder, kind and version, or why it holds no template. That row is an index, never a copy: nothing of a schema is kept
+  in the database.
+- **Every reader reads the file.** A run, `sqlflow check` and lineage read the checkout in front of them. The control
+  plane's pages, the Templates page, the explorer, the mapping builder and the MCP tools find the file through the index
+  and read it from the folder the repository was synced into, found as a node finds a run's checkout (the folder the
+  sync read, a local source where it lives, or the synced commit checked out from the remote). A file that changed since
+  the sync is refused until the repository syncs again, so a page never reads a version the index does not record.
+- **Any kind is a template**, OSDU's or one's own: `sqlflow template capture` and `import` write a bundled file into a
+  folder (`--out`, now required), declaring its kind when the schema did not, and the next sync records it with no GUI
+  step. The Templates page lists the repositories' files and downloads a kind of the OSDU data definitions as the file a
+  folder keeps.
 
 ## Alternatives considered
 
 - **Keep templates in the database alone.** Rejected for the reasons in the context: the working copy could not be
   read or checked on its own, and a template of one's own needed a step outside the repository.
-- **Remove the library.** Rejected: the explorer, the builder and the assistant read templates where no repository is
-  at hand, and the gate can check a record rendered before its file changed against a version someone saved.
-- **Mirror the repositories' templates into the library.** Built first and taken back before it was released: every
-  sync saved what the folders held, and the Templates page listed the files holding each version and refused to delete
-  one a folder held. It tied the library to the repositories, so its list grew with every repository's files and a
-  delete depended on files elsewhere, when the library only serves reading templates where no repository is at hand. A
-  copy kept with each file's row serves the control plane's pages without it.
+- **Keep a library of saved templates beside the folders.** Built first: `[osdu].[Template]` held what a person saved
+  from the Templates page's import and browse tabs or the command line, for the explorer, the mapping builder and the
+  assistant, and the sync kept a copy of each file's schema on its row for the control plane's pages. Taken back before
+  it was released. It was a second path to the same thing: a version could be read from the library, from a row's copy
+  or from the file, two of them could disagree with the repository, and the Templates page showed a library no document
+  read. With the index pointing at the file and the file readable wherever the repository is synced, every reader has
+  one source, and the GUI shows what the repositories hold.
+- **Mirror the repositories' templates into the library.** Built before that and taken back too: every sync saved what
+  the folders held, and the Templates page listed the files holding each version and refused to delete one a folder
+  held. The library's list grew with every repository's files and a delete depended on files elsewhere.
 - **A template path in each document.** Rejected in favour of folders: the path would be repeated in every mapping,
   search, test and dimension, would break when files move, and would leave a document that names a kind alone without
   a rule. A folder on the path gives each project of a repository its own versions with no path written anywhere.
 
 ## Consequences
 
-- An estate whose templates were saved only in the library must commit them as files before its next sync loads its
-  mappings: `sqlflow template show --kind <kind> --version <version> --out <folder>/<file>` writes each one, and an
-  exact pin keeps its version ([Upgrading an estate](../../reference/concepts/templates.md#upgrading-an-estate-whose-templates-were-saved-only-in-the-library)).
+- An estate whose templates were saved in the database must have every version its documents need as a file in a
+  template folder before it upgrades: module schema 1.54.0 drops the library and the copies
+  ([Upgrading an estate](../../reference/concepts/templates.md#upgrading-an-estate-that-saved-templates-in-the-database)).
+  A version a release publishes is downloaded again from Browse OSDU or written with `sqlflow template capture --out`.
 - `sqlflow check`, a run, lineage and the sync read the files, so a working copy is checked before it is committed;
-  `sqlflow template folders --for <document>` shows what a document reads.
-- The Templates page no longer counts the mappings that pin a version, and a saved version is deleted whatever a
-  mapping names, since mappings read their folders. A row recorded before copies were kept reads as missing its copy
-  until the next sync of its repository.
+  `sqlflow template folders --for <document>` shows what a document reads. The command line's `template` verb needs no
+  database: `list`, `show` and `delete`, which worked on the library, are gone.
+- The validation gate checks a record against the version it was rendered for while a folder on the mapping's path
+  holds it, and calls the record `unverified` once none does, rather than reaching for a saved copy.
+- A page that reads a repository's template needs the repository's files on its host, or the means to check out the
+  synced commit; a repository whose folder cannot be had says why, rather than answering from a stale copy.
 - The order the catalog keeps for a repository leaves out a delivery whose mapping's template no folder holds, since
-  that mapping does not load; lineage still orders it by a built release of OSDU's lineage
-  ([0016](0016-osdu-order.md)).
-- The mapping builder proposes a mapping with its template's file when no folder on the mapping's path holds it yet.
+  that mapping does not load; it reads a template from the file the sync recorded, and from a built release of OSDU's
+  lineage when the file cannot be read ([0016](0016-osdu-order.md)).
+- The mapping builder starts a mapping from a file the repository's folders hold and proposes the mapping alone, into
+  the `mappings` folder beside that template folder.

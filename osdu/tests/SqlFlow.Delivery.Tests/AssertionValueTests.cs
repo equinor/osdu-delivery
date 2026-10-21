@@ -266,16 +266,16 @@ public sealed class AssertionValueTests
     }
 
     [Fact]
-    public async Task A_test_of_a_kind_no_template_is_saved_for_is_told_how_to_capture_one()
+    public async Task A_test_of_a_kind_no_template_folder_holds_is_told_how_to_capture_one()
     {
         var fit = await FitAsync("- { field: data.X, exists: true }", kind: "osdu:wks:master-data--Rig:1.0.0");
         Assert.Contains(
-            "The test's fields are checked against the template of osdu:wks:master-data--Rig:1.0.0, and no template of osdu:wks:master-data--Rig:1.0.0 is saved",
+            "The test's fields are checked against the template of osdu:wks:master-data--Rig:1.0.0, and no template folder holds template osdu:wks:master-data--Rig:1.0.0",
             Assert.Single(fit.Problems));
         Assert.Contains("sqlflow template capture --kind osdu:wks:master-data--Rig:1.0.0", fit.Problems[0]);
 
         var pinned = await FitAsync("- { field: data.FacilityName, exists: true }", "template: 0000000000000000");
-        Assert.Contains("template osdu:wks:master-data--Wellbore:1.3.0 version 0000000000000000 is not saved", Assert.Single(pinned.Problems));
+        Assert.Contains("no template folder holds template osdu:wks:master-data--Wellbore:1.3.0 version 0000000000000000", Assert.Single(pinned.Problems));
 
         var countOnly = await FitAsync("- count: 1", kind: "osdu:wks:master-data--Rig:1.0.0");
         Assert.Empty(countOnly.Problems);

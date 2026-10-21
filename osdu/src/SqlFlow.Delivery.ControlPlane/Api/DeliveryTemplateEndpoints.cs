@@ -24,15 +24,29 @@ using SqlFlow.Delivery.Validation;
 namespace SqlFlow.Delivery.ControlPlane.Api;
 
 /// <summary>
-/// A saved template version of the library: what it is, who saved it and from where. The library is not linked to the
-/// repositories (osdu/docs/reference/concepts/templates.md, The library), so nothing here says which repository holds it.
+/// A file of a synced repository's template folder (osdu/docs/reference/concepts/templates.md, Template folders), as the
+/// repository's last sync found it: the template it holds, or why it holds none. The file is the template: whoever reads
+/// the template reads the file, in the folder the repository was synced into, and the database holds none of it.
 /// </summary>
-public sealed record DeliveryTemplateDto(string Kind, string Version, DateTime CapturedUtc, string CapturedBy, string Origin);
+/// <param name="RepoId">The repository that holds it.</param>
+/// <param name="Repository">The repository's name.</param>
+/// <param name="Path">The file's path in the repository.</param>
+/// <param name="Folder">The template folder it is in.</param>
+/// <param name="Kind">The kind it holds; null when it holds no template.</param>
+/// <param name="Version">The template version it holds, the hash of its schema; null when it holds none.</param>
+/// <param name="Problem">Why it holds no template; null when it holds one.</param>
+/// <param name="SeenUtc">When the repository's last sync saw it.</param>
+public sealed record DeliveryTemplateDto(
+    Guid RepoId, string Repository, string Path, string Folder, string? Kind, string? Version, string? Problem, DateTime SeenUtc);
+
+/// <summary>The repository file a template laid out was read from.</summary>
+public sealed record DeliveryTemplateFileDto(Guid RepoId, string Repository, string Path);
 
 /// <summary>
 /// What a template a document of a synced repository names settles to, from the template folders the repository's last
 /// sync recorded on the document's path: the version and the file holding it, or why none does. <c>SuggestedPath</c> is
-/// where a file of the template goes for the document to read it: the repository's top template folder.
+/// where a file of the template goes for the document to read it: the template folder of the document's project, beside
+/// the folder the document is in.
 /// </summary>
 public sealed record DeliveryTemplateResolutionDto(bool Found, string Kind, string? Version, string? File, string? Problem, string SuggestedPath);
 
@@ -42,11 +56,12 @@ public sealed record DeliveryTemplateVariableDto(
     string? Pattern, string? UnitContext, string? Title, string? Description, string? KeyValueType, bool Nested, IReadOnlyList<string> CacheTypes, bool Open);
 
 /// <summary>
-/// A template laid out variable by variable. <c>Saved</c> is null for a schema being looked at before it is saved;
-/// <c>CacheTypes</c> on a variable names the types of the partition's cache it can be read from, when a partition was named.
+/// A template laid out variable by variable. <c>File</c> is the repository file it was read from, null for a schema of the
+/// OSDU data definitions being looked at; <c>CacheTypes</c> on a variable names the types of the partition's cache it can be
+/// read from, when a partition was named.
 /// </summary>
 public sealed record DeliveryTemplateDetailDto(
-    string Kind, string Version, string? Title, string? Description, DeliveryTemplateDto? Saved, IReadOnlyList<DeliveryTemplateVariableDto> Variables);
+    string Kind, string Version, string? Title, string? Description, DeliveryTemplateFileDto? File, IReadOnlyList<DeliveryTemplateVariableDto> Variables);
 
 /// <summary>A release of the OSDU data definitions: its tag, the commit it names, when that was committed, and its schema folder on the web.</summary>
 public sealed record DeliveryOsduReleaseDto(string Name, string Commit, DateTimeOffset? PublishedUtc, Uri WebUrl, bool Local);
@@ -67,15 +82,15 @@ public sealed record DeliveryOsduSchemaDto(string Kind, string EntityType, strin
 public sealed record DeliveryOsduSchemaIndexDto(DeliveryOsduReleaseDto Release, IReadOnlyList<DeliveryOsduSchemaDto> Schemas);
 
 /// <summary>
-/// A kind's schema bundled from a release of the OSDU data definitions: <c>Version</c> is the template version it saves as,
-/// <c>Origin</c> what the saved template records as where it came from. Nothing is saved.
+/// A kind's schema bundled from a release of the OSDU data definitions: <c>Version</c> is the template version its file
+/// holds, <c>Origin</c> where it came from (the release, its commit and the file). Nothing is kept.
 /// </summary>
 public sealed record DeliveryOsduSchemaFileDto(
     string Kind, string Version, DeliveryOsduReleaseDto Release, string Path, Uri WebUrl, string Origin, JsonObject Schema);
 
 /// <summary>
-/// One side of a comparison: a kind's version in a release, the status the release gives it, the template version it
-/// saves as, and its schema file exactly as the release publishes it.
+/// One side of a comparison: a kind's version in a release, the status the release gives it, the template version its file
+/// holds, and its schema file exactly as the release publishes it.
 /// </summary>
 public sealed record DeliveryOsduComparisonSideDto(
     string Kind, DeliveryOsduReleaseDto Release, string Path, Uri WebUrl, string? Status, string TemplateVersion, string FileText);
@@ -94,7 +109,7 @@ public sealed record DeliveryOsduReferencedFileDto(string Name, string? FromPath
 
 /// <summary>
 /// Two versions of a kind from the OSDU data definitions compared: whether the published files are the same, or differ
-/// only in their own version identifiers, whether they save as the same template, how many variable changes of each
+/// only in their own version identifiers, whether they hold the same template version, how many variable changes of each
 /// impact there are, every variable that differs, and the shared schema files they refer to that differ, with how many
 /// are the same.
 /// </summary>
@@ -103,19 +118,12 @@ public sealed record DeliveryOsduComparisonDto(
     int Breaking, int Additive, int Wording, int Unchanged, IReadOnlyList<DeliveryTemplateVariableChangeDto> Changes,
     int SameReferencedFiles, IReadOnlyList<DeliveryOsduReferencedFileDto> ReferencedFiles);
 
-/// <summary>A schema to lay out as a template without saving it.</summary>
+/// <summary>A schema to lay out as a template, nothing kept.</summary>
 /// <remarks>
 /// A schema that refers to the shared schemas of the OSDU data definitions, as a file a release publishes does, is bundled
 /// with them from <c>Release</c> (the newest release when it is null).
 /// </remarks>
 public sealed record DeliveryTemplatePreviewRequest(string Kind, JsonElement Schema, string? Scope, string? Release);
-
-/// <summary>A schema to save as a template version, and where it came from.</summary>
-/// <remarks>Its references to the OSDU data definitions are read from <c>Release</c>, as a preview reads them, and the saved origin names the release.</remarks>
-public sealed record DeliveryTemplateSaveRequest(string Kind, JsonElement Schema, string Origin, string? Release);
-
-/// <summary>What saving did: <c>created</c> for a new version, <c>unchanged</c> for one already saved.</summary>
-public sealed record DeliveryTemplateSavedDto(DeliveryTemplateDto Template, string Outcome);
 
 /// <summary>
 /// A delivery flow of a repository, as the builder and the Templates page offer it: its connection, what it renders with, and
@@ -159,19 +167,28 @@ public sealed record DeliveryBuilderRepoDto(Guid RepoId, string Name, Guid? Sour
 /// <summary>A partition's cache as the mapping builder offers it: the partition, the cache flows filling it, its current version and its types.</summary>
 public sealed record DeliveryBuilderCacheDto(string Scope, IReadOnlyList<string> Flows, string? CurrentVersion, IReadOnlyList<DeliveryCachedTypeDto> Types);
 
-/// <summary>Starts a mapping for a saved template version, prefilled from the cache of partition <c>Scope</c> when one is named.</summary>
-public sealed record DeliveryMappingDraftRequest(string? Scope, string Kind, string Version, string Name, string MappingVersion, string System);
+/// <summary>
+/// Starts a mapping for the template repository <c>RepoId</c>'s file at <c>TemplatePath</c> holds, prefilled from the cache of
+/// partition <c>Scope</c> when one is named.
+/// </summary>
+public sealed record DeliveryMappingDraftRequest(string? Scope, Guid RepoId, string TemplatePath, string Name, string MappingVersion, string System);
 
-/// <summary>A draft to write as YAML and check against the cache of partition <c>Scope</c>; <c>Parameters</c> are the values the check renders static ids with.</summary>
-public sealed record DeliveryMappingComposeRequest(string? Scope, MappingDraft Draft, IReadOnlyDictionary<string, string>? Parameters);
+/// <summary>
+/// A draft to write as YAML and check against the cache of partition <c>Scope</c>; <c>Parameters</c> are the values the check
+/// renders static ids with. <c>RepoId</c> and <c>Path</c> name the synced repository the mapping is written for and its path
+/// there, whose template folders settle its templates as they will once it is there; without them the templates are read
+/// from every synced repository's, by the versions the draft names.
+/// </summary>
+public sealed record DeliveryMappingComposeRequest(
+    string? Scope, MappingDraft Draft, IReadOnlyDictionary<string, string>? Parameters, Guid? RepoId = null, string? Path = null);
 
 /// <summary>The draft as YAML, what the checks found, and whether the mapping loads and passes the preflight.</summary>
 public sealed record DeliveryMappingComposeResult(string Yaml, IReadOnlyList<MappingDraftIssue> Issues, bool Valid);
 
-/// <summary>A mapping document to open in the builder.</summary>
 /// <summary>
 /// A mapping document to read back into a draft. <c>RepoId</c> names the synced repository it is a document of, whose
-/// template folders settle a template it names by kind alone; without it the document has to name its versions.
+/// template folders settle a template it names by kind alone; without it the document has to name its versions, which are
+/// read from every synced repository's template folders.
 /// </summary>
 public sealed record DeliveryMappingParseRequest(string Yaml, string? Path, Guid? RepoId = null);
 
@@ -183,7 +200,7 @@ public sealed record DeliveryMappingCoverageRequest(string Yaml, string? Path, G
 /// <summary>
 /// What a mapping fills of its template: the template version it pins, every variable a mapping may fill with how the
 /// document reaches it, and what it leaves required and empty. <c>Variables</c> is empty when the document does not load
-/// or pins a template that is not saved, and <c>Issues</c> says which.
+/// or its template cannot be read, and <c>Issues</c> says which.
 /// </summary>
 public sealed record DeliveryMappingCoverageResult(
     string? Kind, string? Version, IReadOnlyList<VariableCoverage> Variables, IReadOnlyList<MappingDraftIssue> Issues);
@@ -204,9 +221,10 @@ public sealed record DeliveryMappingShapeResult(
 
 /// <summary>
 /// Templates and the mapping builder (osdu/docs/reference/concepts/templates.md; the builder:
-/// osdu/docs/reference/concepts/gui.md, Mapping builder). Reading and laying out templates, browsing the OSDU data
-/// definitions (the public repository of OSDU schemas, which needs no credential), drafting and checking a mapping are
-/// reads; saving and deleting a template changes what mappings can pin, so it is an author action.
+/// osdu/docs/reference/concepts/gui.md, Mapping builder). A template is a file of a synced repository's template folder,
+/// and every template read here is read from its file; the database only lists which files hold which template. Listing
+/// and laying out templates, browsing and downloading the OSDU data definitions (the public repository of OSDU schemas,
+/// which needs no credential), drafting and checking a mapping are reads; nothing here writes a template.
 /// </summary>
 public static class DeliveryTemplateEndpoints
 {
@@ -225,6 +243,7 @@ public static class DeliveryTemplateEndpoints
         delivery.MapGet("/templates/osdu/releases", ListOsduReleasesAsync).WithName("ListDeliveryOsduReleases");
         delivery.MapGet("/templates/osdu/schemas", ListOsduSchemasAsync).WithName("ListDeliveryOsduSchemas");
         delivery.MapGet("/templates/osdu/schema", GetOsduSchemaAsync).WithName("GetDeliveryOsduSchema");
+        delivery.MapGet("/templates/osdu/file", GetOsduSchemaFileAsync).WithName("GetDeliveryOsduSchemaFile");
         delivery.MapGet("/templates/osdu/compare", CompareOsduSchemasAsync).WithName("CompareDeliveryOsduSchemas");
         delivery.MapGet("/mapping-builder/repos", ListBuilderReposAsync).WithName("ListDeliveryMappingBuilderRepos");
         delivery.MapGet("/mapping-builder/caches", ListBuilderCachesAsync).WithName("ListDeliveryMappingBuilderCaches");
@@ -244,60 +263,84 @@ public static class DeliveryTemplateEndpoints
         return group;
     }
 
-    public static RouteGroupBuilder MapDeliveryTemplateAuthorEndpoints(this RouteGroupBuilder group)
+    /// <summary>
+    /// Every file of every synced repository's template folders, as each repository's last sync found it, by repository and
+    /// path: the list the Templates page shows. Nothing is read from a file here.
+    /// </summary>
+    private static async Task<Ok<IReadOnlyList<DeliveryTemplateDto>>> ListTemplatesAsync(OsduDbContext osdu, CatalogDbContext db, CancellationToken ct)
     {
-        ArgumentNullException.ThrowIfNull(group);
-        var delivery = group.MapGroup("/delivery").WithTags("Delivery");
-        delivery.MapPost("/templates", SaveTemplateAsync).WithName("SaveDeliveryTemplate");
-        delivery.MapDelete("/templates", DeleteTemplateAsync).WithName("DeleteDeliveryTemplate");
-        return group;
+        var files = await RepositoryTemplates.FilesAsync(osdu, null, ct).ConfigureAwait(false);
+        var names = await RepositoryNamesAsync(db, ct).ConfigureAwait(false);
+        return TypedResults.Ok<IReadOnlyList<DeliveryTemplateDto>>(files
+            .Select(f => new DeliveryTemplateDto(
+                f.RepoId, names.GetValueOrDefault(f.RepoId, f.RepoId.ToString("D")), f.Path, f.Folder,
+                f.Kind.Length == 0 ? null : f.Kind, f.Version.Length == 0 ? null : f.Version, f.Problem, f.SeenUtc))
+            .OrderBy(t => t.Repository, StringComparer.OrdinalIgnoreCase)
+            .ThenBy(t => t.Path, StringComparer.Ordinal)
+            .ToList());
     }
 
-    private static async Task<Ok<IReadOnlyList<DeliveryTemplateDto>>> ListTemplatesAsync(ITemplateStore templates, CancellationToken ct)
-    {
-        var saved = await templates.ListAsync(ct).ConfigureAwait(false);
-        return TypedResults.Ok<IReadOnlyList<DeliveryTemplateDto>>(saved.Select(ToDto).ToList());
-    }
-
+    /// <summary>The template repository <paramref name="repoId"/>'s file at <paramref name="path"/> holds, read from the file and laid out.</summary>
     private static async Task<Results<Ok<DeliveryTemplateDetailDto>, ProblemHttpResult>> GetTemplateAsync(
-        string? kind, string? version, string? scope, ITemplateStore templates, OsduDbContext osdu, CancellationToken ct)
+        Guid? repoId, string? path, string? scope, OsduDbContext osdu, CatalogDbContext db, IRepositoryFolders folders, CancellationToken ct)
     {
-        if (string.IsNullOrWhiteSpace(kind) || string.IsNullOrWhiteSpace(version))
-        {
-            return Problem("Name the template with kind and version.", StatusCodes.Status400BadRequest);
-        }
-
-        var reference = new TemplateReference(kind.Trim(), version.Trim());
-        var schema = await templates.LoadAsync(reference, ct).ConfigureAwait(false);
+        var (schema, problem) = await TemplateFileAsync(repoId, path, osdu, folders, ct).ConfigureAwait(false);
         if (schema is null)
         {
-            return Problem($"There is no saved template {reference}.", StatusCodes.Status404NotFound, "Not found");
+            return problem!;
         }
 
-        var info = (await templates.ListAsync(ct).ConfigureAwait(false)).FirstOrDefault(t => t.Reference == reference);
+        var names = await RepositoryNamesAsync(db, ct).ConfigureAwait(false);
         var types = string.IsNullOrWhiteSpace(scope) ? [] : await CatalogCacheReader.TypesAsync(osdu, scope.Trim(), ct).ConfigureAwait(false);
-        return TypedResults.Ok(Detail(OsduTemplate.From(schema), info is null ? null : ToDto(info), types));
+        var file = new DeliveryTemplateFileDto(repoId!.Value, names.GetValueOrDefault(repoId.Value, repoId.Value.ToString("D")), path!.Trim());
+        return TypedResults.Ok(Detail(OsduTemplate.From(schema), file, types));
     }
 
     /// <summary>
-    /// A saved version's bundled schema as a file to save (<see cref="TemplateSources.FileText"/>), named after its kind
-    /// (<see cref="TemplateSources.FileName"/>): what the Templates page shows as Schema JSON and downloads, for a
-    /// repository to keep in a template folder beside the mappings that fill it.
+    /// The template repository <paramref name="repoId"/>'s file at <paramref name="path"/> holds, read from the file, as a file
+    /// to save under the file's own name (<see cref="TemplateSources.FileText"/>): what the Templates page shows as Schema JSON.
     /// </summary>
     private static async Task<Results<FileContentHttpResult, ProblemHttpResult>> GetTemplateSchemaAsync(
-        string? kind, string? version, ITemplateStore templates, CancellationToken ct)
+        Guid? repoId, string? path, OsduDbContext osdu, IRepositoryFolders folders, CancellationToken ct)
     {
-        if (string.IsNullOrWhiteSpace(kind) || string.IsNullOrWhiteSpace(version))
+        var (schema, problem) = await TemplateFileAsync(repoId, path, osdu, folders, ct).ConfigureAwait(false);
+        return schema is null
+            ? problem!
+            : TypedResults.File(Encoding.UTF8.GetBytes(TemplateSources.FileText(schema)), "application/json", System.IO.Path.GetFileName(path!.Trim()));
+    }
+
+    /// <summary>
+    /// The template a synced repository's file holds, read from the file in the folder the repository was synced into: a
+    /// 400 when the file is not named, a 404 when the repository's last sync recorded no such file, and a 422 when the file
+    /// holds no template or cannot be read as the one recorded.
+    /// </summary>
+    private static async Task<(SchemaSnapshot? Schema, ProblemHttpResult? Problem)> TemplateFileAsync(
+        Guid? repoId, string? path, OsduDbContext osdu, IRepositoryFolders folders, CancellationToken ct)
+    {
+        if (repoId is not { } repo || string.IsNullOrWhiteSpace(path))
         {
-            return Problem("Name the template with kind and version.", StatusCodes.Status400BadRequest);
+            return (null, Problem("Name the template by its repository (repoId) and its file's path in it (path).", StatusCodes.Status400BadRequest));
         }
 
-        var reference = new TemplateReference(kind.Trim(), version.Trim());
-        var schema = await templates.LoadAsync(reference, ct).ConfigureAwait(false);
-        return schema is null
-            ? Problem($"There is no saved template {reference}.", StatusCodes.Status404NotFound, "Not found")
-            : TypedResults.File(Encoding.UTF8.GetBytes(TemplateSources.FileText(schema)), "application/json", TemplateSources.FileName(schema.Kind));
+        var templates = await RepositoryTemplates.ReadAsync(osdu, folders, repo, ct).ConfigureAwait(false);
+        var file = path.Trim();
+        if (!templates.Files.Any(f => string.Equals(f.Path, file, StringComparison.Ordinal)))
+        {
+            return (null, Problem(
+                $"The template folders of repository {repo:D} hold no file {file} as its last sync found them; sync the repository if the file is new.",
+                StatusCodes.Status404NotFound,
+                "Not found"));
+        }
+
+        var resolved = await templates.LoadAsync(repo, file, ct).ConfigureAwait(false);
+        return resolved.Schema is { } schema
+            ? (schema, null)
+            : (null, Problem(resolved.Problem!, StatusCodes.Status422UnprocessableEntity, "Template unreadable"));
     }
+
+    /// <summary>The name of every repository the catalog holds, by id.</summary>
+    private static async Task<Dictionary<Guid, string>> RepositoryNamesAsync(CatalogDbContext db, CancellationToken ct)
+        => await db.Repos.AsNoTracking().Select(r => new { r.Id, r.Name }).ToDictionaryAsync(r => r.Id, r => r.Name, ct).ConfigureAwait(false);
 
     /// <summary>
     /// The template the document at <paramref name="path"/> of synced repository <paramref name="repoId"/> reads for
@@ -305,7 +348,7 @@ public static class DeliveryTemplateEndpoints
     /// repository's last sync recorded on the document's path, as a run settles it from the files.
     /// </summary>
     private static async Task<Results<Ok<DeliveryTemplateResolutionDto>, ProblemHttpResult>> ResolveTemplateAsync(
-        Guid? repoId, string? path, string? kind, string? version, OsduDbContext osdu, CancellationToken ct)
+        Guid? repoId, string? path, string? kind, string? version, OsduDbContext osdu, IRepositoryFolders folders, CancellationToken ct)
     {
         if (repoId is not { } repo || string.IsNullOrWhiteSpace(path) || string.IsNullOrWhiteSpace(kind))
         {
@@ -313,24 +356,39 @@ public static class DeliveryTemplateEndpoints
         }
 
         var wanted = kind.Trim();
+        var document = path.Trim().Replace('\\', '/');
         string suggested;
         try
         {
-            // Naming the file checks the kind: a record kind is what a template file is named after.
-            suggested = $"{TemplateFolders.FolderName}/{TemplateSources.FileName(wanted)}";
+            // Naming the file checks the kind: a record kind is what a template file is named after. The file goes in the
+            // template folder of the document's project, beside the folder the document is in, which the document reads.
+            suggested = $"{ProjectTemplateFolder(document)}/{TemplateSources.FileName(wanted)}";
         }
         catch (FlowValidationException ex)
         {
             return Problem(ex.Message, StatusCodes.Status400BadRequest);
         }
 
-        var folders = await SyncedTemplates.ReadAsync(osdu, repo, ct).ConfigureAwait(false);
-        var pick = folders.ChainFor(path.Trim()).Pick(wanted, string.IsNullOrWhiteSpace(version) ? null : version.Trim());
+        var synced = await SyncedTemplates.ReadAsync(osdu, folders, repo, ct).ConfigureAwait(false);
+        var pick = synced.ChainFor(document).Pick(wanted, string.IsNullOrWhiteSpace(version) ? null : version.Trim());
         return TypedResults.Ok(new DeliveryTemplateResolutionDto(pick.Found, wanted, pick.File?.Version, pick.File?.Shown, pick.Problem, suggested));
     }
 
+    /// <summary>
+    /// The template folder of the project a document at <paramref name="document"/> belongs to: the one beside the folder the
+    /// document is in (<c>welldb/templates</c> for <c>welldb/mappings/WellLog@1.4.0.yaml</c>), or the repository's top one for
+    /// a document at the top or in a top folder.
+    /// </summary>
+    internal static string ProjectTemplateFolder(string document)
+    {
+        var parts = document.Trim('/').Split('/', StringSplitOptions.RemoveEmptyEntries);
+        // The document's folder is parts[..^1]; its project is the folder above that.
+        var project = parts.Length >= 3 ? string.Join('/', parts[..^2]) : string.Empty;
+        return project.Length == 0 ? TemplateFolders.FolderName : $"{project}/{TemplateFolders.FolderName}";
+    }
+
     private static async Task<Results<Ok<DeliveryTemplateDetailDto>, ProblemHttpResult>> PreviewTemplateAsync(
-        DeliveryTemplatePreviewRequest request, ITemplateStore templates, OsduDataDefinitions definitions, OsduDbContext osdu, CancellationToken ct)
+        DeliveryTemplatePreviewRequest request, OsduDataDefinitions definitions, OsduDbContext osdu, CancellationToken ct)
     {
         if (request is null || string.IsNullOrWhiteSpace(request.Kind) || request.Schema.ValueKind == JsonValueKind.Undefined)
         {
@@ -343,10 +401,8 @@ public static class DeliveryTemplateEndpoints
             return problem!;
         }
 
-        var schema = imported.Schema;
-        var info = (await templates.ListAsync(ct).ConfigureAwait(false)).FirstOrDefault(t => t.Kind == schema.Kind && t.Version == schema.Version);
         var types = string.IsNullOrWhiteSpace(request.Scope) ? [] : await CatalogCacheReader.TypesAsync(osdu, request.Scope.Trim(), ct).ConfigureAwait(false);
-        return TypedResults.Ok(Detail(OsduTemplate.From(schema), info is null ? null : ToDto(info), types));
+        return TypedResults.Ok(Detail(OsduTemplate.From(imported.Schema), null, types));
     }
 
     private static async Task<Results<Ok<DeliveryOsduReleasesDto>, ProblemHttpResult>> ListOsduReleasesAsync(
@@ -403,7 +459,42 @@ public static class DeliveryTemplateEndpoints
         }
         catch (DeliveryException ex)
         {
-            // The release's file is there but is not a record schema a template can be saved from.
+            // The release's file is there but is not a record schema a template can be laid out from.
+            return Problem(ex.Message, StatusCodes.Status422UnprocessableEntity, "Not a record schema");
+        }
+    }
+
+    /// <summary>
+    /// A kind's schema from a release of the OSDU data definitions (the newest when none is named), bundled, as the file a
+    /// repository's template folder keeps (<see cref="TemplateSources.FileText"/>), named after its kind
+    /// (<see cref="TemplateSources.FileName"/>): what the Templates page's Browse OSDU downloads, for a repository to hold in
+    /// a template folder beside the documents that read it. Nothing is kept.
+    /// </summary>
+    private static async Task<Results<FileContentHttpResult, ProblemHttpResult>> GetOsduSchemaFileAsync(
+        string? release, string? kind, OsduDataDefinitions definitions, CancellationToken ct)
+    {
+        if (string.IsNullOrWhiteSpace(kind))
+        {
+            return Problem("Name the schema with kind, as authority:source:entityType:version.", StatusCodes.Status400BadRequest);
+        }
+
+        try
+        {
+            var file = await definitions.FetchAsync(release, kind, ct).ConfigureAwait(false);
+            return TypedResults.File(
+                Encoding.UTF8.GetBytes(TemplateSources.FileText(file.Schema)), "application/json", TemplateSources.FileName(file.Schema.Kind));
+        }
+        catch (FlowValidationException ex)
+        {
+            return Problem(ex.Message, StatusCodes.Status400BadRequest);
+        }
+        catch (DataDefinitionsException ex)
+        {
+            return Unavailable(ex);
+        }
+        catch (DeliveryException ex)
+        {
+            // The release's file is there but is not a record schema a template can be laid out from.
             return Problem(ex.Message, StatusCodes.Status422UnprocessableEntity, "Not a record schema");
         }
     }
@@ -502,54 +593,6 @@ public static class DeliveryTemplateEndpoints
             // A release's file is there but is not a record schema a template can be laid out from.
             return Problem(ex.Message, StatusCodes.Status422UnprocessableEntity, "Not a record schema");
         }
-    }
-
-    private static async Task<Results<Ok<DeliveryTemplateSavedDto>, ProblemHttpResult>> SaveTemplateAsync(
-        DeliveryTemplateSaveRequest request, ITemplateStore templates, OsduDataDefinitions definitions, ClaimsPrincipal user, CancellationToken ct)
-    {
-        if (request is null || string.IsNullOrWhiteSpace(request.Kind) || string.IsNullOrWhiteSpace(request.Origin)
-            || request.Schema.ValueKind == JsonValueKind.Undefined)
-        {
-            return Problem("Saving a template needs the kind, the schema, and where it came from.", StatusCodes.Status400BadRequest);
-        }
-
-        var (imported, problem) = await ImportAsync(request.Schema, request.Kind, request.Release, definitions, ct).ConfigureAwait(false);
-        if (imported is null)
-        {
-            return problem!;
-        }
-
-        var saved = await templates.SaveAsync(imported.Schema, imported.Origin(request.Origin.Trim()), RequestActor.Label(user), ct).ConfigureAwait(false);
-        return TypedResults.Ok(new DeliveryTemplateSavedDto(
-            ToDto(saved.Template), saved.Outcome == TemplateSaveOutcome.Created ? "created" : "unchanged"));
-    }
-
-    private static async Task<Results<NoContent, ProblemHttpResult>> DeleteTemplateAsync(
-        string? kind, string? version, ITemplateStore templates, CancellationToken ct)
-    {
-        if (string.IsNullOrWhiteSpace(kind) || string.IsNullOrWhiteSpace(version))
-        {
-            return Problem("Name the template with kind and version.", StatusCodes.Status400BadRequest);
-        }
-
-        var reference = new TemplateReference(kind.Trim(), version.Trim());
-        if (await templates.LoadAsync(reference, ct).ConfigureAwait(false) is null)
-        {
-            return Problem($"There is no saved template {reference}.", StatusCodes.Status404NotFound, "Not found");
-        }
-
-        // Nothing a repository holds keeps a saved version: its documents read their template folders, not the library.
-        try
-        {
-            await templates.DeleteAsync(reference, ct).ConfigureAwait(false);
-        }
-        catch (DeliveryException ex)
-        {
-            // Deleted by someone else since it was read.
-            return Problem(ex.Message, StatusCodes.Status404NotFound, "Not found");
-        }
-
-        return TypedResults.NoContent();
     }
 
     private static async Task<Ok<IReadOnlyList<DeliveryBuilderRepoDto>>> ListBuilderReposAsync(
@@ -708,19 +751,19 @@ public static class DeliveryTemplateEndpoints
         return TypedResults.Ok<IReadOnlyList<DeliveryBuilderCacheDto>>(result);
     }
 
+    /// <summary>Starts a mapping for a template a synced repository's file holds, read from the file.</summary>
     private static async Task<Results<Ok<MappingDraft>, ProblemHttpResult>> DraftMappingAsync(
-        DeliveryMappingDraftRequest request, ITemplateStore templates, OsduDbContext osdu, CancellationToken ct)
+        DeliveryMappingDraftRequest request, OsduDbContext osdu, IRepositoryFolders folders, CancellationToken ct)
     {
-        if (request is null || string.IsNullOrWhiteSpace(request.Kind) || string.IsNullOrWhiteSpace(request.Version))
+        if (request is null || request.RepoId == Guid.Empty || string.IsNullOrWhiteSpace(request.TemplatePath))
         {
-            return Problem("A draft needs the saved template version it fills.", StatusCodes.Status400BadRequest);
+            return Problem("A draft needs the template it fills: its repository (repoId) and its file's path in it (templatePath).", StatusCodes.Status400BadRequest);
         }
 
-        var reference = new TemplateReference(request.Kind.Trim(), request.Version.Trim());
-        var schema = await templates.LoadAsync(reference, ct).ConfigureAwait(false);
+        var (schema, problem) = await TemplateFileAsync(request.RepoId, request.TemplatePath, osdu, folders, ct).ConfigureAwait(false);
         if (schema is null)
         {
-            return Problem($"There is no saved template {reference}.", StatusCodes.Status404NotFound, "Not found");
+            return problem!;
         }
 
         var types = string.IsNullOrWhiteSpace(request.Scope) ? [] : await CatalogCacheReader.TypesAsync(osdu, request.Scope.Trim(), ct).ConfigureAwait(false);
@@ -728,7 +771,7 @@ public static class DeliveryTemplateEndpoints
     }
 
     private static async Task<Results<Ok<DeliveryMappingComposeResult>, ProblemHttpResult>> ComposeMappingAsync(
-        DeliveryMappingComposeRequest request, ITemplateStore templates, ICacheStore caches, DeliveryDocumentLoader documents, CancellationToken ct)
+        DeliveryMappingComposeRequest request, OsduDbContext osdu, IRepositoryFolders folders, ICacheStore caches, DeliveryDocumentLoader documents, CancellationToken ct)
     {
         if (request?.Draft is null)
         {
@@ -743,10 +786,14 @@ public static class DeliveryTemplateEndpoints
             return TypedResults.Ok(new DeliveryMappingComposeResult(yaml, issues, false));
         }
 
+        // The mapping is checked where it will be: at its path in the repository it is written for, whose template folders on
+        // that path settle its templates as a sync and a run will.
+        var path = string.IsNullOrWhiteSpace(request.Path) ? $"mappings/{draft.Name}@{draft.Version}.yaml" : request.Path.Trim();
+        var (source, pins) = await TemplatesForAsync(request.RepoId, path, osdu, folders, ct).ConfigureAwait(false);
         MappingDefinition mapping;
         try
         {
-            mapping = documents.ParseMapping(yaml, $"mappings/{draft.Name}@{draft.Version}.yaml");
+            mapping = documents.ParseMapping(yaml, path, pins);
         }
         catch (FlowValidationException ex)
         {
@@ -754,10 +801,10 @@ public static class DeliveryTemplateEndpoints
             return TypedResults.Ok(new DeliveryMappingComposeResult(yaml, issues, false));
         }
 
-        var schema = await templates.LoadAsync(mapping.Template, ct).ConfigureAwait(false);
-        if (schema is null)
+        var resolved = await source.ResolveAsync(mapping.TemplateDocument ?? path, mapping.Template.Kind, mapping.Template.Version, ct).ConfigureAwait(false);
+        if (resolved.Schema is not { } schema)
         {
-            issues.Add(new MappingDraftIssue(MappingDraftIssue.ErrorSeverity, $"The mapping pins template {mapping.Template}, which is not saved. Save it on the Templates page first."));
+            issues.Add(new MappingDraftIssue(MappingDraftIssue.ErrorSeverity, $"The mapping's template {mapping.Template} cannot be read: {resolved.Problem}"));
             return TypedResults.Ok(new DeliveryMappingComposeResult(yaml, issues, false));
         }
 
@@ -807,7 +854,7 @@ public static class DeliveryTemplateEndpoints
         try
         {
             // A search is checked against the schema it pins, as a delivery resolving the mapping would check it.
-            var searches = await RenderResolver.SearchesAsync(templates, mapping, ct).ConfigureAwait(false);
+            var searches = await RenderResolver.SearchesAsync(source, mapping, ct).ConfigureAwait(false);
             foreach (var issue in Preflight.Check(mapping, schema, references, context, sourceColumns: null, searches))
             {
                 issues.Add(new MappingDraftIssue(
@@ -823,7 +870,7 @@ public static class DeliveryTemplateEndpoints
     }
 
     private static async Task<Ok<DeliveryMappingParseResult>> ParseMappingAsync(
-        DeliveryMappingParseRequest request, DeliveryDocumentLoader documents, ITemplateStore templates, OsduDbContext osdu, CancellationToken ct)
+        DeliveryMappingParseRequest request, DeliveryDocumentLoader documents, OsduDbContext osdu, IRepositoryFolders folders, CancellationToken ct)
     {
         if (request is null || string.IsNullOrWhiteSpace(request.Yaml))
         {
@@ -833,7 +880,7 @@ public static class DeliveryTemplateEndpoints
         try
         {
             var path = PathOf(request.Path);
-            var (_, pins) = await TemplatesForAsync(request.RepoId, path, templates, osdu, ct).ConfigureAwait(false);
+            var (_, pins) = await TemplatesForAsync(request.RepoId, path, osdu, folders, ct).ConfigureAwait(false);
             var mapping = documents.ParseMapping(request.Yaml, path, pins);
             return TypedResults.Ok(new DeliveryMappingParseResult(MappingBuilder.FromDefinition(mapping), []));
         }
@@ -846,11 +893,11 @@ public static class DeliveryTemplateEndpoints
     /// <summary>
     /// The shape of the records a mapping document renders, drawn against its template without a row or a cache
     /// (<see cref="MappingRenderer.Shape"/>): the template its repository's folders settle it to for a document of a synced
-    /// repository, else the saved one it names. A document that does not load, or whose template cannot be read, answers
+    /// repository, else the version it names as a synced repository holds it, read from the file. A document that does not load, or whose template cannot be read, answers
     /// with the issue and no record; it is not an HTTP error, because the document is what the caller is looking at.
     /// </summary>
     private static async Task<Ok<DeliveryMappingShapeResult>> ShapeMappingAsync(
-        DeliveryMappingShapeRequest request, ITemplateStore templates, OsduDbContext osdu, DeliveryDocumentLoader documents, CancellationToken ct)
+        DeliveryMappingShapeRequest request, OsduDbContext osdu, IRepositoryFolders folders, DeliveryDocumentLoader documents, CancellationToken ct)
     {
         if (request is null || string.IsNullOrWhiteSpace(request.Yaml))
         {
@@ -859,7 +906,7 @@ public static class DeliveryTemplateEndpoints
 
         MappingDefinition mapping;
         var path = PathOf(request.Path);
-        var (source, pins) = await TemplatesForAsync(request.RepoId, path, templates, osdu, ct).ConfigureAwait(false);
+        var (source, pins) = await TemplatesForAsync(request.RepoId, path, osdu, folders, ct).ConfigureAwait(false);
         try
         {
             mapping = documents.ParseMapping(request.Yaml, path, pins);
@@ -902,12 +949,12 @@ public static class DeliveryTemplateEndpoints
     /// <summary>
     /// What a mapping document fills of its template, variable by variable, and what it leaves required and empty
     /// (<see cref="MappingCoverage.Of"/>): the template its repository's folders settle it to for a document of a synced
-    /// repository, else the saved one it names. Nothing is rendered and no cache is read, so the answer is the document
+    /// repository, else the version it names as a synced repository holds it, read from the file. Nothing is rendered and no cache is read, so the answer is the document
     /// against the schema alone. A document that does not load, or whose template cannot be read, answers with the issue and
     /// no variables; it is not an HTTP error, because the document is what the caller is looking at.
     /// </summary>
     private static async Task<Ok<DeliveryMappingCoverageResult>> CoverMappingAsync(
-        DeliveryMappingCoverageRequest request, ITemplateStore templates, OsduDbContext osdu, DeliveryDocumentLoader documents, CancellationToken ct)
+        DeliveryMappingCoverageRequest request, OsduDbContext osdu, IRepositoryFolders folders, DeliveryDocumentLoader documents, CancellationToken ct)
     {
         if (request is null || string.IsNullOrWhiteSpace(request.Yaml))
         {
@@ -916,7 +963,7 @@ public static class DeliveryTemplateEndpoints
 
         MappingDefinition mapping;
         var path = PathOf(request.Path);
-        var (source, pins) = await TemplatesForAsync(request.RepoId, path, templates, osdu, ct).ConfigureAwait(false);
+        var (source, pins) = await TemplatesForAsync(request.RepoId, path, osdu, folders, ct).ConfigureAwait(false);
         try
         {
             mapping = documents.ParseMapping(request.Yaml, path, pins);
@@ -946,18 +993,19 @@ public static class DeliveryTemplateEndpoints
     /// <summary>
     /// Where a mapping document a page sends reads its templates: for a document of synced repository
     /// <paramref name="repoId"/>, the template folders its last sync recorded on the document's path, which also settle a
-    /// template named by kind alone (the pins); otherwise the saved templates, with no pins, so the document names its versions.
+    /// template named by kind alone (the pins); otherwise the templates every synced repository holds, with no pins, so the
+    /// document names its versions. Either way a template is read from its file.
     /// </summary>
     private static async Task<(ITemplateSource Source, ITemplatePins? Pins)> TemplatesForAsync(
-        Guid? repoId, string path, ITemplateStore templates, OsduDbContext osdu, CancellationToken ct)
+        Guid? repoId, string path, OsduDbContext osdu, IRepositoryFolders folders, CancellationToken ct)
     {
         if (repoId is not { } repo)
         {
-            return (templates, null);
+            return (await RepositoryTemplates.ReadAsync(osdu, folders, ct).ConfigureAwait(false), null);
         }
 
-        var folders = await SyncedTemplates.ReadAsync(osdu, repo, ct).ConfigureAwait(false);
-        return (folders, folders.For(path));
+        var synced = await SyncedTemplates.ReadAsync(osdu, folders, repo, ct).ConfigureAwait(false);
+        return (synced, synced.For(path));
     }
 
     private static Ok<DeliveryMappingCoverageResult> CoverageIssue(string? kind, string? version, string message)
@@ -968,16 +1016,13 @@ public static class DeliveryTemplateEndpoints
 
     private static bool IsError(MappingDraftIssue issue) => issue.Severity == MappingDraftIssue.ErrorSeverity;
 
-    private static DeliveryTemplateDto ToDto(TemplateInfo info)
-        => new(info.Kind, info.Version, info.CapturedUtc, info.CapturedBy, info.Origin);
-
-    private static DeliveryTemplateDetailDto Detail(OsduTemplate template, DeliveryTemplateDto? saved, IReadOnlyList<CachedTypeInfo> cache)
+    private static DeliveryTemplateDetailDto Detail(OsduTemplate template, DeliveryTemplateFileDto? file, IReadOnlyList<CachedTypeInfo> cache)
         => new(
             template.Kind,
             template.Version,
             template.Title,
             template.Description,
-            saved,
+            file,
             template.Variables.Select(v => new DeliveryTemplateVariableDto(
                 v.Path.Text, v.Shape.ToString(), v.Type, v.ItemType, v.Format, v.Required, v.Role.ToString(), v.Relationships, v.Pattern, v.UnitContext,
                 v.Title, v.Description, v.KeyValueType, v.Nested, MappingBuilder.CacheTypesFor(v, cache).Select(c => c.Name).ToList(), v.Open)).ToList());
@@ -999,7 +1044,7 @@ public static class DeliveryTemplateEndpoints
     private sealed record ComparedSide(DataDefinitionsPublishedFile File, DataDefinitionsSchemaFile Bundled);
 
     /// <summary>
-    /// The schema a preview or a save was sent, as a template: taken as it is when it arrived bundled, or bundled with the
+    /// The schema a preview was sent, as a template: taken as it is when it arrived bundled, or bundled with the
     /// shared schemas of the OSDU data definitions it refers to, read from <paramref name="release"/>. A schema that is not a
     /// record schema, or refers to a file or release the data definitions do not hold, is a 400; data definitions that could
     /// not be read are a 502.

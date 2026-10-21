@@ -34,7 +34,7 @@ export const VIEW_STANDING_VISUALS: Record<ViewStanding, StandingVisual> = {
   },
 };
 
-/** What the saved templates say of a join, as a glyph in its tone and a word. */
+/** What the flow's templates say of a join, as a glyph in its tone and a word. */
 export const VERDICT_VISUALS: Record<DimensionViewJoinVerdictKind, { icon: LucideIcon; label: string; tone: string }> = {
   agrees: { icon: CircleCheck, label: "agrees", tone: "text-success" },
   differs: { icon: CircleX, label: "differs", tone: "text-destructive" },

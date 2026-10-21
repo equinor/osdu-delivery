@@ -22,8 +22,8 @@ namespace SqlFlow.Delivery.Catalog;
 /// the tree) with the template the folders on its path settle it to, what every cache flow (<c>flowType: cache</c>)
 /// declares it caches, and the interfaces of every delivery flow (<c>flowType: delivery</c>) become rows of the
 /// <c>osdu</c> schema, so the GUI lists what a flow renders with, what each cache holds and which pipeline keeps a
-/// ledger, without opening the repository. Every template a folder holds is saved in the library too, which the pages,
-/// the explorer and the mapping builder read (osdu/docs/reference/concepts/templates.md, Template folders). Rows are keyed by repository and reference; a document that disappears from the tree loses its row. The
+/// ledger, without opening the repository. A template folder's file is indexed, never copied: whoever reads a template
+/// reads its file (osdu/docs/reference/concepts/templates.md, Template folders). Rows are keyed by repository and reference; a document that disappears from the tree loses its row. The
 /// sync only reads the repository: the versions of a cache are written by the runs of its cache flow, never by the sync.
 /// <para>
 /// Where those rows are written depends on where the module database is. In the default estate it is the catalog's own
@@ -53,7 +53,7 @@ public sealed class DeliveryCatalogSync : ICatalogSyncExtension
 
     private static readonly JsonSerializerOptions SummaryJson = new(JsonSerializerDefaults.Web);
 
-    /// <summary>The widths of <c>osdu.Template</c>'s kind and version, which a mapping row's pin mirrors.</summary>
+    /// <summary>The widths of <c>osdu.RepositoryTemplate</c>'s kind and version, which a mapping row's pin mirrors.</summary>
     private const int MaxTemplateKindLength = 200;
 
     private const int MaxTemplateVersionLength = 64;
@@ -116,7 +116,7 @@ public sealed class DeliveryCatalogSync : ICatalogSyncExtension
 
         await using var work = await OpenAsync(context, write: true, ct).ConfigureAwait(false);
         var result = await ReconcileAsync(work.Context, repoId, root, nowUtc, warnings, ct).ConfigureAwait(false);
-        await CheckOrderAsync(context, work.Context, repoId, warnings, ct).ConfigureAwait(false);
+        await CheckOrderAsync(context, work.Context, repoId, root, warnings, ct).ConfigureAwait(false);
         await work.CommitAsync(ct).ConfigureAwait(false);
         return result;
     }
@@ -128,15 +128,16 @@ public sealed class DeliveryCatalogSync : ICatalogSyncExtension
     /// the order, so a breach is rare: a cycle lineage could only put in its fallback wave, or a flow it gave no wave. The
     /// waves are the ones lineage stamped in this sync's transaction, read from the catalog context's tracked pipelines,
     /// and the deliveries are the repository's own rows, which the sync already holds. A breach is a warning: the sync
-    /// still lands.
+    /// still lands. The templates the deliveries' mappings fill are read from the files the sync is reading, in
+    /// <paramref name="root"/>.
     /// </summary>
     private static async Task CheckOrderAsync(
-        CatalogDbContext catalog, OsduDbContext context, Guid repoId, ICollection<string> warnings, CancellationToken ct)
+        CatalogDbContext catalog, OsduDbContext context, Guid repoId, string root, ICollection<string> warnings, CancellationToken ct)
     {
         var waves = catalog.Pipelines.Local
             .Where(p => p.RepoId == repoId && p.Active && p.Wave >= 0)
             .ToDictionary(p => p.Name, p => p.Wave, StringComparer.OrdinalIgnoreCase);
-        var read = await Ordering.OrderCatalog.ReadAsync(context, repoId, ct).ConfigureAwait(false);
+        var read = await Ordering.OrderCatalog.ReadAsync(context, RepositoryFolders.Of(repoId, root), repoId, ct).ConfigureAwait(false);
         var report = Ordering.RepositoryOrder.Check(repoId, Ordering.RepositoryOrder.Plan(read, new Dictionary<Guid, string>()), waves, read.Problems);
         foreach (var warning in report.Warnings())
         {
@@ -387,7 +388,7 @@ public sealed class DeliveryCatalogSync : ICatalogSyncExtension
         // The search terms are read from the delivery flows parsed above and the rows the passes above wrote: the mappings
         // and the cached types. They are derived from the documents counted above, so the sync's counts stay the documents';
         // their warnings are reported.
-        await DeliverySearchTermCatalog.ReconcileAsync(context, repoId, sources, _documents, nowUtc, warnings, ct).ConfigureAwait(false);
+        await DeliverySearchTermCatalog.ReconcileAsync(context, RepositoryFolders.Of(repoId, root), repoId, sources, _documents, nowUtc, warnings, ct).ConfigureAwait(false);
         return mappings.Add(caches).Add(interfaces);
     }
 
@@ -840,7 +841,7 @@ public sealed class DeliveryCatalogSync : ICatalogSyncExtension
 
     /// <summary>
     /// The template an invalid mapping document names. A kind or version longer than the catalog holds for a template
-    /// can pin no saved template, so it counts as naming none rather than failing the row.
+    /// can name no template a folder holds, so it counts as naming none rather than failing the row.
     /// </summary>
     private TemplateReference? NamedTemplate(string yaml)
         => _documents.TemplateNamedBy(yaml) is { } named && named.Kind.Length <= MaxTemplateKindLength && named.Version.Length <= MaxTemplateVersionLength
@@ -858,9 +859,8 @@ public sealed class DeliveryCatalogSync : ICatalogSyncExtension
 
     /// <summary>
     /// The repository's template folders, as this sync finds them on disk (<see cref="TemplateFolders.Scan"/>): each file a
-    /// row of <c>[osdu].[RepositoryTemplate]</c>, with the template it holds and a copy of its schema, which the control
-    /// plane's pages read it from, or why it holds none. The library of saved templates is left as it is: it holds only
-    /// what people save there. A file that holds no template, a folder named almost like a template folder, the same
+    /// row of <c>[osdu].[RepositoryTemplate]</c>, which says the template it holds or why it holds none, and holds none of
+    /// it: whoever reads the template reads the file. A file that holds no template, a folder named almost like a template folder, the same
     /// template twice in one folder and two versions of a kind in one folder are reported as warnings; the sync goes on.
     /// Returns the folders, which settle the repository's mappings.
     /// </summary>
@@ -913,32 +913,11 @@ public sealed class DeliveryCatalogSync : ICatalogSyncExtension
                 context.DeliveryRepositoryTemplates.Add(row);
             }
 
-            // The copy of a template is written when the file holds another version than the row last did, or the row has
-            // none yet (a row recorded before copies were kept); a file that changed since the scan holds no template now.
-            var problem = file.Problem;
-            var schemaJson = problem is null
-                && string.Equals(row.Kind, file.Kind, StringComparison.Ordinal)
-                && string.Equals(row.Version, file.Version, StringComparison.Ordinal)
-                    ? row.SchemaJson
-                    : null;
-            if (problem is null && schemaJson is null)
-            {
-                try
-                {
-                    schemaJson = Json.DocumentJson.Compact(TemplateFolders.Load(file.Source).Root);
-                }
-                catch (DeliveryException ex)
-                {
-                    problem = Bounded(ex.Message, DeliveryRepositoryTemplate.MaxProblemLength);
-                    warnings.Add($"{file.Path}: {problem}");
-                }
-            }
-
+            // The row says which template the file holds, as the scan read it; whoever reads the template reads the file.
             row.Folder = file.Folder;
-            row.Kind = problem is null ? file.Kind : string.Empty;
-            row.Version = problem is null ? file.Version : string.Empty;
-            row.Problem = problem;
-            row.SchemaJson = problem is null ? schemaJson : null;
+            row.Kind = file.Problem is null ? file.Kind : string.Empty;
+            row.Version = file.Problem is null ? file.Version : string.Empty;
+            row.Problem = file.Problem;
             row.LastSeenUtc = nowUtc;
         }
 
@@ -955,7 +934,7 @@ public sealed class DeliveryCatalogSync : ICatalogSyncExtension
     }
 
     /// <summary>A file of a template folder as the sync records it.</summary>
-    private sealed record RecordedFile(string Path, string Folder, string Kind, string Version, string? Problem, TemplateFolderFile Source);
+    private sealed record RecordedFile(string Path, string Folder, string Kind, string Version, string? Problem);
 
     /// <summary>
     /// The files of <paramref name="scan"/> as rows record them, in path order: a path longer than a row holds is left out,
@@ -982,7 +961,7 @@ public sealed class DeliveryCatalogSync : ICatalogSyncExtension
 
                 files.Add(new RecordedFile(
                     file.Shown, folder.Shown, file.Kind ?? string.Empty, file.Version ?? string.Empty,
-                    file.Problem is null ? null : Bounded(file.Problem, DeliveryRepositoryTemplate.MaxProblemLength), file));
+                    file.Problem is null ? null : Bounded(file.Problem, DeliveryRepositoryTemplate.MaxProblemLength)));
             }
         }
 

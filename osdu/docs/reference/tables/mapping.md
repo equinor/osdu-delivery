@@ -14,7 +14,6 @@ related:
   - delivery-concept-database
   - delivery-flow-mapping
   - delivery-concept-templates
-  - delivery-table-template
   - delivery-table-repository-template
   - delivery-table-interface
 sourceRefs:
@@ -59,7 +58,6 @@ id, with no foreign key into SQLFlow's catalog.
 | `PK_Mapping` | `Id` | primary key | none | none | A mapping by its id. |
 | `IX_Mapping_RepoId_Reference` | `RepoId`, `Reference` | unique | none | none | A repository's mapping by its reference, once. |
 | `IX_Mapping_RepoId_Kind` | `RepoId`, `Kind` | index | none | none | A repository's mappings of one kind. |
-| `IX_Mapping_Kind_TemplateVersion` | `Kind`, `TemplateVersion` | index | none | none | The mappings filling a template version: what the Templates page counts and a template delete asks. |
 
 ## Written and read by
 

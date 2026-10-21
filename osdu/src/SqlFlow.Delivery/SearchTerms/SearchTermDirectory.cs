@@ -162,18 +162,25 @@ public sealed class SearchTermDirectory
     private readonly OsduDbContext _db;
     private readonly DeliveryDocumentLoader _documents;
     private readonly TimeProvider _time;
+    private readonly Catalog.IRepositoryFolders _repositories;
     private readonly Dictionary<(Guid Repo, string Reference), (MappingDefinition? Mapping, string? Problem)> _mappings = [];
     private readonly Dictionary<(Guid Repo, string? Document, TemplateReference Reference), TemplateResolution> _schemas = [];
     private readonly Dictionary<Guid, Catalog.SyncedTemplates> _folders = [];
 
-    public SearchTermDirectory(OsduDbContext db, DeliveryDocumentLoader documents, TimeProvider time)
+    /// <param name="db">The module database the terms and the synced mappings are read from.</param>
+    /// <param name="documents">Reads a synced mapping.</param>
+    /// <param name="time">The clock a refinement is stamped by.</param>
+    /// <param name="repositories">Where a synced repository's files are, which a template is read from.</param>
+    public SearchTermDirectory(OsduDbContext db, DeliveryDocumentLoader documents, TimeProvider time, Catalog.IRepositoryFolders repositories)
     {
         ArgumentNullException.ThrowIfNull(db);
         ArgumentNullException.ThrowIfNull(documents);
         ArgumentNullException.ThrowIfNull(time);
+        ArgumentNullException.ThrowIfNull(repositories);
         _db = db;
         _documents = documents;
         _time = time;
+        _repositories = repositories;
     }
 
     /// <summary>The entity types terms are extracted for, each with how many terms it has, by name.</summary>
@@ -818,7 +825,7 @@ public sealed class SearchTermDirectory
     {
         if (!_folders.TryGetValue(repo, out var folders))
         {
-            folders = await Catalog.SyncedTemplates.ReadAsync(_db, repo, ct).ConfigureAwait(false);
+            folders = await Catalog.SyncedTemplates.ReadAsync(_db, _repositories, repo, ct).ConfigureAwait(false);
             _folders[repo] = folders;
         }
 

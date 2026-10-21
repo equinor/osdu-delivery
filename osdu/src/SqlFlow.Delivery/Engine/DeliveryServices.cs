@@ -29,14 +29,14 @@ namespace SqlFlow.Delivery.Engine;
 /// <see cref="AddDeliveryKind"/> after the platform's <c>AddSqlFlowEngine</c>, so the kinds, their executors and their
 /// compute operations are wired the same way everywhere; a host that has the module's database connection also calls
 /// <see cref="AddDeliveryLedger(IServiceCollection, Func{IServiceProvider, Func{OsduDbContext}?})"/>, which is what
-/// turns plan-only into deliver and gives the ledger, the templates and the caches.
+/// turns plan-only into deliver and gives the ledger and the caches.
 /// </summary>
 public static class DeliveryServices
 {
     /// <summary>What a host is told when an operation needs the module's database and it has none.</summary>
     public const string NoLedgerMessage =
-        "This host has no osdu database connection (Osdu:Database:Connection or SQLFLOW_OSDU_DB); the delivery ledger, templates and caches are unavailable. "
-        + "Without them only validation and planning against the flow document are available, since a render reads its template, and any cache it reads, from that database.";
+        "This host has no osdu database connection (Osdu:Database:Connection or SQLFLOW_OSDU_DB); the delivery ledger and caches are unavailable. "
+        + "Without them only validation and planning against the flow document are available, since a render reads any cache it reads from that database.";
 
     public static IServiceCollection AddDeliveryKind(this IServiceCollection services)
     {
@@ -82,6 +82,10 @@ public static class DeliveryServices
             sp.GetRequiredService<DeliveryDocumentLoader>(),
             sp.GetService<IDbContextFactory<OsduDbContext>>(),
             sp.GetService<ISecretResolver>()));
+        // Where a synced repository's files are on this host, which a template read outside a run of its own repository is
+        // read from: the catalog this host names says where each repository's last sync put them. The control plane
+        // registers its own catalog's before this.
+        services.TryAddSingleton<IRepositoryFolders>(sp => CatalogRepositoryFolders.FromEnvironment(sp.GetRequiredService<ISecretResolver>()));
 
         // Protocols and the completion callback. The logging listener is always on; hosts add their own (a live
         // feed, metrics, a webhook) by registering more IDeliveryListener instances.
@@ -108,7 +112,6 @@ public static class DeliveryServices
             new CompositeDeliveryListener(sp.GetServices<IDeliveryListener>()),
             // The fan-out belongs to one run: the executor attaches the one the platform handed that run.
             FanOut: null,
-            sp.GetService<DeliveryLedgerSource>()?.Templates(sp),
             sp.GetService<DeliveryLedgerSource>()?.Cache(sp),
             sp.GetRequiredService<IRecordSearchFactory>(),
             Partitions: sp.GetService<DeliveryLedgerSource>()?.Partitions(sp),
@@ -116,7 +119,10 @@ public static class DeliveryServices
             // The OSDU data definitions' example records, which a check's guidance quotes; a host that keeps no copy of
             // the data definitions (a node) registers none, and guidance there quotes the schema alone.
             Examples: sp.GetService<IOfficialExamples>(),
-            SchemaIndexes: sp.GetRequiredService<PartitionSchemaIndexes>()));
+            SchemaIndexes: sp.GetRequiredService<PartitionSchemaIndexes>())
+        {
+            RepositoryFolders = sp.GetRequiredService<IRepositoryFolders>(),
+        });
 
         // Execution: the run executors behind the platform's document executor, the compute operations a node runs for the
         // control plane (a value check and a removal), and the operations the control plane runs itself.
@@ -145,7 +151,7 @@ public static class DeliveryServices
     }
 
     /// <summary>
-    /// Wires the ledger, the templates and the caches over the module's own database (schema <c>osdu</c>).
+    /// Wires the ledger and the caches over the module's own database (schema <c>osdu</c>).
     /// <paramref name="contexts"/> decides, once the host is built, whether that database is configured and, when it is,
     /// opens a fresh context per operation; the ledger disposes what it opens.
     /// </summary>
@@ -155,8 +161,6 @@ public static class DeliveryServices
         ArgumentNullException.ThrowIfNull(contexts);
         services.AddSingleton(new DeliveryLedgerSource(contexts));
         services.AddSingleton<ILedger>(sp => sp.GetRequiredService<DeliveryLedgerSource>().Open(sp)
-            ?? throw new DeliveryException(NoLedgerMessage));
-        services.AddSingleton<ITemplateStore>(sp => sp.GetRequiredService<DeliveryLedgerSource>().Templates(sp)
             ?? throw new DeliveryException(NoLedgerMessage));
         services.AddSingleton<ICacheStore>(sp => sp.GetRequiredService<DeliveryLedgerSource>().Cache(sp)
             ?? throw new DeliveryException(NoLedgerMessage));
@@ -214,7 +218,6 @@ public sealed class DeliveryLedgerSource
     private bool _resolved;
     private Func<OsduDbContext>? _factory;
     private ILedger? _ledger;
-    private ITemplateStore? _templates;
     private OsduCacheStore? _cache;
     private DeliveryPartitionRegistry? _partitions;
     private Ordering.SchemaLineageStore? _lineage;
@@ -232,14 +235,6 @@ public sealed class DeliveryLedgerSource
         ArgumentNullException.ThrowIfNull(provider);
         Resolve(provider);
         return _ledger;
-    }
-
-    /// <summary>The template store, or null when the host has no osdu database connection.</summary>
-    public ITemplateStore? Templates(IServiceProvider provider)
-    {
-        ArgumentNullException.ThrowIfNull(provider);
-        Resolve(provider);
-        return _templates;
     }
 
     /// <summary>The cache store, or null when the host has no osdu database connection.</summary>
@@ -290,7 +285,6 @@ public sealed class DeliveryLedgerSource
             {
                 _factory = _contexts(provider);
                 _ledger = _factory is null ? null : new OsduLedger(_factory, provider.GetRequiredService<TimeProvider>());
-                _templates = _factory is null ? null : new OsduTemplateStore(_factory, provider.GetRequiredService<TimeProvider>());
                 _cache = _factory is null ? null : new OsduCacheStore(_factory);
                 _partitions = _factory is null ? null : new DeliveryPartitionRegistry(_factory);
                 _lineage = _factory is null ? null : new Ordering.SchemaLineageStore(_factory);

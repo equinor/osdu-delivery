@@ -45,7 +45,7 @@ public static partial class DeliveryDimensionEndpoints
     /// </summary>
     private static async Task<Results<Ok<DeliveryDimensionBlueprintDto>, ProblemHttpResult>> GetBlueprintAsync(
         Guid pipelineId, string name, string? partition, HttpRequest request, CatalogDbContext db, DeliveryDocumentLoader documents, ILedger ledger,
-        IPartitionRegistry registry, CancellationToken ct)
+        IPartitionRegistry registry, IRepositoryFolders repositories, CancellationToken ct)
     {
         if (string.IsNullOrWhiteSpace(name) || name.Length > DeliveryDimension.MaxNameLength)
         {
@@ -94,7 +94,7 @@ public static partial class DeliveryDimensionEndpoints
             kinds = runs.Count == 0 ? [] : DimensionRunner.KindsOf(runs[0].Read.Templates);
         }
 
-        var folders = await SyncedTemplates.ReadAsync(ledger, pipeline.RepoId, ct).ConfigureAwait(false);
+        var folders = await SyncedTemplates.ReadAsync(ledger, repositories, pipeline.RepoId, ct).ConfigureAwait(false);
         var blueprint = await DimensionBlueprints.DescribeAsync(described, folders, pipeline.RelativePath, kinds, ct).ConfigureAwait(false);
         var coverage = state is null ? [] : await ledger.DimensionAttributeCoverageAsync(state.DimensionId, ct).ConfigureAwait(false);
 

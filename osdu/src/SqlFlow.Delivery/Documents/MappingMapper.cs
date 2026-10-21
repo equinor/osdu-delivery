@@ -53,7 +53,7 @@ internal static partial class MappingMapper
         if (templateVersion is not null && !TemplateVersionPattern().IsMatch(templateVersion))
         {
             throw new FlowValidationException(
-                $"{source}: template.version '{templateVersion}' is not a template version. A version is the 16 hexadecimal characters the Templates page shows for a saved template, such as 26a3c3441882db4f; leave it out to fill the one version of the kind the nearest template folder holds.");
+                $"{source}: template.version '{templateVersion}' is not a template version. A version is the 16 hexadecimal characters the Templates page shows for a template file, such as 26a3c3441882db4f; leave it out to fill the one version of the kind the nearest template folder holds.");
         }
 
         var pinned = Pinned(kind, templateVersion, $"{source}: template", pins);
@@ -390,7 +390,7 @@ internal static partial class MappingMapper
         if (!FlowMapper.IsRecordKind(schemaKind))
         {
             throw new FlowValidationException(
-                $"{where}: schema.kind '{schemaKind}' must be 'authority:source:entityType:major.minor.patch', the kind of a saved template.");
+                $"{where}: schema.kind '{schemaKind}' must be 'authority:source:entityType:major.minor.patch', the kind of a template.");
         }
 
         var schemaSegments = schemaKind.Split(':');
@@ -410,7 +410,7 @@ internal static partial class MappingMapper
         if (schemaVersion is not null && !TemplateVersionPattern().IsMatch(schemaVersion))
         {
             throw new FlowValidationException(
-                $"{where}: schema.version '{schemaVersion}' is not a template version. A version is the 16 hexadecimal characters the Templates page shows for a saved template, such as 58d6bdbd9d066a06; leave it out to read the one version of the kind the nearest template folder holds.");
+                $"{where}: schema.version '{schemaVersion}' is not a template version. A version is the 16 hexadecimal characters the Templates page shows for a template file, such as 58d6bdbd9d066a06; leave it out to read the one version of the kind the nearest template folder holds.");
         }
 
         var description = y.Description?.Trim();

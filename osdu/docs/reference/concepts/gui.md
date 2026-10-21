@@ -384,30 +384,33 @@ builder**, and three tabs:
 ### Mapping builder
 
 Opened from Mappings (`/delivery/mappings/build`, or `?mappingId=` for a synced mapping). **Setup** picks the
-**Repository**, the **Partition cache** the mapping is checked against, the saved **Template**, and the mapping's
+**Repository**, the **Partition cache** the mapping is checked against, the **Template** (a file of the repository's
+template folders, by its kind and path), and the mapping's
 **Name**, **Mapping version**, **Source system** and **Description**, then **Start mapping**. **Dataset** sets the **Key
 columns**, how the **OSDU id** is made (from the delivery key, or the key's values) and the **Label**. Every template
 variable is listed, each filled as a **Dataset column**, **Repeat child rows**, **Cache**, **Lookup**, **Platform
 search**, **Expression**, **Static value**, **First value of**, **List of values** or **Object**, or left **Not
 filled**; the YAML and its check against the template and the cache's current version follow every edit. **Copy YAML**
-takes it; **Propose to repository** opens a pull request through SQLFlow's proposal endpoint (**Open pull request**),
-and says whether a template folder on the mapping's path already holds its template version; when none does, the pull
-request also writes the saved version as a file in the nearest folder the mapping reads
-([template folders](templates.md#template-folders)). **Start over** discards the draft. A mapping that cannot be opened
-says why.
+takes it; **Propose to repository** opens a pull request through SQLFlow's proposal endpoint (**Open pull request**)
+that writes the mapping into the `mappings` folder beside the template folder holding its template, so that folder is
+on its path ([template folders](templates.md#template-folders)). A repository that holds no template yet says how to
+get one. **Start over** discards the draft. A mapping that cannot be opened says why.
 
 ### Templates
 
-OSDU record schemas saved as templates, the library, for the explorer, the mapping builder and the assistant. It is not
-linked to the repositories, whose documents read their templates from their template folders. Three tabs:
+The OSDU record schemas the synced repositories hold in their template folders, each read from its file; the database
+keeps none of them. A repository adds and removes its templates by committing and deleting their files, and its sync
+records them. Two tabs:
 
-- **Saved**: the saved versions, filtered by kind, version, origin or who saved it, each with when, by whom and from
-  where it was saved. A version opens laid out as a template; **Download** saves its bundled schema as a file for a
-  template folder, and **Delete** removes it from the library, which no repository document reads.
+- **Repositories**: every file of every synced repository's template folders, filtered by kind, version, repository or
+  file, each with the kind and version it holds (or why it holds none) and when its repository's sync last saw it. A
+  file opens laid out as a template, with its repository and path; **Download** saves it as a template file under its
+  own name, to keep in another repository's template folder. A link naming a kind and version opens the file holding
+  it, and says so when no repository holds it.
 - **Browse OSDU**: the OSDU data definitions, the Open Group's public repository of OSDU schemas, by **Release**,
-  searched by kind, with **Every version**, **Compare versions**, **Save template**, and **Sync with the repository**,
-  which reads the release list again and downloads the release in view.
-- **Import file**: a schema file or pasted JSON, with **Preview** and **Save template**.
+  searched by kind, with **Every version**, **View**, **Compare versions**, **Download** (on a kind's row and in its
+  sheet: the kind's schema as the file a template folder keeps), and **Sync with the repository**, which reads the
+  release list again and downloads the release in view.
 
 See [templates](templates.md).
 

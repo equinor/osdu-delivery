@@ -18,7 +18,7 @@ public sealed record ResolvedMapping(
     RenderContext Context,
     MappingRenderer Renderer)
 {
-    /// <summary>Where the template was read from: the template folder file on the mapping's path, or the saved template's origin.</summary>
+    /// <summary>Where the template was read from: the template folder file on the mapping's path.</summary>
     public string? TemplateOrigin { get; init; }
 }
 
@@ -112,7 +112,7 @@ public sealed class RenderResolver
         var issues = Preflight.Check(mapping, schema, references, context, sourceColumns: null, searches);
         Preflight.ThrowIfFailed(issues, where);
         var renderer = new MappingRenderer(mapping, schema, references, context, searches, _search);
-        return new ResolvedMapping(mapping, schema, references, context, renderer) { TemplateOrigin = template.Template?.Origin };
+        return new ResolvedMapping(mapping, schema, references, context, renderer) { TemplateOrigin = template.Template?.File };
     }
 
     /// <summary>

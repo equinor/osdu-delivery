@@ -39,7 +39,6 @@ public sealed record EngineContext(
     IProtocolFactory Protocols,
     IDeliveryListener Listener,
     IFanOutDispatcher? FanOut = null,
-    Templates.ITemplateStore? Templates = null,
     ICacheStore? Cache = null,
     IRecordSearchFactory? Searches = null,
     RunTrace? Trace = null,
@@ -60,10 +59,16 @@ public sealed record EngineContext(
 
     /// <summary>
     /// Where a repository document's templates are read (osdu/docs/reference/concepts/templates.md, Template folders): the
-    /// template folders on the document's path, which every host reads. <see cref="Templates"/> is the library of saved
-    /// templates, which only assists (the explorer, the template commands); a run, a check and a lineage scan read here.
+    /// template folders on the document's path, which every host reads. A run, a check and a lineage scan read here.
     /// </summary>
     public global::SqlFlow.Delivery.Templates.ITemplateSource DocumentTemplates { get; init; } = global::SqlFlow.Delivery.Templates.FolderTemplates.Default;
+
+    /// <summary>
+    /// Where a synced repository's files are on this host (<see cref="Catalog.IRepositoryFolders"/>): what reads a template of
+    /// a repository other than the one a run executes from (a mapping an assertion names by its reference, the explorer)
+    /// reads its file there. A host with no catalog knows none.
+    /// </summary>
+    public Catalog.IRepositoryFolders RepositoryFolders { get; init; } = Catalog.RepositoryFolders.None;
 
     /// <summary>Where a flow's search sources are answered, never null: the platform the flow delivers to, unless composed otherwise.</summary>
     public IRecordSearchFactory RecordSearches => Searches ?? PlatformRecordSearchFactory.Instance;
@@ -565,7 +570,7 @@ public sealed class FlowRuntime : IDisposable
     /// <summary>
     /// The gate every document of the flow goes through before it is sent (<see cref="ValidationGate"/>): its policy is the
     /// flow's <c>target.validation</c>; a document is checked against the template of its kind at the version it was rendered
-    /// for, the runtime's own when that is the one, else the saved version; and the records it refers to are looked up in the
+    /// for, the runtime's own when that is the one, else that version from the template folders on the mapping's path; and the records it refers to are looked up in the
     /// ledger, then in OSDU's storage service under <c>target.verifyReferences: storage</c>, else in the cache the runtime
     /// renders with.
     /// </summary>
@@ -593,10 +598,9 @@ public sealed class FlowRuntime : IDisposable
 
     /// <summary>
     /// The schema of <paramref name="kind"/> at <paramref name="version"/>: the runtime's own template when it is that one,
-    /// else that version as the template folders on the mapping's path hold it, else as the saved templates hold it when
-    /// someone saved it there. A version is the hash of its content, so every copy of it is the same schema: a record
-    /// rendered before its template's file changed is still checked against the version it was rendered for, where one is
-    /// held.
+    /// else that version as the template folders on the mapping's path hold it. A version is the hash of its content, so
+    /// every file of it is the same schema: a record rendered before its template's file changed is still checked against
+    /// the version it was rendered for while a folder on the mapping's path holds it, and is unverified once none does.
     /// Without a version, the runtime's own template of that kind. Null when nothing holds it.
     /// </summary>
     private async Task<SchemaSnapshot?> SchemaOfAsync(string kind, string? version, CancellationToken ct)
@@ -614,14 +618,7 @@ public sealed class FlowRuntime : IDisposable
 
         var document = _mapping?.Mapping.TemplateDocument ?? Flow.SourcePath;
         var resolved = await _context.DocumentTemplates.ResolveAsync(document, kind, version, ct).ConfigureAwait(false);
-        if (resolved.Schema is { } held)
-        {
-            return held;
-        }
-
-        return _context.Templates is { } saved
-            ? await saved.LoadAsync(new Templates.TemplateReference(kind, version), ct).ConfigureAwait(false)
-            : null;
+        return resolved.Schema;
     }
 
     /// <summary>

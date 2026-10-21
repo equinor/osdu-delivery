@@ -354,8 +354,6 @@ public sealed class OsduTestDatabase : IDisposable
 
     public OsduLedger Ledger(TimeProvider? time = null) => new(CreateDbContext, time);
 
-    public OsduTemplateStore Templates(TimeProvider? time = null) => new(CreateDbContext, time);
-
     public OsduCacheStore Caches() => new(CreateDbContext);
 
     /// <summary>

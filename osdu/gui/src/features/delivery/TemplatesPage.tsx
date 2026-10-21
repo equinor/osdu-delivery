@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { ClipboardPaste, Cloud, Download, FileJson, Loader2, Trash2, type LucideIcon } from "lucide-react";
+import { Download, Loader2, TriangleAlert } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -10,10 +10,8 @@ import { useLocalStorageState } from "@/hooks/useLocalStorageState";
 import { downloadText } from "@/lib/download";
 import { deliveryApi, type DeliveryTemplate } from "../../api/delivery";
 import { useAuth } from "@/auth/AuthContext";
-import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { DataTable, type Column } from "@/components/DataTable";
 import { FilterBar } from "@/components/FilterBar";
-import { GlyphRef } from "@/components/GlyphRef";
 import { Page } from "@/components/Page";
 import { PageHeader } from "@/components/PageHeader";
 import { RelativeTime } from "@/components/RelativeTime";
@@ -21,275 +19,233 @@ import { SearchInput } from "@/components/SearchInput";
 import { TruncatedText } from "@/components/TruncatedText";
 import { KindText } from "./KindText";
 import { TemplatesBrowseTab } from "./TemplatesBrowseTab";
-import { TemplatesImportTab } from "./TemplatesImportTab";
 import { problemText } from "./problemText";
-import { templateFileName, templateSchemaQuery } from "./templateFormat";
+import { fileName, templateSchemaQuery } from "./templateFormat";
 import { ProblemView, TemplateSheet } from "./TemplateSheet";
 
-type TemplatesTab = "saved" | "browse" | "import";
+type TemplatesTab = "repositories" | "browse";
 
-const TABS: readonly string[] = ["saved", "browse", "import"];
+const TABS: readonly string[] = ["repositories", "browse"];
 
-/**
- * Where a saved version came from, as the import and browse tabs word it, reduced to a glyph and a word so the column
- * stays narrow; the full origin is on hover. Null for an origin worded some other way, which then shows as text.
- */
-function originVisual(origin: string): { icon: LucideIcon; label: string } | null {
-  if (origin.startsWith("file ")) {
-    return { icon: FileJson, label: "File" };
-  }
-
-  if (origin.startsWith("OSDU ")) {
-    return { icon: Cloud, label: "OSDU" };
-  }
-
-  return origin === "pasted schema" ? { icon: ClipboardPaste, label: "Pasted" } : null;
+/** A repository's template file the sheet is open on. */
+interface Opened {
+  repoId: string;
+  path: string;
+  /** The kind the file holds, for the sheet's title before the template is read. */
+  kind: string | null;
 }
 
-function OriginCell({ origin }: { origin: string }) {
-  const visual = originVisual(origin);
-  return visual === null
-    ? <TruncatedText text={origin} maxWidth={180} title="Origin" />
-    : <GlyphRef icon={visual.icon} title="Origin" body={origin} label={visual.label} collapse />;
+/** The kind a file holds, or, for a file that holds none, why, beside a warning glyph. */
+function KindCell({ row }: { row: DeliveryTemplate }) {
+  if (row.kind !== null) {
+    return <KindText kind={row.kind} />;
+  }
+
+  return (
+    <span className="inline-flex min-w-0 items-center gap-1.5 text-muted-foreground" data-testid={`templates-problem-${row.path}`}>
+      <TriangleAlert className="size-3.5 shrink-0 text-warning" aria-hidden />
+      <TruncatedText text={row.problem ?? "Holds no template."} maxWidth={360} title="Holds no template" />
+    </span>
+  );
 }
 
-const savedColumns: Column<DeliveryTemplate>[] = [
-  { id: "kind", header: "Kind", fill: true, floor: 150, render: (row) => <KindText kind={row.kind} /> },
+const columns: Column<DeliveryTemplate>[] = [
+  { id: "kind", header: "Kind", fill: true, floor: 150, render: (row) => <KindCell row={row} /> },
   {
     id: "version",
     header: "Version",
     // In a narrow table eight characters of the content hash tell versions apart; the rest stays in the row's text.
-    render: (row) => (
-      <span className="font-mono text-[12px]">
-        {row.version.slice(0, 8)}
-        <span className="@max-3xl/table:sr-only">{row.version.slice(8)}</span>
-      </span>
-    ),
+    render: (row) => row.version === null
+      ? <span className="text-muted-foreground">-</span>
+      : (
+        <span className="font-mono text-[12px]">
+          {row.version.slice(0, 8)}
+          <span className="@max-3xl/table:sr-only">{row.version.slice(8)}</span>
+        </span>
+      ),
+  },
+  { id: "repository", header: "Repository", render: (row) => <TruncatedText text={row.repository} maxWidth={180} title="Repository" /> },
+  {
+    id: "file",
+    header: "File",
+    render: (row) => <span className="font-mono text-[12px]"><TruncatedText text={row.path} maxWidth={340} title="File" /></span>,
   },
   {
-    id: "saved",
-    header: "Saved",
-    render: (row) => (
-      <span className="inline-flex items-baseline gap-1.5">
-        <RelativeTime value={row.capturedUtc} />
-        {/* Who saved it gives way first in a narrow table; the template's sheet names them as well. */}
-        <span className="inline-flex items-baseline gap-1.5 @max-3xl/table:sr-only">
-          <span className="text-muted-foreground">by</span>
-          <TruncatedText text={row.capturedBy} maxWidth={160} />
-        </span>
-      </span>
-    ),
+    id: "seen",
+    header: "Synced",
+    // When the repository's sync last saw the file gives way first in a narrow table.
+    render: (row) => <span className="@max-3xl/table:sr-only"><RelativeTime value={row.seenUtc} /></span>,
   },
-  { id: "origin", header: "Origin", render: (row) => <OriginCell origin={row.origin} /> },
 ];
 
 /**
- * Templates: the OSDU record schemas saved as templates, the library, for what reads templates where no repository is at
- * hand (the explorer, the mapping builder, the assistant). It is not linked to the repositories, whose documents read
- * their templates from their template folders: it holds what was saved here, from the OSDU data definitions (the Open
- * Group's public repository of OSDU schemas) or, for a schema of one's own, from a bundled schema file, each looked at
- * variable by variable before it is saved. A saved version is its content and never changes, and it downloads as the
- * bundled file a template folder keeps.
+ * Templates (osdu/docs/reference/concepts/templates.md): the OSDU record schemas the synced repositories hold in their
+ * template folders, folders named templates beside the documents that fill them. A repository adds and removes its
+ * templates, and its sync records which file holds which template; each is read from its file, in the folder the
+ * repository was synced into, and nothing of it is kept in the database. Browse OSDU reads the OSDU data definitions (the
+ * Open Group's public repository of OSDU schemas) and downloads a kind as the file a template folder keeps.
  */
 export default function TemplatesPage() {
   const queryClient = useQueryClient();
   const { hasScope } = useAuth();
-  const canAuthor = hasScope("author");
   const canOperate = hasScope("operate");
   const [searchParams, setSearchParams] = useSearchParams();
-  const [storedTab, setTab] = useLocalStorageState<string>("sqlflow.templates.tab", "saved");
-  const tab: TemplatesTab = TABS.includes(storedTab) ? (storedTab as TemplatesTab) : "saved";
+  const [storedTab, setTab] = useLocalStorageState<string>("sqlflow.templates.tab", "repositories");
+  const tab: TemplatesTab = TABS.includes(storedTab) ? (storedTab as TemplatesTab) : "repositories";
   const [search, setSearch] = useState("");
-  const [selected, setSelected] = useState<{ kind: string; version: string } | null>(null);
-  const [deleteOpen, setDeleteOpen] = useState(false);
+  const [opened, setOpened] = useState<Opened | null>(null);
 
-  // A link to one saved version (/delivery/templates?kind=...&version=...) opens it, once per link.
+  const templates = useQuery({ queryKey: ["delivery", "templates", "list"], queryFn: deliveryApi.templates });
+
+  // A link to one file (/delivery/templates?repoId=...&path=...) opens it, once per link. A link naming a kind and version
+  // opens the file holding that version the repository synced last holds, once the list is read.
+  const linkedRepo = searchParams.get("repoId");
+  const linkedPath = searchParams.get("path");
   const linkedKind = searchParams.get("kind");
   const linkedVersion = searchParams.get("version");
-  const link = linkedKind !== null && linkedVersion !== null ? `${linkedKind} ${linkedVersion}` : null;
+  const byVersion = linkedKind !== null && linkedVersion !== null && templates.data !== undefined
+    ? templates.data
+      .filter((row) => row.kind === linkedKind && row.version === linkedVersion)
+      .sort((a, b) => b.seenUtc.localeCompare(a.seenUtc))[0] ?? null
+    : null;
+  const link = linkedRepo !== null && linkedPath !== null
+    ? `${linkedRepo} ${linkedPath}`
+    : byVersion !== null ? `${byVersion.repoId} ${byVersion.path}` : null;
   const [openedLink, setOpenedLink] = useState<string | null>(null);
   if (link !== openedLink) {
     setOpenedLink(link);
-    if (linkedKind !== null && linkedVersion !== null) {
-      setSelected({ kind: linkedKind, version: linkedVersion });
-      setTab("saved");
+    if (linkedRepo !== null && linkedPath !== null) {
+      setOpened({ repoId: linkedRepo, path: linkedPath, kind: null });
+      setTab("repositories");
+    } else if (byVersion !== null) {
+      setOpened({ repoId: byVersion.repoId, path: byVersion.path, kind: byVersion.kind });
+      setTab("repositories");
     }
   }
 
-  const templates = useQuery({ queryKey: ["delivery", "templates", "list"], queryFn: deliveryApi.templates });
+  // A link naming a version no repository's folders hold says so where the list is, rather than opening nothing silently.
+  const unheldLink = linkedRepo === null && linkedKind !== null && linkedVersion !== null && templates.data !== undefined && byVersion === null
+    ? `No synced repository's template folders hold ${linkedKind} version ${linkedVersion}.`
+    : null;
+
   const detail = useQuery({
-    queryKey: ["delivery", "templates", "detail", selected?.kind ?? null, selected?.version ?? null],
-    queryFn: () => deliveryApi.templateDetail(selected!.kind, selected!.version),
-    enabled: selected !== null,
+    queryKey: ["delivery", "templates", "detail", opened?.repoId ?? null, opened?.path ?? null],
+    queryFn: () => deliveryApi.templateDetail(opened!.repoId, opened!.path),
+    enabled: opened !== null,
   });
 
   const closeSheet = () => {
-    setSelected(null);
-    if (searchParams.has("kind") || searchParams.has("version")) {
+    setOpened(null);
+    if (["repoId", "path", "kind", "version"].some((name) => searchParams.has(name))) {
       setSearchParams((current) => {
         const next = new URLSearchParams(current);
-        next.delete("kind");
-        next.delete("version");
+        for (const name of ["repoId", "path", "kind", "version"]) {
+          next.delete(name);
+        }
+
         return next;
       }, { replace: true });
     }
   };
 
-  const remove = useMutation({
-    mutationFn: (template: { kind: string; version: string }) => deliveryApi.deleteTemplate(template.kind, template.version),
-    onSuccess: (_result, template) => {
-      setDeleteOpen(false);
-      closeSheet();
-      toast.success(`Deleted template ${template.kind} version ${template.version}.`);
-      void queryClient.invalidateQueries({ queryKey: ["delivery", "templates"] });
-    },
-    onError: (error) => {
-      // A 409 names the template folder files or the synced mappings that took up the version since the sheet was read;
-      // the sheet keeps the problem in view, and reads the version again so Delete shows what now holds it.
-      setDeleteOpen(false);
-      toast.error(problemText(error));
-      void queryClient.invalidateQueries({ queryKey: ["delivery", "templates"] });
-    },
-  });
-
-  // The saved version as a file: the text the Schema JSON tab shows, read once for both, named as the samples name their
-  // schemas. A repository can keep it beside the mappings that pin it, and importing it saves this same version.
+  // The file as the repository holds it: the text the Schema JSON tab shows, read once for both, under the file's own name.
   const download = useMutation({
-    mutationFn: async (template: { kind: string; version: string }) => {
-      const text = await queryClient.fetchQuery(templateSchemaQuery(template.kind, template.version));
-      downloadText(templateFileName(template.kind), text, "application/json");
+    mutationFn: async (file: Opened) => {
+      const text = await queryClient.fetchQuery(templateSchemaQuery(file.repoId, file.path));
+      downloadText(fileName(file.path), text, "application/json");
     },
-    onSuccess: (_result, template) => toast.success(`Downloaded ${templateFileName(template.kind)}.`),
-    onError: (error) => toast.error(`The schema could not be downloaded: ${problemText(error)}`),
+    onSuccess: (_result, file) => toast.success(`Downloaded ${fileName(file.path)}.`),
+    onError: (error) => toast.error(`The template could not be downloaded: ${problemText(error)}`),
   });
-  const downloadButton = selected === null ? null : (
-    <Tooltip>
-      <TooltipTrigger asChild>
-        <Button
-          variant="outline"
-          size="xs"
-          onClick={() => download.mutate(selected)}
-          disabled={download.isPending}
-          data-testid="templates-download"
-        >
-          {download.isPending ? <Loader2 className="animate-spin" /> : <Download />}
-          Download
-        </Button>
-      </TooltipTrigger>
-      <TooltipContent className="max-w-xs">
-        {`The bundled schema as ${templateFileName(selected.kind)}, for a repository's template folder, where its documents read it. Importing it saves this same version.`}
-      </TooltipContent>
-    </Tooltip>
-  );
-
-  // Nothing a repository holds depends on a saved version, so any can be deleted.
-  const deleteButton = (
-    <Button
-      variant="destructive-outline"
-      size="xs"
-      onClick={() => setDeleteOpen(true)}
-      disabled={remove.isPending}
-      data-testid="templates-delete"
-    >
-      <Trash2 />
-      Delete
-    </Button>
-  );
 
   const term = search.trim().toLowerCase();
   const rows = templates.data === undefined
     ? undefined
-    : templates.data
-      .filter((template) => term === ""
-        || template.kind.toLowerCase().includes(term)
-        || template.version.toLowerCase().includes(term)
-        || template.origin.toLowerCase().includes(term)
-        || template.capturedBy.toLowerCase().includes(term))
-      .sort((a, b) => a.kind.localeCompare(b.kind) || b.capturedUtc.localeCompare(a.capturedUtc));
+    : templates.data.filter((template) => term === ""
+      || (template.kind ?? "").toLowerCase().includes(term)
+      || (template.version ?? "").toLowerCase().includes(term)
+      || template.repository.toLowerCase().includes(term)
+      || template.path.toLowerCase().includes(term));
 
   return (
     <Page data-testid="page-delivery-templates">
       <PageHeader
         title="Templates"
-        subtitle="OSDU record schemas saved as templates, for the explorer, the mapping builder and the assistant; a repository's documents read theirs from its template folders. Every property becomes a variable a mapping can fill, and a saved version never changes."
+        subtitle="The OSDU record schemas the synced repositories hold in their template folders, each read from its file. A repository adds and removes its templates, and its sync records them; Browse OSDU downloads a kind as the file a template folder keeps."
       />
       <Tabs value={tab} onValueChange={setTab}>
         <TabsList data-testid="templates-tabs">
-          <TabsTrigger value="saved" data-testid="templates-tab-saved">Saved</TabsTrigger>
+          <TabsTrigger value="repositories" data-testid="templates-tab-repositories">Repositories</TabsTrigger>
           <TabsTrigger value="browse" data-testid="templates-tab-browse">Browse OSDU</TabsTrigger>
-          <TabsTrigger value="import" data-testid="templates-tab-import">Import file</TabsTrigger>
         </TabsList>
-        {/* The tabs stay mounted so a search, its results and a pasted schema survive switching between them. */}
-        <TabsContent value="saved" forceMount className="flex flex-col gap-3 data-[state=inactive]:hidden">
+        {/* The tabs stay mounted so a search and its results survive switching between them. */}
+        <TabsContent value="repositories" forceMount className="flex flex-col gap-3 data-[state=inactive]:hidden">
           <FilterBar>
             <SearchInput
               value={search}
               onChange={setSearch}
-              placeholder="Kind, version, origin or who saved it"
-              label="Filter the saved templates"
-              testId="templates-saved-search"
+              placeholder="Kind, version, repository or file"
+              label="Filter the repositories' templates"
+              testId="templates-search"
             />
           </FilterBar>
-          {templates.isError && <ProblemView error={templates.error} testId="templates-saved-error" />}
+          {unheldLink !== null && (
+            <p className="flex items-center gap-1.5 text-[13px] text-muted-foreground" data-testid="templates-link-unheld">
+              <TriangleAlert className="size-3.5 shrink-0 text-warning" aria-hidden />
+              {unheldLink}
+            </p>
+          )}
+          {templates.isError && <ProblemView error={templates.error} testId="templates-error" />}
           {!templates.isError && (
             <DataTable
-              columns={savedColumns}
+              columns={columns}
               rows={rows}
-              rowKey={(row) => `${row.kind} ${row.version}`}
+              rowKey={(row) => `${row.repoId} ${row.path}`}
               onRowClick={(row) => {
-                remove.reset();
-                setSelected({ kind: row.kind, version: row.version });
+                download.reset();
+                setOpened({ repoId: row.repoId, path: row.path, kind: row.kind });
               }}
               emptyMessage={templates.data !== undefined && templates.data.length === 0
-                ? "No template is saved yet. Browse OSDU or import a schema file to save one."
-                : "No saved template matches the filter."}
-              data-testid="templates-saved-table"
+                ? "No synced repository holds a template yet. A template is a file in a folder named templates: download one from Browse OSDU, commit it to the repository beside the documents that fill it, and sync the repository."
+                : "No template file matches the filter."}
+              data-testid="templates-table"
             />
           )}
         </TabsContent>
         <TabsContent value="browse" forceMount className="data-[state=inactive]:hidden">
-          <TemplatesBrowseTab canAuthor={canAuthor} canOperate={canOperate} />
-        </TabsContent>
-        <TabsContent value="import" forceMount className="data-[state=inactive]:hidden">
-          <TemplatesImportTab canAuthor={canAuthor} />
+          <TemplatesBrowseTab canOperate={canOperate} />
         </TabsContent>
       </Tabs>
 
       <TemplateSheet
-        open={selected !== null}
+        open={opened !== null}
         onClose={closeSheet}
-        title={selected?.kind ?? "Template"}
+        title={opened?.kind ?? detail.data?.kind ?? (opened !== null ? fileName(opened.path) : "Template")}
         source={null}
         progress={null}
-        problem={detail.isError
-          ? <ProblemView error={detail.error} testId="templates-detail-error" />
-          : remove.isError ? <ProblemView error={remove.error} testId="templates-delete-error" /> : null}
+        problem={detail.isError ? <ProblemView error={detail.error} testId="templates-detail-error" /> : null}
         detail={detail.data}
-        actions={detail.data !== undefined ? (
-          <>
-            {/* Anyone who can read a version can download it; deleting it is an author's action. */}
-            {downloadButton}
-            {canAuthor && deleteButton}
-          </>
+        actions={detail.data !== undefined && opened !== null ? (
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button
+                variant="outline"
+                size="xs"
+                onClick={() => download.mutate(opened)}
+                disabled={download.isPending}
+                data-testid="templates-download"
+              >
+                {download.isPending ? <Loader2 className="animate-spin" /> : <Download />}
+                Download
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent className="max-w-xs">
+              {`The file ${opened.path} of the repository, as ${fileName(opened.path)}: to keep in another repository's template folder.`}
+            </TooltipContent>
+          </Tooltip>
         ) : undefined}
-        busy={remove.isPending}
-        testId="templates-saved-sheet"
-      />
-      <ConfirmDialog
-        open={deleteOpen && selected !== null}
-        title="Delete this template version"
-        message={selected === null
-          ? ""
-          : `Delete ${selected.kind} version ${selected.version}? Repositories read their templates from their template folders, so none of their documents is affected. The builder and the explorer no longer offer it until the same schema is saved again.`}
-        confirmLabel="Delete"
-        danger
-        busy={remove.isPending}
-        onConfirm={() => {
-          if (selected !== null) {
-            remove.mutate(selected);
-          }
-        }}
-        onClose={() => setDeleteOpen(false)}
+        busy={download.isPending}
+        testId="templates-sheet"
       />
     </Page>
   );

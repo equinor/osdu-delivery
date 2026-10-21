@@ -53,3 +53,23 @@ changes in them, since each named the saved template as what a document is read 
 [pattern catalog](maps/pattern-catalog.md), the rows on starting a mapping, on `template.version` and on lineage's
 missing cache reads now name template folders, and two rows were added: two projects of one repository filling different
 versions of one kind, and a kind of one's own. Indexed 0018.
+
+## [2026-10-22] ingest | Templates read from repository files, decision 0018 rewritten
+
+Source: the change that makes templates purely repository based: the catalog side
+(`osdu/src/SqlFlow.Delivery/Catalog/RepositoryTemplates.cs`, `RepositoryFolders.cs`, `SyncedTemplates.cs`), the
+template routes (`osdu/src/SqlFlow.Delivery.ControlPlane/Api/DeliveryTemplateEndpoints.cs`), the Templates page
+(`osdu/gui/src/features/delivery/TemplatesPage.tsx`, `TemplatesBrowseTab.tsx`), the migration that drops the library and
+the copies, and the reference pages it rewrote ([templates](../reference/concepts/templates.md),
+[sqlflow template](../reference/cli/template.md), [osdu.RepositoryTemplate](../reference/tables/repository-template.md)).
+
+Rewrote [0018](decisions/0018-template-folders.md): the repository is the only place a template lives, the sync keeps an
+index of the files and no copy, and every reader (the GUI and the MCP tools included) reads the file from the folder the
+repository was synced into. Recorded the library of saved templates, and the copy on each file's row, as an alternative
+built and taken back before release, with why: a second path to the same template that could disagree with the
+repository. Its consequences now name the upgrade (module schema 1.54.0 drops both), the command line's `template` verb
+without a database, the gate calling a record `unverified` once no folder holds its version, and the builder proposing
+the mapping alone. Updated the notes in [0003](decisions/0003-rendering-location.md) and
+[0016](decisions/0016-osdu-order.md) that named the saved templates and the copies, the
+[pattern catalog](maps/pattern-catalog.md) row on starting a mapping (download on Browse OSDU, then sync), and the index
+line of 0018.

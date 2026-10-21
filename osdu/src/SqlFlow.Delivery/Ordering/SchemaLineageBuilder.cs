@@ -7,7 +7,7 @@ namespace SqlFlow.Delivery.Ordering;
 
 /// <summary>
 /// Builds OSDU's lineage for a release of the OSDU data definitions and keeps it (osdu/docs/reference/concepts/osdu-order.md,
-/// OSDU's lineage by release): every record kind the release publishes, its schema bundled as a template is saved from it,
+/// OSDU's lineage by release): every record kind the release publishes, its schema bundled as a template file holds it,
 /// and the properties of that schema that refer to other records. A kind whose schema cannot be read is listed with why,
 /// and the rest are kept: one broken file of a release never costs the lineage of the others.
 /// </summary>

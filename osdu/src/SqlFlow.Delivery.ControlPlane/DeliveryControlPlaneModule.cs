@@ -59,8 +59,20 @@ public sealed class DeliveryControlPlaneModule : IControlPlaneModule
         services.AddDatabase(OsduModuleDatabase.Create(
             OsduModuleDatabase.ResolveReference(database.Connection, Environment.GetEnvironmentVariable)));
 
-        // The kinds, their executors and the compute operations a node runs for this control plane, plus the ledger,
-        // the templates and the caches over the module database's context factory.
+        // Where a synced repository's files are on this host, which a template is read from outside a run of its own
+        // repository: this control plane's catalog says where each repository's last sync put them. Registered before the
+        // kind, whose own registration reads the catalog a node or the command line names.
+        services.Services.AddSingleton<IRepositoryFolders>(provider => new CatalogRepositoryFolders(
+            async (repoId, ct) =>
+            {
+                await using var scope = provider.GetRequiredService<IServiceScopeFactory>().CreateAsyncScope();
+                var catalog = scope.ServiceProvider.GetRequiredService<SqlFlow.Catalog.CatalogDbContext>();
+                return await RepositorySync.ReadAsync(catalog, repoId, ct).ConfigureAwait(false);
+            },
+            provider.GetRequiredService<SqlFlow.Core.Secrets.ISecretResolver>()));
+
+        // The kinds, their executors and the compute operations a node runs for this control plane, plus the ledger
+        // and the caches over the module database's context factory.
         services.Services.AddDeliveryKind();
         services.Services.AddDeliveryLedger();
 
@@ -84,7 +96,7 @@ public sealed class DeliveryControlPlaneModule : IControlPlaneModule
         services.Services.AddScoped<ISearchContributor, RecordSearchContributor>();
 
         // The OSDU data definitions (the Open Group's public repository of OSDU schemas) the Templates page browses and
-        // saves templates from, kept as a local copy: each release downloaded once as one archive and read from disk
+        // downloads template files from, kept as a local copy: each release downloaded once as one archive and read from disk
         // after that, the release list read again when it is older than RefreshMinutes or when someone syncs.
         services.Services.AddHttpClient(OsduDataDefinitions.HttpClientName, client => client.Timeout = Timeout.InfiniteTimeSpan);
         services.Services.AddSingleton(provider => new OsduDataDefinitions(
@@ -100,7 +112,7 @@ public sealed class DeliveryControlPlaneModule : IControlPlaneModule
         services.Services.AddSingleton<IOfficialExamples>(provider => provider.GetRequiredService<OsduDataDefinitions>());
 
         // OSDU's lineage by release, built from the same local copy and kept in the module database, which the OSDU order
-        // reads a kind from when its template is not saved and the order pages draw.
+        // reads a kind from when no template folder holds its template, and the order pages draw.
         services.Services.AddSingleton(provider => new Ordering.SchemaLineageStore(
             provider.GetRequiredService<IDbContextFactory<OsduDbContext>>().CreateDbContext));
         services.Services.AddSingleton(provider => new Ordering.SchemaLineageBuilder(
@@ -223,9 +235,9 @@ public sealed class DeliveryControlPlaneModule : IControlPlaneModule
         ArgumentNullException.ThrowIfNull(endpoints);
 
         // Reading the ledger, the mappings, the caches, the templates and the search terms is any signed-in user's; running
-        // something (a redelivery, a removal, a data definitions sync) is an operate action; saving or deleting a template
-        // changes what mappings can pin, and refining a search term what every reader searches by, so both are author
-        // actions, as SQLFlow's own proposals are. Of the reads, the ones the chat assistant's delivery tools call are
+        // something (a redelivery, a removal, a data definitions sync) is an operate action; refining a search term changes
+        // what every reader searches by, so it is an author action, as SQLFlow's own proposals are. A template is added or
+        // removed only by its repository and that repository's sync. Of the reads, the ones the chat assistant's delivery tools call are
         // opened to an assistant run's delegated token, which SQLFlow refuses everywhere else (DeliveryAssistantAccess).
         endpoints.Read
             .OpenToAssistantRuns()
@@ -238,7 +250,6 @@ public sealed class DeliveryControlPlaneModule : IControlPlaneModule
             .MapDeliveryTemplateOperateEndpoints()
             .MapDeliveryOrderOperateEndpoints();
         endpoints.Author
-            .MapDeliveryTemplateAuthorEndpoints()
             .MapDeliverySearchTermAuthorEndpoints();
     }
 }

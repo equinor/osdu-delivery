@@ -38,7 +38,7 @@
       "path": "template",
       "type": "object",
       "required": true,
-      "description": "The saved template version the mapping fills. A run refuses to render against any other, and one the catalog does not hold stops the run."
+      "description": "The template the mapping fills, read from the template folders on the mapping's path, the nearest first. A run renders against that file alone, and a version no folder there holds stops the repository's sync from settling the mapping."
     },
     {
       "path": "template.kind",
@@ -49,8 +49,8 @@
     {
       "path": "template.version",
       "type": "string",
-      "required": true,
-      "description": "The saved template version: the 16 hexadecimal characters the Templates page and 'sqlflow template list' show for the kind."
+      "required": false,
+      "description": "The template version the mapping fills exactly: the 16 hexadecimal characters the Templates page and 'sqlflow template folders' show for a template file. Left out, the mapping fills the one version of the kind the nearest template folder holding the kind holds."
     },
     {
       "path": "dataset",
@@ -156,19 +156,19 @@
       "path": "searches.<name>.schema",
       "type": "object",
       "required": true,
-      "description": "The saved template whose schema says how the searched kind's properties are indexed, so a $findBy line is asked the way the platform answers it."
+      "description": "The template whose schema says how the searched kind's properties are indexed, read from the template folders on the mapping's path, so a $findBy line is asked the way the platform answers it."
     },
     {
       "path": "searches.<name>.schema.kind",
       "type": "string",
       "required": true,
-      "description": "The kind of the saved template, such as osdu:wks:master-data--Wellbore:1.3.0."
+      "description": "The kind of the template, such as osdu:wks:master-data--Wellbore:1.3.0."
     },
     {
       "path": "searches.<name>.schema.version",
       "type": "string",
-      "required": true,
-      "description": "The saved template version: 16 hexadecimal characters."
+      "required": false,
+      "description": "The template version: 16 hexadecimal characters. Left out, the one version of the kind the nearest template folder holding the kind holds."
     },
     {
       "path": "searches.<name>.description",

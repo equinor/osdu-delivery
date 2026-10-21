@@ -48,7 +48,7 @@ public static class RepositoryOrder
     /// <summary>
     /// The order of every partition <paramref name="read"/>'s deliveries reach, with the deliveries of each repository
     /// labelled by the name <paramref name="repositoryNames"/> gives it. Two deliveries pinning one kind under different
-    /// saved versions read the first one's relationships, as lineage does.
+    /// template versions read the first one's relationships, as lineage does.
     /// </summary>
     public static IReadOnlyList<OrderPlan> Plan(CatalogDeliveries read, IReadOnlyDictionary<Guid, string> repositoryNames)
     {

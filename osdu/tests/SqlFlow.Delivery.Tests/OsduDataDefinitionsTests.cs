@@ -245,7 +245,7 @@ public sealed class OsduDataDefinitionsTests : IDisposable
         var noRelease = await Assert.ThrowsAsync<DataDefinitionsException>(() => definitions.ImportAsync(text, kind, "v9.9.9", "file WellboreTest.1.5.1.json"));
         Assert.True(noRelease.NotFound);
 
-        // The kind the schema declares is still the kind it is saved as.
+        // The kind the schema declares is still the kind its file holds.
         var other = await Assert.ThrowsAsync<DeliveryException>(() => definitions.ImportAsync(text, "osdu:wks:master-data--Other:1.0.0", "v0.30.0", "file WellboreTest.1.5.1.json"));
         Assert.Contains($"describes '{kind}'", other.Message, StringComparison.Ordinal);
     }

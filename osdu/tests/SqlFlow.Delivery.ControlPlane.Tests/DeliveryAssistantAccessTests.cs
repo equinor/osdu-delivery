@@ -142,10 +142,8 @@ public sealed class DeliveryAssistantAccessTests
     [InlineData("POST", "/api/v1/delivery/records/" + SomeGuid + "/" + SomeGuid + "/preview")]
     [InlineData("POST", "/api/v1/delivery/records/" + SomeGuid + "/" + SomeGuid + "/read")]
     [InlineData("GET", "/api/v1/delivery/records/" + SomeGuid + "/" + SomeGuid + "/artifacts")]
-    // A read route opened to the assistant does not open the writes on the same path, which any signed-in person may
-    // make (saving and deleting a template are author actions, and the author policy admits every session).
-    [InlineData("POST", "/api/v1/delivery/templates")]
-    [InlineData("DELETE", "/api/v1/delivery/templates")]
+    // A read route opened to the assistant does not open the operate route beside it, which any signed-in person may take
+    // (syncing the OSDU data definitions).
     [InlineData("POST", "/api/v1/delivery/templates/osdu/sync")]
     public async Task ADelegatedToken_IsRefused_OnEveryOtherDeliveryRoute(string method, string path)
     {

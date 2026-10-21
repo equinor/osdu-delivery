@@ -188,7 +188,7 @@ test.describe.serial("dimension builder", () => {
     await expect(source.getByTestId("builder-column-attribute-example")).toHaveText("CPI (2), COMP (1)", { timeout: 60_000 });
 
     // The YAML a dimension flow lists, checked as the flow's own would be: it loads, and the one thing it cannot check (no
-    // template of the political entities is saved) is said, with where to save one.
+    // synced repository holds a template of the political entities) is said, with where to download one.
     const expression = adminPage.getByTestId("builder-expression");
     await expect(adminPage.getByTestId("builder-status")).toHaveAttribute("data-valid", "true", { timeout: 60_000 });
     for (const line of [

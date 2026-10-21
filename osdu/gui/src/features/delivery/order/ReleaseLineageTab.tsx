@@ -176,7 +176,7 @@ function EntityDetail({ entity, graph, onPick }: { entity: OrderEntity; graph: O
 /**
  * OSDU's lineage by release: a release of the OSDU data definitions built into what each kind refers to, drawn around one
  * entity type, as far out as the depth asks, the way its references point. It is what the order reads a kind from when
- * no template of it is saved, and a map of how OSDU's records connect.
+ * no template folder holds its template, and a map of how OSDU's records connect.
  */
 export function ReleaseLineageTab({ canBuild }: { canBuild: boolean }) {
   const releases = useQuery({ queryKey: ["delivery", "order", "releases"], queryFn: orderApi.releases });
@@ -262,7 +262,7 @@ export function ReleaseLineageTab({ canBuild }: { canBuild: boolean }) {
         <EmptyState
           icon={<Network />}
           title="No release of OSDU's lineage is built"
-          description="Build one from the OSDU data definitions to see how OSDU's records refer to each other, and to order a kind whose template is not saved."
+          description="Build one from the OSDU data definitions to see how OSDU's records refer to each other, and to order a kind no template folder holds."
           action={buildButton || undefined}
           data-testid="order-releases-empty"
         />

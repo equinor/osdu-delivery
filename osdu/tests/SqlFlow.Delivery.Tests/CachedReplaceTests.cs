@@ -388,8 +388,7 @@ public sealed class CachedReplaceTests : IDisposable
     [Fact]
     public async Task A_mapping_whose_only_cache_read_is_a_replace_renders_against_the_partitions_cache()
     {
-        var templates = _db.Templates();
-        await templates.SaveAsync(TestSchema.Build(), "tests", "tests");
+        var templates = new MemoryTemplates(TestSchema.Build());
         var caches = _db.Caches();
         var directory = Samples.NewTempDirectory();
         await File.WriteAllTextAsync(Path.Combine(directory, "Thing@1.0.0.yaml"), TestSchema.MappingDocument("""

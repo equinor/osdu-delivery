@@ -39,7 +39,7 @@ public sealed record DataDefinitionsSchemaFile(DataDefinitionsRelease Release, s
 }
 
 /// <summary>
-/// A schema brought in from outside the data definitions (an uploaded file, pasted JSON), as a template is saved from it.
+/// A schema brought in from outside the data definitions (a file of one's own, pasted JSON), as a template file holds it.
 /// <see cref="Release"/> is the release its references were read from, and <see cref="Files"/> the files read, each a path
 /// under <see cref="OsduDataDefinitions.TreeRoot"/>; null and empty for a schema that arrived bundled.
 /// </summary>
@@ -360,7 +360,7 @@ public sealed class OsduDataDefinitions : IOfficialExamples
 
     /// <summary>
     /// A kind's schema from the release (the newest when none is named), bundled with every file it refers to and checked
-    /// as a template is saved: it describes the kind, refers to nothing outside itself, and declares <c>data</c>.
+    /// as a template file holds it: it describes the kind, refers to nothing outside itself, and declares <c>data</c>.
     /// </summary>
     public async Task<DataDefinitionsSchemaFile> FetchAsync(string? release, string kind, CancellationToken ct = default)
     {
@@ -378,7 +378,7 @@ public sealed class OsduDataDefinitions : IOfficialExamples
     }
 
     /// <summary>
-    /// A schema brought in from outside the data definitions, checked as a template is saved from it. A schema whose every
+    /// A schema brought in from outside the data definitions, checked as a template file holds it. A schema whose every
     /// reference is already in its definitions is taken as it is, and reads nothing. A schema that refers to the shared
     /// schemas of the data definitions, as every file a release publishes does, is bundled with those files from the release
     /// named (the newest when none is), resolved as though it were the kind's own file in that release. <paramref name="where"/>

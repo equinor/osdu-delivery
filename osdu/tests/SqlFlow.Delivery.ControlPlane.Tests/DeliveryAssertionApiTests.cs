@@ -83,7 +83,7 @@ public sealed class DeliveryAssertionApiTests
             db.Repos.Add(new CatalogRepo
             {
                 Id = repoId, Name = "cp-assertions-" + suffix, RemoteUrl = "https://example/cp-assertions.git",
-                RootPath = Path.GetTempPath(), FirstSeenUtc = now, LastSyncUtc = now,
+                RootPath = SampleEstate.TemplateRoot, FirstSeenUtc = now, LastSyncUtc = now,
             });
             db.Pipelines.Add(Pipeline(pipelineId, repoId, flowName, "assertion", yaml, now));
             db.Pipelines.Add(Pipeline(deliveryPipelineId, repoId, flowName + "-delivery", "ingestion", "flowType: ingestion", now));
@@ -268,7 +268,6 @@ public sealed class DeliveryAssertionApiTests
     {
         var cs = OsduTestServer.Require();
         await CatalogDatabase.MigrateAsync(cs);
-        await SampleEstate.SaveTemplatesAsync(cs);
 
         var suffix = Guid.NewGuid().ToString("N")[..10];
         var flowName = "api-assertion-dated-" + suffix;
@@ -318,7 +317,7 @@ public sealed class DeliveryAssertionApiTests
             db.Repos.Add(new CatalogRepo
             {
                 Id = repoId, Name = "cp-assertions-dated-" + suffix, RemoteUrl = "https://example/cp-assertions-dated.git",
-                RootPath = Path.GetTempPath(), FirstSeenUtc = now, LastSyncUtc = now,
+                RootPath = SampleEstate.TemplateRoot, FirstSeenUtc = now, LastSyncUtc = now,
             });
             db.Pipelines.Add(Pipeline(pipelineId, repoId, flowName, "assertion", yaml, now));
             await db.SaveChangesAsync();

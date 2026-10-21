@@ -826,7 +826,7 @@ public static class DeliveryEndpoints
 
             try
             {
-                folders ??= await Catalog.SyncedTemplates.ReadAsync(osdu, source.Pipeline.RepoId, ct).ConfigureAwait(false);
+                folders ??= await Catalog.SyncedTemplates.ReadAsync(osdu, engine.RepositoryFolders, source.Pipeline.RepoId, ct).ConfigureAwait(false);
                 var mapping = documents.ParseMapping(row.Yaml, row.RelativePath, folders.For(row.RelativePath));
                 var resolved = await folders.ResolveAsync(mapping.TemplateDocument, mapping.Template.Kind, mapping.Template.Version, ct).ConfigureAwait(false);
                 if (resolved.Schema is not { } schema)

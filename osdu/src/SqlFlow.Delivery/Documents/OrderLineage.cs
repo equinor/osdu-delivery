@@ -14,7 +14,7 @@ namespace SqlFlow.Delivery.Documents;
 /// The OSDU order of the estate a lineage scan walks (osdu/docs/reference/concepts/osdu-order.md, Lineage takes the order):
 /// every delivery flow of the scanned repository, each interface in each partition it is described in, with the kind its
 /// mapping fills and the properties it fills, ordered by the relationships the templates those mappings pin declare, or,
-/// for a kind whose template is not saved, a built release of OSDU's lineage (<see cref="IOrderCatalog"/>). It holds the
+/// for a kind no template folder holds, a built release of OSDU's lineage (<see cref="IOrderCatalog"/>). It holds the
 /// repository's own deliveries alone: a schedule runs flows of one repository, in that repository's waves, and another
 /// repository's flows run in its own schedules. It is built once per scan, however many documents are described, and
 /// lineage reads from it which entity types each delivery waits for.
@@ -150,7 +150,7 @@ internal sealed class OrderLineage
                 var node = template is not null ? OrderDeliveries.Node(template) : Released(released, catalog, mapping.Kind);
                 if (node is not null)
                 {
-                    // Two mappings pinning one kind under different saved versions read the first one's relationships.
+                    // Two mappings pinning one kind under different template versions read the first one's relationships.
                     nodes.TryAdd(node.Kind, node);
                 }
 

@@ -63,7 +63,7 @@ public sealed record DimensionDraftIssue(string Severity, string Message, string
     public const string Error = "error";
     public const string Warning = "warning";
 
-    /// <summary>A saved template is missing: the Templates page saves it.</summary>
+    /// <summary>No synced repository holds a template: the Templates page downloads its file from the OSDU data definitions.</summary>
     public const string TemplateCode = "template";
 
     /// <summary>Another flow's dimension writes the table this one would.</summary>

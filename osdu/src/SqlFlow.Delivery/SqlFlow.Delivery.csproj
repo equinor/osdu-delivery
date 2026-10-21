@@ -21,6 +21,8 @@
     <ProjectReference Include="..\..\..\sqlflow\src\SqlFlow.Yaml\SqlFlow.Yaml.csproj" />
     <ProjectReference Include="..\..\..\sqlflow\src\SqlFlow.Execution\SqlFlow.Execution.csproj" />
     <ProjectReference Include="..\..\..\sqlflow\src\SqlFlow.Catalog\SqlFlow.Catalog.csproj" />
+    <!-- A repository's files are read where its last sync put them, or from its synced commit checked out as a run's is. -->
+    <ProjectReference Include="..\..\..\sqlflow\src\SqlFlow.Node\SqlFlow.Node.csproj" />
     <ProjectReference Include="..\..\..\sqlflow\src\SqlFlow.Azure\SqlFlow.Azure.csproj" />
     <ProjectReference Include="..\..\..\sqlflow\src\SqlFlow.Sources\SqlFlow.Sources.csproj" />
     <ProjectReference Include="..\SqlFlow.Delivery.Data\SqlFlow.Delivery.Data.csproj" />

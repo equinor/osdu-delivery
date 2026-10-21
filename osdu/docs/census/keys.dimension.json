@@ -203,7 +203,7 @@
       "path": "dimensions[].kind",
       "type": "string",
       "required": true,
-      "description": "The kind whose records are read, `authority:source:entityType:version`, wildcards allowed per segment (`osdu:wks:master-data--Wellbore:*`). For a property of `data`, a build reads the saved template of every kind the pattern matches in the partition, and every one must index the property the same way."
+      "description": "The kind whose records are read, `authority:source:entityType:version`, wildcards allowed per segment (`osdu:wks:master-data--Wellbore:*`). For a property of `data`, a build reads the template of every kind the pattern matches in the partition from the template folders on the flow's path, and every one must index the property the same way."
     },
     {
       "path": "dimensions[].label",

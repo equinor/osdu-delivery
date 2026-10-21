@@ -14,7 +14,6 @@ related:
   - delivery-concept-database
   - delivery-concept-osdu-order
   - delivery-table-schema-lineage-kind
-  - delivery-table-template
   - delivery-wiki-0016-osdu-order
 sourceRefs:
   - osdu/src/SqlFlow.Delivery.Data/DeliveryEntities.cs

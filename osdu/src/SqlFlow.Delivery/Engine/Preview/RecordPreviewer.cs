@@ -83,7 +83,7 @@ public sealed class RecordPreviewer
     /// <summary>
     /// Previews the record <paramref name="key"/> names, or the scope's first renderable record when it names none. A key
     /// that names no row, or a scope with no row, is an answer (<see cref="RecordPreview.Found"/> false, with the reason),
-    /// not a failure; a flow that cannot render at all (a template or cache that is not saved, a table without the columns
+    /// not a failure; a flow that cannot render at all (a template no folder on the mapping's path holds, a cache that is not saved, a table without the columns
     /// the mapping reads) fails as a run of it would.
     /// </summary>
     public async Task<RecordPreview> PreviewAsync(string? key, CancellationToken ct = default)

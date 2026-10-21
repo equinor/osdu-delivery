@@ -213,8 +213,8 @@ The shipped templates carry these settings on the control plane alone:
 3. **Deploy the workers** with that token as `SQLFLOW_TOKEN`, `SQLFLOW_OSDU_DB`, and the references their flows use.
 4. **Register the flow repository** as a managed repository source, so the pre, ingestion and OSDU flows, the mappings and
    the cache flows are synced and their schedules fire.
-5. **Save the templates** the mappings pin ([sqlflow template](../cli/template.md)) and fill each partition's cache with
-   a refresh run of its cache flows. The partitions are already registered from the configuration; `partition list`
+5. **Fill each partition's cache** with a refresh run of its cache flows. The templates the mappings fill come with the
+   repository, as files of its template folders, which its sync records ([templates](../concepts/templates.md)). The partitions are already registered from the configuration; `partition list`
    shows them marked `(configured)` ([sqlflow partition](../cli/partition.md)).
 6. **Plan before anything touches OSDU**: run the pre and ingestion flows, then the delivery flow with operation `plan`,
    then `deliver` a small scope. [Getting started](getting-started.md) walks through it.

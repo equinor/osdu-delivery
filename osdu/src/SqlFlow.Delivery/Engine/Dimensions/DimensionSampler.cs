@@ -49,8 +49,9 @@ public sealed record DimensionKeysRequest
     public DimensionFieldWire? KeyField { get; init; }
 
     /// <summary>
-    /// Whether <see cref="KeyField"/> is a guess, made because no saved template says how the path is indexed: text, which most
-    /// properties of data are. A guess is said in the answer's notes, since a build refuses such a path until a template is saved.
+    /// Whether <see cref="KeyField"/> is a guess, made because no template a synced repository holds says how the path is
+    /// indexed: text, which most properties of data are. A guess is said in the answer's notes, since a build refuses such a
+    /// path until a template folder on the flow's path holds the template.
     /// </summary>
     public bool KeyFieldGuessed { get; init; }
 }
@@ -109,11 +110,11 @@ public sealed class DimensionSampler
         var field = request.KeyField?.Field();
         if (field is null)
         {
-            notes.Add($"How {request.Path} is indexed is not known, so its keys are not grouped: save the template of {request.Kind} to read them.");
+            notes.Add($"How {request.Path} is indexed is not known, so its keys are not grouped: put the template of {request.Kind} in a template folder and sync the repository to read them.");
         }
         else if (request.KeyFieldGuessed)
         {
-            notes.Add($"No saved template of {request.Kind} says how {field.Path} is indexed, so it is read here as text, which most properties are. A build reads it only once the template is saved.");
+            notes.Add($"No template a synced repository holds of {request.Kind} says how {field.Path} is indexed, so it is read here as text, which most properties are. A build reads it only once a template folder on the flow's path holds the template.");
         }
 
         var answer = await _search.PageAsync(new OsduSearchQuery { Kind = request.Kind, Query = request.Query }, 0, 1, field?.AggregateBy, ct).ConfigureAwait(false);

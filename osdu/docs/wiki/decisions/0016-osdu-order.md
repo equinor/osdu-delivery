@@ -21,7 +21,7 @@ related:
   - delivery-wiki-0009-searched-references
   - delivery-wiki-0017-pipelines-update-the-cache
   - delivery-wiki-0018-template-folders
-updated: 2026-10-21
+updated: 2026-10-22
 ---
 # 0016: OSDU's relationships order a repository's waves, and dependencies between schedules are shown, not enforced
 
@@ -30,9 +30,9 @@ Answers the ordering question [0009](0009-searched-references.md) left to lineag
 
 > **Amended by [0018](0018-template-folders.md).** "A kind whose template is not saved" below reads "a kind no template
 > folder on the mapping's path holds": lineage reads a kind's relationships from the template the folders give the
-> mapping, and from a built release of OSDU's lineage when they give none. The order the catalog keeps reads the copy of
-> that template the sync saved, and a release only when the copy cannot be read, since a mapping whose template no
-> folder holds does not load.
+> mapping, and from a built release of OSDU's lineage when they give none. The order the catalog keeps reads that
+> template from the file the sync recorded, in the repository's synced folder, and a release only when the file cannot
+> be read, since a mapping whose template no folder holds does not load.
 
 ## Context
 

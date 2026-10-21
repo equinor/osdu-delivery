@@ -31,7 +31,7 @@ import { MappingBuilderVariables } from "./MappingBuilderVariables";
 import { MappingEntryEditor, type EntryEditorTarget } from "./MappingEntryEditor";
 import { MappingProposeSheet } from "./MappingProposeSheet";
 import { bareColumn, COLUMN_NAME, emptyEntry, LOOKUP_TARGET_PREFIX, putEntry, renameLookup } from "./mappingDraft";
-import { entityName, parseTemplateKey, templateKey } from "./templateFormat";
+import { entityName } from "./templateFormat";
 import { problemText } from "./problemText";
 import { ProblemView } from "./TemplateSheet";
 import { variableRows } from "./variableRows";
@@ -44,6 +44,26 @@ interface ComposeRequest {
   scope: string | null;
   draft: MappingDraft;
   parameters: Record<string, string>;
+  /** The repository the mapping is written for, and its path there, whose template folders settle its templates. */
+  repoId: string | null;
+  path: string | null;
+}
+
+/**
+ * The folder a new mapping goes in for the template folder its template is in: the mappings folder beside it, in the same
+ * project (welldb/templates gives welldb/mappings, a top templates folder gives mappings), where the mapping reads that
+ * template folder.
+ */
+function mappingsFolderFor(templateFolder: string): string {
+  const at = templateFolder.lastIndexOf("templates");
+  const project = at < 0 ? "" : templateFolder.slice(0, at);
+  return `${project}mappings`;
+}
+
+/** The folder a path is in, or "" for a path at the top. */
+function folderOf(path: string): string {
+  const at = path.lastIndexOf("/");
+  return at < 0 ? "" : path.slice(0, at);
 }
 
 /**
@@ -82,10 +102,11 @@ function CheckValueSource({ flow, parameter, edited }: { flow: DeliveryBuilderFl
 }
 
 /**
- * The mapping builder: pick a saved template, the partition whose cache the mapping reads and the repository it lives in,
- * and fill the template's variables from the dataset, the cache and static values. The page writes the mapping as YAML and
- * checks it against the template and the cache's current version as it changes. An existing mapping opens with its entries
- * filled in, reading the cache of the partition its repository's delivery flow delivers to.
+ * The mapping builder: pick the repository the mapping lives in and one of the templates its template folders hold, and fill
+ * the template's variables from the dataset, the cache of the partition picked in the title bar and static values. The
+ * page writes the mapping as YAML and checks it, at the path it would have in the repository, against the template read
+ * from its file and the cache's current version as it changes. An existing mapping opens with its entries filled in, at
+ * its own path, reading the cache of the partition its repository's delivery flow delivers to.
  */
 export default function MappingBuilderPage() {
   const { hasScope } = useAuth();
@@ -138,7 +159,7 @@ export default function MappingBuilderPage() {
     setLoadedFrom(mappingId);
     setDraft(openedDraft);
     setRepoId(opening.mapping.repoId);
-    setTemplateChoice(templateKey(openedDraft.templateKind, openedDraft.templateVersion));
+    setTemplateChoice(opening.mapping.templatePath);
     setName(openedDraft.name);
     setMappingVersion(openedDraft.version);
     setSystem(openedDraft.system);
@@ -149,9 +170,23 @@ export default function MappingBuilderPage() {
   }
 
   const repo = (repos.data ?? []).find((candidate) => candidate.repoId === repoId) ?? null;
-  const chosenTemplate = parseTemplateKey(templateChoice);
+  // The templates the chosen repository's folders hold, each a file; the one the draft fills is named by its path.
+  const repoTemplates = useMemo(
+    () => (templates.data ?? []).filter((template) => template.repoId === repoId && template.kind !== null && template.version !== null),
+    [templates.data, repoId],
+  );
+  const templatePath = templateChoice !== ""
+    ? templateChoice
+    : draft === null
+      ? ""
+      : repoTemplates.find((template) => template.kind === draft.templateKind && template.version === draft.templateVersion)?.path ?? "";
+  const chosenTemplate = repoTemplates.find((template) => template.path === templatePath) ?? null;
+  const opened = loadedFrom !== null && opening !== undefined ? opening.mapping : null;
 
   const reference = `${name.trim()}@${mappingVersion.trim()}`;
+  // Where the mapping is, or goes: beside the one it was opened from, or in the mappings folder of the template's project.
+  const mappingFolder = opened !== null ? folderOf(opened.relativePath) : chosenTemplate !== null ? mappingsFolderFor(chosenTemplate.folder) : null;
+  const mappingPath = mappingFolder === null ? null : `${mappingFolder === "" ? "" : `${mappingFolder}/`}${reference}.yaml`;
   // A flow that works in partitions is offered once per partition, each with that partition's values; the check takes the
   // one for the title bar's partition, so the values it renders with and the cache it reads agree.
   const usingMapping = repo === null ? [] : repo.flows.filter((flow) => flow.mapping === reference);
@@ -165,14 +200,15 @@ export default function MappingBuilderPage() {
   const checkFlowName = checkFlow === null ? "" : `${checkFlow.name}${checkFlow.partition ? ` in partition ${checkFlow.partition}` : ""}`;
   const cache = active === null ? null : (caches.data ?? []).find((candidate) => candidate.scope === active) ?? null;
 
+  // The template is read from the repository's file, so the variables are what the file holds.
   const detail = useQuery({
-    queryKey: ["delivery", "templates", "detail", draft?.templateKind ?? null, draft?.templateVersion ?? null, cache?.scope ?? null],
-    queryFn: () => deliveryApi.templateDetail(draft!.templateKind, draft!.templateVersion, cache?.scope),
-    enabled: draft !== null,
+    queryKey: ["delivery", "templates", "detail", repoId, templatePath, cache?.scope ?? null],
+    queryFn: () => deliveryApi.templateDetail(repoId, templatePath, cache?.scope),
+    enabled: draft !== null && repoId !== "" && templatePath !== "",
     // A cache change keeps the variables in view while their cached types load; another template never does.
     placeholderData: (previous, previousQuery) => (previousQuery !== undefined
-      && previousQuery.queryKey[3] === (draft?.templateKind ?? null)
-      && previousQuery.queryKey[4] === (draft?.templateVersion ?? null)
+      && previousQuery.queryKey[3] === repoId
+      && previousQuery.queryKey[4] === templatePath
       ? previous
       : undefined),
   });
@@ -208,14 +244,20 @@ export default function MappingBuilderPage() {
 
   const composeKey = composedDraft === null
     ? null
-    : JSON.stringify({ scope: cache?.scope ?? null, draft: composedDraft, parameters: checkValues } satisfies ComposeRequest);
+    : JSON.stringify({
+      scope: cache?.scope ?? null,
+      draft: composedDraft,
+      parameters: checkValues,
+      repoId: repoId === "" ? null : repoId,
+      path: repoId === "" ? null : mappingPath,
+    } satisfies ComposeRequest);
   const settledKey = useDebouncedValue(composeKey, COMPOSE_DELAY_MS);
   const compose = useQuery({
     queryKey: ["delivery", "mapping-builder", "compose", settledKey],
     queryFn: () => {
       const request = JSON.parse(settledKey!) as ComposeRequest;
       return deliveryApi.composeMapping(
-        request.scope, request.draft, Object.keys(request.parameters).length > 0 ? request.parameters : null,
+        request.scope, request.draft, Object.keys(request.parameters).length > 0 ? request.parameters : null, request.repoId, request.path,
       );
     },
     enabled: settledKey !== null,
@@ -234,14 +276,14 @@ export default function MappingBuilderPage() {
 
   const start = useMutation({
     mutationFn: () => {
-      if (chosenTemplate === null) {
-        throw new Error("Pick the saved template the mapping fills.");
+      if (repoId === "" || chosenTemplate === null) {
+        throw new Error("Pick the repository and the template of its template folders the mapping fills.");
       }
 
       return deliveryApi.draftMapping({
         scope: cache?.scope ?? null,
-        kind: chosenTemplate.kind,
-        version: chosenTemplate.version,
+        repoId,
+        templatePath: chosenTemplate.path,
         name: name.trim(),
         mappingVersion: mappingVersion.trim(),
         system: system.trim(),
@@ -374,18 +416,14 @@ export default function MappingBuilderPage() {
           ? "Wait for the first check."
           : !result.valid ? "Fix the errors the check found first." : null;
 
-  const savedTemplates = templates.data ?? [];
-  const templateItems = draft !== null && !savedTemplates.some((t) => t.kind === draft.templateKind && t.version === draft.templateVersion)
-    ? [...savedTemplates, { kind: draft.templateKind, version: draft.templateVersion, capturedUtc: "", capturedBy: "", origin: "" }]
-    : savedTemplates;
-  const canStart = chosenTemplate !== null && name.trim() !== "" && mappingVersion.trim() !== ""
+  const canStart = repo !== null && chosenTemplate !== null && name.trim() !== "" && mappingVersion.trim() !== ""
     && system.trim() !== "" && !start.isPending;
 
   return (
     <Page data-testid="page-delivery-mapping-builder">
       <PageHeader
         title="Mapping builder"
-        subtitle="Fill a saved template from the dataset, the cache and static values. The YAML is checked against the template and the cache's current version as you go."
+        subtitle="Fill one of a repository's templates from the dataset, the cache and static values. The YAML is checked where it would be in the repository, against the template's file and the cache's current version, as you go."
         actions={draft !== null ? (
           <>
             {result !== undefined && <CopyButton label="Copy YAML" text={result.yaml} testId="mapping-builder-copy-yaml" />}
@@ -451,7 +489,15 @@ export default function MappingBuilderPage() {
             <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
               <div className="flex flex-col gap-1.5">
                 <Label htmlFor="mapping-builder-repo">Repository</Label>
-                <Select value={repoId} onValueChange={setRepoId}>
+                <Select
+                  value={repoId}
+                  disabled={draft !== null}
+                  onValueChange={(next) => {
+                    // Another repository holds other templates, so the template is picked again from its folders.
+                    setRepoId(next);
+                    setTemplateChoice("");
+                  }}
+                >
                   <SelectTrigger id="mapping-builder-repo" size="sm" className="h-8 w-full" data-testid="mapping-builder-repo">
                     <SelectValue placeholder={repos.data === undefined ? "Loading the repositories" : "Pick a repository"} />
                   </SelectTrigger>
@@ -466,7 +512,7 @@ export default function MappingBuilderPage() {
                 </Select>
                 <p className="text-xs text-muted-foreground">
                   {repo === null
-                    ? "The repository the mapping lives in; its delivery flow supplies the parameters the check renders with."
+                    ? "The repository the mapping lives in: its template folders hold the template it fills, and its delivery flow supplies the parameters the check renders with."
                     : checkFlow === null
                       ? `${repo.name} has no delivery flow, so the check renders without flow parameters.`
                       : `The check renders with the parameters of ${checkFlowName}.`}
@@ -492,34 +538,36 @@ export default function MappingBuilderPage() {
               <div className="flex flex-col gap-1.5">
                 <Label htmlFor="mapping-builder-template">Template</Label>
                 <Select
-                  value={templateChoice}
-                  disabled={draft !== null}
+                  value={templatePath}
+                  disabled={draft !== null || repo === null}
                   onValueChange={(next) => {
                     setTemplateChoice(next);
-                    const chosen = parseTemplateKey(next);
-                    if (chosen !== null && name.trim() === "") {
+                    const chosen = repoTemplates.find((template) => template.path === next);
+                    if (chosen !== undefined && chosen.kind !== null && name.trim() === "") {
                       setName(entityName(chosen.kind));
                     }
                   }}
                 >
                   <SelectTrigger id="mapping-builder-template" size="sm" className="h-8 w-full" data-testid="mapping-builder-template">
-                    <SelectValue placeholder={templates.data === undefined ? "Loading the saved templates" : "Pick a saved template"} />
+                    <SelectValue placeholder={repo === null
+                      ? "Pick the repository first"
+                      : templates.data === undefined ? "Loading the repository's templates" : "Pick a template of the repository"} />
                   </SelectTrigger>
                   <SelectContent>
-                    {templateItems.map((template) => (
-                      <SelectItem key={templateKey(template.kind, template.version)} value={templateKey(template.kind, template.version)}>
+                    {repoTemplates.map((template) => (
+                      <SelectItem key={template.path} value={template.path}>
                         <span className="font-mono text-[12px]">{template.kind}</span>
-                        <span className="font-mono text-[11px] text-muted-foreground">{template.version}</span>
+                        <span className="font-mono text-[11px] text-muted-foreground">{template.path}</span>
                       </SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
-                <p className="text-xs text-muted-foreground">
+                <p className="text-xs text-muted-foreground" data-testid="mapping-builder-template-note">
                   {draft !== null
-                    ? "Start over to fill another template."
-                    : templates.data !== undefined && templates.data.length === 0
-                      ? <>No template is saved yet. <RouterLink to="/delivery/templates" className="text-primary hover:underline">Save one on the Templates page</RouterLink>.</>
-                      : <>A kind that has no saved template is saved on the <RouterLink to="/delivery/templates" className="text-primary hover:underline">Templates page</RouterLink> first.</>}
+                    ? mappingPath === null ? "Start over to fill another template." : <>Start over to fill another template. The mapping is <span className="font-mono">{mappingPath}</span>.</>
+                    : repo !== null && templates.data !== undefined && repoTemplates.length === 0
+                      ? <>{repo.name} holds no template in a folder named templates yet. Download one from Browse OSDU on the <RouterLink to="/delivery/templates" className="text-primary hover:underline">Templates page</RouterLink>, commit it to the repository beside the documents that fill it, and sync it.</>
+                      : <>A kind the repository holds no template of is downloaded from Browse OSDU on the <RouterLink to="/delivery/templates" className="text-primary hover:underline">Templates page</RouterLink>, committed to a template folder, and synced.</>}
                 </p>
               </div>
               <div className="flex flex-col gap-1.5">
@@ -729,9 +777,10 @@ export default function MappingBuilderPage() {
             <Card className="gap-2 rounded-lg p-4" data-testid="mapping-builder-template-error">
               <ProblemView error={detail.error} />
               <p className="text-xs text-muted-foreground">
-                A mapping is built against a saved template.{" "}
-                <RouterLink to="/delivery/templates" className="text-primary hover:underline">Save it on the Templates page</RouterLink>,
-                then open the mapping here again.
+                A mapping is built against a template its repository's folders hold, read from the file. Put the template's file in
+                a template folder on the mapping's path (Browse OSDU on the{" "}
+                <RouterLink to="/delivery/templates" className="text-primary hover:underline">Templates page</RouterLink> downloads it),
+                sync the repository, then open the mapping here again.
               </p>
             </Card>
           ) : detail.data === undefined ? (
@@ -747,7 +796,7 @@ export default function MappingBuilderPage() {
               <EmptyState
                 icon={<PencilRuler />}
                 title="No mapping yet"
-                description="Pick a repository and a saved template, name the mapping and start it. The YAML and what the check finds appear here."
+                description="Pick a repository and one of its templates, name the mapping and start it. The YAML and what the check finds appear here."
                 data-testid="mapping-builder-empty"
               />
             </Card>
@@ -828,7 +877,7 @@ export default function MappingBuilderPage() {
           onClose={() => setEditing(null)}
         />
       )}
-      {repo !== null && repo.sourceId !== null && result !== undefined && draft !== null && (
+      {repo !== null && repo.sourceId !== null && result !== undefined && draft !== null && mappingPath !== null && (
         <MappingProposeSheet
           open={proposeOpen}
           onClose={() => setProposeOpen(false)}
@@ -836,9 +885,9 @@ export default function MappingBuilderPage() {
           sourceId={repo.sourceId}
           name={name.trim()}
           version={mappingVersion.trim()}
+          path={mappingPath}
           yaml={result.yaml}
-          templateKind={draft.templateKind}
-          templateVersion={draft.templateVersion}
+          template={chosenTemplate?.path ?? null}
         />
       )}
       <ConfirmDialog

@@ -273,16 +273,18 @@ deliveries.
 
 ## When lineage is computed again
 
-The repository sync recomputes lineage when a flow document changes, as SQLFlow always does. The module adds three more
+The repository sync recomputes lineage when a flow document changes, as SQLFlow always does. The module adds four more
 reasons, because a delivery flow's lineage depends on documents that are not flows:
 
 - A mapping document was added, removed or edited (compared by path and content hash with the rows the module keeps).
-- A template one of the repository's mappings pins was saved after the sync that last saw the mapping, since a bare
-  `ref` could not be resolved without it.
+- A file of the repository's template folders was added, removed or changed (compared by path and version with the
+  rows the last sync recorded), since what a bare `ref` is checked against is read off the template a mapping fills,
+  and a mapping that names its template's kind alone fills whatever version its folders hold.
 - The stored graph holds a delivery flow writing an OSDU type with no read of a mapping node, which is what a graph drawn
   before mappings were nodes looks like. The first ordinary sync after an upgrade draws it again.
-- A release of OSDU's lineage holding a kind one of the repository's mappings fills, with no template of it saved, was
-  built after the sync that last saw the mapping ([OSDU's lineage by release](osdu-order.md#osdus-lineage-by-release)).
+- A release of OSDU's lineage holding a kind one of the repository's mappings fills, which no template folder on the
+  mapping's path gives a template, was built after the sync that last saw the mapping
+  ([OSDU's lineage by release](osdu-order.md#osdus-lineage-by-release)).
 
 ## Warnings
 
@@ -298,7 +300,7 @@ never costs other flows their lineage. The common ones:
 | `cache flow '<flow>': type '<type>' holds dictionary <name>, which was not found in a dictionaries/ directory above the flow, so its lineage leaves the file out.` | The dictionary file is not where a refresh would look for it. |
 | `retrieval flow '<flow>': target.location '<path>' is a relative path; a retrieval run resolves it against the working directory of the process running it, not the flow file, ...` | Use an absolute path or a storage URI, so the node is where the files land. |
 | `<flow> shows no OSDU type for <what>: '<kind>' is not an exact kind.` | A write needs an exact kind, version included. |
-| `delivery flow '<flow>' is not ordered by what its records refer to: mapping '<ref>' fills <kind>, whose template ...` | The OSDU order cannot read what the kind refers to; save the template, or build a release of OSDU's lineage holding the kind ([the OSDU order](osdu-order.md)). |
+| `delivery flow '<flow>' is not ordered by what its records refer to: mapping '<ref>' fills <kind>, whose template ...` | The OSDU order cannot read what the kind refers to; put the template's file in a template folder on the mapping's path, or build a release of OSDU's lineage holding the kind ([the OSDU order](osdu-order.md)). |
 | `delivery flow '<flow>' is not ordered against every delivery it refers to: ...` | Its type and another refer to each other in a circle the order leaves unordered ([cycles](osdu-order.md#cycles-and-how-they-are-cut)). |
 
 ## Known limits

@@ -144,8 +144,9 @@ export function DimensionDefinition({ entry }: { entry: DimensionEntry }) {
           <p className="flex items-start gap-1.5 border-t border-border/60 px-4 py-2 text-[12px] text-muted-foreground" data-testid="blueprint-undescribed">
             <TriangleAlert className="mt-0.5 size-3.5 shrink-0 text-warning" aria-hidden />
             <span>
-              No template of <span className="font-mono text-foreground">{[...new Set(undescribed)].join(", ")}</span> is saved, so the paths read
-              from those records are read as written, unchecked. Save one on the <Link to="/delivery/templates" className="text-primary hover:underline">Templates</Link> page.
+              No template folder on the flow's path holds a template of <span className="font-mono text-foreground">{[...new Set(undescribed)].join(", ")}</span>,
+              so the paths read from those records are read as written, unchecked. Put one there: Browse OSDU on the{" "}
+              <Link to="/delivery/templates" className="text-primary hover:underline">Templates</Link> page downloads it.
             </span>
           </p>
         )}

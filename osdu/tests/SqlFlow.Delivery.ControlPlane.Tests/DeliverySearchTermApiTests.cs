@@ -43,7 +43,6 @@ public sealed class DeliverySearchTermApiTests
         var cs = OsduTestServer.Require();
         await CatalogDatabase.MigrateAsync(cs);
         await SampleEstate.MigrateModuleAsync(cs);
-        await SampleEstate.SaveTemplatesAsync(cs);
 
         var suffix = Guid.NewGuid().ToString("N")[..10];
         var partition = "t" + suffix;

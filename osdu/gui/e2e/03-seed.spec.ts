@@ -6,10 +6,10 @@ import { CACHE, CACHE_RECORDS, DELIVERY_FLOW, FixtureMeta, LOADING_FLOWS, LOOKUP
 import { importCacheRecords } from "./delivery-cli";
 import { adminSession, expect, test } from "./helpers";
 
-// Seeds the estate THROUGH the product: saves the templates the estate's mappings pin, imports the fixture reference records
-// as the cache's first version, registers the fixture git repo as a source from the Repos page in the GUI, then watches the
-// control plane's managed sync pull it and the pipelines appear in the catalog. Everything after this spec runs against
-// real synced data.
+// Seeds the estate THROUGH the product: imports the fixture reference records as the cache's first version, registers the
+// fixture git repo as a source from the Repos page in the GUI, then watches the control plane's managed sync pull it, record
+// the templates its template folder holds, and the pipelines appear in the catalog. Everything after this spec runs
+// against real synced data.
 
 /** The OSDU module's folder: the sample estate, the suites' fixtures and the hosts live beside the GUI. */
 const moduleRoot = join(import.meta.dirname, "..", "..");
@@ -120,24 +120,6 @@ IF @sql <> N'' EXEC sp_executesql @sql;`,
 }
 
 test.describe.serial("seed the estate via repo source sync", () => {
-  // Templates live in the module's database, not the repository, so the ones the estate's mappings pin are saved first:
-  // every plan the later specs run renders against them.
-  test("save the templates the estate's mappings pin", async ({ request }) => {
-    const session = await adminSession(request);
-    for (const template of TEMPLATES) {
-      const schema: unknown = JSON.parse(readFileSync(join(moduleRoot, template.file), "utf8"));
-      const name = template.file.split(/[\\/]/).at(-1);
-      const response = await request.post(`${E2E.apiBaseUrl}/api/v1/delivery/templates`, {
-        headers: { Authorization: `Bearer ${session.token}` },
-        data: { kind: template.kind, schema, origin: `file ${name}` },
-      });
-      expect(response.status(), await response.text()).toBe(200);
-      const saved = (await response.json()) as { template: { kind: string; version: string }; outcome: string };
-      expect(saved.template.version).toBe(template.version);
-      expect(["created", "unchanged"]).toContain(saved.outcome);
-    }
-  });
-
   // A cache lives in the module database, never in the repository. A refresh would search the estate's OSDU target, so
   // the suite imports the fixture reference records as the cache's first version through the OSDU Delivery CLI host,
   // the offline path an operator uses. Importing the same files again writes nothing, so a rerun keeps one version.
@@ -167,6 +149,25 @@ test.describe.serial("seed the estate via repo source sync", () => {
     await expect(row).toBeVisible({ timeout: 15_000 });
     await row.getByTestId("source-sync-now").click();
     await expect(row.getByText(meta.headSha.slice(0, 10)).first()).toBeVisible({ timeout: 120_000 });
+  });
+
+  // Templates are files of the repository: the sync records which file of its template folder holds which template, and
+  // whoever reads one reads the file. Every plan the later specs run renders against them.
+  test("the sync records every template the source's template folder holds", async ({ request }) => {
+    const session = await adminSession(request);
+    const response = await request.get(`${E2E.apiBaseUrl}/api/v1/delivery/templates`, {
+      headers: { Authorization: `Bearer ${session.token}` },
+    });
+    expect(response.status(), await response.text()).toBe(200);
+    const held = ((await response.json()) as { repository: string; path: string; kind: string | null; version: string | null }[])
+      .filter((template) => template.repository === REPO_NAME);
+    for (const template of TEMPLATES) {
+      const path = `${SOURCE}/templates/${template.file.split(/[\\/]/).at(-1)}`;
+      const file = held.find((candidate) => candidate.path === path);
+      expect(file, `the sync recorded no template in ${path}`).toBeDefined();
+      expect(file?.kind).toBe(template.kind);
+      expect(file?.version).toBe(template.version);
+    }
   });
 
   // Runs AFTER the source is registered and synced, because each run records itself into that repo: a run that

@@ -156,8 +156,7 @@ says how they fit and how each dimension's `dim_` table is laid out from them.
 | [`osdu.Interface`](../tables/interface.md) | An interface of a delivery flow, per partition it names, and the ledger it keeps |
 | [`osdu.SearchTerm`](../tables/search-term.md) | A search term a repository's pipelines give an entity type |
 | [`osdu.SearchTermRefinement`](../tables/search-term-refinement.md) | What a person made of a search term |
-| [`osdu.Template`](../tables/template.md) | A saved OSDU schema version: the library the explorer, the builder and the assistant read |
-| [`osdu.RepositoryTemplate`](../tables/repository-template.md) | A file of a repository's template folder, with the template it holds and a copy of its schema, or why it holds none |
+| [`osdu.RepositoryTemplate`](../tables/repository-template.md) | A file of a repository's template folder, with the kind and version it holds, or why it holds none |
 | [`osdu.SchemaLineage`](../tables/schema-lineage.md) | A built release of the OSDU data definitions |
 | [`osdu.SchemaLineageKind`](../tables/schema-lineage-kind.md) | A kind of a built release, with the properties that refer to other records |
 

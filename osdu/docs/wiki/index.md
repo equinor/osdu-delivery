@@ -96,9 +96,9 @@ other packages adopt the same contract.
 - [0017: a pipeline names the cache it needs current before it runs and the cache it updates after](decisions/0017-pipelines-update-the-cache.md) -
   why the cache steps belong to the pipeline, why before is mandatory and after is not, why after reads storage,
   and how held records wait for what they miss.
-- [0018: a repository's template folders settle the template each document fills](decisions/0018-template-folders.md) -
-  why templates live as files in a repository's template folders, how a document's template is settled, and why
-  the saved templates stay a separate library.
+- [0018: a repository's template folders hold the templates, and every reader reads the file](decisions/0018-template-folders.md) -
+  why templates live only as files in a repository's template folders, how a document's template is settled, and why
+  the database keeps an index of them and no copy.
 
 ## Coverage
 

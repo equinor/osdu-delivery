@@ -23,22 +23,10 @@ internal static class WellLogVersions
 
     public const string NextMapping = "WellLog@1.5.0";
 
-    /// <summary>The content version of the WellLog 1.5.0 fixture, as <c>sqlflow template capture</c> saved it.</summary>
+    /// <summary>The content version of the WellLog 1.5.0 fixture, as <c>sqlflow template capture</c> wrote it.</summary>
     public const string NextTemplateVersion = "2f8a99cb38d32480";
 
-    public const string NextOrigin = "OSDU data definitions v0.30.0 (99f8fc88d8ad) Generated/work-product-component/WellLog.1.5.0.json";
-
     private const string CurrentTemplateVersion = "26a3c3441882db4f";
-
-    /// <summary>Saves WellLog 1.5.0 into <paramref name="store"/>; saving it again changes nothing.</summary>
-    public static async Task SaveNextTemplateAsync(ITemplateStore store)
-    {
-        ArgumentNullException.ThrowIfNull(store);
-        var file = Path.Combine(AppContext.BaseDirectory, "Fixtures", "templates", NextKind.Replace(':', '_') + ".json");
-        var schema = TemplateSources.FromBundledJson(File.ReadAllText(file), NextKind, new DateTimeOffset(2026, 9, 16, 12, 21, 35, TimeSpan.Zero), file);
-        var saved = await store.SaveAsync(schema, NextOrigin, "tests");
-        Assert.Equal(NextTemplateVersion, saved.Template.Version);
-    }
 
     /// <summary>
     /// <paramref name="flow"/> as a pipeline named <paramref name="name"/> that renders WellLog 1.5.0 and delivers to

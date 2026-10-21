@@ -517,7 +517,7 @@ public static class Samples
 
     /// <summary>
     /// The welldb source's template folder: the bundled OSDU schemas its mappings fill and its flows read, which a run reads
-    /// from here (osdu/docs/reference/concepts/templates.md, Template folders) and a suite saves into the library.
+    /// from here (osdu/docs/reference/concepts/templates.md, Template folders) and the suites' in-memory templates load.
     /// </summary>
     public static string TemplateFiles => Path.Combine(Source, "templates");
 
@@ -596,22 +596,22 @@ public static class Samples
     /// <summary>When the sample cache records were captured: the version label the sample cache is imported under.</summary>
     public static readonly DateTimeOffset SampleCacheCaptured = new(2026, 9, 8, 21, 27, 27, TimeSpan.Zero);
 
-    // The sample templates and the sample cache, imported once for the whole run through the real stores: template and
-    // cache versions are immutable, and after the warm-up a render never reaches the database behind them, so the import
-    // holds the test database only while it runs. The SQL Server collection warms them before its first test, so a test
-    // inside it never finds its database written by the import; a parallel test that asks first takes the database for
-    // the import, waiting while another test process holds it.
-    private static readonly Lazy<(OsduTemplateStore Store, ICacheStore Cache)> SampleStores = new(() =>
+    // The sample cache, imported once for the whole run through the real store: a cache version is immutable, and after the
+    // warm-up a render never reaches the database behind it, so the import holds the test database only while it runs. The
+    // SQL Server collection warms it before its first test, so a test inside it never finds its database written by the
+    // import; a parallel test that asks first takes the database for the import, waiting while another test process holds it.
+    private static readonly Lazy<ICacheStore> SampleStores = new(() =>
     {
         using var hold = OsduTestDatabaseLock.Acquire();
         using var database = new OsduTestDatabase();
-        var store = database.Templates();
-        ImportSampleTemplatesAsync(store).GetAwaiter().GetResult();
         var version = ImportSampleCacheAsync(database.Caches()).GetAwaiter().GetResult();
-        return (store, new FixedCacheStore(SampleCacheScope, FixtureCacheFlowName, version, SampleCacheDeclaration()));
+        return new FixedCacheStore(SampleCacheScope, FixtureCacheFlowName, version, SampleCacheDeclaration());
     });
 
-    /// <summary>Imports the sample templates and cache now, when nothing has asked for them yet.</summary>
+    /// <summary>The sample templates, read from their files once for the whole run.</summary>
+    private static readonly Lazy<MemoryTemplates> SampleTemplateFiles = new(() => new MemoryTemplates(TemplateKinds().Select(SampleTemplate)));
+
+    /// <summary>Imports the sample cache now, when nothing has asked for it yet.</summary>
     internal static void WarmSampleStores() => _ = SampleStores.Value;
 
     /// <summary>
@@ -707,11 +707,14 @@ public static class Samples
         return types;
     }
 
-    /// <summary>A template store holding the sample templates, shared by the engine tests.</summary>
-    public static ITemplateStore SampleTemplates => SampleStores.Value.Store;
+    /// <summary>
+    /// The sample templates, read from the sample estate's template files and held in memory, shared by the engine tests that
+    /// read a template whatever a document's path.
+    /// </summary>
+    public static MemoryTemplates SampleTemplates => SampleTemplateFiles.Value;
 
     /// <summary>The sample cache at its one version, shared by the engine tests.</summary>
-    public static ICacheStore SampleCache => SampleStores.Value.Cache;
+    public static ICacheStore SampleCache => SampleStores.Value;
 
     /// <summary>
     /// Imports the sample cache records into <paramref name="store"/> as a version of the sample partition's cache: the
@@ -737,21 +740,6 @@ public static class Samples
             store, SampleCacheScope, fixtures.Name, new TestClock(SampleCacheCaptured), Logger<SnapshotBuilder>());
         var write = await fixtureBuilder.ImportDirectoryAsync(FixtureCacheRecords, fixtures.Types, new CacheCapture(null, "tests", "fixture files"));
         return (await store.LoadAsync(SampleCacheScope, write.Snapshot.Version))!;
-    }
-
-    /// <summary>Saves the sample templates into <paramref name="store"/> and loads each once, returning what was saved.</summary>
-    public static async Task<IReadOnlyList<TemplateSaved>> ImportSampleTemplatesAsync(ITemplateStore store)
-    {
-        ArgumentNullException.ThrowIfNull(store);
-        var saved = new List<TemplateSaved>();
-        foreach (var kind in TemplateKinds())
-        {
-            var schema = SampleTemplate(kind);
-            saved.Add(await store.SaveAsync(schema, "sample file", "tests"));
-            await store.LoadAsync(new TemplateReference(schema.Kind, schema.Version));
-        }
-
-        return saved;
     }
 
     /// <summary>
@@ -826,21 +814,23 @@ public static class Samples
     /// which the suites supply as a fake protocol. A host reads a document's templates from the template folders on its
     /// path; the suites that test what renders read them from <paramref name="templates"/> (the sample templates by
     /// default) whatever a document's path, and a suite of the folders themselves passes
-    /// <paramref name="documentTemplates"/> (<see cref="FolderTemplates.Default"/>, as every host composes it).
+    /// <paramref name="documentTemplates"/> (<see cref="FolderTemplates.Default"/>, as every host composes it). A suite
+    /// that reads a synced repository's templates passes the <paramref name="repositories"/> it is synced into.
     /// </summary>
     public static EngineContext Engine(
         ILedger? ledger,
         TimeProvider? time = null,
         IProtocolFactory? protocols = null,
-        ITemplateStore? templates = null,
+        ITemplateSource? templates = null,
         ICacheStore? cache = null,
         IIngestionSourceFactory? sources = null,
         IPayloadFiles? payloads = null,
         IRecordSearchFactory? searches = null,
         IPartitionRegistry? partitions = null,
-        ITemplateSource? documentTemplates = null)
+        ITemplateSource? documentTemplates = null,
+        IRepositoryFolders? repositories = null)
     {
-        var library = templates ?? SampleTemplates;
+        var held = templates ?? SampleTemplates;
         var stores = Stores();
         var loader = new DeliveryDocumentLoader();
         return new EngineContext(
@@ -854,12 +844,12 @@ public static class Samples
             NullLoggerFactory.Instance,
             protocols ?? new DefaultProtocolFactory(),
             CompositeDeliveryListener.Empty,
-            Templates: library,
             Cache: cache ?? SampleCache,
             Searches: searches ?? FixedRecordSearchFactory.SampleWellbores(),
             Partitions: partitions ?? FixedPartitionRegistry.Empty)
         {
-            DocumentTemplates = documentTemplates ?? library,
+            DocumentTemplates = documentTemplates ?? held,
+            RepositoryFolders = repositories ?? RepositoryFolders.None,
         };
     }
 

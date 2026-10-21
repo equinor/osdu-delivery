@@ -3,6 +3,7 @@ using SqlFlow.Delivery.Catalog;
 using SqlFlow.Delivery.Documents;
 using SqlFlow.Delivery.Engine.Search;
 using SqlFlow.Delivery.SearchTerms;
+using SqlFlow.Delivery.Templates;
 using Xunit;
 
 namespace SqlFlow.Delivery.Tests;
@@ -58,7 +59,7 @@ public sealed class SearchTermCatalogTests : IDisposable
     private async Task<T> WithDirectoryAsync<T>(Func<SearchTermDirectory, Task<T>> read)
     {
         await using var db = _module.CreateDbContext();
-        return await read(new SearchTermDirectory(db, new DeliveryDocumentLoader(), _clock));
+        return await read(new SearchTermDirectory(db, new DeliveryDocumentLoader(), _clock, RepositoryFolders.Of(_repo, _root)));
     }
 
     private Task<IReadOnlyList<SearchTermView>> TermsAsync(bool orphans = false) => WithDirectoryAsync(d => d.ListAsync(WellLog, null, orphans, CancellationToken.None));
@@ -120,20 +121,19 @@ public sealed class SearchTermCatalogTests : IDisposable
         File.Delete(Path.Combine(_root, "templates", "osdu_wks_reference-data--UnitOfMeasure_1.0.0.json"));
         await SyncAsync();
 
-        // A term's template is the one the template folders the last sync recorded give its mapping, read from the copy the
-        // sync kept of the file. While that copy cannot be read (a row recorded before copies were kept), nothing of the
-        // record's content can be compared, and each term says why; the next sync keeps it again.
-        await using (var db = _module.CreateDbContext())
-        {
-            await db.DeliveryRepositoryTemplates.Where(t => t.RepoId == _repo && t.Kind == WellLogVersions.CurrentKind)
-                .ExecuteUpdateAsync(set => set.SetProperty(t => t.SchemaJson, (string?)null));
-        }
+        // A term's template is the one the template folders the last sync recorded give its mapping, read from its file where
+        // the repository was synced. While that file is gone (removed since the sync), nothing of the record's content can be
+        // compared, and each term says why; put back, it is read again.
+        var file = Path.Combine(_root, "templates", TemplateSources.FileName(WellLogVersions.CurrentKind));
+        var held = await File.ReadAllTextAsync(file);
+        File.Delete(file);
 
         var unread = Assert.Single(await TermsAsync(), t => t.Column == "log_run");
         Assert.Null(unread.Route);
         Assert.Contains("the template of WellLog@1.4.0 cannot be read", unread.Problem, StringComparison.Ordinal);
-        Assert.Contains("the copy the sync keeps of it is missing; sync the repository again", unread.Problem, StringComparison.Ordinal);
+        Assert.Contains("no longer reads: the file no longer exists; sync the repository again", unread.Problem, StringComparison.Ordinal);
 
+        await File.WriteAllTextAsync(file, held);
         await SyncAsync();
         var terms = await TermsAsync();
         var run = Assert.Single(terms, t => t.Column == "log_run");
@@ -399,7 +399,8 @@ public sealed class SearchTermCatalogTests : IDisposable
             .ToList();
         var warnings = new List<string>();
         await using var context = _module.CreateDbContext();
-        var counts = await DeliverySearchTermCatalog.ReconcileAsync(context, _repo, sources, loader, _clock.GetUtcNow().UtcDateTime, warnings, CancellationToken.None);
+        var counts = await DeliverySearchTermCatalog.ReconcileAsync(
+            context, RepositoryFolders.Of(_repo, _root), _repo, sources, loader, _clock.GetUtcNow().UtcDateTime, warnings, CancellationToken.None);
 
         Assert.True(counts.Added > 10);
         Assert.Empty(warnings);

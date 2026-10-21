@@ -1,18 +1,23 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import type { Locator, Page } from "@playwright/test";
+import { REPO_NAME, SOURCE } from "./global-setup";
 import { expect, test } from "./helpers";
 
 // Templates and the mapping builder (osdu/docs/reference/concepts/templates.md; the builder:
-// osdu/docs/reference/concepts/gui.md, Mapping builder). Runs after the seed (03), which saves the templates the sample
-// mappings fill in the library, as the Templates page saves them, and syncs the fixture repository, so its cache is in the
-// catalog. The library is not linked to the repository, whose documents read their templates from its template folder. Browsing OSDU reads the Open Group's public data definitions repository through
-// the control plane, which the suite cannot reach, so the browse test stands in for those three answers and lets
-// everything after them (the preview, the save) run against the real control plane.
+// osdu/docs/reference/concepts/gui.md, Mapping builder). Runs after the seed (03), which syncs the fixture repository: its
+// sync records the templates the source's template folder holds, which the Templates page lists and reads from the
+// repository's files, and its cache is in the catalog. Browsing OSDU reads the Open Group's public data definitions
+// repository through the control plane, which the suite cannot reach, so the browse tests stand in for those answers and
+// let everything after them (the preview, the download) run against the real control plane.
 
 const WELLBORE_KIND = "osdu:wks:master-data--Wellbore:1.3.0";
 const WELLBORE_VERSION = "58d6bdbd9d066a06";
 const WELLBORE_FILE = "osdu_wks_master-data--Wellbore_1.3.0.json";
+/** The file of the source's template folder that holds the wellbore template, as the sync records it. */
+const WELLBORE_PATH = `${SOURCE}/templates/${WELLBORE_FILE}`;
+/** The sample's own copy of that file, which the fixture repository's template folder was copied from. */
+const WELLBORE_SAMPLE = join(import.meta.dirname, "..", "..", "samples", "welldb", "templates", WELLBORE_FILE);
 
 const DATA_DEFINITIONS = "https://community.opengroup.org/osdu/data/data-definitions";
 const RELEASE = {
@@ -59,23 +64,30 @@ async function openTemplates(page: Page): Promise<void> {
 }
 
 test.describe.serial("templates and the mapping builder", () => {
-  test("a saved template is laid out and downloads as a file, and deleting it touches no repository", async ({ adminPage }) => {
+  test("a repository's template is listed by its file, laid out from it, and downloads as that file", async ({ adminPage }) => {
     await openTemplates(adminPage);
 
-    const rows = adminPage.getByTestId("templates-saved-table").getByTestId("table-row");
-    const wellbore = rows.filter({ hasText: WELLBORE_KIND });
+    // Each row is a file of a synced repository's template folder: the kind and version it holds, the repository, the file.
+    const rows = adminPage.getByTestId("templates-table").getByTestId("table-row");
+    const ours = rows.filter({ hasText: REPO_NAME });
+    const wellbore = ours.filter({ hasText: WELLBORE_PATH });
     await expect(wellbore).toHaveCount(1, { timeout: 30_000 });
+    await expect(wellbore).toContainText(WELLBORE_KIND);
     await expect(wellbore).toContainText(WELLBORE_VERSION);
-    await expect(rows.filter({ hasText: WELLLOG_KIND })).toContainText(WELLLOG_VERSION);
+    await expect(ours.filter({ hasText: WELLLOG_KIND }).first()).toContainText(WELLLOG_VERSION);
+
+    // The filter finds a file by any of what its row says.
+    await adminPage.getByTestId("templates-search").fill(WELLBORE_FILE);
+    await expect(ours).toHaveCount(1);
+    await adminPage.getByTestId("templates-search").fill("");
 
     await wellbore.click();
-    const sheet = adminPage.getByTestId("templates-saved-sheet");
+    const sheet = adminPage.getByTestId("templates-sheet");
     await expect(sheet.getByTestId("templates-view-kind")).toHaveText(WELLBORE_KIND, { timeout: 15_000 });
     await expect(sheet.getByTestId("templates-view-version")).toHaveText(WELLBORE_VERSION);
-    await expect(sheet.getByTestId("templates-view-state")).toHaveText("saved");
-    // The library says nothing of the repositories: their documents read their own template folders.
-    await expect(sheet.getByTestId("templates-view-held")).toHaveCount(0);
-    await expect(sheet.getByTestId("templates-view-saved")).not.toContainText("Filled by");
+    // It says where it is read from: the repository, and the file of its template folder.
+    await expect(sheet.getByTestId("templates-view-repository")).toContainText(REPO_NAME);
+    await expect(sheet.getByTestId("templates-view-file")).toContainText(WELLBORE_PATH);
 
     // The variables a mapping fills are listed; what OSDU Delivery and OSDU write themselves shows only on request.
     // The tree opens fully folded; opening the data section shows what it holds.
@@ -111,66 +123,45 @@ test.describe.serial("templates and the mapping builder", () => {
     await sheet.getByTestId("templates-view-tab-schema").click();
     await expect(sheet.getByTestId("templates-view-schema-json")).toBeVisible({ timeout: 15_000 });
 
-    // Download saves the schema as a file named as the samples name theirs, holding the schema the sample file holds.
+    // Download saves the file as the repository holds it, under its own name: the sample's file, which the fixture copied.
+    // A template is the repository's file, so there is nothing to delete here: the repository removes it, and its sync.
+    await expect(sheet.getByTestId("templates-view-actions").getByTestId("templates-delete")).toHaveCount(0);
     const [download] = await Promise.all([
       adminPage.waitForEvent("download"),
       sheet.getByTestId("templates-view-actions").getByTestId("templates-download").click(),
     ]);
     expect(download.suggestedFilename()).toBe(WELLBORE_FILE);
-    expect(JSON.parse(readFileSync(await download.path(), "utf8"))).toEqual(
-      JSON.parse(readFileSync(join(import.meta.dirname, "..", "..", "samples", "welldb", "templates", WELLBORE_FILE), "utf8")),
-    );
-
-    // A synced repository's template folder holds this same version, and Delete is offered all the same: the repository's
-    // documents read the file, so the confirmation says none is affected. Kept here, for the builder tests after this one.
-    await sheet.getByTestId("templates-view-actions").getByTestId("templates-delete").click();
-    await expect(adminPage.getByTestId("confirm-dialog")).toContainText("none of their documents is affected");
-    await adminPage.getByTestId("confirm-dialog-cancel").click();
-    await expect(rows.filter({ hasText: WELLBORE_KIND })).toHaveCount(1);
+    // A checkout may write the file's line endings its own way, so the two are compared as the JSON they hold.
+    expect(JSON.parse(readFileSync(await download.path(), "utf8"))).toEqual(JSON.parse(readFileSync(WELLBORE_SAMPLE, "utf8")));
   });
 
-  test("a schema file is laid out as a template, and saving a version already saved changes nothing", async ({ adminPage }) => {
-    await openTemplates(adminPage);
-    await adminPage.getByTestId("templates-tab-import").click();
+  test("a link to a kind and version opens the file holding it, and one no repository holds says so", async ({ adminPage }) => {
+    // The links the mapping, dimension and order pages make name a kind and version; the page opens the file holding it.
+    await adminPage.goto(`/delivery/templates?${new URLSearchParams({ kind: WELLBORE_KIND, version: WELLBORE_VERSION }).toString()}`);
+    const sheet = adminPage.getByTestId("templates-sheet");
+    await expect(sheet.getByTestId("templates-view-version")).toHaveText(WELLBORE_VERSION, { timeout: FIRST_VISIT_MS });
+    await expect(sheet.getByTestId("templates-view-file")).toContainText(`templates/${WELLBORE_FILE}`);
+    await adminPage.keyboard.press("Escape");
+    await expect(sheet).toHaveCount(0);
+    // Closing the sheet drops the link from the address, so a reload does not open it again.
+    expect(new URL(adminPage.url()).searchParams.has("kind")).toBe(false);
 
-    const schema = readFileSync(join(import.meta.dirname, "..", "..", "samples", "welldb", "templates", WELLBORE_FILE), "utf8");
-    // The kind is asked for until the schema names its own, and then it is read from the schema.
-    await expect(adminPage.getByTestId("templates-import-kind")).toBeVisible();
-    await adminPage.getByTestId("templates-import-json").fill(schema);
-    await expect(adminPage.getByTestId("templates-import-kind-declared")).toHaveText(WELLBORE_KIND);
-    await expect(adminPage.getByTestId("templates-import-kind")).toHaveCount(0);
-    await adminPage.getByTestId("templates-import-preview").click();
+    await adminPage.goto(`/delivery/templates?${new URLSearchParams({ kind: WELLBORE_KIND, version: "0".repeat(16) }).toString()}`);
+    await expect(adminPage.getByTestId("templates-link-unheld")).toContainText(`${WELLBORE_KIND} version ${"0".repeat(16)}`, { timeout: FIRST_VISIT_MS });
+    await expect(adminPage.getByTestId("templates-sheet")).toHaveCount(0);
 
-    // A version is the schema's content, so the same file lays out as the version the catalog already holds.
-    const sheet = adminPage.getByTestId("templates-import-sheet");
-    await expect(sheet.getByTestId("templates-view-version")).toHaveText(WELLBORE_VERSION, { timeout: 15_000 });
-    await expect(sheet.getByTestId("templates-view-state")).toHaveText("saved");
-    await sheet.getByTestId("templates-import-save").click();
-    await expect(adminPage.getByText(/was already saved, so nothing changed/).first()).toBeVisible({ timeout: 15_000 });
+    // A link to a file the sync did not record says so in the sheet rather than showing nothing.
+    await adminPage.goto(`/delivery/templates?${new URLSearchParams({ repoId: "00000000-0000-0000-0000-000000000000", path: "nowhere/templates/none.json" }).toString()}`);
+    await expect(adminPage.getByTestId("templates-detail-error")).toBeVisible({ timeout: FIRST_VISIT_MS });
   });
 
-  test("a schema is saved straight from the import form, and opens as the saved version", async ({ adminPage }) => {
-    await openTemplates(adminPage);
-    await adminPage.getByTestId("templates-tab-import").click();
-
-    const schema = readFileSync(join(import.meta.dirname, "..", "..", "samples", "welldb", "templates", WELLBORE_FILE), "utf8");
-    await adminPage.getByTestId("templates-import-json").fill(schema);
-    await adminPage.getByTestId("templates-import-save-now").click();
-
-    await expect(adminPage.getByText(/was already saved, so nothing changed/).first()).toBeVisible({ timeout: 15_000 });
-    const sheet = adminPage.getByTestId("templates-import-sheet");
-    await expect(sheet.getByTestId("templates-view-kind")).toHaveText(WELLBORE_KIND, { timeout: 15_000 });
-    await expect(sheet.getByTestId("templates-view-version")).toHaveText(WELLBORE_VERSION);
-    await expect(sheet.getByTestId("templates-view-state")).toHaveText("saved");
-  });
-
-  test("the OSDU data definitions are browsed by release, and a kind opens as the template it saves as", async ({ adminPage }) => {
+  test("the OSDU data definitions are browsed by release, and a kind opens as a template and downloads as its file", async ({ adminPage }) => {
     const releases = /\/api\/v1\/delivery\/templates\/osdu\/releases$/;
     const schemas = /\/api\/v1\/delivery\/templates\/osdu\/schemas(\?|$)/;
     const schema = /\/api\/v1\/delivery\/templates\/osdu\/schema(\?|$)/;
-    const wellboreSchema: unknown = JSON.parse(
-      readFileSync(join(import.meta.dirname, "..", "..", "samples", "welldb", "templates", WELLBORE_FILE), "utf8"),
-    );
+    const file = /\/api\/v1\/delivery\/templates\/osdu\/file(\?|$)/;
+    const wellboreText = readFileSync(WELLBORE_SAMPLE, "utf8");
+    const wellboreSchema: unknown = JSON.parse(wellboreText);
     const asked: string[] = [];
     const sync = /\/api\/v1\/delivery\/templates\/osdu\/sync$/;
     await adminPage.route(sync, (route) => route.fulfill({ json: { syncedUtc: "2026-09-13T11:00:00Z", releases: [RELEASE], downloaded: ["v0.30.0"] } }));
@@ -202,6 +193,11 @@ test.describe.serial("templates and the mapping builder", () => {
         },
       });
     });
+    // The file a template folder keeps: the bundled schema, as the control plane writes it for the kind of the release.
+    await adminPage.route(file, (route) => {
+      asked.push(route.request().url());
+      return route.fulfill({ contentType: "application/json", body: wellboreText });
+    });
 
     try {
       await openTemplates(adminPage);
@@ -228,22 +224,38 @@ test.describe.serial("templates and the mapping builder", () => {
       await adminPage.getByTestId("templates-browse-all-versions").click();
       await expect(rows).toHaveCount(2);
 
-      // A kind opens laid out as the template it saves as; the seed saved this one, so saving it changes nothing.
+      // A kind downloads straight from its row as the file a template folder keeps, named after its kind.
+      const [fromRow] = await Promise.all([
+        adminPage.waitForEvent("download"),
+        adminPage.getByTestId(`templates-browse-download-${WELLBORE_KIND}`).click(),
+      ]);
+      expect(fromRow.suggestedFilename()).toBe(WELLBORE_FILE);
+      expect(readFileSync(await fromRow.path(), "utf8")).toBe(wellboreText);
+      await expect(adminPage.getByText(/Put it in a folder named templates beside the documents that fill it/).first()).toBeVisible();
+
+      // A kind opens laid out as the template its file holds, with the same download beside it. Nothing is kept: the
+      // template is the repository's once the file is committed to a template folder and synced.
       await adminPage.getByTestId(`templates-browse-view-${WELLBORE_KIND}`).click();
       const sheet = adminPage.getByTestId("templates-browse-sheet");
       await expect(sheet.getByTestId("templates-view-version")).toHaveText(WELLBORE_VERSION, { timeout: 15_000 });
-      await expect(sheet.getByTestId("templates-view-state")).toHaveText("saved");
       await expect(sheet.getByTestId("templates-browse-source-link")).toHaveAttribute("href", WELLBORE_URL);
-      await sheet.getByTestId("templates-browse-save").click();
-      await expect(adminPage.getByText(/was already saved, so nothing changed/).first()).toBeVisible({ timeout: 15_000 });
+      await expect(sheet.getByTestId("templates-view-repository")).toHaveCount(0);
+      const [fromSheet] = await Promise.all([
+        adminPage.waitForEvent("download"),
+        sheet.getByTestId("templates-view-actions").getByTestId("templates-browse-download").click(),
+      ]);
+      expect(fromSheet.suggestedFilename()).toBe(WELLBORE_FILE);
+      expect(JSON.parse(readFileSync(await fromSheet.path(), "utf8"))).toEqual(wellboreSchema);
 
       expect(asked.length).toBeGreaterThan(1);
       expect(asked.every((url) => new URL(url).searchParams.get("release") === "v0.30.0")).toBe(true);
+      expect(asked.some((url) => new URL(url).pathname.endsWith("/osdu/file") && new URL(url).searchParams.get("kind") === WELLBORE_KIND)).toBe(true);
     } finally {
       await adminPage.unroute(sync);
       await adminPage.unroute(releases);
       await adminPage.unroute(schemas);
       await adminPage.unroute(schema);
+      await adminPage.unroute(file);
     }
   });
 
@@ -376,7 +388,7 @@ test.describe.serial("templates and the mapping builder", () => {
     }
   });
 
-  test("the builder starts a mapping from a saved template, with what the cache holds prefilled", async ({ adminPage }) => {
+  test("the builder starts a mapping from a template of the repository, with what the cache holds prefilled", async ({ adminPage }) => {
     // The builder is no entry of the menu: Mappings opens it.
     await adminPage.getByTestId("nav-delivery-documents").click();
     await adminPage.getByTestId("delivery-documents-new-mapping").click();
@@ -389,7 +401,9 @@ test.describe.serial("templates and the mapping builder", () => {
     await expect(adminPage.getByTestId("mapping-builder-cache")).toContainText("dev", { timeout: 15_000 });
     await expect(adminPage.getByTestId("mapping-builder-cache-note")).toContainText(/holds \d+ types? at version /, { timeout: 15_000 });
 
+    // The templates offered are the files the repository's template folders hold, each named by its kind and its file.
     await adminPage.getByTestId("mapping-builder-template").click();
+    await expect(adminPage.getByRole("option").filter({ hasText: WELLBORE_PATH })).toBeVisible();
     await adminPage.getByRole("option").filter({ hasText: WELLLOG_KIND }).first().click();
     // The name starts as the template's entity; this draft takes its own, so it is never taken for the synced mapping.
     await expect(adminPage.getByTestId("mapping-builder-name")).toHaveValue("WellLog");
@@ -527,7 +541,7 @@ test.describe.serial("templates and the mapping builder", () => {
     await expect(async () => {
       await adminPage.mouse.move(0, 0);
       await templateKey.getByText("template", { exact: true }).hover();
-      await expect(hoverCard).toContainText("The saved template version the mapping fills", { timeout: 3_000 });
+      await expect(hoverCard).toContainText("The template the mapping fills, read from the template folders", { timeout: 3_000 });
     }).toPass({ timeout: 30_000 });
     await expect(yaml.locator(".squiggly-error, .squiggly-warning")).toHaveCount(0);
 

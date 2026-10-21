@@ -104,7 +104,7 @@ public sealed record MappingDraft
 
 public sealed record MappingDraftParameter(string Name, bool Required, string? Default, string? Description);
 
-/// <summary>One search: the name entries read it by, the kind it looks in, and the saved template whose schema says how that kind is indexed.</summary>
+/// <summary>One search: the name entries read it by, the kind it looks in, and the template whose schema says how that kind is indexed.</summary>
 public sealed record MappingDraftSearch(string Name, string Kind, string SchemaKind, string SchemaVersion, string? Description);
 
 /// <summary>
@@ -520,7 +520,7 @@ public static partial class MappingBuilder
 
         if (string.IsNullOrWhiteSpace(draft.TemplateKind) || string.IsNullOrWhiteSpace(draft.TemplateVersion))
         {
-            Error("Pick the saved template the mapping fills.");
+            Error("Pick the template the mapping fills, among those the repository's template folders hold.");
         }
 
         if (string.IsNullOrWhiteSpace(draft.System))
@@ -569,7 +569,7 @@ public static partial class MappingBuilder
 
             if (string.IsNullOrWhiteSpace(search.SchemaKind) || string.IsNullOrWhiteSpace(search.SchemaVersion))
             {
-                Error($"Search '{search.Name}': pick the saved template whose schema says how the kind it searches is indexed.");
+                Error($"Search '{search.Name}': pick the template whose schema says how the kind it searches is indexed, among those the repository's template folders hold.");
             }
         }
 

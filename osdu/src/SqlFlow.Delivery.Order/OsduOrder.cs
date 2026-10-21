@@ -289,7 +289,7 @@ public static class OsduOrder
             if (relationships is null)
             {
                 unknown.Add(delivery);
-                warnings.Add($"{delivery.FullLabel} writes {delivery.Kind}, whose schema is not known (no template of it is saved, and no built release of OSDU's lineage holds it), so what its records refer to is not ordered.");
+                warnings.Add($"{delivery.FullLabel} writes {delivery.Kind}, whose schema is not known (no template folder holds its template, and no built release of OSDU's lineage holds it), so what its records refer to is not ordered.");
                 referred[delivery.Identity] = [];
                 continue;
             }

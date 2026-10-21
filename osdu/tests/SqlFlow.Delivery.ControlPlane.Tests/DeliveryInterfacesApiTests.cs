@@ -73,7 +73,7 @@ public sealed class DeliveryInterfacesApiTests
             db.Repos.Add(new CatalogRepo
             {
                 Id = repoId, Name = "cp-interfaces-" + suffix, RemoteUrl = "https://example/cp-interfaces.git",
-                RootPath = Path.GetTempPath(), FirstSeenUtc = now, LastSyncUtc = now,
+                RootPath = SampleEstate.TemplateRoot, FirstSeenUtc = now, LastSyncUtc = now,
             });
             db.Pipelines.Add(new CatalogPipeline
             {

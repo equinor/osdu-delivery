@@ -37,7 +37,7 @@ public sealed class ValidationGate
     private readonly ValidationLimits _limits;
 
     /// <param name="flow">The flow whose records are checked, with its policy (<c>target.validation</c>).</param>
-    /// <param name="schemas">The schema of a kind at a content version (null for the newest the caller has), or null when none is saved.</param>
+    /// <param name="schemas">The schema of a kind at a content version (null for the newest the caller has), or null when no template folder holds it.</param>
     /// <param name="references">Where the records a document refers to are looked up.</param>
     /// <param name="time">The clock verdicts are stamped with.</param>
     /// <param name="limits">The bounds of each check; the defaults when null.</param>

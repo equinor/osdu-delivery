@@ -36,7 +36,7 @@ public static class TemplateFolderFixtures
         return schema.ToJsonString();
     }
 
-    /// <summary>The version the schema text holds, as a template is saved from it.</summary>
+    /// <summary>The version the schema text holds, as a template file holding it has.</summary>
     public static string VersionOf(string kind, string json) => SchemaSnapshot.Parse(kind, json, DateTimeOffset.UnixEpoch).Version;
 
     /// <summary>The test template as a template folder keeps it, naming its kind; <paramref name="comment"/> makes another version of it.</summary>

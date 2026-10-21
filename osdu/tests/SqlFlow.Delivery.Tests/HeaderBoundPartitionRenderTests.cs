@@ -37,8 +37,7 @@ public sealed class HeaderBoundPartitionRenderTests : IDisposable
     [Fact]
     public async Task A_flow_bound_by_its_header_mints_every_id_in_the_partition_its_requests_carry()
     {
-        var templates = _db.Templates();
-        await templates.SaveAsync(TestSchema.Build(), "tests", "tests");
+        var templates = new MemoryTemplates(TestSchema.Build());
         var directory = Samples.NewTempDirectory();
         await File.WriteAllTextAsync(Path.Combine(directory, "Thing@1.0.0.yaml"), TestSchema.MappingDocument());
 

@@ -26,10 +26,11 @@ namespace SqlFlow.ControlPlane.Tests;
 
 /// <summary>
 /// Templates and the mapping builder through the API (osdu/docs/reference/concepts/templates.md; the builder:
-/// osdu/docs/reference/concepts/gui.md, Mapping builder): saving a template version, which takes a signed-in caller,
-/// reading it as variables and as its schema, the delete a pinned version refuses, and the builder's repository
-/// listing, draft, parse and check against a repository's cache as the catalog carries it, and browsing the OSDU data
-/// definitions, served here by a stand-in for the repository's API. Gated on a reachable catalog database.
+/// osdu/docs/reference/concepts/gui.md, Mapping builder): the templates every synced repository holds, listed as their syncs
+/// recorded them and each read from its file where the repository was synced, as variables and as the file; nothing that
+/// saves or deletes one; the builder's repository listing, draft from a repository's template, parse and check against a
+/// repository's cache as the catalog carries it; and browsing and downloading the OSDU data definitions, served here by a
+/// stand-in for the repository's API. Gated on a reachable catalog database.
 /// </summary>
 [Trait("Category", "Integration")]
 [Collection(SqlServerSuite.Name)]
@@ -58,7 +59,7 @@ public sealed class DeliveryTemplateApiTests
     private static string SampleSource => Path.Combine(SampleRoot, SampleEstate.SourceFolder);
 
     [Fact]
-    public async Task A_template_is_saved_once_by_a_signed_in_caller_and_read_as_variables_and_as_its_schema()
+    public async Task The_templates_page_lists_what_every_synced_repository_holds_and_reads_each_template_from_its_file()
     {
         var cs = OsduTestServer.Require();
         await ProvisionAsync(cs);
@@ -67,207 +68,118 @@ public sealed class DeliveryTemplateApiTests
         var reader = await TokenAsync(client, "read");
         var author = await TokenAsync(client, "read", "author");
 
-        // Saving is an author action, which every signed-in user may take and no anonymous caller may.
-        using (var anonymous = await client.PostAsJsonAsync(new Uri("/api/v1/delivery/templates", UriKind.Relative), SaveBody(WellboreKind, WellboreFile), Web))
-        {
-            Assert.Equal(HttpStatusCode.Unauthorized, anonymous.StatusCode);
-        }
-
-        var first = await ReadAsync<DeliveryTemplateSavedDto>(await SendAsync(client, author, HttpMethod.Post, "/api/v1/delivery/templates", SaveBody(WellboreKind, WellboreFile)));
-        Assert.Equal(WellboreVersion, first.Template.Version);
-        Assert.Contains(first.Outcome, new[] { "created", "unchanged" });
-        var again = await ReadAsync<DeliveryTemplateSavedDto>(await SendAsync(client, author, HttpMethod.Post, "/api/v1/delivery/templates", SaveBody(WellboreKind, WellboreFile)));
-        Assert.Equal("unchanged", again.Outcome);
-
-        var listed = await ReadAsync<List<DeliveryTemplateDto>>(await SendAsync(client, reader, HttpMethod.Get, "/api/v1/delivery/templates"));
-        Assert.Contains(listed, t => t.Kind == WellboreKind && t.Version == WellboreVersion);
-
-        var detail = await ReadAsync<DeliveryTemplateDetailDto>(await SendAsync(client, reader, HttpMethod.Get, DetailUrl(WellboreKind, WellboreVersion)));
-        Assert.NotNull(detail.Saved);
-        Assert.Contains(detail.Variables, v => v.Path == "osdu.data.FacilityName" && v.Role == "Mapping");
-        Assert.Contains(detail.Variables, v => v.Path == "osdu.id" && v.Role == "Engine");
-        Assert.Contains(detail.Variables, v => v.Path == "osdu.data.NameAliases" && v.Shape == "GroupList");
-
-        using (var schema = await SendAsync(client, reader, HttpMethod.Get, $"/api/v1/delivery/templates/schema?kind={Uri.EscapeDataString(WellboreKind)}&version={WellboreVersion}"))
-        {
-            Assert.Equal(HttpStatusCode.OK, schema.StatusCode);
-            Assert.Equal("application/json", schema.Content.Headers.ContentType?.MediaType);
-            var text = await schema.Content.ReadAsStringAsync();
-            Assert.NotNull(JsonNode.Parse(text)?["properties"]?["data"]);
-
-            // The answer is a file to save, named as the samples name theirs, which imports again as this same version.
-            Assert.Equal("attachment", schema.Content.Headers.ContentDisposition?.DispositionType);
-            Assert.Equal(WellboreFile, schema.Content.Headers.ContentDisposition?.FileNameStar ?? schema.Content.Headers.ContentDisposition?.FileName);
-            Assert.Equal(WellboreVersion, TemplateSources.FromBundledJson(text, WellboreKind, DateTimeOffset.UnixEpoch, WellboreFile).Version);
-        }
-
-        using var notRecord = await SendAsync(client, reader, HttpMethod.Post, "/api/v1/delivery/templates/preview", new { kind = WellboreKind, schema = new { type = "object" } });
-        Assert.Equal(HttpStatusCode.BadRequest, notRecord.StatusCode);
-        Assert.Contains("declares no 'data' property", await notRecord.Content.ReadAsStringAsync(), StringComparison.Ordinal);
-    }
-
-    [Fact]
-    public async Task A_saved_version_is_deleted_whatever_a_synced_mapping_names_since_no_repository_reads_the_library()
-    {
-        var cs = OsduTestServer.Require();
-        await ProvisionAsync(cs);
-        await using var factory = Factory(cs);
-        using var client = factory.CreateClient();
-        var author = await TokenAsync(client, "read", "author");
-
-        // A kind of its own, so deleting it cannot pull a template from under any other test.
-        var kind = $"test:wks:master-data--ApiThing{Guid.NewGuid():N}:1.0.0";
-        var schema = JsonDocument.Parse("""{"type":"object","properties":{"kind":{"type":"string"},"data":{"type":"object","properties":{"Name":{"type":"string"}}}}}""").RootElement.Clone();
-        var saved = await ReadAsync<DeliveryTemplateSavedDto>(await SendAsync(client, author, HttpMethod.Post, "/api/v1/delivery/templates", new { kind, schema, origin = "test" }));
-        Assert.Equal("created", saved.Outcome);
-        var version = saved.Template.Version;
-
-        var mappingId = Guid.NewGuid();
-        await using (var db = SampleEstate.Context(cs))
-        {
-            db.DeliveryMappings.Add(new DeliveryMapping
-            {
-                Id = mappingId,
-                RepoId = Guid.NewGuid(),
-                Reference = "ApiThing@1.0.0",
-                Name = "ApiThing",
-                Version = "1.0.0",
-                Kind = kind,
-                TemplateVersion = version,
-                RelativePath = "mappings/ApiThing@1.0.0.yaml",
-                ContentHash = new string('0', 64),
-                Yaml = "documentType: mapping",
-                SummaryJson = "{}",
-                Status = "valid",
-                FirstSeenUtc = DateTime.UtcNow,
-                LastSeenUtc = DateTime.UtcNow,
-            });
-            await db.SaveChangesAsync();
-        }
-
-        // A synced mapping that names the version reads it from its repository's template folder, never from here, so the
-        // saved version is deleted and the mapping's row is left as it is.
-        var deleteUrl = $"/api/v1/delivery/templates?kind={Uri.EscapeDataString(kind)}&version={version}";
-        try
-        {
-            using (var deleted = await SendAsync(client, author, HttpMethod.Delete, deleteUrl))
-            {
-                Assert.Equal(HttpStatusCode.NoContent, deleted.StatusCode);
-            }
-
-            await using (var db = SampleEstate.Context(cs))
-            {
-                Assert.True(await db.DeliveryMappings.AnyAsync(m => m.Id == mappingId && m.TemplateVersion == version));
-            }
-
-            using (var gone = await SendAsync(client, author, HttpMethod.Get, DetailUrl(kind, version)))
-            {
-                Assert.Equal(HttpStatusCode.NotFound, gone.StatusCode);
-            }
-
-            // Deleting it again finds nothing to delete.
-            using var again = await SendAsync(client, author, HttpMethod.Delete, deleteUrl);
-            Assert.Equal(HttpStatusCode.NotFound, again.StatusCode);
-        }
-        finally
-        {
-            await using var db = SampleEstate.Context(cs);
-            await db.DeliveryMappings.Where(m => m.Id == mappingId).ExecuteDeleteAsync();
-        }
-    }
-
-    [Fact]
-    public async Task A_template_a_repositorys_folder_holds_settles_its_documents_from_the_syncs_copy_and_the_library_is_left_alone()
-    {
-        var cs = OsduTestServer.Require();
-        await ProvisionAsync(cs);
-        await using var factory = Factory(cs);
-        using var client = factory.CreateClient();
-        var author = await TokenAsync(client, "read", "author");
-
-        // A repository whose template folder holds a version of the test kind no other test makes, and a mapping that names
-        // the kind alone, synced as a control plane syncs it.
+        // A repository whose template folder holds a version of the test kind no other test makes and a file that holds no
+        // template, with a mapping that names the kind alone, synced from the folder its catalog row names, as a control
+        // plane syncs it.
         var kind = TestSchema.Kind;
         var json = TemplateFolderFixtures.ThingFile($"api-{Guid.NewGuid():N}");
         var version = TemplateFolderFixtures.VersionOf(kind, json);
-        var repoId = Guid.NewGuid();
+        var repoName = "cp_tplfiles_" + Guid.NewGuid().ToString("N")[..8];
+        var repoId = FlowIdentity.FromName(repoName);
         var root = Samples.NewTempDirectory();
+        var file = Path.Combine(root, "templates", "thing.json");
         Directory.CreateDirectory(Path.Combine(root, "templates"));
         Directory.CreateDirectory(Path.Combine(root, "mappings"));
-        await File.WriteAllTextAsync(Path.Combine(root, "templates", "thing.json"), json);
+        await File.WriteAllTextAsync(file, json);
+        await File.WriteAllTextAsync(Path.Combine(root, "templates", "broken.json"), "{ not json");
         await File.WriteAllTextAsync(Path.Combine(root, "mappings", "Thing@1.0.0.yaml"), TemplateFolderFixtures.KindAloneMapping());
+        var now = DateTime.UtcNow;
         try
         {
-            await using (var db = SampleEstate.Context(cs))
+            await using (var db = CatalogDatabase.Create(cs))
             {
-                await new DeliveryCatalogSync(new DeliveryDocumentLoader()).ReconcileAsync(db, repoId, root, DateTime.UtcNow, new List<string>(), CancellationToken.None);
+                db.Repos.Add(new CatalogRepo { Id = repoId, Name = repoName, RootPath = root, FirstSeenUtc = now, LastSyncUtc = now });
+                await db.SaveChangesAsync();
             }
 
-            // The sync keeps a copy of the file with its row, and saves nothing in the library.
-            var listed = await ReadAsync<List<DeliveryTemplateDto>>(await SendAsync(client, author, HttpMethod.Get, "/api/v1/delivery/templates"));
-            Assert.DoesNotContain(listed, t => t.Kind == kind && t.Version == version);
-            await using (var db = SampleEstate.Context(cs))
+            await SyncAsync(cs, repoId, root);
+
+            // The list is what the repositories hold, which any signed-in user reads, and no anonymous caller does.
+            using (var anonymous = await client.GetAsync(new Uri("/api/v1/delivery/templates", UriKind.Relative)))
             {
-                var row = await db.DeliveryRepositoryTemplates.AsNoTracking().SingleAsync(t => t.RepoId == repoId);
-                Assert.Equal(version, TemplateFolderFixtures.VersionOf(kind, row.SchemaJson!));
+                Assert.Equal(HttpStatusCode.Unauthorized, anonymous.StatusCode);
             }
 
-            // A document of the repository settles to it, as its run would; a version no folder on its path holds is said
-            // with where it would go.
-            var path = Uri.EscapeDataString("mappings/Thing@1.0.0.yaml");
-            var resolveUrl = $"/api/v1/delivery/templates/resolve?repoId={repoId}&path={path}&kind={Uri.EscapeDataString(kind)}";
-            var found = await ReadAsync<DeliveryTemplateResolutionDto>(await SendAsync(client, author, HttpMethod.Get, resolveUrl));
+            var listed = await ReadAsync<List<DeliveryTemplateDto>>(await SendAsync(client, reader, HttpMethod.Get, "/api/v1/delivery/templates"));
+            var thing = Assert.Single(listed, t => t.RepoId == repoId && t.Path == "templates/thing.json");
+            Assert.Equal((repoName, "templates", (string?)kind, (string?)version, (string?)null), (thing.Repository, thing.Folder, thing.Kind, thing.Version, thing.Problem));
+            var broken = Assert.Single(listed, t => t.RepoId == repoId && t.Path == "templates/broken.json");
+            Assert.Equal(((string?)null, (string?)null), (broken.Kind, broken.Version));
+            Assert.Contains("the schema is not valid JSON", broken.Problem, StringComparison.Ordinal);
+
+            // Nothing saves or deletes a template: the repository adds and removes its files, and its sync records them.
+            using (var save = await SendAsync(client, author, HttpMethod.Post, "/api/v1/delivery/templates", new { kind, schema = new { type = "object" }, origin = "test" }))
+            {
+                Assert.Equal(HttpStatusCode.MethodNotAllowed, save.StatusCode);
+            }
+
+            using (var delete = await SendAsync(client, author, HttpMethod.Delete, $"/api/v1/delivery/templates?kind={Uri.EscapeDataString(kind)}&version={version}"))
+            {
+                Assert.Equal(HttpStatusCode.MethodNotAllowed, delete.StatusCode);
+            }
+
+            // Laid out from the file, as variables, and given as the file the repository holds.
+            var detail = await ReadAsync<DeliveryTemplateDetailDto>(await SendAsync(client, reader, HttpMethod.Get, TemplateUrl("detail", repoId, "templates/thing.json")));
+            Assert.Equal((kind, version), (detail.Kind, detail.Version));
+            Assert.Equal(new DeliveryTemplateFileDto(repoId, repoName, "templates/thing.json"), detail.File);
+            Assert.Contains(detail.Variables, v => v.Path == "osdu.data.Name");
+            using (var schema = await SendAsync(client, reader, HttpMethod.Get, TemplateUrl("schema", repoId, "templates/thing.json")))
+            {
+                Assert.Equal(HttpStatusCode.OK, schema.StatusCode);
+                Assert.Equal("application/json", schema.Content.Headers.ContentType?.MediaType);
+                Assert.Equal("attachment", schema.Content.Headers.ContentDisposition?.DispositionType);
+                Assert.Equal("thing.json", schema.Content.Headers.ContentDisposition?.FileNameStar ?? schema.Content.Headers.ContentDisposition?.FileName);
+                Assert.Equal(version, TemplateSources.FromBundledJson(await schema.Content.ReadAsStringAsync(), kind, DateTimeOffset.UnixEpoch, "thing.json").Version);
+            }
+
+            // What cannot be read says why: a file not named, one the sync did not record, one that holds no template.
+            await RefusedAsync(client, reader, $"/api/v1/delivery/templates/detail?repoId={repoId}", HttpStatusCode.BadRequest, "Name the template by its repository (repoId) and its file's path in it (path).");
+            await RefusedAsync(client, reader, TemplateUrl("detail", repoId, "templates/none.json"), HttpStatusCode.NotFound, "hold no file templates/none.json as its last sync found them");
+            await RefusedAsync(client, reader, TemplateUrl("schema", repoId, "templates/broken.json"), (HttpStatusCode)422, "templates/broken.json holds no template: ");
+
+            // The file changes and the repository is not synced again: the page reads the file, sees it no longer holds what
+            // the sync recorded, and says to sync again rather than show another version.
+            await File.WriteAllTextAsync(file, TemplateFolderFixtures.ThingFile($"api-changed-{Guid.NewGuid():N}"));
+            await RefusedAsync(client, reader, TemplateUrl("detail", repoId, "templates/thing.json"), (HttpStatusCode)422, "sync the repository again, as its last sync read the file before it changed");
+            await File.WriteAllTextAsync(file, json);
+
+            // A repository whose folder this host does not see says so, and names where it was synced from.
+            var elsewhere = Path.Combine(root, "on-another-host");
+            await SetRootAsync(cs, repoId, elsewhere);
+            await RefusedAsync(client, reader, TemplateUrl("detail", repoId, "templates/thing.json"), (HttpStatusCode)422, $"repository '{repoName}' was synced from {elsewhere}, which this host does not see");
+            await SetRootAsync(cs, repoId, root);
+
+            // A document of the repository settles to the template as its run would; a version no folder on its path holds is
+            // said with where its file would go: the template folder of the document's project.
+            var resolveUrl = $"/api/v1/delivery/templates/resolve?repoId={repoId}&path={Uri.EscapeDataString("mappings/Thing@1.0.0.yaml")}&kind={Uri.EscapeDataString(kind)}";
+            var found = await ReadAsync<DeliveryTemplateResolutionDto>(await SendAsync(client, reader, HttpMethod.Get, resolveUrl));
             Assert.Equal((true, (string?)version, (string?)"templates/thing.json"), (found.Found, found.Version, found.File));
-            var missing = await ReadAsync<DeliveryTemplateResolutionDto>(await SendAsync(client, author, HttpMethod.Get, resolveUrl + "&version=0123456789abcdef"));
+            var missing = await ReadAsync<DeliveryTemplateResolutionDto>(await SendAsync(client, reader, HttpMethod.Get, resolveUrl + "&version=0123456789abcdef"));
             Assert.False(missing.Found);
             Assert.StartsWith($"no template folder on the path of mappings/Thing@1.0.0.yaml holds template {kind} version 0123456789abcdef.", missing.Problem, StringComparison.Ordinal);
             Assert.Equal("templates/test_wks_work-product-component--Thing_1.0.0.json", missing.SuggestedPath);
-            using (var unnamed = await SendAsync(client, author, HttpMethod.Get, "/api/v1/delivery/templates/resolve?repoId=" + repoId))
-            {
-                Assert.Equal(HttpStatusCode.BadRequest, unnamed.StatusCode);
-            }
+            var nested = await ReadAsync<DeliveryTemplateResolutionDto>(await SendAsync(
+                client, reader, HttpMethod.Get, $"/api/v1/delivery/templates/resolve?repoId={repoId}&path={Uri.EscapeDataString("welldb/mappings/Thing@1.0.0.yaml")}&kind={Uri.EscapeDataString(kind)}"));
+            Assert.Equal("welldb/templates/test_wks_work-product-component--Thing_1.0.0.json", nested.SuggestedPath);
+            await RefusedAsync(client, reader, "/api/v1/delivery/templates/resolve?repoId=" + repoId, HttpStatusCode.BadRequest, "Name the repository (repoId)");
 
-            // The mapping views read the mapping as a document of its repository; without the repository its version is unknown.
+            // The mapping views read the mapping as a document of its repository, its template from the file; without the
+            // repository, a document naming its kind alone has no version to read.
             var coverage = await ReadAsync<DeliveryMappingCoverageResult>(await SendAsync(
-                client, author, HttpMethod.Post, "/api/v1/delivery/mapping-builder/coverage",
+                client, reader, HttpMethod.Post, "/api/v1/delivery/mapping-builder/coverage",
                 new { yaml = TemplateFolderFixtures.KindAloneMapping(), path = "mappings/Thing@1.0.0.yaml", repoId }));
             Assert.Equal((kind, version), (coverage.Kind, coverage.Version));
             Assert.NotEmpty(coverage.Variables);
             var alone = await ReadAsync<DeliveryMappingCoverageResult>(await SendAsync(
-                client, author, HttpMethod.Post, "/api/v1/delivery/mapping-builder/coverage",
+                client, reader, HttpMethod.Post, "/api/v1/delivery/mapping-builder/coverage",
                 new { yaml = TemplateFolderFixtures.KindAloneMapping(), path = "mappings/Thing@1.0.0.yaml" }));
             Assert.Contains(alone.Issues, i => i.Message.Contains("without a version", StringComparison.Ordinal));
 
-            // The same schema saved in the library and deleted again changes nothing for the repository, whose documents still
-            // settle from its own copy.
-            using (var schemaJson = JsonDocument.Parse(json))
-            {
-                var saved = await ReadAsync<DeliveryTemplateSavedDto>(await SendAsync(
-                    client, author, HttpMethod.Post, "/api/v1/delivery/templates", new { kind, schema = schemaJson.RootElement.Clone(), origin = "test" }));
-                Assert.Equal(version, saved.Template.Version);
-            }
-
-            using (var deleted = await SendAsync(client, author, HttpMethod.Delete, $"/api/v1/delivery/templates?kind={Uri.EscapeDataString(kind)}&version={version}"))
-            {
-                Assert.Equal(HttpStatusCode.NoContent, deleted.StatusCode);
-            }
-
-            var still = await ReadAsync<DeliveryMappingCoverageResult>(await SendAsync(
-                client, author, HttpMethod.Post, "/api/v1/delivery/mapping-builder/coverage",
-                new { yaml = TemplateFolderFixtures.KindAloneMapping(), path = "mappings/Thing@1.0.0.yaml", repoId }));
-            Assert.Equal((kind, version), (still.Kind, still.Version));
-            Assert.NotEmpty(still.Variables);
-
-            // Without the copy (a row recorded before copies were kept), the page says to sync the repository again.
-            await using (var db = SampleEstate.Context(cs))
-            {
-                await db.DeliveryRepositoryTemplates.Where(t => t.RepoId == repoId).ExecuteUpdateAsync(set => set.SetProperty(t => t.SchemaJson, (string?)null));
-            }
-
-            var uncopied = await ReadAsync<DeliveryMappingCoverageResult>(await SendAsync(
-                client, author, HttpMethod.Post, "/api/v1/delivery/mapping-builder/coverage",
-                new { yaml = TemplateFolderFixtures.KindAloneMapping(), path = "mappings/Thing@1.0.0.yaml", repoId }));
-            Assert.Contains(uncopied.Issues, i => i.Message.Contains("the copy the sync keeps of it is missing; sync the repository again", StringComparison.Ordinal));
+            // The repository removing the file removes it from the list at its next sync.
+            File.Delete(file);
+            await SyncAsync(cs, repoId, root);
+            listed = await ReadAsync<List<DeliveryTemplateDto>>(await SendAsync(client, reader, HttpMethod.Get, "/api/v1/delivery/templates"));
+            Assert.DoesNotContain(listed, t => t.RepoId == repoId && t.Path == "templates/thing.json");
         }
         finally
         {
@@ -275,11 +187,41 @@ public sealed class DeliveryTemplateApiTests
             {
                 await db.DeliveryRepositoryTemplates.Where(t => t.RepoId == repoId).ExecuteDeleteAsync();
                 await db.DeliveryMappings.Where(m => m.RepoId == repoId).ExecuteDeleteAsync();
-                await db.DeliveryTemplates.Where(t => t.Kind == kind && t.Version == version).ExecuteDeleteAsync();
+            }
+
+            await using (var catalog = CatalogDatabase.Create(cs))
+            {
+                await catalog.Repos.Where(r => r.Id == repoId).ExecuteDeleteAsync();
             }
 
             Directory.Delete(root, recursive: true);
         }
+    }
+
+    /// <summary>Syncs repository <paramref name="repoId"/> from <paramref name="root"/>, as the control plane's sync does.</summary>
+    private static async Task SyncAsync(string cs, Guid repoId, string root)
+    {
+        await using var db = SampleEstate.Context(cs);
+        await new DeliveryCatalogSync(new DeliveryDocumentLoader()).ReconcileAsync(db, repoId, root, DateTime.UtcNow, new List<string>(), CancellationToken.None);
+    }
+
+    /// <summary>Names <paramref name="root"/> as the folder repository <paramref name="repoId"/> was synced into.</summary>
+    private static async Task SetRootAsync(string cs, Guid repoId, string root)
+    {
+        await using var catalog = CatalogDatabase.Create(cs);
+        await catalog.Repos.Where(r => r.Id == repoId).ExecuteUpdateAsync(set => set.SetProperty(r => r.RootPath, root));
+    }
+
+    /// <summary>Asserts a request is refused with <paramref name="status"/> and a body saying <paramref name="says"/>.</summary>
+    private static async Task RefusedAsync(HttpClient client, string token, string url, HttpStatusCode status, string says)
+    {
+        using var response = await SendAsync(client, token, HttpMethod.Get, url);
+        var text = await response.Content.ReadAsStringAsync();
+        Assert.True(response.StatusCode == status, $"{url} answered {(int)response.StatusCode}: {text}");
+
+        // A problem's detail is read as the JSON holds it, so a path's separators are compared as written.
+        var detail = JsonNode.Parse(text)?["detail"]?.GetValue<string>();
+        Assert.Contains(says, detail ?? text, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -290,11 +232,6 @@ public sealed class DeliveryTemplateApiTests
         await using var factory = Factory(cs);
         using var client = factory.CreateClient();
         var author = await TokenAsync(client, "read", "operate", "author");
-        foreach (var (kind, file) in new[] { (WellLogKind, WellLogFile), (WellboreKind, WellboreFile) })
-        {
-            using var response = await SendAsync(client, author, HttpMethod.Post, "/api/v1/delivery/templates", SaveBody(kind, file));
-            Assert.Equal(HttpStatusCode.OK, response.StatusCode);
-        }
 
         var suffix = Guid.NewGuid().ToString("N")[..8];
         var repoName = "cp_tpl_" + suffix;
@@ -372,13 +309,32 @@ public sealed class DeliveryTemplateApiTests
                 Assert.Equal(HttpStatusCode.BadRequest, unnamed.StatusCode);
             }
 
-            var detail = await ReadAsync<DeliveryTemplateDetailDto>(await SendAsync(client, author, HttpMethod.Get, DetailUrl(WellLogKind, WellLogVersion) + "&scope=" + scope));
+            // The repository's template laid out against the partition's cache: which cached types a variable can be read from.
+            var detail = await ReadAsync<DeliveryTemplateDetailDto>(await SendAsync(client, author, HttpMethod.Get, TemplateUrl("detail", repoId, "templates/" + WellLogFile) + "&scope=" + scope));
+            Assert.Equal((WellLogKind, WellLogVersion), (detail.Kind, detail.Version));
             Assert.Equal(["UnitOfMeasure"], Assert.Single(detail.Variables, v => v.Path == "osdu.data.Curves[].CurveUnit").CacheTypes);
 
+            // A draft starts from a template the repository holds, read from its file.
             var draft = await ReadAsync<MappingDraft>(await SendAsync(client, author, HttpMethod.Post, "/api/v1/delivery/mapping-builder/draft", new
             {
-                scope,kind = WellLogKind, version = WellLogVersion, name = "WellLog", mappingVersion = "9.0.0", system = "welldb",
+                scope, repoId, templatePath = "templates/" + WellLogFile, name = "WellLog", mappingVersion = "9.0.0", system = "welldb",
             }));
+            Assert.Equal((WellLogKind, WellLogVersion), (draft.TemplateKind, draft.TemplateVersion));
+            using (var unheld = await SendAsync(client, author, HttpMethod.Post, "/api/v1/delivery/mapping-builder/draft", new
+            {
+                scope, repoId, templatePath = "templates/none.json", name = "WellLog", mappingVersion = "9.0.0", system = "welldb",
+            }))
+            {
+                Assert.Equal(HttpStatusCode.NotFound, unheld.StatusCode);
+            }
+
+            using (var unnamed = await SendAsync(client, author, HttpMethod.Post, "/api/v1/delivery/mapping-builder/draft", new
+            {
+                scope, kind = WellLogKind, version = WellLogVersion, name = "WellLog", mappingVersion = "9.0.0", system = "welldb",
+            }))
+            {
+                Assert.Equal(HttpStatusCode.BadRequest, unnamed.StatusCode);
+            }
             var prefilled = Assert.Single(draft.Entries, e => e.Target == "osdu.data.VerticalMeasurement.VerticalMeasurementTypeID");
             Assert.True(prefilled.Prefilled);
             Assert.Equal(MappingDraftInput.Cache, prefilled.Input);
@@ -389,7 +345,7 @@ public sealed class DeliveryTemplateApiTests
 
             // The sample mapping, opened in the builder and written back, passes the check against the seeded cache.
             var sample = await File.ReadAllTextAsync(Path.Combine(SampleSource, "mappings", "WellLog@1.4.0.yaml"));
-            var parsed = await ReadAsync<DeliveryMappingParseResult>(await SendAsync(client, author, HttpMethod.Post, "/api/v1/delivery/mapping-builder/parse", new { yaml = sample, path = "mappings/WellLog@1.4.0.yaml" }));
+            var parsed = await ReadAsync<DeliveryMappingParseResult>(await SendAsync(client, author, HttpMethod.Post, "/api/v1/delivery/mapping-builder/parse", new { yaml = sample, path = "mappings/WellLog@1.4.0.yaml", repoId }));
             Assert.Empty(parsed.Issues);
             Assert.NotNull(parsed.Draft);
 
@@ -422,7 +378,9 @@ public sealed class DeliveryTemplateApiTests
                 ["aclViewer"] = "data.welldb.viewers@dev.dataservices.energy",
                 ["legalTag"] = "dev-osdu-default-legal",
             };
-            var checkedSample = await ReadAsync<DeliveryMappingComposeResult>(await SendAsync(client, author, HttpMethod.Post, "/api/v1/delivery/mapping-builder/compose", new { scope,draft = parsed.Draft, parameters }));
+            // Checked where it would be written: at its path in the repository, whose template folders settle its templates.
+            var checkedSample = await ReadAsync<DeliveryMappingComposeResult>(await SendAsync(
+                client, author, HttpMethod.Post, "/api/v1/delivery/mapping-builder/compose", new { scope, draft = parsed.Draft, parameters, repoId, path = "mappings/WellLog@1.4.0.yaml" }));
             Assert.True(checkedSample.Valid, string.Join(Environment.NewLine, checkedSample.Issues.Select(i => i.Message)));
             Assert.Contains("    WellboreID:\n      $search: Wellbore\n", checkedSample.Yaml.ReplaceLineEndings("\n"), StringComparison.Ordinal);
             Assert.Contains("          $coalesce:\n            - $from: curve_unit\n              $modifiers:\n                - replace: $cache.UnitAlias\n                - ref\n", checkedSample.Yaml.ReplaceLineEndings("\n"), StringComparison.Ordinal);
@@ -461,7 +419,7 @@ public sealed class DeliveryTemplateApiTests
             Assert.Contains(coverage.Variables, v => v.State == CoverageState.Empty);
             Assert.DoesNotContain(coverage.Variables, v => v.Target == "osdu.id");
 
-            // A document whose template is not saved says so, instead of answering with an empty template.
+            // A document naming a version no synced repository holds says so, instead of answering with an empty template.
             var unsaved = await ReadAsync<DeliveryMappingCoverageResult>(await SendAsync(
                 client,
                 author,
@@ -470,7 +428,14 @@ public sealed class DeliveryTemplateApiTests
                 new { yaml = sample.Replace($"version: {WellLogVersion}", "version: 00000000deadbeef", StringComparison.Ordinal), path = "mappings/WellLog@1.4.0.yaml" }));
             Assert.Empty(unsaved.Variables);
             Assert.Contains(unsaved.Issues, i => i.Severity == "error"
-                && i.Message.StartsWith("The mapping's template cannot be read: template osdu:wks:work-product-component--WellLog:1.4.0 version 00000000deadbeef is not saved", StringComparison.Ordinal));
+                && i.Message.StartsWith("The mapping's template cannot be read: no synced repository holds template osdu:wks:work-product-component--WellLog:1.4.0 version 00000000deadbeef in a template folder", StringComparison.Ordinal));
+
+            // Checked against a version the template folders on its path do not hold, the draft says so: it would not load there.
+            var misplaced = await ReadAsync<DeliveryMappingComposeResult>(await SendAsync(
+                client, author, HttpMethod.Post, "/api/v1/delivery/mapping-builder/compose",
+                new { scope, draft = parsed.Draft with { TemplateVersion = "00000000deadbeef" }, parameters, repoId, path = "other/mappings/WellLog@1.4.0.yaml" }));
+            Assert.False(misplaced.Valid);
+            Assert.Contains(misplaced.Issues, i => i.Severity == "error" && i.Message.Contains("no template folder on the path of other/mappings/WellLog@1.4.0.yaml", StringComparison.Ordinal));
 
             // A wellbore reference read from the unit cache is written, and refused by the check against the template. The
             // entry no longer searches for the wellbore, so the search it read goes with it.
@@ -670,11 +635,32 @@ public sealed class DeliveryTemplateApiTests
         Assert.Equal("OSDU data definitions v0.30.0 (99f8fc88d8ad) Generated/master-data/Wellbore.1.3.0.json", file.Origin);
         Assert.NotNull(file.Schema["definitions"]?["AbstractAccessControlList.1.0.0"]);
 
-        // What comes back is what the preview lays out, and what saving would store.
+        // What comes back is what the preview lays out, and what the downloaded file holds.
         var detail = await ReadAsync<DeliveryTemplateDetailDto>(await SendAsync(client, reader, HttpMethod.Post, "/api/v1/delivery/templates/preview", new { kind = file.Kind, schema = file.Schema }));
         Assert.Equal(file.Version, detail.Version);
         Assert.Contains(detail.Variables, v => v.Path == "osdu.data.FacilityName");
         Assert.Contains(detail.Variables, v => v.Path == "osdu.acl.owners");
+
+        // Downloaded straight from the release, the kind is the file a repository's template folder keeps, named after its
+        // kind, and it holds the version the release's schema lays out as; nothing is kept on the control plane.
+        using (var download = await SendAsync(client, reader, HttpMethod.Get, $"/api/v1/delivery/templates/osdu/file?release=v0.30.0&kind={Uri.EscapeDataString(WellboreKind)}"))
+        {
+            Assert.Equal(HttpStatusCode.OK, download.StatusCode);
+            Assert.Equal("application/json", download.Content.Headers.ContentType?.MediaType);
+            Assert.Equal("attachment", download.Content.Headers.ContentDisposition?.DispositionType);
+            Assert.Equal(WellboreFile, download.Content.Headers.ContentDisposition?.FileNameStar ?? download.Content.Headers.ContentDisposition?.FileName);
+            var text = await download.Content.ReadAsStringAsync();
+            Assert.Equal(file.Version, TemplateSources.FromBundledJson(text, WellboreKind, DateTimeOffset.UnixEpoch, WellboreFile).Version);
+            Assert.True(TemplateSources.DeclaresKind(JsonNode.Parse(text)!.AsObject()));
+        }
+
+        await RefusedAsync(client, reader, "/api/v1/delivery/templates/osdu/file?kind=" + Uri.EscapeDataString("osdu:wks:master-data--Missing:1.0.0"), HttpStatusCode.NotFound, "Generated/master-data/Missing.1.0.0.json");
+        await RefusedAsync(client, reader, "/api/v1/delivery/templates/osdu/file?kind=Wellbore", HttpStatusCode.BadRequest, "Wellbore");
+        await RefusedAsync(client, reader, "/api/v1/delivery/templates/osdu/file", HttpStatusCode.BadRequest, "Name the schema with kind");
+        using (var anonymousDownload = await client.GetAsync(new Uri("/api/v1/delivery/templates/osdu/file?kind=" + Uri.EscapeDataString(WellboreKind), UriKind.Relative)))
+        {
+            Assert.Equal(HttpStatusCode.Unauthorized, anonymousDownload.StatusCode);
+        }
 
         using (var unknownRelease = await SendAsync(client, reader, HttpMethod.Get, "/api/v1/delivery/templates/osdu/schemas?release=v9.9.9"))
         {
@@ -741,8 +727,9 @@ public sealed class DeliveryTemplateApiTests
     }
 
     /// <summary>
-    /// A repository as the sync would leave it: a tracked source, one delivery flow that renders with the sample WellLog
-    /// mapping and delivers to <paramref name="scope"/>, the cache definitions a cache flow of that partition declares, and
+    /// A repository as the sync would leave it: a tracked source, the sample templates in its template folder, one delivery
+    /// flow that renders with the sample WellLog mapping and delivers to <paramref name="scope"/>, the cache definitions a
+    /// cache flow of that partition declares, and
     /// the sample cache records as the current version of the partition's cache, merged the way a refresh merges a capture.
     /// </summary>
     private static async Task SeedRepositoryAsync(string cs, string repoName, Guid repoId, Guid sourceId, string flowName, Guid pipelineId, string scope, string cacheFlowName)
@@ -750,8 +737,10 @@ public sealed class DeliveryTemplateApiTests
         var now = DateTime.UtcNow;
         await using var db = CatalogDatabase.Create(cs);
         await using var osdu = SampleEstate.Context(cs);
-        db.Repos.Add(new CatalogRepo { Id = repoId, Name = repoName, RemoteUrl = "https://example/" + repoName + ".git", RootPath = Path.GetTempPath(), FirstSeenUtc = now, LastSyncUtc = now });
+        // The repository was synced into the folder holding the sample templates, which its sync recorded in its template folder.
+        db.Repos.Add(new CatalogRepo { Id = repoId, Name = repoName, RemoteUrl = "https://example/" + repoName + ".git", RootPath = SampleEstate.TemplateRoot, FirstSeenUtc = now, LastSyncUtc = now });
         db.RepoSources.Add(new CatalogRepoSource { Id = sourceId, Name = repoName, RemoteUrl = "https://example/" + repoName + ".git", Branch = "main" });
+        await SampleEstate.HoldTemplatesAsync(cs, repoId, now);
         db.Pipelines.Add(new CatalogPipeline
         {
             Id = pipelineId,
@@ -872,6 +861,7 @@ public sealed class DeliveryTemplateApiTests
         {
             await osdu.DeliveryCacheDefinitions.Where(c => c.RepoId == repoId).ExecuteDeleteAsync();
             await osdu.DeliveryInterfaces.Where(i => i.RepoId == repoId).ExecuteDeleteAsync();
+            await osdu.DeliveryRepositoryTemplates.Where(t => t.RepoId == repoId).ExecuteDeleteAsync();
         }
 
         await using var db = CatalogDatabase.Create(cs);
@@ -885,13 +875,9 @@ public sealed class DeliveryTemplateApiTests
         }
     }
 
-    private static object SaveBody(string kind, string file)
-    {
-        using var document = JsonDocument.Parse(File.ReadAllText(Path.Combine(SampleSource, "templates", file)));
-        return new { kind, schema = document.RootElement.Clone(), origin = "file " + file };
-    }
-
-    private static string DetailUrl(string kind, string version) => $"/api/v1/delivery/templates/detail?kind={Uri.EscapeDataString(kind)}&version={version}";
+    /// <summary>A template route (<c>detail</c> or <c>schema</c>) for repository <paramref name="repoId"/>'s file at <paramref name="path"/>.</summary>
+    private static string TemplateUrl(string route, Guid repoId, string path)
+        => $"/api/v1/delivery/templates/{route}?repoId={repoId}&path={Uri.EscapeDataString(path)}";
 
     /// <summary>The control plane with the OSDU module, its own database migrated, and no network warm-up of the schema repository.</summary>
     private static ControlPlaneAppFactory Factory(string cs)

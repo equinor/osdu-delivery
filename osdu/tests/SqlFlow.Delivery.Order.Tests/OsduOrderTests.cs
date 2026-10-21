@@ -210,7 +210,7 @@ public sealed class OsduOrderTests
         var plan = Plan(Deliver("rigs", "osdu:wks:master-data--Rig:1.0.0", null), Deliver("logs", WellLog, ["osdu.data.WellboreID"]));
         Assert.Equal(["master-data--Rig", "work-product-component--WellLog"], plan.Types);
         Assert.Equal("rigs", Assert.Single(plan.Unknown).Flow);
-        Assert.Contains("no template of it is saved, and no built release", Assert.Single(plan.Warnings), StringComparison.Ordinal);
+        Assert.Contains("no template folder holds its template, and no built release", Assert.Single(plan.Warnings), StringComparison.Ordinal);
     }
 
     [Fact]

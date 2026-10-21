@@ -1,10 +1,12 @@
 using System.Text.Json.Nodes;
 using Microsoft.Extensions.Logging.Abstractions;
 using SqlFlow.Core.Secrets;
+using SqlFlow.Delivery.Catalog;
 using SqlFlow.Delivery.Documents;
 using SqlFlow.Delivery.Engine.Protocols;
 using SqlFlow.Delivery.Engine.Search;
 using SqlFlow.Delivery.Http;
+using SqlFlow.Delivery.Ledger;
 using SqlFlow.Delivery.Model;
 using SqlFlow.Delivery.Snapshots;
 using SqlFlow.Delivery.Templates;
@@ -17,7 +19,8 @@ namespace SqlFlow.Delivery.Tests;
 /// <summary>
 /// The explorer's checks of what OSDU holds against what OSDU expects (osdu/docs/reference/concepts/explorer.md,
 /// Validate): a kind's schema read from the partition's Schema service and bundled, whatever references it makes to
-/// other schemas; one record checked at its latest or a version, against that schema or a saved template, with the
+/// other schemas; one record checked at its latest or a version, against that schema or a template a synced repository
+/// holds, read from its file, with the
 /// records it refers to looked up in storage; and the records a search finds checked up to a bound, counted by outcome
 /// and rule.
 /// </summary>
@@ -27,6 +30,7 @@ public sealed class ExplorerValidationTests : IDisposable
     private readonly HttpRuntime _runtime;
     private readonly OsduHttpClient _client;
     private readonly TestClock _clock = new();
+    private readonly List<string> _repositories = [];
 
     public ExplorerValidationTests()
     {
@@ -38,20 +42,29 @@ public sealed class ExplorerValidationTests : IDisposable
             new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase) { ["data-partition-id"] = "dev" });
     }
 
-    /// <summary>Saved templates, read only.</summary>
-    private sealed class SavedTemplates(params SchemaSnapshot[] schemas) : ITemplateStore
+    /// <summary>
+    /// A synced repository whose template folder holds <paramref name="schemas"/> as files, each naming its kind as a template
+    /// file does, read as the explorer reads them: from the files, in the folder the repository was synced into. Answers the
+    /// templates and the schemas as the files hold them.
+    /// </summary>
+    private (RepositoryTemplates Templates, IReadOnlyList<SchemaSnapshot> Held) Repository(params SchemaSnapshot[] schemas)
     {
-        public Task<SchemaSnapshot?> LoadAsync(TemplateReference reference, CancellationToken ct = default)
-            => Task.FromResult(schemas.FirstOrDefault(s => s.Kind == reference.Kind && s.Version == reference.Version));
+        var root = Samples.NewTempDirectory();
+        _repositories.Add(root);
+        var repo = Guid.NewGuid();
+        Directory.CreateDirectory(Path.Combine(root, "templates"));
+        var files = new List<RepositoryTemplateFile>();
+        var held = new List<SchemaSnapshot>();
+        foreach (var schema in schemas)
+        {
+            var named = SchemaSnapshot.Parse(schema.Kind, TemplateSources.WithKind(schema.Root, schema.Kind).ToJsonString(), schema.CapturedUtc);
+            var name = $"{schema.Kind.Replace(':', '_')}.json";
+            File.WriteAllText(Path.Combine(root, "templates", name), TemplateSources.FileText(named));
+            files.Add(new RepositoryTemplateFile(repo, $"templates/{name}", "templates", named.Kind, named.Version, null, DateTime.UtcNow));
+            held.Add(named);
+        }
 
-        public Task<TemplateSaved> SaveAsync(SchemaSnapshot schema, string origin, string actor, CancellationToken ct = default)
-            => throw new NotSupportedException("The explorer only reads saved templates.");
-
-        public Task<IReadOnlyList<TemplateInfo>> ListAsync(CancellationToken ct = default)
-            => Task.FromResult<IReadOnlyList<TemplateInfo>>(schemas.Select(s => new TemplateInfo(s.Kind, s.Version, s.CapturedUtc.UtcDateTime, "tests", "memory")).ToList());
-
-        public Task DeleteAsync(TemplateReference reference, CancellationToken ct = default)
-            => throw new NotSupportedException("The explorer only reads saved templates.");
+        return (RepositoryTemplates.Of(files, RepositoryFolders.Of(repo, root)), held);
     }
 
     /// <summary>The data definitions' example records, as a host that keeps a copy of them answers; each kind asked is noted.</summary>
@@ -76,7 +89,7 @@ public sealed class ExplorerValidationTests : IDisposable
         new Uri("https://community.opengroup.org/osdu/data/data-definitions/-/blob/v0.30.0/Examples/master-data/Thing.1.0.0.json"),
         JsonNode.Parse("""{ "kind": "osdu:wks:master-data--Thing:1.0.0", "data": { "Status": "Active", "Code": "EX-1" } }""")!.AsObject());
 
-    private ExplorerChecks Checks(ITemplateStore? templates = null, IOfficialExamples? examples = null)
+    private ExplorerChecks Checks(RepositoryTemplates? templates = null, IOfficialExamples? examples = null)
         => new(_client, new OsduRecordProtocol(_client, new ProtocolOptions(), _clock), OsduRecordProtocol.DefaultVerifyBatchPath, templates, _clock, examples: examples);
 
     /// <summary>The fixture's record stored under OSDU's own kind, with its schema in the Schema service under that kind.</summary>
@@ -289,25 +302,33 @@ public sealed class ExplorerValidationTests : IDisposable
     }
 
     [Fact]
-    public async Task A_kind_the_Schema_service_does_not_hold_offers_the_saved_templates_and_checks_against_one_asked_for()
+    public async Task A_kind_the_Schema_service_does_not_hold_offers_the_repositories_templates_and_checks_against_one_asked_for()
     {
         _platform.Put(ValidRecord());
-        var saved = new SavedTemplates(Schema);
+        var (templates, held) = Repository(Schema);
+        var version = Assert.Single(held).Version;
 
-        var unheld = await Checks(saved).RecordAsync("dev:master-data--Thing:T-1", null, ExplorerSchemaSource.Osdu, null);
+        var unheld = await Checks(templates).RecordAsync("dev:master-data--Thing:T-1", null, ExplorerSchemaSource.Osdu, null);
         Assert.Null(unheld.Verdict);
         Assert.Contains($"holds no schema of {Kind}", unheld.Problem, StringComparison.Ordinal);
-        Assert.Equal([Schema.Version], unheld.SavedVersions);
+        Assert.Equal([version], unheld.TemplateVersions);
 
-        var checkedAgainstSaved = await Checks(saved).RecordAsync("dev:master-data--Thing:T-1", null, ExplorerSchemaSource.Saved, null);
-        Assert.Equal(VerdictSchema.Template, checkedAgainstSaved.Schema!.Source);
-        Assert.Equal(Schema.Version, VerdictOf(checkedAgainstSaved).Schema!.Version);
+        var checkedAgainstTemplate = await Checks(templates).RecordAsync("dev:master-data--Thing:T-1", null, ExplorerSchemaSource.Template, null);
+        Assert.Equal(VerdictSchema.Template, checkedAgainstTemplate.Schema!.Source);
+        Assert.Equal(version, VerdictOf(checkedAgainstTemplate).Schema!.Version);
+        Assert.Equal(version, VerdictOf(await Checks(templates).RecordAsync("dev:master-data--Thing:T-1", null, ExplorerSchemaSource.Template, version)).Schema!.Version);
 
-        var unknownVersion = await Checks(saved).RecordAsync("dev:master-data--Thing:T-1", null, ExplorerSchemaSource.Saved, "0000000000000000");
-        Assert.Contains("version 0000000000000000 is not saved", unknownVersion.Problem, StringComparison.Ordinal);
+        var unknownVersion = await Checks(templates).RecordAsync("dev:master-data--Thing:T-1", null, ExplorerSchemaSource.Template, "0000000000000000");
+        Assert.Contains($"No synced repository holds template {Kind} version 0000000000000000 in a template folder; they hold version {version}", unknownVersion.Problem, StringComparison.Ordinal);
 
-        var noneSaved = await Checks(new SavedTemplates()).RecordAsync("dev:master-data--Thing:T-1", null, ExplorerSchemaSource.Saved, null);
-        Assert.Contains($"No template of {Kind} is saved", noneSaved.Problem, StringComparison.Ordinal);
+        var noneHeld = await Checks(Repository().Templates).RecordAsync("dev:master-data--Thing:T-1", null, ExplorerSchemaSource.Template, null);
+        Assert.StartsWith($"No synced repository holds a template of {Kind} in a template folder.", noneHeld.Problem, StringComparison.Ordinal);
+        Assert.EndsWith("or check the record against the Schema service's.", noneHeld.Problem, StringComparison.Ordinal);
+
+        // A host with no module database has no repository's templates to offer, and says so.
+        var none = await Checks().RecordAsync("dev:master-data--Thing:T-1", null, ExplorerSchemaSource.Template, null);
+        Assert.Equal("No repository's template can be read here: this host keeps no module database.", none.Problem);
+        Assert.Empty(none.TemplateVersions);
     }
 
     [Fact]
@@ -509,7 +530,7 @@ public sealed class ExplorerValidationTests : IDisposable
     {
         var id = Stored();
 
-        var answer = await Checks(new SavedTemplates()).RecordAsync(id, null, ExplorerSchemaSource.Saved, null, new ExplorerAssertions(Asserting(), null));
+        var answer = await Checks(Repository().Templates).RecordAsync(id, null, ExplorerSchemaSource.Template, null, new ExplorerAssertions(Asserting(), null));
 
         Assert.NotNull(answer.Problem);
         var verdict = VerdictOf(answer);
@@ -518,7 +539,7 @@ public sealed class ExplorerValidationTests : IDisposable
         Assert.Equal((2L, 1L), (verdict.Assertions!.Failed, verdict.Assertions.Held));
 
         // Without a mapping asked for, nothing was checked and there is no verdict.
-        Assert.Null((await Checks(new SavedTemplates()).RecordAsync(id, null, ExplorerSchemaSource.Saved, null)).Verdict);
+        Assert.Null((await Checks(Repository().Templates).RecordAsync(id, null, ExplorerSchemaSource.Template, null)).Verdict);
     }
 
     [Fact]
@@ -569,5 +590,9 @@ public sealed class ExplorerValidationTests : IDisposable
     {
         _runtime.Dispose();
         _platform.Dispose();
+        foreach (var root in _repositories)
+        {
+            Directory.Delete(root, recursive: true);
+        }
     }
 }

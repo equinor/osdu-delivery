@@ -270,13 +270,16 @@ internal sealed class OrderEstate
 
     private static string Table(string name) => Mapping(name);
 
-    /// <summary>Saved templates held in memory, by kind and version, as a host's store answers a lineage read.</summary>
-    public sealed class MemoryTemplates : ITemplateStore
+    /// <summary>
+    /// The templates the estate was written with, held in memory by kind and version, as the template folders on a mapping's
+    /// path answer a lineage read whatever the mapping's path; a kind forgotten is held by no folder.
+    /// </summary>
+    public sealed class MemoryTemplates : ITemplateSource
     {
         private readonly Dictionary<string, SchemaSnapshot> _byKind = new(StringComparer.Ordinal);
         private readonly HashSet<string> _forgotten = new(StringComparer.Ordinal);
 
-        /// <summary>Every schema saved, in kind order, for a test that also saves them where a host keeps them.</summary>
+        /// <summary>Every schema held, in kind order, for a test that also puts them in a repository's template folder.</summary>
         public IReadOnlyList<SchemaSnapshot> All => [.. _byKind.Values.OrderBy(s => s.Kind, StringComparer.Ordinal)];
 
         public void Save(SchemaSnapshot schema) => _byKind[schema.Kind] = schema;
@@ -289,20 +292,21 @@ internal sealed class OrderEstate
 
         public void Forget(string entityType) => _forgotten.Add($"osdu:wks:{entityType}:1.0.0");
 
-        public Task<SchemaSnapshot?> LoadAsync(TemplateReference reference, CancellationToken ct = default)
-            => Task.FromResult(!_forgotten.Contains(reference.Kind) && _byKind.TryGetValue(reference.Kind, out var schema) && schema.Version == reference.Version ? schema : null);
+        public Task<TemplateResolution> ResolveAsync(string? document, string kind, string? version, CancellationToken ct = default)
+        {
+            ct.ThrowIfCancellationRequested();
+            return Task.FromResult(!_forgotten.Contains(kind) && _byKind.TryGetValue(kind, out var schema) && (version is null || schema.Version == version)
+                ? TemplateResolution.Of(Info(schema), schema)
+                : TemplateResolution.Missing($"no template folder holds template {kind}{(version is null ? string.Empty : $" version {version}")}"));
+        }
 
-        public Task<TemplateSaved> SaveAsync(SchemaSnapshot schema, string origin, string actor, CancellationToken ct = default)
-            => throw new NotSupportedException("The order tests save their schemas directly.");
-
-        /// <summary>Every schema saved and not forgotten, as a host's store lists its saved templates.</summary>
-        public Task<IReadOnlyList<TemplateInfo>> ListAsync(CancellationToken ct = default)
+        /// <summary>Every schema held and not forgotten, as the template folders on a mapping's path list them.</summary>
+        public Task<IReadOnlyList<TemplateInfo>> ListForAsync(string? document, CancellationToken ct = default)
             => Task.FromResult<IReadOnlyList<TemplateInfo>>([.. _byKind.Values
                 .Where(s => !_forgotten.Contains(s.Kind))
                 .OrderBy(s => s.Kind, StringComparer.Ordinal)
-                .Select(s => new TemplateInfo(s.Kind, s.Version, s.CapturedUtc.UtcDateTime, "tests", "the order estate"))]);
+                .Select(Info)]);
 
-        public Task DeleteAsync(TemplateReference reference, CancellationToken ct = default)
-            => throw new NotSupportedException("The order tests delete no template.");
+        private static TemplateInfo Info(SchemaSnapshot schema) => new(schema.Kind, schema.Version, $"templates/{TemplateSources.FileName(schema.Kind)}");
     }
 }

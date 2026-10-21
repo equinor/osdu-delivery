@@ -25,8 +25,8 @@ namespace SqlFlow.Delivery.ControlPlane.Api;
 /// <summary>A record the explorer checks against its schema.</summary>
 /// <param name="TargetId">The record's id.</param>
 /// <param name="Version">The version to check; its latest when left out.</param>
-/// <param name="Schema"><c>osdu</c> (the default): what the partition's Schema service holds for its kind; <c>saved</c>: a saved template.</param>
-/// <param name="TemplateVersion">With <c>saved</c>, the template version to check against; the kind's newest when left out.</param>
+/// <param name="Schema"><c>osdu</c> (the default): what the partition's Schema service holds for its kind; <c>template</c>: a template a synced repository holds, read from its file.</param>
+/// <param name="TemplateVersion">With <c>template</c>, the template version to check against, among those the synced repositories hold; the one the most recently synced repository holds when left out.</param>
 /// <param name="Mapping">
 /// The synced mapping (its id, as the Mappings page lists it) whose assertions are judged on the record
 /// (osdu/docs/reference/flow/mapping-assertions.md); none when left out, except on a record page, whose check judges the
@@ -37,7 +37,7 @@ public sealed record DeliveryExplorerValidateRequest(string? TargetId, long? Ver
 /// <summary>The records a search finds, checked against their schemas: the search as the explorer sends it, how many records at most, and the schema.</summary>
 /// <param name="Search">The search, as <c>/explorer/search</c> takes it; its page and grouping are not used.</param>
 /// <param name="Max">The most records read and checked, 1 to 1,000; 1,000 when left out.</param>
-/// <param name="Schema"><c>osdu</c> (the default) or <c>saved</c>, each kind's newest saved template.</param>
+/// <param name="Schema"><c>osdu</c> (the default) or <c>template</c>, each kind's template as the most recently synced repository holding it holds it.</param>
 /// <param name="Mapping">The synced mapping whose assertions are judged on the records, by its id; none when left out.</param>
 public sealed record DeliveryExplorerValidateListRequest(DeliveryExplorerSearchRequest? Search = null, int? Max = null, string? Schema = null, Guid? Mapping = null);
 
@@ -53,7 +53,7 @@ public static partial class DeliveryExplorerEndpoints
 
     /// <summary>
     /// One record OSDU holds checked against the schema of its kind (osdu/docs/reference/concepts/explorer.md,
-    /// Validate): the Schema service's, or a saved template's; the records it refers to are looked up in storage. Reads
+    /// Validate): the Schema service's, or a template a synced repository holds; the records it refers to are looked up in storage. Reads
     /// OSDU through the partition's connection, as every explorer read does.
     /// </summary>
     private static async Task<Results<ContentHttpResult, ProblemHttpResult>> ValidateAsync(
@@ -109,7 +109,7 @@ public static partial class DeliveryExplorerEndpoints
     }
 
     /// <summary>
-    /// The task arguments of a check of one record (its id, version, schema and saved template version), or why the request
+    /// The task arguments of a check of one record (its id, version, schema and template version), or why the request
     /// cannot be asked. Every check of one record reads its request this way.
     /// </summary>
     private static ProblemHttpResult? ValidateArguments(DeliveryExplorerValidateRequest? body, out Dictionary<string, string> arguments)
@@ -128,7 +128,7 @@ public static partial class DeliveryExplorerEndpoints
 
         if (body.TemplateVersion is { } version && (version.Trim().Length is 0 or > 64 || version.Any(char.IsControl)))
         {
-            return DeliveryEndpoints.Invalid("Name the saved template version as the Templates page shows it.");
+            return DeliveryEndpoints.Invalid("Name the template version as the Templates page shows it.");
         }
 
         arguments["targetId"] = TargetId.WithoutVersion(asked);
@@ -158,12 +158,12 @@ public static partial class DeliveryExplorerEndpoints
     private static async Task<Results<ContentHttpResult, ProblemHttpResult>> ValidateListAsync(
         DeliveryExplorerValidateListRequest? body, [FromQuery] string? partition, CatalogDbContext db, DeliveryDocumentLoader documents, IPartitionRegistry partitions,
         ILedger ledger, DeliveryConfigStore config, DirectOperations direct, ILoggerFactory loggers, HttpRequest request, ClaimsPrincipal user,
-        OsduDbContext osdu, TimeProvider clock, CancellationToken ct)
+        OsduDbContext osdu, TimeProvider clock, IRepositoryFolders folders, CancellationToken ct)
     {
         var asked = body ?? new DeliveryExplorerValidateListRequest();
         var searched = (asked.Search ?? new DeliveryExplorerSearchRequest()) with { Offset = null, Limit = null, Facet = null };
         var (terms, failure) = await TermsOfAsync(
-            searched, partition, db, documents, partitions, ledger, request, new SearchTermDirectory(osdu, documents, clock), ct).ConfigureAwait(false);
+            searched, partition, db, documents, partitions, ledger, request, new SearchTermDirectory(osdu, documents, clock, folders), ct).ConfigureAwait(false);
         if (failure is not null)
         {
             return failure;
@@ -205,7 +205,7 @@ public static partial class DeliveryExplorerEndpoints
 
     /// <summary>Why a request's schema is not one a record is checked against, or null when it is (or is left out).</summary>
     private static string? SchemaProblem(string? schema)
-        => string.IsNullOrWhiteSpace(schema) || schema.Trim().ToLowerInvariant() is "osdu" or "saved"
+        => string.IsNullOrWhiteSpace(schema) || schema.Trim().ToLowerInvariant() is "osdu" or "template"
             ? null
-            : $"'{schema}' is not a schema a record is checked against: osdu (what the Schema service holds) or saved (a saved template).";
+            : $"'{schema}' is not a schema a record is checked against: osdu (what the Schema service holds) or template (a template a synced repository holds).";
 }

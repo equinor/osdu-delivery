@@ -132,8 +132,9 @@ by `failWhen` (below).
 holds.
 
 **Do:** the flow declares `target.validation` or `target.verifyReferences: storage` ([Preflight](../concepts/preflight.md)).
-Correct the source rows or the mapping (the next plan renders and judges the new documents), save the template version the
-mapping pins when the check could not find it, or deliver the records the references name. When the documents are right as
+Correct the source rows or the mapping (the next plan renders and judges the new documents), put the file of the template
+version the records were rendered for back in a template folder on the mapping's path when the check could not find it,
+or deliver the records the references name. When the documents are right as
 they are, release the issue's records: a released record holding its rendered document is sent as it is, and the release
 is recorded.
 
