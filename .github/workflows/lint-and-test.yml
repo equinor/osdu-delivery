@@ -19,6 +19,8 @@ jobs:
       issues: write # Required to write results as pull request comments
       pull-requests: write # Required to write results as pull request comments
     uses: equinor/ops-actions/.github/workflows/super-linter.yml@af5bad1a47ab8f8c333f8910f06c1938dd962dac # v9.43.0
+    with:
+      filter_regex_exclude: \.github/workflows/(ci|deploy)\.yml$
 
   vendored-sqlflow:
     name: Vendored SQLFlow

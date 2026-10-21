@@ -13,11 +13,9 @@ Send email to [it-security@equinor.com](mailto:it-security@equinor.com) or phone
 - Norway (+47) 51 999 222
 - US/Canada (+1) 713 878 6970
 
-## Upstream
+## OSDU Delivery Security Policy
 
-This repository is a fork of [TahirRiaz/osdu-delivery](https://github.com/TahirRiaz/osdu-delivery). Vulnerabilities in the upstream project itself are reported as described in the upstream policy below.
-
-# Security Policy
+This repository is a fork of [TahirRiaz/osdu-delivery](https://github.com/TahirRiaz/osdu-delivery). Vulnerabilities in that project itself are reported as described in its policy below.
 
 ## Supported Versions
 
