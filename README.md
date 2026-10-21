@@ -209,7 +209,7 @@ Docker when the machine has none, which is how it runs on a Mac), the first admi
 (which it can test by signing in and reading the legal tag), and a folder or git repository of flows. It shows its plan,
 and once you say yes it writes the git-ignored `.sqlflow/env`, creates the databases and registers the partition. Every
 start after that checks the machine and the settings, prints what is set and what is missing with the fix for each, and
-stops only when a start would fail. Then the GUI opens at http://localhost:5173 (the API is http://localhost:5000);
+stops only when a start would fail. Then the GUI opens at `http://localhost:5173` (the API is `http://localhost:5000`);
 sign in as `admin` with the password the setup put in `.sqlflow/env` as `SQLFLOW_ADMIN_PASSWORD`.
 
 | Command | What it does |
