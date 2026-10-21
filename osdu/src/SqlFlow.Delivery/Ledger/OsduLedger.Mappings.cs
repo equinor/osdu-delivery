@@ -34,6 +34,25 @@ public sealed partial class OsduLedger
             ct);
     }
 
+    /// <summary>The most template files of one repository read at once: far more than a repository's folders hold.</summary>
+    internal const int MaxRepositoryTemplates = 10_000;
+
+    public Task<IReadOnlyList<SyncedTemplateFile>> RepositoryTemplatesAsync(Guid repoId, CancellationToken ct = default)
+        => ReadAsync(
+            async db => (IReadOnlyList<SyncedTemplateFile>)(await db.DeliveryRepositoryTemplates.AsNoTracking()
+                    .Where(t => t.RepoId == repoId)
+                    .OrderBy(t => t.Path)
+                    .Take(MaxRepositoryTemplates)
+                    .Select(t => new SyncedTemplateFile(t.Path, t.Folder, t.Kind, t.Version, t.Problem))
+                    .ToListAsync(ct).ConfigureAwait(false)),
+            ct);
+
+    public Task<RecordedTemplateCopy?> RepositoryTemplateCopyAsync(Guid repoId, string path, CancellationToken ct = default)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(path);
+        return ReadAsync(db => Catalog.SyncedTemplates.CopyAsync(db, repoId, path, ct), ct);
+    }
+
     private static SyncedMapping Synced(DeliveryMapping row)
-        => new(row.Id, row.RepoId, row.Reference, row.Kind, row.RelativePath, row.ContentHash, row.Yaml, string.Equals(row.Status, "valid", StringComparison.Ordinal), row.Message);
+        => new(row.Id, row.RepoId, row.Reference, row.Kind, row.RelativePath, row.ContentHash, row.Yaml, string.Equals(row.Status, "valid", StringComparison.Ordinal), row.Message, row.TemplateVersion);
 }

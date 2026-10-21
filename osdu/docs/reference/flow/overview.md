@@ -295,7 +295,9 @@ record:
         AliasNameTypeID: "{$param.dataPartition}:reference-data--AliasNameType:UniqueIdentifier:"
 ```
 
-`template.version` is the 16-character version of a saved template ([templates](../concepts/templates.md)).
+`template.version` is the 16-character version of the template, which a template folder on the mapping's path holds
+([template folders](../concepts/templates.md#template-folders)); left out, the mapping fills the one version of the kind
+the nearest folder holding it holds.
 `dataset.idFrom: key` makes each record's OSDU id from its key (`dev:master-data--Wellbore:WB-0001`), so other mappings
 can refer to it ([the OSDU id](mapping.md#the-osdu-id)).
 

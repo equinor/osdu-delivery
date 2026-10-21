@@ -265,14 +265,15 @@ public sealed class SearchTermTests
     }
 
     [Fact]
-    public void A_route_through_records_no_saved_template_describes_cannot_be_searched_and_says_so()
+    public void A_route_through_records_no_template_the_mapping_reads_describes_cannot_be_searched_and_says_so()
     {
         var route = Route("wellbore_uwi", "osdu.data.WellboreID", SearchRouteKind.Search);
 
         var fields = SearchTermResolver.Classify(route, Template, found: null);
 
         Assert.Null(fields.Target);
-        Assert.Contains("no saved template of osdu:wks:master-data--Wellbore:*", fields.Problem, StringComparison.Ordinal);
+        Assert.Contains("no template the mapping reads of osdu:wks:master-data--Wellbore:*", fields.Problem, StringComparison.Ordinal);
+        Assert.Contains("put one in a template folder on the mapping's path", fields.Problem, StringComparison.Ordinal);
     }
 
     [Fact]

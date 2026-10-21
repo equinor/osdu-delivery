@@ -6,7 +6,7 @@ using SqlFlow.Delivery.Templates;
 namespace SqlFlow.Delivery.Model;
 
 /// <summary>
-/// A mapping (osdu/docs/reference/flow/mapping.md) as it is loaded: which saved template version it fills, what
+/// A mapping (osdu/docs/reference/flow/mapping.md) as it is loaded: which template version it fills, what
 /// identifies a record of the incoming dataset, and one entry per template variable its record tree fills, each saying
 /// where the value comes from.
 /// </summary>
@@ -15,6 +15,18 @@ public sealed record MappingDefinition
     public const string DocumentTypeName = "mapping";
 
     public string? SourcePath { get; init; }
+
+    /// <summary>
+    /// The file the mapping was read from, as a full path, when it was read from disk: where the template folders it reads
+    /// are walked from. Null for a mapping read from the catalog or from text, whose <see cref="SourcePath"/> names it.
+    /// </summary>
+    public string? Location { get; init; }
+
+    /// <summary>
+    /// The document the mapping's templates are read for: the file it was read from, or the path the catalog names it by,
+    /// which the folders the catalog recorded for its repository are walked from the same way.
+    /// </summary>
+    public string? TemplateDocument => Location ?? SourcePath;
 
     public required string Name { get; init; }
 
@@ -27,8 +39,17 @@ public sealed record MappingDefinition
     /// </summary>
     public string? Fingerprint { get; init; }
 
-    /// <summary>The template version the mapping fills.</summary>
+    /// <summary>
+    /// The template version the mapping fills: the one it names, or, when it names the kind alone, the one version of the
+    /// kind the nearest template folder on its path holds (osdu/docs/reference/concepts/templates.md, Template folders).
+    /// </summary>
     public required TemplateReference Template { get; init; }
+
+    /// <summary>
+    /// Whether the document names its template's version (<c>template.version</c>), rather than following the version the
+    /// template folders on its path hold. True for a definition built in code.
+    /// </summary>
+    public bool TemplateVersionNamed { get; init; } = true;
 
     public string? Description { get; init; }
 
@@ -755,7 +776,7 @@ public sealed partial record MappingEntry
 /// The OSDU kind searched: one entity type, at one version or at every version (<c>osdu:wks:master-data--Wellbore:*</c>).
 /// </param>
 /// <param name="Schema">
-/// The saved template whose schema says how the searched kind's properties are indexed, pinned the way a mapping pins its
+/// The template whose schema says how the searched kind's properties are indexed, settled the way a mapping settles its
 /// own template, so the query a render sends is fixed by the mapping's version and not by whatever the platform says on
 /// the day. It is a version of the same entity type as <paramref name="Kind"/>.
 /// </param>

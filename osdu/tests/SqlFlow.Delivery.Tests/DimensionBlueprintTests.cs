@@ -222,6 +222,7 @@ public class DimensionBlueprintTests
     [Fact]
     public async Task With_no_template_saved_the_blueprint_lays_out_the_reads_and_says_what_it_cannot_describe()
     {
+        // A dimension the explorer drafts, which no flow holds yet, is described by the saved templates.
         var blueprint = await DimensionBlueprints.DescribeAsync(Wellbore, new MemoryTemplates(), []);
 
         Assert.Null(blueprint.Source.Template);
@@ -236,6 +237,40 @@ public class DimensionBlueprintTests
         Assert.Contains("which records its ids name is not known", first.Missing, StringComparison.Ordinal);
         Assert.Equal(4, first.Reads.Count);
         Assert.Equal(2, blueprint.Records.Count(r => r.Depth == 2));
+    }
+
+    [Fact]
+    public async Task A_flows_dimension_no_template_folder_on_its_path_describes_says_where_to_put_the_template()
+    {
+        var root = Samples.NewTempDirectory();
+        try
+        {
+            // A repository whose only template folder sits beside another project's documents, off the flow's path.
+            Directory.CreateDirectory(System.IO.Path.Combine(root, ".git"));
+            Directory.CreateDirectory(System.IO.Path.Combine(root, "other", "templates"));
+            File.WriteAllText(
+                System.IO.Path.Combine(root, "other", "templates", TemplateSources.FileName(Samples.WellLogKind)),
+                TemplateSources.FileText(Samples.SampleTemplate(Samples.WellLogKind)));
+            Directory.CreateDirectory(System.IO.Path.Combine(root, "welldb", "flows"));
+            var document = System.IO.Path.Combine(root, "welldb", "flows", "dimensions.yaml");
+            File.WriteAllText(document, "flowType: dimension\n");
+
+            var blueprint = await DimensionBlueprints.DescribeAsync(Wellbore, new FolderTemplates(root), document, []);
+
+            Assert.Null(blueprint.Source.Template);
+            Assert.Contains("No template the flow reads matches", blueprint.Source.Missing, StringComparison.Ordinal);
+            Assert.Contains("template folder on the flow's path", blueprint.Source.Missing, StringComparison.Ordinal);
+
+            // The same template one folder up the flow's path describes it.
+            Directory.Move(System.IO.Path.Combine(root, "other", "templates"), System.IO.Path.Combine(root, "welldb", "templates"));
+            var described = await DimensionBlueprints.DescribeAsync(Wellbore, new FolderTemplates(root), document, []);
+            Assert.Equal(Samples.WellLogKind, described.Source.Template?.Kind);
+            Assert.Null(described.Source.Missing);
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
+        }
     }
 
     [Fact]

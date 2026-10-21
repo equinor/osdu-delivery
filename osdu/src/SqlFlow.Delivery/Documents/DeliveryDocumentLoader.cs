@@ -100,16 +100,26 @@ public sealed class DeliveryDocumentLoader
     public MappingDefinition LoadMapping(string path) => LoadMapping(path, path);
 
     /// <summary>Loads the mapping file at <paramref name="path"/>, naming it <paramref name="source"/> in every message.</summary>
-    public MappingDefinition LoadMapping(string path, string source)
+    public MappingDefinition LoadMapping(string path, string source) => LoadMapping(path, source, FolderTemplates.Default);
+
+    /// <summary>
+    /// Loads the mapping file at <paramref name="path"/>, naming it <paramref name="source"/> in every message. A template or
+    /// a search schema it names by kind alone is settled from the template folders on the file's path, read by
+    /// <paramref name="templates"/>; a version it names is taken as written, and checked when its template is read for the
+    /// render (osdu/docs/reference/concepts/templates.md, Template folders).
+    /// </summary>
+    public MappingDefinition LoadMapping(string path, string source, FolderTemplates templates)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(path);
         ArgumentException.ThrowIfNullOrWhiteSpace(source);
+        ArgumentNullException.ThrowIfNull(templates);
         if (!File.Exists(path))
         {
             throw new FlowValidationException($"Mapping file not found: '{source}'.");
         }
 
-        return ParseMapping(File.ReadAllText(path), source);
+        var full = Path.GetFullPath(path);
+        return ParseMapping(File.ReadAllText(full), source, templates.ForKindsAlone(full), full);
     }
 
     /// <summary>The flow types the loader reads, each the <c>flowType</c> of one of its documents, in the order a message lists them.</summary>
@@ -285,7 +295,14 @@ public sealed class DeliveryDocumentLoader
         return DictionaryMapper.Map(yaml, source);
     }
 
-    public MappingDefinition ParseMapping(string yaml, string source = "<inline>")
+    public MappingDefinition ParseMapping(string yaml, string source = "<inline>") => ParseMapping(yaml, source, pins: null, location: null);
+
+    /// <summary>
+    /// Reads a mapping document, settling the templates it names with <paramref name="pins"/>: the template folders its
+    /// repository holds on its path. Without pins, a template has to be named with its version. <paramref name="location"/>
+    /// is the file it was read from, when it was read from disk.
+    /// </summary>
+    public MappingDefinition ParseMapping(string yaml, string source, ITemplatePins? pins, string? location = null)
     {
         ArgumentNullException.ThrowIfNull(yaml);
         var kind = Probe(yaml, source);
@@ -296,7 +313,7 @@ public sealed class DeliveryDocumentLoader
 
         RefuseFixtures(yaml, source);
         var y = Deserialize<MappingYaml>(_strict, yaml, source) ?? throw new FlowValidationException($"{source}: the document is empty.");
-        return MappingMapper.Map(y, source) with { Fingerprint = MappingFingerprint.Of(yaml, source) };
+        return MappingMapper.Map(y, source, pins) with { Fingerprint = MappingFingerprint.Of(yaml, source), Location = location };
     }
 
     /// <summary>
@@ -318,6 +335,18 @@ public sealed class DeliveryDocumentLoader
     private static readonly string[] FixtureKeys = ["fixtureDefaults", "fixtures"];
 
     /// <summary>
+    /// The kind a mapping document names in its <c>template</c> block, with or without a version, read without validating
+    /// anything else; null when the document is not readable YAML or names no kind. What a document that fails to load is
+    /// listed under.
+    /// </summary>
+    public string? TemplateKindNamedBy(string yaml)
+    {
+        ArgumentNullException.ThrowIfNull(yaml);
+        var kind = ProbeTemplate(yaml)?.Kind?.Trim();
+        return string.IsNullOrEmpty(kind) ? null : kind;
+    }
+
+    /// <summary>
     /// The template a mapping document names in its <c>template</c> block, read without validating anything else, or
     /// null when the document is not readable YAML or names no complete template. A document that fails to load still
     /// pins what it names, so the template cannot be deleted from under a mapping that is only waiting for a fix.
@@ -325,20 +354,24 @@ public sealed class DeliveryDocumentLoader
     public TemplateReference? TemplateNamedBy(string yaml)
     {
         ArgumentNullException.ThrowIfNull(yaml);
-        TemplateProbeYaml? probe;
+        var template = ProbeTemplate(yaml);
+        var kind = template?.Kind?.Trim();
+        var version = template?.Version?.Trim();
+        return string.IsNullOrEmpty(kind) || string.IsNullOrEmpty(version) ? null : new TemplateReference(kind, version);
+    }
+
+    /// <summary>The <c>template</c> block of a mapping document, or null when it is not readable YAML or has none of the right shape.</summary>
+    private MappingTemplateYaml? ProbeTemplate(string yaml)
+    {
         try
         {
-            probe = _probe.Deserialize<TemplateProbeYaml>(yaml);
+            return _probe.Deserialize<TemplateProbeYaml>(yaml)?.Template;
         }
         catch (YamlException)
         {
             // Unreadable YAML, or a template block of the wrong shape, names no template. ParseMapping reports why.
             return null;
         }
-
-        var kind = probe?.Template?.Kind?.Trim();
-        var version = probe?.Template?.Version?.Trim();
-        return string.IsNullOrEmpty(kind) || string.IsNullOrEmpty(version) ? null : new TemplateReference(kind, version);
     }
 
     private static T? Deserialize<T>(IDeserializer deserializer, string yaml, string source)

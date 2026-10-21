@@ -69,7 +69,7 @@ internal static class DeliveryDimensionVerbs
         if (verb == "views")
         {
             return context.Arguments.GetOption("--suggest") is { } from && !string.IsNullOrWhiteSpace(from)
-                ? await SuggestAsync(context, flow, from.Trim(), engine.Templates, ct).ConfigureAwait(false)
+                ? await SuggestAsync(context, flow, from.Trim(), engine.DocumentTemplates, ct).ConfigureAwait(false)
                 : await ViewsAsync(context, ledger, flow, ct).ConfigureAwait(false);
         }
 
@@ -232,15 +232,15 @@ internal static class DeliveryDimensionVerbs
 
     /// <summary>
     /// The joins a view whose rows are <paramref name="from"/>'s could make (<see cref="DimensionViewTemplates.SuggestAsync"/>),
-    /// from the flow file's dimensions and the saved templates, as the <c>join:</c> block of a view's YAML, each with why it
-    /// is offered: what a person keeps or changes in the file. Nothing is written.
+    /// from the flow file's dimensions and the templates of the template folders on its path, as the <c>join:</c> block of a
+    /// view's YAML, each with why it is offered: what a person keeps or changes in the file. Nothing is written, and no
+    /// database is read.
     /// </summary>
-    private static async Task<int> SuggestAsync(CliVerbContext context, DimensionFlowDefinition flow, string from, ITemplateStore? templates, CancellationToken ct)
+    private static async Task<int> SuggestAsync(CliVerbContext context, DimensionFlowDefinition flow, string from, ITemplateSource templates, CancellationToken ct)
     {
-        var store = templates ?? throw new FlowValidationException("Joins are offered from the saved templates, which live in the module's database. Run with --db <conn-ref>, or set the catalog variable.");
         var dimension = flow.Dimension(from)
             ?? throw new FlowValidationException($"{flow.Name} has no dimension named '{from}'; its dimensions are {string.Join(", ", flow.Dimensions.Select(d => d.Name))}.");
-        var joins = await DimensionViewTemplates.SuggestAsync(flow, dimension.Name, store, ct).ConfigureAwait(false);
+        var joins = await DimensionViewTemplates.SuggestAsync(flow, dimension.Name, templates, ct).ConfigureAwait(false);
         if (context.Json)
         {
             context.Out.WriteLine(CanonicalJson.Pretty(new JsonObject

@@ -327,7 +327,7 @@ public sealed record KnownValuesShape(string? Items, IReadOnlyList<KnownColumnSh
         return null;
     }
 
-    /// <summary>The template of an entity type a path reaches, or null with a problem saying it is not saved.</summary>
+    /// <summary>The template of an entity type a path reaches, or null with a problem saying no template folder the flow reads holds one.</summary>
     private static OsduTemplate? Template(string entityType, KnownColumn column, IReadOnlyDictionary<string, OsduTemplate> referenced, string at, ICollection<string> problems)
     {
         if (referenced.TryGetValue(entityType, out var template))
@@ -335,7 +335,7 @@ public sealed record KnownValuesShape(string? Items, IReadOnlyList<KnownColumnSh
             return template;
         }
 
-        problems.Add($"{at}: no template of {entityType} is saved, so '{column.Path}' cannot be checked against what those records hold. Capture one on the Templates page (or with 'sqlflow template capture --kind osdu:wks:{entityType}:<version>'), then run the test again.");
+        problems.Add($"{at}: no template folder on the flow's path holds a template of {entityType}, so '{column.Path}' cannot be checked against what those records hold. Put its file in one ('sqlflow template capture --kind osdu:wks:{entityType}:<version> --out <folder>/<file>.json' writes it, and the Templates page downloads a saved version), then run the test again.");
         return null;
     }
 

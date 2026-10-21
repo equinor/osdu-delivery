@@ -2,7 +2,7 @@
 
 **OSDU Delivery turns delivering data to OSDU from a development task into configuration.** Three things make that
 possible: a drop-off zone that brings any source data into one shape (rows of a keyed table), a template that fixes the
-target (a saved, versioned OSDU schema), and a cache that holds every lookup (OSDU reference data, and lookup tables from
+target (a versioned OSDU schema the repository keeps in a template folder), and a cache that holds every lookup (OSDU reference data, and lookup tables from
 files or databases, versioned per partition). A mapping connects the three, and one generic engine delivers what it
 renders and keeps a ledger that accounts for every record it sends. Nothing in this folder is written for one kind of
 data; the well logs in `samples/` are the worked example, not a special case. The pitch and a tour are in the
@@ -25,7 +25,7 @@ data; the well logs in `samples/` are the worked example, not a special case. Th
 | `specs/` | The OSDU service contracts every route is built from, pinned with their provenance (`specs/sources.json`), and an integration brief per service |
 | `samples/` | The `welldb` sample estate (well logs with their curves, delivered to the Wellbore DDMS), the bundled OSDU schemas, and sample cache records |
 | `deploy/` | Dockerfiles, Docker Compose, Kubernetes, Bicep, Terraform and Radix |
-| `docs/` | The reference corpus, the decision records and the key census |
+| `docs/` | The reference corpus, the wiki (decisions, patterns, narratives, incidents and maps) and the key census |
 | `tools/` | `SampleData`, which generates the sample's synthetic well logs and lookup tables |
 
 `sqlflow/` next to this folder is the engine underneath, vendored as a subtree and changed only through the extension
@@ -48,8 +48,7 @@ the committed tree (no build output, no local files).
 | `tests/SqlFlow.Delivery.Tests/` | The delivery domain suites |
 | `tests/SqlFlow.Delivery.ControlPlane.Tests/` | The module, plan run, record origin and template API suites, and the sample estate they use |
 | `docs/` | `docs/delivery/` and the CLI reference of the delivery verbs (both since replaced by the reference corpus in `docs/reference/`) |
-| `samples/welldb/` | The sample estate, laid out the way a repository is: one folder for the WellDB source, holding the well log chain's flows (pre, ingestion and delivery), the WellLog mapping, the lookups cache flow with the lookup tables' files and the flows that load them, the schedules, and the drop-off folder with five sample WellDB logs |
-| `samples/templates/` | The bundled OSDU schemas the suites and the e2e seed save as templates, beside the source folders rather than inside one: a template is a catalog object, not repository content |
+| `samples/welldb/` | The sample estate, laid out the way a repository is: one folder for the WellDB source, holding the well log chain's flows (pre, ingestion and delivery), the WellLog mapping, the template folder holding the bundled OSDU schemas its mappings fill, the lookups cache flow with the lookup tables' files and the flows that load them, the schedules, and the drop-off folder with five sample WellDB logs |
 
 ## What was left behind, and why
 

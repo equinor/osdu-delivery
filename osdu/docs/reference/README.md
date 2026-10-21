@@ -8,7 +8,7 @@ the rest instead of repeating them.
 
 It is written in SQLFlow's reference format, so the MCP server indexes and searches it exactly as it does SQLFlow's
 pages. Every fact traces to the code in this repository (each page's `sourceRefs`), and code that explains itself by a
-document cites a page of this corpus or a decision record.
+document cites a page of this corpus or of the wiki.
 
 ## Layout
 
@@ -22,12 +22,16 @@ osdu/docs/reference/
                          routes, DDMSs and the other DDMS shapes and services
   concepts/<slug>.md     how the extension works: the ledger, record lifecycle, submissions, change detection, templates,
                          the partition cache, partitions, protocols, removal and reversal, lineage, the GUI, the API, ...
-  guides/<slug>.md       task-oriented walkthroughs, and the pattern catalog that maps a problem to the shape that solves it
-osdu/docs/decisions/     the decision records (type decision), indexed beside the reference pages
+  guides/<slug>.md       task-oriented walkthroughs
+  tables/<table>.md      one page per table of the osdu schema (type table): every column, key and index, checked
+                         against the model by DatabaseTablePagesTests; concepts/database.md lists them all
+osdu/docs/wiki/          why it is this way and how the pieces fit, in SQLFlow's wiki format (index.md, log.md,
+                         decisions/, patterns/, narratives/, incidents/, maps/), indexed beside the reference pages
 osdu/docs/census/        the key census of every document the extension adds (the editor and validate_flow surface)
 ```
 
-Every id starts with `delivery-`, so no page can collide with one of SQLFlow's.
+Every id starts with `delivery-`, and every wiki page's with `delivery-wiki-`, so no page can collide with one of
+SQLFlow's. The wiki's format and its upkeep are the OSDU wiki section of [CLAUDE.md](../../../CLAUDE.md).
 
 ## Page format
 
@@ -37,7 +41,7 @@ Each page is Markdown with YAML frontmatter, then `# <title>`, then the body, as
 ---
 id: delivery-flow-cache
 title: "Cache flow (flowType: cache): OSDU reference data and lookup tables in a partition's cache"
-type: flow-reference        # cli-command | flow-reference | concept | guide (decision in osdu/docs/decisions)
+type: flow-reference        # cli-command | flow-reference | concept | guide | table (the wiki's: osdu/docs/wiki)
 summary: "One sentence, at most 160 characters, in the words a user asks with."
 keywords:
   - lookup table
@@ -65,7 +69,7 @@ references only (`${env:NAME}`, `${keyvault:NAME}`); no em dash.
 Run after adding, removing or renaming a page, or after editing any page's frontmatter:
 
 ```bash
-python sqlflow/docs/reference/build_manifest.py --reference osdu/docs/reference --wiki osdu/docs/decisions \
+python sqlflow/docs/reference/build_manifest.py --reference osdu/docs/reference --wiki osdu/docs/wiki \
   --product "OSDU Delivery" --known sqlflow/docs/reference/manifest.json
 ```
 
@@ -75,4 +79,12 @@ link leads nowhere, or a page carries an em dash.
 
 ```bash
 cargo test --manifest-path osdu/hosts/osdu-delivery-mcp/Cargo.toml
+```
+
+A change to the wiki is linted with SQLFlow's wiki linter as well, after the manifest is regenerated (CI's Conventions
+job runs it):
+
+```bash
+python sqlflow/docs/wiki/lint_wiki.py --wiki osdu/docs/wiki --root . --manifest osdu/docs/reference/manifest.json \
+  --id-prefix delivery-wiki- --known sqlflow/docs/reference/manifest.json
 ```

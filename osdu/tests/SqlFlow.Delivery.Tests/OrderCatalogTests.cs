@@ -53,7 +53,7 @@ public sealed class OrderCatalogTests : IDisposable
         _b.Delivery("wells", "master-data--Well");
         _a.Delivery("wellbores", "master-data--Wellbore", columns: ["WellID"]);
         _a.Delivery("test-wellbores", "master-data--Wellbore", columns: ["WellID"], partition: "test");
-        await SaveTemplatesAsync();
+        HoldTemplates();
         await ReconcileAsync(_repoB, _rootB);
         await ReconcileAsync(_repoA, _rootA);
 
@@ -84,18 +84,28 @@ public sealed class OrderCatalogTests : IDisposable
     }
 
     [Fact]
-    public async Task A_kind_with_no_saved_template_is_read_from_the_newest_built_release_holding_it()
+    public async Task A_kind_whose_template_copy_is_missing_is_read_from_the_newest_built_release_holding_it()
     {
         WellsAndWellbores();
         _a.Delivery("wells", "master-data--Well");
         _a.Delivery("wellbores", "master-data--Wellbore", columns: ["WellID"]);
-        await SaveTemplatesAsync("master-data--Well");
+        HoldTemplates();
         await ReconcileAsync(_repoA, _rootA);
 
-        // Neither a template nor a release knows the wellbores' kind: what the mapping fills cannot be told.
-        var unknown = (await ReadAsync()).Deliveries.Single(d => d.Delivery.Flow == "wellbores");
+        // The order reads a template from the copy the sync kept of the file its folder holds. Without that copy (a row
+        // recorded before copies were kept), and with no release knowing the wellbores' kind, what the mapping fills cannot
+        // be told, and the order says why.
+        await using (var db = _database.CreateDbContext())
+        {
+            await db.DeliveryRepositoryTemplates.Where(t => t.Kind == "osdu:wks:master-data--Wellbore:1.0.0")
+                .ExecuteUpdateAsync(set => set.SetProperty(t => t.SchemaJson, (string?)null));
+        }
+
+        var unread = await ReadAsync();
+        var unknown = unread.Deliveries.Single(d => d.Delivery.Flow == "wellbores");
         Assert.Null(unknown.Schema);
         Assert.Null(unknown.Delivery.Filled);
+        Assert.Contains(unread.Problems, p => p.Contains("the copy the sync keeps of it is missing; sync the repository again", StringComparison.Ordinal));
 
         var store = new SchemaLineageStore(_database.CreateDbContext);
         await store.SaveAsync("v0.28.0", "aaaa", null, [Entry("master-data--Wellbore")], [], "tests", Utc);
@@ -107,35 +117,38 @@ public sealed class OrderCatalogTests : IDisposable
     }
 
     [Fact]
-    public async Task A_saved_template_that_does_not_read_as_one_is_said_and_the_release_is_asked_instead()
+    public async Task A_template_copy_that_does_not_read_as_one_is_said_and_the_release_is_asked_instead()
     {
         WellsAndWellbores();
         _a.Delivery("wellbores", "master-data--Wellbore", columns: ["WellID"]);
-        await SaveTemplatesAsync();
+        HoldTemplates();
         await ReconcileAsync(_repoA, _rootA);
         await using (var db = _database.CreateDbContext())
         {
-            await db.DeliveryTemplates.Where(t => t.Kind == "osdu:wks:master-data--Wellbore:1.0.0")
+            await db.DeliveryRepositoryTemplates.Where(t => t.Kind == "osdu:wks:master-data--Wellbore:1.0.0")
                 .ExecuteUpdateAsync(set => set.SetProperty(t => t.SchemaJson, "{ not json"));
         }
 
         var read = await ReadAsync();
         var problem = Assert.Single(read.Problems);
-        Assert.Contains("The saved template of osdu:wks:master-data--Wellbore:1.0.0", problem, StringComparison.Ordinal);
+        Assert.StartsWith("The template osdu:wks:master-data--Wellbore:1.0.0 version ", problem, StringComparison.Ordinal);
+        Assert.Contains("that mappings/Wellbores@1.0.0.yaml fills cannot be read", problem, StringComparison.Ordinal);
+        Assert.Contains("does not read as a schema", problem, StringComparison.Ordinal);
         Assert.Null(Assert.Single(read.Deliveries).Schema);
     }
 
     [Fact]
-    public async Task A_release_built_since_a_mapping_was_synced_is_a_lineage_input_change_when_its_template_is_not_saved()
+    public async Task A_release_built_since_a_mapping_was_synced_is_a_lineage_input_change_when_no_template_folder_holds_its_template()
     {
         WellsAndWellbores();
         _a.Delivery("wells", "master-data--Well");
         _a.Delivery("wellbores", "master-data--Wellbore", columns: ["WellID"]);
-        await SaveTemplatesAsync("master-data--Well");
-        await ReconcileAsync(_repoA, _rootA);
+        HoldTemplates("master-data--Well");
+        var warning = Assert.Single(await ReconcileAsync(_repoA, _rootA, clean: false));
+        Assert.Contains("no template folder on the path of mappings/Wellbores@1.0.0.yaml holds template osdu:wks:master-data--Wellbore:1.0.0", warning, StringComparison.Ordinal);
         Assert.False(await ReleaseBuiltSinceAsync());
 
-        // A release holding a kind whose template is saved changes nothing.
+        // A release holding a kind whose template a folder holds changes nothing.
         var store = new SchemaLineageStore(_database.CreateDbContext);
         await store.SaveAsync("v0.28.0", "aaaa", null, [Entry("master-data--Well")], [], "tests", Utc.AddHours(1));
         Assert.False(await ReleaseBuiltSinceAsync());
@@ -143,7 +156,7 @@ public sealed class OrderCatalogTests : IDisposable
         // One holding the wellbores' kind, built after the sync that saw their mapping, does: once.
         await store.SaveAsync("v0.29.0", "bbbb", null, [Entry("master-data--Wellbore", ("osdu.data.WellID", "master-data--Well"))], [], "tests", Utc.AddHours(1));
         Assert.True(await ReleaseBuiltSinceAsync());
-        await ReconcileAsync(_repoA, _rootA, Utc.AddHours(2));
+        await ReconcileAsync(_repoA, _rootA, Utc.AddHours(2), clean: false);
         Assert.False(await ReleaseBuiltSinceAsync());
     }
 
@@ -187,10 +200,10 @@ public sealed class OrderCatalogTests : IDisposable
         _b.Delivery("wells", "master-data--Well");
         _a.Delivery("wellbores", "master-data--Wellbore", columns: ["WellID"]);
         _a.Delivery("logs", "work-product-component--WellLog", columns: ["WellboreID"]);
-        await SaveTemplatesAsync();
+        HoldTemplates();
         var documents = new DeliveryDocumentLoader();
         var loader = YamlDocumentLoader.CreateDefault(
-            [new DeliveryFlowKind(documents, new MappingTemplateSource(Templates()), () => new OrderCatalog(_database.CreateDbContext)), new CacheFlowKind(documents)]);
+            [new DeliveryFlowKind(documents, new MappingTemplateSource(), () => new OrderCatalog(_database.CreateDbContext)), new CacheFlowKind(documents)]);
         var sync = new CatalogSync(loader, [new DeliveryCatalogSync(documents)]);
         var nameA = "order-a-" + _repoA.ToString("N")[..10];
         var nameB = "order-b-" + _repoB.ToString("N")[..10];
@@ -280,25 +293,28 @@ public sealed class OrderCatalogTests : IDisposable
         return id;
     }
 
-    /// <summary>Saves the schemas the estates were written with where a host keeps templates; with entity types named, those alone.</summary>
-    private async Task SaveTemplatesAsync(params string[] entityTypes)
+    /// <summary>
+    /// Puts the schemas the estates were written with in the template folder of each, as a repository holds the templates
+    /// its mappings fill; with entity types named, those alone.
+    /// </summary>
+    private void HoldTemplates(params string[] entityTypes)
     {
-        var store = Templates();
-        foreach (var schema in _templates.All.Where(s => entityTypes.Length == 0 || entityTypes.Any(e => s.Kind.Contains($":{e}:", StringComparison.Ordinal))))
-        {
-            await store.SaveAsync(schema, "tests", "tests");
-        }
+        _a.Hold(entityTypes);
+        _b.Hold(entityTypes);
     }
 
-    /// <summary>The template store, saving as of the day before the syncs, so no template reads as saved since a sync saw its mapping.</summary>
-    private OsduTemplateStore Templates() => _database.Templates(new FixedClock(new DateTimeOffset(Utc.AddDays(-1))));
-
-    private async Task ReconcileAsync(Guid repo, string root, DateTime? nowUtc = null)
+    /// <summary>Reconciles a repository and returns what its sync warned of, which a <paramref name="clean"/> sync has none of.</summary>
+    private async Task<IReadOnlyList<string>> ReconcileAsync(Guid repo, string root, DateTime? nowUtc = null, bool clean = true)
     {
         var warnings = new List<string>();
         await using var db = _database.CreateDbContext();
         await new DeliveryCatalogSync(new DeliveryDocumentLoader()).ReconcileAsync(db, repo, root, nowUtc ?? Utc, warnings, CancellationToken.None);
-        Assert.Empty(warnings);
+        if (clean)
+        {
+            Assert.Empty(warnings);
+        }
+
+        return warnings;
     }
 
     private async Task<CatalogDeliveries> ReadAsync(Guid? repo = null)

@@ -145,8 +145,9 @@ public sealed class DeliveryInterfacesApiTests
                 Assert.Contains("Mapping Wellbore@1.0.0 of interface 'wellbores' is not among the repository's valid mappings", items[0].GetProperty("orderProblem").GetString(), StringComparison.Ordinal);
             }
 
-            // Once the mappings are synced and their templates saved, the well logs wait for the wellbores they refer to.
-            await SampleEstate.SaveTemplatesAsync(cs);
+            // Once the mappings are synced with the template folder holding their templates, the well logs wait for the
+            // wellbores they refer to.
+            await SampleEstate.HoldTemplatesAsync(cs, repoId, now);
             await using (var osdu = SampleEstate.Context(cs))
             {
                 var loader = new DeliveryDocumentLoader();
@@ -323,6 +324,7 @@ public sealed class DeliveryInterfacesApiTests
                 await osdu.DeliveryRecords.Where(r => r.FlowId == logsLedger).ExecuteDeleteAsync();
                 await osdu.DeliveryInterfaces.Where(i => i.RepoId == repoId).ExecuteDeleteAsync();
                 await osdu.DeliveryMappings.Where(m => m.RepoId == repoId).ExecuteDeleteAsync();
+                await osdu.DeliveryRepositoryTemplates.Where(t => t.RepoId == repoId).ExecuteDeleteAsync();
             }
 
             await using (var db = CatalogDatabase.Create(cs))

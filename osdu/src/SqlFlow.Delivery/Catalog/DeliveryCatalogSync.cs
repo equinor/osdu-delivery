@@ -17,10 +17,13 @@ using ContentHash = SqlFlow.Delivery.Hashing.ContentHash;
 namespace SqlFlow.Delivery.Catalog;
 
 /// <summary>
-/// The delivery kind's document families in the repository sync: every mapping document (<c>documentType: mapping</c>,
-/// anywhere in the tree), what every cache flow (<c>flowType: cache</c>) declares it caches, and the interfaces of every
-/// delivery flow (<c>flowType: delivery</c>) become rows of the <c>osdu</c> schema, so the GUI lists what a flow renders
-/// with, what each cache holds and which pipeline keeps a ledger, without opening the repository. Rows are keyed by repository and reference; a document that disappears from the tree loses its row. The
+/// The delivery kind's document families in the repository sync: every file of the repository's template folders (each
+/// folder named <c>templates</c>, anywhere in the tree), every mapping document (<c>documentType: mapping</c>, anywhere in
+/// the tree) with the template the folders on its path settle it to, what every cache flow (<c>flowType: cache</c>)
+/// declares it caches, and the interfaces of every delivery flow (<c>flowType: delivery</c>) become rows of the
+/// <c>osdu</c> schema, so the GUI lists what a flow renders with, what each cache holds and which pipeline keeps a
+/// ledger, without opening the repository. Every template a folder holds is saved in the library too, which the pages,
+/// the explorer and the mapping builder read (osdu/docs/reference/concepts/templates.md, Template folders). Rows are keyed by repository and reference; a document that disappears from the tree loses its row. The
 /// sync only reads the repository: the versions of a cache are written by the runs of its cache flow, never by the sync.
 /// <para>
 /// Where those rows are written depends on where the module database is. In the default estate it is the catalog's own
@@ -147,11 +150,11 @@ public sealed class DeliveryCatalogSync : ICatalogSyncExtension
     /// stays the same. Compared by path and content hash against the rows the last sync wrote, through the same discovery
     /// the reconciliation uses. A document that is a second declaration of a reference already on record (which the
     /// reconciliation leaves out) is not a change. Cache flows need no check here: they are flows, which the sync compares
-    /// itself. A template one of the repository's mappings pins, saved since the mappings were last reconciled, is a change
-    /// too: what a <c>ref</c> is checked against is read off that template, so the lineage computed without it left those
-    /// cache types out (<see cref="PinnedTemplateSavedSinceAsync"/>). And so is a stored graph that does not hold what the
-    /// documents describe, whatever the documents did: one a build drew before a mapping was a node of it
-    /// (<see cref="StoredGraphLacksMappingsAsync"/>), which no document change would ever bring forward.
+    /// itself. A changed template folder is a change too (<see cref="TemplateFoldersChangedAsync"/>): what a <c>ref</c> is
+    /// checked against is read off the template a mapping fills, and a mapping that names its template's kind alone fills
+    /// whatever version its folders hold. And so is a stored graph that does not hold what the documents describe, whatever
+    /// the documents did: one a build drew before a mapping was a node of it (<see cref="StoredGraphLacksMappingsAsync"/>),
+    /// which no document change would ever bring forward.
     /// </summary>
     public async Task<bool> LineageInputsChangedAsync(CatalogDbContext context, Guid repoId, string root, CancellationToken ct)
     {
@@ -164,23 +167,22 @@ public sealed class DeliveryCatalogSync : ICatalogSyncExtension
 
         await using var work = await OpenAsync(context, write: false, ct).ConfigureAwait(false);
         return await MappingsChangedAsync(work.Context, repoId, root, ct).ConfigureAwait(false)
-            || await PinnedTemplateSavedSinceAsync(work.Context, repoId, ct).ConfigureAwait(false)
+            || await TemplateFoldersChangedAsync(work.Context, repoId, root, ct).ConfigureAwait(false)
             || await ReleaseBuiltSinceAsync(work.Context, repoId, ct).ConfigureAwait(false);
     }
 
     /// <summary>
-    /// Whether a release of OSDU's lineage holding the kind of a mapping of the repository whose pinned template is not
-    /// saved was built after the sync that last saw the mapping (osdu/docs/reference/concepts/osdu-order.md, OSDU's lineage
-    /// by release). The OSDU order reads such a kind's relationships from the newest built release holding it, so the
-    /// lineage computed before the build ordered its flow by nothing, and the first sync after the build computes it again.
-    /// Every reconciliation stamps the mappings it sees, so this holds for exactly one sync.
+    /// Whether a release of OSDU's lineage holding the kind of a mapping of the repository that no template folder on its
+    /// path gives a template was built after the sync that last saw the mapping (osdu/docs/reference/concepts/osdu-order.md,
+    /// OSDU's lineage by release). The OSDU order reads such a kind's relationships from the newest built release holding
+    /// it, so the lineage computed before the build ordered its flow by nothing, and the first sync after the build computes
+    /// it again. Every reconciliation stamps the mappings it sees, so this holds for exactly one sync.
     /// </summary>
     public static Task<bool> ReleaseBuiltSinceAsync(OsduDbContext context, Guid repoId, CancellationToken ct)
     {
         ArgumentNullException.ThrowIfNull(context);
         return context.DeliveryMappings.AsNoTracking()
-            .Where(m => m.RepoId == repoId && m.Kind != string.Empty)
-            .Where(m => !context.DeliveryTemplates.Any(t => t.Kind == m.Kind && t.Version == m.TemplateVersion))
+            .Where(m => m.RepoId == repoId && m.Kind != string.Empty && m.TemplatePath == string.Empty)
             .Join(context.SchemaLineageKinds.AsNoTracking(), m => m.Kind, k => k.Kind, (m, k) => new { m.LastSeenUtc, k.LineageId })
             .Join(context.SchemaLineages.AsNoTracking(), x => x.LineageId, l => l.Id, (x, l) => new { x.LastSeenUtc, l.BuiltUtc })
             .AnyAsync(x => x.BuiltUtc > x.LastSeenUtc, ct);
@@ -218,22 +220,23 @@ public sealed class DeliveryCatalogSync : ICatalogSyncExtension
     }
 
     /// <summary>
-    /// Whether a template a mapping of the repository pins was saved after the sync that last saw the mapping. A saved
-    /// template version never changes, so the only thing that can move is whether it is there: a mapping synced before its
-    /// template was saved had its lineage computed without it, and the first sync after the save computes it again. Every
-    /// reconciliation stamps the mappings it sees, so this holds for exactly one sync.
+    /// Whether the repository's template folders on disk differ from the files <paramref name="context"/> recorded for it at
+    /// the last sync: a file added, removed, or holding another template (or none) now. A changed file can move the
+    /// template a mapping that names its template's kind alone fills, and what a <c>ref</c> is checked against with it.
     /// </summary>
-    public static Task<bool> PinnedTemplateSavedSinceAsync(OsduDbContext context, Guid repoId, CancellationToken ct)
+    public static async Task<bool> TemplateFoldersChangedAsync(OsduDbContext context, Guid repoId, string root, CancellationToken ct)
     {
         ArgumentNullException.ThrowIfNull(context);
-        return context.DeliveryMappings.AsNoTracking()
-            .Where(m => m.RepoId == repoId && m.TemplateVersion != string.Empty)
-            .Join(
-                context.DeliveryTemplates.AsNoTracking(),
-                m => new { m.Kind, Version = m.TemplateVersion },
-                t => new { t.Kind, t.Version },
-                (m, t) => new { m.LastSeenUtc, t.CapturedUtc })
-            .AnyAsync(pin => pin.CapturedUtc > pin.LastSeenUtc, ct);
+        ArgumentException.ThrowIfNullOrWhiteSpace(root);
+        var stored = await context.DeliveryRepositoryTemplates.AsNoTracking()
+            .Where(t => t.RepoId == repoId)
+            .Select(t => new { t.Path, t.Kind, t.Version, t.Problem })
+            .ToListAsync(ct).ConfigureAwait(false);
+        var found = RecordedFiles(TemplateFolders.Scan(root, ct), warnings: null)
+            .Select(f => (f.Path, f.Kind, f.Version, f.Problem))
+            .ToHashSet();
+        return found.Count != stored.Count
+            || stored.Any(s => !found.Contains((s.Path, s.Kind, s.Version, s.Problem)));
     }
 
     /// <summary>
@@ -347,7 +350,8 @@ public sealed class DeliveryCatalogSync : ICatalogSyncExtension
             string reference;
             try
             {
-                reference = _documents.ParseMapping(yaml, relative).Reference;
+                // Only the reference it declares is asked, so its templates are left as it names them.
+                reference = _documents.ParseMapping(yaml, relative, TemplatePins.DocumentAlone).Reference;
             }
             catch (FlowValidationException)
             {
@@ -375,7 +379,9 @@ public sealed class DeliveryCatalogSync : ICatalogSyncExtension
         ArgumentException.ThrowIfNullOrWhiteSpace(root);
         ArgumentNullException.ThrowIfNull(warnings);
 
-        var mappings = await SyncMappingsAsync(context, repoId, root, nowUtc, warnings, ct).ConfigureAwait(false);
+        // The template folders first: the mappings are settled from what they hold.
+        var folders = await SyncTemplateFoldersAsync(context, repoId, root, nowUtc, warnings, ct).ConfigureAwait(false);
+        var mappings = await SyncMappingsAsync(context, repoId, root, folders, nowUtc, warnings, ct).ConfigureAwait(false);
         var caches = await SyncCacheDefinitionsAsync(context, repoId, root, nowUtc, warnings, ct).ConfigureAwait(false);
         var (interfaces, sources) = await SyncInterfacesAsync(context, repoId, root, nowUtc, warnings, ct).ConfigureAwait(false);
         // The search terms are read from the delivery flows parsed above and the rows the passes above wrote: the mappings
@@ -386,7 +392,7 @@ public sealed class DeliveryCatalogSync : ICatalogSyncExtension
     }
 
     private async Task<CatalogSyncExtensionResult> SyncMappingsAsync(
-        OsduDbContext context, Guid repoId, string root, DateTime nowUtc, ICollection<string> warnings, CancellationToken ct)
+        OsduDbContext context, Guid repoId, string root, SyncedTemplates folders, DateTime nowUtc, ICollection<string> warnings, CancellationToken ct)
     {
         var existing = await context.DeliveryMappings.Where(m => m.RepoId == repoId).AsTracking().ToDictionaryAsync(m => m.Id, ct).ConfigureAwait(false);
         var seen = new HashSet<Guid>();
@@ -416,14 +422,33 @@ public sealed class DeliveryCatalogSync : ICatalogSyncExtension
             string? message = null;
             try
             {
-                mapping = _documents.ParseMapping(yaml, relative);
+                // Its template, and the schema each of its searches reads, are settled from the template folders on its path
+                // as this sync found them: a version it names must be held there, and a kind it names alone takes the one
+                // version the nearest folder holding the kind holds.
+                mapping = _documents.ParseMapping(yaml, relative, folders.For(relative), Path.GetFullPath(file));
             }
             catch (FlowValidationException ex)
             {
-                message = ex.Message;
+                message = Bounded(ex.Message, MaxMessageLength);
             }
 
-            var reference = mapping?.Reference ?? relative;
+            // A document whose only fault is a template no folder on its path settles still says who it is, so its row keeps
+            // the reference it is known by (and the flows that pin it find it, invalid and saying why) while the template is
+            // missing, rather than becoming a row of its path.
+            MappingDefinition? alone = null;
+            if (mapping is null)
+            {
+                try
+                {
+                    alone = _documents.ParseMapping(yaml, relative, TemplatePins.DocumentAlone);
+                }
+                catch (FlowValidationException)
+                {
+                    alone = null;
+                }
+            }
+
+            var reference = mapping?.Reference ?? alone?.Reference ?? relative;
             var id = MappingId(repoId, reference);
             if (!seen.Add(id))
             {
@@ -431,9 +456,17 @@ public sealed class DeliveryCatalogSync : ICatalogSyncExtension
                 continue;
             }
 
-            // The template the document pins. A document that fails to load still names one, and still pins it: deleting
-            // that template would leave the fix with nothing to render against.
+            // The template the document fills, and the file it was settled from. A document that fails to load still names
+            // the version it pins, and still pins it: deleting that template would leave the fix with nothing to render
+            // against. Everything here is derived again for an unchanged document too, since what its folders hold, and
+            // what this build makes of a pin, can change while the document does not.
             var pinned = mapping?.Template ?? NamedTemplate(yaml);
+            var kind = mapping?.Kind ?? pinned?.Kind ?? NamedKind(yaml) ?? string.Empty;
+            var templateVersion = pinned?.Version ?? string.Empty;
+            var templatePath = mapping is null
+                ? string.Empty
+                : folders.ChainFor(relative).Pick(mapping.Template.Kind, mapping.Template.Version).File?.Shown ?? string.Empty;
+            var status = mapping is null ? "invalid" : "valid";
             var hash = ContentHash.Of(yaml);
             if (!existing.TryGetValue(id, out var row))
             {
@@ -441,12 +474,9 @@ public sealed class DeliveryCatalogSync : ICatalogSyncExtension
                 context.DeliveryMappings.Add(row);
                 added++;
             }
-            else if (row.ContentHash == hash && row.RelativePath == relative)
+            else if (row.ContentHash == hash && row.RelativePath == relative && row.Kind == kind && row.TemplateVersion == templateVersion
+                && row.TemplatePath == templatePath && row.Status == status && row.Message == message)
             {
-                // The pin is derived again for an unchanged document too, so what counts as a pin follows this build
-                // rather than the build that first synced the row.
-                row.Kind = mapping?.Kind ?? pinned?.Kind ?? string.Empty;
-                row.TemplateVersion = pinned?.Version ?? string.Empty;
                 row.LastSeenUtc = nowUtc;
                 unchanged++;
                 if (mapping is null)
@@ -462,15 +492,16 @@ public sealed class DeliveryCatalogSync : ICatalogSyncExtension
             }
 
             row.Reference = reference;
-            row.Name = mapping?.Name ?? Path.GetFileNameWithoutExtension(file);
-            row.Version = mapping?.Version ?? string.Empty;
-            row.Kind = mapping?.Kind ?? pinned?.Kind ?? string.Empty;
-            row.TemplateVersion = pinned?.Version ?? string.Empty;
+            row.Name = (mapping ?? alone)?.Name ?? Path.GetFileNameWithoutExtension(file);
+            row.Version = (mapping ?? alone)?.Version ?? string.Empty;
+            row.Kind = kind;
+            row.TemplateVersion = templateVersion;
+            row.TemplatePath = templatePath;
             row.RelativePath = relative;
             row.ContentHash = hash;
             row.Yaml = yaml;
             row.SummaryJson = mapping is null ? "{}" : JsonSerializer.Serialize(Summarize(mapping), SummaryJson);
-            row.Status = mapping is null ? "invalid" : "valid";
+            row.Status = status;
             row.Message = message;
             row.LastSeenUtc = nowUtc;
             if (mapping is null)
@@ -790,6 +821,7 @@ public sealed class DeliveryCatalogSync : ICatalogSyncExtension
         mapping.Version,
         mapping.Kind,
         TemplateVersion = mapping.Template.Version,
+        mapping.TemplateVersionNamed,
         mapping.EntityType,
         mapping.Description,
         System = mapping.Dataset.System,
@@ -814,6 +846,149 @@ public sealed class DeliveryCatalogSync : ICatalogSyncExtension
         => _documents.TemplateNamedBy(yaml) is { } named && named.Kind.Length <= MaxTemplateKindLength && named.Version.Length <= MaxTemplateVersionLength
             ? named
             : null;
+
+    /// <summary>The kind an invalid mapping document names for its template, with or without a version; null when it names none the catalog can hold.</summary>
+    private string? NamedKind(string yaml)
+        => _documents.TemplateKindNamedBy(yaml) is { } kind && kind.Length <= MaxTemplateKindLength ? kind : null;
+
+    /// <summary>The longest message a mapping row keeps.</summary>
+    private const int MaxMessageLength = 4000;
+
+    private static string Bounded(string value, int max) => value.Length <= max ? value : value[..(max - 3)] + "...";
+
+    /// <summary>
+    /// The repository's template folders, as this sync finds them on disk (<see cref="TemplateFolders.Scan"/>): each file a
+    /// row of <c>[osdu].[RepositoryTemplate]</c>, with the template it holds and a copy of its schema, which the control
+    /// plane's pages read it from, or why it holds none. The library of saved templates is left as it is: it holds only
+    /// what people save there. A file that holds no template, a folder named almost like a template folder, the same
+    /// template twice in one folder and two versions of a kind in one folder are reported as warnings; the sync goes on.
+    /// Returns the folders, which settle the repository's mappings.
+    /// </summary>
+    private static async Task<SyncedTemplates> SyncTemplateFoldersAsync(
+        OsduDbContext context, Guid repoId, string root, DateTime nowUtc, ICollection<string> warnings, CancellationToken ct)
+    {
+        var scan = TemplateFolders.Scan(root, ct);
+        var files = RecordedFiles(scan, warnings);
+        foreach (var warning in scan.Warnings)
+        {
+            warnings.Add(warning);
+        }
+
+        foreach (var file in files.Where(f => f.Problem is not null))
+        {
+            warnings.Add($"{file.Path}: {file.Problem}");
+        }
+
+        foreach (var folder in scan.Folders)
+        {
+            foreach (var same in folder.Files.Where(f => f.IsTemplate).GroupBy(f => f.Reference).Where(g => g.Count() > 1))
+            {
+                warnings.Add($"{TemplateChain.Listed(same.Select(f => f.Shown))} hold the same template, {same.Key}; one file of it in a folder is enough.");
+            }
+
+            foreach (var kind in folder.Files.Where(f => f.IsTemplate).GroupBy(f => f.Kind!, StringComparer.OrdinalIgnoreCase)
+                         .Where(g => g.Select(f => f.Version!).Distinct(StringComparer.OrdinalIgnoreCase).Count() > 1))
+            {
+                warnings.Add(
+                    $"{folder.Shown} holds {kind.Select(f => f.Version).Distinct(StringComparer.OrdinalIgnoreCase).Count()} versions of {kind.Key} "
+                    + $"({TemplateChain.Listed(kind.Select(f => $"{f.Version} in {f.Shown}"))}), so a document that names the kind alone and reads this folder has to name its version.");
+            }
+        }
+
+        var existing = await context.DeliveryRepositoryTemplates.Where(t => t.RepoId == repoId).AsTracking()
+            .ToDictionaryAsync(t => t.Path, StringComparer.Ordinal, ct).ConfigureAwait(false);
+        var seen = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var file in files)
+        {
+            seen.Add(file.Path);
+            if (!existing.TryGetValue(file.Path, out var row))
+            {
+                row = new DeliveryRepositoryTemplate
+                {
+                    Id = FlowIdentity.FromName($"delivery-template-file/{repoId:N}/{file.Path}"),
+                    RepoId = repoId,
+                    Path = file.Path,
+                    FirstSeenUtc = nowUtc,
+                };
+                context.DeliveryRepositoryTemplates.Add(row);
+            }
+
+            // The copy of a template is written when the file holds another version than the row last did, or the row has
+            // none yet (a row recorded before copies were kept); a file that changed since the scan holds no template now.
+            var problem = file.Problem;
+            var schemaJson = problem is null
+                && string.Equals(row.Kind, file.Kind, StringComparison.Ordinal)
+                && string.Equals(row.Version, file.Version, StringComparison.Ordinal)
+                    ? row.SchemaJson
+                    : null;
+            if (problem is null && schemaJson is null)
+            {
+                try
+                {
+                    schemaJson = Json.DocumentJson.Compact(TemplateFolders.Load(file.Source).Root);
+                }
+                catch (DeliveryException ex)
+                {
+                    problem = Bounded(ex.Message, DeliveryRepositoryTemplate.MaxProblemLength);
+                    warnings.Add($"{file.Path}: {problem}");
+                }
+            }
+
+            row.Folder = file.Folder;
+            row.Kind = problem is null ? file.Kind : string.Empty;
+            row.Version = problem is null ? file.Version : string.Empty;
+            row.Problem = problem;
+            row.SchemaJson = problem is null ? schemaJson : null;
+            row.LastSeenUtc = nowUtc;
+        }
+
+        foreach (var (path, row) in existing)
+        {
+            if (!seen.Contains(path))
+            {
+                context.DeliveryRepositoryTemplates.Remove(row);
+            }
+        }
+
+        await context.SaveChangesAsync(ct).ConfigureAwait(false);
+        return SyncedTemplates.Of(scan);
+    }
+
+    /// <summary>A file of a template folder as the sync records it.</summary>
+    private sealed record RecordedFile(string Path, string Folder, string Kind, string Version, string? Problem, TemplateFolderFile Source);
+
+    /// <summary>
+    /// The files of <paramref name="scan"/> as rows record them, in path order: a path longer than a row holds is left out,
+    /// and said so to <paramref name="warnings"/> when given.
+    /// </summary>
+    private static List<RecordedFile> RecordedFiles(TemplateFolderScan scan, ICollection<string>? warnings)
+    {
+        var files = new List<RecordedFile>();
+        var seen = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var folder in scan.Folders)
+        {
+            foreach (var file in folder.Files)
+            {
+                if (file.Shown.Length > DeliveryRepositoryTemplate.MaxPathLength || folder.Shown.Length > DeliveryRepositoryTemplate.MaxPathLength)
+                {
+                    warnings?.Add($"{file.Shown}: the path is longer than {DeliveryRepositoryTemplate.MaxPathLength} characters, so the file is not recorded as a template.");
+                    continue;
+                }
+
+                if (!seen.Add(file.Shown))
+                {
+                    continue;
+                }
+
+                files.Add(new RecordedFile(
+                    file.Shown, folder.Shown, file.Kind ?? string.Empty, file.Version ?? string.Empty,
+                    file.Problem is null ? null : Bounded(file.Problem, DeliveryRepositoryTemplate.MaxProblemLength), file));
+            }
+        }
+
+        files.Sort((a, b) => string.CompareOrdinal(a.Path, b.Path));
+        return files;
+    }
 
     /// <summary>A cheap textual pre-check, so only candidate documents are parsed: every mapping declares its type.</summary>
     /// <summary>

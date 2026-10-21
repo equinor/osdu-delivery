@@ -1,4 +1,25 @@
-import type { DeliveryTemplateRole, DeliveryTemplateVariable } from "../../api/delivery";
+import { deliveryApi, type DeliveryTemplateRole, type DeliveryTemplateVariable } from "../../api/delivery";
+
+/**
+ * How a saved version's bundled schema is read, by the Schema JSON tab and by the download alike, so the file is the text
+ * the tab shows. A saved version never changes, so its schema, once read, is not read again.
+ */
+export function templateSchemaQuery(kind: string, version: string) {
+  return {
+    queryKey: ["delivery", "templates", "schema", kind, version] as const,
+    queryFn: () => deliveryApi.templateSchema(kind, version),
+    staleTime: Infinity,
+  };
+}
+
+/**
+ * The file a template downloads as: its kind, each colon an underscore
+ * (osdu_wks_work-product-component--WellLog_1.4.0.json), the name the control plane gives the schema it answers
+ * (TemplateSources.FileName) and the one the sample's template folder, osdu/samples/welldb/templates, names its schemas by.
+ */
+export function templateFileName(kind: string): string {
+  return `${kind.replace(/:/g, "_")}.json`;
+}
 
 /** A variable's shape as a person reads it: the type of one value, a list of what, an object, or a list of objects. */
 export function shapeText(variable: Pick<DeliveryTemplateVariable, "shape" | "type" | "itemType">): string {

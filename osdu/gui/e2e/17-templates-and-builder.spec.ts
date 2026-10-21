@@ -4,9 +4,9 @@ import type { Locator, Page } from "@playwright/test";
 import { expect, test } from "./helpers";
 
 // Templates and the mapping builder (osdu/docs/reference/concepts/templates.md; the builder:
-// osdu/docs/reference/concepts/gui.md, Mapping builder). Runs after the seed (03), which saves the two templates the
-// sample mappings pin and syncs the fixture repository, so both templates are pinned by a synced mapping and the
-// repository's cache is in the catalog. Browsing OSDU reads the Open Group's public data definitions repository through
+// osdu/docs/reference/concepts/gui.md, Mapping builder). Runs after the seed (03), which saves the templates the sample
+// mappings fill in the library, as the Templates page saves them, and syncs the fixture repository, so its cache is in the
+// catalog. The library is not linked to the repository, whose documents read their templates from its template folder. Browsing OSDU reads the Open Group's public data definitions repository through
 // the control plane, which the suite cannot reach, so the browse test stands in for those three answers and lets
 // everything after them (the preview, the save) run against the real control plane.
 
@@ -59,15 +59,13 @@ async function openTemplates(page: Page): Promise<void> {
 }
 
 test.describe.serial("templates and the mapping builder", () => {
-  test("the saved templates say which mappings pin them, and a pinned version is not deleted", async ({ adminPage }) => {
+  test("a saved template is laid out and downloads as a file, and deleting it touches no repository", async ({ adminPage }) => {
     await openTemplates(adminPage);
 
     const rows = adminPage.getByTestId("templates-saved-table").getByTestId("table-row");
     const wellbore = rows.filter({ hasText: WELLBORE_KIND });
     await expect(wellbore).toHaveCount(1, { timeout: 30_000 });
     await expect(wellbore).toContainText(WELLBORE_VERSION);
-    // The sample's Wellbore mapping and the fixture's both pin it.
-    await expect(wellbore).toContainText("2 mappings");
     await expect(rows.filter({ hasText: WELLLOG_KIND })).toContainText(WELLLOG_VERSION);
 
     await wellbore.click();
@@ -75,7 +73,9 @@ test.describe.serial("templates and the mapping builder", () => {
     await expect(sheet.getByTestId("templates-view-kind")).toHaveText(WELLBORE_KIND, { timeout: 15_000 });
     await expect(sheet.getByTestId("templates-view-version")).toHaveText(WELLBORE_VERSION);
     await expect(sheet.getByTestId("templates-view-state")).toHaveText("saved");
-    await expect(sheet.getByTestId("templates-view-saved")).toContainText("Pinned by 2 synced mappings");
+    // The library says nothing of the repositories: their documents read their own template folders.
+    await expect(sheet.getByTestId("templates-view-held")).toHaveCount(0);
+    await expect(sheet.getByTestId("templates-view-saved")).not.toContainText("Filled by");
 
     // The variables a mapping fills are listed; what OSDU Delivery and OSDU write themselves shows only on request.
     // The tree opens fully folded; opening the data section shows what it holds.
@@ -111,10 +111,21 @@ test.describe.serial("templates and the mapping builder", () => {
     await sheet.getByTestId("templates-view-tab-schema").click();
     await expect(sheet.getByTestId("templates-view-schema-json")).toBeVisible({ timeout: 15_000 });
 
-    // The synced Wellbore mappings pin this version, so Delete sits beside the saved state disabled, and says why.
-    await expect(sheet.getByTestId("templates-view-actions").getByTestId("templates-delete")).toBeDisabled();
-    await sheet.getByTestId("templates-delete-blocked").hover();
-    await expect(adminPage.getByText(/Pinned by 2 synced mappings\. Move them to another template version/).first()).toBeVisible();
+    // Download saves the schema as a file named as the samples name theirs, holding the schema the sample file holds.
+    const [download] = await Promise.all([
+      adminPage.waitForEvent("download"),
+      sheet.getByTestId("templates-view-actions").getByTestId("templates-download").click(),
+    ]);
+    expect(download.suggestedFilename()).toBe(WELLBORE_FILE);
+    expect(JSON.parse(readFileSync(await download.path(), "utf8"))).toEqual(
+      JSON.parse(readFileSync(join(import.meta.dirname, "..", "..", "samples", "welldb", "templates", WELLBORE_FILE), "utf8")),
+    );
+
+    // A synced repository's template folder holds this same version, and Delete is offered all the same: the repository's
+    // documents read the file, so the confirmation says none is affected. Kept here, for the builder tests after this one.
+    await sheet.getByTestId("templates-view-actions").getByTestId("templates-delete").click();
+    await expect(adminPage.getByTestId("confirm-dialog")).toContainText("none of their documents is affected");
+    await adminPage.getByTestId("confirm-dialog-cancel").click();
     await expect(rows.filter({ hasText: WELLBORE_KIND })).toHaveCount(1);
   });
 
@@ -122,7 +133,7 @@ test.describe.serial("templates and the mapping builder", () => {
     await openTemplates(adminPage);
     await adminPage.getByTestId("templates-tab-import").click();
 
-    const schema = readFileSync(join(import.meta.dirname, "..", "..", "samples", "templates", WELLBORE_FILE), "utf8");
+    const schema = readFileSync(join(import.meta.dirname, "..", "..", "samples", "welldb", "templates", WELLBORE_FILE), "utf8");
     // The kind is asked for until the schema names its own, and then it is read from the schema.
     await expect(adminPage.getByTestId("templates-import-kind")).toBeVisible();
     await adminPage.getByTestId("templates-import-json").fill(schema);
@@ -142,7 +153,7 @@ test.describe.serial("templates and the mapping builder", () => {
     await openTemplates(adminPage);
     await adminPage.getByTestId("templates-tab-import").click();
 
-    const schema = readFileSync(join(import.meta.dirname, "..", "..", "samples", "templates", WELLBORE_FILE), "utf8");
+    const schema = readFileSync(join(import.meta.dirname, "..", "..", "samples", "welldb", "templates", WELLBORE_FILE), "utf8");
     await adminPage.getByTestId("templates-import-json").fill(schema);
     await adminPage.getByTestId("templates-import-save-now").click();
 
@@ -158,7 +169,7 @@ test.describe.serial("templates and the mapping builder", () => {
     const schemas = /\/api\/v1\/delivery\/templates\/osdu\/schemas(\?|$)/;
     const schema = /\/api\/v1\/delivery\/templates\/osdu\/schema(\?|$)/;
     const wellboreSchema: unknown = JSON.parse(
-      readFileSync(join(import.meta.dirname, "..", "..", "samples", "templates", WELLBORE_FILE), "utf8"),
+      readFileSync(join(import.meta.dirname, "..", "..", "samples", "welldb", "templates", WELLBORE_FILE), "utf8"),
     );
     const asked: string[] = [];
     const sync = /\/api\/v1\/delivery\/templates\/osdu\/sync$/;

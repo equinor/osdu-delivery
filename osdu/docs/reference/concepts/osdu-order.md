@@ -20,7 +20,7 @@ keywords:
   - build lineage
 related:
   - delivery-concept-lineage
-  - delivery-decision-0016
+  - delivery-wiki-0016-osdu-order
   - delivery-flow-interfaces
   - delivery-flow-mapping
   - delivery-concept-templates
@@ -77,8 +77,10 @@ types inside it.
   nothing.
 - A reference to the record's own type (a parent wellbore) adds nothing: records of one flow are ordered against each
   other by [record waits](../flow/interfaces.md#records-that-wait-for-records).
-- A kind whose template is not saved is read from a [built release of OSDU's lineage](#osdus-lineage-by-release). When
-  neither knows it, the delivery orders nothing and waits for nothing, and lineage warns on its flow.
+- A kind whose template no [template folder](templates.md#template-folders) on its mapping's path holds is read from a
+  [built release of OSDU's lineage](#osdus-lineage-by-release); so is one whose template's copy the sync kept cannot be read,
+  where the catalog orders a repository. When neither knows it, the delivery orders nothing and waits for nothing, and
+  lineage warns on its flow.
 
 ## Cycles, and how they are cut
 
@@ -158,9 +160,11 @@ the properties of its schema that refer to other records. A release is built onc
 (`[osdu].[SchemaLineage]`, `[osdu].[SchemaLineageKind]`), and building it again replaces it. A kind a release lists that
 cannot be read is kept as a failure with why, and the rest are kept.
 
-The order reads a kind from the newest built release holding it when no template of the kind is saved. A release built
-after a repository's mappings were synced, holding a kind one of them fills with no saved template, computes that
-repository's lineage again at its next sync.
+The order reads a kind from the newest built release holding it when no template folder on the mapping's path holds the
+kind's template. A release built after a repository's mappings were synced, holding a kind one of them fills that no
+folder on its path holds, computes that repository's lineage again at its next sync. Such a mapping does not load, and
+the sync reports it, so the order the catalog keeps for the repository leaves its deliveries out until the template's
+file is in a folder on its path.
 
 ## In the GUI and the API
 
@@ -197,6 +201,6 @@ The Order page (OSDU, Build) has three tabs ([the GUI](gui.md)):
 ## See also
 
 - [Lineage](lineage.md): the nodes, reads and writes behind the waves.
-- [Decision 0016](../../decisions/0016-osdu-order.md): why the order is read from OSDU's schemas, and why schedules are
+- [Decision 0016](../../wiki/decisions/0016-osdu-order.md): why the order is read from OSDU's schemas, and why schedules are
   shown rather than chained.
 - [SQLFlow: the lineage graph and the execution plan](../../../../sqlflow/docs/reference/concepts/lineage-graph-and-plan.md).

@@ -2,7 +2,7 @@
 id: delivery-cli-check
 title: "sqlflow check: the preflight of a delivery flow, its mapping, template and cache, without sending anything"
 type: cli-command
-summary: "Check a delivery flow before it runs: the pinned mapping against its saved template and the partition cache it reads, the route, and with --connect its tables."
+summary: "Check a delivery flow before it runs: the mapping against the template its folders hold and the cache it reads, the route, and with --connect its tables."
 keywords:
   - check
   - preflight
@@ -49,9 +49,10 @@ sourceRefs:
 # sqlflow check: the preflight of a delivery flow, its mapping, template and cache, without sending anything
 
 `sqlflow check` answers "would this delivery flow render?" before anything is planned or sent. It loads the flow, the
-mapping it pins, the template that mapping pins and the version of the partition cache it reads, builds the render
-context, and runs the preflight gate a run runs. It sends nothing to OSDU and writes nothing anywhere. Use it after
-editing a flow or a mapping, after saving a template, and in a CI job that has the module database.
+mapping it pins, the template that mapping fills (from the template folders on the mapping's path) and the version of the
+partition cache it reads, builds the render context, and runs the preflight gate a run runs. It sends nothing to OSDU and
+writes nothing anywhere. Use it after editing a flow, a mapping or a template folder, and in a CI job that has the module
+database.
 
 The command line is `sqlflow`: OSDU Delivery's CLI is SQLFlow's CLI with the OSDU verbs added (`check`, `preview`,
 `values`, `records`, `config`, `partition`, `cache`, `template`, `assertions`, `dimensions`, `inventory`). The options
@@ -100,9 +101,12 @@ names), in this order:
    `mappings/` folder: `render.mappings` when the flow names one, else the nearest `mappings` directory walking up from
    the flow file. The file is `<Name>@<version>.yaml` (or `.yml`, or `<Name>/<version>.yaml`), and its own name and
    version must agree with the file name.
-4. **The template** the mapping pins, loaded from the module database. A template that is not saved fails with
-   `<file>: mapping <Name@version> pins template <kind> version <version>, which is not saved. Save it on the Templates page, or with 'sqlflow template import'.`
-   ([sqlflow template](template.md)).
+4. **The template** the mapping fills, read from the [template folders](../concepts/templates.md#template-folders) on
+   the mapping's path: the version `template.version` names, or, when it names the kind alone, the one version the
+   nearest folder holding the kind holds. A template no folder there holds fails with
+   `<file>: mapping <Name@version> cannot render: no template folder on the path of <mapping file> holds template <kind> version <version>. ...`,
+   the rest naming the folders it read and how to put the file in one
+   ([sqlflow template](template.md)); `sqlflow template folders --for <mapping file>` lists what the mapping reads.
 5. **The cache version** of the partition the flow delivers to, when the mapping reads the cache: the current version,
    or the one `render.cacheVersion` pins. A mapping that only searches reads no cached record and is checked against the
    partition's system properties alone; a mapping that does neither is checked with no cache at all. A partition whose
@@ -127,12 +131,13 @@ names by its registration is read from the Register service when the flow runs, 
 
 ## What it needs
 
-Templates and caches live in the module database, so `check` needs it: `--db <conn-ref>` (or `SQLFLOW_CATALOG_DB`)
-when the `osdu` schema is in the catalog's database, or `SQLFLOW_OSDU_DB`. Without either it stops at the first thing
-it has to read from there, usually the template:
+The templates are read from the repository's files. Caches and the partition registry live in the module database, so
+`check` needs it for a mapping that reads a cache and for a flow that leaves its partitions to the registry:
+`--db <conn-ref>` (or `SQLFLOW_CATALOG_DB`) when the `osdu` schema is in the catalog's database, or `SQLFLOW_OSDU_DB`.
+Without either it stops at the first thing it has to read from there:
 
 ```text
-ERROR  <file>: mapping Wellbore@1.0.0 fills template osdu:wks:master-data--Wellbore:1.3.0 version 58d6bdbd9d066a06, and templates live in the module's database, which this host was started without. Start it with the module's connection (Osdu:Database:Connection or SQLFLOW_OSDU_DB), or with --db when the catalog's database holds the osdu schema.
+ERROR  <file>: mapping WellLog@1.4.0 reads the cache of partition 'dev', and caches live in the module's database, which this host was started without. Start it with the module's connection (Osdu:Database:Connection or SQLFLOW_OSDU_DB), or with --db when the catalog's database holds the osdu schema.
 ```
 
 The check that needs no database is [`sqlflow validate`](validate.md).
@@ -146,7 +151,7 @@ One block, `OK` on its first line (values vary):
 ```text
 OK  welldb-wellbore-03-delivery (<flow id>)
     mapping     Wellbore@1.0.0
-    template    osdu:wks:master-data--Wellbore:1.3.0 version 58d6bdbd9d066a06 (saved <yyyy-MM-dd HH:mm:ssZ>)
+    template    osdu:wks:master-data--Wellbore:1.3.0 version 58d6bdbd9d066a06 (welldb/templates/osdu_wks_master-data--Wellbore_1.3.0.json)
     cache       none (the mapping reads nothing from a cache)
     context     <first 16 characters of the render context's hash>
     mappings    <absolute path of the mappings directory>
@@ -159,7 +164,7 @@ OK  welldb-wellbore-03-delivery (<flow id>)
 | --- | --- |
 | `OK  <flow> (<flow id>)` | The flow and its ledger identity in the partition checked. |
 | `ddms` | On a route that reaches a DDMS only: which collection of which DDMS the records go to, or why no DDMS the flow reaches takes them. |
-| `mapping`, `template` | The pinned mapping, and the template it pins with when it was saved. |
+| `mapping`, `template` | The pinned mapping, and the template it fills with the template folder file it was read from; `, the version its folder holds` follows when the mapping names the kind alone. |
 | `cache` | `partition <id> version <version> (<n> type(s))`, or `none (the mapping reads nothing from a cache)`. |
 | `searches` | Only for a mapping that searches the platform: `exact, then regardless of case where one record answers (...)` or `exact only (...)`, with the partition's system properties that decide it (`<service> <name> <state>`). |
 | `context` | The render context hash: the mapping, the template, the cache version and the parameters a record renders with. |
@@ -228,7 +233,7 @@ stdout carries one JSON document; keys are sorted and properties without a value
 | --- | --- |
 | `flow`, `flowId` | The flow's name and its ledger identity; an interface's name is under `interface`. |
 | `mapping` | The pinned mapping, `Name@version`. |
-| `template` | `kind` and `version` of the template the mapping pins. |
+| `template` | `kind` and `version` of the template the mapping fills, `file` (the template folder file it was read from) and `versionNamed` (false when the mapping names the kind alone). |
 | `renderContext` | The render context: `mapping`, `schema`, `parameters`, `cacheVersion`, and when present `mappingFingerprint`, `cache` and `systemProperties`. |
 | `source` | `connection`, `record` (the record table), `key`, `datasets` (each `name` and `object`) and `payloadRoots`. |
 | `mappings` | The mappings directory. |

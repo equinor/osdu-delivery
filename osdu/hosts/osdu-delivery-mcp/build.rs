@@ -6,17 +6,17 @@
 //! ships the pages and the manifest with no runtime file dependency, as SQLFlow's server ships its own. Editing
 //! a page or the manifest retriggers the build.
 //!
-//! `reference` pages resolve under `osdu/docs/reference/`, and `wiki` pages, the decision records, under
-//! `osdu/docs/decisions/`.
+//! `reference` pages resolve under `osdu/docs/reference/`, and `wiki` pages (decisions, patterns, narratives,
+//! incidents and maps) under `osdu/docs/wiki/`.
 
 use std::{env, fs, path::Path};
 
 fn main() {
     let manifest_dir = env::var("CARGO_MANIFEST_DIR").expect("CARGO_MANIFEST_DIR");
-    // osdu/hosts/osdu-delivery-mcp/../../docs/{reference,decisions}
+    // osdu/hosts/osdu-delivery-mcp/../../docs/{reference,wiki}
     let docs_dir = Path::new(&manifest_dir).join("../../docs");
     let reference = docs_dir.join("reference");
-    let decisions = docs_dir.join("decisions");
+    let wiki = docs_dir.join("wiki");
     let manifest_path = reference.join("manifest.json");
 
     println!("cargo:rerun-if-changed={}", manifest_path.display());
@@ -44,7 +44,7 @@ fn main() {
             .unwrap_or_else(|| panic!("manifest doc '{id}' has no string path"));
         let root = match doc["corpus"].as_str().unwrap_or("reference") {
             "reference" => &reference,
-            "wiki" => &decisions,
+            "wiki" => &wiki,
             other => panic!("manifest doc '{id}' names the corpus '{other}'; expected reference or wiki"),
         };
         let full = root.join(rel);

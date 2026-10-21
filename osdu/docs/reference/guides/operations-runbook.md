@@ -190,7 +190,7 @@ twice. A run that asks for a submission another run is taking over in that momen
 | Message | What to do |
 | --- | --- |
 | `The legal service refuses <n> of the legal tag(s) mapping <mapping> puts on every record, so nothing was planned or sent: ...` | Fix or renew the legal tags the flow's parameters name. Nothing reached the ledger or OSDU. |
-| `The preflight of '<source>' found <n> problem(s), so nothing was planned or sent: ...` | Fix each finding (a template not saved, a record table without its identity key, a service refusing the credentials) and run again. |
+| `The preflight of '<source>' found <n> problem(s), so nothing was planned or sent: ...` | Fix each finding (a template no template folder on the mapping's path holds, a record table without its identity key, a service refusing the credentials) and run again. |
 | `Flow '<name>' names no partition, and its target.headers no 'data-partition-id', so the partition its ledger belongs to is unknown.` | Name the partition the flow delivers to. |
 | A registration naming another partition than the ledger is kept in | The flow's `data-partition-id` resolved differently on this node; nothing ran. Make the reference resolve the same everywhere ([Partitions](../concepts/partitions.md)). |
 

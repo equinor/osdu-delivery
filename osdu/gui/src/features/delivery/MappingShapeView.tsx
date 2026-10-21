@@ -19,6 +19,8 @@ interface MappingShapeViewProps {
   path: string;
   /** The document's content hash, so a mapping synced with new content is drawn again. */
   contentHash: string;
+  /** The synced repository the mapping is a document of, whose template folders settle a template it names by kind alone. */
+  repoId?: string | null;
 }
 
 /**
@@ -27,12 +29,12 @@ interface MappingShapeViewProps {
  * and the source wherever a value comes from a row or the cache. No data is read; the parameter values only fill what
  * uses them.
  */
-export function MappingShapeView({ yaml, path, contentHash }: MappingShapeViewProps) {
+export function MappingShapeView({ yaml, path, contentHash, repoId }: MappingShapeViewProps) {
   const [values, setValues] = useState<Record<string, string>>({});
   const settled = useDebouncedValue(values, SHAPE_DELAY_MS);
   const shape = useQuery({
-    queryKey: ["delivery", "mapping-shape", path, contentHash, settled],
-    queryFn: () => deliveryApi.mappingShape(yaml, path, settled),
+    queryKey: ["delivery", "mapping-shape", repoId ?? null, path, contentHash, settled],
+    queryFn: () => deliveryApi.mappingShape(yaml, path, settled, repoId),
     placeholderData: keepPreviousData,
   });
   const data = shape.data;

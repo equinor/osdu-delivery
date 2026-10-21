@@ -47,7 +47,7 @@ sourceRefs:
 # sqlflow preview: render one record of a delivery flow as it would be sent, and send nothing
 
 `sqlflow preview` answers "what would this flow send for this record?" before anything is sent. It renders one record
-exactly as a delivery renders it: the same planner, the mapping the flow pins, the template that mapping pins, the
+exactly as a delivery renders it: the same planner, the mapping the flow pins, the template that mapping fills, the
 partition's cache version, and the platform's search asked only what the mapping's searches ask a run. It shows the
 document as the route sends it, what the next run would do with the record and why, the files it would upload and the
 requests the route would make. Nothing is written anywhere: not OSDU, not the ledger, not the work location. It is not
@@ -89,7 +89,7 @@ It also opens the flow's ingestion tables on this machine through the flow's own
 record's payload files where the flow streams any, and asks the platform's search what the mapping's searches ask, so
 those references have to resolve here (the `.sqlflow/env` file supplies them on a workstation).
 
-A flow that cannot render at all fails as a run of it would: a template or cache version that is not saved, a
+A flow that cannot render at all fails as a run of it would: a template no template folder on the mapping's path holds, a cache version that is not saved, a
 preflight error, or a table without a column the mapping reads. The preview opens the tables through the planner, so
 it holds the mapping's columns against them, which `sqlflow check` does not.
 

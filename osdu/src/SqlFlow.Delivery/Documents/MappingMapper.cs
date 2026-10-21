@@ -31,7 +31,13 @@ internal static partial class MappingMapper
     /// </summary>
     private static readonly string[] AccessTargets = ["osdu.acl.owners", "osdu.acl.viewers"];
 
-    public static MappingDefinition Map(MappingYaml y, string source)
+    /// <summary>
+    /// The mapping <paramref name="y"/> describes. Its template, and the schema each search pins, name a kind and, when they
+    /// pin one, a version; <paramref name="pins"/> settles each against the template folders the document reads
+    /// (osdu/docs/reference/concepts/templates.md, Template folders). Read without pins, a mapping has to name its versions,
+    /// which are then taken as written.
+    /// </summary>
+    public static MappingDefinition Map(MappingYaml y, string source, ITemplatePins? pins = null)
     {
         var name = FlowMapper.Require(y.Name, "name", source);
         var version = FlowMapper.Require(y.Version, "version", source);
@@ -43,12 +49,14 @@ internal static partial class MappingMapper
                 $"{source}: template.kind '{kind}' must be 'authority:source:entityType:major.minor.patch', each of the first three made of letters, digits, underscore, hyphen and dot, as the storage service requires of every record it accepts.");
         }
 
-        var templateVersion = FlowMapper.Require(template.Version, "template.version", source);
-        if (!TemplateVersionPattern().IsMatch(templateVersion))
+        var templateVersion = string.IsNullOrWhiteSpace(template.Version) ? null : template.Version.Trim();
+        if (templateVersion is not null && !TemplateVersionPattern().IsMatch(templateVersion))
         {
             throw new FlowValidationException(
-                $"{source}: template.version '{templateVersion}' is not a template version. A version is the 16 hexadecimal characters the Templates page shows for a saved template, such as 26a3c3441882db4f.");
+                $"{source}: template.version '{templateVersion}' is not a template version. A version is the 16 hexadecimal characters the Templates page shows for a saved template, such as 26a3c3441882db4f; leave it out to fill the one version of the kind the nearest template folder holds.");
         }
+
+        var pinned = Pinned(kind, templateVersion, $"{source}: template", pins);
 
         var dataset = y.Dataset ?? throw FlowMapper.Missing("dataset", source);
         var declaredKey = dataset.Key is { Count: > 0 } k
@@ -86,7 +94,7 @@ internal static partial class MappingMapper
         // against the same set cannot disagree about the kind they search or the schema it is read by.
         var searches = (y.Searches ?? []).ToDictionary(
             kv => kv.Key,
-            kv => ParseSearch(kv.Key, kv.Value, source),
+            kv => ParseSearch(kv.Key, kv.Value, source, pins),
             StringComparer.Ordinal);
 
         var lookups = ReadLookups(y.Lookups, source);
@@ -100,7 +108,8 @@ internal static partial class MappingMapper
             SourcePath = source == "<inline>" ? null : source,
             Name = name,
             Version = version,
-            Template = new TemplateReference(kind, templateVersion),
+            Template = pinned,
+            TemplateVersionNamed = templateVersion is not null,
             Description = y.Description,
             Dataset = new MappingDataset
             {
@@ -347,7 +356,7 @@ internal static partial class MappingMapper
     /// kind names one entity type, since one schema describes everything its query can reach, and the schema is a
     /// version of that entity type: the one searched, when the kind names a version.
     /// </summary>
-    private static MappingSearch ParseSearch(string name, MappingSearchYaml? y, string source)
+    private static MappingSearch ParseSearch(string name, MappingSearchYaml? y, string source, ITemplatePins? pins)
     {
         var where = $"{source}: search '{name}'";
         if (!NamePattern().IsMatch(name))
@@ -376,7 +385,7 @@ internal static partial class MappingMapper
         }
 
         var schema = y!.Schema ?? throw new FlowValidationException(
-            $"{where} pins no schema; a search pins the saved template of the kind it searches (schema: {{ kind: {segments[0]}:{segments[1]}:{segments[2]}:<version>, version: <template version> }}), which says how each property it compares is indexed. Save the kind's schema on the Templates page, or with 'sqlflow template import'.");
+            $"{where} pins no schema; a search pins the template of the kind it searches (schema: {{ kind: {segments[0]}:{segments[1]}:{segments[2]}:<version> }}, with the template's version when the mapping names one), which says how each property it compares is indexed, read from the template folders on the mapping's path.");
         var schemaKind = FlowMapper.Require(schema.Kind, $"searches.{name}.schema.kind", source);
         if (!FlowMapper.IsRecordKind(schemaKind))
         {
@@ -397,15 +406,32 @@ internal static partial class MappingMapper
                 $"{where} searches version {segments[3]} and pins the schema of version {schemaSegments[3]}; pin the schema of the version it searches.");
         }
 
-        var schemaVersion = FlowMapper.Require(schema.Version, $"searches.{name}.schema.version", source);
-        if (!TemplateVersionPattern().IsMatch(schemaVersion))
+        var schemaVersion = string.IsNullOrWhiteSpace(schema.Version) ? null : schema.Version.Trim();
+        if (schemaVersion is not null && !TemplateVersionPattern().IsMatch(schemaVersion))
         {
             throw new FlowValidationException(
-                $"{where}: schema.version '{schemaVersion}' is not a template version. A version is the 16 hexadecimal characters the Templates page shows for a saved template, such as 58d6bdbd9d066a06.");
+                $"{where}: schema.version '{schemaVersion}' is not a template version. A version is the 16 hexadecimal characters the Templates page shows for a saved template, such as 58d6bdbd9d066a06; leave it out to read the one version of the kind the nearest template folder holds.");
         }
 
         var description = y.Description?.Trim();
-        return new MappingSearch(name, kind, new TemplateReference(schemaKind, schemaVersion), string.IsNullOrEmpty(description) ? null : description);
+        return new MappingSearch(name, kind, Pinned(schemaKind, schemaVersion, $"{where}: schema", pins), string.IsNullOrEmpty(description) ? null : description);
+    }
+
+    /// <summary>
+    /// The template a document names under <paramref name="where"/>: settled by <paramref name="pins"/> when the reader has
+    /// them, and otherwise the version as written, which a document read without them has to name.
+    /// </summary>
+    private static TemplateReference Pinned(string kind, string? version, string where, ITemplatePins? pins)
+    {
+        if (pins is not null)
+        {
+            return pins.Pin(kind, version, where);
+        }
+
+        return version is not null
+            ? new TemplateReference(kind, version)
+            : throw new FlowValidationException(
+                $"{where} names {kind} without a version, which is settled from the template folders on the mapping's path, and the mapping was read where no template folder is known. Name the version (version: <16 hexadecimal characters>), or read the mapping in its repository.");
     }
 
     /// <summary>

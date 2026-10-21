@@ -92,7 +92,13 @@ public sealed class DeliveryTemplateApiTests
         {
             Assert.Equal(HttpStatusCode.OK, schema.StatusCode);
             Assert.Equal("application/json", schema.Content.Headers.ContentType?.MediaType);
-            Assert.NotNull(JsonNode.Parse(await schema.Content.ReadAsStringAsync())?["properties"]?["data"]);
+            var text = await schema.Content.ReadAsStringAsync();
+            Assert.NotNull(JsonNode.Parse(text)?["properties"]?["data"]);
+
+            // The answer is a file to save, named as the samples name theirs, which imports again as this same version.
+            Assert.Equal("attachment", schema.Content.Headers.ContentDisposition?.DispositionType);
+            Assert.Equal(WellboreFile, schema.Content.Headers.ContentDisposition?.FileNameStar ?? schema.Content.Headers.ContentDisposition?.FileName);
+            Assert.Equal(WellboreVersion, TemplateSources.FromBundledJson(text, WellboreKind, DateTimeOffset.UnixEpoch, WellboreFile).Version);
         }
 
         using var notRecord = await SendAsync(client, reader, HttpMethod.Post, "/api/v1/delivery/templates/preview", new { kind = WellboreKind, schema = new { type = "object" } });
@@ -101,7 +107,7 @@ public sealed class DeliveryTemplateApiTests
     }
 
     [Fact]
-    public async Task A_template_version_a_synced_mapping_pins_is_refused_deletion_until_nothing_pins_it()
+    public async Task A_saved_version_is_deleted_whatever_a_synced_mapping_names_since_no_repository_reads_the_library()
     {
         var cs = OsduTestServer.Require();
         await ProvisionAsync(cs);
@@ -139,28 +145,141 @@ public sealed class DeliveryTemplateApiTests
             await db.SaveChangesAsync();
         }
 
+        // A synced mapping that names the version reads it from its repository's template folder, never from here, so the
+        // saved version is deleted and the mapping's row is left as it is.
         var deleteUrl = $"/api/v1/delivery/templates?kind={Uri.EscapeDataString(kind)}&version={version}";
         try
         {
-            using (var pinned = await SendAsync(client, author, HttpMethod.Delete, deleteUrl))
+            using (var deleted = await SendAsync(client, author, HttpMethod.Delete, deleteUrl))
             {
-                Assert.Equal(HttpStatusCode.Conflict, pinned.StatusCode);
-                Assert.Contains("pinned by mapping(s) ApiThing@1.0.0", await pinned.Content.ReadAsStringAsync(), StringComparison.Ordinal);
+                Assert.Equal(HttpStatusCode.NoContent, deleted.StatusCode);
             }
+
+            await using (var db = SampleEstate.Context(cs))
+            {
+                Assert.True(await db.DeliveryMappings.AnyAsync(m => m.Id == mappingId && m.TemplateVersion == version));
+            }
+
+            using (var gone = await SendAsync(client, author, HttpMethod.Get, DetailUrl(kind, version)))
+            {
+                Assert.Equal(HttpStatusCode.NotFound, gone.StatusCode);
+            }
+
+            // Deleting it again finds nothing to delete.
+            using var again = await SendAsync(client, author, HttpMethod.Delete, deleteUrl);
+            Assert.Equal(HttpStatusCode.NotFound, again.StatusCode);
         }
         finally
         {
             await using var db = SampleEstate.Context(cs);
             await db.DeliveryMappings.Where(m => m.Id == mappingId).ExecuteDeleteAsync();
         }
+    }
 
-        using (var deleted = await SendAsync(client, author, HttpMethod.Delete, deleteUrl))
+    [Fact]
+    public async Task A_template_a_repositorys_folder_holds_settles_its_documents_from_the_syncs_copy_and_the_library_is_left_alone()
+    {
+        var cs = OsduTestServer.Require();
+        await ProvisionAsync(cs);
+        await using var factory = Factory(cs);
+        using var client = factory.CreateClient();
+        var author = await TokenAsync(client, "read", "author");
+
+        // A repository whose template folder holds a version of the test kind no other test makes, and a mapping that names
+        // the kind alone, synced as a control plane syncs it.
+        var kind = TestSchema.Kind;
+        var json = TemplateFolderFixtures.ThingFile($"api-{Guid.NewGuid():N}");
+        var version = TemplateFolderFixtures.VersionOf(kind, json);
+        var repoId = Guid.NewGuid();
+        var root = Samples.NewTempDirectory();
+        Directory.CreateDirectory(Path.Combine(root, "templates"));
+        Directory.CreateDirectory(Path.Combine(root, "mappings"));
+        await File.WriteAllTextAsync(Path.Combine(root, "templates", "thing.json"), json);
+        await File.WriteAllTextAsync(Path.Combine(root, "mappings", "Thing@1.0.0.yaml"), TemplateFolderFixtures.KindAloneMapping());
+        try
         {
-            Assert.Equal(HttpStatusCode.NoContent, deleted.StatusCode);
-        }
+            await using (var db = SampleEstate.Context(cs))
+            {
+                await new DeliveryCatalogSync(new DeliveryDocumentLoader()).ReconcileAsync(db, repoId, root, DateTime.UtcNow, new List<string>(), CancellationToken.None);
+            }
 
-        using var gone = await SendAsync(client, author, HttpMethod.Get, DetailUrl(kind, version));
-        Assert.Equal(HttpStatusCode.NotFound, gone.StatusCode);
+            // The sync keeps a copy of the file with its row, and saves nothing in the library.
+            var listed = await ReadAsync<List<DeliveryTemplateDto>>(await SendAsync(client, author, HttpMethod.Get, "/api/v1/delivery/templates"));
+            Assert.DoesNotContain(listed, t => t.Kind == kind && t.Version == version);
+            await using (var db = SampleEstate.Context(cs))
+            {
+                var row = await db.DeliveryRepositoryTemplates.AsNoTracking().SingleAsync(t => t.RepoId == repoId);
+                Assert.Equal(version, TemplateFolderFixtures.VersionOf(kind, row.SchemaJson!));
+            }
+
+            // A document of the repository settles to it, as its run would; a version no folder on its path holds is said
+            // with where it would go.
+            var path = Uri.EscapeDataString("mappings/Thing@1.0.0.yaml");
+            var resolveUrl = $"/api/v1/delivery/templates/resolve?repoId={repoId}&path={path}&kind={Uri.EscapeDataString(kind)}";
+            var found = await ReadAsync<DeliveryTemplateResolutionDto>(await SendAsync(client, author, HttpMethod.Get, resolveUrl));
+            Assert.Equal((true, (string?)version, (string?)"templates/thing.json"), (found.Found, found.Version, found.File));
+            var missing = await ReadAsync<DeliveryTemplateResolutionDto>(await SendAsync(client, author, HttpMethod.Get, resolveUrl + "&version=0123456789abcdef"));
+            Assert.False(missing.Found);
+            Assert.StartsWith($"no template folder on the path of mappings/Thing@1.0.0.yaml holds template {kind} version 0123456789abcdef.", missing.Problem, StringComparison.Ordinal);
+            Assert.Equal("templates/test_wks_work-product-component--Thing_1.0.0.json", missing.SuggestedPath);
+            using (var unnamed = await SendAsync(client, author, HttpMethod.Get, "/api/v1/delivery/templates/resolve?repoId=" + repoId))
+            {
+                Assert.Equal(HttpStatusCode.BadRequest, unnamed.StatusCode);
+            }
+
+            // The mapping views read the mapping as a document of its repository; without the repository its version is unknown.
+            var coverage = await ReadAsync<DeliveryMappingCoverageResult>(await SendAsync(
+                client, author, HttpMethod.Post, "/api/v1/delivery/mapping-builder/coverage",
+                new { yaml = TemplateFolderFixtures.KindAloneMapping(), path = "mappings/Thing@1.0.0.yaml", repoId }));
+            Assert.Equal((kind, version), (coverage.Kind, coverage.Version));
+            Assert.NotEmpty(coverage.Variables);
+            var alone = await ReadAsync<DeliveryMappingCoverageResult>(await SendAsync(
+                client, author, HttpMethod.Post, "/api/v1/delivery/mapping-builder/coverage",
+                new { yaml = TemplateFolderFixtures.KindAloneMapping(), path = "mappings/Thing@1.0.0.yaml" }));
+            Assert.Contains(alone.Issues, i => i.Message.Contains("without a version", StringComparison.Ordinal));
+
+            // The same schema saved in the library and deleted again changes nothing for the repository, whose documents still
+            // settle from its own copy.
+            using (var schemaJson = JsonDocument.Parse(json))
+            {
+                var saved = await ReadAsync<DeliveryTemplateSavedDto>(await SendAsync(
+                    client, author, HttpMethod.Post, "/api/v1/delivery/templates", new { kind, schema = schemaJson.RootElement.Clone(), origin = "test" }));
+                Assert.Equal(version, saved.Template.Version);
+            }
+
+            using (var deleted = await SendAsync(client, author, HttpMethod.Delete, $"/api/v1/delivery/templates?kind={Uri.EscapeDataString(kind)}&version={version}"))
+            {
+                Assert.Equal(HttpStatusCode.NoContent, deleted.StatusCode);
+            }
+
+            var still = await ReadAsync<DeliveryMappingCoverageResult>(await SendAsync(
+                client, author, HttpMethod.Post, "/api/v1/delivery/mapping-builder/coverage",
+                new { yaml = TemplateFolderFixtures.KindAloneMapping(), path = "mappings/Thing@1.0.0.yaml", repoId }));
+            Assert.Equal((kind, version), (still.Kind, still.Version));
+            Assert.NotEmpty(still.Variables);
+
+            // Without the copy (a row recorded before copies were kept), the page says to sync the repository again.
+            await using (var db = SampleEstate.Context(cs))
+            {
+                await db.DeliveryRepositoryTemplates.Where(t => t.RepoId == repoId).ExecuteUpdateAsync(set => set.SetProperty(t => t.SchemaJson, (string?)null));
+            }
+
+            var uncopied = await ReadAsync<DeliveryMappingCoverageResult>(await SendAsync(
+                client, author, HttpMethod.Post, "/api/v1/delivery/mapping-builder/coverage",
+                new { yaml = TemplateFolderFixtures.KindAloneMapping(), path = "mappings/Thing@1.0.0.yaml", repoId }));
+            Assert.Contains(uncopied.Issues, i => i.Message.Contains("the copy the sync keeps of it is missing; sync the repository again", StringComparison.Ordinal));
+        }
+        finally
+        {
+            await using (var db = SampleEstate.Context(cs))
+            {
+                await db.DeliveryRepositoryTemplates.Where(t => t.RepoId == repoId).ExecuteDeleteAsync();
+                await db.DeliveryMappings.Where(m => m.RepoId == repoId).ExecuteDeleteAsync();
+                await db.DeliveryTemplates.Where(t => t.Kind == kind && t.Version == version).ExecuteDeleteAsync();
+            }
+
+            Directory.Delete(root, recursive: true);
+        }
     }
 
     [Fact]
@@ -350,7 +469,8 @@ public sealed class DeliveryTemplateApiTests
                 "/api/v1/delivery/mapping-builder/coverage",
                 new { yaml = sample.Replace($"version: {WellLogVersion}", "version: 00000000deadbeef", StringComparison.Ordinal), path = "mappings/WellLog@1.4.0.yaml" }));
             Assert.Empty(unsaved.Variables);
-            Assert.Contains(unsaved.Issues, i => i.Severity == "error" && i.Message.Contains("which is not saved", StringComparison.Ordinal));
+            Assert.Contains(unsaved.Issues, i => i.Severity == "error"
+                && i.Message.StartsWith("The mapping's template cannot be read: template osdu:wks:work-product-component--WellLog:1.4.0 version 00000000deadbeef is not saved", StringComparison.Ordinal));
 
             // A wellbore reference read from the unit cache is written, and refused by the check against the template. The
             // entry no longer searches for the wellbore, so the search it read goes with it.
@@ -767,7 +887,7 @@ public sealed class DeliveryTemplateApiTests
 
     private static object SaveBody(string kind, string file)
     {
-        using var document = JsonDocument.Parse(File.ReadAllText(Path.Combine(SampleRoot, "templates", file)));
+        using var document = JsonDocument.Parse(File.ReadAllText(Path.Combine(SampleSource, "templates", file)));
         return new { kind, schema = document.RootElement.Clone(), origin = "file " + file };
     }
 

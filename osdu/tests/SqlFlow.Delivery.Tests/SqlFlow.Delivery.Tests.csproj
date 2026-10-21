@@ -33,9 +33,8 @@
 
   <ItemGroup>
     <!-- The sample estate, linked into the test output in the shape the repository holds it: one folder for the source,
-         holding its flows, the mappings they pin, and the cache flow with the folder of sample records beside it. The
-         bundled schemas sit beside that folder rather than inside it, because a template is a catalog object captured
-         from OSDU's schema service, not a file a repository sync reads. -->
+         holding its flows, the mappings they pin with the template folder holding the templates they fill, and the cache
+         flow with the folder of sample records beside it. -->
     <Content Include="..\..\samples\welldb\mappings\**" Link="samples\welldb\mappings\%(RecursiveDir)%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
     <Content Include="..\..\samples\welldb\cache\**" Link="samples\welldb\cache\%(RecursiveDir)%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
     <Content Include="..\..\samples\welldb\dictionaries\**" Link="samples\welldb\dictionaries\%(RecursiveDir)%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
@@ -45,7 +44,7 @@
     <Content Include="..\..\samples\welldb\flows\**" Link="samples\welldb\flows\%(RecursiveDir)%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
     <!-- The reference data the sample's records refer to: its flows, and the files its pre flows read. -->
     <Content Include="..\..\samples\welldb\reference\**" Link="samples\welldb\reference\%(RecursiveDir)%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
-    <Content Include="..\..\samples\templates\**" Link="samples\templates\%(RecursiveDir)%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
+    <Content Include="..\..\samples\welldb\templates\**" Link="samples\welldb\templates\%(RecursiveDir)%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
     <Content Include="..\..\samples\cache-records\**" Link="samples\cache-records\%(RecursiveDir)%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
     <!-- The source's drop-off folder: what the pre-ingestion flows read and the payload files the delivery streams. The
          suites read the sample logs back from these files (SampleWellLogs), so they exercise what the repository holds. -->
@@ -54,8 +53,11 @@
     <Content Include="..\..\specs\**" Link="specs\%(RecursiveDir)%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
     <!-- The schemas the suites save beside the sample estate's, for the cases it does not carry (Fixtures/templates/README.md). -->
     <None Update="Fixtures\**" CopyToOutputDirectory="PreserveNewest" />
-    <!-- The fixture documents' flows deliver well logs beside their own kinds, with the sample's WellLog mapping. -->
+    <!-- The fixture documents' flows deliver well logs beside their own kinds, with the sample's WellLog mapping, and read
+         the sample's templates from a template folder of their own; Fixtures/templates, above both, holds the kinds the
+         sample estate does not carry. -->
     <Content Include="..\..\samples\welldb\mappings\**" Link="Fixtures\documents\mappings\%(RecursiveDir)%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="..\..\samples\welldb\templates\**" Link="Fixtures\documents\templates\%(RecursiveDir)%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 
   <ItemGroup>

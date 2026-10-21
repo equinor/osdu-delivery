@@ -168,7 +168,8 @@ matchKeys:
 ## What the templates say of a view's joins
 
 A join is declared, never inferred, and a build writes a view from its document alone. Beside that, a view's page reads
-the saved templates and says of each join its flow declares now whether the column joined on names records of the type
+the templates the template folders on its flow's path hold ([template folders](../concepts/templates.md#template-folders)),
+as the flow's repository last synced them, and says of each join its flow declares now whether the column joined on names records of the type
 the dimension joined reads, since an id carries its entity type and a join between two types finds nothing. It is
 advice: it never stops a build or changes what one writes. `GET /api/v1/delivery/dimensions/views/{name}` gives it as
 `joinChecks`, one per join in order:
@@ -187,14 +188,14 @@ The verdict is settled by what the column joined on holds:
 | --- | --- |
 | The key column of a dimension keyed by a path, or a column kept as `key` | `agrees`: it holds the text the joined dimension is keyed by (the document already refused a join to a dimension keyed by another path). |
 | The key column of a dimension keyed by `id` | Its kind's entity type against the joined dimension's: `agrees` when they are the same, `differs` when not, `unchecked` when either kind names any type. |
-| A column kept as `id` | The newest saved template of the kind the holding dimension reads (the newest version its pattern matches) names the entity types the column's path refers to: `agrees` when they include the type the joined dimension reads, `differs` when they do not, `unchecked` when the joined dimension's kind names any type, when the template does not declare the path a reference, or when no saved template describes the path. |
+| A column kept as `id` | The template the flow reads of the kind the holding dimension reads (of the kinds its pattern matches, the newest) names the entity types the column's path refers to: `agrees` when they include the type the joined dimension reads, `differs` when they do not, `unchecked` when the joined dimension's kind names any type, when the template does not declare the path a reference, or when no template the flow reads describes the path. |
 | A join to a dimension the flow does not declare now, or on an alias no earlier join gives | `unchecked`. |
 
 A template describes the path of a column kept as `id` only where the column is read from the dimension's own records:
 an element's field (the element's path, less `up` segments, then the field's path), a collected attribute's path, and an
 attribute of a dimension keyed by `id` read in one step. An attribute read through the records a key names is
-`unchecked`, with `No saved template of <kind> says which records <column> names, so the join is not checked. Save the
-template on the Templates page to check it.`
+`unchecked`, with `No template the flow reads of <kind> says which records <column> names, so the join is not checked.
+Put the template in a template folder on the flow's path to check it.`
 
 The view's page shows the verdicts in three places: the **Joins** tab's **Template** column, a glyph beside each join on
 the **Definition** tab (the sentence, `names` and `reads` on hover), and, when any join differs, `<n> join(s) differ

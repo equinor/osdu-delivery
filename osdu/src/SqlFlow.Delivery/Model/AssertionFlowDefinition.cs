@@ -425,8 +425,8 @@ public sealed record AssertionTest
     public required string Kind { get; init; }
 
     /// <summary>
-    /// The saved template version the test's paths are checked against; null takes the one <see cref="TemplateMapping"/>
-    /// pins, or else the newest saved for the kind.
+    /// The template version the test's paths are checked against; null takes the one <see cref="TemplateMapping"/> fills,
+    /// or else the one the template folders on the flow's path hold of the kind.
     /// </summary>
     public string? Template { get; init; }
 

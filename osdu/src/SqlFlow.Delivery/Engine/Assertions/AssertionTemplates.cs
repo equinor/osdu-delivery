@@ -35,23 +35,31 @@ public delegate Task<(MappingDefinition? Mapping, string? Problem)> MappingReade
 public static partial class AssertionTemplates
 {
     /// <summary>
-    /// The template each test's fields are checked against: the version the test pins, or the newest saved for its kind.
-    /// A test that reads no field needs none; a test that reads fields of a kind no template is saved for gets a problem.
+    /// The template each test's fields are checked against, as the overload with a document reads it for a flow that names
+    /// none: what a library of templates gives.
     /// </summary>
-    public static async Task<IReadOnlyDictionary<string, TemplateFit>> FitAsync(
-        IReadOnlyList<AssertionTest> tests, ITemplateStore? store, CancellationToken ct)
-        => await FitAsync(tests, store, null, ct).ConfigureAwait(false);
+    public static Task<IReadOnlyDictionary<string, TemplateFit>> FitAsync(
+        IReadOnlyList<AssertionTest> tests, ITemplateSource templates, CancellationToken ct)
+        => FitAsync(tests, templates, document: null, mappings: null, ct);
+
+    /// <summary>As the overload with a document, for a flow that names none.</summary>
+    public static Task<IReadOnlyDictionary<string, TemplateFit>> FitAsync(
+        IReadOnlyList<AssertionTest> tests, ITemplateSource templates, MappingReader? mappings, CancellationToken ct)
+        => FitAsync(tests, templates, document: null, mappings, ct);
 
     /// <summary>
-    /// As <see cref="FitAsync(IReadOnlyList{AssertionTest}, ITemplateStore?, CancellationToken)"/>, reading the mapping a test
-    /// names for its template (<c>template: WellLog@1.5.0</c>) through <paramref name="mappings"/>: the test is checked against
-    /// the kind and version that mapping's <c>template</c> pins, and does not fit when the mapping cannot be read or pins
-    /// another kind than the test reads.
+    /// The template each test's fields are checked against, read from <paramref name="templates"/> for the assertion flow at
+    /// <paramref name="document"/>: the version the test pins, the version the mapping it names fills
+    /// (<c>template: WellLog@1.5.0</c>, read through <paramref name="mappings"/>), or, when it names neither, the one version
+    /// of its kind the template folders on the flow's path hold (osdu/docs/reference/concepts/templates.md, Template
+    /// folders). A test that reads no field needs none; a test whose template cannot be read, or that names a mapping that
+    /// cannot be read or fills another kind than the test reads, gets a problem.
     /// </summary>
     public static async Task<IReadOnlyDictionary<string, TemplateFit>> FitAsync(
-        IReadOnlyList<AssertionTest> tests, ITemplateStore? store, MappingReader? mappings, CancellationToken ct)
+        IReadOnlyList<AssertionTest> tests, ITemplateSource templates, string? document, MappingReader? mappings, CancellationToken ct)
     {
         ArgumentNullException.ThrowIfNull(tests);
+        ArgumentNullException.ThrowIfNull(templates);
         var fits = new Dictionary<string, TemplateFit>(StringComparer.OrdinalIgnoreCase);
         var needing = tests.Where(ReadsFields).ToList();
         foreach (var test in tests.Where(t => !ReadsFields(t)))
@@ -64,19 +72,9 @@ public static partial class AssertionTemplates
             return fits;
         }
 
-        if (store is null)
-        {
-            foreach (var test in needing)
-            {
-                fits[test.Name] = new TemplateFit(null, null, [$"The fields of '{test.Kind}' cannot be checked against its template: {DeliveryServices.NoLedgerMessage}"]);
-            }
-
-            return fits;
-        }
-
-        var saved = await store.ListAsync(ct).ConfigureAwait(false);
-        var loaded = new Dictionary<TemplateReference, OsduTemplate?>();
+        var loaded = new Dictionary<TemplateReference, OsduTemplate>();
         var read = new Dictionary<string, (MappingDefinition? Mapping, string? Problem)>(StringComparer.Ordinal);
+        IReadOnlyList<TemplateInfo>? readable = null;
         foreach (var test in needing)
         {
             var pin = test.Template;
@@ -92,14 +90,14 @@ public static partial class AssertionTemplates
 
                 if (mapping.Mapping is not { } pinning)
                 {
-                    fits[test.Name] = new TemplateFit(null, null, [$"The test is checked against the template mapping {reference} pins, and {mapping.Problem}."]);
+                    fits[test.Name] = new TemplateFit(null, null, [$"The test is checked against the template mapping {reference} fills, and {mapping.Problem}."]);
                     continue;
                 }
 
                 if (!string.Equals(pinning.Template.Kind, test.Kind, StringComparison.OrdinalIgnoreCase))
                 {
                     fits[test.Name] = new TemplateFit(null, pinning.Template.Version, [
-                        $"Mapping {reference} pins a template of {pinning.Template.Kind}, and the test reads {test.Kind}; name the mapping of {test.Kind}, or a template version of it.",
+                        $"Mapping {reference} fills a template of {pinning.Template.Kind}, and the test reads {test.Kind}; name the mapping of {test.Kind}, or a template version of it.",
                     ]);
                     continue;
                 }
@@ -107,36 +105,27 @@ public static partial class AssertionTemplates
                 pin = pinning.Template.Version;
             }
 
-            var versions = saved.Where(t => string.Equals(t.Kind, test.Kind, StringComparison.OrdinalIgnoreCase)).OrderByDescending(t => t.CapturedUtc).ToList();
-            var chosen = pin is { } pinned
-                ? versions.FirstOrDefault(t => string.Equals(t.Version, pinned, StringComparison.OrdinalIgnoreCase))
-                : versions.FirstOrDefault();
-            if (chosen is null)
+            var resolved = await templates.ResolveAsync(document, test.Kind, pin, ct).ConfigureAwait(false);
+            if (!resolved.Found)
             {
-                var by = test.TemplateMapping is { } named ? $" (the version mapping {named} pins)" : string.Empty;
                 fits[test.Name] = new TemplateFit(null, pin, [
-                    pin is { } version
-                        ? $"Template version '{version}'{by} of {test.Kind} is not saved{(versions.Count == 0 ? "; no version of the kind is" : $"; the saved versions are {string.Join(", ", versions.Select(v => v.Version))}")}. Capture it on the Templates page, or pin a saved version."
-                        : $"No template of {test.Kind} is saved, so the test's fields cannot be checked against the kind's schema. Capture it on the Templates page (or with 'sqlflow template capture --kind {test.Kind}'), then run the test again.",
+                    test.TemplateMapping is { } named
+                        ? $"The test is checked against template {test.Kind} version {pin}, the one mapping {named} fills, and {resolved.Problem}"
+                        : $"The test's fields are checked against the template of {test.Kind}, and {resolved.Problem}",
                 ]);
                 continue;
             }
 
+            var chosen = resolved.Template!;
             if (!loaded.TryGetValue(chosen.Reference, out var template))
             {
-                var schema = await store.LoadAsync(chosen.Reference, ct).ConfigureAwait(false);
-                template = schema is null ? null : OsduTemplate.From(schema);
+                template = OsduTemplate.From(resolved.Schema!);
                 loaded[chosen.Reference] = template;
             }
 
-            if (template is null)
-            {
-                fits[test.Name] = new TemplateFit(null, chosen.Version, [$"Template {chosen.Reference} was listed but could not be read back; capture it again."]);
-                continue;
-            }
-
-            // The records a test's known values reach from its own are checked against the newest saved template of their type.
-            // A step's type is known once the template of the step before it is, so they are loaded a step at a time.
+            // The records a test's known values reach from its own are checked against the template of their type the flow
+            // reads: of the kinds of that type it can read, the newest version. A step's type is known once the template of
+            // the step before it is, so they are loaded a step at a time.
             var referenced = new Dictionary<string, OsduTemplate>(StringComparer.OrdinalIgnoreCase);
             var known = test.Assertions.OfType<KnownValuesAssertion>().ToList();
             for (var step = 0; step < KnownColumn.MaxSteps && known.Count > 0; step++)
@@ -145,26 +134,27 @@ public static partial class AssertionTemplates
                 var added = false;
                 foreach (var entityType in wanted)
                 {
-                    var newest = saved.Where(t => string.Equals(Documents.OsduKind.EntityType(t.Kind), entityType, StringComparison.OrdinalIgnoreCase))
-                        .OrderByDescending(t => t.CapturedUtc)
-                        .FirstOrDefault();
-                    if (newest is null)
+                    readable ??= await templates.ListForAsync(document, ct).ConfigureAwait(false);
+                    var kind = NewestKindOf(readable, entityType);
+                    if (kind is null)
                     {
                         continue;
                     }
 
-                    if (!loaded.TryGetValue(newest.Reference, out var target))
+                    var of = await templates.ResolveAsync(document, kind, null, ct).ConfigureAwait(false);
+                    if (!of.Found)
                     {
-                        var schema = await store.LoadAsync(newest.Reference, ct).ConfigureAwait(false);
-                        target = schema is null ? null : OsduTemplate.From(schema);
-                        loaded[newest.Reference] = target;
+                        continue;
                     }
 
-                    if (target is not null)
+                    if (!loaded.TryGetValue(of.Template!.Reference, out var target))
                     {
-                        referenced[entityType] = target;
-                        added = true;
+                        target = OsduTemplate.From(of.Schema!);
+                        loaded[of.Template.Reference] = target;
                     }
+
+                    referenced[entityType] = target;
+                    added = true;
                 }
 
                 if (!added)
@@ -178,6 +168,19 @@ public static partial class AssertionTemplates
 
         return fits;
     }
+
+    /// <summary>
+    /// The newest kind of <paramref name="entityType"/> among <paramref name="readable"/>: the highest version of the type,
+    /// and among templates of one kind the first listed (the nearest folder's, or the newest saved).
+    /// </summary>
+    private static string? NewestKindOf(IReadOnlyList<TemplateInfo> readable, string entityType)
+        => readable
+            .Where(t => string.Equals(Documents.OsduKind.EntityType(t.Kind), entityType, StringComparison.OrdinalIgnoreCase))
+            .Select((t, order) => (t.Kind, Order: order))
+            .OrderByDescending(t => Dimensions.KindPatterns.VersionOf(t.Kind))
+            .ThenBy(t => t.Order)
+            .Select(t => t.Kind)
+            .FirstOrDefault();
 
     /// <summary>
     /// Whether a test reads fields of its records, and so needs its kind's template: a test that only counts, asks how

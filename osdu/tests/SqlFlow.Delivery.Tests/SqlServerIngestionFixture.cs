@@ -36,11 +36,10 @@ public sealed class SqlServerIngestionFixture : IAsyncDisposable
 {
     /// <summary>The estate parts copied next to the generated flows; the data folders are written per test instead.</summary>
     /// <summary>
-    /// What the fixture copies out of the source folder as it is: the mappings the flows pin, and the cache flow with
-    /// the sample records beside it. Templates are not among them, being catalog objects the fixture saves from
-    /// <see cref="Samples.TemplateFiles"/> rather than files an estate carries.
+    /// What the fixture copies out of the source folder as it is: the mappings the flows pin, the template folder holding
+    /// the templates they fill, and the cache flow with the sample records beside it.
     /// </summary>
-    private static readonly string[] CopiedParts = ["mappings", "cache"];
+    private static readonly string[] CopiedParts = ["mappings", "templates", "cache"];
 
     /// <summary>The flow documents of the well log chain, by the name they carry in the repository.</summary>
     private static readonly string[] ChainDocuments =
@@ -466,7 +465,9 @@ public sealed class SqlServerIngestionFixture : IAsyncDisposable
 
     /// <summary>
     /// Saves the templates the sample mappings pin and the sample partition's cache into the fixture's database, which
-    /// starts empty. A render reads both from that database, so a chain run needs them there.
+    /// starts empty. A render reads the cache from that database and its template from the estate's template folder; the
+    /// templates are saved as a repository sync saves what its folders hold, which the validation gate reads a version from
+    /// when a folder no longer holds it.
     /// </summary>
     private static async Task ImportRenderInputsAsync(string connectionString, CancellationToken ct)
     {
@@ -554,8 +555,10 @@ public sealed class SqlServerIngestionFixture : IAsyncDisposable
             CopyDirectory(Path.Combine(Samples.Source, part), Path.Combine(root, part));
         }
 
-        // The fixture mappings sit beside the sample's, for the sources whose interfaces deliver wellbores.
+        // The fixture mappings sit beside the sample's, for the sources whose interfaces deliver wellbores, and the
+        // templates the sample does not carry beside its own in the one template folder.
         CopyDirectory(Samples.FixtureMappings, Path.Combine(root, "mappings"));
+        CopyDirectory(Samples.FixtureTemplateFiles, Path.Combine(root, "templates"));
 
         foreach (var folder in new[] { "welllog", "curves-meta", "curves", "wellbore", "wellbore-aliases" })
         {

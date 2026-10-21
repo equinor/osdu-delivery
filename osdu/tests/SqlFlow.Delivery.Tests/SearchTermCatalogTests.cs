@@ -33,7 +33,8 @@ public sealed class SearchTermCatalogTests : IDisposable
 
     public SearchTermCatalogTests()
     {
-        // The sample estate as a repository holds it: the flows, the mapping they pin and the cache flows.
+        // The sample estate as a repository holds it: the flows, the mappings they pin, the template folder holding the
+        // templates those fill, and the cache flows.
         CopyDirectory(Samples.Source, _root);
     }
 
@@ -54,18 +55,10 @@ public sealed class SearchTermCatalogTests : IDisposable
         return (warnings, result);
     }
 
-    /// <summary>Saves the templates the sample mapping pins and searches by, as the Templates page saves them.</summary>
-    private async Task SaveTemplatesAsync()
-    {
-        var store = _module.Templates(_clock);
-        await store.SaveAsync(Samples.SampleTemplate(WellLogVersions.CurrentKind), "tests", "tests");
-        await store.SaveAsync(Samples.SampleTemplate("osdu:wks:master-data--Wellbore:1.3.0"), "tests", "tests");
-    }
-
     private async Task<T> WithDirectoryAsync<T>(Func<SearchTermDirectory, Task<T>> read)
     {
         await using var db = _module.CreateDbContext();
-        return await read(new SearchTermDirectory(db, _module.Templates(_clock), new DeliveryDocumentLoader(), _clock));
+        return await read(new SearchTermDirectory(db, new DeliveryDocumentLoader(), _clock));
     }
 
     private Task<IReadOnlyList<SearchTermView>> TermsAsync(bool orphans = false) => WithDirectoryAsync(d => d.ListAsync(WellLog, null, orphans, CancellationToken.None));
@@ -77,13 +70,19 @@ public sealed class SearchTermCatalogTests : IDisposable
 
     /// <summary>
     /// A second delivery flow beside the sample's, as the estate holds one: the same tables rendered by the next version of
-    /// the mapping, under a source system of its own, so its records are records of their own.
+    /// the mapping, under a source system of its own, so its records are records of their own, filling the next version of
+    /// the template, which the template folder holds beside the current one.
     /// </summary>
     private void AddNextVersionFlow()
     {
+        var current = Samples.SampleTemplate(WellLogVersions.CurrentKind);
+        var next = Samples.SampleTemplate(WellLogVersions.NextKind);
+        var file = WellLogVersions.NextKind.Replace(':', '_') + ".json";
+        File.Copy(Path.Combine(Samples.FixtureTemplateFiles, file), Path.Combine(_root, "templates", file), overwrite: true);
         var mapping = File.ReadAllText(Path.Combine(_root, "mappings", "WellLog@1.4.0.yaml"))
             .Replace("\nversion: 1.4.0", "\nversion: 1.5.0", StringComparison.Ordinal)
             .Replace("  kind: osdu:wks:work-product-component--WellLog:1.4.0", "  kind: " + WellLogVersions.NextKind, StringComparison.Ordinal)
+            .Replace("  version: " + current.Version, "  version: " + next.Version, StringComparison.Ordinal)
             .Replace("  system: welldb\n", "  system: welldb-welllog-1.5.0\n", StringComparison.Ordinal)
             .Replace("  system: welldb\r\n", "  system: welldb-welllog-1.5.0\r\n", StringComparison.Ordinal);
         File.WriteAllText(Path.Combine(_root, "mappings", "WellLog@1.5.0.yaml"), mapping);
@@ -101,7 +100,7 @@ public sealed class SearchTermCatalogTests : IDisposable
 
         await using var db = _module.CreateDbContext();
         var rows = await db.DeliverySearchTerms.AsNoTracking().Where(t => t.RepoId == _repo).ToListAsync();
-        var wellbore = Assert.Single(rows, r => r.Column == "wellbore_uwi");
+        var wellbore = Assert.Single(rows, r => r.Column == "wellbore_uwi" && r.EntityType == WellLog);
         Assert.Equal((IdOf("wellbore_uwi"), "osdudata.silver.welllog/wellbore_uwi", WellLog, Header), (wellbore.TermId, wellbore.TermKey, wellbore.EntityType, wellbore.Source));
         Assert.Contains("welldb-welllog-03-header-delivery", wellbore.FlowsJson, StringComparison.Ordinal);
         Assert.Equal(SearchRouteKind.Search, Assert.Single(SearchRoute.FromJson(wellbore.RoutesJson)).Kind);
@@ -115,16 +114,27 @@ public sealed class SearchTermCatalogTests : IDisposable
     }
 
     [Fact]
-    public async Task A_term_is_listed_by_its_columns_name_with_the_route_it_is_searched_through_classified_by_the_saved_templates()
+    public async Task A_term_is_listed_by_its_columns_name_with_the_route_it_is_searched_through_classified_by_the_templates_its_mapping_reads()
     {
+        // The repository's template folder describes no unit of measure.
+        File.Delete(Path.Combine(_root, "templates", "osdu_wks_reference-data--UnitOfMeasure_1.0.0.json"));
         await SyncAsync();
 
-        // No template saved: nothing of the record's content can be compared, and each term says why.
-        var unsaved = Assert.Single(await TermsAsync(), t => t.Column == "log_run");
-        Assert.Null(unsaved.Route);
-        Assert.Contains("is not saved; save it on the Templates page", unsaved.Problem, StringComparison.Ordinal);
+        // A term's template is the one the template folders the last sync recorded give its mapping, read from the copy the
+        // sync kept of the file. While that copy cannot be read (a row recorded before copies were kept), nothing of the
+        // record's content can be compared, and each term says why; the next sync keeps it again.
+        await using (var db = _module.CreateDbContext())
+        {
+            await db.DeliveryRepositoryTemplates.Where(t => t.RepoId == _repo && t.Kind == WellLogVersions.CurrentKind)
+                .ExecuteUpdateAsync(set => set.SetProperty(t => t.SchemaJson, (string?)null));
+        }
 
-        await SaveTemplatesAsync();
+        var unread = Assert.Single(await TermsAsync(), t => t.Column == "log_run");
+        Assert.Null(unread.Route);
+        Assert.Contains("the template of WellLog@1.4.0 cannot be read", unread.Problem, StringComparison.Ordinal);
+        Assert.Contains("the copy the sync keeps of it is missing; sync the repository again", unread.Problem, StringComparison.Ordinal);
+
+        await SyncAsync();
         var terms = await TermsAsync();
         var run = Assert.Single(terms, t => t.Column == "log_run");
         Assert.Equal(("WellLog.log_run", $"{WellLog}|osdu.data.LogRun|Copy", (string?)null, false), (run.Name, run.Route, run.Problem, run.Renamed));
@@ -139,21 +149,23 @@ public sealed class SearchTermCatalogTests : IDisposable
         Assert.Contains("is", wellbore.Routes[0].Conditions);
 
         // A route through a table of the database is listed and never chosen; one through the partition's units waits for a
-        // saved template of them, which says how a unit's code is indexed.
+        // template of them on the mapping's path, which says how a unit's code is indexed.
         var unit = Assert.Single(terms, t => t.ColumnLabel == "WellLogCurve.curve_unit");
         Assert.Null(unit.Route);
         Assert.Contains(unit.Routes, r => r.Kind == "steps" && r.Problem!.Contains("UnitAlias", StringComparison.Ordinal));
-        Assert.Contains(unit.Routes, r => r.Kind == "lookup" && r.Problem!.Contains("no saved template of osdu:wks:reference-data--UnitOfMeasure:*", StringComparison.Ordinal));
+        Assert.Contains(unit.Routes, r => r.Kind == "lookup" && r.Problem!.Contains("no template the mapping reads of osdu:wks:reference-data--UnitOfMeasure:*", StringComparison.Ordinal));
 
-        // Every kind the sample delivers is listed: the logs, the wells and wellbores they hang off, and the reference data
-        // their records refer to.
+        // Every kind the sample delivers is listed: the logs and surveys, the wells and wellbores they hang off, and the
+        // reference data their records refer to; all but the units, whose mapping does not load while no template folder
+        // on its path holds their template.
         var types = await WithDirectoryAsync(d => d.EntityTypesAsync(CancellationToken.None));
         Assert.Equal(
             [
                 "master-data--Well", "master-data--Wellbore", "reference-data--LogCurveBusinessValue", "reference-data--LogCurveFamily",
                 "reference-data--LogCurveMainFamily", "reference-data--LogCurveType", "reference-data--LogType",
-                "reference-data--TechnicalAssuranceType", "reference-data--UnitOfMeasure", "reference-data--UnitQuantity",
+                "reference-data--TechnicalAssuranceType", "reference-data--TrajectoryStationPropertyType", "reference-data--UnitQuantity",
                 "reference-data--VerticalMeasurementType", "reference-data--WellLogSamplingDomainType", WellLog,
+                "work-product-component--WellboreMarkerSet", "work-product-component--WellboreTrajectory",
             ],
             types.Select(t => t.EntityType).Order(StringComparer.Ordinal));
     }
@@ -162,7 +174,6 @@ public sealed class SearchTermCatalogTests : IDisposable
     public async Task What_a_person_makes_of_a_term_holds_across_syncs_and_names_it_once_no_mapping_gives_it()
     {
         await SyncAsync();
-        await SaveTemplatesAsync();
 
         var renamed = await RefineAsync(IdOf("wellbore_uwi"), new SearchTermRefinementRequest("Wellbore name", false, null, "The UWI the well database files the log under."));
         Assert.Equal(("Wellbore name", true, "The UWI the well database files the log under.", "tester"), (renamed.Name, renamed.Renamed, renamed.Note, renamed.UpdatedBy));
@@ -193,7 +204,6 @@ public sealed class SearchTermCatalogTests : IDisposable
     public async Task A_name_belongs_to_one_term_of_an_entity_type_and_a_route_picked_must_be_one_the_term_is_searched_through()
     {
         await SyncAsync();
-        await SaveTemplatesAsync();
         await RefineAsync(IdOf("log_run"), new SearchTermRefinementRequest("Run", false, null, null));
 
         var taken = await Assert.ThrowsAsync<DeliveryException>(() => RefineAsync(IdOf("log_version"), new SearchTermRefinementRequest("run", false, null, null)));
@@ -224,7 +234,6 @@ public sealed class SearchTermCatalogTests : IDisposable
     public async Task A_condition_on_a_term_resolves_through_its_route_and_one_left_out_is_refused()
     {
         await SyncAsync();
-        await SaveTemplatesAsync();
         await RefineAsync(IdOf("wellbore_uwi"), new SearchTermRefinementRequest("Wellbore name", false, null, null));
 
         var wellbore = await WithDirectoryAsync(d => d.ResolveAsync(IdOf("wellbore_uwi"), new SearchTermCondition(ExplorerCondition.Is, "WB D/4-A-30"), "dev", null, CancellationToken.None));
@@ -249,7 +258,6 @@ public sealed class SearchTermCatalogTests : IDisposable
     public async Task Terms_deleted_together_leave_the_search_until_restored_and_one_no_pipeline_reads_is_removed_for_good()
     {
         await SyncAsync();
-        await SaveTemplatesAsync();
         await RefineAsync(IdOf("wellbore_uwi"), new SearchTermRefinementRequest("Wellbore name", false, null, "The UWI the well database files the log under."));
 
         // What is left of a term no pipeline reads any longer: its refinement alone.
@@ -318,7 +326,7 @@ public sealed class SearchTermCatalogTests : IDisposable
         Assert.DoesNotContain(warnings, w => w.Contains("search term", StringComparison.OrdinalIgnoreCase));
 
         await using var db = _module.CreateDbContext();
-        var rows = await db.DeliverySearchTerms.AsNoTracking().Where(t => t.RepoId == _repo && t.Column == "wellbore_uwi").ToListAsync();
+        var rows = await db.DeliverySearchTerms.AsNoTracking().Where(t => t.RepoId == _repo && t.Column == "wellbore_uwi" && t.EntityType == WellLog).ToListAsync();
         var wellbore = Assert.Single(rows);
         Assert.Contains("welldb-welllog-03-header-delivery\"", wellbore.FlowsJson, StringComparison.Ordinal);
         Assert.Contains("welldb-welllog-03-header-delivery-v150", wellbore.FlowsJson, StringComparison.Ordinal);
@@ -358,7 +366,6 @@ public sealed class SearchTermCatalogTests : IDisposable
 
         AddNextVersionFlow();
         await SyncAsync();
-        await SaveTemplatesAsync();
 
         var terms = await TermsAsync(orphans: true);
         var wellbore = Assert.Single(terms, t => t.Id == IdOf("wellbore_uwi"));

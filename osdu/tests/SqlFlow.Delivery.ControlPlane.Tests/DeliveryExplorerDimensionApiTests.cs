@@ -420,7 +420,21 @@ public sealed class DeliveryExplorerDimensionApiTests
                 Assert.True(suggested.StatusCode == HttpStatusCode.OK, text);
                 var answer = JsonDocument.Parse(text).RootElement;
                 Assert.Equal("*:*:work-product-component--WellLog:*", answer.GetProperty("kind").GetString());
-                Assert.Equal(WellLog, answer.GetProperty("template").GetProperty("kind").GetString());
+
+                // The newest kind the library saves of the pattern answers. The library is the shared test database's, which
+                // other suites' syncs save into too, so the newest is read from it rather than assumed.
+                await using (var osdu = SampleEstate.Context(estate.Cs))
+                {
+                    var saved = await osdu.DeliveryTemplates.AsNoTracking()
+                        .Where(t => t.Kind.StartsWith("osdu:wks:work-product-component--WellLog:"))
+                        .Select(t => t.Kind)
+                        .Distinct()
+                        .ToListAsync();
+                    Assert.Contains(WellLog, saved);
+                    var newest = saved.OrderByDescending(k => Version.Parse(k[(k.LastIndexOf(':') + 1)..])).First();
+                    Assert.Equal(newest, answer.GetProperty("template").GetProperty("kind").GetString());
+                }
+
                 var first = answer.GetProperty("keys")[0];
                 Assert.Equal(("data.WellboreID", false), (first.GetProperty("path").GetString(), first.GetProperty("repeated").GetBoolean()));
                 Assert.Contains("master-data--Wellbore", first.GetProperty("names").EnumerateArray().Select(n => n.GetString()));

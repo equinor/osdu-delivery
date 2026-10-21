@@ -11,7 +11,7 @@ namespace SqlFlow.Delivery.Model;
 /// OSDU serves, and where the two disagree is the report: records no ledger knows (orphans), records a ledger never
 /// confirmed, removed or forgot, and records a ledger delivered that OSDU no longer serves. A build, a reconcile and a plan
 /// only read OSDU; a flow that declares <see cref="Removal"/> may also remove what it found of the findings it names, when
-/// an operator asks for it (osdu/docs/decisions/0014-inventory-removals.md).
+/// an operator asks for it (osdu/docs/wiki/decisions/0014-inventory-removals.md).
 /// </summary>
 public sealed record InventoryFlowDefinition
 {

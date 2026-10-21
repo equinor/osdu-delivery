@@ -1,5 +1,6 @@
 using SqlFlow.Core;
 using SqlFlow.Delivery.Model;
+using SqlFlow.Delivery.Templates;
 
 namespace SqlFlow.Delivery.Documents;
 
@@ -12,13 +13,22 @@ public sealed class MappingCatalog
 {
     private readonly string _directory;
     private readonly DeliveryDocumentLoader _loader;
+    private readonly FolderTemplates _templates;
 
-    public MappingCatalog(string directory, DeliveryDocumentLoader loader)
+    /// <param name="directory">The mappings directory.</param>
+    /// <param name="loader">Reads each mapping document.</param>
+    /// <param name="templates">
+    /// The template folders a mapping that names its template's kind alone is settled from: those on the mapping file's
+    /// path, up to the repository's top when the caller knows it (lineage reads a checkout), and otherwise up to the folder
+    /// holding <c>.git</c>.
+    /// </param>
+    public MappingCatalog(string directory, DeliveryDocumentLoader loader, FolderTemplates? templates = null)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(directory);
         ArgumentNullException.ThrowIfNull(loader);
         _directory = directory;
         _loader = loader;
+        _templates = templates ?? FolderTemplates.Default;
     }
 
     public string Directory => _directory;
@@ -60,7 +70,7 @@ public sealed class MappingCatalog
             ?? throw new FlowValidationException(
                 $"Mapping '{reference}' was not found under '{shown(_directory)}'. Expected one of: {string.Join(", ", candidates.Select(Path.GetFileName))}.");
 
-        var mapping = _loader.LoadMapping(path, shown(path));
+        var mapping = _loader.LoadMapping(path, shown(path), _templates);
         if (!mapping.Name.Equals(name, StringComparison.Ordinal) || !mapping.Version.Equals(version, StringComparison.Ordinal))
         {
             throw new FlowValidationException(

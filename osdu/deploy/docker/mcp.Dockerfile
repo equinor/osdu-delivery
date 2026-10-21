@@ -23,7 +23,7 @@ FROM rust:1.94-slim-bookworm AS build
 WORKDIR /src
 # The server compiles its documentation and the key census into the binary through repository-relative paths, so the
 # build keeps the repository's shape: SQLFlow's server and language engine with the reference pages they embed, and
-# the host crate with the product's reference pages, decision records and census (osdu/docs). The root .dockerignore
+# the host crate with the product's reference pages, wiki and census (osdu/docs). The root .dockerignore
 # re-includes these documentation trees for this.
 COPY sqlflow/tools/ sqlflow/tools/
 COPY sqlflow/docs/reference/ sqlflow/docs/reference/

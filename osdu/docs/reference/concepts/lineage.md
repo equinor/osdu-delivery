@@ -141,12 +141,14 @@ warning says what was left out:
 WARN  welldb/flows/welldb-welllog-03-delivery.yaml: delivery flow 'welldb-welllog-03-delivery' shows fewer cache types
 in lineage than its mapping reads: mapping 'WellLog@1.0.0' builds a reference with ref at osdu.data.WellboreID,
 osdu.data.SamplingDomainTypeID, osdu.data.Curves[].CurveUnit, and the entity type of each is told by its template
-(osdu:wks:work-product-component--WellLog:1.4.0 version 26a3c3441882db4f), which could not be read (SqlFlowException:
-Environment variable 'SQLFLOW_CATALOG_DB' is not set.), so the cache types those references are checked against are left out.
+(osdu:wks:work-product-component--WellLog:1.4.0 version 26a3c3441882db4f), so the cache types those references are
+checked against are left out. Its template is not read: no template folder on the path of
+welldb/mappings/WellLog@1.0.0.yaml holds template osdu:wks:work-product-component--WellLog:1.4.0 version 26a3c3441882db4f. ...
 ```
 
-The clause after "which" is one of: `this host has no osdu database to read from`, `is not saved`, or
-`could not be read (<reason>)`. Save the template and the next sync shows the missing reads. An id whose entity type a
+The reason after `Its template is not read:` says which template folders lineage read on the mapping's path
+([template folders](templates.md#template-folders)), or why the file it found could not be read. Put the template's file
+in one of those folders and the next sync shows the missing reads. An id whose entity type a
 token gives (`{$param.dataPartition}:{group}--{entity}:...`) is only known at render time, and lineage shows nothing for
 what it is checked against.
 
@@ -259,9 +261,9 @@ $ sqlflow lineage . --explain welldb-welllog-03-delivery
 
 The reads through the mapping are `derived`: the flow inherits them from the mapping's node. In that offline run the
 mapping's bare `ref`s could not be resolved (no database was named), so `osdu-reference-00-cache` is not yet a dependency
-of the well log delivery and sits in wave 1. With the pinned template saved and readable, the mapping also reads the
-reference cache types holding `UnitOfMeasure` and `WellLogSamplingDomainType` records, and the well log delivery waits
-for that cache flow too. With the template saved, the OSDU order also has the well log delivery read
+of the well log delivery and sits in wave 1. With its template in a template folder on its path and readable, the
+mapping also reads the reference cache types holding `UnitOfMeasure` and `WellLogSamplingDomainType` records, and the
+well log delivery waits for that cache flow too. With the template read, the OSDU order also has the well log delivery read
 `*:*:master-data--Wellbore:*`, since its mapping fills `WellboreID`, and lineage runs it after the wellbore delivery
 ([the OSDU order](osdu-order.md#lineage-takes-the-order)).
 

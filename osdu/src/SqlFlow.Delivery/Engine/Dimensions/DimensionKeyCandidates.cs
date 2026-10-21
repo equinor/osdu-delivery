@@ -34,26 +34,27 @@ public sealed record DimensionKeySuggestions(string Kind, BlueprintTemplate? Tem
 /// </summary>
 public static class DimensionKeyCandidates
 {
-    /// <summary>The suggestions for <paramref name="kind"/> (wildcards allowed per segment), from the saved templates.</summary>
-    public static async Task<DimensionKeySuggestions> SuggestAsync(string kind, ITemplateStore templates, CancellationToken ct)
+    /// <summary>
+    /// The suggestions for <paramref name="kind"/> (wildcards allowed per segment), from the templates
+    /// <paramref name="templates"/> offers: the saved templates for a dimension drafted in the explorer, before any flow
+    /// holds it.
+    /// </summary>
+    public static async Task<DimensionKeySuggestions> SuggestAsync(string kind, ITemplateSource templates, CancellationToken ct)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(kind);
         ArgumentNullException.ThrowIfNull(templates);
-        var saved = await templates.ListAsync(ct).ConfigureAwait(false);
-        var matching = DimensionBlueprints.Matching(kind, saved);
+        var (matching, problems) = await DimensionBlueprints.MatchingAsync(kind, templates, document: null, ct).ConfigureAwait(false);
         if (matching.Count == 0)
         {
             return new DimensionKeySuggestions(
                 kind, null, [],
-                $"No saved template matches {kind}, so no key can be suggested. Pick a property of one of its records, or save the kind's template on the Templates page.");
+                problems.Count > 0
+                    ? $"No key can be suggested for {kind}: {problems[0]}"
+                    : $"No saved template matches {kind}, so no key can be suggested. Pick a property of one of its records, or save the kind's template on the Templates page.");
         }
 
         var newest = matching[0];
-        var schema = await templates.LoadAsync(newest.Reference, ct).ConfigureAwait(false);
-        var template = new BlueprintTemplate(newest.Kind, newest.Version);
-        return schema is null
-            ? new DimensionKeySuggestions(kind, null, [], $"The template {newest.Kind} version {newest.Version} is no longer saved, so no key can be suggested.")
-            : new DimensionKeySuggestions(kind, template, Of(OsduTemplate.From(schema)), null);
+        return new DimensionKeySuggestions(kind, new BlueprintTemplate(newest.Template.Kind, newest.Template.Version), Of(OsduTemplate.From(newest.Schema)), null);
     }
 
     /// <summary>The suggestions a template makes, the likeliest first.</summary>

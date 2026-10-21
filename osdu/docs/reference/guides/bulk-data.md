@@ -40,7 +40,7 @@ sourceRefs:
   - osdu/src/SqlFlow.Delivery/Engine/Protocols/WellboreDdmsRules.cs
   - osdu/src/SqlFlow.Delivery/Engine/Protocols/WellboreDdmsBulkLink.cs
   - osdu/src/SqlFlow.Delivery.Cli/DeliveryCliModule.cs
-  - osdu/samples/templates/osdu_wks_work-product-component--WellLog_1.4.0.json
+  - osdu/samples/welldb/templates/osdu_wks_work-product-component--WellLog_1.4.0.json
   - osdu/specs/wellbore-ddms/openapi.json
 ---
 

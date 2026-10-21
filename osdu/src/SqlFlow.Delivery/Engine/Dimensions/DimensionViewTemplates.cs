@@ -5,7 +5,7 @@ using SqlFlow.Delivery.Templates;
 
 namespace SqlFlow.Delivery.Engine.Dimensions;
 
-/// <summary>What the saved templates say of one join of a view: the entity types the joined column names, and whether the dimension joined reads one of them.</summary>
+/// <summary>What the templates the flow reads say of one join of a view: the entity types the joined column names, and whether the dimension joined reads one of them.</summary>
 /// <param name="Alias">The join's alias.</param>
 /// <param name="On">The column joined on, as the document writes it.</param>
 /// <param name="To">The dimension joined.</param>
@@ -19,7 +19,7 @@ public sealed record DimensionViewJoinVerdict(string Alias, string On, string To
 public sealed record DimensionViewJoinSuggestion(string On, string To, string As, string Note);
 
 /// <summary>
-/// The saved templates as a view's joins are checked and suggested by (osdu/docs/reference/flow/dimension-views.md,
+/// The templates the flow reads as a view's joins are checked and suggested by (osdu/docs/reference/flow/dimension-views.md,
 /// What the templates say of a view's joins): a join is declared, never inferred, and the template of the records a
 /// joined column is read from says which records the column names, so a join to a dimension of another entity type is
 /// marked, and the joins a view could make are offered. Nothing here decides what a build writes: the document alone
@@ -36,14 +36,17 @@ public static class DimensionViewTemplates
     /// <summary>A join no template says anything of.</summary>
     public const string Unchecked = "unchecked";
 
-    /// <summary>What the saved templates say of each join of <paramref name="view"/>.</summary>
+    /// <summary>
+    /// What the templates <paramref name="flow"/> reads say of each join of <paramref name="view"/>: those of the template
+    /// folders on the flow's path, read from <paramref name="templates"/>.
+    /// </summary>
     public static async Task<IReadOnlyList<DimensionViewJoinVerdict>> CheckAsync(
-        DimensionFlowDefinition flow, DimensionViewSpec view, ITemplateStore templates, CancellationToken ct)
+        DimensionFlowDefinition flow, DimensionViewSpec view, ITemplateSource templates, CancellationToken ct)
     {
         ArgumentNullException.ThrowIfNull(flow);
         ArgumentNullException.ThrowIfNull(view);
         ArgumentNullException.ThrowIfNull(templates);
-        var reader = new Reader(templates, await templates.ListAsync(ct).ConfigureAwait(false));
+        var reader = new Reader(templates, flow.SourcePath);
         var read = new Dictionary<string, DimensionSpec>(StringComparer.OrdinalIgnoreCase);
         if (flow.Dimension(view.From) is { } from)
         {
@@ -76,12 +79,12 @@ public static class DimensionViewTemplates
     /// names a record of any type, and only the template tells which.
     /// </summary>
     public static async Task<IReadOnlyList<DimensionViewJoinSuggestion>> SuggestAsync(
-        DimensionFlowDefinition flow, string from, ITemplateStore templates, CancellationToken ct)
+        DimensionFlowDefinition flow, string from, ITemplateSource templates, CancellationToken ct)
     {
         ArgumentNullException.ThrowIfNull(flow);
         ArgumentNullException.ThrowIfNull(templates);
         var root = flow.Dimension(from) ?? throw new DeliveryException($"Dimension flow '{flow.Name}' has no dimension named '{from}'.");
-        var reader = new Reader(templates, await templates.ListAsync(ct).ConfigureAwait(false));
+        var reader = new Reader(templates, flow.SourcePath);
         var suggestions = new List<DimensionViewJoinSuggestion>();
         var aliases = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         var level = new List<(string Alias, DimensionSpec Dimension)> { (ViewScope.FromAlias, root) };
@@ -170,7 +173,7 @@ public static class DimensionViewTemplates
         if (names is null)
         {
             return new DimensionViewJoinVerdict(alias, on, to.Name, [], reads, Unchecked,
-                $"No saved template of {holder.Kind} says which records {column} names, so the join is not checked. Save the template on the Templates page to check it.");
+                $"No template the flow reads of {holder.Kind} says which records {column} names, so the join is not checked. Put the template in a template folder on the flow's path to check it.");
         }
 
         if (names.Count == 0)
@@ -189,16 +192,17 @@ public static class DimensionViewTemplates
                 $"The template says {column} names {string.Join(" or ", names)}, and {to.Name} reads {reads}: an id carries its entity type, so the join finds nothing.");
     }
 
-    /// <summary>The newest saved template of each kind a dimension reads, loaded once.</summary>
-    private sealed class Reader(ITemplateStore templates, IReadOnlyList<TemplateInfo> saved)
+    /// <summary>The template the flow reads of each kind pattern a dimension reads, loaded once.</summary>
+    private sealed class Reader(ITemplateSource templates, string? document)
     {
         private readonly Dictionary<string, SchemaSnapshot?> _loaded = new(StringComparer.OrdinalIgnoreCase);
 
         /// <summary>
-        /// The entity types the value of <paramref name="column"/> names, as the newest saved template of the kind
-        /// <paramref name="dimension"/> reads declares it; null when no template describes the records the value is read
-        /// from. Only a column read from the dimension's own records is described: a key's path, a field of its elements,
-        /// and an attribute of a dimension keyed by its records' own id, read in one step.
+        /// The entity types the value of <paramref name="column"/> names, as the template of the kind
+        /// <paramref name="dimension"/> reads declares it (the newest version of the kinds its pattern matches that the flow
+        /// reads); null when no template describes the records the value is read from. Only a column read from the
+        /// dimension's own records is described: a key's path, a field of its elements, and an attribute of a dimension keyed
+        /// by its records' own id, read in one step.
         /// </summary>
         public async Task<IReadOnlyList<string>?> NamesAsync(DimensionSpec dimension, string column, CancellationToken ct)
         {
@@ -208,17 +212,11 @@ public static class DimensionViewTemplates
                 return null;
             }
 
-            var matching = DimensionBlueprints.Matching(dimension.Kind, saved);
-            var newest = matching.Count > 0 ? matching[0] : null;
-            if (newest is null)
+            if (!_loaded.TryGetValue(dimension.Kind, out var schema))
             {
-                return null;
-            }
-
-            if (!_loaded.TryGetValue(newest.Kind, out var schema))
-            {
-                schema = await templates.LoadAsync(newest.Reference, ct).ConfigureAwait(false);
-                _loaded[newest.Kind] = schema;
+                var (matching, _) = await DimensionBlueprints.MatchingAsync(dimension.Kind, templates, document, ct).ConfigureAwait(false);
+                schema = matching.Count > 0 ? matching[0].Schema : null;
+                _loaded[dimension.Kind] = schema;
             }
 
             return schema is null ? null : SchemaPathReader.Read(schema, parsed).References;

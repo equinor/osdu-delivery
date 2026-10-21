@@ -113,17 +113,10 @@ unsettled for the same read (a whole-scope plan resumes the whole-scope plan, a 
 exactly the same keys) instead of registering another: it plans it again, keeps its key slices, and gets back its
 fan-out members.
 
-| Columns | What they hold |
-| --- | --- |
-| `FlowId`, `FlowName`, `MappingReference`, `RenderContext`, `ParametersJson` | What produced it: the ledger, the mapping, the render context and the parameter values. |
-| `Kind`, `SourceConnection`, `SourceObject` | The selection, the connection reference exactly as the flow declares it (never a resolved secret), and the record table read. |
-| `WindowFromUtc`, `WindowToUtc`, `SourceWindowJson` | The `UpdatedDate_DW` window and what else bounded the read: child datasets, overlap, scope values, key slices, the key digest of a `keys` plan. |
-| `WorkLocation`, `BatchCount`, `Slices` | Where its work batches were written, how many, and how many key slices a fan-out cut it into. |
-| `Status` | `received`, `planned`, `running`, `completed`, `failed`. |
-| `RecordCount`, `Planned`, `SkippedUnchanged`, `AwaitingApproval`, `SkippedStale`, `Blocked`, `Held`, `Untracked` | What its latest planning pass found. A re-run of the submission plans it again and replaces them. |
-| `Delivered`, `UnchangedAtPush` | Records its attempts delivered, or found OSDU already holding at the final check, across every pass. |
-| `Held`, `Failed`, `Waiting` | When it closes: the records whose last submission it is that are held, failed or waiting now (`Held` then replaces the planning pass's count). |
-| `RunId`, `ReceivedUtc`, `StartedUtc`, `CompletedUtc`, `Error` | The coordinating run and the timeline. |
+A submission records what produced it (the ledger, the mapping, the render context and the parameter values), what it
+selected and read (its kind, the connection reference exactly as the flow declares it, the record table, the
+`UpdatedDate_DW` window and what else bounded the read), where its work batches went, its status and timeline, and what
+its planning passes and its drain counted. Every column, key and index: [`osdu.Submission`](../tables/submission.md).
 
 **Status.** A submission is `received` while it plans. It is `planned` when the planning finished with records to send,
 and `completed` at once when it planned none. A plan that finds nothing new while records an earlier pass queued are

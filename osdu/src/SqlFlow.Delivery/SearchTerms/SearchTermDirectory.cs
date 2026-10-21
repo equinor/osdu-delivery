@@ -160,21 +160,18 @@ public sealed class SearchTermDirectory
     public const int MaxBatch = 5000;
 
     private readonly OsduDbContext _db;
-    private readonly ITemplateStore _templates;
     private readonly DeliveryDocumentLoader _documents;
     private readonly TimeProvider _time;
     private readonly Dictionary<(Guid Repo, string Reference), (MappingDefinition? Mapping, string? Problem)> _mappings = [];
-    private readonly Dictionary<TemplateReference, SchemaSnapshot?> _schemas = [];
-    private IReadOnlyList<TemplateInfo>? _saved;
+    private readonly Dictionary<(Guid Repo, string? Document, TemplateReference Reference), TemplateResolution> _schemas = [];
+    private readonly Dictionary<Guid, Catalog.SyncedTemplates> _folders = [];
 
-    public SearchTermDirectory(OsduDbContext db, ITemplateStore templates, DeliveryDocumentLoader documents, TimeProvider time)
+    public SearchTermDirectory(OsduDbContext db, DeliveryDocumentLoader documents, TimeProvider time)
     {
         ArgumentNullException.ThrowIfNull(db);
-        ArgumentNullException.ThrowIfNull(templates);
         ArgumentNullException.ThrowIfNull(documents);
         ArgumentNullException.ThrowIfNull(time);
         _db = db;
-        _templates = templates;
         _documents = documents;
         _time = time;
     }
@@ -525,7 +522,7 @@ public sealed class SearchTermDirectory
         var chosen = term.Routes[chosenAt];
 
         var (mapping, fields) = await ClassifyAsync(chosen.Route, chosen.Repo, MappingFor(chosen.Route, kind), ct).ConfigureAwait(false);
-        var template = mapping is null ? null : await TemplateAsync(mapping.Template, ct).ConfigureAwait(false);
+        var template = mapping is null ? null : (await TemplateAsync(chosen.Repo, mapping.TemplateDocument, mapping.Template, ct).ConfigureAwait(false)).Schema;
         if (mapping is null || template is null)
         {
             throw new DeliveryException($"{view.Name} cannot be searched: {fields.Problem}.");
@@ -744,10 +741,10 @@ public sealed class SearchTermDirectory
             return (null, SearchRouteFields.Refused(mappingProblem!));
         }
 
-        var template = await TemplateAsync(mapping.Template, ct).ConfigureAwait(false);
-        if (template is null)
+        var resolved = await TemplateAsync(repo, mapping.TemplateDocument, mapping.Template, ct).ConfigureAwait(false);
+        if (resolved.Schema is not { } template)
         {
-            return (mapping, SearchRouteFields.Refused($"the template {mapping.Template.Kind} version {mapping.Template.Version} that {reference} pins is not saved; save it on the Templates page"));
+            return (mapping, SearchRouteFields.Refused($"the template of {reference} cannot be read: {resolved.Problem}"));
         }
 
         SchemaSnapshot? found = null;
@@ -755,13 +752,12 @@ public sealed class SearchTermDirectory
         {
             if (route.Kind == SearchRouteKind.Search && mapping.Searches.TryGetValue(find.Name, out var search) && search.Schema is { } pinned)
             {
-                found = await TemplateAsync(pinned, ct).ConfigureAwait(false);
+                found = (await TemplateAsync(repo, mapping.TemplateDocument, pinned, ct).ConfigureAwait(false)).Schema;
             }
             else
             {
-                _saved ??= await _templates.ListAsync(ct).ConfigureAwait(false);
-                var matching = DimensionBlueprints.Matching(find.Kind, _saved);
-                found = matching.Count == 0 ? null : await TemplateAsync(matching[0].Reference, ct).ConfigureAwait(false);
+                var (matching, _) = await DimensionBlueprints.MatchingAsync(find.Kind, await FoldersAsync(repo, ct).ConfigureAwait(false), mapping.TemplateDocument, ct).ConfigureAwait(false);
+                found = matching.Count == 0 ? null : matching[0].Schema;
             }
         }
 
@@ -788,7 +784,8 @@ public sealed class SearchTermDirectory
         {
             try
             {
-                found = (_documents.ParseMapping(row.Yaml, row.RelativePath), null);
+                var folders = await FoldersAsync(repo, ct).ConfigureAwait(false);
+                found = (_documents.ParseMapping(row.Yaml, row.RelativePath, folders.For(row.RelativePath)), null);
             }
             catch (FlowValidationException ex)
             {
@@ -800,15 +797,32 @@ public sealed class SearchTermDirectory
         return found;
     }
 
-    private async Task<SchemaSnapshot?> TemplateAsync(TemplateReference reference, CancellationToken ct)
+    /// <summary>
+    /// The template <paramref name="reference"/> as the document at <paramref name="document"/> of repository
+    /// <paramref name="repo"/> reads it, from the template folders the repository's last sync recorded on its path.
+    /// </summary>
+    private async Task<TemplateResolution> TemplateAsync(Guid repo, string? document, TemplateReference reference, CancellationToken ct)
     {
-        if (!_schemas.TryGetValue(reference, out var schema))
+        var key = (repo, document, reference);
+        if (!_schemas.TryGetValue(key, out var resolved))
         {
-            schema = await _templates.LoadAsync(reference, ct).ConfigureAwait(false);
-            _schemas[reference] = schema;
+            resolved = await (await FoldersAsync(repo, ct).ConfigureAwait(false)).ResolveAsync(document, reference.Kind, reference.Version, ct).ConfigureAwait(false);
+            _schemas[key] = resolved;
         }
 
-        return schema;
+        return resolved;
+    }
+
+    /// <summary>The template folders the last sync of repository <paramref name="repo"/> recorded, read once.</summary>
+    private async Task<Catalog.SyncedTemplates> FoldersAsync(Guid repo, CancellationToken ct)
+    {
+        if (!_folders.TryGetValue(repo, out var folders))
+        {
+            folders = await Catalog.SyncedTemplates.ReadAsync(_db, repo, ct).ConfigureAwait(false);
+            _folders[repo] = folders;
+        }
+
+        return folders;
     }
 
     private static IReadOnlyList<string> Flows(string json)
