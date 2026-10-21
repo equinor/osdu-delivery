@@ -1,0 +1,16 @@
+name: Release Please
+
+on:
+  workflow_dispatch: {}
+  push:
+    branches: [main]
+
+permissions: {}
+
+jobs:
+  release-please:
+    name: Release Please
+    permissions:
+      contents: write # Required to update changelog file
+      pull-requests: write # Required to create release PRs
+    uses: equinor/ops-actions/.github/workflows/release-please-manifest.yml@af5bad1a47ab8f8c333f8910f06c1938dd962dac # v9.43.0
