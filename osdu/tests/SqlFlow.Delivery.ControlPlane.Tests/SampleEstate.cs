@@ -17,9 +17,10 @@ namespace SqlFlow.ControlPlane.Tests;
 /// real flow: the well log delivery flow with the pre and ing chains that feed it, the mapping it renders with, the
 /// schedule library, and the drop-off folder the pre flows read. The wellbore fixture flow and its mapping are copied in
 /// beside them, for the suites that need a second flow with no payload files. The copy keeps the shape a repository has,
-/// one folder per source, so a path the catalog records here is the path it would record for a customer's repo. What the
-/// flows render with lives in the module's database (the templates and the partition cache), so a test saves those rather
-/// than inventing a second estate that would drift from the real one.
+/// one folder per source, so a path the catalog records here is the path it would record for a customer's repo. The
+/// templates the mappings fill are in the source's template folder, which a sync of the copy records and saves; the
+/// partition cache lives in the module's database, so a test saves it rather than inventing a second estate that would
+/// drift from the real one.
 /// </summary>
 internal static class SampleEstate
 {
@@ -54,10 +55,11 @@ internal static class SampleEstate
 
     /// <summary>
     /// What the source folder holds, and so what a copy of the estate is made of: the documents, what they render with
-    /// (mappings and the dictionaries a dimension flow cleans its values through), and the drop-off folder. Neither the templates nor the cache records are among them, because neither is
-    /// repository content: both live in the module's database, and the repository holds only what declares them.
+    /// (mappings, the template folder holding the templates they fill, and the dictionaries a dimension flow cleans its
+    /// values through), and the drop-off folder. The cache records are not among them: a cache lives in the module's
+    /// database, and the repository holds only the flows that declare it.
     /// </summary>
-    private static readonly string[] Parts = ["flows", "reference", "cache", "dictionaries", "mappings", "data"];
+    private static readonly string[] Parts = ["flows", "reference", "cache", "dictionaries", "mappings", "templates", "data"];
 
     /// <summary>The schedule library every flow of the estate joins a schedule of.</summary>
     private const string ScheduleLibrary = "schedules.yaml";
@@ -139,9 +141,9 @@ internal static class SampleEstate
     private static readonly SemaphoreSlim ModuleMigrate = new(1, 1);
 
     /// <summary>
-    /// Saves the templates the sample mappings pin into the module's database at <paramref name="connectionString"/>,
-    /// exactly as saving them on the Templates page does. Templates live in that database rather than the repository, so
-    /// a run that renders the sample needs them there.
+    /// Saves the templates the sample mappings fill into the library of the module's database at
+    /// <paramref name="connectionString"/>, exactly as saving them on the Templates page does: what the explorer and the
+    /// pages read without a repository. A run and a synced repository's pages read them from the source's template folder.
     /// </summary>
     public static async Task SaveTemplatesAsync(string connectionString)
     {
@@ -150,10 +152,49 @@ internal static class SampleEstate
         var store = new OsduTemplateStore(() => Context(connectionString));
         foreach (var (kind, file) in Templates)
         {
-            var path = Path.Combine(Locate(), "templates", file);
+            var path = Path.Combine(SourceRoot(), "templates", file);
             var schema = TemplateSources.FromBundledJson(await File.ReadAllTextAsync(path), kind, DateTimeOffset.UtcNow, path);
             await store.SaveAsync(schema, "file " + file, "tests");
         }
+    }
+
+    /// <summary>
+    /// Records the templates the sample mappings fill as the files of a template folder at the top of repository
+    /// <paramref name="repoId"/>, each with the copy of its schema, as a sync of the sample estate records its
+    /// <c>templates</c> folder: what the pages of a synced repository settle its documents' templates from. A test that
+    /// writes a repository's mapping rows itself, as a sync would, records its template folder with them. The library is
+    /// left as it is, as a sync leaves it.
+    /// </summary>
+    public static async Task HoldTemplatesAsync(string connectionString, Guid repoId, DateTime nowUtc)
+    {
+        await MigrateModuleAsync(connectionString);
+        await using var db = Context(connectionString);
+        foreach (var (kind, file) in Templates)
+        {
+            var path = "templates/" + file;
+            var schema = TemplateSources.FromBundledJson(await File.ReadAllTextAsync(Path.Combine(SourceRoot(), "templates", file)), kind, DateTimeOffset.UtcNow, file);
+            var row = db.DeliveryRepositoryTemplates.FirstOrDefault(t => t.RepoId == repoId && t.Path == path);
+            if (row is null)
+            {
+                row = new DeliveryRepositoryTemplate
+                {
+                    Id = SqlFlow.Core.Identity.FlowIdentity.FromName($"delivery-template-file/{repoId:N}/{path}"),
+                    RepoId = repoId,
+                    Path = path,
+                    FirstSeenUtc = nowUtc,
+                };
+                db.DeliveryRepositoryTemplates.Add(row);
+            }
+
+            row.Folder = "templates";
+            row.Kind = schema.Kind;
+            row.Version = schema.Version;
+            row.Problem = null;
+            row.SchemaJson = SqlFlow.Delivery.Json.DocumentJson.Compact(schema.Root);
+            row.LastSeenUtc = nowUtc;
+        }
+
+        await db.SaveChangesAsync();
     }
 
     /// <summary>

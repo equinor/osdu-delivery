@@ -100,6 +100,7 @@ public sealed class CachePruneCommandTests : IDisposable
             services,
             new CliArguments(["cache", subcommand, target, .. options], declared.ValueOptions),
             output,
+            TextWriter.Null,
             reason =>
             {
                 usage = reason ?? string.Empty;

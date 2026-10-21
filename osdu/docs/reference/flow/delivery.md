@@ -126,7 +126,7 @@ sqlflow run flows/welldb-wellbore-03-delivery.yaml
 ```
 
 `validate` prints `OK  'welldb-wellbore-03-delivery' is valid (delivery: OsduData.silver.Wellbore -> ${env:OSDU_URL}).`
-[`sqlflow check`](../cli/check.md) then resolves the mapping against its saved template and the partition's cache, and a
+[`sqlflow check`](../cli/check.md) then resolves the mapping against the template its template folders hold and the partition's cache, and a
 `plan` run reports what a delivery would send without sending it ([running an OSDU flow](../cli/run.md)).
 
 ## A fuller example

@@ -459,6 +459,10 @@ export interface DeliveryMapping {
   summary: Record<string, unknown>;
   firstSeenUtc: string;
   lastSeenUtc: string;
+  /** The template version the mapping fills; empty when it names none the sync could settle. */
+  templateVersion: string;
+  /** The template folder file the last sync settled the template from; empty when no folder on the mapping's path holds it. */
+  templatePath: string;
 }
 
 export interface DeliveryMappingDetail {
@@ -1870,14 +1874,29 @@ export type DeliveryTemplateShape = "Value" | "ValueList" | "Group" | "GroupList
 /** Who writes a template variable: a mapping, OSDU Delivery itself (the id and the kind), or OSDU when it stores the record. */
 export type DeliveryTemplateRole = "Mapping" | "Engine" | "Osdu";
 
-/** A saved template version: the OSDU kind, its content version, when, by whom and from where it was saved, and how many synced mappings pin it. */
+/**
+ * A saved template version of the library: the OSDU kind, its content version, and when, by whom and from where it was
+ * saved. The library is not linked to the repositories, whose documents read their templates from their template folders.
+ */
 export interface DeliveryTemplate {
   kind: string;
   version: string;
   capturedUtc: string;
   capturedBy: string;
   origin: string;
-  pinnedBy: number;
+}
+
+/**
+ * What a template a document of a synced repository names settles to, from the template folders the repository's last
+ * sync recorded on the document's path; `suggestedPath` is where a file of the template goes for the document to read it.
+ */
+export interface DeliveryTemplateResolution {
+  found: boolean;
+  kind: string;
+  version?: string | null;
+  file?: string | null;
+  problem?: string | null;
+  suggestedPath: string;
 }
 
 /** One variable of a template: a property of the OSDU record, with what the schema says about it. */
@@ -3724,7 +3743,7 @@ export const deliveryApi = {
   /** A saved template laid out variable by variable; with `scope`, each variable names the types of that partition's cache it can be read from. */
   templateDetail: (kind: string, version: string, scope?: string) =>
     get<DeliveryTemplateDetail>("/api/v1/delivery/templates/detail", { kind, version, scope }),
-  /** The saved template's bundled schema as JSON text, exactly as it was saved. */
+  /** The saved template's bundled schema, which the control plane answers as a file to save, read as its JSON text. */
   templateSchema: (kind: string, version: string) =>
     getText(`/api/v1/delivery/templates/schema?${new URLSearchParams({ kind, version }).toString()}`),
   /**
@@ -3772,14 +3791,21 @@ export const deliveryApi = {
   composeMapping: (scope: string | null, draft: MappingDraft, parameters: Record<string, string> | null) =>
     post<DeliveryMappingComposeResult>("/api/v1/delivery/mapping-builder/compose", { scope, draft, parameters }),
   /** What a mapping document fills of the template version it pins, variable by variable; nothing is rendered and no cache is read. */
-  mappingCoverage: (yaml: string, path: string | null) =>
-    post<DeliveryMappingCoverage>("/api/v1/delivery/mapping-builder/coverage", { yaml, path }),
-  /** Reads a mapping document back into a draft for the builder. */
-  parseMapping: (yaml: string, path: string | null) =>
-    post<DeliveryMappingParseResult>("/api/v1/delivery/mapping-builder/parse", { yaml, path }),
+  /**
+   * `repoId` names the synced repository the document is a mapping of, whose template folders settle a template it names
+   * by kind alone, as its runs do; without it the document has to name its template's version.
+   */
+  mappingCoverage: (yaml: string, path: string | null, repoId?: string | null) =>
+    post<DeliveryMappingCoverage>("/api/v1/delivery/mapping-builder/coverage", { yaml, path, repoId: repoId ?? null }),
+  /** Reads a mapping document back into a draft for the builder; `repoId` as for the coverage. */
+  parseMapping: (yaml: string, path: string | null, repoId?: string | null) =>
+    post<DeliveryMappingParseResult>("/api/v1/delivery/mapping-builder/parse", { yaml, path, repoId: repoId ?? null }),
   /** The shape of the records a mapping document renders, drawn with `parameters`; nothing is read or stored. */
-  mappingShape: (yaml: string, path: string | null, parameters: Record<string, string>) =>
-    post<DeliveryMappingShapeResult>("/api/v1/delivery/mapping-builder/shape", { yaml, path, parameters }),
+  mappingShape: (yaml: string, path: string | null, parameters: Record<string, string>, repoId?: string | null) =>
+    post<DeliveryMappingShapeResult>("/api/v1/delivery/mapping-builder/shape", { yaml, path, parameters, repoId: repoId ?? null }),
+  /** What a template a document of a synced repository names settles to, from the template folders on its path. */
+  resolveTemplate: (repoId: string, path: string, kind: string, version?: string | null) =>
+    get<DeliveryTemplateResolution>("/api/v1/delivery/templates/resolve", { repoId, path, kind, version: version ?? undefined }),
   /** Every partition's cache: the cache flows filling it, what refreshes them, its types and its current version. */
   caches: (repoId?: string) =>
     get<DeliveryCache[]>("/api/v1/delivery/caches", { repoId }),

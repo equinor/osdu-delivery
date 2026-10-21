@@ -1,13 +1,13 @@
 import { useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { ClipboardPaste, Cloud, FileJson, Trash2, type LucideIcon } from "lucide-react";
+import { ClipboardPaste, Cloud, Download, FileJson, Loader2, Trash2, type LucideIcon } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { useLocalStorageState } from "@/hooks/useLocalStorageState";
-import { cn } from "@/lib/utils";
+import { downloadText } from "@/lib/download";
 import { deliveryApi, type DeliveryTemplate } from "../../api/delivery";
 import { useAuth } from "@/auth/AuthContext";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
@@ -23,6 +23,7 @@ import { KindText } from "./KindText";
 import { TemplatesBrowseTab } from "./TemplatesBrowseTab";
 import { TemplatesImportTab } from "./TemplatesImportTab";
 import { problemText } from "./problemText";
+import { templateFileName, templateSchemaQuery } from "./templateFormat";
 import { ProblemView, TemplateSheet } from "./TemplateSheet";
 
 type TemplatesTab = "saved" | "browse" | "import";
@@ -80,23 +81,15 @@ const savedColumns: Column<DeliveryTemplate>[] = [
     ),
   },
   { id: "origin", header: "Origin", render: (row) => <OriginCell origin={row.origin} /> },
-  {
-    id: "pinned",
-    header: "Pinned by",
-    align: "right",
-    render: (row) => (
-      <span className={cn("font-mono tabular-nums", row.pinnedBy === 0 && "text-muted-foreground")}>
-        {row.pinnedBy}
-        <span className="@max-3xl/table:sr-only">{` mapping${row.pinnedBy === 1 ? "" : "s"}`}</span>
-      </span>
-    ),
-  },
 ];
 
 /**
- * Templates: the OSDU record schemas the catalog holds as templates, which mappings pin. A saved version is its content
- * and never changes. New versions come from the OSDU data definitions (the Open Group's public repository of OSDU schemas)
- * or, for a schema of one's own, from a bundled schema file, and each is looked at, variable by variable, before it is saved.
+ * Templates: the OSDU record schemas saved as templates, the library, for what reads templates where no repository is at
+ * hand (the explorer, the mapping builder, the assistant). It is not linked to the repositories, whose documents read
+ * their templates from their template folders: it holds what was saved here, from the OSDU data definitions (the Open
+ * Group's public repository of OSDU schemas) or, for a schema of one's own, from a bundled schema file, each looked at
+ * variable by variable before it is saved. A saved version is its content and never changes, and it downloads as the
+ * bundled file a template folder keeps.
  */
 export default function TemplatesPage() {
   const queryClient = useQueryClient();
@@ -151,22 +144,51 @@ export default function TemplatesPage() {
       void queryClient.invalidateQueries({ queryKey: ["delivery", "templates"] });
     },
     onError: (error) => {
-      // A 409 names the synced mappings that pinned the version since the sheet was read; the sheet keeps the problem in
-      // view, and reads the version again so Delete shows the pins that now hold it.
+      // A 409 names the template folder files or the synced mappings that took up the version since the sheet was read;
+      // the sheet keeps the problem in view, and reads the version again so Delete shows what now holds it.
       setDeleteOpen(false);
       toast.error(problemText(error));
       void queryClient.invalidateQueries({ queryKey: ["delivery", "templates"] });
     },
   });
 
-  // A version a synced mapping pins cannot be deleted, so Delete is not offered for it; the API refuses it regardless.
-  const pinnedBy = detail.data?.saved?.pinnedBy ?? 0;
+  // The saved version as a file: the text the Schema JSON tab shows, read once for both, named as the samples name their
+  // schemas. A repository can keep it beside the mappings that pin it, and importing it saves this same version.
+  const download = useMutation({
+    mutationFn: async (template: { kind: string; version: string }) => {
+      const text = await queryClient.fetchQuery(templateSchemaQuery(template.kind, template.version));
+      downloadText(templateFileName(template.kind), text, "application/json");
+    },
+    onSuccess: (_result, template) => toast.success(`Downloaded ${templateFileName(template.kind)}.`),
+    onError: (error) => toast.error(`The schema could not be downloaded: ${problemText(error)}`),
+  });
+  const downloadButton = selected === null ? null : (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <Button
+          variant="outline"
+          size="xs"
+          onClick={() => download.mutate(selected)}
+          disabled={download.isPending}
+          data-testid="templates-download"
+        >
+          {download.isPending ? <Loader2 className="animate-spin" /> : <Download />}
+          Download
+        </Button>
+      </TooltipTrigger>
+      <TooltipContent className="max-w-xs">
+        {`The bundled schema as ${templateFileName(selected.kind)}, for a repository's template folder, where its documents read it. Importing it saves this same version.`}
+      </TooltipContent>
+    </Tooltip>
+  );
+
+  // Nothing a repository holds depends on a saved version, so any can be deleted.
   const deleteButton = (
     <Button
       variant="destructive-outline"
       size="xs"
       onClick={() => setDeleteOpen(true)}
-      disabled={remove.isPending || pinnedBy > 0}
+      disabled={remove.isPending}
       data-testid="templates-delete"
     >
       <Trash2 />
@@ -189,7 +211,7 @@ export default function TemplatesPage() {
     <Page data-testid="page-delivery-templates">
       <PageHeader
         title="Templates"
-        subtitle="OSDU record schemas saved as templates. Every property becomes a variable a mapping can fill, and a saved version never changes."
+        subtitle="OSDU record schemas saved as templates, for the explorer, the mapping builder and the assistant; a repository's documents read theirs from its template folders. Every property becomes a variable a mapping can fill, and a saved version never changes."
       />
       <Tabs value={tab} onValueChange={setTab}>
         <TabsList data-testid="templates-tabs">
@@ -243,18 +265,12 @@ export default function TemplatesPage() {
           ? <ProblemView error={detail.error} testId="templates-detail-error" />
           : remove.isError ? <ProblemView error={remove.error} testId="templates-delete-error" /> : null}
         detail={detail.data}
-        actions={canAuthor && detail.data !== undefined ? (
-          pinnedBy > 0 ? (
-            <Tooltip>
-              <TooltipTrigger asChild>
-                {/* A disabled button takes no pointer or focus, so the wrapper is what carries the reason. */}
-                <span tabIndex={0} className="inline-flex rounded-md" data-testid="templates-delete-blocked">{deleteButton}</span>
-              </TooltipTrigger>
-              <TooltipContent className="max-w-xs">
-                {`Pinned by ${pinnedBy} synced mapping${pinnedBy === 1 ? "" : "s"}. Move ${pinnedBy === 1 ? "it" : "them"} to another template version before deleting this one.`}
-              </TooltipContent>
-            </Tooltip>
-          ) : deleteButton
+        actions={detail.data !== undefined ? (
+          <>
+            {/* Anyone who can read a version can download it; deleting it is an author's action. */}
+            {downloadButton}
+            {canAuthor && deleteButton}
+          </>
         ) : undefined}
         busy={remove.isPending}
         testId="templates-saved-sheet"
@@ -264,7 +280,7 @@ export default function TemplatesPage() {
         title="Delete this template version"
         message={selected === null
           ? ""
-          : `Delete ${selected.kind} version ${selected.version}? No synced mapping pins it. A mapping that names it later has nothing to render against until the same schema is saved again.`}
+          : `Delete ${selected.kind} version ${selected.version}? Repositories read their templates from their template folders, so none of their documents is affected. The builder and the explorer no longer offer it until the same schema is saved again.`}
         confirmLabel="Delete"
         danger
         busy={remove.isPending}

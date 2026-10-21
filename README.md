@@ -32,7 +32,7 @@ look up or hard-code lives in three places, each known and versioned, and a mapp
 | | What it is | Why it makes configuration enough |
 | --- | --- | --- |
 | **Drop-off zone** | Where your source data arrives: files (CSV, JSON, Parquet) dropped in a folder or storage location, or the tables of a source database. Built-in flows load them into a table keyed by record, noting what changed and which file and row each row came from. | Whatever system the data came from, the mapping reads it in one shape: columns of a row. |
-| **Template** | The OSDU schema of the type you deliver, picked from the published OSDU schemas and saved with a version. | The mapping fills a known shape, and is checked against it before anything runs. |
+| **Template** | The OSDU schema of the type you deliver, picked from the published OSDU schemas and kept as a file in a template folder beside your mappings, its version the hash of its content. | The mapping fills a known shape, and is checked against it before anything runs. |
 | **Cache** | What mappings look values up in: reference data captured from OSDU, lookup tables loaded from files or databases, and small dictionaries kept beside the mappings. One cache per OSDU data partition, refreshed by its own flows and kept as versions. | Codes and units are translated, and references checked against what OSDU holds, without a line of lookup code. |
 
 With those three in place, a new type of data needs only a mapping: this column, translated through that lookup, fills
@@ -62,7 +62,8 @@ It is built for data teams that have to load data into OSDU, keep it current, an
 
 1. **Drop your data.** Put source files in the drop-off zone, or point a flow at a source database. Built-in flows load
    them into a table keyed by record.
-2. **Save the template.** Pick the OSDU schema of the type you deliver, in the GUI. Nothing to write.
+2. **Keep the template.** Pick the OSDU schema of the type you deliver, in the GUI or from the command line, and commit
+   it into a `templates` folder beside your mappings. Nothing to write.
 3. **Fill the cache.** A cache flow captures what your mappings look up, from OSDU, files or databases, and refreshes it
    on a schedule.
 4. **Write the mapping.** A YAML file says how one row becomes one record. Write it by hand, build it in the GUI's
@@ -166,8 +167,8 @@ a record the package delivers, and the suites check that it does. Lineage orders
 refer to each other: the reference data, which puts what it delivers into the partition's cache as it runs, the wells,
 the wellbores that name them, then the logs and the surveys, whose curves and stations go to the Wellbore DDMS, with the
 tops. The wells, the logs and the surveys bring the cache types they read up to date before they render. It has all three parts: a drop-off zone
-with sample files and the flows that load them, the templates its mappings pin (in
-[osdu/samples/templates](osdu/samples/templates)), and cache flows for the lookup tables and the partition's reference
+with sample files and the flows that load them, the templates its mappings fill (in its template folder,
+[osdu/samples/welldb/templates](osdu/samples/welldb/templates)), and cache flows for the lookup tables and the partition's reference
 data. Once the records land it reads OSDU back: tests check the wells against their mapping's rules and the values the
 well database gives, and the logs as delivered; dimensions over the logs, cleaned through a dictionary, give a search
 panel its choices; a weekly inventory sets what OSDU holds against every ledger; and a retrieval reads the wellbores back
@@ -175,7 +176,7 @@ into a lake. `sqlflow lineage welldb` prints the order.
 
 You need a SQL Server and an OSDU instance you can write to. The
 [getting started guide](osdu/docs/reference/guides/getting-started.md) sets up the databases and the OSDU connection,
-saves the templates and fills the cache. The sample's schedules then deliver the reference data nightly, with the wells
+keeps the templates and fills the cache. The sample's schedules then deliver the reference data nightly, with the wells
 and wellbores chained after it, and refresh the caches on a schedule of their own. Once the wellbores are in OSDU, delivering the logs takes four commands:
 
 ```bash
@@ -274,10 +275,11 @@ for the project's working rules.
 ## Learn more
 
 - [What OSDU Delivery is](osdu/docs/reference/concepts/overview.md): the product on one page
-- [Pattern catalog](osdu/docs/reference/guides/pattern-catalog.md): which configuration solves which delivery problem
+- [Pattern catalog](osdu/docs/wiki/maps/pattern-catalog.md): which configuration solves which delivery problem
 - [Reference documentation](osdu/docs/reference/README.md): every flow, mapping key, command and concept
 - [Architecture](osdu/docs/reference/concepts/architecture.md): components, databases and how it sits on SQLFlow
-- [Decision records](osdu/docs/decisions/README.md): the design choices and why they were made
+- [Wiki](osdu/docs/wiki/index.md): why it is this way and how the pieces fit: the decisions, patterns, narratives,
+  incidents and maps
 - [osdu/README.md](osdu/README.md): a map of the module's code
 
 ## License and contact

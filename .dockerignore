@@ -44,7 +44,7 @@ sqlflow/schemas/
 **/target/
 
 # The MCP image compiles the documentation into its binary (osdu/deploy/docker/mcp.Dockerfile): SQLFlow's reference
-# pages, wiki and key census, and the product's reference pages, decision records and census. They are re-included
+# pages, wiki and key census, and the product's reference pages, wiki and census. They are re-included
 # here, after the rules above that leave documentation out; a few megabytes of text.
 !sqlflow/docs/reference/
 !sqlflow/docs/wiki/

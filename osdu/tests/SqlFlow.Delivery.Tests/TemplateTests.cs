@@ -7,6 +7,7 @@ using SqlFlow.Core;
 using SqlFlow.Delivery.Catalog;
 using SqlFlow.Delivery.Documents;
 using SqlFlow.Delivery.Engine.Snapshots;
+using SqlFlow.Delivery.Json;
 using SqlFlow.Delivery.Snapshots;
 using SqlFlow.Delivery.Templates;
 using Xunit;
@@ -170,7 +171,7 @@ public sealed class OsduTemplateStoreTests : IDisposable
     }
 
     [Fact]
-    public async Task A_version_a_synced_mapping_pins_cannot_be_deleted()
+    public async Task A_saved_version_is_deleted_whatever_a_synced_mapping_names()
     {
         var store = _db.Templates();
         await store.SaveAsync(TestSchema.Build(), "file thing.json", "tests");
@@ -196,24 +197,22 @@ public sealed class OsduTemplateStoreTests : IDisposable
             await db.SaveChangesAsync();
         }
 
-        var refused = await Assert.ThrowsAsync<DeliveryException>(() => store.DeleteAsync(TestSchema.Template));
-        Assert.Contains("pinned by mapping(s) Thing@1.0.0", refused.Message, StringComparison.Ordinal);
-
-        await using (var db = _db.CreateDbContext())
-        {
-            await db.DeliveryMappings.ExecuteDeleteAsync();
-        }
-
+        // The mapping reads its template from its repository's template folder, never from the library, so nothing refuses
+        // the delete and the mapping's row is left as it is.
         await store.DeleteAsync(TestSchema.Template);
         Assert.Null(await store.LoadAsync(TestSchema.Template));
+        await using (var db = _db.CreateDbContext())
+        {
+            Assert.Equal(TestSchema.Build().Version, (await db.DeliveryMappings.AsNoTracking().SingleAsync()).TemplateVersion);
+        }
+
+        // A version no longer saved has nothing to delete.
         await Assert.ThrowsAsync<DeliveryException>(() => store.DeleteAsync(TestSchema.Template));
     }
 
     [Fact]
-    public async Task A_mapping_document_that_fails_to_load_still_pins_the_template_it_names()
+    public async Task A_mapping_document_that_fails_to_load_still_records_the_template_it_names()
     {
-        var store = _db.Templates();
-        await store.SaveAsync(TestSchema.Build(), "file thing.json", "tests");
         var root = Path.Combine(Path.GetTempPath(), "sqlflow-template-pin-" + Guid.NewGuid().ToString("N"));
         var repoId = Guid.NewGuid();
         try
@@ -243,18 +242,22 @@ public sealed class OsduTemplateStoreTests : IDisposable
                 Assert.Equal(TestSchema.Template.Version, rows[1].TemplateVersion);
             }
 
-            var refused = await Assert.ThrowsAsync<DeliveryException>(() => store.DeleteAsync(TestSchema.Template));
-            Assert.Contains("pinned by mapping(s)", refused.Message, StringComparison.Ordinal);
 
-            // A second sync of the unchanged documents keeps the pin.
+            // A second sync of the unchanged documents keeps what the row records.
             await SyncAsync(repoId, root);
-            await Assert.ThrowsAsync<DeliveryException>(() => store.DeleteAsync(TestSchema.Template));
+            await using (var db = _db.CreateDbContext())
+            {
+                var thing = await db.DeliveryMappings.AsNoTracking().SingleAsync(m => m.RelativePath == "mappings/Thing@1.0.0.yaml");
+                Assert.Equal(("invalid", TestSchema.Template.Version), (thing.Status, thing.TemplateVersion));
+            }
 
-            // Once the document is gone from the repository, nothing pins the version and it can be deleted.
+            // Once the document is gone from the repository, so is its row.
             File.Delete(Path.Combine(root, "mappings", "Thing@1.0.0.yaml"));
             await SyncAsync(repoId, root);
-            await store.DeleteAsync(TestSchema.Template);
-            Assert.Null(await store.LoadAsync(TestSchema.Template));
+            await using (var db = _db.CreateDbContext())
+            {
+                Assert.DoesNotContain(await db.DeliveryMappings.AsNoTracking().ToListAsync(), m => m.RelativePath == "mappings/Thing@1.0.0.yaml");
+            }
         }
         finally
         {
@@ -356,5 +359,48 @@ public class TemplateSourcesTests
         Assert.Contains(reason, ex.Message, StringComparison.Ordinal);
     }
 
+    public static TheoryData<string> SampleKinds
+    {
+        get
+        {
+            var kinds = new TheoryData<string>();
+            foreach (var kind in Samples.TemplateKinds())
+            {
+                kinds.Add(kind);
+            }
+
+            return kinds;
+        }
+    }
+
+    [Theory]
+    [MemberData(nameof(SampleKinds))]
+    public void A_template_as_a_file_is_the_form_the_samples_keep_and_imports_as_the_same_version(string kind)
+    {
+        var name = kind.Replace(':', '_') + ".json";
+        var file = File.Exists(Path.Combine(Samples.TemplateFiles, name))
+            ? Path.Combine(Samples.TemplateFiles, name)
+            : Path.Combine(Samples.FixtureTemplateFiles, name);
+        var saved = Samples.SampleTemplate(kind);
+        var text = TemplateSources.FileText(saved);
+        Assert.Equal(name, TemplateSources.FileName(kind));
+
+        // The file keeps the keys in the order the schema was written, so a sample schema comes back as its own file. A
+        // checkout may have changed its line endings, and a few fixtures end in a newline the samples leave out; neither
+        // says anything about the schema.
+        Assert.Equal(File.ReadAllText(file).ReplaceLineEndings("\n").TrimEnd('\n'), text.ReplaceLineEndings("\n"));
+        Assert.Equal(saved.Version, TemplateSources.FromBundledJson(text, kind, DateTimeOffset.UnixEpoch, name).Version);
+    }
+
+    [Fact]
+    public void A_file_whose_keys_are_in_another_order_imports_as_the_same_version()
+    {
+        // capture --out wrote the canonical form before it wrote this one; a copy a repository kept from then still
+        // imports as the version its mappings pin.
+        var saved = Samples.SampleTemplate(Samples.WellLogKind);
+        var canonical = CanonicalJson.Pretty(saved.Root);
+        Assert.NotEqual(TemplateSources.FileText(saved), canonical);
+        Assert.Equal(saved.Version, TemplateSources.FromBundledJson(canonical, Samples.WellLogKind, DateTimeOffset.UnixEpoch, "canonical").Version);
+    }
 }
 

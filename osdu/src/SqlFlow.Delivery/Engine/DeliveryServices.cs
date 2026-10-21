@@ -62,11 +62,11 @@ public static class DeliveryServices
         services.AddSingleton<DeliveryDocumentLoader>();
         // The delivery kind also owns the mapping documents its flows pin, so the one instance is registered both as a flow
         // kind and as the companion kind the loader, the CLI and the proposal preflight read mappings through; the dictionary
-        // documents cache flows hold are a companion kind of their own. Its lineage reads the templates those mappings pin
-        // from the module database, asked for each time: whether the host has one is known only once it is built.
+        // documents cache flows hold are a companion kind of their own. Its lineage reads the templates those mappings fill
+        // from the template folders on each mapping's path in the checkout it scans, as a run reads them.
         services.AddSingleton(sp => new DeliveryFlowKind(
             sp.GetRequiredService<DeliveryDocumentLoader>(),
-            new MappingTemplateSource(() => sp.GetService<DeliveryLedgerSource>()?.Templates(sp), sp.GetRequiredService<TimeProvider>()),
+            new MappingTemplateSource(),
             () => sp.GetService<DeliveryLedgerSource>()?.OrderCatalog(sp)));
         services.AddSingleton<IFlowDocumentKind>(sp => sp.GetRequiredService<DeliveryFlowKind>());
         services.AddSingleton<ICompanionDocumentKind>(sp => sp.GetRequiredService<DeliveryFlowKind>());

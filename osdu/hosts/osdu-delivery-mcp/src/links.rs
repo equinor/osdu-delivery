@@ -103,9 +103,9 @@ pub fn delivery_links(links: &GuiLinks, row: &Map<String, Value>) -> Option<Map<
         return Some(found);
     }
 
-    // A saved template: its kind and version, with when it was saved.
+    // A saved template: its kind and version, with when, by whom and from where it was saved.
     if let (Some(kind), Some(version), true) = (text(row, "kind"), text(row, "version"), row.contains_key("capturedBy")) {
-        if row.contains_key("pinnedBy") {
+        if row.contains_key("origin") && row.contains_key("capturedUtc") {
             put(
                 "page",
                 links.route(&format!("/delivery/templates?kind={}&version={}", encode(kind), encode(version))),
@@ -248,7 +248,7 @@ mod tests {
 
         let template = decorated(json!({
             "kind": "osdu:wks:master-data--Wellbore:1.5.1", "version": "1.5.1", "capturedUtc": "2026-09-01T00:00:00Z",
-            "capturedBy": "user:alice", "origin": "release 0.28", "pinnedBy": 2
+            "capturedBy": "user:alice", "origin": "release 0.28"
         }));
         assert_eq!(
             template["links"]["page"],

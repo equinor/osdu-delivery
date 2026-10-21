@@ -3,11 +3,11 @@ import { useQuery } from "@tanstack/react-query";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { isApiError } from "@/api/client";
-import { deliveryApi, type DeliveryTemplateDetail } from "../../api/delivery";
+import type { DeliveryTemplateDetail } from "../../api/delivery";
 import { CodeView } from "@/components/CodeView";
 import { CorrelationError } from "@/components/CorrelationError";
 import { TemplateVariableExplorer } from "./TemplateVariableExplorer";
-import { templateKey } from "./templateFormat";
+import { templateKey, templateSchemaQuery } from "./templateFormat";
 
 interface TemplateViewProps {
   detail: DeliveryTemplateDetail;
@@ -17,11 +17,7 @@ interface TemplateViewProps {
 
 /** The schema as JSON: the one being previewed, or the saved template's, loaded when the tab opens. */
 function SchemaJson({ detail, previewSchema }: { detail: DeliveryTemplateDetail; previewSchema?: Record<string, unknown> }) {
-  const saved = useQuery({
-    queryKey: ["delivery", "templates", "schema", detail.kind, detail.version],
-    queryFn: () => deliveryApi.templateSchema(detail.kind, detail.version),
-    enabled: previewSchema === undefined,
-  });
+  const saved = useQuery({ ...templateSchemaQuery(detail.kind, detail.version), enabled: previewSchema === undefined });
   const previewText = useMemo(
     () => (previewSchema === undefined ? null : JSON.stringify(previewSchema, null, 2)),
     [previewSchema],

@@ -92,7 +92,9 @@ name: WellLog
 version: 2.0.0
 template:
   kind: osdu:wks:work-product-component--WellLog:1.4.0
-  version: 26a3c3441882db4f            # the saved template version: 16 hexadecimal characters
+  version: 26a3c3441882db4f            # optional: the template version, 16 hexadecimal characters, which a template
+                                       # folder on the mapping's path must hold; left out, the one version the nearest
+                                       # folder holding the kind holds
 description: Well logs from the well database, one record per logging run, one curve item per curve row.
 
 dataset:
@@ -200,10 +202,14 @@ the repository's shared mappings. The file must declare the name and version it 
 | No file is found | `Mapping 'WellLog@1.0.0' was not found under '<directory>'. Expected one of: WellLog@1.0.0.yaml, WellLog@1.0.0.yml, 1.0.0.yaml, 1.0.0.yml.` |
 | The document declares another name or version | `<file>: declares 'WellLog@1.0.1' but is filed as 'WellLog@1.0.0'. The file name and the document must agree.` |
 
-The repository sync reads every YAML file of the repository whose top-level `documentType` is `mapping`, and the GUI's
-Mappings page lists each one with the template it pins and whether it loads. A mapping that fails to load is listed with
-its error and still pins the template its `template` block names. A reference declared by two files is synced once, with
-the warning `mapping '<Name@version>' is declared more than once in the repository; the first file wins.`
+The repository sync reads every YAML file of the repository whose top-level `documentType` is `mapping`, settles the
+template each one fills from the template folders on its path ([template folders](../concepts/templates.md#template-folders)),
+and the GUI's Mappings page lists each one with that template version, the file it was read from, and whether it loads. A
+mapping whose template no folder on its path settles does not load, keeps the reference it declares, and says where it
+looked; one that names a version still pins it, so the version cannot be deleted from under it. A mapping that fails to
+load for another reason is listed with its error and still pins the template version its `template` block names. A
+reference declared by two files is synced once, with the warning `mapping '<Name@version>' is declared more than once in
+the repository; the first file wins.`
 
 ## Header keys
 
@@ -217,14 +223,14 @@ written twice in one map (`Encountered duplicate key Name`).
 | `version` | string | yes | The mapping's version. It enters every record's render context, so a new version renders the records again. |
 | `description` | string | no | Free text. |
 | `template.kind` | string | yes | The OSDU kind the records are, `authority:source:entityType:major.minor.patch`, such as `osdu:wks:work-product-component--WellLog:1.4.0`. |
-| `template.version` | string | yes | The saved template version the mapping fills: the 16 hexadecimal characters the Templates page and `sqlflow template list` show. |
+| `template.version` | string | no | The template version the mapping fills exactly: the 16 hexadecimal characters `sqlflow template folders` and the Templates page show. A template folder on the mapping's path must hold it. Left out, the mapping fills the one version of the kind the nearest template folder holding the kind holds, and follows that file as it changes ([template folders](../concepts/templates.md#template-folders)). |
 | `dataset.system` | string | yes | The source system. It enters the delivery key, and so the OSDU id. |
 | `dataset.key` | list | yes | The record table's columns that identify a record, in order. |
 | `dataset.label` | string | no | Display text for the ledger and the GUI, with `{column}` tokens. Never in the record. |
 | `dataset.identity` | list | no | Columns whose values identify the record to a person; the ledger indexes them. Never in the record. |
 | `dataset.idFrom` | `deliveryKey` or `key` | no | What the last part of the OSDU id is made from. Default `deliveryKey`. See [The OSDU id](#the-osdu-id). |
 | `parameters` | map | yes (`dataPartition`) | The values the flow supplies, each `required`, `default` and `description`. See [parameters](#parameters). |
-| `searches` | map | no | The record sets `$search` nodes look in on the platform: a `kind`, the saved template (`schema.kind`, `schema.version`) that says how it is indexed, and a `description`. One search per kind, each read by a node. See [mapping lookups](mapping-lookups.md). |
+| `searches` | map | no | The record sets `$search` nodes look in on the platform: a `kind`, the template (`schema.kind`, and `schema.version` when it means one exactly) that says how it is indexed, read from the template folders on the mapping's path, and a `description`. One search per kind, each read by a node. See [mapping lookups](mapping-lookups.md). |
 | `lookups` | map | no | Records found once in the partition's cache and read by name with `$lookup`: `$cache`, `$findBy`, `$modifiers`, `$ignoreSeparators`, `$description`. Each is read by a node. See [mapping lookups](mapping-lookups.md). |
 | `record` | map | yes | The record the mapping renders, laid out as the record is. See [The record tree](#the-record-tree). |
 
@@ -552,7 +558,9 @@ Each message starts with the file. A sample of what `sqlflow validate`, the sync
 | Mistake | Message |
 | --- | --- |
 | No `dataPartition` parameter | `the mapping must declare the 'dataPartition' parameter; record ids and references are minted in that partition.` |
-| A template version that is not 16 hex characters | `template.version '26a3c344' is not a template version. A version is the 16 hexadecimal characters the Templates page shows for a saved template, such as 26a3c3441882db4f.` |
+| A template version that is not 16 hex characters | `template.version '26a3c344' is not a template version. A version is the 16 hexadecimal characters the Templates page shows for a saved template, such as 26a3c3441882db4f; leave it out to fill the one version of the kind the nearest template folder holds.` |
+| A template no folder on the mapping's path settles | `template: no template folder on the path of welldb/mappings/WellLog@1.4.0.yaml holds template osdu:wks:work-product-component--WellLog:1.4.0 version 26a3c3441882db4f. ...` (the whole message says where it looked and how to put the file there: [template folders](../concepts/templates.md#template-folders)) |
+| A kind named alone where no template folder is known | `template names osdu:wks:work-product-component--WellLog:1.4.0 without a version, which is settled from the template folders on the mapping's path, and the mapping was read where no template folder is known. ...` |
 | A kind that is not a record kind | `template.kind 'WellLog:1.4.0' must be 'authority:source:entityType:major.minor.patch', each of the first three made of letters, digits, underscore, hyphen and dot, as the storage service requires of every record it accepts.` |
 | An empty key | `dataset.key must name at least one column, such as key: [log_id].` |
 | An unknown `idFrom` | `dataset.idFrom is 'code'; write deliveryKey for an OSDU id made from the delivery key (the default), or key for one made from the values of dataset.key, ...` |
@@ -568,7 +576,7 @@ The node, condition and expression messages are on [mapping values](mapping-valu
 - [Mapping expressions](mapping-expressions.md): `$expr`, `$when` and `$where`.
 - [Mapping lookups](mapping-lookups.md) and [mapping modifiers](mapping-modifiers.md).
 - [Mapping assertions](mapping-assertions.md): `$assert`, the rules a property's value must meet.
-- [Templates](../concepts/templates.md): where `template.version` comes from.
+- [Templates](../concepts/templates.md): the template folders a mapping reads, and where `template.version` comes from.
 - [Delivery flow](delivery.md): `render.mapping`, `render.parameters`, `source.record` and `source.datasets`.
 - [Writing a mapping](../guides/writing-a-mapping.md): from a template to a mapping that passes the preflight.
 - SQLFlow's [`sqlflow validate`](../../../../sqlflow/docs/reference/cli/validate.md) and

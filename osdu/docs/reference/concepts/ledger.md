@@ -95,21 +95,22 @@ directory holds is refused, naming both. See [Partitions](partitions.md).
 
 | Table | One row is | Grows with |
 | --- | --- | --- |
-| `osdu.Record` | The current state of one deliverable of one flow | Deliverables |
-| `osdu.Attempt` | One try of a record, append-only, or one decision written as an attempt | Tries |
-| `osdu.Submission` | One plan of a flow over its ingestion tables | Plans |
-| `osdu.WorkBatch` | One file of rendered documents of a submission | Batches |
-| `osdu.Lease`, `osdu.RecordEvent` | A worker's hold on work, and what it learned and has not applied yet | In-flight work only |
-| `osdu.SourceWatermark` | How far the last whole-scope plan of a flow scope read | Flow scopes |
-| `osdu.Activity` | One run or operator intervention: the audit trail | Runs and interventions |
-| `osdu.ActivityRecord` | One record an intervention or a reversal reached | Records reached |
-| `osdu.RecordIdentity` | One value a record can be found by | Records and their values |
-| `osdu.PurgedRecord` | The one line kept of a record deleted from the ledger | Records deleted |
-| `osdu.Artifact` | One object a delivery created in OSDU, or set out to create | Objects delivered |
-| `osdu.Reversal`, `osdu.ReversalItem` | One reversal of a run or submission, and each record it reached | Reversals |
-| `osdu.Ledger`, `osdu.LedgerPartition` | The ledger directory and the partition numbers | Ledgers |
+| [`osdu.Record`](../tables/record.md) | The current state of one deliverable of one flow | Deliverables |
+| [`osdu.Attempt`](../tables/attempt.md) | One try of a record, append-only, or one decision written as an attempt | Tries |
+| [`osdu.Submission`](../tables/submission.md) | One plan of a flow over its ingestion tables | Plans |
+| [`osdu.WorkBatch`](../tables/work-batch.md) | One file of rendered documents of a submission | Batches |
+| [`osdu.Lease`](../tables/lease.md), [`osdu.RecordEvent`](../tables/record-event.md) | A worker's hold on work, and what it learned and has not applied yet | In-flight work only |
+| [`osdu.SourceWatermark`](../tables/source-watermark.md) | How far the last whole-scope plan of a flow scope read | Flow scopes |
+| [`osdu.Activity`](../tables/activity.md) | One run or operator intervention: the audit trail | Runs and interventions |
+| [`osdu.ActivityRecord`](../tables/activity-record.md) | One record an intervention or a reversal reached | Records reached |
+| [`osdu.RecordIdentity`](../tables/record-identity.md) | One value a record can be found by | Records and their values |
+| [`osdu.PurgedRecord`](../tables/purged-record.md) | The one line kept of a record deleted from the ledger | Records deleted |
+| [`osdu.Artifact`](../tables/artifact.md) | One object a delivery created in OSDU, or set out to create | Objects delivered |
+| [`osdu.Reversal`](../tables/reversal.md), [`osdu.ReversalItem`](../tables/reversal-item.md) | One reversal of a run or submission, and each record it reached | Reversals |
+| [`osdu.Ledger`](../tables/ledger.md), [`osdu.LedgerPartition`](../tables/ledger-partition.md) | The ledger directory and the partition numbers | Ledgers |
 
-Other tables of the schema are documented with what they serve:
+Each table has a page of its own with every column, key and index ([The osdu schema](database.md) lists them all). The
+other tables of the schema are explained with what they serve:
 
 - `osdu.CacheVersion`, `osdu.CacheItem`, `osdu.CacheMember`, `osdu.CacheSet`, `osdu.CacheSetEntry`, `osdu.UpdateTag`,
   `osdu.CacheDefinition`: the partition cache and its changes, in [The partition cache](partition-cache.md).
@@ -133,25 +134,12 @@ Other tables of the schema are documented with what they serve:
 Keyed by `(PartitionId, FlowId, DeliveryKey)`. The delivery key is a deterministic UUID derived from the source key, so the
 same row always lands on the same record.
 
-| Columns | What they hold |
-| --- | --- |
-| `SourceKey`, `SourceKeyJson`, `Label`, `MappingName` | The source key as text (at most 400 characters) and as a JSON array in `source.record.key` order, which a key-scoped read uses; the mapping's `dataset.label` rendered for the row (at most 400 characters, for search and display); the mapping. |
-| `TargetId`, `ClaimedTargetId`, `TargetVersion` | The OSDU id and the last known version. `ClaimedTargetId` is the id the record claimed when it first queued a document, kept for good and unique across the ledger: one OSDU record belongs to one record of one flow. |
-| `TargetIdAssignedUtc` | When an operator gave the record a new OSDU id because OSDU lost the one it claimed; the record is written under `ClaimedTargetId` from then on, not the id its mapping makes (migration `RecordAssignedTargetId`, module version 1.45.0). |
-| `TargetStateJson` | Every value the target returned across the record's deliveries: record id and version, dataset ids, file sources, a workflow run id. |
-| `MetadataHash`, `PayloadHash`, `PayloadModifiedUtc` | What OSDU holds, as hashes: the change gates for the next plan ([Change detection](change-detection.md)). |
-| `RenderContext`, `CacheSetId` | What the version OSDU holds was rendered with (below), and the set of cached values it read. |
-| `SourceFingerprint`, `SourceModifiedUtc` | The source version the delivered document was built from. |
-| `SourceFileName`, `SourceRowNumber`, `SourceUpdatedUtc`, `SourceInsertedUtc` | Where that version came from: the ingestion row's `FileName_DW` (at most 800 characters), `RowNumber_DW` and `UpdatedDate_DW`, and the row's arrival (`InsertedDate_DW`). See SQLFlow's [provenance columns](../../../../sqlflow/docs/reference/concepts/provenance-and-row-keys.md). |
-| `Pending*`, `PendingDocumentRef`, `WorkBatch`, `LastSubmissionId` | The work waiting to be sent: its hashes, render context, source version and origin, payload location, the OSDU ids it refers to (`PendingReferences`), and where its rendered document sits (`batch:offset:length` in a work batch file). The document itself is never stored in the database. |
-| `PendingStepJson` | The steps an earlier try of the pending work completed, so the next try resumes after them. |
-| `Status`, `Blocked`, `ProblemHash` | The custody state and whether it is blocked, and while blocked by a held or failed try, the issue it shares with every record refused for the same reason ([Record lifecycle](record-lifecycle.md)). |
-| `AttemptCount`, `NextAttemptUtc`, `LastError` | The pending work's tries, when the next is due, and the last error or hold reason, redacted (at most 2,000 characters). |
-| `LeaseOwner`, `WaitingFor`, `PlanRequestedUtc` | The lease delivering it now; the OSDU id a waiting record waits for; the moment the ledger asked for it to be planned again. |
-| `ValidationOutcome`, `ValidationProblems`, `ValidatedUtc`, `AcceptedMetadataHash` | What the last check of its document against the template came to, and the document a release accepted as it is ([Preflight](preflight.md)). |
-| `AssertionFailures` | How many judgements of the mapping's assertions failed on the last document the check before sending read, whether they held it, were reported or left a value out: `0` when every one was met, null when the mapping states no assertion or no check has reached the record. A try that sends the payload alone keeps the last count. Added by migration `RecordAssertions` (module version 1.39.0), with the same column on `osdu.RecordEvent`, through which a worker writes it with the rest of the verdict ([Mapping assertions](../flow/mapping-assertions.md#what-the-ledger-keeps)). |
-| `LastDeliveredUtc`, `LastVerifiedUtc`, `LastVerifyOutcome` | Custody times, and the last verify outcome: `match`, `drifted`, `missing` or `error`. |
-| `CreatedUtc`, `UpdatedUtc` | When the row was created and last changed. |
+It holds what OSDU holds of the record (its id, version and hashes), where that version came from (the ingestion
+row's file, row number and update time, and its arrival), the work waiting to be sent (`Pending*`: its hashes, render
+context, source version and origin, payload location, the OSDU ids it refers to, and where its rendered document sits in
+a work batch file; the document itself is never stored in the database), its custody state and why it is blocked, the
+last check of its document, and the lease delivering it now. Every column, key and index:
+[`osdu.Record`](../tables/record.md).
 
 ### `osdu.Attempt`: every try, and every decision that changed the record
 
@@ -159,15 +147,10 @@ Append-only. One row per delivery try, and one per decision the engine or an ope
 nothing was sent: a hold at render time, a stale or identical row, a removal, a restore, an undo, a row a sync no longer
 found. The record's history is its attempts.
 
-| Columns | What they hold |
-| --- | --- |
-| `FlowId`, `DeliveryKey`, `SubmissionId`, `RunId`, `WorkBatch` | The record, the submission and platform run the try belonged to, and the batch it was drained from. |
-| `Worker`, `StartedUtc`, `CompletedUtc` | Who made it (a worker, `intake`, `sync`, or the operator who asked for a removal) and when. |
-| `Outcome`, `Phase` | What came of it and what was sent; the values are listed in [Record lifecycle](record-lifecycle.md#attempts). |
-| `MetadataHash`, `PayloadHash`, `TargetVersion` | The hashes the try established and the OSDU version it returned. |
-| `SourceFileName`, `SourceRowNumber`, `SourceUpdatedUtc`, `SourceDeletedUtc` | The ingestion row the try's document was built from. Kept here because the record's own origin moves on with later versions. |
-| `Error` | The redacted error of a held or failed try (at most 2,000 characters). |
-| `ResultJson` | Every step the route took (name, start, duration, status, what the target returned, whether an earlier try completed it), the `correlationId` every OSDU request of the try carried, the version OSDU held before (`replaced`), the verdict of the check before sending (`validation`, with what the mapping's assertions found under `assertions`), the unit of work (`unit`) and a note (`detail`) for a try that did not fail. |
+Each attempt names the record, the submission, run and batch it belonged to, who made it and when, what came of it
+and what was sent, the hashes it established and the version OSDU returned, the ingestion row its document was built
+from, the redacted error, and every step of the route with what OSDU answered. Every column, key and index:
+[`osdu.Attempt`](../tables/attempt.md).
 
 The `correlationId` is the id each OSDU request of the try sent in its `correlation-id` header, so an attempt can be followed
 into the OSDU services' own logs.
@@ -230,12 +213,9 @@ minted stays for good, whatever later happens to the record or its ledger, which
 [inventory flow](../flow/inventory.md) say which ids OSDU serves that no delivery accounts for. A delivery that does not
 complete is undone from these rows; see [Removal and reversal](removal-and-reversal.md#unfinished-deliveries-and-their-undo).
 
-| Columns | What they hold |
-| --- | --- |
-| `UnitId`, `UnitStartedUtc`, `Slot`, `Role` | The unit of work, when it began, the route's name for the object and what it is (`record`, `version`, `dataset`, `content`, `output`, `dataspace`, `session`, `lock`, `rows`, `points`, `objects`, `run`). |
-| `TargetId`, `Locator`, `Version`, `PriorVersion` | The OSDU id, or what finds the object when the id is not known yet; the version written and the one it replaced. |
-| `State` | `intent`, `pending`, `live`, `superseded`, `due`, `removed`, `restored`, `gone`, `kept` or `failed`. |
-| `Note`, `UndoAttempts`, `NextUndoUtc`, `Settled*` | Why it was kept or why its undo failed, the undo tries, when the next is due, and who settled it in which run. |
+Each artifact names its unit of work, the route's name for it and what it is, its OSDU id or what finds it, the version
+it wrote and the one it replaced, its state, and how its undo settled it. Every column, key and index:
+[`osdu.Artifact`](../tables/artifact.md).
 
 ### `osdu.Reversal` and `osdu.ReversalItem`
 
@@ -312,28 +292,16 @@ search has no index: it runs only when the rest of the filter leaves at most 100
 
 ### The indexes behind it
 
-Every key and every index that serves a listing leads with `PartitionId`. The ones an operator meets most:
+Every key and every index that serves a listing leads with `PartitionId`.
 
-| Index on `osdu.Record` | Serves |
-| --- | --- |
-| `(PartitionId, FlowId, DeliveryKey)` (primary key) | One record; key-ordered walks of a flow (removals, key-scoped plans, deleting a ledger). |
-| `(PartitionId, FlowId, Status, NextAttemptUtc)`, `(PartitionId, FlowId, LastSubmissionId, Status, NextAttemptUtc)` | The worker's claim and what is due next, answered from the index alone. |
-| `(PartitionId, FlowId, Status, UpdatedUtc)`, `(PartitionId, FlowId, UpdatedUtc)`, `(PartitionId, Status, UpdatedUtc)`, `(PartitionId, UpdatedUtc)` | Listings newest first, in a flow and across a partition. |
-| `(PartitionId, FlowId, Label)`, `(..., SourceKey)`, `(..., TargetId)`, `(PartitionId, FlowId, SourceFileName, SourceRowNumber)` | Prefix search in a flow, and "which records came from this file". |
-| `(PartitionId, DeliveryKey)`, `(PartitionId, TargetId)`, `(PartitionId, SourceKey)`, `(PartitionId, Label)`, `(PartitionId, SourceFileName)` | Lookups across the flows of a partition. |
-| `(PartitionId, FlowId, ProblemHash, UpdatedUtc)` filtered to blocked records | A flow's issues, an issue's records, the release of an issue. |
-| `(PartitionId, FlowId, PlanRequestedUtc)` filtered | The records asked to be planned again, which each run pages. |
-| `(PartitionId, FlowId, AssertionFailures, UpdatedUtc)` filtered to `AssertionFailures > 0` | A flow's records whose last checked document failed an assertion of its mapping. |
-| `(PartitionId, WaitingFor)` filtered | Waiting records, released when the record they wait for lands. |
-| `(ClaimedTargetId)` unique, filtered, binary collation | One OSDU id, one record: the database refuses a second claim. |
+Each table's page lists every index with what it serves: [`osdu.Record`](../tables/record.md#keys-and-indexes)
+(the worker's claims, the listings newest first, prefix search in a flow, the lookups across a partition's flows, the
+issues, the records asked to be planned again, the waiting records, and the unique claim on an OSDU id),
+[`osdu.RecordIdentity`](../tables/record-identity.md#keys-and-indexes) (the lookup by any identifier),
+[`osdu.Attempt`](../tables/attempt.md#keys-and-indexes) and [`osdu.PurgedRecord`](../tables/purged-record.md#keys-and-indexes).
 
-`osdu.PurgedRecord` keeps the requests of records deleted from the ledger in `(PartitionId, FlowId, PlanRequestedUtc,
-DeliveryKey)`, filtered to the lines that carry one, which each run pages beside the records' own requests.
-
-`osdu.Attempt` is indexed on `(PartitionId, FlowId, DeliveryKey, StartedUtc)` (a record's timeline), `(SubmissionId, Outcome,
-Phase)` (a submission's counts and the records it delivered), `(RunId, PartitionId, FlowId, DeliveryKey)` (a run's records)
-and `(StartedUtc)` (retention). Its primary key and `StartedUtc` index, and `osdu.RecordEvent`'s primary key, grow at their
-end and are set to `OPTIMIZE_FOR_SEQUENTIAL_KEY` where the server has it. OSDU ids are compared in a binary collation
+`osdu.Attempt`'s primary key and `StartedUtc` index, and `osdu.RecordEvent`'s primary key, grow at their end and are set
+to `OPTIMIZE_FOR_SEQUENTIAL_KEY` where the server has it. OSDU ids are compared in a binary collation
 (`Latin1_General_100_BIN2`), since ids that differ only in case are different records.
 
 ## Writes at scale

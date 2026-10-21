@@ -58,6 +58,13 @@ public sealed record EngineContext(
     /// <summary>The fan-out dispatcher, never null: a run the platform gave no fan-out does its work itself.</summary>
     public IFanOutDispatcher Dispatcher => FanOut ?? NoFanOutDispatcher.Instance;
 
+    /// <summary>
+    /// Where a repository document's templates are read (osdu/docs/reference/concepts/templates.md, Template folders): the
+    /// template folders on the document's path, which every host reads. <see cref="Templates"/> is the library of saved
+    /// templates, which only assists (the explorer, the template commands); a run, a check and a lineage scan read here.
+    /// </summary>
+    public global::SqlFlow.Delivery.Templates.ITemplateSource DocumentTemplates { get; init; } = global::SqlFlow.Delivery.Templates.FolderTemplates.Default;
+
     /// <summary>Where a flow's search sources are answered, never null: the platform the flow delivers to, unless composed otherwise.</summary>
     public IRecordSearchFactory RecordSearches => Searches ?? PlatformRecordSearchFactory.Instance;
 
@@ -397,7 +404,7 @@ public sealed class FlowRuntime : IDisposable
         try
         {
             search = context.RecordSearches.Create(flow, target.ClientAsync, context.Loggers);
-            var resolver = new RenderResolver(mappings, context.Cache, context.Templates, context.Secrets, search);
+            var resolver = new RenderResolver(mappings, context.Cache, context.DocumentTemplates, context.Secrets, search);
             var mapping = await resolver.ResolveAsync(flow, ct).ConfigureAwait(false);
             var runtime = new FlowRuntime(context, flow, layout, mappings, values, mapping, target, search);
             if (context.Trace is not null)
@@ -445,11 +452,9 @@ public sealed class FlowRuntime : IDisposable
         }
 
         var mapping = Mappings.Load(Flow.Render.Mapping);
-        var templates = _context.Templates ?? throw new FlowValidationException(
-            $"{KeyPaths.Where(Flow)}: a source's interfaces are ordered by the relationships in the templates their mappings pin, and templates live in the module's database, which this host was started without. Start it with the module's connection (Osdu:Database:Connection or SQLFLOW_OSDU_DB), or with --db when the catalog's database holds the osdu schema.");
-        var schema = await templates.LoadAsync(mapping.Template, ct).ConfigureAwait(false)
-            ?? throw new FlowValidationException(
-                $"{KeyPaths.Where(Flow)}: mapping {mapping.Reference} pins template {mapping.Template}, which is not saved. Save it on the Templates page, or with 'sqlflow template import'.");
+        var template = await _context.DocumentTemplates.ResolveAsync(mapping.TemplateDocument, mapping.Template.Kind, mapping.Template.Version, ct).ConfigureAwait(false);
+        var schema = template.Schema ?? throw new FlowValidationException(
+            $"{KeyPaths.Where(Flow)}: a source's interfaces are ordered by the relationships in the templates their mappings fill, and mapping {mapping.Reference} has none to read: {template.Problem}");
         return InterfaceSchemas.Describe(name, mapping, Templates.OsduTemplate.From(schema));
     }
 
@@ -588,7 +593,11 @@ public sealed class FlowRuntime : IDisposable
 
     /// <summary>
     /// The schema of <paramref name="kind"/> at <paramref name="version"/>: the runtime's own template when it is that one,
-    /// else the saved template version. Without a version, the runtime's own template of that kind. Null when neither holds it.
+    /// else that version as the template folders on the mapping's path hold it, else as the saved templates hold it when
+    /// someone saved it there. A version is the hash of its content, so every copy of it is the same schema: a record
+    /// rendered before its template's file changed is still checked against the version it was rendered for, where one is
+    /// held.
+    /// Without a version, the runtime's own template of that kind. Null when nothing holds it.
     /// </summary>
     private async Task<SchemaSnapshot?> SchemaOfAsync(string kind, string? version, CancellationToken ct)
     {
@@ -598,12 +607,21 @@ public sealed class FlowRuntime : IDisposable
             return own;
         }
 
-        if (version is null || _context.Templates is not { } templates)
+        if (version is null)
         {
             return null;
         }
 
-        return await templates.LoadAsync(new Templates.TemplateReference(kind, version), ct).ConfigureAwait(false);
+        var document = _mapping?.Mapping.TemplateDocument ?? Flow.SourcePath;
+        var resolved = await _context.DocumentTemplates.ResolveAsync(document, kind, version, ct).ConfigureAwait(false);
+        if (resolved.Schema is { } held)
+        {
+            return held;
+        }
+
+        return _context.Templates is { } saved
+            ? await saved.LoadAsync(new Templates.TemplateReference(kind, version), ct).ConfigureAwait(false)
+            : null;
     }
 
     /// <summary>
@@ -943,7 +961,7 @@ public sealed class FlowRuntime : IDisposable
             return;
         }
 
-        var resolver = new RenderResolver(Mappings, _context.Cache, _context.Templates, _context.Secrets, _search);
+        var resolver = new RenderResolver(Mappings, _context.Cache, _context.DocumentTemplates, _context.Secrets, _search);
         _mapping = await resolver.ResolveAsync(Flow, ct).ConfigureAwait(false);
         _log.LogInformation(
             "The cache of partition {Scope} moved from version {Resolved} to {Current} since the run opened; it renders against {Current}.",

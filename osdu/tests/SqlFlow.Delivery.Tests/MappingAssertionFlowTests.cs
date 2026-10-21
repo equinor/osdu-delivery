@@ -201,6 +201,24 @@ public sealed class SyncedMappingTests : IDisposable
         };
         await using var db = _db.CreateDbContext();
         db.DeliveryMappings.Add(row);
+
+        // The repository's template folder holds the version the mapping names, as the sync recorded it beside the mapping.
+        var path = "templates/" + TemplateSources.FileName(TestSchema.Kind);
+        if (!await db.DeliveryRepositoryTemplates.AnyAsync(t => t.RepoId == repoId && t.Path == path))
+        {
+            db.DeliveryRepositoryTemplates.Add(new DeliveryRepositoryTemplate
+            {
+                Id = Guid.NewGuid(),
+                RepoId = repoId,
+                Path = path,
+                Folder = "templates",
+                Kind = TestSchema.Kind,
+                Version = TestSchema.Build().Version,
+                FirstSeenUtc = DateTime.UtcNow,
+                LastSeenUtc = DateTime.UtcNow,
+            });
+        }
+
         await db.SaveChangesAsync();
         return row;
     }
@@ -260,10 +278,15 @@ public sealed class SyncedMappingTests : IDisposable
         var repoId = Guid.NewGuid();
         try
         {
+            // The repository holds the template its mapping fills, which the mapping names by its kind alone.
             Directory.CreateDirectory(Path.Combine(root, "mappings"));
+            Directory.CreateDirectory(Path.Combine(root, "templates"));
+            await File.WriteAllTextAsync(Path.Combine(root, "templates", TemplateSources.FileName(TestSchema.Kind)), TemplateFolderFixtures.ThingFile());
             await File.WriteAllTextAsync(
                 Path.Combine(root, "mappings", $"Thing@{version}.yaml"),
-                Document(version, "Count: { $from: count, $assert: [ { atLeast: 0 }, { atMost: 250, onFail: report } ] }"));
+                Document(version, "Count: { $from: count, $assert: [ { atLeast: 0 }, { atMost: 250, onFail: report } ] }")
+                    .ReplaceLineEndings("\n")
+                    .Replace($"  version: {TestSchema.Build().Version}\n", string.Empty, StringComparison.Ordinal));
 
             await using (var db = _db.CreateDbContext())
             {

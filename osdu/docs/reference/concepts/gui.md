@@ -369,10 +369,11 @@ runs, each with its pass rate and how often it flipped) and **Reports**; a dimen
 ### Mappings
 
 The mapping documents the repositories hold, as the last sync found them, filtered by repository, with **New mapping**
-(opens the builder). A mapping opens in a sheet with the template version it pins (a link to Templates), **Open in
+(opens the builder). A mapping opens in a sheet with the template version it fills (a link to Templates, its tooltip
+naming the template folder file the version was read from, or saying no folder on the mapping's path holds it), **Open in
 builder**, and three tabs:
 
-- **Properties**: the template the mapping pins as the record's tree, beside the selected attribute. The views
+- **Properties**: the template the mapping fills as the record's tree, beside the selected attribute. The views
   **Filled**, **Missing**, **Unfilled**, **Failing** (after a data check) and **All** each carry a count; **View** adds
   **Required**, **Minted** and **Nested**. The selected attribute reads in **Filled by**, **Data** and **Schema**. The
   data check line picks a flow that renders with the mapping, its scope's values and how many rows, and **Check all
@@ -389,16 +390,20 @@ columns**, how the **OSDU id** is made (from the delivery key, or the key's valu
 variable is listed, each filled as a **Dataset column**, **Repeat child rows**, **Cache**, **Lookup**, **Platform
 search**, **Expression**, **Static value**, **First value of**, **List of values** or **Object**, or left **Not
 filled**; the YAML and its check against the template and the cache's current version follow every edit. **Copy YAML**
-takes it; **Propose to repository** opens a pull request through SQLFlow's proposal endpoint (**Open pull request**);
-**Start over** discards the draft. A mapping that cannot be opened says why.
+takes it; **Propose to repository** opens a pull request through SQLFlow's proposal endpoint (**Open pull request**),
+and says whether a template folder on the mapping's path already holds its template version; when none does, the pull
+request also writes the saved version as a file in the nearest folder the mapping reads
+([template folders](templates.md#template-folders)). **Start over** discards the draft. A mapping that cannot be opened
+says why.
 
 ### Templates
 
-OSDU record schemas saved as templates. Three tabs:
+OSDU record schemas saved as templates, the library, for the explorer, the mapping builder and the assistant. It is not
+linked to the repositories, whose documents read their templates from their template folders. Three tabs:
 
-- **Saved**: the saved versions, filtered by kind, version, origin or who saved it, each with where it came from and how
-  many mappings pin it. A version opens laid out as a template; **Delete** is offered only while no synced mapping pins
-  it.
+- **Saved**: the saved versions, filtered by kind, version, origin or who saved it, each with when, by whom and from
+  where it was saved. A version opens laid out as a template; **Download** saves its bundled schema as a file for a
+  template folder, and **Delete** removes it from the library, which no repository document reads.
 - **Browse OSDU**: the OSDU data definitions, the Open Group's public repository of OSDU schemas, by **Release**,
   searched by kind, with **Every version**, **Compare versions**, **Save template**, and **Sync with the repository**,
   which reads the release list again and downloads the release in view.

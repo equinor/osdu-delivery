@@ -361,18 +361,9 @@ The run's `result` (in `run.json`):
 ## What a run records
 
 A retrieve run registers the flow's ledger in the partition its header names, then opens an `osdu.Retrieval` row when it
-starts and closes it with its counts:
-
-| Column | Meaning |
-| --- | --- |
-| `RetrievalId` | The row's number. |
-| `FlowId`, `FlowName`, `RunId`, `Actor` | The flow, the platform run, who asked. |
-| `Kinds`, `Query` | The kinds, comma separated, and the query as it ran (window included). |
-| `WindowField`, `WindowFrom`, `WindowTo` | The window; `WindowTo` of the latest `done` row is the next run's `from`. |
-| `Location`, `ManifestLocation` | The run's directory and its manifest. |
-| `Status` | `running`, `done`, `failed` or `cancelled`. |
-| `Records`, `Files`, `Bytes` | What was written; bytes uncompressed. |
-| `StartedUtc`, `CompletedUtc`, `Error` | The timeline, and the redacted error of a failed run. |
+starts and closes it with its counts: the kinds and query it read, its window (`WindowTo` of the latest `done` row is the
+next run's `from`), where its files and manifest went, what it wrote, and its status. Every column, key and index:
+[`osdu.Retrieval`](../tables/retrieval.md).
 
 The pipeline's **Retrievals** tab in the GUI lists these rows, newest first, and so does
 `GET /api/v1/delivery/flows/{pipelineId}/retrievals?max=<n>` (100 by default, at most 1,000; 409 for a pipeline that is

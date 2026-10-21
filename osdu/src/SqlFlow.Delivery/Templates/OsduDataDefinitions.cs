@@ -391,7 +391,9 @@ public sealed class OsduDataDefinitions : IOfficialExamples
         ArgumentException.ThrowIfNullOrWhiteSpace(where);
         var wanted = kind.Trim();
         TemplateSources.RequireKind(wanted);
-        var root = TemplateSources.ParseObject(json, where);
+        // A schema of one's own that names no kind is given the one it is imported as, so the template it saves, and the file
+        // a template folder keeps of it, say which kind they hold.
+        var root = TemplateSources.WithKind(TemplateSources.ParseObject(json, where), wanted);
         if (!TemplateSources.RefersOutside(root))
         {
             return new ImportedSchema(TemplateSources.Validated(wanted, root, _time.GetUtcNow(), where), null, []);

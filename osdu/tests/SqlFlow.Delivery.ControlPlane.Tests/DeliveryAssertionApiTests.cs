@@ -37,7 +37,6 @@ public sealed class DeliveryAssertionApiTests
     {
         var cs = OsduTestServer.Require();
         await CatalogDatabase.MigrateAsync(cs);
-        await SampleEstate.SaveTemplatesAsync(cs);
 
         var suffix = Guid.NewGuid().ToString("N")[..10];
         var flowName = "api-assertion-" + suffix;
@@ -77,6 +76,8 @@ public sealed class DeliveryAssertionApiTests
         var flow = new DeliveryDocumentLoader().ParseAssertion(yaml, "flows/" + flowName + ".yaml").ForRun(partition, RegisteredPartitions.None);
         var now = new DateTime(DateTime.UtcNow.Ticks / TimeSpan.TicksPerSecond * TimeSpan.TicksPerSecond, DateTimeKind.Utc);
 
+        // The repository holds the templates its tests are checked against in its template folder, as its sync records it.
+        await SampleEstate.HoldTemplatesAsync(cs, repoId, now);
         await using (var db = CatalogDatabase.Create(cs))
         {
             db.Repos.Add(new CatalogRepo
@@ -243,6 +244,7 @@ public sealed class DeliveryAssertionApiTests
             await using (var osdu = SampleEstate.Context(cs))
             {
                 await osdu.DeliveryAssertionResults.Where(r => r.FlowId == flow.LedgerId).ExecuteDeleteAsync();
+                await osdu.DeliveryRepositoryTemplates.Where(t => t.RepoId == repoId).ExecuteDeleteAsync();
                 await osdu.DeliveryAssertionRuns.Where(r => r.FlowId == flow.LedgerId).ExecuteDeleteAsync();
                 await osdu.DeliveryLedgers.Where(l => l.FlowId == flow.LedgerId).ExecuteDeleteAsync();
                 await osdu.DeliveryLedgerPartitions.Where(p => p.Name == partition).ExecuteDeleteAsync();

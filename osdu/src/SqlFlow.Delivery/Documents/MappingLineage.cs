@@ -76,113 +76,74 @@ public sealed record MappingCacheReads(IReadOnlyList<string> Types, IReadOnlyLis
     }
 }
 
-/// <summary>How a read of the template a mapping pins came out.</summary>
+/// <summary>How a read of the template a mapping fills came out.</summary>
 public enum MappingTemplateOutcome
 {
-    /// <summary>The template is saved, and its schema is at hand.</summary>
+    /// <summary>The template was found, and its schema is at hand.</summary>
     Found,
 
-    /// <summary>The host reads no templates: it has no module database.</summary>
-    NoStore,
+    /// <summary>No template folder the mapping reads holds it; <see cref="MappingTemplateRead.Reason"/> says where it looked.</summary>
+    NotFound,
 
-    /// <summary>The module database holds no such template version.</summary>
-    NotSaved,
-
-    /// <summary>The template could not be read; <see cref="MappingTemplateRead.Reason"/> says why.</summary>
+    /// <summary>The read failed; <see cref="MappingTemplateRead.Reason"/> says why.</summary>
     Failed,
 }
 
-/// <summary>The template a mapping pins as lineage read it: its schema, or why there is none.</summary>
+/// <summary>The template a mapping fills as lineage read it: its schema, or why there is none.</summary>
 /// <param name="Outcome">How the read came out.</param>
 /// <param name="Schema">The template's schema, when <see cref="MappingTemplateOutcome.Found"/>.</param>
-/// <param name="Reason">Why the read failed, redacted, when <see cref="MappingTemplateOutcome.Failed"/>.</param>
+/// <param name="Reason">Why there is none, redacted, when it was not found or the read failed.</param>
 public sealed record MappingTemplateRead(MappingTemplateOutcome Outcome, SchemaSnapshot? Schema = null, string? Reason = null)
 {
-    /// <summary>
-    /// Why lineage has no template to read a mapping's references by, as the clause a warning says of the template after
-    /// "which"; null when it has one.
-    /// </summary>
-    public string? Missing => Outcome switch
-    {
-        MappingTemplateOutcome.Found => null,
-        MappingTemplateOutcome.NoStore => "this host has no osdu database to read from",
-        MappingTemplateOutcome.NotSaved => "is not saved",
-        _ => $"could not be read ({Reason})",
-    };
+    /// <summary>Why lineage has no template to read a mapping's references by, as a clause a warning ends with; null when it has one.</summary>
+    public string? Missing => Outcome == MappingTemplateOutcome.Found ? null : Reason ?? "it was not read";
 }
 
 /// <summary>
-/// Reads the templates mappings pin, for lineage: the one thing a mapping's lineage needs that the repository does not
-/// hold. A <c>ref</c> written without its entity type takes it from the template variable it fills, and templates live in
-/// the module database, so a host with that database reads the pinned version from it. A saved template version never
-/// changes, so what lineage reads of it is as fixed as the documents are. A host without the database, a version that is
-/// not saved and a database that does not answer each come back as a reason, never as an exception: lineage then shows
+/// Reads the templates mappings fill, for lineage: a <c>ref</c> written without its entity type takes it from the template
+/// variable it fills, so lineage reads the template from the template folders on the mapping's path, up to the top of the
+/// checkout it scans (osdu/docs/reference/concepts/templates.md, Template folders), exactly as a run reads it. A template
+/// that is not there and a file that cannot be read each come back as a reason, never as an exception: lineage then shows
 /// what the documents alone tell, and says what it left out.
 /// </summary>
 public sealed class MappingTemplateSource
 {
-    /// <summary>How long a failed read stands for every read after it, so one database that does not answer costs a scan
-    /// of many flows one wait and not one per flow.</summary>
-    internal static readonly TimeSpan FailureHold = TimeSpan.FromSeconds(30);
+    private readonly ITemplateSource? _source;
 
-    private readonly Func<ITemplateStore?> _store;
-    private readonly TimeProvider _time;
-    private readonly Lock _gate = new();
-    private MappingTemplateRead? _failure;
-    private DateTimeOffset _failedUntil;
-
-    /// <summary>A source over the store <paramref name="store"/> gives each time it is asked: null on a host that has
-    /// no module database, which may be known only once the host is built.</summary>
-    public MappingTemplateSource(Func<ITemplateStore?> store, TimeProvider? time = null)
+    /// <summary>The template folders on each mapping's path: what every host's lineage reads.</summary>
+    public MappingTemplateSource()
     {
-        ArgumentNullException.ThrowIfNull(store);
-        _store = store;
-        _time = time ?? TimeProvider.System;
     }
 
-    /// <summary>A source over <paramref name="store"/>.</summary>
-    public MappingTemplateSource(ITemplateStore store, TimeProvider? time = null)
-        : this(() => store, time)
+    /// <summary>A source of fixed templates, read whatever a mapping's path: what a suite describing lineage over given templates composes.</summary>
+    public MappingTemplateSource(ITemplateSource source)
     {
-        ArgumentNullException.ThrowIfNull(store);
+        ArgumentNullException.ThrowIfNull(source);
+        _source = source;
     }
 
-    /// <summary>The template <paramref name="reference"/> names, or why there is none to read.</summary>
-    public MappingTemplateRead Read(TemplateReference reference)
+    /// <summary>
+    /// The template <paramref name="mapping"/> fills, read from the template folders on its path up to
+    /// <paramref name="root"/>, the top of the checkout lineage reads; or why there is none to read.
+    /// </summary>
+    public MappingTemplateRead Read(MappingDefinition mapping, string? root)
     {
-        lock (_gate)
-        {
-            if (_failure is not null && _time.GetUtcNow() < _failedUntil)
-            {
-                return _failure;
-            }
-        }
-
+        ArgumentNullException.ThrowIfNull(mapping);
         try
         {
-            if (_store() is not { } store)
-            {
-                return new MappingTemplateRead(MappingTemplateOutcome.NoStore);
-            }
-
-            // Describing lineage is synchronous and the store is not; the read runs on the pool so no caller's
+            var source = _source ?? new FolderTemplates(root);
+            // Describing lineage is synchronous and a source is not; the read runs on the pool so no caller's
             // synchronization context is waited on from inside itself.
-            var schema = Task.Run(() => store.LoadAsync(reference)).GetAwaiter().GetResult();
-            return schema is null
-                ? new MappingTemplateRead(MappingTemplateOutcome.NotSaved)
-                : new MappingTemplateRead(MappingTemplateOutcome.Found, schema);
+            var resolved = Task.Run(() => source.ResolveAsync(mapping.TemplateDocument, mapping.Template.Kind, mapping.Template.Version))
+                .GetAwaiter().GetResult();
+            return resolved.Schema is { } schema
+                ? new MappingTemplateRead(MappingTemplateOutcome.Found, schema)
+                : new MappingTemplateRead(MappingTemplateOutcome.NotFound, Reason: SecretHygiene.RedactedMessage(resolved.Problem ?? "it was not found"));
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
-            var failure = new MappingTemplateRead(
-                MappingTemplateOutcome.Failed, Reason: $"{ex.GetType().Name}: {SecretHygiene.RedactedMessage(ex.Message)}");
-            lock (_gate)
-            {
-                _failure = failure;
-                _failedUntil = _time.GetUtcNow() + FailureHold;
-            }
-
-            return failure;
+            return new MappingTemplateRead(
+                MappingTemplateOutcome.Failed, Reason: $"it could not be read ({ex.GetType().Name}: {SecretHygiene.RedactedMessage(ex.Message)})");
         }
     }
 }

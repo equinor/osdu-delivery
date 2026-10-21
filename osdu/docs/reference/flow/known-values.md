@@ -174,14 +174,15 @@ all the same; at most 200,000 records are reached through others.
 
 ## Checked against the templates
 
-Every path is checked against the template of each kind it reads: the test's own, and for a step to other records the
-newest saved template of that entity type (a reference's type, named by its schema relationship, or the type a step to
-the records naming one names). A path that is not a property, a reference that names no one type of record, a step to
-records the index cannot find by their reference, a type with no saved template, and a value a property cannot hold
-leave the test `errored`, each said once:
+Every path is checked against the template of each kind it reads, as the template folders on the flow's path give it
+([template folders](../concepts/templates.md#template-folders)): the test's own, and for a step to other records the
+newest template the flow reads of that entity type (a reference's type, named by its schema relationship, or the type a
+step to the records naming one names). A path that is not a property, a reference that names no one type of record, a
+step to records the index cannot find by their reference, a type no template folder on the flow's path holds, and a value
+a property cannot hold leave the test `errored`, each said once:
 
 - `'<label>': '<path>' follows data.Name, which is a string in <kind>, not a reference to a record.`
-- `'<label>': no template of master-data--Well is saved, so '<path>' cannot be checked against what those records hold. ...`
+- `'<label>': no template folder on the flow's path holds a template of master-data--Well, so '<path>' cannot be checked against what those records hold. ...`
 - `'<label>': a row is located by paths inside data.Curves alone, so nothing says which record its item is in; ...`
 
 ## See also

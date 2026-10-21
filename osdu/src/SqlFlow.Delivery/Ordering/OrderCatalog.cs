@@ -19,7 +19,7 @@ public sealed record CatalogDelivery(Guid RepoId, string RelativePath, OrderDeli
 
 /// <summary>
 /// The deliveries the catalog holds (<see cref="OrderCatalog.ReadAsync"/>), and what could not be read as the order needs
-/// it: a mapping that no longer loads, or a saved template that does not read as one. Each problem names what it is about.
+/// it: a mapping that no longer loads, or a template whose copy cannot be read. Each problem names what it is about.
 /// </summary>
 public sealed record CatalogDeliveries(IReadOnlyList<CatalogDelivery> Deliveries, IReadOnlyList<string> Problems);
 
@@ -77,10 +77,11 @@ public sealed class OrderCatalog : IOrderCatalog
     /// <summary>
     /// The active delivery interfaces the catalog holds, on <paramref name="db"/>: those of repository
     /// <paramref name="repoId"/>, or of every repository when none is named. Each is read as the OSDU order reads it: the
-    /// partition its records reach, and the mapping it pins, read for the properties it fills against the template that
-    /// mapping pins, or against the newest built release of OSDU's lineage holding the kind when that template is not
-    /// saved. An interface whose mapping is not valid, names no OSDU kind, or whose partition cannot be read is left out, as
-    /// lineage leaves it out; its own repository's sync reports why.
+    /// partition its records reach, and the mapping it pins, read for the properties it fills against the template the sync
+    /// settled that mapping to from the template folders on its path (the copy the same sync kept of the file), or against
+    /// the newest built release of OSDU's lineage holding the kind when that copy cannot be read. An interface whose mapping
+    /// is not valid (a mapping whose template no folder on its path holds is not), names no OSDU kind, or whose partition
+    /// cannot be read is left out; its own repository's sync reports why.
     /// </summary>
     public static async Task<CatalogDeliveries> ReadAsync(OsduDbContext db, Guid? repoId = null, CancellationToken ct = default)
     {
@@ -96,7 +97,7 @@ public sealed class OrderCatalog : IOrderCatalog
                 db.DeliveryMappings.AsNoTracking().Where(m => m.Status == "valid"),
                 i => new { i.RepoId, Reference = i.MappingReference },
                 m => new { m.RepoId, m.Reference },
-                (i, m) => new { i.RepoId, i.FlowName, i.Interface, i.TargetPartition, i.RelativePath, m.Yaml, m.TemplateVersion })
+                (i, m) => new { i.RepoId, i.FlowName, i.Interface, i.TargetPartition, i.RelativePath, m.Yaml, m.TemplateVersion, MappingPath = m.RelativePath })
             .ToListAsync(ct)
             .ConfigureAwait(false);
 
@@ -110,15 +111,24 @@ public sealed class OrderCatalog : IOrderCatalog
             .ToList();
         var deliveries = new List<CatalogDelivery>(distinct.Count);
         var problems = new List<string>();
-        var mappings = new Dictionary<string, MappingDefinition?>(StringComparer.Ordinal);
-        var schemas = new Dictionary<(string Kind, string Version), (OsduTemplate? Template, SchemaNode? Node)>();
+        // A mapping that names its template's kind alone settles to what its repository's folders hold, so one document reads
+        // as one mapping per repository.
+        var mappings = new Dictionary<(Guid Repo, string Yaml), MappingDefinition?>();
+        var folders = new Dictionary<Guid, Catalog.SyncedTemplates>();
+        var schemas = new Dictionary<(Guid Repo, string Kind, string Version), (OsduTemplate? Template, SchemaNode? Node)>();
         foreach (var row in distinct)
         {
-            if (!mappings.TryGetValue(row.Yaml, out var mapping))
+            if (!folders.TryGetValue(row.RepoId, out var held))
+            {
+                held = await Catalog.SyncedTemplates.ReadAsync(db, row.RepoId, ct).ConfigureAwait(false);
+                folders[row.RepoId] = held;
+            }
+
+            if (!mappings.TryGetValue((row.RepoId, row.Yaml), out var mapping))
             {
                 try
                 {
-                    mapping = Documents.ParseMapping(row.Yaml, row.RelativePath);
+                    mapping = Documents.ParseMapping(row.Yaml, row.MappingPath, held.For(row.MappingPath));
                 }
                 catch (SqlFlowException ex)
                 {
@@ -128,7 +138,7 @@ public sealed class OrderCatalog : IOrderCatalog
                     mapping = null;
                 }
 
-                mappings[row.Yaml] = mapping;
+                mappings[(row.RepoId, row.Yaml)] = mapping;
             }
 
             if (mapping is null || OsduEntity.OfKind(mapping.Kind) is null)
@@ -136,10 +146,10 @@ public sealed class OrderCatalog : IOrderCatalog
                 continue;
             }
 
-            if (!schemas.TryGetValue((mapping.Kind, row.TemplateVersion), out var schema))
+            if (!schemas.TryGetValue((row.RepoId, mapping.Kind, mapping.Template.Version), out var schema))
             {
-                schema = await SchemaAsync(db, mapping.Kind, row.TemplateVersion, problems, ct).ConfigureAwait(false);
-                schemas[(mapping.Kind, row.TemplateVersion)] = schema;
+                schema = await SchemaAsync(db, held, row.MappingPath, mapping.Template, problems, ct).ConfigureAwait(false);
+                schemas[(row.RepoId, mapping.Kind, mapping.Template.Version)] = schema;
             }
 
             var delivery = OrderDeliveries.Of(
@@ -150,33 +160,32 @@ public sealed class OrderCatalog : IOrderCatalog
         return new CatalogDeliveries(deliveries, problems);
     }
 
-    /// <summary>The kind's template as saved under <paramref name="version"/>, or the kind from a built release of OSDU's lineage.</summary>
+    /// <summary>
+    /// The template the mapping at <paramref name="mappingPath"/> fills, as its repository's last sync kept a copy of it,
+    /// or the kind from a built release of OSDU's lineage when that copy cannot be read.
+    /// </summary>
     private static async Task<(OsduTemplate? Template, SchemaNode? Node)> SchemaAsync(
-        OsduDbContext db, string kind, string version, List<string> problems, CancellationToken ct)
+        OsduDbContext db, Catalog.SyncedTemplates held, string mappingPath, TemplateReference template, List<string> problems, CancellationToken ct)
     {
-        if (!string.IsNullOrEmpty(version))
+        var resolved = await held.ResolveAsync(mappingPath, template.Kind, template.Version, ct).ConfigureAwait(false);
+        if (resolved.Schema is { } schema)
         {
-            var row = await db.DeliveryTemplates.AsNoTracking()
-                .Where(t => t.Kind == kind && t.Version == version)
-                .Select(t => new { t.SchemaJson, t.CapturedUtc })
-                .FirstOrDefaultAsync(ct)
-                .ConfigureAwait(false);
-            if (row is not null)
+            try
             {
-                try
-                {
-                    var schema = SchemaSnapshot.Parse(kind, row.SchemaJson, new DateTimeOffset(DateTime.SpecifyKind(row.CapturedUtc, DateTimeKind.Utc)));
-                    var template = OsduTemplate.From(schema);
-                    return (template, OrderDeliveries.Node(template));
-                }
-                catch (Exception ex) when (ex is SqlFlowException or InvalidOperationException or ArgumentException or System.Text.Json.JsonException)
-                {
-                    // A saved template that does not read as one is no better than none: the release's lineage is asked next.
-                    problems.Add($"The saved template of {kind} {version} does not read as one ({SecretHygiene.RedactedMessage(ex.Message)}), so the OSDU order reads the kind from a built release of OSDU's lineage, or not at all.");
-                }
+                var read = OsduTemplate.From(schema);
+                return (read, OrderDeliveries.Node(read));
+            }
+            catch (Exception ex) when (ex is SqlFlowException or InvalidOperationException or ArgumentException)
+            {
+                // A template that does not read as one is no better than none: the release's lineage is asked next.
+                problems.Add($"The template {template} that {mappingPath} fills does not read as one ({SecretHygiene.RedactedMessage(ex.Message)}), so the OSDU order reads the kind from a built release of OSDU's lineage, or not at all.");
             }
         }
+        else
+        {
+            problems.Add($"The template {template} that {mappingPath} fills cannot be read ({resolved.Problem}), so the OSDU order reads the kind from a built release of OSDU's lineage, or not at all.");
+        }
 
-        return (null, await SchemaLineageStore.FindKindAsync(db, kind, ct).ConfigureAwait(false));
+        return (null, await SchemaLineageStore.FindKindAsync(db, template.Kind, ct).ConfigureAwait(false));
     }
 }

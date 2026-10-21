@@ -170,5 +170,5 @@ deliveries that read it; the other four read what OSDU holds and run after the d
 - [Architecture: the module on SQLFlow](architecture.md)
 - [The OSDU documents](../flow/overview.md)
 - [Your first delivery, end to end](../guides/getting-started.md)
-- [Which delivery problem maps to which shape](../guides/pattern-catalog.md)
+- [Which delivery problem maps to which shape](../../wiki/maps/pattern-catalog.md)
 - [SQLFlow: getting started](../../../../sqlflow/docs/reference/guides/getting-started.md)

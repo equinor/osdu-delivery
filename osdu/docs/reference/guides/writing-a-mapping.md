@@ -1,8 +1,8 @@
 ---
 id: delivery-guide-writing-a-mapping
-title: "Writing a mapping: from a saved template to a mapping that checks clean"
+title: "Writing a mapping: from a template in a template folder to a mapping that checks clean"
 type: guide
-summary: "Save the template, scaffold the mapping in the builder or the MCP server, fill it in, then validate, check, test values and preview a record until clean."
+summary: "Put the template in a template folder, scaffold the mapping in the builder or the MCP server, fill it in, then check, test values and preview until clean."
 keywords:
   - write a mapping
   - new mapping
@@ -14,6 +14,7 @@ keywords:
   - sqlflow preview
   - sqlflow validate mapping
   - template capture
+  - template folder
   - preflight failed
   - held record reasons
   - mapping example
@@ -33,6 +34,7 @@ sourceRefs:
   - osdu/src/SqlFlow.Delivery.Cli/DeliveryPreviewVerbs.cs
   - osdu/src/SqlFlow.Delivery.Cli/DeliveryCliModule.cs
   - osdu/src/SqlFlow.Delivery/Templates/MappingBuilder.cs
+  - osdu/src/SqlFlow.Delivery/Templates/TemplateFolders.cs
   - osdu/src/SqlFlow.Delivery/Documents/MappingCatalog.cs
   - osdu/src/SqlFlow.Delivery/Documents/MappingMapper.cs
   - osdu/src/SqlFlow.Delivery/Engine/RenderResolver.cs
@@ -46,7 +48,7 @@ sourceRefs:
   - osdu/hosts/osdu-delivery-mcp/src/tools/documents.rs
 ---
 
-# Writing a mapping: from a saved template to a mapping that checks clean
+# Writing a mapping: from a template in a template folder to a mapping that checks clean
 
 A mapping says, property by property, how a row of an ingestion table becomes an OSDU record of one kind. This guide
 writes one for well logs, `WellLog@1.1.0`, filling `osdu:wks:work-product-component--WellLog:1.4.0` from the well
@@ -73,21 +75,26 @@ The language itself is on [the mapping document](../flow/mapping.md), [mapping v
   of its own in `SQLFLOW_OSDU_DB`. `values` and `preview` also open the flow's ingestion tables on your machine through
   the flow's own connection reference, and ask the platform whatever the mapping's searches ask.
 
-## 1. Save the template
+## 1. Put the template in a template folder
 
-A mapping fills a saved template version and pins it. Save the kind's schema from the OSDU data definitions, or on the
-GUI's Templates page ([templates](../concepts/templates.md), [sqlflow template](../cli/template.md)):
+A mapping fills a template that a template folder on its path holds: a folder named `templates` beside the mappings or
+above them, committed with them ([template folders](../concepts/templates.md#template-folders)). Write the kind's schema
+into one from the OSDU data definitions, or download a saved version on the GUI's Templates page
+([sqlflow template](../cli/template.md)):
 
 ```bash
-sqlflow template capture --kind osdu:wks:work-product-component--WellLog:1.4.0
+sqlflow template capture --kind osdu:wks:work-product-component--WellLog:1.4.0 --out welldb/templates/osdu_wks_work-product-component--WellLog_1.4.0.json
 ```
 
 ```text
 saved template osdu:wks:work-product-component--WellLog:1.4.0 version 26a3c3441882db4f
 ```
 
-The 16 hexadecimal characters are the template version the mapping pins. A capture of a schema already saved says
-`template ... was already saved`. To see what can be filled:
+The 16 hexadecimal characters are the template version. The mapping may name it (`template.version`), which pins that
+version exactly, or name the kind alone and fill the one version the nearest folder holding the kind holds. Given the
+module database, the command also saves the version in the library, which the builder, the explorer and the MCP tools
+read (the repository's documents read only the file); on a host without it, `--out` writes the file alone. `sqlflow template folders --for
+welldb/mappings/WellLog@1.4.0.yaml` lists the templates the mapping will read. To see what can be filled:
 
 ```bash
 sqlflow template show --kind osdu:wks:work-product-component--WellLog:1.4.0
@@ -107,7 +114,8 @@ partition's cache to prefill and check. Then, under Setup:
 1. Pick the **Repository** the mapping will live in. Its delivery flow supplies the parameter values the check renders
    with (shown under Check values, and never written into the mapping).
 2. Pick the saved **Template**, and give the **Name**, **Mapping version** and **Source system**. The file will be
-   `mappings/<Name>@<version>.yaml`. Press **Start mapping**.
+   `mappings/<Name>@<version>.yaml`. Press **Start mapping**. The builder offers the saved versions of the library; when
+   the repository's folders do not hold the one picked, proposing the mapping writes its file there too.
 3. Under **Dataset**, add the key columns, choose how the OSDU id is made, and write the label.
 4. Every template variable is listed. Open one to choose its input (Dataset column, Repeat child rows, Cache, Lookup,
    Platform search, Static value, Expression, First value of, List of values or List of objects), with its modifiers,
@@ -116,12 +124,14 @@ partition's cache to prefill and check. Then, under Setup:
 5. The right side shows the check (`loads and passes`, or the errors and warnings, each opening the variable it is
    about) and the YAML, checked again as you edit. **Copy YAML**, or, once the check finds no error, **Propose to
    repository**: for a repository tracked from git, the control plane pushes a branch and opens a pull request with
-   the file, and nothing reaches the catalog until it is merged and synced.
+   the file, and with the template's file in the nearest template folder the mapping reads when none on its path holds
+   that version yet. Nothing reaches the catalog until it is merged and synced.
 
 **The MCP server.** An assistant connected to the OSDU Delivery MCP server calls `delivery_scaffold_mapping` with the
 template's kind and version, the mapping's name, version and source system, and optionally a partition. It returns the
 YAML and the issues still to resolve, and writes nothing. `delivery_check_mapping` then checks each edit against the
-saved template until `valid` is true ([the MCP server](mcp.md)).
+template until `valid` is true: the one the template folders on the mapping's path hold when it is given the synced
+repository's `repoId`, else the saved version ([the MCP server](mcp.md)).
 
 Either way, a fresh scaffold holds the header filled from what you gave, the `dataPartition` parameter, the four access
 and legal lists to fill, and a `$cache` entry for every relationship property outside a repeated array whose entity
@@ -281,7 +291,7 @@ flow when it is missing or does not load; `check` holds it against its template 
 sqlflow check welldb-welllog-03-delivery.yaml
 ```
 
-`check` loads the flow and the mapping it pins, the saved template, the version of the partition's cache the mapping
+`check` loads the flow and the mapping it pins, the template its template folders hold, the version of the partition's cache the mapping
 reads, and runs the preflight: every property against the template, every cached type and field against the cache,
 every search property against its schema, every parameter against what the flow supplies
 ([the preflight](../concepts/preflight.md), [sqlflow check](../cli/check.md)). A clean mapping answers:
@@ -356,7 +366,8 @@ make, and then the document itself
 | --- | --- | --- |
 | `Mapping 'WellLog@1.1.0' was not found under '...'` | `check` | The file name or folder: `mappings/<Name>@<version>.yaml`. |
 | `... declares 'WellLog@1.1.1' but is filed as 'WellLog@1.1.0'` | `check` | Make the file name and the document's `name` and `version` agree. |
-| `... pins template ..., which is not saved` | `check` | Save the template (step 1), or pin the version that is saved. |
+| `... cannot render: no template folder on the path of ... holds template ...` | `check` | Put the template's file in a folder on the mapping's path (step 1), or name the version a folder there holds. |
+| `..., the nearest template folder on the path of ... holding <kind>, holds <n> versions of it: ...` | `check` | Keep one version of the kind in that folder, or name the version in the mapping's `template.version`. |
 | `mapping parameter '<name>' is required and the flow supplies no value.` | `check` | Supply it under the flow's `render.parameters`. (`aclOwner`, `aclViewer` and `legalTag` default to `${env:OSDU_ACL_OWNER}`, `${env:OSDU_ACL_VIEWER}` and `${env:OSDU_LEGAL_TAG}`, which have to resolve.) |
 | `... reads <Type> from the cache, and cache version '...' does not hold it` | `check` | Add the type to a cache flow of the partition and refresh it, or fix the name. |
 | `template ... requires osdu.data.<property>, which the mapping does not fill.` | `check` | Fill the property, without `$required: false`. |

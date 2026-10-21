@@ -49,12 +49,13 @@ public sealed class LineageTests : IDisposable
 
     /// <summary>
     /// The welldb estate as the repository holds it, with the fixture documents (a wellbore chain, a source of several
-    /// interfaces, a retrieval) beside it, so one scan orders flows of every kind the module adds.
+    /// interfaces, a retrieval) beside it, so one scan orders flows of every kind the module adds; its template folder holds
+    /// the sample's templates and the fixture mappings' own, which every mapping of the estate reads.
     /// </summary>
     public LineageTests()
     {
         Directory.CreateDirectory(_root);
-        foreach (var folder in new[] { "flows", "reference", "cache", "dictionaries", "mappings", "data" })
+        foreach (var folder in new[] { "flows", "reference", "cache", "dictionaries", "mappings", "templates", "data" })
         {
             Copy(Path.Combine(Samples.Source, folder), Path.Combine(_root, Source, folder));
         }
@@ -64,6 +65,8 @@ public sealed class LineageTests : IDisposable
         {
             Copy(Path.Combine(Samples.FixtureDocuments, folder), Path.Combine(_root, Source, folder), overwrite: true);
         }
+
+        Copy(Samples.FixtureTemplateFiles, Path.Combine(_root, Source, "templates"));
     }
 
     public void Dispose() => Directory.Delete(_root, recursive: true);
@@ -86,27 +89,16 @@ public sealed class LineageTests : IDisposable
     private static string InRepo(string relative) => Source + "/" + relative;
 
     /// <summary>
-    /// The loader a host with the module database registers: its delivery kind reads the templates the mappings pin, here
-    /// the sample templates, unless <paramref name="templates"/> says how this host reads them.
+    /// The loader every host registers: its delivery kind reads the templates the mappings fill from the template folders on
+    /// their paths in the checkout, unless <paramref name="templates"/> says otherwise.
     /// </summary>
     private static YamlDocumentLoader Loader(MappingTemplateSource? templates = null)
     {
         var documents = new DeliveryDocumentLoader();
         return YamlDocumentLoader.CreateDefault(
             [
-                new DeliveryFlowKind(documents, templates ?? new MappingTemplateSource(Samples.SampleTemplates)),
+                new DeliveryFlowKind(documents, templates ?? new MappingTemplateSource()),
                 new CacheFlowKind(documents), new RetrievalFlowKind(documents), new AssertionFlowKind(documents),
-                new DimensionFlowKind(documents), new InventoryFlowKind(documents),
-            ]);
-    }
-
-    /// <summary>The loader of a host without the module database: its delivery kind reads no templates.</summary>
-    private static YamlDocumentLoader LoaderWithoutTemplates()
-    {
-        var documents = new DeliveryDocumentLoader();
-        return YamlDocumentLoader.CreateDefault(
-            [
-                new DeliveryFlowKind(documents), new CacheFlowKind(documents), new RetrievalFlowKind(documents), new AssertionFlowKind(documents),
                 new DimensionFlowKind(documents), new InventoryFlowKind(documents),
             ]);
     }
@@ -693,34 +685,14 @@ public sealed class LineageTests : IDisposable
             OsduLineage.Type(LineageRelation.Writes, Platform, "dev", Samples.WellboreKind, "flow 'x'", "a write", warnings)!.Name);
     }
 
-    /// <summary>
-    /// A template store as the tests need one: it holds the schemas it is given and no others, counts the reads asked of
-    /// it, and fails every read with <see cref="Failure"/> while that is set, as a database that does not answer does.
-    /// </summary>
-    private sealed class FakeTemplates : ITemplateStore
+    /// <summary>A source of templates that fails every read with <paramref name="failure"/>, as one that cannot be read does.</summary>
+    private sealed class ThrowingTemplates(string failure) : ITemplateSource
     {
-        public List<SchemaSnapshot> Schemas { get; } = [];
+        public Task<TemplateResolution> ResolveAsync(string? document, string kind, string? version, CancellationToken ct = default)
+            => throw new InvalidOperationException(failure);
 
-        public string? Failure { get; set; }
-
-        public int Loads { get; private set; }
-
-        public Task<SchemaSnapshot?> LoadAsync(TemplateReference reference, CancellationToken ct = default)
-        {
-            Loads++;
-            return Failure is { } failure
-                ? throw new InvalidOperationException(failure)
-                : Task.FromResult(Schemas.FirstOrDefault(s => s.Kind == reference.Kind && s.Version == reference.Version));
-        }
-
-        public Task<TemplateSaved> SaveAsync(SchemaSnapshot schema, string origin, string actor, CancellationToken ct = default)
-            => throw new NotSupportedException("The lineage tests save no template through this store.");
-
-        public Task<IReadOnlyList<TemplateInfo>> ListAsync(CancellationToken ct = default)
-            => throw new NotSupportedException("The lineage tests list no templates through this store.");
-
-        public Task DeleteAsync(TemplateReference reference, CancellationToken ct = default)
-            => throw new NotSupportedException("The lineage tests delete no template through this store.");
+        public Task<IReadOnlyList<TemplateInfo>> ListForAsync(string? document, CancellationToken ct = default)
+            => throw new InvalidOperationException(failure);
     }
 
     [Theory]
@@ -835,70 +807,69 @@ public sealed class LineageTests : IDisposable
     [Fact]
     public void Without_its_template_a_mapping_shows_what_the_documents_tell_and_says_what_it_left_out()
     {
-        var lineage = Describe("flows/welldb-welllog-03-header-delivery.yaml", LoaderWithoutTemplates());
+        // The template folder on the mapping's path no longer holds the template the mapping names.
+        File.Delete(PathOf("templates/osdu_wks_work-product-component--WellLog_1.4.0.json"));
+        var lineage = Describe("flows/welldb-welllog-03-header-delivery.yaml");
 
         // The three curve classes are ids whose entity type the mapping writes; what the refs are checked against is not known.
         Assert.Equal(
             NamedByTheWellLogMapping
             + ", osdu-cache/dev/cache/LogCurveFamily, osdu-cache/dev/cache/LogCurveMainFamily, osdu-cache/dev/cache/LogCurveType, " + WellboresSearched,
             Sources(lineage));
-        Assert.Equal(
+        Assert.Equal(2, lineage.Warnings.Count);
+        Assert.StartsWith(
             "delivery flow 'welldb-welllog-03-header-delivery' shows fewer cache types in lineage than its mapping reads: mapping 'WellLog@1.4.0' builds a reference "
             + "with ref at osdu.data.SamplingDomainTypeID, osdu.data.WellLogTypeID, osdu.data.VerticalMeasurement.VerticalMeasurementUnitOfMeasureID, "
             + "osdu.data.VerticalMeasurement.VerticalMeasurementTypeID, osdu.data.Curves[].CurveUnit and 2 more, and the entity type of each is told by its template "
-            + "(osdu:wks:work-product-component--WellLog:1.4.0 version 26a3c3441882db4f), which this host has no osdu database to read from, "
-            + "so the cache types those references are checked against are left out.",
-            Assert.Single(lineage.Warnings));
+            + "(osdu:wks:work-product-component--WellLog:1.4.0 version 26a3c3441882db4f), so the cache types those references are checked against are left out. "
+            + "Its template is not read: no template folder on the path of welldb/mappings/WellLog@1.4.0.yaml holds template "
+            + "osdu:wks:work-product-component--WellLog:1.4.0 version 26a3c3441882db4f. It reads welldb/templates. Put the template's file in one of them",
+            lineage.Warnings[0],
+            StringComparison.Ordinal);
+        Assert.Contains("is not ordered by what its records refer to", lineage.Warnings[1], StringComparison.Ordinal);
 
         // The flow keeps everything else, and the estate still orders it: after its tables, its lookup tables and the wellbores.
-        var (collected, report) = Scan(LoaderWithoutTemplates());
+        var (collected, report) = Scan(Loader());
         Assert.Contains(collected.Warnings, w => w.StartsWith(InRepo("flows/welldb-welllog-03-header-delivery.yaml") + ": delivery flow", StringComparison.Ordinal));
         Assert.True(WaveOf(report, "welldb-lookups-00-cache") < WaveOf(report, "welldb-welllog-03-header-delivery"));
         Assert.True(WaveOf(report, "wells-wellbore-03-header-delivery") < WaveOf(report, "welldb-welllog-03-header-delivery"));
     }
 
     [Fact]
-    public void A_template_that_is_not_saved_or_cannot_be_read_is_said_and_a_failed_read_is_not_repeated_at_once()
+    public void A_template_the_folders_hold_in_another_version_or_that_cannot_be_read_is_said_and_never_thrown()
     {
-        var unsaved = Describe("flows/welldb-welllog-03-header-delivery.yaml", Loader(new MappingTemplateSource(new FakeTemplates())));
-        Assert.Equal(2, unsaved.Warnings.Count);
+        // The folder holds the kind in another version than the mapping names: the warning says which, and the OSDU order
+        // says it cannot tell what the records refer to.
+        Rewrite("mappings/WellLog@1.4.0.yaml", "  version: 26a3c3441882db4f\n", "  version: 0123456789abcdef\n");
+        var other = Describe("flows/welldb-welllog-03-header-delivery.yaml");
+        Assert.Equal(2, other.Warnings.Count);
         Assert.Contains(
-            "is told by its template (osdu:wks:work-product-component--WellLog:1.4.0 version 26a3c3441882db4f), which is not saved, so",
-            unsaved.Warnings[0],
+            "Its template is not read: no template folder on the path of welldb/mappings/WellLog@1.4.0.yaml holds template "
+            + "osdu:wks:work-product-component--WellLog:1.4.0 version 0123456789abcdef. On its path welldb/templates/"
+            + "osdu_wks_work-product-component--WellLog_1.4.0.json holds version 26a3c3441882db4f.",
+            other.Warnings[0],
+            StringComparison.Ordinal);
+        Assert.StartsWith(
+            "delivery flow 'welldb-welllog-03-header-delivery' is not ordered by what its records refer to: mapping 'WellLog@1.4.0' fills "
+            + "osdu:wks:work-product-component--WellLog:1.4.0 version 0123456789abcdef, and without that template the OSDU order cannot tell "
+            + "which of the partition's deliveries it waits for. Its template is not read: no template folder",
+            other.Warnings[1],
             StringComparison.Ordinal);
 
-        // Without the template the OSDU order cannot tell what the records refer to either, and says so.
-        Assert.Equal(
-            "delivery flow 'welldb-welllog-03-header-delivery' is not ordered by what its records refer to: mapping 'WellLog@1.4.0' fills "
-            + "osdu:wks:work-product-component--WellLog:1.4.0 version 26a3c3441882db4f, whose template is not saved, so the OSDU order cannot tell "
-            + "which of the partition's deliveries it waits for.",
-            unsaved.Warnings[1]);
-
-        // A database that does not answer: the reason is said without what it may carry, and every flow of the scan is told
-        // the same from the one failed read rather than each waiting for its own.
-        var clock = new TestClock();
-        var failing = new FakeTemplates { Failure = "the login for 'osdu' failed; Password=hunter2" };
-        var source = new MappingTemplateSource(failing, clock);
-        var (collected, report) = Scan(Loader(source));
-
-        var told = collected.Warnings.Where(w => w.Contains("which could not be read (InvalidOperationException: ", StringComparison.Ordinal)).ToList();
-        Assert.Equal(2, told.Count);
+        // A source that fails: the reason is said without what it may carry, and the scan goes on ordering the flow.
+        Rewrite("mappings/WellLog@1.4.0.yaml", "  version: 0123456789abcdef\n", "  version: 26a3c3441882db4f\n");
+        var failing = new ThrowingTemplates("the login for 'osdu' failed; Password=hunter2");
+        var (collected, report) = Scan(Loader(new MappingTemplateSource(failing)));
+        var told = collected.Warnings.Where(w => w.Contains("Its template is not read: it could not be read (InvalidOperationException: ", StringComparison.Ordinal)).ToList();
+        Assert.NotEmpty(told);
         Assert.DoesNotContain(collected.Warnings, w => w.Contains("hunter2", StringComparison.Ordinal));
-        Assert.Equal(1, failing.Loads);
         Assert.True(WaveOf(report, "welldb-welllog-02-header-ing") < WaveOf(report, "welldb-welllog-03-header-delivery"));
 
-        // The hold is short: once it is over the store is asked again, and a store that answers is read.
-        clock.Advance(MappingTemplateSource.FailureHold);
-        failing.Failure = null;
-        failing.Schemas.Add(Samples.SampleTemplate(Samples.WellLogKind));
-        Assert.Equal(MappingTemplateOutcome.Found, source.Read(new TemplateReference(Samples.WellLogKind, "26a3c3441882db4f")).Outcome);
-        Assert.Equal(2, failing.Loads);
-
-        // A host whose store cannot even be reached for is told the same way, never thrown at.
-        var unreachable = new MappingTemplateSource(() => throw new InvalidOperationException("no connection configured"));
-        var read = unreachable.Read(new TemplateReference(Samples.WellLogKind, "26a3c3441882db4f"));
-        Assert.Equal((MappingTemplateOutcome.Failed, "could not be read (InvalidOperationException: no connection configured)"), (read.Outcome, read.Missing));
-        Assert.Equal(MappingTemplateOutcome.NoStore, new MappingTemplateSource(() => null).Read(new TemplateReference(Samples.WellLogKind, "x")).Outcome);
+        // A source that answers is read.
+        var mapping = new DeliveryDocumentLoader().LoadMapping(PathOf("mappings/WellLog@1.4.0.yaml"));
+        var read = new MappingTemplateSource().Read(mapping, _root);
+        Assert.Equal((MappingTemplateOutcome.Found, "26a3c3441882db4f"), (read.Outcome, read.Schema!.Version));
+        Assert.Null(read.Missing);
     }
 
     [Fact]
@@ -1063,7 +1034,7 @@ public sealed class LineageTests : IDisposable
     }
 
     [Fact]
-    public async Task A_template_saved_after_its_mapping_was_synced_is_a_lineage_input_change_for_one_sync()
+    public async Task A_changed_template_folder_is_a_lineage_input_change_until_it_is_synced_and_a_library_save_is_not()
     {
         using var catalog = new OsduTestDatabase();
         var sync = new DeliveryCatalogSync(new DeliveryDocumentLoader());
@@ -1075,31 +1046,41 @@ public sealed class LineageTests : IDisposable
             await sync.ReconcileAsync(db, repoId, _root, nowUtc, new List<string>(), CancellationToken.None);
         }
 
-        async Task<bool> SavedSinceAsync()
+        async Task<bool> ChangedAsync(Guid? repo = null)
         {
             await using var db = catalog.CreateDbContext();
-            return await DeliveryCatalogSync.PinnedTemplateSavedSinceAsync(db, repoId, CancellationToken.None);
+            return await DeliveryCatalogSync.TemplateFoldersChangedAsync(db, repo ?? repoId, _root, CancellationToken.None);
         }
 
-        // The mappings are synced before any template is saved: their lineage was computed without one, and nothing has changed yet.
+        // Nothing recorded yet: every file of the folder is new. Once synced, nothing has changed.
+        Assert.True(await ChangedAsync());
         await ReconcileAsync(Utc);
-        Assert.False(await SavedSinceAsync());
+        Assert.False(await ChangedAsync());
 
-        // A template no mapping of the repository pins says nothing about its lineage.
+        // A template saved in the library, not in a folder, is no input of a repository's lineage.
         await WellLogVersions.SaveNextTemplateAsync(catalog.Templates(new TestClock(Utc.AddHours(1))));
-        Assert.False(await SavedSinceAsync());
+        Assert.False(await ChangedAsync());
 
-        // The template the well log mapping pins is saved: the next sync computes the lineage again, and the one after does not.
-        await catalog.Templates(new TestClock(Utc.AddHours(2))).SaveAsync(Samples.SampleTemplate(Samples.WellLogKind), "tests", "tests");
-        Assert.True(await SavedSinceAsync());
+        // A file that now holds another version is a change, until the sync records it.
+        var file = PathOf("templates/osdu_wks_work-product-component--WellLog_1.4.0.json");
+        File.WriteAllText(file, File.ReadAllText(file).Replace("\"description\":", "\"$comment\": \"changed\", \"description\":", StringComparison.Ordinal));
+        File.SetLastWriteTimeUtc(file, Utc.AddHours(2));
+        Assert.True(await ChangedAsync());
+        await ReconcileAsync(Utc.AddHours(2));
+        Assert.False(await ChangedAsync());
+
+        // A file that holds no template, and a file removed, are changes too.
+        File.WriteAllText(PathOf("templates/notes.json"), "not json");
+        Assert.True(await ChangedAsync());
         await ReconcileAsync(Utc.AddHours(3));
-        Assert.False(await SavedSinceAsync());
+        Assert.False(await ChangedAsync());
+        File.Delete(PathOf("templates/notes.json"));
+        Assert.True(await ChangedAsync());
+        await ReconcileAsync(Utc.AddHours(4));
+        Assert.False(await ChangedAsync());
 
-        // Another repository's mappings are another repository's sync.
-        await using (var db = catalog.CreateDbContext())
-        {
-            Assert.False(await DeliveryCatalogSync.PinnedTemplateSavedSinceAsync(db, Guid.NewGuid(), CancellationToken.None));
-        }
+        // Another repository has recorded nothing of these folders.
+        Assert.True(await ChangedAsync(Guid.NewGuid()));
     }
 
     [Fact]

@@ -1,5 +1,5 @@
 import { useLayoutEffect, useRef, useState, type ReactNode } from "react";
-import { Clock3, FileJson, Pin, Save, Tag, TriangleAlert, type LucideIcon } from "lucide-react";
+import { Clock3, FileJson, Save, Tag, TriangleAlert, type LucideIcon } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { SheetDescription, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { cn } from "@/lib/utils";
@@ -67,7 +67,8 @@ interface TemplateHeaderProps {
 
 /**
  * A template's header: its name, whether it is saved and the actions on it beside that, the kind it is, OSDU's description, and one
- * row of facts (the version, where it comes from, when and by whom it was saved, and what pins it).
+ * row of facts (the version, where it comes from, when and by whom it was saved, which repositories' template folders hold
+ * it, and how many synced mappings fill it).
  */
 export function TemplateHeader({ kind, detail, source, actions }: TemplateHeaderProps) {
   const saved = detail?.saved ?? null;
@@ -104,15 +105,6 @@ export function TemplateHeader({ kind, detail, source, actions }: TemplateHeader
               <span>Saved <RelativeTime value={saved.capturedUtc} /> by {saved.capturedBy}</span>
             </Fact>
           )}
-          <Fact icon={Pin} label="Pinned by">
-            <span className="text-muted-foreground">
-              {saved === null
-                ? "Not saved, so no mapping can pin it yet"
-                : saved.pinnedBy === 0
-                  ? "No synced mapping pins it"
-                  : `Pinned by ${saved.pinnedBy} synced mapping${saved.pinnedBy === 1 ? "" : "s"}`}
-            </span>
-          </Fact>
         </dl>
       )}
     </SheetHeader>

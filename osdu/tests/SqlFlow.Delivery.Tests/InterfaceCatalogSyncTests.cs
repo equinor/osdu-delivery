@@ -81,6 +81,7 @@ public sealed class InterfaceCatalogSyncTests : IDisposable
         Write("flows/petrel.yaml", Source);
         Write("flows/wells-wellbore-03-header-delivery.yaml", File.ReadAllText(Samples.WellboreFlowFile));
         Write("mappings/Wellbore@1.0.0.yaml", File.ReadAllText(Path.Combine(Samples.FixtureMappings, "Wellbore@1.0.0.yaml")));
+        Write("templates/osdu_wks_master-data--Wellbore_1.3.0.json", File.ReadAllText(Path.Combine(Samples.TemplateFiles, "osdu_wks_master-data--Wellbore_1.3.0.json")));
 
         var (warnings, result) = await SyncAsync();
 
@@ -125,6 +126,7 @@ public sealed class InterfaceCatalogSyncTests : IDisposable
         const string Pinned = "20260901T060000Z";
         Write("flows/wells-wellbore-03-header-delivery.yaml", File.ReadAllText(Samples.WellboreFlowFile));
         Write("mappings/Wellbore@1.0.0.yaml", File.ReadAllText(Path.Combine(Samples.FixtureMappings, "Wellbore@1.0.0.yaml")));
+        Write("templates/osdu_wks_master-data--Wellbore_1.3.0.json", File.ReadAllText(Path.Combine(Samples.TemplateFiles, "osdu_wks_master-data--Wellbore_1.3.0.json")));
         Write("flows/welldb-welllog-03-header-delivery.yaml", File.ReadAllText(Samples.Flow)
             .Replace("mapping: WellLog@1.4.0", $"mapping: WellLog@1.4.0\n  cacheVersion: {Pinned}", StringComparison.Ordinal));
 

@@ -275,7 +275,7 @@ flow's partitions; a run in another records it as `skipped`. See [Partitions](..
 | `tags` | none | Up to 20 labels, written as names are. A run can select tests by tag. |
 | `partitions` | all | The flow's partitions the test runs in. |
 | `kind` | required | The one type the test reads, in one version: `authority:source:entityType:major.minor.patch`, as the delivering mapping's `template.kind` names it. Wildcards are refused. |
-| `template` | newest | The template its fields are checked against. The mapping that renders the records, as `Name@version` (`template: WellLog@1.5.0`): the kind and version that mapping's `template` pins, read from the synced mapping each time the test is checked, so the test follows the mapping when it is pinned to another capture. Or a saved template version itself (`template: 2f8a99cb38d32480`), as the Templates page lists it. Left out, the most recently captured template of the kind. |
+| `template` | the folder's | The template its fields are checked against, read from the [template folders](../concepts/templates.md#template-folders) on the flow's path. The mapping that renders the records, as `Name@version` (`template: WellLog@1.5.0`): the kind and version that mapping fills, read from the synced mapping each time the test is checked, so the test follows the mapping when it moves to another version. Or a template version itself (`template: 2f8a99cb38d32480`), as `sqlflow template folders` lists it, which a folder on the flow's path must hold. Left out, the one version of the kind the nearest template folder holding the kind holds. |
 | `query` | none | A Lucene query narrowing the kind, with `{parameter}` and `{partition}` tokens. Left out, every record of the kind. |
 | `ids` | none | 1 to 1,000 record ids to read from storage instead of searching, with tokens. Not with `query`, `spatial` or `sort`. |
 | `spatial` | none | The search's `spatialFilter`: a geo `field` and exactly one of `byBoundingBox` (`topLeft`, `bottomRight`), `byDistance` (`point`, `distance` in metres), `byGeoPolygon` (`points`), `byIntersection` (`polygons`, each with `points`), `byWithinPolygon` (`points`); a point is `{ latitude, longitude }`. |
@@ -622,9 +622,10 @@ A test that does not fit is reported `errored` with each problem, and is not eva
 - `'<label>': '<path>' is not a property of <kind> (template <version>); did you mean '<nearest>'?`
 - `'<label>': '<path>' is a list in <kind> (template <version>); equals compares one value, so test each item with '<path>[*]', or ask what the list contains.`
 - `'<label>': '<path>' refers to master-data--Wellbore in <kind> (template <version>), never to master-data--Well.`
-- `No template of <kind> is saved, so the test's fields cannot be checked against the kind's schema. Capture it on the Templates page (or with 'sqlflow template capture --kind <kind>'), then run the test again.`
-- `The test is checked against the template mapping <Name@version> pins, and no mapping <Name@version> is synced; sync the repository that declares it, then run again.`
-- `Mapping <Name@version> pins a template of <kind>, and the test reads <other kind>; name the mapping of <other kind>, or a template version of it.`
+- `The test's fields are checked against the template of <kind>, and no template folder on the path of flows/<flow>.yaml holds template <kind>. ...` (the rest says which folders it read and how to put the template's file in one)
+- `The test is checked against template <kind> version <version>, the one mapping <Name@version> fills, and ...`
+- `The test is checked against the template mapping <Name@version> fills, and no mapping <Name@version> is synced; sync the repository that declares it, then run again.`
+- `Mapping <Name@version> fills a template of <kind>, and the test reads <other kind>; name the mapping of <other kind>, or a template version of it.`
 
 A test that only counts, checks the index, legal tags or the ledger, or reads bulk data, needs no template.
 

@@ -16,33 +16,41 @@ public sealed record ResolvedMapping(
     SchemaSnapshot Schema,
     ReferenceSnapshot References,
     RenderContext Context,
-    MappingRenderer Renderer);
+    MappingRenderer Renderer)
+{
+    /// <summary>Where the template was read from: the template folder file on the mapping's path, or the saved template's origin.</summary>
+    public string? TemplateOrigin { get; init; }
+}
 
 /// <summary>
 /// Resolves a flow's <c>render</c> block into a <see cref="ResolvedMapping"/>: the pinned mapping from the repository, the
-/// template version the mapping pins from the catalog, the version of the cache of the partition the flow delivers to (its
-/// current version, or the one the flow pins) from the catalog, the schemas the mapping's searches pin, and the mapping
-/// parameters the flow supplies. The preflight runs before anything is returned.
+/// template it fills and the schemas its searches read from the template folders on the mapping's path, the version of the
+/// cache of the partition the flow delivers to (its current version, or the one the flow pins) from the catalog, and the
+/// mapping parameters the flow supplies. The preflight runs before anything is returned.
 /// </summary>
 public sealed class RenderResolver
 {
     private readonly MappingCatalog _mappings;
     private readonly ICacheStore? _cache;
-    private readonly ITemplateStore? _templates;
+    private readonly ITemplateSource _templates;
     private readonly ISecretResolver _secrets;
     private readonly IRecordSearch? _search;
 
     /// <param name="mappings">Where the flow's mapping is read from.</param>
     /// <param name="cache">The partitions' caches, for a mapping that reads one.</param>
-    /// <param name="templates">The saved templates: the mapping's own, and those its searches pin.</param>
+    /// <param name="templates">
+    /// Where the mapping's template and the schemas its searches pin are read: the template folders on the mapping's path
+    /// (<see cref="EngineContext.DocumentTemplates"/>).
+    /// </param>
     /// <param name="secrets">Resolves the references the flow supplies as parameters.</param>
     /// <param name="search">
     /// Where the mapping's search sources are answered: the platform the flow delivers to. A mapping that searches and is
     /// resolved without one renders every search as finding nothing, which holds the records that need it.
     /// </param>
-    public RenderResolver(MappingCatalog mappings, ICacheStore? cache, ITemplateStore? templates, ISecretResolver secrets, IRecordSearch? search = null)
+    public RenderResolver(MappingCatalog mappings, ICacheStore? cache, ITemplateSource templates, ISecretResolver secrets, IRecordSearch? search = null)
     {
         ArgumentNullException.ThrowIfNull(mappings);
+        ArgumentNullException.ThrowIfNull(templates);
         ArgumentNullException.ThrowIfNull(secrets);
         _mappings = mappings;
         _cache = cache;
@@ -57,16 +65,9 @@ public sealed class RenderResolver
         ArgumentNullException.ThrowIfNull(flow);
         var where = KeyPaths.Where(flow);
         var mapping = _mappings.Load(flow.Render.Mapping);
-
-        if (_templates is null)
-        {
-            throw new FlowValidationException(
-                $"{where}: mapping {mapping.Reference} fills template {mapping.Template}, and templates live in the module's database, which this host was started without. Start it with the module's connection (Osdu:Database:Connection or SQLFLOW_OSDU_DB), or with --db when the catalog's database holds the osdu schema.");
-        }
-
-        var schema = await _templates.LoadAsync(mapping.Template, ct).ConfigureAwait(false)
-            ?? throw new FlowValidationException(
-                $"{where}: mapping {mapping.Reference} pins template {mapping.Template}, which is not saved. Save it on the Templates page, or with 'sqlflow template import'.");
+        var template = await _templates.ResolveAsync(mapping.TemplateDocument, mapping.Template.Kind, mapping.Template.Version, ct).ConfigureAwait(false);
+        var schema = template.Schema
+            ?? throw new FlowValidationException($"{where}: mapping {mapping.Reference} cannot render: {template.Problem}");
 
         var (references, scope, systemProperties) = await CacheAsync(flow, mapping, where, ct).ConfigureAwait(false);
 
@@ -111,15 +112,15 @@ public sealed class RenderResolver
         var issues = Preflight.Check(mapping, schema, references, context, sourceColumns: null, searches);
         Preflight.ThrowIfFailed(issues, where);
         var renderer = new MappingRenderer(mapping, schema, references, context, searches, _search);
-        return new ResolvedMapping(mapping, schema, references, context, renderer);
+        return new ResolvedMapping(mapping, schema, references, context, renderer) { TemplateOrigin = template.Template?.Origin };
     }
 
     /// <summary>
     /// <paramref name="mapping"/>'s searches resolved against the templates they pin, read from
-    /// <paramref name="templates"/>: how each property a search compares is indexed. A pinned template that is not saved
-    /// is reported among the problems, with every other, for the preflight to list.
+    /// <paramref name="templates"/>: how each property a search compares is indexed. A pinned template that cannot be read
+    /// is reported among the problems, with why, for the preflight to list.
     /// </summary>
-    public static async Task<ResolvedSearches> SearchesAsync(ITemplateStore templates, MappingDefinition mapping, CancellationToken ct = default)
+    public static async Task<ResolvedSearches> SearchesAsync(ITemplateSource templates, MappingDefinition mapping, CancellationToken ct = default)
     {
         ArgumentNullException.ThrowIfNull(templates);
         ArgumentNullException.ThrowIfNull(mapping);
@@ -129,15 +130,21 @@ public sealed class RenderResolver
         }
 
         var schemas = new Dictionary<TemplateReference, SchemaSnapshot>();
+        var missing = new Dictionary<TemplateReference, string>();
         foreach (var pinned in mapping.Searches.Values.Select(s => s.Schema).Distinct())
         {
-            if (await templates.LoadAsync(pinned, ct).ConfigureAwait(false) is { } schema)
+            var resolved = await templates.ResolveAsync(mapping.TemplateDocument, pinned.Kind, pinned.Version, ct).ConfigureAwait(false);
+            if (resolved.Schema is { } schema)
             {
                 schemas[pinned] = schema;
             }
+            else
+            {
+                missing[pinned] = resolved.Problem!;
+            }
         }
 
-        return ResolvedSearches.Resolve(mapping, schemas);
+        return ResolvedSearches.Resolve(mapping, schemas, missing);
     }
 
     /// <summary>

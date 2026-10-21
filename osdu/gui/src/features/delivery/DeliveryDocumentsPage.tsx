@@ -74,7 +74,7 @@ const mappingColumns: Column<DeliveryMapping>[] = [
     render: (row) => (
       <div className="flex min-w-0 flex-col">
         <KindText kind={row.kind} />
-        <span className="font-mono text-[11px] text-muted-foreground">{summaryText(row.summary, "templateVersion")}</span>
+        <span className="font-mono text-[11px] text-muted-foreground">{row.templateVersion === "" ? "-" : row.templateVersion}</span>
       </div>
     ),
   },
@@ -115,7 +115,13 @@ export default function DeliveryDocumentsPage() {
   });
 
   const detail = mapping.data;
-  const templateVersion = detail !== undefined ? summaryText(detail.mapping.summary, "templateVersion") : "-";
+  const templateVersion = detail !== undefined && detail.mapping.templateVersion !== "" ? detail.mapping.templateVersion : "-";
+  // Where the template was settled from: the template folder file on the mapping's path, or none when no folder there holds it.
+  const templateTitle = detail === undefined
+    ? undefined
+    : detail.mapping.templatePath !== ""
+      ? `The template the mapping fills, read from ${detail.mapping.templatePath}`
+      : "The template version the mapping names; no template folder on its path holds it";
 
   return (
     <Page data-testid="page-delivery-documents">
@@ -196,7 +202,7 @@ export default function DeliveryDocumentsPage() {
                           asChild
                           size="sm"
                           variant="ghost"
-                          title="The template version the mapping pins"
+                          title={templateTitle}
                           data-testid="delivery-mapping-template"
                         >
                           <RouterLink
@@ -222,13 +228,14 @@ export default function DeliveryDocumentsPage() {
                       yaml={detail.yaml}
                       path={detail.mapping.relativePath}
                       contentHash={detail.mapping.contentHash}
+                      repoId={detail.mapping.repoId}
                     />
                   </TabsContent>
                   <TabsContent value="yaml" className="flex min-h-0 flex-col">
                     <CodeView value={detail.yaml} language="yaml" fill data-testid="delivery-mapping-yaml" />
                   </TabsContent>
                   <TabsContent value="shape" className="flex min-h-0 flex-col">
-                    <MappingShapeView yaml={detail.yaml} path={detail.mapping.relativePath} contentHash={detail.mapping.contentHash} />
+                    <MappingShapeView yaml={detail.yaml} path={detail.mapping.relativePath} contentHash={detail.mapping.contentHash} repoId={detail.mapping.repoId} />
                   </TabsContent>
                 </Tabs>
               </>

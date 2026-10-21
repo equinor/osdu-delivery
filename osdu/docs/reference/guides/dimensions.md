@@ -2,7 +2,7 @@
 id: delivery-guide-dimensions
 title: "Building a dimension of OSDU values and using it to filter search, drop-downs and reports"
 type: guide
-summary: "Build a dimension flow end to end: pick key, label and attributes, save templates, plan, build, check the values, then search, query the table or cache it."
+summary: "Build a dimension flow end to end: pick key, label and attributes, keep templates, plan, build, check the values, then search, query the table or cache it."
 keywords:
   - build a dimension
   - pick list of osdu values
@@ -20,7 +20,7 @@ related:
   - delivery-flow-cache
   - delivery-flow-dictionary
   - delivery-concept-templates
-  - delivery-guide-pattern-catalog
+  - delivery-wiki-pattern-catalog
   - cli-run
 sourceRefs:
   - osdu/src/SqlFlow.Delivery/Documents/DimensionDocumentMapper.cs
@@ -59,15 +59,16 @@ Start from the question a person asks, and split it three ways:
 Reading through the well logs (rather than the wellbores) keeps only the wellbores that have logs, and every filter the
 dimension writes then finds logs. The kind is the one your search will read.
 
-## 2. Save the templates of the kinds it reads
+## 2. Keep the templates of the kinds it reads
 
-A dimension reading a `data` path learns how the index stores it from the saved template of every kind its pattern
-matches in the partition. Save the template of each ([templates](../concepts/templates.md)). The commands in this guide
-read and write the module's database, which is the catalog's (`SQLFLOW_CATALOG_DB`, or `--db <conn-ref>`) unless
-`SQLFLOW_OSDU_DB` names one of its own:
+A dimension reading a `data` path learns how the index stores it from the template of every kind its pattern matches in
+the partition, as the template folders on the flow's path hold it. Put the template of each in a folder on the flow's
+path ([template folders](../concepts/templates.md#template-folders)). The commands in this guide read and write the
+module's database, which is the catalog's (`SQLFLOW_CATALOG_DB`, or `--db <conn-ref>`) unless `SQLFLOW_OSDU_DB` names one
+of its own:
 
 ```bash
-sqlflow template capture --kind osdu:wks:work-product-component--WellLog:1.4.0
+sqlflow template capture --kind osdu:wks:work-product-component--WellLog:1.4.0 --out welldb/templates/osdu_wks_work-product-component--WellLog_1.4.0.json
 ```
 
 A dimension reading a property of the record itself (`kind`, `legal.legaltags`, `acl.owners`, `tags.<name>`) needs no
@@ -304,7 +305,7 @@ sqlflow dimensions remove flows/welldb-welllog-05-dimensions.yaml --dimension Cu
 
 | Symptom | Cause and fix |
 | --- | --- |
-| `... no template is saved for <kind> ...` | Capture the template of every kind the pattern matches (step 2), or narrow `kind`. |
+| `... and the flow reads no template of <kind> ...` | Put the template of every kind the pattern matches in a template folder on the flow's path (step 2), or narrow `kind`. |
 | `... which the kinds its pattern matches index differently ...` | Two schema versions store the path differently; narrow `kind` to the versions that agree. |
 | `<path> holds more than <n> distinct values ...` | Narrow `query`, or raise `maxValues` (at most 5,000,000). |
 | `... would write the table osdu.dim_<name>, which dimension <name> of <flow> writes ...` | Dimension names are unique across the flows of a database; rename one. |

@@ -524,7 +524,7 @@ public class SearchSourceTests
     }
 
     [Fact]
-    public void A_search_that_pins_no_schema_is_refused_and_told_where_to_save_one()
+    public void A_search_that_pins_no_schema_is_refused_and_told_what_to_pin_and_where_it_is_read()
     {
         var document = TestSchema.MappingDocument(ByNameThenAlias).Replace("parameters:", """
             searches:
@@ -537,7 +537,8 @@ public class SearchSourceTests
         var refused = Assert.Throws<FlowValidationException>(() => new DeliveryDocumentLoader().ParseMapping(document, "thing.yaml"));
 
         Assert.Contains("pins no schema", refused.Message, StringComparison.Ordinal);
-        Assert.Contains("Templates page", refused.Message, StringComparison.Ordinal);
+        Assert.Contains("schema: { kind: osdu:wks:master-data--Wellbore:<version> }", refused.Message, StringComparison.Ordinal);
+        Assert.Contains("read from the template folders on the mapping's path", refused.Message, StringComparison.Ordinal);
     }
 
     [Fact]

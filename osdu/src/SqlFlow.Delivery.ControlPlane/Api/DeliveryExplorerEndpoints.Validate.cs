@@ -158,12 +158,12 @@ public static partial class DeliveryExplorerEndpoints
     private static async Task<Results<ContentHttpResult, ProblemHttpResult>> ValidateListAsync(
         DeliveryExplorerValidateListRequest? body, [FromQuery] string? partition, CatalogDbContext db, DeliveryDocumentLoader documents, IPartitionRegistry partitions,
         ILedger ledger, DeliveryConfigStore config, DirectOperations direct, ILoggerFactory loggers, HttpRequest request, ClaimsPrincipal user,
-        OsduDbContext osdu, ITemplateStore templates, TimeProvider clock, CancellationToken ct)
+        OsduDbContext osdu, TimeProvider clock, CancellationToken ct)
     {
         var asked = body ?? new DeliveryExplorerValidateListRequest();
         var searched = (asked.Search ?? new DeliveryExplorerSearchRequest()) with { Offset = null, Limit = null, Facet = null };
         var (terms, failure) = await TermsOfAsync(
-            searched, partition, db, documents, partitions, ledger, request, new SearchTermDirectory(osdu, templates, documents, clock), ct).ConfigureAwait(false);
+            searched, partition, db, documents, partitions, ledger, request, new SearchTermDirectory(osdu, documents, clock), ct).ConfigureAwait(false);
         if (failure is not null)
         {
             return failure;

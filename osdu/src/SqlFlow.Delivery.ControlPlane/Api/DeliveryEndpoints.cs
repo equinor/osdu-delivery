@@ -194,9 +194,14 @@ public sealed record DeliverySubmissionDetailDto(
     DeliverySubmissionDto Submission, Guid? PipelineId, IReadOnlyList<Guid> RunIds, string? Interface = null, string? Partition = null);
 
 /// <summary>A mapping document as the sync found it in a repository.</summary>
+/// <remarks>
+/// <c>TemplateVersion</c> is the template version the mapping fills, and <c>TemplatePath</c> the template folder file the
+/// last sync settled it from (osdu/docs/reference/concepts/templates.md, Template folders); empty when no folder on the
+/// mapping's path holds it.
+/// </remarks>
 public sealed record DeliveryMappingDto(
     Guid Id, Guid RepoId, string Reference, string Name, string Version, string Kind, string RelativePath, string ContentHash,
-    string Status, string? Message, JsonElement Summary, DateTime FirstSeenUtc, DateTime LastSeenUtc);
+    string Status, string? Message, JsonElement Summary, DateTime FirstSeenUtc, DateTime LastSeenUtc, string TemplateVersion, string TemplatePath);
 
 /// <summary>A mapping document with its text.</summary>
 public sealed record DeliveryMappingDetailDto(DeliveryMappingDto Mapping, string Yaml);
@@ -790,9 +795,9 @@ public static class DeliveryEndpoints
 
     /// <summary>
     /// The order a run takes the source's interfaces in, worked out as the run's preflight works it out: from <c>after:</c>
-    /// and the relationships the mappings fill, read from the repository's synced mappings and the catalog's templates. When
-    /// a mapping or template is missing, or the interfaces wait for each other, the order <c>after:</c> alone gives is
-    /// returned with the reason.
+    /// and the relationships the mappings fill, read from the repository's synced mappings and the templates the template
+    /// folders its last sync recorded on each mapping's path hold. When a mapping or template is missing, or the interfaces
+    /// wait for each other, the order <c>after:</c> alone gives is returned with the reason.
     /// </summary>
     private static async Task<(InterfaceOrderPlan Order, string? Problem)> OrderAsync(
         OsduDbContext osdu, DeliveryDocumentLoader documents, EngineContext engine, SourceContext source, CancellationToken ct)
@@ -810,6 +815,7 @@ public static class DeliveryEndpoints
             .Select(m => new { m.Reference, m.Yaml, m.RelativePath })
             .ToListAsync(ct).ConfigureAwait(false);
         var schemas = new List<InterfaceSchema>(names.Count);
+        Catalog.SyncedTemplates? folders = null;
         foreach (var flow in source.Source.Interfaces)
         {
             var row = rows.FirstOrDefault(r => r.Reference == flow.Render.Mapping);
@@ -820,11 +826,12 @@ public static class DeliveryEndpoints
 
             try
             {
-                var mapping = documents.ParseMapping(row.Yaml, row.RelativePath);
-                var schema = engine.Templates is { } templates ? await templates.LoadAsync(mapping.Template, ct).ConfigureAwait(false) : null;
-                if (schema is null)
+                folders ??= await Catalog.SyncedTemplates.ReadAsync(osdu, source.Pipeline.RepoId, ct).ConfigureAwait(false);
+                var mapping = documents.ParseMapping(row.Yaml, row.RelativePath, folders.For(row.RelativePath));
+                var resolved = await folders.ResolveAsync(mapping.TemplateDocument, mapping.Template.Kind, mapping.Template.Version, ct).ConfigureAwait(false);
+                if (resolved.Schema is not { } schema)
                 {
-                    return (InterfaceOrder.Plan(names, declared, []), $"Mapping {mapping.Reference} of interface '{flow.Interface}' pins template {mapping.Template}, which is not saved, so only after: orders the interfaces.");
+                    return (InterfaceOrder.Plan(names, declared, []), $"Only after: orders the interfaces, since the template of mapping {mapping.Reference} of interface '{flow.Interface}' cannot be read: {resolved.Problem}");
                 }
 
                 schemas.Add(InterfaceSchemas.Describe(flow.Interface ?? string.Empty, mapping, OsduTemplate.From(schema)));
@@ -3415,7 +3422,7 @@ public static class DeliveryEndpoints
 
     private static DeliveryMappingDto ToDto(DeliveryMapping m) => new(
         m.Id, m.RepoId, m.Reference, m.Name, m.Version, m.Kind, m.RelativePath, m.ContentHash, m.Status, m.Message, ParseJson(m.SummaryJson),
-        m.FirstSeenUtc, m.LastSeenUtc);
+        m.FirstSeenUtc, m.LastSeenUtc, m.TemplateVersion, m.TemplatePath);
 
     private static DeliveryUpdateTagDto ToDto(UpdateTag t, IReadOnlyDictionary<Guid, LedgerPipeline> pipelines) => new(
         t.TagId, t.Kind, t.Scope, t.TypeName, t.ItemId, t.Path, t.Change, t.OldValue, t.NewValue, t.FromVersion, t.ToVersion, t.Mode,

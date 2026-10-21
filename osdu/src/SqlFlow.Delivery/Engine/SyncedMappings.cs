@@ -24,7 +24,7 @@ public static class SyncedMappings
         }
 
         return await ledger.SyncedMappingAsync(id, ct).ConfigureAwait(false) is { } synced
-            ? Parse(context.Documents, synced)
+            ? await ParseAsync(ledger, context.Documents, synced, ct).ConfigureAwait(false)
             : (null, $"no mapping is synced under {id:D}; its repository may no longer declare it");
     }
 
@@ -58,18 +58,26 @@ public static class SyncedMappings
             return (null, $"no mapping {reference} is synced; sync the repository that declares it, then run again");
         }
 
-        var documents = synced.GroupBy(s => s.ContentHash, StringComparer.Ordinal).ToList();
+        // Two repositories hold one mapping only when they hold the same document and it fills the same template: a mapping
+        // that names its template's kind alone fills whatever version the folders on its path hold, which can differ.
+        var documents = synced.GroupBy(s => (s.ContentHash, Template: s.TemplateVersion.ToUpperInvariant())).ToList();
         if (documents.Count > 1)
         {
+            var differ = synced.GroupBy(s => s.ContentHash, StringComparer.Ordinal).Count() > 1 ? "whose documents differ" : "whose template folders give it different templates";
             return (null,
-                $"mapping {reference} is synced from {synced.Select(s => s.RepoId).Distinct().Count()} repositories whose documents differ "
-                + $"({string.Join(", ", documents.Select(d => d.First().RelativePath))}), so there is no one mapping to read; give each its own version");
+                $"mapping {reference} is synced from {synced.Select(s => s.RepoId).Distinct().Count()} repositories {differ} "
+                + $"({string.Join(", ", documents.Select(d => d.First().RelativePath + (d.Key.Template.Length == 0 ? string.Empty : $" (template {d.First().TemplateVersion})")))}), so there is no one mapping to read; give each its own version");
         }
 
-        return Parse(loader, synced[0]);
+        return await ParseAsync(ledger, loader, synced[0], ct).ConfigureAwait(false);
     }
 
-    private static (MappingDefinition? Mapping, string? Problem) Parse(DeliveryDocumentLoader loader, SyncedMapping synced)
+    /// <summary>
+    /// The synced mapping read again, its templates settled from the template folders its repository's last sync recorded on
+    /// its path, as the sync settled them (osdu/docs/reference/concepts/templates.md, Template folders).
+    /// </summary>
+    private static async Task<(MappingDefinition? Mapping, string? Problem)> ParseAsync(
+        ILedger ledger, DeliveryDocumentLoader loader, SyncedMapping synced, CancellationToken ct)
     {
         if (!synced.Valid)
         {
@@ -78,7 +86,8 @@ public static class SyncedMappings
 
         try
         {
-            return (loader.ParseMapping(synced.Yaml, synced.RelativePath), null);
+            var folders = await Catalog.SyncedTemplates.ReadAsync(ledger, synced.RepoId, ct).ConfigureAwait(false);
+            return (loader.ParseMapping(synced.Yaml, synced.RelativePath, folders.For(synced.RelativePath)), null);
         }
         catch (FlowValidationException ex)
         {

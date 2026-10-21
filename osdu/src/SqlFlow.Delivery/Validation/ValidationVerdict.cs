@@ -51,7 +51,7 @@ public static class ValidationOutcomes
 /// <summary>Which schema a record was checked against, and where it came from.</summary>
 /// <param name="Kind">The kind whose schema it is.</param>
 /// <param name="Version">The schema's content version (<see cref="Snapshots.SchemaSnapshot.Version"/>).</param>
-/// <param name="Source"><c>template</c> for a saved template, <c>schema-service</c> for the partition's Schema service.</param>
+/// <param name="Source"><c>template</c> for a template OSDU Delivery holds (a template folder's, or a saved one), <c>schema-service</c> for the partition's Schema service.</param>
 public sealed record VerdictSchema(string Kind, string Version, string Source)
 {
     public const string Template = "template";

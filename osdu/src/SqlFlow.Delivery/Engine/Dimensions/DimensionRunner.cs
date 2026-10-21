@@ -188,8 +188,8 @@ public sealed record DimensionPlanOutcome(string Operation, string Flow, string 
 
 /// <summary>
 /// Builds a dimension flow's dimensions in one partition (osdu/docs/reference/flow/dimension.md, What a build does):
-/// for each dimension, settles how the index stores its field (from the saved template of every kind its pattern
-/// matches, or the indexer's mapping of the record's own properties), reads every distinct value through the search's
+/// for each dimension, settles how the index stores its field (from the template the flow reads of every kind its
+/// pattern matches, or the indexer's mapping of the record's own properties), reads every distinct value through the search's
 /// aggregation paged by value ranges, cleans the values into members, gives each member its search filter and, where
 /// asked, its exact record count, and writes the build in one transaction. Dimensions build as many at once as the
 /// flow's concurrency allows, and one that fails leaves the others building. The plan settles the fields and counts the
@@ -289,7 +289,7 @@ public sealed partial class DimensionRunner
         using var http = new HttpRuntime(_flow.Reliability, _context.Secrets, _context.Time, _transport, _allowLoopback, observer: _context.HttpObserver);
         var client = await ProtocolFactory.ClientAsync(http, _flow.Source.Endpoint, _flow.Source.Auth, _flow.Source.Headers, _context.Secrets, ct).ConfigureAwait(false);
         var search = new OsduSearch(client, _flow.Source.QueryPath, _flow.Source.SearchPath, _log, _flow.Source.Paging);
-        using var templates = new TemplateCache(_context.Templates);
+        using var templates = new TemplateCache(_context.DocumentTemplates, _flow.SourcePath);
         var summaries = new List<DimensionBuildSummary>(selected.Count);
         var gate = new Lock();
         await Parallel.ForEachAsync(
@@ -423,7 +423,7 @@ public sealed partial class DimensionRunner
         using var http = new HttpRuntime(_flow.Reliability, _context.Secrets, _context.Time, _transport, _allowLoopback, observer: _context.HttpObserver);
         var client = await ProtocolFactory.ClientAsync(http, _flow.Source.Endpoint, _flow.Source.Auth, _flow.Source.Headers, _context.Secrets, ct).ConfigureAwait(false);
         var search = new OsduSearch(client, _flow.Source.QueryPath, _flow.Source.SearchPath, _log, _flow.Source.Paging);
-        using var templates = new TemplateCache(_context.Templates);
+        using var templates = new TemplateCache(_context.DocumentTemplates, _flow.SourcePath);
         var plans = new List<DimensionPlanSummary>(selected.Count);
         foreach (var dimension in selected)
         {
@@ -912,7 +912,7 @@ public sealed partial class DimensionRunner
 
     /// <summary>
     /// How the index stores the dimension's field: for a property of the record itself, as the indexer maps it for every kind;
-    /// for a property of data, as the saved template of every kind the pattern matches in the partition says, which must all
+    /// for a property of data, as the template the flow reads of every kind the pattern matches in the partition says, which must all
     /// say the same. A partition holding no record of the kind settles nothing, and says so.
     /// </summary>
     private Task<ResolvedField> ResolveFieldAsync(OsduSearch search, TemplateCache templates, DimensionSpec dimension, string? query, CancellationToken ct)
@@ -956,12 +956,14 @@ public sealed partial class DimensionRunner
 
         var found = new List<DimensionKind>();
         var missing = new List<string>();
+        string? why = null;
         var shapes = new List<(string Kind, IndexedShape Shape)>();
         foreach (var (kind, records) in kinds.OrderBy(k => k.Kind, StringComparer.Ordinal))
         {
-            var (schema, version) = await templates.NewestAsync(kind, ct).ConfigureAwait(false);
+            var (schema, version, problem) = await templates.NewestAsync(kind, ct).ConfigureAwait(false);
             if (schema is null)
             {
+                why ??= problem;
                 missing.Add(string.Create(CultureInfo.InvariantCulture, $"{kind} ({records} record(s))"));
                 found.Add(new DimensionKind(kind, records, null));
                 continue;
@@ -974,7 +976,7 @@ public sealed partial class DimensionRunner
         if (missing.Count > 0)
         {
             throw new DeliveryException(
-                $"{who} reads {path} of {dimension.Kind}, and no template is saved for {string.Join(", ", missing.Take(10))}{(missing.Count > 10 ? $" and {missing.Count - 10} more" : string.Empty)}, so how the index stores the field there is not known. Capture each on the Templates page, or with 'sqlflow template capture --kind <kind>'.");
+                $"{who} reads {path} of {dimension.Kind}, and the flow reads no template of {string.Join(", ", missing.Take(10))}{(missing.Count > 10 ? $" and {missing.Count - 10} more" : string.Empty)}, so how the index stores the field there is not known: {why}");
         }
 
         var refused = shapes.Where(s => s.Shape.Field is null).ToList();
@@ -1435,23 +1437,21 @@ public sealed partial class DimensionRunner
 
     private sealed record ResolvedField(OsduField? Field, bool Repeats, IReadOnlyList<DimensionKind> Kinds, string? Note);
 
-    /// <summary>The newest saved template of each exact kind, read once per run whichever dimension asks.</summary>
-    private sealed class TemplateCache(ITemplateStore? store) : IDisposable
+    /// <summary>
+    /// The template of each exact kind a dimension reads, as the flow reads it: the one version of the kind the template
+    /// folders on the flow's path hold (osdu/docs/reference/concepts/templates.md, Template folders), read once per run
+    /// whichever dimension asks.
+    /// </summary>
+    private sealed class TemplateCache(ITemplateSource source, string? document) : IDisposable
     {
         private readonly SemaphoreSlim _gate = new(1, 1);
-        private readonly Dictionary<string, (SchemaSnapshot? Schema, string? Version)> _loaded = new(StringComparer.OrdinalIgnoreCase);
-        private IReadOnlyList<TemplateInfo>? _saved;
+        private readonly Dictionary<string, (SchemaSnapshot? Schema, string? Version, string? Problem)> _loaded = new(StringComparer.OrdinalIgnoreCase);
 
         public void Dispose() => _gate.Dispose();
 
-        /// <summary>The schema of the newest template saved for <paramref name="kind"/>, with its version; nulls when none is saved.</summary>
-        public async Task<(SchemaSnapshot? Schema, string? Version)> NewestAsync(string kind, CancellationToken ct)
+        /// <summary>The schema of the template of <paramref name="kind"/> the flow reads, with its version; nulls and why when it reads none.</summary>
+        public async Task<(SchemaSnapshot? Schema, string? Version, string? Problem)> NewestAsync(string kind, CancellationToken ct)
         {
-            if (store is null)
-            {
-                throw new DeliveryException($"The templates of the kinds a dimension reads are kept in the module database, and this host has none: {DeliveryServices.NoLedgerMessage}");
-            }
-
             await _gate.WaitAsync(ct).ConfigureAwait(false);
             try
             {
@@ -1460,10 +1460,10 @@ public sealed partial class DimensionRunner
                     return known;
                 }
 
-                _saved ??= await store.ListAsync(ct).ConfigureAwait(false);
-                var newest = _saved.Where(t => string.Equals(t.Kind, kind, StringComparison.OrdinalIgnoreCase)).OrderByDescending(t => t.CapturedUtc).FirstOrDefault();
-                var schema = newest is null ? null : await store.LoadAsync(newest.Reference, ct).ConfigureAwait(false);
-                var loaded = (schema, schema is null ? null : newest!.Version);
+                var resolved = await source.ResolveAsync(document, kind, null, ct).ConfigureAwait(false);
+                var loaded = resolved.Found
+                    ? (resolved.Schema, resolved.Template!.Version, (string?)null)
+                    : ((SchemaSnapshot?)null, (string?)null, resolved.Problem);
                 _loaded[kind] = loaded;
                 return loaded;
             }

@@ -2,7 +2,7 @@
 id: delivery-guide-getting-started
 title: "Getting started: your first delivery, from source files to a wellbore record in OSDU"
 type: guide
-summary: "Deliver a first wellbore end to end: land and key the files, save the template, write the mapping and flow, check, preview, plan, deliver, read the ledger."
+summary: "Deliver a first wellbore end to end: land and key the files, keep the template, write the mapping and flow, check, preview, plan, deliver, read the ledger."
 keywords:
   - getting started
   - quickstart
@@ -228,11 +228,12 @@ changes, is what the delivery's incremental read windows on, so keep `systemColu
 RecId` gives the table the identity primary key a delivery pages by. The provenance columns the file flow wrote
 (`FileName_DW`, `RowNumber_DW`) pass through the view into the table, and become each record's origin in the ledger.
 
-## Step 4: save the template the mapping fills
+## Step 4: keep the template the mapping fills
 
-A mapping fills a template: the OSDU schema of one kind, in one version, saved in the module's database. Save the
-wellbore kind from the OSDU data definitions (the Open Group's public repository of OSDU schemas, newest release unless
-`--release` names one):
+A mapping fills a template: the OSDU schema of one kind, in one version, which a template folder on the mapping's path
+holds, a folder named `templates` committed with the mappings ([template folders](../concepts/templates.md#template-folders)).
+Write the wellbore kind's schema into the project's folder from the OSDU data definitions (the Open Group's public
+repository of OSDU schemas, newest release unless `--release` names one):
 
 ```bash
 sqlflow template capture --kind osdu:wks:master-data--Wellbore:1.3.0 --out welldb/templates/osdu_wks_master-data--Wellbore_1.3.0.json
@@ -242,13 +243,15 @@ sqlflow template capture --kind osdu:wks:master-data--Wellbore:1.3.0 --out welld
 saved template osdu:wks:master-data--Wellbore:1.3.0 version 58d6bdbd9d066a06
 ```
 
-The version is a 16-character hash of the saved schema, and the mapping pins it. `--out` also writes the bundled schema
-to a file, which a machine without access to the data definitions can save again with
-`sqlflow template import <file> --kind <kind>`. The Templates page of the GUI does the same, and `sqlflow template list`
-shows what is saved:
+The version is a 16-character hash of the schema. A mapping can pin it (`template.version`), or name the kind alone and
+fill the one version the nearest folder holding the kind holds. Given the module's database, the command also saves the
+version in the library, which the GUI's builder and explorer and the MCP server read; the repository's documents read
+only the file, and on a machine without the database the command writes the file alone. The Templates page of the GUI downloads a saved version as the same file.
+`sqlflow template folders` lists what the repository's template folders hold:
 
 ```text
-osdu:wks:master-data--Wellbore:1.3.0  58d6bdbd9d066a06  saved 2026-10-09 09:12:44Z by <you>  (<where it came from>)
+welldb/templates
+  welldb/templates/osdu_wks_master-data--Wellbore_1.3.0.json  osdu:wks:master-data--Wellbore:1.3.0  58d6bdbd9d066a06
 ```
 
 Copy the version your save printed into the mapping in the next step: a different release can bundle a different schema
@@ -331,7 +334,7 @@ OK  'Wellbore@1.0.0 -> osdu:wks:master-data--Wellbore:1.3.0' is valid (mapping).
 ```
 
 Validation reads the mapping alone. Whether every path it fills exists in the template, and every value fits, is
-checked by `sqlflow check` and `sqlflow values` once the template is saved.
+checked by `sqlflow check` and `sqlflow values`, which read the template from the template folder.
 
 ## Step 6: write the delivery flow
 
@@ -392,7 +395,7 @@ OK  'welldb-wellbore-03-delivery' is valid (delivery: OsduData.silver.Wellbore -
 
 ## Step 7: check the flow with everything it renders with
 
-`sqlflow check` is the preflight: it reads the flow, the mapping it pins, the template that mapping pins and the cache it
+`sqlflow check` is the preflight: it reads the flow, the mapping it pins, the template that mapping fills and the cache it
 reads, and runs the mapping's checks against the template, without reading a row or sending anything:
 
 ```bash
@@ -575,9 +578,9 @@ no catalog connection ([the node](../cli/worker.md)).
 
 | Message (start) | Cause | What to do |
 | --- | --- | --- |
-| `mapping Wellbore@1.0.0 pins template osdu:wks:master-data--Wellbore:1.3.0 version ..., which is not saved.` | The template version in the mapping is not in the module's database. | Save it (step 4) and copy the version it prints into the mapping. |
+| `mapping Wellbore@1.0.0 cannot render: no template folder on the path of ... holds template osdu:wks:master-data--Wellbore:1.3.0 version ...` | No template folder on the mapping's path holds that version. | Write it into the folder (step 4), and name the version it prints in the mapping, or leave the version out. |
 | `Mapping 'Wellbore@1.0.0' was not found under '...mappings'. Expected one of: Wellbore@1.0.0.yaml, ...` | The mapping file is not in the nearest `mappings/` folder, or is named differently. | Move or rename it, or set `render.mappings`. |
-| `... templates live in the module's database, which this host was started without.` | No module database: no `SQLFLOW_CATALOG_DB`, `--db` or `SQLFLOW_OSDU_DB`. | Set one (step 1). |
+| `... caches live in the module's database, which this host was started without.` | No module database: no `SQLFLOW_CATALOG_DB`, `--db` or `SQLFLOW_OSDU_DB`. | Set one (step 1). |
 | `Environment variable 'OSDU_ACL_OWNER' is not set.` | A reference the flow or a default parameter names has no value here. | Add it to `.sqlflow/env` or the environment; on a control plane, to the partition's values in its configuration (`Osdu:Partitions:dev:Properties:OSDU_ACL_OWNER`) or to the central configuration (`sqlflow config set`). |
 | `source.record.key is [...] but mapping '...' keys its records by [...]` | The flow and the mapping name different key columns. | Name the same columns, in the same order. |
 | `... the source database does not allow snapshot isolation ...` | `OsduData` does not allow snapshot isolation. | Run the `ALTER DATABASE` above, or set `source.incremental.isolation: readCommitted`. |
@@ -591,4 +594,4 @@ no catalog connection ([the node](../cli/worker.md)).
 - [One source, several kinds](multi-kind-source.md): wellbores and their well logs from one document.
 - [Well logs with curves](bulk-data.md): the header record and its bulk data.
 - [The operations runbook](operations-runbook.md): held and failed records, releasing, redelivering.
-- [Which delivery problem maps to which shape](pattern-catalog.md).
+- [Which delivery problem maps to which shape](../../wiki/maps/pattern-catalog.md).

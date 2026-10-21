@@ -122,7 +122,7 @@ export default function MappingBuilderPage() {
   const opening = mappingDetail.data;
   const parsed = useQuery({
     queryKey: ["delivery", "mapping-builder", "parse", mappingId, opening?.mapping.contentHash ?? null],
-    queryFn: () => deliveryApi.parseMapping(opening!.yaml, opening!.mapping.relativePath),
+    queryFn: () => deliveryApi.parseMapping(opening!.yaml, opening!.mapping.relativePath, opening!.mapping.repoId),
     enabled: mappingId !== null && opening !== undefined,
     staleTime: Infinity,
   });
@@ -376,7 +376,7 @@ export default function MappingBuilderPage() {
 
   const savedTemplates = templates.data ?? [];
   const templateItems = draft !== null && !savedTemplates.some((t) => t.kind === draft.templateKind && t.version === draft.templateVersion)
-    ? [...savedTemplates, { kind: draft.templateKind, version: draft.templateVersion, capturedUtc: "", capturedBy: "", origin: "", pinnedBy: 0 }]
+    ? [...savedTemplates, { kind: draft.templateKind, version: draft.templateVersion, capturedUtc: "", capturedBy: "", origin: "" }]
     : savedTemplates;
   const canStart = chosenTemplate !== null && name.trim() !== "" && mappingVersion.trim() !== ""
     && system.trim() !== "" && !start.isPending;
@@ -828,7 +828,7 @@ export default function MappingBuilderPage() {
           onClose={() => setEditing(null)}
         />
       )}
-      {repo !== null && repo.sourceId !== null && result !== undefined && (
+      {repo !== null && repo.sourceId !== null && result !== undefined && draft !== null && (
         <MappingProposeSheet
           open={proposeOpen}
           onClose={() => setProposeOpen(false)}
@@ -837,6 +837,8 @@ export default function MappingBuilderPage() {
           name={name.trim()}
           version={mappingVersion.trim()}
           yaml={result.yaml}
+          templateKind={draft.templateKind}
+          templateVersion={draft.templateVersion}
         />
       )}
       <ConfirmDialog

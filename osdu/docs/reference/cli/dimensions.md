@@ -349,10 +349,11 @@ build last wrote it with (or, before any build, the one a build writes). With `-
 checks, and both statements.
 
 `--suggest <dimension>` offers the joins a view whose rows are that dimension's could make: each column holding a key,
-joined to the dimension of the flow keyed by what it holds, one row a key, of the entity type the saved template of its
-records names (`x-osdu-relationship`), and through each dimension so joined. It prints the `join:` block of a view's
-YAML to keep or change, each join with why it is offered; nothing is written. A column no saved template describes is
-offered nothing, since a record's id can name a record of any type.
+joined to the dimension of the flow keyed by what it holds, one row a key, of the entity type the template of its
+records names (`x-osdu-relationship`), as the template folders on the flow's path give it, and through each dimension so
+joined. It prints the `join:` block of a view's YAML to keep or change, each join with why it is offered; nothing is
+written. A column no template the flow reads describes is offered nothing, since a record's id can name a record of any
+type.
 
 ```text
     from: LogCurve

@@ -49,6 +49,25 @@
 #       - name: Vendored SQLFlow guard
 #         run: bash tools/check-vendored-sqlflow.sh
 
+#       # The wiki is linted whole on every change with SQLFlow's linter, through the options a product's wiki takes, after
+#       # the tests of SQLFlow's docs scripts the documentation is built with (CLAUDE.md, The OSDU Wiki). Both read
+#       # frontmatter with PyYAML.
+#       - uses: actions/setup-python@v6
+#         with:
+#           python-version: "3.12"
+
+#       - name: OSDU wiki
+#         env:
+#           PYTHONDONTWRITEBYTECODE: "1"
+#         run: |
+#           set -euo pipefail
+#           python -m pip install --quiet --disable-pip-version-check pyyaml==6.0.3
+#           (cd sqlflow && python -m unittest discover -s docs/reference -p "test_*.py")
+#           (cd sqlflow && python -m unittest discover -s docs/wiki -p "test_*.py")
+#           python sqlflow/docs/wiki/lint_wiki.py --wiki osdu/docs/wiki --root . \
+#             --manifest osdu/docs/reference/manifest.json --id-prefix delivery-wiki- \
+#             --known sqlflow/docs/reference/manifest.json
+
 #       # A pull request brings what its head has and its base does not. A push brings what its new tip has and its
 #       # previous tip did not; a new ref (a release tag) or a previous tip this clone does not hold (a forced push)
 #       # brings what the default branch does not already have, and a branch with nothing beyond it is checked on its

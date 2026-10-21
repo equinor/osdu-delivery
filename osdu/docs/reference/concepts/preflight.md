@@ -16,7 +16,8 @@ keywords:
   - unverified
   - invalid record
   - verifyreferences
-  - template not saved
+  - template not found
+  - template folder
   - required property
   - why nothing was sent
 related:
@@ -66,7 +67,7 @@ anything to OSDU except the run's own probes of its target.
 | Layer | When | What it needs | Where you see it |
 | --- | --- | --- | --- |
 | [Reading the documents](#when-a-document-is-read) | every load: `sqlflow validate`, a repository sync, every run | the files | `validate`, the sync's warnings |
-| [The preflight gate](#the-preflight-gate) | before any row renders | the saved template and the partition cache (the module's database) | `sqlflow check`, `preview`, `values`, every run |
+| [The preflight gate](#the-preflight-gate) | before any row renders | the template the template folders on the mapping's path hold, and the partition cache (the module's database) | `sqlflow check`, `preview`, `values`, every run |
 | [The source tables](#the-source-tables) | when the tables are opened | the ingestion database | `sqlflow check --connect`, every run that reads the source |
 | [The run's preflight](#the-runs-preflight) | when a run starts | the target, the ledger | the run's log and result |
 | [Each record's render](#each-records-render) | as each record renders | the row | the record's hold reason |
@@ -108,12 +109,12 @@ in their own terms. What a mapping writes is described on [mapping](../flow/mapp
 
 ## The preflight gate
 
-Before any row is rendered, and with no OSDU call, the mapping is judged against its pinned template, the partition's
-cache and the flow's parameters. Resolving the render inputs first refuses a missing input:
+Before any row is rendered, and with no OSDU call, the mapping is judged against its template, the partition's cache and
+the flow's parameters. Resolving the render inputs first refuses a missing input:
 
 | Input | Message |
 | --- | --- |
-| The template the mapping pins | `mapping WellLog@1.0.0 pins template osdu:wks:work-product-component--WellLog:1.4.0 version 26a3c3441882db4f, which is not saved. Save it on the Templates page, or with 'sqlflow template import'.` |
+| The template the mapping fills | `flows/welldb-welllog-03-header-delivery.yaml: mapping WellLog@1.4.0 cannot render: no template folder on the path of mappings/WellLog@1.4.0.yaml holds template osdu:wks:work-product-component--WellLog:1.4.0 version 26a3c3441882db4f. ...`, the rest saying which folders it read and how to put the file in one ([template folders](templates.md#template-folders)) |
 | A cache for a mapping that reads one | `mapping WellLog@1.0.0 reads the cache of partition 'dev', which holds no version yet. Refresh a cache flow that builds it (...) to capture one.` |
 | A pinned cache version | `render.cacheVersion pins version <v> of the cache of partition 'dev', which the catalog does not hold.` |
 | The module's database | `... templates live in the module's database, which this host was started without. ...` |
@@ -231,7 +232,7 @@ else in the cache version the flow renders with, for the entity types it capture
 | --- | --- |
 | `valid` | every rule that applies was checked and met |
 | `invalid` | a rule is broken, or the document refers to a record that the cache (or storage, when asked) does not hold |
-| `unverified` | nothing is broken and some part could not be checked: a pattern no regular expression dialect reads, a check that ran out of time or walked past its bounds, a reference nothing could answer for, or no saved template of the kind at that version |
+| `unverified` | nothing is broken and some part could not be checked: a pattern no regular expression dialect reads, a check that ran out of time or walked past its bounds, a reference nothing could answer for, or no template of the kind at the version the document was rendered for, neither in a template folder on the mapping's path nor saved |
 | `notValidated` | the try sends the payload alone, so nothing of the document is sent or checked |
 
 `target.validation` decides which verdicts hold the record; every verdict is recorded on the try's attempt, and the record
@@ -267,7 +268,7 @@ order they are written:
 | Field | What it holds |
 | --- | --- |
 | `outcome` | `valid`, `invalid`, `unverified` or `notValidated`, as the table above says. |
-| `schema` | What the record was checked against: `kind`, `version` (the schema's content version, as [templates](templates.md) name it) and `source`, which is `template` for a saved template and `schema-service` for the partition's Schema service. The gate before sending always checks against a saved template; the explorer can check against either. Absent when no schema could be had. |
+| `schema` | What the record was checked against: `kind`, `version` (the schema's content version, as [templates](templates.md) name it) and `source`, which is `template` for a template OSDU Delivery holds and `schema-service` for the partition's Schema service. The gate before sending always checks against the template version the document was rendered for, read from the template folders on the mapping's path, or from the saved templates once no folder holds that version any longer and someone saved it there; the explorer checks against a saved template or the Schema service's. Absent when no schema could be had. |
 | `rules` | How many rules were applied. |
 | `problemCount`, `problems` | Every problem found is counted; the first 50 the check finds are listed, and each reference nothing holds is added as a problem of the rule `reference`, at most 20 of those listed. |
 | `unverifiedCount`, `unverified` | Every part not checked is counted; the first 20 are listed. |

@@ -4,6 +4,7 @@ using System.Runtime.CompilerServices;
 using System.Text.Json;
 using Microsoft.Data.SqlClient;
 using Microsoft.Extensions.Logging;
+using SqlFlow.Catalog;
 using SqlFlow.Core;
 using SqlFlow.Core.Secrets;
 using SqlFlow.Delivery.Documents;
@@ -748,65 +749,89 @@ public sealed class SqlServerIngestionSource : IIngestionSource
         }
         catch (SqlException ex) when (snapshot && ex.Number is SnapshotNotAllowed or SnapshotDisabled)
         {
+            await PooledIsolation.RestoreAfterFailureAsync(connection, null).ConfigureAwait(false);
             throw SnapshotRefusal(ex);
         }
 
+        // SQL Server keeps a session's isolation level when the pool lends the connection again, so a page read under
+        // snapshot hands its connection back at read committed: a session left at snapshot would read the next
+        // borrower's statements at snapshot too, and fail every one of them on a database that does not allow it.
         await using (transaction.ConfigureAwait(false))
         {
-            await using var command = Command(connection, IngestionSql.PageRows(layout));
-            command.Transaction = transaction;
-            BindKeys(command, page);
-
-            var rows = new Dictionary<KeyTuple, RecordBuilder>();
-            var order = new List<KeyTuple>(page.Count);
-            SqlDataReader reader;
             try
             {
-                reader = await command.ExecuteReaderAsync(ct).ConfigureAwait(false);
+                var records = await ReadPageRowsAsync(connection, transaction, layout, page, snapshot, ct).ConfigureAwait(false);
+                if (snapshot)
+                {
+                    await PooledIsolation.RestoreReadCommittedAsync(connection, transaction, ct).ConfigureAwait(false);
+                }
+
+                await transaction.CommitAsync(ct).ConfigureAwait(false);
+                return records;
             }
-            catch (SqlException ex) when (snapshot && ex.Number is SnapshotNotAllowed or SnapshotDisabled)
+            catch (Exception) when (snapshot && connection.State == ConnectionState.Open)
             {
-                throw SnapshotRefusal(ex);
+                await PooledIsolation.RestoreAfterFailureAsync(connection, transaction).ConfigureAwait(false);
+                throw;
             }
-            catch (SqlException ex) when (ex.Number != DeadlockError)
+        }
+    }
+
+    private async Task<IReadOnlyList<SourceRecord>> ReadPageRowsAsync(
+        SqlConnection connection, SqlTransaction transaction, IngestionLayout layout, IReadOnlyList<KeyTuple> page, bool snapshot, CancellationToken ct)
+    {
+        await using var command = Command(connection, IngestionSql.PageRows(layout));
+        command.Transaction = transaction;
+        BindKeys(command, page);
+
+        var rows = new Dictionary<KeyTuple, RecordBuilder>();
+        var order = new List<KeyTuple>(page.Count);
+        SqlDataReader reader;
+        try
+        {
+            reader = await command.ExecuteReaderAsync(ct).ConfigureAwait(false);
+        }
+        catch (SqlException ex) when (snapshot && ex.Number is SnapshotNotAllowed or SnapshotDisabled)
+        {
+            throw SnapshotRefusal(ex);
+        }
+        catch (SqlException ex) when (ex.Number != DeadlockError)
+        {
+            throw Failure(ex, "read a page of record rows");
+        }
+
+        await using (reader.ConfigureAwait(false))
+        {
+            while (await reader.ReadAsync(ct).ConfigureAwait(false))
             {
-                throw Failure(ex, "read a page of record rows");
+                var row = ReadRow(reader);
+                var key = KeyOf(layout, row);
+                if (rows.TryAdd(key, new RecordBuilder(row)))
+                {
+                    order.Add(key);
+                }
             }
 
-            await using (reader.ConfigureAwait(false))
+            foreach (var dataset in layout.Datasets)
             {
+                if (!await reader.NextResultAsync(ct).ConfigureAwait(false))
+                {
+                    throw new DeliveryException($"Flow '{_flow.Label}': the source page did not return the rows of child dataset '{dataset.Name}'.");
+                }
+
                 while (await reader.ReadAsync(ct).ConfigureAwait(false))
                 {
                     var row = ReadRow(reader);
-                    var key = KeyOf(layout, row);
-                    if (rows.TryAdd(key, new RecordBuilder(row)))
+                    var key = ChildKeyOf(dataset, row);
+                    if (rows.TryGetValue(key, out var builder))
                     {
-                        order.Add(key);
-                    }
-                }
-
-                foreach (var dataset in layout.Datasets)
-                {
-                    if (!await reader.NextResultAsync(ct).ConfigureAwait(false))
-                    {
-                        throw new DeliveryException($"Flow '{_flow.Label}': the source page did not return the rows of child dataset '{dataset.Name}'.");
-                    }
-
-                    while (await reader.ReadAsync(ct).ConfigureAwait(false))
-                    {
-                        var row = ReadRow(reader);
-                        var key = ChildKeyOf(dataset, row);
-                        if (rows.TryGetValue(key, out var builder))
-                        {
-                            builder.Add(dataset, row);
-                        }
+                        builder.Add(dataset, row);
                     }
                 }
             }
-
-            await transaction.CommitAsync(ct).ConfigureAwait(false);
-            return order.Where(rows.ContainsKey).Select(key => Build(layout, key, rows[key])).ToList();
         }
+
+        return order.Where(rows.ContainsKey).Select(key => Build(layout, key, rows[key])).ToList();
     }
 
     private SourceRecord Build(IngestionLayout layout, KeyTuple key, RecordBuilder builder)

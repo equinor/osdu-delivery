@@ -142,7 +142,7 @@
       "path": "cli/check.md",
       "title": "sqlflow check: the preflight of a delivery flow, its mapping, template and cache, without sending anything",
       "type": "cli-command",
-      "summary": "Check a delivery flow before it runs: the pinned mapping against its saved template and the partition cache it reads, the route, and with --connect its tables.",
+      "summary": "Check a delivery flow before it runs: the mapping against the template its folders hold and the cache it reads, the route, and with --connect its tables.",
       "keywords": [
         "check",
         "preflight",
@@ -719,11 +719,13 @@
       "id": "delivery-cli-template",
       "corpus": "reference",
       "path": "cli/template.md",
-      "title": "sqlflow template: save, list, show and delete the OSDU schemas a mapping pins",
+      "title": "sqlflow template: a repository's template folders, and the saved templates of the library",
       "type": "cli-command",
-      "summary": "Capture a kind's schema from the OSDU data definitions or import a schema file as a template, and list, show or delete saved templates.",
+      "summary": "Read a working copy's template folders, write a template into one from the OSDU data definitions or a file, and list, show or delete the saved templates.",
       "keywords": [
         "template",
+        "template folders",
+        "templates folder",
         "template capture",
         "template import",
         "osdu schema",
@@ -733,7 +735,11 @@
         "mapping template pin",
         "release tag",
         "osdu.template",
-        "offline schema"
+        "offline schema",
+        "template file",
+        "template of one's own",
+        "show --out",
+        "folders --for"
       ],
       "cliCommand": "template",
       "related": [
@@ -747,6 +753,8 @@
       "sourceRefs": [
         "osdu/src/SqlFlow.Delivery.Cli/DeliveryVerbs.cs",
         "osdu/src/SqlFlow.Delivery.Cli/DeliveryCliModule.cs",
+        "osdu/src/SqlFlow.Delivery/Templates/TemplateFolders.cs",
+        "osdu/src/SqlFlow.Delivery/Templates/TemplateChain.cs",
         "osdu/src/SqlFlow.Delivery/Templates/TemplateStore.cs",
         "osdu/src/SqlFlow.Delivery/Templates/OsduDataDefinitions.cs",
         "osdu/src/SqlFlow.Delivery/Templates/TemplateSources.cs",
@@ -1355,6 +1363,40 @@
       ]
     },
     {
+      "id": "delivery-concept-database",
+      "corpus": "reference",
+      "path": "concepts/database.md",
+      "title": "The osdu schema: every table of the module's database, what each is for, and how they are keyed",
+      "type": "concept",
+      "summary": "Every table of the osdu schema grouped by what it serves, with one line each and its own page; how the tables are keyed, and the objects outside the model.",
+      "keywords": [
+        "osdu schema",
+        "database tables",
+        "which table",
+        "data model",
+        "module database",
+        "table pages",
+        "OsduDbContext",
+        "PartitionId",
+        "__EFMigrationsHistory"
+      ],
+      "related": [
+        "delivery-concept-ledger",
+        "delivery-concept-architecture",
+        "delivery-concept-availability-and-retention",
+        "delivery-concept-dimension-tables",
+        "delivery-cli-db",
+        "delivery-table-record",
+        "delivery-table-schema-version"
+      ],
+      "sourceRefs": [
+        "osdu/src/SqlFlow.Delivery.Data/DeliveryEntities.cs",
+        "osdu/src/SqlFlow.Delivery.Data/OsduDbContext.cs",
+        "osdu/src/SqlFlow.Delivery.Data/OsduSchema.cs",
+        "osdu/tests/SqlFlow.Delivery.Tests/DatabaseTablePagesTests.cs"
+      ]
+    },
+    {
       "id": "delivery-concept-dimension-blueprint",
       "corpus": "reference",
       "path": "concepts/dimension-blueprint.md",
@@ -1802,7 +1844,7 @@
       ],
       "related": [
         "delivery-concept-lineage",
-        "delivery-decision-0016",
+        "delivery-wiki-0016-osdu-order",
         "delivery-flow-interfaces",
         "delivery-flow-mapping",
         "delivery-concept-templates",
@@ -2056,7 +2098,8 @@
         "unverified",
         "invalid record",
         "verifyreferences",
-        "template not saved",
+        "template not found",
+        "template folder",
         "required property",
         "why nothing was sent"
       ],
@@ -2512,13 +2555,17 @@
       "id": "delivery-concept-templates",
       "corpus": "reference",
       "path": "concepts/templates.md",
-      "title": "Templates: OSDU schemas saved as the records a mapping fills, with versions mappings pin",
+      "title": "Templates: OSDU schemas a repository's template folders hold, settled for each document by the folders on its path",
       "type": "concept",
-      "summary": "What a template is, where it comes from (the OSDU data definitions or a file), how its version is a content hash a mapping pins, and comparing versions.",
+      "summary": "What a template is, the template folders a repository keeps them in, how a document's template is settled, the library, and comparing versions.",
       "keywords": [
         "template",
+        "template folder",
+        "templates folder",
         "osdu schema",
         "template version",
+        "kind alone",
+        "nearest folder",
         "data definitions",
         "capture",
         "import",
@@ -2527,9 +2574,14 @@
         "compare versions",
         "breaking change",
         "kind",
+        "custom template",
+        "template of one's own",
         "sqlflow template",
         "osdu:schemarepository",
-        "save template"
+        "save template",
+        "download template",
+        "template file",
+        "library"
       ],
       "related": [
         "delivery-flow-mapping",
@@ -2538,10 +2590,15 @@
         "delivery-flow-mapping-lookups",
         "delivery-guide-writing-a-mapping",
         "delivery-concept-lineage",
-        "delivery-concept-architecture"
+        "delivery-concept-architecture",
+        "delivery-table-template",
+        "delivery-table-repository-template"
       ],
       "sourceRefs": [
         "osdu/src/SqlFlow.Delivery/Templates/OsduTemplate.cs",
+        "osdu/src/SqlFlow.Delivery/Templates/TemplateChain.cs",
+        "osdu/src/SqlFlow.Delivery/Templates/TemplateFolders.cs",
+        "osdu/src/SqlFlow.Delivery/Templates/TemplateSource.cs",
         "osdu/src/SqlFlow.Delivery/Templates/TemplateStore.cs",
         "osdu/src/SqlFlow.Delivery/Templates/TemplateSources.cs",
         "osdu/src/SqlFlow.Delivery/Templates/OsduDataDefinitions.cs",
@@ -2551,10 +2608,15 @@
         "osdu/src/SqlFlow.Delivery/Json/CanonicalJson.cs",
         "osdu/src/SqlFlow.Delivery/Snapshots/RenderContext.cs",
         "osdu/src/SqlFlow.Delivery/Engine/RenderResolver.cs",
+        "osdu/src/SqlFlow.Delivery/Engine/FlowRuntime.cs",
         "osdu/src/SqlFlow.Delivery/Rendering/MappingRenderer.cs",
         "osdu/src/SqlFlow.Delivery/Documents/MappingMapper.cs",
+        "osdu/src/SqlFlow.Delivery/Documents/MappingLineage.cs",
         "osdu/src/SqlFlow.Delivery/Documents/DeliveryDocumentLoader.cs",
         "osdu/src/SqlFlow.Delivery/Catalog/DeliveryCatalogSync.cs",
+        "osdu/src/SqlFlow.Delivery/Catalog/SyncedTemplates.cs",
+        "osdu/src/SqlFlow.Delivery/Engine/Assertions/AssertionTemplates.cs",
+        "osdu/src/SqlFlow.Delivery/Engine/Dimensions/DimensionBlueprint.cs",
         "osdu/src/SqlFlow.Delivery.Data/DeliveryEntities.cs",
         "osdu/src/SqlFlow.Delivery.Cli/DeliveryVerbs.cs",
         "osdu/src/SqlFlow.Delivery.ControlPlane/Api/DeliveryTemplateEndpoints.cs",
@@ -2562,375 +2624,11 @@
         "osdu/src/SqlFlow.Delivery.ControlPlane/DeliveryControlPlaneModule.cs",
         "osdu/gui/src/features/delivery/TemplatesPage.tsx",
         "osdu/gui/src/features/delivery/TemplatesBrowseTab.tsx",
-        "osdu/samples/templates/osdu_wks_work-product-component--WellLog_1.4.0.json",
-        "osdu/samples/templates/osdu_wks_master-data--Wellbore_1.3.0.json"
+        "osdu/gui/src/features/delivery/MappingProposeSheet.tsx",
+        "osdu/gui/src/features/delivery/templateFormat.ts",
+        "osdu/samples/welldb/templates/osdu_wks_work-product-component--WellLog_1.4.0.json",
+        "osdu/samples/welldb/templates/osdu_wks_master-data--Wellbore_1.3.0.json"
       ]
-    },
-    {
-      "id": "delivery-decision-0001",
-      "corpus": "wiki",
-      "path": "0001-delivery-grain.md",
-      "title": "Decision 0001: the delivery grain, one record per source log",
-      "type": "decision",
-      "summary": "Why a well log record is keyed by its source's own identity (project and log id) and not collapsed per wellbore.",
-      "keywords": [
-        "delivery grain",
-        "delivery key",
-        "record identity",
-        "well log",
-        "dataset key",
-        "idfrom"
-      ],
-      "related": [
-        "delivery-concept-ledger",
-        "delivery-flow-mapping"
-      ],
-      "sourceRefs": []
-    },
-    {
-      "id": "delivery-decision-0002",
-      "corpus": "wiki",
-      "path": "0002-client-supplied-ids.md",
-      "title": "Decision 0002: deterministic, client-supplied OSDU ids",
-      "type": "decision",
-      "summary": "Why OSDU ids are computed from the data by the delivery instead of assigned by OSDU, and what that guarantees.",
-      "keywords": [
-        "osdu id",
-        "client-supplied id",
-        "deterministic id",
-        "duplicate records",
-        "idfrom",
-        "delivery key"
-      ],
-      "related": [
-        "delivery-flow-mapping",
-        "delivery-concept-ledger"
-      ],
-      "sourceRefs": []
-    },
-    {
-      "id": "delivery-decision-0003",
-      "corpus": "wiki",
-      "path": "0003-rendering-location.md",
-      "title": "Decision 0003: rendering runs in the delivery service",
-      "type": "decision",
-      "summary": "Why the mapping is interpreted by the delivery against a pinned template and cache version, not by a facade service.",
-      "keywords": [
-        "rendering",
-        "mapping renderer",
-        "offline plan",
-        "content hash",
-        "facade",
-        "recordpath"
-      ],
-      "related": [
-        "delivery-concept-templates",
-        "delivery-concept-change-detection",
-        "delivery-decision-0009"
-      ],
-      "sourceRefs": []
-    },
-    {
-      "id": "delivery-decision-0004",
-      "corpus": "wiki",
-      "path": "0004-preserved-keys.md",
-      "title": "Decision 0004: Datasets, DDMSDatasets and ExtensionProperties belong to OSDU",
-      "type": "decision",
-      "summary": "Why an update keeps the properties a DDMS or External Data Services writes into a record, and leaves them out of the hash.",
-      "keywords": [
-        "preserved keys",
-        "datasets",
-        "ddmsdatasets",
-        "extensionproperties",
-        "record update",
-        "eds"
-      ],
-      "related": [
-        "delivery-flow-ddms",
-        "delivery-concept-change-detection"
-      ],
-      "sourceRefs": []
-    },
-    {
-      "id": "delivery-decision-0005",
-      "corpus": "wiki",
-      "path": "0005-ledger-retention.md",
-      "title": "Decision 0005: attempts are pruned by age, keeping the latest per record",
-      "type": "decision",
-      "summary": "Why the ledger's attempt history is pruned by age while every record keeps its latest attempt.",
-      "keywords": [
-        "retention",
-        "attempts",
-        "pruning",
-        "ledger size",
-        "history"
-      ],
-      "related": [
-        "delivery-concept-availability-and-retention",
-        "delivery-concept-ledger"
-      ],
-      "sourceRefs": []
-    },
-    {
-      "id": "delivery-decision-0006",
-      "corpus": "wiki",
-      "path": "0006-work-batches.md",
-      "title": "Decision 0006: rendered documents live in work batch files, not in the ledger",
-      "type": "decision",
-      "summary": "Why rendered documents are written to work batch files the ledger points at, and how large submissions fan out.",
-      "keywords": [
-        "work batch",
-        "rendered documents",
-        "key slice",
-        "fan out",
-        "submission"
-      ],
-      "related": [
-        "delivery-concept-submissions"
-      ],
-      "sourceRefs": []
-    },
-    {
-      "id": "delivery-decision-0007",
-      "corpus": "wiki",
-      "path": "0007-manifest-dataset-ids.md",
-      "title": "Decision 0007: manifest datasets take ids derived from their record's id",
-      "type": "decision",
-      "summary": "Why the datasets a manifest delivery registers get ids derived from the record, so a redelivery can replace them.",
-      "keywords": [
-        "manifest",
-        "dataset id",
-        "ingestion workflow",
-        "redelivery",
-        "file generic"
-      ],
-      "related": [
-        "delivery-flow-routes",
-        "delivery-concept-protocols"
-      ],
-      "sourceRefs": []
-    },
-    {
-      "id": "delivery-decision-0008",
-      "corpus": "wiki",
-      "path": "0008-retrieval-lands-raw-records.md",
-      "title": "Decision 0008: retrieval lands records as OSDU holds them",
-      "type": "decision",
-      "summary": "Why a retrieval flow brings OSDU records back unchanged instead of reversing a mapping.",
-      "keywords": [
-        "retrieval",
-        "raw records",
-        "reverse mapping",
-        "osdu to lake",
-        "landing"
-      ],
-      "related": [
-        "delivery-flow-retrieval",
-        "delivery-guide-retrieving-records"
-      ],
-      "sourceRefs": []
-    },
-    {
-      "id": "delivery-decision-0009",
-      "corpus": "wiki",
-      "path": "0009-searched-references.md",
-      "title": "Decision 0009: references to business data are searched for, not cached",
-      "type": "decision",
-      "summary": "Why wellbores and other business data are found by a search per record while closed vocabularies stay in the cache.",
-      "keywords": [
-        "search",
-        "findby",
-        "business data",
-        "wellbore reference",
-        "cache size",
-        "reference data"
-      ],
-      "related": [
-        "delivery-flow-mapping-lookups",
-        "delivery-flow-cache",
-        "delivery-decision-0003"
-      ],
-      "sourceRefs": []
-    },
-    {
-      "id": "delivery-decision-0010",
-      "corpus": "wiki",
-      "path": "0010-assertion-flows-read-only.md",
-      "title": "Decision 0010: assertion flows read OSDU, check against templates, and keep whole reports",
-      "type": "decision",
-      "summary": "Why data quality tests read what OSDU serves, never write, and keep every report whole.",
-      "keywords": [
-        "assertion",
-        "data quality",
-        "read only",
-        "test report",
-        "template check"
-      ],
-      "related": [
-        "delivery-flow-assertion",
-        "delivery-guide-data-quality-tests"
-      ],
-      "sourceRefs": []
-    },
-    {
-      "id": "delivery-decision-0011",
-      "corpus": "wiki",
-      "path": "0011-dimension-flows.md",
-      "title": "Decision 0011: dimension flows read every distinct value by ranges and keep each key",
-      "type": "decision",
-      "summary": "Why dimensions page through every distinct value of a field by ranges instead of the search aggregation.",
-      "keywords": [
-        "dimension",
-        "distinct values",
-        "aggregation limit",
-        "ranges",
-        "keys"
-      ],
-      "related": [
-        "delivery-flow-dimension",
-        "delivery-guide-dimensions"
-      ],
-      "sourceRefs": []
-    },
-    {
-      "id": "delivery-decision-0012",
-      "corpus": "wiki",
-      "path": "0012-atomic-delivery.md",
-      "title": "Decision 0012: every delivery completes or is undone, and the ledger names every id it minted",
-      "type": "decision",
-      "summary": "Why a delivery of many OSDU calls is a unit of work whose minted ids the ledger keeps, so an unfinished one can be undone.",
-      "keywords": [
-        "atomic delivery",
-        "unit of work",
-        "undo",
-        "minted ids",
-        "artifacts",
-        "partial failure"
-      ],
-      "related": [
-        "delivery-concept-removal-and-reversal",
-        "delivery-concept-protocols",
-        "delivery-concept-ledger"
-      ],
-      "sourceRefs": []
-    },
-    {
-      "id": "delivery-decision-0013",
-      "corpus": "wiki",
-      "path": "0013-inventory-flows.md",
-      "title": "Decision 0013: inventory flows compare what OSDU serves with every ledger of the partition",
-      "type": "decision",
-      "summary": "Why finding orphans needs a read of what OSDU serves set against every ledger, and what an inventory compares.",
-      "keywords": [
-        "inventory",
-        "orphans",
-        "stale ids",
-        "forgotten ids",
-        "ledger drift"
-      ],
-      "related": [
-        "delivery-flow-inventory",
-        "delivery-guide-finding-orphans"
-      ],
-      "sourceRefs": []
-    },
-    {
-      "id": "delivery-decision-0014",
-      "corpus": "wiki",
-      "path": "0014-inventory-removals.md",
-      "title": "Decision 0014: an inventory flow may remove the orphan, stale and forgotten ids it found",
-      "type": "decision",
-      "summary": "Why an inventory flow may remove what it found when its document allows it, and how that stays traceable.",
-      "keywords": [
-        "inventory",
-        "removal",
-        "orphans",
-        "cleanup",
-        "soft delete"
-      ],
-      "related": [
-        "delivery-flow-inventory",
-        "delivery-decision-0013",
-        "delivery-concept-removal-and-reversal"
-      ],
-      "sourceRefs": []
-    },
-    {
-      "id": "delivery-decision-0015",
-      "corpus": "wiki",
-      "path": "0015-lost-records.md",
-      "title": "Decision 0015: a record OSDU lost is delivered again under its own id, and under a new one only when an operator asks",
-      "type": "decision",
-      "summary": "Why a record OSDU lost is delivered again under the id it claimed, restored first when soft-deleted, and given a new id only on request.",
-      "keywords": [
-        "missing records",
-        "lost records",
-        "accidental delete",
-        "restore soft delete",
-        "undelete",
-        "redeliver",
-        "new osdu id",
-        "reassign id",
-        "repair"
-      ],
-      "related": [
-        "delivery-decision-0002",
-        "delivery-decision-0004",
-        "delivery-decision-0013",
-        "delivery-flow-inventory",
-        "delivery-concept-removal-and-reversal"
-      ],
-      "sourceRefs": []
-    },
-    {
-      "id": "delivery-decision-0016",
-      "corpus": "wiki",
-      "path": "0016-osdu-order.md",
-      "title": "Decision 0016: OSDU's relationships order a repository's waves, and dependencies between schedules are shown, not enforced",
-      "type": "decision",
-      "summary": "Why lineage orders delivery flows by the relationships OSDU's schemas declare, and why schedules that depend on each other are shown rather than chained.",
-      "keywords": [
-        "osdu order",
-        "referential order",
-        "relationship",
-        "x-osdu-relationship",
-        "waves",
-        "schedule dependencies",
-        "cross schedule",
-        "osdu lineage by release"
-      ],
-      "related": [
-        "delivery-concept-osdu-order",
-        "delivery-concept-lineage",
-        "delivery-flow-interfaces",
-        "delivery-decision-0009",
-        "concept-lineage-graph-and-plan"
-      ],
-      "sourceRefs": []
-    },
-    {
-      "id": "delivery-decision-0017",
-      "corpus": "wiki",
-      "path": "0017-pipelines-update-the-cache.md",
-      "title": "Decision 0017: A pipeline names the cache it needs current before it runs and the cache it updates after",
-      "type": "decision",
-      "summary": "Why the cache steps belong to the pipeline, why before is mandatory and after is not, why after reads storage, and how held records wait for what they miss.",
-      "keywords": [
-        "cache.before",
-        "cache.after",
-        "update the cache before a pipeline",
-        "update the cache after a pipeline",
-        "cache update during a schedule",
-        "held record waits for a reference"
-      ],
-      "related": [
-        "delivery-concept-partition-cache",
-        "delivery-flow-delivery",
-        "delivery-flow-cache",
-        "delivery-concept-lineage",
-        "delivery-decision-0016"
-      ],
-      "sourceRefs": []
     },
     {
       "id": "delivery-flow-assertion",
@@ -3889,7 +3587,7 @@
         "delivery-concept-partition-cache",
         "delivery-concept-change-detection",
         "delivery-concept-preflight",
-        "delivery-guide-pattern-catalog"
+        "delivery-wiki-pattern-catalog"
       ],
       "sourceRefs": [
         "osdu/src/SqlFlow.Delivery/Documents/MappingMapper.cs",
@@ -4160,7 +3858,7 @@
         "delivery-concept-removal-and-reversal",
         "delivery-concept-artifacts-and-undo",
         "delivery-guide-bulk-data",
-        "delivery-guide-pattern-catalog"
+        "delivery-wiki-pattern-catalog"
       ],
       "sourceRefs": [
         "osdu/src/SqlFlow.Delivery/Protocols/DeliveryProtocol.cs",
@@ -4243,7 +3941,7 @@
         "osdu/src/SqlFlow.Delivery/Engine/Protocols/WellboreDdmsRules.cs",
         "osdu/src/SqlFlow.Delivery/Engine/Protocols/WellboreDdmsBulkLink.cs",
         "osdu/src/SqlFlow.Delivery.Cli/DeliveryCliModule.cs",
-        "osdu/samples/templates/osdu_wks_work-product-component--WellLog_1.4.0.json",
+        "osdu/samples/welldb/templates/osdu_wks_work-product-component--WellLog_1.4.0.json",
         "osdu/specs/wellbore-ddms/openapi.json"
       ]
     },
@@ -4388,7 +4086,7 @@
       "path": "guides/dimensions.md",
       "title": "Building a dimension of OSDU values and using it to filter search, drop-downs and reports",
       "type": "guide",
-      "summary": "Build a dimension flow end to end: pick key, label and attributes, save templates, plan, build, check the values, then search, query the table or cache it.",
+      "summary": "Build a dimension flow end to end: pick key, label and attributes, keep templates, plan, build, check the values, then search, query the table or cache it.",
       "keywords": [
         "build a dimension",
         "pick list of osdu values",
@@ -4407,7 +4105,7 @@
         "delivery-flow-cache",
         "delivery-flow-dictionary",
         "delivery-concept-templates",
-        "delivery-guide-pattern-catalog",
+        "delivery-wiki-pattern-catalog",
         "cli-run"
       ],
       "sourceRefs": [
@@ -4474,7 +4172,7 @@
       "path": "guides/getting-started.md",
       "title": "Getting started: your first delivery, from source files to a wellbore record in OSDU",
       "type": "guide",
-      "summary": "Deliver a first wellbore end to end: land and key the files, save the template, write the mapping and flow, check, preview, plan, deliver, read the ledger.",
+      "summary": "Deliver a first wellbore end to end: land and key the files, keep the template, write the mapping and flow, check, preview, plan, deliver, read the ledger.",
       "keywords": [
         "getting started",
         "quickstart",
@@ -4725,7 +4423,7 @@
         "osdu/src/SqlFlow.Delivery/Identity/TargetId.cs",
         "osdu/src/SqlFlow.Delivery/Ledger/OsduLedger.Waits.cs",
         "osdu/src/SqlFlow.Delivery.Cli/DeliveryVerbs.cs",
-        "osdu/samples/templates/osdu_wks_work-product-component--WellLog_1.4.0.json"
+        "osdu/samples/welldb/templates/osdu_wks_work-product-component--WellLog_1.4.0.json"
       ]
     },
     {
@@ -4831,62 +4529,6 @@
         "osdu/gui/src/module.tsx",
         "osdu/gui/src/features/delivery/DeliveryFlowPanel.tsx",
         "osdu/gui/src/features/delivery/DeliveryRecordPage.tsx"
-      ]
-    },
-    {
-      "id": "delivery-guide-pattern-catalog",
-      "corpus": "reference",
-      "path": "guides/pattern-catalog.md",
-      "title": "Pattern catalog: which delivery problem maps to which OSDU Delivery shape",
-      "type": "guide",
-      "summary": "Problem-first index: where a lookup belongs, one kind or interfaces, which route, retrieval or explorer, tests, orphans, and the page for each.",
-      "keywords": [
-        "patterns",
-        "which shape",
-        "how do i",
-        "where does a lookup belong",
-        "cache or dictionary or dimension",
-        "search per record",
-        "interfaces",
-        "which route",
-        "retrieval vs explorer",
-        "assertion tests",
-        "orphans",
-        "redeliver",
-        "partitions"
-      ],
-      "related": [
-        "wiki-pattern-catalog",
-        "delivery-flow-overview",
-        "delivery-flow-mapping-lookups",
-        "delivery-flow-cache",
-        "delivery-flow-interfaces",
-        "delivery-flow-routes",
-        "delivery-guide-getting-started",
-        "delivery-concept-overview"
-      ],
-      "sourceRefs": [
-        "osdu/src/SqlFlow.Delivery/Documents/CacheDocumentMapper.cs",
-        "osdu/src/SqlFlow.Delivery/Documents/MappingMapper.cs",
-        "osdu/src/SqlFlow.Delivery/Documents/DeliveryDocumentLoader.cs",
-        "osdu/src/SqlFlow.Delivery/Documents/DeliveryFlowKind.cs",
-        "osdu/src/SqlFlow.Delivery/Documents/InventoryFlowKind.cs",
-        "osdu/src/SqlFlow.Delivery/Documents/DimensionFlowKind.cs",
-        "osdu/src/SqlFlow.Delivery/Documents/RetrievalFlowKind.cs",
-        "osdu/src/SqlFlow.Delivery/Documents/AssertionFlowKind.cs",
-        "osdu/src/SqlFlow.Delivery/Protocols/DeliveryProtocol.cs",
-        "osdu/src/SqlFlow.Delivery/Rendering/ReplaceTables.cs",
-        "osdu/src/SqlFlow.Delivery/Model/DeliveryDestination.cs",
-        "osdu/src/SqlFlow.Delivery/Engine/Worker/DeliveryWorker.cs",
-        "osdu/src/SqlFlow.Delivery/Source/SqlServerIngestionSource.cs",
-        "osdu/src/SqlFlow.Delivery.Cli/DeliveryCliModule.cs",
-        "osdu/src/SqlFlow.Delivery.ControlPlane/Background/ConfiguredRunDispatcher.cs",
-        "osdu/docs/census/keys.delivery.json",
-        "osdu/docs/census/keys.cache.json",
-        "osdu/docs/census/keys.mapping.json",
-        "osdu/docs/census/keys.assertion.json",
-        "osdu/docs/census/keys.inventory.json",
-        "osdu/gui/src/module.tsx"
       ]
     },
     {
@@ -5014,7 +4656,7 @@
         "osdu/src/SqlFlow.Delivery/Rendering/EntryValues.cs",
         "osdu/src/SqlFlow.Delivery/Validation/Preflight.cs",
         "osdu/src/SqlFlow.Delivery.Cli/DeliveryVerbs.cs",
-        "osdu/samples/templates/osdu_wks_work-product-component--WellLog_1.4.0.json"
+        "osdu/samples/welldb/templates/osdu_wks_work-product-component--WellLog_1.4.0.json"
       ]
     },
     {
@@ -5063,9 +4705,9 @@
       "id": "delivery-guide-writing-a-mapping",
       "corpus": "reference",
       "path": "guides/writing-a-mapping.md",
-      "title": "Writing a mapping: from a saved template to a mapping that checks clean",
+      "title": "Writing a mapping: from a template in a template folder to a mapping that checks clean",
       "type": "guide",
-      "summary": "Save the template, scaffold the mapping in the builder or the MCP server, fill it in, then validate, check, test values and preview a record until clean.",
+      "summary": "Put the template in a template folder, scaffold the mapping in the builder or the MCP server, fill it in, then check, test values and preview until clean.",
       "keywords": [
         "write a mapping",
         "new mapping",
@@ -5077,6 +4719,7 @@
         "sqlflow preview",
         "sqlflow validate mapping",
         "template capture",
+        "template folder",
         "preflight failed",
         "held record reasons",
         "mapping example"
@@ -5098,6 +4741,7 @@
         "osdu/src/SqlFlow.Delivery.Cli/DeliveryPreviewVerbs.cs",
         "osdu/src/SqlFlow.Delivery.Cli/DeliveryCliModule.cs",
         "osdu/src/SqlFlow.Delivery/Templates/MappingBuilder.cs",
+        "osdu/src/SqlFlow.Delivery/Templates/TemplateFolders.cs",
         "osdu/src/SqlFlow.Delivery/Documents/MappingCatalog.cs",
         "osdu/src/SqlFlow.Delivery/Documents/MappingMapper.cs",
         "osdu/src/SqlFlow.Delivery/Engine/RenderResolver.cs",
@@ -5109,6 +4753,2174 @@
         "osdu/gui/src/features/delivery/MappingBuilderPage.tsx",
         "osdu/gui/src/features/delivery/MappingEntryEditor.tsx",
         "osdu/hosts/osdu-delivery-mcp/src/tools/documents.rs"
+      ]
+    },
+    {
+      "id": "delivery-table-activity",
+      "corpus": "reference",
+      "path": "tables/activity.md",
+      "title": "osdu.Activity: the audit trail, one row per run and per operator intervention",
+      "type": "table",
+      "summary": "One row per run or intervention: what it was, who asked and when, its inputs and outcome, what it concerned, a summary of its counts and the run log.",
+      "keywords": [
+        "osdu.Activity",
+        "activity table",
+        "audit trail",
+        "intervention",
+        "actor",
+        "run log",
+        "idle runs",
+        "release",
+        "redeliver"
+      ],
+      "related": [
+        "delivery-concept-database",
+        "delivery-concept-ledger",
+        "delivery-concept-authentication-and-identity",
+        "delivery-table-activity-record",
+        "delivery-table-record",
+        "delivery-concept-availability-and-retention"
+      ],
+      "sourceRefs": [
+        "osdu/src/SqlFlow.Delivery.Data/DeliveryEntities.cs",
+        "osdu/src/SqlFlow.Delivery/Ledger/OsduLedger.cs",
+        "osdu/src/SqlFlow.Delivery/Ledger/SqlServerLedgerBulk.cs",
+        "osdu/src/SqlFlow.Delivery.ControlPlane/Api/DeliveryEndpoints.cs"
+      ]
+    },
+    {
+      "id": "delivery-table-activity-record",
+      "corpus": "reference",
+      "path": "tables/activity-record.md",
+      "title": "osdu.ActivityRecord: each record an intervention for many records changed, named once",
+      "type": "table",
+      "summary": "One row per record a release, redelivery, reversal, verify reconcile or ledger deletion reached, written by the statement that changed it.",
+      "keywords": [
+        "osdu.ActivityRecord",
+        "activity record table",
+        "audit trail",
+        "record history",
+        "bulk release",
+        "intervention records"
+      ],
+      "related": [
+        "delivery-concept-database",
+        "delivery-concept-ledger",
+        "delivery-table-activity",
+        "delivery-table-record",
+        "delivery-table-purged-record"
+      ],
+      "sourceRefs": [
+        "osdu/src/SqlFlow.Delivery.Data/DeliveryEntities.cs",
+        "osdu/src/SqlFlow.Delivery/Ledger/SqlServerLedgerBulk.Problems.cs",
+        "osdu/src/SqlFlow.Delivery/Ledger/SqlServerLedgerBulk.Reversals.cs",
+        "osdu/src/SqlFlow.Delivery/Ledger/SqlServerLedgerBulk.Purges.cs",
+        "osdu/src/SqlFlow.Delivery/Ledger/OsduLedger.cs"
+      ]
+    },
+    {
+      "id": "delivery-table-artifact",
+      "corpus": "reference",
+      "path": "tables/artifact.md",
+      "title": "osdu.Artifact: every object a delivery created in OSDU, or set out to create, and how its undo settled it",
+      "type": "table",
+      "summary": "One row per object a unit of work created or meant to create (a record, a dataset, a session, rows): its id or locator, version, state and undo.",
+      "keywords": [
+        "osdu.Artifact",
+        "artifact table",
+        "minted ids",
+        "unit of work",
+        "undo",
+        "intent",
+        "atomic delivery",
+        "orphans"
+      ],
+      "related": [
+        "delivery-concept-database",
+        "delivery-concept-artifacts-and-undo",
+        "delivery-concept-removal-and-reversal",
+        "delivery-table-record",
+        "delivery-table-inventory-record",
+        "delivery-wiki-0012-atomic-delivery"
+      ],
+      "sourceRefs": [
+        "osdu/src/SqlFlow.Delivery.Data/DeliveryEntities.cs",
+        "osdu/src/SqlFlow.Delivery/Ledger/Artifacts.cs",
+        "osdu/src/SqlFlow.Delivery/Ledger/OsduLedger.Artifacts.cs",
+        "osdu/src/SqlFlow.Delivery/Ledger/SqlServerLedgerBulk.Artifacts.cs",
+        "osdu/src/SqlFlow.Delivery/Ledger/SqlServerLedgerBulk.Inventory.cs",
+        "osdu/src/SqlFlow.Delivery.ControlPlane/Api/DeliveryArtifactEndpoints.cs"
+      ]
+    },
+    {
+      "id": "delivery-table-assertion-result",
+      "corpus": "reference",
+      "path": "tables/assertion-result.md",
+      "title": "osdu.AssertionResult: one test's result in one run of an assertion flow, with everything its assertions found",
+      "type": "table",
+      "summary": "One row per test of an assertion run: its outcome and severity, what it matched and evaluated, its definition hash, and the whole result as JSON.",
+      "keywords": [
+        "osdu.AssertionResult",
+        "assertion result table",
+        "test result",
+        "outcome",
+        "severity",
+        "sampled",
+        "definition hash"
+      ],
+      "related": [
+        "delivery-concept-database",
+        "delivery-flow-assertion",
+        "delivery-guide-data-quality-tests",
+        "delivery-table-assertion-run"
+      ],
+      "sourceRefs": [
+        "osdu/src/SqlFlow.Delivery.Data/DeliveryEntities.cs",
+        "osdu/src/SqlFlow.Delivery/Ledger/ILedger.cs",
+        "osdu/src/SqlFlow.Delivery/Ledger/OsduLedger.Assertions.cs",
+        "osdu/src/SqlFlow.Delivery/Engine/Assertions/AssertionRunner.cs"
+      ]
+    },
+    {
+      "id": "delivery-table-assertion-run",
+      "corpus": "reference",
+      "path": "tables/assertion-run.md",
+      "title": "osdu.AssertionRun: one run of an assertion flow's tests in a partition, and how they came out",
+      "type": "table",
+      "summary": "One row per run of an assertion flow: the tests it was asked for, its status and counts by outcome, a hash of the definitions it ran, and who asked.",
+      "keywords": [
+        "osdu.AssertionRun",
+        "assertion run table",
+        "assertion flow",
+        "data quality tests",
+        "test report",
+        "junit"
+      ],
+      "related": [
+        "delivery-concept-database",
+        "delivery-flow-assertion",
+        "delivery-guide-data-quality-tests",
+        "delivery-cli-assertions",
+        "delivery-table-assertion-result",
+        "delivery-wiki-0010-assertion-flows-read-only"
+      ],
+      "sourceRefs": [
+        "osdu/src/SqlFlow.Delivery.Data/DeliveryEntities.cs",
+        "osdu/src/SqlFlow.Delivery/Ledger/ILedger.cs",
+        "osdu/src/SqlFlow.Delivery/Ledger/OsduLedger.Assertions.cs",
+        "osdu/src/SqlFlow.Delivery/Engine/Assertions/AssertionRunner.cs"
+      ]
+    },
+    {
+      "id": "delivery-table-attempt",
+      "corpus": "reference",
+      "path": "tables/attempt.md",
+      "title": "osdu.Attempt: every try of a record, and every decision written as one, append-only",
+      "type": "table",
+      "summary": "One row per delivery try or decision about a record: who made it and when, what came of it, what was sent, the error, the steps, and the source row.",
+      "keywords": [
+        "osdu.Attempt",
+        "attempt table",
+        "attempt history",
+        "record history",
+        "delivery try",
+        "outcome",
+        "phase",
+        "correlation id",
+        "retention"
+      ],
+      "related": [
+        "delivery-concept-database",
+        "delivery-concept-ledger",
+        "delivery-concept-record-lifecycle",
+        "delivery-concept-availability-and-retention",
+        "delivery-table-record",
+        "delivery-table-submission",
+        "delivery-table-record-event"
+      ],
+      "sourceRefs": [
+        "osdu/src/SqlFlow.Delivery.Data/DeliveryEntities.cs",
+        "osdu/src/SqlFlow.Delivery/Ledger/ILedger.cs",
+        "osdu/src/SqlFlow.Delivery/Ledger/OsduLedger.cs",
+        "osdu/src/SqlFlow.Delivery/Ledger/SqlServerLedgerBulk.cs",
+        "osdu/src/SqlFlow.Delivery/Ledger/SqlServerLedgerBulk.Purges.cs",
+        "osdu/src/SqlFlow.Delivery.Data/Migrations/20260928064320_LedgerPartitions.cs"
+      ]
+    },
+    {
+      "id": "delivery-table-cache-definition",
+      "corpus": "reference",
+      "path": "tables/cache-definition.md",
+      "title": "osdu.CacheDefinition: each cached type a cache flow declares, copied from the repository by the sync",
+      "type": "table",
+      "summary": "One row per cached type a cache flow declares in a partition: where its records come from, what of each it keeps, how changes are approved, and retention.",
+      "keywords": [
+        "osdu.CacheDefinition",
+        "cache definition table",
+        "cache flow",
+        "cached type",
+        "lookup table",
+        "dictionary",
+        "retentionDays",
+        "onChange"
+      ],
+      "related": [
+        "delivery-concept-database",
+        "delivery-concept-partition-cache",
+        "delivery-flow-cache",
+        "delivery-table-cache-version",
+        "delivery-table-cache-member"
+      ],
+      "sourceRefs": [
+        "osdu/src/SqlFlow.Delivery.Data/DeliveryEntities.cs",
+        "osdu/src/SqlFlow.Delivery/Catalog/DeliveryCatalogSync.cs",
+        "osdu/src/SqlFlow.Delivery/Catalog/OsduCacheStore.cs"
+      ]
+    },
+    {
+      "id": "delivery-table-cache-item",
+      "corpus": "reference",
+      "path": "tables/cache-item.md",
+      "title": "osdu.CacheItem: each cached record as a run of consecutive versions of its partition's cache held it",
+      "type": "table",
+      "summary": "One row per cached record and run of versions it held unchanged: the OSDU id, the values captured at the declared paths, and the versions it held them in.",
+      "keywords": [
+        "osdu.CacheItem",
+        "cache item table",
+        "cached record",
+        "partition cache",
+        "cache history",
+        "version ranges",
+        "FromSequence"
+      ],
+      "related": [
+        "delivery-concept-database",
+        "delivery-concept-partition-cache",
+        "delivery-table-cache-version",
+        "delivery-table-cache-member",
+        "delivery-table-cache-definition"
+      ],
+      "sourceRefs": [
+        "osdu/src/SqlFlow.Delivery.Data/DeliveryEntities.cs",
+        "osdu/src/SqlFlow.Delivery/Catalog/OsduCacheStore.cs",
+        "osdu/src/SqlFlow.Delivery/Catalog/CacheVersions.cs"
+      ]
+    },
+    {
+      "id": "delivery-table-cache-member",
+      "corpus": "reference",
+      "path": "tables/cache-member.md",
+      "title": "osdu.CacheMember: which cache flow's last capture of a type held each cached record",
+      "type": "table",
+      "summary": "One row per partition, type, cached record and cache flow whose last capture held it: what lets several cache flows share one partition's cache.",
+      "keywords": [
+        "osdu.CacheMember",
+        "cache member table",
+        "partition cache",
+        "several cache flows",
+        "shared cache",
+        "cached record"
+      ],
+      "related": [
+        "delivery-concept-database",
+        "delivery-concept-partition-cache",
+        "delivery-table-cache-item",
+        "delivery-table-cache-definition"
+      ],
+      "sourceRefs": [
+        "osdu/src/SqlFlow.Delivery.Data/DeliveryEntities.cs",
+        "osdu/src/SqlFlow.Delivery/Catalog/OsduCacheStore.cs",
+        "osdu/src/SqlFlow.Delivery/Catalog/DeliveryCatalogSync.cs"
+      ]
+    },
+    {
+      "id": "delivery-table-cache-set",
+      "corpus": "reference",
+      "path": "tables/cache-set.md",
+      "title": "osdu.CacheSet: each distinct combination of cached values that delivered records were built from",
+      "type": "table",
+      "summary": "One row per distinct set of (type, cached record, path, value) a render consumed: what a record's CacheSetId names, and whether a change gates it.",
+      "keywords": [
+        "osdu.CacheSet",
+        "cache set table",
+        "cache dependencies",
+        "CacheSetId",
+        "gated sets",
+        "cache change",
+        "approval"
+      ],
+      "related": [
+        "delivery-concept-database",
+        "delivery-concept-partition-cache",
+        "delivery-table-cache-set-entry",
+        "delivery-table-update-tag",
+        "delivery-table-record"
+      ],
+      "sourceRefs": [
+        "osdu/src/SqlFlow.Delivery.Data/DeliveryEntities.cs",
+        "osdu/src/SqlFlow.Delivery/Ledger/OsduLedger.cs"
+      ]
+    },
+    {
+      "id": "delivery-table-cache-set-entry",
+      "corpus": "reference",
+      "path": "tables/cache-set-entry.md",
+      "title": "osdu.CacheSetEntry: each cached value inside a cache set, what a render read and what it read at the time",
+      "type": "table",
+      "summary": "One row per cached value in a cache set: the partition, type, cached record and path read, how it was used, and the value as it was consumed.",
+      "keywords": [
+        "osdu.CacheSetEntry",
+        "cache set entry table",
+        "cache dependency",
+        "impact query",
+        "cached value",
+        "match",
+        "lookup"
+      ],
+      "related": [
+        "delivery-concept-database",
+        "delivery-concept-partition-cache",
+        "delivery-table-cache-set",
+        "delivery-table-update-tag"
+      ],
+      "sourceRefs": [
+        "osdu/src/SqlFlow.Delivery.Data/DeliveryEntities.cs",
+        "osdu/src/SqlFlow.Delivery/Ledger/OsduLedger.cs",
+        "osdu/src/SqlFlow.Delivery/Snapshots/CacheUsage.cs",
+        "osdu/src/SqlFlow.Delivery/Engine/Snapshots/CacheImpact.cs"
+      ]
+    },
+    {
+      "id": "delivery-table-cache-version",
+      "corpus": "reference",
+      "path": "tables/cache-version.md",
+      "title": "osdu.CacheVersion: each version of a partition's cache, the whole cache as one merge left it",
+      "type": "table",
+      "summary": "One row per version of a partition's cache: its label and place in the history, who captured it and from where, its types and counts, and whether it was pruned.",
+      "keywords": [
+        "osdu.CacheVersion",
+        "cache version table",
+        "partition cache",
+        "cache capture",
+        "current version",
+        "cache retention",
+        "system properties"
+      ],
+      "related": [
+        "delivery-concept-database",
+        "delivery-concept-partition-cache",
+        "delivery-flow-cache",
+        "delivery-table-cache-item",
+        "delivery-table-cache-definition"
+      ],
+      "sourceRefs": [
+        "osdu/src/SqlFlow.Delivery.Data/DeliveryEntities.cs",
+        "osdu/src/SqlFlow.Delivery/Catalog/OsduCacheStore.cs",
+        "osdu/src/SqlFlow.Delivery/Catalog/CacheVersions.cs",
+        "osdu/src/SqlFlow.Delivery.ControlPlane/Api/DeliveryCacheStreams.cs"
+      ]
+    },
+    {
+      "id": "delivery-table-config-property",
+      "corpus": "reference",
+      "path": "tables/config-property.md",
+      "title": "osdu.ConfigProperty: the central configuration the control plane supplies to the runs it queues",
+      "type": "table",
+      "summary": "One row per configuration value: the name a flow spells as ${env:NAME}, its value or reference, and the repository and partition it applies to.",
+      "keywords": [
+        "osdu.ConfigProperty",
+        "config property table",
+        "central configuration",
+        "sqlflow config",
+        "env references",
+        "per partition values",
+        "legal tag"
+      ],
+      "related": [
+        "delivery-concept-database",
+        "delivery-cli-config",
+        "delivery-concept-partitions",
+        "delivery-concept-environment-variables",
+        "delivery-table-partition"
+      ],
+      "sourceRefs": [
+        "osdu/src/SqlFlow.Delivery.Data/DeliveryEntities.cs",
+        "osdu/src/SqlFlow.Delivery/Catalog/DeliveryConfigStore.cs",
+        "osdu/src/SqlFlow.Delivery/Catalog/ConfiguredPartitions.cs"
+      ]
+    },
+    {
+      "id": "delivery-table-dimension",
+      "corpus": "reference",
+      "path": "tables/dimension.md",
+      "title": "osdu.Dimension: one dimension of a dimension flow in a partition, its declaration and what it holds now",
+      "type": "table",
+      "summary": "One row per dimension of a flow in a partition: the declaration its last build read with, the field it asked for, its dim_ table and columns, and its counts.",
+      "keywords": [
+        "osdu.Dimension",
+        "dimension table",
+        "dimension flow",
+        "dim_ table",
+        "members",
+        "originals",
+        "clean values",
+        "incremental load"
+      ],
+      "related": [
+        "delivery-concept-database",
+        "delivery-concept-dimension-tables",
+        "delivery-flow-dimension",
+        "delivery-guide-dimensions",
+        "delivery-table-dimension-run",
+        "delivery-table-dimension-member",
+        "delivery-table-dimension-value",
+        "delivery-wiki-0011-dimension-flows"
+      ],
+      "sourceRefs": [
+        "osdu/src/SqlFlow.Delivery.Data/DeliveryEntities.cs",
+        "osdu/src/SqlFlow.Delivery/Ledger/SqlServerDimensionStore.cs",
+        "osdu/src/SqlFlow.Delivery/Ledger/OsduLedger.Dimensions.cs",
+        "osdu/src/SqlFlow.Delivery/Ledger/DimensionTables.cs",
+        "osdu/src/SqlFlow.Delivery/Engine/Dimensions/DimensionRunner.cs"
+      ]
+    },
+    {
+      "id": "delivery-table-dimension-attribute",
+      "corpus": "reference",
+      "path": "tables/dimension-attribute.md",
+      "title": "osdu.DimensionAttribute: each value of each attribute of a dimension's keys",
+      "type": "table",
+      "summary": "One row per key, attribute and value: the value read for the key, where it was read from, and for a collected attribute how many of the key's records hold it.",
+      "keywords": [
+        "osdu.DimensionAttribute",
+        "dimension attribute table",
+        "attribute values",
+        "collected attribute",
+        "dimension columns"
+      ],
+      "related": [
+        "delivery-concept-database",
+        "delivery-concept-dimension-tables",
+        "delivery-flow-dimension",
+        "delivery-table-dimension-attribute-name",
+        "delivery-table-dimension-value"
+      ],
+      "sourceRefs": [
+        "osdu/src/SqlFlow.Delivery.Data/DeliveryEntities.cs",
+        "osdu/src/SqlFlow.Delivery/Ledger/SqlServerDimensionStore.cs",
+        "osdu/src/SqlFlow.Delivery/Ledger/OsduLedger.Dimensions.cs"
+      ]
+    },
+    {
+      "id": "delivery-table-dimension-attribute-name",
+      "corpus": "reference",
+      "path": "tables/dimension-attribute-name.md",
+      "title": "osdu.DimensionAttributeName: each attribute of a dimension, under the number its values are joined by",
+      "type": "table",
+      "summary": "One row per attribute or element field of a dimension: its number, its name, whether it is collected, and its place among the attributes declared now.",
+      "keywords": [
+        "osdu.DimensionAttributeName",
+        "dimension attribute name table",
+        "attribute number",
+        "attribute order",
+        "collected attribute"
+      ],
+      "related": [
+        "delivery-concept-database",
+        "delivery-concept-dimension-tables",
+        "delivery-flow-dimension",
+        "delivery-table-dimension-attribute",
+        "delivery-table-dimension-element"
+      ],
+      "sourceRefs": [
+        "osdu/src/SqlFlow.Delivery.Data/DeliveryEntities.cs",
+        "osdu/src/SqlFlow.Delivery/Ledger/SqlServerDimensionStore.cs",
+        "osdu/src/SqlFlow.Delivery/Ledger/OsduLedger.Dimensions.cs"
+      ]
+    },
+    {
+      "id": "delivery-table-dimension-change",
+      "corpus": "reference",
+      "path": "tables/dimension-change.md",
+      "title": "osdu.DimensionChange: each change a build made to one key of a dimension",
+      "type": "table",
+      "summary": "One row per change a build made to a key: it arrived, left, came back, or moved from one value to another, with the values it moved from and to.",
+      "keywords": [
+        "osdu.DimensionChange",
+        "dimension change table",
+        "change log",
+        "added",
+        "removed",
+        "moved",
+        "restored"
+      ],
+      "related": [
+        "delivery-concept-database",
+        "delivery-concept-dimension-tables",
+        "delivery-flow-dimension",
+        "delivery-table-dimension-run",
+        "delivery-table-dimension-value"
+      ],
+      "sourceRefs": [
+        "osdu/src/SqlFlow.Delivery.Data/DeliveryEntities.cs",
+        "osdu/src/SqlFlow.Delivery/Ledger/SqlServerDimensionStore.cs",
+        "osdu/src/SqlFlow.Delivery/Ledger/OsduLedger.Dimensions.cs"
+      ]
+    },
+    {
+      "id": "delivery-table-dimension-collected-text",
+      "corpus": "reference",
+      "path": "tables/dimension-collected-text.md",
+      "title": "osdu.DimensionCollectedText: each text a dimension's records hold at a collected attribute's path",
+      "type": "table",
+      "summary": "One row per collected attribute and text: the text exactly as the index holds it, the value it is shown as, and the records holding it.",
+      "keywords": [
+        "osdu.DimensionCollectedText",
+        "collected text table",
+        "collected attribute",
+        "composed search",
+        "dimension search"
+      ],
+      "related": [
+        "delivery-concept-database",
+        "delivery-concept-dimension-tables",
+        "delivery-flow-dimension",
+        "delivery-cli-dimensions",
+        "delivery-table-dimension-attribute-name"
+      ],
+      "sourceRefs": [
+        "osdu/src/SqlFlow.Delivery.Data/DeliveryEntities.cs",
+        "osdu/src/SqlFlow.Delivery/Ledger/SqlServerDimensionStore.cs",
+        "osdu/src/SqlFlow.Delivery/Ledger/OsduLedger.Dimensions.cs"
+      ]
+    },
+    {
+      "id": "delivery-table-dimension-element",
+      "corpus": "reference",
+      "path": "tables/dimension-element.md",
+      "title": "osdu.DimensionElement: each field of each object of a nested array a dimension's keys hold",
+      "type": "table",
+      "summary": "One row per field of an object of a nested array a key's records hold (a curve of a well log): the key, the object's place, the field and its value.",
+      "keywords": [
+        "osdu.DimensionElement",
+        "dimension element table",
+        "nested array",
+        "elements",
+        "curves",
+        "element rows"
+      ],
+      "related": [
+        "delivery-concept-database",
+        "delivery-concept-dimension-tables",
+        "delivery-flow-dimension",
+        "delivery-table-dimension-value",
+        "delivery-table-dimension-attribute-name"
+      ],
+      "sourceRefs": [
+        "osdu/src/SqlFlow.Delivery.Data/DeliveryEntities.cs",
+        "osdu/src/SqlFlow.Delivery/Ledger/SqlServerDimensionStore.cs"
+      ]
+    },
+    {
+      "id": "delivery-table-dimension-key-record",
+      "corpus": "reference",
+      "path": "tables/dimension-key-record.md",
+      "title": "osdu.DimensionKeyRecord: each record a dimension key's label and attributes were read through",
+      "type": "table",
+      "summary": "One row per key and record its label and attributes were read through: the record's id hash and entity type, how an incremental load finds keys to read again.",
+      "keywords": [
+        "osdu.DimensionKeyRecord",
+        "dimension key record table",
+        "incremental load",
+        "read through",
+        "label records",
+        "changed records"
+      ],
+      "related": [
+        "delivery-concept-database",
+        "delivery-concept-dimension-tables",
+        "delivery-flow-dimension",
+        "delivery-table-dimension-value",
+        "delivery-table-dimension-record"
+      ],
+      "sourceRefs": [
+        "osdu/src/SqlFlow.Delivery.Data/DeliveryEntities.cs",
+        "osdu/src/SqlFlow.Delivery/Ledger/SqlServerDimensionStore.cs",
+        "osdu/src/SqlFlow.Delivery/Ledger/OsduLedger.Dimensions.cs",
+        "osdu/src/SqlFlow.Delivery/Engine/Dimensions/DimensionRunner.Incremental.cs"
+      ]
+    },
+    {
+      "id": "delivery-table-dimension-member",
+      "corpus": "reference",
+      "path": "tables/dimension-member.md",
+      "title": "osdu.DimensionMember: one value of a dimension, a clean value with its records and search filter",
+      "type": "table",
+      "summary": "One row per member (clean value) of a dimension: the value, the records holding any of its keys, its search filter, and the builds that found and removed it.",
+      "keywords": [
+        "osdu.DimensionMember",
+        "dimension member table",
+        "clean value",
+        "dimension values",
+        "search filter",
+        "member counts"
+      ],
+      "related": [
+        "delivery-concept-database",
+        "delivery-concept-dimension-tables",
+        "delivery-flow-dimension",
+        "delivery-table-dimension",
+        "delivery-table-dimension-value"
+      ],
+      "sourceRefs": [
+        "osdu/src/SqlFlow.Delivery.Data/DeliveryEntities.cs",
+        "osdu/src/SqlFlow.Delivery/Ledger/SqlServerDimensionStore.cs",
+        "osdu/src/SqlFlow.Delivery/Ledger/OsduLedger.Dimensions.cs"
+      ]
+    },
+    {
+      "id": "delivery-table-dimension-record",
+      "corpus": "reference",
+      "path": "tables/dimension-record.md",
+      "title": "osdu.DimensionRecord: the keys each record of a dimension held when a load last read it",
+      "type": "table",
+      "summary": "One row per record and key it held, the record named by a hash of its unique key (incremental.keyColumns): what an incremental load reads again.",
+      "keywords": [
+        "osdu.DimensionRecord",
+        "dimension record table",
+        "incremental load",
+        "keyColumns",
+        "record keys",
+        "changed records"
+      ],
+      "related": [
+        "delivery-concept-database",
+        "delivery-concept-dimension-tables",
+        "delivery-flow-dimension",
+        "delivery-table-dimension-key-record",
+        "delivery-table-dimension-run"
+      ],
+      "sourceRefs": [
+        "osdu/src/SqlFlow.Delivery.Data/DeliveryEntities.cs",
+        "osdu/src/SqlFlow.Delivery/Ledger/SqlServerDimensionStore.cs",
+        "osdu/src/SqlFlow.Delivery/Engine/Dimensions/DimensionRunner.Incremental.cs"
+      ]
+    },
+    {
+      "id": "delivery-table-dimension-run",
+      "corpus": "reference",
+      "path": "tables/dimension-run.md",
+      "title": "osdu.DimensionRun: one build of one dimension, how it read, what it found and what it changed",
+      "type": "table",
+      "summary": "One row per build of a dimension: how it loaded (full or incremental), how it read the index, what it found and how complete that is, and what it changed.",
+      "keywords": [
+        "osdu.DimensionRun",
+        "dimension run table",
+        "dimension build",
+        "full load",
+        "incremental load",
+        "aggregations",
+        "ranges",
+        "scans"
+      ],
+      "related": [
+        "delivery-concept-database",
+        "delivery-concept-dimension-tables",
+        "delivery-flow-dimension",
+        "delivery-table-dimension",
+        "delivery-table-dimension-change"
+      ],
+      "sourceRefs": [
+        "osdu/src/SqlFlow.Delivery.Data/DeliveryEntities.cs",
+        "osdu/src/SqlFlow.Delivery/Ledger/DimensionStates.cs",
+        "osdu/src/SqlFlow.Delivery/Ledger/OsduLedger.Dimensions.cs",
+        "osdu/src/SqlFlow.Delivery/Engine/Dimensions/DistinctValues.cs",
+        "osdu/src/SqlFlow.Delivery/Engine/Dimensions/DimensionRunner.cs"
+      ]
+    },
+    {
+      "id": "delivery-table-dimension-value",
+      "corpus": "reference",
+      "path": "tables/dimension-value.md",
+      "title": "osdu.DimensionValue: one key of a dimension, exactly as the index holds it, and the value it is under",
+      "type": "table",
+      "summary": "One row per original (key) of a dimension: the key exactly as the index holds it, its member or why it has none, its label, filter and records.",
+      "keywords": [
+        "osdu.DimensionValue",
+        "dimension value table",
+        "original",
+        "dimension key",
+        "label",
+        "left out",
+        "key_id"
+      ],
+      "related": [
+        "delivery-concept-database",
+        "delivery-concept-dimension-tables",
+        "delivery-flow-dimension",
+        "delivery-table-dimension-member",
+        "delivery-table-dimension-attribute"
+      ],
+      "sourceRefs": [
+        "osdu/src/SqlFlow.Delivery.Data/DeliveryEntities.cs",
+        "osdu/src/SqlFlow.Delivery/Ledger/SqlServerDimensionStore.cs",
+        "osdu/src/SqlFlow.Delivery/Ledger/OsduLedger.Dimensions.cs"
+      ]
+    },
+    {
+      "id": "delivery-table-dimension-view",
+      "corpus": "reference",
+      "path": "tables/dimension-view.md",
+      "title": "osdu.DimensionView: each view a dimension flow declares, as its builds last wrote it in the schema",
+      "type": "table",
+      "summary": "One row per view a dimension flow declares: its v_dim_ name, its declaration, the statement it was written with, its tables and columns, and who wrote it.",
+      "keywords": [
+        "osdu.DimensionView",
+        "dimension view table",
+        "v_dim_ views",
+        "dimension views",
+        "view statement",
+        "view record"
+      ],
+      "related": [
+        "delivery-concept-database",
+        "delivery-flow-dimension-views",
+        "delivery-concept-dimension-tables",
+        "delivery-table-dimension-view-check",
+        "delivery-table-dimension"
+      ],
+      "sourceRefs": [
+        "osdu/src/SqlFlow.Delivery.Data/DeliveryEntities.cs",
+        "osdu/src/SqlFlow.Delivery/Ledger/SqlServerDimensionViewStore.cs",
+        "osdu/src/SqlFlow.Delivery.Data/Migrations/20261009204033_DimensionViews.cs"
+      ]
+    },
+    {
+      "id": "delivery-table-dimension-view-check",
+      "corpus": "reference",
+      "path": "tables/dimension-view-check.md",
+      "title": "osdu.DimensionViewCheck: what a build's check of a dimension view found in a partition",
+      "type": "table",
+      "summary": "One row per check of a dimension view in a partition: passed or failed, its rows, what each join found, and what each converted column could not read.",
+      "keywords": [
+        "osdu.DimensionViewCheck",
+        "dimension view check table",
+        "view check",
+        "joins",
+        "conversions",
+        "v_dim_ views"
+      ],
+      "related": [
+        "delivery-concept-database",
+        "delivery-flow-dimension-views",
+        "delivery-table-dimension-view"
+      ],
+      "sourceRefs": [
+        "osdu/src/SqlFlow.Delivery.Data/DeliveryEntities.cs",
+        "osdu/src/SqlFlow.Delivery/Ledger/SqlServerDimensionViewStore.cs"
+      ]
+    },
+    {
+      "id": "delivery-table-interface",
+      "corpus": "reference",
+      "path": "tables/interface.md",
+      "title": "osdu.Interface: each interface of a delivery flow as the repository sync found it, and the ledger it keeps",
+      "type": "table",
+      "summary": "One row per interface of a delivery flow, per partition it names: its pipeline, ledger identity, route, mapping, cache version and record table.",
+      "keywords": [
+        "osdu.Interface",
+        "interface table",
+        "interface read model",
+        "delivery flow",
+        "ledger identity",
+        "route",
+        "mapping"
+      ],
+      "related": [
+        "delivery-concept-database",
+        "delivery-flow-interfaces",
+        "delivery-concept-osdu-order",
+        "delivery-table-ledger",
+        "delivery-table-mapping"
+      ],
+      "sourceRefs": [
+        "osdu/src/SqlFlow.Delivery.Data/DeliveryEntities.cs",
+        "osdu/src/SqlFlow.Delivery/Catalog/DeliveryInterfaceCatalog.cs",
+        "osdu/src/SqlFlow.Delivery/Ordering/OrderCatalog.cs",
+        "osdu/src/SqlFlow.Delivery.ControlPlane/Background/InterfaceCatalogBackfillService.cs"
+      ]
+    },
+    {
+      "id": "delivery-table-inventory",
+      "corpus": "reference",
+      "path": "tables/inventory.md",
+      "title": "osdu.Inventory: one inventory of an inventory flow in a partition, what it reads and its last build and reconcile",
+      "type": "table",
+      "summary": "One row per inventory a flow declares in a partition: the kind and query it reads, how it reads, the owners its last reconcile used, and its last runs.",
+      "keywords": [
+        "osdu.Inventory",
+        "inventory table",
+        "inventory flow",
+        "orphans",
+        "owners",
+        "build",
+        "reconcile"
+      ],
+      "related": [
+        "delivery-concept-database",
+        "delivery-flow-inventory",
+        "delivery-guide-finding-orphans",
+        "delivery-table-inventory-run",
+        "delivery-table-inventory-record",
+        "delivery-wiki-0013-inventory-flows"
+      ],
+      "sourceRefs": [
+        "osdu/src/SqlFlow.Delivery.Data/DeliveryEntities.cs",
+        "osdu/src/SqlFlow.Delivery/Ledger/OsduLedger.Inventory.cs",
+        "osdu/src/SqlFlow.Delivery/Engine/Inventories/InventoryRunner.cs"
+      ]
+    },
+    {
+      "id": "delivery-table-inventory-record",
+      "corpus": "reference",
+      "path": "tables/inventory-record.md",
+      "title": "osdu.InventoryRecord: each id an inventory holds or a ledger expects, and what the ledgers hold of it",
+      "type": "table",
+      "summary": "One row per OSDU id an inventory holds, or a ledger of its partition expects: its system properties, when it was seen, changed or gone, and its finding.",
+      "keywords": [
+        "osdu.InventoryRecord",
+        "inventory record table",
+        "finding",
+        "orphan",
+        "missing",
+        "stale",
+        "drifted",
+        "OSDU id"
+      ],
+      "related": [
+        "delivery-concept-database",
+        "delivery-flow-inventory",
+        "delivery-guide-finding-orphans",
+        "delivery-table-inventory",
+        "delivery-table-artifact",
+        "delivery-table-record"
+      ],
+      "sourceRefs": [
+        "osdu/src/SqlFlow.Delivery.Data/DeliveryEntities.cs",
+        "osdu/src/SqlFlow.Delivery/Ledger/SqlServerLedgerBulk.Inventory.cs",
+        "osdu/src/SqlFlow.Delivery/Ledger/SqlServerLedgerBulk.InventoryRemoval.cs",
+        "osdu/src/SqlFlow.Delivery/Ledger/OsduLedger.Inventory.cs"
+      ]
+    },
+    {
+      "id": "delivery-table-inventory-removal",
+      "corpus": "reference",
+      "path": "tables/inventory-removal.md",
+      "title": "osdu.InventoryRemoval: one removal of an inventory's ids an operator asked for, and what it came to",
+      "type": "table",
+      "summary": "One row per removal of an inventory's ids: the run, who asked, the finding and scope, how many ids the operator was shown, and its tallies.",
+      "keywords": [
+        "osdu.InventoryRemoval",
+        "inventory removal table",
+        "remove orphans",
+        "soft delete",
+        "purge",
+        "removal tallies"
+      ],
+      "related": [
+        "delivery-concept-database",
+        "delivery-flow-inventory",
+        "delivery-table-inventory-removal-item",
+        "delivery-table-inventory-selection",
+        "delivery-table-activity",
+        "delivery-wiki-0014-inventory-removals"
+      ],
+      "sourceRefs": [
+        "osdu/src/SqlFlow.Delivery.Data/DeliveryEntities.cs",
+        "osdu/src/SqlFlow.Delivery/Ledger/OsduLedger.InventoryRemoval.cs",
+        "osdu/src/SqlFlow.Delivery/Ledger/SqlServerLedgerBulk.InventoryRemoval.cs",
+        "osdu/src/SqlFlow.Delivery/Ledger/InventoryRemovals.cs"
+      ]
+    },
+    {
+      "id": "delivery-table-inventory-removal-item",
+      "corpus": "reference",
+      "path": "tables/inventory-removal-item.md",
+      "title": "osdu.InventoryRemovalItem: what one removal did to one id, and why",
+      "type": "table",
+      "summary": "One row per id an inventory removal reached: the version it found, the finding it had, the outcome (removed, gone, skipped or failed) and why.",
+      "keywords": [
+        "osdu.InventoryRemovalItem",
+        "inventory removal item table",
+        "removal outcome",
+        "removed",
+        "skipped",
+        "failed",
+        "OSDU id"
+      ],
+      "related": [
+        "delivery-concept-database",
+        "delivery-flow-inventory",
+        "delivery-table-inventory-removal",
+        "delivery-table-inventory-record"
+      ],
+      "sourceRefs": [
+        "osdu/src/SqlFlow.Delivery.Data/DeliveryEntities.cs",
+        "osdu/src/SqlFlow.Delivery/Ledger/OsduLedger.InventoryRemoval.cs",
+        "osdu/src/SqlFlow.Delivery/Ledger/SqlServerLedgerBulk.InventoryRemoval.cs"
+      ]
+    },
+    {
+      "id": "delivery-table-inventory-run",
+      "corpus": "reference",
+      "path": "tables/inventory-run.md",
+      "title": "osdu.InventoryRun: one build or reconcile of an inventory, how it read OSDU and what it found and changed",
+      "type": "table",
+      "summary": "One row per build or reconcile of an inventory: the run and who asked, how it read OSDU, what the merge changed, and its counts by finding.",
+      "keywords": [
+        "osdu.InventoryRun",
+        "inventory run table",
+        "inventory build",
+        "reconcile",
+        "listed ids",
+        "findings",
+        "owners"
+      ],
+      "related": [
+        "delivery-concept-database",
+        "delivery-flow-inventory",
+        "delivery-table-inventory",
+        "delivery-table-inventory-scan",
+        "delivery-table-inventory-record"
+      ],
+      "sourceRefs": [
+        "osdu/src/SqlFlow.Delivery.Data/DeliveryEntities.cs",
+        "osdu/src/SqlFlow.Delivery/Ledger/OsduLedger.Inventory.cs",
+        "osdu/src/SqlFlow.Delivery/Engine/Inventories/InventoryRunner.cs"
+      ]
+    },
+    {
+      "id": "delivery-table-inventory-scan",
+      "corpus": "reference",
+      "path": "tables/inventory-scan.md",
+      "title": "osdu.InventoryScan: each id a build listed, staged until the read is whole and merged into the inventory",
+      "type": "table",
+      "summary": "One row per id an inventory build's read listed, with its system properties as OSDU served them, held only until the build merges or fails.",
+      "keywords": [
+        "osdu.InventoryScan",
+        "inventory scan table",
+        "staging",
+        "inventory build",
+        "merge",
+        "listed ids"
+      ],
+      "related": [
+        "delivery-concept-database",
+        "delivery-flow-inventory",
+        "delivery-table-inventory-run",
+        "delivery-table-inventory-record"
+      ],
+      "sourceRefs": [
+        "osdu/src/SqlFlow.Delivery.Data/DeliveryEntities.cs",
+        "osdu/src/SqlFlow.Delivery/Ledger/SqlServerLedgerBulk.Inventory.cs",
+        "osdu/src/SqlFlow.Delivery/Ledger/OsduLedger.Inventory.cs"
+      ]
+    },
+    {
+      "id": "delivery-table-inventory-selection",
+      "corpus": "reference",
+      "path": "tables/inventory-selection.md",
+      "title": "osdu.InventorySelection: the ids of an inventory that hold what an operator's conditions ask in OSDU",
+      "type": "table",
+      "summary": "One row per match of an operator's conditions against an inventory: the conditions as written and as searched, how OSDU was read, and its counts.",
+      "keywords": [
+        "osdu.InventorySelection",
+        "inventory selection table",
+        "conditions",
+        "match",
+        "select ids by value",
+        "search terms",
+        "removal by selection"
+      ],
+      "related": [
+        "delivery-concept-database",
+        "delivery-flow-inventory",
+        "delivery-table-inventory-selection-item",
+        "delivery-table-inventory-removal",
+        "delivery-concept-search-terms"
+      ],
+      "sourceRefs": [
+        "osdu/src/SqlFlow.Delivery.Data/DeliveryEntities.cs",
+        "osdu/src/SqlFlow.Delivery/Ledger/OsduLedger.InventorySelection.cs",
+        "osdu/src/SqlFlow.Delivery/Ledger/SqlServerLedgerBulk.InventorySelection.cs",
+        "osdu/src/SqlFlow.Delivery.Data/Migrations/20261020222949_InventorySelections.cs"
+      ]
+    },
+    {
+      "id": "delivery-table-inventory-selection-item",
+      "corpus": "reference",
+      "path": "tables/inventory-selection-item.md",
+      "title": "osdu.InventorySelectionItem: each id of an inventory a match found holding what its conditions ask",
+      "type": "table",
+      "summary": "One row per id a match of an inventory selection found: the version the search index held, and the values it held at the conditions' properties.",
+      "keywords": [
+        "osdu.InventorySelectionItem",
+        "inventory selection item table",
+        "matched ids",
+        "matched version",
+        "selection grid"
+      ],
+      "related": [
+        "delivery-concept-database",
+        "delivery-flow-inventory",
+        "delivery-table-inventory-selection",
+        "delivery-table-inventory-record"
+      ],
+      "sourceRefs": [
+        "osdu/src/SqlFlow.Delivery.Data/DeliveryEntities.cs",
+        "osdu/src/SqlFlow.Delivery/Ledger/OsduLedger.InventorySelection.cs",
+        "osdu/src/SqlFlow.Delivery/Ledger/SqlServerLedgerBulk.InventorySelection.cs"
+      ]
+    },
+    {
+      "id": "delivery-table-inventory-version",
+      "corpus": "reference",
+      "path": "tables/inventory-version.md",
+      "title": "osdu.InventoryVersion: each version storage keeps of a record an inventory holds",
+      "type": "table",
+      "summary": "One row per version storage keeps of a record an inventory holds, for an inventory that reads every version (versions: all).",
+      "keywords": [
+        "osdu.InventoryVersion",
+        "inventory version table",
+        "record versions",
+        "versions all",
+        "inventory build"
+      ],
+      "related": [
+        "delivery-concept-database",
+        "delivery-flow-inventory",
+        "delivery-table-inventory-record"
+      ],
+      "sourceRefs": [
+        "osdu/src/SqlFlow.Delivery.Data/DeliveryEntities.cs",
+        "osdu/src/SqlFlow.Delivery/Ledger/SqlServerLedgerBulk.Inventory.cs",
+        "osdu/src/SqlFlow.Delivery/Ledger/SqlServerLedgerBulk.InventoryRemoval.cs"
+      ]
+    },
+    {
+      "id": "delivery-table-lease",
+      "corpus": "reference",
+      "path": "tables/lease.md",
+      "title": "osdu.Lease: a worker's hold on work, one row per claim, renewed while it delivers",
+      "type": "table",
+      "summary": "One row per worker claim on a work batch or a group of records due for a retry: its token, owner, expiry, and the tries its flow allows.",
+      "keywords": [
+        "osdu.Lease",
+        "lease table",
+        "worker lease",
+        "claim",
+        "lease token",
+        "expiry",
+        "lease recovery",
+        "removal hold"
+      ],
+      "related": [
+        "delivery-concept-database",
+        "delivery-concept-submissions",
+        "delivery-table-record-event",
+        "delivery-table-work-batch",
+        "delivery-table-record"
+      ],
+      "sourceRefs": [
+        "osdu/src/SqlFlow.Delivery.Data/DeliveryEntities.cs",
+        "osdu/src/SqlFlow.Delivery/Ledger/ILedger.cs",
+        "osdu/src/SqlFlow.Delivery/Ledger/OsduLedger.Leases.cs",
+        "osdu/src/SqlFlow.Delivery/Ledger/OsduLedger.Holds.cs"
+      ]
+    },
+    {
+      "id": "delivery-table-ledger",
+      "corpus": "reference",
+      "path": "tables/ledger.md",
+      "title": "osdu.Ledger: the ledger directory, one row per ledger identity and the partition it belongs to",
+      "type": "table",
+      "summary": "One row per ledger: the identity every ledger row carries, the partition it belongs to, its kind, flow, interface and display name.",
+      "keywords": [
+        "osdu.Ledger",
+        "ledger directory",
+        "ledger table",
+        "FlowId",
+        "ledger identity",
+        "ledger kind",
+        "LedgerName"
+      ],
+      "related": [
+        "delivery-concept-database",
+        "delivery-concept-ledger",
+        "delivery-concept-partitions",
+        "delivery-table-ledger-partition",
+        "delivery-table-record",
+        "delivery-flow-interfaces"
+      ],
+      "sourceRefs": [
+        "osdu/src/SqlFlow.Delivery.Data/DeliveryEntities.cs",
+        "osdu/src/SqlFlow.Delivery/Ledger/OsduLedger.Directory.cs",
+        "osdu/src/SqlFlow.Delivery/Ledger/ILedger.cs",
+        "osdu/src/SqlFlow.Delivery/Engine/LedgerRegistration.cs"
+      ]
+    },
+    {
+      "id": "delivery-table-ledger-partition",
+      "corpus": "reference",
+      "path": "tables/ledger-partition.md",
+      "title": "osdu.LedgerPartition: the number each OSDU partition is keyed by in every ledger table",
+      "type": "table",
+      "summary": "One row per data partition the ledger has rows in: the two-byte number every ledger key starts with, and the partition's name.",
+      "keywords": [
+        "osdu.LedgerPartition",
+        "ledger partition table",
+        "partition number",
+        "PartitionId",
+        "data-partition-id",
+        "ledger keys"
+      ],
+      "related": [
+        "delivery-concept-database",
+        "delivery-concept-ledger",
+        "delivery-concept-partitions",
+        "delivery-table-ledger",
+        "delivery-table-partition"
+      ],
+      "sourceRefs": [
+        "osdu/src/SqlFlow.Delivery.Data/DeliveryEntities.cs",
+        "osdu/src/SqlFlow.Delivery/Ledger/OsduLedger.Directory.cs",
+        "osdu/src/SqlFlow.Delivery.Data/Migrations/20260928064320_LedgerPartitions.cs"
+      ]
+    },
+    {
+      "id": "delivery-table-mapping",
+      "corpus": "reference",
+      "path": "tables/mapping.md",
+      "title": "osdu.Mapping: each mapping document a repository sync found, the read model behind the mappings page",
+      "type": "table",
+      "summary": "One row per mapping document a repository holds: its reference, the template it fills and the file it was read from, its text, a summary, and whether it loads.",
+      "keywords": [
+        "osdu.Mapping",
+        "mapping table",
+        "mapping read model",
+        "repository sync",
+        "template version",
+        "mapping reference"
+      ],
+      "related": [
+        "delivery-concept-database",
+        "delivery-flow-mapping",
+        "delivery-concept-templates",
+        "delivery-table-template",
+        "delivery-table-repository-template",
+        "delivery-table-interface"
+      ],
+      "sourceRefs": [
+        "osdu/src/SqlFlow.Delivery.Data/DeliveryEntities.cs",
+        "osdu/src/SqlFlow.Delivery/Catalog/DeliveryCatalogSync.cs",
+        "osdu/src/SqlFlow.Delivery/Ledger/OsduLedger.Mappings.cs",
+        "osdu/src/SqlFlow.Delivery.ControlPlane/Api/DeliveryEndpoints.cs"
+      ]
+    },
+    {
+      "id": "delivery-table-partition",
+      "corpus": "reference",
+      "path": "tables/partition.md",
+      "title": "osdu.Partition: the partition registry, the OSDU partitions registered with the catalog and the default one",
+      "type": "table",
+      "summary": "One row per OSDU data partition registered with the catalog: what it is for, whether it is the default, whether the configuration names it, and who changed it.",
+      "keywords": [
+        "osdu.Partition",
+        "partition table",
+        "partition registry",
+        "data-partition-id",
+        "default partition",
+        "Osdu:Partitions",
+        "configured partitions"
+      ],
+      "related": [
+        "delivery-concept-database",
+        "delivery-concept-partitions",
+        "delivery-cli-partition",
+        "delivery-table-config-property",
+        "delivery-table-ledger-partition"
+      ],
+      "sourceRefs": [
+        "osdu/src/SqlFlow.Delivery.Data/DeliveryEntities.cs",
+        "osdu/src/SqlFlow.Delivery/Catalog/DeliveryPartitionRegistry.cs",
+        "osdu/src/SqlFlow.Delivery/Catalog/ConfiguredPartitions.cs",
+        "osdu/src/SqlFlow.Delivery/Model/RegisteredPartitions.cs",
+        "osdu/src/SqlFlow.Delivery.ControlPlane/Api/DeliveryPartitionEndpoints.cs"
+      ]
+    },
+    {
+      "id": "delivery-table-purged-record",
+      "corpus": "reference",
+      "path": "tables/purged-record.md",
+      "title": "osdu.PurgedRecord: the one line kept of a record deleted from the ledger after its removal from OSDU",
+      "type": "table",
+      "summary": "One row per record deleted from the ledger: its key, label, OSDU id and last version, who deleted it, and the request to read its row again.",
+      "keywords": [
+        "osdu.PurgedRecord",
+        "purged record table",
+        "deleted from the ledger",
+        "removal",
+        "read again",
+        "plan requested",
+        "purge"
+      ],
+      "related": [
+        "delivery-concept-database",
+        "delivery-concept-ledger",
+        "delivery-concept-removal-and-reversal",
+        "delivery-table-record",
+        "delivery-table-activity-record"
+      ],
+      "sourceRefs": [
+        "osdu/src/SqlFlow.Delivery.Data/DeliveryEntities.cs",
+        "osdu/src/SqlFlow.Delivery/Ledger/SqlServerLedgerBulk.Purges.cs",
+        "osdu/src/SqlFlow.Delivery/Ledger/OsduLedger.Purges.cs",
+        "osdu/src/SqlFlow.Delivery/Ledger/SqlServerLedgerBulk.Recency.cs",
+        "osdu/src/SqlFlow.Delivery.Data/Migrations/20261014094057_PurgedRecordReadAgain.cs"
+      ]
+    },
+    {
+      "id": "delivery-table-record",
+      "corpus": "reference",
+      "path": "tables/record.md",
+      "title": "osdu.Record: the current state of one deliverable of one flow, and the work waiting to be sent",
+      "type": "table",
+      "summary": "One row per record a flow delivers: what OSDU holds of it, where it came from, the work queued for it, its status and why it is blocked.",
+      "keywords": [
+        "osdu.Record",
+        "record table",
+        "delivery ledger",
+        "record state",
+        "delivery key",
+        "OSDU id",
+        "record status",
+        "pending work",
+        "blocked records"
+      ],
+      "related": [
+        "delivery-concept-database",
+        "delivery-concept-ledger",
+        "delivery-concept-record-lifecycle",
+        "delivery-concept-change-detection",
+        "delivery-table-attempt",
+        "delivery-table-record-identity",
+        "delivery-table-submission",
+        "delivery-table-lease"
+      ],
+      "sourceRefs": [
+        "osdu/src/SqlFlow.Delivery.Data/DeliveryEntities.cs",
+        "osdu/src/SqlFlow.Delivery/Ledger/ILedger.cs",
+        "osdu/src/SqlFlow.Delivery/Ledger/OsduLedger.cs",
+        "osdu/src/SqlFlow.Delivery/Ledger/OsduLedger.Leases.cs",
+        "osdu/src/SqlFlow.Delivery/Ledger/SqlServerLedgerBulk.cs",
+        "osdu/src/SqlFlow.Delivery/Identity/DeliveryKey.cs",
+        "osdu/src/SqlFlow.Delivery/Snapshots/RenderContext.cs"
+      ]
+    },
+    {
+      "id": "delivery-table-record-event",
+      "corpus": "reference",
+      "path": "tables/record-event.md",
+      "title": "osdu.RecordEvent: what a worker appended under its lease and the lease has not applied to the record yet",
+      "type": "table",
+      "summary": "One row per step a worker completed or try it ended under a lease, with the claimed work it carried; applied to the record once, then deleted.",
+      "keywords": [
+        "osdu.RecordEvent",
+        "record event table",
+        "lease events",
+        "step",
+        "completion",
+        "lease apply",
+        "checkpoint",
+        "claimed work"
+      ],
+      "related": [
+        "delivery-concept-database",
+        "delivery-concept-submissions",
+        "delivery-table-lease",
+        "delivery-table-record",
+        "delivery-table-attempt"
+      ],
+      "sourceRefs": [
+        "osdu/src/SqlFlow.Delivery.Data/DeliveryEntities.cs",
+        "osdu/src/SqlFlow.Delivery/Ledger/ILedger.cs",
+        "osdu/src/SqlFlow.Delivery/Ledger/OsduLedger.Leases.cs",
+        "osdu/src/SqlFlow.Delivery/Ledger/SqlServerLedgerBulk.cs",
+        "osdu/src/SqlFlow.Delivery/Engine/Worker/DeliveryWorker.cs",
+        "osdu/src/SqlFlow.Delivery.Data/Migrations/20260928064320_LedgerPartitions.cs"
+      ]
+    },
+    {
+      "id": "delivery-table-record-identity",
+      "corpus": "reference",
+      "path": "tables/record-identity.md",
+      "title": "osdu.RecordIdentity: every value a record can be found by, folded to upper case for prefix lookups",
+      "type": "table",
+      "summary": "One row per value a record is known by (an identity column, a key value, a label word, its OSDU id, its file): what the record search reads.",
+      "keywords": [
+        "osdu.RecordIdentity",
+        "record identity table",
+        "record search",
+        "identity index",
+        "prefix search",
+        "find a record",
+        "dataset.identity"
+      ],
+      "related": [
+        "delivery-concept-database",
+        "delivery-concept-ledger",
+        "delivery-table-record",
+        "delivery-flow-mapping"
+      ],
+      "sourceRefs": [
+        "osdu/src/SqlFlow.Delivery.Data/DeliveryEntities.cs",
+        "osdu/src/SqlFlow.Delivery/Ledger/RecordIdentity.cs",
+        "osdu/src/SqlFlow.Delivery/Ledger/OsduLedger.cs",
+        "osdu/src/SqlFlow.Delivery.ControlPlane/Api/RecordSearchContributor.cs"
+      ]
+    },
+    {
+      "id": "delivery-table-repository-template",
+      "corpus": "reference",
+      "path": "tables/repository-template.md",
+      "title": "osdu.RepositoryTemplate: each file of a repository's template folders, as the last sync found it",
+      "type": "table",
+      "summary": "One row per file in a folder named templates of a synced repository: the template it holds with a copy of its schema, or why it holds none.",
+      "keywords": [
+        "osdu.RepositoryTemplate",
+        "template folder",
+        "templates folder",
+        "repository template",
+        "template file",
+        "template copy",
+        "repository sync"
+      ],
+      "related": [
+        "delivery-concept-database",
+        "delivery-concept-templates",
+        "delivery-table-template",
+        "delivery-table-mapping",
+        "delivery-cli-template"
+      ],
+      "sourceRefs": [
+        "osdu/src/SqlFlow.Delivery.Data/DeliveryEntities.cs",
+        "osdu/src/SqlFlow.Delivery/Catalog/DeliveryCatalogSync.cs",
+        "osdu/src/SqlFlow.Delivery/Catalog/SyncedTemplates.cs",
+        "osdu/src/SqlFlow.Delivery/Templates/TemplateFolders.cs",
+        "osdu/src/SqlFlow.Delivery/Ledger/OsduLedger.Mappings.cs",
+        "osdu/src/SqlFlow.Delivery/Ordering/OrderCatalog.cs",
+        "osdu/src/SqlFlow.Delivery.ControlPlane/Api/DeliveryTemplateEndpoints.cs"
+      ]
+    },
+    {
+      "id": "delivery-table-retrieval",
+      "corpus": "reference",
+      "path": "tables/retrieval.md",
+      "title": "osdu.Retrieval: one run of a retrieval flow, the window it covered, where its files went and its outcome",
+      "type": "table",
+      "summary": "One row per retrieve run: the kinds and query it read, its window (the next run's start), where it wrote its files, and what it wrote.",
+      "keywords": [
+        "osdu.Retrieval",
+        "retrieval table",
+        "retrieval flow",
+        "retrieve run",
+        "modifytime watermark",
+        "JSON Lines files",
+        "incremental window"
+      ],
+      "related": [
+        "delivery-concept-database",
+        "delivery-flow-retrieval",
+        "delivery-guide-retrieving-records",
+        "delivery-table-ledger",
+        "delivery-wiki-0008-retrieval-lands-raw-records"
+      ],
+      "sourceRefs": [
+        "osdu/src/SqlFlow.Delivery.Data/DeliveryEntities.cs",
+        "osdu/src/SqlFlow.Delivery/Ledger/ILedger.cs",
+        "osdu/src/SqlFlow.Delivery/Ledger/OsduLedger.cs",
+        "osdu/src/SqlFlow.Delivery/Engine/RetrievalExecutor.cs"
+      ]
+    },
+    {
+      "id": "delivery-table-reversal",
+      "corpus": "reference",
+      "path": "tables/reversal.md",
+      "title": "osdu.Reversal: one reversal of a run or a submission, putting back what it put into OSDU",
+      "type": "table",
+      "summary": "One row per run or submission reversed in a ledger: what it covers, its status, who asked and when, and the run that last worked on it.",
+      "keywords": [
+        "osdu.Reversal",
+        "reversal table",
+        "reverse a run",
+        "reverse a submission",
+        "put back",
+        "restore",
+        "removal and reversal"
+      ],
+      "related": [
+        "delivery-concept-database",
+        "delivery-concept-removal-and-reversal",
+        "delivery-table-reversal-item",
+        "delivery-table-submission",
+        "delivery-table-activity-record"
+      ],
+      "sourceRefs": [
+        "osdu/src/SqlFlow.Delivery.Data/DeliveryEntities.cs",
+        "osdu/src/SqlFlow.Delivery/Ledger/Reversals.cs",
+        "osdu/src/SqlFlow.Delivery/Ledger/OsduLedger.Reversals.cs",
+        "osdu/src/SqlFlow.Delivery/Ledger/SqlServerLedgerBulk.Reversals.cs",
+        "osdu/src/SqlFlow.Delivery.ControlPlane/Api/DeliveryReversalEndpoints.cs"
+      ]
+    },
+    {
+      "id": "delivery-table-reversal-item",
+      "corpus": "reference",
+      "path": "tables/reversal-item.md",
+      "title": "osdu.ReversalItem: each record a reversal reaches, what OSDU held before and what the reversal did",
+      "type": "table",
+      "summary": "One row per record a reversed run or submission delivered: the versions it wrote, what OSDU held before, and the item's state and outcome.",
+      "keywords": [
+        "osdu.ReversalItem",
+        "reversal item table",
+        "reversal",
+        "prior version",
+        "restored version",
+        "removed",
+        "already gone"
+      ],
+      "related": [
+        "delivery-concept-database",
+        "delivery-concept-removal-and-reversal",
+        "delivery-table-reversal",
+        "delivery-table-attempt",
+        "delivery-table-record"
+      ],
+      "sourceRefs": [
+        "osdu/src/SqlFlow.Delivery.Data/DeliveryEntities.cs",
+        "osdu/src/SqlFlow.Delivery/Ledger/Reversals.cs",
+        "osdu/src/SqlFlow.Delivery/Ledger/OsduLedger.Reversals.cs",
+        "osdu/src/SqlFlow.Delivery/Ledger/SqlServerLedgerBulk.Reversals.cs",
+        "osdu/src/SqlFlow.Delivery.ControlPlane/Api/DeliveryReversalEndpoints.cs"
+      ]
+    },
+    {
+      "id": "delivery-table-schema-lineage",
+      "corpus": "reference",
+      "path": "tables/schema-lineage.md",
+      "title": "osdu.SchemaLineage: OSDU's lineage as one release of the OSDU data definitions declares it",
+      "type": "table",
+      "summary": "One row per built release of the OSDU data definitions: its tag and commit, who built it and when, its kinds and relationships, and what failed.",
+      "keywords": [
+        "osdu.SchemaLineage",
+        "schema lineage table",
+        "OSDU lineage",
+        "data definitions release",
+        "OSDU order",
+        "relationships"
+      ],
+      "related": [
+        "delivery-concept-database",
+        "delivery-concept-osdu-order",
+        "delivery-table-schema-lineage-kind",
+        "delivery-table-template",
+        "delivery-wiki-0016-osdu-order"
+      ],
+      "sourceRefs": [
+        "osdu/src/SqlFlow.Delivery.Data/DeliveryEntities.cs",
+        "osdu/src/SqlFlow.Delivery/Ordering/SchemaLineageStore.cs",
+        "osdu/src/SqlFlow.Delivery/Catalog/DeliveryCatalogSync.cs"
+      ]
+    },
+    {
+      "id": "delivery-table-schema-lineage-kind",
+      "corpus": "reference",
+      "path": "tables/schema-lineage-kind.md",
+      "title": "osdu.SchemaLineageKind: each kind of a built release, with the properties of its schema that refer to other records",
+      "type": "table",
+      "summary": "One row per kind of a built OSDU release: its entity type, version and status, and every property of its schema that refers to other records.",
+      "keywords": [
+        "osdu.SchemaLineageKind",
+        "schema lineage kind table",
+        "OSDU lineage",
+        "relationships",
+        "x-osdu-relationship",
+        "entity type"
+      ],
+      "related": [
+        "delivery-concept-database",
+        "delivery-concept-osdu-order",
+        "delivery-table-schema-lineage"
+      ],
+      "sourceRefs": [
+        "osdu/src/SqlFlow.Delivery.Data/DeliveryEntities.cs",
+        "osdu/src/SqlFlow.Delivery/Ordering/SchemaLineageStore.cs",
+        "osdu/src/SqlFlow.Delivery/Ordering/OrderCatalog.cs"
+      ]
+    },
+    {
+      "id": "delivery-table-schema-version",
+      "corpus": "reference",
+      "path": "tables/schema-version.md",
+      "title": "osdu.SchemaVersion: the single row that says which version of the osdu schema a database holds",
+      "type": "table",
+      "summary": "The one row naming the osdu schema's module version, the last migration applied, when and by whom, and the oldest SQLFlow catalog migration it needs.",
+      "keywords": [
+        "osdu.SchemaVersion",
+        "schema version table",
+        "module version",
+        "migrations",
+        "sqlflow db status",
+        "catalog migration"
+      ],
+      "related": [
+        "delivery-concept-database",
+        "delivery-cli-db",
+        "delivery-concept-architecture",
+        "delivery-concept-ledger"
+      ],
+      "sourceRefs": [
+        "osdu/src/SqlFlow.Delivery.Data/DeliveryEntities.cs",
+        "osdu/src/SqlFlow.Delivery.Data/OsduSchema.cs",
+        "osdu/src/SqlFlow.Delivery.Data/OsduDbContext.cs"
+      ]
+    },
+    {
+      "id": "delivery-table-search-term",
+      "corpus": "reference",
+      "path": "tables/search-term.md",
+      "title": "osdu.SearchTerm: each search term a repository's pipelines give an entity type, written by every sync",
+      "type": "table",
+      "summary": "One row per repository, term and entity type: a source column the active delivery flows read, with every route by which it reaches the records they render.",
+      "keywords": [
+        "osdu.SearchTerm",
+        "search term table",
+        "search terms",
+        "explorer",
+        "source column",
+        "routes",
+        "find records by source value"
+      ],
+      "related": [
+        "delivery-concept-database",
+        "delivery-concept-search-terms",
+        "delivery-concept-explorer",
+        "delivery-table-search-term-refinement",
+        "delivery-table-mapping"
+      ],
+      "sourceRefs": [
+        "osdu/src/SqlFlow.Delivery.Data/DeliveryEntities.cs",
+        "osdu/src/SqlFlow.Delivery/Catalog/DeliverySearchTermCatalog.cs",
+        "osdu/src/SqlFlow.Delivery/SearchTerms/SearchTermDirectory.cs",
+        "osdu/src/SqlFlow.Delivery.ControlPlane/Background/SearchTermCatalogRefreshService.cs"
+      ]
+    },
+    {
+      "id": "delivery-table-search-term-refinement",
+      "corpus": "reference",
+      "path": "tables/search-term-refinement.md",
+      "title": "osdu.SearchTermRefinement: what a person made of a search term, kept apart from what a sync writes",
+      "type": "table",
+      "summary": "One row per search term a person refined: the name it is searched by, whether it is left out, the route it is searched through, a note, and who changed it.",
+      "keywords": [
+        "osdu.SearchTermRefinement",
+        "search term refinement table",
+        "rename a term",
+        "delete a term",
+        "restore a term",
+        "route"
+      ],
+      "related": [
+        "delivery-concept-database",
+        "delivery-concept-search-terms",
+        "delivery-table-search-term"
+      ],
+      "sourceRefs": [
+        "osdu/src/SqlFlow.Delivery.Data/DeliveryEntities.cs",
+        "osdu/src/SqlFlow.Delivery/SearchTerms/SearchTermDirectory.cs",
+        "osdu/src/SqlFlow.Delivery/Catalog/DeliverySearchTermCatalog.cs"
+      ]
+    },
+    {
+      "id": "delivery-table-source-watermark",
+      "corpus": "reference",
+      "path": "tables/source-watermark.md",
+      "title": "osdu.SourceWatermark: how far the last whole-scope plan of a flow scope read",
+      "type": "table",
+      "summary": "One row per flow and scope (parameter set): the upper bound of the last completed whole-scope plan, the submission that wrote it, and its render context hash.",
+      "keywords": [
+        "osdu.SourceWatermark",
+        "source watermark table",
+        "incremental window",
+        "change window",
+        "UpdatedThroughUtc",
+        "flow scope",
+        "render context hash"
+      ],
+      "related": [
+        "delivery-concept-database",
+        "delivery-concept-submissions",
+        "delivery-concept-change-detection",
+        "delivery-table-submission"
+      ],
+      "sourceRefs": [
+        "osdu/src/SqlFlow.Delivery.Data/DeliveryEntities.cs",
+        "osdu/src/SqlFlow.Delivery/Ledger/ILedger.cs",
+        "osdu/src/SqlFlow.Delivery/Ledger/OsduLedger.cs"
+      ]
+    },
+    {
+      "id": "delivery-table-submission",
+      "corpus": "reference",
+      "path": "tables/submission.md",
+      "title": "osdu.Submission: one plan of a delivery flow over its ingestion tables, with its window and counts",
+      "type": "table",
+      "summary": "One row per plan of a flow: what it read (window, full read or keys), what rendered it, its work batches, status and record counts.",
+      "keywords": [
+        "osdu.Submission",
+        "submission table",
+        "plan",
+        "change window",
+        "work batches",
+        "submission status",
+        "submission counts"
+      ],
+      "related": [
+        "delivery-concept-database",
+        "delivery-concept-submissions",
+        "delivery-concept-change-detection",
+        "delivery-table-work-batch",
+        "delivery-table-record",
+        "delivery-table-source-watermark"
+      ],
+      "sourceRefs": [
+        "osdu/src/SqlFlow.Delivery.Data/DeliveryEntities.cs",
+        "osdu/src/SqlFlow.Delivery/Engine/Intake/SubmissionIntake.cs",
+        "osdu/src/SqlFlow.Delivery/Ledger/OsduLedger.cs",
+        "osdu/src/SqlFlow.Delivery/Snapshots/RenderContext.cs"
+      ]
+    },
+    {
+      "id": "delivery-table-template",
+      "corpus": "reference",
+      "path": "tables/template.md",
+      "title": "osdu.Template: each saved OSDU schema version, the library the explorer, the builder and the assistant read",
+      "type": "table",
+      "summary": "One row per saved template: the OSDU kind, the content version (a hash of the bundled schema), the bundled JSON Schema, where it came from and who saved it.",
+      "keywords": [
+        "osdu.Template",
+        "template table",
+        "saved template",
+        "OSDU schema",
+        "template version",
+        "schema capture",
+        "import"
+      ],
+      "related": [
+        "delivery-concept-database",
+        "delivery-concept-templates",
+        "delivery-cli-template",
+        "delivery-table-mapping",
+        "delivery-table-repository-template",
+        "delivery-table-schema-lineage"
+      ],
+      "sourceRefs": [
+        "osdu/src/SqlFlow.Delivery.Data/DeliveryEntities.cs",
+        "osdu/src/SqlFlow.Delivery/Templates/TemplateStore.cs",
+        "osdu/src/SqlFlow.Delivery/Engine/FlowRuntime.cs",
+        "osdu/src/SqlFlow.Delivery.ControlPlane/Api/DeliveryTemplateEndpoints.cs"
+      ]
+    },
+    {
+      "id": "delivery-table-update-tag",
+      "corpus": "reference",
+      "path": "tables/update-tag.md",
+      "title": "osdu.UpdateTag: each change to the cache that delivered records were built from, and its rollout",
+      "type": "table",
+      "summary": "One row per cache change reaching delivered records: what changed, between which versions, whether it needs approval, its decision, and its rollout.",
+      "keywords": [
+        "osdu.UpdateTag",
+        "update tag table",
+        "cache change",
+        "approve",
+        "rollout",
+        "redelivery",
+        "onChange"
+      ],
+      "related": [
+        "delivery-concept-database",
+        "delivery-concept-partition-cache",
+        "delivery-table-cache-set",
+        "delivery-table-cache-version",
+        "delivery-flow-cache"
+      ],
+      "sourceRefs": [
+        "osdu/src/SqlFlow.Delivery.Data/DeliveryEntities.cs",
+        "osdu/src/SqlFlow.Delivery/Ledger/ILedger.cs",
+        "osdu/src/SqlFlow.Delivery/Ledger/OsduLedger.cs",
+        "osdu/src/SqlFlow.Delivery/Engine/Snapshots/CacheImpact.cs",
+        "osdu/src/SqlFlow.Delivery.ControlPlane/Api/DeliveryCacheStreams.cs"
+      ]
+    },
+    {
+      "id": "delivery-table-work-batch",
+      "corpus": "reference",
+      "path": "tables/work-batch.md",
+      "title": "osdu.WorkBatch: one file of rendered documents of a submission, claimed and drained as one unit",
+      "type": "table",
+      "summary": "One row per work batch a submission's intake wrote: where its file is, how many records it holds, its status, the lease draining it, and its counts.",
+      "keywords": [
+        "osdu.WorkBatch",
+        "work batch table",
+        "work batch file",
+        "drain",
+        "batch claim",
+        "rendered documents",
+        "submission batches"
+      ],
+      "related": [
+        "delivery-concept-database",
+        "delivery-concept-submissions",
+        "delivery-table-submission",
+        "delivery-table-lease",
+        "delivery-table-record",
+        "delivery-wiki-0006-work-batches"
+      ],
+      "sourceRefs": [
+        "osdu/src/SqlFlow.Delivery.Data/DeliveryEntities.cs",
+        "osdu/src/SqlFlow.Delivery/Ledger/ILedger.cs",
+        "osdu/src/SqlFlow.Delivery/Ledger/OsduLedger.Leases.cs",
+        "osdu/src/SqlFlow.Delivery/Engine/Intake/SubmissionIntake.cs",
+        "osdu/src/SqlFlow.Delivery/Engine/Worker/DeliveryWorker.cs"
+      ]
+    },
+    {
+      "id": "delivery-wiki-0001-delivery-grain",
+      "corpus": "wiki",
+      "path": "decisions/0001-delivery-grain.md",
+      "title": "Decision 0001: the delivery grain, one record per source log",
+      "type": "decision",
+      "summary": "Why a well log record is keyed by its source's own identity (project and log id) and not collapsed per wellbore.",
+      "keywords": [
+        "delivery grain",
+        "delivery key",
+        "record identity",
+        "well log",
+        "dataset key",
+        "idfrom"
+      ],
+      "related": [],
+      "sourceRefs": []
+    },
+    {
+      "id": "delivery-wiki-0002-client-supplied-ids",
+      "corpus": "wiki",
+      "path": "decisions/0002-client-supplied-ids.md",
+      "title": "Decision 0002: deterministic, client-supplied OSDU ids",
+      "type": "decision",
+      "summary": "Why OSDU ids are computed from the data by the delivery instead of assigned by OSDU, and what that guarantees.",
+      "keywords": [
+        "osdu id",
+        "client-supplied id",
+        "deterministic id",
+        "duplicate records",
+        "idfrom",
+        "delivery key"
+      ],
+      "related": [
+        "delivery-wiki-0015-lost-records"
+      ],
+      "sourceRefs": []
+    },
+    {
+      "id": "delivery-wiki-0003-rendering-location",
+      "corpus": "wiki",
+      "path": "decisions/0003-rendering-location.md",
+      "title": "Decision 0003: rendering runs in the delivery service",
+      "type": "decision",
+      "summary": "Why the mapping is interpreted by the delivery against a pinned template and cache version, not by a facade service.",
+      "keywords": [
+        "rendering",
+        "mapping renderer",
+        "offline plan",
+        "content hash",
+        "facade",
+        "recordpath"
+      ],
+      "related": [
+        "delivery-wiki-0009-searched-references",
+        "delivery-wiki-0018-template-folders"
+      ],
+      "sourceRefs": []
+    },
+    {
+      "id": "delivery-wiki-0004-preserved-keys",
+      "corpus": "wiki",
+      "path": "decisions/0004-preserved-keys.md",
+      "title": "Decision 0004: Datasets, DDMSDatasets and ExtensionProperties belong to OSDU",
+      "type": "decision",
+      "summary": "Why an update keeps the properties a DDMS or External Data Services writes into a record, and leaves them out of the hash.",
+      "keywords": [
+        "preserved keys",
+        "datasets",
+        "ddmsdatasets",
+        "extensionproperties",
+        "record update",
+        "eds"
+      ],
+      "related": [],
+      "sourceRefs": []
+    },
+    {
+      "id": "delivery-wiki-0005-ledger-retention",
+      "corpus": "wiki",
+      "path": "decisions/0005-ledger-retention.md",
+      "title": "Decision 0005: attempts are pruned by age, keeping the latest per record",
+      "type": "decision",
+      "summary": "Why the ledger's attempt history is pruned by age while every record keeps its latest attempt.",
+      "keywords": [
+        "retention",
+        "attempts",
+        "pruning",
+        "ledger size",
+        "history"
+      ],
+      "related": [],
+      "sourceRefs": []
+    },
+    {
+      "id": "delivery-wiki-0006-work-batches",
+      "corpus": "wiki",
+      "path": "decisions/0006-work-batches.md",
+      "title": "Decision 0006: rendered documents live in work batch files, not in the ledger",
+      "type": "decision",
+      "summary": "Why rendered documents are written to work batch files the ledger points at, and how large submissions fan out.",
+      "keywords": [
+        "work batch",
+        "rendered documents",
+        "key slice",
+        "fan out",
+        "submission"
+      ],
+      "related": [],
+      "sourceRefs": []
+    },
+    {
+      "id": "delivery-wiki-0007-manifest-dataset-ids",
+      "corpus": "wiki",
+      "path": "decisions/0007-manifest-dataset-ids.md",
+      "title": "Decision 0007: manifest datasets take ids derived from their record's id",
+      "type": "decision",
+      "summary": "Why the datasets a manifest delivery registers get ids derived from the record, so a redelivery can replace them.",
+      "keywords": [
+        "manifest",
+        "dataset id",
+        "ingestion workflow",
+        "redelivery",
+        "file generic"
+      ],
+      "related": [],
+      "sourceRefs": []
+    },
+    {
+      "id": "delivery-wiki-0008-retrieval-lands-raw-records",
+      "corpus": "wiki",
+      "path": "decisions/0008-retrieval-lands-raw-records.md",
+      "title": "Decision 0008: retrieval lands records as OSDU holds them",
+      "type": "decision",
+      "summary": "Why a retrieval flow brings OSDU records back unchanged instead of reversing a mapping.",
+      "keywords": [
+        "retrieval",
+        "raw records",
+        "reverse mapping",
+        "osdu to lake",
+        "landing"
+      ],
+      "related": [],
+      "sourceRefs": []
+    },
+    {
+      "id": "delivery-wiki-0009-searched-references",
+      "corpus": "wiki",
+      "path": "decisions/0009-searched-references.md",
+      "title": "Decision 0009: references to business data are searched for, not cached",
+      "type": "decision",
+      "summary": "Why wellbores and other business data are found by a search per record while closed vocabularies stay in the cache.",
+      "keywords": [
+        "search",
+        "findby",
+        "business data",
+        "wellbore reference",
+        "cache size",
+        "reference data"
+      ],
+      "related": [
+        "delivery-wiki-0003-rendering-location",
+        "delivery-wiki-0018-template-folders"
+      ],
+      "sourceRefs": []
+    },
+    {
+      "id": "delivery-wiki-0010-assertion-flows-read-only",
+      "corpus": "wiki",
+      "path": "decisions/0010-assertion-flows-read-only.md",
+      "title": "Decision 0010: assertion flows read OSDU, check against templates, and keep whole reports",
+      "type": "decision",
+      "summary": "Why data quality tests read what OSDU serves, never write, and keep every report whole.",
+      "keywords": [
+        "assertion",
+        "data quality",
+        "read only",
+        "test report",
+        "template check"
+      ],
+      "related": [
+        "delivery-wiki-0018-template-folders"
+      ],
+      "sourceRefs": []
+    },
+    {
+      "id": "delivery-wiki-0011-dimension-flows",
+      "corpus": "wiki",
+      "path": "decisions/0011-dimension-flows.md",
+      "title": "Decision 0011: dimension flows read every distinct value by ranges and keep each key",
+      "type": "decision",
+      "summary": "Why dimensions page through every distinct value of a field by ranges instead of the search aggregation.",
+      "keywords": [
+        "dimension",
+        "distinct values",
+        "aggregation limit",
+        "ranges",
+        "keys"
+      ],
+      "related": [
+        "delivery-wiki-0018-template-folders"
+      ],
+      "sourceRefs": []
+    },
+    {
+      "id": "delivery-wiki-0012-atomic-delivery",
+      "corpus": "wiki",
+      "path": "decisions/0012-atomic-delivery.md",
+      "title": "Decision 0012: every delivery completes or is undone, and the ledger names every id it minted",
+      "type": "decision",
+      "summary": "Why a delivery of many OSDU calls is a unit of work whose minted ids the ledger keeps, so an unfinished one can be undone.",
+      "keywords": [
+        "atomic delivery",
+        "unit of work",
+        "undo",
+        "minted ids",
+        "artifacts",
+        "partial failure"
+      ],
+      "related": [
+        "delivery-wiki-0013-inventory-flows"
+      ],
+      "sourceRefs": []
+    },
+    {
+      "id": "delivery-wiki-0013-inventory-flows",
+      "corpus": "wiki",
+      "path": "decisions/0013-inventory-flows.md",
+      "title": "Decision 0013: inventory flows compare what OSDU serves with every ledger of the partition",
+      "type": "decision",
+      "summary": "Why finding orphans needs a read of what OSDU serves set against every ledger, and what an inventory compares.",
+      "keywords": [
+        "inventory",
+        "orphans",
+        "stale ids",
+        "forgotten ids",
+        "ledger drift"
+      ],
+      "related": [
+        "delivery-wiki-0012-atomic-delivery",
+        "delivery-wiki-0014-inventory-removals"
+      ],
+      "sourceRefs": []
+    },
+    {
+      "id": "delivery-wiki-0014-inventory-removals",
+      "corpus": "wiki",
+      "path": "decisions/0014-inventory-removals.md",
+      "title": "Decision 0014: an inventory flow may remove the orphan, stale and forgotten ids it found",
+      "type": "decision",
+      "summary": "Why an inventory flow may remove what it found when its document allows it, and how that stays traceable.",
+      "keywords": [
+        "inventory",
+        "removal",
+        "orphans",
+        "cleanup",
+        "soft delete"
+      ],
+      "related": [
+        "delivery-wiki-0013-inventory-flows"
+      ],
+      "sourceRefs": []
+    },
+    {
+      "id": "delivery-wiki-0015-lost-records",
+      "corpus": "wiki",
+      "path": "decisions/0015-lost-records.md",
+      "title": "Decision 0015: a record OSDU lost is delivered again under its own id, and under a new one only when an operator asks",
+      "type": "decision",
+      "summary": "Why a record OSDU lost is delivered again under the id it claimed, restored first when soft-deleted, and given a new id only on request.",
+      "keywords": [
+        "missing records",
+        "lost records",
+        "accidental delete",
+        "restore soft delete",
+        "undelete",
+        "redeliver",
+        "new osdu id",
+        "reassign id",
+        "repair"
+      ],
+      "related": [
+        "delivery-wiki-0002-client-supplied-ids",
+        "delivery-wiki-0004-preserved-keys",
+        "delivery-wiki-0013-inventory-flows"
+      ],
+      "sourceRefs": []
+    },
+    {
+      "id": "delivery-wiki-0016-osdu-order",
+      "corpus": "wiki",
+      "path": "decisions/0016-osdu-order.md",
+      "title": "Decision 0016: OSDU's relationships order a repository's waves, and dependencies between schedules are shown, not enforced",
+      "type": "decision",
+      "summary": "Why lineage orders delivery flows by the relationships OSDU's schemas declare, and why schedules that depend on each other are shown rather than chained.",
+      "keywords": [
+        "osdu order",
+        "referential order",
+        "relationship",
+        "x-osdu-relationship",
+        "waves",
+        "schedule dependencies",
+        "cross schedule",
+        "osdu lineage by release"
+      ],
+      "related": [
+        "delivery-wiki-0009-searched-references",
+        "delivery-wiki-0017-pipelines-update-the-cache",
+        "delivery-wiki-0018-template-folders"
+      ],
+      "sourceRefs": []
+    },
+    {
+      "id": "delivery-wiki-0017-pipelines-update-the-cache",
+      "corpus": "wiki",
+      "path": "decisions/0017-pipelines-update-the-cache.md",
+      "title": "Decision 0017: A pipeline names the cache it needs current before it runs and the cache it updates after",
+      "type": "decision",
+      "summary": "Why the cache steps belong to the pipeline, why before is mandatory and after is not, why after reads storage, and how held records wait for what they miss.",
+      "keywords": [
+        "cache.before",
+        "cache.after",
+        "update the cache before a pipeline",
+        "update the cache after a pipeline",
+        "cache update during a schedule",
+        "held record waits for a reference"
+      ],
+      "related": [
+        "delivery-wiki-0016-osdu-order"
+      ],
+      "sourceRefs": []
+    },
+    {
+      "id": "delivery-wiki-0018-template-folders",
+      "corpus": "wiki",
+      "path": "decisions/0018-template-folders.md",
+      "title": "Decision 0018: A repository's template folders settle the template each document fills, and the library stands apart",
+      "type": "decision",
+      "summary": "Why templates live as files in a repository's template folders, how a document's template is settled, and why the saved templates stay a separate library.",
+      "keywords": [
+        "template folder",
+        "templates folder",
+        "template version",
+        "kind alone",
+        "nearest folder",
+        "custom template",
+        "template library",
+        "repository templates"
+      ],
+      "related": [
+        "delivery-wiki-0003-rendering-location",
+        "delivery-wiki-0009-searched-references",
+        "delivery-wiki-0010-assertion-flows-read-only",
+        "delivery-wiki-0011-dimension-flows",
+        "delivery-wiki-0016-osdu-order"
+      ],
+      "sourceRefs": [
+        "osdu/src/SqlFlow.Delivery/Templates/TemplateFolders.cs",
+        "osdu/src/SqlFlow.Delivery/Templates/TemplateChain.cs",
+        "osdu/src/SqlFlow.Delivery/Templates/TemplateSource.cs",
+        "osdu/src/SqlFlow.Delivery/Templates/TemplateStore.cs",
+        "osdu/src/SqlFlow.Delivery/Catalog/SyncedTemplates.cs",
+        "osdu/src/SqlFlow.Delivery/Catalog/DeliveryCatalogSync.cs",
+        "osdu/src/SqlFlow.Delivery/Engine/FlowRuntime.cs",
+        "osdu/src/SqlFlow.Delivery/Documents/MappingMapper.cs",
+        "osdu/src/SqlFlow.Delivery/Ordering/OrderCatalog.cs"
+      ]
+    },
+    {
+      "id": "delivery-wiki-pattern-catalog",
+      "corpus": "wiki",
+      "path": "maps/pattern-catalog.md",
+      "title": "Pattern catalog: which delivery problem maps to which OSDU Delivery shape",
+      "type": "map",
+      "summary": "Problem-first index: where a lookup belongs, one kind or interfaces, which route, retrieval or explorer, tests, orphans, and the page for each.",
+      "keywords": [
+        "patterns",
+        "which shape",
+        "how do i",
+        "where does a lookup belong",
+        "cache or dictionary or dimension",
+        "search per record",
+        "interfaces",
+        "which route",
+        "retrieval vs explorer",
+        "assertion tests",
+        "orphans",
+        "redeliver",
+        "partitions"
+      ],
+      "related": [
+        "wiki-pattern-catalog",
+        "delivery-wiki-0018-template-folders"
+      ],
+      "sourceRefs": [
+        "osdu/src/SqlFlow.Delivery/Documents/CacheDocumentMapper.cs",
+        "osdu/src/SqlFlow.Delivery/Documents/MappingMapper.cs",
+        "osdu/src/SqlFlow.Delivery/Templates/TemplateFolders.cs",
+        "osdu/src/SqlFlow.Delivery/Documents/DeliveryDocumentLoader.cs",
+        "osdu/src/SqlFlow.Delivery/Documents/DeliveryFlowKind.cs",
+        "osdu/src/SqlFlow.Delivery/Documents/InventoryFlowKind.cs",
+        "osdu/src/SqlFlow.Delivery/Documents/DimensionFlowKind.cs",
+        "osdu/src/SqlFlow.Delivery/Documents/RetrievalFlowKind.cs",
+        "osdu/src/SqlFlow.Delivery/Documents/AssertionFlowKind.cs",
+        "osdu/src/SqlFlow.Delivery/Protocols/DeliveryProtocol.cs",
+        "osdu/src/SqlFlow.Delivery/Rendering/ReplaceTables.cs",
+        "osdu/src/SqlFlow.Delivery/Model/DeliveryDestination.cs",
+        "osdu/src/SqlFlow.Delivery/Engine/Worker/DeliveryWorker.cs",
+        "osdu/src/SqlFlow.Delivery/Source/SqlServerIngestionSource.cs",
+        "osdu/src/SqlFlow.Delivery.Cli/DeliveryCliModule.cs",
+        "osdu/src/SqlFlow.Delivery.ControlPlane/Background/ConfiguredRunDispatcher.cs",
+        "osdu/docs/census/keys.delivery.json",
+        "osdu/docs/census/keys.cache.json",
+        "osdu/docs/census/keys.mapping.json",
+        "osdu/docs/census/keys.assertion.json",
+        "osdu/docs/census/keys.inventory.json",
+        "osdu/gui/src/module.tsx"
       ]
     }
   ]

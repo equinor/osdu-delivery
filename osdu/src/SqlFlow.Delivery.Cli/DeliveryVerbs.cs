@@ -143,7 +143,13 @@ internal static class DeliveryVerbs
             ["flow"] = flow.Name,
             ["flowId"] = flow.Id.ToString("D"),
             ["mapping"] = runtime.Mapping.Mapping.Reference,
-            ["template"] = new JsonObject { ["kind"] = runtime.Mapping.Mapping.Template.Kind, ["version"] = runtime.Mapping.Mapping.Template.Version },
+            ["template"] = new JsonObject
+            {
+                ["kind"] = runtime.Mapping.Mapping.Template.Kind,
+                ["version"] = runtime.Mapping.Mapping.Template.Version,
+                ["file"] = runtime.Mapping.TemplateOrigin,
+                ["versionNamed"] = runtime.Mapping.Mapping.TemplateVersionNamed,
+            },
             ["renderContext"] = JsonNode.Parse(runtime.Mapping.Context.Canonical()),
             ["source"] = new JsonObject
             {
@@ -195,7 +201,9 @@ internal static class DeliveryVerbs
         // What the text form needs is captured now: the runtime is gone by the time it writes.
         var reference = runtime.Mapping.Mapping.Reference;
         var template = runtime.Mapping.Mapping.Template.ToString();
-        var captured = runtime.Mapping.Schema.CapturedUtc;
+        var templateFrom = runtime.Mapping.TemplateOrigin is { } origin
+            ? $"{origin}{(runtime.Mapping.Mapping.TemplateVersionNamed ? string.Empty : ", the version its folder holds")}"
+            : "read from the saved templates";
         var cacheLine = runtime.Mapping.Context.CacheScope is { } scope
             ? $"    cache       partition {scope} version {runtime.Mapping.References.Version} ({runtime.Mapping.References.Types.Count} type(s))"
             : "    cache       none (the mapping reads nothing from a cache)";
@@ -234,7 +242,7 @@ internal static class DeliveryVerbs
             }
 
             context.Out.WriteLine($"    mapping     {reference}");
-            context.Out.WriteLine($"    template    {template} (saved {captured:u})");
+            context.Out.WriteLine($"    template    {template} ({templateFrom})");
             context.Out.WriteLine(cacheLine);
             if (searchLine is not null)
             {
@@ -683,18 +691,31 @@ internal static class DeliveryVerbs
         }).ToArray()),
     };
 
-    public static async Task<int> TemplateAsync(CliVerbContext context)
+    public static Task<int> TemplateAsync(CliVerbContext context)
+    {
+        ArgumentNullException.ThrowIfNull(context);
+        return TemplateAsync(ModuleCommand.Of(context));
+    }
+
+    /// <summary><c>sqlflow template</c> over the command it runs for, whether the command line or a suite runs it.</summary>
+    internal static async Task<int> TemplateAsync(ModuleCommand context)
     {
         ArgumentNullException.ThrowIfNull(context);
         var ct = context.CancellationToken;
         var engine = context.Services.GetRequiredService<EngineContext>();
         var verb = context.Arguments.Positional(1)?.ToLowerInvariant() ?? string.Empty;
-        var store = engine.Templates
-            ?? throw new FlowValidationException("Templates live in the module's database. Run 'sqlflow template' with --db <conn-ref>, or set the catalog variable.");
         var actor = RunActors.LocalAccount();
+
+        // The saved templates, the library, are in the module's database; a repository's template folders are read from disk.
+        ITemplateStore Store() => engine.Templates
+            ?? throw new FlowValidationException(
+                "Saved templates live in the module's database. Run 'sqlflow template' with --db <conn-ref>, or set the catalog variable; 'sqlflow template folders' reads a repository's template folders without one.");
 
         switch (verb)
         {
+            case "folders":
+                return Folders(context, ct);
+
             case "capture":
             {
                 // The canonical OSDU schemas are the Open Group's data definitions, not whatever one platform happens to host.
@@ -715,17 +736,14 @@ internal static class DeliveryVerbs
                 // so its templates can be imported again without reaching the data definitions (sqlflow template import).
                 if (context.Arguments.GetOption("--out") is { } outPath)
                 {
-                    var directory = Path.GetDirectoryName(Path.GetFullPath(outPath));
-                    if (!string.IsNullOrEmpty(directory))
+                    await WriteTemplateFileAsync(context, file.Schema, outPath, ct).ConfigureAwait(false);
+                    if (engine.Templates is null)
                     {
-                        Directory.CreateDirectory(directory);
+                        return ReportUnsaved(context, file.Schema);
                     }
-
-                    await File.WriteAllTextAsync(outPath, CanonicalJson.Pretty(file.Schema.Root), ct).ConfigureAwait(false);
-                    context.Error.WriteLine(string.Create(CultureInfo.InvariantCulture, $"Wrote the bundled schema of {kind} to {Path.GetFullPath(outPath)}"));
                 }
 
-                return Report(context, await store.SaveAsync(file.Schema, file.Origin, actor, ct).ConfigureAwait(false));
+                return Report(context, await Store().SaveAsync(file.Schema, file.Origin, actor, ct).ConfigureAwait(false));
             }
 
             case "import":
@@ -738,7 +756,16 @@ internal static class DeliveryVerbs
                 if (context.Arguments.GetOption("--from-dir") is { } directory)
                 {
                     var schema = await TemplateSources.FromDirectoryAsync(directory, kind, engine.Time, ct).ConfigureAwait(false);
-                    return Report(context, await store.SaveAsync(schema, $"data definitions under {Path.GetFullPath(directory)}", actor, ct).ConfigureAwait(false));
+                    if (context.Arguments.GetOption("--out") is { } fromDirOut)
+                    {
+                        await WriteTemplateFileAsync(context, schema, fromDirOut, ct).ConfigureAwait(false);
+                        if (engine.Templates is null)
+                        {
+                            return ReportUnsaved(context, schema);
+                        }
+                    }
+
+                    return Report(context, await Store().SaveAsync(schema, $"data definitions under {Path.GetFullPath(directory)}", actor, ct).ConfigureAwait(false));
                 }
 
                 // A bundled file is saved as it is. A file as the data definitions publish it is bundled with the shared schemas
@@ -752,11 +779,23 @@ internal static class DeliveryVerbs
                 var imported = await DataDefinitions(http, engine.Time)
                     .ImportAsync(await File.ReadAllTextAsync(path, ct).ConfigureAwait(false), kind, context.Arguments.GetOption("--release"), path, ct)
                     .ConfigureAwait(false);
-                return Report(context, await store.SaveAsync(imported.Schema, imported.Origin($"file {Path.GetFileName(path)}"), actor, ct).ConfigureAwait(false));
+
+                // A schema of one's own goes into a template folder as the file --out writes: bundled, and naming its kind.
+                if (context.Arguments.GetOption("--out") is { } importOut)
+                {
+                    await WriteTemplateFileAsync(context, imported.Schema, importOut, ct).ConfigureAwait(false);
+                    if (engine.Templates is null)
+                    {
+                        return ReportUnsaved(context, imported.Schema);
+                    }
+                }
+
+                return Report(context, await Store().SaveAsync(imported.Schema, imported.Origin($"file {Path.GetFileName(path)}"), actor, ct).ConfigureAwait(false));
             }
 
             case "list":
             {
+                var store = Store();
                 var templates = await store.ListAsync(ct).ConfigureAwait(false);
                 if (context.Json)
                 {
@@ -784,11 +823,20 @@ internal static class DeliveryVerbs
                     return context.UsageError("name the kind to show with --kind.");
                 }
 
+                var store = Store();
                 var version = context.Arguments.GetOption("--version")
                     ?? (await store.ListAsync(ct).ConfigureAwait(false)).FirstOrDefault(t => t.Kind == kind)?.Version
                     ?? throw new FlowValidationException($"There is no saved template for '{kind}'.");
                 var schema = await store.LoadAsync(new TemplateReference(kind, version), ct).ConfigureAwait(false)
                     ?? throw new FlowValidationException($"There is no template {new TemplateReference(kind, version)}.");
+
+                // The saved version as a file, the one the Templates page downloads, for a repository to keep beside the
+                // mappings that pin it; importing it again saves nothing new.
+                if (context.Arguments.GetOption("--out") is { } outPath)
+                {
+                    await WriteTemplateFileAsync(context, schema, outPath, ct).ConfigureAwait(false);
+                }
+
                 var template = OsduTemplate.From(schema);
                 if (context.Json)
                 {
@@ -839,7 +887,7 @@ internal static class DeliveryVerbs
                 }
 
                 var reference = new TemplateReference(kind, version);
-                await store.DeleteAsync(reference, ct).ConfigureAwait(false);
+                await Store().DeleteAsync(reference, ct).ConfigureAwait(false);
                 context.Out.WriteLine($"deleted template {reference}");
                 return 0;
             }
@@ -855,7 +903,175 @@ internal static class DeliveryVerbs
             () => http, OsduDataDefinitions.DefaultApiUrl, OsduDataDefinitions.DefaultWebUrl, OsduDataDefinitions.DefaultCacheDirectory,
             OsduDataDefinitions.DefaultFreshness, OsduDataDefinitions.DefaultDownloadTimeout, time);
 
-    private static int Report(CliVerbContext context, TemplateSaved saved)
+    /// <summary>
+    /// Writes a template as a file (<see cref="TemplateSources.FileText"/>) to <paramref name="outPath"/>, creating the
+    /// folders it needs, and notes where on stderr, so that stdout stays the subcommand's own output. A path that cannot be
+    /// written is refused with the reason, as every other refusal of the verb is.
+    /// </summary>
+    private static async Task WriteTemplateFileAsync(ModuleCommand context, SchemaSnapshot schema, string outPath, CancellationToken ct)
+    {
+        var reference = new TemplateReference(schema.Kind, schema.Version);
+        string path;
+        try
+        {
+            path = Path.GetFullPath(outPath);
+            var directory = Path.GetDirectoryName(path);
+            if (!string.IsNullOrEmpty(directory))
+            {
+                Directory.CreateDirectory(directory);
+            }
+
+            await File.WriteAllTextAsync(path, TemplateSources.FileText(schema), ct).ConfigureAwait(false);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or ArgumentException or NotSupportedException)
+        {
+            throw new DeliveryException($"The bundled schema of template {reference} could not be written to '{outPath}': {ex.Message}", ex);
+        }
+
+        context.Error.WriteLine(string.Create(CultureInfo.InvariantCulture, $"Wrote the bundled schema of template {reference} to {path}"));
+        if (!TemplateSources.DeclaresKind(schema.Root))
+        {
+            // Saved before a template named its kind: a template folder cannot tell which kind such a file holds.
+            context.Error.WriteLine(
+                $"The schema names no kind in x-osdu-schema-source, so no template folder reads it as a template. Import the file again with 'sqlflow template import {path} --kind {schema.Kind} --out {path}', which writes it naming its kind, as a new version.");
+        }
+    }
+
+    /// <summary>What an import or capture with <c>--out</c> did on a host without the module's database: the file, not a save.</summary>
+    private static int ReportUnsaved(ModuleCommand context, SchemaSnapshot schema)
+    {
+        var reference = new TemplateReference(schema.Kind, schema.Version);
+        if (context.Json)
+        {
+            context.Out.WriteLine(CanonicalJson.Pretty(new JsonObject { ["kind"] = reference.Kind, ["version"] = reference.Version, ["outcome"] = "written" }));
+            return 0;
+        }
+
+        context.Out.WriteLine($"wrote template {reference}; it is not saved in the library, since no module database is configured");
+        return 0;
+    }
+
+    /// <summary>
+    /// <c>sqlflow template folders [&lt;dir&gt;] [--for &lt;document&gt;]</c>: a repository's template folders as a run reads them
+    /// (osdu/docs/reference/concepts/templates.md, Template folders), read from disk with no database. Without
+    /// <c>--for</c>, every template folder under the directory (the repository's top above the current folder by default),
+    /// each file with the template it holds or why it holds none. With <c>--for</c>, the folders the document reads,
+    /// nearest first, and the version each kind they hold settles to for a document that names the kind alone.
+    /// </summary>
+    private static int Folders(ModuleCommand context, CancellationToken ct)
+    {
+        var directory = context.Arguments.Positional(2);
+        if (context.Arguments.GetOption("--for") is { } document)
+        {
+            var full = Path.GetFullPath(document);
+            if (!File.Exists(full))
+            {
+                return context.UsageError($"--for names '{document}', which is not a file; name the mapping or flow whose template folders to read.");
+            }
+
+            var chain = TemplateFolders.ChainFor(full, directory is null ? null : Path.GetFullPath(directory));
+            var kinds = chain.Templates.Select(f => f.Kind!).Distinct(StringComparer.OrdinalIgnoreCase).Order(StringComparer.Ordinal)
+                .Select(kind => (Kind: kind, Pick: chain.Pick(kind, null)))
+                .ToList();
+            if (context.Json)
+            {
+                context.Out.WriteLine(CanonicalJson.Pretty(new JsonObject
+                {
+                    ["document"] = chain.Document,
+                    ["looked"] = new JsonArray(chain.Looked.Select(l => (JsonNode)l).ToArray()),
+                    ["folders"] = new JsonArray(chain.Folders.Select(f => (JsonNode)FolderJson(f)).ToArray()),
+                    ["kinds"] = new JsonArray(kinds.Select(k => (JsonNode)new JsonObject
+                    {
+                        ["kind"] = k.Kind,
+                        ["version"] = k.Pick.File?.Version,
+                        ["file"] = k.Pick.File?.Shown,
+                        ["problem"] = k.Pick.Problem,
+                    }).ToArray()),
+                }));
+                return 0;
+            }
+
+            if (chain.Folders.Count == 0)
+            {
+                context.Out.WriteLine(
+                    $"{chain.Document} reads no template folder: a document reads the folder named templates beside it and those above it, and there is none ({TemplateChain.Listed(chain.Looked)}).");
+                return 0;
+            }
+
+            context.Out.WriteLine($"{chain.Document} reads {chain.Folders.Count} template folder(s), nearest first:");
+            foreach (var folder in chain.Folders)
+            {
+                WriteFolder(context, folder);
+            }
+
+            context.Out.WriteLine("A kind named without a version settles to:");
+            foreach (var (kind, pick) in kinds)
+            {
+                context.Out.WriteLine(pick.Found
+                    ? $"  {kind}  {pick.File!.Version}  {pick.File.Shown}"
+                    : $"  {kind}  not settled: {pick.Problem}");
+            }
+
+            return 0;
+        }
+
+        var root = directory is null
+            ? TemplateFolders.RepositoryTop(Directory.GetCurrentDirectory()) ?? Directory.GetCurrentDirectory()
+            : Path.GetFullPath(directory);
+        var scan = TemplateFolders.Scan(root, ct);
+        if (context.Json)
+        {
+            context.Out.WriteLine(CanonicalJson.Pretty(new JsonObject
+            {
+                ["root"] = root,
+                ["folders"] = new JsonArray(scan.Folders.Select(f => (JsonNode)FolderJson(f)).ToArray()),
+                ["warnings"] = new JsonArray(scan.Warnings.Select(w => (JsonNode)w).ToArray()),
+            }));
+            return 0;
+        }
+
+        if (scan.Folders.Count == 0)
+        {
+            context.Out.WriteLine($"no template folder under {root}");
+        }
+
+        foreach (var folder in scan.Folders)
+        {
+            WriteFolder(context, folder);
+        }
+
+        foreach (var warning in scan.Warnings)
+        {
+            context.Error.WriteLine($"WARN   {warning}");
+        }
+
+        return 0;
+    }
+
+    private static void WriteFolder(ModuleCommand context, TemplateFolder folder)
+    {
+        context.Out.WriteLine(folder.Shown.Length == 0 ? "." : folder.Shown);
+        foreach (var file in folder.Files)
+        {
+            context.Out.WriteLine(file.IsTemplate
+                ? $"  {file.Shown}  {file.Kind}  {file.Version}"
+                : $"  {file.Shown}  holds no template: {file.Problem}");
+        }
+    }
+
+    private static JsonObject FolderJson(TemplateFolder folder) => new()
+    {
+        ["path"] = folder.Shown,
+        ["files"] = new JsonArray(folder.Files.Select(f => (JsonNode)new JsonObject
+        {
+            ["path"] = f.Shown,
+            ["kind"] = f.Kind,
+            ["version"] = f.Version,
+            ["problem"] = f.Problem,
+        }).ToArray()),
+    };
+
+    private static int Report(ModuleCommand context, TemplateSaved saved)
     {
         if (context.Json)
         {
