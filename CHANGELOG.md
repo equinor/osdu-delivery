@@ -103,6 +103,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **A source's Interfaces table fits its panel instead of scrolling sideways.** Why an interface goes by its route is on
+  the route's hover, with a copy beside it; the kind takes the width the other columns leave, clipped from the left with
+  the whole kind on hover and a copy beside it; and a long mapping name or list of interfaces waited for clips with the
+  whole on hover ([A delivery flow's page](osdu/docs/reference/concepts/gui.md#a-delivery-flows-page)).
 - **A verify no longer calls a newer version drift when it holds the content the flow wrote.** Every write through the
   storage route records the hash of what it wrote, so a record another writer sent again unchanged, such as another
   instance of the delivery linked to it, is a match; records written before this change compare versions alone until

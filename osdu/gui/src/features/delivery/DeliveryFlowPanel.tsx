@@ -17,16 +17,19 @@ import {
   type DeliverySubmission, type DeliverySyncRequest,
 } from "../../api/delivery";
 import { CodeView } from "@/components/CodeView";
+import { CopyButton } from "@/components/CopyButton";
 import { CorrelationError } from "@/components/CorrelationError";
 import { DataTable, type Column } from "@/components/DataTable";
 import { FilterBar } from "@/components/FilterBar";
 import { PagedTable } from "@/components/PagedTable";
 import { RelativeTime } from "@/components/RelativeTime";
+import { RichTooltip } from "@/components/RichTooltip";
 import { SearchInput } from "@/components/SearchInput";
 import { TruncatedText } from "@/components/TruncatedText";
 import { BlockedBadge, RecordStatusBadge, SubmissionStatusBadge, VerifyOutcomeBadge } from "./DeliveryBadges";
 import { FlowStatusBar } from "./FlowStatusBar";
 import { InterfacePicker } from "./InterfacePicker";
+import { KindText } from "./KindText";
 import { OutsidePartition } from "./PartitionNotice";
 import { CompactTime, OsduTarget, RecordIdentity, type RecordOrigin } from "./RecordCells";
 import { useInterfaceChoice } from "./useInterfaceChoice";
@@ -726,39 +729,78 @@ function selectionFor(
   return allMatching ? { kind: "filter", filter, expected: matched } : { kind: "keys", keys: [...selected] };
 }
 
-/** One line per interface of a source: where its records go, when it runs, and how its ledger stands. */
+/**
+ * The interfaces one waits for, in a width that does not grow with their number: the first, how many more, and every one
+ * on hover.
+ */
+function WaitsFor({ waits }: { waits: DeliveryInterface["waitsFor"] }) {
+  if (waits === null || waits.length === 0) {
+    return <span className="text-[13px] text-muted-foreground">nothing</span>;
+  }
+
+  const names = waits.map((wait) => wait.interface);
+  const line = (
+    <span className="inline-flex max-w-40 items-center gap-1 text-[13px] text-muted-foreground" data-testid="delivery-interface-waits">
+      <span className="min-w-0 truncate">{names[0]}</span>
+      {names.length > 1 && <span className="shrink-0 text-[11px]">+{names.length - 1}</span>}
+    </span>
+  );
+  return names.length > 1 ? <RichTooltip body={names.join("\n")} title="Waits for">{line}</RichTooltip> : line;
+}
+
+/** The route an interface's records go by, with why it goes by it on hover and a copy of the reason beside it. */
+function InterfaceRoute({ route, reason }: { route: string; reason: string | null }) {
+  const badge = <Badge variant="outline" className="w-fit font-mono text-[11px]">{route}</Badge>;
+  if (reason === null || reason === "") {
+    return badge;
+  }
+
+  return (
+    <span className="inline-flex items-center gap-0.5">
+      <RichTooltip body={reason} title="Why this route">
+        <span className="inline-flex" data-testid="delivery-interface-route">{badge}</span>
+      </RichTooltip>
+      <CopyButton iconOnly label="Copy why this route" text={reason} testId="copy-interface-route" />
+    </span>
+  );
+}
+
+/**
+ * One line per interface of a source: where its records go, when it runs, and how its ledger stands. The kind takes the
+ * width the other columns leave, clipped there from the left with the whole kind on hover and a copy beside it; why the
+ * route is the route is on hover too, and every other column is bounded, so the grid fits its panel rather than
+ * scrolling sideways.
+ */
 const interfaceColumns: Column<DeliveryInterface>[] = [
   {
     id: "interface",
     header: "Interface",
+    // A width in pixels that steps down as the table narrows: a table sizes an auto column to its content, which a
+    // percentage cap does not hold.
     render: (row) => (
-      <div className="flex min-w-0 flex-col">
-        <span className="font-medium">{row.interface ?? "(single)"}</span>
-        <span className="truncate font-mono text-[11px] text-muted-foreground">{row.mapping}</span>
+      <div className="flex min-w-0 max-w-[240px] flex-col @max-5xl/table:max-w-[128px]">
+        <span className="truncate font-medium">{row.interface ?? "(single)"}</span>
+        <TruncatedText text={row.mapping} mono maxWidth={1600} className="text-[11px] text-muted-foreground" />
       </div>
     ),
   },
   { id: "wave", header: "Wave", align: "right", render: (row) => <span className="font-mono tabular-nums">{row.wave}</span> },
+  { id: "route", header: "Route", render: (row) => <InterfaceRoute route={row.route} reason={row.routeReason} /> },
   {
-    id: "route",
-    header: "Route",
-    render: (row) => (
-      <div className="flex min-w-0 flex-col">
-        <Badge variant="outline" className="w-fit font-mono text-[11px]">{row.route}</Badge>
-        {row.routeReason && <TruncatedText text={row.routeReason} maxWidth={260} />}
-      </div>
-    ),
+    id: "kind",
+    header: "Kind",
+    fill: true,
+    floor: 100,
+    render: (row) => row.kind === null
+      ? <span className="text-muted-foreground">-</span>
+      : (
+        <span className="flex min-w-0 items-center gap-1">
+          <span className="min-w-0 shrink"><KindText kind={row.kind} /></span>
+          <CopyButton iconOnly label="Copy the kind" text={row.kind} testId="copy-interface-kind" />
+        </span>
+      ),
   },
-  { id: "kind", header: "Kind", render: (row) => <TruncatedText text={row.kind} maxWidth={260} /> },
-  {
-    id: "waits",
-    header: "Waits for",
-    render: (row) => (
-      <span className="text-[13px] text-muted-foreground">
-        {(row.waitsFor ?? []).length === 0 ? "nothing" : (row.waitsFor ?? []).map((wait) => wait.interface).join(", ")}
-      </span>
-    ),
-  },
+  { id: "waits", header: "Waits for", render: (row) => <WaitsFor waits={row.waitsFor} /> },
   { id: "total", header: "Records", align: "right", render: (row) => <span className="font-mono tabular-nums">{row.stats.total.toLocaleString()}</span> },
   { id: "delivered", header: "Delivered", align: "right", render: (row) => <span className="font-mono tabular-nums text-success">{row.stats.delivered.toLocaleString()}</span> },
   { id: "pending", header: "Pending", align: "right", render: (row) => <span className="font-mono tabular-nums">{(row.stats.pending + row.stats.delivering).toLocaleString()}</span> },

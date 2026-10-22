@@ -284,8 +284,12 @@ partitions is read in the title bar's partition.
   records once the partition is typed back, and can queue a deliver run of the source straight after,
   [Adopting a record OSDU already holds](record-lifecycle.md#adopting-a-record-osdu-already-holds)), **Redeliver**,
   **Sync timelines**, **Undo unfinished** (runs the `undo` operation now rather than at the end of the next deliver run)
-  and **Delete ledger**; the last submission; for a source, the **Interfaces** in the order a run takes them (wave, route,
-  what each waits for, its counts); the target probe's answer; and unfinished deliveries left to undo. The tab follows the
+  and **Delete ledger**; the last submission; for a source, the **Interfaces** in the order a run takes them (each with
+  its mapping, wave, route, kind, what it waits for and its counts, in a table that fits its panel rather than scrolling
+  sideways: why an interface goes by its route is on the route's hover, the kind clips from the left and keeps its
+  entity and version in view, a long mapping name or list of interfaces waited for clips with the whole on hover, and
+  the kind and the route's reason each have a copy beside them); the target probe's answer; and unfinished deliveries
+  left to undo. The tab follows the
   flow's newest run as the Delivery page does: its counts and submissions move with a run, and every view of the flow is
   read again within seconds of a run ending.
 - **Records**: the ledger's records, searched by delivery key, label, source key or OSDU id, with a status picker,

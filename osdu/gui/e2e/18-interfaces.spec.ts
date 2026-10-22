@@ -17,8 +17,7 @@ test.describe.serial("interfaces", () => {
     await expect(adminPage.getByTestId("delivery-stats")).toBeVisible({ timeout: 30_000 });
     const interfaces = adminPage.getByTestId("delivery-interfaces-table");
     await expect(interfaces).toBeVisible();
-    // By row: an interface's name appears in its own row, in the sentence saying how its route was decided, and in
-    // the rows of the interfaces that wait for it.
+    // By row: an interface's name appears in its own row and in the rows of the interfaces that wait for it.
     await expect(interfaces.getByTestId("table-row").filter({ hasText: "wellbores" }).first()).toBeVisible();
     await expect(interfaces.getByTestId("table-row").filter({ hasText: "welllogs" }).first()).toBeVisible();
     // The third interface declares files, so its route follows from that and is shown as the file route.
