@@ -127,6 +127,32 @@ public sealed class DevReadinessTests : IDisposable
     }
 
     [Fact]
+    public void A_whole_github_app_is_reported_ready_and_a_half_named_one_is_warned()
+    {
+        var pem = Path.Combine(_scope.Root, "app.private-key.pem");
+        File.WriteAllText(pem, "-----BEGIN RSA PRIVATE KEY-----");
+
+        var whole = Evaluate(new Spec { Env = [.. ReadyEnv, "SQLFLOW_GITHUB_APP_ID=Iv23liAbCdEf", $"SQLFLOW_GITHUB_APP_PRIVATE_KEY_PATH={pem}"] });
+        var app = Single(whole, "GitHub App");
+        Assert.Equal(FindingStatus.Ok, app.Status);
+        Assert.Contains("Iv23liAbCdEf reads the private GitHub repositories", app.Detail, StringComparison.Ordinal);
+        Assert.True(whole.Ready);
+
+        var keyOnly = Single(Evaluate(new Spec { Env = [.. ReadyEnv, $"SQLFLOW_GITHUB_APP_PRIVATE_KEY_PATH={pem}"] }), "GitHub App");
+        Assert.Equal(FindingStatus.Warning, keyOnly.Status);
+        Assert.Contains("SQLFLOW_GITHUB_APP_ID is not", keyOnly.Detail, StringComparison.Ordinal);
+
+        var idOnly = Single(Evaluate(new Spec { Env = [.. ReadyEnv, "SQLFLOW_GITHUB_APP_ID=Iv23liAbCdEf"] }), "GitHub App");
+        Assert.Equal(FindingStatus.Warning, idOnly.Status);
+        Assert.Contains("has no private key", idOnly.Detail, StringComparison.Ordinal);
+
+        var both = Single(Evaluate(new Spec { Env = [.. ReadyEnv, "SQLFLOW_GITHUB_APP_ID=Iv23liAbCdEf", $"SQLFLOW_GITHUB_APP_PRIVATE_KEY_PATH={pem}", "SQLFLOW_GITHUB_APP_PRIVATE_KEY=LS0tLS1CRUdJTg=="] }), "GitHub App");
+        Assert.Contains("set one", both.Detail, StringComparison.Ordinal);
+
+        Assert.DoesNotContain(All(Evaluate(new Spec())), f => f.Label == "GitHub App");
+    }
+
+    [Fact]
     public void Without_a_file_the_check_names_it_and_still_says_whether_the_server_is_there()
     {
         var report = Evaluate(new Spec { Env = null });

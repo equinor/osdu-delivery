@@ -147,9 +147,17 @@ On Azure, an estate is ready to use when its deployment ends: the Bicep template
    vault later is picked up without a redeploy; the control plane keeps serving meanwhile.
 
 What a person does is put in the vault the secrets only they have, under the names the configuration gives: each
-OSDU partition's client secret (`osdu-<data-partition-id>-client-secret` unless the partition names another), and the
-token of each private repository (a GitHub fine-grained token with read access to the repository's contents). Until
-then the partition's step, or the repository's sync, reports the secret it cannot read.
+OSDU partition's client secret (`osdu-<data-partition-id>-client-secret` unless the partition names another), and for
+the private flow repositories either the private key of the estate's GitHub App or each repository's token (a GitHub
+fine-grained token with read access to the repository's contents). Until then the partition's step, or the
+repository's sync, reports the secret it cannot read.
+
+**Private GitHub repositories are best read with a GitHub App.** It belongs to the organization rather than a person,
+needs only Contents: Read-only on the repositories it is installed on, and the control plane and each worker ask it for
+a short-lived token for every sync and checkout, so no token is stored. Create it and install it on the flow repository
+([Reading a private GitHub repository with a GitHub App](../../sqlflow/docs/reference/guides/github-app.md)), put its `.pem` in the vault, and name it in the
+configuration (`githubApp` in the Bicep, `github_app` in the Terraform): every GitHub repository that names no token of
+its own is then read with it, and a repository the App should not read sets `useGitHubApp` (`use_github_app`) to false.
 
 Once it is set up, the estate:
 
@@ -219,11 +227,15 @@ az deployment group create -g osdu-delivery -f osdu/deploy/bicep/main.bicep \
      sqlAdmins='[{"name": "<group display name>", "objectId": "<group object id>", "type": "group"}]' \
      sqlConnections='{"OSDU_DATA_DB": {"database": "OsduData"}}' \
      landingStorage='{}' \
-     repositories='{"flows": {"remoteUrl": "https://github.com/<owner>/<repository>.git", "credentialSecretName": "github-flows-token"}}'
+     repositories='{"flows": {"remoteUrl": "https://github.com/<owner>/<repository>.git"}}' \
+     githubApp='{"appId": "<the App's client ID>", "privateKeySecretName": "github-app-private-key"}'
 
-# The secrets only you have, under the names the deployment gives (outputs osduPartitions and keyVaultName):
+# The secrets only you have, under the names the deployment gives (outputs osduPartitions, githubAppPrivateKeySecret
+# and keyVaultName):
 az keyvault secret set --vault-name <vault> --name osdu-dev-client-secret --file <file holding the client secret>
-az keyvault secret set --vault-name <vault> --name github-flows-token --file <file holding the token>
+az keyvault secret set --vault-name <vault> --name github-app-private-key --file <the App's .pem>
+# Or, without an App, the repository's own token ("credentialSecretName": "github-flows-token" in its entry):
+# az keyvault secret set --vault-name <vault> --name github-flows-token --file <file holding the token>
 ```
 
 Leave `mcpImage` and `aiFoundryName` out for an estate without the chat assistant. Every deployment of `main.bicep`
@@ -273,9 +285,13 @@ own identity. How the Kubernetes layout maps onto Container Apps:
   alone (shared keys off), and its `landing` container; `{"existingAccountId": "<account resource id>",
   "container": "<container>"}` adopts an account and container you have. `referenceName` renames `LANDING_URL`.
 - **Repositories**: `repositories` names each flow repository the control plane syncs (`remoteUrl`, `branch`,
-  `syncIntervalSeconds`, and for a private one `credentialSecretName`, with `credentialUsername` for a host that
-  pairs the token with a username, such as Bitbucket). The control plane registers them at start and keeps them as
-  configured: the GUI shows them as set by the configuration, and changing one there is refused.
+  `syncIntervalSeconds`, and for a private one either the estate's `githubApp` or its own `credentialSecretName`,
+  with `credentialUsername` for a host that pairs the token with a username, such as Bitbucket; `useGitHubApp: false`
+  keeps the App off one repository). The control plane registers them at start and keeps them as configured: the GUI
+  shows them as set by the configuration, and changing one there is refused.
+- **GitHub App**: `githubApp` (`appId`, `privateKeySecretName`, and `apiUrl` for GitHub Enterprise) reads every
+  GitHub repository that names no token with a token the App mints for that repository alone. The control plane and
+  each worker resolve it with their own identity, so the apps need no setting of their own for it.
 - **The chat assistant**: with `mcpImage` and `aiFoundryName` plus `aiFoundryModelName` (a model that serves the
   Responses API), the MCP server and the Foundry account are deployed and the control plane's assistant turns on by
   itself. The control plane calls the model keylessly with its own identity (granted Cognitive Services OpenAI User
@@ -404,17 +420,22 @@ prod files are placeholders: each environment keeps its values this way.
   lives now.
 - **Ready when it ends.** After an apply the script waits for the control plane's start-up pass, signs in as the
   initial admin with the password the deployment generated, and shows each start-up step, each repository's sync and
-  whether the chat assistant is on.
+  the credential it reads with, and whether the chat assistant is on. When the environment names a GitHub App
+  (`github_app`), it first checks the App's private key is in the vault, and prints the command that puts it there
+  when it is not.
 
 **A new environment**, start to end: create the resource group, the registry and the state account; fill in its
 files; `.\deploy-<env>.ps1 -Infrastructure` (it builds the images of the apps it creates); put each partition's client
-secret and each private repository's token in the vault, under the names the outputs and the environment's file give.
+secret, and the GitHub App's private key or each private repository's token, in the vault, under the names the outputs
+and the environment's file give.
 The control plane picks them up on its next attempt, with no redeploy. From then on, `.\deploy-<env>.ps1` deploys.
 
 ### Deploying from GitHub
 
 A repository deploys one way, and the repository variable `DEPLOY_METHOD` says which: the **Deploy** workflow
-(`.github/workflows/deploy.yml`) runs only when it is `terraform`, and runs the same `deploy.ps1`:
+(`.github/workflows/deploy.yml`) runs only when it is `terraform`, and runs the same `deploy.ps1`. A fork that deploys
+with workflows of its own leaves `DEPLOY_METHOD` unset and sets `CI_ENABLED` to `false`, keeping both workflow files as
+they are so its syncs do not conflict on them ([CONTRIBUTING.md](../../CONTRIBUTING.md#forks)):
 
 - a push to `main` deploys to **dev** once CI has passed on it;
 - **test** and **prod** are promoted by running the workflow by hand from `main` (Actions > Deploy > Run workflow),
@@ -481,8 +502,9 @@ The layout and the reasoning behind it:
   `${keyvault:<vault>/<secret>}` reads it from a Key Vault instead.
 - **Secrets stay on the tier that uses them**: the control plane gets the metadata connection and JWT material,
   and the flows' `${env:...}` references, which a person's reads of a flow (a probe, a record read back, a preview,
-  a source read, the explorer) resolve there as a run resolves them on a node; nodes get a node token, the git
-  token, a connection to the `osdu` schema of their own (mounted as both `SQLFLOW_OSDU_DB` and `SQLFLOW_CATALOG_DB`),
+  a source read, the explorer) resolve there as a run resolves them on a node; both get the git credentials (the
+  GitHub App's ID and key, and the git token) for a source naming none; nodes get a node token, a connection to the
+  `osdu` schema of their own (mounted as both `SQLFLOW_OSDU_DB` and `SQLFLOW_CATALOG_DB`),
   the data connection (`OSDU_DATA_DB`) and every other `${env:...}` reference their pool's flows use, and never the
   catalog's own credential. Keep `controlplane.yaml`'s flow references and the pools' the same. The control plane
   reads; nothing it does delivers, and no run passes through it.
@@ -525,7 +547,8 @@ The node token is a secret of the environment's Key Vault, `node-token`, generat
 token form, as the Terraform estate's setup step generates it: the control plane makes it the admin's node credential
 when it starts (`ControlPlane__Bootstrap__NodeTokenReference`), and every worker presents it, so the first worker
 starts with the first deploy. The flow repository is configured the same way
-(`ControlPlane__Bootstrap__Repositories__<name>__...`, with its token as a vault reference). A redeploy leaves running
+(`ControlPlane__Bootstrap__Repositories__<name>__...`, with its token as a vault reference, or a
+`${githubapp:app=<client ID>;key=keyvault:<vault>/<secret>}` reference to a read-only GitHub App). A redeploy leaves running
 jobs alone; the new control plane replaces every worker from before it once their replacements poll, so no run is cut
 off by the rollout.
 

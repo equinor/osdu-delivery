@@ -151,14 +151,30 @@ type repository = {
   @minValue(30)
   syncIntervalSeconds: int?
 
-  @description('For a private remote, the vault secret a person puts its token in (a GitHub fine-grained token with read access to the repository\'s contents).')
+  @description('For a private remote read with its own token, the vault secret a person puts the token in (a GitHub fine-grained token with read access to the repository\'s contents). It wins over githubApp.')
   credentialSecretName: string?
 
   @description('The username paired with the token, where the host needs one.')
   credentialUsername: string?
 
+  @description('Whether the estate\'s githubApp reads this repository when it is on the App\'s GitHub and names no credentialSecretName. Default true; false reads it with no credential (a public repository the App is not installed on).')
+  useGitHubApp: bool?
+
   @description('Flow documents in the repository the control plane does not register.')
   excludedFlowPaths: string[]?
+}
+
+@sealed()
+@description('The GitHub App the estate\'s GitHub repositories are read with, in place of a token per repository (sqlflow/docs/reference/guides/github-app.md).')
+type gitHubAppOptions = {
+  @description('The App\'s client ID (like Iv23liAbCdEf) or its numeric App ID.')
+  appId: string
+
+  @description('The vault secret a person puts the App\'s private key in: the .pem file GitHub generated, as downloaded.')
+  privateKeySecretName: string
+
+  @description('For GitHub Enterprise Server (https://<host>/api/v3) or GHE.com (https://api.<name>.ghe.com), the API root. Default https://api.github.com.')
+  apiUrl: string?
 }
 
 @sealed()
@@ -341,6 +357,9 @@ param sqlConnectionSku string = 'S1'
 @description('The flow repositories the control plane syncs, by name (ControlPlane:Bootstrap:Repositories): { remoteUrl (https), branch (main), syncIntervalSeconds (300, at least 30), credentialSecretName: for a private remote the vault secret a person puts its token in (a GitHub fine-grained token with read access to the repository\'s contents), credentialUsername where the host needs one, excludedFlowPaths }. The control plane registers them at start and keeps them as configured; nobody registers them by hand.')
 param repositories { *: repository } = {}
 
+@description('The GitHub App the estate\'s GitHub repositories are read with, in place of a token per repository (sqlflow/docs/reference/guides/github-app.md): { appId (its client ID), privateKeySecretName (the vault secret a person puts its .pem in), apiUrl (GitHub Enterprise only) }. A repository on the App\'s GitHub that names no credentialSecretName and leaves useGitHubApp on is read with a short-lived token the App mints for that repository alone, by the control plane and by each worker with its own identity; no token is stored anywhere. Left out, each repository is read with its own token, or with none.')
+param githubApp gitHubAppOptions?
+
 @description('The storage account the estate\'s flows read their source files from: created here ({ accountName }, derived from the resource group when left out) or adopted ({ existingAccountId }), with a container (landing). The worker\'s identity may read and write it and the control plane\'s read it, and every run is given its location as referenceName (LANDING_URL: abfss://<container>@<account>.dfs.<storage suffix>), which a flow names in its source location (\${env:LANDING_URL}/<folder>). Left out, the estate has none.')
 param landingStorage landingStorageOptions?
 
@@ -488,6 +507,17 @@ var repositoriesChecked = !empty(repositoriesMisnamed)
   : !empty(repositoriesUnreachable)
       ? fail('A repository\'s remoteUrl is an https:// URL, and it syncs at most every 30 seconds. Not so: ${join(repositoriesUnreachable, ', ')}.')
       : repositories
+
+var githubAppIdValid = githubApp == null || (length(githubApp.?appId ?? '') >= 1 && length(githubApp.?appId ?? '') <= 100 && contains('ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789', take(githubApp.?appId ?? '', 1)) && empty(filter(range(0, length(githubApp.?appId ?? '')), i => !contains('ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_.-', substring(githubApp.?appId ?? '', i, 1)))))
+var githubAppKeyValid = githubApp == null || (length(githubApp.?privateKeySecretName ?? '') >= 1 && length(githubApp.?privateKeySecretName ?? '') <= 127 && empty(filter(range(0, length(githubApp.?privateKeySecretName ?? '')), i => !contains('ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-', substring(githubApp.?privateKeySecretName ?? '', i, 1)))))
+var githubAppApiValid = empty(githubApp.?apiUrl ?? '') || (take(githubApp.?apiUrl ?? '', 8) == 'https://' && length(githubApp.?apiUrl ?? '') > 8 && !contains(githubApp.?apiUrl ?? '', '?') && !contains(githubApp.?apiUrl ?? '', '#') && !contains(githubApp.?apiUrl ?? '', '@'))
+var githubAppChecked = !githubAppIdValid
+  ? fail('githubApp.appId is the App\'s client ID (like Iv23liAbCdEf) or its numeric App ID.')
+  : !githubAppKeyValid
+      ? fail('githubApp.privateKeySecretName is a Key Vault secret name: letters, digits and hyphens, at most 127 characters.')
+      : !githubAppApiValid
+          ? fail('githubApp.apiUrl is the https:// API root of GitHub Enterprise Server (https://<host>/api/v3) or GHE.com (https://api.<name>.ghe.com), with no user, query or fragment.')
+          : githubApp
 
 var landingStorageChecked = landingStorage == null
   ? null
@@ -1105,6 +1135,28 @@ var propertySettings = union(
   toObject(items(propertiesChecked), property => 'Osdu__Properties__${property.key}', property => property.value)
 )
 
+// The estate's GitHub App (githubApp) as the credential reference of a repository on its GitHub: a sync, and a worker
+// checking out the commit a run is pinned to, each mint a token for that repository alone, reading the App's key from
+// the vault with their own identity (sqlflow/docs/reference/guides/github-app.md).
+var githubAppApiUrl = githubAppChecked.?apiUrl ?? ''
+var githubAppApiRoot = empty(githubAppApiUrl) ? 'https://api.github.com' : (endsWith(githubAppApiUrl, '/') ? substring(githubAppApiUrl, 0, length(githubAppApiUrl) - 1) : githubAppApiUrl)
+var githubAppApiHost = toLower(split(githubAppApiRoot, '/')[2])
+var githubAppWebHost = startsWith(githubAppApiHost, 'api.') ? substring(githubAppApiHost, 4) : githubAppApiHost
+var githubAppReference = githubAppChecked == null
+  ? ''
+  : '\${githubapp:app=${githubAppChecked.?appId ?? ''};key=keyvault:${keyVaultName}/${githubAppChecked.?privateKeySecretName ?? ''}${empty(githubAppApiUrl) ? '' : ';api=${githubAppApiRoot}'}}'
+
+@description('The host of an https:// remote, lower-cased, without a user or a port.')
+func remoteHost(remoteUrl string) string => toLower(first(split(last(split(split(remoteUrl, '/')[2], '@')), ':')))
+
+// Each repository's credential: its own token when it names one, else the App when the repository is on the App's
+// GitHub and leaves useGitHubApp on, else none (a public remote).
+var repositoryCredentials = toObject(items(repositoriesChecked), r => r.key, r => !empty(r.value.?credentialSecretName ?? '')
+  ? vaultReference(keyVaultName, r.value.?credentialSecretName ?? '')
+  : (!empty(githubAppReference) && (r.value.?useGitHubApp ?? true) && (remoteHost(r.value.remoteUrl) == githubAppWebHost || remoteHost(r.value.remoteUrl) == 'www.${githubAppWebHost}'))
+      ? githubAppReference
+      : '')
+
 // The repositories the control plane syncs, written at its start and kept as configured.
 var repositorySettings = reduce(map(items(repositoriesChecked), r => union(
   {
@@ -1112,9 +1164,9 @@ var repositorySettings = reduce(map(items(repositoriesChecked), r => union(
     'ControlPlane__Bootstrap__Repositories__${r.key}__Branch': r.value.?branch ?? 'main'
     'ControlPlane__Bootstrap__Repositories__${r.key}__SyncIntervalSeconds': string(r.value.?syncIntervalSeconds ?? 300)
   },
-  empty(r.value.?credentialSecretName ?? '')
+  empty(repositoryCredentials[r.key])
     ? {}
-    : { 'ControlPlane__Bootstrap__Repositories__${r.key}__CredentialReference': vaultReference(keyVaultName, r.value.?credentialSecretName ?? '') },
+    : { 'ControlPlane__Bootstrap__Repositories__${r.key}__CredentialReference': repositoryCredentials[r.key] },
   empty(r.value.?credentialUsername ?? '')
     ? {}
     : { 'ControlPlane__Bootstrap__Repositories__${r.key}__CredentialUsername': r.value.?credentialUsername ?? '' },
@@ -1359,8 +1411,11 @@ output sqlConnections { *: string } = toObject(sqlConnectionList, c => c.name, c
 @description('The landing storage every run is given (landingStorage.referenceName), or empty without one.')
 output landingUrl string = landingUrl
 
-@description('The vault holding every estate secret: the generated ones, and the ones put here by hand (each partition\'s client secret, a repository\'s token, a connection elsewhere).')
+@description('The vault holding every estate secret: the generated ones, and the ones put here by hand (each partition\'s client secret, a repository\'s token or the GitHub App\'s private key, a connection elsewhere).')
 output keyVaultName string = keyVault.name
+
+@description('The vault secret the estate\'s GitHub App\'s private key is read from, put there by hand: az keyvault secret set --vault-name <keyVaultName> --name <this> --file <the App\'s .pem>. Empty when the estate names no App.')
+output githubAppPrivateKeySecret string = githubAppChecked.?privateKeySecretName ?? ''
 
 @description('The vault\'s URI.')
 output keyVaultUri string = keyVault.properties.vaultUri

@@ -30,6 +30,7 @@ related:
   - delivery-cli-worker
   - delivery-guide-deployment
   - delivery-concept-run-trace-and-metrics
+  - guide-github-app
 sourceRefs:
   - osdu/src/SqlFlow.Delivery/Hosting/OsduModuleDatabase.cs
   - osdu/src/SqlFlow.Delivery.ControlPlane/DeliveryControlPlaneModule.cs
@@ -57,8 +58,8 @@ sourceRefs:
 
 A flow, a mapping and a cache document carry secret references (`${env:NAME}`, `${keyvault:vault/secret}`), never
 values; the values arrive through each process's environment. That contract, SQLFlow's own variables
-(`SQLFLOW_CATALOG_DB`, `SQLFLOW_URL`, `SQLFLOW_TOKEN`, `SQLFLOW_GIT_TOKEN`, `SQLFLOW_AZURE_AUTH`, `SQLFLOW_CONN_<NAME>`,
-`SQLFLOW_WORKER_*`) and the `.sqlflow/env` file are documented in
+(`SQLFLOW_CATALOG_DB`, `SQLFLOW_URL`, `SQLFLOW_TOKEN`, `SQLFLOW_GIT_TOKEN`, `SQLFLOW_GITHUB_APP_*`, `SQLFLOW_AZURE_AUTH`,
+`SQLFLOW_CONN_<NAME>`, `SQLFLOW_WORKER_*`) and the `.sqlflow/env` file are documented in
 [SQLFlow's environment variables page](../../../../sqlflow/docs/reference/concepts/environment-variables.md) and
 [connections and secrets](../../../../sqlflow/docs/reference/concepts/connections-and-secrets.md). This page lists only what
 OSDU Delivery adds, and which tier reads each.

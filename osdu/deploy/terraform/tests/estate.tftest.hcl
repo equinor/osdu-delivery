@@ -835,6 +835,117 @@ run "the_repositories_are_synced_as_the_configuration_names_them" {
   }
 }
 
+run "a_github_app_reads_the_estates_github_repositories_that_name_no_token" {
+  command = apply
+
+  variables {
+    github_app = {
+      app_id                  = "Iv23liEstateApp"
+      private_key_secret_name = "github-app-private-key"
+    }
+    repositories = {
+      recall = {
+        remote_url = "https://github.com/example/recall-metadata.git"
+      }
+      tokened = {
+        remote_url             = "https://github.com/example/other-metadata.git"
+        credential_secret_name = "github-other-token"
+      }
+      samples = {
+        remote_url     = "https://github.com/example/public-samples.git"
+        use_github_app = false
+      }
+      bitbucket = {
+        remote_url = "https://bitbucket.org/example/flows.git"
+      }
+    }
+  }
+
+  assert {
+    condition     = local.control_plane_settings["ControlPlane__Bootstrap__Repositories__recall__CredentialReference"] == "$${githubapp:app=Iv23liEstateApp;key=keyvault:${azurerm_key_vault.this.name}/github-app-private-key}"
+    error_message = "A GitHub repository naming no token is read with the estate's App, its key read from the vault: no token is stored."
+  }
+
+  assert {
+    condition     = local.control_plane_settings["ControlPlane__Bootstrap__Repositories__tokened__CredentialReference"] == "$${keyvault:${azurerm_key_vault.this.name}/github-other-token}"
+    error_message = "A repository naming its own token keeps it, App or not."
+  }
+
+  assert {
+    condition = (
+      !contains(keys(local.control_plane_settings), "ControlPlane__Bootstrap__Repositories__samples__CredentialReference") &&
+      !contains(keys(local.control_plane_settings), "ControlPlane__Bootstrap__Repositories__bitbucket__CredentialReference")
+    )
+    error_message = "A repository that opts out of the App, and one on a host the App does not serve, are read with no credential."
+  }
+
+  assert {
+    condition     = output.github_app_private_key_secret == "github-app-private-key"
+    error_message = "The deployment names the vault secret the App's key is put in."
+  }
+
+  assert {
+    condition     = local.worker_secret_env == [{ name = "SQLFLOW_OSDU_DB", secret_name = "osdu-delivery-osdu-db" }]
+    error_message = "A worker needs nothing new for the App: the credential reference reaches it with each run."
+  }
+}
+
+run "a_github_enterprise_app_reads_its_own_hosts_repositories" {
+  command = apply
+
+  variables {
+    github_app = {
+      app_id                  = "123456"
+      private_key_secret_name = "ghes-app-key"
+      api_url                 = "https://ghe.example.com/api/v3/"
+    }
+    repositories = {
+      enterprise = { remote_url = "https://ghe.example.com/example/flows.git" }
+      public     = { remote_url = "https://github.com/example/flows.git" }
+    }
+  }
+
+  assert {
+    condition     = local.control_plane_settings["ControlPlane__Bootstrap__Repositories__enterprise__CredentialReference"] == "$${githubapp:app=123456;key=keyvault:${azurerm_key_vault.this.name}/ghes-app-key;api=https://ghe.example.com/api/v3}"
+    error_message = "A GitHub Enterprise App names its API root, and serves its own host's repositories."
+  }
+
+  assert {
+    condition     = !contains(keys(local.control_plane_settings), "ControlPlane__Bootstrap__Repositories__public__CredentialReference")
+    error_message = "A GitHub Enterprise App does not serve github.com."
+  }
+}
+
+run "a_github_app_with_a_malformed_app_id_is_refused" {
+  command = plan
+
+  variables {
+    github_app = { app_id = "my app", private_key_secret_name = "github-app-private-key" }
+  }
+
+  expect_failures = [var.github_app]
+}
+
+run "a_github_app_key_named_against_the_vaults_rules_is_refused" {
+  command = plan
+
+  variables {
+    github_app = { app_id = "Iv23liEstateApp", private_key_secret_name = "github_app/key" }
+  }
+
+  expect_failures = [var.github_app]
+}
+
+run "a_github_app_api_over_plain_http_is_refused" {
+  command = plan
+
+  variables {
+    github_app = { app_id = "Iv23liEstateApp", private_key_secret_name = "github-app-private-key", api_url = "http://ghe.example.com/api/v3" }
+  }
+
+  expect_failures = [var.github_app]
+}
+
 run "a_repository_over_plain_http_is_refused" {
   command = plan
 

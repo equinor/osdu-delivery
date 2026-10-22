@@ -180,6 +180,21 @@ chosen. The other methods (Bicep, Radix, Docker Compose, Kubernetes) run as thei
 sample under `osdu/deploy/radix` that a deployer copies into `.github/workflows` to use.
 [osdu/deploy/README.md](osdu/deploy/README.md) describes each method.
 
+## Forks
+
+A fork that builds, tests and deploys with workflows of its own leaves this repository's workflows as they are and
+turns them off with repository variables: `CI_ENABLED` set to `false` skips every job of CI, and the Deploy workflow
+runs only where `DEPLOY_METHOD` is `terraform`, so a fork that leaves it unset deploys nothing.
+
+```bash
+gh variable set CI_ENABLED --body false --repo <owner>/<fork>
+```
+
+Editing or commenting out `.github/workflows/ci.yml` or `deploy.yml` in the fork instead turns every later change to
+them here into a merge conflict when the fork syncs. A fork's own files (its workflows, release configuration) never
+conflict. What it changes in files this repository also keeps (a README badge, its `SECURITY.md`, `CODEOWNERS`,
+`dependabot.yml`, the ruleset) conflicts only when a change here touches the same lines; keep the fork's side of those.
+
 ## Repository settings
 
 The rules above are GitHub settings, applied from the repository by `tools/github/apply-repo-settings.ps1` (Windows

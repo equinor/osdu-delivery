@@ -679,6 +679,29 @@ internal sealed partial class DevSetupWizard(DevCheckout checkout, DevEnvTemplat
 
         values[prefix + "RemoteUrl"] = normal;
         values[prefix + "Branch"] = _ask.Answer("Branch", "main");
+
+        // A GitHub repository is best read with a GitHub App: it belongs to the organization rather than a person, and the
+        // hosts mint a short-lived, read-only token for the repository alone. A source naming no credential reads with it.
+        if (new Uri(normal).Host.EndsWith("github.com", StringComparison.OrdinalIgnoreCase))
+        {
+            if (values.TryGetValue(DevValues.GitHubAppIdName, out var configured) && configured.Length > 0)
+            {
+                _ask.Note($"Read with the GitHub App {configured} this file names, where the App is installed on the repository.");
+                return;
+            }
+
+            _ask.Note("A private GitHub repository is best read with a GitHub App: read-only (Contents), installed on the repository (sqlflow/docs/reference/guides/github-app.md).");
+            var appId = _ask.Answer("GitHub App client ID (Enter to use an access token instead)", null, v => DevValues.Problem(DevValues.GitHubAppIdName, v, gui: false), optional: true);
+            if (appId.Length > 0)
+            {
+                var pem = _ask.Answer("The App's private key: the full path of its .pem file", null, v => DevValues.Problem(DevValues.GitHubAppKeyPathName, v, gui: false));
+                values[DevValues.GitHubAppIdName] = appId.Trim();
+                values[DevValues.GitHubAppKeyPathName] = pem.Trim().Trim('"');
+                values.Remove(DevValues.GitHubAppKeyName);
+                return;
+            }
+        }
+
         var token = _ask.Secret("Access token, for a private repository (Enter for none)");
         if (token.Length > 0)
         {

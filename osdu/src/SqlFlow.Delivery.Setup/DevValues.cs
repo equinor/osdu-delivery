@@ -29,6 +29,12 @@ internal static partial class DevValues
     /// <summary>The shortest password the control plane gives a local user.</summary>
     public const int MinPasswordLength = 12;
 
+    // The host's GitHub App, as SQLFlow reads it (SqlFlow.SourceControl's GitHubAppEnvironment, and
+    // sqlflow/docs/reference/guides/github-app.md): its client ID, and its private key as a value or as a file.
+    public const string GitHubAppIdName = "SQLFLOW_GITHUB_APP_ID";
+    public const string GitHubAppKeyName = "SQLFLOW_GITHUB_APP_PRIVATE_KEY";
+    public const string GitHubAppKeyPathName = "SQLFLOW_GITHUB_APP_PRIVATE_KEY_PATH";
+
     /// <summary>A template value standing for what the user fills in: the whole value in angle brackets.</summary>
     public static bool IsPlaceholder(string? value) => value is { Length: >= 2 } && value[0] == '<' && value[^1] == '>';
 
@@ -92,6 +98,12 @@ internal static partial class DevValues
                 return "not a data-partition-id: letters, digits, _, - and . only";
             case "OSDU_ACL_OWNER" or "OSDU_ACL_VIEWER" when !IsReference(value) && !IsGroupEmail(value):
                 return "not a group e-mail, such as data.default.owners@dev.dataservices.energy";
+            case GitHubAppIdName when !GitHubAppId().IsMatch(value.Trim()):
+                return "not a GitHub App's client ID (like Iv23liAbCdEf) or App ID";
+            case GitHubAppKeyPathName when !Path.IsPathFullyQualified(value.Trim().Trim('"')):
+                return "not an absolute path: give the full path of the App's .pem file";
+            case GitHubAppKeyPathName when !File.Exists(value.Trim().Trim('"')):
+                return "no file there: download the App's private key (.pem) and give its path";
         }
 
         if (IsConnectionName(name) && !IsReference(value))
@@ -170,8 +182,11 @@ internal static partial class DevValues
     [GeneratedRegex(@"^\$\{(env|keyvault):[^}]+\}$", RegexOptions.CultureInvariant)]
     private static partial Regex WholeReference();
 
-    [GeneratedRegex("(SECRET|PASSWORD|TOKEN|SIGNINGKEY|APIKEY|API_KEY)$", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
+    [GeneratedRegex("(SECRET|PASSWORD|TOKEN|SIGNINGKEY|APIKEY|API_KEY|PRIVATE_KEY|PRIVATEKEY)$", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
     private static partial Regex SecretName();
+
+    [GeneratedRegex(@"^[A-Za-z0-9][A-Za-z0-9._-]{0,99}$", RegexOptions.CultureInvariant)]
+    private static partial Regex GitHubAppId();
 
     [GeneratedRegex(@"^[A-Za-z0-9_.\-]{1,200}$", RegexOptions.CultureInvariant)]
     private static partial Regex PartitionId();

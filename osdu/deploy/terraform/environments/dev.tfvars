@@ -4,7 +4,7 @@
 # (OSDU_ENVIRONMENT_DIR; osdu/deploy/README.md, Environments): the scripts refuse to run on a placeholder. No secret
 # goes in this file, and none reaches Terraform: the deployment generates the JWT signing key, the initial admin's
 # password and the node credential into the estate's vault, and the secrets only a person has (each partition's OSDU
-# client secret, a repository's token) are put in the vault by hand under the names below. The OSDU partitions come from
+# client secret, a repository's token or the GitHub App's private key) are put in the vault by hand under the names below. The OSDU partitions come from
 # outside this file too (below).
 
 subscription_id     = "<dev subscription id>"
@@ -46,8 +46,15 @@ sql_connections = {
 # The storage account the flows read their source files from, given to every run as LANDING_URL.
 landing_storage = {}
 
-# The flow repository the control plane syncs. A private one is read with a token (for GitHub, a fine-grained token
-# with read access to the repository's contents) put in the estate's vault by hand under the secret name given here.
+# The flow repository the control plane syncs. A private one is read either with the estate's GitHub App (github_app:
+# read-only, installed on the repository, its private key put in the estate's vault by hand; it serves every GitHub
+# repository below that names no token, sqlflow/docs/reference/guides/github-app.md) or with its own token (for GitHub,
+# a fine-grained token with read access to the repository's contents) put in the vault by hand under the secret name
+# given here.
+# github_app = {
+#   app_id                  = "<the App's client ID>"
+#   private_key_secret_name = "github-app-private-key"
+# }
 repositories = {
   "<flow repository name>" = {
     remote_url             = "<https URL of the flow repository>"

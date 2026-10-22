@@ -24,6 +24,7 @@ related:
   - delivery-guide-deployment
   - guide-chat-assistant
   - concept-authentication-and-identity
+  - guide-github-app
 sourceRefs:
   - osdu/deploy/radix/radixconfig.yaml
   - osdu/deploy/radix/radix-deploy.workflow.yml
@@ -127,7 +128,8 @@ identities as `Key Vault Secrets User`, and these secrets:
 | `admin-password` | control plane | `${keyvault:...}` reference | The bootstrap `admin` account's password. |
 | `node-token` | control plane, worker | `${keyvault:...}` reference: `ControlPlane__Bootstrap__NodeTokenReference` and the job component's `SQLFLOW_TOKEN` | The workers' credential, in SQLFlow's token form: `sqlf_` followed by at least 32 random characters (the generator below writes 43). The control plane makes it the admin's `node`-scope token when it starts, revoking the one it replaced, so rotating the secret and restarting the control plane rotates the credential. |
 | `osdu-client-secret` | worker, control plane | `${keyvault:...}` reference: the partition's `OSDU_CLIENT_SECRET` value | The secret of `OSDU_CLIENT_ID`, the client the flows sign in to OSDU with. A worker reads it when a run needs it, and the control plane for the reads a person waits on. |
-| `git-token` | control plane, worker | `${keyvault:...}` reference: the repository's `CredentialReference` | A token that can read the flow repository (for GitHub, a fine-grained token with read access to the repository's contents): the control plane syncs with it, a worker checks out the commit a run is pinned to. A public repository needs none. |
+| `git-token` | control plane, worker | `${keyvault:...}` reference: the repository's `CredentialReference` | A token that can read the flow repository (for GitHub, a fine-grained token with read access to the repository's contents): the control plane syncs with it, a worker checks out the commit a run is pinned to. A public repository needs none, and one read with a GitHub App needs none either. |
+| `github-app-private-key` | control plane, worker | `${keyvault:...}` reference inside the repository's `CredentialReference` (`${githubapp:app=...;key=keyvault:...}`) | Instead of `git-token`, for a GitHub repository: the private key (the `.pem` file, as GitHub generated it) of a GitHub App with read-only access to the repository's contents, installed on it ([creating one](../../../../sqlflow/docs/reference/guides/github-app.md)). Each sync and each checkout mints a token for the repository alone, so no token is stored. |
 
 The secret `secretRefs` mounts must exist before the component's pod starts; the ones read through a `${keyvault:...}`
 reference are read by the application itself when it needs them, and a missing one is reported by the control plane's
@@ -182,9 +184,12 @@ is another set of these under its own name, with exactly one `Default`.
 The repository the flows live in is a setting of each environment's `controlplane`, registered at start and kept as
 set there (`ControlPlane__Bootstrap__Repositories__estate__RemoteUrl`, `__Branch`, `__CredentialReference`; rename
 `estate` to the repository's own name). Its token is `git-token` in the vault (step 4), as the reference
-`${keyvault:<env key vault>/git-token}`; a public repository leaves the reference out. The control plane syncs the
-repository on its interval, and a worker that runs a pinned commit checks it out with the same reference, resolved with
-the worker's own identity.
+`${keyvault:<env key vault>/git-token}`; a public repository leaves the reference out. A GitHub repository can be read
+with a GitHub App instead: the reference names the App and where its key is kept,
+`${githubapp:app=<the App's client ID>;key=keyvault:<env key vault>/github-app-private-key}`, and the App needs only
+read access to the repository's contents ([creating one](../../../../sqlflow/docs/reference/guides/github-app.md)). The control plane syncs the repository on its
+interval, and a worker that runs a pinned commit checks it out with the same reference, resolved with the worker's own
+identity.
 
 ## 7. Sign-in
 

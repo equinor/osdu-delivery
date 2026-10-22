@@ -625,6 +625,30 @@ locals {
     { for name, value in var.properties : "Osdu__Properties__${name}" => value },
   )
 
+  # The estate's GitHub App (var.github_app) as the credential reference of a repository on its GitHub: a sync, and a
+  # worker checking out the commit a run is pinned to, each mint a token for that repository alone, reading the App's key
+  # from the vault with their own identity (sqlflow/docs/reference/guides/github-app.md).
+  github_app_api_root = var.github_app == null ? null : (var.github_app.api_url == null ? "https://api.github.com" : trimsuffix(var.github_app.api_url, "/"))
+  github_app_web_host = local.github_app_api_root == null ? null : trimprefix(lower(regex("^https://([^/]+)", local.github_app_api_root)[0]), "api.")
+  github_app_reference = var.github_app == null ? null : join("", [
+    "$${githubapp:app=", var.github_app.app_id,
+    ";key=keyvault:", local.key_vault_name, "/", var.github_app.private_key_secret_name,
+    var.github_app.api_url == null ? "" : ";api=${local.github_app_api_root}",
+    "}",
+  ])
+
+  # Each repository's credential: its own token when it names one, else the App when the repository is on the App's
+  # GitHub and leaves use_github_app on, else none (a public remote).
+  repository_credential = { for name, r in var.repositories : name => (
+    r.credential_secret_name != null ? "$${keyvault:${local.key_vault_name}/${r.credential_secret_name}}" : (
+      local.github_app_reference == null ? null : (
+        r.use_github_app && contains([local.github_app_web_host, "www.${local.github_app_web_host}"], lower(regex("^https://(?:[^@/]+@)?([^/:]+)", r.remote_url)[0]))
+        ? local.github_app_reference
+        : null
+      )
+    )
+  ) }
+
   # The repositories the control plane syncs, written at its start and kept as configured.
   repository_settings = merge([for name, r in var.repositories : merge(
     {
@@ -632,7 +656,7 @@ locals {
       "ControlPlane__Bootstrap__Repositories__${name}__Branch"              = r.branch
       "ControlPlane__Bootstrap__Repositories__${name}__SyncIntervalSeconds" = tostring(r.sync_interval_seconds)
     },
-    r.credential_secret_name == null ? {} : { "ControlPlane__Bootstrap__Repositories__${name}__CredentialReference" = "$${keyvault:${local.key_vault_name}/${r.credential_secret_name}}" },
+    local.repository_credential[name] == null ? {} : { "ControlPlane__Bootstrap__Repositories__${name}__CredentialReference" = local.repository_credential[name] },
     r.credential_username == null ? {} : { "ControlPlane__Bootstrap__Repositories__${name}__CredentialUsername" = r.credential_username },
     { for i, path in r.excluded_flow_paths : "ControlPlane__Bootstrap__Repositories__${name}__ExcludedFlowPaths__${i}" => path },
   )]...)

@@ -84,8 +84,13 @@ output "landing_url" {
 }
 
 output "key_vault_name" {
-  description = "The vault holding every estate secret: the generated ones, and the ones put here by hand (each partition's client secret, a repository's token, a connection elsewhere)."
+  description = "The vault holding every estate secret: the generated ones, and the ones put here by hand (each partition's client secret, a repository's token or the GitHub App's private key, a connection elsewhere)."
   value       = azurerm_key_vault.this.name
+}
+
+output "github_app_private_key_secret" {
+  description = "The vault secret the estate's GitHub App's private key is read from, put there by hand: az keyvault secret set --vault-name <key_vault_name> --name <this> --file <the App's .pem>. Null when the estate names no App."
+  value       = var.github_app == null ? null : var.github_app.private_key_secret_name
 }
 
 output "key_vault_uri" {
