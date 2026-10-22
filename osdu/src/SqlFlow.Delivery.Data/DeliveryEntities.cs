@@ -223,6 +223,19 @@ public sealed class DeliveryRecord
     /// </summary>
     public long? HeldCacheSetId { get; set; }
 
+    /// <summary>
+    /// The record's parent (osdu/docs/reference/flow/mapping-parent.md): the OSDU id, without a version, of the record of the
+    /// kind its template is linked to whose sections its render reads; null for a record whose mapping reads no parent. Set
+    /// when work is queued or the record is held, so a parent that lands asks the records that read it to be planned again.
+    /// </summary>
+    public string? ParentId { get; set; }
+
+    /// <summary>The version of the parent the document OSDU holds was rendered from; null when it read none.</summary>
+    public long? ParentVersion { get; set; }
+
+    /// <summary>The version of the parent the pending work was rendered from; null when it read none.</summary>
+    public long? PendingParentVersion { get; set; }
+
     public string? PendingRenderContext { get; set; }
 
     public string? PendingSourceFingerprint { get; set; }
@@ -353,6 +366,12 @@ public sealed class DeliveryAttempt
     /// <summary>The ingestion file the attempt's document was built from; kept here because the record's own origin
     /// columns move on with later versions.</summary>
     public string? SourceFileName { get; set; }
+
+    /// <summary>
+    /// The version of the record's parent the attempt's document was rendered from (osdu/docs/reference/flow/mapping-parent.md);
+    /// null when its mapping reads no parent, or the platform held none.
+    /// </summary>
+    public long? ParentVersion { get; set; }
 
     /// <summary>The row of that file.</summary>
     public long? SourceRowNumber { get; set; }
@@ -573,6 +592,9 @@ public sealed class DeliveryRecordEvent
     public DateTime? ClaimSourceUpdatedUtc { get; set; }
 
     public string? ClaimMetadataHash { get; set; }
+
+    /// <summary>The version of the record's parent the claimed work was rendered from; null when it read none.</summary>
+    public long? ClaimParentVersion { get; set; }
 
     public string? ClaimPayloadHash { get; set; }
 
@@ -1581,6 +1603,12 @@ public sealed class DeliveryRepositoryTemplate
 
     /// <summary>Why the file holds no template; null when it holds one.</summary>
     public string? Problem { get; set; }
+
+    /// <summary>
+    /// The kind the template is linked to as its parent (x-osdu-inheriting-from-kind, osdu/docs/reference/concepts/templates.md,
+    /// Linked templates); null for a template linked to none, and for a file that holds no template.
+    /// </summary>
+    public string? Parent { get; set; }
 
     public DateTime FirstSeenUtc { get; set; }
 
@@ -3232,6 +3260,7 @@ public static class DeliveryModel
             e.Property(r => r.TargetId).HasMaxLength(MaxTargetIdLength);
             OptionalOsduId(e.Property(r => r.ClaimedTargetId)).HasMaxLength(MaxTargetIdLength);
             OptionalOsduId(e.Property(r => r.WaitingFor)).HasMaxLength(MaxTargetIdLength);
+            OptionalOsduId(e.Property(r => r.ParentId)).HasMaxLength(MaxTargetIdLength);
             e.Property(r => r.Status).HasMaxLength(16).IsRequired();
             e.Property(r => r.LastVerifyOutcome).HasMaxLength(16);
             e.Property(r => r.LeaseOwner).HasMaxLength(200);
@@ -3256,6 +3285,8 @@ public static class DeliveryModel
             e.HasIndex(r => new { r.CacheSetId, r.DeliveryKey, r.FlowId }).HasFilter("[CacheSetId] IS NOT NULL");
             // A cache version that brings in what held records missed finds them by the set their held render read.
             e.HasIndex(r => new { r.HeldCacheSetId, r.Status }).HasFilter("[HeldCacheSetId] IS NOT NULL");
+            // A parent that lands finds the records of its partition that read it, of whatever flow, to plan them again.
+            e.HasIndex(r => new { r.PartitionId, r.ParentId }).HasFilter("[ParentId] IS NOT NULL");
             // One OSDU record, one flow: the database refuses a second flow's claim on an id, whatever races the intakes
             // run. An id names its partition, so this stays unique across every partition.
             e.HasIndex(r => r.ClaimedTargetId).IsUnique().HasFilter("[ClaimedTargetId] IS NOT NULL");
@@ -4032,6 +4063,7 @@ public static class DeliveryModel
             e.Property(t => t.Kind).HasMaxLength(200).IsRequired();
             e.Property(t => t.Version).HasMaxLength(64).IsRequired();
             e.Property(t => t.Problem).HasMaxLength(DeliveryRepositoryTemplate.MaxProblemLength);
+            e.Property(t => t.Parent).HasMaxLength(200);
             // A sync reconciles one repository's files, and a page reads them to settle that repository's documents.
             e.HasIndex(t => new { t.RepoId, t.Path }).IsUnique();
         });

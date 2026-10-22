@@ -205,7 +205,7 @@ public static class TemplateFolders
         foreach (var file in files.Take(MaxFilesPerFolder))
         {
             var found = ReadFile(file, shown(file));
-            read.Add(new TemplateFolderFile(file, shown(file), found.Kind, found.Version, found.Problem));
+            read.Add(new TemplateFolderFile(file, shown(file), found.Kind, found.Version, found.Problem) { Parent = found.Schema?.Parent?.Kind, ParentProblem = found.Schema?.ParentProblem });
         }
 
         if (files.Count > MaxFilesPerFolder)

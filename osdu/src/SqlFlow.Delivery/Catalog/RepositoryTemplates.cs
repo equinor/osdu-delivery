@@ -71,7 +71,7 @@ public sealed class RepositoryTemplates : ITemplateSource
         return await rows
             .OrderBy(t => t.RepoId).ThenBy(t => t.Path)
             .Take(MaxFiles)
-            .Select(t => new RepositoryTemplateFile(t.RepoId, t.Path, t.Folder, t.Kind, t.Version, t.Problem, t.LastSeenUtc))
+            .Select(t => new RepositoryTemplateFile(t.RepoId, t.Path, t.Folder, t.Kind, t.Version, t.Problem, t.LastSeenUtc, t.Parent))
             .ToListAsync(ct).ConfigureAwait(false);
     }
 

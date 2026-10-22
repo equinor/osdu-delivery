@@ -807,7 +807,14 @@ internal sealed class SeenIds
 /// <param name="Records">The records storage returned, in no particular order.</param>
 /// <param name="Missing">The ids asked for that storage did not return: deleted, never written, or hidden from the caller.</param>
 /// <param name="Invalid">The ids storage named under invalidRecords, a subset of <paramref name="Missing"/>.</param>
-public sealed record StorageRead(IReadOnlyList<JsonElement> Records, IReadOnlyList<string> Missing, IReadOnlyList<string> Invalid);
+public sealed record StorageRead(IReadOnlyList<JsonElement> Records, IReadOnlyList<string> Missing, IReadOnlyList<string> Invalid)
+{
+    /// <summary>
+    /// The ids storage still named under retryRecords when asked again, a subset of <see cref="Missing"/>: storage did
+    /// not say whether it holds them. A reader that must not take an unanswered id for a missing one reads this.
+    /// </summary>
+    public IReadOnlyList<string> Unanswered { get; init; } = [];
+}
 
 /// <summary>
 /// Reads records by id from the storage service (openapi storage v2, POST /query/records), a hundred ids per request, and
@@ -844,6 +851,7 @@ public sealed class StorageRecords
         var found = new HashSet<string>(StringComparer.Ordinal);
         var invalid = new List<string>();
         var pending = ids;
+        IReadOnlyList<string> unanswered = [];
         for (var attempt = 0; attempt < 2 && pending.Count > 0; attempt++)
         {
             var body = new JsonObject { ["records"] = new JsonArray(pending.Select(id => (JsonNode?)JsonValue.Create(id)).ToArray()) };
@@ -901,8 +909,9 @@ public sealed class StorageRecords
             }
 
             pending = retry;
+            unanswered = retry;
         }
 
-        return new StorageRead(records, ids.Where(id => !found.Contains(id)).ToList(), invalid);
+        return new StorageRead(records, ids.Where(id => !found.Contains(id)).ToList(), invalid) { Unanswered = unanswered };
     }
 }

@@ -28,11 +28,13 @@ related:
   - delivery-cli-records
   - delivery-flow-delivery
   - delivery-flow-mapping-assertions
+  - delivery-flow-mapping-parent
 sourceRefs:
   - osdu/src/SqlFlow.Delivery/Ledger/ILedger.cs
   - osdu/src/SqlFlow.Delivery/Ledger/OsduLedger.cs
   - osdu/src/SqlFlow.Delivery/Ledger/OsduLedger.Leases.cs
   - osdu/src/SqlFlow.Delivery/Ledger/OsduLedger.Waits.cs
+  - osdu/src/SqlFlow.Delivery/Ledger/OsduLedger.Parents.cs
   - osdu/src/SqlFlow.Delivery/Ledger/OsduLedger.Problems.cs
   - osdu/src/SqlFlow.Delivery/Ledger/SqlServerLedgerBulk.cs
   - osdu/src/SqlFlow.Delivery/Ledger/SqlServerLedgerBulk.Problems.cs
@@ -292,6 +294,12 @@ the error quotes the values. A release sends the kept document as it is: its ver
 what the assertions found. The acceptance ends when the document is delivered: the same document queued again later is
 judged again. The record stays held while only the mapping changes; correcting the row plans it again, and
 so does a redelivery, under the mapping the flow pins then.
+
+**A record held because its parent is not in OSDU** (a record of a custom template reading sections of its canonical
+parent with `$parent`) is held at its render, keeping no document, and its parent's id is on the record. It needs no
+release: when the parent lands through the ledger, delivered by any flow of the partition, the record is released under
+a `release` activity whose actor is `parent`, and its flow's next run renders it from the parent
+([mapping $parent](../flow/mapping-parent.md#when-the-parent-changes)).
 
 ## Issues
 

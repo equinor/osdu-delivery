@@ -213,12 +213,12 @@ public class SearchSourceTests
         var renderer = Renderer(search);
 
         var first = renderer.Render(Row("OLD-NAME"));
-        Assert.Equal("data.FacilityName", Assert.Single(first.Unanswered).Field);
+        Assert.Equal("data.FacilityName", Assert.IsType<SearchQuestion>(Assert.Single(first.Unanswered)).Field);
         await search.AnswerAsync(first.Unanswered);
 
         // The name found nothing, so the alias is asked next, through the nested form the schema says it needs.
         var second = renderer.Render(Row("OLD-NAME"));
-        var alias = Assert.Single(second.Unanswered);
+        var alias = Assert.IsType<SearchQuestion>(Assert.Single(second.Unanswered));
         Assert.Equal("nested(data.NameAliases, (AliasName.keyword:\"OLD-NAME\"))", alias.Query);
         await search.AnswerAsync(second.Unanswered);
 
@@ -414,7 +414,7 @@ public class SearchSourceTests
 
         foreach (var wellbore in rows)
         {
-            var question = Assert.Single(results[wellbore].Unanswered);
+            var question = Assert.IsType<SearchQuestion>(Assert.Single(results[wellbore].Unanswered));
             Assert.Equal(wellbore, question.Value);
         }
     }
@@ -752,9 +752,16 @@ public class SearchSourceTests
         public bool TryAnswer(SearchQuestion question, [System.Diagnostics.CodeAnalysis.NotNullWhen(true)] out SearchAnswer? answer)
             => _answers.TryGetValue(question, out answer);
 
-        public Task AnswerAsync(IReadOnlyCollection<SearchQuestion> questions, CancellationToken ct = default)
+        /// <summary>The platform holds no parent: the mappings these tests render read none.</summary>
+        public bool TryRead(ParentQuestion question, [System.Diagnostics.CodeAnalysis.NotNullWhen(true)] out ParentAnswer? answer)
         {
-            foreach (var question in questions.Where(q => !_answers.ContainsKey(q)))
+            answer = ParentAnswer.None;
+            return true;
+        }
+
+        public Task AnswerAsync(IReadOnlyCollection<PlatformQuestion> questions, CancellationToken ct = default)
+        {
+            foreach (var question in questions.OfType<SearchQuestion>().Where(q => !_answers.ContainsKey(q)))
             {
                 Asked.Add(question.Query);
                 var match = known.FirstOrDefault(k => string.Equals(k.Query, question.Query, StringComparison.Ordinal));
@@ -785,9 +792,16 @@ public class SearchSourceTests
         public bool TryAnswer(SearchQuestion question, [System.Diagnostics.CodeAnalysis.NotNullWhen(true)] out SearchAnswer? answer)
             => _answers.TryGetValue(question, out answer);
 
-        public Task AnswerAsync(IReadOnlyCollection<SearchQuestion> questions, CancellationToken ct = default)
+        /// <summary>The platform holds no parent: the mappings these tests render read none.</summary>
+        public bool TryRead(ParentQuestion question, [System.Diagnostics.CodeAnalysis.NotNullWhen(true)] out ParentAnswer? answer)
         {
-            foreach (var question in questions)
+            answer = ParentAnswer.None;
+            return true;
+        }
+
+        public Task AnswerAsync(IReadOnlyCollection<PlatformQuestion> questions, CancellationToken ct = default)
+        {
+            foreach (var question in questions.OfType<SearchQuestion>())
             {
                 _answers[question] = SearchAnswer.Refused(reason);
             }

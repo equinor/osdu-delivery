@@ -67,6 +67,12 @@ public static partial class Preflight
             issues.AddRange(searches.Problems.Select(problem => ValidationIssue.Error(problem)));
         }
 
+        // 4c. A mapping that reads its records' parent reads it as the parent's template declares it, under an id of its own.
+        if (mapping.ReadsParent)
+        {
+            CheckParent(mapping, schema, searches?.Parent, issues, where);
+        }
+
         MappingRenderer renderer;
         try
         {
@@ -112,6 +118,120 @@ public static partial class Preflight
 
         return issues;
     }
+
+    /// <summary>
+    /// A mapping that reads its records' parent (<c>$parent</c>, osdu/docs/reference/flow/mapping-parent.md): its template is
+    /// linked to one parent, of an entity type other than its own, so a record and its parent never share an id; the folders
+    /// on the mapping's path hold the parent's template; every path it reads is a property of that template, of a shape the
+    /// variable it fills can take.
+    /// </summary>
+    private static void CheckParent(MappingDefinition mapping, SchemaSnapshot schema, ResolvedParent? resolved, List<ValidationIssue> issues, string where)
+    {
+        if (schema.Parent is not { } link)
+        {
+            issues.Add(ValidationIssue.Error(schema.ParentProblem is { } problem
+                ? $"{where}: the mapping reads its records' parent with $parent, and template {mapping.Template} names no parent that can be read: {problem}."
+                : $"{where}: the mapping reads its records' parent with $parent, and template {mapping.Template} is linked to no parent; name the canonical kind its records stand beside in the template's {TemplateParent.Key}, as [{{ \"name\": \"WellLog\", \"kind\": \"osdu:wks:work-product-component--WellLog:1.4.0\" }}]."));
+            return;
+        }
+
+        if (string.Equals(link.EntityType, mapping.EntityType, StringComparison.Ordinal))
+        {
+            issues.Add(ValidationIssue.Error(
+                $"{where}: template {mapping.Template} is linked to {link.Kind}, a {link.EntityType} record as its own records are, so a record and its parent would have the same OSDU id and the record would be written over its parent; a linked template takes an entity type of its own, the namespace its records' ids are minted in."));
+            return;
+        }
+
+        if (resolved?.Schema is not { } parent)
+        {
+            issues.Add(ValidationIssue.Error(resolved?.Problem is { } why
+                ? $"{where}: the mapping reads its records' parent, of {link.Kind}, and that template cannot be read: {why}"
+                : $"{where}: the mapping reads its records' parent, of {link.Kind}, and that template was not loaded for this check, so nothing says whether the paths it reads are there."));
+            return;
+        }
+
+        foreach (var entry in mapping.Entries)
+        {
+            // An item of a list is one value of the list it fills, so only a node filling its variable itself is matched to it.
+            var whole = !entry.IsList;
+            foreach (var node in entry.ValueNodes.Where(n => n.Source is { Kind: MappingSourceKind.Parent }))
+            {
+                var path = node.Source!.ParentPath!;
+                if (ParentProperty(parent, path) is not { } read)
+                {
+                    issues.Add(ValidationIssue.Error(
+                        $"{where}: {node.Where} reads {path} of the record's parent, and template {parent.Kind} version {parent.Version} declares no {path}.", node.Target.Text));
+                    continue;
+                }
+
+                if (whole && schema.Resolve(node.Target.SchemaPath) is { } filled && Mismatch(read, filled) is { } given)
+                {
+                    issues.Add(ValidationIssue.Error(
+                        $"{where}: {node.Where} takes the parent's {path}, {given}, where template {mapping.Template.Kind} takes {ShapeOf(filled)} at {node.Target.Text}.", node.Target.Text));
+                }
+            }
+        }
+    }
+
+    /// <summary>
+    /// The property <paramref name="path"/> names in the parent's template; for a path inside an object that template leaves
+    /// open (one declaring no properties and not closed by <c>additionalProperties: false</c>, as OSDU's
+    /// <c>ExtensionProperties</c> is, where the wellbore DDMS keeps its <c>wdms</c> references), a value of any shape, since
+    /// the parent may hold anything there. Null when the template declares no such property.
+    /// </summary>
+    private static SchemaProperty? ParentProperty(SchemaSnapshot parent, string path)
+    {
+        if (parent.Resolve(path) is { } declared)
+        {
+            return declared;
+        }
+
+        var segments = path.Split('.');
+        for (var length = segments.Length - 1; length > 0; length--)
+        {
+            if (parent.Resolve(string.Join('.', segments, 0, length)) is not { } holder)
+            {
+                continue;
+            }
+
+            var open = holder.Type is SchemaType.Object or SchemaType.Any
+                && holder.Schema["properties"] is not JsonObject { Count: > 0 }
+                && holder.Schema["oneOf"] is null && holder.Schema["anyOf"] is null
+                && !(holder.Schema["additionalProperties"] is JsonValue closed && closed.TryGetValue<bool>(out var allowed) && !allowed);
+            return open ? new SchemaProperty(segments[^1], SchemaType.Any, new JsonObject(), null, null, false) : null;
+        }
+
+        return null;
+    }
+
+    /// <summary>
+    /// What a section of the parent is, when the variable it fills cannot take it: an object where no object goes, a list
+    /// where a single value or an object goes, or a single value where an object goes. A single value fills a list as a list
+    /// of one, and a property either template leaves untyped takes anything. Null when the variable can take it.
+    /// </summary>
+    private static string? Mismatch(SchemaProperty given, SchemaProperty taken)
+    {
+        if (given.Type == SchemaType.Any || taken.Type == SchemaType.Any)
+        {
+            return null;
+        }
+
+        var takesObjects = taken.Type == SchemaType.Object || (taken.Type == SchemaType.Array && taken.ItemScalarType == SchemaType.Object);
+        var takesValues = taken.Type is not (SchemaType.Object or SchemaType.Array) || (taken.Type == SchemaType.Array && taken.ItemScalarType != SchemaType.Object);
+        return given.Type switch
+        {
+            SchemaType.Object => takesObjects ? null : "an object",
+            SchemaType.Array => taken.Type == SchemaType.Array ? null : "a list",
+            _ => takesValues ? null : "a single value",
+        };
+    }
+
+    private static string ShapeOf(SchemaProperty property) => property.Type switch
+    {
+        SchemaType.Array => property.ItemScalarType == SchemaType.Object ? "a list of objects" : "a list",
+        SchemaType.Object => "an object",
+        _ => "a single value",
+    };
 
     /// <summary>Throws a <see cref="FlowValidationException"/> listing every error when any is present.</summary>
     public static void ThrowIfFailed(IReadOnlyList<ValidationIssue> issues, string where)
@@ -344,6 +464,13 @@ public static partial class Preflight
             return shape is TemplateVariableShape.Value or TemplateVariableShape.ValueList
                 ? null
                 : $"{entry.Source} is the id of the record a search finds, and {target} is {Describe(variable)}.";
+        }
+
+        if (entry.Source.Kind == MappingSourceKind.Parent)
+        {
+            // A section of the parent is written whole, an object or a list of objects as the parent holds it; whether its
+            // shape fits the variable is judged against the parent's own template (CheckParent).
+            return null;
         }
 
         if (entry.FindAll is not null)

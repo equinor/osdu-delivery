@@ -1,10 +1,12 @@
 using System.Diagnostics.CodeAnalysis;
+using System.Text.Json.Nodes;
 using SqlFlow.Delivery.Model;
 
 namespace SqlFlow.Delivery.Rendering;
 
 /// <summary>
-/// What a run knows about records it must find on the platform, and how it learns the rest.
+/// What a run knows about records it must find on the platform, and how it learns the rest: the records a mapping searches
+/// for, and the parent a record of a linked template reads sections of (osdu/docs/reference/flow/mapping-parent.md).
 /// </summary>
 /// <remarks>
 /// <para>
@@ -40,15 +42,86 @@ public interface IRecordSearch
     bool TryAnswer(SearchQuestion question, [NotNullWhen(true)] out SearchAnswer? answer);
 
     /// <summary>
-    /// Answers every question in <paramref name="questions"/> this run has not answered yet, so the renders that asked
-    /// them can run again and finish. Asking for none does nothing.
+    /// The record's parent as this run read it, or false when it has not been read yet. A parent the platform does not hold
+    /// is an answer too, and is not read again.
+    /// </summary>
+    bool TryRead(ParentQuestion question, [NotNullWhen(true)] out ParentAnswer? answer);
+
+    /// <summary>
+    /// Answers every question in <paramref name="questions"/> this run has not answered yet, searches and parents alike, so
+    /// the renders that asked them can run again and finish. Asking for none does nothing.
     /// </summary>
     /// <exception cref="DeliveryException">
     /// The platform could not be asked: it was unreachable, refused the run's credentials, or failed after its retries.
     /// An answer that did not come is never taken for finding nothing, which would hold records for the wrong reason.
     /// </exception>
-    Task AnswerAsync(IReadOnlyCollection<SearchQuestion> questions, CancellationToken ct = default);
+    Task AnswerAsync(IReadOnlyCollection<PlatformQuestion> questions, CancellationToken ct = default);
 }
+
+/// <summary>
+/// What reading a record's parent came to (osdu/docs/reference/flow/mapping-parent.md): the parent the platform holds, with
+/// the sections the mapping reads of it, or that it holds none the flow may read.
+/// </summary>
+public sealed record ParentAnswer
+{
+    private ParentAnswer(JsonObject? record, string? kind, long? version)
+    {
+        Record = record;
+        Kind = kind;
+        Version = version;
+    }
+
+    /// <summary>
+    /// The sections the mapping reads, laid out at their paths from the record's root, as the platform holds them; null when
+    /// the platform holds no parent. Shared by every render that reads the parent, so a section is copied before it is written.
+    /// </summary>
+    public JsonObject? Record { get; }
+
+    /// <summary>The kind the parent the platform holds is of; null when it holds none.</summary>
+    public string? Kind { get; }
+
+    /// <summary>The version of the parent read; null when the platform holds none.</summary>
+    public long? Version { get; }
+
+    public bool Found => Record is not null;
+
+    /// <summary>The platform holds no record under the parent's id the flow may read: none was delivered, it was deleted, or the flow's identity may not view it.</summary>
+    public static ParentAnswer None { get; } = new(null, null, null);
+
+    /// <summary>The parent the platform holds, of kind <paramref name="kind"/> at version <paramref name="version"/>, with the sections <paramref name="sections"/> lays out.</summary>
+    public static ParentAnswer Of(JsonObject sections, string kind, long version)
+    {
+        ArgumentNullException.ThrowIfNull(sections);
+        ArgumentException.ThrowIfNullOrWhiteSpace(kind);
+        return new ParentAnswer(sections, kind, version);
+    }
+
+    /// <summary>The section at <paramref name="path"/>, or null when the parent holds none there (or the platform holds no parent).</summary>
+    public JsonNode? At(string path)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(path);
+        JsonNode? node = Record;
+        foreach (var step in path.Split('.'))
+        {
+            if (node is not JsonObject holder || !holder.TryGetPropertyValue(step, out node))
+            {
+                return null;
+            }
+        }
+
+        return node;
+    }
+}
+
+/// <summary>
+/// The parent a render read sections of, kept so a record says which parent, and which version of it, its document was
+/// built from (osdu/docs/reference/flow/mapping-parent.md, What the ledger keeps).
+/// </summary>
+/// <param name="Id">The parent's OSDU id, without a version.</param>
+/// <param name="Kind">The kind the record's template names as its parent.</param>
+/// <param name="Found">Whether the platform holds the parent.</param>
+/// <param name="Version">The version read; null when the platform holds no parent.</param>
+public sealed record ParentUsage(string Id, string Kind, bool Found, long? Version);
 
 /// <summary>What asking the platform one question came to.</summary>
 public enum SearchOutcome
@@ -157,6 +230,12 @@ public sealed class NoRecordSearch : IRecordSearch
         return true;
     }
 
-    public Task AnswerAsync(IReadOnlyCollection<SearchQuestion> questions, CancellationToken ct = default)
+    public bool TryRead(ParentQuestion question, [NotNullWhen(true)] out ParentAnswer? answer)
+    {
+        answer = ParentAnswer.None;
+        return true;
+    }
+
+    public Task AnswerAsync(IReadOnlyCollection<PlatformQuestion> questions, CancellationToken ct = default)
         => Task.CompletedTask;
 }

@@ -27,6 +27,10 @@ keywords:
   - template file
   - repository sync
   - browse osdu
+  - linked template
+  - parent kind
+  - x-osdu-inheriting-from-kind
+  - custom schema
 related:
   - delivery-flow-mapping
   - delivery-cli-template
@@ -36,6 +40,7 @@ related:
   - delivery-concept-lineage
   - delivery-concept-architecture
   - delivery-table-repository-template
+  - delivery-flow-mapping-parent
 sourceRefs:
   - osdu/src/SqlFlow.Delivery/Templates/OsduTemplate.cs
   - osdu/src/SqlFlow.Delivery/Templates/TemplateChain.cs
@@ -45,6 +50,7 @@ sourceRefs:
   - osdu/src/SqlFlow.Delivery/Templates/OsduDataDefinitions.cs
   - osdu/src/SqlFlow.Delivery/Templates/TemplateComparison.cs
   - osdu/src/SqlFlow.Delivery/Templates/TemplatePath.cs
+  - osdu/src/SqlFlow.Delivery/Templates/TemplateParent.cs
   - osdu/src/SqlFlow.Delivery/Snapshots/SchemaSnapshot.cs
   - osdu/src/SqlFlow.Delivery/Json/CanonicalJson.cs
   - osdu/src/SqlFlow.Delivery/Snapshots/RenderContext.cs
@@ -256,6 +262,9 @@ The same sync settles every mapping against the files it is scanning, and record
 file it read (`TemplateVersion` and `TemplatePath` of [`osdu.Mapping`](../tables/mapping.md)). A mapping whose template
 does not settle is invalid, keeps the reference it is known by, and its message is the one above.
 
+A row of a linked template also names the kind it is linked to (`Parent`), and the sync warns of a link it cannot read
+([Linked templates](#linked-templates)).
+
 ## Where templates are read
 
 Every reader reads the file. What tells readers apart is where the file is:
@@ -354,6 +363,53 @@ The file `--out` writes is bundled, names its kind, and holds the version a mapp
 alone follows each edit of the file from the next sync and run, and each edit is a version of its own, which the ledger
 records with every record it renders. Check it from the working copy with `sqlflow template folders --for <mapping>` and
 `sqlflow check <flow>`, before a sync ever reads it.
+
+## Linked templates
+
+A custom template is often a copy of an OSDU kind changed where OSDU's schema falls short: a property the source knows
+and the canonical schema has no place for, or a value its validation would refuse. Its records stand beside the
+canonical ones, and some of what they need is only in the canonical record: a well log's curve values are stored by the
+wellbore DDMS, which serves only the canonical kinds and writes where it put them into the canonical record. A custom
+template **linked** to the canonical kind lets its records read that: each record has a **parent**, the record of the
+canonical kind with the same minted id in the canonical entity type's namespace, and a mapping takes sections of it
+with [`$parent`](../flow/mapping-parent.md).
+
+The link is the key the OSDU data definitions name a kind's parents with, written in the template file:
+
+```json
+{
+  "x-osdu-schema-source": "welldb:wks:work-product-component--WellLogDetail:1.0.0",
+  "x-osdu-inheriting-from-kind": [
+    { "name": "WellLog", "kind": "osdu:wks:work-product-component--WellLog:1.4.0" }
+  ]
+}
+```
+
+- **One record kind is the parent.** The data definitions list the abstract schemas a kind is built from under the same
+  key (`osdu:wks:AbstractDataset:1.0.0`); an entry whose entity type has no group (`--`) names no record and is passed
+  over. The one entry naming a record kind is the parent, named by its `name`, or by its entity type when it has none.
+- **The template takes an entity type of its own.** Its records' ids are minted in that namespace, so a record and its
+  parent never share an id. A template linked to its own entity type is refused where a mapping reads `$parent`.
+- **The link is part of the template.** Adding, changing or removing it is a new version of the file, which a mapping
+  naming the kind alone follows from the next sync.
+- **The parent's template is settled like any other**: from the template folders on the mapping's path, by its kind
+  alone, so the canonical template file sits in a folder the mapping reads, usually beside the custom one.
+- A template without the key, or listing abstract schemas only, is an ordinary template. A linked template whose
+  mapping reads no `$parent` renders like any other, and its records name no parent.
+
+What cannot be read is said rather than guessed: a key that is not a list of `{ "name", "kind" }` objects, an entry
+without a kind, a kind that is not `authority:source:entityType:major.minor.patch`, or two record kinds. The file still
+holds its template, and the sync warns of it by file:
+
+```text
+welldb/templates/welldb_wks_work-product-component--WellLogDetail_1.0.0.json: x-osdu-inheriting-from-kind names 2 record kinds (...), and a template is linked to one parent, so the template is linked to no parent and a mapping of it cannot read $parent.
+```
+
+A linked template is registered with OSDU's schema service like any template of one's own, outside OSDU Delivery; the
+link is read by OSDU Delivery alone. Storage takes records of a kind the schema service does not hold (it checks the
+kind's form, the id, the ACL and the legal tags), and the indexer flags each of them `schema not found`, so register the
+kind before relying on search to find its records. The Templates page shows the kind a template
+is linked to beside it, and `GET /api/v1/delivery/templates` names it as `parent`.
 
 ## A template as a file
 

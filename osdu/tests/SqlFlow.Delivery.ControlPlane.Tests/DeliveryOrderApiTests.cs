@@ -148,9 +148,14 @@ public sealed class DeliveryOrderApiTests
 
             await using (var db = CatalogDatabase.Create(cs))
             {
-                foreach (var (id, name, flow) in new[] { (masters, "cp-order-masters-" + suffix, "wells"), (estate, "cp-order-estate-" + suffix, "wellbores") })
+                // Each repository is recorded with the folder its sync read, as a sync records it: the control plane reads the
+                // templates its mappings fill from the files there.
+                foreach (var (id, name, flow, root) in new[]
                 {
-                    db.Repos.Add(new CatalogRepo { Id = id, Name = name, FirstSeenUtc = now, LastSyncUtc = now });
+                    (masters, "cp-order-masters-" + suffix, "wells", rootMasters), (estate, "cp-order-estate-" + suffix, "wellbores", rootEstate),
+                })
+                {
+                    db.Repos.Add(new CatalogRepo { Id = id, Name = name, RootPath = root, FirstSeenUtc = now, LastSyncUtc = now });
                     db.Pipelines.Add(new CatalogPipeline
                     {
                         Id = CatalogIdentity.Pipeline(id, flow), RepoId = id, Name = flow, Kind = "delivery", RelativePath = $"flows/{flow}.yaml",

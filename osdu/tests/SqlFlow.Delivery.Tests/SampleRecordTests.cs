@@ -169,7 +169,7 @@ public sealed class SampleRecordTests
             Parameters = Parameters,
             SystemProperties = mapping.Searches.Count > 0 ? SystemProperties.Pinned(references.SystemProperties) : [],
         };
-        var searches = await RenderResolver.SearchesAsync(Samples.SampleTemplates, mapping);
+        var searches = await RenderResolver.SearchesAsync(Samples.SampleTemplates, mapping, schema);
         var renderer = new MappingRenderer(mapping, schema, references, context, searches, new FixedRecordSearch(known));
         return await Samples.RenderSettledAsync(renderer, new SourceRecord
         {

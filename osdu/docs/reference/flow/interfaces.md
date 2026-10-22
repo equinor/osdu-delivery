@@ -345,8 +345,8 @@ interfaces can wait for each other. Such a cycle is cut, and the reference that 
    `The interfaces a -> b -> a wait for each other (...), and neither after: nor their OSDU groups say which goes first.
    Name the interface that waits for the other with after:.`
 
-The references are read from the mappings and the templates they pin, which live in the module's database, so the order
-is worked out when a run starts (its preflight refuses a cycle nothing cuts), by `sqlflow check`, and by the control
+The references are read from the mappings and the templates they fill, which a run reads from the template folders on
+each mapping's path, so the order is worked out when a run starts (its preflight refuses a cycle nothing cuts), by `sqlflow check`, and by the control
 plane's listing of a flow's interfaces. When the document is read only `after:` is checked: naming an interface the
 document does not declare, the interface itself or one interface twice is refused, and so are interfaces whose `after:`
 wait for each other:

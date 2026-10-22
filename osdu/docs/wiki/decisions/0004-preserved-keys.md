@@ -13,7 +13,9 @@ keywords:
 referenceRefs:
   - delivery-flow-ddms
   - delivery-concept-change-detection
-updated: 2026-10-16
+related:
+  - delivery-wiki-0019-linked-templates
+updated: 2026-10-22
 ---
 # 0004: Datasets, DDMSDatasets and ExtensionProperties are OSDU's
 

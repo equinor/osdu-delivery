@@ -106,6 +106,14 @@ internal static partial class EntryValues
                 return null;
             }
         }
+        else if (entry.Source.Kind == MappingSourceKind.Parent)
+        {
+            raw = FromParent(entry, root, item, renderer, holds, usages, searched);
+            if (raw is null)
+            {
+                return null;
+            }
+        }
         else
         {
             raw = entry.FindAll is not null
@@ -292,8 +300,9 @@ internal static partial class EntryValues
             return new JsonArray(JsonValue.Create(Placeholder(entry, itemFormat is not null ? $"{itemFormat} string" : Name(itemType))));
         }
 
-        // An object, or a list of objects: a cached field can carry one whole, and a dataset column never can.
-        if (entry.ValueNodes.Any(node => node.Source?.Kind == MappingSourceKind.Cache))
+        // An object, or a list of objects: a cached field or a section of the record's parent can carry one whole, and a
+        // dataset column never can.
+        if (entry.ValueNodes.Any(node => node.Source?.Kind is MappingSourceKind.Cache or MappingSourceKind.Parent))
         {
             return JsonValue.Create(Placeholder(entry, Name(type)));
         }
@@ -406,6 +415,90 @@ internal static partial class EntryValues
         => column.Child is null ? root.Get(column.Column) : item?.Get(column.Column);
 
     private static bool IsEmpty(object? value) => value is null || (value is string text && string.IsNullOrWhiteSpace(text));
+
+    /// <summary>
+    /// The value of a <c>$parent</c> node (osdu/docs/reference/flow/mapping-parent.md): the section at its path of the record's
+    /// parent, the record of the kind the template is linked to whose OSDU id is the record's own with the parent's entity
+    /// type. The parent is read from the platform between two renders, as a search is asked: a render that meets it first
+    /// stops there, naming it, and the caller reads it and renders again. A parent the platform does not hold holds the
+    /// record, whatever <c>$required</c> says: what the record takes from it is unknown, not absent. A parent without the
+    /// section is an empty value, which <c>$required</c> decides. The section is copied whole, an object or a list as the
+    /// parent holds it, and a single value passes through the node's modifiers like a column's.
+    /// </summary>
+    private static object? FromParent(
+        MappingEntry entry, SourceRow root, SourceRow? item, MappingRenderer renderer, List<string> holds, List<CacheUsage> usages, RenderTrail searched)
+    {
+        var path = entry.Target.Text;
+        var section = entry.Source!.ParentPath!;
+        if (renderer.ParentOf(root) is not { } question)
+        {
+            // A row without a complete key is held for that already; a template naming no parent is refused by the preflight,
+            // and said here too, for a render that reaches this without one.
+            if (renderer.Schema.Parent is null)
+            {
+                holds.Add(
+                    $"{path}: $parent reads the record's parent, and template {renderer.Mapping.Template} is linked to none ({Templates.TemplateParent.Key}{(renderer.Schema.ParentProblem is { } problem ? ": " + problem : string.Empty)})");
+            }
+
+            return null;
+        }
+
+        if (!renderer.Search.TryRead(question, out var answer))
+        {
+            // Not read yet. The render stops here rather than guess, and the caller reads the parent and renders again.
+            searched.Ask(question);
+            return null;
+        }
+
+        searched.Read(question, answer);
+        if (!answer.Found)
+        {
+            holds.Add(
+                $"{path}: the record's parent {question.Id} ({question.Kind}) is not in OSDU, or the flow's identity may not read it, and the record takes {section} from it");
+            return null;
+        }
+
+        var value = answer.At(section);
+        if (value is null || (value is JsonValue text && text.TryGetValue<string>(out var said) && string.IsNullOrWhiteSpace(said)))
+        {
+            if (entry.Required)
+            {
+                holds.Add($"{path}: the record's parent {question.Id} holds no {section}, and the entry is required");
+            }
+
+            return null;
+        }
+
+        // The answer is shared by every render that reads the parent, so what is written is a copy of it.
+        var copy = value.DeepClone();
+        if (entry.Modifiers.Count == 0)
+        {
+            return copy;
+        }
+
+        if (copy is JsonObject or JsonArray)
+        {
+            holds.Add($"{path}: $modifiers change a single value, and the parent's {section} is {(copy is JsonArray ? "a list" : "an object")}");
+            return null;
+        }
+
+        if (!TryModify(entry, Native(copy), root, item, renderer, holds, usages, out var modified))
+        {
+            return null;
+        }
+
+        if (IsEmpty(modified))
+        {
+            if (entry.Required)
+            {
+                holds.Add($"{path}: the parent's {section} gives no value once modified, and the entry is required");
+            }
+
+            return null;
+        }
+
+        return modified;
+    }
 
     /// <summary>
     /// Where the value an incoming assertion judges came from: the column of the dataset's own row (<c>dataset.log_name</c>)

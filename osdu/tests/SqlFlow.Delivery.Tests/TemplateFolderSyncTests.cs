@@ -1,3 +1,4 @@
+using System.Text.Json.Nodes;
 using Microsoft.EntityFrameworkCore;
 using SqlFlow.Delivery.Catalog;
 using SqlFlow.Delivery.Data;
@@ -131,6 +132,49 @@ public sealed class TemplateFolderSyncTests : IDisposable
         await SyncAsync();
         Assert.DoesNotContain(await FilesAsync(), f => f.Path == "p/templates/thing.json");
         Assert.Contains(await FilesAsync(), f => f.Path == "r/templates/thing.json" && f.Version == VersionOf(b));
+    }
+
+    [Fact]
+    public async Task A_sync_records_the_parent_a_template_is_linked_to_and_warns_of_a_link_no_mapping_can_read()
+    {
+        const string bad = "test:wks:work-product-component--BadThing:1.0.0";
+        const string self = "test:wks:work-product-component--SelfThing:1.0.0";
+        Write("templates/thing.json", ThingFile("parent"));
+        Write("templates/custom.json", LinkedTemplates.Custom().Root.ToJsonString());
+        Write("templates/bad.json", LinkedTemplates.Custom(bad, JsonValue.Create(Thing)).Root.ToJsonString());
+        Write("templates/self.json", LinkedTemplates.Custom(self, LinkedTemplates.Link("Self", "test:wks:work-product-component--SelfThing:0.9.0")).Root.ToJsonString());
+
+        var (_, warnings) = await SyncAsync();
+
+        // The custom template's row names the kind it is linked to; the canonical one, linked to none, names none.
+        var files = (await FilesAsync()).ToDictionary(f => f.Path, StringComparer.Ordinal);
+        Assert.Equal(Thing, files["templates/custom.json"].Parent);
+        Assert.Null(files["templates/thing.json"].Parent);
+
+        // A link that cannot be read names no parent and is said, and the file still holds its template.
+        Assert.Null(files["templates/bad.json"].Parent);
+        Assert.Equal(bad, files["templates/bad.json"].Kind);
+        Assert.Null(files["templates/bad.json"].Problem);
+        Assert.Contains(
+            $"templates/bad.json: x-osdu-inheriting-from-kind lists the value \"{Thing}\", and each entry is an object naming a kind",
+            Assert.Single(warnings, w => w.StartsWith("templates/bad.json", StringComparison.Ordinal)), StringComparison.Ordinal);
+        Assert.EndsWith("so the template is linked to no parent and a mapping of it cannot read $parent.", warnings.Single(w => w.StartsWith("templates/bad.json", StringComparison.Ordinal)), StringComparison.Ordinal);
+
+        // A parent of the template's own entity type is recorded as written, and said: its records would share their ids.
+        Assert.Equal("test:wks:work-product-component--SelfThing:0.9.0", files["templates/self.json"].Parent);
+        Assert.Contains(
+            $"templates/self.json: the template {self} is linked to test:wks:work-product-component--SelfThing:0.9.0, of its own entity type, so a record and its parent would have the same OSDU id; a linked template takes an entity type of its own.",
+            warnings);
+        Assert.DoesNotContain(warnings, w => w.StartsWith("templates/custom.json", StringComparison.Ordinal) || w.StartsWith("templates/thing.json", StringComparison.Ordinal));
+
+        // The link is part of the template: a file that drops it is another version, and its row names no parent after the next sync.
+        var unlinked = LinkedTemplates.Custom().Root.DeepClone().AsObject();
+        unlinked.Remove(TemplateParent.Key);
+        Write("templates/custom.json", unlinked.ToJsonString());
+        await SyncAsync();
+        var custom = Assert.Single(await FilesAsync(), f => f.Path == "templates/custom.json");
+        Assert.Null(custom.Parent);
+        Assert.Equal(TemplateFolderFixtures.VersionOf(LinkedTemplates.CustomKind, unlinked.ToJsonString()), custom.Version);
     }
 
     [Fact]

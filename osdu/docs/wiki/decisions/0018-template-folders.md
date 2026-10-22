@@ -26,6 +26,7 @@ related:
   - delivery-wiki-0010-assertion-flows-read-only
   - delivery-wiki-0011-dimension-flows
   - delivery-wiki-0016-osdu-order
+  - delivery-wiki-0019-linked-templates
 sourceRefs:
   - osdu/src/SqlFlow.Delivery/Templates/TemplateFolders.cs
   - osdu/src/SqlFlow.Delivery/Templates/TemplateChain.cs

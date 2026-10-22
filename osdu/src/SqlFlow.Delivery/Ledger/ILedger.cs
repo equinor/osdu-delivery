@@ -533,7 +533,19 @@ public sealed record RecordState
     /// </summary>
     public long? CacheSetId { get; init; }
 
-    /// <summary>When the ledger asked for the record to be planned again (a redeliver, a release, a cache rollout); null once a plan took it.</summary>
+    /// <summary>
+    /// The record's parent (osdu/docs/reference/flow/mapping-parent.md): the OSDU id of the record its render read sections
+    /// of, or would have, had the platform held it; null for a record whose mapping reads no parent.
+    /// </summary>
+    public string? ParentId { get; init; }
+
+    /// <summary>The version of the parent the document OSDU holds was rendered from; null when it read none.</summary>
+    public long? ParentVersion { get; init; }
+
+    /// <summary>The version of the parent the pending work was rendered from; null when it read none.</summary>
+    public long? PendingParentVersion { get; init; }
+
+    /// <summary>When the ledger asked for the record to be planned again (a redeliver, a release, a cache rollout, a parent that landed); null once a plan took it.</summary>
     public DateTime? PlanRequestedUtc { get; init; }
 
     public DateTime CreatedUtc { get; init; }
@@ -607,6 +619,9 @@ public sealed record AttemptRecord
 
     /// <summary>When the ingestion table last updated that row.</summary>
     public DateTime? SourceUpdatedUtc { get; init; }
+
+    /// <summary>The version of the record's parent the attempt's document was rendered from; null when it read none.</summary>
+    public long? ParentVersion { get; init; }
 
     /// <summary>When the ingestion table marked that row deleted, for the hold of a deleted row; null otherwise.</summary>
     public DateTime? SourceDeletedUtc { get; init; }
@@ -714,7 +729,8 @@ public sealed record SyncedTemplateFile(string Path, string Folder, string Kind,
 /// <param name="Version">The template version it holds; empty when it holds none.</param>
 /// <param name="Problem">Why it holds no template; null when it holds one.</param>
 /// <param name="SeenUtc">When the repository's last sync saw it.</param>
-public sealed record RepositoryTemplateFile(Guid RepoId, string Path, string Folder, string Kind, string Version, string? Problem, DateTime SeenUtc);
+/// <param name="Parent">The kind its template is linked to as its parent; null when it is linked to none.</param>
+public sealed record RepositoryTemplateFile(Guid RepoId, string Path, string Folder, string Kind, string Version, string? Problem, DateTime SeenUtc, string? Parent = null);
 
 /// <summary>What a check of a record's document came to, as the record keeps it: the outcome, the problems, and when.</summary>
 /// <param name="Outcome">What the check against the schema came to (<see cref="Validation.ValidationOutcomes"/>).</param>
@@ -741,7 +757,8 @@ public sealed record ClaimedWork(
     DateTime? PayloadModifiedUtc,
     bool Metadata,
     bool Payload,
-    RecordOrigin Origin = default)
+    RecordOrigin Origin = default,
+    long? ParentVersion = null)
 {
     /// <summary>The claimed work of a record, or null when it holds no pending document.</summary>
     public static ClaimedWork? Of(RecordState record)
@@ -752,7 +769,7 @@ public sealed record ClaimedWork(
             : new ClaimedWork(
                 record.LastSubmissionId, reference, record.PendingRenderContext, record.PendingSourceFingerprint, record.PendingSourceModifiedUtc,
                 record.PendingMetadataHash, record.PendingPayloadHash, record.PendingPayloadModifiedUtc, record.PendingMetadata, record.PendingPayload,
-                record.PendingOrigin);
+                record.PendingOrigin, record.PendingParentVersion);
     }
 }
 
@@ -2318,6 +2335,13 @@ public interface ILedger
     /// one. At most <paramref name="max"/>.
     /// </summary>
     Task<IReadOnlyList<RecordState>> ListHoldersAsync(Guid flowId, string targetId, int max, CancellationToken ct = default);
+
+    /// <summary>
+    /// The records that read <paramref name="parentId"/> as their parent (osdu/docs/reference/flow/mapping-parent.md), in any
+    /// flow of the partition of <paramref name="flowId"/>'s ledger, compared exactly, most recently updated first. At most
+    /// <paramref name="max"/>.
+    /// </summary>
+    Task<IReadOnlyList<RecordState>> ListChildrenOfAsync(Guid flowId, string parentId, int max, CancellationToken ct = default);
 
     Task<IReadOnlyList<WorkBatchState>> ListWorkBatchesAsync(Guid submissionId, int max, int offset, CancellationToken ct = default);
 

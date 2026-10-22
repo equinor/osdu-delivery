@@ -56,7 +56,7 @@ public class MappingBuilderTests
                 ["legalTag"] = "dev-osdu-default-legal",
             },
         };
-        var searches = await RenderResolver.SearchesAsync(Samples.SampleTemplates, reread);
+        var searches = await RenderResolver.SearchesAsync(Samples.SampleTemplates, reread, schema);
         var issues = Preflight.Check(reread, schema, references, context, sourceColumns: null, searches);
         Assert.True(issues.All(i => i.Severity != IssueSeverity.Error), string.Join(Environment.NewLine, issues));
     }

@@ -956,10 +956,19 @@ internal static class DeliveryVerbs
         foreach (var file in folder.Files)
         {
             context.Out.WriteLine(file.IsTemplate
-                ? $"  {file.Shown}  {file.Kind}  {file.Version}"
+                ? $"  {file.Shown}  {file.Kind}  {file.Version}{Linked(file)}"
                 : $"  {file.Shown}  holds no template: {file.Problem}");
         }
     }
+
+    /// <summary>
+    /// The kind a template file is linked to as its parent (osdu/docs/reference/concepts/templates.md, Linked templates), or
+    /// why its link cannot be read, after its version; nothing for a template linked to none.
+    /// </summary>
+    private static string Linked(TemplateFolderFile file)
+        => file.Parent is { } parent ? $"  linked to {parent}"
+            : file.ParentProblem is { } problem ? $"  linked to no parent: {problem}"
+            : string.Empty;
 
     private static JsonObject FolderJson(TemplateFolder folder) => new()
     {
@@ -970,6 +979,8 @@ internal static class DeliveryVerbs
             ["kind"] = f.Kind,
             ["version"] = f.Version,
             ["problem"] = f.Problem,
+            ["parent"] = f.Parent,
+            ["parentProblem"] = f.ParentProblem,
         }).ToArray()),
     };
 

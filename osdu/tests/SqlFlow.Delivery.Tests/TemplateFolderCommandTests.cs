@@ -63,6 +63,26 @@ public sealed class TemplateFolderCommandTests : IDisposable
     }
 
     [Fact]
+    public async Task Folders_say_which_kind_a_template_is_linked_to_and_why_a_link_cannot_be_read()
+    {
+        var custom = LinkedTemplates.Custom();
+        Write("templates/custom.json", custom.Root.ToJsonString());
+        Write("templates/bad.json", LinkedTemplates.Custom("test:wks:work-product-component--BadThing:1.0.0", JsonValue.Create(Thing)).Root.ToJsonString());
+
+        var (exit, output, _) = await RunAsync("folders", _root);
+        Assert.Equal(0, exit);
+        var lines = output.ReplaceLineEndings("\n");
+        Assert.Contains($"  templates/custom.json  {LinkedTemplates.CustomKind}  {custom.Version}  linked to {Thing}\n", lines, StringComparison.Ordinal);
+        Assert.Contains("  linked to no parent: x-osdu-inheriting-from-kind lists the value", lines, StringComparison.Ordinal);
+
+        (exit, output, _) = await RunAsync("folders", _root, "--json");
+        Assert.Equal(0, exit);
+        var files = JsonNode.Parse(output)!["folders"]![0]!["files"]!.AsArray();
+        Assert.Equal(Thing, files.Single(f => f!["path"]!.GetValue<string>() == "templates/custom.json")!["parent"]!.GetValue<string>());
+        Assert.NotNull(files.Single(f => f!["path"]!.GetValue<string>() == "templates/bad.json")!["parentProblem"]);
+    }
+
+    [Fact]
     public async Task Folders_for_a_document_lists_the_folders_it_reads_nearest_first_and_what_each_kind_settles_to()
     {
         var near = TemplateFolderFixtures.ThingFile("near");

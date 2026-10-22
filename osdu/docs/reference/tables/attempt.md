@@ -67,6 +67,7 @@ the server has it (SQL Server 2019 and later, Azure SQL), since every drain appe
 | `SourceRowNumber` | `bigint` | yes | The row of that file. |
 | `SourceUpdatedUtc` | `datetime2` | yes | When the ingestion table last updated that row. |
 | `SourceDeletedUtc` | `datetime2` | yes | When the ingestion table marked that row deleted, for the hold of a deleted row; null otherwise. |
+| `ParentVersion` | `bigint` | yes | The version of the record's parent the attempt's document was rendered from, kept here because the record's own moves on with later versions; null when its mapping reads no parent, or OSDU held none ([Parent records](../flow/mapping-parent.md)). |
 
 ## Keys and indexes
 

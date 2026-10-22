@@ -808,6 +808,8 @@ function attemptEntry(attempt: DeliveryAttempt): Entry {
           <Fact label="Row stamped"><RelativeTime value={attempt.sourceUpdatedUtc} /></Fact>
           {attempt.sourceDeletedUtc != null && <Fact label="Row deleted"><RelativeTime value={attempt.sourceDeletedUtc} /></Fact>}
           <Fact label="OSDU version">{attempt.targetVersion !== null ? <Mono>{attempt.targetVersion}</Mono> : <NoFact />}</Fact>
+          {/* A record of a linked template: the version of its parent the document this try sent was rendered from. */}
+          {attempt.parentVersion != null && <Fact label="Parent version"><Mono>{attempt.parentVersion}</Mono></Fact>}
           <Fact label="Work batch">{attempt.workBatch !== null ? <Mono>{attempt.workBatch}</Mono> : <NoFact />}</Fact>
           <Fact label="Worker"><TruncatedText text={attempt.worker} mono maxWidth={360} title="Worker" /></Fact>
           <Fact label="Completed"><RelativeTime value={attempt.completedUtc} /></Fact>

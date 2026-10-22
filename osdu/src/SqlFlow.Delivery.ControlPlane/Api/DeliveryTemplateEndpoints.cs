@@ -36,8 +36,12 @@ namespace SqlFlow.Delivery.ControlPlane.Api;
 /// <param name="Version">The template version it holds, the hash of its schema; null when it holds none.</param>
 /// <param name="Problem">Why it holds no template; null when it holds one.</param>
 /// <param name="SeenUtc">When the repository's last sync saw it.</param>
+/// <param name="Parent">
+/// The kind the template is linked to as its parent (osdu/docs/reference/concepts/templates.md, Linked templates); null for
+/// a template linked to none.
+/// </param>
 public sealed record DeliveryTemplateDto(
-    Guid RepoId, string Repository, string Path, string Folder, string? Kind, string? Version, string? Problem, DateTime SeenUtc);
+    Guid RepoId, string Repository, string Path, string Folder, string? Kind, string? Version, string? Problem, DateTime SeenUtc, string? Parent);
 
 /// <summary>The repository file a template laid out was read from.</summary>
 public sealed record DeliveryTemplateFileDto(Guid RepoId, string Repository, string Path);
@@ -61,7 +65,14 @@ public sealed record DeliveryTemplateVariableDto(
 /// read from, when a partition was named.
 /// </summary>
 public sealed record DeliveryTemplateDetailDto(
-    string Kind, string Version, string? Title, string? Description, DeliveryTemplateFileDto? File, IReadOnlyList<DeliveryTemplateVariableDto> Variables);
+    string Kind, string Version, string? Title, string? Description, DeliveryTemplateFileDto? File, IReadOnlyList<DeliveryTemplateVariableDto> Variables)
+{
+    /// <summary>
+    /// The kind the template is linked to as its parent (osdu/docs/reference/concepts/templates.md, Linked templates), read
+    /// from its <c>x-osdu-inheriting-from-kind</c>; null for a template linked to none.
+    /// </summary>
+    public string? Parent { get; init; }
+}
 
 /// <summary>A release of the OSDU data definitions: its tag, the commit it names, when that was committed, and its schema folder on the web.</summary>
 public sealed record DeliveryOsduReleaseDto(string Name, string Commit, DateTimeOffset? PublishedUtc, Uri WebUrl, bool Local);
@@ -274,7 +285,7 @@ public static class DeliveryTemplateEndpoints
         return TypedResults.Ok<IReadOnlyList<DeliveryTemplateDto>>(files
             .Select(f => new DeliveryTemplateDto(
                 f.RepoId, names.GetValueOrDefault(f.RepoId, f.RepoId.ToString("D")), f.Path, f.Folder,
-                f.Kind.Length == 0 ? null : f.Kind, f.Version.Length == 0 ? null : f.Version, f.Problem, f.SeenUtc))
+                f.Kind.Length == 0 ? null : f.Kind, f.Version.Length == 0 ? null : f.Version, f.Problem, f.SeenUtc, f.Parent))
             .OrderBy(t => t.Repository, StringComparer.OrdinalIgnoreCase)
             .ThenBy(t => t.Path, StringComparer.Ordinal)
             .ToList());
@@ -293,7 +304,7 @@ public static class DeliveryTemplateEndpoints
         var names = await RepositoryNamesAsync(db, ct).ConfigureAwait(false);
         var types = string.IsNullOrWhiteSpace(scope) ? [] : await CatalogCacheReader.TypesAsync(osdu, scope.Trim(), ct).ConfigureAwait(false);
         var file = new DeliveryTemplateFileDto(repoId!.Value, names.GetValueOrDefault(repoId.Value, repoId.Value.ToString("D")), path!.Trim());
-        return TypedResults.Ok(Detail(OsduTemplate.From(schema), file, types));
+        return TypedResults.Ok(Detail(OsduTemplate.From(schema), file, types) with { Parent = schema.Parent?.Kind });
     }
 
     /// <summary>
@@ -402,7 +413,7 @@ public static class DeliveryTemplateEndpoints
         }
 
         var types = string.IsNullOrWhiteSpace(request.Scope) ? [] : await CatalogCacheReader.TypesAsync(osdu, request.Scope.Trim(), ct).ConfigureAwait(false);
-        return TypedResults.Ok(Detail(OsduTemplate.From(imported.Schema), null, types));
+        return TypedResults.Ok(Detail(OsduTemplate.From(imported.Schema), null, types) with { Parent = imported.Schema.Parent?.Kind });
     }
 
     private static async Task<Results<Ok<DeliveryOsduReleasesDto>, ProblemHttpResult>> ListOsduReleasesAsync(
@@ -853,8 +864,9 @@ public static class DeliveryTemplateEndpoints
 
         try
         {
-            // A search is checked against the schema it pins, as a delivery resolving the mapping would check it.
-            var searches = await RenderResolver.SearchesAsync(source, mapping, ct).ConfigureAwait(false);
+            // A search is checked against the schema it pins, and a $parent path against the parent's template, as a delivery
+            // resolving the mapping would check them.
+            var searches = await RenderResolver.SearchesAsync(source, mapping, schema, ct).ConfigureAwait(false);
             foreach (var issue in Preflight.Check(mapping, schema, references, context, sourceColumns: null, searches))
             {
                 issues.Add(new MappingDraftIssue(

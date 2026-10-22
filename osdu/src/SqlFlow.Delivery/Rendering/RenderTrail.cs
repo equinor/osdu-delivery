@@ -4,12 +4,12 @@ namespace SqlFlow.Delivery.Rendering;
 
 /// <summary>
 /// What one render met on its way: the questions it asked of the platform that the run could not answer yet, the answers
-/// it used, and which alternative each <c>$coalesce</c> node took its value from. It belongs to one render, never to the
-/// renderer, which the plan's parallel workers share.
+/// it used, the parent it read, and which alternative each <c>$coalesce</c> node took its value from. It belongs to one
+/// render, never to the renderer, which the plan's parallel workers share.
 /// </summary>
 internal sealed class RenderTrail
 {
-    private List<SearchQuestion>? _unanswered;
+    private List<PlatformQuestion>? _unanswered;
     private List<SearchUsage>? _used;
     private Dictionary<(string Target, int Alternative), CoalesceChoice>? _chosen;
 
@@ -26,7 +26,10 @@ internal sealed class RenderTrail
     public int? Item { get; set; }
 
     /// <summary>The questions to ask before the row is rendered again, each once, in the order the render met them.</summary>
-    public IReadOnlyList<SearchQuestion> Unanswered => _unanswered ?? (IReadOnlyList<SearchQuestion>)[];
+    public IReadOnlyList<PlatformQuestion> Unanswered => _unanswered ?? (IReadOnlyList<PlatformQuestion>)[];
+
+    /// <summary>The record's parent as the render read it (osdu/docs/reference/flow/mapping-parent.md); null when it read none.</summary>
+    public ParentUsage? Parent { get; private set; }
 
     /// <summary>The answers the render consulted, each once, in the order it consulted them.</summary>
     public IReadOnlyList<SearchUsage> Used => _used ?? (IReadOnlyList<SearchUsage>)[];
@@ -37,7 +40,7 @@ internal sealed class RenderTrail
     /// </summary>
     public IReadOnlyList<CoalesceChoice> Chosen => _chosen is null ? [] : [.. _chosen.Values];
 
-    public void Ask(SearchQuestion question)
+    public void Ask(PlatformQuestion question)
     {
         _unanswered ??= [];
         if (!_unanswered.Contains(question))
@@ -55,6 +58,10 @@ internal sealed class RenderTrail
             _used.Add(usage);
         }
     }
+
+    /// <summary>Notes the parent <paramref name="question"/> asked for as <paramref name="answer"/> gives it.</summary>
+    public void Read(ParentQuestion question, ParentAnswer answer)
+        => Parent ??= new ParentUsage(question.Id, question.Kind, answer.Found, answer.Version);
 
     /// <summary>Notes that the node filling <paramref name="target"/> took its value from its alternative number <paramref name="alternative"/>.</summary>
     public void Choose(string target, int alternative, int of, string origin, bool unverified)

@@ -291,8 +291,8 @@ valid, and propose it with propose_pipelines into the mappings folder beside the
 
     #[tool(
         description = "Templates: the OSDU record schemas mappings fill, held as files in the synced repositories' \
-folders named templates. Without arguments, lists every file: repoId, repository, path, and the kind and version it \
-holds or why none. With repoId and path, lays that file's template out variable by variable: path \
+folders named templates. Without arguments, lists every file: repoId, repository, path, the kind and version it \
+holds or why none, and the parent kind a custom template is linked to ($parent reads that record). With repoId and path, lays that file's template out variable by variable: path \
 (osdu.data.FacilityName), type, format, whether required, the entity types an id refers to, pattern and description. \
 Use it for 'which properties does a Wellbore require' and whenever you write or review a mapping: a variable not in \
 the template cannot be filled. Narrow with search or requiredOnly. A kind no repository holds: delivery_osdu_schemas."

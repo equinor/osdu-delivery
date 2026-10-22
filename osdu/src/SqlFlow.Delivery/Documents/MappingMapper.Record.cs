@@ -44,6 +44,7 @@ internal static partial class MappingMapper
     internal const string CoalesceKey = "$coalesce";
     internal const string UnverifiedKey = "$unverified";
     internal const string LookupKey = "$lookup";
+    internal const string ParentKey = "$parent";
     internal const string FindAllKey = "$findAll";
     internal const string AssertKey = "$assert";
 
@@ -57,7 +58,7 @@ internal static partial class MappingMapper
     internal const string CacheReference = Marker + MappingSource.CachePrefix;
 
     /// <summary>The keys a value node reads its value with; naming one of them makes a map a value node.</summary>
-    internal static readonly IReadOnlyList<string> SourceKeys = [FromKey, ExprKey, ValueKey, CacheKey, SearchKey, LookupKey, CoalesceKey];
+    internal static readonly IReadOnlyList<string> SourceKeys = [FromKey, ExprKey, ValueKey, CacheKey, SearchKey, LookupKey, ParentKey, CoalesceKey];
 
     /// <summary>The settings a value node takes beside the key it reads its value with.</summary>
     internal static readonly IReadOnlyList<string> ValueSettings = [FindByKey, FindAllKey, ModifiersKey, WhenKey, RequiredKey, IgnoreSeparatorsKey, UnverifiedKey, AssertKey, DescriptionKey];
@@ -76,7 +77,7 @@ internal static partial class MappingMapper
 
     /// <summary>Every word of the mapping language a key of the record tree can be.</summary>
     internal static readonly IReadOnlyList<string> NodeKeys =
-        [FromKey, ExprKey, ValueKey, CacheKey, SearchKey, LookupKey, CoalesceKey, ForEachKey, ItemKey, WhereKey, FindByKey, FindAllKey, ModifiersKey, WhenKey, RequiredKey, IgnoreSeparatorsKey, UnverifiedKey, AssertKey, DescriptionKey];
+        [FromKey, ExprKey, ValueKey, CacheKey, SearchKey, LookupKey, ParentKey, CoalesceKey, ForEachKey, ItemKey, WhereKey, FindByKey, FindAllKey, ModifiersKey, WhenKey, RequiredKey, IgnoreSeparatorsKey, UnverifiedKey, AssertKey, DescriptionKey];
 
     /// <summary>The value keys, as a message lists them.</summary>
     private static string SourceList => string.Join(", ", SourceKeys.Take(SourceKeys.Count - 1)) + " or " + SourceKeys[^1];
@@ -601,14 +602,18 @@ internal static partial class MappingMapper
             FromKey => new MappingSource { Kind = MappingSourceKind.DatasetColumn, Column = Column(RequiredText(map, FromKey, at), scope, $"{at}: {FromKey}") },
             ExprKey => new MappingSource { Kind = MappingSourceKind.Expression, Expression = Expression(Get(map, ExprKey), ExprKey, scope, at) },
             CacheKey => CacheSource(RequiredText(map, CacheKey, at), at),
+            ParentKey => ParentSource(RequiredText(map, ParentKey, at), scope, at),
             _ => SearchSource(RequiredText(map, SearchKey, at), at),
         };
 
         if (!read.Resolves && Has(map, FindByKey))
         {
-            throw new FlowValidationException(read.Kind == MappingSourceKind.Expression
-                ? $"{at}: {FindByKey} selects the record a {CacheKey} or a {SearchKey} node reads; this node computes its value with {ExprKey}."
-                : $"{at}: {FindByKey} selects the record a {CacheKey} or a {SearchKey} node reads; this node reads the column {Written(read.Column!, scope)}.");
+            throw new FlowValidationException(read.Kind switch
+            {
+                MappingSourceKind.Expression => $"{at}: {FindByKey} selects the record a {CacheKey} or a {SearchKey} node reads; this node computes its value with {ExprKey}.",
+                MappingSourceKind.Parent => $"{at}: {FindByKey} selects the record a {CacheKey} or a {SearchKey} node reads; this node reads its record's parent, which is found by the record's own id.",
+                _ => $"{at}: {FindByKey} selects the record a {CacheKey} or a {SearchKey} node reads; this node reads the column {Written(read.Column!, scope)}.",
+            });
         }
 
         if (read.Kind != MappingSourceKind.Cache && Has(map, IgnoreSeparatorsKey))
@@ -688,7 +693,12 @@ internal static partial class MappingMapper
         var required = Flag(map, RequiredKey, at) ?? true;
         var notIncoming = read.ReadsRow
             ? null
-            : read.Kind == MappingSourceKind.Search ? "this node's value is the id a search of the platform finds" : "this node's value comes from the partition's cache";
+            : read.Kind switch
+            {
+                MappingSourceKind.Search => "this node's value is the id a search of the platform finds",
+                MappingSourceKind.Parent => "this node's value is read from the record's parent",
+                _ => "this node's value comes from the partition's cache",
+            };
         return new MappingEntry
         {
             Index = index,
@@ -961,6 +971,36 @@ internal static partial class MappingMapper
         }
 
         return new MappingSource { Kind = MappingSourceKind.Cache, CacheType = parts[0], CacheField = string.Join('.', parts.Skip(1)) };
+    }
+
+    /// <summary>
+    /// <c>$parent: data.DDMSDatasets</c>: a section of the record's parent, by its path from the record's root as the record
+    /// writes it. The parent is the record's, found by the record's own id, so a node under a <c>$forEach</c>, which reads a
+    /// row of a child dataset, cannot read it item by item: it takes the whole array instead.
+    /// </summary>
+    private static MappingSource ParentSource(string text, TreeScope scope, string at)
+    {
+        const string Example = ParentKey + ": data.DDMSDatasets";
+        var path = text.Trim();
+        if (scope.Child is not null)
+        {
+            throw new FlowValidationException(
+                $"{at}: {ParentKey} reads the record's parent, which a row of {scope.Child} has none of; read the whole array from the parent instead, with {ParentKey} on the array itself (as {Example}).");
+        }
+
+        if (path.Contains("[]", StringComparison.Ordinal) || path.Contains('[', StringComparison.Ordinal))
+        {
+            throw new FlowValidationException(
+                $"{at}: {ParentKey} '{path}' steps into an array, and a section of the parent is read whole: name the array itself, as {Example}, and it is taken with every item.");
+        }
+
+        if (!ParentPathPattern().IsMatch(path))
+        {
+            throw new FlowValidationException(
+                $"{at}: {ParentKey} names the path of a section of the record's parent from the record's root, its property names joined by dots, as {Example} or {ParentKey}: data.ExtensionProperties.wdms; '{text}' is not one.");
+        }
+
+        return new MappingSource { Kind = MappingSourceKind.Parent, ParentPath = path };
     }
 
     /// <summary><c>$search: Wellbore</c>: one of the mapping's searches, which gives the id of the one record it finds.</summary>
@@ -1370,6 +1410,10 @@ internal static partial class MappingMapper
 
     private static string RequiredText(IDictionary<object, object> map, string key, string at)
         => Text(map, key, at)?.Trim() is { Length: > 0 } text ? text : throw new FlowValidationException($"{at}: {key} is empty.");
+
+    /// <summary>A path into a record from its root: property names joined by dots, as <c>data.ExtensionProperties.wdms</c>.</summary>
+    [GeneratedRegex(@"^[A-Za-z_][A-Za-z0-9_]*(\.[A-Za-z_][A-Za-z0-9_]*)*$")]
+    internal static partial Regex ParentPathPattern();
 
     [GeneratedRegex(@"^[^\.\[\]\s]+$")]
     private static partial Regex PropertyPattern();

@@ -238,7 +238,8 @@ public sealed class OrderCatalogTests : IDisposable
             await using (var catalog = _database.CreateCatalogContext())
             await using (var module = _database.CreateDbContext())
             {
-                var orders = (await ScheduleOrders.ReadAsync(catalog, module, Folders())).Schedules;
+                // The sync named the repositories by their flow identities, so those are the repositories whose files are read.
+                var orders = (await ScheduleOrders.ReadAsync(catalog, module, RepositoryFolders.Of(idA, _rootA, RepositoryFolders.Of(idB, _rootB)))).Schedules;
                 var nightly = orders.Single(o => o.Schedule.Name == "estate-nightly");
                 var first = Assert.Single(nightly.RunFirst);
                 Assert.Equal(("masters-nightly", nameB, false, false), (first.Schedule.Name, first.Schedule.Repository, first.SameRepository, first.Chained));

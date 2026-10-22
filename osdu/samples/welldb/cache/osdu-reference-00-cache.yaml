@@ -80,9 +80,11 @@ types:
   - kind: "osdu:wks:reference-data--LogCurveFamily:*"
     name: LogCurveFamily
     fields: [data.Code, data.Name]
-  # A survey's station properties: the TrajectoryStationPropertyTypeID of each property its stations carry.
+  # A survey's station properties: the TrajectoryStationPropertyTypeID of each property its stations carry. Kept with the
+  # paths a mapping finds a station property by elsewhere (Code, then Name, then ID), as UnitOfMeasure is, so a partition
+  # whose other cache flows keep the same type keeps one type of it, every flow's records in it.
   - kind: "osdu:wks:reference-data--TrajectoryStationPropertyType:*"
     name: TrajectoryStationPropertyType
-    fields: [data.Code, data.Name]
+    fields: [data.Code, data.Name, data.ID]
 
 schedule: welldb-cache

@@ -53,6 +53,12 @@ public enum MappingDraftInput
     /// own input filling a variable inside the list's items (<c>osdu.data.TechnicalAssurances[].TechnicalAssuranceTypeID</c>).
     /// </summary>
     Group,
+
+    /// <summary>
+    /// A section of the record's parent (<c>$parent</c>, osdu/docs/reference/flow/mapping-parent.md): the record of the kind
+    /// the template is linked to with the same minted id, read from the platform as the record renders.
+    /// </summary>
+    Parent,
 }
 
 /// <summary>
@@ -166,6 +172,9 @@ public sealed record MappingDraftEntry
 
     /// <summary>For a lookup input: the lookup read, by the name the mapping declares it under.</summary>
     public string? Lookup { get; init; }
+
+    /// <summary>For a parent input: the path of the section of the record's parent it takes, from the record's root (<c>data.DDMSDatasets</c>).</summary>
+    public string? ParentPath { get; init; }
 
     public IReadOnlyList<MappingDraftFind> FindBy { get; init; } = [];
 
@@ -1034,6 +1043,35 @@ public static partial class MappingBuilder
     }
 
     /// <summary>
+    /// What a parent input lacks (osdu/docs/reference/flow/mapping-parent.md): the path of the section it takes, its property
+    /// names joined by dots and never into an array, read by an entry of the record rather than of a repeater's items, and
+    /// nothing that finds or matches a record, since the parent is found by the record's own id. Whether the template is
+    /// linked to a parent, and the parent's template declares the path, is the preflight's to judge.
+    /// </summary>
+    private static void ParentIssues(MappingDraftEntry entry, string name, string target, string? scope, Action<string, string?> error)
+    {
+        var path = entry.ParentPath?.Trim() ?? string.Empty;
+        if (path.Length == 0)
+        {
+            error($"{name}: name the section of the record's parent to take, such as data.DDMSDatasets.", target);
+        }
+        else if (path.Contains('[', StringComparison.Ordinal) || !MappingMapper.ParentPathPattern().IsMatch(path))
+        {
+            error($"{name}: '{path}' is not a path of the parent: its property names joined by dots, never into an array, such as data.DDMSDatasets or data.ExtensionProperties.wdms.", target);
+        }
+
+        if (scope is not null)
+        {
+            error($"{name}: a row of {scope} has no parent; take the whole array from the parent with a parent input on the array itself.", target);
+        }
+
+        if (entry.FindBy.Count > 0 || entry.FindAll is not null || entry.IgnoreSeparators || entry.Unverified)
+        {
+            error($"{name}: the parent is found by the record's own id, so a parent input takes no findBy lines, find all, folded separators or unverified ids.", target);
+        }
+    }
+
+    /// <summary>
     /// What one value lacks, as an entry of its own or as one alternative of a coalesce entry (<paramref name="name"/> says
     /// which): its input, its modifiers, and the id it builds.
     /// </summary>
@@ -1142,6 +1180,9 @@ public static partial class MappingBuilder
                     error($"{name}: a lookup input reads the record its lookup finds, so how the record is found (findBy lines, modifiers, folding separators) is the lookup's to say.", target);
                 }
 
+                break;
+            case MappingDraftInput.Parent:
+                ParentIssues(entry, name, target, scope, error);
                 break;
             case MappingDraftInput.Static:
                 StaticIssue(entry, name, error);
@@ -1478,9 +1519,11 @@ public static partial class MappingBuilder
                     MappingSourceKind.DatasetRows => MappingDraftInput.Repeat,
                     MappingSourceKind.Search => MappingDraftInput.Search,
                     MappingSourceKind.Expression => MappingDraftInput.Expression,
+                    MappingSourceKind.Parent => MappingDraftInput.Parent,
                     _ => MappingDraftInput.Cache,
                 },
             Expression = source?.Expression?.Text,
+            ParentPath = source?.ParentPath,
             Column = source?.Column is { } column ? ColumnText(column) : null,
             Child = source?.Child,
             CacheType = source?.CacheType,
@@ -1794,6 +1837,7 @@ public static partial class MappingBuilder
         {
             MappingDraftInput.Dataset => (MappingMapper.FromKey, ScopedColumn(entry.Column ?? string.Empty, scope)),
             MappingDraftInput.Search => (MappingMapper.SearchKey, entry.CacheType?.Trim() ?? string.Empty),
+            MappingDraftInput.Parent => (MappingMapper.ParentKey, entry.ParentPath?.Trim() ?? string.Empty),
             _ => (MappingMapper.CacheKey, $"{entry.CacheType?.Trim()}.{entry.CacheField?.Trim()}"),
         };
 

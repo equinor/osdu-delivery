@@ -1,3 +1,4 @@
+using System.Text.Json.Nodes;
 using Microsoft.EntityFrameworkCore;
 using SqlFlow.Catalog;
 using SqlFlow.Core;
@@ -269,6 +270,119 @@ public sealed class LineageTests : IDisposable
         Assert.Empty(lineage.Warnings);
         Assert.Empty(lineage.Files);
         Assert.Equal("osdu-type/dev/master-data/osdu:wks:master-data--Wellbore:1.3.0", Datasets(lineage, LineageRelation.Writes));
+    }
+
+    /// <summary>
+    /// A custom log template beside the sample's WellLog, linked to it (osdu/docs/reference/concepts/templates.md, Linked
+    /// templates), a mapping over it whose data takes <paramref name="parentSections"/> from each record's parent, and a
+    /// storage flow delivering it from the WellLog header table.
+    /// </summary>
+    private void CustomLog(string parentSections)
+    {
+        var root = JsonNode.Parse(File.ReadAllText(PathOf("templates/osdu_wks_work-product-component--WellLog_1.4.0.json")))!.AsObject();
+        root["$id"] = "https://schema.example.org/json/work-product-component/CustomLog.1.0.0.json";
+        root["x-osdu-schema-source"] = CustomLogKind;
+        root[TemplateParent.Key] = new JsonArray(new JsonObject { ["name"] = "WellLog", ["kind"] = WellLogKind });
+        File.WriteAllText(PathOf("templates/welldb_wks_work-product-component--CustomLog_1.0.0.json"), root.ToJsonString());
+
+        File.WriteAllText(PathOf("mappings/CustomLog@1.0.0.yaml"), $$"""
+            documentType: mapping
+            name: CustomLog
+            version: 1.0.0
+            template:
+              kind: {{CustomLogKind}}
+              version: {{new SchemaSnapshot(CustomLogKind, root, DateTimeOffset.UnixEpoch).Version}}
+            dataset:
+              system: welldb
+              key: [source_project, log_id]
+            parameters:
+              dataPartition: { required: true }
+              aclOwner: { required: true }
+              aclViewer: { required: true }
+              legalTag: { required: true }
+            record:
+              acl:
+                owners: ["{$param.aclOwner}"]
+                viewers: ["{$param.aclViewer}"]
+              legal:
+                legaltags: ["{$param.legalTag}"]
+                otherRelevantDataCountries: [US]
+              data:
+                Name: { $from: log_source }
+            {{parentSections}}
+            """);
+
+        File.WriteAllText(PathOf("flows/welldb-customlog-03-delivery.yaml"), """
+            flowType: delivery
+            name: welldb-customlog-03-delivery
+            batch: welldb
+            partitions:
+              - name: dev
+            source:
+              connection: ${env:OSDU_DATA_DB}
+              record:
+                object: OsduData.silver.WellLog
+                key: [source_project, log_id]
+                primaryKey: RecId
+              lastModified: update_date
+              work: ../.work/customlog
+            render:
+              mapping: CustomLog@1.0.0
+            change:
+              detect: renderedHash
+              onUnchanged: skip
+            target:
+              endpoint: ${env:OSDU_URL}
+              auth:
+                type: oauth2ClientCredentials
+                secondarySecretRef: ${env:OSDU_CLIENT_ID}
+                secretRef: ${env:OSDU_CLIENT_SECRET}
+                token:
+                  url: ${env:OSDU_TOKEN_URL}
+              protocol: storage
+            """);
+    }
+
+    private const string CustomLogKind = "welldb:wks:work-product-component--CustomLog:1.0.0";
+
+    private const string WellLogKind = "osdu:wks:work-product-component--WellLog:1.4.0";
+
+    [Fact]
+    public void A_mapping_reading_its_records_parent_reads_the_parent_kind_and_runs_after_the_flow_delivering_it()
+    {
+        CustomLog("""
+                DDMSDatasets: { $parent: data.DDMSDatasets }
+                ExtensionProperties:
+                  wdms: { $parent: data.ExtensionProperties.wdms }
+            """);
+
+        var lineage = Describe("flows/welldb-customlog-03-delivery.yaml");
+
+        Assert.True(lineage.Warnings.Count == 0, string.Join(" | ", lineage.Warnings));
+        Assert.Equal($"osdu-type/dev/work-product-component/{CustomLogKind}", TypeWrites(lineage));
+
+        // The parent's kind is read once, however many of its sections the mapping takes, and as the very kind the template
+        // names: the parent is read by its id, which its kind's entity type mints.
+        var parent = Assert.Single(Assert.Single(lineage.Derivations).From, d => d.System == "osdu-type" && d.Name == WellLogKind);
+        Assert.Equal((LineageRelation.Reads, "dev", "work-product-component", Platform), (parent.Relation, parent.Namespace, parent.Group, parent.Instance));
+
+        // So the custom records are rendered after the flow that delivers their parents has run.
+        var (_, report) = Scan();
+        Assert.True(WaveOf(report, "welldb-welllog-03-header-delivery") < WaveOf(report, "welldb-customlog-03-delivery"));
+    }
+
+    [Fact]
+    public void A_mapping_over_a_linked_template_that_reads_no_parent_section_reads_no_parent_kind()
+    {
+        // The link is the template's; a mapping filling the custom template from its own rows alone waits for no parent.
+        CustomLog(string.Empty);
+
+        var lineage = Describe("flows/welldb-customlog-03-delivery.yaml");
+
+        Assert.True(lineage.Warnings.Count == 0, string.Join(" | ", lineage.Warnings));
+        Assert.DoesNotContain(Assert.Single(lineage.Derivations).From, d => d.Name == WellLogKind);
+        var (_, report) = Scan();
+        Assert.True(WaveOf(report, "welldb-customlog-03-delivery") <= WaveOf(report, "welldb-welllog-03-header-delivery"));
     }
 
     [Fact]
@@ -823,7 +937,8 @@ public sealed class LineageTests : IDisposable
             + "osdu.data.VerticalMeasurement.VerticalMeasurementTypeID, osdu.data.Curves[].CurveUnit and 2 more, and the entity type of each is told by its template "
             + "(osdu:wks:work-product-component--WellLog:1.4.0 version 26a3c3441882db4f), so the cache types those references are checked against are left out. "
             + "Its template is not read: no template folder on the path of welldb/mappings/WellLog@1.4.0.yaml holds template "
-            + "osdu:wks:work-product-component--WellLog:1.4.0 version 26a3c3441882db4f. It reads welldb/templates. Put the template's file in one of them",
+            + "osdu:wks:work-product-component--WellLog:1.4.0 version 26a3c3441882db4f. It reads welldb/templates. Put the file holding version "
+            + "26a3c3441882db4f in one of them",
             lineage.Warnings[0],
             StringComparison.Ordinal);
         Assert.Contains("is not ordered by what its records refer to", lineage.Warnings[1], StringComparison.Ordinal);

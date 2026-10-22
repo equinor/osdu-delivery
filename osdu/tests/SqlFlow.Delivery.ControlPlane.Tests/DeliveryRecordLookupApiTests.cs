@@ -146,6 +146,81 @@ public sealed class DeliveryRecordLookupApiTests
     }
 
     [Fact]
+    public async Task A_record_and_its_parent_each_link_to_the_other_on_their_pages()
+    {
+        var cs = OsduTestServer.Require();
+        await CatalogDatabase.MigrateAsync(cs);
+        await SampleEstate.MigrateModuleAsync(cs);
+
+        // A canonical log and a custom one of the same minted id, the custom one reading the canonical one as its parent
+        // (osdu/docs/reference/flow/mapping-parent.md), each delivered by a flow of its own in one partition.
+        var canonicalFlow = FlowId.Of(FlowName + "-parent-canonical");
+        var customFlow = FlowId.Of(FlowName + "-parent-custom");
+        var minted = Guid.NewGuid().ToString("N");
+        var parentId = $"dev:work-product-component--WellLog:{minted}";
+        var childId = $"dev:work-product-component--CustomLog:{minted}";
+        var canonical = new DeliveryKey(Guid.NewGuid());
+        var custom = new DeliveryKey(Guid.NewGuid());
+        var plain = new DeliveryKey(Guid.NewGuid());
+        var ledger = new OsduLedger(() => SampleEstate.Context(cs));
+        await ledger.RegisterAsync(canonicalFlow, customFlow);
+
+        try
+        {
+            await ledger.UpsertPendingAsync(canonicalFlow, [Record(canonicalFlow, canonical, minted + "-A", parentId, "logs.csv", 1)]);
+            await ledger.UpsertPendingAsync(customFlow,
+            [
+                Record(customFlow, custom, minted + "-B", childId, "logs.csv", 1) with { ParentId = parentId, PendingParentVersion = 1761037100000007 },
+                Record(customFlow, plain, minted + "-C", $"dev:work-product-component--CustomLog:{minted}-plain", "logs.csv", 2),
+            ]);
+
+            await using var factory = Factory(cs);
+            using var client = factory.CreateClient();
+            var token = await TokenAsync(client);
+
+            // The custom record names its parent and the version its queued document was rendered from, and links to the
+            // record of the ledger that holds the parent's id.
+            var child = await DetailAsync(client, token, customFlow, custom);
+            Assert.Equal(parentId, child.GetProperty("record").GetProperty("parentId").GetString());
+            Assert.Equal(1761037100000007, child.GetProperty("record").GetProperty("pendingParentVersion").GetInt64());
+            var parent = child.GetProperty("parent");
+            Assert.Equal((canonicalFlow, canonical.Value, parentId), (parent.GetProperty("flowId").GetGuid(), parent.GetProperty("deliveryKey").GetGuid(), parent.GetProperty("targetId").GetString()));
+            Assert.Empty(child.GetProperty("readBy").EnumerateArray());
+
+            // The canonical record lists the records reading it as their parent, and only those.
+            var read = await DetailAsync(client, token, canonicalFlow, canonical);
+            var reader = Assert.Single(read.GetProperty("readBy").EnumerateArray().ToList());
+            Assert.Equal((customFlow, custom.Value, childId), (reader.GetProperty("flowId").GetGuid(), reader.GetProperty("deliveryKey").GetGuid(), reader.GetProperty("targetId").GetString()));
+            Assert.Equal(JsonValueKind.Null, read.GetProperty("parent").ValueKind);
+
+            // A record of a linked template whose parent no flow of the partition delivers names it, and links nowhere.
+            await using (var osdu = SampleEstate.Context(cs))
+            {
+                await osdu.DeliveryRecords.Where(r => r.DeliveryKey == canonical.Value).ExecuteDeleteAsync();
+            }
+
+            child = await DetailAsync(client, token, customFlow, custom);
+            Assert.Equal(parentId, child.GetProperty("record").GetProperty("parentId").GetString());
+            Assert.Equal(JsonValueKind.Null, child.GetProperty("parent").ValueKind);
+        }
+        finally
+        {
+            await using var osdu = SampleEstate.Context(cs);
+            var keys = new[] { canonical.Value, custom.Value, plain.Value };
+            await osdu.DeliveryRecordIdentities.Where(i => keys.Contains(i.DeliveryKey)).ExecuteDeleteAsync();
+            await osdu.DeliveryRecords.Where(r => keys.Contains(r.DeliveryKey)).ExecuteDeleteAsync();
+        }
+    }
+
+    private static async Task<JsonElement> DetailAsync(HttpClient client, string token, Guid flowId, DeliveryKey key)
+    {
+        using var response = await GetAsync(client, token, $"/api/v1/delivery/records/{flowId:D}/{key.Value:D}");
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        using var json = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        return json.RootElement.Clone();
+    }
+
+    [Fact]
     public async Task With_nothing_to_look_for_the_records_the_system_last_took_in_are_listed_newest_first()
     {
         var cs = OsduTestServer.Require();

@@ -71,6 +71,8 @@ internal static partial class SqlServerLedgerBulk
             [PendingPayload] bit NOT NULL,
             [PendingReferences] nvarchar(max) NULL,
             [CacheSetId] bigint NULL,
+            [ParentId] nvarchar(500) COLLATE Latin1_General_100_BIN2 NULL,
+            [PendingParentVersion] bigint NULL,
             [SeenPlanRequestedUtc] datetime2 NULL,
             [AnswersAnyRequest] bit NOT NULL,
             PRIMARY KEY ([Slice], [FlowId], [DeliveryKey]),
@@ -182,7 +184,7 @@ internal static partial class SqlServerLedgerBulk
                 [PendingPayloadModifiedUtc] = s.[PendingPayloadModifiedUtc],
                 [PendingPayloadLocation] = s.[PendingPayloadLocation], [PendingMetadata] = s.[PendingMetadata], [PendingPayload] = s.[PendingPayload],
                 [PendingReferences] = s.[PendingReferences], [WaitingFor] = NULL,
-                [CacheSetId] = s.[CacheSetId], [Blocked] = 0, [ProblemHash] = NULL,
+                [CacheSetId] = s.[CacheSetId], [ParentId] = s.[ParentId], [PendingParentVersion] = s.[PendingParentVersion], [Blocked] = 0, [ProblemHash] = NULL,
                 [PlanRequestedUtc] = CASE WHEN s.[AnswersAnyRequest] = 1 OR t.[PlanRequestedUtc] = s.[SeenPlanRequestedUtc] THEN NULL ELSE t.[PlanRequestedUtc] END, [UpdatedUtc] = @now
         FROM [osdu].[Record] AS t WITH (FORCESEEK ({{RecordKey}} ([PartitionId], [FlowId], [DeliveryKey])))
         INNER JOIN #PendingStage AS s ON t.[PartitionId] = @partitionId AND t.[FlowId] = s.[FlowId] AND t.[DeliveryKey] = s.[DeliveryKey]
@@ -199,12 +201,12 @@ internal static partial class SqlServerLedgerBulk
                 [PendingDocumentRef], [WorkBatch], [PendingRenderContext], [PendingSourceFingerprint], [PendingSourceModifiedUtc],
                 [PendingSourceFileName], [PendingSourceRowNumber], [PendingSourceUpdatedUtc], [SourceInsertedUtc],
                 [PendingMetadataHash], [PendingPayloadHash], [PendingPayloadModifiedUtc],
-                [PendingPayloadLocation], [PendingMetadata], [PendingPayload], [PendingReferences], [CacheSetId], [Blocked], [CreatedUtc], [UpdatedUtc])
+                [PendingPayloadLocation], [PendingMetadata], [PendingPayload], [PendingReferences], [CacheSetId], [ParentId], [PendingParentVersion], [Blocked], [CreatedUtc], [UpdatedUtc])
         SELECT @partitionId, s.[DeliveryKey], s.[FlowId], s.[SourceKey], s.[SourceKeyJson], s.[Label], s.[MappingName], s.[TargetId], s.[TargetId] COLLATE Latin1_General_100_BIN2, N'pending', s.[LastSubmissionId], 0,
                 s.[PendingDocumentRef], s.[WorkBatch], s.[PendingRenderContext], s.[PendingSourceFingerprint], s.[PendingSourceModifiedUtc],
                 s.[PendingSourceFileName], s.[PendingSourceRowNumber], s.[PendingSourceUpdatedUtc], s.[SourceInsertedUtc],
                 s.[PendingMetadataHash], s.[PendingPayloadHash], s.[PendingPayloadModifiedUtc],
-                s.[PendingPayloadLocation], s.[PendingMetadata], s.[PendingPayload], s.[PendingReferences], s.[CacheSetId], 0, @now, @now
+                s.[PendingPayloadLocation], s.[PendingMetadata], s.[PendingPayload], s.[PendingReferences], s.[CacheSetId], s.[ParentId], s.[PendingParentVersion], 0, @now, @now
         FROM #PendingStage AS s
         WHERE s.[Slice] = @slice AND s.[Existing] = 0;
         SELECT @updated + @@ROWCOUNT;
@@ -316,6 +318,9 @@ internal static partial class SqlServerLedgerBulk
             [MetadataHash] = CASE WHEN s.[Promote] = 0 THEN r.[MetadataHash]
                 WHEN x.[Superseded] = 1 THEN CASE WHEN s.[ClaimMetadata] = 1 THEN s.[ClaimMetadataHash] ELSE r.[MetadataHash] END
                 WHEN r.[PendingMetadata] = 1 THEN r.[PendingMetadataHash] ELSE r.[MetadataHash] END,
+            [ParentVersion] = CASE WHEN s.[Promote] = 0 THEN r.[ParentVersion]
+                WHEN x.[Superseded] = 1 THEN CASE WHEN s.[ClaimMetadata] = 1 THEN s.[ClaimParentVersion] ELSE r.[ParentVersion] END
+                WHEN r.[PendingMetadata] = 1 THEN r.[PendingParentVersion] ELSE r.[ParentVersion] END,
             [PayloadHash] = CASE WHEN s.[Promote] = 0 THEN r.[PayloadHash]
                 WHEN x.[Superseded] = 1 THEN CASE WHEN s.[ClaimPayload] = 1 THEN s.[ClaimPayloadHash] ELSE r.[PayloadHash] END
                 WHEN r.[PendingPayload] = 1 THEN r.[PendingPayloadHash] ELSE r.[PayloadHash] END,
@@ -876,6 +881,8 @@ internal static partial class SqlServerLedgerBulk
         table.Columns.Add("PendingPayload", typeof(bool));
         table.Columns.Add("PendingReferences", typeof(string));
         table.Columns.Add("CacheSetId", typeof(long));
+        table.Columns.Add("ParentId", typeof(string));
+        table.Columns.Add("PendingParentVersion", typeof(long));
         table.Columns.Add("SeenPlanRequestedUtc", typeof(DateTime));
         table.Columns.Add("AnswersAnyRequest", typeof(bool));
         var position = 0;
@@ -888,7 +895,8 @@ internal static partial class SqlServerLedgerBulk
                 Value(Truncate(r.PendingSourceFileName, DeliveryModel.MaxSourceFileNameLength)), Value(r.PendingSourceRowNumber), Value(r.PendingSourceUpdatedUtc),
                 Value(r.SourceInsertedUtc), Value(r.PendingMetadataHash), Value(r.PendingPayloadHash),
                 Value(r.PendingPayloadModifiedUtc), Value(r.PendingPayloadLocation), r.PendingMetadata, r.PendingPayload,
-                Value(RecordReferences.Encode(r.PendingReferences)), Value(r.CacheSetId), Value(r.Basis?.PlanRequestedUtc), r.Basis is null);
+                Value(RecordReferences.Encode(r.PendingReferences)), Value(r.CacheSetId), Value(r.ParentId), Value(r.PendingParentVersion),
+                Value(r.Basis?.PlanRequestedUtc), r.Basis is null);
         }
 
         return table;
@@ -917,13 +925,14 @@ internal static partial class SqlServerLedgerBulk
         table.Columns.Add("SourceRowNumber", typeof(long));
         table.Columns.Add("SourceUpdatedUtc", typeof(DateTime));
         table.Columns.Add("SourceDeletedUtc", typeof(DateTime));
+        table.Columns.Add("ParentVersion", typeof(long));
         foreach (var a in attempts)
         {
             table.Rows.Add(
                 a.PartitionId, a.FlowId, a.DeliveryKey, Value(a.SubmissionId), Value(a.RunId), a.Worker, a.StartedUtc, a.CompletedUtc,
                 a.Outcome, a.Phase, Value(a.MetadataHash), Value(a.PayloadHash), Value(a.TargetVersion),
                 Value(a.Error), Value(a.ResultJson), Value(a.WorkBatch),
-                Value(a.SourceFileName), Value(a.SourceRowNumber), Value(a.SourceUpdatedUtc), Value(a.SourceDeletedUtc));
+                Value(a.SourceFileName), Value(a.SourceRowNumber), Value(a.SourceUpdatedUtc), Value(a.SourceDeletedUtc), Value(a.ParentVersion));
         }
 
         return table;
@@ -964,6 +973,7 @@ internal static partial class SqlServerLedgerBulk
         table.Columns.Add("ClaimSourceRowNumber", typeof(long));
         table.Columns.Add("ClaimSourceUpdatedUtc", typeof(DateTime));
         table.Columns.Add("ClaimMetadataHash", typeof(string));
+        table.Columns.Add("ClaimParentVersion", typeof(long));
         table.Columns.Add("ClaimPayloadHash", typeof(string));
         table.Columns.Add("ClaimPayloadModifiedUtc", typeof(DateTime));
         table.Columns.Add("ClaimMetadata", typeof(bool));
@@ -977,7 +987,7 @@ internal static partial class SqlServerLedgerBulk
                 Value(e.TargetId), Value(e.TargetVersion), Value(e.TargetStateJson), Value(e.PendingStepJson),
                 Value(e.ClaimSubmissionId), Value(e.ClaimDocumentRef), Value(e.ClaimAttemptCount), Value(e.ClaimRenderContext), Value(e.ClaimSourceFingerprint),
                 Value(e.ClaimSourceModifiedUtc), Value(e.ClaimSourceFileName), Value(e.ClaimSourceRowNumber), Value(e.ClaimSourceUpdatedUtc),
-                Value(e.ClaimMetadataHash), Value(e.ClaimPayloadHash), Value(e.ClaimPayloadModifiedUtc), e.ClaimMetadata, e.ClaimPayload);
+                Value(e.ClaimMetadataHash), Value(e.ClaimParentVersion), Value(e.ClaimPayloadHash), Value(e.ClaimPayloadModifiedUtc), e.ClaimMetadata, e.ClaimPayload);
         }
 
         return table;

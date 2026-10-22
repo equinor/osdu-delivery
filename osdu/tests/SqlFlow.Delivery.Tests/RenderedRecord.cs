@@ -34,7 +34,7 @@ public static class RenderedRecord
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(expected);
         ArgumentNullException.ThrowIfNull(result);
-        Assert.False(result.IsIncomplete, "The render still waits for answers to: " + string.Join("; ", result.Unanswered.Select(q => $"{q.Kind} {q.Field} = {q.Value}")));
+        Assert.False(result.IsIncomplete, "The render still waits for answers to: " + string.Join("; ", result.Unanswered.Select(MappingRenderer.Unanswerable)));
         Assert.False(result.IsHeld, "The record is held: " + string.Join("; ", result.Holds));
         Assert.Equal(CanonicalJson.ToString(Comparable(JsonNode.Parse(expected))), CanonicalJson.ToString(Comparable(result.Document)));
     }
@@ -51,7 +51,7 @@ public static class RenderedRecord
         ArgumentException.ThrowIfNullOrWhiteSpace(mapping);
         ArgumentException.ThrowIfNullOrWhiteSpace(name);
         ArgumentNullException.ThrowIfNull(result);
-        Assert.False(result.IsIncomplete, "The render still waits for answers to: " + string.Join("; ", result.Unanswered.Select(q => $"{q.Kind} {q.Field} = {q.Value}")));
+        Assert.False(result.IsIncomplete, "The render still waits for answers to: " + string.Join("; ", result.Unanswered.Select(MappingRenderer.Unanswerable)));
         Assert.False(result.IsHeld, "The record is held: " + string.Join("; ", result.Holds));
         var kept = Path.Combine(Folder, mapping, name + ".json");
         var expected = File.Exists(kept) ? CanonicalJson.ToString(Comparable(JsonNode.Parse(File.ReadAllText(kept)))) : null;

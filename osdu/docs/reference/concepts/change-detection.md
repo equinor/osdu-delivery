@@ -28,6 +28,7 @@ related:
   - delivery-concept-submissions
   - delivery-cli-run
   - delivery-flow-mapping
+  - delivery-flow-mapping-parent
   - concept-upsert-and-change-detection
   - concept-provenance-and-row-keys
 sourceRefs:
@@ -36,6 +37,7 @@ sourceRefs:
   - osdu/src/SqlFlow.Delivery/Engine/Planning/Planner.cs
   - osdu/src/SqlFlow.Delivery/Engine/DeliveryExecutor.cs
   - osdu/src/SqlFlow.Delivery/Engine/Intake/SubmissionIntake.cs
+  - osdu/src/SqlFlow.Delivery/Ledger/OsduLedger.Parents.cs
   - osdu/src/SqlFlow.Delivery/Engine/RenderResolver.cs
   - osdu/src/SqlFlow.Delivery/Engine/SourceSync.cs
   - osdu/src/SqlFlow.Delivery/Source/IngestionFingerprint.cs
@@ -236,6 +238,14 @@ was removed, or that a value records looked for and did not find now exists, it 
 A record read for another reason while its cache version moved renders against the current version anyway (its context
 moved), and is sent only if it renders differently. The cache, its versions and approvals are on
 [partition cache](partition-cache.md).
+
+## A parent landing reaching records
+
+A record of a custom template that reads its parent with `$parent` keeps the parent's id and the version it was rendered
+from. When a record of any flow lands under that id, through the ledger, every record reading it is asked to be planned
+again (one held because the parent was not in OSDU is released first), and its flow's next run renders it from what the
+parent now holds and sends it only if it renders differently. The parent's version itself is not part of the render
+context: a parent delivered again with the same sections sends nothing ([mapping $parent](../flow/mapping-parent.md#when-the-parent-changes)).
 
 ## A record keeps the OSDU id it claimed
 

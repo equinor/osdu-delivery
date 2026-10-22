@@ -135,7 +135,9 @@ test.describe.serial("seed the estate via repo source sync", () => {
 
   test("register the fixture repo as a source and watch it sync", async ({ adminPage }) => {
     await adminPage.getByTestId("nav-repos").click();
-    await expect(adminPage.getByTestId("page-repos")).toBeVisible();
+    // The suite's first visit to the page: the GUI's dev server compiles a lazily loaded page when it is first asked for,
+    // which takes longer than the default wait on a busy machine.
+    await expect(adminPage.getByTestId("page-repos")).toBeVisible({ timeout: 30_000 });
 
     const meta = fixtureMeta();
     await adminPage.getByTestId("open-register-source").click();

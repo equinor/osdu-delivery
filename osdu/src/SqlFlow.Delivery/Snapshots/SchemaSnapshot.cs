@@ -22,6 +22,7 @@ public sealed class SchemaSnapshot
 
     private static readonly string[] Choices = ["oneOf", "anyOf"];
     private JsonObject? _effectiveRoot;
+    private (Templates.TemplateParent? Parent, string? Problem)? _parent;
 
     public SchemaSnapshot(string kind, JsonObject bundledSchema, DateTimeOffset capturedUtc)
     {
@@ -38,6 +39,19 @@ public sealed class SchemaSnapshot
 
     /// <summary>Content hash prefix of the bundled schema. Enters the render context.</summary>
     public string Version { get; }
+
+    /// <summary>
+    /// The record kind the template is linked to as its parent (<see cref="Templates.TemplateParent"/>), read from its
+    /// <c>x-osdu-inheriting-from-kind</c>; null for a template linked to none, or whose link cannot be read
+    /// (<see cref="ParentProblem"/> says why).
+    /// </summary>
+    public Templates.TemplateParent? Parent => ParentLink.Parent;
+
+    /// <summary>Why the template's <c>x-osdu-inheriting-from-kind</c> names no parent that can be read; null when it names one or none.</summary>
+    public string? ParentProblem => ParentLink.Problem;
+
+    private (Templates.TemplateParent? Parent, string? Problem) ParentLink
+        => _parent ??= (Templates.TemplateParent.Read(_root, out var problem), problem);
 
     public DateTimeOffset CapturedUtc { get; }
 

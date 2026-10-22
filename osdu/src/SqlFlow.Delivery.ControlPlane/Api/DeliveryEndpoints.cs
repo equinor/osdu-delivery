@@ -120,7 +120,11 @@ public sealed record DeliveryWorkBatchDto(
     DateTime CreatedUtc, DateTime? StartedUtc, DateTime? CompletedUtc, long Delivered, long Held, long Failed, long Retrying, string? Error,
     long Waiting = 0);
 
-/// <summary>The current state of one deliverable: what OSDU holds for it, what is pending, and why it is where it is.</summary>
+/// <summary>
+/// The current state of one deliverable: what OSDU holds for it, what is pending, and why it is where it is. A record of a
+/// linked template that reads its parent names it (<c>ParentId</c>) and the version of it its delivered and its queued
+/// document were rendered from (osdu/docs/reference/flow/mapping-parent.md).
+/// </summary>
 public sealed record DeliveryRecordDto(
     Guid DeliveryKey, Guid FlowId, string SourceKey, string? Label, string MappingName, string? RenderContext,
     string? SourceFingerprint, DateTime? SourceModifiedUtc, string? MetadataHash, string? PayloadHash, DateTime? PayloadModifiedUtc, string? TargetId, long? TargetVersion, string Status,
@@ -132,7 +136,7 @@ public sealed record DeliveryRecordDto(
     string? PendingSourceFileName, long? PendingSourceRowNumber, DateTime? PendingSourceUpdatedUtc,
     string? SourceKeyJson, DateTime? PlanRequestedUtc,
     string? WaitingFor = null, IReadOnlyList<DeliveryRecordReferenceDto>? References = null, DateTime? SourceInsertedUtc = null,
-    string? Partition = null, string? Issue = null);
+    string? Partition = null, string? Issue = null, string? ParentId = null, long? ParentVersion = null, long? PendingParentVersion = null);
 
 /// <summary>An OSDU id a record's pending document refers to, and the property of the record holding it.</summary>
 public sealed record DeliveryRecordReferenceDto(string Id, string Property);
@@ -160,7 +164,10 @@ public sealed record DeliveryActivityFlowDto(Guid FlowId, string FlowName, strin
 /// A record with the pipeline (and, for a source, the interface) it belongs to. The pending document itself lives in the
 /// submission's work batches on storage, which the nodes read; its reference and batch are on the record. A waiting record
 /// names the record it waits for (<c>WaitsOn</c>), and every record lists the records waiting for it (<c>WaitedOnBy</c>,
-/// the first <see cref="DeliveryEndpoints.MaxWaitersShown"/>). <c>KeyColumns</c> names the parts of the record's key
+/// the first <see cref="DeliveryEndpoints.MaxWaitersShown"/>). A record reading its parent names the record of the ledger
+/// holding the parent's id (<c>Parent</c>, null when none of the partition's flows delivers it), and every record lists the
+/// records reading it as their parent (<c>ReadBy</c>, the first <see cref="DeliveryEndpoints.MaxWaitersShown"/>): the same
+/// minted id in the other namespace, one click away. <c>KeyColumns</c> names the parts of the record's key
 /// tuple (<c>SourceKeyJson</c>): its interface's <c>source.record.key</c> as the catalog's copy of the flow declares it
 /// now, null when the catalog holds no readable copy of that flow or interface. <c>Partition</c> is the partition a
 /// request about the record's flow names, for a flow that names or follows its partitions; null for one whose partition is
@@ -169,13 +176,14 @@ public sealed record DeliveryActivityFlowDto(Guid FlowId, string FlowName, strin
 public sealed record DeliveryRecordDetailDto(
     DeliveryRecordDto Record, Guid? PipelineId, Guid? RepoId, string? FlowName, string? Interface = null,
     DeliveryRecordLinkDto? WaitsOn = null, IReadOnlyList<DeliveryRecordLinkDto>? WaitedOnBy = null,
-    IReadOnlyList<string>? KeyColumns = null, string? Partition = null);
+    IReadOnlyList<string>? KeyColumns = null, string? Partition = null,
+    DeliveryRecordLinkDto? Parent = null, IReadOnlyList<DeliveryRecordLinkDto>? ReadBy = null);
 
 /// <summary>One delivery try, as the append-only history holds it: its outcome, and every step with what the target returned.</summary>
 public sealed record DeliveryAttemptDto(
     long AttemptId, Guid DeliveryKey, Guid? SubmissionId, Guid? RunId, string Worker, DateTime StartedUtc, DateTime CompletedUtc,
     string Outcome, string Phase, string? MetadataHash, string? PayloadHash, long? TargetVersion, string? Error, JsonElement? Result, int? WorkBatch,
-    string? SourceFileName, long? SourceRowNumber, DateTime? SourceUpdatedUtc, DateTime? SourceDeletedUtc = null);
+    string? SourceFileName, long? SourceRowNumber, DateTime? SourceUpdatedUtc, DateTime? SourceDeletedUtc = null, long? ParentVersion = null);
 
 /// <summary>
 /// One entry of the audit trail: who did what, when, with which inputs, and how it ended, and the partition whose ledger it
@@ -1107,9 +1115,26 @@ public static class DeliveryEndpoints
             }
         }
 
+        // The record and its parent are the same minted id in two namespaces: each page links to the other.
+        DeliveryRecordLinkDto? parent = null;
+        if (record.ParentId is { } parentId
+            && (await ledger.ListHoldersAsync(record.FlowId, parentId, 1, ct).ConfigureAwait(false)) is [var holder, ..])
+        {
+            parent = await LinkAsync(db, osdu, holder, ct).ConfigureAwait(false);
+        }
+
+        var readBy = new List<DeliveryRecordLinkDto>();
+        if (record.TargetId is { } id)
+        {
+            foreach (var child in await ledger.ListChildrenOfAsync(record.FlowId, id, MaxWaitersShown, ct).ConfigureAwait(false))
+            {
+                readBy.Add(await LinkAsync(db, osdu, child, ct).ConfigureAwait(false));
+            }
+        }
+
         return TypedResults.Ok(new DeliveryRecordDetailDto(
             ToDto(record), found?.Pipeline.Id, found?.Pipeline.RepoId, found?.Pipeline.Name, NamedInterface(found), waitsOn, waitedOnBy,
-            KeyColumnsOf(documents, found), NamedPartition(found)));
+            KeyColumnsOf(documents, found), NamedPartition(found), parent, readBy));
     }
 
     /// <summary>
@@ -3407,14 +3432,18 @@ public static class DeliveryEndpoints
         // The partition the record's ledger is kept under, whichever way its flow names it.
         r.Partition,
         // While it is blocked, held or failed: the issue keeping it so, which every record refused for the same reason shares.
-        r.ProblemHash is { } problem ? ProblemSignature.Format(problem) : null);
+        r.ProblemHash is { } problem ? ProblemSignature.Format(problem) : null,
+        // The parent a record of a linked template reads, and the versions of it its documents were rendered from.
+        r.ParentId, r.ParentVersion, r.PendingParentVersion);
 
     private static DeliveryAttemptDto ToDto(AttemptRecord a) => new(
         a.AttemptId, a.DeliveryKey.Value, a.SubmissionId, a.RunId, a.Worker, a.StartedUtc, a.CompletedUtc, a.Outcome.ToString().ToLowerInvariant(),
         a.Phase, a.MetadataHash, a.PayloadHash, a.TargetVersion, a.Error, ParseJsonOrNull(a.ResultJson), a.WorkBatch,
         // The origin of the document this try sent, which is what makes a past attempt reconstructible from the ledger
         // alone even after the record has moved on to a newer row.
-        a.SourceFileName, a.SourceRowNumber, a.SourceUpdatedUtc, a.SourceDeletedUtc);
+        a.SourceFileName, a.SourceRowNumber, a.SourceUpdatedUtc, a.SourceDeletedUtc,
+        // For a record reading its parent: the version of the parent the document this try sent was rendered from.
+        a.ParentVersion);
 
     private static DeliveryActivityDto ToDto(ActivityRecord a) => new(
         a.ActivityId, a.FlowId, a.FlowName, a.Kind, a.Actor, a.StartedUtc, a.CompletedUtc, a.Outcome, a.ParametersJson, a.SubmissionId,

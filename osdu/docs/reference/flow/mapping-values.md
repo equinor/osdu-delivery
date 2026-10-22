@@ -22,6 +22,7 @@ related:
   - delivery-flow-mapping
   - delivery-flow-mapping-expressions
   - delivery-flow-mapping-lookups
+  - delivery-flow-mapping-parent
   - delivery-flow-mapping-modifiers
   - delivery-flow-mapping-assertions
   - delivery-concept-preflight
@@ -124,13 +125,14 @@ A value node reads its value with exactly one of these:
 | `$cache` | A field of the cached record `$findBy` finds (`UnitOfMeasure.id`), or of every row `$findAll` finds. See [mapping lookups](mapping-lookups.md). |
 | `$search` | The id of the one record a search of the platform finds by `$findBy`, in one of the mapping's `searches`. See [mapping lookups](mapping-lookups.md). |
 | `$lookup` | A field of the record a lookup of the `lookups` block finds (`wellbore.id`). See [mapping lookups](mapping-lookups.md). |
+| `$parent` | A section of the record's parent, by its path (`data.DDMSDatasets`), for a template linked to a parent. See [mapping $parent](mapping-parent.md). |
 | `$coalesce` | The first of two or more alternatives that gives a value. See [$coalesce](#coalesce-the-first-value-that-is-there). |
 
 and takes its settings beside it:
 
 | Setting | Meaning | Taken by |
 | --- | --- | --- |
-| `$modifiers` | Changes to an incoming dataset value, top to bottom. See [mapping modifiers](mapping-modifiers.md). | `$from`, `$expr`, `$cache`, `$search` |
+| `$modifiers` | Changes to an incoming dataset value, top to bottom. See [mapping modifiers](mapping-modifiers.md). | `$from`, `$expr`, `$cache`, `$search`, and `$parent` on a single value |
 | `$when` | A condition: when the property applies to the row. See [$when](#when-when-a-property-applies). | every node |
 | `$required` | What an empty value does: `true` (the default) holds the record, `false` leaves the property out. See [$required](#required-what-an-empty-value-does). | every node but `$value` |
 | `$description` | Free text. | every node |
@@ -207,6 +209,10 @@ the platform is searched for, or a record a named lookup finds once per row. `$f
 reads every matching cached row as a list, and `$ignoreSeparators` loosens a name match. [Mapping lookups](mapping-lookups.md)
 documents all of them. `$modifiers` on such a node change the dataset value its `$findBy` compares; what the cache or the
 platform gives is never modified.
+
+`$parent` reads a section of the record's parent, the record of the canonical kind a custom template is linked to with
+the same minted id, from the platform as the record renders, and copies it whole; a single value it reads passes
+through its `$modifiers` as a column's does ([mapping $parent](mapping-parent.md)).
 
 ## Changing a value: $modifiers
 

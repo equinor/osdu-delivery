@@ -31,6 +31,7 @@ related:
   - delivery-guide-operations-runbook
 sourceRefs:
   - osdu/gui/src/module.tsx
+  - osdu/gui/src/features/delivery/RecordParentChips.tsx
   - osdu/gui/src/features/delivery/PartitionSwitcher.tsx
   - osdu/gui/src/features/delivery/DeliveryOverviewPage.tsx
   - osdu/gui/src/features/delivery/DeliveryRecordsPage.tsx
@@ -200,7 +201,11 @@ that changed nothing are left out until **Show idle runs**. An entry opens on it
 `/delivery/records/{flowId}/{key}`, opened from any records list.
 
 **The header** names the record (its label, status and a blocked mark), its **osdu** id, **flow**, **partition** and
-**submission** as chips, and the one situation its state calls for (held or failed with the error and next try, waiting
+**submission** as chips, and for a record linked to another through a linked template
+([mapping $parent](../flow/mapping-parent.md)) its **parent** (the record of the canonical kind with the same minted id,
+opening on that record's page, or in the explorer when no flow of the partition delivers it) or the records it is
+**read by**, each named by its type; each try on the timeline gives the **Parent version** its document was rendered
+from. Then the one situation its state calls for (held or failed with the error and next try, waiting
 for another record, under a lease, blocked, released and waiting for its run, held with nothing to move it, removed,
 records waiting on this one). Its buttons:
 
@@ -390,7 +395,8 @@ template folders, by its kind and path), and the mapping's
 columns**, how the **OSDU id** is made (from the delivery key, or the key's values) and the **Label**. Every template
 variable is listed, each filled as a **Dataset column**, **Repeat child rows**, **Cache**, **Lookup**, **Platform
 search**, **Expression**, **Static value**, **First value of**, **List of values** or **Object**, or left **Not
-filled**; the YAML and its check against the template and the cache's current version follow every edit. **Copy YAML**
+filled**; for a template linked to a parent, also as **Parent record**, a section of the record's parent by its path,
+offered at the variable's own path ([mapping $parent](../flow/mapping-parent.md)); the YAML and its check against the template and the cache's current version follow every edit. **Copy YAML**
 takes it; **Propose to repository** opens a pull request through SQLFlow's proposal endpoint (**Open pull request**)
 that writes the mapping into the `mappings` folder beside the template folder holding its template, so that folder is
 on its path ([template folders](templates.md#template-folders)). A repository that holds no template yet says how to
@@ -403,8 +409,10 @@ keeps none of them. A repository adds and removes its templates by committing an
 records them. Two tabs:
 
 - **Repositories**: every file of every synced repository's template folders, filtered by kind, version, repository or
-  file, each with the kind and version it holds (or why it holds none) and when its repository's sync last saw it. A
-  file opens laid out as a template, with its repository and path; **Download** saves it as a template file under its
+  file, each with the kind and version it holds (or why it holds none) and when its repository's sync last saw it; a
+  template linked to a canonical kind shows a link beside its kind, naming the parent on hover
+  ([linked templates](templates.md#linked-templates)). A file opens laid out as a template, with its repository and
+  path, and the kind it is linked to; **Download** saves it as a template file under its
   own name, to keep in another repository's template folder. A link naming a kind and version opens the file holding
   it, and says so when no repository holds it.
 - **Browse OSDU**: the OSDU data definitions, the Open Group's public repository of OSDU schemas, by **Release**,

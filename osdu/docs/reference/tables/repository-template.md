@@ -50,6 +50,7 @@ has no `PartitionId`, and names its repository by id, with no foreign key into S
 | `Kind` | `nvarchar(200)` | no | The kind the file's schema declares in `x-osdu-schema-source`; empty when it holds no template. |
 | `Version` | `nvarchar(64)` | no | The template version the file holds, the hash prefix of its canonical schema; empty when it holds none. A reader checks the file still holds it, and one that changed since the sync is refused until the repository syncs again. |
 | `Problem` | `nvarchar(2000)` | yes | Why the file holds no template (not JSON, no kind, a reference outside itself, no `data`, too large, changed while the sync read it); null when it holds one. |
+| `Parent` | `nvarchar(200)` | yes | The kind the template is linked to as its parent, from its `x-osdu-inheriting-from-kind` ([Linked templates](../concepts/templates.md#linked-templates)); null for a template linked to none, and for a file that holds no template. Added by migration `LinkedTemplateParents` (module version 1.55.0). |
 | `FirstSeenUtc` | `datetime2` | no | When a sync first found the file. |
 | `LastSeenUtc` | `datetime2` | no | When a sync last found the file: the Templates page's Synced column, and among the files holding one kind, the one a reader naming the kind alone takes first. |
 

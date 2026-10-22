@@ -121,6 +121,21 @@ public sealed record MappingDefinition
         return types.ToList();
     }
 
+    /// <summary>
+    /// The paths the mapping reads in its records' parent (<c>$parent</c>), each once, in ordinal order: what a run reads of the
+    /// parent record, and empty for a mapping that reads none (osdu/docs/reference/flow/mapping-parent.md).
+    /// </summary>
+    public IReadOnlyList<string> ParentPaths() => Entries
+        .SelectMany(e => e.ValueNodes)
+        .Where(n => n.Source is { Kind: MappingSourceKind.Parent, ParentPath: not null })
+        .Select(n => n.Source!.ParentPath!)
+        .Distinct(StringComparer.Ordinal)
+        .Order(StringComparer.Ordinal)
+        .ToList();
+
+    /// <summary>True when the mapping reads a section of its records' parent.</summary>
+    public bool ReadsParent => Entries.SelectMany(e => e.ValueNodes).Any(n => n.Source?.Kind == MappingSourceKind.Parent);
+
     /// <summary>The access list and legal block, as the static entries for them declare them (parameter tokens unexpanded).</summary>
     public required MappingEnvelope Envelope { get; init; }
 
@@ -237,6 +252,14 @@ public enum MappingSourceKind
 
     /// <summary>A value an expression computes from the row, the dataset's own row and the parameters (<c>$expr</c>).</summary>
     Expression,
+
+    /// <summary>
+    /// A section of the record's parent (<c>$parent</c>, osdu/docs/reference/flow/mapping-parent.md): the record of the kind
+    /// the mapping's template is linked to (<see cref="Templates.TemplateParent"/>), whose OSDU id is the record's own with
+    /// the parent's entity type, read from the platform as the run needs it. A custom template's record takes from it what
+    /// the canonical record holds, such as the bulk data a domain service wrote there.
+    /// </summary>
+    Parent,
 }
 
 /// <summary>Where an entry's value comes from.</summary>
@@ -246,6 +269,9 @@ public sealed record MappingSource
 
     /// <summary>The prefix of a source resolved by searching the platform: <c>search.Wellbore.id</c>.</summary>
     public const string SearchPrefix = "search";
+
+    /// <summary>The prefix a section of the record's parent is named with: <c>parent.data.DDMSDatasets</c>.</summary>
+    public const string ParentPrefix = "parent";
 
     public required MappingSourceKind Kind { get; init; }
 
@@ -265,6 +291,12 @@ public sealed record MappingSource
     public string? CacheField { get; init; }
 
     /// <summary>
+    /// For a parent source: the path of the section it reads in the parent record, from the record's root, as the record
+    /// writes it (<c>data.DDMSDatasets</c>, <c>data.ExtensionProperties.wdms</c>, <c>acl</c>).
+    /// </summary>
+    public string? ParentPath { get; init; }
+
+    /// <summary>
     /// For a node written with <c>$lookup</c>, the lookup it reads (<see cref="MappingDefinition.Lookups"/>): its cached type
     /// is the lookup's, and the entry carries the lookup's findBy lines and modifiers, so it finds the record every other
     /// reader of the lookup finds. Null for any other source.
@@ -279,6 +311,7 @@ public sealed record MappingSource
         MappingSourceKind.DatasetColumn => Column!.ToString(),
         MappingSourceKind.DatasetRows => $"{DatasetColumn.Prefix}.{Child}",
         MappingSourceKind.Expression => Expression!.Text,
+        MappingSourceKind.Parent => $"{ParentPrefix}.{ParentPath}",
         _ when Lookup is not null => $"{MappingLookup.Prefix}.{Lookup}.{CacheField}",
         _ => $"{Prefix}.{CacheType}.{CacheField}",
     };
@@ -784,6 +817,36 @@ public sealed partial record MappingEntry
 public sealed record MappingSearch(string Name, string Kind, TemplateReference Schema, string? Description);
 
 /// <summary>
+/// Something a render needs from the platform before it can finish, which the run asks for between two renders of a row
+/// (<see cref="Rendering.IRecordSearch"/>): a search (<see cref="SearchQuestion"/>), or the record's parent read by its id
+/// (<see cref="ParentQuestion"/>). Two renders asking the same question ask one question, so a run asks it once.
+/// </summary>
+public abstract record PlatformQuestion;
+
+/// <summary>
+/// The record's parent, to be read from the platform's storage by its OSDU id: the record of the kind the mapping's template
+/// is linked to whose id is the record's own with the parent's entity type (osdu/docs/reference/flow/mapping-parent.md).
+/// </summary>
+/// <param name="Id">The parent's OSDU id, without a version.</param>
+/// <param name="Kind">The kind the template names as its parent.</param>
+/// <param name="Sections">
+/// The paths the mapping reads in it, joined by <c>|</c> in ordinal order (<see cref="Paths"/>): all a run keeps of the record
+/// it reads, so a run reading a parent per record keeps what it renders from and not every parent whole.
+/// </param>
+public sealed record ParentQuestion(string Id, string Kind, string Sections) : PlatformQuestion
+{
+    /// <summary>The paths the mapping reads in the parent, as <see cref="Sections"/> joins them.</summary>
+    public IReadOnlyList<string> Paths => Sections.Length == 0 ? [] : Sections.Split('|');
+
+    /// <summary>The paths <paramref name="paths"/> as a question carries them.</summary>
+    public static string SectionsOf(IEnumerable<string> paths)
+    {
+        ArgumentNullException.ThrowIfNull(paths);
+        return string.Join('|', paths.Distinct(StringComparer.Ordinal).Order(StringComparer.Ordinal));
+    }
+}
+
+/// <summary>
 /// One question a render needs answered before it can finish: the query to run against a kind, with the property and
 /// value it compares for anyone reading the answer. Two renders asking the same question are the same question, so a run
 /// answers it once.
@@ -792,4 +855,4 @@ public sealed record MappingSearch(string Name, string Kind, TemplateReference S
 /// <param name="Field">The property compared, as the mapping writes it.</param>
 /// <param name="Value">What that property must equal, after the entry's modifiers have run.</param>
 /// <param name="Query">The query sent, built from the property as the searched kind's schema says it is indexed.</param>
-public sealed record SearchQuestion(string Kind, string Field, string Value, string Query);
+public sealed record SearchQuestion(string Kind, string Field, string Value, string Query) : PlatformQuestion;

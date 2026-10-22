@@ -951,6 +951,10 @@ public sealed partial class OsduLedger : ILedger
                 // What the held render read, the ids it found missing among them, so a cache version that brings one in
                 // releases the record. What the document OSDU holds was built from stays the record's cache set.
                 entity.HeldCacheSetId = record.CacheSetId;
+
+                // The parent the held render read, or found missing, so the parent landing plans the record again.
+                entity.ParentId = record.ParentId;
+                entity.PendingParentVersion = record.PendingParentVersion;
                 held.Add(record.DeliveryKey);
                 db.DeliveryAttempts.Add(new DeliveryAttempt
                 {
@@ -968,6 +972,7 @@ public sealed partial class OsduLedger : ILedger
                     SourceFileName = Truncate(record.PendingSourceFileName, DeliveryModel.MaxSourceFileNameLength),
                     SourceRowNumber = record.PendingSourceRowNumber,
                     SourceUpdatedUtc = record.PendingSourceUpdatedUtc,
+                    ParentVersion = record.PendingParentVersion,
                     SourceDeletedUtc = record.PendingSourceDeletedUtc,
                 });
             }
@@ -2685,6 +2690,7 @@ public sealed partial class OsduLedger : ILedger
                 entity.PendingRenderContext = null;
                 entity.PendingMetadataHash = null;
                 entity.PendingPayloadHash = null;
+                entity.PendingParentVersion = null;
                 entity.AcceptedMetadataHash = null;
                 entity.PlanRequestedUtc = null;
                 entity.LastError = Truncate(note, 2000);
@@ -3799,6 +3805,7 @@ public sealed partial class OsduLedger : ILedger
         SourceRowNumber = attempt.SourceRowNumber,
         SourceUpdatedUtc = attempt.SourceUpdatedUtc,
         SourceDeletedUtc = attempt.SourceDeletedUtc,
+        ParentVersion = attempt.ParentVersion,
     };
 
     private static AttemptRecord ToRecord(DeliveryAttempt a) => new()
@@ -3822,6 +3829,7 @@ public sealed partial class OsduLedger : ILedger
         SourceRowNumber = a.SourceRowNumber,
         SourceUpdatedUtc = a.SourceUpdatedUtc is { } updated ? DateTime.SpecifyKind(updated, DateTimeKind.Utc) : null,
         SourceDeletedUtc = a.SourceDeletedUtc is { } deleted ? DateTime.SpecifyKind(deleted, DateTimeKind.Utc) : null,
+        ParentVersion = a.ParentVersion,
     };
 
     private static ActivityRecord ToRecord(DeliveryActivity a) => new()
@@ -3997,6 +4005,9 @@ public sealed partial class OsduLedger : ILedger
         AssertionFailures = r.AssertionFailures,
         AcceptedMetadataHash = r.AcceptedMetadataHash,
         CacheSetId = r.CacheSetId,
+        ParentId = r.ParentId,
+        ParentVersion = r.ParentVersion,
+        PendingParentVersion = r.PendingParentVersion,
         PlanRequestedUtc = r.PlanRequestedUtc,
         CreatedUtc = r.CreatedUtc,
         UpdatedUtc = r.UpdatedUtc,

@@ -81,7 +81,7 @@ public sealed record RecordInspection
     public required IReadOnlyList<string> Holds { get; init; }
 
     /// <summary>Questions the platform has to answer before the outcomes that wait on them settle.</summary>
-    public IReadOnlyList<SearchQuestion> Unanswered { get; init; } = [];
+    public IReadOnlyList<PlatformQuestion> Unanswered { get; init; } = [];
 
     /// <summary>
     /// What the assertions of the entries evaluated found (osdu/docs/reference/flow/mapping-assertions.md), or null when the

@@ -10,6 +10,15 @@ namespace SqlFlow.Delivery.Templates;
 /// <param name="Problem">Why the file holds no template; null when it holds one.</param>
 public sealed record TemplateFolderFile(string Path, string Shown, string? Kind, string? Version, string? Problem)
 {
+    /// <summary>
+    /// The kind the template the file holds is linked to as its parent (<see cref="TemplateParent"/>); null for a template
+    /// linked to none, and for a file that holds no template.
+    /// </summary>
+    public string? Parent { get; init; }
+
+    /// <summary>Why the template's link to a parent cannot be read; null when it names one parent or none.</summary>
+    public string? ParentProblem { get; init; }
+
     /// <summary>Whether the file holds a template.</summary>
     public bool IsTemplate => Problem is null && Kind is not null && Version is not null;
 

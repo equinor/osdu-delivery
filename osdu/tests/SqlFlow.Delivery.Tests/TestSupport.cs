@@ -1106,24 +1106,45 @@ public static class TestSchema
 
 /// <summary>
 /// A search that answers from records it was given instead of a platform, keeping to the protocol a platform search keeps:
-/// a question is unknown until it has been asked, and anything it was not given is found nowhere.
+/// a question is unknown until it has been asked, and anything it was not given is found nowhere. The parents it was given
+/// are read the way storage hands a record over, trimmed to the sections a mapping reads.
 /// </summary>
 public sealed class FixedRecordSearch : IRecordSearch
 {
     private readonly IReadOnlyList<(string Field, string Value, string Id)> _known;
+    private readonly IReadOnlyDictionary<string, JsonObject> _parents;
     private readonly System.Collections.Concurrent.ConcurrentDictionary<SearchQuestion, SearchAnswer> _answers = new();
+    private readonly System.Collections.Concurrent.ConcurrentDictionary<ParentQuestion, ParentAnswer> _read = new();
 
-    public FixedRecordSearch(IReadOnlyList<(string Field, string Value, string Id)> known) => _known = known;
+    public FixedRecordSearch(IReadOnlyList<(string Field, string Value, string Id)> known, IReadOnlyDictionary<string, JsonObject>? parents = null)
+    {
+        _known = known;
+        _parents = parents ?? new Dictionary<string, JsonObject>(StringComparer.Ordinal);
+    }
 
     /// <summary>Every question asked of this search, in order, so a test can count the round trips.</summary>
     public System.Collections.Concurrent.ConcurrentQueue<SearchQuestion> Asked { get; } = new();
 
+    /// <summary>Every parent read of this search, in order.</summary>
+    public System.Collections.Concurrent.ConcurrentQueue<ParentQuestion> Read { get; } = new();
+
     public bool TryAnswer(SearchQuestion question, [System.Diagnostics.CodeAnalysis.NotNullWhen(true)] out SearchAnswer? answer)
         => _answers.TryGetValue(question, out answer);
 
-    public Task AnswerAsync(IReadOnlyCollection<SearchQuestion> questions, CancellationToken ct = default)
+    public bool TryRead(ParentQuestion question, [System.Diagnostics.CodeAnalysis.NotNullWhen(true)] out ParentAnswer? answer)
+        => _read.TryGetValue(question, out answer);
+
+    public Task AnswerAsync(IReadOnlyCollection<PlatformQuestion> questions, CancellationToken ct = default)
     {
-        foreach (var question in questions.Where(q => !_answers.ContainsKey(q)))
+        foreach (var parent in questions.OfType<ParentQuestion>().Where(q => !_read.ContainsKey(q)))
+        {
+            Read.Enqueue(parent);
+            _read[parent] = _parents.TryGetValue(parent.Id, out var record)
+                ? OsduRecordSearch.Answer(parent, System.Text.Json.JsonDocument.Parse(record.ToJsonString()).RootElement.Clone())
+                : ParentAnswer.None;
+        }
+
+        foreach (var question in questions.OfType<SearchQuestion>().Where(q => !_answers.ContainsKey(q)))
         {
             Asked.Enqueue(question);
             var ids = _known
@@ -1155,15 +1176,18 @@ public sealed class FixedRecordSearchFactory(params (string Field, string Value,
 
     /// <summary>
     /// The wellbores the sample logs belong to, found by name in whichever partition the flow delivers to, plus the two
-    /// fixture wellbores the fixture documents name.
+    /// fixture wellbores the fixture documents name; and <paramref name="parents"/>, the parent records the platform holds.
     /// </summary>
-    public static FixedRecordSearchFactory SampleWellbores() => new(
+    public static FixedRecordSearchFactory SampleWellbores(IReadOnlyDictionary<string, JsonObject>? parents = null) => new(
     [
         .. SampleWellLogs.Logs().Select(l => l.WellboreUwi).Distinct(StringComparer.Ordinal)
             .Select(uwi => ("data.FacilityName", uwi, Partition + ":master-data--Wellbore:" + WellboreId(uwi))),
         ("data.FacilityName", "OSDU-DEV-1-A", Partition + ":master-data--Wellbore:OSDU-DEV-1-A"),
         ("data.FacilityName", "OSDU-DEV-1-B", Partition + ":master-data--Wellbore:OSDU-DEV-1-B"),
-    ]);
+    ])
+    {
+        Parents = parents ?? new Dictionary<string, JsonObject>(StringComparer.Ordinal),
+    };
 
     /// <summary>The id part the suites give a wellbore of that name: "Wellbore B-2 B" is Wellbore-B-2-B, "A/1" is A-1.</summary>
     public static string WellboreId(string facilityName)
@@ -1174,13 +1198,21 @@ public sealed class FixedRecordSearchFactory(params (string Field, string Value,
 
     public System.Collections.Concurrent.ConcurrentQueue<FixedRecordSearch> Created { get; } = new();
 
+    /// <summary>The parent records the platform holds, by OSDU id; an id written with <see cref="Partition"/> is of the flow's partition.</summary>
+    public IReadOnlyDictionary<string, JsonObject> Parents { get; init; } = new Dictionary<string, JsonObject>(StringComparer.Ordinal);
+
     public IRecordSearch Create(FlowDefinition flow, Func<CancellationToken, Task<OsduHttpClient>> target, ILoggerFactory loggers)
     {
         var declared = flow.Target.Headers.FirstOrDefault(h => h.Key.Equals("data-partition-id", StringComparison.OrdinalIgnoreCase)).Value ?? string.Empty;
         var partition = declared.StartsWith("${env:", StringComparison.Ordinal) && declared.EndsWith('}')
             ? Environment.GetEnvironmentVariable(declared[6..^1]) ?? declared
             : declared;
-        var search = new FixedRecordSearch(known.Select(k => (k.Field, k.Value, k.Id.Replace(Partition, partition, StringComparison.Ordinal))).ToList());
+        var search = new FixedRecordSearch(
+            known.Select(k => (k.Field, k.Value, k.Id.Replace(Partition, partition, StringComparison.Ordinal))).ToList(),
+            Parents.ToDictionary(
+                p => p.Key.Replace(Partition, partition, StringComparison.Ordinal),
+                p => (JsonObject)JsonNode.Parse(p.Value.ToJsonString().Replace(Partition, partition, StringComparison.Ordinal))!,
+                StringComparer.Ordinal));
         Created.Enqueue(search);
         return search;
     }

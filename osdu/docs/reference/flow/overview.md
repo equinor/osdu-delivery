@@ -567,7 +567,8 @@ flow pins, and the dictionaries a cache or dimension flow names. A flow pinning 
 ERROR  flows/welldb-wellbore-03-delivery.yaml: render.mapping: Mapping 'Wellbore@9.9.9' was not found under '../mappings'. Expected one of: Wellbore@9.9.9.yaml, Wellbore@9.9.9.yml, 9.9.9.yaml, 9.9.9.yml.
 ```
 
-It does not read the template the mapping pins or the cache it reads, which live in the module's database:
+It does not read the template the mapping fills (a file of the template folders on its path) or the cache it reads (in
+the module's database):
 `sqlflow check` is the preflight that reads all of them together ([check](../cli/check.md),
 [what validate checks](../cli/validate.md)).
 

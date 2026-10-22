@@ -9,6 +9,7 @@ using SqlFlow.Core.Identity;
 using SqlFlow.Core.Lineage;
 using SqlFlow.Delivery.Data;
 using SqlFlow.Delivery.Documents;
+using SqlFlow.Delivery.Identity;
 using SqlFlow.Delivery.Model;
 using SqlFlow.Delivery.Templates;
 using SqlFlow.Lineage.Collection;
@@ -881,6 +882,22 @@ public sealed class DeliveryCatalogSync : ICatalogSyncExtension
 
         foreach (var folder in scan.Folders)
         {
+            // A template's link to its parent (concepts/templates.md, Linked templates) is read where a mapping reads $parent,
+            // and preflight refuses one that cannot be read there; the sync says so of the file first.
+            foreach (var file in folder.Files.Where(f => f.IsTemplate))
+            {
+                if (file.ParentProblem is { } link)
+                {
+                    warnings.Add($"{file.Shown}: {link}, so the template is linked to no parent and a mapping of it cannot read $parent.");
+                }
+                else if (file.Parent is { } parent
+                    && string.Equals(TargetId.EntityTypeFromKind(parent), TargetId.EntityTypeFromKind(file.Kind!), StringComparison.Ordinal))
+                {
+                    warnings.Add(
+                        $"{file.Shown}: the template {file.Kind} is linked to {parent}, of its own entity type, so a record and its parent would have the same OSDU id; a linked template takes an entity type of its own.");
+                }
+            }
+
             foreach (var same in folder.Files.Where(f => f.IsTemplate).GroupBy(f => f.Reference).Where(g => g.Count() > 1))
             {
                 warnings.Add($"{TemplateChain.Listed(same.Select(f => f.Shown))} hold the same template, {same.Key}; one file of it in a folder is enough.");
@@ -918,6 +935,7 @@ public sealed class DeliveryCatalogSync : ICatalogSyncExtension
             row.Kind = file.Problem is null ? file.Kind : string.Empty;
             row.Version = file.Problem is null ? file.Version : string.Empty;
             row.Problem = file.Problem;
+            row.Parent = file.Problem is null ? file.Parent : null;
             row.LastSeenUtc = nowUtc;
         }
 
@@ -933,8 +951,8 @@ public sealed class DeliveryCatalogSync : ICatalogSyncExtension
         return SyncedTemplates.Of(scan);
     }
 
-    /// <summary>A file of a template folder as the sync records it.</summary>
-    private sealed record RecordedFile(string Path, string Folder, string Kind, string Version, string? Problem);
+    /// <summary>A file of a template folder as the sync records it, with the kind its template is linked to, if any.</summary>
+    private sealed record RecordedFile(string Path, string Folder, string Kind, string Version, string? Problem, string? Parent);
 
     /// <summary>
     /// The files of <paramref name="scan"/> as rows record them, in path order: a path longer than a row holds is left out,
@@ -961,7 +979,7 @@ public sealed class DeliveryCatalogSync : ICatalogSyncExtension
 
                 files.Add(new RecordedFile(
                     file.Shown, folder.Shown, file.Kind ?? string.Empty, file.Version ?? string.Empty,
-                    file.Problem is null ? null : Bounded(file.Problem, DeliveryRepositoryTemplate.MaxProblemLength)));
+                    file.Problem is null ? null : Bounded(file.Problem, DeliveryRepositoryTemplate.MaxProblemLength), file.Parent));
             }
         }
 

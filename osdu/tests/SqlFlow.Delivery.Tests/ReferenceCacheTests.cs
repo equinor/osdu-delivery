@@ -573,7 +573,7 @@ public class ReferenceCacheTests
             },
         };
         // The wellbore the log belongs to is searched for, and the sample platform holds it.
-        var searches = await RenderResolver.SearchesAsync(Samples.SampleTemplates, mapping);
+        var searches = await RenderResolver.SearchesAsync(Samples.SampleTemplates, mapping, schema);
         var log = SampleWellLogs.Logs().Single(l => l.LogId == "LOG-0005/1");
         var search = new FixedRecordSearch([("data.FacilityName", log.WellboreUwi, "dev:master-data--Wellbore:" + FixedRecordSearchFactory.WellboreId(log.WellboreUwi))]);
         var renderer = new MappingRenderer(mapping, schema, references, context, searches, search);

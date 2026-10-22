@@ -82,6 +82,7 @@ public sealed class DeliveryTemplateApiTests
         Directory.CreateDirectory(Path.Combine(root, "mappings"));
         await File.WriteAllTextAsync(file, json);
         await File.WriteAllTextAsync(Path.Combine(root, "templates", "broken.json"), "{ not json");
+        await File.WriteAllTextAsync(Path.Combine(root, "templates", "custom.json"), LinkedTemplates.Custom().Root.ToJsonString());
         await File.WriteAllTextAsync(Path.Combine(root, "mappings", "Thing@1.0.0.yaml"), TemplateFolderFixtures.KindAloneMapping());
         var now = DateTime.UtcNow;
         try
@@ -107,6 +108,11 @@ public sealed class DeliveryTemplateApiTests
             Assert.Equal(((string?)null, (string?)null), (broken.Kind, broken.Version));
             Assert.Contains("the schema is not valid JSON", broken.Problem, StringComparison.Ordinal);
 
+            // A custom template linked to the canonical kind names its parent in the list; the canonical one names none.
+            Assert.Null(thing.Parent);
+            var custom = Assert.Single(listed, t => t.RepoId == repoId && t.Path == "templates/custom.json");
+            Assert.Equal(((string?)LinkedTemplates.CustomKind, (string?)kind), (custom.Kind, custom.Parent));
+
             // Nothing saves or deletes a template: the repository adds and removes its files, and its sync records them.
             using (var save = await SendAsync(client, author, HttpMethod.Post, "/api/v1/delivery/templates", new { kind, schema = new { type = "object" }, origin = "test" }))
             {
@@ -123,6 +129,9 @@ public sealed class DeliveryTemplateApiTests
             Assert.Equal((kind, version), (detail.Kind, detail.Version));
             Assert.Equal(new DeliveryTemplateFileDto(repoId, repoName, "templates/thing.json"), detail.File);
             Assert.Contains(detail.Variables, v => v.Path == "osdu.data.Name");
+            Assert.Null(detail.Parent);
+            var customDetail = await ReadAsync<DeliveryTemplateDetailDto>(await SendAsync(client, reader, HttpMethod.Get, TemplateUrl("detail", repoId, "templates/custom.json")));
+            Assert.Equal((LinkedTemplates.CustomKind, (string?)kind), (customDetail.Kind, customDetail.Parent));
             using (var schema = await SendAsync(client, reader, HttpMethod.Get, TemplateUrl("schema", repoId, "templates/thing.json")))
             {
                 Assert.Equal(HttpStatusCode.OK, schema.StatusCode);

@@ -49,6 +49,7 @@ const CHOICE_LABELS: Record<Choice, string> = {
   Coalesce: "First value of",
   List: "List of values",
   Group: "Object",
+  Parent: "Parent record",
 };
 
 /** The inputs one item of a list of values may read: one value each, or with a find all many. */
@@ -148,6 +149,8 @@ interface EntryFormProps {
   variables: DeliveryTemplateVariable[];
   /** The types of the cache the mapping reads, offered to a cache entry; empty when no cache is picked. */
   cacheTypes: DeliveryCachedType[];
+  /** The kind the template is linked to as its parent, whose sections a parent input takes; null for a template linked to none. */
+  parent: string | null;
   issues: MappingDraftIssue[];
   onSave: (target: string, entry: MappingDraftEntry | null) => void;
   onClose: () => void;
@@ -173,7 +176,7 @@ interface EditedPart {
   session: number;
 }
 
-function EntryForm({ target, draft, variables, cacheTypes, issues, onSave, onClose, nested }: EntryFormProps) {
+function EntryForm({ target, draft, variables, cacheTypes, parent, issues, onSave, onClose, nested }: EntryFormProps) {
   const ids = useId();
   const { variable, entry, keyHolder, outside } = target;
   const known = useMemo(() => knownColumns(draft), [draft]);
@@ -207,10 +210,15 @@ function EntryForm({ target, draft, variables, cacheTypes, issues, onSave, onClo
         : isProperty
           ? inputsFor(variable).filter((input) => input !== "Repeat" && !(input === "List" && variable.shape === "GroupList"))
           : inputsFor(variable);
-  // A search is offered once the mapping declares one to look in, and a lookup once it declares one to read. An
+  // A search is offered once the mapping declares one to look in, a lookup once it declares one to read, and the parent
+  // record once the template is linked to a parent, outside the items a child dataset's rows fill, which have none. An
   // alternative or an item reads values of its own, so it is neither a repeat, a coalesce nor a list.
+  const repeatedHolder = repeaterOf(keyHolder !== null ? keyHolder.path : variable.path);
+  const inRepeater = repeatedHolder !== null
+    && draft.entries.some((candidate) => candidate.target === repeatedHolder && candidate.input === "Repeat");
   const allowed = offered.filter((input) => (input !== "Search" || searches.length > 0)
     && (input !== "Lookup" || lookups.length > 0)
+    && (input !== "Parent" || (parent !== null && !inRepeater && !isItem))
     && (nested === undefined || isProperty || (input !== "Repeat" && input !== "Coalesce" && input !== "List")));
   if (entry !== null && !allowed.includes(entry.input)) {
     allowed.push(entry.input);
@@ -239,6 +247,7 @@ function EntryForm({ target, draft, variables, cacheTypes, issues, onSave, onClo
   const [allEmpty, setAllEmpty] = useState<string[]>(initialAll?.empty ?? []);
   const [lookupName, setLookupName] = useState(entry?.input === "Lookup" ? entry.lookup ?? "" : lookups[0]?.name ?? "");
   const [lookupField, setLookupField] = useState(entry?.input === "Lookup" ? entry.cacheField ?? "id" : "id");
+  const [parentPath, setParentPath] = useState(entry?.parentPath ?? "");
   const [ignoreSeparators, setIgnoreSeparators] = useState(entry?.ignoreSeparators ?? false);
   const [modifiers, setModifiers] = useState<MappingDraftModifier[]>(entry?.modifiers ?? []);
   const [expression, setExpression] = useState(entry?.expression ?? "");
@@ -300,8 +309,15 @@ function EntryForm({ target, draft, variables, cacheTypes, issues, onSave, onClo
     .map((field) => ({ value: field, group: "Compared by this search's entries" }));
   const resolves = choice === "Cache" || choice === "Search";
   const findsAll = choice === "Cache" && findMode === "all";
+  // A section of the parent is taken whole, so modifiers change only a single value it holds.
+  const parentValue = valueVariable.shape === "Value";
   // A find all's modifiers change the column it compares, so one comparing a fixed text or a lookup's field takes none.
-  const modified = choice === "Dataset" || choice === "Expression" || (resolves && !(findsAll && allMode !== "column"));
+  const modified = choice === "Dataset" || choice === "Expression" || (resolves && !(findsAll && allMode !== "column"))
+    || (choice === "Parent" && parentValue);
+  // The paths of the template, which a custom template copied from its parent shares, offered as the section to take.
+  const parentOptions: ChoiceOption[] = variables
+    .filter((candidate) => candidate.role === "Mapping" && candidate.path.startsWith("osdu.data.") && !candidate.path.includes("[]"))
+    .map((candidate) => ({ value: candidate.path.slice("osdu.".length), group: "Paths of the template, as its parent's copy holds them" }));
   const buildsId = modifiers.some((modifier) => ID_MODIFIER_KINDS.includes(modifier.kind));
   const access = ACCESS_TARGETS.includes(newTarget);
   const objectList = choice === "List" && variable.shape === "GroupList";
@@ -351,7 +367,8 @@ function EntryForm({ target, draft, variables, cacheTypes, issues, onSave, onClo
   const build = (kind: MappingDraftInput): MappingDraftEntry => {
     const looks = kind === "Cache" || kind === "Search";
     const all = kind === "Cache" && findMode === "all";
-    const takesModifiers = kind === "Dataset" || kind === "Expression" || (looks && !(all && allMode !== "column"));
+    const takesModifiers = kind === "Dataset" || kind === "Expression" || (looks && !(all && allMode !== "column"))
+      || (kind === "Parent" && parentValue);
     const own = !isAlternative && !objectItem && kind !== "List" && kind !== "Group";
     return {
       ...(entry ?? emptyEntry(newTarget, kind)),
@@ -362,6 +379,7 @@ function EntryForm({ target, draft, variables, cacheTypes, issues, onSave, onClo
       cacheType: looks ? cacheType.trim() : null,
       cacheField: kind === "Cache" ? cacheField.trim() : kind === "Search" ? "id" : kind === "Lookup" ? lookupField.trim() : null,
       lookup: kind === "Lookup" ? lookupName.trim() : null,
+      parentPath: kind === "Parent" ? parentPath.trim() : null,
       findBy: looks && !all ? findsOf(findBy) : [],
       findAll: all ? findAllOf() : null,
       modifiers: takesModifiers
@@ -421,6 +439,15 @@ function EntryForm({ target, draft, variables, cacheTypes, issues, onSave, onClo
         } else {
           setItems([{ ...build(previous), assertions: [] }]);
         }
+      }
+
+      return;
+    }
+
+    if (next === "Parent") {
+      // A custom template is a copy of its parent, so the section most often taken is the one at the variable's own path.
+      if (parentPath.trim() === "" && newTarget.startsWith("osdu.") && !newTarget.includes("[]")) {
+        setParentPath(newTarget.slice("osdu.".length));
       }
 
       return;
@@ -846,6 +873,22 @@ function EntryForm({ target, draft, variables, cacheTypes, issues, onSave, onClo
           </Section>
         )}
 
+        {choice === "Parent" && (
+          <Section
+            title="Section of the parent record"
+            hint={`The record of ${parent ?? "the kind the template is linked to"} with this record's minted id, read from OSDU as the record renders. The section is taken whole, an object or a list as the parent holds it. A parent OSDU does not hold holds the record until it lands; a parent without the section gives no value, which Required decides.`}
+            testId="mapping-builder-entry-parent"
+          >
+            <ChoiceOrText
+              value={parentPath}
+              options={parentOptions}
+              onChange={setParentPath}
+              placeholder="data.DDMSDatasets"
+              testId="mapping-builder-entry-parent-path"
+            />
+          </Section>
+        )}
+
         {choice === "Search" && (
           <Section
             title="Searched record"
@@ -1082,7 +1125,9 @@ function EntryForm({ target, draft, variables, cacheTypes, issues, onSave, onClo
                 : "On a cache input, modifiers change the dataset value before it is compared. Cached values are never modified."
               : choice === "Search"
                 ? "On a search input, modifiers change the dataset value before it is searched for."
-                : "Applied to the dataset value, top to bottom."}
+                : choice === "Parent"
+                  ? "Applied to the value the parent holds, top to bottom."
+                  : "Applied to the dataset value, top to bottom."}
             refHint={{ path: variable.path, relationships: variable.relationships }}
             testId="mapping-builder-entry-modifier"
             sectionTestId="mapping-builder-entry-modifiers"
@@ -1209,6 +1254,7 @@ function EntryForm({ target, draft, variables, cacheTypes, issues, onSave, onClo
               draft={draft}
               variables={variables}
               cacheTypes={cacheTypes}
+              parent={parent}
               issues={[]}
               nested={editing.list === "items"
                 ? { kind: "item", label: `item ${editing.index + 1}` }
@@ -1250,6 +1296,8 @@ interface MappingEntryEditorProps {
   variables: DeliveryTemplateVariable[];
   /** The types of the cache the mapping reads, offered to a cache entry; empty when no cache is picked. */
   cacheTypes: DeliveryCachedType[];
+  /** The kind the template is linked to as its parent, whose sections a parent input takes; null for a template linked to none. */
+  parent: string | null;
   /** Every issue of the last check; the editor shows the ones about its target. */
   issues: MappingDraftIssue[];
   /** Puts the entry for a target into the draft, or removes the target's entry when the entry is null. */
@@ -1259,11 +1307,12 @@ interface MappingEntryEditorProps {
 
 /**
  * The entry editor: where one variable's value comes from (a dataset column, a child dataset's rows, a cached record, a
- * lookup's record, a search, a static value, the first of several alternatives, a list of values or a list of objects), with its modifiers,
+ * lookup's record, a search, a section of the record's parent, a static value, the first of several alternatives, a list of
+ * values or a list of objects), with its modifiers,
  * condition, requiredness, assertions and description. It edits a copy, and Save puts the entry into the draft, so Cancel
  * leaves the draft as it was.
  */
-export function MappingEntryEditor({ target, draft, variables, cacheTypes, issues, onSave, onClose }: MappingEntryEditorProps) {
+export function MappingEntryEditor({ target, draft, variables, cacheTypes, parent, issues, onSave, onClose }: MappingEntryEditorProps) {
   // The sheet slides out showing what it showed, so the last target stays rendered while it closes.
   const [shown, setShown] = useState<EntryEditorTarget | null>(target);
   if (target !== null && target !== shown) {
@@ -1280,6 +1329,7 @@ export function MappingEntryEditor({ target, draft, variables, cacheTypes, issue
             draft={draft}
             variables={variables}
             cacheTypes={cacheTypes}
+            parent={parent}
             issues={shown.keyHolder === null ? issues.filter((issue) => issue.target === shown.variable.path) : []}
             onSave={onSave}
             onClose={onClose}

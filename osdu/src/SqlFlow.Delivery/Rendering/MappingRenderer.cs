@@ -35,6 +35,9 @@ public sealed class MappingRenderer
     private readonly IReadOnlyDictionary<(string Target, string? EntityType), (IdTemplate? Template, string? Problem)> _referenceTemplates;
     private readonly IReadOnlyList<(MappingEntry Entry, NodeAssertion Assertion)> _assertions;
 
+    /// <summary>The paths the mapping reads in its records' parent, as a <see cref="ParentQuestion"/> carries them.</summary>
+    private readonly string _parentSections;
+
     /// <param name="mapping">The mapping rendered.</param>
     /// <param name="schema">The template the mapping pins.</param>
     /// <param name="references">The version of the partition's cache a <c>cache.</c> source reads.</param>
@@ -81,6 +84,7 @@ public sealed class MappingRenderer
         _mapping = mapping;
         _searches = searches ?? ResolvedSearches.None;
         _search = search ?? NoRecordSearch.Instance;
+        _parentSections = ParentQuestion.SectionsOf(mapping.ParentPaths());
         _schema = schema;
         _references = references;
         _context = context;
@@ -321,6 +325,7 @@ public sealed class MappingRenderer
             Holds = holds,
             CacheUsages = Distinct(usages),
             SearchUsages = searched.Used,
+            Parent = searched.Parent,
             Unanswered = searched.Unanswered,
             Choices = searched.Chosen,
             Assertions = asserted,
@@ -412,13 +417,39 @@ public sealed class MappingRenderer
     }
 
     /// <summary>
-    /// Why a record whose search never got an answer is held: the platform was asked and said nothing, so the references
-    /// that depend on the answer are unknown. A plan holds the record with it, and a check reports the entry that asked.
+    /// Why a record whose search, or whose parent's read, never got an answer is held: the platform was asked and said
+    /// nothing, so the values that depend on the answer are unknown. A plan holds the record with it, and a check reports the
+    /// entry that asked.
     /// </summary>
-    public static string Unanswerable(SearchQuestion question)
+    public static string Unanswerable(PlatformQuestion question)
     {
         ArgumentNullException.ThrowIfNull(question);
-        return $"searching {question.Kind} for {question.Field} '{question.Value}' got no answer from the platform";
+        return question switch
+        {
+            SearchQuestion search => $"searching {search.Kind} for {search.Field} '{search.Value}' got no answer from the platform",
+            ParentQuestion parent => $"reading the parent record {parent.Id} ({parent.Kind}) got no answer from the platform",
+            _ => throw new ArgumentException($"A question of {question.GetType().Name} is not one a render asks.", nameof(question)),
+        };
+    }
+
+    /// <summary>
+    /// The question that reads the parent of the record <paramref name="row"/> renders (osdu/docs/reference/flow/mapping-parent.md):
+    /// the record of the kind the template is linked to whose id is the record's own with the parent's entity type, made
+    /// from the same key the same way, with the sections the mapping reads of it. Null when the template names no parent,
+    /// or the row's key is not complete (the record is held for that already), or its id cannot be made.
+    /// </summary>
+    internal ParentQuestion? ParentOf(SourceRow row)
+    {
+        ArgumentNullException.ThrowIfNull(row);
+        if (_schema.Parent is not { } parent || DeriveKey(row, out var keyValues) is not { } key)
+        {
+            return null;
+        }
+
+        var id = _mapping.Dataset.IdFrom == MappingIdSource.DeliveryKey
+            ? TargetId.Compose(_context.DataPartition, parent.EntityType, key)
+            : TargetId.ComposeFromKey(_context.DataPartition, parent.EntityType, keyValues, out _);
+        return id is null ? null : new ParentQuestion(id, parent.Kind, _parentSections);
     }
 
     /// <summary>
@@ -926,7 +957,7 @@ public sealed class MappingRenderer
         bool Keeps(MappingEntry repeater, SourceRow? row);
 
         /// <summary>The questions the values met so far are waiting on the platform for, in the order they were asked.</summary>
-        IReadOnlyList<SearchQuestion> Asked { get; }
+        IReadOnlyList<PlatformQuestion> Asked { get; }
 
         /// <summary>Why an entry that wrote nothing gave no value for the row, as a render holding it for that would say.</summary>
         string WhyEmpty(MappingEntry entry, SourceRow? item);
@@ -949,7 +980,7 @@ public sealed class MappingRenderer
         public bool Keeps(MappingEntry repeater, SourceRow? row)
             => repeater.RowFilter is not { } filter || EntryValues.Applies(filter, record.Row, row, renderer, holds, repeater.Target.Text);
 
-        public IReadOnlyList<SearchQuestion> Asked => searched.Unanswered;
+        public IReadOnlyList<PlatformQuestion> Asked => searched.Unanswered;
 
         public string WhyEmpty(MappingEntry entry, SourceRow? item) => EntryValues.WhyEmpty(entry, record.Row, item, renderer);
     }
@@ -976,7 +1007,7 @@ public sealed class MappingRenderer
 
         public bool Keeps(MappingEntry repeater, SourceRow? row) => true;
 
-        public IReadOnlyList<SearchQuestion> Asked => [];
+        public IReadOnlyList<PlatformQuestion> Asked => [];
 
         public string WhyEmpty(MappingEntry entry, SourceRow? item) => "a shape reads no row";
     }
@@ -1020,11 +1051,17 @@ public sealed record RenderResult
     public IReadOnlyList<SearchUsage> SearchUsages { get; init; } = [];
 
     /// <summary>
+    /// The record's parent as the render read it (osdu/docs/reference/flow/mapping-parent.md): its id, and the version its
+    /// sections were taken from, or that the platform holds none. Null for a record whose mapping reads no parent.
+    /// </summary>
+    public ParentUsage? Parent { get; init; }
+
+    /// <summary>
     /// Questions the render needed answered and the run had not asked yet. A result carrying any of these is not
     /// finished: the caller answers them and renders the row again, and the second render finds them known. It is never
     /// delivered as it stands, because the values that depend on them are not in it.
     /// </summary>
-    public IReadOnlyList<SearchQuestion> Unanswered { get; init; } = [];
+    public IReadOnlyList<PlatformQuestion> Unanswered { get; init; } = [];
 
     /// <summary>True when the render could not finish because the platform has not been asked yet.</summary>
     public bool IsIncomplete => Unanswered.Count > 0;

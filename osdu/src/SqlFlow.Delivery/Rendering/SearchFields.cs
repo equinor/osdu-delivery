@@ -6,6 +6,14 @@ using SqlFlow.Delivery.Templates;
 
 namespace SqlFlow.Delivery.Rendering;
 
+/// <summary>
+/// The template of the kind a mapping's template is linked to (<see cref="TemplateParent"/>), settled from the template
+/// folders on the mapping's path as a kind named alone is: what the mapping's <c>$parent</c> paths are checked against
+/// (osdu/docs/reference/flow/mapping-parent.md). <paramref name="Schema"/> is null when it cannot be read, and
+/// <paramref name="Problem"/> says why.
+/// </summary>
+public sealed record ResolvedParent(TemplateParent Link, SchemaSnapshot? Schema, string? Problem);
+
 /// <summary>One search a mapping declares, with how each property its findBy lines compare is indexed.</summary>
 /// <param name="Declaration">The search as the mapping declares it.</param>
 /// <param name="Fields">Each property compared, by the path the mapping writes, as the searched kind's schema indexes it.</param>
@@ -32,6 +40,19 @@ public sealed class ResolvedSearches
 
     /// <summary>Why a search or a property it compares cannot be asked for, one line each, naming the mapping's own words.</summary>
     public IReadOnlyList<string> Problems { get; }
+
+    /// <summary>
+    /// The template of the kind the mapping's template is linked to, for a mapping that reads its records' parent; null for
+    /// one that reads none, or whose template is linked to no parent (which the preflight refuses).
+    /// </summary>
+    public ResolvedParent? Parent { get; private init; }
+
+    /// <summary>These searches with <paramref name="parent"/>, the parent's template, beside them.</summary>
+    public ResolvedSearches WithParent(ResolvedParent parent)
+    {
+        ArgumentNullException.ThrowIfNull(parent);
+        return new ResolvedSearches(Searches, Problems) { Parent = parent };
+    }
 
     /// <summary>
     /// Resolves <paramref name="mapping"/>'s searches against the schemas in <paramref name="schemas"/>, which holds the

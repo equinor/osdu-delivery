@@ -29,6 +29,7 @@ related:
   - delivery-flow-delivery
   - delivery-concept-templates
   - delivery-concept-record-lifecycle
+  - delivery-flow-mapping-parent
   - cli-validate
 sourceRefs:
   - osdu/src/SqlFlow.Delivery/Documents/MappingMapper.cs
@@ -117,43 +118,46 @@ the flow's parameters. Resolving the render inputs first refuses a missing input
 | The template the mapping fills | `flows/welldb-welllog-03-header-delivery.yaml: mapping WellLog@1.4.0 cannot render: no template folder on the path of mappings/WellLog@1.4.0.yaml holds template osdu:wks:work-product-component--WellLog:1.4.0 version 26a3c3441882db4f. ...`, the rest saying which folders it read and how to put the file in one ([template folders](templates.md#template-folders)) |
 | A cache for a mapping that reads one | `mapping WellLog@1.0.0 reads the cache of partition 'dev', which holds no version yet. Refresh a cache flow that builds it (...) to capture one.` |
 | A pinned cache version | `render.cacheVersion pins version <v> of the cache of partition 'dev', which the catalog does not hold.` |
-| The module's database | `... templates live in the module's database, which this host was started without. ...` |
+| The module's database, for a mapping that reads the cache | `... reads the cache of partition 'dev', and caches live in the module's database, which this host was started without. ...` |
 
 Then the gate checks, collecting every finding:
 
 1. **The template version.** The template given is the one the mapping pins, at the content version it names.
 2. **Searches.** Every search resolves against the schema it pins, and every property its `$findBy` lines compare can be
    matched exactly on the platform, as that schema says the property is indexed.
-3. **Every property is a variable of the template.** It exists at that version, it is not one OSDU Delivery writes
+3. **The parent.** A mapping that reads `$parent` fills a template linked to one parent of another entity type, the
+   folders on its path hold the parent's template, and every path it reads is a property of that template, of a shape the
+   property it fills can take ([mapping $parent](../flow/mapping-parent.md#what-the-preflight-checks)).
+4. **Every property is a variable of the template.** It exists at that version, it is not one OSDU Delivery writes
    (`id`, `kind`) or OSDU sets (`version`, `createTime`, `createUser`, `modifyTime`, `modifyUser`), and it is not a list
    of objects inside another list's items.
-4. **Shapes agree.** A `$forEach` fills a list of objects; a single value fills a scalar or a list of values; a literal
+5. **Shapes agree.** A `$forEach` fills a list of objects; a single value fills a scalar or a list of values; a literal
    object or list fills an object or a list; a `$findAll` fills a list. Inside an open object the mapping's own shape
    stands.
-5. **What the last modifier gives is what the variable takes.** `equals` fills a boolean, `number` a number, an integer
+6. **What the last modifier gives is what the variable takes.** `equals` fills a boolean, `number` a number, an integer
    or unformatted text, `date` text of a date format, and `id` or `ref` text. A text value written to a date or date-time
    without the `date` modifier is a warning.
-6. **Every cached type exists** in the cache version the render reads, holds the field the node reads, and holds at
+7. **Every cached type exists** in the cache version the render reads, holds the field the node reads, and holds at
    least one of the fields `$findBy` compares (a field it does not hold is a warning; a type holding none of them is an
    error). A replace reading the cache reads a table the version holds, on fields it holds; values a replace can give that
    then find nothing in the cache are listed as a warning. An `id` modifier's cache token reads a lookup table the version
    holds, at a field its rows hold.
-7. **References resolve to the right entity type.** A `$cache: <Type>.id` node, a search, a cached field written to a
+8. **References resolve to the right entity type.** A `$cache: <Type>.id` node, a search, a cached field written to a
    relationship, an `id` or `ref` modifier and a literal on a relationship each give ids of an entity type the
    relationship allows (`data.WellboreID` takes only `master-data--Wellbore`), matching the variable's pattern. A literal
    id, and the ids a cached field holds, must exist in the cache version when it holds that entity type. A `ref` settles
    one entity type.
-8. **Every property the template requires in `data` has a node**, and none of those nodes may leave it out
+9. **Every property the template requires in `data` has a node**, and none of those nodes may leave it out
    (`$required: false`); an object the template requires may instead be filled through its properties, at least one of
    which renders on every row:
    `template osdu:wks:master-data--Wellbore:1.3.0 requires osdu.data.<Property>, which the mapping does not fill.`
-9. **Parameters.** Every parameter the mapping requires has a value (`mapping parameter '<name>' is required and the
+10. **Parameters.** Every parameter the mapping requires has a value (`mapping parameter '<name>' is required and the
    flow supplies no value.`), the flow supplies none the mapping does not declare, and every `{$param.<name>}` token and
    `$param.<name>` an expression reads has a value.
-10. **Columns.** When the flow's tables are known (a run that reads them), every column and child dataset the mapping
+11. **Columns.** When the flow's tables are known (a run that reads them), every column and child dataset the mapping
     reads exists in them, the key's, the label's, the expressions' and the columns its assertions' conditions read
     included.
-11. **Assertions.** Each record-stage condition of a node's `$assert` suits the type of the value its property carries
+12. **Assertions.** Each record-stage condition of a node's `$assert` suits the type of the value its property carries
     (a list judged value by value, a list of objects only by `exists`, `empty` and `length`, an object only by `exists`
     and `empty`), compares with values the property can hold, and every `where` field is a property of the template
     whose condition suits it:
@@ -209,7 +213,8 @@ A source's findings come back together:
 The render holds a record, with every reason, when it cannot be delivered as it stands: an empty key column, a value that
 cannot take its variable's type, a property the template requires rendered empty, a reference it cannot resolve, an id
 whose shape, pattern or entity type is wrong, a child dataset over its row ceiling, a deleted row, or a route's own rules
-(the Wellbore DDMS's, External Data Services'). Held records keep their reasons in the ledger; records held the same way
+(the Wellbore DDMS's, External Data Services'), or a parent its mapping reads with `$parent` that OSDU does not hold
+([mapping $parent](../flow/mapping-parent.md)). Held records keep their reasons in the ledger; records held the same way
 share one issue ([record lifecycle](record-lifecycle.md)). `sqlflow values` renders every row of a scope and reports
 these, variable by variable, before a run does ([sqlflow values](../cli/values.md)).
 

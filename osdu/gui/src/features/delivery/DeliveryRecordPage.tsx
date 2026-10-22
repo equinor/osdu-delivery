@@ -22,6 +22,7 @@ import { RecordJourney, RecordMilestones } from "./RecordJourney";
 import { RecordName } from "./RecordName";
 import { RECORD_ARTIFACTS_SHOWN, RecordArtifacts, RecordUndoNotice } from "./RecordArtifacts";
 import { RecordOsduView } from "./RecordOsduView";
+import { RecordParentChips } from "./RecordParentChips";
 import { settle } from "./answers";
 import { RecordRenderTab, type RenderResults } from "./RecordRenderTab";
 import { RecordSituation } from "./RecordSituation";
@@ -310,6 +311,13 @@ function DeliveryRecordContent({ flowId, deliveryKey }: DeliveryRecordRef) {
               copyTestId="copy-record-target"
             />
           )}
+          <RecordParentChips
+            record={record}
+            parent={detail.parent}
+            readBy={detail.readBy ?? []}
+            explorerPartition={record.partition ?? detail.partition ?? null}
+            canExplore={canOperate}
+          />
           {detail.pipelineId && <IdChip label="flow" value={detail.pipelineId} display={flowLabel} to={flowLedgerRoute(detail.pipelineId, flowScope)} testId="record-pipeline-link" copyTestId="copy-record-pipeline" />}
           {(detail.record.partition ?? detail.partition) && (
             <IdChip label="partition" value={(detail.record.partition ?? detail.partition)!} testId="record-partition" copyTestId="copy-record-partition" />

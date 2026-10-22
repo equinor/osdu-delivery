@@ -20,6 +20,7 @@ const SOURCE_LABEL: Record<MappingDraftInput, string> = {
   Lookup: "Field of the record a lookup finds",
   List: "Every value these give, in order, each once",
   Group: "The object its properties give",
+  Parent: "Section of the record's parent",
 };
 
 /** One end of the pipeline: where the value comes from, or the property it lands on. */

@@ -108,7 +108,7 @@ public sealed class RenderResolver
             SystemProperties = systemProperties,
         };
 
-        var searches = await SearchesAsync(_templates, mapping, ct).ConfigureAwait(false);
+        var searches = await SearchesAsync(_templates, mapping, schema, ct).ConfigureAwait(false);
         var issues = Preflight.Check(mapping, schema, references, context, sourceColumns: null, searches);
         Preflight.ThrowIfFailed(issues, where);
         var renderer = new MappingRenderer(mapping, schema, references, context, searches, _search);
@@ -118,12 +118,28 @@ public sealed class RenderResolver
     /// <summary>
     /// <paramref name="mapping"/>'s searches resolved against the templates they pin, read from
     /// <paramref name="templates"/>: how each property a search compares is indexed. A pinned template that cannot be read
-    /// is reported among the problems, with why, for the preflight to list.
+    /// is reported among the problems, with why, for the preflight to list. For a mapping that reads its records' parent
+    /// (<c>$parent</c>), the template of the kind its own template, <paramref name="schema"/>, is linked to, settled from the
+    /// same folders the way a kind named alone is (osdu/docs/reference/flow/mapping-parent.md).
     /// </summary>
-    public static async Task<ResolvedSearches> SearchesAsync(ITemplateSource templates, MappingDefinition mapping, CancellationToken ct = default)
+    public static async Task<ResolvedSearches> SearchesAsync(ITemplateSource templates, MappingDefinition mapping, SchemaSnapshot schema, CancellationToken ct = default)
     {
         ArgumentNullException.ThrowIfNull(templates);
         ArgumentNullException.ThrowIfNull(mapping);
+        ArgumentNullException.ThrowIfNull(schema);
+        var searches = await DeclaredSearchesAsync(templates, mapping, ct).ConfigureAwait(false);
+        if (!mapping.ReadsParent || schema.Parent is not { } link)
+        {
+            return searches;
+        }
+
+        var parent = await templates.ResolveAsync(mapping.TemplateDocument, link.Kind, null, ct).ConfigureAwait(false);
+        return searches.WithParent(new ResolvedParent(link, parent.Schema, parent.Schema is null ? parent.Problem : null));
+    }
+
+    /// <summary>The searches <paramref name="mapping"/> declares, resolved against the templates they pin.</summary>
+    private static async Task<ResolvedSearches> DeclaredSearchesAsync(ITemplateSource templates, MappingDefinition mapping, CancellationToken ct)
+    {
         if (mapping.Searches.Count == 0)
         {
             return ResolvedSearches.None;

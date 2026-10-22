@@ -237,6 +237,15 @@ export interface DeliveryRecord {
    * issues.
    */
   issue?: string | null;
+  /**
+   * For a record of a linked template that reads its parent ($parent): the parent's OSDU id, the record of the canonical
+   * kind with the same minted id in that kind's namespace.
+   */
+  parentId?: string | null;
+  /** The version of the parent the delivered document was rendered from. */
+  parentVersion?: number | null;
+  /** The version of the parent the queued document was rendered from. */
+  pendingParentVersion?: number | null;
 }
 
 /** An OSDU id a record's pending document refers to, and the property of the record holding it. */
@@ -270,6 +279,10 @@ export interface DeliveryRecordDetail {
   waitsOn?: DeliveryRecordLink | null;
   /** The records waiting for this one (the first 50). */
   waitedOnBy?: DeliveryRecordLink[] | null;
+  /** The record of the ledger holding this record's parent id, when one of the partition's flows delivers it. */
+  parent?: DeliveryRecordLink | null;
+  /** The records reading this one as their parent (the first 50): the same minted id in another namespace. */
+  readBy?: DeliveryRecordLink[] | null;
   /**
    * The columns the record's key tuple (`sourceKeyJson`) holds the values of, in its order: the interface's
    * `source.record.key` as the catalog's copy of the flow declares it now. Null when the catalog holds no readable copy.
@@ -401,6 +414,8 @@ export interface DeliveryAttempt {
   sourceUpdatedUtc: string | null;
   /** When the ingestion table marked that row deleted, for the hold of a deleted row (phase source-deleted). */
   sourceDeletedUtc?: string | null;
+  /** For a record reading its parent: the version of the parent the document this try sent was rendered from. */
+  parentVersion?: number | null;
 }
 
 /**
@@ -1894,6 +1909,8 @@ export interface DeliveryTemplate {
   problem: string | null;
   /** When the repository's last sync saw it. */
   seenUtc: string;
+  /** The kind the template is linked to as its parent (x-osdu-inheriting-from-kind); null for a template linked to none. */
+  parent?: string | null;
 }
 
 /** The repository file a template laid out was read from. */
@@ -1952,6 +1969,8 @@ export interface DeliveryTemplateDetail {
   description: string | null;
   file: DeliveryTemplateFile | null;
   variables: DeliveryTemplateVariable[];
+  /** The kind the template is linked to as its parent, whose records its mappings read with $parent; null for none. */
+  parent?: string | null;
 }
 
 /**
@@ -2126,10 +2145,11 @@ export interface DeliveryBuilderCache {
  * Where a draft entry's value comes from: a dataset column, a child dataset's rows, a cached record, a fixed value, the
  * id of a record found by searching the platform, a value an expression computes from the row, the first of several
  * alternatives that gives a value ($coalesce), a field of the record one of the mapping's lookups finds ($lookup), a list
- * (of values whose items are fixed values and value nodes, or of objects whose items are groups and fixed objects), or a
- * group: an item of a list of objects, the object its properties give.
+ * (of values whose items are fixed values and value nodes, or of objects whose items are groups and fixed objects), a
+ * group: an item of a list of objects, the object its properties give, or a section of the record's parent ($parent), for a
+ * template linked to a parent.
  */
-export type MappingDraftInput = "Dataset" | "Repeat" | "Cache" | "Static" | "Search" | "Expression" | "Coalesce" | "Lookup" | "List" | "Group";
+export type MappingDraftInput = "Dataset" | "Repeat" | "Cache" | "Static" | "Search" | "Expression" | "Coalesce" | "Lookup" | "List" | "Group" | "Parent";
 
 export type MappingDraftModifierKind = "trim" | "upper" | "lower" | "split" | "replace" | "equals" | "date" | "number" | "id" | "ref";
 
@@ -2198,6 +2218,8 @@ export interface MappingDraftEntry {
   cacheField: string | null;
   /** Lookup: the lookup read, by the name the mapping declares it under. */
   lookup: string | null;
+  /** Parent: the path of the section of the record's parent it takes, from the record's root, such as data.DDMSDatasets. */
+  parentPath?: string | null;
   findBy: MappingDraftFind[];
   /** Cache: every matching row read ($findAll) in place of findBy lines; null for an entry that finds one record. */
   findAll: MappingDraftFindAll | null;

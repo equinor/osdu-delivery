@@ -202,7 +202,8 @@ public static class DeliveryLineage
     /// <summary>
     /// What a mapping reads in a partition of a platform, each node once and in a stable order: the cache types it reads by
     /// name, then the cache types of the partition holding records of an entity type its ids are checked against, in name
-    /// order, then the kinds its searches look in, in the searches' name order.
+    /// order, then the kinds its searches look in, in the searches' name order, then the kind its template is linked to,
+    /// when it reads its records' parent (osdu/docs/reference/flow/mapping-parent.md).
     /// </summary>
     /// <remarks>
     /// Which types hold an entity type is what the cache flows of the scanned estate declare for the partition: a type a
@@ -250,6 +251,14 @@ public static class DeliveryLineage
         {
             Add(reads, OsduLineage.Type(
                 LineageRelation.Reads, endpoint, partition, search.Kind, who, $"search '{search.Name}' of mapping '{mapping.Reference}'", warnings));
+        }
+
+        // A record that takes sections of its parent is rendered from what the parent's delivery wrote, so the flow reads the
+        // parent's kind and runs after the flow that delivers it.
+        if (mapping.ReadsParent && template.Schema?.Parent is { } parent)
+        {
+            Add(reads, OsduLineage.Type(
+                LineageRelation.Reads, endpoint, partition, parent.Kind, who, $"the parent of the records mapping '{mapping.Reference}' renders", warnings));
         }
 
         if (cache.Untold.Count > 0)

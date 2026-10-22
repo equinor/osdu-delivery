@@ -86,6 +86,9 @@ this table through its status indexes on every call; nothing keeps a running tot
 | `PendingStepJson` | `nvarchar(max)` | yes | The steps of the pending delivery that already completed and what they returned, keyed by step, so a retry resumes after them. |
 | `CacheSetId` | `bigint` | yes | The cached values the delivered document was built from, as the id of the set it shares with every record that read the same values ([`osdu.CacheSet`](cache-set.md)). |
 | `HeldCacheSetId` | `bigint` | yes | While the record is held: what its held render read out of the cache and did not find, as a set id. A cache version that brings in one of those ids releases the record to be planned again ([The partition cache](../concepts/partition-cache.md)). |
+| `ParentId` | `nvarchar(500)` | yes | Collation `Latin1_General_100_BIN2`. The record's parent: the OSDU id, without a version, of the record of the kind its template is linked to whose sections its render reads, or would have read had OSDU held it; null for a record whose mapping reads no parent. Written when work is queued or the record is held, so the parent landing plans the record again ([Parent records](../flow/mapping-parent.md)). Added by migration `LinkedTemplateParents` (module version 1.55.0). |
+| `ParentVersion` | `bigint` | yes | The version of the parent the document OSDU holds was rendered from; null when it read none. |
+| `PendingParentVersion` | `bigint` | yes | The version of the parent the pending work was rendered from; null when it read none. |
 | `PendingRenderContext` | `nvarchar(max)` | yes | The render context of the pending work. |
 | `PendingSourceFingerprint` | `nvarchar(200)` | yes | The ingestion fingerprint of the pending work, or of the state a held, failed or deleted record was left in. |
 | `PendingSourceModifiedUtc` | `datetime2` | yes | The business version of the pending work, or of the state a held, failed or deleted record was left in. |
@@ -120,6 +123,7 @@ this table through its status indexes on every call; nothing keeps a running tot
 | `IX_Record_PartitionId_FlowId_LastSubmissionId_Status_NextAttemptUtc` | `PartitionId`, `FlowId`, `LastSubmissionId`, `Status`, `NextAttemptUtc` | index | none | `UpdatedUtc` | The same reads for one submission of the flow, and the settled submissions with due work. |
 | `IX_Record_CacheSetId_DeliveryKey_FlowId` | `CacheSetId`, `DeliveryKey`, `FlowId` | index | `[CacheSetId] IS NOT NULL` | none | A cache rollout walking one set's records in key order, then flow order; the filter keeps untagged records out. |
 | `IX_Record_HeldCacheSetId_Status` | `HeldCacheSetId`, `Status` | index | `[HeldCacheSetId] IS NOT NULL` | none | The held records a new cache version releases, found by the set their held render read. |
+| `IX_Record_PartitionId_ParentId` | `PartitionId`, `ParentId` | index | `[ParentId] IS NOT NULL` | none | The records of a partition, of every flow, that read a parent that just landed, which are planned again ([Parent records](../flow/mapping-parent.md#when-the-parent-changes)). |
 | `IX_Record_ClaimedTargetId` | `ClaimedTargetId` | unique | `[ClaimedTargetId] IS NOT NULL` | none | One OSDU record, one flow: the database refuses a second claim on an id, whatever races the intakes run. An id names its partition, so it stays unique across every partition. |
 | `IX_Record_LastSubmissionId_WorkBatch` | `LastSubmissionId`, `WorkBatch` | index | none | none | A work batch's claim marking the batch's due records, a slice at a time however large the batch. |
 | `IX_Record_LeaseOwner` | `LeaseOwner` | index | none | none | The records a lease holds: the ones a checkpoint or a close hands back, and the ones a submission waits on. |
@@ -152,8 +156,9 @@ this table through its status indexes on every call; nothing keeps a running tot
 
 - **Written** by the intake, which stages and queues records a slice of at most 1,000 at a time, and by the lease
   applying what a worker appended ([`osdu.RecordEvent`](record-event.md)): a worker does not write this table while it
-  delivers. Releases, redeliveries, removals, reversals, syncs and cache rollouts write it through the ledger
-  (`OsduLedger.cs`, `SqlServerLedgerBulk.cs`), each writing an attempt or an activity beside the change.
+  delivers. Releases, redeliveries, removals, reversals, syncs, cache rollouts and parents that land write it through the
+  ledger (`OsduLedger.cs`, `OsduLedger.Parents.cs`, `SqlServerLedgerBulk.cs`), each writing an attempt or an activity beside
+  the change.
 - **Read** by the worker's claims, every plan's change gates, a flow's statistics and Records and Issues tabs, the record
   search across flows, a record's page, `sqlflow records` and the delivery API's record routes
   ([The delivery ledger](../concepts/ledger.md#finding-records)).

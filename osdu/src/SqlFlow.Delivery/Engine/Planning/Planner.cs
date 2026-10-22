@@ -829,24 +829,25 @@ public sealed class Planner
     /// How many rounds of questions a batch can need: two per findBy line of the search entry with the most, since a render
     /// asks a search entry's lines one at a time, and a line that finds nothing exactly may ask again regardless of case
     /// where the partition keeps a lowercased copy of text. A $coalesce node asks its searching alternatives one after
-    /// another, so it counts the lines of all of them. Each round answers what the one before it asked.
+    /// another, so it counts the lines of all of them. A mapping that reads its records' parent reads it in one round of its
+    /// own, which a $coalesce may reach only after its searching alternatives. Each round answers what the one before it asked.
     /// </summary>
     internal static int SearchRounds(MappingDefinition mapping)
-        => 2 * mapping.Entries
+        => (2 * mapping.Entries
             .Select(e => e.ValueNodes.Where(node => node.Source?.Kind == MappingSourceKind.Search).Sum(node => node.FindBy.Count))
             .Where(lines => lines > 0)
             .DefaultIfEmpty(1)
-            .Max();
+            .Max()) + (mapping.ReadsParent ? 1 : 0);
 
     /// <summary>The distinct questions a batch's records wait on, in the order they were first asked.</summary>
     private sealed class Questions
     {
-        private readonly HashSet<SearchQuestion> _seen = [];
-        private readonly List<SearchQuestion> _asked = [];
+        private readonly HashSet<PlatformQuestion> _seen = [];
+        private readonly List<PlatformQuestion> _asked = [];
 
-        public IReadOnlyCollection<SearchQuestion> Asked => _asked;
+        public IReadOnlyCollection<PlatformQuestion> Asked => _asked;
 
-        public void AddRange(IEnumerable<SearchQuestion> questions)
+        public void AddRange(IEnumerable<PlatformQuestion> questions)
         {
             foreach (var question in questions)
             {
@@ -883,7 +884,7 @@ public sealed class Planner
     /// <paramref name="final"/>, the questions have been asked and an answer that never came holds the record instead.
     /// </remarks>
     /// <returns>The questions the record needs answered, or null when its entry has been recorded.</returns>
-    private async Task<IReadOnlyList<SearchQuestion>?> FinishRecordAsync(
+    private async Task<IReadOnlyList<PlatformQuestion>?> FinishRecordAsync(
         PlanHeader header,
         PendingRender pending,
         FlowPayload? payload,

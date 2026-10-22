@@ -79,6 +79,7 @@ Self-clearing: the table holds in-flight work only. Its primary key grows at its
 | `ClaimSourceRowNumber` | `bigint` | yes | The row of that file. |
 | `ClaimSourceUpdatedUtc` | `datetime2` | yes | When the ingestion table last updated that row. |
 | `ClaimMetadataHash` | `nvarchar(64)` | yes | The record document hash the claimed work establishes. |
+| `ClaimParentVersion` | `bigint` | yes | The version of the record's parent the claimed work was rendered from; null when it read none. A completion that promotes the claim makes it the record's `ParentVersion` ([Parent records](../flow/mapping-parent.md)). |
 | `ClaimPayloadHash` | `nvarchar(64)` | yes | The payload hash the claimed work establishes. |
 | `ClaimPayloadModifiedUtc` | `datetime2` | yes | The payload watermark of the claimed work. |
 | `ClaimMetadata` | `bit` | no | Whether the claimed work sends the record document. |

@@ -9,6 +9,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **A custom template can be linked to the canonical kind it stands beside.** A template file naming a record kind in
+  `x-osdu-inheriting-from-kind` is linked to it: each of its records has a parent, the record of that kind with the same
+  minted id, and the sync, the Templates page, the API (`parent`) and the MCP server's template tool say which
+  ([Linked templates](osdu/docs/reference/concepts/templates.md#linked-templates)).
+- **A mapping reads sections of its records' parent with `$parent`.** A record of a linked template takes any section of
+  its canonical parent from OSDU as it renders, such as the wellbore DDMS's references to a well log's curve files
+  (`$parent: data.DDMSDatasets`), so a custom record delivered through storage points at the same bulk data; a record
+  whose parent is not in OSDU is held, and is released and sent once the parent lands. The ledger keeps each record's
+  parent and the version of it every document was rendered from, the record page links a record and its parent both
+  ways, and the mapping builder offers the parent as an input ([Mapping $parent](osdu/docs/reference/flow/mapping-parent.md)).
 - **Every table of the osdu schema has a reference page.** Each says what one row is, what every column holds, what
   each key and index serves and what writes and reads the table, and
   [The osdu schema](osdu/docs/reference/concepts/database.md) lists them by what they serve; the MCP server's

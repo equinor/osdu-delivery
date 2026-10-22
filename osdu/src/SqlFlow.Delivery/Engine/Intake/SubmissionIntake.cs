@@ -907,6 +907,9 @@ public sealed class SubmissionIntake
         PendingSourceDeletedUtc = entry.SourceDeletedUtc,
         SourceInsertedUtc = entry.Origin.InsertedUtc,
         LastError = Http.HeaderRedaction.RedactMessage(entry.Reason),
+        // The parent the held render read, or found missing: the ledger plans the record again when it lands.
+        ParentId = entry.Render?.Parent?.Id,
+        PendingParentVersion = entry.Render?.Parent?.Version,
         Basis = PlanBasis.Of(entry.Existing),
     };
 
@@ -938,6 +941,9 @@ public sealed class SubmissionIntake
         PendingMetadata = entry.DeliverMetadata,
         PendingPayload = entry.DeliverPayload,
         PendingReferences = entry.References,
+        // The parent the document's sections were taken from, and its version: what the record's history traces them to.
+        ParentId = entry.Render!.Parent?.Id,
+        PendingParentVersion = entry.Render.Parent?.Version,
         Basis = PlanBasis.Of(entry.Existing),
     };
 

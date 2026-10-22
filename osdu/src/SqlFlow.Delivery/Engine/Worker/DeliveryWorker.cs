@@ -1381,6 +1381,8 @@ public sealed class DeliveryWorker
                 SourceFileName = record.PendingSourceFileName,
                 SourceRowNumber = record.PendingSourceRowNumber,
                 SourceUpdatedUtc = record.PendingSourceUpdatedUtc,
+                // The version of the parent the document was rendered from, as the hashes above take the half the work carries.
+                ParentVersion = record.PendingMetadata ? record.PendingParentVersion : record.ParentVersion,
             },
         };
 

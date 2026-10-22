@@ -99,6 +99,9 @@ other packages adopt the same contract.
 - [0018: a repository's template folders hold the templates, and every reader reads the file](decisions/0018-template-folders.md) -
   why templates live only as files in a repository's template folders, how a document's template is settled, and why
   the database keeps an index of them and no copy.
+- [0019: a custom template is linked to its canonical kind, and its records read their parent from OSDU](decisions/0019-linked-templates.md) -
+  why the link is the template's, why a record's parent is the same minted id in the canonical namespace, why it is read
+  from storage as the record renders, and what a missing or changed parent does.
 
 ## Coverage
 

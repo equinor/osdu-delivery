@@ -364,6 +364,7 @@ internal static partial class SqlServerLedgerBulk
             r.[PendingRenderContext] = NULL,
             r.[PendingMetadataHash] = NULL,
             r.[PendingPayloadHash] = NULL,
+            r.[PendingParentVersion] = NULL,
             r.[AcceptedMetadataHash] = NULL,
             r.[PlanRequestedUtc] = NULL,
             r.[LastError] = x.[Note],

@@ -428,6 +428,9 @@ namespace SqlFlow.Delivery.Data.Migrations
                         .HasMaxLength(16)
                         .HasColumnType("nvarchar(16)");
 
+                    b.Property<long?>("ParentVersion")
+                        .HasColumnType("bigint");
+
                     b.Property<string>("PayloadHash")
                         .HasMaxLength(64)
                         .HasColumnType("nvarchar(64)");
@@ -2858,6 +2861,14 @@ namespace SqlFlow.Delivery.Data.Migrations
                     b.Property<DateTime?>("NextAttemptUtc")
                         .HasColumnType("datetime2");
 
+                    b.Property<string>("ParentId")
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)")
+                        .UseCollation("Latin1_General_100_BIN2");
+
+                    b.Property<long?>("ParentVersion")
+                        .HasColumnType("bigint");
+
                     b.Property<string>("PayloadHash")
                         .HasMaxLength(64)
                         .HasColumnType("nvarchar(64)");
@@ -2875,6 +2886,9 @@ namespace SqlFlow.Delivery.Data.Migrations
                     b.Property<string>("PendingMetadataHash")
                         .HasMaxLength(64)
                         .HasColumnType("nvarchar(64)");
+
+                    b.Property<long?>("PendingParentVersion")
+                        .HasColumnType("bigint");
 
                     b.Property<bool>("PendingPayload")
                         .HasColumnType("bit");
@@ -3010,6 +3024,9 @@ namespace SqlFlow.Delivery.Data.Migrations
 
                     b.HasIndex("PartitionId", "Label");
 
+                    b.HasIndex("PartitionId", "ParentId")
+                        .HasFilter("[ParentId] IS NOT NULL");
+
                     b.HasIndex("PartitionId", "SourceFileName");
 
                     b.HasIndex("PartitionId", "SourceKey");
@@ -3109,6 +3126,9 @@ namespace SqlFlow.Delivery.Data.Migrations
                     b.Property<string>("ClaimMetadataHash")
                         .HasMaxLength(64)
                         .HasColumnType("nvarchar(64)");
+
+                    b.Property<long?>("ClaimParentVersion")
+                        .HasColumnType("bigint");
 
                     b.Property<bool>("ClaimPayload")
                         .HasColumnType("bit");
@@ -3274,6 +3294,10 @@ namespace SqlFlow.Delivery.Data.Migrations
 
                     b.Property<DateTime>("LastSeenUtc")
                         .HasColumnType("datetime2");
+
+                    b.Property<string>("Parent")
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)");
 
                     b.Property<string>("Path")
                         .IsRequired()

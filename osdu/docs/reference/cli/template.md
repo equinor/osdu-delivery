@@ -80,7 +80,9 @@ Every template written is checked the same way, whatever its source:
 Without `--for`, every template folder under `<dir>` (by default the repository's top: the nearest folder holding `.git`
 above the current folder, or the current folder), in path order, each file with the template it holds or why it holds
 none. A folder named like a template folder but not exactly (`Templates`, or `template` holding `.json` files), and a
-template folder reached through a link, are warned of on stderr, since no document reads them.
+template folder reached through a link, are warned of on stderr, since no document reads them. A template linked to a
+canonical kind says so after its version (`linked to osdu:wks:work-product-component--WellLog:1.4.0`), and one whose link
+cannot be read says why (`linked to no parent: ...`) ([linked templates](../concepts/templates.md#linked-templates)).
 
 ```text
 templates
@@ -105,7 +107,7 @@ A kind named without a version settles to:
   osdu:wks:work-product-component--WellLog:1.4.0  26a3c3441882db4f  welldb/templates/osdu_wks_work-product-component--WellLog_1.4.0.json
 ```
 
-With `--json`, `folders` prints `{ root, folders: [{ path, files: [{ path, kind, version, problem }] }], warnings }`, and
+With `--json`, `folders` prints `{ root, folders: [{ path, files: [{ path, kind, version, problem, parent, parentProblem }] }], warnings }`, and
 `folders --for` prints `{ document, looked, folders, kinds: [{ kind, version, file, problem }] }`.
 
 ### Where `capture` reads from

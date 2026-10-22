@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Download, Loader2, TriangleAlert } from "lucide-react";
+import { Download, Link2, Loader2, TriangleAlert } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -20,7 +20,7 @@ import { TruncatedText } from "@/components/TruncatedText";
 import { KindText } from "./KindText";
 import { TemplatesBrowseTab } from "./TemplatesBrowseTab";
 import { problemText } from "./problemText";
-import { fileName, templateSchemaQuery } from "./templateFormat";
+import { entityName, fileName, templateSchemaQuery } from "./templateFormat";
 import { ProblemView, TemplateSheet } from "./TemplateSheet";
 
 type TemplatesTab = "repositories" | "browse";
@@ -35,10 +35,40 @@ interface Opened {
   kind: string | null;
 }
 
-/** The kind a file holds, or, for a file that holds none, why, beside a warning glyph. */
+/**
+ * The kind a template is linked to as its parent, beside its own: a neutral chip naming the parent's entity and version,
+ * with what the link does on hover.
+ */
+function ParentChip({ parent, testId }: { parent: string; testId?: string }) {
+  const version = parent.slice(parent.lastIndexOf(":") + 1);
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <span
+          className="inline-flex min-w-[1.375rem] shrink-[100] items-center gap-1 overflow-hidden rounded-md border border-border/60 bg-muted/40 px-1.5 py-px text-[11px] text-muted-foreground"
+          data-testid={testId}
+        >
+          <Link2 className="size-3 shrink-0" aria-hidden />
+          {/* The kind the row holds keeps the room: in a narrow cell the parent gives way down to its glyph and its hover. */}
+          <span className="min-w-0 truncate font-mono">{`${entityName(parent)} ${version}`}</span>
+        </span>
+      </TooltipTrigger>
+      <TooltipContent className="max-w-sm">
+        {`Linked to ${parent}. Each record of this template has a parent: the ${entityName(parent)} record with the same minted id, whose sections its mapping can read with $parent.`}
+      </TooltipContent>
+    </Tooltip>
+  );
+}
+
+/** The kind a file holds, with the kind it is linked to; or, for a file that holds none, why, beside a warning glyph. */
 function KindCell({ row }: { row: DeliveryTemplate }) {
   if (row.kind !== null) {
-    return <KindText kind={row.kind} />;
+    return (
+      <span className="flex min-w-0 items-center gap-2">
+        <span className="min-w-0 shrink"><KindText kind={row.kind} /></span>
+        {row.parent && <ParentChip parent={row.parent} testId={`templates-parent-${row.path}`} />}
+      </span>
+    );
   }
 
   return (
@@ -163,6 +193,7 @@ export default function TemplatesPage() {
     ? undefined
     : templates.data.filter((template) => term === ""
       || (template.kind ?? "").toLowerCase().includes(term)
+      || (template.parent ?? "").toLowerCase().includes(term)
       || (template.version ?? "").toLowerCase().includes(term)
       || template.repository.toLowerCase().includes(term)
       || template.path.toLowerCase().includes(term));

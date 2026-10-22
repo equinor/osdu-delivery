@@ -242,6 +242,8 @@ function valueOrigin(input: MappingDraftInput): string {
       return "a lookup's record";
     case "Search":
       return "a search of the platform";
+    case "Parent":
+      return "the record's parent";
     case "Coalesce":
       return "the first alternative that gives one";
     case "Repeat":

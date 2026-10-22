@@ -594,7 +594,7 @@ public sealed partial class OsduLedger
             held = await RetryDeadlockAsync(
                 () => reading.DeliveryRecords.AsNoTracking()
                     .Where(r => r.LeaseOwner == token && r.Status == delivering)
-                    .Select(r => new HeldByLease(r.PartitionId, r.FlowId, r.DeliveryKey, r.AttemptCount, r.LastSubmissionId, r.PendingSourceFileName, r.PendingSourceRowNumber, r.PendingSourceUpdatedUtc))
+                    .Select(r => new HeldByLease(r.PartitionId, r.FlowId, r.DeliveryKey, r.AttemptCount, r.LastSubmissionId, r.PendingSourceFileName, r.PendingSourceRowNumber, r.PendingSourceUpdatedUtc, r.PendingParentVersion))
                     .ToListAsync(ct),
                 ct).ConfigureAwait(false);
         }
@@ -630,6 +630,7 @@ public sealed partial class OsduLedger
                                 SourceFileName = record.PendingSourceFileName,
                                 SourceRowNumber = record.PendingSourceRowNumber,
                                 SourceUpdatedUtc = record.PendingSourceUpdatedUtc,
+                                ParentVersion = record.PendingParentVersion,
                             });
                         }
 
@@ -683,7 +684,7 @@ public sealed partial class OsduLedger
     /// <summary>A record a lease that ran out still holds, with what its hand-back attempt names.</summary>
     private sealed record HeldByLease(
         short PartitionId, Guid FlowId, Guid DeliveryKey, int AttemptCount, Guid? LastSubmissionId, string? PendingSourceFileName, long? PendingSourceRowNumber,
-        DateTime? PendingSourceUpdatedUtc);
+        DateTime? PendingSourceUpdatedUtc, long? PendingParentVersion);
 
     private const string ExhaustedPrefix = "failed after ";
 
@@ -798,6 +799,9 @@ public sealed partial class OsduLedger
             if (slice.PartitionId is { } partition)
             {
                 await ReleaseWaitersOfAsync(partition, slice.Landed, nowUtc, ct).ConfigureAwait(false);
+
+                // The records that read one of these as their parent render again from what landed.
+                await PlanChildrenOfAsync(partition, slice.Landed, nowUtc, ct).ConfigureAwait(false);
             }
 
             applied += slice.Applied;
@@ -967,6 +971,7 @@ public sealed partial class OsduLedger
             ClaimSourceRowNumber = claim?.Origin.RowNumber,
             ClaimSourceUpdatedUtc = claim?.Origin.UpdatedUtc,
             ClaimMetadataHash = claim?.MetadataHash,
+            ClaimParentVersion = claim?.ParentVersion,
             ClaimPayloadHash = claim?.PayloadHash,
             ClaimPayloadModifiedUtc = claim?.PayloadModifiedUtc,
             ClaimMetadata = claim?.Metadata ?? false,

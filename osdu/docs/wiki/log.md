@@ -73,3 +73,19 @@ the mapping alone. Updated the notes in [0003](decisions/0003-rendering-location
 [0016](decisions/0016-osdu-order.md) that named the saved templates and the copies, the
 [pattern catalog](maps/pattern-catalog.md) row on starting a mapping (download on Browse OSDU, then sync), and the index
 line of 0018.
+
+## [2026-10-22] ingest | Linked templates and $parent, decision 0019
+
+Source: the change that links a custom template to its canonical kind and lets its records read their parent: the link
+(`osdu/src/SqlFlow.Delivery/Templates/TemplateParent.cs`), the `$parent` node and its render
+(`osdu/src/SqlFlow.Delivery/Documents/MappingMapper.Record.cs`, `osdu/src/SqlFlow.Delivery/Rendering/EntryValues.cs`), the
+storage read of parents (`osdu/src/SqlFlow.Delivery/Engine/OsduRecordSearch.cs`), the ledger's columns and the landing
+hook (`osdu/src/SqlFlow.Delivery/Ledger/OsduLedger.Parents.cs`), the end to end suite
+(`osdu/tests/SqlFlow.Delivery.Tests/ParentDeliveryTests.cs`), and the reference pages it added and changed
+([mapping $parent](../reference/flow/mapping-parent.md), [templates](../reference/concepts/templates.md#linked-templates)).
+
+Added [0019](decisions/0019-linked-templates.md): why the link is the template's (OSDU's own key) while the mapping says
+what to take, why the parent is the same minted id in the canonical namespace, why it is read from storage by id as the
+record renders rather than searched for or copied from the canonical flow, why a missing parent holds the record, and
+what a landing parent does to the records reading it. Added a [pattern catalog](maps/pattern-catalog.md) row for a custom
+copy of a canonical kind that needs the canonical record's DDMS references. Indexed 0019.

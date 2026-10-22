@@ -1,5 +1,5 @@
 import { useLayoutEffect, useRef, useState, type ReactNode } from "react";
-import { FileJson, FolderGit2, Tag, type LucideIcon } from "lucide-react";
+import { FileJson, FolderGit2, Link2, Tag, type LucideIcon } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { SheetDescription, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { cn } from "@/lib/utils";
@@ -65,8 +65,8 @@ interface TemplateHeaderProps {
 
 /**
  * A template's header: its name and the actions on it beside that, the kind it is, OSDU's description, and one row of facts
- * (the version, and where it is read from: the repository and the file of its template folder, or the release of the OSDU
- * data definitions).
+ * (the version, where it is read from: the repository and the file of its template folder, or the release of the OSDU
+ * data definitions, and the kind it is linked to as its parent, when it is).
  */
 export function TemplateHeader({ kind, detail, source, actions }: TemplateHeaderProps) {
   const file = detail?.file ?? null;
@@ -105,6 +105,17 @@ export function TemplateHeader({ kind, detail, source, actions }: TemplateHeader
             </>
           )}
           {file === null && source !== null && <Fact icon={FileJson} label="Source">{source}</Fact>}
+          {detail.parent && (
+            <Fact icon={Link2} label="Parent" testId="templates-view-parent">
+              <span
+                className="min-w-0 break-all font-mono"
+                title="The kind this template is linked to: each of its records has a parent, the record of this kind with the same minted id, whose sections its mapping can read with $parent."
+              >
+                {detail.parent}
+              </span>
+              <CopyButton iconOnly label="Copy the parent kind" text={detail.parent} testId="templates-view-parent-copy" />
+            </Fact>
+          )}
         </dl>
       )}
     </SheetHeader>

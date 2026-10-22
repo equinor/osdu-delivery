@@ -29,6 +29,7 @@ related:
   - delivery-concept-templates
   - delivery-flow-interfaces
   - delivery-concept-osdu-order
+  - delivery-flow-mapping-parent
 sourceRefs:
   - osdu/src/SqlFlow.Delivery/Documents/OsduLineage.cs
   - osdu/src/SqlFlow.Delivery/Documents/DeliveryLineage.cs
@@ -130,12 +131,13 @@ ordered after the cache flow. A mapping reads the cache in two ways, and lineage
 | A cache type by name | `$cache: UnitOfMeasure.id`, a `lookups` entry, `replace: $cache.UnitAlias`, a `{$cache.CurveDictionary.field}` token in an id | That cache type, in the flow's partition |
 | Cached records by what they are | An `id` modifier whose template names the entity type, `ref` written in full (`ref: reference-data--UnitOfMeasure`), or a bare `ref` | Every cache type of the partition, declared by a cache flow of the same repository, that holds records of that entity type |
 | The platform, as it renders | A `searches` entry and `$search` | The kind the search looks in, wildcards allowed |
+| The record's parent, as it renders | `$parent`, in a mapping whose template is linked to a parent ([mapping $parent](../flow/mapping-parent.md)) | The parent's kind, as the template's link names it |
 
-Which entity type a bare `ref` (or one naming the entity alone) points to is told by the template the mapping pins, and
-templates live in the module's database, not the repository. Lineage reads the pinned version from there when the host
-has it: the repository sync always can, and `sqlflow lineage` can when the command line names a database (`--db`,
-`SQLFLOW_CATALOG_DB` or `SQLFLOW_OSDU_DB`). When it cannot, the flow keeps everything the documents alone tell and a
-warning says what was left out:
+Which entity type a bare `ref` (or one naming the entity alone) points to is told by the template the mapping fills.
+Lineage reads it as a run does, from the template folders on the mapping's path in the checkout it scans
+([template folders](templates.md#template-folders)), so the repository sync and `sqlflow lineage` read the same file.
+When no folder holds it, or its file cannot be read, the flow keeps everything the documents alone tell and a warning
+says what was left out:
 
 ```text
 WARN  welldb/flows/welldb-welllog-03-delivery.yaml: delivery flow 'welldb-welllog-03-delivery' shows fewer cache types
@@ -211,7 +213,8 @@ writes (or what a flow rendering through a mapping writes) are never bound to it
 Reads and writes of OSDU types, cache types and dimensions order flows exactly as table reads and writes do:
 
 - A delivery flow runs after the `ing` flows writing its tables, after the cache flows writing what its mapping reads,
-  after the delivery flows writing the kinds its mapping searches, and after the delivery flows writing the entity types
+  after the delivery flows writing the kinds its mapping searches or reads its records' parents from, and after the
+  delivery flows writing the entity types
   its records refer to, however its mapping writes the reference ([the OSDU order](osdu-order.md)).
 - A cache flow runs after the `ing` flows loading its table types, after the delivery flows writing the kinds it
   captures, and after the dimension flows building its dimension types.
