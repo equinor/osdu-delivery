@@ -142,7 +142,7 @@ public sealed class DeliveryIssuesApiTests
     }
 
     [Fact]
-    public async Task Records_held_for_an_id_osdu_holds_are_adopted_one_at_a_time_or_by_their_issue_with_the_partition_typed_back()
+    public async Task Records_held_for_an_id_osdu_holds_are_asked_to_adopt_in_batches_with_the_partition_typed_back()
     {
         var cs = OsduTestServer.Require();
         await CatalogDatabase.MigrateAsync(cs);
@@ -153,14 +153,14 @@ public sealed class DeliveryIssuesApiTests
         var ledger = new OsduLedger(() => SampleEstate.Context(cs));
         await ledger.RegisterAsync(flowId, TestLedgers.Partition, flowName);
 
-        // Three records whose ids, made from their keys, OSDU already holds records at that no ledger claimed: one issue.
-        var namespaces = Enumerable.Range(1, 3)
+        // Five records whose ids, made from their keys, OSDU already holds records at that no ledger claimed: one issue.
+        var namespaces = Enumerable.Range(1, 5)
             .Select(i => Occupied(flowId, $"N-{suffix}-{i}", $"{TestLedgers.Partition}:reference-data--ExternalCatalogNamespace:N-{suffix}-{i}", 40 + i))
             .ToList();
         var tag = Held(flowId, $"T-{suffix}", EmptyTag, "wells.csv");
         await ledger.MarkHeldAsync(flowId, [.. namespaces, tag]);
         var issue = ProblemSignature.Format(ProblemSignature.Of(namespaces[0].LastError));
-        Assert.Equal(issue, ProblemSignature.Format(ProblemSignature.Of(namespaces[2].LastError)));
+        Assert.Equal(issue, ProblemSignature.Format(ProblemSignature.Of(namespaces[4].LastError)));
 
         try
         {
@@ -172,49 +172,98 @@ public sealed class DeliveryIssuesApiTests
             using var client = factory.CreateClient();
             var token = await TokenAsync(client);
 
-            // The record says which id OSDU holds a record at, and the version, for the page to offer its adoption.
+            // The record says which id OSDU holds a record at, and whether an adoption may be asked of it; the flow counts them.
             var first = namespaces[0];
-            var shown = await JsonAsync(client, token, HttpMethod.Get, $"/api/v1/delivery/records/{flowId:D}/{first.DeliveryKey.Value:D}");
-            Assert.Equal(first.OccupiedTargetId, shown.GetProperty("record").GetProperty("occupiedTargetId").GetString());
-            Assert.Equal(41, shown.GetProperty("record").GetProperty("occupiedTargetVersion").GetInt64());
+            var shown = (await JsonAsync(client, token, HttpMethod.Get, $"/api/v1/delivery/records/{flowId:D}/{first.DeliveryKey.Value:D}")).GetProperty("record");
+            Assert.Equal((first.OccupiedTargetId, 41L, true), (shown.GetProperty("occupiedTargetId").GetString(), shown.GetProperty("occupiedTargetVersion").GetInt64(), shown.GetProperty("adoptable").GetBoolean()));
+            Assert.False((await JsonAsync(client, token, HttpMethod.Get, $"/api/v1/delivery/records/{flowId:D}/{tag.DeliveryKey.Value:D}")).GetProperty("record").GetProperty("adoptable").GetBoolean());
+            Assert.Equal(5, (await JsonAsync(client, token, HttpMethod.Get, $"/api/v1/delivery/flows/{pipelineId:D}/stats")).GetProperty("adoptable").GetInt64());
 
-            // A record held for something else has nothing to adopt.
+            // One record, asked; asking again, or asking a record held for something else, is refused saying why.
             var nothing = await JsonAsync(client, token, HttpMethod.Post, $"/api/v1/delivery/records/{flowId:D}/{tag.DeliveryKey.Value:D}/adopt", "{}", HttpStatusCode.Conflict);
             Assert.Contains("is not held because OSDU already holds a record at the OSDU id its key makes", nothing.GetProperty("detail").GetString(), StringComparison.Ordinal);
-
-            // One record adopted: it claims the id at the version OSDU held, and its history names who adopted it.
-            var adopted = await JsonAsync(client, token, HttpMethod.Post, $"/api/v1/delivery/records/{flowId:D}/{first.DeliveryKey.Value:D}/adopt", "{}");
-            Assert.Equal((first.OccupiedTargetId, 41L, JsonValueKind.Null), (adopted.GetProperty("targetId").GetString(), adopted.GetProperty("version").GetInt64(), adopted.GetProperty("runId").ValueKind));
-            var claimed = await ledger.GetRecordAsync(flowId, first.DeliveryKey);
-            Assert.Equal((first.OccupiedTargetId, (long?)41, false), (claimed!.ClaimedTargetId, claimed.TargetVersion, claimed.Blocked));
+            var one = await JsonAsync(client, token, HttpMethod.Post, $"/api/v1/delivery/records/{flowId:D}/{first.DeliveryKey.Value:D}/adopt", "{}");
+            Assert.Equal((1, 1, JsonValueKind.Null), (one.GetProperty("selected").GetInt32(), one.GetProperty("asked").GetInt32(), one.GetProperty("runId").ValueKind));
+            var asked = await ledger.GetRecordAsync(flowId, first.DeliveryKey);
+            Assert.Equal(((string?)null, false), (asked!.ClaimedTargetId, asked.Blocked));
+            Assert.NotNull(asked.AdoptRequestedUtc);
             var again = await JsonAsync(client, token, HttpMethod.Post, $"/api/v1/delivery/records/{flowId:D}/{first.DeliveryKey.Value:D}/adopt", "{}", HttpStatusCode.Conflict);
-            Assert.Contains($"it claimed {first.OccupiedTargetId} already", again.GetProperty("detail").GetString(), StringComparison.Ordinal);
+            Assert.Contains("its adoption is asked already", again.GetProperty("detail").GetString(), StringComparison.Ordinal);
 
-            // The issue's records together, with the partition typed back: none without it, none with another.
-            var path = $"/api/v1/delivery/flows/{pipelineId:D}/issues/{issue}/adopt";
-            await StatusAsync(client, token, HttpMethod.Post, path, HttpStatusCode.BadRequest, "{}");
-            var wrong = await JsonAsync(client, token, HttpMethod.Post, path, """{"confirm":"prod"}""", HttpStatusCode.BadRequest);
+            // Records named in a batch, the partition typed back: the one held for something else is left.
+            var flowPath = $"/api/v1/delivery/flows/{pipelineId:D}/adopt";
+            var named = $$"""{"keys":["{{namespaces[1].DeliveryKey.Value:D}}","{{tag.DeliveryKey.Value:D}}"]""";
+            await StatusAsync(client, token, HttpMethod.Post, flowPath, HttpStatusCode.BadRequest, named + "}");
+            var wrong = await JsonAsync(client, token, HttpMethod.Post, flowPath, named + ""","confirm":"prod"}""", HttpStatusCode.BadRequest);
             Assert.Contains($"are kept in '{TestLedgers.Partition}'. Nothing was adopted.", wrong.GetProperty("detail").GetString(), StringComparison.Ordinal);
-            var together = await JsonAsync(client, token, HttpMethod.Post, path, $$"""{"confirm":"{{TestLedgers.Partition.ToUpperInvariant()}}","run":true}""", HttpStatusCode.Accepted);
-            Assert.Equal((issue, 2), (together.GetProperty("issue").GetString(), together.GetProperty("adopted").GetInt32()));
-            var runId = together.GetProperty("runId").GetGuid();
+            var batch = await JsonAsync(client, token, HttpMethod.Post, flowPath, named + $$""","confirm":"{{TestLedgers.Partition}}"}""");
+            Assert.Equal((2, 1), (batch.GetProperty("selected").GetInt32(), batch.GetProperty("asked").GetInt32()));
+
+            // Every record of the flow held so, in one batch with a deliver run queued: the batch an operator runs after a run.
+            var every = await JsonAsync(client, token, HttpMethod.Post, flowPath, $$"""{"confirm":"{{TestLedgers.Partition.ToUpperInvariant()}}","run":true}""", HttpStatusCode.Accepted);
+            Assert.Equal((3, 3), (every.GetProperty("selected").GetInt32(), every.GetProperty("asked").GetInt32()));
+            var runId = every.GetProperty("runId").GetGuid();
             await using (var db = CatalogDatabase.Create(cs))
             {
                 Assert.Equal(pipelineId, (await db.Runs.AsNoTracking().SingleAsync(r => r.RunId == runId)).PipelineId);
             }
 
-            foreach (var record in namespaces.Skip(1))
+            foreach (var record in namespaces)
             {
-                Assert.Equal(record.OccupiedTargetId, (await ledger.GetRecordAsync(flowId, record.DeliveryKey))!.ClaimedTargetId);
+                Assert.NotNull((await ledger.GetRecordAsync(flowId, record.DeliveryKey))!.AdoptRequestedUtc);
+                var activities = await JsonAsync(client, token, HttpMethod.Get, $"/api/v1/delivery/records/{flowId:D}/{record.DeliveryKey.Value:D}/activities");
+                Assert.Equal("adopt", Assert.Single(activities.EnumerateArray().ToList()).GetProperty("kind").GetString());
+            }
+
+            // Nothing is left to adopt: the count is zero, the issue keeps no record, and the other record is still held.
+            Assert.Equal(0, (await JsonAsync(client, token, HttpMethod.Get, $"/api/v1/delivery/flows/{pipelineId:D}/stats")).GetProperty("adoptable").GetInt64());
+            await StatusAsync(client, token, HttpMethod.Post, $"/api/v1/delivery/flows/{pipelineId:D}/issues/{issue}/adopt", HttpStatusCode.NotFound, $$"""{"confirm":"{{TestLedgers.Partition}}"}""");
+            Assert.True((await ledger.GetRecordAsync(flowId, tag.DeliveryKey))!.Blocked);
+        }
+        finally
+        {
+            await CleanAsync(cs, repoId, flowId);
+        }
+    }
+
+    [Fact]
+    public async Task An_issue_s_held_records_are_asked_to_adopt_together()
+    {
+        var cs = OsduTestServer.Require();
+        await CatalogDatabase.MigrateAsync(cs);
+        await SampleEstate.MigrateModuleAsync(cs);
+
+        var suffix = Guid.NewGuid().ToString("N")[..10];
+        var (repoId, pipelineId, flowId, flowName) = await SeedFlowAsync(cs, suffix);
+        var ledger = new OsduLedger(() => SampleEstate.Context(cs));
+        await ledger.RegisterAsync(flowId, TestLedgers.Partition, flowName);
+        var namespaces = Enumerable.Range(1, 2)
+            .Select(i => Occupied(flowId, $"I-{suffix}-{i}", $"{TestLedgers.Partition}:reference-data--ExternalCatalogNamespace:I-{suffix}-{i}", 7))
+            .ToList();
+        await ledger.MarkHeldAsync(flowId, namespaces);
+        var issue = ProblemSignature.Format(ProblemSignature.Of(namespaces[0].LastError));
+
+        try
+        {
+            await using var factory = new ControlPlaneAppFactory()
+                .WithCatalog(cs)
+                .WithModules(new DeliveryControlPlaneModule())
+                .WithSetting("ControlPlane:Worker:Enabled", "false")
+                .WithSetting("Osdu:SchemaRepository:WarmOnStart", "false");
+            using var client = factory.CreateClient();
+            var token = await TokenAsync(client);
+
+            var path = $"/api/v1/delivery/flows/{pipelineId:D}/issues/{issue}/adopt";
+            await StatusAsync(client, token, HttpMethod.Post, path, HttpStatusCode.BadRequest, "{}");
+            var together = await JsonAsync(client, token, HttpMethod.Post, path, $$"""{"confirm":"{{TestLedgers.Partition}}"}""");
+            Assert.Equal((issue, 2, JsonValueKind.Null), (together.GetProperty("issue").GetString(), together.GetProperty("asked").GetInt32(), together.GetProperty("runId").ValueKind));
+            foreach (var record in namespaces)
+            {
                 var activities = await JsonAsync(client, token, HttpMethod.Get, $"/api/v1/delivery/records/{flowId:D}/{record.DeliveryKey.Value:D}/activities");
                 var adoption = Assert.Single(activities.EnumerateArray().ToList());
                 Assert.Equal("adopt", adoption.GetProperty("kind").GetString());
-                Assert.StartsWith("adopted 2 record(s) issue ", adoption.GetProperty("summary").GetString(), StringComparison.Ordinal);
+                Assert.StartsWith("asked 2 record(s) issue ", adoption.GetProperty("summary").GetString(), StringComparison.Ordinal);
             }
-
-            // Every record of the issue adopted, the issue is gone; the other record is still held for its own reason.
-            await StatusAsync(client, token, HttpMethod.Post, path, HttpStatusCode.NotFound, $$"""{"confirm":"{{TestLedgers.Partition}}"}""");
-            Assert.True((await ledger.GetRecordAsync(flowId, tag.DeliveryKey))!.Blocked);
         }
         finally
         {

@@ -404,18 +404,19 @@ internal static class DeliveryRecordVerbs
     }
 
     /// <summary>
-    /// <c>sqlflow records adopt</c>: adopts, for the records <c>--key</c> names or every one <c>--issue</c> keeps held, the
-    /// record OSDU already holds at the id each record's key makes (osdu/docs/reference/concepts/record-lifecycle.md, Adopting
-    /// a record OSDU already holds). Each record claims the id at the version OSDU held, and the next run writes it there. An
-    /// issue's adoption takes the partition typed back with <c>--confirm</c>. It is recorded on the audit trail as
-    /// <c>cli:&lt;user&gt;@&lt;machine&gt;</c>'s, with every record it adopted named under it.
+    /// <c>sqlflow records adopt</c>: asks the records held because OSDU already holds a record at the id each one's key makes to
+    /// adopt that record (osdu/docs/reference/concepts/record-lifecycle.md, Adopting a record OSDU already holds): every such
+    /// record of the interface, the ones <c>--issue</c> keeps held, or the ones <c>--key</c> names. The flow's next run takes
+    /// them over, each at the version OSDU holds then. Asking every record or an issue's takes the partition typed back with
+    /// <c>--confirm</c>. It is recorded on the audit trail as <c>cli:&lt;user&gt;@&lt;machine&gt;</c>'s, with every record it
+    /// asked named under it.
     /// </summary>
     private static async Task<int> AdoptAsync(
         CliVerbContext context, ILedger ledger, EngineContext engine, FlowDefinition flow, string label, CancellationToken ct)
     {
-        var asked = context.Arguments.GetOptions("--key").ToList();
-        var keys = new List<DeliveryKey>(asked.Count);
-        foreach (var value in asked)
+        var given = context.Arguments.GetOptions("--key").ToList();
+        var keys = new List<DeliveryKey>(given.Count);
+        foreach (var value in given)
         {
             keys.Add(Guid.TryParse(value, CultureInfo.InvariantCulture, out var key)
                 ? new DeliveryKey(key)
@@ -423,32 +424,40 @@ internal static class DeliveryRecordVerbs
         }
 
         var problem = Issue(context.Arguments.GetOption("--issue"));
-        if ((problem is null) == (keys.Count == 0))
+        if (problem is not null && keys.Count > 0)
         {
-            return context.UsageError("adopt the records --key names or the ones --issue keeps held, one or the other.");
+            return context.UsageError("adopt the records --key names or the ones --issue keeps held, not both; name neither to adopt every record held for an id OSDU holds.");
         }
 
-        ProblemGroup? group = null;
-        if (problem is { } hash)
-        {
-            group = await ledger.GetProblemAsync(flow.Id, hash, ct).ConfigureAwait(false)
+        var group = problem is { } hash
+            ? await ledger.GetProblemAsync(flow.Id, hash, ct).ConfigureAwait(false)
                 ?? throw new FlowValidationException(
-                    $"{label} has no record held by issue {ProblemSignature.Format(hash)}; 'records issues' lists the issues it has.");
+                    $"{label} has no record held by issue {ProblemSignature.Format(hash)}; 'records issues' lists the issues it has.")
+            : null;
+        if (keys.Count == 0)
+        {
             var kept = (await ledger.GetLedgerAsync(flow.Id, ct).ConfigureAwait(false))?.Partition;
+            if (kept is null)
+            {
+                throw new FlowValidationException($"{label} keeps no records in a partition yet, so there is nothing to adopt.");
+            }
+
             var typed = context.Arguments.GetOption("--confirm")?.Trim();
             if (string.IsNullOrEmpty(typed) || !string.Equals(typed, kept, StringComparison.OrdinalIgnoreCase))
             {
+                var what = group is null ? "every record held for an id OSDU holds" : $"the records of issue {ProblemSignature.Format(group.Problem)}";
                 return context.UsageError(
-                    $"adopting the records of issue {ProblemSignature.Format(hash)} takes over every record OSDU holds at their ids in partition {kept}; "
-                    + $"type the partition back with --confirm {kept}.");
+                    $"adopting {what} takes over the records OSDU holds at their ids in partition {kept}; type the partition back with --confirm {kept}.");
             }
         }
 
         using var runtime = FlowRuntime.ForTarget(flow.Interface is null ? engine : engine.ForInterface(flow.Interface), flow);
         runtime.Actor = RunActors.LocalAccount();
-        var adopted = group is not null
+        var asked = group is not null
             ? await runtime.AdoptProblemAsync(group.Problem, group.Pattern, ct).ConfigureAwait(false)
-            : await runtime.AdoptAsync(keys, ct).ConfigureAwait(false);
+            : keys.Count > 0
+                ? await runtime.AdoptAsync(keys, ct).ConfigureAwait(false)
+                : await runtime.AdoptEveryAsync(ct).ConfigureAwait(false);
         if (context.Json)
         {
             context.Out.WriteLine(CanonicalJson.Pretty(new JsonObject
@@ -456,33 +465,17 @@ internal static class DeliveryRecordVerbs
                 ["flow"] = label,
                 ["flowId"] = flow.Id.ToString(),
                 ["issue"] = group is null ? null : ProblemSignature.Format(group.Problem),
-                ["adopted"] = new JsonArray(adopted.Select(a => (JsonNode)new JsonObject
-                {
-                    ["deliveryKey"] = a.Key.ToString(),
-                    ["targetId"] = a.TargetId,
-                    ["version"] = a.Version,
-                }).ToArray()),
+                ["asked"] = new JsonArray(asked.Select(k => (JsonNode)JsonValue.Create(k.ToString())!).ToArray()),
             }));
             return 0;
         }
 
-        var named = group is not null
+        var reached = group is not null
             ? $" issue {ProblemSignature.Format(group.Problem)} kept held"
-            : $" of the {keys.Count.ToString(CultureInfo.InvariantCulture)} named";
+            : keys.Count > 0 ? $" of the {keys.Count.ToString(CultureInfo.InvariantCulture)} named" : " held for an id OSDU holds";
         context.Out.WriteLine(string.Create(
             CultureInfo.InvariantCulture,
-            $"{label}: {adopted.Count} record(s) adopted{named}. Each claims the OSDU id its key makes, and the next run writes it there; a record not held for an id OSDU holds, or whose id another record claimed since, was left as it is."));
-        foreach (var one in adopted.Take(20))
-        {
-            var version = one.Version is { } v ? string.Create(CultureInfo.InvariantCulture, $" (OSDU held version {v})") : string.Empty;
-            context.Out.WriteLine($"  {one.Key}  {one.TargetId}{version}");
-        }
-
-        if (adopted.Count > 20)
-        {
-            context.Out.WriteLine(string.Create(CultureInfo.InvariantCulture, $"  and {adopted.Count - 20} more; --json lists every one."));
-        }
-
+            $"{label}: {asked.Count} record(s){reached} asked to adopt the records OSDU holds at their ids. The next run takes each over, at the version OSDU holds then, and writes its row there; a record held for anything else was left as it is."));
         return 0;
     }
 

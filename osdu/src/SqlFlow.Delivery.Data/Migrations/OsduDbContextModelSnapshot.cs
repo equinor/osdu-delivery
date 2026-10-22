@@ -2801,6 +2801,9 @@ namespace SqlFlow.Delivery.Data.Migrations
                         .HasMaxLength(64)
                         .HasColumnType("nvarchar(64)");
 
+                    b.Property<DateTime?>("AdoptRequestedUtc")
+                        .HasColumnType("datetime2");
+
                     b.Property<long?>("AssertionFailures")
                         .HasColumnType("bigint");
 

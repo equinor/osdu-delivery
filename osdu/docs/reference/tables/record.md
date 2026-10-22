@@ -28,6 +28,7 @@ sourceRefs:
   - osdu/src/SqlFlow.Delivery/Ledger/OsduLedger.cs
   - osdu/src/SqlFlow.Delivery/Ledger/OsduLedger.Leases.cs
   - osdu/src/SqlFlow.Delivery/Ledger/OsduLedger.Adoptions.cs
+  - osdu/src/SqlFlow.Delivery/Ledger/SqlServerLedgerBulk.Adoptions.cs
   - osdu/src/SqlFlow.Delivery/Ledger/SqlServerLedgerBulk.cs
   - osdu/src/SqlFlow.Delivery/Identity/DeliveryKey.cs
   - osdu/src/SqlFlow.Delivery/Snapshots/RenderContext.cs
@@ -69,10 +70,11 @@ this table through its status indexes on every call; nothing keeps a running tot
 | `PayloadHash` | `nvarchar(64)` | yes | The hash of the payload OSDU holds. |
 | `PayloadModifiedUtc` | `datetime2` | yes | The newest modified time among the payload files the delivered payload was sent from. |
 | `TargetId` | `nvarchar(500)` | yes | The OSDU id the record is delivered under. |
-| `ClaimedTargetId` | `nvarchar(500)` | yes | Collation `Latin1_General_100_BIN2`. The OSDU id the record claimed for its flow when it first queued a document, or when an operator adopted the record OSDU held there, kept for good afterwards; null for a record that was only ever held. Unique across the ledger: one OSDU record belongs to one record of one flow. |
+| `ClaimedTargetId` | `nvarchar(500)` | yes | Collation `Latin1_General_100_BIN2`. The OSDU id the record claimed for its flow when it first queued a document, or when a run took over the record OSDU held there as an operator asked, kept for good afterwards; null for a record that was only ever held. Unique across the ledger: one OSDU record belongs to one record of one flow. |
 | `TargetIdAssignedUtc` | `datetime2` | yes | When an operator gave the record a new OSDU id because OSDU lost the one it claimed; from then on the record is written under `ClaimedTargetId` rather than the id its mapping makes. Null for a record whose id is its mapping's. Added by migration `RecordAssignedTargetId` (module version 1.45.0). |
 | `OccupiedTargetId` | `nvarchar(500)` | yes | Collation `Latin1_General_100_BIN2`. While the record is held because OSDU already holds a record at the OSDU id its mapping makes from its key, and no record of any ledger claimed that id: the id, which an adoption makes the record claim ([Adopting a record OSDU already holds](../concepts/record-lifecycle.md#adopting-a-record-osdu-already-holds)). Null for any other record, and cleared when the record claims an id or is held for another reason. Added by migration `RecordOccupiedTargetId` (module version 1.56.0). |
-| `OccupiedTargetVersion` | `bigint` | yes | The version OSDU held at `OccupiedTargetId` when the record was held for it, which an adoption takes as the record's `TargetVersion`; null with it. Added by migration `RecordOccupiedTargetId` (module version 1.56.0). |
+| `OccupiedTargetVersion` | `bigint` | yes | The version OSDU held at `OccupiedTargetId` when the record was held for it; null with it. An adoption takes the version OSDU holds when the run takes the record over, not this one. Added by migration `RecordOccupiedTargetId` (module version 1.56.0). |
+| `AdoptRequestedUtc` | `datetime2` | yes | When an operator asked the record, held for an id OSDU holds, to adopt the record OSDU holds there: the flow's next run takes it over ([Adopting a record OSDU already holds](../concepts/record-lifecycle.md#adopting-a-record-osdu-already-holds)). Null for a record not asked, and cleared when a run writes the record; kept while a run holds the record for another reason, so the run after a release takes it over. Added by migration `RecordAdoptRequested` (module version 1.57.0). |
 | `TargetVersion` | `bigint` | yes | The last OSDU version the ledger knows of. |
 | `Status` | `nvarchar(16)` | no | The custody state: `pending`, `delivering`, `delivered`, `held`, `failed`, `waiting`, `deleted` or `reverted` ([Record lifecycle](../concepts/record-lifecycle.md#record-states)). |
 | `LastDeliveredUtc` | `datetime2` | yes | When a try last delivered the record. |
@@ -160,7 +162,8 @@ this table through its status indexes on every call; nothing keeps a running tot
 - **Written** by the intake, which stages and queues records a slice of at most 1,000 at a time, and by the lease
   applying what a worker appended ([`osdu.RecordEvent`](record-event.md)): a worker does not write this table while it
   delivers. Releases, adoptions, redeliveries, removals, reversals, syncs, cache rollouts and parents that land write it
-  through the ledger (`OsduLedger.cs`, `OsduLedger.Adoptions.cs`, `OsduLedger.Parents.cs`, `SqlServerLedgerBulk.cs`), each
+  through the ledger (`OsduLedger.cs`, `OsduLedger.Adoptions.cs`, `OsduLedger.Parents.cs`, `SqlServerLedgerBulk.cs`,
+  `SqlServerLedgerBulk.Adoptions.cs`), each
   writing an attempt or an activity beside the change.
 - **Read** by the worker's claims, every plan's change gates, a flow's statistics and Records and Issues tabs, the record
   search across flows, a record's page, `sqlflow records` and the delivery API's record routes

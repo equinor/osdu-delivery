@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Link as RouterLink, useNavigate, useSearchParams } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Loader2, Radar, RefreshCcw, RefreshCw, Trash2, Unlock } from "lucide-react";
+import { Link2, Loader2, Radar, RefreshCcw, RefreshCw, Trash2, Unlock } from "lucide-react";
 import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -37,6 +37,7 @@ import { OpenUndosCard, UndoUnfinishedButton } from "./DeliveryOpenUndos";
 import { UndoneFirst } from "./ArtifactMarks";
 import { undoneFirst } from "../../api/artifacts";
 import { RedeliverDialog, type RedeliverSelection } from "./RedeliverDialog";
+import { AdoptDialog, type AdoptSelection } from "./AdoptDialog";
 import { PLANNED_PER_PASS, ReleaseDialog } from "./ReleaseDialog";
 import { failureText } from "./answers";
 import { isTerminalTask, taskResultJson, useComputeTask } from "./useComputeTask";
@@ -122,6 +123,11 @@ export function DeliveryFlowPanel({ pipelineId, flowName, section }: { pipelineI
   const [removalTaskId, setRemovalTaskId] = useState<string | null>(null);
   // The records a redelivery was opened for: the selection, the filtered listing, or every delivered record.
   const [redeliverFor, setRedeliverFor] = useState<RedeliverSelection | null>(null);
+  // The records an adoption was opened for: every record held for an id OSDU holds, or the selection.
+  const [adoptFor, setAdoptFor] = useState<AdoptSelection | null>(null);
+  // The records of the listing's loaded pages an adoption may be asked of, so the selection bar offers Adopt only when the
+  // selection holds one.
+  const [adoptable, setAdoptable] = useState<ReadonlySet<string>>(new Set());
 
   const filter = useMemo<DeliveryRecordFilter>(() => ({
     search: search.trim() === "" ? undefined : search.trim(),
@@ -146,11 +152,25 @@ export function DeliveryFlowPanel({ pipelineId, flowName, section }: { pipelineI
   if (filterKey !== shownFilter) {
     setShownFilter(filterKey);
     clearSelection();
+    setAdoptable(new Set());
   }
 
-  const onPageLoaded = useCallback((_rows: DeliveryRecord[], total: number, capped: boolean) => {
+  const onPageLoaded = useCallback((rows: DeliveryRecord[], total: number, capped: boolean) => {
     setMatched(total);
     setMatchedCapped(capped);
+    const found = rows.filter((row) => row.adoptable === true).map((row) => row.deliveryKey);
+    setAdoptable((known) => {
+      const next = new Set(known);
+      for (const row of rows) {
+        next.delete(row.deliveryKey);
+      }
+
+      for (const key of found) {
+        next.add(key);
+      }
+
+      return next.size === known.size && [...next].every((key) => known.has(key)) ? known : next;
+    });
   }, []);
   const removal = useComputeTask(removalTaskId);
 
@@ -299,6 +319,21 @@ export function DeliveryFlowPanel({ pipelineId, flowName, section }: { pipelineI
                       <Unlock />
                       Release blocked ({blocked})
                     </Button>
+                    {(s.adoptable ?? 0) > 0 && (
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => setAdoptFor({ kind: "every", count: s.adoptable ?? 0 })}
+                        disabled={ledgerPartition === null}
+                        title={ledgerPartition === null
+                          ? "Pick a partition in the title bar: the records are kept in one, and adopting them names that one."
+                          : "Records held because OSDU already holds a record at the id their key makes, written by another system or another instance of the delivery: adopt them all, and the next run takes each over"}
+                        data-testid="delivery-adopt-all"
+                      >
+                        <Link2 />
+                        Adopt ({(s.adoptable ?? 0).toLocaleString()})
+                      </Button>
+                    )}
                     <Button
                       variant="outline"
                       size="sm"
@@ -482,6 +517,20 @@ export function DeliveryFlowPanel({ pipelineId, flowName, section }: { pipelineI
                   <RefreshCcw />
                   Redeliver
                 </Button>
+                {(allMatching ? adoptable.size > 0 : [...selected].some((key) => adoptable.has(key))) && (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="h-7"
+                    onClick={() => setAdoptFor(allMatching ? { kind: "filter", filter, expected: matched } : { kind: "keys", keys: [...selected] })}
+                    disabled={!canSync || ledgerPartition === null}
+                    title="Adopt the records OSDU already holds at the ids the selected held records' keys make: the next run takes each over. A selected record held for anything else is left as it is."
+                    data-testid="delivery-adopt-selected"
+                  >
+                    <Link2 />
+                    Adopt
+                  </Button>
+                )}
                 <Button
                   variant="outline"
                   size="sm"
@@ -596,6 +645,28 @@ export function DeliveryFlowPanel({ pipelineId, flowName, section }: { pipelineI
             toast.success(
               `Deleting the ledger of ${flowName} in ${accepted.partition}: queued as a run.`,
               { action: { label: "Open run", onClick: () => navigate(`/runs/${accepted.runId}`) } });
+            void queryClient.invalidateQueries({ queryKey: ["delivery"] });
+          }}
+        />
+      )}
+      {adoptFor !== null && ledgerPartition !== null && (
+        <AdoptDialog
+          pipelineId={pipelineId}
+          // Every record of the source, from the overview, whose counts are the whole source's; a selection is the interface's.
+          scope={adoptFor.kind === "every" ? { interfaceName: null, partition } : scope}
+          partition={ledgerPartition}
+          ledgerName={adoptFor.kind === "every" ? flowName : ledgerName}
+          selection={adoptFor}
+          onClose={() => setAdoptFor(null)}
+          onDone={(result) => {
+            setAdoptFor(null);
+            clearSelection();
+            const asked = `Adoption asked of ${result.asked.toLocaleString()} record${result.asked === 1 ? "" : "s"}`;
+            toast.success(
+              result.asked === 0
+                ? "No record was asked: none of them is held because OSDU already holds a record at its id."
+                : result.runId ? `${asked}; a deliver run takes them over now.` : `${asked}; the flow's next run takes them over.`,
+              result.runId ? { action: { label: "Open run", onClick: () => navigate(`/runs/${result.runId}`) } } : undefined);
             void queryClient.invalidateQueries({ queryKey: ["delivery"] });
           }}
         />

@@ -1821,6 +1821,14 @@ public sealed partial class OsduLedger : ILedger
         var since = nowUtc.AddHours(-24);
         var (byStatus, drifted, last24) = await CountFromRecordsAsync(db, partition, flowId, since, ct).ConfigureAwait(false);
         var (blocked, stranded) = await SqlServerLedgerBulk.ParkedCountsAsync(db, partition, flowId, ct).ConfigureAwait(false);
+
+        // The held records an adoption may be asked of, read from the held records alone through the status index: the test is
+        // the one an adoption makes (OccupiedHolds.Adoptable), the id a hold kept, or a hold whose message names one.
+        var held = StatusText.Of(RecordStatus.Held);
+        var adoptable = await db.DeliveryRecords
+            .LongCountAsync(r => r.PartitionId == partition && r.FlowId == flowId && r.Status == held && r.ClaimedTargetId == null && r.LeaseOwner == null
+                && r.AdoptRequestedUtc == null && (r.OccupiedTargetId != null || r.LastError!.StartsWith(OccupiedHolds.Prefix)), ct)
+            .ConfigureAwait(false);
         var lastDelivered = await db.DeliveryRecords.Where(r => r.PartitionId == partition && r.FlowId == flowId).MaxAsync(r => r.LastDeliveredUtc, ct).ConfigureAwait(false);
         var lastVerified = await db.DeliveryRecords.Where(r => r.PartitionId == partition && r.FlowId == flowId).MaxAsync(r => r.LastVerifiedUtc, ct).ConfigureAwait(false);
         var submissions = await db.DeliverySubmissions.LongCountAsync(s => s.PartitionId == partition && s.FlowId == flowId, ct).ConfigureAwait(false);
@@ -1839,6 +1847,7 @@ public sealed partial class OsduLedger : ILedger
             Waiting = byStatus.GetValueOrDefault("waiting"),
             Blocked = blocked,
             Stranded = stranded,
+            Adoptable = adoptable,
             Drifted = drifted,
             DeliveredLast24h = last24,
             LastDeliveredUtc = lastDelivered,
@@ -3976,6 +3985,7 @@ public sealed partial class OsduLedger : ILedger
         TargetIdAssignedUtc = r.TargetIdAssignedUtc is { } assigned ? DateTime.SpecifyKind(assigned, DateTimeKind.Utc) : null,
         OccupiedTargetId = r.OccupiedTargetId,
         OccupiedTargetVersion = r.OccupiedTargetVersion,
+        AdoptRequestedUtc = r.AdoptRequestedUtc is { } asked ? DateTime.SpecifyKind(asked, DateTimeKind.Utc) : null,
         TargetVersion = r.TargetVersion,
         Status = StatusText.ToRecordStatus(r.Status),
         LastDeliveredUtc = r.LastDeliveredUtc,

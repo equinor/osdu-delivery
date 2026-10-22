@@ -13,7 +13,7 @@ public sealed record DeliveryEvent
     /// <summary>The interface of its source the event belongs to, or null for a flow in the single form.</summary>
     public string? Interface { get; init; }
 
-    /// <summary>record.delivered, record.unchanged, record.retry, record.held, record.failed, record.waiting, record.released, batch.progress, batch.completed, submission.planned, submission.completed, verify.completed.</summary>
+    /// <summary>record.delivered, record.unchanged, record.retry, record.held, record.failed, record.waiting, record.released, record.adoption-asked, record.adopted, batch.progress, batch.completed, submission.planned, submission.completed, verify.completed.</summary>
     public required string Kind { get; init; }
 
     public Guid? SubmissionId { get; init; }

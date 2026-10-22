@@ -119,3 +119,21 @@ Added [0021](decisions/0021-adopting-occupied-records.md): why the id an ingesti
 renders it, why a record OSDU holds there was held with no way forward when the delivery itself had written it, why an
 operator adopts it and the adoption claims the id at once, and what two instances linked to one record need of the
 storage route. Indexed 0021.
+
+## [2026-10-22] ingest | Adoption in a batch, taken over by the next run, decision 0021 revised
+
+Source: the change that makes adoption a batch operation asked of a ledger's held records and carried out by the flow's
+next run: the request (`osdu/src/SqlFlow.Delivery/Ledger/OsduLedger.Adoptions.cs`,
+`osdu/src/SqlFlow.Delivery/Ledger/SqlServerLedgerBulk.Adoptions.cs`, migration `RecordAdoptRequested`), the one test of what
+can be adopted, old holds included (`osdu/src/SqlFlow.Delivery/Ledger/OccupiedHolds.cs`), the intake taking asked records
+over (`osdu/src/SqlFlow.Delivery/Engine/Intake/SubmissionIntake.cs`), the whole-source route
+(`osdu/src/SqlFlow.Delivery.ControlPlane/Api/DeliveryEndpoints.cs`), and the reference pages it changed
+([record lifecycle](../reference/concepts/record-lifecycle.md#adopting-a-record-osdu-already-holds),
+[the GUI](../reference/concepts/gui.md), [the API](../reference/concepts/api.md),
+[sqlflow records adopt](../reference/cli/records.md#records-adopt)). Discussed with the human: holds made before the hold
+kept the id must be adoptable without rewriting stored records, and thousands of records cannot be adopted one by one.
+
+Revised [0021](decisions/0021-adopting-occupied-records.md): adoption is asked of every record of a source at once and the
+next run claims each id at the version OSDU holds then; claiming at the click moved to Rejected, with why (old holds carry
+no id, the held version goes stale, the scale). Amended [0002](decisions/0002-client-supplied-ids.md) to match.
+Re-indexed 0021.

@@ -51,7 +51,7 @@ public sealed record DeliveryFlowStatsDto(
     long Deleted, long Drifted, long DeliveredLast24h, DateTime? LastDeliveredUtc, DateTime? LastVerifiedUtc, long Submissions,
     DeliverySubmissionDto? LastSubmission, string? Interface = null, int Interfaces = 1, long Waiting = 0, string? Partition = null,
     IReadOnlyList<string>? Partitions = null, string? HeaderPartition = null, IReadOnlyList<string>? RedeliverParts = null, long Reverted = 0,
-    long Blocked = 0, long Stranded = 0);
+    long Blocked = 0, long Stranded = 0, long Adoptable = 0);
 
 /// <summary>
 /// One interface of a delivery flow (osdu/docs/reference/flow/interfaces.md): its ledger identity, how it is delivered
@@ -137,7 +137,7 @@ public sealed record DeliveryRecordDto(
     string? SourceKeyJson, DateTime? PlanRequestedUtc,
     string? WaitingFor = null, IReadOnlyList<DeliveryRecordReferenceDto>? References = null, DateTime? SourceInsertedUtc = null,
     string? Partition = null, string? Issue = null, string? ParentId = null, long? ParentVersion = null, long? PendingParentVersion = null,
-    string? OccupiedTargetId = null, long? OccupiedTargetVersion = null);
+    string? OccupiedTargetId = null, long? OccupiedTargetVersion = null, bool Adoptable = false, DateTime? AdoptRequestedUtc = null);
 
 /// <summary>An OSDU id a record's pending document refers to, and the property of the record holding it.</summary>
 public sealed record DeliveryRecordReferenceDto(string Id, string Property);
@@ -383,13 +383,26 @@ public sealed record DeliveryReleaseResult(int Released, Guid? RunId = null);
 public sealed record DeliveryRecordReleaseRequest(bool Run = false, string? Pool = null);
 
 /// <summary>
-/// An adoption of one record held because OSDU already holds a record at the id its key makes. <c>Run</c> also queues a
-/// deliver run scoped to it, as a record's release does, so the record is written to the id it adopted at once.
+/// An adoption asked of one record held because OSDU already holds a record at the id its key makes. <c>Run</c> also queues
+/// a deliver run scoped to it, as a record's release does, which takes the record over at once.
 /// </summary>
 public sealed record DeliveryRecordAdoptRequest(bool Run = false, string? Pool = null);
 
-/// <summary>What adopting one record did: the OSDU id it claimed, the version OSDU held there, and the run it queued when asked to.</summary>
-public sealed record DeliveryRecordAdoptResult(string TargetId, long? Version, Guid? RunId = null);
+/// <summary>
+/// An adoption asked of a flow's records held because OSDU already holds a record at the id each one's key makes: those
+/// <c>Keys</c> names, every one <c>Filter</c> matches (resolved when it is asked for, and refused when it no longer matches
+/// the <c>Expected</c> count the operator was shown), or, with neither, every such record of the flow, of every interface
+/// when the request names none. <c>Confirm</c> is the partition the ledgers are kept in, typed back. A record held for
+/// another reason is left. <c>Run</c> also queues a deliver run of the flow, which takes the records over.
+/// </summary>
+public sealed record DeliveryFlowAdoptRequest(
+    IReadOnlyList<Guid>? Keys, DeliveryRecordFilterDto? Filter, int? Expected, string? Confirm, bool Run = false, string? Pool = null);
+
+/// <summary>
+/// What an adoption asked: how many records it reached (named, matched, or held for an id OSDU holds), how many it asked
+/// to adopt, and the deliver run it queued, which takes them over, when asked to.
+/// </summary>
+public sealed record DeliveryAdoptResult(int Selected, int Asked, Guid? RunId);
 
 /// <summary>
 /// Redeliver: <c>scope</c> is the part to send again, <c>all</c> by default, <c>record</c>, or <c>files</c> or <c>bulk</c>
@@ -624,6 +637,7 @@ public static class DeliveryEndpoints
         // The records ride in the body, so the route reads a larger body than the default and no larger than that.
         delivery.MapPost("/flows/{pipelineId:guid}/release", ReleaseFlowAsync).WithName("ReleaseDeliveryFlowRecords");
         delivery.MapPost("/flows/{pipelineId:guid}/redeliver", RedeliverFlowAsync).WithName("RedeliverDeliveryFlowRecords");
+        delivery.MapPost("/flows/{pipelineId:guid}/adopt", AdoptFlowAsync).WithName("AdoptDeliveryFlowRecords");
         delivery.MapPost("/flows/{pipelineId:guid}/rerender", RerenderFlowAsync).WithName("BringDeliveryFlowRecordsUpToDate");
         delivery.MapPost("/flows/{pipelineId:guid}/rerender/preview", PreviewRerenderAsync).WithName("PreviewBringingDeliveryFlowRecordsUpToDate");
         delivery.MapPost("/flows/{pipelineId:guid}/probe", ProbeAsync).WithName("ProbeDeliveryTarget");
@@ -896,7 +910,8 @@ public static class DeliveryEndpoints
             one is null ? null : RedeliverScopes.For(one),
             stats.Sum(s => s.Stats.Reverted),
             stats.Sum(s => s.Stats.Blocked),
-            stats.Sum(s => s.Stats.Stranded));
+            stats.Sum(s => s.Stats.Stranded),
+            stats.Sum(s => s.Stats.Adoptable));
     }
 
     private static async Task<Results<Ok<PagedResult<DeliveryRecordDto>>, ProblemHttpResult>> ListRecordsAsync(
@@ -2026,6 +2041,128 @@ public static class DeliveryEndpoints
         public static Intervention Rerender { get; } = new("A request to bring records up to date", "bring up to date");
 
         public static Intervention Purge { get; } = new("Deleting from the ledger", "delete from the ledger");
+
+        public static Intervention Adoption { get; } = new("An adoption", "adopt");
+    }
+
+    /// <summary>
+    /// Asks, as the caller, a flow's records held because OSDU already holds a record at the id each one's key makes to adopt
+    /// it, the partition typed back first (osdu/docs/reference/concepts/record-lifecycle.md, Adopting a record OSDU already
+    /// holds): the records the request names by keys, every one its filter matches, or, with neither, every such record of
+    /// the interface it names, or of every interface of the source when it names none. A record held for another reason is
+    /// left, and the answer counts both. With <c>run</c>, a deliver run is queued (of the whole source for an adoption of every
+    /// interface), which takes the records over.
+    /// </summary>
+    private static async Task<Results<Ok<DeliveryAdoptResult>, Accepted<DeliveryAdoptResult>, ProblemHttpResult>> AdoptFlowAsync(
+        Guid pipelineId, DeliveryFlowAdoptRequest? request, [FromQuery(Name = "interface")] string? interfaceName, [FromQuery] string? partition, CatalogDbContext db,
+        DeliveryDocumentLoader documents, IPartitionRegistry partitions, EngineContext engine, DeliveryConfigStore config, ILedger ledger, IRunDispatcher dispatcher,
+        ClaimsPrincipal user, CancellationToken ct)
+    {
+        var selects = request?.Keys is { Count: > 0 } || request?.Filter is not null;
+        IReadOnlyList<FlowContext> ledgers;
+        if (selects || interfaceName is not null)
+        {
+            var (flow, problem) = await ResolveAsync(db, documents, partitions, pipelineId, interfaceName, partition, ct).ConfigureAwait(false);
+            if (flow is null)
+            {
+                return problem!;
+            }
+
+            ledgers = [flow];
+        }
+        else
+        {
+            var (unbound, problem) = await ResolveSourceAsync(db, documents, pipelineId, ct).ConfigureAwait(false);
+            if (unbound is null)
+            {
+                return problem!;
+            }
+
+            if (Bind(unbound, partition, await RegistryForAsync(partitions, unbound.Source, partition, ct).ConfigureAwait(false), out var bound) is { } unbindable)
+            {
+                return unbindable;
+            }
+
+            ledgers = [.. bound.Source.Interfaces.Select(f => new FlowContext(bound.Pipeline, bound.Source, f))];
+        }
+
+        List<DeliveryKey>? keys = null;
+        if (selects)
+        {
+            var (selected, unselected) = await SelectedAsync(ledgers[0], request?.Keys, request?.Filter, request?.Expected, Intervention.Adoption, ledger, ct).ConfigureAwait(false);
+            if (unselected is not null)
+            {
+                return unselected;
+            }
+
+            keys = selected;
+        }
+
+        // The partition the ledgers are kept in, which the operator types back: one for every interface of a source bound to it.
+        string? kept = null;
+        foreach (var flow in ledgers)
+        {
+            kept ??= (await ledger.GetLedgerAsync(flow.FlowId, ct).ConfigureAwait(false))?.Partition is { Length: > 0 } named ? named : null;
+        }
+
+        var label = ledgers.Count == 1 ? ledgers[0].Flow.Label : ledgers[0].Pipeline.Name;
+        if (kept is null)
+        {
+            return TypedResults.Problem(
+                detail: $"{label} keeps no records in a partition yet, so there is nothing to adopt.",
+                statusCode: StatusCodes.Status409Conflict, title: "Nothing to adopt");
+        }
+
+        var what = keys is null ? $"Adopting every record of {label} held for an id OSDU holds" : $"Adopting {keys.Count} record(s) of {label}";
+        if (AdoptionUnconfirmed(request?.Confirm, kept, what, label) is { } unconfirmed)
+        {
+            return unconfirmed;
+        }
+
+        var asked = 0;
+        foreach (var flow in ledgers)
+        {
+            using var runtime = FlowRuntime.ForTarget(await ConfiguredAsync(engine, config, flow, ct).ConfigureAwait(false), flow.Flow);
+            runtime.Actor = RequestActor.Label(user);
+            asked += (keys is null ? await runtime.AdoptEveryAsync(ct).ConfigureAwait(false) : await runtime.AdoptAsync(keys, ct).ConfigureAwait(false)).Count;
+        }
+
+        var selectedCount = keys?.Count ?? asked;
+        if (request is not { Run: true } || asked == 0)
+        {
+            return TypedResults.Ok(new DeliveryAdoptResult(selectedCount, asked, null));
+        }
+
+        // The run reads under the parameter values the flow's last submission ran with, as a release's run does; an adoption of
+        // every interface runs the whole source, so each interface's records are taken over in the order its waves give.
+        var latest = await ledger.ListSubmissionsAsync(ledgers[0].FlowId, 1, null, ct).ConfigureAwait(false);
+        var values = latest.Count > 0 ? latest[0].ParametersJson : null;
+        var run = ledgers.Count == 1
+            ? DeliverRun(ledgers[0], values)
+            : new RunParameters { Operation = DeliveryOperations.Deliver, Values = SubmissionValues(values), Payload = new DeliveryRunPayload().ToJson() };
+        var runId = await EnqueueRunAsync(db, dispatcher, ledgers[0], run, request.Pool, user, ct).ConfigureAwait(false);
+        return TypedResults.Accepted($"/api/v1/runs/{runId}", new DeliveryAdoptResult(selectedCount, asked, runId));
+    }
+
+    /// <summary>
+    /// Why an adoption of many records is refused before anything is adopted: no partition typed back, or another one than
+    /// <paramref name="kept"/>, the partition the flow's ledger is kept in (case ignored); null when it is confirmed.
+    /// <paramref name="what"/> names what would be adopted, as the refusal says it.
+    /// </summary>
+    internal static ProblemHttpResult? AdoptionUnconfirmed(string? confirm, string kept, string what, string flowLabel)
+    {
+        if (confirm?.Trim() is not { Length: > 0 } typed)
+        {
+            return TypedResults.Problem(
+                detail: $"{what} takes over every record OSDU holds at their ids in partition {kept}, which no ledger owned, and the next run writes them there. Type the partition back as confirm.",
+                statusCode: StatusCodes.Status400BadRequest, title: "Confirmation required");
+        }
+
+        return string.Equals(typed, kept, StringComparison.OrdinalIgnoreCase)
+            ? null
+            : TypedResults.Problem(
+                detail: $"The adoption confirms partition '{typed}', and the records of {flowLabel} are kept in '{kept}'. Nothing was adopted.",
+                statusCode: StatusCodes.Status400BadRequest, title: "Confirmation does not match");
     }
 
     /// <summary>
@@ -2215,12 +2352,12 @@ public static class DeliveryEndpoints
     }
 
     /// <summary>
-    /// Adopts the record OSDU already holds at the id the record's key makes (osdu/docs/reference/concepts/record-lifecycle.md,
-    /// Adopting a record OSDU already holds), as the caller: the record claims the id at the version OSDU held when it was held
-    /// for it, and the flow's next deliver run writes it there. With <c>run</c>, a deliver run scoped to the record is queued.
-    /// Only a record held for such an id is adopted; any other is refused, saying why.
+    /// Asks, as the caller, one record held because OSDU already holds a record at the id its key makes to adopt that record
+    /// (osdu/docs/reference/concepts/record-lifecycle.md, Adopting a record OSDU already holds): the flow's next deliver run
+    /// takes it over at the version OSDU holds then. With <c>run</c>, a deliver run scoped to the record is queued, which does
+    /// it at once. A record that is not held so is refused, saying why.
     /// </summary>
-    private static async Task<Results<Ok<DeliveryRecordAdoptResult>, Accepted<DeliveryRecordAdoptResult>, ProblemHttpResult>> AdoptRecordAsync(
+    private static async Task<Results<Ok<DeliveryAdoptResult>, Accepted<DeliveryAdoptResult>, ProblemHttpResult>> AdoptRecordAsync(
         Guid flowId, Guid key, DeliveryRecordAdoptRequest? request, CatalogDbContext db, OsduDbContext osdu, DeliveryDocumentLoader documents, EngineContext engine,
         DeliveryConfigStore config, ILedger ledger, IRunDispatcher dispatcher, ClaimsPrincipal user, CancellationToken ct)
     {
@@ -2230,11 +2367,17 @@ public static class DeliveryEndpoints
             return problem!;
         }
 
-        if (record.OccupiedTargetId is not { } occupied)
+        if (!OccupiedHolds.Adoptable(record))
         {
-            var why = record.ClaimedTargetId is { } claimed
-                ? $"it claimed {claimed} already, and a record keeps the OSDU id it claimed"
-                : "it is not held because OSDU already holds a record at the OSDU id its key makes";
+            var why = record switch
+            {
+                { ClaimedTargetId: { } claimed } => $"it claimed {claimed} already, and a record keeps the OSDU id it claimed",
+                { AdoptRequestedUtc: not null, Blocked: false } => "its adoption is asked already, and the flow's next run takes it over",
+                { AdoptRequestedUtc: not null } =>
+                    "its adoption is asked already, and a run held it since for another reason (its error says which); release it, and the run after takes it over",
+                { LeaseOwner: not null } => "a delivery holds it now",
+                _ => "it is not held because OSDU already holds a record at the OSDU id its key makes",
+            };
             return TypedResults.Problem(
                 detail: $"Record {record.SourceKey} of {flow.Flow.Label} has nothing to adopt: {why}. An adoption takes over the record OSDU holds at the id a held record's key makes.",
                 statusCode: StatusCodes.Status409Conflict, title: "Nothing to adopt");
@@ -2242,23 +2385,21 @@ public static class DeliveryEndpoints
 
         using var runtime = FlowRuntime.ForTarget(await ConfiguredAsync(engine, config, flow, ct).ConfigureAwait(false), flow.Flow);
         runtime.Actor = RequestActor.Label(user);
-        var adopted = await runtime.AdoptAsync([record.DeliveryKey], ct).ConfigureAwait(false);
-        if (adopted.Count == 0)
+        var asked = await runtime.AdoptAsync([record.DeliveryKey], ct).ConfigureAwait(false);
+        if (asked.Count == 0)
         {
             return TypedResults.Problem(
-                detail: $"Record {record.SourceKey} of {flow.Flow.Label} was not adopted: another record claimed {occupied} since the record was held for it, "
-                    + "or the record moved on since it was shown (a run planned it, or a delivery holds it). Look at the record again.",
-                statusCode: StatusCodes.Status409Conflict, title: "Not adopted");
+                detail: $"Record {record.SourceKey} of {flow.Flow.Label} moved on since it was shown (a run planned it, or a delivery holds it), so no adoption was asked. Look at the record again.",
+                statusCode: StatusCodes.Status409Conflict, title: "Not asked");
         }
 
-        var result = new DeliveryRecordAdoptResult(adopted[0].TargetId, adopted[0].Version);
         if (request is not { Run: true })
         {
-            return TypedResults.Ok(result);
+            return TypedResults.Ok(new DeliveryAdoptResult(1, 1, null));
         }
 
         // The run reads the record by the key tuple the ledger stored, under the parameter values its last plan ran with, as
-        // a record's release with a run does, and writes it to the id it adopted.
+        // a record's release with a run does, and takes it over.
         var last = record.LastSubmissionId is { } lastId ? await ledger.GetSubmissionAsync(lastId, ct).ConfigureAwait(false) : null;
         var parameters = new RunParameters
         {
@@ -2267,7 +2408,7 @@ public static class DeliveryEndpoints
             Payload = new DeliveryRunPayload { RecordKeys = [key], Interface = flow.Flow.Interface }.ToJson(),
         };
         var runId = await EnqueueRunAsync(db, dispatcher, flow, parameters, request.Pool, user, ct).ConfigureAwait(false);
-        return TypedResults.Accepted($"/api/v1/runs/{runId}", result with { RunId = runId });
+        return TypedResults.Accepted($"/api/v1/runs/{runId}", new DeliveryAdoptResult(1, 1, runId));
     }
 
     private static async Task<Results<Ok<DeliveryRedeliverResult>, Accepted<DeliveryRedeliverResult>, ProblemHttpResult>> RedeliverAsync(
@@ -3502,8 +3643,9 @@ public static class DeliveryEndpoints
         r.ProblemHash is { } problem ? ProblemSignature.Format(problem) : null,
         // The parent a record of a linked template reads, and the versions of it its documents were rendered from.
         r.ParentId, r.ParentVersion, r.PendingParentVersion,
-        // While it is held because OSDU already holds a record at the id its key makes: that id and version, to adopt.
-        r.OccupiedTargetId, r.OccupiedTargetVersion);
+        // While it is held because OSDU already holds a record at the id its key makes: that id and version when the hold kept
+        // them, whether an adoption may be asked of it, and when one was.
+        r.OccupiedTargetId, r.OccupiedTargetVersion, OccupiedHolds.Adoptable(r), r.AdoptRequestedUtc);
 
     private static DeliveryAttemptDto ToDto(AttemptRecord a) => new(
         a.AttemptId, a.DeliveryKey.Value, a.SubmissionId, a.RunId, a.Worker, a.StartedUtc, a.CompletedUtc, a.Outcome.ToString().ToLowerInvariant(),

@@ -184,7 +184,7 @@ function DeliveryRecordContent({ flowId, deliveryKey }: DeliveryRecordRef) {
     onSuccess: (result) => {
       setAdoptOpen(false);
       toast.success(
-        result.runId ? `Adopted ${result.targetId}: a deliver run is queued.` : `Adopted ${result.targetId}: the next run writes the record there.`,
+        result.runId ? "Adoption asked: a deliver run takes the record over now." : "Adoption asked: the flow's next run takes the record over.",
         result.runId ? { action: { label: "Open run", onClick: () => navigate(`/runs/${result.runId}`) } } : undefined);
       refresh();
     },
@@ -296,13 +296,13 @@ function DeliveryRecordContent({ flowId, deliveryKey }: DeliveryRecordRef) {
                 Release
               </Button>
             )}
-            {record.occupiedTargetId && (
+            {record.adoptable && (
               <Button
                 variant="outline"
                 size="sm"
                 onClick={() => setAdoptOpen(true)}
                 disabled={busy || !canOperate}
-                title={`Take over the record OSDU already holds at ${record.occupiedTargetId}, written by another system or a ledger this database does not hold: this record claims the id, and the next run writes it there`}
+                title="Take over the record OSDU already holds at the id this record's key makes, written by another system or another instance of the delivery: the next run claims it and writes this row there. To adopt many, use Adopt on the flow's Delivery tab or Issues tab"
                 data-testid="record-adopt"
               >
                 <Link2 />
@@ -422,11 +422,11 @@ function DeliveryRecordContent({ flowId, deliveryKey }: DeliveryRecordRef) {
         onConfirm={() => release.mutate()}
         onClose={() => setConfirm(null)}
       />
-      {record.occupiedTargetId && (
+      {record.adoptable && (
         <ReleaseDialog
           open={adoptOpen}
           title="Adopt the record OSDU holds"
-          message={`OSDU already holds a record at ${record.occupiedTargetId}${record.occupiedTargetVersion == null ? "" : `, version ${record.occupiedTargetVersion}`}, the id this record's key makes, and no ledger claimed it. Adopting links this record to it: the record claims the id at the version OSDU holds, and the next run writes this row there as an update of that record. The adoption is recorded under your name.`}
+          message={`OSDU already holds a record at ${record.occupiedTargetId ?? "the id this record's key makes"}${record.occupiedTargetVersion == null ? "" : ` (version ${record.occupiedTargetVersion} when the record was held)`}, and no ledger claimed it. Adopting links this record to it: the flow's next run makes the id from the record's key, takes over the record OSDU holds there at the version it holds then, and writes this row there as an update of it. If OSDU holds nothing there by then, the row is delivered as a new record. The adoption is recorded under your name.`}
           confirmLabel="Adopt"
           busy={adopt.isPending}
           testId="record-adopt-dialog"

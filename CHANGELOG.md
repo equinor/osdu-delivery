@@ -9,11 +9,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- **A held record whose business key OSDU already holds can be adopted.** When the id a row's key makes is a record
-  OSDU already holds that no ledger claimed, written by an earlier deployment or another instance of the delivery, the
-  record is held keeping that id and version; **Adopt** on the record's page, **Adopt N** on the flow's Issues tab, or
-  `sqlflow records adopt` makes the record claim it at the version OSDU holds, its history says who adopted what, and the
-  next run writes the row there, so the ledger maintains the record from then on
+- **Records whose business keys OSDU already holds are adopted in one batch.** When the ids a flow's rows make from their
+  keys are records OSDU already holds that no ledger claimed, written by an earlier deployment or another instance of the
+  delivery, the records are held, and **Adopt (N)** on the flow's Delivery tab asks every one of them, records held so
+  before this release included, once the partition is typed back; the next run takes each over at the version OSDU holds
+  and writes the row there, so the ledger maintains it from then on, and the Records tab's selection, the Issues tab, a
+  record's page and `sqlflow records adopt` ask fewer
   ([Adopting a record OSDU already holds](osdu/docs/reference/concepts/record-lifecycle.md#adopting-a-record-osdu-already-holds)).
 - **A private GitHub repository can be read with a GitHub App instead of a personal access token.** Give the
   deployment a read-only App (`SQLFLOW_GITHUB_APP_ID` with its private key, or `github_app` in the Terraform and

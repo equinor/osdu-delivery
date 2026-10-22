@@ -69,7 +69,7 @@ sqlflow records list      <flow.yaml> [--search <term>] [--contains] [--status <
 sqlflow records show      <flow.yaml> --key <delivery key | source key> [--attempts <n>]
 sqlflow records issues    <flow.yaml> [--issue <id>] [--max <n>]
 sqlflow records release   <flow.yaml> [--key <delivery key>]... | [--issue <id>]
-sqlflow records adopt     <flow.yaml> (--key <delivery key>... | --issue <id> --confirm <partition>)
+sqlflow records adopt     <flow.yaml> [--key <delivery key>... | --issue <id>] [--confirm <partition>]
 sqlflow records reverse   <flow.yaml> (--run <id> | --submission <id>) [--preview]
 sqlflow records reversals <flow.yaml> [--run <id> | --submission <id>] [--outcome <outcome>] [--max <n>]
 sqlflow records artifacts <flow.yaml> --key <delivery key | source key> [--max <n>]
@@ -218,25 +218,23 @@ both.`). A key that is not a UUID fails with `--key '<value>' is not a delivery 
 
 ## records adopt
 
-Adopts the record OSDU already holds at the OSDU id a held record's key makes, written by another system or another
-instance of the delivery whose ledger this database does not hold ([Adopting a record OSDU already holds](../concepts/record-lifecycle.md#adopting-a-record-osdu-already-holds)):
-the records `--key` names (repeat it; delivery keys only), or every one `--issue` keeps held, with the partition the
-ledger is kept in typed back as `--confirm`. Each record held for an id OSDU holds claims it at the version OSDU held, and
-the flow's next run writes its row there; a record held for anything else, or whose id another record claimed since, is
-left as it is. The adoption is recorded on the audit trail as `cli:<user>@<machine>`'s, with every record it adopted named
-under it, and each record's history gets an `adopt` attempt naming the id and the version.
+Asks held records to adopt the record OSDU already holds at the OSDU id each one's key makes, written by another system or
+another instance of the delivery whose ledger this database does not hold ([Adopting a record OSDU already holds](../concepts/record-lifecycle.md#adopting-a-record-osdu-already-holds)):
+every record of the interface held so, every one `--issue` keeps held, or the ones `--key` names (repeat it; delivery keys
+only). Every record or an issue's takes the partition the ledger is kept in typed back as `--confirm`. Nothing is claimed
+yet: the flow's next run takes each record over, at the version OSDU holds then, and writes its row there. A record held
+for anything else, claiming an id, held by a delivery or asked already is left as it is. The adoption is recorded on the
+audit trail as `cli:<user>@<machine>`'s, with every record it asked named under it.
 
 ```text
-welldb-namespaces-03-delivery: <n> record(s) adopted of the <n> named. Each claims the OSDU id its key makes, and the next run writes it there; a record not held for an id OSDU holds, or whose id another record claimed since, was left as it is.
-  6f1c2a9e-4b7d-4c1e-9a3f-2d8e5b7c1a40  dev:reference-data--ExternalCatalogNamespace:WELLDB (OSDU held version 1791414527455720)
+welldb-namespaces-03-delivery: <n> record(s) held for an id OSDU holds asked to adopt the records OSDU holds at their ids. The next run takes each over, at the version OSDU holds then, and writes its row there; a record held for anything else was left as it is.
 ```
 
-The first 20 records adopted are named; `--json` names every one. `--key` and `--issue` are one or the other (`adopt the
-records --key names or the ones --issue keeps held, one or the other.`), and an issue's adoption without the partition
-typed back is refused (`... type the partition back with --confirm dev.`).
+`--key` and `--issue` together are refused (`adopt the records --key names or the ones --issue keeps held, not both; name
+neither to adopt every record held for an id OSDU holds.`), and every record or an issue's without the partition typed back
+is refused (`... type the partition back with --confirm dev.`).
 
-`--json`: `flow`, `flowId`, `issue` (when `--issue` named one) and `adopted`, each with `deliveryKey`, `targetId` and
-`version`.
+`--json`: `flow`, `flowId`, `issue` (when `--issue` named one) and `asked`, the delivery keys asked.
 
 ## records reverse
 
@@ -349,6 +347,13 @@ One wellbore's history, by its source key:
 
 ```bash
 sqlflow records show flows/welldb-wellbore-03-delivery.yaml --partition dev --key welldb:WB-0002
+```
+
+Every name record of a source an earlier deployment wrote to OSDU, adopted at once, then taken over by the next run:
+
+```bash
+sqlflow records adopt flows/welldb-namespaces-03-delivery.yaml --partition dev --confirm dev
+sqlflow run flows/welldb-namespaces-03-delivery.yaml --partition dev
 ```
 
 What blocks the well logs of a source, then release one issue after fixing its cause:

@@ -278,7 +278,7 @@ each flow keeps its own ledger over them.
   nothing is sent.
 - **An id made from a key is claimed only when it is free.** Before a record first claims such an id, the intake asks OSDU;
   when OSDU already holds a record there that no record of the ledger claimed, or cannot say, the record is held unclaimed.
-  An operator who knows the record OSDU holds is this one's adopts it, and the record claims the id
+  An operator who knows the records OSDU holds are the source's adopts them, and the next run claims each id
   ([Adopting a record OSDU already holds](record-lifecycle.md#adopting-a-record-osdu-already-holds)).
 - **A flow acts only on ids it claimed.** Sends, read backs and removals reach only claimed ids, so a record that was only
   ever held never touches another flow's OSDU record.

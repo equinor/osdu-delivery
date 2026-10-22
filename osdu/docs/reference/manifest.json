@@ -2237,6 +2237,8 @@
         "skipStatusCodes",
         "adopt",
         "adopt a record osdu already holds",
+        "adopt in a batch",
+        "adoption asked",
         "occupied id",
         "business key already in osdu",
         "another instance",
@@ -2262,6 +2264,8 @@
         "osdu/src/SqlFlow.Delivery/Ledger/OsduLedger.Parents.cs",
         "osdu/src/SqlFlow.Delivery/Ledger/OsduLedger.Problems.cs",
         "osdu/src/SqlFlow.Delivery/Ledger/OsduLedger.Adoptions.cs",
+        "osdu/src/SqlFlow.Delivery/Ledger/SqlServerLedgerBulk.Adoptions.cs",
+        "osdu/src/SqlFlow.Delivery/Ledger/OccupiedHolds.cs",
         "osdu/src/SqlFlow.Delivery/Engine/Intake/SubmissionIntake.cs",
         "osdu/src/SqlFlow.Delivery/Engine/Protocols/OsduRecordProtocol.cs",
         "osdu/src/SqlFlow.Delivery.ControlPlane/Api/DeliveryEndpoints.cs",
@@ -6116,6 +6120,7 @@
         "osdu/src/SqlFlow.Delivery/Ledger/OsduLedger.cs",
         "osdu/src/SqlFlow.Delivery/Ledger/OsduLedger.Leases.cs",
         "osdu/src/SqlFlow.Delivery/Ledger/OsduLedger.Adoptions.cs",
+        "osdu/src/SqlFlow.Delivery/Ledger/SqlServerLedgerBulk.Adoptions.cs",
         "osdu/src/SqlFlow.Delivery/Ledger/SqlServerLedgerBulk.cs",
         "osdu/src/SqlFlow.Delivery/Identity/DeliveryKey.cs",
         "osdu/src/SqlFlow.Delivery/Snapshots/RenderContext.cs"
@@ -7012,11 +7017,13 @@
       "id": "delivery-wiki-0021-adopting-occupied-records",
       "corpus": "wiki",
       "path": "decisions/0021-adopting-occupied-records.md",
-      "title": "Decision 0021: A record whose business key OSDU already holds is adopted by an operator, and the ledger maintains it from then on",
+      "title": "Decision 0021: Records whose business keys OSDU already holds are adopted in a batch, and the next run takes them over",
       "type": "decision",
-      "summary": "Why a row whose id OSDU already holds is held until an operator adopts that record, why the hold keeps the id, and how two linked instances share a record.",
+      "summary": "Why records whose ids OSDU already holds are adopted in a batch the next run carries out, and how linked instances share a record.",
       "keywords": [
         "adopt",
+        "adopt in a batch",
+        "adoption asked",
         "occupied id",
         "business key already in osdu",
         "ledger lost",
@@ -7033,12 +7040,16 @@
       "sourceRefs": [
         "osdu/src/SqlFlow.Delivery/Engine/Intake/SubmissionIntake.cs",
         "osdu/src/SqlFlow.Delivery/Ledger/OsduLedger.Adoptions.cs",
+        "osdu/src/SqlFlow.Delivery/Ledger/SqlServerLedgerBulk.Adoptions.cs",
+        "osdu/src/SqlFlow.Delivery/Ledger/OccupiedHolds.cs",
         "osdu/src/SqlFlow.Delivery/Ledger/OsduLedger.cs",
         "osdu/src/SqlFlow.Delivery/Ledger/SqlServerLedgerBulk.cs",
+        "osdu/src/SqlFlow.Delivery.ControlPlane/Api/DeliveryEndpoints.cs",
         "osdu/src/SqlFlow.Delivery/Engine/Protocols/OsduRecordProtocol.cs",
         "osdu/src/SqlFlow.Delivery/Engine/Protocols/OwnedContent.cs",
         "osdu/src/SqlFlow.Delivery/Identity/DeliveryKey.cs",
-        "osdu/src/SqlFlow.Delivery.Data/Migrations/20261022160710_RecordOccupiedTargetId.cs"
+        "osdu/src/SqlFlow.Delivery.Data/Migrations/20261022160710_RecordOccupiedTargetId.cs",
+        "osdu/src/SqlFlow.Delivery.Data/Migrations/20261022185830_RecordAdoptRequested.cs"
       ]
     },
     {

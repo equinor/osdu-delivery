@@ -1269,41 +1269,55 @@ public sealed class FlowRuntime : IDisposable
     }
 
     /// <summary>
-    /// Adopts, for each named record held because OSDU already holds a record at the id its mapping makes from its key, that
-    /// OSDU record (osdu/docs/reference/concepts/record-lifecycle.md, Adopting a record OSDU already holds): the record claims
-    /// the id at the version OSDU held, and the flow's next deliver run writes it there. A named record held for another
-    /// reason, or whose id another record has claimed since, is left as it is. Returns the records adopted.
+    /// Asks the named records held because OSDU already holds a record at the id each one's key makes to adopt that record
+    /// (osdu/docs/reference/concepts/record-lifecycle.md, Adopting a record OSDU already holds): the flow's next deliver run
+    /// takes each over, at the version OSDU holds then, and writes its row there. A named record held for another reason, or
+    /// claiming an id already, is left as it is. Returns the records asked.
     /// </summary>
-    public Task<IReadOnlyList<RecordAdoption>> AdoptAsync(IReadOnlyList<DeliveryKey> keys, CancellationToken ct = default)
+    public Task<IReadOnlyList<DeliveryKey>> AdoptAsync(IReadOnlyList<DeliveryKey> keys, CancellationToken ct = default)
     {
         ArgumentNullException.ThrowIfNull(keys);
         return TrackAsync("adopt", Named(keys, null), keys is { Count: 1 } ? keys[0] : null, async activity =>
         {
-            var adopted = await RequireLedger().AdoptOccupiedAsync(Flow.Id, ReleaseSelection.Named(keys), Actor, activity, _context.Time.GetUtcNow().UtcDateTime, ct).ConfigureAwait(false);
-            await EmitNamedAsync("record.adopted", adopted.Select(a => a.Key).ToList(), $"adopted by {Actor}: the record claims the OSDU record at the id its key makes", ct).ConfigureAwait(false);
-            return (adopted, string.Create(
+            var asked = await RequireLedger().RequestAdoptionAsync(Flow.Id, ReleaseSelection.Named(keys), activity, _context.Time.GetUtcNow().UtcDateTime, ct).ConfigureAwait(false);
+            await EmitNamedAsync("record.adoption-asked", [.. asked], $"adoption asked by {Actor}", ct).ConfigureAwait(false);
+            return (asked, string.Create(
                 CultureInfo.InvariantCulture,
-                $"adopted {adopted.Count} of {keys.Count} record(s); a record not held for an id OSDU holds, or whose id another record claimed since, was left as it is"),
+                $"asked {asked.Count} of {keys.Count} record(s) to adopt the record OSDU holds at the id its key makes; a record not held for such an id, or claiming one already, was left as it is"),
                 (Guid?)null, false);
         }, ct);
     }
 
     /// <summary>
-    /// Adopts the OSDU records every record one issue keeps held was held for (osdu/docs/reference/concepts/record-lifecycle.md,
-    /// Issues): the issue OSDU already holding a record at the id a record's key makes, as many records as it keeps held. The
-    /// activity names the issue and its pattern as the operator was shown it, and every record adopted is named under it.
+    /// Asks every record one issue keeps held to adopt the record OSDU holds at the id its key makes
+    /// (osdu/docs/reference/concepts/record-lifecycle.md, Issues): the issue OSDU already holding a record at such an id, as many
+    /// records as it keeps held. The activity names the issue and its pattern as the operator was shown it, and every record
+    /// asked is named under it.
     /// </summary>
-    public Task<IReadOnlyList<RecordAdoption>> AdoptProblemAsync(long problem, string pattern, CancellationToken ct = default)
+    public Task<IReadOnlyList<DeliveryKey>> AdoptProblemAsync(long problem, string pattern, CancellationToken ct = default)
     {
         ArgumentNullException.ThrowIfNull(pattern);
         var named = ProblemSignature.Format(problem);
         return TrackAsync("adopt", new { issue = named, pattern }, null, async activity =>
         {
-            var adopted = await RequireLedger().AdoptOccupiedAsync(Flow.Id, ReleaseSelection.OfProblem(problem), Actor, activity, _context.Time.GetUtcNow().UtcDateTime, ct).ConfigureAwait(false);
-            await EmitAsync("record.adopted", null, $"adopted by {Actor}", $"the records issue {named} kept held", ct).ConfigureAwait(false);
-            return (adopted, $"adopted {adopted.Count} record(s) issue {named} kept held: {pattern}", (Guid?)null, false);
+            var asked = await RequireLedger().RequestAdoptionAsync(Flow.Id, ReleaseSelection.OfProblem(problem), activity, _context.Time.GetUtcNow().UtcDateTime, ct).ConfigureAwait(false);
+            await EmitAsync("record.adoption-asked", null, $"adoption asked by {Actor}", $"the records issue {named} kept held", ct).ConfigureAwait(false);
+            return (asked, $"asked {asked.Count} record(s) issue {named} kept held to adopt the records OSDU holds at their ids: {pattern}", (Guid?)null, false);
         }, ct);
     }
+
+    /// <summary>
+    /// Asks every record of the ledger held because OSDU already holds a record at the id its key makes to adopt that record:
+    /// the batch an operator runs after a run held them, so that the next run takes them all over and the ledger is in step
+    /// with OSDU. The activity names every record asked.
+    /// </summary>
+    public Task<IReadOnlyList<DeliveryKey>> AdoptEveryAsync(CancellationToken ct = default)
+        => TrackAsync("adopt", new { every = "held for an id OSDU holds" }, null, async activity =>
+        {
+            var asked = await RequireLedger().RequestAdoptionAsync(Flow.Id, ReleaseSelection.EveryBlocked, activity, _context.Time.GetUtcNow().UtcDateTime, ct).ConfigureAwait(false);
+            await EmitAsync("record.adoption-asked", null, $"adoption asked by {Actor}", "every record held for an id OSDU holds", ct).ConfigureAwait(false);
+            return (asked, $"asked {asked.Count} record(s) held for an id OSDU holds to adopt the records OSDU holds at their ids", (Guid?)null, false);
+        }, ct);
 
     /// <summary>
     /// Asks records OSDU holds to be brought up to date (osdu/docs/reference/concepts/removal-and-reversal.md,

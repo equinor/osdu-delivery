@@ -53,6 +53,7 @@ internal static partial class SqlServerLedgerBulk
             [Label] nvarchar(400) NULL,
             [MappingName] nvarchar(200) NOT NULL,
             [TargetId] nvarchar(500) NULL,
+            [TargetVersion] bigint NULL,
             [LastSubmissionId] uniqueidentifier NULL,
             [PendingDocumentRef] nvarchar(64) NULL,
             [WorkBatch] int NULL,
@@ -161,7 +162,9 @@ internal static partial class SqlServerLedgerBulk
     // record (an operator's release or redelivery, a cache rollout, while the run planned) stays for the next run, and with
     // no request read, nothing is cleared. Work that is not a plan's (AnswersAnyRequest) answers whatever request the record
     // carries. It claims the record's OSDU id for its flow the first time it queues a document, and the id OSDU held a
-    // record at that an earlier hold named for adoption is no longer the record's to adopt. A record
+    // record at that an earlier hold named for adoption is no longer the record's to adopt, nor is an adoption asked of it
+    // still to do. A record a run adopts carries the version OSDU holds of it (TargetVersion), which a record that never
+    // delivered takes, so the write that follows is an update of that record. A record
     // another staging inserted after the slice looked is never overwritten here: the insert fails on the table's key,
     // and the slice runs again and finds it.
     private const string PendingWriteSql = $$"""
@@ -170,7 +173,8 @@ internal static partial class SqlServerLedgerBulk
                 [SourceKey] = s.[SourceKey], [SourceKeyJson] = COALESCE(s.[SourceKeyJson], t.[SourceKeyJson]), [Label] = s.[Label], [MappingName] = s.[MappingName],
                 [TargetId] = COALESCE(s.[TargetId], t.[TargetId]),
                 [ClaimedTargetId] = COALESCE(t.[ClaimedTargetId], s.[TargetId] COLLATE Latin1_General_100_BIN2),
-                [OccupiedTargetId] = NULL, [OccupiedTargetVersion] = NULL,
+                [OccupiedTargetId] = NULL, [OccupiedTargetVersion] = NULL, [AdoptRequestedUtc] = NULL,
+                [TargetVersion] = COALESCE(t.[TargetVersion], s.[TargetVersion]),
                 [LastSubmissionId] = s.[LastSubmissionId], [NextAttemptUtc] = NULL,
                 [Status] = CASE WHEN f.[InFlight] = 1 THEN t.[Status] ELSE N'pending' END,
                 [AttemptCount] = CASE WHEN f.[InFlight] = 1 THEN t.[AttemptCount] ELSE 0 END,
@@ -865,6 +869,7 @@ internal static partial class SqlServerLedgerBulk
         table.Columns.Add("Label", typeof(string));
         table.Columns.Add("MappingName", typeof(string));
         table.Columns.Add("TargetId", typeof(string));
+        table.Columns.Add("TargetVersion", typeof(long));
         table.Columns.Add("LastSubmissionId", typeof(Guid));
         table.Columns.Add("PendingDocumentRef", typeof(string));
         table.Columns.Add("WorkBatch", typeof(int));
@@ -891,7 +896,7 @@ internal static partial class SqlServerLedgerBulk
         foreach (var r in records.OrderBy(r => new SqlGuid(r.DeliveryKey.Value)))
         {
             table.Rows.Add(
-                position++ / slice, r.DeliveryKey.Value, flowId, Truncate(r.SourceKey, 400), Value(Truncate(r.SourceKeyJson, 2000)), Value(Truncate(r.Label, 400)), r.MappingName, Value(r.TargetId),
+                position++ / slice, r.DeliveryKey.Value, flowId, Truncate(r.SourceKey, 400), Value(Truncate(r.SourceKeyJson, 2000)), Value(Truncate(r.Label, 400)), r.MappingName, Value(r.TargetId), Value(r.TargetVersion),
                 Value(r.LastSubmissionId), Value(r.PendingDocumentRef), Value(r.WorkBatch), Value(r.PendingRenderContext),
                 Value(r.PendingSourceFingerprint), Value(r.PendingSourceModifiedUtc),
                 Value(Truncate(r.PendingSourceFileName, DeliveryModel.MaxSourceFileNameLength)), Value(r.PendingSourceRowNumber), Value(r.PendingSourceUpdatedUtc),

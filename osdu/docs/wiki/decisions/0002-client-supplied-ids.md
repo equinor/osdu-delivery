@@ -60,5 +60,5 @@ is written under it whatever its mapping makes from its key.
 
 Because the id is the business key whoever renders it, an id made from a key can be one OSDU already holds a
 record at that the delivery itself wrote, from a ledger this database does not hold. A record claims such an id
-only when an operator adopts the record OSDU holds there, at the version OSDU held
-([0021](0021-adopting-occupied-records.md)); until then it is held, claiming nothing.
+only once an operator has asked it to adopt the record OSDU holds there, and then by the next run, at the version OSDU
+holds then ([0021](0021-adopting-occupied-records.md)); until then it is held, claiming nothing.

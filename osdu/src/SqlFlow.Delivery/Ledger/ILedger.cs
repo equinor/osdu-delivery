@@ -136,10 +136,10 @@ public static class AttemptPhases
     public const string ReassignId = "reassign-id";
 
     /// <summary>
-    /// An operator adopted the record OSDU already held at the id the record's mapping makes from its key, which no record of
-    /// a ledger had claimed (osdu/docs/reference/concepts/record-lifecycle.md, Adopting a record OSDU already holds): a skipped
-    /// attempt, since nothing was sent, whose result names the id and the version OSDU held there. The next deliver run
-    /// writes the record to that id.
+    /// A run adopted, as an operator asked, the record OSDU already held at the id the record's mapping makes from its key,
+    /// which no record of a ledger had claimed (osdu/docs/reference/concepts/record-lifecycle.md, Adopting a record OSDU
+    /// already holds): a skipped attempt, since adopting sends nothing, whose result names the id and the version OSDU held
+    /// there. The same run writes the record to that id.
     /// </summary>
     public const string Adopt = "adopt";
 }
@@ -407,13 +407,21 @@ public sealed record RecordState
 
     /// <summary>
     /// While the record is held because OSDU already holds a record at the OSDU id its mapping makes from its key that no
-    /// record of any ledger claimed: that id, which an operator may adopt (<see cref="ILedger.AdoptOccupiedAsync"/>). The
-    /// intake sets it on the hold; the ledger clears it when the record claims an id or is held for another reason.
+    /// record of any ledger claimed: that id, as the hold found it (<see cref="ILedger.RequestAdoptionAsync"/> asks such a
+    /// record to adopt the record there). The intake sets it on the hold; the ledger clears it when the record claims an id
+    /// or is held for another reason. A record held so before the hold kept the id has none, and is told by its hold's
+    /// message (<see cref="OccupiedHolds"/>).
     /// </summary>
     public string? OccupiedTargetId { get; init; }
 
     /// <summary>The version OSDU held at <see cref="OccupiedTargetId"/> when the record was held for it.</summary>
     public long? OccupiedTargetVersion { get; init; }
+
+    /// <summary>
+    /// When an operator asked the record to adopt the record OSDU holds at the id its key makes; the next run that finds one
+    /// there claims it rather than holding the record. Null otherwise, and once the record claims an id.
+    /// </summary>
+    public DateTime? AdoptRequestedUtc { get; init; }
 
     public long? TargetVersion { get; init; }
 
@@ -1082,6 +1090,12 @@ public sealed record FlowStats
     /// release answered by a plan that left the record parked used to leave; a release reaches them as it reaches the blocked.
     /// </summary>
     public long Stranded { get; init; }
+
+    /// <summary>
+    /// Held records an adoption may be asked of: held because OSDU already holds a record at the id each one's key makes,
+    /// claiming none (<see cref="OccupiedHolds.Adoptable"/>).
+    /// </summary>
+    public long Adoptable { get; init; }
 
     /// <summary>Delivered records whose last verify found drift or a missing record.</summary>
     public long Drifted { get; init; }
@@ -2636,19 +2650,22 @@ public interface ILedger
         Guid flowId, IReadOnlyList<DeliveryKey> keys, string actor, string reason, long? activityId, DateTime nowUtc, CancellationToken ct = default);
 
     /// <summary>
-    /// Adopts, for each record of one ledger that <paramref name="selection"/> names, or that its problem keeps held, and that
-    /// is held because OSDU already holds a record at the id its mapping makes from its key (<see cref="RecordState.OccupiedTargetId"/>),
-    /// that OSDU record (osdu/docs/reference/concepts/record-lifecycle.md, Adopting a record OSDU already holds), a chunk to a
-    /// transaction: the record claims the id at the version OSDU held there, unblocked and asked to be planned again, so the
-    /// flow's next deliver run writes it to that id. A record no lease holds is adopted; one held for another reason, or that
-    /// claimed an id, is left as it is, and so is one whose id another record has claimed since, of any flow, or that a record
-    /// before it in key order adopts in the same call. Each record adopted keeps an attempt naming the id, the version and
-    /// <paramref name="actor"/> (phase <see cref="AttemptPhases.Adopt"/>) and is named under <paramref name="activityId"/>.
-    /// An adoption never reaches every blocked record of a flow: a selection that names neither keys nor a problem is refused.
-    /// Returns the records adopted.
+    /// Asks the records of one ledger that <paramref name="selection"/> reaches (the ones named, the ones a problem keeps held,
+    /// or every blocked record) to adopt the record OSDU holds at the id each one's key makes
+    /// (osdu/docs/reference/concepts/record-lifecycle.md, Adopting a record OSDU already holds), a slice to a statement: each
+    /// record held because OSDU held a record at that id (<see cref="OccupiedHolds"/>), claiming none and no lease holding it, is
+    /// marked (<see cref="RecordState.AdoptRequestedUtc"/>), unblocked and asked to be planned again, and named under
+    /// <paramref name="activityId"/>. Any other record is left as it is. The adoption itself is the next run's: it makes the
+    /// id from the record's key, asks OSDU, and claims the id at the version OSDU holds then. Returns the records asked.
     /// </summary>
-    Task<IReadOnlyList<RecordAdoption>> AdoptOccupiedAsync(
-        Guid flowId, ReleaseSelection selection, string actor, long? activityId, DateTime nowUtc, CancellationToken ct = default);
+    Task<IReadOnlyList<DeliveryKey>> RequestAdoptionAsync(Guid flowId, ReleaseSelection selection, long? activityId, DateTime nowUtc, CancellationToken ct = default);
+
+    /// <summary>
+    /// Records on the history of each record of <paramref name="adoptions"/> that a run adopted the record OSDU held at its
+    /// id, as an operator asked: an attempt (phase <see cref="AttemptPhases.Adopt"/>, outcome skipped, since adopting sends
+    /// nothing) naming the id and the version OSDU held, under the run and submission that took it over.
+    /// </summary>
+    Task RecordAdoptionsAsync(Guid flowId, IReadOnlyList<RecordAdoption> adoptions, Guid? submissionId, Guid? runId, DateTime nowUtc, CancellationToken ct = default);
 
     Task<IReadOnlyList<DeliveryKey>> MarkRestoredAsync(
         Guid flowId, IReadOnlyList<PreviousVersionRestored> restored, string worker, Guid? runId, DateTime nowUtc, string? correlationId = null, CancellationToken ct = default);

@@ -254,11 +254,11 @@ export function DeliveryIssuesPanel({ pipelineId, flowName }: { pipelineId: stri
       setAdoptOpen(false);
       setAdoptTyped("");
       refresh();
-      const adopted = `Adopted ${result.adopted.toLocaleString()} record${result.adopted === 1 ? "" : "s"}`;
+      const asked = `Adoption asked of ${result.asked.toLocaleString()} record${result.asked === 1 ? "" : "s"}`;
       toast.success(
-        result.adopted === 0
-          ? "No record of the issue was adopted: their ids were claimed since, or they were held for something else."
-          : result.runId ? `${adopted}; a deliver run writes them now.` : `${adopted}; the flow's next run writes them.`,
+        result.asked === 0
+          ? "No record of the issue was asked: they were held for something else, or a run took them up since."
+          : result.runId ? `${asked}; a deliver run takes them over now.` : `${asked}; the flow's next run takes them over.`,
         result.runId ? { action: openRun(result.runId) } : undefined);
     },
     onError: (error) => {
@@ -388,7 +388,7 @@ export function DeliveryIssuesPanel({ pipelineId, flowName }: { pipelineId: stri
         <ReleaseDialog
           open={adoptOpen}
           title={`Adopt ${selected.records.toLocaleString()} record${selected.records === 1 ? "" : "s"}`}
-          message={`OSDU already holds a record at the id each of these records' keys makes, and no ledger claimed it: another system wrote it, or another instance of the delivery whose ledger this database does not hold. Adopting links every record of ${ledgerName} this issue keeps held to the record OSDU holds: each claims its id at the version OSDU held, and the next run writes its row there. A record whose id another record claimed since is left as it is.`}
+          message={`OSDU already holds a record at the id each of these records' keys makes, and no ledger claimed it: another system wrote it, or another instance of the delivery whose ledger this database does not hold. Adopting links every record of ${ledgerName} this issue keeps held to the record OSDU holds: the flow's next run takes each over at the version OSDU holds then, and writes its row there. A record whose id OSDU no longer holds by then is delivered as a new one, and one whose id another record claimed since stays that record's.`}
           confirmLabel={`Adopt ${selected.records.toLocaleString()}`}
           busy={adopt.isPending}
           confirmDisabled={keptPartition(selected, partition) === null || adoptTyped.trim().toLowerCase() !== keptPartition(selected, partition)?.toLowerCase()}
@@ -426,7 +426,7 @@ export function DeliveryIssuesPanel({ pipelineId, flowName }: { pipelineId: stri
  * adopted: every record of an issue shares its error, so its example, or a sample, says it for all of them.
  */
 function adoptable(issue: DeliveryIssue, samples: DeliveryIssueSample[] | undefined): boolean {
-  return Boolean(issue.example?.occupiedTargetId) || (samples ?? []).some((sample) => Boolean(sample.record.occupiedTargetId));
+  return issue.example?.adoptable === true || (samples ?? []).some((sample) => sample.record.adoptable === true);
 }
 
 /** The partition an issue's records are kept in, which an adoption takes typed back; null when nothing names it. */

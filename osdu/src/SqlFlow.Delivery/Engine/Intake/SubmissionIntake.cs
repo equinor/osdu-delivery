@@ -453,8 +453,10 @@ public sealed class SubmissionIntake
 
         WorkBatchWriter? writer = null;
         var pending = new List<RecordState>(batchRecords);
-        // The records of the batch about to claim an OSDU id made from their key for the first time.
+        // The records of the batch about to claim an OSDU id made from their key for the first time, and of those the ones an
+        // operator asked to adopt the record OSDU holds there.
         var unclaimed = new HashSet<DeliveryKey>();
+        var adopting = new HashSet<DeliveryKey>();
         var skipped = new List<SkippedRecord>(Planner.RenderBatch);
         var context = header.Mapping.Context.Canonical();
         long refused = 0;
@@ -548,11 +550,15 @@ public sealed class SubmissionIntake
                         if (header.Mapping.Mapping.Dataset.IdFrom == MappingIdSource.Key && entry.Existing?.ClaimedTargetId is null)
                         {
                             unclaimed.Add(entry.Key.Value);
+                            if (entry.Existing?.AdoptRequestedUtc is not null)
+                            {
+                                adopting.Add(entry.Key.Value);
+                            }
                         }
 
                         if (pending.Count >= batchRecords)
                         {
-                            var (closed, occupied) = await CloseBatchAsync(flow, submission, writer, pending, unclaimed, skipped, ct).ConfigureAwait(false);
+                            var (closed, occupied) = await CloseBatchAsync(flow, submission, writer, pending, unclaimed, adopting, skipped, ct).ConfigureAwait(false);
                             staged += closed.Staged;
                             refused += closed.Refused.Count;
                             conflicted += closed.Conflicts.Count + occupied;
@@ -575,7 +581,7 @@ public sealed class SubmissionIntake
 
             if (writer is not null)
             {
-                var (closed, occupied) = await CloseBatchAsync(flow, submission, writer, pending, unclaimed, skipped, ct).ConfigureAwait(false);
+                var (closed, occupied) = await CloseBatchAsync(flow, submission, writer, pending, unclaimed, adopting, skipped, ct).ConfigureAwait(false);
                 staged += closed.Staged;
                 refused += closed.Refused.Count;
                 conflicted += closed.Conflicts.Count + occupied;
@@ -644,12 +650,13 @@ public sealed class SubmissionIntake
     /// rather than only in a log. Returns the staging and how many records were held for an id OSDU already holds.
     /// </summary>
     private async Task<(PendingStaging Staging, int Occupied)> CloseBatchAsync(
-        FlowDefinition flow, SubmissionState submission, WorkBatchWriter writer, List<RecordState> pending, HashSet<DeliveryKey> unclaimed,
+        FlowDefinition flow, SubmissionState submission, WorkBatchWriter writer, List<RecordState> pending, HashSet<DeliveryKey> unclaimed, HashSet<DeliveryKey> adopting,
         List<SkippedRecord> stale, CancellationToken ct)
     {
         await writer.DisposeAsync().ConfigureAwait(false);
-        var occupied = await HoldOccupiedAsync(flow, submission, writer.Batch, pending, unclaimed, ct).ConfigureAwait(false);
+        var (occupied, adoptions) = await HoldOccupiedAsync(flow, submission, writer.Batch, pending, unclaimed, adopting, ct).ConfigureAwait(false);
         var staging = await _ledger.UpsertPendingAsync(flow.Id, pending, ct).ConfigureAwait(false);
+        await RecordAdoptionsAsync(flow, submission, adoptions, staging, ct).ConfigureAwait(false);
         if (staging.Conflicts.Count > 0)
         {
             var byKey = pending.GroupBy(p => p.DeliveryKey).ToDictionary(g => g.Key, g => g.Last());
@@ -707,47 +714,119 @@ public sealed class SubmissionIntake
     /// and takes them out of <paramref name="pending"/> before staging. Such a record never queued a document, so nothing it
     /// did wrote that record: it is another system's, or one this ledger has no record of, and writing to the id would make
     /// a new version of a record the ledger does not own. The hold keeps the id and the version OSDU answered, so an operator
-    /// who knows the record is this one's can adopt it (<see cref="ILedger.AdoptOccupiedAsync"/>), after which the record
-    /// claims the id and is never asked again. The flow's own read back asks (<see cref="IDeliveryProtocol.VerifyBatchAsync"/>),
-    /// one batched read for the batch. An id a record of the ledger has claimed is not asked: staging refuses it, naming that
-    /// record. An answer that is not an absence holds the record too, since an id made from a key is claimed only when it is
-    /// known to be free; a release, or the next run, asks again. A target that keeps records under keys of its own (a DSPDM
-    /// row's primary key) stores nothing at the id, and is not asked. Returns how many records were held.
+    /// who knows the records are this ledger's can ask them to adopt it (<see cref="ILedger.RequestAdoptionAsync"/>). A record
+    /// of <paramref name="adopting"/>, asked so, is not held: it stays in <paramref name="pending"/> carrying the version OSDU
+    /// holds now, and staging claims the id for it, so the batch writes it there as an update of that record. The flow's own
+    /// read back asks (<see cref="IDeliveryProtocol.VerifyBatchAsync"/>), one batched read for the batch. An id a record of the
+    /// ledger has claimed is not asked: staging refuses it, naming that record. An answer that is not an absence holds the
+    /// record too, adoption asked or not, since an id made from a key is claimed only when it is known to be free or known to
+    /// hold a record to adopt; a release, or the next run, asks again. A target that keeps records under keys of its own (a
+    /// DSPDM row's primary key) stores nothing at the id, and is not asked. Returns how many records were held, and the
+    /// records adopted.
     /// </summary>
-    private async Task<int> HoldOccupiedAsync(
-        FlowDefinition flow, SubmissionState submission, int batch, List<RecordState> pending, HashSet<DeliveryKey> unclaimed, CancellationToken ct)
+    private async Task<(int Held, IReadOnlyList<RecordAdoption> Adopted)> HoldOccupiedAsync(
+        FlowDefinition flow, SubmissionState submission, int batch, List<RecordState> pending, HashSet<DeliveryKey> unclaimed, HashSet<DeliveryKey> adopting,
+        CancellationToken ct)
     {
         if (unclaimed.Count == 0)
         {
-            return 0;
+            adopting.Clear();
+            return (0, []);
         }
 
         var asking = pending.Where(p => unclaimed.Contains(p.DeliveryKey) && p.TargetId is not null).ToList();
+        var asked = adopting.ToHashSet();
         unclaimed.Clear();
+        adopting.Clear();
         var claimed = await _ledger.ClaimedTargetIdsAsync(asking.Select(p => p.TargetId!).Distinct(StringComparer.Ordinal).ToList(), ct).ConfigureAwait(false);
         asking.RemoveAll(p => claimed.Contains(p.TargetId!));
         if (asking.Count == 0)
         {
-            return 0;
+            return (0, []);
         }
 
         var occupancies = await OccupiedAsync(asking.Select(p => p.TargetId!).Distinct(StringComparer.Ordinal).ToList(), ct).ConfigureAwait(false);
-        var held = asking
-            .Where(p => occupancies.ContainsKey(p.TargetId!))
-            .Select(p => OccupiedState(p, occupancies[p.TargetId!]))
-            .ToList();
-        if (held.Count == 0)
+        var held = new List<RecordState>();
+        var adopted = new Dictionary<DeliveryKey, RecordAdoption>();
+        foreach (var record in asking.Where(p => occupancies.ContainsKey(p.TargetId!)))
         {
-            return 0;
+            var occupancy = occupancies[record.TargetId!];
+            if (occupancy.Held && asked.Contains(record.DeliveryKey))
+            {
+                adopted[record.DeliveryKey] = new RecordAdoption(record.DeliveryKey, record.TargetId!, occupancy.Version);
+            }
+            else
+            {
+                held.Add(OccupiedState(record, occupancy));
+            }
         }
 
-        var keys = held.Select(h => h.DeliveryKey).ToHashSet();
-        pending.RemoveAll(p => keys.Contains(p.DeliveryKey));
-        _logger.LogWarning(
-            "Batch {Batch}: {Held} record(s) were held because their OSDU ids, made from their keys, are not known to be free; the first: {Detail}",
-            batch, held.Count, held[0].LastError);
-        await FlushHeldAsync(flow, submission, held, ct).ConfigureAwait(false);
-        return held.Count;
+        if (adopted.Count > 0)
+        {
+            for (var i = 0; i < pending.Count; i++)
+            {
+                if (adopted.TryGetValue(pending[i].DeliveryKey, out var adoption))
+                {
+                    pending[i] = pending[i] with { TargetVersion = adoption.Version };
+                }
+            }
+
+            _logger.LogInformation(
+                "Batch {Batch}: {Adopted} record(s) adopt the records OSDU holds at their OSDU ids, as an operator asked; the first: {TargetId}",
+                batch, adopted.Count, adopted.Values.First().TargetId);
+        }
+
+        if (held.Count > 0)
+        {
+            var keys = held.Select(h => h.DeliveryKey).ToHashSet();
+            pending.RemoveAll(p => keys.Contains(p.DeliveryKey));
+            _logger.LogWarning(
+                "Batch {Batch}: {Held} record(s) were held because their OSDU ids, made from their keys, are not known to be free; the first: {Detail}",
+                batch, held.Count, held[0].LastError);
+            await FlushHeldAsync(flow, submission, held, ct).ConfigureAwait(false);
+        }
+
+        return (held.Count, [.. adopted.Values]);
+    }
+
+    /// <summary>
+    /// Records on each adopted record's history that this run took over the record OSDU held at its id, and tells the
+    /// listeners: only for a record staging wrote, since one it refused (another record claimed the id since, or a newer
+    /// version was queued) claimed nothing.
+    /// </summary>
+    private async Task RecordAdoptionsAsync(FlowDefinition flow, SubmissionState submission, IReadOnlyList<RecordAdoption> adoptions, PendingStaging staging, CancellationToken ct)
+    {
+        if (adoptions.Count == 0)
+        {
+            return;
+        }
+
+        var refused = staging.Refused.Concat(staging.Conflicts.Select(c => c.DeliveryKey)).ToHashSet();
+        var staged = adoptions.Where(a => !refused.Contains(a.Key)).ToList();
+        if (staged.Count == 0)
+        {
+            return;
+        }
+
+        var now = _time.GetUtcNow().UtcDateTime;
+        await _ledger.RecordAdoptionsAsync(flow.Id, staged, submission.SubmissionId, RunId, now, ct).ConfigureAwait(false);
+        foreach (var adoption in staged)
+        {
+            await _listener.OnEventAsync(new DeliveryEvent
+            {
+                AtUtc = now,
+                FlowId = flow.Id,
+                FlowName = flow.Label,
+                Interface = flow.Interface,
+                Kind = "record.adopted",
+                SubmissionId = submission.SubmissionId,
+                DeliveryKey = adoption.Key,
+                TargetId = adoption.TargetId,
+                TargetVersion = adoption.Version,
+                Worker = "intake",
+                Detail = "adopted the record OSDU holds at the id its key makes, as an operator asked",
+            }, ct).ConfigureAwait(false);
+        }
     }
 
     /// <summary>
@@ -823,9 +902,9 @@ public sealed class SubmissionIntake
                     case VerifyOutcome.Match or VerifyOutcome.Drifted:
                         var version = result.ObservedVersion is { } observed ? string.Create(CultureInfo.InvariantCulture, $" at version {observed}") : string.Empty;
                         reasons[chunk[i]] = new Occupancy(
-                            $"OSDU already holds a record at {chunk[i]}{version}, the OSDU id made from the key, and no record of the ledger claimed it: "
+                            $"{OccupiedHolds.Prefix}{chunk[i]}{version}, the OSDU id made from the key, and no record of the ledger claimed it: "
                             + "another system wrote it, or a ledger this database does not hold, so nothing is sent rather than writing a new version of a "
-                            + "record no ledger owns. Adopt it when it is this record's (the record claims the id, and the next run writes this row there), "
+                            + "record no ledger owns. Adopt the records held so when they are this flow's (the next run takes each over and writes its row there), "
                             + "remove or rename that record, or give the mapping a key or dataset.idFrom that yields another id",
                             Held: true,
                             Version: result.ObservedVersion);

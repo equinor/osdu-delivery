@@ -55,6 +55,11 @@ export interface DeliveryFlowStats {
    * every blocked record reaches them too. Absent from an older control plane.
    */
   stranded?: number;
+  /**
+   * Held records an adoption may be asked of: held because OSDU already holds a record at the id each one's key makes, and
+   * claiming none. The Delivery tab's Adopt asks every one. Absent from an older control plane.
+   */
+  adoptable?: number;
   drifted: number;
   deliveredLast24h: number;
   lastDeliveredUtc: string | null;
@@ -253,6 +258,13 @@ export interface DeliveryRecord {
   occupiedTargetId?: string | null;
   /** The version OSDU held at `occupiedTargetId` when the record was held for it. */
   occupiedTargetVersion?: number | null;
+  /**
+   * Whether an adoption may be asked of the record: held because OSDU already holds a record at the id its key makes (the
+   * id the hold kept, or a hold made before holds kept it), claiming none, and not asked already.
+   */
+  adoptable?: boolean;
+  /** When an adoption was asked of the record; the flow's next run takes it over. Null otherwise. */
+  adoptRequestedUtc?: string | null;
 }
 
 /** An OSDU id a record's pending document refers to, and the property of the record holding it. */
@@ -941,18 +953,30 @@ export interface DeliveryIssueReleaseResult {
   runId: string | null;
 }
 
-/** What adopting one record did: the OSDU id it claimed, the version OSDU held there, and the run queued when asked to. */
-export interface DeliveryRecordAdoptResult {
-  targetId: string;
-  version?: number | null;
-  runId?: string | null;
+/**
+ * What an adoption asked: how many records it reached (named, matched, or held for an id OSDU holds), how many it asked to
+ * adopt, and the deliver run it queued, which takes them over, when asked to.
+ */
+export interface DeliveryAdoptResult {
+  selected: number;
+  asked: number;
+  runId: string | null;
 }
 
-/** What adopting an issue's records did: how many it adopted, and the deliver run it queued when asked to. */
+/** What an adoption of an issue's records asked, and the deliver run it queued when asked to. */
 export interface DeliveryIssueAdoptResult {
   issue: string;
-  adopted: number;
+  asked: number;
   runId: string | null;
+}
+
+/**
+ * An adoption asked of many records: the ones `keys` names, every one `filter` matches (with the `expected` count shown), or
+ * with neither every record held for an id OSDU holds, of every interface when the scope names none. `confirm` is the
+ * partition the ledgers are kept in, typed back.
+ */
+export interface DeliveryAdoptRequest extends DeliveryManyRecords {
+  confirm: string;
 }
 
 export interface DeliveryRedeliverResult {
@@ -3939,14 +3963,20 @@ export const deliveryApi = {
   releaseIssue: (pipelineId: string, issue: string, run: boolean, scope?: DeliveryFlowScope) =>
     post<DeliveryIssueReleaseResult>(flowPath(pipelineId, `/issues/${encodeURIComponent(issue)}/release`, scope), { run }),
   /**
-   * Adopts the record OSDU already holds at the id a held record's key makes: the record claims the id at the version
-   * OSDU held, and the next run writes it there. With `run`, a deliver run scoped to the record is queued at once.
+   * Asks one record held because OSDU already holds a record at the id its key makes to adopt it: the next run takes it
+   * over. With `run`, a deliver run scoped to the record is queued at once.
    */
   adopt: (record: DeliveryRecordRef, run = false) =>
-    post<DeliveryRecordAdoptResult>(`${recordApiPath(record)}/adopt`, run ? { run: true } : undefined),
-  /** Adopts what OSDU holds for every record an issue keeps held, the partition typed back as `confirm`. */
+    post<DeliveryAdoptResult>(`${recordApiPath(record)}/adopt`, run ? { run: true } : undefined),
+  /** Asks every record an issue keeps held for an id OSDU holds to adopt it, the partition typed back as `confirm`. */
   adoptIssue: (pipelineId: string, issue: string, confirm: string, run: boolean, scope?: DeliveryFlowScope) =>
     post<DeliveryIssueAdoptResult>(flowPath(pipelineId, `/issues/${encodeURIComponent(issue)}/adopt`, scope), { confirm, run }),
+  /**
+   * Asks a flow's records held for an id OSDU holds to adopt it: the ones the request names or matches, or every one, of
+   * every interface when the scope names none. The partition is typed back as `confirm`; with `run`, a deliver run is queued.
+   */
+  adoptFlow: (pipelineId: string, request: DeliveryAdoptRequest, scope?: DeliveryFlowScope) =>
+    post<DeliveryAdoptResult>(flowPath(pipelineId, "/adopt", scope), request),
   /** Queues a verify run scoped to this record. */
   verify: (record: DeliveryRecordRef) => post<DeliveryRunAccepted>(`${recordApiPath(record)}/verify`),
   /**

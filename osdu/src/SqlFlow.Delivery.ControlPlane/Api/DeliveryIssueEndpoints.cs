@@ -58,14 +58,14 @@ public sealed record DeliveryIssueReleaseRequest(bool Run = false, string? Pool 
 public sealed record DeliveryIssueReleaseResult(string Issue, int Released, Guid? RunId);
 
 /// <summary>
-/// An adoption of every record an issue keeps held because OSDU already holds a record at the id each record's key makes.
-/// <c>Confirm</c> is the partition the flow's ledger is kept in, typed back: the records OSDU holds there are taken over
-/// whole, and a write follows. <c>Run</c> also queues a deliver run of the flow, as an issue's release does.
+/// An adoption asked of every record an issue keeps held because OSDU already holds a record at the id each record's key
+/// makes. <c>Confirm</c> is the partition the flow's ledger is kept in, typed back. <c>Run</c> also queues a deliver run of
+/// the flow, as an issue's release does, which takes the records over.
 /// </summary>
 public sealed record DeliveryIssueAdoptRequest(string? Confirm, bool Run = false, string? Pool = null);
 
-/// <summary>What an adoption of an issue's records did: how many it adopted, and the run it queued when asked to.</summary>
-public sealed record DeliveryIssueAdoptResult(string Issue, int Adopted, Guid? RunId);
+/// <summary>What an adoption of an issue's records asked: how many records, and the run it queued when asked to.</summary>
+public sealed record DeliveryIssueAdoptResult(string Issue, int Asked, Guid? RunId);
 
 /// <summary>
 /// The issues of a flow: what keeps its records blocked, grouped by the issue each record's error names, so an operator
@@ -188,11 +188,11 @@ public static class DeliveryIssueEndpoints
     }
 
     /// <summary>
-    /// Adopts, as the caller, the OSDU record every record the issue keeps held was held for, the partition typed back first
-    /// (osdu/docs/reference/concepts/record-lifecycle.md, Adopting a record OSDU already holds): each record claims the id its
-    /// key makes at the version OSDU held, recorded on the audit trail with the issue and its pattern and with every record
-    /// adopted named under it. A record of the issue held for anything else is left. With <c>run</c>, a deliver run of the
-    /// flow is queued too.
+    /// Asks, as the caller, every record the issue keeps held because OSDU already holds a record at the id its key makes to
+    /// adopt that record, the partition typed back first (osdu/docs/reference/concepts/record-lifecycle.md, Adopting a record
+    /// OSDU already holds), recorded on the audit trail with the issue and its pattern and with every record asked named under
+    /// it. A record of the issue held for anything else is left. The flow's next deliver run takes the records over; with
+    /// <c>run</c>, one is queued.
     /// </summary>
     private static async Task<Results<Ok<DeliveryIssueAdoptResult>, Accepted<DeliveryIssueAdoptResult>, ProblemHttpResult>> AdoptIssueAsync(
         Guid pipelineId, string issue, DeliveryIssueAdoptRequest? request, [FromQuery(Name = "interface")] string? interfaceName, [FromQuery] string? partition,
@@ -216,33 +216,24 @@ public static class DeliveryIssueEndpoints
             return NoSuchIssue(issue, flow);
         }
 
-        if (request?.Confirm?.Trim() is not { Length: > 0 } typed)
+        if (DeliveryEndpoints.AdoptionUnconfirmed(request?.Confirm, kept, $"Adopting the records of issue {issue}", flow.Flow.Label) is { } unconfirmed)
         {
-            return TypedResults.Problem(
-                detail: $"Adopting the records of issue {issue} takes over every record OSDU holds at their ids in partition {kept}, which no ledger owned, and the next run writes them there. Type the partition back as confirm.",
-                statusCode: StatusCodes.Status400BadRequest, title: "Confirmation required");
-        }
-
-        if (!string.Equals(typed, kept, StringComparison.OrdinalIgnoreCase))
-        {
-            return TypedResults.Problem(
-                detail: $"The adoption confirms partition '{typed}', and the records of {flow.Flow.Label} are kept in '{kept}'. Nothing was adopted.",
-                statusCode: StatusCodes.Status400BadRequest, title: "Confirmation does not match");
+            return unconfirmed;
         }
 
         using var runtime = FlowRuntime.ForTarget(await DeliveryEndpoints.ConfiguredAsync(engine, config, flow, ct).ConfigureAwait(false), flow.Flow);
         runtime.Actor = RequestActor.Label(user);
-        var adopted = await runtime.AdoptProblemAsync(hash, group.Pattern, ct).ConfigureAwait(false);
+        var asked = await runtime.AdoptProblemAsync(hash, group.Pattern, ct).ConfigureAwait(false);
         var named = ProblemSignature.Format(hash);
-        if (request is not { Run: true } || adopted.Count == 0)
+        if (request is not { Run: true } || asked.Count == 0)
         {
-            return TypedResults.Ok(new DeliveryIssueAdoptResult(named, adopted.Count, null));
+            return TypedResults.Ok(new DeliveryIssueAdoptResult(named, asked.Count, null));
         }
 
         // The run reads under the parameter values the example was last planned with, as an issue's release with a run does.
         var last = group.Example?.LastSubmissionId is { } lastId ? await ledger.GetSubmissionAsync(lastId, ct).ConfigureAwait(false) : null;
         var runId = await DeliveryEndpoints.EnqueueRunAsync(db, dispatcher, flow, DeliveryEndpoints.DeliverRun(flow, last?.ParametersJson), request.Pool, user, ct).ConfigureAwait(false);
-        return TypedResults.Accepted($"/api/v1/runs/{runId}", new DeliveryIssueAdoptResult(named, adopted.Count, runId));
+        return TypedResults.Accepted($"/api/v1/runs/{runId}", new DeliveryIssueAdoptResult(named, asked.Count, runId));
     }
 
     /// <summary>An issue as a route names it: the sixteen characters the listing gives it.</summary>

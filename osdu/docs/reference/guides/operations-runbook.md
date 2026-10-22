@@ -233,10 +233,12 @@ have loaded the row, the run scoped to the record reads it by key.
 Deliver the flow to another partition, or give its mapping a `dataset.system` or key that yields other ids. Nothing was
 sent.
 
-For an id another system wrote that is this row's record (an earlier deployment of the delivery, or another instance
-delivering to the same partition, wrote it from the same business key), adopt it: **Adopt** on the record's page, **Adopt
-N** on the flow's Issues tab, or `sqlflow records adopt <flow.yaml> --issue <id> --confirm <partition>`. Each record
-claims the id at the version OSDU holds, and the next run writes its row there
+For ids another system wrote that are these rows' records (an earlier deployment of the delivery, or another instance
+delivering to the same partition, wrote them from the same business keys), adopt them all at once: **Adopt (N)** on the
+flow's Delivery tab, with the partition typed back and a deliver run queued straight after, or `sqlflow records adopt
+<flow.yaml> --confirm <partition>` for one interface. The run takes each record over at the version OSDU holds then and
+writes its row there, and the ledger maintains the records from then on; **Adopt N** on the Issues tab, **Adopt** in the
+Records tab's selection bar and on a record's page ask fewer
 ([Adopting a record OSDU already holds](../concepts/record-lifecycle.md#adopting-a-record-osdu-already-holds)). For a
 record that is not this row's, remove or rename it in OSDU first.
 

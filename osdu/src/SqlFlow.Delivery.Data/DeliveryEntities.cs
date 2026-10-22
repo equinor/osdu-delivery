@@ -182,6 +182,14 @@ public sealed class DeliveryRecord
     /// <summary>The version OSDU held at <see cref="OccupiedTargetId"/> when the record was held for it; null with it.</summary>
     public long? OccupiedTargetVersion { get; set; }
 
+    /// <summary>
+    /// When an operator asked the record to adopt the record OSDU holds at the OSDU id its key makes: the next run that asks
+    /// OSDU about the id and finds a record there claims it, at the version OSDU holds then, rather than holding the record
+    /// (osdu/docs/reference/concepts/record-lifecycle.md, Adopting a record OSDU already holds). Cleared once the record
+    /// claims an id. Null for any other record.
+    /// </summary>
+    public DateTime? AdoptRequestedUtc { get; set; }
+
     public long? TargetVersion { get; set; }
 
     public string Status { get; set; } = "pending";
