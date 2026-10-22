@@ -139,6 +139,9 @@ spec:
             # The flow repository the control plane syncs, registered at start and kept as set here (rename estate to
             # the repository's own name). Its token is the vault's git-token, which the control plane resolves to sync
             # and a worker resolves to check out the commit a run is pinned to; a public repository needs no reference.
+            # With a GitHub App instead (read-only, installed on the repository, its .pem in the vault; see
+            # sqlflow/docs/reference/guides/github-app.md), the reference names the App and where its key is kept:
+            # ${githubapp:app=<the App's client ID>;key=keyvault:<dev key vault>/github-app-private-key}
             ControlPlane__Bootstrap__Repositories__estate__RemoteUrl: https://github.com/<owner>/<flow repository>
             ControlPlane__Bootstrap__Repositories__estate__Branch: main
             ControlPlane__Bootstrap__Repositories__estate__CredentialReference: ${keyvault:<dev key vault>/git-token}

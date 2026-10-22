@@ -6,7 +6,7 @@
     "_generator": {
       "name": "bicep",
       "version": "0.44.1.10279",
-      "templateHash": "10349189633629633820"
+      "templateHash": "7348496145866376427"
     }
   },
   "definitions": {
@@ -203,7 +203,7 @@
           "type": "string",
           "nullable": true,
           "metadata": {
-            "description": "For a private remote, the vault secret a person puts its token in (a GitHub fine-grained token with read access to the repository's contents)."
+            "description": "For a private remote read with its own token, the vault secret a person puts the token in (a GitHub fine-grained token with read access to the repository's contents). It wins over githubApp."
           }
         },
         "credentialUsername": {
@@ -211,6 +211,13 @@
           "nullable": true,
           "metadata": {
             "description": "The username paired with the token, where the host needs one."
+          }
+        },
+        "useGitHubApp": {
+          "type": "bool",
+          "nullable": true,
+          "metadata": {
+            "description": "Whether the estate's githubApp reads this repository when it is on the App's GitHub and names no credentialSecretName. Default true; false reads it with no credential (a public repository the App is not installed on)."
           }
         },
         "excludedFlowPaths": {
@@ -227,6 +234,34 @@
       "additionalProperties": false,
       "metadata": {
         "description": "A flow repository the control plane syncs."
+      }
+    },
+    "gitHubAppOptions": {
+      "type": "object",
+      "properties": {
+        "appId": {
+          "type": "string",
+          "metadata": {
+            "description": "The App's client ID (like Iv23liAbCdEf) or its numeric App ID."
+          }
+        },
+        "privateKeySecretName": {
+          "type": "string",
+          "metadata": {
+            "description": "The vault secret a person puts the App's private key in: the .pem file GitHub generated, as downloaded."
+          }
+        },
+        "apiUrl": {
+          "type": "string",
+          "nullable": true,
+          "metadata": {
+            "description": "For GitHub Enterprise Server (https://<host>/api/v3) or GHE.com (https://api.<name>.ghe.com), the API root. Default https://api.github.com."
+          }
+        }
+      },
+      "additionalProperties": false,
+      "metadata": {
+        "description": "The GitHub App the estate's GitHub repositories are read with, in place of a token per repository (sqlflow/docs/reference/guides/github-app.md)."
       }
     },
     "landingStorageOptions": {
@@ -431,6 +466,21 @@
           },
           "metadata": {
             "description": "The reference a run resolves a vault secret by, with the identity of the app or node that runs it."
+          }
+        },
+        "remoteHost": {
+          "parameters": [
+            {
+              "type": "string",
+              "name": "remoteUrl"
+            }
+          ],
+          "output": {
+            "type": "string",
+            "value": "[toLower(first(split(last(split(split(parameters('remoteUrl'), '/')[2], '@')), ':')))]"
+          },
+          "metadata": {
+            "description": "The host of an https:// remote, lower-cased, without a user or a port."
           }
         }
       }
@@ -690,6 +740,13 @@
         "description": "The flow repositories the control plane syncs, by name (ControlPlane:Bootstrap:Repositories): { remoteUrl (https), branch (main), syncIntervalSeconds (300, at least 30), credentialSecretName: for a private remote the vault secret a person puts its token in (a GitHub fine-grained token with read access to the repository's contents), credentialUsername where the host needs one, excludedFlowPaths }. The control plane registers them at start and keeps them as configured; nobody registers them by hand."
       }
     },
+    "githubApp": {
+      "$ref": "#/definitions/gitHubAppOptions",
+      "nullable": true,
+      "metadata": {
+        "description": "The GitHub App the estate's GitHub repositories are read with, in place of a token per repository (sqlflow/docs/reference/guides/github-app.md): { appId (its client ID), privateKeySecretName (the vault secret a person puts its .pem in), apiUrl (GitHub Enterprise only) }. A repository on the App's GitHub that names no credentialSecretName and leaves useGitHubApp on is read with a short-lived token the App mints for that repository alone, by the control plane and by each worker with its own identity; no token is stored anywhere. Left out, each repository is read with its own token, or with none."
+      }
+    },
     "landingStorage": {
       "$ref": "#/definitions/landingStorageOptions",
       "nullable": true,
@@ -898,6 +955,10 @@
     "repositoriesMisnamed": "[filter(objectKeys(parameters('repositories')), lambda('name', not(__bicep.isRepositoryName(lambdaVariables('name')))))]",
     "repositoriesUnreachable": "[map(filter(items(parameters('repositories')), lambda('r', or(not(equals(take(lambdaVariables('r').value.remoteUrl, 8), 'https://')), less(coalesce(tryGet(lambdaVariables('r').value, 'syncIntervalSeconds'), 300), 30)))), lambda('r', lambdaVariables('r').key))]",
     "repositoriesChecked": "[if(not(empty(variables('repositoriesMisnamed'))), fail(format('A repository is named with letters, digits, underscore, hyphen and dot, starting with a letter or digit, at most 100 characters. Not so: {0}.', join(variables('repositoriesMisnamed'), ', '))), if(not(empty(variables('repositoriesUnreachable'))), fail(format('A repository''s remoteUrl is an https:// URL, and it syncs at most every 30 seconds. Not so: {0}.', join(variables('repositoriesUnreachable'), ', '))), parameters('repositories')))]",
+    "githubAppIdValid": "[or(equals(parameters('githubApp'), null()), and(and(and(greaterOrEquals(length(coalesce(tryGet(parameters('githubApp'), 'appId'), '')), 1), lessOrEquals(length(coalesce(tryGet(parameters('githubApp'), 'appId'), '')), 100)), contains('ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789', take(coalesce(tryGet(parameters('githubApp'), 'appId'), ''), 1))), empty(filter(range(0, length(coalesce(tryGet(parameters('githubApp'), 'appId'), ''))), lambda('i', not(contains('ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_.-', substring(coalesce(tryGet(parameters('githubApp'), 'appId'), ''), lambdaVariables('i'), 1))))))))]",
+    "githubAppKeyValid": "[or(equals(parameters('githubApp'), null()), and(and(greaterOrEquals(length(coalesce(tryGet(parameters('githubApp'), 'privateKeySecretName'), '')), 1), lessOrEquals(length(coalesce(tryGet(parameters('githubApp'), 'privateKeySecretName'), '')), 127)), empty(filter(range(0, length(coalesce(tryGet(parameters('githubApp'), 'privateKeySecretName'), ''))), lambda('i', not(contains('ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-', substring(coalesce(tryGet(parameters('githubApp'), 'privateKeySecretName'), ''), lambdaVariables('i'), 1))))))))]",
+    "githubAppApiValid": "[or(empty(coalesce(tryGet(parameters('githubApp'), 'apiUrl'), '')), and(and(and(and(equals(take(coalesce(tryGet(parameters('githubApp'), 'apiUrl'), ''), 8), 'https://'), greater(length(coalesce(tryGet(parameters('githubApp'), 'apiUrl'), '')), 8)), not(contains(coalesce(tryGet(parameters('githubApp'), 'apiUrl'), ''), '?'))), not(contains(coalesce(tryGet(parameters('githubApp'), 'apiUrl'), ''), '#'))), not(contains(coalesce(tryGet(parameters('githubApp'), 'apiUrl'), ''), '@'))))]",
+    "githubAppChecked": "[if(not(variables('githubAppIdValid')), fail('githubApp.appId is the App''s client ID (like Iv23liAbCdEf) or its numeric App ID.'), if(not(variables('githubAppKeyValid')), fail('githubApp.privateKeySecretName is a Key Vault secret name: letters, digits and hyphens, at most 127 characters.'), if(not(variables('githubAppApiValid')), fail('githubApp.apiUrl is the https:// API root of GitHub Enterprise Server (https://<host>/api/v3) or GHE.com (https://api.<name>.ghe.com), with no user, query or fragment.'), parameters('githubApp'))))]",
     "landingStorageChecked": "[if(equals(parameters('landingStorage'), null()), null(), if(not(__bicep.isContainerName(coalesce(tryGet(parameters('landingStorage'), 'container'), 'landing'))), fail('landingStorage.container is a container name: 3 to 63 lowercase letters, digits and hyphens.'), if(not(__bicep.isEnvironmentName(coalesce(tryGet(parameters('landingStorage'), 'referenceName'), 'LANDING_URL'))), fail('landingStorage.referenceName is named as a flow spells it in ${env:NAME}: a letter or underscore, then letters, digits and underscores, at most 64 characters.'), if(and(not(empty(coalesce(tryGet(parameters('landingStorage'), 'existingAccountId'), ''))), if(equals(length(split(coalesce(tryGet(parameters('landingStorage'), 'existingAccountId'), ''), '/')), 9), not(__bicep.isStorageAccountPath(split(coalesce(tryGet(parameters('landingStorage'), 'existingAccountId'), ''), '/'))), true())), fail('landingStorage.existingAccountId is a storage account''s resource id: /subscriptions/<id>/resourceGroups/<group>/providers/Microsoft.Storage/storageAccounts/<name>.'), parameters('landingStorage')))))]",
     "sqlAdminLoginChecked": "[if(and(equals(parameters('sqlAuthentication'), 'password'), empty(parameters('sqlAdminPassword'))), fail('sqlAdminPassword is required with sqlAuthentication password; set it, or use the default Entra authentication, where each app signs in as its own managed identity.'), parameters('sqlAdminLogin'))]",
     "catalogConnectionSecretName": "osdu-delivery-catalog-db",
@@ -958,7 +1019,13 @@
     "imagesFromTag": "[or(or(or(empty(parameters('controlPlaneImage')), empty(parameters('workerImage'))), empty(parameters('guiImage'))), and(variables('mcpOn'), empty(parameters('mcpImage'))))]",
     "entraSignInAudience": "[if(empty(parameters('azureAdAdditionalAllowedTenantIds')), 'AzureADMyOrg', 'AzureADMultipleOrgs')]",
     "propertySettings": "[union(createObject('Osdu__Properties__SQLFLOW_CATALOG_DB', __bicep.vaultReference(parameters('keyVaultName'), variables('catalogConnectionSecretName'))), toObject(variables('sqlConnectionList'), lambda('c', format('Osdu__Properties__{0}', lambdaVariables('c').name)), lambda('c', __bicep.vaultReference(parameters('keyVaultName'), lambdaVariables('c').secretName))), if(variables('landingEnabled'), createObject(format('Osdu__Properties__{0}', variables('landingReferenceName')), variables('landingUrl')), createObject()), toObject(items(variables('propertiesChecked')), lambda('property', format('Osdu__Properties__{0}', lambdaVariables('property').key)), lambda('property', lambdaVariables('property').value)))]",
-    "repositorySettings": "[reduce(map(items(variables('repositoriesChecked')), lambda('r', union(createObject(format('ControlPlane__Bootstrap__Repositories__{0}__RemoteUrl', lambdaVariables('r').key), lambdaVariables('r').value.remoteUrl, format('ControlPlane__Bootstrap__Repositories__{0}__Branch', lambdaVariables('r').key), coalesce(tryGet(lambdaVariables('r').value, 'branch'), 'main'), format('ControlPlane__Bootstrap__Repositories__{0}__SyncIntervalSeconds', lambdaVariables('r').key), string(coalesce(tryGet(lambdaVariables('r').value, 'syncIntervalSeconds'), 300))), if(empty(coalesce(tryGet(lambdaVariables('r').value, 'credentialSecretName'), '')), createObject(), createObject(format('ControlPlane__Bootstrap__Repositories__{0}__CredentialReference', lambdaVariables('r').key), __bicep.vaultReference(parameters('keyVaultName'), coalesce(tryGet(lambdaVariables('r').value, 'credentialSecretName'), '')))), if(empty(coalesce(tryGet(lambdaVariables('r').value, 'credentialUsername'), '')), createObject(), createObject(format('ControlPlane__Bootstrap__Repositories__{0}__CredentialUsername', lambdaVariables('r').key), coalesce(tryGet(lambdaVariables('r').value, 'credentialUsername'), ''))), toObject(range(0, length(coalesce(tryGet(lambdaVariables('r').value, 'excludedFlowPaths'), createArray()))), lambda('i', format('ControlPlane__Bootstrap__Repositories__{0}__ExcludedFlowPaths__{1}', lambdaVariables('r').key, lambdaVariables('i'))), lambda('i', coalesce(tryGet(lambdaVariables('r').value, 'excludedFlowPaths'), createArray())[lambdaVariables('i')]))))), createObject(), lambda('settings', 'repository', union(lambdaVariables('settings'), lambdaVariables('repository'))))]",
+    "githubAppApiUrl": "[coalesce(tryGet(variables('githubAppChecked'), 'apiUrl'), '')]",
+    "githubAppApiRoot": "[if(empty(variables('githubAppApiUrl')), 'https://api.github.com', if(endsWith(variables('githubAppApiUrl'), '/'), substring(variables('githubAppApiUrl'), 0, sub(length(variables('githubAppApiUrl')), 1)), variables('githubAppApiUrl')))]",
+    "githubAppApiHost": "[toLower(split(variables('githubAppApiRoot'), '/')[2])]",
+    "githubAppWebHost": "[if(startsWith(variables('githubAppApiHost'), 'api.'), substring(variables('githubAppApiHost'), 4), variables('githubAppApiHost'))]",
+    "githubAppReference": "[if(equals(variables('githubAppChecked'), null()), '', format('${{githubapp:app={0};key=keyvault:{1}/{2}{3}}}', coalesce(tryGet(variables('githubAppChecked'), 'appId'), ''), parameters('keyVaultName'), coalesce(tryGet(variables('githubAppChecked'), 'privateKeySecretName'), ''), if(empty(variables('githubAppApiUrl')), '', format(';api={0}', variables('githubAppApiRoot')))))]",
+    "repositoryCredentials": "[toObject(items(variables('repositoriesChecked')), lambda('r', lambdaVariables('r').key), lambda('r', if(not(empty(coalesce(tryGet(lambdaVariables('r').value, 'credentialSecretName'), ''))), __bicep.vaultReference(parameters('keyVaultName'), coalesce(tryGet(lambdaVariables('r').value, 'credentialSecretName'), '')), if(and(and(not(empty(variables('githubAppReference'))), coalesce(tryGet(lambdaVariables('r').value, 'useGitHubApp'), true())), or(equals(__bicep.remoteHost(lambdaVariables('r').value.remoteUrl), variables('githubAppWebHost')), equals(__bicep.remoteHost(lambdaVariables('r').value.remoteUrl), format('www.{0}', variables('githubAppWebHost'))))), variables('githubAppReference'), ''))))]",
+    "repositorySettings": "[reduce(map(items(variables('repositoriesChecked')), lambda('r', union(createObject(format('ControlPlane__Bootstrap__Repositories__{0}__RemoteUrl', lambdaVariables('r').key), lambdaVariables('r').value.remoteUrl, format('ControlPlane__Bootstrap__Repositories__{0}__Branch', lambdaVariables('r').key), coalesce(tryGet(lambdaVariables('r').value, 'branch'), 'main'), format('ControlPlane__Bootstrap__Repositories__{0}__SyncIntervalSeconds', lambdaVariables('r').key), string(coalesce(tryGet(lambdaVariables('r').value, 'syncIntervalSeconds'), 300))), if(empty(variables('repositoryCredentials')[lambdaVariables('r').key]), createObject(), createObject(format('ControlPlane__Bootstrap__Repositories__{0}__CredentialReference', lambdaVariables('r').key), variables('repositoryCredentials')[lambdaVariables('r').key])), if(empty(coalesce(tryGet(lambdaVariables('r').value, 'credentialUsername'), '')), createObject(), createObject(format('ControlPlane__Bootstrap__Repositories__{0}__CredentialUsername', lambdaVariables('r').key), coalesce(tryGet(lambdaVariables('r').value, 'credentialUsername'), ''))), toObject(range(0, length(coalesce(tryGet(lambdaVariables('r').value, 'excludedFlowPaths'), createArray()))), lambda('i', format('ControlPlane__Bootstrap__Repositories__{0}__ExcludedFlowPaths__{1}', lambdaVariables('r').key, lambdaVariables('i'))), lambda('i', coalesce(tryGet(lambdaVariables('r').value, 'excludedFlowPaths'), createArray())[lambdaVariables('i')]))))), createObject(), lambda('settings', 'repository', union(lambdaVariables('settings'), lambdaVariables('repository'))))]",
     "controlPlaneSettings": "[union(variables('osduPartitionSettings'), variables('propertySettings'), variables('repositorySettings'), createObject('ControlPlane__Bootstrap__NodeTokenReference', __bicep.vaultReference(parameters('keyVaultName'), variables('nodeTokenSecretName'))))]",
     "effectiveAzureAdAllowedTenantIds": "[if(parameters('provisionEntraApp'), concat(createArray(subscription().tenantId), parameters('azureAdAdditionalAllowedTenantIds')), parameters('azureAdAllowedTenantIds'))]"
   },
@@ -3535,9 +3602,16 @@
     "keyVaultName": {
       "type": "string",
       "metadata": {
-        "description": "The vault holding every estate secret: the generated ones, and the ones put here by hand (each partition's client secret, a repository's token, a connection elsewhere)."
+        "description": "The vault holding every estate secret: the generated ones, and the ones put here by hand (each partition's client secret, a repository's token or the GitHub App's private key, a connection elsewhere)."
       },
       "value": "[parameters('keyVaultName')]"
+    },
+    "githubAppPrivateKeySecret": {
+      "type": "string",
+      "metadata": {
+        "description": "The vault secret the estate's GitHub App's private key is read from, put there by hand: az keyvault secret set --vault-name <keyVaultName> --name <this> --file <the App's .pem>. Empty when the estate names no App."
+      },
+      "value": "[coalesce(tryGet(variables('githubAppChecked'), 'privateKeySecretName'), '')]"
     },
     "keyVaultUri": {
       "type": "string",

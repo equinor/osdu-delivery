@@ -385,7 +385,8 @@
         "delivery-cli-partition",
         "delivery-cli-db",
         "concept-environment-variables",
-        "cli-control-plane"
+        "cli-control-plane",
+        "guide-github-app"
       ],
       "sourceRefs": [
         "osdu/src/SqlFlow.Delivery.Setup/DevCommand.cs",
@@ -1501,7 +1502,8 @@
         "delivery-cli-config",
         "delivery-cli-worker",
         "delivery-guide-deployment",
-        "delivery-concept-run-trace-and-metrics"
+        "delivery-concept-run-trace-and-metrics",
+        "guide-github-app"
       ],
       "sourceRefs": [
         "osdu/src/SqlFlow.Delivery/Hosting/OsduModuleDatabase.cs",
@@ -4111,7 +4113,8 @@
         "delivery-guide-getting-started",
         "delivery-cli-db",
         "delivery-guide-mcp",
-        "delivery-guide-managed-workers"
+        "delivery-guide-managed-workers",
+        "guide-github-app"
       ],
       "sourceRefs": [
         "osdu/deploy/README.md",
@@ -4677,7 +4680,8 @@
         "delivery-concept-partitions",
         "delivery-guide-deployment",
         "guide-chat-assistant",
-        "concept-authentication-and-identity"
+        "concept-authentication-and-identity",
+        "guide-github-app"
       ],
       "sourceRefs": [
         "osdu/deploy/radix/radixconfig.yaml",

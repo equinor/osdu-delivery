@@ -5,16 +5,20 @@
 #                                       SQL Server, host or other process, and the GUI's build, lint and unit tests. It
 #                                       is what CI's Build and test runs on a pull request, and what the pre-push hook
 #                                       runs. It takes minutes, and needs no database.
-#   bash tools/test.sh --full           everything: the whole .NET suite against SQL Server, the MCP server's crates and
-#                                       the GUI end-to-end suite. Run it before opening a pull request; CI runs it on a
-#                                       release tag, and on a pull request labelled full-tests.
+#   bash tools/test.sh --full           everything: the whole .NET suite against SQL Server (and a test GitHub App when
+#                                       one is configured), the MCP server's crates and the GUI end-to-end suite. Run it
+#                                       before opening a pull request; CI runs it on a release tag, and on a pull request
+#                                       labelled full-tests.
 #   bash tools/test.sh --install-hook   makes git run the unit tier before every push (git config core.hooksPath).
 #
 # The unit tier points the suites at a server that does not exist, so a test that needs SQL Server without carrying
 # [Trait("Category", "Integration")] fails here, as it would in CI, rather than passing on this machine's database.
 # The full tier uses SQLFLOW_TEST_DB: from the environment, else from .sqlflow/env, else (on Windows) the local default
 # instance's OsduDeliveryTests under Windows authentication. Never point it at a database holding real data: the suites
-# migrate and seed it.
+# migrate and seed it. It reads an optional test GitHub App the same way (SQLFLOW_TEST_GITHUB_APP_ID, its key in
+# SQLFLOW_TEST_GITHUB_APP_PRIVATE_KEY_PATH or SQLFLOW_TEST_GITHUB_APP_PRIVATE_KEY, and SQLFLOW_TEST_GITHUB_REPOSITORY;
+# see sqlflow/docs/reference/guides/github-app.md): a read-only App the live suite writes nothing with. Without one,
+# as on an estate that reads its repositories with a token, that suite is skipped.
 #
 # Written for the bash macOS ships (3.2), and for Git Bash on Windows.
 set -euo pipefail
@@ -33,7 +37,7 @@ case "${1:-}" in
   --full) mode=full ;;
   --install-hook) mode=install-hook ;;
   -h | --help)
-    sed -n '2,19p' "$0" | sed 's/^# \{0,1\}//'
+    sed -n '2,23p' "$0" | sed 's/^# \{0,1\}//'
     exit 0
     ;;
   *)
@@ -100,6 +104,22 @@ else
   fi
 fi
 export SQLFLOW_TEST_DB="$test_db"
+
+# The GitHub App live suite's test App: from the environment, else from .sqlflow/env (one line per value, so the key is
+# its .pem file's path, or the base64 of the PEM). With none of them the suite is skipped; with only some of them it
+# fails, naming the rest.
+if [ "$mode" = full ] && [ -f .sqlflow/env ]; then
+  for name in SQLFLOW_TEST_GITHUB_APP_ID SQLFLOW_TEST_GITHUB_APP_PRIVATE_KEY SQLFLOW_TEST_GITHUB_APP_PRIVATE_KEY_PATH \
+    SQLFLOW_TEST_GITHUB_REPOSITORY; do
+    if [ -z "${!name:-}" ]; then
+      value="$(grep -m 1 "^$name=" .sqlflow/env | cut -d= -f2- | sed -e "s/^[\"']//" -e "s/[\"']\$//" || true)"
+      if [ -n "$value" ]; then
+        export "$name=$value"
+      fi
+    fi
+  done
+fi
+
 # The hosts the suites start never apply this checkout's .sqlflow/env: its credentials and its OSDU partition are not
 # the suites' to use.
 export SQLFLOW_LOCAL_ENV_FILE=false

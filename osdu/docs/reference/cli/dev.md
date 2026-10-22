@@ -39,6 +39,7 @@ related:
   - delivery-cli-db
   - concept-environment-variables
   - cli-control-plane
+  - guide-github-app
 sourceRefs:
   - osdu/src/SqlFlow.Delivery.Setup/DevCommand.cs
   - osdu/src/SqlFlow.Delivery.Setup/DevCommandLine.cs
@@ -149,9 +150,11 @@ PATH or the one an installer just put in its usual place; by the time the plan i
    for Energy (`*.energy.azure.com`) the scope and the groups default to its conventions. On request it signs in with the
    client and reads the legal tag from the partition (`GET /api/legal/v1/legaltags/{name}`), writing nothing, and offers
    the questions again when that fails.
-5. **Flows.** A flow repository to register: a folder on this machine, read live, or a git URL, cloned and pulled, with
-   an access token kept in `SQLFLOW_GIT_TOKEN` and named by reference. One the catalog registers already is left as it
-   is.
+5. **Flows.** A flow repository to register: a folder on this machine, read live, or a git URL, cloned and pulled. A
+   GitHub repository can be read with a GitHub App: its client ID goes in `SQLFLOW_GITHUB_APP_ID` and the path of its
+   `.pem` file in `SQLFLOW_GITHUB_APP_PRIVATE_KEY_PATH`, and the repository names no credential, so it is read with a
+   token the App mints for it alone ([creating a read-only App](../../../../sqlflow/docs/reference/guides/github-app.md)). Otherwise an access token is kept in
+   `SQLFLOW_GIT_TOKEN` and named by reference. One the catalog registers already is left as it is.
 6. **Optional.** Whether flows read Azure through `az login` (`SQLFLOW_AZURE_AUTH=cli`), and the assistant's ! questions.
 
 It then writes the file, keeping the one it replaces beside it as `env.<time>.bak`, carries over every name the old file
@@ -170,7 +173,7 @@ command line's build to finish, which the start needs next, and then runs the ch
 | The file | lines the hosts refuse, names set twice (the first counts), values `dev.bat` cannot set (a double quote beside `&`, `\|`, `<`, `>` or `^`, or more than 8,000 characters), and names this terminal sets to another value |
 | Settings | every setting of the template, by section: set, missing, still a placeholder, or wrong (a signing key under 32 bytes, an origin that is not the GUI's, a URL that is not https, a group that is not an e-mail, Windows authentication off Windows); misspelt names, with the one meant |
 | SQL Server | the servers on this machine; the catalog's server, its release and edition; the catalog database (missing, empty, another application's, offline, closed to the login) and the data database (missing, without snapshot isolation) |
-| Sign-in, partitions and flows | the users and the first admin; the partitions registered; each repository (its folder missing here, its last sync's error); every `${env:NAME}` the repositories' YAML names that nothing sets (the file, this terminal, or the central configuration) |
+| Sign-in, partitions and flows | the users and the first admin; the partitions registered; each repository (its folder missing here, its last sync's error); the GitHub App the file names (all of it, or which part is missing; its client ID and the `.pem` path are checked as settings); every `${env:NAME}` the repositories' YAML names that nothing sets (the file, this terminal, or the central configuration) |
 | OSDU | with `--test-osdu`: the client's sign-in and the legal tag |
 
 A server that does not answer is explained from what this machine has: SQL Server not installed (with the installer to

@@ -1,7 +1,7 @@
 # Copy to terraform.tfvars (git-ignored) and fill in. No secret goes in this file, and none reaches Terraform: the
 # deployment generates the JWT signing key, the initial admin's password and the node credential into the estate's
-# vault, and the secrets only a person has (each partition's OSDU client secret, a private repository's token, a
-# connection string elsewhere) are put in the vault by hand under the names given below.
+# vault, and the secrets only a person has (each partition's OSDU client secret, a private repository's token or the
+# GitHub App's private key, a connection string elsewhere) are put in the vault by hand under the names given below.
 
 resource_group_name = "<existing resource group>"
 # subscription_id   = "<subscription id>"   # or ARM_SUBSCRIPTION_ID
@@ -43,12 +43,22 @@ sql_connections = {
 landing_storage = {}
 # landing_storage = { existing_account_id = "/subscriptions/<sub>/resourceGroups/<rg>/providers/Microsoft.Storage/storageAccounts/<account>", container = "landing" }
 
-# The flow repositories the control plane syncs. A private one names the vault secret holding its token (a GitHub
-# fine-grained token with read access to the repository's contents), which a person puts there.
+# The flow repositories the control plane syncs. A private GitHub repository is best read with a GitHub App
+# (github_app): read-only, installed on the repositories it reads, its private key put in the vault by hand
+# (az keyvault secret set --vault-name <vault> --name github-app-private-key --file <the App's .pem>). It reads every
+# repository on its GitHub that names no credential_secret_name and leaves use_github_app on, with a short-lived token
+# for that repository alone (sqlflow/docs/reference/guides/github-app.md). A repository can name its own token instead:
+# the vault secret holding it (a GitHub fine-grained token with read access to the repository's contents).
+# github_app = {
+#   app_id                  = "<the App's client ID, like Iv23liAbCdEf>"
+#   private_key_secret_name = "github-app-private-key"
+#   # api_url               = "https://<GitHub Enterprise Server>/api/v3"
+# }
 repositories = {
   flows = {
     remote_url = "https://github.com/<owner>/<repository>.git"
     # credential_secret_name = "github-flows-token"
+    # use_github_app         = false   # a public repository the App is not installed on
   }
 }
 

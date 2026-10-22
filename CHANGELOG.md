@@ -9,6 +9,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **A private GitHub repository can be read with a GitHub App instead of a personal access token.** Give the
+  deployment a read-only App (`SQLFLOW_GITHUB_APP_ID` with its private key, or `github_app` in the Terraform and
+  `githubApp` in the Bicep), or name one in a source's credential reference (`${githubapp:...}`), and every sync and
+  checkout asks it for a short-lived token for that repository alone, so no token is stored and none belongs to a person
+  ([Reading a private GitHub repository with a GitHub App](sqlflow/docs/reference/guides/github-app.md)).
+- **The Repos page says which credential each repository is read with, and tests it.** A mark beside each remote, the
+  repository page and the register dialog show whether a source reads with its own token, a GitHub App, the host's
+  token or nothing; Git credentials shows the deployment's App and checks it with GitHub; Test access reads the branch
+  tip with the credential a sync would use ([Git credentials](sqlflow/docs/reference/concepts/control-plane.md#git-credentials-a-reference-never-a-secret)).
 - **A custom template can be linked to the canonical kind it stands beside.** A template file naming a record kind in
   `x-osdu-inheriting-from-kind` is linked to it: each of its records has a parent, the record of that kind with the same
   minted id, and the sync, the Templates page, the API (`parent`) and the MCP server's template tool say which
@@ -87,6 +96,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **`sqlflow dev setup` offers a GitHub App for a GitHub repository before a token.** It asks for the App's client ID
+  and the path of its `.pem` file, and `sqlflow dev check` reports an App that is only half configured; Enter at the new
+  question keeps the token as before ([dev](osdu/docs/reference/cli/dev.md)).
+- **The compose stacks give the control plane the git credentials too.** A repository registered there with no
+  credential reference now syncs with `SQLFLOW_GITHUB_APP_*` or `SQLFLOW_GIT_TOKEN` from `.env`, as the worker already
+  checked out with them ([deployment](osdu/docs/reference/guides/deployment.md)).
 - **Documents read their templates from the repository, not from the saved templates.** A mapping, its searches, an
   assertion test and a dimension read the template they fill from the template folders on their path, and a run,
   `sqlflow check`, lineage and the sync do too; a mapping whose template no folder on its path holds no longer loads,
@@ -229,6 +244,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
+- **A GitHub token quoted in an error is redacted before it is logged or shown,** in every format GitHub issues, and a
+  resolved git credential never prints its secret.
 - **An unzip cannot write outside its target.** An archive names its entries itself, and on an Azure Blob or S3 target
   an entry such as `../x` landed beside the target folder. A copy flow now fails with `escapes the target root` on any
   target when an archive entry, or a source object's key, would leave it

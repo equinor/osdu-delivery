@@ -219,7 +219,7 @@ public sealed class DevSetupWizardTests : IDisposable
         Assert.DoesNotContain(_scope.ReadEnv().Keys, k => k.StartsWith("ControlPlane__Bootstrap__Repositories__", StringComparison.Ordinal));
 
         File.Delete(_scope.Checkout.EnvFile);
-        var (gitWritten, _) = await RunAsync(DevPlatform.Windows, ["", "", "", "", "", "n", "https://github.com/org/flows-repo.git", "", "", "token-1", "", "", "", ""]);
+        var (gitWritten, _) = await RunAsync(DevPlatform.Windows, ["", "", "", "", "", "n", "https://github.com/org/flows-repo.git", "", "", "", "token-1", "", "", "", ""]);
         Assert.True(gitWritten);
         var env = _scope.ReadEnv();
         Assert.Equal("https://github.com/org/flows-repo.git", env["ControlPlane__Bootstrap__Repositories__flows_repo__RemoteUrl"]);
@@ -227,6 +227,25 @@ public sealed class DevSetupWizardTests : IDisposable
         Assert.Equal("${env:SQLFLOW_GIT_TOKEN}", env["ControlPlane__Bootstrap__Repositories__flows_repo__CredentialReference"]);
         Assert.Equal("x-access-token", env["ControlPlane__Bootstrap__Repositories__flows_repo__CredentialUsername"]);
         Assert.Equal("token-1", env["SQLFLOW_GIT_TOKEN"]);
+    }
+
+    [Fact]
+    public async Task A_github_repository_can_be_read_with_a_github_app_whose_key_stays_in_its_file()
+    {
+        _scope.WithReadyServer();
+        var pem = Path.Combine(_scope.Root, "flows-reader.private-key.pem");
+        File.WriteAllText(pem, "-----BEGIN RSA PRIVATE KEY-----");
+
+        var (written, prompter) = await RunAsync(DevPlatform.Windows, ["", "", "", "", "", "n", "https://github.com/org/flows-repo.git", "", "", "Iv23liAbCdEf", pem, "", "", "", ""]);
+
+        Assert.True(written);
+        var env = _scope.ReadEnv();
+        Assert.Equal("https://github.com/org/flows-repo.git", env["ControlPlane__Bootstrap__Repositories__flows_repo__RemoteUrl"]);
+        Assert.Equal("Iv23liAbCdEf", env["SQLFLOW_GITHUB_APP_ID"]);
+        Assert.Equal(pem, env["SQLFLOW_GITHUB_APP_PRIVATE_KEY_PATH"]);
+        Assert.False(env.ContainsKey("ControlPlane__Bootstrap__Repositories__flows_repo__CredentialReference"));
+        Assert.False(env.ContainsKey("SQLFLOW_GIT_TOKEN"));
+        Assert.Contains("read-only (Contents)", prompter.Transcript, StringComparison.Ordinal);
     }
 
     [Fact]

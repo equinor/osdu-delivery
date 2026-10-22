@@ -1,5 +1,5 @@
 import { useEffect, useId, useState } from "react";
-import { useMutation } from "@tanstack/react-query";
+import { useMutation, useQuery } from "@tanstack/react-query";
 import { GitPullRequest, Loader2, TriangleAlert } from "lucide-react";
 import { toast } from "sonner";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
@@ -34,7 +34,8 @@ interface MappingProposeSheetProps {
  * Proposes the mapping to its repository as a pull request, through the same proposal path flows use: the control plane
  * pushes a branch with the source's own credential and opens the pull request. Nothing reaches the catalog until a person
  * merges it and the repository syncs. The mapping fills a template the repository already holds, and goes where the check
- * read it from, so the pull request writes the mapping alone.
+ * read it from, so the pull request writes the mapping alone. The sheet says which credential pushes it, since a
+ * read-only GitHub App (enough for syncing) cannot.
  */
 export function MappingProposeSheet({ open, onClose, repo, sourceId, name, version, path, yaml, template }: MappingProposeSheetProps) {
   const ids = useId();
@@ -75,6 +76,14 @@ export function MappingProposeSheet({ open, onClose, repo, sourceId, name, versi
 
   const created = propose.data;
 
+  // The credential the control plane pushes the branch and opens the pull request with, as the Repos page lists it.
+  const sources = useQuery({
+    queryKey: ["repo-sources", "list", 200],
+    queryFn: () => repoSourceApi.list({ page: 1, pageSize: 200 }),
+    enabled: open,
+  });
+  const credential = sources.data?.items.find((source) => source.id === sourceId)?.credential;
+
   return (
     <Sheet open={open} onOpenChange={(next) => { if (!next && !propose.isPending) { onClose(); } }}>
       <SheetContent className="w-full gap-0 sm:max-w-lg" data-testid="mapping-builder-propose-dialog">
@@ -87,6 +96,14 @@ export function MappingProposeSheet({ open, onClose, repo, sourceId, name, versi
           </SheetDescription>
         </SheetHeader>
         <div className="flex flex-1 flex-col gap-4 overflow-y-auto px-4 pb-4">
+          {created === undefined && credential != null && (
+            <p className="text-xs text-muted-foreground" data-testid="mapping-builder-propose-credential">
+              Pushed and opened with {credential.summary}.
+              {credential.kind === "github-app"
+                ? " A GitHub App proposes only with Contents and Pull requests set to read and write; a read-only one is refused."
+                : null}
+            </p>
+          )}
           {propose.isError && <ProblemView error={propose.error} testId="mapping-builder-propose-error" />}
           {created !== undefined ? (
             <div className="flex flex-col gap-2 rounded-lg border border-border p-3" data-testid="mapping-builder-propose-result">

@@ -300,13 +300,14 @@ variable "sql_connection_sku" {
 }
 
 variable "repositories" {
-  description = "The flow repositories the control plane syncs, by name (ControlPlane:Bootstrap:Repositories): remote_url, branch, how often to sync, and for a private remote the vault secret holding its token (credential_secret_name, put there by hand: a GitHub fine-grained token with read access to the repository's contents) with its username where the host needs one. The control plane registers them at start and keeps them as configured; nobody registers them by hand."
+  description = "The flow repositories the control plane syncs, by name (ControlPlane:Bootstrap:Repositories): remote_url, branch, how often to sync, and for a private remote either the estate's GitHub App (github_app, used for every repository on its GitHub unless use_github_app is false) or the vault secret holding the repository's own token (credential_secret_name, put there by hand: a GitHub fine-grained token with read access to the repository's contents, which wins over the App) with its username where the host needs one. The control plane registers them at start and keeps them as configured; nobody registers them by hand."
   type = map(object({
     remote_url             = string
     branch                 = optional(string, "main")
     sync_interval_seconds  = optional(number, 300)
     credential_secret_name = optional(string)
     credential_username    = optional(string)
+    use_github_app         = optional(bool, true)
     excluded_flow_paths    = optional(list(string), [])
   }))
   default = {}
@@ -319,6 +320,31 @@ variable "repositories" {
   validation {
     condition     = alltrue([for r in values(var.repositories) : can(regex("^https://", r.remote_url)) && r.sync_interval_seconds >= 30])
     error_message = "A repository's remote_url is an https:// URL, and it syncs at most every 30 seconds."
+  }
+}
+
+variable "github_app" {
+  description = "The GitHub App the estate's GitHub repositories are read with, in place of a token per repository (sqlflow/docs/reference/guides/github-app.md): its client ID or App ID (app_id), the vault secret holding its private key (private_key_secret_name: the .pem GitHub generated, put there by hand), and for GitHub Enterprise Server or GHE.com its API root (api_url). A repository on the App's GitHub that names no credential_secret_name and leaves use_github_app on is read with a short-lived token the App mints for that repository alone, by the control plane and by each worker with its own identity; no token is stored anywhere. Null reads each repository with its own token, or with none."
+  type = object({
+    app_id                  = string
+    private_key_secret_name = string
+    api_url                 = optional(string)
+  })
+  default = null
+
+  validation {
+    condition     = var.github_app == null ? true : can(regex("^[A-Za-z0-9][A-Za-z0-9._-]{0,99}$", var.github_app.app_id))
+    error_message = "github_app.app_id is the App's client ID (like Iv23liAbCdEf) or its numeric App ID."
+  }
+
+  validation {
+    condition     = var.github_app == null ? true : can(regex("^[0-9A-Za-z-]{1,127}$", var.github_app.private_key_secret_name))
+    error_message = "github_app.private_key_secret_name is a Key Vault secret name: letters, digits and hyphens, at most 127 characters."
+  }
+
+  validation {
+    condition     = var.github_app == null ? true : (var.github_app.api_url == null ? true : can(regex("^https://[^/?#@]+(/[^?#]*)?$", var.github_app.api_url)))
+    error_message = "github_app.api_url is the https:// API root of GitHub Enterprise Server (https://<host>/api/v3) or GHE.com (https://api.<name>.ghe.com), with no user, query or fragment."
   }
 }
 

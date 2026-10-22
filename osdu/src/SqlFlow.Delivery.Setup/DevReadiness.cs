@@ -589,6 +589,15 @@ internal static partial class DevReadiness
             }
         }
 
+        // The GitHub App the hosts read private GitHub repositories with: all of it, or none of it.
+        if (GitHubApp(settings) is { } app)
+        {
+            findings.Add(app.Problem is null
+                ? Finding.Ok("GitHub App", $"{app.Id} reads the private GitHub repositories it is installed on (read-only is enough)")
+                : Finding.Warning("GitHub App", app.Problem + ": the hosts refuse to read a repository with it",
+                    $"Fix it in {advice.EnvFile}, or run {advice.Launcher} setup (sqlflow/docs/reference/guides/github-app.md)."));
+        }
+
         if (facts.References is { } references)
         {
             var set = new HashSet<string>(StringComparer.Ordinal);
@@ -710,4 +719,28 @@ internal static partial class DevReadiness
 
     [GeneratedRegex(@"^Osdu__(Partitions__[A-Za-z0-9_.\-]+?__)?Properties__(?<name>[A-Za-z0-9_]+)$", RegexOptions.CultureInvariant)]
     private static partial Regex PropertySetting();
+
+    /// <summary>
+    /// The host's GitHub App as the env file names it, and what keeps the hosts from using it (an App ID without a key, a
+    /// key without an App ID, or both key settings), as SQLFlow refuses the same; null when the file names none of it.
+    /// </summary>
+    private static (string Id, string? Problem)? GitHubApp(DevSettings settings)
+    {
+        var id = settings.Get(DevValues.GitHubAppIdName);
+        var key = settings.Get(DevValues.GitHubAppKeyName);
+        var path = settings.Get(DevValues.GitHubAppKeyPathName);
+        if (id is null && key is null && path is null)
+        {
+            return null;
+        }
+
+        var problem = id is null
+            ? $"{(key is not null ? DevValues.GitHubAppKeyName : DevValues.GitHubAppKeyPathName)} is set but {DevValues.GitHubAppIdName} is not"
+            : key is null && path is null
+                ? $"{DevValues.GitHubAppIdName} is set but the App has no private key ({DevValues.GitHubAppKeyPathName}, or {DevValues.GitHubAppKeyName})"
+                : key is not null && path is not null
+                    ? $"both {DevValues.GitHubAppKeyName} and {DevValues.GitHubAppKeyPathName} are set; set one"
+                    : null;
+        return (id ?? "(no App ID)", problem);
+    }
 }

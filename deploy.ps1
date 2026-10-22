@@ -39,14 +39,17 @@
     the environment's name is typed back (-AutoApprove skips the question: the GitHub
     workflow, where the environment's approval is the gate). No secret reaches Terraform:
     the deployment generates its own into the estate's vault, and a person puts the rest
-    there (each partition's client secret, a repository's token). What an environment
+    there (each partition's client secret, a repository's token, or the private key of the
+    GitHub App the environment's github_app names, which then reads its GitHub repositories
+    instead of a token: sqlflow/docs/reference/guides/github-app.md). What an environment
     keeps out of the repository (its OSDU partitions, TF_VAR_osdu_partitions) comes from
     the process environment or from the git-ignored .sqlflow/deploy/<env>.env (NAME=value
     lines), never from a committed file. The images of apps the plan is about to create
     are built first; an app that exists keeps the image it serves (the Terraform ignores
     image changes: this script rolls them forward). Once applied, the script waits for the
-    control plane's start-up pass and shows each of its steps, each repository's sync and
-    whether the chat assistant is on, signed in as the initial admin with the password the
+    control plane's start-up pass and shows each of its steps, each repository's sync and the
+    credential it reads with, and whether the chat assistant is on, signed in as the initial
+    admin with the password the
     deployment generated: the estate is ready to use when every step is done.
 
     Change detection (the single interface: run it bare and it deploys what is required):
@@ -712,6 +715,14 @@ function Show-EstateReadiness {
         else {
             Write-Host ("   {0,-24} pending  not synced yet" -f $source.name) -ForegroundColor Yellow
         }
+
+        # The credential it reads with (a GitHub App, a token, none), never a secret; one that cannot be used says why.
+        if ($source.PSObject.Properties['credential'] -and $source.credential) {
+            Write-Host ("   {0,-24}          read with {1}" -f '', $source.credential.summary)
+            if ($source.credential.PSObject.Properties['problem'] -and $source.credential.problem) {
+                Write-Host ("   {0,-24}          {1}" -f '', $source.credential.problem) -ForegroundColor Yellow
+            }
+        }
     }
 
     $chat = Invoke-RestMethod -Uri "$base/api/v1/chat/capabilities" -Headers $headers -TimeoutSec 30
@@ -833,6 +844,21 @@ function Invoke-Infrastructure {
     }
     if ($outputs.PSObject.Properties['entra_assignment_reminder'] -and $outputs.entra_assignment_reminder.value) {
         Write-Host "   $($outputs.entra_assignment_reminder.value)" -ForegroundColor Yellow
+    }
+    if ($outputs.PSObject.Properties['github_app_private_key_secret'] -and $outputs.github_app_private_key_secret.value) {
+        # The GitHub App's private key is put in the vault by hand; until it is there, each repository the App reads
+        # reports that it cannot read the key. Only the secret's existence is asked, never its value.
+        $vault = $outputs.key_vault_name.value
+        $keySecret = $outputs.github_app_private_key_secret.value
+        $found = Invoke-Az @('keyvault', 'secret', 'show', '--vault-name', $vault, '--name', $keySecret, '--query', 'id', '-o', 'tsv')
+        if ($found.ExitCode -eq 0) {
+            Write-Host ("   {0,-24} {1}/{2}" -f 'github_app_private_key', $vault, $keySecret)
+        }
+        else {
+            Write-Host "   The GitHub App's private key is not in $vault/$keySecret yet. Put the .pem GitHub generated there:" -ForegroundColor Yellow
+            Write-Host "        az keyvault secret set --vault-name $vault --name $keySecret --file <the App's .pem>"
+            Write-Host '        The repositories it reads sync once it is there (sqlflow/docs/reference/guides/github-app.md).'
+        }
     }
     if ($outputs.PSObject.Properties['sql_setup_script'] -and $outputs.sql_setup_script.value) {
         Write-Host '   SQL: on a server this deployment does not administer, an Entra administrator of it runs the setup script, database by' -ForegroundColor Yellow

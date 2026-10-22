@@ -270,8 +270,8 @@ Write-Host "The environment's secret, for 'Plan and apply the environment's Terr
 Write-Host '   TF_VAR_OSDU_PARTITIONS   {"<data-partition-id>": {"default": true, "url": ..., "client_id": ...}}, with no secret in it'
 Write-Host '   gh secret set TF_VAR_OSDU_PARTITIONS --repo <owner/name> --env <environment>   (gh reads the value from standard input)'
 Write-Host 'No other secret reaches Terraform: the deployment generates its own into the estate''s vault, and a person puts each' -ForegroundColor Cyan
-Write-Host 'partition''s client secret and each private repository''s token there, under the names terraform output osdu_partitions' -ForegroundColor Cyan
-Write-Host 'and the environment''s repositories give.' -ForegroundColor Cyan
+Write-Host 'partition''s client secret and each private repository''s token (or the GitHub App''s private key) there, under the names' -ForegroundColor Cyan
+Write-Host 'terraform output osdu_partitions and the environment''s repositories and github_app give.' -ForegroundColor Cyan
 if ($WhatIf) {
     Write-Host ''
     Write-Host '-WhatIf: nothing was created, assigned or set.' -ForegroundColor Yellow

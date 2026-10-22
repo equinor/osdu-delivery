@@ -37,6 +37,7 @@ related:
   - delivery-cli-db
   - delivery-guide-mcp
   - delivery-guide-managed-workers
+  - guide-github-app
 sourceRefs:
   - osdu/deploy/README.md
   - osdu/deploy/docker/control-plane.Dockerfile
@@ -261,8 +262,13 @@ server. Three layers make it so (`osdu/deploy/README.md` explains each):
    (`GET /api/v1/bootstrap`, `/health/startup`). A step that fails is retried, so a secret put in the vault later is
    picked up without a redeploy.
 
-A person puts in the vault only the secrets nobody else has: each partition's client secret and each private
-repository's token, under the names the deployment's outputs give.
+A person puts in the vault only the secrets nobody else has: each partition's client secret, and for the private
+flow repositories either the private key of the estate's GitHub App (`githubApp`, `github_app`) or each repository's
+token, under the names the deployment's outputs give. A GitHub App is the better choice for a GitHub repository: it
+belongs to the organization rather than a person, needs only read access to the repository's contents, and is asked for
+a short-lived token for each sync and checkout, so no token is stored anywhere
+([Reading a private GitHub repository with a GitHub App](../../../../sqlflow/docs/reference/guides/github-app.md) walks
+through creating one).
 
 OSDU Delivery's Bicep parameters beyond SQLFlow's:
 
@@ -274,7 +280,8 @@ OSDU Delivery's Bicep parameters beyond SQLFlow's:
 | `catalogDatabaseName` | The metadata database, `OsduDelivery` by default. |
 | `osduDatabaseName` | The database holding the `osdu` schema; the catalog's database by default. |
 | `landingStorage` | The storage account the flows read their files from, created or adopted, granted to the apps, and given to every run as `LANDING_URL` (`abfss://<container>@<account>.dfs.core.windows.net`). |
-| `repositories` | The flow repositories the control plane syncs, registered at its start and kept as configured; a private one names the vault secret holding its token (`credentialSecretName`). |
+| `repositories` | The flow repositories the control plane syncs, registered at its start and kept as configured; a private one is read with the estate's GitHub App (`githubApp`, unless it sets `useGitHubApp` to false) or names the vault secret holding its own token (`credentialSecretName`, which wins). |
+| `githubApp` | The GitHub App the estate's GitHub repositories are read with: `appId` (its client ID), `privateKeySecretName` (the vault secret a person puts its `.pem` in), and for GitHub Enterprise `apiUrl`. Each repository on the App's GitHub that names no token gets `${githubapp:app=<appId>;key=keyvault:<vault>/<privateKeySecretName>}` as its credential reference, which the control plane and each worker resolve with their own identity; the output `githubAppPrivateKeySecret` names the secret. |
 | `properties` | Further values every run resolves with, as a setting or a `${keyvault:...}` reference. |
 | `privateNetworks` | `SQLFLOW_DELIVERY_PRIVATE_NETWORKS` for the apps. |
 | `provisionEntraApp`, `azureAdAllowedGroupObjectId` | The Entra registration with the `SqlFlow.User` app role and assignment required ([authentication and identity](../concepts/authentication-and-identity.md)). |
@@ -284,7 +291,7 @@ The Terraform takes the same choices under snake-case names:
 | Variable | Meaning |
 | --- | --- |
 | `osdu_partitions` | The partitions, a map by data-partition-id of `{ default, description, url, token_url, scope, client_id, client_secret_name, acl_owner, acl_viewer, legal_tag, properties }`. At least one; with several, exactly one `default = true`; property names as a flow spells them, and a property whose name says it is a secret only as a `${keyvault:...}` or `${env:...}` reference. `url`, `token_url`, `scope` and `client_id` become `OSDU_URL`, `OSDU_TOKEN_URL`, `OSDU_SCOPE` and `OSDU_CLIENT_ID`, the three optional ones `OSDU_ACL_OWNER`, `OSDU_ACL_VIEWER` and `OSDU_LEGAL_TAG`. The client secret is never a variable: it is read from `osdu-<partition>-client-secret` (or `client_secret_name`) in the vault. |
-| `sql_connections`, `sql_admins`, `landing_storage`, `repositories`, `properties` | As the Bicep's `sqlConnections`, `sqlAdmins`, `landingStorage`, `repositories` and `properties`. |
+| `sql_connections`, `sql_admins`, `landing_storage`, `repositories`, `github_app`, `properties` | As the Bicep's `sqlConnections`, `sqlAdmins`, `landingStorage`, `repositories` (with `use_github_app`), `githubApp` (`app_id`, `private_key_secret_name`, `api_url`) and `properties`. The output `github_app_private_key_secret` names the vault secret the App's key goes in, and `deploy.ps1 -Infrastructure` says when it is not there yet. |
 | `catalog_database_name` | `OsduDelivery` by default. |
 | `osdu_database_name` | The database holding the `osdu` schema; the catalog's by default. |
 | `image_tag`, `mcp_enabled` | The images are the repository's, `<registry>/osdu-delivery-<app>:<image_tag>`, unless an app's image variable names one; `mcp_enabled` deploys the MCP server. An image is set when its app is created, and later applies leave it: the deploy scripts roll the apps forward. |

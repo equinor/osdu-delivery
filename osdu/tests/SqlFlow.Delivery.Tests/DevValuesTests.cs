@@ -134,11 +134,38 @@ public sealed partial class DevValuesTests
     [Theory]
     [InlineData("OSDU_CLIENT_SECRET", "abcdef", "set, 6 characters")]
     [InlineData("SQLFLOW_GIT_TOKEN", "abc", "set, 3 characters")]
+    [InlineData("SQLFLOW_GITHUB_APP_PRIVATE_KEY", "LS0tLS1CRUdJTiBSU0EgUFJJVkFURSBLRVktLS0tLQ==", "set, 44 characters")]
+    [InlineData("SQLFLOW_GITHUB_APP_PRIVATE_KEY", "${keyvault:vault/github-app-key}", "${keyvault:vault/github-app-key}")]
     [InlineData("ControlPlane__Jwt__SigningKey", "0123456789", "set, 10 characters")]
     [InlineData("ControlPlane__Bootstrap__AdminPasswordReference", "${env:SQLFLOW_ADMIN_PASSWORD}", "${env:SQLFLOW_ADMIN_PASSWORD}")]
     [InlineData("OSDU_DATA_DB", "Server=db;Database=D;User ID=u;Password=p4ss", "db / D, SQL login u")]
     public void A_secret_shows_its_length_and_a_connection_its_target(string name, string value, string shown)
         => Assert.Equal(shown, DevValues.Show(name, value));
+
+    [Theory]
+    [InlineData("my app")]
+    [InlineData("acme/app")]
+    public void A_github_app_id_that_github_could_not_have_issued_is_named(string value)
+        => Assert.Contains("client ID", DevValues.Problem(DevValues.GitHubAppIdName, value, gui: false), StringComparison.Ordinal);
+
+    [Fact]
+    public void A_github_app_key_path_must_be_absolute_and_hold_a_file()
+    {
+        Assert.Contains("not an absolute path", DevValues.Problem(DevValues.GitHubAppKeyPathName, "keys/app.pem", gui: false), StringComparison.Ordinal);
+        Assert.Contains("no file there", DevValues.Problem(DevValues.GitHubAppKeyPathName, Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString("N") + ".pem"), gui: false), StringComparison.Ordinal);
+
+        var pem = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString("N") + ".pem");
+        File.WriteAllText(pem, "-----BEGIN RSA PRIVATE KEY-----");
+        try
+        {
+            Assert.Null(DevValues.Problem(DevValues.GitHubAppKeyPathName, pem, gui: false));
+            Assert.Null(DevValues.Problem(DevValues.GitHubAppIdName, "Iv23liAbCdEf", gui: false));
+        }
+        finally
+        {
+            File.Delete(pem);
+        }
+    }
 
     [Fact]
     public void Generated_values_are_long_enough_and_safe_to_carry()

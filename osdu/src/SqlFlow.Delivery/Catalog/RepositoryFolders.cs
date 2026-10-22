@@ -202,7 +202,7 @@ public sealed class CatalogRepositoryFolders : IRepositoryFolders
         try
         {
             var credentials = await GitMaterializer
-                .ResolveCredentialsAsync(_secrets, sync.CredentialReference, sync.CredentialUsername, ct)
+                .ResolveCredentialsAsync(_secrets, sync.CredentialReference, sync.CredentialUsername, sync.RemoteUrl, GitAccess.Read, ct)
                 .ConfigureAwait(false);
 
             // A clone is slow and blocking, so it is kept off the caller's thread; a commit already checked out is reused.
