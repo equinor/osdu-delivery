@@ -61,8 +61,8 @@ function SchemaPicker({ choice, held, onChoose }: { choice: SchemaChoice; held: 
 }
 
 /**
- * Where a check reads the record it checks: through the connection the explorer picks for a partition, or through the route
- * and credentials of the flow a record page reads the record by. `key` tells one source's answers from another's.
+ * Where a check reads the record it checks: through the partition's own connection, as the explorer reads, or through the
+ * route and credentials of the flow a record page reads the record by. `key` tells one source's answers from another's.
  */
 export interface ValidationSource {
   key: readonly unknown[];

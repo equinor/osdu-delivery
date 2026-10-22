@@ -177,7 +177,7 @@ The route is `target.protocol` (or, in a source with interfaces, follows from wh
 
 | Problem | Shape | Page |
 | --- | --- | --- |
-| Look at what OSDU holds for a type or one record, now | The explorer (GUI, any signed-in user), read live from search and storage | [explorer](../../reference/concepts/explorer.md) |
+| Look at what OSDU holds for a type or one record, now | The explorer (GUI, any signed-in user), read live from search and storage through the partition's own connection, with no flow needed | [explorer](../../reference/concepts/explorer.md), [0020](../decisions/0020-explorer-partition-connection.md) |
 | OSDU records must land in tables for reporting | A retrieval flow writes JSON Lines files; a SQLFlow file flow loads them, ordered after it by lineage | [retrieval](../../reference/flow/retrieval.md), [retrieving records](../../reference/guides/retrieving-records.md) |
 | Prove what landed: counts, values, references, schema, legal tags, bulk data | An assertion flow, with a report per run (JUnit for CI) | [assertion](../../reference/flow/assertion.md), [data quality tests](../../reference/guides/data-quality-tests.md) |
 | Prove that everything the ledger says it delivered is in OSDU | An assertion with the `delivered` subject | [assertion](../../reference/flow/assertion.md) |

@@ -391,8 +391,8 @@ export function InventoryReport({ reference, siblings, finding, onFinding, view,
   const [active] = useActivePartition();
   const queryClient = useQueryClient();
   const { hasScope } = useAuth();
-  // The panel reads OSDU through a flow's credentials, as the explorer does, under the operate policy, which every
-  // signed-in user holds (only admin checks a scope).
+  // The panel reads OSDU through the partition's own connection, as the explorer does, under the operate policy, which
+  // every signed-in user holds (only admin checks a scope).
   const canReadOsdu = hasScope("operate");
   const detail = useQuery({
     queryKey: ["delivery", "inventories", "detail", reference.partition, reference.inventoryId],

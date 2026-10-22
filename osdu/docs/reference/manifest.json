@@ -1537,6 +1537,8 @@
       "summary": "How the explorer reads an OSDU partition live: browse types, search by id, text, property or source column, open records and versions, validate, references.",
       "keywords": [
         "explorer",
+        "explorer connection",
+        "search without a flow",
         "browse osdu",
         "search osdu records",
         "what is in osdu",
@@ -1575,6 +1577,7 @@
         "osdu/src/SqlFlow.Delivery.ControlPlane/Api/DirectOperationRunner.cs",
         "osdu/src/SqlFlow.Delivery/Engine/Operations/ExploreOperation.cs",
         "osdu/src/SqlFlow.Delivery/Engine/Operations/TargetClients.cs",
+        "osdu/src/SqlFlow.Delivery/Engine/Operations/PartitionConnection.cs",
         "osdu/src/SqlFlow.Delivery/Engine/Search/RecordExplorer.cs",
         "osdu/src/SqlFlow.Delivery/Engine/Search/RecordExplorer.Via.cs",
         "osdu/src/SqlFlow.Delivery/Engine/Search/OsduSearch.cs",
@@ -2071,6 +2074,7 @@
         "osdu/src/SqlFlow.Delivery.ControlPlane/Api/DeliveryPartitionEndpoints.cs",
         "osdu/src/SqlFlow.Delivery.ControlPlane/Api/DeliveryConfigEndpoints.cs",
         "osdu/src/SqlFlow.Delivery.ControlPlane/Api/WorkbenchPartition.cs",
+        "osdu/src/SqlFlow.Delivery/Engine/Operations/PartitionConnection.cs",
         "osdu/gui/src/features/delivery/DeliveryPartitionsPage.tsx",
         "osdu/gui/src/features/delivery/PartitionNotice.tsx",
         "osdu/gui/src/features/delivery/useInterfaceChoice.ts",
@@ -6960,6 +6964,34 @@
         "osdu/src/SqlFlow.Delivery/Ledger/OsduLedger.Parents.cs",
         "osdu/src/SqlFlow.Delivery/Documents/DeliveryLineage.cs",
         "osdu/tests/SqlFlow.Delivery.Tests/ParentDeliveryTests.cs"
+      ]
+    },
+    {
+      "id": "delivery-wiki-0020-explorer-partition-connection",
+      "corpus": "wiki",
+      "path": "decisions/0020-explorer-partition-connection.md",
+      "title": "Decision 0020: The explorer reads a partition through the partition's own connection, never a flow's",
+      "type": "decision",
+      "summary": "Why the explorer signs in with the platform and client a partition's configuration names, rather than borrowing a delivery flow's connection.",
+      "keywords": [
+        "explorer connection",
+        "partition connection",
+        "borrowed connection",
+        "search without a flow",
+        "OSDU_URL",
+        "client credentials"
+      ],
+      "related": [],
+      "sourceRefs": [
+        "osdu/src/SqlFlow.Delivery/Engine/Operations/PartitionConnection.cs",
+        "osdu/src/SqlFlow.Delivery/Engine/Operations/ExploreOperation.cs",
+        "osdu/src/SqlFlow.Delivery/Engine/Operations/TargetClients.cs",
+        "osdu/src/SqlFlow.Delivery.ControlPlane/Api/DeliveryExplorerEndpoints.cs",
+        "osdu/src/SqlFlow.Delivery.ControlPlane/Api/DirectOperationRunner.cs",
+        "osdu/deploy/terraform/main.tf",
+        "osdu/deploy/bicep/main.bicep",
+        "osdu/src/SqlFlow.Delivery.Setup/DevSetupWizard.cs",
+        "osdu/tests/SqlFlow.Delivery.Tests/PartitionConnectionTests.cs"
       ]
     },
     {

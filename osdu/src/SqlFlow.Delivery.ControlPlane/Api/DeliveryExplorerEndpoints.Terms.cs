@@ -22,12 +22,13 @@ public static partial class DeliveryExplorerEndpoints
 
     /// <summary>
     /// The conditions of <paramref name="body"/> that name a search term, each resolved by place in the partition the search
-    /// reads: the one asked, else the workbench's, else the registry's default, as the search's own connection picks it. None
-    /// for a search naming no term; a problem answer for a term that cannot be searched as asked, or a partition no flow reaches.
+    /// reads: the one asked, else the workbench's, else the registry's default, as the search's own connection settles it.
+    /// None for a search naming no term; a problem answer for a term that cannot be searched as asked, or a partition the
+    /// explorer has no connection to.
     /// </summary>
     internal static async Task<(IReadOnlyDictionary<int, ExplorerFilter>? Terms, Results<ContentHttpResult, ProblemHttpResult>? Failure)> TermsOfAsync(
-        DeliveryExplorerSearchRequest body, string? partition, CatalogDbContext db, DeliveryDocumentLoader documents, IPartitionRegistry partitions, ILedger ledger,
-        HttpRequest request, SearchTermDirectory directory, CancellationToken ct)
+        DeliveryExplorerSearchRequest body, string? partition, IPartitionRegistry partitions, DeliveryConfigStore config, HttpRequest request,
+        SearchTermDirectory directory, CancellationToken ct)
     {
         var filters = body.Filters ?? [];
         if (!filters.Any(f => f?.Term is not null))
@@ -35,10 +36,10 @@ public static partial class DeliveryExplorerEndpoints
             return (null, null);
         }
 
-        var found = await ConnectAsync(db, documents, partitions, ledger, WorkbenchPartition.Named(partition, request), ct).ConfigureAwait(false);
-        if (found.Flow is null || found.Partition is not { } read)
+        var found = await ConnectAsync(partitions, config, WorkbenchPartition.Named(partition, request), ct).ConfigureAwait(false);
+        if (found.Configured is null || found.Partition is not { } read)
         {
-            return (null, TypedResults.Problem(detail: found.Reason ?? "No partition is named, so no search term can be read.", statusCode: StatusCodes.Status409Conflict, title: "No connection to the partition"));
+            return (null, NoConnection(found.Reason));
         }
 
         var (resolved, problem) = await ResolveTermsAsync(filters, read, body.Kind, directory, ct).ConfigureAwait(false);
@@ -49,8 +50,7 @@ public static partial class DeliveryExplorerEndpoints
     /// The conditions of <paramref name="filters"/> that name a search term, each resolved by place in <paramref name="partition"/>
     /// for <paramref name="kind"/>: the route of the term for the kind searched, the version of the mapping that renders it where
     /// versions differ. None for conditions naming no term; the problem, in words a reader acts on, for a term that cannot be
-    /// searched as asked. The explorer resolves them in the partition its connection reads, an inventory's match in the
-    /// inventory's own.
+    /// searched as asked. The explorer resolves them in the partition it reads, an inventory's match in the inventory's own.
     /// </summary>
     internal static async Task<(IReadOnlyDictionary<int, ExplorerFilter>? Terms, string? Problem)> ResolveTermsAsync(
         IReadOnlyList<DeliveryExplorerFilterDto?> filters, string partition, string? kind, SearchTermDirectory directory, CancellationToken ct)

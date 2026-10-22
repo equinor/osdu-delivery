@@ -254,7 +254,7 @@ export default function ExplorerPage() {
       {connection.data?.available && (
         <RichTooltip
           title="Read live from OSDU"
-          body={`Partition ${connection.data.partition ?? ""}, read through the connection of ${connection.data.through ?? "a delivery flow"} (${connection.data.endpoint ?? ""}). Every view is what OSDU's search and storage services answer now.`}
+          body={`Partition ${connection.data.partition ?? ""}, read through its own connection${connection.data.endpoint === null ? "" : ` to ${connection.data.endpoint}`}: the platform and client its configuration names. Every view is what OSDU's search, storage and schema services answer now.`}
         >
           <span className="inline-flex items-center gap-1.5 rounded-full border px-2 py-0.5 text-[12px] text-muted-foreground" data-testid="explorer-live">
             <span className="size-1.5 rounded-full bg-success" aria-hidden />
@@ -300,8 +300,8 @@ export default function ExplorerPage() {
     content = (
       <EmptyState
         icon={<Telescope />}
-        title="The explorer reads OSDU with a flow's credentials"
-        description="Each read goes through a delivery flow's connection to the partition, which takes a signed-in session. Sign in to read OSDU."
+        title="The explorer reads OSDU with the partition's credentials"
+        description="Each read goes through the partition's own connection to OSDU, which takes a signed-in session. Sign in to read OSDU."
         data-testid="explorer-no-scope"
       />
     );

@@ -66,8 +66,11 @@ OSDU Delivery adds, and which tier reads each.
 
 The three tiers read different things on purpose. A node delivers, so it holds the module database connection and the
 credentials its pool's flows use. The control plane never delivers, but it answers the reads a person waits on (a probe,
-a record read back, a preview, a source read, the explorer) with the flow's own credentials, so it is given the same flow
-references as a node. The CLI reads what a local run needs.
+a record read back, a preview, a source read) with the flow's own credentials, so it is given the same flow references as
+a node; the explorer reads each partition with the platform and client its configuration names, `OSDU_URL`,
+`OSDU_TOKEN_URL`, `OSDU_SCOPE`, `OSDU_CLIENT_ID` and `OSDU_CLIENT_SECRET`, which the control plane's environment gives
+where its configuration does not ([the explorer](explorer.md#how-it-reaches-osdu)). The CLI reads what a local run
+needs.
 
 ## Variables the module reads
 

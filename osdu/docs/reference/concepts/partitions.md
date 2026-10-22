@@ -65,6 +65,7 @@ sourceRefs:
   - osdu/src/SqlFlow.Delivery.ControlPlane/Api/DeliveryPartitionEndpoints.cs
   - osdu/src/SqlFlow.Delivery.ControlPlane/Api/DeliveryConfigEndpoints.cs
   - osdu/src/SqlFlow.Delivery.ControlPlane/Api/WorkbenchPartition.cs
+  - osdu/src/SqlFlow.Delivery/Engine/Operations/PartitionConnection.cs
   - osdu/gui/src/features/delivery/DeliveryPartitionsPage.tsx
   - osdu/gui/src/features/delivery/PartitionNotice.tsx
   - osdu/gui/src/features/delivery/useInterfaceChoice.ts
@@ -224,6 +225,10 @@ A name a partition's values leave out resolves as every reference does: the repo
 for no partition, then the node's environment ([sqlflow config](../cli/config.md)). The client secret stays in the
 vault: the value is a `${keyvault:<vault>/<secret>}` reference, carried unresolved in the run's payload, which the node
 resolves with its own identity when a run needs it, as the control plane does for the reads a person waits on.
+
+`OSDU_URL`, `OSDU_TOKEN_URL`, `OSDU_SCOPE`, `OSDU_CLIENT_ID` and `OSDU_CLIENT_SECRET` are also the partition's own
+connection to OSDU: the explorer reads the partition through them, resolved the same way but with no repository's
+values, and needs no flow to do so ([the explorer](explorer.md#how-it-reaches-osdu)).
 
 ### What start checks
 

@@ -27,16 +27,17 @@ using SqlFlow.Delivery.Templates;
 namespace SqlFlow.Delivery.ControlPlane.Api;
 
 /// <summary>
-/// How the explorer reaches a partition: the partition, whether anything reaches it, and through what (the delivery flow whose
-/// OSDU connection it borrows, the endpoint that flow names, as written, and the route it delivers by), or why nothing does.
+/// How the explorer reaches a partition: the partition, whether its own connection can be made (the platform and client its
+/// configuration names, <see cref="PartitionConnection"/>) and where it reaches, or why it cannot.
 /// </summary>
-/// <param name="Partition">The partition asked about; null when no partition was named and none is the default.</param>
-/// <param name="Available">True when a connection reaches the partition.</param>
-/// <param name="Through">The flow (and interface) whose connection the explorer reads through; null when none reaches it.</param>
-/// <param name="Endpoint">The endpoint that flow names, as its document writes it (a reference stays a reference).</param>
-/// <param name="Route">The route the flow delivers by, which says nothing of how the explorer reads: always search and storage.</param>
-/// <param name="Reason">Why no connection reaches the partition; null when one does.</param>
-public sealed record DeliveryExplorerConnectionDto(string? Partition, bool Available, string? Through, string? Endpoint, string? Route, string? Reason);
+/// <param name="Partition">The partition asked about, as the registry spells it; null when no partition was named and none is the default.</param>
+/// <param name="Available">True when the partition's connection can be made.</param>
+/// <param name="Endpoint">
+/// The platform the connection reaches: the configured base URL, or the control plane's environment's, without the
+/// credentials, query or fragment a URL can carry; a configured reference as written. Null when it is not available.
+/// </param>
+/// <param name="Reason">Why the connection cannot be made; null when it can.</param>
+public sealed record DeliveryExplorerConnectionDto(string? Partition, bool Available, string? Endpoint, string? Reason);
 
 /// <summary>A condition a page of the explorer narrows to, as the GUI sends it.</summary>
 /// <param name="Path">The property's path from the record root.</param>
@@ -93,33 +94,19 @@ public sealed record DeliveryExplorerFieldsRequest(string? Kind);
 
 /// <summary>
 /// The explorer (osdu/docs/reference/concepts/explorer.md): a browser of what an OSDU partition holds, read live from
-/// OSDU's own search and storage services. It shows what OSDU holds and nothing the delivery system keeps; the delivery
-/// system lends it only the way in: each read (<see cref="ExploreOperation"/>) runs in this process, as the request's
-/// answer, through the OSDU connection of a delivery flow that reaches the partition, which the engine keeps open
-/// between reads. The partition is the one the request names, else the workbench's, else the registry's default.
+/// OSDU's own search, storage and schema services. It shows what OSDU holds and nothing the delivery system keeps, and needs
+/// no flow: each read (<see cref="ExploreOperation"/>) runs in this process, as the request's answer, through the
+/// partition's own connection (<see cref="PartitionConnection"/>: the platform and client the control plane's configuration
+/// names for the partition, or its environment), which the engine keeps open between reads. The partition is the one the
+/// request names, else the workbench's, else the registry's default, and it is a registered one.
 /// </summary>
 /// <remarks>
-/// The connection is picked, not chosen by the reader: of the delivery flows that reach the partition, one whose route
-/// delivers through the platform's own services (any but dspdm and etp, whose endpoints are not the platform's), the storage
-/// route first since its endpoint is the platform root by definition, then by flow and interface name, so the same partition
-/// is always read the same way. Reading what OSDU holds with a flow's credentials is an operate action, as reading a record
-/// back is; which connection a partition is read through is anyone's to see.
+/// Reading what OSDU holds with the partition's credentials is an operate action, as reading a record back is; where a
+/// partition is read is anyone's to see. A record page's check of the record it shows is the one read made through a flow:
+/// the record's own, as the page reads the record.
 /// </remarks>
 public static partial class DeliveryExplorerEndpoints
 {
-    /// <summary>The routes the explorer reads through, best first; a route not listed (dspdm, etp) has no platform endpoint.</summary>
-    private static readonly IReadOnlyList<DeliveryProtocol> Routes =
-    [
-        DeliveryProtocol.Storage,
-        DeliveryProtocol.Manifest,
-        DeliveryProtocol.File,
-        DeliveryProtocol.Dataset,
-        DeliveryProtocol.Workflow,
-        DeliveryProtocol.FileAndDdms,
-        DeliveryProtocol.ManifestAndDdms,
-        DeliveryProtocol.Ddms,
-    ];
-
     public static RouteGroupBuilder MapDeliveryExplorerReadEndpoints(this RouteGroupBuilder delivery)
     {
         ArgumentNullException.ThrowIfNull(delivery);
@@ -142,37 +129,36 @@ public static partial class DeliveryExplorerEndpoints
     }
 
     private static async Task<Ok<DeliveryExplorerConnectionDto>> GetConnectionAsync(
-        [FromQuery] string? partition, CatalogDbContext db, DeliveryDocumentLoader documents, IPartitionRegistry partitions, ILedger ledger, HttpRequest request,
-        CancellationToken ct)
+        [FromQuery] string? partition, IPartitionRegistry partitions, DeliveryConfigStore config, HttpRequest request, CancellationToken ct)
     {
-        var found = await ConnectAsync(db, documents, partitions, ledger, WorkbenchPartition.Named(partition, request), ct).ConfigureAwait(false);
-        return TypedResults.Ok(found.Flow is { } flow
-            ? new DeliveryExplorerConnectionDto(found.Partition, true, flow.Flow.Label, flow.Flow.Target.Endpoint, DeliveryProtocols.Name(flow.Flow.Target.Protocol), null)
-            : new DeliveryExplorerConnectionDto(found.Partition, false, null, null, null, found.Reason));
+        var found = await ConnectAsync(partitions, config, WorkbenchPartition.Named(partition, request), ct).ConfigureAwait(false);
+        return TypedResults.Ok(found.Configured is { } configured
+            ? new DeliveryExplorerConnectionDto(found.Partition, true, PartitionConnection.EndpointShown(configured, Environment.GetEnvironmentVariable), null)
+            : new DeliveryExplorerConnectionDto(found.Partition, false, null, found.Reason));
     }
 
     /// <summary>The kinds of the records a search finds across every kind, each with its count.</summary>
     private static Task<Results<ContentHttpResult, ProblemHttpResult>> TypesAsync(
-        DeliveryExplorerSearchRequest? body, [FromQuery] string? partition, CatalogDbContext db, DeliveryDocumentLoader documents, IPartitionRegistry partitions,
-        ILedger ledger, DeliveryConfigStore config, DirectOperations direct, ILoggerFactory loggers, HttpRequest request, ClaimsPrincipal user,
+        DeliveryExplorerSearchRequest? body, [FromQuery] string? partition, DeliveryDocumentLoader documents, IPartitionRegistry partitions,
+        DeliveryConfigStore config, DirectOperations direct, ILoggerFactory loggers, HttpRequest request, ClaimsPrincipal user,
         OsduDbContext osdu, TimeProvider clock, IRepositoryFolders folders, CancellationToken ct)
-        => QueueSearchAsync(
-            ExploreOperation.TypesAction, body, partition, db, documents, partitions, ledger, config, direct, loggers, request, user,
+        => ExploreSearchAsync(
+            ExploreOperation.TypesAction, body, partition, partitions, config, direct, loggers, request, user,
             new SearchTermDirectory(osdu, documents, clock, folders), ct);
 
     /// <summary>One page of the records a search finds.</summary>
     private static Task<Results<ContentHttpResult, ProblemHttpResult>> SearchAsync(
-        DeliveryExplorerSearchRequest? body, [FromQuery] string? partition, CatalogDbContext db, DeliveryDocumentLoader documents, IPartitionRegistry partitions,
-        ILedger ledger, DeliveryConfigStore config, DirectOperations direct, ILoggerFactory loggers, HttpRequest request, ClaimsPrincipal user,
+        DeliveryExplorerSearchRequest? body, [FromQuery] string? partition, DeliveryDocumentLoader documents, IPartitionRegistry partitions,
+        DeliveryConfigStore config, DirectOperations direct, ILoggerFactory loggers, HttpRequest request, ClaimsPrincipal user,
         OsduDbContext osdu, TimeProvider clock, IRepositoryFolders folders, CancellationToken ct)
-        => QueueSearchAsync(
-            ExploreOperation.SearchAction, body, partition, db, documents, partitions, ledger, config, direct, loggers, request, user,
+        => ExploreSearchAsync(
+            ExploreOperation.SearchAction, body, partition, partitions, config, direct, loggers, request, user,
             new SearchTermDirectory(osdu, documents, clock, folders), ct);
 
     /// <summary>The properties the records of a kind hold: the record's own, those its schema declares, and those its records hold beyond them.</summary>
     private static async Task<Results<ContentHttpResult, ProblemHttpResult>> FieldsAsync(
-        DeliveryExplorerFieldsRequest? body, [FromQuery] string? partition, CatalogDbContext db, DeliveryDocumentLoader documents, IPartitionRegistry partitions,
-        ILedger ledger, DeliveryConfigStore config, DirectOperations direct, ILoggerFactory loggers, HttpRequest request, ClaimsPrincipal user, CancellationToken ct)
+        DeliveryExplorerFieldsRequest? body, [FromQuery] string? partition, IPartitionRegistry partitions, DeliveryConfigStore config, DirectOperations direct,
+        ILoggerFactory loggers, HttpRequest request, ClaimsPrincipal user, CancellationToken ct)
     {
         var kind = body?.Kind?.Trim();
         if (string.IsNullOrEmpty(kind))
@@ -185,15 +171,15 @@ public static partial class DeliveryExplorerEndpoints
             return DeliveryEndpoints.Invalid(wrong);
         }
 
-        return await QueueAsync(
+        return await ExploreAsync(
             ExploreOperation.FieldsAction, new Dictionary<string, string>(StringComparer.Ordinal) { [ExploreOperation.KindArgument] = kind },
-            partition, db, documents, partitions, ledger, config, direct, loggers, request, user, ct).ConfigureAwait(false);
+            partition, partitions, config, direct, loggers, request, user, ct).ConfigureAwait(false);
     }
 
     /// <summary>One record as the storage service holds it, at its latest or at one version, with its version list.</summary>
     private static async Task<Results<ContentHttpResult, ProblemHttpResult>> ReadAsync(
-        DeliveryReadRequest? body, [FromQuery] string? partition, CatalogDbContext db, DeliveryDocumentLoader documents, IPartitionRegistry partitions,
-        ILedger ledger, DeliveryConfigStore config, DirectOperations direct, ILoggerFactory loggers, HttpRequest request, ClaimsPrincipal user, CancellationToken ct)
+        DeliveryReadRequest? body, [FromQuery] string? partition, IPartitionRegistry partitions, DeliveryConfigStore config, DirectOperations direct,
+        ILoggerFactory loggers, HttpRequest request, ClaimsPrincipal user, CancellationToken ct)
     {
         if (DeliveryEndpoints.TargetProblem(body, out var asked) is { } invalid)
         {
@@ -202,16 +188,15 @@ public static partial class DeliveryExplorerEndpoints
 
         var arguments = new Dictionary<string, string>(StringComparer.Ordinal) { ["targetId"] = TargetId.WithoutVersion(asked) };
         DeliveryEndpoints.WithVersion(arguments, body);
-        return await QueueAsync(ExploreOperation.ReadAction, arguments, partition, db, documents, partitions, ledger, config, direct, loggers, request, user, ct).ConfigureAwait(false);
+        return await ExploreAsync(ExploreOperation.ReadAction, arguments, partition, partitions, config, direct, loggers, request, user, ct).ConfigureAwait(false);
     }
 
-    private static async Task<Results<ContentHttpResult, ProblemHttpResult>> QueueSearchAsync(
-        string action, DeliveryExplorerSearchRequest? body, string? partition, CatalogDbContext db, DeliveryDocumentLoader documents, IPartitionRegistry partitions,
-        ILedger ledger, DeliveryConfigStore config, DirectOperations direct, ILoggerFactory loggers, HttpRequest request, ClaimsPrincipal user,
-        SearchTermDirectory directory, CancellationToken ct)
+    private static async Task<Results<ContentHttpResult, ProblemHttpResult>> ExploreSearchAsync(
+        string action, DeliveryExplorerSearchRequest? body, string? partition, IPartitionRegistry partitions, DeliveryConfigStore config, DirectOperations direct,
+        ILoggerFactory loggers, HttpRequest request, ClaimsPrincipal user, SearchTermDirectory directory, CancellationToken ct)
     {
         var asked = body ?? new DeliveryExplorerSearchRequest();
-        var (terms, failure) = await TermsOfAsync(asked, partition, db, documents, partitions, ledger, request, directory, ct).ConfigureAwait(false);
+        var (terms, failure) = await TermsOfAsync(asked, partition, partitions, config, request, directory, ct).ConfigureAwait(false);
         if (failure is not null)
         {
             return failure;
@@ -223,24 +208,24 @@ public static partial class DeliveryExplorerEndpoints
             return DeliveryEndpoints.Invalid(invalid!);
         }
 
-        return await QueueAsync(
+        return await ExploreAsync(
             action, new Dictionary<string, string>(StringComparer.Ordinal) { [ExploreOperation.SearchArgument] = search.ToJson() },
-            partition, db, documents, partitions, ledger, config, direct, loggers, request, user, ct).ConfigureAwait(false);
+            partition, partitions, config, direct, loggers, request, user, ct).ConfigureAwait(false);
     }
 
-    /// <summary>Runs one of the explorer's reads in this process, through the connection that reaches the partition, and answers with it.</summary>
-    private static async Task<Results<ContentHttpResult, ProblemHttpResult>> QueueAsync(
-        string action, Dictionary<string, string> arguments, string? partition, CatalogDbContext db, DeliveryDocumentLoader documents, IPartitionRegistry partitions,
-        ILedger ledger, DeliveryConfigStore config, DirectOperations direct, ILoggerFactory loggers, HttpRequest request, ClaimsPrincipal user, CancellationToken ct)
+    /// <summary>Runs one of the explorer's reads in this process, through the partition's own connection, and answers with it.</summary>
+    private static async Task<Results<ContentHttpResult, ProblemHttpResult>> ExploreAsync(
+        string action, Dictionary<string, string> arguments, string? partition, IPartitionRegistry partitions, DeliveryConfigStore config, DirectOperations direct,
+        ILoggerFactory loggers, HttpRequest request, ClaimsPrincipal user, CancellationToken ct)
     {
-        var found = await ConnectAsync(db, documents, partitions, ledger, WorkbenchPartition.Named(partition, request), ct).ConfigureAwait(false);
-        if (found.Flow is not { } flow)
+        var found = await ConnectAsync(partitions, config, WorkbenchPartition.Named(partition, request), ct).ConfigureAwait(false);
+        if (found.Configured is not { } configured)
         {
-            return TypedResults.Problem(detail: found.Reason, statusCode: StatusCodes.Status409Conflict, title: "No connection to the partition");
+            return NoConnection(found.Reason);
         }
 
         arguments[ExploreOperation.ActionArgument] = action;
-        return await DirectOperationRunner.RunAsync(db, config, direct, flow, ExploreOperation.OperationName, arguments, user, loggers, ct).ConfigureAwait(false);
+        return await DirectOperationRunner.RunOnPartitionAsync(direct, found.Partition!, configured, arguments, user, loggers, ct).ConfigureAwait(false);
     }
 
     /// <summary>
@@ -344,97 +329,44 @@ public static partial class DeliveryExplorerEndpoints
     }
 
     /// <summary>
-    /// The delivery flow whose OSDU connection reaches <paramref name="asked"/> (the registry's default when none is named), as
-    /// the remarks on <see cref="DeliveryExplorerEndpoints"/> describe; or, when none does, why. A flow that hard-codes its
-    /// partition header reaches the partition the header names, or the partition its ledger is kept in when the header is a
-    /// reference the control plane does not resolve.
+    /// The partition <paramref name="asked"/> names (the registry's default when it names none), as the registry spells it,
+    /// with the control plane's configuration its connection resolves with (its values for the partition over those for
+    /// none, <see cref="PartitionConnection"/>); or why the explorer has no connection to it: no partition named, one not
+    /// registered, or one whose configuration and environment leave a value of the connection unset, each named.
     /// </summary>
-    internal static async Task<(DeliveryEndpoints.FlowContext? Flow, string? Partition, string? Reason)> ConnectAsync(
-        CatalogDbContext db, DeliveryDocumentLoader documents, IPartitionRegistry partitions, ILedger ledger, string? asked, CancellationToken ct)
+    internal static async Task<(string? Partition, IReadOnlyDictionary<string, string>? Configured, string? Reason)> ConnectAsync(
+        IPartitionRegistry partitions, DeliveryConfigStore config, string? asked, CancellationToken ct)
     {
         var registry = await partitions.ReadAsync(ct).ConfigureAwait(false);
-        var partition = string.IsNullOrWhiteSpace(asked) ? registry.Default : asked.Trim();
-        if (partition is not null && !CacheScope.IsPartitionId(partition))
+        var named = string.IsNullOrWhiteSpace(asked) ? registry.Default : asked.Trim();
+        if (named is null)
         {
-            return (null, null, $"'{partition}' is not a partition id.");
+            return (null, null, "No partition is named and none is the default. Pick one in the title bar.");
         }
 
-        var pipelines = await db.Pipelines.AsNoTracking()
-            .Where(p => p.Kind == FlowDefinition.FlowTypeName && p.Active)
-            .ToListAsync(ct).ConfigureAwait(false);
-        IReadOnlySet<Guid>? kept = null;
-        (DeliveryEndpoints.SourceContext Source, FlowDefinition Flow, string? Partition, int Rank)? best = null;
-        foreach (var pipeline in pipelines.OrderBy(p => p.Name, StringComparer.OrdinalIgnoreCase))
+        if (!CacheScope.IsPartitionId(named))
         {
-            var (source, _) = DeliveryEndpoints.Parse(documents, pipeline);
-            if (source is null)
-            {
-                // A flow whose catalog copy does not parse reaches nothing; the flow's own pages say why.
-                continue;
-            }
-
-            string? bound = null;
-            if (source.Source.Partitioned)
-            {
-                bound = partition is null ? null : source.Source.Served(registry).FirstOrDefault(p => string.Equals(p, partition, StringComparison.OrdinalIgnoreCase));
-                if (bound is null)
-                {
-                    continue;
-                }
-            }
-
-            foreach (var flow in source.Source.Interfaces)
-            {
-                var rank = Rank(flow.Target.Protocol);
-                if (rank < 0 || (best is { } current && rank >= current.Rank))
-                {
-                    continue;
-                }
-
-                if (!source.Source.Partitioned && partition is not null && !HeaderNames(flow, partition))
-                {
-                    kept ??= (await ledger.ListLedgersAsync(partition, ct).ConfigureAwait(false)).Select(l => l.FlowId).ToHashSet();
-                    if (!kept.Contains(flow.Id))
-                    {
-                        continue;
-                    }
-                }
-
-                best = (source, flow, bound, rank);
-            }
+            return (null, null, $"'{named}' is not a partition id.");
         }
 
-        if (best is not { } chosen)
+        if (registry.Find(named) is not { } partition)
         {
-            return (null, partition, partition is null
-                ? "No partition is named and none is the default. Pick one in the title bar."
-                : $"No delivery flow reaches partition '{partition}', so the explorer has no connection to it. A flow that delivers there through the platform's own services (any route but dspdm and etp) lends the explorer its connection.");
+            return (named, null, registry.NotRegistered(named));
         }
 
-        var (picked, problem) = DeliveryEndpoints.Select(chosen.Source, chosen.Flow.Interface, chosen.Partition, registry);
-        return picked is null
-            ? (null, partition, problem?.ProblemDetails.Detail ?? "The flow that reaches the partition could not be bound to it.")
-            : (picked, partition ?? chosen.Partition, null);
+        var configured = (await config.ConfigurationAsync(null, ct).ConfigureAwait(false)).For(partition);
+        var missing = PartitionConnection.Missing(configured, Environment.GetEnvironmentVariable);
+        return missing.Count == 0
+            ? (partition, configured, null)
+            : (partition, null,
+                $"The explorer reads partition '{partition}' through the platform and client its configuration names, and {string.Join(", ", missing)} {(missing.Count == 1 ? "is" : "are")} not set. "
+                + $"Set {(missing.Count == 1 ? "it" : "them")} under {ConfiguredPartitions.SectionPath}:{partition}:Properties in the control plane's configuration, or in its environment.");
     }
 
-    /// <summary>Where a route stands among those the explorer reads through, best first; -1 for one it cannot read through.</summary>
-    private static int Rank(DeliveryProtocol protocol)
-    {
-        for (var i = 0; i < Routes.Count; i++)
-        {
-            if (Routes[i] == protocol)
-            {
-                return i;
-            }
-        }
+    /// <summary>The answer to a read the explorer cannot make, with <paramref name="reason"/>.</summary>
+    private static ProblemHttpResult NoConnection(string? reason)
+        => TypedResults.Problem(detail: reason, statusCode: StatusCodes.Status409Conflict, title: "No connection to the partition");
 
-        return -1;
-    }
-
-    /// <summary>Whether the flow's partition header names <paramref name="partition"/> as written, not as a reference to resolve.</summary>
-    private static bool HeaderNames(FlowDefinition flow, string partition)
-    {
-        var declared = flow.Target.Headers.FirstOrDefault(h => h.Key.Equals(CacheScope.PartitionHeader, StringComparison.OrdinalIgnoreCase)).Value;
-        return declared is not null && !declared.Contains("${", StringComparison.Ordinal) && string.Equals(declared.Trim(), partition, StringComparison.OrdinalIgnoreCase);
-    }
+    /// <summary>Whether a flow delivering by <paramref name="protocol"/> keeps its records in OSDU's storage service, where a check reads them: every route but dspdm and etp, whose endpoints are not the platform's.</summary>
+    private static bool KeepsStorageRecords(DeliveryProtocol protocol) => protocol is not (DeliveryProtocol.Dspdm or DeliveryProtocol.Etp);
 }

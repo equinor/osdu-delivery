@@ -102,6 +102,9 @@ other packages adopt the same contract.
 - [0019: a custom template is linked to its canonical kind, and its records read their parent from OSDU](decisions/0019-linked-templates.md) -
   why the link is the template's, why a record's parent is the same minted id in the canonical namespace, why it is read
   from storage as the record renders, and what a missing or changed parent does.
+- [0020: the explorer reads a partition through the partition's own connection, never a flow's](decisions/0020-explorer-partition-connection.md) -
+  why the explorer signs in with the platform and client a partition's configuration names, what a record page's check
+  still reads through, and why the explorer has no connection setting of its own.
 
 ## Coverage
 

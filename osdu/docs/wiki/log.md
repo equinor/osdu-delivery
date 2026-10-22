@@ -89,3 +89,18 @@ what to take, why the parent is the same minted id in the canonical namespace, w
 record renders rather than searched for or copied from the canonical flow, why a missing parent holds the record, and
 what a landing parent does to the records reading it. Added a [pattern catalog](maps/pattern-catalog.md) row for a custom
 copy of a canonical kind that needs the canonical record's DDMS references. Indexed 0019.
+
+## [2026-10-22] ingest | The explorer's own partition connection, decision 0020
+
+Source: the change that has the explorer read a partition through the partition's own connection rather than a delivery
+flow's: the connection (`osdu/src/SqlFlow.Delivery/Engine/Operations/PartitionConnection.cs`), the operation reading
+through a target made from a partition or a flow (`osdu/src/SqlFlow.Delivery/Engine/Operations/ExploreOperation.cs`,
+`osdu/src/SqlFlow.Delivery/Engine/Operations/TargetClients.cs`), the control plane settling the partition and its values
+(`osdu/src/SqlFlow.Delivery.ControlPlane/Api/DeliveryExplorerEndpoints.cs`), the five values the deployment templates and
+the local setup already write, and the reference pages it changed ([the explorer](../reference/concepts/explorer.md#how-it-reaches-osdu),
+[partitions](../reference/concepts/partitions.md#configured-partitions)).
+
+Added [0020](decisions/0020-explorer-partition-connection.md): why borrowing a flow's connection made a view of OSDU
+depend on the catalog (no search before a flow exists, credentials that moved with the flows), why the partition's
+configured platform and client are the way in, why a record page's check stays on the record's own flow, and why the
+explorer has no connection setting of its own. Indexed 0020.

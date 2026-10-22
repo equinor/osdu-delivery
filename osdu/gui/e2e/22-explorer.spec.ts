@@ -2,13 +2,14 @@ import type { Locator, Page } from "@playwright/test";
 import { E2E } from "../playwright.config";
 import { expect, test } from "./helpers";
 
-// The explorer: what the partition of OSDU holds, read live through a delivery flow's connection, and nothing
+// The explorer: what the partition of OSDU holds, read live through the partition's own connection, and nothing
 // the delivery system keeps. It browses by type, searches by name and by id, reads a record under the place it sits in,
 // follows the records that mention it, compares two of its versions side by side, and offers the ids near one OSDU holds
 // nothing under.
 //
-// Nothing here reaches an OSDU: the flows reach the e2e stand-in, which holds the platform's wellbores and the well log
-// this spec gives it, in two versions, for as long as the spec runs. Nothing is delivered and nothing is written.
+// Nothing here reaches an OSDU: the partition's connection reaches the e2e stand-in, which holds the platform's wellbores
+// and the well log this spec gives it, in two versions, for as long as the spec runs. Nothing is delivered and nothing is
+// written.
 
 /** The well log this spec holds in the stand-in: written twice, so OSDU keeps two versions of it. */
 const LOG = `${E2E.osdu.OSDU_DATA_PARTITION}:work-product-component--WellLog:e2e-explorer-log`;

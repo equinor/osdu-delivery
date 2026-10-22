@@ -96,6 +96,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **The explorer reads a partition through the partition's own connection, and needs no flow.** It signs in with the
+  platform and client the deployment names for the partition (`OSDU_URL`, `OSDU_TOKEN_URL`, `OSDU_SCOPE`,
+  `OSDU_CLIENT_ID` and `OSDU_CLIENT_SECRET`, from `Osdu:Partitions:<id>:Properties` or the control plane's environment,
+  naming any that is missing), so a deployment can be searched before a flow is synced;
+  `GET /api/v1/delivery/explorer/connection` answers the `endpoint` it reaches in place of the borrowed flow's `through`
+  and `route` ([The explorer](osdu/docs/reference/concepts/explorer.md#how-it-reaches-osdu)).
 - **`sqlflow dev setup` offers a GitHub App for a GitHub repository before a token.** It asks for the App's client ID
   and the path of its `.pem` file, and `sqlflow dev check` reports an App that is only half configured; Enter at the new
   question keeps the token as before ([dev](osdu/docs/reference/cli/dev.md)).

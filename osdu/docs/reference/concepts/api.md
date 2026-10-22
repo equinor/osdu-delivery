@@ -285,12 +285,13 @@ See [partitions](partitions.md), [configured partitions](partitions.md#configure
 
 ## The explorer and search terms
 
-The explorer reads OSDU through a delivery flow's connection; the GUI names the partition with `partition` or the
-workbench header.
+The explorer reads OSDU through the partition's own connection, the platform and client its configuration names, and
+needs no flow ([how it reaches OSDU](explorer.md#how-it-reaches-osdu)); the GUI names the partition with `partition` or
+the workbench header.
 
 | Route | Policy | Parameters | Answers |
 | --- | --- | --- | --- |
-| `GET /explorer/connection` | read | `partition` | Whether a delivery flow's connection reaches the partition, and which. |
+| `GET /explorer/connection` | read | `partition` | Whether the partition's connection can be made: `partition`, `available`, the `endpoint` it reaches, or the `reason` it cannot be. |
 | `POST /explorer/types` | operate | body as `search`; `partition` | The kinds a search finds, each with its count. |
 | `POST /explorer/search` | operate | body `text`, `lucene`, `mentions`, `kind`, `filters`, `sort` (`relevance`, `modified`, `created`), `offset`, `limit` (100), `facet`, `columns`; `partition` | One page of the records a search finds. |
 | `POST /explorer/fields` | operate | body `kind`; `partition` | The properties a kind's records hold. |

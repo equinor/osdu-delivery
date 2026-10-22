@@ -261,8 +261,8 @@ own identity. How the Kubernetes layout maps onto Container Apps:
   (`SQLFLOW_AZURE_AUTH=mi`). Every run is given the values its flows read by the control plane: the metadata database
   as `SQLFLOW_CATALOG_DB`, each of `sqlConnections` by its name, the landing storage as `LANDING_URL`, and
   `properties` (a further value, or a `${keyvault:...}` reference to a secret you put in the vault). A person's reads
-  of a flow (a probe, a record read back, a preview, a source read, the explorer) run on the control plane with the
-  same values; it never delivers. The deploying principal needs to create role assignments (Owner, or User Access
+  (a flow's probe, record read back, preview and source read, and the explorer's reads of a partition) run on the
+  control plane with the same values; it never delivers. The deploying principal needs to create role assignments (Owner, or User Access
   Administrator beside Contributor), to write vault secrets (Key Vault Secrets Officer; the vault uses RBAC), and
   Contributor on the resource group, where each deployment script runs in a container instance with a storage account
   of its own.
@@ -502,7 +502,7 @@ The layout and the reasoning behind it:
   `${keyvault:<vault>/<secret>}` reads it from a Key Vault instead.
 - **Secrets stay on the tier that uses them**: the control plane gets the metadata connection and JWT material,
   and the flows' `${env:...}` references, which a person's reads of a flow (a probe, a record read back, a preview,
-  a source read, the explorer) resolve there as a run resolves them on a node; both get the git credentials (the
+  a source read) and the explorer's reads of a partition resolve there as a run resolves them on a node; both get the git credentials (the
   GitHub App's ID and key, and the git token) for a source naming none; nodes get a node token, a connection to the
   `osdu` schema of their own (mounted as both `SQLFLOW_OSDU_DB` and `SQLFLOW_CATALOG_DB`),
   the data connection (`OSDU_DATA_DB`) and every other `${env:...}` reference their pool's flows use, and never the

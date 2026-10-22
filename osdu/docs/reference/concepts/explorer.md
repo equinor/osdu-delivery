@@ -5,6 +5,8 @@ type: concept
 summary: "How the explorer reads an OSDU partition live: browse types, search by id, text, property or source column, open records and versions, validate, references."
 keywords:
   - explorer
+  - explorer connection
+  - search without a flow
   - browse osdu
   - search osdu records
   - what is in osdu
@@ -41,6 +43,7 @@ sourceRefs:
   - osdu/src/SqlFlow.Delivery.ControlPlane/Api/DirectOperationRunner.cs
   - osdu/src/SqlFlow.Delivery/Engine/Operations/ExploreOperation.cs
   - osdu/src/SqlFlow.Delivery/Engine/Operations/TargetClients.cs
+  - osdu/src/SqlFlow.Delivery/Engine/Operations/PartitionConnection.cs
   - osdu/src/SqlFlow.Delivery/Engine/Search/RecordExplorer.cs
   - osdu/src/SqlFlow.Delivery/Engine/Search/RecordExplorer.Via.cs
   - osdu/src/SqlFlow.Delivery/Engine/Search/OsduSearch.cs
@@ -93,27 +96,39 @@ partition picked in the title bar.
 
 ## How it reaches OSDU
 
-The explorer borrows one thing from OSDU Delivery: a way in. Every read runs in the control plane as the request's
-answer (the operation `delivery-explore`), nothing queued and nothing polled, through the OSDU connection of a delivery
-flow that reaches the partition: the flow's endpoint, credentials and `data-partition-id`, resolved with the partition's
-central configuration as a run resolves them. The reader never picks the flow. Of the active delivery flows (every
-interface of a source), the control plane takes one that reaches the partition:
+The explorer needs no flow. Every read runs in the control plane as the request's answer (the operation
+`delivery-explore`), nothing queued and nothing polled, through the partition's own connection: the platform and the
+client the deployment names for the partition, by five of the values its runs resolve `${env:NAME}` references with
+([configured partitions](partitions.md#configured-partitions)):
 
-- a flow that names its partitions must serve this one;
-- a flow that names none must either write this partition literally in its `data-partition-id` header (a `${...}`
-  reference does not count) or have a ledger kept in it;
-- its route must use the platform's own services: `storage` first (its endpoint is the platform root by definition),
-  then `manifest`, `file`, `dataset`, `workflow`, `fileAndDdms`, `manifestAndDdms` and `ddms`; a `dspdm` or `etp` flow
-  never lends its connection;
-- ties go to the first flow by name, so a partition is always read the same way.
+| Value | What it is |
+| --- | --- |
+| `OSDU_URL` | The platform's base URL; search, storage and schema are read at their own paths under it. |
+| `OSDU_TOKEN_URL` | The token endpoint the client signs in at, with the OAuth 2.0 client credentials grant. |
+| `OSDU_SCOPE` | The scope the token is asked for. |
+| `OSDU_CLIENT_ID` | The client (application) id. |
+| `OSDU_CLIENT_SECRET` | The client secret, a `${keyvault:<vault>/<secret>}` or `${env:NAME}` reference. |
 
-When one is found, a green badge with the partition's name stands beside the page's title; its tooltip, **Read live from
-OSDU**, names the flow (`flow/interface` for a source's interface) and its endpoint as the flow writes it. When none is,
-every read answers 409 with the reason, for example `No delivery flow reaches partition 'test', so the explorer has no
-connection to it. A flow that delivers there through the platform's own services (any route but dspdm and etp) lends the
-explorer its connection.`
+Each is read as a run reads it: the control plane's value for the partition (`Osdu:Partitions:<id>:Properties:<NAME>`,
+or [sqlflow config](../cli/config.md) `set --partition <id>` with no repository), then its value for no partition
+(`Osdu:Properties:<NAME>`), then the control plane's own environment, which is where a local setup's `.sqlflow/env` puts
+them. A repository's values are not read, since the explorer belongs to no repository. Every request carries
+`data-partition-id` set to the partition. A deployment can therefore be searched as soon as its configuration names its
+partitions, before a repository is synced or a flow delivers anywhere.
 
-Whatever route the flow delivers by, the explorer reads:
+The partition is the one picked in the title bar (the request's `partition`, else the workbench's `X-Osdu-Partition`
+header, else the registry's default), and it has to be registered. When its connection cannot be made, every read
+answers 409 **No connection to the partition** and the page says why: a partition the registry does not hold is refused
+as a run in it is (`Partition 'prod' is not registered with the catalog, so nothing runs in it. ...`), and a registered
+one names the values its configuration and the control plane's environment leave unset, for example
+`The explorer reads partition 'test' through the platform and client its configuration names, and OSDU_TOKEN_URL, OSDU_CLIENT_SECRET are not set. Set them under Osdu:Partitions:test:Properties in the control plane's configuration, or in its environment.`
+
+When the connection can be made, a green badge with the partition's name stands beside the page's title; its tooltip,
+**Read live from OSDU**, names the platform it reaches: the base URL as scheme, host, port and path, without the
+credentials, query or fragment a URL can carry, or a configured `${keyvault:...}` reference as written, since that is
+resolved only when a read needs it.
+
+The explorer reads:
 
 | Service | Calls | For |
 | --- | --- | --- |
@@ -122,17 +137,19 @@ Whatever route the flow delivers by, the explorer reads:
 | Storage | `POST /api/storage/v2/query/records` | the records a record refers to, during a validation |
 | Schema | `GET /api/schema-service/v1/schema`, `GET /api/schema-service/v1/schema/{id}` | a kind's properties, validation, Referenced by |
 
-A record is read the way a record page's OSDU tab reads it back, so both pages show a record the same way. A `storage`
-flow's `protocolOptions.verifyPath`, and any flow's `protocolOptions.verifyBatchPath`, replace the default storage paths.
+A record is read the way a record page's OSDU tab reads it back, so both pages show a record the same way. A record
+page's check of the record it shows (`POST /api/v1/delivery/flows/{pipelineId}/osdu/validate`) is the one read made
+through a flow: the record's own, with its route and credentials, as the page reads the record; there a `storage` flow's
+`protocolOptions.verifyPath`, and any flow's `protocolOptions.verifyBatchPath`, replace the default storage paths.
 
 The control plane keeps the connection between reads (at most 64 targets, each retired after 10 minutes unused or 30
 minutes in all, and at once on the 401 a rotated secret draws), so a token is fetched once rather than for every read.
 A person is waiting on these reads, so they retry as a person would rather than as a run: at most two attempts, a
-backoff of at most two seconds, no wait on a `Retry-After`, and at most 60 seconds (or the flow's own shorter timeout)
-for an answer.
+backoff of at most two seconds, no wait on a `Retry-After`, and at most 60 seconds (or, for a record page's check, its
+flow's own shorter timeout) for an answer.
 
 **Who may use it.** The page's route asks for the `operate` scope, and its reads sit in the control plane's operate
-group, because they use a flow's credentials. SQLFlow resolves `operate` to any signed-in user
+group, because they use the partition's credentials. SQLFlow resolves `operate` to any signed-in user
 ([authentication and identity](authentication-and-identity.md)), so in practice anyone signed in can use the explorer.
 The MCP server offers none of its routes: it answers from metadata alone, and the explorer reads OSDU's data.
 
@@ -458,7 +475,7 @@ the workbench's partition, else the registry's default, is read.
 
 | Route | Group | What it does |
 | --- | --- | --- |
-| `GET /api/v1/delivery/explorer/connection` | read | How the partition is reached: `available`, `through`, `endpoint`, `route`, or `reason`. |
+| `GET /api/v1/delivery/explorer/connection` | read | How the partition is reached: its `partition` as the registry spells it, `available`, the `endpoint` it reaches, or the `reason` it cannot be. |
 | `POST /api/v1/delivery/explorer/types` | operate | The records a search finds, counted kind by kind. |
 | `POST /api/v1/delivery/explorer/search` | operate | One page of records: `text`, `lucene` or `mentions`, `kind`, `filters` (at most 12; a filter may name a search `term`), `sort`, `offset` and `limit` (1 to 200, inside the first 10,000), `facet`, `columns` (at most 8). |
 | `POST /api/v1/delivery/explorer/fields` | operate | The properties the records of a `kind` hold. |

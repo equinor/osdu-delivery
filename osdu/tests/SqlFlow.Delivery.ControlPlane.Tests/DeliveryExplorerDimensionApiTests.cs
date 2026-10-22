@@ -24,9 +24,9 @@ namespace SqlFlow.ControlPlane.Tests;
 /// checked against the templates the synced repositories hold as a flow's own dimension is against its folders, a missing
 /// template said with where to put one; every mistake pointed at the part it is about; a name whose table another flow's
 /// dimension writes warned of; the keys a kind's template suggests; and an example key made into its row, and the
-/// commonest keys of a path, through the
-/// connection the explorer reads the partition by, given exactly what the operation reads back. Nothing here reaches an
-/// OSDU: the operations are stood in for (<see cref="RecordedOperations"/>), and what each was given is read back.
+/// commonest keys of a path, through the partition's own connection, as the explorer reads it, given exactly what the
+/// operation reads back. Nothing here reaches an OSDU: the operations are stood in for (<see cref="RecordedOperations"/>),
+/// and what each was given is read back.
 /// </summary>
 [Trait("Category", "Integration")]
 [Collection(SqlServerSuite.Name)]
@@ -69,7 +69,7 @@ public sealed class DeliveryExplorerDimensionApiTests
           "records":3,"filter":"data.WellboreID.keyword:\"dev:master-data--Wellbore:W1:\"","notes":["one note"]}}
         """;
 
-    private sealed record Estate(string Cs, string Suffix, string Headed, Guid RepoId, string ConnectionFlow, string DimensionFlow, string Taken);
+    private sealed record Estate(string Cs, string Suffix, string Partition, Guid RepoId, string DimensionFlow, string Taken);
 
     private static async Task<Estate> SeedAsync()
     {
@@ -81,21 +81,7 @@ public sealed class DeliveryExplorerDimensionApiTests
         await SampleEstate.HoldTemplateRepositoryAsync(cs, DateTime.UtcNow);
 
         var suffix = Guid.NewGuid().ToString("N")[..10];
-        var estate = new Estate(cs, suffix, "h" + suffix, FlowIdentity.FromName("repo/cp-dimension-builder-" + suffix), "builder-c-" + suffix, "builder-d-" + suffix, "Taken" + suffix);
-        var connection = $$"""
-            flowType: delivery
-            name: {{estate.ConnectionFlow}}
-            source:
-              connection: ${env:OSDU_DATA_DB}
-              record: { object: OsduData.arc.Wellbore, key: [facility_name] }
-              work: ../.work/builder
-            render:
-              mapping: Wellbore@1.0.0
-            target:
-              endpoint: ${env:OSDU_URL}
-              protocol: storage
-              headers: { data-partition-id: {{estate.Headed}} }
-            """;
+        var estate = new Estate(cs, suffix, "h" + suffix, FlowIdentity.FromName("repo/cp-dimension-builder-" + suffix), "builder-d-" + suffix, "Taken" + suffix);
         var dimensions = $$"""
             flowType: dimension
             name: {{estate.DimensionFlow}}
@@ -113,7 +99,7 @@ public sealed class DeliveryExplorerDimensionApiTests
             Id = estate.RepoId, Name = "cp-dimension-builder-" + suffix, RemoteUrl = "https://example/cp-dimension-builder.git",
             RootPath = Path.GetTempPath(), FirstSeenUtc = now, LastSyncUtc = now,
         });
-        foreach (var (name, kind, yaml) in new[] { (estate.ConnectionFlow, "delivery", connection), (estate.DimensionFlow, "dimension", dimensions) })
+        foreach (var (name, kind, yaml) in new[] { (estate.DimensionFlow, "dimension", dimensions) })
         {
             db.Pipelines.Add(new CatalogPipeline
             {
@@ -133,15 +119,19 @@ public sealed class DeliveryExplorerDimensionApiTests
         }
 
         await db.SaveChangesAsync();
+
+        // The partition the builder reads, with its own connection and no flow to lend one.
+        await TestPartitions.RegisterAsync(cs, estate.Partition);
         return estate;
     }
 
     private static async Task CleanAsync(Estate estate)
     {
         await using var db = CatalogDatabase.Create(estate.Cs);
-        await db.ComputeTasks.Where(t => t.SourceRef == estate.ConnectionFlow).ExecuteDeleteAsync();
+        await db.ComputeTasks.Where(t => t.SourceRef == estate.Partition).ExecuteDeleteAsync();
         await db.Pipelines.Where(p => p.RepoId == estate.RepoId).ExecuteDeleteAsync();
         await db.Repos.Where(r => r.Id == estate.RepoId).ExecuteDeleteAsync();
+        await TestPartitions.ForgetAsync(estate.Cs, estate.Partition);
     }
 
     private static ControlPlaneAppFactory Host(Estate estate, RecordedOperations operations) => new ControlPlaneAppFactory()
@@ -163,7 +153,7 @@ public sealed class DeliveryExplorerDimensionApiTests
             var token = await TokenAsync(client);
             var name = "Wellbore" + estate.Suffix;
 
-            var composed = await ComposeAsync(client, token, estate.Headed, new { draft = Draft(name), example = "dev:master-data--Wellbore:W1:" });
+            var composed = await ComposeAsync(client, token, estate.Partition, new { draft = Draft(name), example = "dev:master-data--Wellbore:W1:" });
 
             // The YAML is the builder's writer's, and it loads: a repository holds the logs' and the wellbores' templates, so the key and
             // the wellbore's reads are checked; the countries' are not, which reads them as written and says so.
@@ -197,9 +187,12 @@ public sealed class DeliveryExplorerDimensionApiTests
             Assert.Equal(JsonValueKind.Null, composed.GetProperty("exampleProblem").ValueKind);
 
             // The operation was given the item exactly as written, the key, and how the key and the collected path are indexed,
-            // as the repository's template says, through the connection that reaches the partition.
+            // as the repository's template says, through the partition's own connection.
             var ran = operations.Last();
-            Assert.Equal((ExploreOperation.OperationName, estate.ConnectionFlow), (ran.Operation, ran.SourceRef));
+            Assert.Equal((ExploreOperation.OperationName, estate.Partition), (ran.Operation, ran.SourceRef));
+            Assert.Equal(
+                (ExploreOperation.PartitionConnectionValue, estate.Partition),
+                (ran.Argument(ExploreOperation.ConnectionArgument), ran.Argument(DeliveryOperation.PartitionArgument)));
             Assert.Equal(ExploreOperation.DimensionExampleAction, ran.Argument(ExploreOperation.ActionArgument));
             Assert.Equal("dev:master-data--Wellbore:W1:", ran.Argument(ExploreOperation.KeyArgument));
             Assert.Equal(yaml, LongArgument.Read(ran, ExploreOperation.ItemArgument));
@@ -224,7 +217,7 @@ public sealed class DeliveryExplorerDimensionApiTests
             using var client = factory.CreateClient();
             var token = await TokenAsync(client);
 
-            var composed = await ComposeAsync(client, token, estate.Headed, new { draft = Draft("Logs" + estate.Suffix, "osdu:wks:work-product-component--WellLog:9.9.9") });
+            var composed = await ComposeAsync(client, token, estate.Partition, new { draft = Draft("Logs" + estate.Suffix, "osdu:wks:work-product-component--WellLog:9.9.9") });
 
             Assert.False(composed.GetProperty("valid").GetBoolean());
             var issue = composed.GetProperty("issues").EnumerateArray().Single(i => i.GetProperty("severity").GetString() == "error");
@@ -265,7 +258,7 @@ public sealed class DeliveryExplorerDimensionApiTests
             using var client = factory.CreateClient();
             var token = await TokenAsync(client);
 
-            var composed = await ComposeAsync(client, token, estate.Headed, JsonDocument.Parse($$"""{"draft":{{draft}},"example":"x"}""").RootElement);
+            var composed = await ComposeAsync(client, token, estate.Partition, JsonDocument.Parse($$"""{"draft":{{draft}},"example":"x"}""").RootElement);
 
             Assert.False(composed.GetProperty("valid").GetBoolean());
             var error = composed.GetProperty("issues").EnumerateArray().First(i => i.GetProperty("severity").GetString() == "error");
@@ -298,14 +291,14 @@ public sealed class DeliveryExplorerDimensionApiTests
             // The same name, and one apart only in a character a table's name leaves out, would write the same table.
             foreach (var name in new[] { estate.Taken, estate.Taken.ToUpperInvariant() })
             {
-                var composed = await ComposeAsync(client, token, estate.Headed, new { draft = Draft(name) });
+                var composed = await ComposeAsync(client, token, estate.Partition, new { draft = Draft(name) });
                 var warning = composed.GetProperty("issues").EnumerateArray().Single(i => i.GetProperty("code").GetString() == "name");
                 Assert.Equal(("warning", "name"), (warning.GetProperty("severity").GetString(), warning.GetProperty("target").GetString()));
                 Assert.Contains(estate.DimensionFlow, warning.GetProperty("message").GetString(), StringComparison.Ordinal);
                 Assert.Contains($"osdu.dim_{estate.Taken}", warning.GetProperty("message").GetString(), StringComparison.OrdinalIgnoreCase);
             }
 
-            var free = await ComposeAsync(client, token, estate.Headed, new { draft = Draft("Free" + estate.Suffix) });
+            var free = await ComposeAsync(client, token, estate.Partition, new { draft = Draft("Free" + estate.Suffix) });
             Assert.DoesNotContain(free.GetProperty("issues").EnumerateArray(), i => i.GetProperty("code").GetString() == "name");
         }
         finally
@@ -325,14 +318,14 @@ public sealed class DeliveryExplorerDimensionApiTests
             using var client = factory.CreateClient();
             var token = await TokenAsync(client);
 
-            var composed = await ComposeAsync(client, token, estate.Headed, new { draft = Draft("Wellbore" + estate.Suffix), example = "dev:master-data--Wellbore:W1:" });
+            var composed = await ComposeAsync(client, token, estate.Partition, new { draft = Draft("Wellbore" + estate.Suffix), example = "dev:master-data--Wellbore:W1:" });
             Assert.True(composed.GetProperty("valid").GetBoolean());
             Assert.Equal(JsonValueKind.Null, composed.GetProperty("example").ValueKind);
             Assert.Contains("would not read the key's records", composed.GetProperty("exampleProblem").GetString(), StringComparison.Ordinal);
 
-            // A partition no flow reaches has no connection to read an example through; the YAML is written all the same.
+            // A partition the registry does not hold has no connection to read an example through; the YAML is written all the same.
             var unreached = await ComposeAsync(client, token, "z" + estate.Suffix, new { draft = Draft("Wellbore" + estate.Suffix), example = "dev:master-data--Wellbore:W1:" });
-            Assert.Contains("No delivery flow reaches partition", unreached.GetProperty("exampleProblem").GetString(), StringComparison.Ordinal);
+            Assert.Contains("is not registered with the catalog", unreached.GetProperty("exampleProblem").GetString(), StringComparison.Ordinal);
             Assert.False(string.IsNullOrEmpty(unreached.GetProperty("yaml").GetString()));
         }
         finally
@@ -357,13 +350,13 @@ public sealed class DeliveryExplorerDimensionApiTests
                 kind = WellLog,
                 query = " data.Source:\"WellDB\" ",
                 path = " data.WellboreID ",
-            }, estate.Headed))
+            }, estate.Partition))
             {
                 Assert.True(read.StatusCode == HttpStatusCode.OK, await read.Content.ReadAsStringAsync());
             }
 
             var ran = operations.Last();
-            Assert.Equal((ExploreOperation.DimensionKeysAction, estate.ConnectionFlow), (ran.Argument(ExploreOperation.ActionArgument), ran.SourceRef));
+            Assert.Equal((ExploreOperation.DimensionKeysAction, estate.Partition), (ran.Argument(ExploreOperation.ActionArgument), ran.SourceRef));
             var request = JsonSerializer.Deserialize<DimensionKeysRequest>(LongArgument.Read(ran, ExploreOperation.KeysArgument)!, ExploreOperation.BuilderJson)!;
             Assert.Equal((WellLog, "data.Source:\"WellDB\"", "data.WellboreID"), (request.Kind, request.Query, request.Path));
             Assert.Equal(new DimensionFieldWire("data.WellboreID", "text", null), request.KeyField);
@@ -374,7 +367,7 @@ public sealed class DeliveryExplorerDimensionApiTests
             {
                 kind = "osdu:wks:work-product-component--WellLog:9.9.9",
                 path = "data.WellboreID",
-            }, estate.Headed))
+            }, estate.Partition))
             {
                 Assert.True(guessed.StatusCode == HttpStatusCode.OK, await guessed.Content.ReadAsStringAsync());
             }
@@ -388,7 +381,7 @@ public sealed class DeliveryExplorerDimensionApiTests
             {
                 kind = "osdu:wks:work-product-component--WellLog:9.9.9",
                 path = "legal.legaltags",
-            }, estate.Headed))
+            }, estate.Partition))
             {
                 Assert.True(own.StatusCode == HttpStatusCode.OK, await own.Content.ReadAsStringAsync());
             }
@@ -396,7 +389,7 @@ public sealed class DeliveryExplorerDimensionApiTests
             var tags = JsonSerializer.Deserialize<DimensionKeysRequest>(LongArgument.Read(operations.Last(), ExploreOperation.KeysArgument)!, ExploreOperation.BuilderJson)!;
             Assert.Equal(("keyword", false), (tags.KeyField!.Index, tags.KeyFieldGuessed));
 
-            // A partition no flow reaches has no connection to read through.
+            // A partition the registry does not hold has no connection to read through.
             using var unreached = await SendAsync(client, token, HttpMethod.Post, "/api/v1/delivery/explorer/dimension/keys", new { kind = WellLog, path = "data.WellboreID" }, "z" + estate.Suffix);
             Assert.Equal(HttpStatusCode.Conflict, unreached.StatusCode);
         }
@@ -417,7 +410,7 @@ public sealed class DeliveryExplorerDimensionApiTests
             using var client = factory.CreateClient();
             var token = await TokenAsync(client);
 
-            using (var suggested = await SendAsync(client, token, HttpMethod.Get, "/api/v1/delivery/explorer/dimension/candidates?kind=" + Uri.EscapeDataString(" *:*:work-product-component--WellLog:* "), null, estate.Headed))
+            using (var suggested = await SendAsync(client, token, HttpMethod.Get, "/api/v1/delivery/explorer/dimension/candidates?kind=" + Uri.EscapeDataString(" *:*:work-product-component--WellLog:* "), null, estate.Partition))
             {
                 var text = await suggested.Content.ReadAsStringAsync();
                 Assert.True(suggested.StatusCode == HttpStatusCode.OK, text);
@@ -444,7 +437,7 @@ public sealed class DeliveryExplorerDimensionApiTests
                 Assert.Equal(JsonValueKind.Null, answer.GetProperty("missing").ValueKind);
             }
 
-            using (var unsaved = await SendAsync(client, token, HttpMethod.Get, "/api/v1/delivery/explorer/dimension/candidates?kind=" + Uri.EscapeDataString("osdu:wks:master-data--Nothing:1.0.0"), null, estate.Headed))
+            using (var unsaved = await SendAsync(client, token, HttpMethod.Get, "/api/v1/delivery/explorer/dimension/candidates?kind=" + Uri.EscapeDataString("osdu:wks:master-data--Nothing:1.0.0"), null, estate.Partition))
             {
                 var answer = JsonDocument.Parse(await unsaved.Content.ReadAsStringAsync()).RootElement;
                 Assert.Equal(HttpStatusCode.OK, unsaved.StatusCode);
@@ -454,7 +447,7 @@ public sealed class DeliveryExplorerDimensionApiTests
 
             foreach (var (kind, why) in new[] { ("", "Name the kind"), ("osdu:wks:WellLog", "osdu:wks:WellLog") })
             {
-                using var refused = await SendAsync(client, token, HttpMethod.Get, "/api/v1/delivery/explorer/dimension/candidates?kind=" + Uri.EscapeDataString(kind), null, estate.Headed);
+                using var refused = await SendAsync(client, token, HttpMethod.Get, "/api/v1/delivery/explorer/dimension/candidates?kind=" + Uri.EscapeDataString(kind), null, estate.Partition);
                 Assert.Equal(HttpStatusCode.BadRequest, refused.StatusCode);
                 Assert.Contains(why, await refused.Content.ReadAsStringAsync(), StringComparison.Ordinal);
             }
@@ -502,7 +495,7 @@ public sealed class DeliveryExplorerDimensionApiTests
 
             using var request = new HttpRequestMessage(HttpMethod.Post, new Uri($"/api/v1/delivery/explorer/dimension/{route}", UriKind.Relative));
             request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
-            request.Headers.Add("X-Osdu-Partition", estate.Headed);
+            request.Headers.Add("X-Osdu-Partition", estate.Partition);
             request.Content = new StringContent(body, System.Text.Encoding.UTF8, "application/json");
             using var response = await client.SendAsync(request);
             var text = await response.Content.ReadAsStringAsync();

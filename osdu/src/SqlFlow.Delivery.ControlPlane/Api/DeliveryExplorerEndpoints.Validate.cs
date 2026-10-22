@@ -54,25 +54,25 @@ public static partial class DeliveryExplorerEndpoints
     /// <summary>
     /// One record OSDU holds checked against the schema of its kind (osdu/docs/reference/concepts/explorer.md,
     /// Validate): the Schema service's, or a template a synced repository holds; the records it refers to are looked up in storage. Reads
-    /// OSDU through the partition's connection, as every explorer read does.
+    /// OSDU through the partition's own connection, as every explorer read does.
     /// </summary>
     private static async Task<Results<ContentHttpResult, ProblemHttpResult>> ValidateAsync(
-        DeliveryExplorerValidateRequest? body, [FromQuery] string? partition, CatalogDbContext db, DeliveryDocumentLoader documents, IPartitionRegistry partitions,
-        ILedger ledger, DeliveryConfigStore config, DirectOperations direct, ILoggerFactory loggers, HttpRequest request, ClaimsPrincipal user, CancellationToken ct)
+        DeliveryExplorerValidateRequest? body, [FromQuery] string? partition, IPartitionRegistry partitions, DeliveryConfigStore config, DirectOperations direct,
+        ILoggerFactory loggers, HttpRequest request, ClaimsPrincipal user, CancellationToken ct)
     {
         if (ValidateArguments(body, out var arguments) is { } invalid)
         {
             return invalid;
         }
 
-        return await QueueAsync(ExploreOperation.ValidateAction, arguments, partition, db, documents, partitions, ledger, config, direct, loggers, request, user, ct).ConfigureAwait(false);
+        return await ExploreAsync(ExploreOperation.ValidateAction, arguments, partition, partitions, config, direct, loggers, request, user, ct).ConfigureAwait(false);
     }
 
     /// <summary>
     /// One record checked as <see cref="ValidateAsync"/> checks it, read through the route and credentials of the flow named
-    /// (its interface and partition as a record page names them) rather than the connection the explorer picks for a
-    /// partition: a record page's OSDU tab checks the records it shows, which it reads through their flow. A flow whose route
-    /// has no platform endpoint (dspdm, etp) keeps no record in storage to check.
+    /// (its interface and partition as a record page names them) rather than the partition's own connection: a record page's
+    /// OSDU tab checks the records it shows, which it reads through their flow. A flow whose route has no platform endpoint
+    /// (dspdm, etp) keeps no record in storage to check.
     /// </summary>
     private static async Task<Results<ContentHttpResult, ProblemHttpResult>> ValidateTargetAsync(
         Guid pipelineId, DeliveryExplorerValidateRequest? body, [FromQuery(Name = "interface")] string? interfaceName, [FromQuery] string? partition,
@@ -90,7 +90,7 @@ public static partial class DeliveryExplorerEndpoints
             return problem!;
         }
 
-        if (Rank(flow.Flow.Target.Protocol) < 0)
+        if (!KeepsStorageRecords(flow.Flow.Target.Protocol))
         {
             return TypedResults.Problem(
                 detail: $"{flow.Flow.Label} delivers by the {DeliveryProtocols.Name(flow.Flow.Target.Protocol)} route, which keeps no record in OSDU's storage service to check against a schema.",
@@ -156,14 +156,14 @@ public static partial class DeliveryExplorerEndpoints
     /// example of each (osdu/docs/reference/concepts/explorer.md, Validate).
     /// </summary>
     private static async Task<Results<ContentHttpResult, ProblemHttpResult>> ValidateListAsync(
-        DeliveryExplorerValidateListRequest? body, [FromQuery] string? partition, CatalogDbContext db, DeliveryDocumentLoader documents, IPartitionRegistry partitions,
-        ILedger ledger, DeliveryConfigStore config, DirectOperations direct, ILoggerFactory loggers, HttpRequest request, ClaimsPrincipal user,
+        DeliveryExplorerValidateListRequest? body, [FromQuery] string? partition, DeliveryDocumentLoader documents, IPartitionRegistry partitions,
+        DeliveryConfigStore config, DirectOperations direct, ILoggerFactory loggers, HttpRequest request, ClaimsPrincipal user,
         OsduDbContext osdu, TimeProvider clock, IRepositoryFolders folders, CancellationToken ct)
     {
         var asked = body ?? new DeliveryExplorerValidateListRequest();
         var searched = (asked.Search ?? new DeliveryExplorerSearchRequest()) with { Offset = null, Limit = null, Facet = null };
         var (terms, failure) = await TermsOfAsync(
-            searched, partition, db, documents, partitions, ledger, request, new SearchTermDirectory(osdu, documents, clock, folders), ct).ConfigureAwait(false);
+            searched, partition, partitions, config, request, new SearchTermDirectory(osdu, documents, clock, folders), ct).ConfigureAwait(false);
         if (failure is not null)
         {
             return failure;
@@ -200,7 +200,7 @@ public static partial class DeliveryExplorerEndpoints
             arguments[ExploreOperation.MappingArgument] = mapping.ToString("D");
         }
 
-        return await QueueAsync(ExploreOperation.ValidateListAction, arguments, partition, db, documents, partitions, ledger, config, direct, loggers, request, user, ct).ConfigureAwait(false);
+        return await ExploreAsync(ExploreOperation.ValidateListAction, arguments, partition, partitions, config, direct, loggers, request, user, ct).ConfigureAwait(false);
     }
 
     /// <summary>Why a request's schema is not one a record is checked against, or null when it is (or is left out).</summary>

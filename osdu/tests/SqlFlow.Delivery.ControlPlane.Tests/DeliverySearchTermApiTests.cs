@@ -51,7 +51,9 @@ public sealed class DeliverySearchTermApiTests
         var now = DateTime.UtcNow;
         var sample = Path.Combine(AppContext.BaseDirectory, "samples", SampleEstate.SourceFolder);
 
-        // The sample estate synced into the module, as a repository sync writes it; and a flow reaching the partition read.
+        // The sample estate synced into the module, as a repository sync writes it; a delivery flow reading the log's table
+        // with the log's mapping, which the terms are written from again when the control plane starts; and the partition
+        // read, registered with its own connection.
         await using (var osdu = SampleEstate.Context(cs))
         {
             await new DeliveryCatalogSync(new DeliveryDocumentLoader()).ReconcileAsync(osdu, repoId, sample, now, new List<string>(), CancellationToken.None);
@@ -72,7 +74,6 @@ public sealed class DeliverySearchTermApiTests
                 Yaml = $$"""
                     flowType: delivery
                     name: {{flow}}
-                    partitions: [{{partition}}]
                     source:
                       connection: ${env:OSDU_DATA_DB}
                       record: { object: OsduData.silver.WellLog, key: [source_project, log_id] }
@@ -95,6 +96,7 @@ public sealed class DeliverySearchTermApiTests
         var operations = new RecordedOperations();
         try
         {
+            await TestPartitions.RegisterAsync(cs, partition);
             await using var factory = new ControlPlaneAppFactory()
                 .WithCatalog(cs)
                 .WithModules(new DeliveryControlPlaneModule())
@@ -205,6 +207,7 @@ public sealed class DeliverySearchTermApiTests
         }
         finally
         {
+            await TestPartitions.ForgetAsync(cs, partition);
             await using var db = CatalogDatabase.Create(cs);
             await db.Pipelines.Where(p => p.RepoId == repoId).ExecuteDeleteAsync();
             await db.Repos.Where(r => r.Id == repoId).ExecuteDeleteAsync();

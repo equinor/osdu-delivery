@@ -47,7 +47,7 @@ public abstract class DeliveryOperation : IComputeOperation
 
     public abstract string Name { get; }
 
-    public async Task<string> ExecuteAsync(ComputeTaskPayload payload, CancellationToken ct)
+    public virtual async Task<string> ExecuteAsync(ComputeTaskPayload payload, CancellationToken ct)
     {
         ArgumentNullException.ThrowIfNull(payload);
         var flowFile = ResolveFlowFile(payload);
@@ -64,13 +64,19 @@ public abstract class DeliveryOperation : IComputeOperation
             : RegisteredPartitions.None;
         var bound = source.Resolve(requested, registry);
         var flow = bound.Interface(payload.Argument("interface"));
-
-        // Every operation resolves its references as a run of the same flow and partition does: from the configuration the
-        // control plane supplied with the task for that partition (the partition's own values over the ones set for none),
-        // and only then from the process's environment.
-        var context = _context.WithSuppliedReferences(payload.References ?? System.Collections.ObjectModel.ReadOnlyDictionary<string, string>.Empty);
-        var result = await RunAsync(context, flow, payload, ct).ConfigureAwait(false);
+        var result = await RunAsync(ContextFor(payload), flow, payload, ct).ConfigureAwait(false);
         return JsonSerializer.Serialize(result, JsonOptions);
+    }
+
+    /// <summary>
+    /// The process's services as <paramref name="payload"/>'s operation resolves its references with them, as a run of the
+    /// same flow and partition does: from the configuration the control plane supplied with the task for that partition (the
+    /// partition's own values over the ones set for none), and only then from the process's environment.
+    /// </summary>
+    protected EngineContext ContextFor(ComputeTaskPayload payload)
+    {
+        ArgumentNullException.ThrowIfNull(payload);
+        return _context.WithSuppliedReferences(payload.References ?? System.Collections.ObjectModel.ReadOnlyDictionary<string, string>.Empty);
     }
 
     /// <summary>

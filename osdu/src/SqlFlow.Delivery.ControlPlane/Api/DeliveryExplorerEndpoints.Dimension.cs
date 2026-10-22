@@ -57,7 +57,7 @@ public sealed record DeliveryDimensionComposeDto(
 /// The explorer's dimension builder (osdu/docs/reference/concepts/explorer.md, Building a dimension): what a person
 /// picks from the records OSDU holds, written as the item a dimension flow lists and checked by the same loader and
 /// blueprint a flow's own dimension is. The explorer's own reads show the records a person picks from; here, the keys a
-/// kind's template suggests, the commonest keys of a path (through the connection the explorer reads the partition by),
+/// kind's template suggests, the commonest keys of a path (through the partition's own connection, as the explorer reads it),
 /// and a compose that writes the draft, checks it, and makes one key into its row as a build would. Nothing is saved:
 /// the YAML is the builder's output.
 /// </summary>
@@ -97,8 +97,8 @@ public static partial class DeliveryExplorerEndpoints
 
     /// <summary>The commonest keys of a drafted dimension's path, with the records holding each, which the builder's example steps through.</summary>
     private static async Task<Results<ContentHttpResult, ProblemHttpResult>> DimensionKeysAsync(
-        DeliveryDimensionKeysRequest? body, [FromQuery] string? partition, CatalogDbContext db, DeliveryDocumentLoader documents, IPartitionRegistry partitions,
-        ILedger ledger, DeliveryConfigStore config, DirectOperations direct, IRepositoryFolders folders, ILoggerFactory loggers, HttpRequest request, ClaimsPrincipal user,
+        DeliveryDimensionKeysRequest? body, [FromQuery] string? partition, IPartitionRegistry partitions, ILedger ledger, DeliveryConfigStore config,
+        DirectOperations direct, IRepositoryFolders folders, ILoggerFactory loggers, HttpRequest request, ClaimsPrincipal user,
         CancellationToken ct)
     {
         if (KeysProblem(body) is { } invalid)
@@ -121,14 +121,14 @@ public static partial class DeliveryExplorerEndpoints
 
         var arguments = new Dictionary<string, string>(StringComparer.Ordinal);
         LongArgument.Put(arguments, ExploreOperation.KeysArgument, JsonSerializer.Serialize(keys, ExploreOperation.BuilderJson));
-        return await QueueAsync(ExploreOperation.DimensionKeysAction, arguments, partition, db, documents, partitions, ledger, config, direct, loggers, request, user, ct)
+        return await ExploreAsync(ExploreOperation.DimensionKeysAction, arguments, partition, partitions, config, direct, loggers, request, user, ct)
             .ConfigureAwait(false);
     }
 
     /// <summary>
     /// A drafted dimension written as YAML and checked: by the document loader, as a flow's own item is read, then against the
     /// templates the synced repositories hold as its blueprint describes it, and against the dimensions of the database, whose tables it must not
-    /// share; with one key made into its row through the connection the explorer reads the partition by.
+    /// share; with one key made into its row through the partition's own connection, as the explorer reads it.
     /// </summary>
     private static async Task<Results<Ok<DeliveryDimensionComposeDto>, ProblemHttpResult>> ComposeDimensionAsync(
         DeliveryDimensionComposeRequest? body, [FromQuery] string? partition, CatalogDbContext db, OsduDbContext osdu, DeliveryDocumentLoader documents,
@@ -177,7 +177,7 @@ public static partial class DeliveryExplorerEndpoints
         if (spec is not null && blueprint is not null && !string.IsNullOrEmpty(body.Example))
         {
             (example, exampleProblem) = await ExampleAsync(
-                spec, blueprint, item, body.Example, partition, db, documents, partitions, ledger, config, direct, loggers, request, user, ct).ConfigureAwait(false);
+                spec, blueprint, item, body.Example, partition, partitions, config, direct, loggers, request, user, ct).ConfigureAwait(false);
         }
 
         var distinct = issues.DistinctBy(i => (i.Severity, i.Message, i.Target)).ToList();
@@ -383,21 +383,20 @@ public static partial class DeliveryExplorerEndpoints
     }
 
     /// <summary>
-    /// The example row: <paramref name="key"/> made into its row by the explorer's operation, through the connection that
-    /// reaches the partition, reading the item exactly as written; or why there is none.
+    /// The example row: <paramref name="key"/> made into its row by the explorer's operation, through the partition's own
+    /// connection, reading the item exactly as written; or why there is none.
     /// </summary>
     private static async Task<(DeliveryDimensionExampleDto? Example, string? Problem)> ExampleAsync(
-        DimensionSpec spec, DimensionBlueprint blueprint, string item, string key, string? partition, CatalogDbContext db, DeliveryDocumentLoader documents,
-        IPartitionRegistry partitions, ILedger ledger, DeliveryConfigStore config, DirectOperations direct, ILoggerFactory loggers, HttpRequest request,
-        ClaimsPrincipal user, CancellationToken ct)
+        DimensionSpec spec, DimensionBlueprint blueprint, string item, string key, string? partition, IPartitionRegistry partitions, DeliveryConfigStore config,
+        DirectOperations direct, ILoggerFactory loggers, HttpRequest request, ClaimsPrincipal user, CancellationToken ct)
     {
         if (key.Length > DimensionSpec.MaxOriginalLength)
         {
             return (null, string.Create(CultureInfo.InvariantCulture, $"The example key is longer than the {DimensionSpec.MaxOriginalLength:N0} characters a dimension keeps."));
         }
 
-        var found = await ConnectAsync(db, documents, partitions, ledger, WorkbenchPartition.Named(partition, request), ct).ConfigureAwait(false);
-        if (found.Flow is not { } flow)
+        var found = await ConnectAsync(partitions, config, WorkbenchPartition.Named(partition, request), ct).ConfigureAwait(false);
+        if (found.Configured is not { } configured)
         {
             return (null, found.Reason);
         }
@@ -417,7 +416,7 @@ public static partial class DeliveryExplorerEndpoints
             return (null, ex.Message);
         }
 
-        var answered = await DirectOperationRunner.RunAsync(db, config, direct, flow, ExploreOperation.OperationName, arguments, user, loggers, ct).ConfigureAwait(false);
+        var answered = await DirectOperationRunner.RunOnPartitionAsync(direct, found.Partition!, configured, arguments, user, loggers, ct).ConfigureAwait(false);
         switch (answered.Result)
         {
             case ContentHttpResult { ResponseContent: { } json }:

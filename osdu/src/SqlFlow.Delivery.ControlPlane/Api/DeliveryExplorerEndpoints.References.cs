@@ -31,8 +31,8 @@ public static partial class DeliveryExplorerEndpoints
     /// first ask of a partition starts the pass that reads them, and answers with where it stands until it ends.
     /// </summary>
     private static async Task<Results<ContentHttpResult, ProblemHttpResult>> ReferencedByAsync(
-        DeliveryExplorerReferencesRequest? body, [FromQuery] string? partition, CatalogDbContext db, DeliveryDocumentLoader documents, IPartitionRegistry partitions,
-        ILedger ledger, DeliveryConfigStore config, DirectOperations direct, ILoggerFactory loggers, HttpRequest request, ClaimsPrincipal user, CancellationToken ct)
+        DeliveryExplorerReferencesRequest? body, [FromQuery] string? partition, IPartitionRegistry partitions, DeliveryConfigStore config, DirectOperations direct,
+        ILoggerFactory loggers, HttpRequest request, ClaimsPrincipal user, CancellationToken ct)
     {
         if (ExplorerReferences.EntityTypeOf(body?.Type) is not { } entityType)
         {
@@ -47,6 +47,6 @@ public static partial class DeliveryExplorerEndpoints
             arguments[ExploreOperation.RefreshArgument] = "true";
         }
 
-        return await QueueAsync(ExploreOperation.ReferencedByAction, arguments, partition, db, documents, partitions, ledger, config, direct, loggers, request, user, ct).ConfigureAwait(false);
+        return await ExploreAsync(ExploreOperation.ReferencedByAction, arguments, partition, partitions, config, direct, loggers, request, user, ct).ConfigureAwait(false);
     }
 }

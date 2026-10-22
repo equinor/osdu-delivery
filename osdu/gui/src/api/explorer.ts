@@ -7,15 +7,15 @@ import { get, post } from "@/api/client";
 import { flowPath, type DeliveryDimension, type DeliveryDimensionAttribute, type DeliveryDimensionYaml, type DeliveryFlowScope, type DeliveryOsduRead, type DimensionBlueprint } from "./delivery";
 import { guidanceOf, type AssertionAction, type AssertionStage, type ValidationGuidance, type ValidationVerdict } from "./validation";
 
-/** How the explorer reaches a partition: through which flow's connection, or why nothing does. */
+/**
+ * How the explorer reaches a partition: through the partition's own connection (the platform and client its configuration
+ * names), and where that reaches, or why it cannot be made.
+ */
 export interface ExplorerConnection {
   partition: string | null;
   available: boolean;
-  /** The flow (and interface) whose OSDU connection the explorer reads through. */
-  through: string | null;
-  /** The endpoint that flow names, as its document writes it. */
+  /** The platform's base URL, without credentials or query; a configured reference as written. */
   endpoint: string | null;
-  route: string | null;
   reason: string | null;
 }
 
