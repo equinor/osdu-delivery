@@ -156,9 +156,13 @@ and a link that names a partition (`?partition=`) makes it the title bar's. See 
 
 **Ledger** is what the delivery system sent and keeps; **In OSDU** is what OSDU holds, read live by the explorer or by
 the assertion, inventory and dimension flows; **Build** is what a delivered document is built from; **Setup** is what is
-kept in the GUI rather than in a flow. A click on a section's name folds its entries away or brings them back, as a
-click on **OSDU** does for the whole group, and the browser keeps each section as it was left. The command palette lists
-the same entries, headed `OSDU · Ledger`, `OSDU · In OSDU` and so on, whatever is folded.
+kept in the GUI rather than in a flow. The side bar's menu is a tree, like the catalog's: **OSDU** is a branch beside
+SQLFlow's own groups, each section a branch under it and each entry a leaf under its section, every level indented
+under the one above with a guide line down its side. A click on a section's name folds its entries away or brings them
+back, as a click on **OSDU** does for the whole group, and the browser keeps each section as it was left. The menu is one
+stop for Tab: it lands on the page shown, the arrow keys move through it (left and right fold and unfold a branch), and
+Enter opens an entry's page. The command palette lists the same entries, headed `OSDU · Ledger`, `OSDU · In OSDU` and so
+on, whatever is folded.
 
 ## Ledger
 

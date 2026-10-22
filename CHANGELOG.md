@@ -96,6 +96,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **The sign-in page says what OSDU Delivery is for, and is set on the brand's navy.** In place of four paragraphs of
+  features, it shows the README's pitch in two lines and one sentence, a picture of the kinds of data it delivers
+  (wells, logs, seismic, documents, production data and more) flowing into OSDU, the "powered by SQLFlow" lockup, and the
+  sign-in form, in both themes ([The GUI](osdu/docs/reference/concepts/gui.md)).
+- **The side bar's menu is a tree.** OSDU and the platform's groups are branches, each OSDU section a branch under its
+  group and each entry a leaf under its section, every level indented under the one above with a guide line, and a
+  group's and a section's name the same size as its entries. Tab enters the menu at the page shown, the arrow keys move
+  through it and fold or unfold a branch, and Enter opens a page
+  ([The OSDU menu](osdu/docs/reference/concepts/gui.md#the-osdu-menu)).
 - **The explorer reads a partition through the partition's own connection, and needs no flow.** It signs in with the
   platform and client the deployment names for the partition (`OSDU_URL`, `OSDU_TOKEN_URL`, `OSDU_SCOPE`,
   `OSDU_CLIENT_ID` and `OSDU_CLIENT_SECRET`, from `Osdu:Partitions:<id>:Properties` or the control plane's environment,
@@ -213,6 +222,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Shift+Tab leaves a tree.** In the catalog, a repository's folders, the AI context tables and a template's
+  variables, Shift+Tab from a row sent focus straight back into the tree, so the keyboard could not leave it backwards;
+  it now steps out, and the schema changes tree can be reached with Tab at all
+  ([The OSDU menu](osdu/docs/reference/concepts/gui.md#the-osdu-menu)).
 - **Runs that finish together no longer deadlock in the catalog.** When a schedule's members ended at once, as a set
   of failing assertion flows does, each completion waited on the others and the control plane's log filled with failed
   commands and deadlock victims. Every read on a connection a catalog or ledger write had used also ran serializable,

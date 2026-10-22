@@ -1,6 +1,6 @@
 import {
-  ClipboardList, CloudDownload, DatabaseZap, FileCode2, GitCompare, Layers, LayoutTemplate, ListChecks, Network, PackageCheck, PackageSearch,
-  ScrollText, Shapes, ShieldCheck, Telescope, TextSearch, Workflow,
+  ClipboardList, CloudDownload, DatabaseZap, FileCode2, Layers, LayoutTemplate, ListChecks, Network, PackageCheck, PackageSearch,
+  ScrollText, Shapes, Telescope, TextSearch,
 } from "lucide-react";
 import type { RunSummary } from "@/api/types";
 import type { Column } from "@/components/DataTable";
@@ -410,30 +410,24 @@ export const osduDeliveryModule: GuiModule = {
     productName: "OSDU Delivery",
     attribution: "powered by SQLFlow",
     documentTitle: "OSDU Delivery",
+    // The README's pitch. The streams are kinds the delivery engine delivers (docs/osdu-coverage-plan.md): any kind
+    // through storage, and the bulk data of the wellbore, seismic, production and rock and fluid sample DDMS.
     login: {
-      headline: "Deliver to OSDU with confidence.",
-      tagline: "Publish subsurface records into OSDU, send only what changed, and keep every record traceable from a single control plane.",
-      capabilities: [
-        {
-          icon: Workflow,
-          title: "Flows and mappings as code",
-          body: "Flow documents and the mappings they pin live as YAML in your repository, versioned and reviewed like the rest of your codebase.",
-        },
-        {
-          icon: ScrollText,
-          title: "Every record accounted for",
-          body: "Which source row it came from, every attempt and its outcome, the OSDU id and version it landed as, and who asked for each change.",
-        },
-        {
-          icon: GitCompare,
-          title: "Only what changed",
-          body: "Rendered documents and their payloads are hashed independently, so an unchanged record is skipped and a changed one is re-sent on its own.",
-        },
-        {
-          icon: ShieldCheck,
-          title: "Governed execution",
-          body: "Managed identity, secrets resolved from the vault by reference, and an audited history of every run and intervention.",
-        },
+      headline: "Get any data into OSDU.",
+      headlineAccent: "Configured, not coded.",
+      tagline: "Wells, logs, seismic, production data and more: delivered, kept in sync, and traceable record by record.",
+      streams: [
+        "Wells",
+        "Seismic",
+        "Well logs",
+        "Documents",
+        "Trajectories",
+        "Production",
+        "Wellbores",
+        "Reference data",
+        "Markers",
+        "Pressure tests",
+        "Rock and fluid samples",
       ],
     },
   },

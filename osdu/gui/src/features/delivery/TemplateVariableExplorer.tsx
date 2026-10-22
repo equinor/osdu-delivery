@@ -1,4 +1,4 @@
-import { createContext, useContext, useMemo, useState, type FocusEvent } from "react";
+import { createContext, useContext, useMemo, useState } from "react";
 import {
   Braces,
   Brackets,
@@ -45,7 +45,7 @@ import { GlyphRef } from "@/components/GlyphRef";
 import { IconAction } from "@/components/IconAction";
 import { SearchInput } from "@/components/SearchInput";
 import { StatePill } from "@/components/StatusBadge";
-import { TreeContext, TreeNode, type TreeState } from "@/components/Tree";
+import { TreeNode, TreeRoot, type TreeState } from "@/components/Tree";
 import { usePersistentLayout } from "@/layout/workbench/usePersistentLayout";
 import { assertionLine, assertionText } from "./mappingAssertionText";
 import { entryText, propertyRow } from "./mappingDraft";
@@ -999,15 +999,6 @@ export function TemplateVariableExplorer({ variables, mapping, fill = false }: {
     setClosed(new Set(holds.keys()));
   };
 
-  // The tree takes one tab stop: focus arriving from outside moves to the selected row, or the first row.
-  const enterTree = (event: FocusEvent<HTMLDivElement>) => {
-    if (event.target !== event.currentTarget || event.currentTarget.contains(event.relatedTarget)) {
-      return;
-    }
-    const rows = [...event.currentTarget.querySelectorAll<HTMLElement>("[data-tree-row]")];
-    (rows.find((row) => row.getAttribute("aria-selected") === "true") ?? rows[0])?.focus();
-  };
-
   const selected = selectedId === null ? undefined : byPath.get(selectedId);
   // A search in a narrower view says how many more attributes it finds in the whole template, a click away.
   const elsewhere = lens !== null && lens !== "all" && lensCounts !== null && term !== "" ? lensCounts.all - tree.matched : 0;
@@ -1063,38 +1054,29 @@ export function TemplateVariableExplorer({ variables, mapping, fill = false }: {
           <ResizablePanelGroup orientation="horizontal" defaultLayout={layout.defaultLayout} onLayoutChanged={layout.onLayoutChanged}>
             {/* The properties side gets the larger share: a variable's description is the longest thing either side shows. */}
             <ResizablePanel id="template-variables-tree" defaultSize="45" minSize="30">
-              <div
-                role="tree"
-                aria-label="Variables"
-                tabIndex={0}
-                onFocus={enterTree}
-                className="h-full overflow-y-auto overflow-x-hidden p-1 focus:outline-none"
-                data-testid="templates-view-variables-tree"
-              >
-                <TreeContext.Provider value={treeState}>
-                  {tree.roots.length === 0
-                    ? (
-                      <p className="px-2 py-3 text-[13px] text-muted-foreground" data-testid="templates-view-variables-empty">
-                        {lens === "failing" && term === ""
-                          ? "No attribute checked has rows that fail this way."
-                          : lens === "missing" && term === ""
-                            ? "Nothing the schema requires of this record is missing: every required variable the record reaches is filled on every row."
-                            : "No variable matches the filter."}
-                      </p>
-                    )
-                    : tree.roots.map((node) => <VariableBranch key={node.variable.path} node={node} />)}
-                  {elsewhere > 0 && (
-                    <button
-                      type="button"
-                      onClick={() => chooseLens("all")}
-                      className="mx-2 my-2 text-left text-[12px] text-primary hover:underline"
-                      data-testid="templates-view-search-all"
-                    >
-                      {`${elsewhere} more ${elsewhere === 1 ? "attribute matches" : "attributes match"} in the whole template`}
-                    </button>
-                  )}
-                </TreeContext.Provider>
-              </div>
+              <TreeRoot label="Variables" state={treeState} className="h-full overflow-y-auto overflow-x-hidden p-1" testId="templates-view-variables-tree">
+                {tree.roots.length === 0
+                  ? (
+                    <p className="px-2 py-3 text-[13px] text-muted-foreground" data-testid="templates-view-variables-empty">
+                      {lens === "failing" && term === ""
+                        ? "No attribute checked has rows that fail this way."
+                        : lens === "missing" && term === ""
+                          ? "Nothing the schema requires of this record is missing: every required variable the record reaches is filled on every row."
+                          : "No variable matches the filter."}
+                    </p>
+                  )
+                  : tree.roots.map((node) => <VariableBranch key={node.variable.path} node={node} />)}
+                {elsewhere > 0 && (
+                  <button
+                    type="button"
+                    onClick={() => chooseLens("all")}
+                    className="mx-2 my-2 text-left text-[12px] text-primary hover:underline"
+                    data-testid="templates-view-search-all"
+                  >
+                    {`${elsewhere} more ${elsewhere === 1 ? "attribute matches" : "attributes match"} in the whole template`}
+                  </button>
+                )}
+              </TreeRoot>
             </ResizablePanel>
             <ResizableHandle withHandle />
             <ResizablePanel id="template-variables-properties" defaultSize="55" minSize="30">
