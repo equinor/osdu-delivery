@@ -246,6 +246,13 @@ export interface DeliveryRecord {
   parentVersion?: number | null;
   /** The version of the parent the queued document was rendered from. */
   pendingParentVersion?: number | null;
+  /**
+   * While the record is held because OSDU already holds a record at the OSDU id its key makes, which no ledger claimed
+   * (another system wrote it, or a ledger this database does not hold): that id, which an adoption makes the record's.
+   */
+  occupiedTargetId?: string | null;
+  /** The version OSDU held at `occupiedTargetId` when the record was held for it. */
+  occupiedTargetVersion?: number | null;
 }
 
 /** An OSDU id a record's pending document refers to, and the property of the record holding it. */
@@ -354,6 +361,11 @@ export interface DeliveryAttemptResult {
   settled?: boolean;
   /** For an undo (outcome `undone`, phase `undo`): why it ran and what became of each artifact it took. */
   undo?: DeliveryUndoResult;
+  /**
+   * For an adoption (phase `adopt`): the OSDU id the record claimed, where OSDU already held a record no ledger had
+   * claimed, and the version OSDU held there.
+   */
+  adopted?: { targetId: string; version?: number };
   /**
    * What the check before sending found of the document (osdu/docs/reference/concepts/preflight.md, Validation before a
    * record is sent), what the mapping's assertions found among it; read it with `verdictIn`, which answers null for a
@@ -926,6 +938,20 @@ export interface DeliveryIssueDetail {
 export interface DeliveryIssueReleaseResult {
   issue: string;
   released: number;
+  runId: string | null;
+}
+
+/** What adopting one record did: the OSDU id it claimed, the version OSDU held there, and the run queued when asked to. */
+export interface DeliveryRecordAdoptResult {
+  targetId: string;
+  version?: number | null;
+  runId?: string | null;
+}
+
+/** What adopting an issue's records did: how many it adopted, and the deliver run it queued when asked to. */
+export interface DeliveryIssueAdoptResult {
+  issue: string;
+  adopted: number;
   runId: string | null;
 }
 
@@ -3912,6 +3938,15 @@ export const deliveryApi = {
   /** Releases every record an issue keeps blocked; with `run`, also queues a deliver run of the flow. */
   releaseIssue: (pipelineId: string, issue: string, run: boolean, scope?: DeliveryFlowScope) =>
     post<DeliveryIssueReleaseResult>(flowPath(pipelineId, `/issues/${encodeURIComponent(issue)}/release`, scope), { run }),
+  /**
+   * Adopts the record OSDU already holds at the id a held record's key makes: the record claims the id at the version
+   * OSDU held, and the next run writes it there. With `run`, a deliver run scoped to the record is queued at once.
+   */
+  adopt: (record: DeliveryRecordRef, run = false) =>
+    post<DeliveryRecordAdoptResult>(`${recordApiPath(record)}/adopt`, run ? { run: true } : undefined),
+  /** Adopts what OSDU holds for every record an issue keeps held, the partition typed back as `confirm`. */
+  adoptIssue: (pipelineId: string, issue: string, confirm: string, run: boolean, scope?: DeliveryFlowScope) =>
+    post<DeliveryIssueAdoptResult>(flowPath(pipelineId, `/issues/${encodeURIComponent(issue)}/adopt`, scope), { confirm, run }),
   /** Queues a verify run scoped to this record. */
   verify: (record: DeliveryRecordRef) => post<DeliveryRunAccepted>(`${recordApiPath(record)}/verify`),
   /**

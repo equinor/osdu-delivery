@@ -527,11 +527,14 @@ public class ProtocolTests
     [Fact]
     public async Task A_record_write_asks_storage_to_skip_duplicates_only_when_the_flow_opts_in()
     {
-        // Opted in, skipdupes is sent, and a record the service names under skippedRecordIds settles on the version
-        // the ledger already held. By default it is not sent: the spec does not say what the service compares, and an
-        // envelope-only change must never be skipped while the ledger records it as delivered.
+        // Opted in, skipdupes is sent. A record the service names under skippedRecordIds has no version in the answer, so
+        // the route reads the version storage holds, which another writer may have moved since the ledger knew it. By
+        // default it is not sent: the spec does not say what the service compares, and an envelope-only change must never
+        // be skipped while the ledger records it as delivered.
+        const string skippedAnswer = """{"recordIdVersions":[],"skippedRecordIds":["dev:work-product-component--WellLog:abc"]}""";
         var handler = new FakeHttpHandler()
-            .On(HttpMethod.Put, "/records", HttpStatusCode.Created, """{"recordIdVersions":[],"skippedRecordIds":["dev:work-product-component--WellLog:abc"]}""");
+            .On(HttpMethod.Put, "/records", HttpStatusCode.Created, skippedAnswer)
+            .On(HttpMethod.Post, "/query/records", HttpStatusCode.OK, """{"records":[{"id":"dev:work-product-component--WellLog:abc","version":6}],"invalidRecords":[],"retryRecords":[]}""");
         var (client, _, runtime) = Client(handler);
         using (runtime)
         {
@@ -539,10 +542,24 @@ public class ProtocolTests
             var outcome = await protocol.DeliverAsync(Work(true, false, 0, existing: 4));
 
             Assert.True(outcome.MetadataDelivered);
-            Assert.Equal(4, outcome.TargetVersion);
+            Assert.Equal(6, outcome.TargetVersion);
             Assert.Equal("true", outcome.Returned["skipped"]);
-            Assert.Contains("unchanged at the target", outcome.Detail, StringComparison.Ordinal);
-            Assert.Contains("skipdupes=true", handler.Calls.Single().Uri.Query, StringComparison.Ordinal);
+            Assert.Equal("unchanged at the target", outcome.Detail);
+            Assert.Contains("skipdupes=true", Assert.Single(handler.Calls, c => c.Method == HttpMethod.Put).Uri.Query, StringComparison.Ordinal);
+            Assert.Single(handler.Calls, c => c.Method == HttpMethod.Post);
+        }
+
+        // A read that fails keeps the version the ledger knew, and the outcome says so.
+        var unread = new FakeHttpHandler()
+            .On(HttpMethod.Put, "/records", HttpStatusCode.Created, skippedAnswer)
+            .On(HttpMethod.Post, "/query/records", HttpStatusCode.InternalServerError, """{"code":500,"reason":"Server error"}""");
+        var (client3, _, runtime3) = Client(unread);
+        using (runtime3)
+        {
+            var outcome = await new OsduRecordProtocol(client3, new ProtocolOptions { SkipDuplicates = true }).DeliverAsync(Work(true, false, 0, existing: 4));
+            Assert.Equal(4, outcome.TargetVersion);
+            Assert.Contains("unchanged at the target; the version OSDU holds could not be read (", outcome.Detail, StringComparison.Ordinal);
+            Assert.EndsWith("so the version the ledger knew stands", outcome.Detail, StringComparison.Ordinal);
         }
 
         var plain = new FakeHttpHandler()

@@ -160,7 +160,8 @@ internal static partial class SqlServerLedgerBulk
     // record again that the plan read (SeenPlanRequestedUtc), so that request is cleared; one made after the plan read the
     // record (an operator's release or redelivery, a cache rollout, while the run planned) stays for the next run, and with
     // no request read, nothing is cleared. Work that is not a plan's (AnswersAnyRequest) answers whatever request the record
-    // carries. It claims the record's OSDU id for its flow the first time it queues a document. A record
+    // carries. It claims the record's OSDU id for its flow the first time it queues a document, and the id OSDU held a
+    // record at that an earlier hold named for adoption is no longer the record's to adopt. A record
     // another staging inserted after the slice looked is never overwritten here: the insert fails on the table's key,
     // and the slice runs again and finds it.
     private const string PendingWriteSql = $$"""
@@ -169,6 +170,7 @@ internal static partial class SqlServerLedgerBulk
                 [SourceKey] = s.[SourceKey], [SourceKeyJson] = COALESCE(s.[SourceKeyJson], t.[SourceKeyJson]), [Label] = s.[Label], [MappingName] = s.[MappingName],
                 [TargetId] = COALESCE(s.[TargetId], t.[TargetId]),
                 [ClaimedTargetId] = COALESCE(t.[ClaimedTargetId], s.[TargetId] COLLATE Latin1_General_100_BIN2),
+                [OccupiedTargetId] = NULL, [OccupiedTargetVersion] = NULL,
                 [LastSubmissionId] = s.[LastSubmissionId], [NextAttemptUtc] = NULL,
                 [Status] = CASE WHEN f.[InFlight] = 1 THEN t.[Status] ELSE N'pending' END,
                 [AttemptCount] = CASE WHEN f.[InFlight] = 1 THEN t.[AttemptCount] ELSE 0 END,

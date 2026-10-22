@@ -45,7 +45,7 @@ The row is never pruned. Its captured run log is cleared by age once the activit
 | `ActivityId` | `bigint` identity | no | The activity's id, unique on its own: what the audit trail numbers an entry by. |
 | `FlowId` | `uniqueidentifier` | no | The ledger identity of the flow the activity concerned. |
 | `FlowName` | `nvarchar(200)` | no | The flow's name. |
-| `Kind` | `nvarchar(32)` | no | What it was. Runs: `deliver`, `intake`, `drain`, `verify`, `sync`, `undo`, `reverse`, `delete-ledger` and `probe`. Interventions: `release`, `redeliver`, `rerender`, `delete`, `restore-previous`, `purge`, `remove-dimension`, `inventory-remove`, `inventory-repair` and `reassign-id`. |
+| `Kind` | `nvarchar(32)` | no | What it was. Runs: `deliver`, `intake`, `drain`, `verify`, `sync`, `undo`, `reverse`, `delete-ledger` and `probe`. Interventions: `release`, `adopt`, `redeliver`, `rerender`, `delete`, `restore-previous`, `purge`, `remove-dimension`, `inventory-remove`, `inventory-repair` and `reassign-id`. |
 | `Actor` | `nvarchar(200)` | no | Who asked: for a run, who asked for it or `schedule:<name>`; `user:<name>` for an intervention from the GUI or the API, `cli:<user>@<machine>` from a workstation, `service:schedule` for a scheduled probe ([Authentication and identity](../concepts/authentication-and-identity.md)). |
 | `StartedUtc` | `datetime2` | no | When it started. |
 | `CompletedUtc` | `datetime2` | yes | When it ended; null while it runs. |

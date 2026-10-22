@@ -193,7 +193,7 @@ lookup is a link.
 
 Every run and intervention across flows, newest first: when, flow, partition, **Action**, **By** (a schedule, a person,
 the command line), **Result** and **Target** (the record, else the submission, else the run). It narrows by actor, flow,
-action (`deliver`, `intake`, `drain`, `verify`, `probe`, `sync`, `release`, `redeliver`, `rerender`, `delete`,
+action (`deliver`, `intake`, `drain`, `verify`, `probe`, `sync`, `release`, `adopt`, `redeliver`, `rerender`, `delete`,
 `restore-previous`, `purge`, `reverse`, `undo`, `delete-ledger`, `remove-dimension`, `inventory-remove`, `inventory-repair`,
 `reassign-id`) and outcome. Runs
 that changed nothing are left out until **Show idle runs**. An entry opens on its ids, **Parameters**, its captured
@@ -219,6 +219,7 @@ records waiting on this one). Its buttons:
 | **Verify** | queues a verify run for this record, comparing what OSDU holds with the ledger |
 | **Redeliver** | brings the record up to date from its current row, or sends it again (the Redeliver dialog, opening on **Send again** for a record that is not delivered) |
 | **Release** | while blocked, or held with nothing to move it: a kept document is sent as it is, otherwise the next run plans the record from its row |
+| **Adopt** | while held because OSDU already holds a record at the id the record's key makes, written by another system or another instance of the delivery: asks first, then the record claims that OSDU record at the version OSDU held, and the next run writes the row there; it can queue a deliver run scoped to the record at once ([Adopting a record OSDU already holds](record-lifecycle.md#adopting-a-record-osdu-already-holds)). The timeline shows the adoption as its own step, naming the id and the version |
 | **Send without waiting** | while waiting: sends it on its next claim without waiting for the record it refers to |
 | **Remove** | opens the removal dialog for this record |
 
@@ -291,7 +292,9 @@ partitions is read in the title bar's partition.
 - **Issues**: the blocked records grouped by the issue that keeps them blocked, each a **Set error** or **Row errors**,
   with its records and when it last changed. The issue picked shows samples, each with **Check** (opens it on its Render
   tab) and **Try** (releases it alone and queues a deliver run), the files its records came from, **Records** (the
-  Records tab narrowed to it) and **Release N**, which can queue a deliver run straight after.
+  Records tab narrowed to it) and **Release N**, which can queue a deliver run straight after. An issue of records held
+  because OSDU already holds a record at the ids their keys make also offers **Adopt N**, which adopts every record of it
+  once the partition is typed back, and can queue a deliver run straight after.
 - **Submissions**: every submission with what it read and its counts; a row opens its page.
 - **Preview**: **Preview a record** renders one record exactly as a delivery would and sends nothing: the first record of
   the scope, or the one a key names, with a field for each parameter the flow declares. The answer shows what the next run

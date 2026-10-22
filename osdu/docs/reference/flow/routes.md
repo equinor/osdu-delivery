@@ -45,6 +45,7 @@ sourceRefs:
   - osdu/src/SqlFlow.Delivery/Engine/Reversals/ReversalRoute.cs
   - osdu/src/SqlFlow.Delivery/Engine/Protocols/ProtocolFactory.cs
   - osdu/src/SqlFlow.Delivery/Engine/Protocols/OsduRecordProtocol.cs
+  - osdu/src/SqlFlow.Delivery/Engine/Protocols/OwnedContent.cs
   - osdu/src/SqlFlow.Delivery/Engine/Protocols/OsduFileProtocol.cs
   - osdu/src/SqlFlow.Delivery/Engine/Protocols/FileUploads.cs
   - osdu/src/SqlFlow.Delivery/Engine/Protocols/OsduDatasetProtocol.cs
@@ -197,9 +198,24 @@ only itself.
 
 An update of a record that carries preserved keys reads the stored record first and copies those keys in. A connected
 source data job of External Data Services always carries the run state EDS writes on it (`LastSuccessfulRunDateUTC`,
-`FailedRecords`, `CreateTimeMax`; see [DDMS shapes and services](ddms-services.md#external-data-services)). A write that carried any such key records
-the hash of the content the flow owns (`ownedContent.hash`), so a verify that finds a newer version whose only change is
-in those keys reports a match, not drift.
+`FailedRecords`, `CreateTimeMax`; see [DDMS shapes and services](ddms-services.md#external-data-services)).
+
+Storage keeps what this route writes, so every write records the hash of the content the flow owns (`ownedContent.hash`,
+leaving out the preserved keys it carried, listed in `ownedContent.excluded`). A verify that finds a newer version reads the
+record and reports a match, not drift, when only those keys changed, or when the content is what the flow wrote: another
+writer wrote the same record again, such as another instance of the delivery linked to it
+([Adopting a record OSDU already holds](../concepts/record-lifecycle.md#adopting-a-record-osdu-already-holds)). A record a
+delivery before module 1.56.0 wrote without carrying keys has no hash until its next write, and its verify compares versions
+alone.
+
+With `skipDuplicates`, storage names no version for a record it skips as unchanged (osdu/specs/core/INTEGRATION.md
+section 2.2), and the version it holds may be newer than the one the ledger knew, written by another writer. The route
+reads the versions of the skipped records after the write, 100 ids a request, and records the version each stands at; a
+read that fails keeps the version the ledger knew, and the attempt's note says so. A skipped record storage does not serve
+is one it holds soft-deleted, which a skipped write leaves deleted: the route brings it back under its id (`PATCH` on the
+verify path, `{"deleted": false}`, step `restore`) at the version it had. One it cannot bring back is not delivered: a
+403 holds it (the flow's credentials are no owner of the record), and a record storage holds no trace of any more is tried
+again, which writes it under its id.
 
 The `storage` route makes one atomic write per record, so it declares nothing to undo. A reversal can write an earlier
 version of its records back.

@@ -3,7 +3,7 @@ import { Link as RouterLink } from "react-router-dom";
 import { format, formatDistanceToNow } from "date-fns";
 import {
   ArchiveRestore, CheckCircle2, ChevronRight, CircleDashed, CircleDot, Database, DatabaseZap, Eraser, FileInput, FilePen,
-  FileQuestion, FileX2, Hourglass, Layers, PauseCircle, RefreshCw, ScanSearch, ShieldCheck, Trash2, Undo2, XCircle,
+  FileQuestion, FileX2, Hourglass, Layers, Link2, PauseCircle, RefreshCw, ScanSearch, ShieldCheck, Trash2, Undo2, XCircle,
   type LucideIcon,
 } from "lucide-react";
 import { Card } from "@/components/ui/card";
@@ -670,6 +670,18 @@ function attemptShape(attempt: DeliveryAttempt, refusal: Refusal | null, reached
       };
   }
 
+  // An operator adopted the record OSDU already held at the id the record's key makes, written by another system or
+  // another instance of the delivery: the record claims it, and the next run writes the row there. Nothing was sent.
+  if (attempt.phase === "adopt") {
+    return {
+      title: "Adopted the record OSDU already held",
+      tone: "info",
+      icon: Link2,
+      then: { text: "The next deliver run writes this row there.", tone: "muted" },
+      outcome: null,
+    };
+  }
+
   // An operator took the latest version out of being current: the version before it written back as a new version.
   if (attempt.phase === "restore-previous" && attempt.outcome === "restored") {
     return {
@@ -768,6 +780,7 @@ function attemptEntry(attempt: DeliveryAttempt): Entry {
   const lane: Lane = attempt.phase === "source-missing" ? "source" : reached ? "osdu" : "ledger";
   const request = refusal?.method != null && refusal.url !== null ? `${refusal.method} ${urlPath(refusal.url)}` : null;
   const version = attempt.targetVersion !== null && attempt.outcome === "delivered" ? attempt.targetVersion : null;
+  const adopted = attempt.phase === "adopt" ? attempt.result?.adopted : undefined;
   return {
     ...entryDefaults(),
     id: `attempt-${attempt.attemptId}`,
@@ -786,6 +799,9 @@ function attemptEntry(attempt: DeliveryAttempt): Entry {
         <SubmissionRef key="s" submissionId={attempt.submissionId} />,
       ]
       : [
+        // What an adoption took over: the OSDU id and the version OSDU held there.
+        adopted !== undefined && <RecordName key="a" id={adopted.targetId} className="max-w-[320px]" />,
+        adopted?.version != null && <Mono key="av">{`version ${adopted.version}`}</Mono>,
         attempt.sourceFileName !== null && <Origin key="o" file={attempt.sourceFileName} row={attempt.sourceRowNumber} />,
         verdict !== null && verdictFact(verdict),
         <RunRef key="r" runId={attempt.runId} />,
@@ -919,13 +935,13 @@ interface Reach {
 
 function reachOf(activity: DeliveryActivity, parameters: Record<string, unknown> | null): Reach | null {
   const keys = parameters?.keys;
-  if ((activity.kind !== "release" && activity.kind !== "redeliver" && activity.kind !== "rerender")
+  if ((activity.kind !== "release" && activity.kind !== "adopt" && activity.kind !== "redeliver" && activity.kind !== "rerender")
     || activity.deliveryKey !== null || (Array.isArray(keys) && keys.length > 0) || typeof parameters?.count === "number") {
     return null;
   }
 
-  // "released 1,204 record(s) ...", or "marked every delivered record, 1204 in all, for redelivery of ...".
-  const reached = /^released (\d+) record|, (\d+) in all,/.exec(activity.summary ?? "");
+  // "released 1,204 record(s) ...", "adopted 1204 record(s) ...", or "marked every delivered record, 1204 in all, for redelivery of ...".
+  const reached = /^(?:released|adopted) (\d+) record|, (\d+) in all,/.exec(activity.summary ?? "");
   const said = reached?.[1] ?? reached?.[2];
   const count = said === undefined ? null : Number(said);
   if (activity.kind === "rerender") {
@@ -949,6 +965,15 @@ function reachOf(activity: DeliveryActivity, parameters: Record<string, unknown>
   }
 
   const records = count === null ? "the records" : `${count.toLocaleString()} record${count === 1 ? "" : "s"}`;
+  // An adoption that names no record is always one issue's: OSDU holding a record at the ids its records' keys make.
+  if (activity.kind === "adopt") {
+    return {
+      title: `Adoption asked for ${records} one issue kept held, this one among them`,
+      count,
+      pattern: typeof parameters?.pattern === "string" ? parameters.pattern : null,
+    };
+  }
+
   // A release of one issue's records names the issue (under "problem" in what the first releases wrote).
   if (typeof (parameters?.issue ?? parameters?.problem) === "string") {
     return {
@@ -995,6 +1020,7 @@ const REQUESTS: Partial<Record<string, { one: string; many: (count: number) => s
     button: "Bring up to date",
   },
   release: { one: "Release of this record asked", many: (count) => `Release asked for ${count} records, this one among them`, button: "Release" },
+  adopt: { one: "Adoption of this record asked", many: (count) => `Adoption asked for ${count} records, this one among them`, button: "Adopt" },
   delete: { one: "Removal of this record asked", many: (count) => `Removal asked for ${count} records, this one among them`, button: "Remove" },
   "restore-previous": {
     one: "Restoring the previous version of this record asked",
@@ -1162,7 +1188,11 @@ function verifiedEntry(record: DeliveryRecord, at: string): Entry {
  * or being sent, a wait on a record it refers to): what the latest chapter says when nothing in it has settled yet, or
  * when something since has set the record going again.
  */
-function standingOf(record: DeliveryRecord): { outcome: Outcome; inFlight: boolean } {
+/**
+ * Where the record stands now. `adopted` says its newest attempt is an adoption, so a record asked to be planned with no
+ * document kept is one that claimed the record OSDU already held and waits for its first write there.
+ */
+function standingOf(record: DeliveryRecord, adopted: boolean): { outcome: Outcome; inFlight: boolean } {
   switch (record.status) {
     case "delivered":
       return { outcome: { text: "Delivered", tone: "success" }, inFlight: false };
@@ -1178,7 +1208,7 @@ function standingOf(record: DeliveryRecord): { outcome: Outcome; inFlight: boole
     case "failed":
       // Released (or asked to be planned again) with no document kept: the next run plans it from its row.
       if (!record.blocked && !record.hasPendingDocument && record.planRequestedUtc !== null) {
-        return { outcome: { text: "Released: waiting for the next run", tone: "info" }, inFlight: true };
+        return { outcome: { text: adopted ? "Adopted: waiting for the next run" : "Released: waiting for the next run", tone: "info" }, inFlight: true };
       }
 
       return record.status === "held"
@@ -1258,7 +1288,11 @@ function buildStory(
   });
 
   const chapters: Chapter[] = [];
-  const standing = standingOf(record);
+  // An adoption as the record's newest attempt is what it waits on.
+  const newest = attempts.reduce<DeliveryAttempt | undefined>(
+    (latest, attempt) => latest === undefined || parseUtc(attempt.startedUtc).getTime() > parseUtc(latest.startedUtc).getTime() ? attempt : latest,
+    undefined);
+  const standing = standingOf(record, newest?.phase === "adopt");
   for (const entry of foldRepeats(entries)) {
     const current = chapters.at(-1);
     const onlyTriggers = current !== undefined && current.entries.every((e) => e.trigger !== null);

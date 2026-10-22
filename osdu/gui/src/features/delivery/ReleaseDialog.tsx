@@ -11,16 +11,18 @@ import { Label } from "@/components/ui/label";
 export const PLANNED_PER_PASS = 5000;
 
 /**
- * The confirmation of a release of many records, with the choice of a deliver run straight after: the one release dialog,
- * for a flow's blocked records and for an issue's. While the release runs it cannot be dismissed.
+ * The confirmation of a release or an adoption of records, with the choice of a deliver run straight after: the one
+ * dialog for a flow's blocked records, an issue's, and a held record's adoption. While it runs it cannot be dismissed.
  */
-export function ReleaseDialog({ open, title, message, confirmLabel, busy, children, testId, onConfirm, onClose }: {
+export function ReleaseDialog({ open, title, message, confirmLabel, busy, confirmDisabled = false, children, testId, onConfirm, onClose }: {
   open: boolean;
   title: string;
   message: string;
   confirmLabel: string;
   busy: boolean;
-  /** What else the dialog shows above the run choice (the issue's error, a warning). */
+  /** Keeps the confirm button off until what `children` asks for is given (a partition typed back). */
+  confirmDisabled?: boolean;
+  /** What else the dialog shows above the run choice (the issue's error, a warning, a partition to type back). */
   children?: ReactNode;
   testId: string;
   onConfirm: (run: boolean) => void;
@@ -50,7 +52,7 @@ export function ReleaseDialog({ open, title, message, confirmLabel, busy, childr
           <Button variant="ghost" size="sm" onClick={onClose} disabled={busy} data-testid={`${testId}-cancel`}>
             Cancel
           </Button>
-          <Button size="sm" onClick={() => onConfirm(run)} disabled={busy} data-testid={`${testId}-confirm`}>
+          <Button size="sm" onClick={() => onConfirm(run)} disabled={busy || confirmDisabled} data-testid={`${testId}-confirm`}>
             {busy && <Loader2 className="animate-spin" />}
             {confirmLabel}
           </Button>

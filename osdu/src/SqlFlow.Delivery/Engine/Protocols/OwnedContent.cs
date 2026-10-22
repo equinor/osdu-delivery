@@ -129,6 +129,22 @@ internal static class OwnedContent
         }
     }
 
+    /// <summary>
+    /// Puts the hash of <paramref name="written"/> on the values a plain storage write returns, whether or not it carries keys
+    /// forward: storage keeps what such a write sends (openapi storage v2, PUT /records), so the hash always stands. With it,
+    /// a verify that finds a newer version reads the record and tells a write of the same content by another writer (another
+    /// instance of the delivery linked to the record, osdu/docs/reference/concepts/record-lifecycle.md, Adopting a record
+    /// OSDU already holds) from a change to what the flow delivered.
+    /// </summary>
+    public static void RecordWritten(IDictionary<string, string> returned, JsonObject written, IReadOnlyList<string> preserved)
+    {
+        ArgumentNullException.ThrowIfNull(returned);
+        ArgumentNullException.ThrowIfNull(written);
+        ArgumentNullException.ThrowIfNull(preserved);
+        returned[HashValue] = Hash(written, preserved);
+        returned[ExcludedValue] = new JsonArray(preserved.Select(k => (JsonNode?)JsonValue.Create(k)).ToArray()).ToJsonString();
+    }
+
     /// <summary>The hash a delivery recorded and the keys it left out, or null when the state records none (or cannot be read).</summary>
     public static (string Hash, IReadOnlyList<string> Excluded)? Recorded(IReadOnlyDictionary<string, string>? state)
     {

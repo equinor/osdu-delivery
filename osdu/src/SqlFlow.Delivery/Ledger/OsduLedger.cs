@@ -920,6 +920,11 @@ public sealed partial class OsduLedger : ILedger
                 {
                     entity.TargetId = claims.Contains(targetId) ? null : targetId;
                 }
+
+                // The id OSDU already holds a record at, for a record held because of it, is what an adoption claims; any
+                // other hold, and a record that claimed an id, has none. The intake asks OSDU only of ids no record claimed.
+                entity.OccupiedTargetId = entity.ClaimedTargetId is null ? record.OccupiedTargetId : null;
+                entity.OccupiedTargetVersion = entity.OccupiedTargetId is null ? null : record.OccupiedTargetVersion;
                 // A request to plan the record again made after the plan read it, which did not move the record (a sync that
                 // found its row changed), is kept: the record is held unblocked, so the next run plans it under that request.
                 var asked = record.Basis is { } basis && entity.PlanRequestedUtc is { } requested && requested != basis.PlanRequestedUtc
@@ -3969,6 +3974,8 @@ public sealed partial class OsduLedger : ILedger
         TargetId = r.TargetId,
         ClaimedTargetId = r.ClaimedTargetId,
         TargetIdAssignedUtc = r.TargetIdAssignedUtc is { } assigned ? DateTime.SpecifyKind(assigned, DateTimeKind.Utc) : null,
+        OccupiedTargetId = r.OccupiedTargetId,
+        OccupiedTargetVersion = r.OccupiedTargetVersion,
         TargetVersion = r.TargetVersion,
         Status = StatusText.ToRecordStatus(r.Status),
         LastDeliveredUtc = r.LastDeliveredUtc,

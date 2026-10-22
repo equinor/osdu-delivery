@@ -18,6 +18,12 @@ keywords:
   - attempt phase
   - reliability.retry
   - skipStatusCodes
+  - adopt
+  - adopt a record osdu already holds
+  - occupied id
+  - business key already in osdu
+  - another instance
+  - linked instances
 related:
   - delivery-concept-ledger
   - delivery-concept-submissions
@@ -36,6 +42,10 @@ sourceRefs:
   - osdu/src/SqlFlow.Delivery/Ledger/OsduLedger.Waits.cs
   - osdu/src/SqlFlow.Delivery/Ledger/OsduLedger.Parents.cs
   - osdu/src/SqlFlow.Delivery/Ledger/OsduLedger.Problems.cs
+  - osdu/src/SqlFlow.Delivery/Ledger/OsduLedger.Adoptions.cs
+  - osdu/src/SqlFlow.Delivery/Engine/Intake/SubmissionIntake.cs
+  - osdu/src/SqlFlow.Delivery/Engine/Protocols/OsduRecordProtocol.cs
+  - osdu/src/SqlFlow.Delivery.ControlPlane/Api/DeliveryEndpoints.cs
   - osdu/src/SqlFlow.Delivery/Ledger/SqlServerLedgerBulk.cs
   - osdu/src/SqlFlow.Delivery/Ledger/SqlServerLedgerBulk.Problems.cs
   - osdu/src/SqlFlow.Delivery/Ledger/ProblemSignature.cs
@@ -170,6 +180,7 @@ OSDU answered and the correlation id every request carried ([The delivery ledger
 | `delete`, `purge-history` | A removal at the `record` or `everything` scope, or at the `history` scope. |
 | `restore-previous` | An operator stepped the record back to the version before the latest. |
 | `reassign-id` | An operator gave the record a new OSDU id because OSDU lost the one it claimed; its result names both (outcome `skipped`). |
+| `adopt` | An operator adopted the record OSDU already held at the id the record's key makes; its result names the id and the version OSDU held (outcome `skipped`). See [Adopting a record OSDU already holds](#adopting-a-record-osdu-already-holds). |
 | `reverse` | What a reversal did to the record. |
 | `undo` | An undo of an unfinished delivery, naming each object it took back. |
 
@@ -301,6 +312,51 @@ release: when the parent lands through the ledger, delivered by any flow of the 
 a `release` activity whose actor is `parent`, and its flow's next run renders it from the parent
 ([mapping $parent](../flow/mapping-parent.md#when-the-parent-changes)).
 
+## Adopting a record OSDU already holds
+
+A mapping that makes its OSDU ids from the key's values (`dataset.idFrom: key`, [mapping](../flow/mapping.md)) makes the
+same id from the same business key whoever renders it. Before a record claims such an id for the first time, the intake
+asks OSDU whether a record is there already. When OSDU holds one and no record of the ledger claimed it, another system
+wrote it, or another instance of the delivery whose ledger this database does not hold (an earlier deployment, a second
+environment delivering to the same partition). The row's business key is in the ingestion table and its record is in OSDU,
+but nothing is sent: writing to the id would make a new version of a record no ledger owns. The record is held, saying
+`OSDU already holds a record at <id> at version <n>, the OSDU id made from the key, and no record of the ledger claimed it: ...`,
+and the hold keeps that id and version on the record (`osdu.Record.OccupiedTargetId` and `OccupiedTargetVersion`,
+migration `RecordOccupiedTargetId`, module version 1.56.0). A hold for any other reason, and one where OSDU could not say,
+keeps neither.
+
+An operator who knows the OSDU record is this row's adopts it: the ledger then maintains it as one of its own records.
+
+| The record | After the adoption |
+| --- | --- |
+| Held for an id OSDU holds, claiming none, no delivery holding it | Claims the id (`ClaimedTargetId`, its `TargetId` too) at the version OSDU held (`TargetVersion`), unblocked and asked to be planned again, with the note `adopted by <who>: the record claims <id>, ...`. Its history gets an attempt, outcome `skipped`, phase `adopt`, naming the id and the version, and the adoption is an `adopt` activity naming every record it adopted. |
+| Held for an id another record of any ledger of the database claimed since the hold | Left as it is: the id is that record's. Of two records of one adoption held for the same id, the first in key order takes it. |
+| Held for anything else, or claiming an id already | Left as it is; the API answers 409 for a record named alone, saying why. |
+
+The flow's next deliver run reads the adopted record by key and writes its row to the id it claimed, as an update of the
+record OSDU holds: the write carries forward the data keys OSDU keeps of a record (`preserveDataKeys`), since the ledger
+knows the version it took over, and with `target.protocolOptions.skipDuplicates` OSDU writes no version when the row renders what the
+record already holds, and the record lands at the version OSDU holds. From then on the record is one of the ledger's: its
+later changes are written there, it is read back, verified and removed through its claim, and an inventory finds the id
+`tracked`. Adopting changes the ledger only, and asks nothing of OSDU; the write that follows needs the flow's
+credentials to be an owner of the record (its `acl.owners`), and storage refuses it with 403 otherwise, which holds the
+record with that reason.
+
+**Two instances linked to one record.** Each instance keeps its own ledger, so each can adopt the same OSDU record, and
+both deliver to it. Through the storage route each write records the hash of the content it wrote
+([routes, storage](../flow/routes.md)), so a verify that finds a newer version reads the record and calls it `match` when
+the other instance wrote the same content again, and `drifted` only when what this flow delivered changed. A write OSDU
+skips as unchanged records the version OSDU holds, read after the write, rather than the one the ledger last knew.
+
+```bash
+sqlflow records adopt flows/welldb-namespaces-03-delivery.yaml --partition dev --key 6f1c2a9e-4b7d-4c1e-9a3f-2d8e5b7c1a40
+sqlflow records adopt flows/welldb-namespaces-03-delivery.yaml --partition dev --issue 3fa1c09b5d2e7a44 --confirm dev
+```
+
+On a held record's page **Adopt** asks before it acts, and can queue a deliver run scoped to the record at once
+(`POST /records/{flowId}/{key}/adopt`); on the flow's Issues tab, **Adopt N** adopts every record an issue keeps held,
+with the partition typed back ([Adopting an issue](#issues)).
+
 ## Issues
 
 A blocked record's error names the record: the value it read, an OSDU id, a moment, a row, the correlation id of the
@@ -346,6 +402,12 @@ filtered index that holds them alone, never kept beside them.
 **Releasing an issue** (`POST /flows/{pipelineId}/issues/{issue}/release`, `sqlflow records release --issue`) walks the
 issue's records a page of 1,000 at a time and releases each page in its own statement; a record a run blocks with the same
 issue while the walk goes is released too. The activity records the issue and the pattern the operator was shown.
+
+**Adopting an issue** (`POST /flows/{pipelineId}/issues/{issue}/adopt` with `confirm`, the partition the flow's ledger is
+kept in typed back, case ignored; `sqlflow records adopt --issue <id> --confirm <partition>`) walks the issue's records the
+same way and adopts each record held for an id OSDU holds ([above](#adopting-a-record-osdu-already-holds)), 500 to a
+transaction; a record of the issue held for anything else is left. Without `confirm`, or with another partition, nothing is
+adopted (400). The activity records the issue and its pattern.
 
 **Records blocked before the ledger kept issues** have none. The control plane sorts them in the background, 500 records a
 page a quarter of a second apart, looking again every ten minutes; until then a flow's issues say how many blocked records

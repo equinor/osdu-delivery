@@ -155,7 +155,8 @@ Choose this before the first wellbore is delivered: a record keeps the OSDU id i
 `idFrom` changes later holds every record it would move, naming both ids (a changed system or key makes new records of
 the ledger instead). Before a record first claims an
 id made from its key, the intake asks OSDU whether a record already sits there; one that no record of the ledger claimed
-is another system's, and the record is held rather than writing over it ([mapping](../flow/mapping.md)).
+is another system's, and the record is held rather than writing over it until an operator adopts it
+([Adopting a record OSDU already holds](../concepts/record-lifecycle.md#adopting-a-record-osdu-already-holds)).
 
 ## 3. Point the well log at its wellbore
 

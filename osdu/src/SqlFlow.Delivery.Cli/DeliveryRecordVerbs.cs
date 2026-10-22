@@ -62,11 +62,12 @@ internal static class DeliveryRecordVerbs
             "show" => await ShowAsync(context, ledger, flowId, label, ct).ConfigureAwait(false),
             "issues" => await IssuesAsync(context, ledger, flowId, label, ct).ConfigureAwait(false),
             "release" => await ReleaseAsync(context, ledger, engine, flow, label, ct).ConfigureAwait(false),
+            "adopt" => await AdoptAsync(context, ledger, engine, flow, label, ct).ConfigureAwait(false),
             "reverse" => await DeliveryReversalVerbs.ReverseAsync(context, ledger, engine, flow, label, ct).ConfigureAwait(false),
             "reversals" => await DeliveryReversalVerbs.ListAsync(context, ledger, flow, label, ct).ConfigureAwait(false),
             "artifacts" => await DeliveryArtifactVerbs.ArtifactsAsync(context, ledger, flowId, label, ct).ConfigureAwait(false),
             "undos" => await DeliveryArtifactVerbs.UndosAsync(context, ledger, flowId, label, ct).ConfigureAwait(false),
-            _ => context.UsageError("say what to do with the records: list, show, issues, release, reverse, reversals, artifacts or undos."),
+            _ => context.UsageError("say what to do with the records: list, show, issues, release, adopt, reverse, reversals, artifacts or undos."),
         };
     }
 
@@ -399,6 +400,89 @@ internal static class DeliveryRecordVerbs
         context.Out.WriteLine(string.Create(
             CultureInfo.InvariantCulture,
             $"{label}: {released} record(s) released{named}. The ones that still hold a rendered document are queued now; the rest are planned again by the next run."));
+        return 0;
+    }
+
+    /// <summary>
+    /// <c>sqlflow records adopt</c>: adopts, for the records <c>--key</c> names or every one <c>--issue</c> keeps held, the
+    /// record OSDU already holds at the id each record's key makes (osdu/docs/reference/concepts/record-lifecycle.md, Adopting
+    /// a record OSDU already holds). Each record claims the id at the version OSDU held, and the next run writes it there. An
+    /// issue's adoption takes the partition typed back with <c>--confirm</c>. It is recorded on the audit trail as
+    /// <c>cli:&lt;user&gt;@&lt;machine&gt;</c>'s, with every record it adopted named under it.
+    /// </summary>
+    private static async Task<int> AdoptAsync(
+        CliVerbContext context, ILedger ledger, EngineContext engine, FlowDefinition flow, string label, CancellationToken ct)
+    {
+        var asked = context.Arguments.GetOptions("--key").ToList();
+        var keys = new List<DeliveryKey>(asked.Count);
+        foreach (var value in asked)
+        {
+            keys.Add(Guid.TryParse(value, CultureInfo.InvariantCulture, out var key)
+                ? new DeliveryKey(key)
+                : throw new FlowValidationException($"--key '{value}' is not a delivery key; 'records list' prints them."));
+        }
+
+        var problem = Issue(context.Arguments.GetOption("--issue"));
+        if ((problem is null) == (keys.Count == 0))
+        {
+            return context.UsageError("adopt the records --key names or the ones --issue keeps held, one or the other.");
+        }
+
+        ProblemGroup? group = null;
+        if (problem is { } hash)
+        {
+            group = await ledger.GetProblemAsync(flow.Id, hash, ct).ConfigureAwait(false)
+                ?? throw new FlowValidationException(
+                    $"{label} has no record held by issue {ProblemSignature.Format(hash)}; 'records issues' lists the issues it has.");
+            var kept = (await ledger.GetLedgerAsync(flow.Id, ct).ConfigureAwait(false))?.Partition;
+            var typed = context.Arguments.GetOption("--confirm")?.Trim();
+            if (string.IsNullOrEmpty(typed) || !string.Equals(typed, kept, StringComparison.OrdinalIgnoreCase))
+            {
+                return context.UsageError(
+                    $"adopting the records of issue {ProblemSignature.Format(hash)} takes over every record OSDU holds at their ids in partition {kept}; "
+                    + $"type the partition back with --confirm {kept}.");
+            }
+        }
+
+        using var runtime = FlowRuntime.ForTarget(flow.Interface is null ? engine : engine.ForInterface(flow.Interface), flow);
+        runtime.Actor = RunActors.LocalAccount();
+        var adopted = group is not null
+            ? await runtime.AdoptProblemAsync(group.Problem, group.Pattern, ct).ConfigureAwait(false)
+            : await runtime.AdoptAsync(keys, ct).ConfigureAwait(false);
+        if (context.Json)
+        {
+            context.Out.WriteLine(CanonicalJson.Pretty(new JsonObject
+            {
+                ["flow"] = label,
+                ["flowId"] = flow.Id.ToString(),
+                ["issue"] = group is null ? null : ProblemSignature.Format(group.Problem),
+                ["adopted"] = new JsonArray(adopted.Select(a => (JsonNode)new JsonObject
+                {
+                    ["deliveryKey"] = a.Key.ToString(),
+                    ["targetId"] = a.TargetId,
+                    ["version"] = a.Version,
+                }).ToArray()),
+            }));
+            return 0;
+        }
+
+        var named = group is not null
+            ? $" issue {ProblemSignature.Format(group.Problem)} kept held"
+            : $" of the {keys.Count.ToString(CultureInfo.InvariantCulture)} named";
+        context.Out.WriteLine(string.Create(
+            CultureInfo.InvariantCulture,
+            $"{label}: {adopted.Count} record(s) adopted{named}. Each claims the OSDU id its key makes, and the next run writes it there; a record not held for an id OSDU holds, or whose id another record claimed since, was left as it is."));
+        foreach (var one in adopted.Take(20))
+        {
+            var version = one.Version is { } v ? string.Create(CultureInfo.InvariantCulture, $" (OSDU held version {v})") : string.Empty;
+            context.Out.WriteLine($"  {one.Key}  {one.TargetId}{version}");
+        }
+
+        if (adopted.Count > 20)
+        {
+            context.Out.WriteLine(string.Create(CultureInfo.InvariantCulture, $"  and {adopted.Count - 20} more; --json lists every one."));
+        }
+
         return 0;
     }
 

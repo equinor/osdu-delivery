@@ -203,19 +203,33 @@ public sealed class OsduRecordProtocol : IDeliveryProtocol
             }
         }
 
+        var held = await SettleSkippedAsync(toWrite.Select(t => t.Work.TargetId).Where(id => skipped.Contains(id) && !versions.ContainsKey(id)).ToList(), ct).ConfigureAwait(false);
+
         // Every record of the request is written at the target now, so their steps are reported together, and the worker
         // writes them to the ledger in one go.
         var reports = new List<Task>(toWrite.Count);
         foreach (var (index, work, document, preserved) in toWrite)
         {
-            var version = versions.TryGetValue(work.TargetId, out var text) ? RecordWriter.ParseVersion(text) : RecordWriter.ParseVersion(single);
+            if (held.Failed.TryGetValue(work.TargetId, out var unserved))
+            {
+                // Skipped as unchanged, and not served: the record stands at no version OSDU serves, so it is not delivered.
+                // Its write step is not reported, so its next try writes it again rather than resuming past the write.
+                var refused = new DeliverySteps(_time);
+                refused.Add(RecordsStep, started, (int)result.Status, null, unserved.Message);
+                outcomes[index] = DeliveryOutcome.Failed(unserved, refused.Steps);
+                continue;
+            }
+
+            var version = versions.TryGetValue(work.TargetId, out var text)
+                ? RecordWriter.ParseVersion(text)
+                : held.Versions.TryGetValue(work.TargetId, out var current) ? current : RecordWriter.ParseVersion(single);
             var returned = new Dictionary<string, string>(StringComparer.Ordinal) { ["recordId"] = work.TargetId };
             if (version is { } v)
             {
                 returned["version"] = v.ToString(CultureInfo.InvariantCulture);
             }
 
-            OwnedContent.Record(returned, document, preserved, work.TargetState);
+            OwnedContent.RecordWritten(returned, document, preserved);
 
             if (skipped.Contains(work.TargetId))
             {
@@ -235,6 +249,12 @@ public sealed class OsduRecordProtocol : IDeliveryProtocol
                 };
             }
 
+            if (held.Restored.TryGetValue(work.TargetId, out var brought))
+            {
+                own.Add(RestoreStep, brought.Started, brought.Status, new Dictionary<string, string>(StringComparer.Ordinal) { ["outcome"] = RecordWriter.Describe(RecordRestore.Restored) });
+                restoredDetail = $"OSDU held {work.TargetId} soft-deleted and skipped the unchanged write, which leaves a deleted record deleted: it was brought back under its id";
+            }
+
             own.Add(RecordsStep, started, (int)result.Status, returned);
             reports.Add(work.ReportStepAsync(RecordsStep, returned, ct));
             outcomes[index] = new DeliveryOutcome
@@ -245,13 +265,125 @@ public sealed class OsduRecordProtocol : IDeliveryProtocol
                 Returned = returned,
                 Steps = own.Steps,
                 Detail = skipped.Contains(work.TargetId)
-                    ? restoredDetail is null ? "unchanged at the target" : $"{restoredDetail}; unchanged at the target"
+                    ? (restoredDetail is null ? "unchanged at the target" : $"{restoredDetail}; unchanged at the target") + held.Note(work.TargetId)
                     : restoredDetail,
             };
         }
 
         await Task.WhenAll(reports).ConfigureAwait(false);
         return outcomes;
+    }
+
+    /// <summary>
+    /// Settles the records a write skipped as unchanged without naming a version (storage leaves skipped ids out of
+    /// <c>recordIdVersions</c>, osdu/specs/core/INTEGRATION.md section 2.2). Their versions are read in one batched read: the
+    /// version such a record stands at is OSDU's, which another writer (another instance linked to the record) may have
+    /// moved since this ledger last knew it. A skipped record storage does not serve is one it holds soft-deleted, which a
+    /// skipped write leaves deleted: it is brought back under its id (a merge patch, at the version it had) and its version
+    /// read again. One that cannot be brought back fails with why: OSDU serves nothing at its id, so it is not delivered.
+    /// A read that fails keeps the version the ledger knew, and the outcome's detail says so.
+    /// </summary>
+    private async Task<SkippedRecords> SettleSkippedAsync(IReadOnlyList<string> ids, CancellationToken ct)
+    {
+        if (ids.Count == 0)
+        {
+            return SkippedRecords.None;
+        }
+
+        var versions = new Dictionary<string, long>(StringComparer.Ordinal);
+        var restored = new Dictionary<string, (DateTime Started, int Status)>(StringComparer.Ordinal);
+        var failed = new Dictionary<string, Exception>(StringComparer.Ordinal);
+        IReadOnlyList<VerifyResult> read;
+        try
+        {
+            read = await VerifyBatchAsync(ids.Select(id => new VerifyRequest(id, null)).ToList(), ct).ConfigureAwait(false);
+        }
+        catch (Exception ex) when (ex is SqlFlowException or HttpRequestException or IOException)
+        {
+            return new SkippedRecords(versions, restored, failed, HeaderRedaction.RedactMessage(ex.Message));
+        }
+
+        var unserved = new List<string>();
+        for (var i = 0; i < ids.Count && i < read.Count; i++)
+        {
+            switch (read[i])
+            {
+                case { Outcome: VerifyOutcome.Match, ObservedVersion: { } observed }:
+                    versions[ids[i]] = observed;
+                    break;
+                case { Outcome: VerifyOutcome.Missing }:
+                    unserved.Add(ids[i]);
+                    break;
+            }
+        }
+
+        foreach (var id in unserved)
+        {
+            var at = _time.GetUtcNow().UtcDateTime;
+            try
+            {
+                var (outcome, status) = await RecordWriter.RestoreAsync(_client, _options.VerifyPath ?? DefaultVerifyPath, id, ct).ConfigureAwait(false);
+                if (outcome == RecordRestore.NotHeld)
+                {
+                    failed[id] = new DeliveryException(
+                        $"OSDU skipped the write of {id} as unchanged, and holds no record of it now (purged meanwhile); nothing stands at the id, so the next try writes it again");
+                    continue;
+                }
+
+                restored[id] = (at, status);
+            }
+            catch (Exception ex) when (ex is SqlFlowException or HttpRequestException or IOException)
+            {
+                failed[id] = ex;
+            }
+        }
+
+        if (restored.Count > 0)
+        {
+            var back = restored.Keys.ToList();
+            try
+            {
+                var again = await VerifyBatchAsync(back.Select(id => new VerifyRequest(id, null)).ToList(), ct).ConfigureAwait(false);
+                for (var i = 0; i < back.Count && i < again.Count; i++)
+                {
+                    if (again[i] is { Outcome: VerifyOutcome.Match, ObservedVersion: { } observed })
+                    {
+                        versions[back[i]] = observed;
+                    }
+                }
+            }
+            catch (Exception ex) when (ex is SqlFlowException or HttpRequestException or IOException)
+            {
+                return new SkippedRecords(versions, restored, failed, HeaderRedaction.RedactMessage(ex.Message));
+            }
+        }
+
+        return new SkippedRecords(versions, restored, failed, null);
+    }
+
+    /// <summary>
+    /// What became of the records a write skipped: the versions read, the ones brought back from a soft delete (when and with
+    /// what status), the ones that could not be (with why), and why a read failed when one did.
+    /// </summary>
+    private sealed record SkippedRecords(
+        IReadOnlyDictionary<string, long> Versions,
+        IReadOnlyDictionary<string, (DateTime Started, int Status)> Restored,
+        IReadOnlyDictionary<string, Exception> Failed,
+        string? ReadFailure)
+    {
+        public static SkippedRecords None { get; } = new(
+            new Dictionary<string, long>(StringComparer.Ordinal),
+            new Dictionary<string, (DateTime, int)>(StringComparer.Ordinal),
+            new Dictionary<string, Exception>(StringComparer.Ordinal),
+            null);
+
+        /// <summary>What the outcome of a skipped record adds when its version was not read: why, and which version stands.</summary>
+        public string Note(string targetId)
+            => Versions.ContainsKey(targetId)
+                ? string.Empty
+                : ReadFailure is null
+                    ? "; OSDU did not name the version it holds, so the version the ledger knew stands"
+                    : $"; the version OSDU holds could not be read ({ReadFailure}), so the version the ledger knew stands";
     }
 
     public Task<VerifyResult> VerifyAsync(string targetId, long? expectedVersion, CancellationToken ct = default)
@@ -669,7 +801,7 @@ internal static class RecordWriter
                 results[i] = new VerifyResult(
                     VerifyOutcome.Error,
                     results[i].ObservedVersion,
-                    $"{results[i].Detail}; the record could not be read to tell whether only the data keys another system writes changed: {HeaderRedaction.RedactMessage(ex.Message)}");
+                    $"{results[i].Detail}; the record could not be read to tell whether the content the flow wrote changed, or only the version moved: {HeaderRedaction.RedactMessage(ex.Message)}");
             }
 
             return;
@@ -688,7 +820,9 @@ internal static class RecordWriter
             results[i] = new VerifyResult(
                 VerifyOutcome.Match,
                 observed,
-                string.Create(CultureInfo.InvariantCulture, $"observed version {observed}, ledger holds {request.ExpectedVersion}: the newer version changed only data keys another system writes ({string.Join(", ", excluded)}), which is not drift"));
+                excluded.Count == 0
+                    ? string.Create(CultureInfo.InvariantCulture, $"observed version {observed}, ledger holds {request.ExpectedVersion}: the newer version holds the content the flow wrote, written again by another writer (another instance linked to the record), which is not drift")
+                    : string.Create(CultureInfo.InvariantCulture, $"observed version {observed}, ledger holds {request.ExpectedVersion}: the newer version changed only data keys another system writes ({string.Join(", ", excluded)}), which is not drift"));
         }
     }
 

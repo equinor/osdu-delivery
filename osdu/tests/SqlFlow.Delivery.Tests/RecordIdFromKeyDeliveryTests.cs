@@ -279,6 +279,108 @@ public sealed partial class RecordIdFromKeyDeliveryTests : IDisposable
     }
 
     [Fact]
+    public async Task A_record_whose_id_osdu_already_holds_is_adopted_and_the_next_run_writes_it_there()
+    {
+        // An earlier ledger, or another instance of the delivery, wrote the record OSDU holds at a code id, and this ledger has
+        // no record of it. The record is held, keeping the id and the version OSDU answered; adopted, it claims the id at that
+        // version, and the next run writes it there as an update of the record OSDU holds.
+        var tables = await SampleEstate.BuildAsync(_root, Now.AddMinutes(-5), time: _clock);
+        var (runtime, protocol, ledger) = await RuntimeAsync(tables, Rendering(Mappings("key", FromKey)));
+        using (runtime)
+        {
+            var earlier = CodeId(SampleEstate.Logs()[0]);
+            var other = CodeId(SampleEstate.Logs()[1]);
+            protocol.VerifyWith = id => id == earlier || id == other
+                ? new VerifyResult(VerifyOutcome.Match, 7, null)
+                : new VerifyResult(VerifyOutcome.Missing, null, "record not found");
+            Assert.Equal(LogCount - 2, (await RunAsync(runtime, protocol, ledger)).Work.Delivered);
+
+            var held = await ledger.GetRecordAsync(runtime.Flow.Id, SampleEstate.Key(0));
+            Assert.Equal((RecordStatus.Held, (string?)null, (string?)null, earlier, 7L), (held!.Status, held.TargetId, held.ClaimedTargetId, held.OccupiedTargetId, held.OccupiedTargetVersion));
+            Assert.Contains("Adopt it when it is this record's", held.LastError, StringComparison.Ordinal);
+
+            // A named record held for no id OSDU holds (one delivered here) has nothing to adopt, and is left as it is.
+            runtime.Actor = "gui:tahir";
+            var adopted = Assert.Single(await runtime.AdoptAsync([SampleEstate.Key(0), SampleEstate.Key(2)]));
+            Assert.Equal((SampleEstate.Key(0), earlier, (long?)7), (adopted.Key, adopted.TargetId, adopted.Version));
+            var claimed = await ledger.GetRecordAsync(runtime.Flow.Id, SampleEstate.Key(0));
+            Assert.Equal(
+                (RecordStatus.Held, false, earlier, earlier, (long?)7, (string?)null, (long?)null),
+                (claimed!.Status, claimed.Blocked, claimed.TargetId, claimed.ClaimedTargetId, claimed.TargetVersion, claimed.OccupiedTargetId, claimed.OccupiedTargetVersion));
+            Assert.NotNull(claimed.PlanRequestedUtc);
+            Assert.StartsWith($"adopted by gui:tahir: the record claims {earlier}", claimed.LastError, StringComparison.Ordinal);
+            var adoption = Assert.Single(await ledger.ListAttemptsAsync(runtime.Flow.Id, SampleEstate.Key(0), 10), a => a.Phase == AttemptPhases.Adopt);
+            Assert.Equal((AttemptOutcome.Skipped, (long?)7, "gui:tahir"), (adoption.Outcome, adoption.TargetVersion, adoption.Worker));
+            Assert.Contains($"\"targetId\":\"{earlier}\"", adoption.ResultJson, StringComparison.Ordinal);
+            Assert.Single(await ledger.ListActivitiesAsync(new ActivityQuery { FlowId = runtime.Flow.Id, DeliveryKey = SampleEstate.Key(0).Value, Kind = "adopt" }));
+            Assert.Equal(RecordStatus.Delivered, (await ledger.GetRecordAsync(runtime.Flow.Id, SampleEstate.Key(2)))!.Status);
+            Assert.Equal(other, (await ledger.GetRecordAsync(runtime.Flow.Id, SampleEstate.Key(1)))!.OccupiedTargetId);
+
+            // The next run writes the adopted record to the id, told the version OSDU holds there, so the write keeps what
+            // OSDU keeps of a record and a write OSDU finds unchanged lands at it. OSDU is not asked about the id again.
+            protocol.Deliveries.Clear();
+            protocol.Verifies.Clear();
+            _clock.Advance(TimeSpan.FromMinutes(1));
+            runtime.Selection = SourceSelection.Full();
+            Assert.Equal(1, (await RunAsync(runtime, protocol, ledger, force: true)).Work.Delivered);
+            var write = Assert.Single(protocol.Deliveries);
+            Assert.Equal((SampleEstate.Key(0), earlier, (long?)7), (write.Key, write.TargetId, write.ExistingVersion));
+            Assert.DoesNotContain(protocol.Verifies, v => v.TargetId == earlier);
+            var delivered = await ledger.GetRecordAsync(runtime.Flow.Id, SampleEstate.Key(0));
+            Assert.Equal((RecordStatus.Delivered, earlier, (string?)null), (delivered!.Status, delivered.ClaimedTargetId, delivered.OccupiedTargetId));
+
+            // A record that claimed its id has nothing left to adopt; the one still held for an id OSDU holds keeps it.
+            Assert.Empty(await runtime.AdoptAsync([SampleEstate.Key(0)]));
+            var still = await ledger.GetRecordAsync(runtime.Flow.Id, SampleEstate.Key(1));
+            Assert.Equal((RecordStatus.Held, true, other), (still!.Status, still.Blocked, still.OccupiedTargetId));
+        }
+    }
+
+    [Fact]
+    public async Task An_issue_s_records_are_adopted_together_and_an_id_another_flow_claimed_since_is_left_to_it()
+    {
+        var tables = await SampleEstate.BuildAsync(_root, Now.AddMinutes(-5), time: _clock);
+        var first = CodeId(SampleEstate.Logs()[0]);
+        var second = CodeId(SampleEstate.Logs()[1]);
+        var (runtime, protocol, ledger) = await RuntimeAsync(tables, Rendering(Mappings("key", FromKey)));
+        using var owner = runtime;
+        protocol.VerifyWith = id => id == first || id == second
+            ? new VerifyResult(VerifyOutcome.Match, 3, null)
+            : new VerifyResult(VerifyOutcome.Missing, null, "record not found");
+        Assert.Equal(LogCount - 2, (await RunAsync(runtime, protocol, ledger)).Work.Delivered);
+
+        // Another flow of the partition, reading the same rows, claims the second id meanwhile; the first id it is held for.
+        var (codes, codesProtocol, _) = await RuntimeAsync(tables, Rendering(Mappings("fresh", FromKey), "wells-welllog-codes"));
+        using var other = codes;
+        codesProtocol.VerifyWith = id => id == first ? new VerifyResult(VerifyOutcome.Match, 3, null) : new VerifyResult(VerifyOutcome.Missing, null, "record not found");
+        await RunAsync(codes, codesProtocol, ledger);
+        Assert.Equal(second, (await ledger.GetRecordAsync(codes.Flow.Id, SampleEstate.Key(1)))!.ClaimedTargetId);
+        Assert.Equal(first, (await ledger.GetRecordAsync(codes.Flow.Id, SampleEstate.Key(0)))!.OccupiedTargetId);
+
+        // Both records of the first flow are held by one issue; adopting it takes the first id and leaves the second, which
+        // another record claimed since the hold, to that record.
+        var issue = (await ledger.GetRecordAsync(runtime.Flow.Id, SampleEstate.Key(0)))!.ProblemHash!.Value;
+        Assert.Equal(issue, (await ledger.GetRecordAsync(runtime.Flow.Id, SampleEstate.Key(1)))!.ProblemHash);
+        protocol.Deliveries.Clear();
+        runtime.Actor = "cli:tahir@host";
+        var adopted = Assert.Single(await runtime.AdoptProblemAsync(issue, "OSDU already holds a record at <id>"));
+        Assert.Equal((SampleEstate.Key(0), first, (long?)3), (adopted.Key, adopted.TargetId, adopted.Version));
+        Assert.Equal(first, (await ledger.GetRecordAsync(runtime.Flow.Id, SampleEstate.Key(0)))!.ClaimedTargetId);
+        var left = await ledger.GetRecordAsync(runtime.Flow.Id, SampleEstate.Key(1));
+        Assert.Equal((RecordStatus.Held, (string?)null), (left!.Status, left.ClaimedTargetId));
+        var activity = Assert.Single(await ledger.ListActivitiesAsync(new ActivityQuery { FlowId = runtime.Flow.Id, Kind = "adopt" }));
+        Assert.StartsWith("adopted 1 record(s) issue ", activity.Summary, StringComparison.Ordinal);
+
+        // The other flow's record held for the first id finds it claimed now, and adopts nothing.
+        Assert.Empty(await ledger.AdoptOccupiedAsync(codes.Flow.Id, ReleaseSelection.Named([SampleEstate.Key(0)]), "gui:tahir", null, Now));
+        Assert.Equal(first, (await ledger.GetRecordAsync(codes.Flow.Id, SampleEstate.Key(0)))!.OccupiedTargetId);
+
+        // An adoption reaches the records it names or one issue's, never every blocked record of a flow, and sends nothing.
+        await Assert.ThrowsAsync<ArgumentException>(() => ledger.AdoptOccupiedAsync(runtime.Flow.Id, ReleaseSelection.EveryBlocked, "gui:tahir", null, Now));
+        Assert.Empty(protocol.Deliveries);
+    }
+
+    [Fact]
     public async Task A_queued_document_written_to_another_id_than_its_records_is_never_sent()
     {
         // The ledger's state was changed outside it after the document was queued: the record now names another id than

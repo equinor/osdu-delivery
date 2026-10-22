@@ -170,7 +170,7 @@ One `osdu.Activity` row per run and per operator intervention, never deleted:
 
 - runs: `deliver`, `intake`, `drain`, `verify`, `sync`, `undo`, `reverse`, `delete-ledger`, and `probe` (a target probe,
   by button, the API, the MCP tool or the schedule);
-- interventions: `release`, `redeliver`, `rerender` (bring up to date), `delete` (a removal from OSDU),
+- interventions: `release`, `adopt` (a record taking over the OSDU record at the id its key makes), `redeliver`, `rerender` (bring up to date), `delete` (a removal from OSDU),
   `restore-previous`, `purge` (deleting removed records from the ledger), `remove-dimension`, `inventory-remove`,
   `inventory-repair` and `reassign-id`.
 

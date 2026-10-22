@@ -56,7 +56,7 @@ the server has it (SQL Server 2019 and later, Azure SQL), since every drain appe
 | `StartedUtc` | `datetime2` | no | When the try or decision started. |
 | `CompletedUtc` | `datetime2` | no | When it ended. |
 | `Outcome` | `nvarchar(16)` | no | What came of it: `delivered`, `skipped`, `held`, `failed`, `deleted`, `historypurged`, `restored` or `undone` ([Record lifecycle](../concepts/record-lifecycle.md#attempts)). |
-| `Phase` | `nvarchar(32)` | no | What was sent or decided: `metadata`, `payload`, `metadata+payload`, `none`, or a decision such as `render`, `source-deleted`, `identical`, `stale`, `unchanged`, `undo-wait`, `source-missing`, `delete`, `purge-history`, `restore-previous`, `reassign-id`, `reverse` or `undo` ([Record lifecycle](../concepts/record-lifecycle.md#attempts)). |
+| `Phase` | `nvarchar(32)` | no | What was sent or decided: `metadata`, `payload`, `metadata+payload`, `none`, or a decision such as `render`, `source-deleted`, `identical`, `stale`, `unchanged`, `undo-wait`, `source-missing`, `delete`, `purge-history`, `restore-previous`, `reassign-id`, `adopt`, `reverse` or `undo` ([Record lifecycle](../concepts/record-lifecycle.md#attempts)). |
 | `MetadataHash` | `nvarchar(64)` | yes | The record document hash the try established. |
 | `PayloadHash` | `nvarchar(64)` | yes | The payload hash the try established. |
 | `TargetVersion` | `bigint` | yes | The OSDU version the try returned. |

@@ -20,7 +20,8 @@ related:
   - delivery-wiki-0002-client-supplied-ids
   - delivery-wiki-0004-preserved-keys
   - delivery-wiki-0013-inventory-flows
-updated: 2026-10-16
+  - delivery-wiki-0021-adopting-occupied-records
+updated: 2026-10-22
 ---
 # 0015: A record OSDU lost is delivered again under its own id, and under a new one only when an operator asks
 

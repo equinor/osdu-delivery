@@ -923,19 +923,23 @@ public sealed class ExternalDataServicesTests
     }
 
     [Fact]
-    public async Task A_record_without_keys_to_carry_records_no_hash_and_a_verify_that_cannot_read_the_record_decides_nothing()
+    public async Task A_storage_write_records_the_hash_of_what_it_wrote_and_a_verify_that_cannot_read_the_record_decides_nothing()
     {
         var platform = new FakeOsduPlatform();
         using var rig = new Rig(platform);
         var protocol = new OsduRecordProtocol(rig.Client, Rig.Options);
+
+        // Storage keeps what a plain write sends, so the write records the hash of it even with no keys to carry forward.
         var registry = await protocol.DeliverAsync(Work(Registry()));
         Assert.True(registry.Succeeded, registry.Failure?.Message);
-        Assert.False(registry.Returned.ContainsKey(OwnedContent.HashValue));
+        Assert.Equal(OwnedContent.Hash(Registry(), []), registry.Returned[OwnedContent.HashValue]);
+        Assert.Equal("[]", registry.Returned[OwnedContent.ExcludedValue]);
 
-        // A record an earlier delivery recorded a hash for has it cleared when nothing is carried any more.
+        // A record an earlier delivery recorded a hash for, leaving out keys it no longer carries, gets the hash of this write.
         var earlier = new Dictionary<string, string>(StringComparer.Ordinal) { [OwnedContent.HashValue] = "old", [OwnedContent.ExcludedValue] = """["Owned"]""" };
         var rewritten = await protocol.DeliverAsync(Work(Registry(), existing: registry.TargetVersion, state: earlier));
-        Assert.Equal(string.Empty, rewritten.Returned[OwnedContent.HashValue]);
+        Assert.Equal(OwnedContent.Hash(Registry(), []), rewritten.Returned[OwnedContent.HashValue]);
+        Assert.Equal("[]", rewritten.Returned[OwnedContent.ExcludedValue]);
 
         // The header read answers, the whole-record read does not: the moved version is left undecided, not called drift.
         var handler = new FakeHttpHandler().On(
@@ -953,7 +957,7 @@ public sealed class ExternalDataServicesTests
         var result = Assert.Single(await failing.VerifyBatchAsync([Request(8, state)]));
         Assert.Equal(VerifyOutcome.Error, result.Outcome);
         Assert.Equal(9, result.ObservedVersion);
-        Assert.Contains("observed version 9, ledger holds 8; the record could not be read to tell whether only the data keys another system writes changed", result.Detail, StringComparison.Ordinal);
+        Assert.Contains("observed version 9, ledger holds 8; the record could not be read to tell whether the content the flow wrote changed, or only the version moved", result.Detail, StringComparison.Ordinal);
         Assert.Equal(2, handler.Calls.Count);
     }
 

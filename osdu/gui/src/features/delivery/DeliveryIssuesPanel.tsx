@@ -2,11 +2,13 @@ import { useRef, useState, type ReactNode } from "react";
 import { Link as RouterLink, useNavigate, useSearchParams } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
-  CircleCheck, CirclePause, CircleX, Layers, ListFilter, Loader2, Play, RefreshCw, Rows3, ScanSearch, Unlock,
+  CircleCheck, CirclePause, CircleX, Layers, Link2, ListFilter, Loader2, Play, RefreshCw, Rows3, ScanSearch, Unlock,
 } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { isApiError } from "@/api/client";
@@ -186,6 +188,8 @@ export function DeliveryIssuesPanel({ pipelineId, flowName }: { pipelineId: stri
   // A link may name the issue to open on (the Records tab's filter carries one); a click picks another.
   const [chosen, setChosen] = useState<string | null>(searchParams.get("issue"));
   const [releaseOpen, setReleaseOpen] = useState(false);
+  const [adoptOpen, setAdoptOpen] = useState(false);
+  const [adoptTyped, setAdoptTyped] = useState("");
   const list = useRef<HTMLDivElement>(null);
   const detailFrame = useRef<HTMLDivElement>(null);
   useWindowFit(list, BELOW, MIN_LIST_HEIGHT, tableContainer);
@@ -238,6 +242,27 @@ export function DeliveryIssuesPanel({ pipelineId, flowName }: { pipelineId: stri
     },
     onError: (error) => {
       setReleaseOpen(false);
+      toast.error(problemText(error));
+    },
+  });
+
+  // Every record the issue keeps held because OSDU already holds a record at the id its key makes, taken over together:
+  // each record claims its id, and the next run (queued now when asked) writes the rows there.
+  const adopt = useMutation({
+    mutationFn: ({ issue, confirm, run }: { issue: string; confirm: string; run: boolean }) => deliveryApi.adoptIssue(pipelineId, issue, confirm, run, scope),
+    onSuccess: (result) => {
+      setAdoptOpen(false);
+      setAdoptTyped("");
+      refresh();
+      const adopted = `Adopted ${result.adopted.toLocaleString()} record${result.adopted === 1 ? "" : "s"}`;
+      toast.success(
+        result.adopted === 0
+          ? "No record of the issue was adopted: their ids were claimed since, or they were held for something else."
+          : result.runId ? `${adopted}; a deliver run writes them now.` : `${adopted}; the flow's next run writes them.`,
+        result.runId ? { action: openRun(result.runId) } : undefined);
+    },
+    onError: (error) => {
+      setAdoptOpen(false);
       toast.error(problemText(error));
     },
   });
@@ -328,6 +353,7 @@ export function DeliveryIssuesPanel({ pipelineId, flowName }: { pipelineId: stri
                 trying={trySample.isPending ? trySample.variables?.deliveryKey ?? null : null}
                 onTry={(record) => trySample.mutate(record)}
                 onRelease={() => setReleaseOpen(true)}
+                onAdopt={() => setAdoptOpen(true)}
               />
             )}
           </div>
@@ -357,16 +383,63 @@ export function DeliveryIssuesPanel({ pipelineId, flowName }: { pipelineId: stri
           )}
         </ReleaseDialog>
       )}
+
+      {selected !== null && adoptable(selected, opened?.samples) && (
+        <ReleaseDialog
+          open={adoptOpen}
+          title={`Adopt ${selected.records.toLocaleString()} record${selected.records === 1 ? "" : "s"}`}
+          message={`OSDU already holds a record at the id each of these records' keys makes, and no ledger claimed it: another system wrote it, or another instance of the delivery whose ledger this database does not hold. Adopting links every record of ${ledgerName} this issue keeps held to the record OSDU holds: each claims its id at the version OSDU held, and the next run writes its row there. A record whose id another record claimed since is left as it is.`}
+          confirmLabel={`Adopt ${selected.records.toLocaleString()}`}
+          busy={adopt.isPending}
+          confirmDisabled={keptPartition(selected, partition) === null || adoptTyped.trim().toLowerCase() !== keptPartition(selected, partition)?.toLowerCase()}
+          testId="issue-adopt-dialog"
+          onConfirm={(run) => adopt.mutate({ issue: selected.issue, confirm: adoptTyped.trim(), run })}
+          onClose={() => { setAdoptOpen(false); setAdoptTyped(""); }}
+        >
+          <div className="flex flex-col gap-1.5">
+            <Label htmlFor="issue-adopt-confirm" className="text-[12px] font-normal text-muted-foreground">
+              <span>
+                {"Type "}
+                <span className="font-mono font-medium text-foreground">{keptPartition(selected, partition) ?? "the partition"}</span>
+                {" to confirm."}
+              </span>
+            </Label>
+            <Input
+              id="issue-adopt-confirm"
+              value={adoptTyped}
+              onChange={(event) => setAdoptTyped(event.target.value)}
+              disabled={adopt.isPending}
+              autoComplete="off"
+              spellCheck={false}
+              className="h-8 font-mono"
+              data-testid="issue-adopt-confirm-input"
+            />
+          </div>
+        </ReleaseDialog>
+      )}
     </div>
   );
 }
 
 /**
+ * Whether an issue's records are held because OSDU already holds a record at the ids their keys make, so they can be
+ * adopted: every record of an issue shares its error, so its example, or a sample, says it for all of them.
+ */
+function adoptable(issue: DeliveryIssue, samples: DeliveryIssueSample[] | undefined): boolean {
+  return Boolean(issue.example?.occupiedTargetId) || (samples ?? []).some((sample) => Boolean(sample.record.occupiedTargetId));
+}
+
+/** The partition an issue's records are kept in, which an adoption takes typed back; null when nothing names it. */
+function keptPartition(issue: DeliveryIssue, partition: string | null): string | null {
+  return issue.example?.partition ?? partition ?? null;
+}
+
+/**
  * One issue: where it lies and what its records share, how many there are and when they last changed, samples spread
  * across its records to check before releasing it, where its records came from, and what can be done: check a sample,
- * try one, see every record of the issue, release them all.
+ * try one, see every record of the issue, release them all, or adopt what OSDU holds for them.
  */
-function IssueDetail({ issue, shape, samples, files, recordsLink, trying, onTry, onRelease }: {
+function IssueDetail({ issue, shape, samples, files, recordsLink, trying, onTry, onRelease, onAdopt }: {
   issue: DeliveryIssue;
   shape: DeliveryIssueShape;
   samples: DeliveryIssueSample[] | undefined;
@@ -376,6 +449,7 @@ function IssueDetail({ issue, shape, samples, files, recordsLink, trying, onTry,
   trying: string | null;
   onTry: (record: DeliveryRecord) => void;
   onRelease: () => void;
+  onAdopt: () => void;
 }) {
   const first = samples?.[0]?.record ?? issue.example;
   return (
@@ -389,6 +463,19 @@ function IssueDetail({ issue, shape, samples, files, recordsLink, trying, onTry,
               Records
             </RouterLink>
           </Button>
+          {adoptable(issue, samples) && (
+            <Button
+              variant="outline"
+              size="sm"
+              className="h-7"
+              onClick={onAdopt}
+              title="Take over the records OSDU already holds at these records' ids, written by another system or another instance of the delivery: each record claims its id, and the next run writes it there"
+              data-testid="issue-adopt"
+            >
+              <Link2 />
+              {`Adopt ${issue.records.toLocaleString()}`}
+            </Button>
+          )}
           <Button size="sm" className="h-7" onClick={onRelease} data-testid="issue-release">
             <Unlock />
             {`Release ${issue.records.toLocaleString()}`}

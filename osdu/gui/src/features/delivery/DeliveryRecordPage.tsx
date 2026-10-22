@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Navigate, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Eraser, RefreshCw, RotateCcw, Send, ShieldCheck, Trash2, Unlock } from "lucide-react";
+import { Eraser, Link2, RefreshCw, RotateCcw, Send, ShieldCheck, Trash2, Unlock } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -29,6 +29,7 @@ import { RecordSituation } from "./RecordSituation";
 import { stranded } from "./strandedRecord";
 import { RecordSourceTab } from "./RecordSourceTab";
 import { RedeliverDialog } from "./RedeliverDialog";
+import { ReleaseDialog } from "./ReleaseDialog";
 import { RemovalDialog } from "./RemovalDialog";
 import { TaskResultCard } from "./TaskResultCard";
 import { isTerminalTask, useComputeTask } from "./useComputeTask";
@@ -91,6 +92,7 @@ function DeliveryRecordContent({ flowId, deliveryKey }: DeliveryRecordRef) {
   const queryClient = useQueryClient();
   const [confirm, setConfirm] = useState<"send-now" | null>(null);
   const [redeliverOpen, setRedeliverOpen] = useState(false);
+  const [adoptOpen, setAdoptOpen] = useState(false);
   const [removeOpen, setRemoveOpen] = useState(false);
   // The removal a node runs for this record, shown under the header whatever tab is open, since it changes the record.
   const [removal, setRemoval] = useState<{ taskId: string; label: string } | null>(null);
@@ -175,6 +177,19 @@ function DeliveryRecordContent({ flowId, deliveryKey }: DeliveryRecordRef) {
     },
     onError: (error) => { setConfirm(null); fail(error); },
   });
+  // Taking over the record OSDU already holds at the id this record's key makes: the record claims it, and the next run
+  // (queued now when asked) writes this row there.
+  const adopt = useMutation({
+    mutationFn: (run: boolean) => deliveryApi.adopt(ref, run),
+    onSuccess: (result) => {
+      setAdoptOpen(false);
+      toast.success(
+        result.runId ? `Adopted ${result.targetId}: a deliver run is queued.` : `Adopted ${result.targetId}: the next run writes the record there.`,
+        result.runId ? { action: { label: "Open run", onClick: () => navigate(`/runs/${result.runId}`) } } : undefined);
+      refresh();
+    },
+    onError: (error) => { setAdoptOpen(false); fail(error); },
+  });
   // A read of the record from OSDU, shown on the OSDU tab and kept here so it is still there after a look at another
   // tab. A page opened with ?tab=osdu reads it once, as soon as the record is known to have an id OSDU may hold.
   const readable = query.data !== undefined && query.data.record.targetId !== null && query.data.record.status !== "deleted" && canOperate;
@@ -231,7 +246,7 @@ function DeliveryRecordContent({ flowId, deliveryKey }: DeliveryRecordRef) {
   }
 
   const record = detail.record;
-  const busy = verify.isPending || sync.isPending || release.isPending || osdu.pending || readSource.isPending
+  const busy = verify.isPending || sync.isPending || release.isPending || adopt.isPending || osdu.pending || readSource.isPending
     || render.isPending;
   const canActOnTarget = record.targetId !== null && record.status !== "deleted";
   // The record's ledger: the interface of its source and the partition it delivers to, which every view of it acts in.
@@ -279,6 +294,19 @@ function DeliveryRecordContent({ flowId, deliveryKey }: DeliveryRecordRef) {
               >
                 <Unlock />
                 Release
+              </Button>
+            )}
+            {record.occupiedTargetId && (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setAdoptOpen(true)}
+                disabled={busy || !canOperate}
+                title={`Take over the record OSDU already holds at ${record.occupiedTargetId}, written by another system or a ledger this database does not hold: this record claims the id, and the next run writes it there`}
+                data-testid="record-adopt"
+              >
+                <Link2 />
+                Adopt
               </Button>
             )}
             {record.status === "waiting" && (
@@ -394,6 +422,18 @@ function DeliveryRecordContent({ flowId, deliveryKey }: DeliveryRecordRef) {
         onConfirm={() => release.mutate()}
         onClose={() => setConfirm(null)}
       />
+      {record.occupiedTargetId && (
+        <ReleaseDialog
+          open={adoptOpen}
+          title="Adopt the record OSDU holds"
+          message={`OSDU already holds a record at ${record.occupiedTargetId}${record.occupiedTargetVersion == null ? "" : `, version ${record.occupiedTargetVersion}`}, the id this record's key makes, and no ledger claimed it. Adopting links this record to it: the record claims the id at the version OSDU holds, and the next run writes this row there as an update of that record. The adoption is recorded under your name.`}
+          confirmLabel="Adopt"
+          busy={adopt.isPending}
+          testId="record-adopt-dialog"
+          onConfirm={(run) => adopt.mutate(run)}
+          onClose={() => setAdoptOpen(false)}
+        />
+      )}
       {detail.pipelineId !== null && redeliverOpen && (
         <RedeliverDialog
           open

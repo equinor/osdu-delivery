@@ -106,6 +106,12 @@ public sealed class DeliveryCliModule : ICliModule
                 "                                   Release blocked records (held, failed, deleted or reverted) back to",
                 "                                   pending, all of them, the ones named, or every one an issue keeps",
                 "                                   blocked, once their cause is fixed (needs --db)",
+                "sqlflow records adopt <flow.yaml> (--key <delivery key>... | --issue <id> --confirm <partition>)",
+                "                      [--interface <name>] [--partition <id>]",
+                "                                   Adopt the record OSDU already holds at the id a held record's key",
+                "                                   makes, written by another system or a ledger this database does not",
+                "                                   hold: the record claims the id, and the next run writes it there. An",
+                "                                   issue's records take the partition typed back (needs --db)",
                 "sqlflow records reverse <flow.yaml> (--run <id> | --submission <id>) [--interface <name>] [--partition <id>]",
                 "                        [--preview]",
                 "                                   Put OSDU back as it was before one run or submission: what it created",
@@ -130,9 +136,9 @@ public sealed class DeliveryCliModule : ICliModule
             ],
             DeliveryRecordVerbs.RecordsAsync)
         {
-            Subcommands = ["list", "show", "issues", "release", "reverse", "reversals", "artifacts", "undos"],
+            Subcommands = ["list", "show", "issues", "release", "adopt", "reverse", "reversals", "artifacts", "undos"],
             Flags = ["--contains", "--preview"],
-            ValueOptions = ["--interface", "--partition", "--search", "--status", "--max", "--key", "--attempts", "--issue", "--run", "--submission", "--outcome"],
+            ValueOptions = ["--interface", "--partition", "--search", "--status", "--max", "--key", "--attempts", "--issue", "--confirm", "--run", "--submission", "--outcome"],
         },
         new CliVerb(
             "config",

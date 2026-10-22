@@ -105,6 +105,9 @@ other packages adopt the same contract.
 - [0020: the explorer reads a partition through the partition's own connection, never a flow's](decisions/0020-explorer-partition-connection.md) -
   why the explorer signs in with the platform and client a partition's configuration names, what a record page's check
   still reads through, and why the explorer has no connection setting of its own.
+- [0021: a record whose business key OSDU already holds is adopted by an operator, and the ledger maintains it from then on](decisions/0021-adopting-occupied-records.md) -
+  why a row whose id OSDU already holds is held until adopted, why the hold keeps the id and the adoption claims it, and
+  how two instances linked to one record share it without calling each other's writes drift.
 
 ## Coverage
 

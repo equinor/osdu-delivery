@@ -62,6 +62,23 @@ public static class AttemptResult
     }
 
     /// <summary>
+    /// The result of an adoption: the OSDU id the record claimed and the version OSDU held there when the record was held for
+    /// it, under <c>adopted</c>, and the note saying who adopted it and what follows.
+    /// </summary>
+    public static string Adopted(string targetId, long? version, string detail)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(targetId);
+        ArgumentException.ThrowIfNullOrWhiteSpace(detail);
+        var adopted = new JsonObject { ["targetId"] = targetId };
+        if (version is { } held)
+        {
+            adopted["version"] = held;
+        }
+
+        return new JsonObject { ["detail"] = detail, ["adopted"] = adopted }.ToJsonString();
+    }
+
+    /// <summary>
     /// The result of a removal: the correlation id its call carried, what OSDU held for the record when it was removed (the
     /// record's target state, under <c>returned</c>), and the note saying what went.
     /// </summary>

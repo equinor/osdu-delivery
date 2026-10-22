@@ -106,6 +106,16 @@ public sealed partial class FakeOsduPlatform : HttpMessageHandler
 
     public HashSet<string> Purged { get; } = new(StringComparer.Ordinal);
 
+    /// <summary>The ids storage brought back from a soft delete through a merge patch, in the order it did.</summary>
+    public List<string> Restores { get; } = [];
+
+    /// <summary>
+    /// Whether a write of <paramref name="sent"/> changes nothing storage compares for skipdupes in <paramref name="held"/>:
+    /// data, meta, acl, legal, tags and ancestry, not the kind (osdu/specs/core/INTEGRATION.md section 2.2).
+    /// </summary>
+    private static bool SameForSkip(JsonObject held, JsonObject sent)
+        => new[] { "data", "meta", "acl", "legal", "tags", "ancestry" }.All(block => JsonNode.DeepEquals(held[block], sent[block]));
+
     /// <summary>The workflows the partition registers, with what each does.</summary>
     public Dictionary<string, Script> Workflows { get; } = new(StringComparer.Ordinal);
 
@@ -276,7 +286,7 @@ public sealed partial class FakeOsduPlatform : HttpMessageHandler
 
         if (path.StartsWith("/api/storage/v2/", StringComparison.Ordinal))
         {
-            return StorageService(method, Uri.UnescapeDataString(path["/api/storage/v2/".Length..]), body);
+            return StorageService(method, Uri.UnescapeDataString(path["/api/storage/v2/".Length..]), body, HttpUtility.ParseQueryString(uri.Query)["skipdupes"] == "true");
         }
 
         if (path.StartsWith("/api/file/v2/files/", StringComparison.Ordinal))
@@ -524,18 +534,61 @@ public sealed partial class FakeOsduPlatform : HttpMessageHandler
         return Error(HttpStatusCode.NotFound, "no dataset route " + operation);
     }
 
-    private HttpResponseMessage StorageService(string method, string operation, string? body)
+    private HttpResponseMessage StorageService(string method, string operation, string? body, bool skipDuplicates = false)
     {
         if (operation == "records" && method == "PUT")
         {
             var ids = new JsonArray();
+            var skipped = new JsonArray();
             foreach (var node in JsonNode.Parse(body!)!.AsArray())
             {
-                var version = Put(node!.AsObject());
-                ids.Add(node["id"]!.GetValue<string>() + ":" + version.ToString(CultureInfo.InvariantCulture));
+                // With skipdupes, an update that changes nothing storage compares (data, meta, acl, legal, tags, ancestry, not
+                // the kind) writes no version and names the id under skippedRecordIds, a record held soft-deleted included,
+                // which stays deleted (osdu/specs/core/INTEGRATION.md section 2.2).
+                var record = node!.AsObject();
+                var id = record["id"]!.GetValue<string>();
+                if (skipDuplicates && Records.TryGetValue(id, out var existing) && SameForSkip(existing, record))
+                {
+                    skipped.Add(id);
+                    continue;
+                }
+
+                var version = Put(record);
+                ids.Add(id + ":" + version.ToString(CultureInfo.InvariantCulture));
             }
 
-            return Json(HttpStatusCode.Created, new JsonObject { ["recordCount"] = ids.Count, ["recordIdVersions"] = ids });
+            // Storage creates each list on the first record added to it, so a list with nothing in it is left out.
+            var answer = new JsonObject { ["recordCount"] = ids.Count + skipped.Count };
+            if (ids.Count > 0)
+            {
+                answer["recordIdVersions"] = ids;
+            }
+
+            if (skipped.Count > 0)
+            {
+                answer["skippedRecordIds"] = skipped;
+            }
+
+            return Json(HttpStatusCode.Created, answer);
+        }
+
+        // A merge patch bringing a soft-deleted record back (openapi storage v2, PATCH /records/{id}): 404 for an id storage
+        // holds no record of, 400 for a record it already serves (storage RecordServiceImpl.patchRecord).
+        if (operation.StartsWith("records/", StringComparison.Ordinal) && method == "PATCH")
+        {
+            var id = operation["records/".Length..];
+            if (!Records.ContainsKey(id))
+            {
+                return Error(HttpStatusCode.NotFound, "Record not found");
+            }
+
+            if (!Removed.Remove(id))
+            {
+                return Error(HttpStatusCode.BadRequest, "Record State already updated");
+            }
+
+            Restores.Add(id);
+            return Json(HttpStatusCode.OK, new JsonObject { ["recordCount"] = 1, ["recordIds"] = new JsonArray(id) });
         }
 
         if (operation == "query/records" && method == "POST")

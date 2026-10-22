@@ -230,8 +230,15 @@ have loaded the row, the run scoped to the record reads it by key.
 `OSDU already holds a record at <id>, the OSDU id made from the key, and no record of the ledger claimed it: ...`.
 
 **Do:** two flows, or two keys of one flow, give the same OSDU id, or the id belongs to a record another system wrote.
-Deliver the flow to another partition, or give its mapping a `dataset.system` or key that yields other ids; for an id
-another system wrote, remove or rename that record in OSDU first. Nothing was sent.
+Deliver the flow to another partition, or give its mapping a `dataset.system` or key that yields other ids. Nothing was
+sent.
+
+For an id another system wrote that is this row's record (an earlier deployment of the delivery, or another instance
+delivering to the same partition, wrote it from the same business key), adopt it: **Adopt** on the record's page, **Adopt
+N** on the flow's Issues tab, or `sqlflow records adopt <flow.yaml> --issue <id> --confirm <partition>`. Each record
+claims the id at the version OSDU holds, and the next run writes its row there
+([Adopting a record OSDU already holds](../concepts/record-lifecycle.md#adopting-a-record-osdu-already-holds)). For a
+record that is not this row's, remove or rename it in OSDU first.
 
 ## A record is held because its OSDU id moved
 

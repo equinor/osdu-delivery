@@ -9,6 +9,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **A held record whose business key OSDU already holds can be adopted.** When the id a row's key makes is a record
+  OSDU already holds that no ledger claimed, written by an earlier deployment or another instance of the delivery, the
+  record is held keeping that id and version; **Adopt** on the record's page, **Adopt N** on the flow's Issues tab, or
+  `sqlflow records adopt` makes the record claim it at the version OSDU holds, its history says who adopted what, and the
+  next run writes the row there, so the ledger maintains the record from then on
+  ([Adopting a record OSDU already holds](osdu/docs/reference/concepts/record-lifecycle.md#adopting-a-record-osdu-already-holds)).
 - **A private GitHub repository can be read with a GitHub App instead of a personal access token.** Give the
   deployment a read-only App (`SQLFLOW_GITHUB_APP_ID` with its private key, or `github_app` in the Terraform and
   `githubApp` in the Bicep), or name one in a source's credential reference (`${githubapp:...}`), and every sync and
@@ -96,6 +102,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **A verify no longer calls a newer version drift when it holds the content the flow wrote.** Every write through the
+  storage route records the hash of what it wrote, so a record another writer sent again unchanged, such as another
+  instance of the delivery linked to it, is a match; records written before this change compare versions alone until
+  their next write ([routes, storage](osdu/docs/reference/flow/routes.md#storage)).
 - **The sign-in page says what OSDU Delivery is for, and is set on the brand's navy.** In place of four paragraphs of
   features, it shows the README's pitch in two lines and one sentence, a picture of the kinds of data it delivers
   (wells, logs, seismic, documents, production data and more) flowing into OSDU, the "powered by SQLFlow" lockup, and the
@@ -222,6 +232,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **A write OSDU skips as unchanged lands at the version OSDU holds.** With `skipDuplicates`, the ledger recorded the
+  version it last knew for a skipped record, which another writer may have moved, and recorded a skipped record OSDU held
+  soft-deleted as delivered while OSDU served nothing; the route now reads the version, and brings such a record back
+  under its id ([routes, storage](osdu/docs/reference/flow/routes.md#storage)).
+- **The audit trail narrows to inventory repairs and new OSDU ids.** Its action filter now offers `inventory-repair` and
+  `reassign-id`, which the trail records, beside the new `adopt` ([Audit trail](osdu/docs/reference/concepts/gui.md#audit-trail)).
 - **Shift+Tab leaves a tree.** In the catalog, a repository's folders, the AI context tables and a template's
   variables, Shift+Tab from a row sent focus straight back into the tree, so the keyboard could not leave it backwards;
   it now steps out, and the schema changes tree can be reached with Tab at all

@@ -158,9 +158,9 @@ public sealed class DeliveryRecord
     public string? TargetId { get; set; }
 
     /// <summary>
-    /// The OSDU id this record claimed for its flow when it first queued a document, kept for good afterwards. One OSDU
-    /// record belongs to one flow: no other flow's record can claim the same id. A record that was only ever held has
-    /// claimed nothing.
+    /// The OSDU id this record claimed for its flow when it first queued a document, or when an operator adopted the record
+    /// OSDU held there (<see cref="OccupiedTargetId"/>), kept for good afterwards. One OSDU record belongs to one flow: no
+    /// other flow's record can claim the same id. A record that was only ever held, and never adopted, has claimed nothing.
     /// </summary>
     public string? ClaimedTargetId { get; set; }
 
@@ -170,6 +170,17 @@ public sealed class DeliveryRecord
     /// for a record whose id is the one its mapping makes.
     /// </summary>
     public DateTime? TargetIdAssignedUtc { get; set; }
+
+    /// <summary>
+    /// While the record is held because OSDU already holds a record at the OSDU id its mapping makes from its key, and no
+    /// record of any ledger claimed that id (another system wrote it, or a ledger this database does not hold): that id.
+    /// An operator's adoption makes the record claim it (osdu/docs/reference/concepts/record-lifecycle.md, Adopting a
+    /// record OSDU already holds). Null for any other record, and once the record claims an id or is held for another reason.
+    /// </summary>
+    public string? OccupiedTargetId { get; set; }
+
+    /// <summary>The version OSDU held at <see cref="OccupiedTargetId"/> when the record was held for it; null with it.</summary>
+    public long? OccupiedTargetVersion { get; set; }
 
     public long? TargetVersion { get; set; }
 
@@ -3261,6 +3272,7 @@ public static class DeliveryModel
             OptionalOsduId(e.Property(r => r.ClaimedTargetId)).HasMaxLength(MaxTargetIdLength);
             OptionalOsduId(e.Property(r => r.WaitingFor)).HasMaxLength(MaxTargetIdLength);
             OptionalOsduId(e.Property(r => r.ParentId)).HasMaxLength(MaxTargetIdLength);
+            OptionalOsduId(e.Property(r => r.OccupiedTargetId)).HasMaxLength(MaxTargetIdLength);
             e.Property(r => r.Status).HasMaxLength(16).IsRequired();
             e.Property(r => r.LastVerifyOutcome).HasMaxLength(16);
             e.Property(r => r.LeaseOwner).HasMaxLength(200);

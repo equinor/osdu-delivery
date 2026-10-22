@@ -15,7 +15,8 @@ referenceRefs:
   - delivery-concept-ledger
 related:
   - delivery-wiki-0015-lost-records
-updated: 2026-10-16
+  - delivery-wiki-0021-adopting-occupied-records
+updated: 2026-10-22
 ---
 # 0002: Deterministic, client-supplied OSDU ids
 
@@ -56,3 +57,8 @@ second claim on an id from a record of the same flow as it does from another flo
 claimed, and a render that gives it another is held rather than sent. The one exception is an id an
 operator gives a record OSDU lost ([0015](0015-lost-records.md)): the record claims it, marked assigned, and
 is written under it whatever its mapping makes from its key.
+
+Because the id is the business key whoever renders it, an id made from a key can be one OSDU already holds a
+record at that the delivery itself wrote, from a ledger this database does not hold. A record claims such an id
+only when an operator adopts the record OSDU holds there, at the version OSDU held
+([0021](0021-adopting-occupied-records.md)); until then it is held, claiming nothing.

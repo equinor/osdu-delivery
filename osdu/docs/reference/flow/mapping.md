@@ -344,9 +344,11 @@ Under `idFrom: key`:
   cut short or changed to fit.
 - **Case is the source's to fold.** The id keeps whatever case the key has; a source whose codes ignore case should fold
   them in the ingestion SQL.
-- **An id OSDU already holds is never taken over.** Before a record first claims an id made from its key, the run asks
-  the flow's target whether OSDU holds a record there. A record no record of the ledger claimed is another system's: the
-  record is held (`OSDU already holds a record at <id> ..., the OSDU id made from the key, and no record of the ledger claimed it: it is another system's, so nothing is sent ...`).
+- **An id OSDU already holds is taken over only when an operator adopts it.** Before a record first claims an id made from
+  its key, the run asks the flow's target whether OSDU holds a record there. One no record of the ledger claimed was written
+  by another system, or another instance of the delivery: the record is held (`OSDU already holds a record at <id> ..., the OSDU id made from the key, and no record of the ledger claimed it: ...`),
+  keeping the id and the version OSDU holds, until an operator adopts it, after which the record claims the id and the
+  next run writes its row there ([Adopting a record OSDU already holds](../concepts/record-lifecycle.md#adopting-a-record-osdu-already-holds)).
   An answer that is not an absence holds the record too, and a release or the next run asks again.
 
 Under either form the delivery key stays the record's identity in the ledger, and **a record keeps the id it claimed**

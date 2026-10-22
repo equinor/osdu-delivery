@@ -39,51 +39,7 @@ public sealed class DeliveryIssuesApiTests
         await SampleEstate.MigrateModuleAsync(cs);
 
         var suffix = Guid.NewGuid().ToString("N")[..10];
-        var flowName = "api-issues-" + suffix;
-        var repoId = FlowIdentity.FromName("repo/cp-issues-" + suffix);
-        var pipelineId = CatalogIdentity.Pipeline(repoId, flowName);
-        var flowId = FlowId.Of(flowName);
-        var now = DateTime.UtcNow;
-        var yaml = $$"""
-            flowType: delivery
-            name: {{flowName}}
-            source:
-              connection: ${env:OSDU_DATA_DB}
-              record: { object: OsduData.arc.Wellbore, key: [facility_name] }
-              work: ../.work/issues
-            render:
-              mapping: Wellbore@1.0.0
-            target:
-              endpoint: ${env:OSDU_URL}
-              protocol: storage
-              headers: { data-partition-id: dev }
-            """;
-
-        await using (var db = CatalogDatabase.Create(cs))
-        {
-            db.Repos.Add(new CatalogRepo
-            {
-                Id = repoId, Name = "cp-issues-" + suffix, RemoteUrl = "https://example/cp-issues.git",
-                RootPath = Path.GetTempPath(), FirstSeenUtc = now, LastSyncUtc = now,
-            });
-            db.Pipelines.Add(new CatalogPipeline
-            {
-                Id = pipelineId,
-                RepoId = repoId,
-                Name = flowName,
-                Kind = "delivery",
-                RelativePath = "flows/" + flowName + ".yaml",
-                ContentHash = new string('0', 64),
-                Yaml = yaml,
-                DefinitionJson = string.Create(CultureInfo.InvariantCulture, $$"""{"name":"{{flowName}}","flowKind":"delivery"}"""),
-                Active = true,
-                Wave = 0,
-                FirstSeenUtc = now,
-                LastSeenUtc = now,
-            });
-            await db.SaveChangesAsync();
-        }
-
+        var (repoId, pipelineId, flowId, flowName) = await SeedFlowAsync(cs, suffix);
         var ledger = new OsduLedger(() => SampleEstate.Context(cs));
         await ledger.RegisterAsync(flowId, TestLedgers.Partition, flowName);
         var wellbores = Enumerable.Range(1, 3)
@@ -181,24 +137,173 @@ public sealed class DeliveryIssuesApiTests
         }
         finally
         {
-            await using (var osdu = SampleEstate.Context(cs))
-            {
-                await osdu.DeliveryActivityRecords.Where(l => l.FlowId == flowId).ExecuteDeleteAsync();
-                await osdu.DeliveryActivities.Where(a => a.FlowId == flowId).ExecuteDeleteAsync();
-                await osdu.DeliveryAttempts.Where(a => a.FlowId == flowId).ExecuteDeleteAsync();
-                await osdu.DeliveryRecordIdentities.Where(i => i.FlowId == flowId).ExecuteDeleteAsync();
-                await osdu.DeliveryRecords.Where(r => r.FlowId == flowId).ExecuteDeleteAsync();
-                await osdu.DeliveryInterfaces.Where(i => i.RepoId == repoId).ExecuteDeleteAsync();
-            }
+            await CleanAsync(cs, repoId, flowId);
+        }
+    }
 
+    [Fact]
+    public async Task Records_held_for_an_id_osdu_holds_are_adopted_one_at_a_time_or_by_their_issue_with_the_partition_typed_back()
+    {
+        var cs = OsduTestServer.Require();
+        await CatalogDatabase.MigrateAsync(cs);
+        await SampleEstate.MigrateModuleAsync(cs);
+
+        var suffix = Guid.NewGuid().ToString("N")[..10];
+        var (repoId, pipelineId, flowId, flowName) = await SeedFlowAsync(cs, suffix);
+        var ledger = new OsduLedger(() => SampleEstate.Context(cs));
+        await ledger.RegisterAsync(flowId, TestLedgers.Partition, flowName);
+
+        // Three records whose ids, made from their keys, OSDU already holds records at that no ledger claimed: one issue.
+        var namespaces = Enumerable.Range(1, 3)
+            .Select(i => Occupied(flowId, $"N-{suffix}-{i}", $"{TestLedgers.Partition}:reference-data--ExternalCatalogNamespace:N-{suffix}-{i}", 40 + i))
+            .ToList();
+        var tag = Held(flowId, $"T-{suffix}", EmptyTag, "wells.csv");
+        await ledger.MarkHeldAsync(flowId, [.. namespaces, tag]);
+        var issue = ProblemSignature.Format(ProblemSignature.Of(namespaces[0].LastError));
+        Assert.Equal(issue, ProblemSignature.Format(ProblemSignature.Of(namespaces[2].LastError)));
+
+        try
+        {
+            await using var factory = new ControlPlaneAppFactory()
+                .WithCatalog(cs)
+                .WithModules(new DeliveryControlPlaneModule())
+                .WithSetting("ControlPlane:Worker:Enabled", "false")
+                .WithSetting("Osdu:SchemaRepository:WarmOnStart", "false");
+            using var client = factory.CreateClient();
+            var token = await TokenAsync(client);
+
+            // The record says which id OSDU holds a record at, and the version, for the page to offer its adoption.
+            var first = namespaces[0];
+            var shown = await JsonAsync(client, token, HttpMethod.Get, $"/api/v1/delivery/records/{flowId:D}/{first.DeliveryKey.Value:D}");
+            Assert.Equal(first.OccupiedTargetId, shown.GetProperty("record").GetProperty("occupiedTargetId").GetString());
+            Assert.Equal(41, shown.GetProperty("record").GetProperty("occupiedTargetVersion").GetInt64());
+
+            // A record held for something else has nothing to adopt.
+            var nothing = await JsonAsync(client, token, HttpMethod.Post, $"/api/v1/delivery/records/{flowId:D}/{tag.DeliveryKey.Value:D}/adopt", "{}", HttpStatusCode.Conflict);
+            Assert.Contains("is not held because OSDU already holds a record at the OSDU id its key makes", nothing.GetProperty("detail").GetString(), StringComparison.Ordinal);
+
+            // One record adopted: it claims the id at the version OSDU held, and its history names who adopted it.
+            var adopted = await JsonAsync(client, token, HttpMethod.Post, $"/api/v1/delivery/records/{flowId:D}/{first.DeliveryKey.Value:D}/adopt", "{}");
+            Assert.Equal((first.OccupiedTargetId, 41L, JsonValueKind.Null), (adopted.GetProperty("targetId").GetString(), adopted.GetProperty("version").GetInt64(), adopted.GetProperty("runId").ValueKind));
+            var claimed = await ledger.GetRecordAsync(flowId, first.DeliveryKey);
+            Assert.Equal((first.OccupiedTargetId, (long?)41, false), (claimed!.ClaimedTargetId, claimed.TargetVersion, claimed.Blocked));
+            var again = await JsonAsync(client, token, HttpMethod.Post, $"/api/v1/delivery/records/{flowId:D}/{first.DeliveryKey.Value:D}/adopt", "{}", HttpStatusCode.Conflict);
+            Assert.Contains($"it claimed {first.OccupiedTargetId} already", again.GetProperty("detail").GetString(), StringComparison.Ordinal);
+
+            // The issue's records together, with the partition typed back: none without it, none with another.
+            var path = $"/api/v1/delivery/flows/{pipelineId:D}/issues/{issue}/adopt";
+            await StatusAsync(client, token, HttpMethod.Post, path, HttpStatusCode.BadRequest, "{}");
+            var wrong = await JsonAsync(client, token, HttpMethod.Post, path, """{"confirm":"prod"}""", HttpStatusCode.BadRequest);
+            Assert.Contains($"are kept in '{TestLedgers.Partition}'. Nothing was adopted.", wrong.GetProperty("detail").GetString(), StringComparison.Ordinal);
+            var together = await JsonAsync(client, token, HttpMethod.Post, path, $$"""{"confirm":"{{TestLedgers.Partition.ToUpperInvariant()}}","run":true}""", HttpStatusCode.Accepted);
+            Assert.Equal((issue, 2), (together.GetProperty("issue").GetString(), together.GetProperty("adopted").GetInt32()));
+            var runId = together.GetProperty("runId").GetGuid();
             await using (var db = CatalogDatabase.Create(cs))
             {
-                await db.RunEvents.Where(e => e.RepoId == repoId).ExecuteDeleteAsync();
-                await db.Runs.Where(r => r.RepoId == repoId).ExecuteDeleteAsync();
-                await db.RunGroups.Where(g => g.RepoId == repoId).ExecuteDeleteAsync();
-                await db.Pipelines.Where(p => p.RepoId == repoId).ExecuteDeleteAsync();
-                await db.Repos.Where(r => r.Id == repoId).ExecuteDeleteAsync();
+                Assert.Equal(pipelineId, (await db.Runs.AsNoTracking().SingleAsync(r => r.RunId == runId)).PipelineId);
             }
+
+            foreach (var record in namespaces.Skip(1))
+            {
+                Assert.Equal(record.OccupiedTargetId, (await ledger.GetRecordAsync(flowId, record.DeliveryKey))!.ClaimedTargetId);
+                var activities = await JsonAsync(client, token, HttpMethod.Get, $"/api/v1/delivery/records/{flowId:D}/{record.DeliveryKey.Value:D}/activities");
+                var adoption = Assert.Single(activities.EnumerateArray().ToList());
+                Assert.Equal("adopt", adoption.GetProperty("kind").GetString());
+                Assert.StartsWith("adopted 2 record(s) issue ", adoption.GetProperty("summary").GetString(), StringComparison.Ordinal);
+            }
+
+            // Every record of the issue adopted, the issue is gone; the other record is still held for its own reason.
+            await StatusAsync(client, token, HttpMethod.Post, path, HttpStatusCode.NotFound, $$"""{"confirm":"{{TestLedgers.Partition}}"}""");
+            Assert.True((await ledger.GetRecordAsync(flowId, tag.DeliveryKey))!.Blocked);
+        }
+        finally
+        {
+            await CleanAsync(cs, repoId, flowId);
+        }
+    }
+
+    /// <summary>
+    /// A record held because OSDU already holds a record at <paramref name="targetId"/>, the id its key makes, at
+    /// <paramref name="version"/>, as the intake holds it.
+    /// </summary>
+    private static RecordState Occupied(Guid flowId, string sourceKey, string targetId, long version) => Held(
+        flowId,
+        sourceKey,
+        $"OSDU already holds a record at {targetId} at version {version.ToString(CultureInfo.InvariantCulture)}, the OSDU id made from the key, and no record of the ledger claimed it: "
+            + "another system wrote it, or a ledger this database does not hold, so nothing is sent rather than writing a new version of a record no ledger owns",
+        "namespaces.json") with
+    {
+        OccupiedTargetId = targetId,
+        OccupiedTargetVersion = version,
+    };
+
+    /// <summary>A delivery flow in a repository of its own in the catalog, named with <paramref name="suffix"/>.</summary>
+    private static async Task<(Guid RepoId, Guid PipelineId, Guid FlowId, string FlowName)> SeedFlowAsync(string cs, string suffix)
+    {
+        var flowName = "api-issues-" + suffix;
+        var repoId = FlowIdentity.FromName("repo/cp-issues-" + suffix);
+        var pipelineId = CatalogIdentity.Pipeline(repoId, flowName);
+        var now = DateTime.UtcNow;
+        var yaml = $$"""
+            flowType: delivery
+            name: {{flowName}}
+            source:
+              connection: ${env:OSDU_DATA_DB}
+              record: { object: OsduData.arc.Wellbore, key: [facility_name] }
+              work: ../.work/issues
+            render:
+              mapping: Wellbore@1.0.0
+            target:
+              endpoint: ${env:OSDU_URL}
+              protocol: storage
+              headers: { data-partition-id: dev }
+            """;
+
+        await using var db = CatalogDatabase.Create(cs);
+        db.Repos.Add(new CatalogRepo
+        {
+            Id = repoId, Name = "cp-issues-" + suffix, RemoteUrl = "https://example/cp-issues.git",
+            RootPath = Path.GetTempPath(), FirstSeenUtc = now, LastSyncUtc = now,
+        });
+        db.Pipelines.Add(new CatalogPipeline
+        {
+            Id = pipelineId,
+            RepoId = repoId,
+            Name = flowName,
+            Kind = "delivery",
+            RelativePath = "flows/" + flowName + ".yaml",
+            ContentHash = new string('0', 64),
+            Yaml = yaml,
+            DefinitionJson = string.Create(CultureInfo.InvariantCulture, $$"""{"name":"{{flowName}}","flowKind":"delivery"}"""),
+            Active = true,
+            Wave = 0,
+            FirstSeenUtc = now,
+            LastSeenUtc = now,
+        });
+        await db.SaveChangesAsync();
+        return (repoId, pipelineId, FlowId.Of(flowName), flowName);
+    }
+
+    /// <summary>Removes what a test of this class left: the flow's ledger rows, and the repository's catalog rows.</summary>
+    private static async Task CleanAsync(string cs, Guid repoId, Guid flowId)
+    {
+        await using (var osdu = SampleEstate.Context(cs))
+        {
+            await osdu.DeliveryActivityRecords.Where(l => l.FlowId == flowId).ExecuteDeleteAsync();
+            await osdu.DeliveryActivities.Where(a => a.FlowId == flowId).ExecuteDeleteAsync();
+            await osdu.DeliveryAttempts.Where(a => a.FlowId == flowId).ExecuteDeleteAsync();
+            await osdu.DeliveryRecordIdentities.Where(i => i.FlowId == flowId).ExecuteDeleteAsync();
+            await osdu.DeliveryRecords.Where(r => r.FlowId == flowId).ExecuteDeleteAsync();
+            await osdu.DeliveryInterfaces.Where(i => i.RepoId == repoId).ExecuteDeleteAsync();
+        }
+
+        await using (var db = CatalogDatabase.Create(cs))
+        {
+            await db.RunEvents.Where(e => e.RepoId == repoId).ExecuteDeleteAsync();
+            await db.Runs.Where(r => r.RepoId == repoId).ExecuteDeleteAsync();
+            await db.RunGroups.Where(g => g.RepoId == repoId).ExecuteDeleteAsync();
+            await db.Pipelines.Where(p => p.RepoId == repoId).ExecuteDeleteAsync();
+            await db.Repos.Where(r => r.Id == repoId).ExecuteDeleteAsync();
         }
     }
 

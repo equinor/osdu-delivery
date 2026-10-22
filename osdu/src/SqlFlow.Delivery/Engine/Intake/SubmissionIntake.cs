@@ -706,7 +706,9 @@ public sealed class SubmissionIntake
     /// Holds the records of <paramref name="unclaimed"/> whose OSDU id, made from their key, OSDU already holds a record at,
     /// and takes them out of <paramref name="pending"/> before staging. Such a record never queued a document, so nothing it
     /// did wrote that record: it is another system's, or one this ledger has no record of, and writing to the id would make
-    /// a new version of a record the ledger does not own. The flow's own read back asks (<see cref="IDeliveryProtocol.VerifyBatchAsync"/>),
+    /// a new version of a record the ledger does not own. The hold keeps the id and the version OSDU answered, so an operator
+    /// who knows the record is this one's can adopt it (<see cref="ILedger.AdoptOccupiedAsync"/>), after which the record
+    /// claims the id and is never asked again. The flow's own read back asks (<see cref="IDeliveryProtocol.VerifyBatchAsync"/>),
     /// one batched read for the batch. An id a record of the ledger has claimed is not asked: staging refuses it, naming that
     /// record. An answer that is not an absence holds the record too, since an id made from a key is claimed only when it is
     /// known to be free; a release, or the next run, asks again. A target that keeps records under keys of its own (a DSPDM
@@ -729,10 +731,10 @@ public sealed class SubmissionIntake
             return 0;
         }
 
-        var reasons = await OccupiedAsync(asking.Select(p => p.TargetId!).Distinct(StringComparer.Ordinal).ToList(), ct).ConfigureAwait(false);
+        var occupancies = await OccupiedAsync(asking.Select(p => p.TargetId!).Distinct(StringComparer.Ordinal).ToList(), ct).ConfigureAwait(false);
         var held = asking
-            .Where(p => reasons.ContainsKey(p.TargetId!))
-            .Select(p => OccupiedState(p, reasons[p.TargetId!]))
+            .Where(p => occupancies.ContainsKey(p.TargetId!))
+            .Select(p => OccupiedState(p, occupancies[p.TargetId!]))
             .ToList();
         if (held.Count == 0)
         {
@@ -749,18 +751,28 @@ public sealed class SubmissionIntake
     }
 
     /// <summary>
+    /// Why an id made from a key could not be claimed: OSDU holds a record there (<paramref name="Held"/>, at
+    /// <paramref name="Version"/> when its answer named one), which an operator may adopt; or the target could not say, or
+    /// there was no target to ask, which a release or the next run asks again.
+    /// </summary>
+    private sealed record Occupancy(string Reason, bool Held, long? Version);
+
+    /// <summary>
     /// Why each of <paramref name="ids"/> that is not known to be free cannot be claimed: OSDU holds a record there, the target
     /// could not say, or there is no target to ask. An id the target answers is absent is free, and not in the result.
     /// </summary>
-    private async Task<Dictionary<string, string>> OccupiedAsync(IReadOnlyList<string> ids, CancellationToken ct)
+    private async Task<Dictionary<string, Occupancy>> OccupiedAsync(IReadOnlyList<string> ids, CancellationToken ct)
     {
-        var reasons = new Dictionary<string, string>(StringComparer.Ordinal);
+        var reasons = new Dictionary<string, Occupancy>(StringComparer.Ordinal);
         if (Target is null)
         {
             foreach (var id in ids)
             {
-                reasons[id] = $"the OSDU id {id} is made from the key, and no target was given to ask whether OSDU already holds a record there; "
-                    + "an id made from a key is claimed only when it is known to be free";
+                reasons[id] = new Occupancy(
+                    $"the OSDU id {id} is made from the key, and no target was given to ask whether OSDU already holds a record there; "
+                    + "an id made from a key is claimed only when it is known to be free",
+                    Held: false,
+                    Version: null);
             }
 
             return reasons;
@@ -784,8 +796,11 @@ public sealed class SubmissionIntake
                 var why = Http.HeaderRedaction.RedactMessage(ex.Message);
                 foreach (var id in chunk)
                 {
-                    reasons[id] = $"asking OSDU whether it already holds a record at {id}, the OSDU id made from the key, failed ({why}); "
-                        + "an id made from a key is claimed only when it is known to be free, so a release or the next run asks again";
+                    reasons[id] = new Occupancy(
+                        $"asking OSDU whether it already holds a record at {id}, the OSDU id made from the key, failed ({why}); "
+                        + "an id made from a key is claimed only when it is known to be free, so a release or the next run asks again",
+                        Held: false,
+                        Version: null);
                 }
 
                 continue;
@@ -807,13 +822,20 @@ public sealed class SubmissionIntake
                         break;
                     case VerifyOutcome.Match or VerifyOutcome.Drifted:
                         var version = result.ObservedVersion is { } observed ? string.Create(CultureInfo.InvariantCulture, $" at version {observed}") : string.Empty;
-                        reasons[chunk[i]] = $"OSDU already holds a record at {chunk[i]}{version}, the OSDU id made from the key, and no record of the ledger claimed it: "
-                            + "it is another system's, so nothing is sent rather than writing a new version of it. Remove or rename that record, "
-                            + "or give the mapping a key or dataset.idFrom that yields another id";
+                        reasons[chunk[i]] = new Occupancy(
+                            $"OSDU already holds a record at {chunk[i]}{version}, the OSDU id made from the key, and no record of the ledger claimed it: "
+                            + "another system wrote it, or a ledger this database does not hold, so nothing is sent rather than writing a new version of a "
+                            + "record no ledger owns. Adopt it when it is this record's (the record claims the id, and the next run writes this row there), "
+                            + "remove or rename that record, or give the mapping a key or dataset.idFrom that yields another id",
+                            Held: true,
+                            Version: result.ObservedVersion);
                         break;
                     default:
-                        reasons[chunk[i]] = $"OSDU could not say whether it holds a record at {chunk[i]}, the OSDU id made from the key ({Http.HeaderRedaction.RedactMessage(result.Detail ?? "no detail")}); "
-                            + "an id made from a key is claimed only when it is known to be free, so a release or the next run asks again";
+                        reasons[chunk[i]] = new Occupancy(
+                            $"OSDU could not say whether it holds a record at {chunk[i]}, the OSDU id made from the key ({Http.HeaderRedaction.RedactMessage(result.Detail ?? "no detail")}); "
+                            + "an id made from a key is claimed only when it is known to be free, so a release or the next run asks again",
+                            Held: false,
+                            Version: null);
                         break;
                 }
             }
@@ -824,10 +846,13 @@ public sealed class SubmissionIntake
 
     /// <summary>
     /// A record held before staging because its OSDU id is not known to be free, as a hold: the origin and version the work
-    /// was built from, no OSDU id (the one it names is not the ledger's), and the reason.
+    /// was built from, no OSDU id (the one it names is not the ledger's), and the reason. An id OSDU holds a record at is kept
+    /// apart, with the version OSDU answered, as the one an operator's adoption claims.
     /// </summary>
-    private static RecordState OccupiedState(RecordState record, string reason) => record with
+    private static RecordState OccupiedState(RecordState record, Occupancy occupancy) => record with
     {
+        OccupiedTargetId = occupancy.Held ? record.TargetId : null,
+        OccupiedTargetVersion = occupancy.Held ? occupancy.Version : null,
         TargetId = null,
         PendingDocumentRef = null,
         WorkBatch = null,
@@ -837,7 +862,7 @@ public sealed class SubmissionIntake
         PendingMetadata = false,
         PendingPayload = false,
         CacheSetId = null,
-        LastError = reason,
+        LastError = occupancy.Reason,
     };
 
     /// <summary>

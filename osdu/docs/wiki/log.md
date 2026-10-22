@@ -104,3 +104,18 @@ Added [0020](decisions/0020-explorer-partition-connection.md): why borrowing a f
 depend on the catalog (no search before a flow exists, credentials that moved with the flows), why the partition's
 configured platform and client are the way in, why a record page's check stays on the record's own flow, and why the
 explorer has no connection setting of its own. Indexed 0020.
+
+## [2026-10-22] ingest | Adopting a record OSDU already holds, decision 0021
+
+Source: the change that lets an operator adopt the record OSDU already holds at the id a held record's business key makes:
+the hold keeping the id and version (`osdu/src/SqlFlow.Delivery/Engine/Intake/SubmissionIntake.cs`), the adoption
+(`osdu/src/SqlFlow.Delivery/Ledger/OsduLedger.Adoptions.cs`, migration `RecordOccupiedTargetId`), the storage route's
+content hash on every write, its reading of skipped versions and its restore of a skipped soft-deleted record
+(`osdu/src/SqlFlow.Delivery/Engine/Protocols/OsduRecordProtocol.cs`, `OwnedContent.cs`), and the reference pages it
+changed ([record lifecycle](../reference/concepts/record-lifecycle.md#adopting-a-record-osdu-already-holds),
+[routes](../reference/flow/routes.md#storage), [sqlflow records adopt](../reference/cli/records.md#records-adopt)).
+
+Added [0021](decisions/0021-adopting-occupied-records.md): why the id an ingestion row makes is its business key whoever
+renders it, why a record OSDU holds there was held with no way forward when the delivery itself had written it, why an
+operator adopts it and the adoption claims the id at once, and what two instances linked to one record need of the
+storage route. Indexed 0021.

@@ -2861,6 +2861,14 @@ namespace SqlFlow.Delivery.Data.Migrations
                     b.Property<DateTime?>("NextAttemptUtc")
                         .HasColumnType("datetime2");
 
+                    b.Property<string>("OccupiedTargetId")
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)")
+                        .UseCollation("Latin1_General_100_BIN2");
+
+                    b.Property<long?>("OccupiedTargetVersion")
+                        .HasColumnType("bigint");
+
                     b.Property<string>("ParentId")
                         .HasMaxLength(500)
                         .HasColumnType("nvarchar(500)")
