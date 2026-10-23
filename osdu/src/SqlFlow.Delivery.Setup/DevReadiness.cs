@@ -137,6 +137,7 @@ internal static partial class DevReadiness
             }
         }
 
+        file.AddRange(RetiredSettings(facts));
         var sections = new List<ReportSection>();
         if (file.Count > 0)
         {
@@ -270,6 +271,57 @@ internal static partial class DevReadiness
         return findings;
     }
 
+    /// <summary>
+    /// The settings that once gave the delivery module a database of its own, set in the file or in this terminal: an error
+    /// each, since every host refuses to start while one is set, so the launchers stop before they start anything. The fix
+    /// says whether removing it loses nothing (it names the catalog's own database) or a ledger has to move first.
+    /// </summary>
+    private static List<Finding> RetiredSettings(DevFacts facts)
+    {
+        var advice = facts.Advice;
+        var catalog = facts.Settings.Get(DevValues.CatalogName);
+        var findings = new List<Finding>();
+        foreach (var name in DevValues.RetiredSettings)
+        {
+            var inFile = facts.File!.Entries.FirstOrDefault(e => string.Equals(e.Name, name, StringComparison.Ordinal))?.Value;
+            var inTerminal = facts.Terminal.TryGetValue(name, out var terminal) ? terminal : null;
+            var value = !string.IsNullOrWhiteSpace(inFile) ? inFile : !string.IsNullOrWhiteSpace(inTerminal) ? inTerminal : null;
+            if (value is null)
+            {
+                continue;
+            }
+
+            var remove = value == inFile
+                ? $"remove it from {advice.EnvFile}"
+                : advice.Platform == DevPlatform.Windows
+                    ? $"clear it in this terminal (set {name}=) and in Windows' environment variables"
+                    : $"clear it in this shell (unset {name}) and in the profile that sets it";
+            var fix = NamesTheCatalog(value, catalog)
+                ? $"It names the catalog's database, so nothing is lost: {remove}."
+                : $"It may name another database than {DevValues.CatalogName}, which would hold the ledger: bring that database's osdu schema into the catalog's database first, then {remove}.";
+            findings.Add(Finding.Error(
+                name, $"no longer a setting: the osdu schema lives in the catalog's database, which {DevValues.CatalogName} names, and every host refuses to start while it is set", fix));
+        }
+
+        return findings;
+    }
+
+    /// <summary>Whether a retired setting's value reaches the catalog's database: the same reference, or the same server and database.</summary>
+    private static bool NamesTheCatalog(string value, string? catalog)
+    {
+        if (string.Equals(value, $"${{env:{DevValues.CatalogName}}}", StringComparison.Ordinal)
+            || string.Equals(value, catalog, StringComparison.Ordinal))
+        {
+            return true;
+        }
+
+        return SqlTarget.TryParse(value) is { HasReference: false } retired
+            && SqlTarget.TryParse(catalog) is { HasReference: false } current
+            && retired.Database.Length > 0
+            && SameServer(retired.Server, current.Server)
+            && string.Equals(retired.Database, current.Database, StringComparison.OrdinalIgnoreCase);
+    }
+
     /// <summary>Names the file sets that the template does not: kept, and checked for a misspelling of one it does.</summary>
     private static List<Finding> Extras(DevFacts facts)
     {
@@ -279,7 +331,7 @@ internal static partial class DevReadiness
         foreach (var name in facts.File!.Entries.Select(e => e.Name).Distinct(StringComparer.Ordinal))
         {
             if (known.Contains(name, StringComparer.Ordinal) || DevFactsCollector.RepositorySetting().IsMatch(name) || name.StartsWith("Osdu__Partitions__", StringComparison.Ordinal)
-                || name.StartsWith("Osdu__Properties__", StringComparison.Ordinal))
+                || name.StartsWith("Osdu__Properties__", StringComparison.Ordinal) || DevValues.RetiredSettings.Contains(name, StringComparer.Ordinal))
             {
                 continue;
             }

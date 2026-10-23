@@ -278,3 +278,14 @@ Amended [0025](decisions/0025-parallelism-and-default-fan-out.md): each run of a
 key slices from its own node, on SQLFlow's run fan-out, in place of intake and drain members over a shared work folder;
 the export's segment planner was looked at for the cut and not taken. [0006](decisions/0006-work-batches.md) says the
 same.
+
+## [2026-10-23] ingest | The local check names a retired module connection, decision 0026 amended
+
+Source: the human's `dev.bat` run on their other computer after decision 0026 landed: the check said ready, the
+migration failed with `SQLFLOW_OSDU_DB is no longer a setting`, and the control plane then stopped on the same refusal,
+because their `.sqlflow/env` still named it. The check (`osdu/src/SqlFlow.Delivery.Setup/DevReadiness.cs`) had listed
+the name among the file's extra settings and gone on.
+
+Amended [0026](decisions/0026-one-database-connection.md): a retired setting in the file or the terminal is an error of
+the check, so the launcher stops before it starts anything, with a fix that says whether the value names the catalog's
+own database.

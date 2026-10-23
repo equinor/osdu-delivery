@@ -32,10 +32,12 @@ public static class OsduModuleDatabase
         + ", or --db on the command line).";
 
     /// <summary>
-    /// The settings that once gave the module a database of its own, each refused with what replaced it. Ignoring one would
-    /// move the ledger: a host would migrate an empty <c>osdu</c> schema in the catalog's database and deliver everything again.
+    /// The settings that once gave the module a database of its own, each refused with what replaced it: a configuration key
+    /// and an environment variable. Ignoring one would move the ledger: a host would migrate an empty <c>osdu</c> schema in
+    /// the catalog's database and deliver everything again. The local readiness check names them too, in the environment's
+    /// spelling (<c>SqlFlow.Delivery.Setup</c>'s <c>DevValues.RetiredSettings</c>), and a test holds the two lists alike.
     /// </summary>
-    private static readonly string[] RetiredSettings = ["Osdu:Database:Connection", "SQLFLOW_OSDU_DB"];
+    public static IReadOnlyList<string> RetiredSettings { get; } = ["Osdu:Database:Connection", "SQLFLOW_OSDU_DB"];
 
     /// <summary>The module database on the catalog's own connection, as the control plane and a command open it.</summary>
     public static ModuleDatabase<OsduDbContext> Create() => Build(connectionReference: null);

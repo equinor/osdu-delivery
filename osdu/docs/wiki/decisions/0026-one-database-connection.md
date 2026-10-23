@@ -29,6 +29,7 @@ sourceRefs:
   - osdu/deploy/bicep/main.bicep
   - osdu/deploy/k8s/worker-pool.yaml
   - sqlflow/src/SqlFlow.Catalog/Modules/ModuleDatabaseConnections.cs
+  - osdu/src/SqlFlow.Delivery.Setup/DevReadiness.cs
 updated: 2026-10-23
 ---
 # 0026: The osdu schema lives in the catalog's database, reached through its one connection
@@ -93,3 +94,6 @@ should be no duplicate connections, and every hard-coded lookup of the second on
   database by hand before the hosts start again.
 - A node's start-up check describes the module as `own connection`, SQLFlow's word for a module database opened through
   a reference, though the reference is the catalog's.
+- A developer's `.sqlflow/env` still naming `SQLFLOW_OSDU_DB` stopped `dev.bat` halfway: the check said ready, the
+  migration and then the control plane refused. `dev.bat check` now names a retired setting, in the file or the
+  terminal, as an error, so the launcher stops before it starts anything, and says whether removing it loses nothing.

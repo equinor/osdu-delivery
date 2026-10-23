@@ -7574,7 +7574,8 @@
         "osdu/deploy/terraform/variables.tf",
         "osdu/deploy/bicep/main.bicep",
         "osdu/deploy/k8s/worker-pool.yaml",
-        "sqlflow/src/SqlFlow.Catalog/Modules/ModuleDatabaseConnections.cs"
+        "sqlflow/src/SqlFlow.Catalog/Modules/ModuleDatabaseConnections.cs",
+        "osdu/src/SqlFlow.Delivery.Setup/DevReadiness.cs"
       ]
     },
     {
