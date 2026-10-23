@@ -11,7 +11,7 @@ using YamlDotNet.Serialization.NamingConventions;
 namespace SqlFlow.Delivery.Documents;
 
 /// <summary>
-/// Loads the module's documents: delivery, retrieval, cache, assertion, dimension and inventory flows (behind the platform's
+/// Loads the module's documents: delivery, retrieval, cache, assertion, dimension, inventory and removal flows (behind the platform's
 /// envelope probe, which dispatches on flowType), and the mappings and dictionaries those flows name. Unknown keys are a hard
 /// parse error (osdu/docs/reference/flow/overview.md, Unknown and repeated keys are errors), and so is a literal secret
 /// (<see cref="DocumentSecrets"/>); every failure is a <see cref="FlowValidationException"/> prefixed with the file
@@ -131,6 +131,7 @@ public sealed class DeliveryDocumentLoader
         AssertionFlowDefinition.FlowTypeName,
         DimensionFlowDefinition.FlowTypeName,
         InventoryFlowDefinition.FlowTypeName,
+        RemovalFlowDefinition.FlowTypeName,
     ];
 
     /// <summary>The discriminator of a document: one of <see cref="FlowTypes"/> for a flow, "mapping" or "dictionary" for a document.</summary>
@@ -266,6 +267,32 @@ public sealed class DeliveryDocumentLoader
         }
 
         return ParseInventory(File.ReadAllText(path), path);
+    }
+
+    /// <summary>Parses a removal flow (<c>flowType: removal</c>): the keys a source holds, compared with delivery flows' ledgers.</summary>
+    public RemovalFlowDefinition ParseRemoval(string yaml, string source = "<inline>")
+    {
+        ArgumentNullException.ThrowIfNull(yaml);
+        var kind = Probe(yaml, source);
+        if (!kind.Equals(RemovalFlowDefinition.FlowTypeName, StringComparison.OrdinalIgnoreCase))
+        {
+            throw new FlowValidationException($"{source}: expected 'flowType: {RemovalFlowDefinition.FlowTypeName}', found '{kind}'.");
+        }
+
+        var y = Deserialize<RemovalFlowYaml>(_strict, yaml, source) ?? throw new FlowValidationException($"{source}: the document is empty.");
+        DocumentSecrets.Check(y, source);
+        return RemovalMapper.Map(y, source);
+    }
+
+    public RemovalFlowDefinition LoadRemoval(string path)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(path);
+        if (!File.Exists(path))
+        {
+            throw new FlowValidationException($"Removal flow file not found: '{path}'.");
+        }
+
+        return ParseRemoval(File.ReadAllText(path), path);
     }
 
     /// <summary>Loads the dictionary file at <paramref name="path"/>, naming it <paramref name="source"/> in every message.</summary>

@@ -89,7 +89,7 @@ records into issues, and what releasing a record does. For removals and reversal
 | `held` | The record was refused: a data problem, a status no retry can fix, the check before sending, or a render problem. | Yes | Its source row changes, or an operator releases it. |
 | `failed` | Retryable failures used up the retry budget. | Yes | As `held`. |
 | `waiting` | Its document refers to a record another record of the ledger holds and has not delivered. | No | That record lands: `pending`. Nothing is charged. |
-| `deleted` | Removed from OSDU by an operator, or by a reversal of the run that created it. | Not after a removal; yes after a reversal | The flow's next run reads its row by key and delivers it again, since the removal asked for it (removal), or a release (reversal). |
+| `deleted` | Removed from OSDU by an operator, by a reversal of the run that created it, or by a removal flow because its source no longer holds the key. | Not after a removal; yes after a reversal | The flow's next run reads its row by key and delivers it again, since the removal asked for it (removal), or a release (reversal). A record a removal flow took out is kept out instead: only a row newer than its removal, the key back in the source, or **Deliver again** brings it back ([Removal flow](../flow/removal.md#delivering-a-record-again)). |
 | `reverted` | A reversal, or a step back to the previous version, wrote an earlier version back. | Yes | Its source row changes, or a release makes it `delivered` again. |
 
 A **blocked** record is skipped by every later plan as `blocked`, with the reason
@@ -129,6 +129,7 @@ lost.
                                                      +--> failed  (retry budget spent; blocked)
  pending --claim, refers to a record not landed--> waiting --that record lands--> pending
  delivered --removal (record or everything)--> deleted --row read again--> pending
+ delivered --removal flow (source no longer holds the key)--> deleted --newer row, key back, or Deliver again--> pending
  delivered --reversal or previous--> reverted --release--> delivered
 ```
 
@@ -165,10 +166,10 @@ OSDU answered and the correlation id every request carried ([The delivery ledger
 | Outcome | Written when |
 | --- | --- |
 | `delivered` | A try sent the record and OSDU accepted every call. |
-| `skipped` | Nothing was sent: unchanged at the final check, identical or stale at plan time, waiting on an undo, a row a sync no longer found, or a record a reversal passed over. |
+| `skipped` | Nothing was sent: unchanged at the final check, identical or stale at plan time, waiting on an undo, a row a sync no longer found, a record a reversal passed over, or a record a removal flow settled because OSDU held nothing of it. |
 | `held` | A try or a plan refused the record. |
 | `failed` | A try failed; the record is retried (status `pending`) or failed for good (status `failed`). |
-| `deleted` | A removal took the record out of OSDU, or a reversal removed a record its run created. |
+| `deleted` | A removal took the record out of OSDU, a reversal removed a record its run created, or a removal flow took it out because its source no longer holds the key. |
 | `historypurged` | A removal purged the record's earlier versions; the record itself is still live. |
 | `restored` | An earlier version was written back, by a reversal or a step back to the previous version. |
 | `undone` | What an unfinished delivery left in OSDU was undone. |
@@ -182,6 +183,7 @@ OSDU answered and the correlation id every request carried ([The delivery ledger
 | `undo-wait` | The newer work waited for an earlier delivery's undo ([below](#waiting-for-an-undo)). |
 | `source-missing` | A sync found the row gone from the ingestion table, or outside the record's scope (worker `sync`). |
 | `delete`, `purge-history` | A removal at the `record` or `everything` scope, or at the `history` scope. |
+| `source-removed` | A removal flow took the record out of OSDU (`deleted`) or settled it in the ledger (`skipped`), because its source no longer holds the key; its result names the removal flow, the removal run, why and as of when, and the file and row that said so ([Removal flow](../flow/removal.md#taking-out-what-the-source-removed)). |
 | `restore-previous` | An operator stepped the record back to the version before the latest. |
 | `reassign-id` | An operator gave the record a new OSDU id because OSDU lost the one it claimed; its result names both (outcome `skipped`). |
 | `adopt` | A run took over the record OSDU already held at the id the record's key makes, as an operator asked (worker `intake`, outcome `skipped`); its result names the id and the version OSDU held. See [Adopting a record OSDU already holds](#adopting-a-record-osdu-already-holds). |

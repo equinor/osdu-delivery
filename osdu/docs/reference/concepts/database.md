@@ -107,6 +107,14 @@ What may be pruned and what never is: [Availability and retention](availability-
 | [`osdu.InventorySelection`](../tables/inventory-selection.md) | A match of an operator's conditions against an inventory |
 | [`osdu.InventorySelectionItem`](../tables/inventory-selection-item.md) | An id a match found holding what its conditions ask |
 
+### Removals
+
+| Table | One row is |
+| --- | --- |
+| [`osdu.RemovedKey`](../tables/removed-key.md) | A key a removal flow found a delivery flow's source no longer holds: the ledger's deletion, and how far taking it out has come |
+| [`osdu.RemovalRun`](../tables/removal-run.md) | A run of one removal of a removal flow, kept under the delivery ledger it wrote to |
+| [`osdu.RemovalKey`](../tables/removal-key.md) | A key a running removal staged from one of its sources or the record table |
+
 ### Retrieval and assertions
 
 | Table | One row is |

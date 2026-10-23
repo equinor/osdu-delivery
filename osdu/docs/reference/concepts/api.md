@@ -147,6 +147,8 @@ An intervention is recorded in the ledger under the caller's name: what the cont
 | `POST /records/{flowId}/{key}/sync` | operate | | The same for one record. |
 | `POST /records/{flowId}/{key}/verify` | operate | | 202 with a verify run that compares what OSDU holds with the ledger and records drift. |
 | `POST /cache/tags/decide` | operate | body `tagIds`, `approve` | Approves or rejects cache changes. An approved change is carried to its records by the rollout ([the control plane](control-plane.md)). |
+| `POST /flows/{pipelineId}/lift-removal` | operate | body `keys` (1 to 1,000 delivery keys), `run` (false), `pool`; `interface`, `partition` | Lifts the deletions a [removal flow](../flow/removal.md) found of the records named, in one `lift-removal` activity: their keys are no longer kept out, and a record taken out is planned again. 200 with `lifted` (a key the ledger keeps out for no removal is passed over), or 202 with a deliver run when `run` is true and a record was lifted; 400 for no key or too many. |
+| `POST /records/{flowId}/{key}/lift-removal` | operate | body `run` (false), `pool` | The same for one record, its deliver run scoped to it. 409 when the ledger keeps its key out for no removal. |
 
 A `filter` is the record listing's filter (`status`, `search`, `mode`, `submissionId`, `runId`, `drifted`,
 `deliveredBy`, `issue`). `expected` is the count the operator was shown; when the filter no longer resolves to it the
@@ -364,6 +366,25 @@ See [the explorer](explorer.md) and [search terms](search-terms.md).
 
 See [assertion flows](../flow/assertion.md), [dimension flows](../flow/dimension.md) and
 [inventory flows](../flow/inventory.md).
+
+## Removal flows
+
+A removal flow keeps its runs, and the deletions it finds, under the ledgers of the delivery flows it names
+([removal flow](../flow/removal.md)), so its runs are read by its partition and the deletions by their ledger. The partition
+is the one the query names, else the workbench's (`X-Osdu-Partition`).
+
+| Route | Policy | Parameters | Answers |
+| --- | --- | --- | --- |
+| `GET /removals` | read | `partition` | Every active removal flow that removes in the partition (at most 200), each as the next route answers it; one whose catalog copy does not load is listed with its problem. |
+| `GET /removals/flows/{pipelineId}` | read | `partition` | One removal flow: its guard and parameters, and each removal with the delivery flow (and pipeline) it writes to, what it reads, that ledger's identity in the partition, its deletions by state, the count waiting for this removal's approval and its last run. A partition the flow does not remove in, or a copy that does not load, is answered with the flow as declared and `problem`; 404 for another kind. |
+| `GET /removals/flows/{pipelineId}/runs` | read | `partition`, `entry`, `limit` (50, at most 1,000) | Its runs in the partition, newest first, of one removal with `entry`; 404 for a removal it does not declare. |
+| `GET /removals/{partition}/runs/{removalRunId}` | read | | One run with every count it kept. |
+| `GET /removals/ledgers/{ledgerFlowId}/keys` | read | `state` (`pending`, `awaiting-approval`, `removed`), `run` (the removal run that found them), `after` (a delivery key), `limit` (200, at most 1,000) | A page of a delivery ledger's deletions in key order, with `next` (the `after` of the next page, when there is one) and `counts` by state. 400 for another state. |
+| `GET /removals/ledgers/{ledgerFlowId}/runs` | read | `limit` (50, at most 1,000) | The removal runs that wrote to a delivery ledger, newest first, whichever removal flow ran them. |
+| `POST /removals/flows/{pipelineId}/approve` | operate | body `entry`, `expected` (the count the operator was shown waiting for approval), `confirm` (the partition, typed back), `pool` | 202 with the `remove` run that approves what the removal's guard held and takes it out ([The guard](../flow/removal.md#the-guard)); the run checks the count again on the node. 400 without a removal, a count or a partition; 404 for a removal the flow does not declare; 409 when the delivery flow keeps no ledger in the partition, another number waits than the caller was shown, or a run of the flow is queued or running. |
+
+The deletions of a record are also on its detail (`GET /records/{flowId}/{key}`, `removedKey`), and delivering records
+again is an intervention (`POST /flows/{pipelineId}/lift-removal`, [Interventions](#interventions)).
 
 ## Retention
 

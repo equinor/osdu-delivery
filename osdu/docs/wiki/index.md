@@ -109,6 +109,10 @@ other packages adopt the same contract.
   why a row whose id OSDU already holds is held until adopted, why an adoption is asked of every such record at once and
   the next run claims each id at the version OSDU holds then, why claiming at the click was rejected, and how two
   instances linked to one record share it without calling each other's writes drift.
+- [0022: a removal flow reads the source's keys whole and keeps its deletions in the delivery ledger](decisions/0022-removal-flows.md) -
+  why records a source dropped are found by a flow kind of its own reading the source rather than by `matchKeys` or the
+  ingestion table, why its deletions are the delivery ledger's, taken out once each, and why a guard holds a run that
+  finds too many.
 
 ## Coverage
 

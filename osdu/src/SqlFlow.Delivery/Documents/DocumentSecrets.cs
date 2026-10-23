@@ -90,6 +90,21 @@ internal static partial class DocumentSecrets
         OsduSource(y.Source?.Endpoint, y.Source?.Auth, y.Source?.Headers, source);
     }
 
+    /// <summary>
+    /// A removal flow: a reader source's location written literally with a credential in it. A table source's connection is
+    /// checked where it is mapped, as a delivery flow's is.
+    /// </summary>
+    public static void Check(RemovalFlowYaml y, string source)
+    {
+        ArgumentNullException.ThrowIfNull(y);
+        for (var i = 0; i < (y.Removals?.Count ?? 0); i++)
+        {
+            var entry = y.Removals![i];
+            Url(entry?.Keys?.Location, $"removals[{i}].keys.location", source);
+            Url(entry?.Removed?.Location, $"removals[{i}].removed.location", source);
+        }
+    }
+
     /// <summary>The OSDU source every kind but delivery reads: its endpoint, auth and headers.</summary>
     private static void OsduSource(string? endpoint, TargetAuthYaml? auth, Dictionary<string, string>? headers, string source)
     {

@@ -622,7 +622,10 @@
         "artifacts",
         "undo",
         "ledger lookup",
-        "source key"
+        "source key",
+        "removed keys",
+        "ledger deletions",
+        "lift removal"
       ],
       "cliCommand": "records",
       "related": [
@@ -634,6 +637,7 @@
         "delivery-cli-preview",
         "delivery-flow-mapping-assertions",
         "delivery-cli-db",
+        "delivery-flow-removal",
         "concept-cli-conventions"
       ],
       "sourceRefs": [
@@ -642,6 +646,7 @@
         "osdu/src/SqlFlow.Delivery.Cli/FindingLines.cs",
         "osdu/src/SqlFlow.Delivery.Cli/DeliveryReversalVerbs.cs",
         "osdu/src/SqlFlow.Delivery.Cli/DeliveryArtifactVerbs.cs",
+        "osdu/src/SqlFlow.Delivery.Cli/DeliveryRemovalVerbs.cs",
         "osdu/src/SqlFlow.Delivery.Cli/CliPartitions.cs",
         "osdu/src/SqlFlow.Delivery/Ledger/ILedger.cs",
         "osdu/src/SqlFlow.Delivery/Ledger/OsduLedger.cs",
@@ -654,6 +659,40 @@
         "osdu/src/SqlFlow.Delivery/Engine/FlowRuntime.cs",
         "osdu/src/SqlFlow.Delivery/Identity/DeliveryKey.cs",
         "osdu/src/SqlFlow.Delivery/Model/SourceDefinition.cs"
+      ]
+    },
+    {
+      "id": "delivery-cli-removal",
+      "corpus": "reference",
+      "path": "cli/removal.md",
+      "title": "sqlflow removal: a removal flow's runs, what each read, found removed and took out of OSDU",
+      "type": "cli-command",
+      "summary": "sqlflow removal runs and run: a removal flow's runs in a partition from a terminal, with what each read, found removed, held for approval and took out.",
+      "keywords": [
+        "sqlflow removal",
+        "removal runs",
+        "removal flow",
+        "keys found removed",
+        "guard held",
+        "removal tally",
+        "--removal"
+      ],
+      "cliCommand": "removal",
+      "related": [
+        "delivery-flow-removal",
+        "delivery-cli-records",
+        "delivery-cli-run",
+        "delivery-table-removal-run",
+        "cli-run",
+        "concept-cli-conventions"
+      ],
+      "sourceRefs": [
+        "osdu/src/SqlFlow.Delivery.Cli/DeliveryRemovalVerbs.cs",
+        "osdu/src/SqlFlow.Delivery.Cli/DeliveryCliModule.cs",
+        "osdu/src/SqlFlow.Delivery.Cli/CliPartitions.cs",
+        "osdu/src/SqlFlow.Delivery/Ledger/SourceRemovals.cs",
+        "osdu/src/SqlFlow.Delivery/Ledger/OsduLedger.Removal.cs",
+        "sqlflow/src/SqlFlow.Cli/Hosting/CliVerbContext.cs"
       ]
     },
     {
@@ -1685,6 +1724,9 @@
         "osdu/gui/src/features/delivery/assertions/AssertionTestSheet.tsx",
         "osdu/gui/src/features/delivery/assertions/AssertionReportPage.tsx",
         "osdu/gui/src/features/delivery/inventories/InventoryReport.tsx",
+        "osdu/gui/src/features/delivery/removals/DeliveryRemovalsPage.tsx",
+        "osdu/gui/src/features/delivery/removals/RemovedKeysGrid.tsx",
+        "osdu/gui/src/features/delivery/removals/DeliveryDeletionsPanel.tsx",
         "osdu/gui/src/features/delivery/dimensions/DeliveryDimensionsPage.tsx",
         "osdu/gui/src/features/delivery/dimensions/DimensionWorkspace.tsx",
         "osdu/gui/src/features/delivery/DeliveryDocumentsPage.tsx",
@@ -1810,6 +1852,7 @@
         "osdu/src/SqlFlow.Delivery/Documents/AssertionLineage.cs",
         "osdu/src/SqlFlow.Delivery/Documents/DimensionLineage.cs",
         "osdu/src/SqlFlow.Delivery/Documents/InventoryFlowKind.cs",
+        "osdu/src/SqlFlow.Delivery/Documents/RemovalFlowKind.cs",
         "osdu/src/SqlFlow.Delivery/Documents/DeliveryFlowKind.cs",
         "osdu/src/SqlFlow.Delivery/Model/SourceDefinition.cs",
         "osdu/src/SqlFlow.Delivery/Model/FlowDefinition.cs",
@@ -2314,7 +2357,9 @@
         "rollback",
         "unit of work",
         "artifacts",
-        "undo unfinished deliveries"
+        "undo unfinished deliveries",
+        "records the source no longer holds",
+        "removal flow"
       ],
       "related": [
         "delivery-concept-ledger",
@@ -2325,7 +2370,8 @@
         "delivery-cli-records",
         "delivery-concept-api",
         "delivery-guide-finding-orphans",
-        "delivery-concept-protocols"
+        "delivery-concept-protocols",
+        "delivery-flow-removal"
       ],
       "sourceRefs": [
         "osdu/src/SqlFlow.Delivery/Engine/FlowRuntime.cs",
@@ -2353,7 +2399,9 @@
         "osdu/src/SqlFlow.Delivery.ControlPlane/Api/DeliveryLedgerEndpoints.cs",
         "osdu/src/SqlFlow.Delivery.ControlPlane/Api/DeliveryReversalEndpoints.cs",
         "osdu/src/SqlFlow.Delivery.Cli/DeliveryReversalVerbs.cs",
-        "osdu/src/SqlFlow.Delivery.Cli/DeliveryArtifactVerbs.cs"
+        "osdu/src/SqlFlow.Delivery.Cli/DeliveryArtifactVerbs.cs",
+        "osdu/src/SqlFlow.Delivery/Engine/FlowRuntime.SourceRemoval.cs",
+        "osdu/src/SqlFlow.Delivery/Ledger/OsduLedger.Removal.cs"
       ]
     },
     {
@@ -3858,6 +3906,76 @@
         "sqlflow/src/SqlFlow.Yaml/YamlDocumentLoader.cs",
         "sqlflow/src/SqlFlow.Yaml/FlowDocumentKinds.cs",
         "sqlflow/src/SqlFlow.Cli/Program.cs"
+      ]
+    },
+    {
+      "id": "delivery-flow-removal",
+      "corpus": "reference",
+      "path": "flow/removal.md",
+      "title": "Removal flow (flowType: removal): take out of OSDU the records whose keys the source no longer holds",
+      "type": "flow-reference",
+      "summary": "The flowType: removal document: read a source's keys whole, and its removed keys, compare them with a delivery ledger, and take out what the source dropped.",
+      "keywords": [
+        "removal flow",
+        "deletion detection",
+        "detect deleted rows",
+        "keys the source no longer holds",
+        "removed keys list",
+        "full key read",
+        "source key comparison",
+        "ledger deletions",
+        "RemovedKey",
+        "guard",
+        "maxPercent",
+        "maxRecords",
+        "approve removals",
+        "keepReferenced",
+        "lift removal",
+        "deliver again",
+        "incremental removal",
+        "matchKeys",
+        "soft delete",
+        "removedAt"
+      ],
+      "yamlPath": "(root, flowType: removal)",
+      "related": [
+        "delivery-cli-removal",
+        "delivery-cli-records",
+        "delivery-concept-removal-and-reversal",
+        "delivery-concept-record-lifecycle",
+        "delivery-concept-change-detection",
+        "delivery-concept-ledger",
+        "delivery-flow-delivery",
+        "delivery-flow-inventory",
+        "delivery-table-removed-key",
+        "delivery-table-removal-run",
+        "delivery-table-removal-key",
+        "delivery-wiki-0022-removal-flows",
+        "flow-source",
+        "flow-schedule"
+      ],
+      "sourceRefs": [
+        "osdu/src/SqlFlow.Delivery/Documents/RemovalFlowKind.cs",
+        "osdu/src/SqlFlow.Delivery/Documents/RemovalDocumentMapper.cs",
+        "osdu/src/SqlFlow.Delivery/Documents/YamlModels.cs",
+        "osdu/src/SqlFlow.Delivery/Model/RemovalFlowDefinition.cs",
+        "osdu/src/SqlFlow.Delivery/Engine/RemovalExecutor.cs",
+        "osdu/src/SqlFlow.Delivery/Engine/DeliveryRunPayload.cs",
+        "osdu/src/SqlFlow.Delivery/Engine/Removals/RemovalRunner.cs",
+        "osdu/src/SqlFlow.Delivery/Engine/Removals/RemovalKeySources.cs",
+        "osdu/src/SqlFlow.Delivery/Engine/Removals/RemovalTargets.cs",
+        "osdu/src/SqlFlow.Delivery/Engine/FlowRuntime.SourceRemoval.cs",
+        "osdu/src/SqlFlow.Delivery/Engine/Planning/Planner.cs",
+        "osdu/src/SqlFlow.Delivery/Ledger/SourceRemovals.cs",
+        "osdu/src/SqlFlow.Delivery/Ledger/OsduLedger.Removal.cs",
+        "osdu/src/SqlFlow.Delivery/Ledger/SqlServerLedgerBulk.Removal.cs",
+        "osdu/src/SqlFlow.Delivery.ControlPlane/Api/DeliveryRemovalEndpoints.cs",
+        "osdu/src/SqlFlow.Delivery.Cli/DeliveryRemovalVerbs.cs",
+        "osdu/src/SqlFlow.Delivery.Data/Migrations/20261022223524_RemovalFlows.cs",
+        "osdu/gui/src/features/delivery/removals/DeliveryRemovalsPage.tsx",
+        "osdu/gui/src/features/delivery/removals/RemovedKeysGrid.tsx",
+        "osdu/docs/census/keys.removal.json",
+        "osdu/samples/welldb/flows/welldb-wellbore-05-removal.yaml"
       ]
     },
     {
@@ -6189,6 +6307,99 @@
       ]
     },
     {
+      "id": "delivery-table-removal-key",
+      "corpus": "reference",
+      "path": "tables/removal-key.md",
+      "title": "osdu.RemovalKey: the keys a running removal staged from its sources and the delivery flow's record table",
+      "type": "table",
+      "summary": "Staging for one removal run: each distinct key read from the source's current keys, its removed keys or the record table, derived to its delivery key.",
+      "keywords": [
+        "osdu.RemovalKey",
+        "removal staging",
+        "staged keys",
+        "source keys",
+        "removed keys list",
+        "record table keys",
+        "full key read"
+      ],
+      "related": [
+        "delivery-concept-database",
+        "delivery-flow-removal",
+        "delivery-table-removal-run",
+        "delivery-table-removed-key"
+      ],
+      "sourceRefs": [
+        "osdu/src/SqlFlow.Delivery.Data/DeliveryEntities.cs",
+        "osdu/src/SqlFlow.Delivery/Ledger/SqlServerLedgerBulk.Removal.cs",
+        "osdu/src/SqlFlow.Delivery/Engine/Removals/RemovalRunner.cs",
+        "osdu/src/SqlFlow.Delivery.Data/Migrations/20261022223524_RemovalFlows.cs"
+      ]
+    },
+    {
+      "id": "delivery-table-removal-run",
+      "corpus": "reference",
+      "path": "tables/removal-run.md",
+      "title": "osdu.RemovalRun: one run of one removal of a removal flow, what it read, found and took out",
+      "type": "table",
+      "summary": "One row per run of a removal: the removal flow and removal, the delivery ledger it wrote to, what it read and compared, found removed and took out.",
+      "keywords": [
+        "osdu.RemovalRun",
+        "removal run table",
+        "removal flow runs",
+        "keys found removed",
+        "guard held",
+        "source keys read",
+        "removal tallies"
+      ],
+      "related": [
+        "delivery-concept-database",
+        "delivery-flow-removal",
+        "delivery-table-removed-key",
+        "delivery-table-removal-key",
+        "delivery-cli-removal"
+      ],
+      "sourceRefs": [
+        "osdu/src/SqlFlow.Delivery.Data/DeliveryEntities.cs",
+        "osdu/src/SqlFlow.Delivery/Ledger/OsduLedger.Removal.cs",
+        "osdu/src/SqlFlow.Delivery/Ledger/SqlServerLedgerBulk.Removal.cs",
+        "osdu/src/SqlFlow.Delivery/Engine/Removals/RemovalRunner.cs",
+        "osdu/src/SqlFlow.Delivery.Data/Migrations/20261022223524_RemovalFlows.cs"
+      ]
+    },
+    {
+      "id": "delivery-table-removed-key",
+      "corpus": "reference",
+      "path": "tables/removed-key.md",
+      "title": "osdu.RemovedKey: a delivery ledger's deletions, the keys its source no longer holds, and how far taking each out has come",
+      "type": "table",
+      "summary": "One row per key a removal flow found its source removed: why and as of when, its state, what taking it out came to, and who found and approved it.",
+      "keywords": [
+        "osdu.RemovedKey",
+        "ledger deletions",
+        "removed keys",
+        "keys the source no longer holds",
+        "pending deletions",
+        "awaiting approval",
+        "incremental removal",
+        "kept out"
+      ],
+      "related": [
+        "delivery-concept-database",
+        "delivery-flow-removal",
+        "delivery-table-removal-run",
+        "delivery-table-record",
+        "delivery-concept-removal-and-reversal"
+      ],
+      "sourceRefs": [
+        "osdu/src/SqlFlow.Delivery.Data/DeliveryEntities.cs",
+        "osdu/src/SqlFlow.Delivery/Ledger/OsduLedger.Removal.cs",
+        "osdu/src/SqlFlow.Delivery/Ledger/SqlServerLedgerBulk.Removal.cs",
+        "osdu/src/SqlFlow.Delivery/Engine/FlowRuntime.SourceRemoval.cs",
+        "osdu/src/SqlFlow.Delivery/Engine/Planning/Planner.cs",
+        "osdu/src/SqlFlow.Delivery.Data/Migrations/20261022223524_RemovalFlows.cs"
+      ]
+    },
+    {
       "id": "delivery-table-repository-template",
       "corpus": "reference",
       "path": "tables/repository-template.md",
@@ -6834,7 +7045,8 @@
         "soft delete"
       ],
       "related": [
-        "delivery-wiki-0013-inventory-flows"
+        "delivery-wiki-0013-inventory-flows",
+        "delivery-wiki-0022-removal-flows"
       ],
       "sourceRefs": []
     },
@@ -7053,6 +7265,37 @@
       ]
     },
     {
+      "id": "delivery-wiki-0022-removal-flows",
+      "corpus": "wiki",
+      "path": "decisions/0022-removal-flows.md",
+      "title": "Decision 0022: a removal flow reads the source's keys whole and keeps its deletions in the delivery ledger",
+      "type": "decision",
+      "summary": "Why records a source dropped are found by a flow kind of its own, read from the source, and kept as the delivery ledger's deletions, taken out once.",
+      "keywords": [
+        "removal flow",
+        "deletion detection",
+        "matchKeys",
+        "full key read",
+        "ledger deletions",
+        "guard",
+        "incremental removal"
+      ],
+      "related": [
+        "delivery-wiki-0013-inventory-flows",
+        "delivery-wiki-0014-inventory-removals",
+        "delivery-wiki-0002-client-supplied-ids"
+      ],
+      "sourceRefs": [
+        "osdu/src/SqlFlow.Delivery/Documents/RemovalFlowKind.cs",
+        "osdu/src/SqlFlow.Delivery/Engine/Removals/RemovalRunner.cs",
+        "osdu/src/SqlFlow.Delivery/Engine/Removals/RemovalKeySources.cs",
+        "osdu/src/SqlFlow.Delivery/Engine/FlowRuntime.SourceRemoval.cs",
+        "osdu/src/SqlFlow.Delivery/Ledger/SqlServerLedgerBulk.Removal.cs",
+        "osdu/src/SqlFlow.Delivery/Engine/Planning/Planner.cs",
+        "osdu/src/SqlFlow.Delivery.Data/DeliveryEntities.cs"
+      ]
+    },
+    {
       "id": "delivery-wiki-pattern-catalog",
       "corpus": "wiki",
       "path": "maps/pattern-catalog.md",
@@ -7076,7 +7319,8 @@
       ],
       "related": [
         "wiki-pattern-catalog",
-        "delivery-wiki-0018-template-folders"
+        "delivery-wiki-0018-template-folders",
+        "delivery-wiki-0022-removal-flows"
       ],
       "sourceRefs": [
         "osdu/src/SqlFlow.Delivery/Documents/CacheDocumentMapper.cs",
@@ -7100,6 +7344,8 @@
         "osdu/docs/census/keys.mapping.json",
         "osdu/docs/census/keys.assertion.json",
         "osdu/docs/census/keys.inventory.json",
+        "osdu/docs/census/keys.removal.json",
+        "osdu/src/SqlFlow.Delivery/Documents/RemovalFlowKind.cs",
         "osdu/gui/src/module.tsx"
       ]
     }

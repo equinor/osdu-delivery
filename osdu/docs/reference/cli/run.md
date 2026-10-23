@@ -117,6 +117,7 @@ window is anchored on an OSDU flow. `--assertions-only` is refused for every kin
 | `assertion` | `test`: it keeps the report there. |
 | `dimension` | `build`: it keeps the builds there, and reads the templates of the kinds the dimensions read. |
 | `inventory` | `build`, `reconcile` and `remove`: it keeps the inventories there. |
+| `removal` | Every operation: it compares with the delivery ledgers kept there, and keeps its runs and the deletions it finds in them. |
 | `retrieval` | Nothing; when it has one, each `retrieve` is recorded in the flow's ledger. |
 
 On a workstation the module database is the catalog's (`--db`, else `${env:SQLFLOW_CATALOG_DB}`) unless
@@ -174,6 +175,8 @@ parameter instead. A partition named for a flow that follows the registry has to
 | | `reconcile` | Compare each inventory, as its last build left it, with the ledgers as they stand now. | no |
 | | `plan` | Count the records each inventory would read, and say what would stop it. | no |
 | | `remove` | Remove from OSDU the ids of one finding (`orphan`, `stale` or `forgotten`), for a flow whose document allows it. | yes |
+| `removal` | `remove` (default) | Read every removal's key sources whole, compare them with its delivery flow's ledger, and take out of OSDU (reversibly) the records whose keys the source no longer holds and no run took out before, unless the guard holds what it found for an approval ([Removal flow](../flow/removal.md#a-run)). | yes |
+| | `plan` | Read and compare the same way and say what a remove run would find and whether the guard would hold it, writing nothing. | no |
 
 A source with interfaces runs the interfaces its payload selects, every one when it selects none: every selected
 interface is checked first, then they run in waves of their dependencies, and an interface that stops takes only the
@@ -220,7 +223,7 @@ Which fields each operation takes:
 
 Across every operation: `submissionId` and `recordKeys` never together; `interface` and `interfaces` never together;
 `interfaces` never with `submissionId`, `recordKeys` or `slices`; `runId` only on `reverse`; `confirm` only on
-`delete-ledger`; and `tests`, `tags`, `dimensions`, `inventories` and `removal`, which belong to the other kinds, never.
+`delete-ledger`; and `tests`, `tags`, `dimensions`, `inventories`, `removal`, `entries` and `approve`, which belong to the other kinds, never.
 A refusal names the field and why, for example
 `payload redeliver does not apply to the plan operation: a plan sends nothing.`, and a property of another kind is
 refused in the shape every kind uses (below):
@@ -243,8 +246,9 @@ A property counts when it asks for something (`force` set to `true`, a list that
 | `assertion` | `tests` (test names) and `tags` (every test carrying one of them), each at most 500 names, each once. With neither, every test runs. | `payload recordKeys does not apply to an assertion flow: only a delivery flow's runs are scoped to records; an assertion flow's payload names only tests and tags.` |
 | `dimension` | `dimensions`: the dimensions to build; every one when left out. | `payload tests does not apply to a dimension flow: only an assertion flow's runs select tests; a dimension flow's payload names only dimensions.` |
 | `inventory` | `inventories`: the inventories to build or reconcile. A `remove` run names exactly one inventory, `removal` (`finding`, `scope` `record` or `everything`, `expected`, and optionally `ids`) and `confirm`, the partition. | `payload runId does not apply to an inventory flow: only a delivery flow's reverse run names the run it reverses; an inventory flow's payload names only inventories, removal and confirm.` |
+| `removal` | `entries`: the removals to carry out; every one when left out. An approval of what a guard held is `approve` (`expected`, the count the operator was shown waiting) with `confirm`, the partition, on a `remove` run naming exactly one removal; the Removals page sends it ([The guard](../flow/removal.md#the-guard)). | `payload tests does not apply to a removal flow: only an assertion flow's runs select tests; a removal flow's payload names only entries, approve and confirm.` |
 
-A name that is not a test, tag, dimension, inventory or type of the flow fails the run naming what the flow has, for example
+A name that is not a test, tag, dimension, inventory, removal or type of the flow fails the run naming what the flow has, for example
 `Assertion flow '<name>' has no test named '<x>'; its tests are <names>.`
 
 ## The result
@@ -280,6 +284,7 @@ carries the run's result object (camelCase, enum values as names, `operation` fi
 | `build` (dimension) | `flow`, `partition`, `built`, `failed`, `skipped`, `dimensions`. |
 | `build`, `reconcile` (inventory) | `flow`, `partition`, `completed`, `failed`, `inventories`. |
 | `remove` (inventory) | `inventoryRemovalId`, `inventory`, `finding`, `scope`, `requested`, `removed`, `gone`, `skipped`, `failed`, `error`. |
+| `remove`, `plan` (removal) | `operation`, `partition`, `removed` (across its removals) and `removals`, each with its `entry`, `deliveryFlow`, `removalRunId`, `status` (`completed`, `guarded` or `failed`), `tally` (the counts of [`osdu.RemovalRun`](../tables/removal-run.md)), `pending` and `awaitingApproval` after the run, `wouldHold` (a plan), `undone`, `cacheAfter` and `error`. |
 | A run that failed before it produced an outcome | `operation` and `error`. |
 
 ## Examples
@@ -335,7 +340,7 @@ sqlflow run flows/welldb-wellbore-03-delivery.yaml --set partition=dev --payload
 | Exit code | Condition |
 | --- | --- |
 | 0 | The run succeeded. |
-| 1 | The run failed: its operation failed; an interface of a source stopped or was skipped; a cache partition of a run over several failed; a dimension build or an inventory failed; a removal stopped part way; or an assertion flow's tests came out as its `failRunOn` says fails the run (a failed or errored test by default). The result still says what was done. Also exit 1, with one `ERROR  <message>` line and no run, for kind arguments refused before the run starts. |
+| 1 | The run failed: its operation failed; an interface of a source stopped or was skipped; a cache partition of a run over several failed; a dimension build or an inventory failed; a removal stopped part way; a removal flow's removal failed or its guard held what it found for an approval; or an assertion flow's tests came out as its `failRunOn` says fails the run (a failed or errored test by default). The result still says what was done. Also exit 1, with one `ERROR  <message>` line and no run, for kind arguments refused before the run starts. |
 | 130 | Interrupted with Ctrl+C. |
 
 A catalog write-back failure never changes the exit code (SQLFlow's rule). `sqlflow trigger` exits as SQLFlow's

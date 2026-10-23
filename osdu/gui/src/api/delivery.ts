@@ -312,6 +312,11 @@ export interface DeliveryRecordDetail {
    * its own); null for a flow that names none.
    */
   partition?: string | null;
+  /**
+   * The ledger's deletion of the record's key, when a removal flow found its source no longer holds it; null when it holds
+   * none. Its empty fields arrive as null: read it through `removedKeyOf`.
+   */
+  removedKey?: object | null;
 }
 
 /**

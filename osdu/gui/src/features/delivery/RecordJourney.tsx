@@ -553,6 +553,7 @@ const PHASE_TEXT: Record<string, string> = {
   metadata: "record only",
   payload: "payload only",
   "metadata+payload": "record and payload",
+  "source-removed": "a removal flow found its source no longer holds the key",
 };
 
 /** Why an undo ran, as its attempt's result names the reason. */
@@ -731,6 +732,14 @@ function attemptShape(attempt: DeliveryAttempt, refusal: Refusal | null, reached
       }
 
       switch (attempt.phase) {
+        case "source-removed":
+          return {
+            title: "Settled: its source no longer holds the key, and OSDU did not hold the record",
+            tone: "muted",
+            icon: Trash2,
+            then: { text: "Kept out: a row of the key newer than its removal is delivered again.", tone: "muted" },
+            outcome: { text: "Removed by its source", tone: "muted" },
+          };
         case "source-missing":
           return { title: "Not found in the ingestion table", tone: "warning", icon: FileQuestion, then: { text: "The row is gone; the record keeps its status.", tone: "muted" }, outcome: null };
         case "identical":
@@ -743,7 +752,15 @@ function attemptShape(attempt: DeliveryAttempt, refusal: Refusal | null, reached
           return { title: "Skipped", tone: "muted", icon: CircleDashed, then: null, outcome: { text: "Skipped", tone: "muted" } };
       }
     case "deleted":
-      return { title: "Removed", tone: "muted", icon: Trash2, then: null, outcome: { text: "Removed", tone: "muted" } };
+      return attempt.phase === "source-removed"
+        ? {
+          title: "Removed from OSDU: its source no longer holds the key",
+          tone: "muted",
+          icon: Trash2,
+          then: { text: "Kept out: a row of the key newer than its removal is delivered again.", tone: "muted" },
+          outcome: { text: "Removed by its source", tone: "muted" },
+        }
+        : { title: "Removed", tone: "muted", icon: Trash2, then: null, outcome: { text: "Removed", tone: "muted" } };
     case "historypurged":
       return { title: "Earlier versions purged", tone: "warning", icon: Eraser, then: null, outcome: { text: "Earlier versions purged", tone: "warning" } };
     case "restored":
@@ -1043,6 +1060,16 @@ const REQUESTS: Partial<Record<string, { one: string; many: (count: number) => s
   },
   reverse: { one: "Reversal of a run asked", many: (count) => `Reversal of a run that reached ${count} records, this one among them`, button: "Reverse" },
   verify: { one: "Verify of this record asked", many: (count) => `Verify asked for ${count} records, this one among them`, button: "Verify" },
+  "source-remove": {
+    one: "Taken out by a removal flow: its source no longer holds the key",
+    many: (count) => `Taken out by a removal flow with ${count} records their source no longer holds, this one among them`,
+    button: "Deliver again",
+  },
+  "lift-removal": {
+    one: "Lifting this record's removal asked",
+    many: (count) => `Lifting the removal of ${count} records asked, this one among them`,
+    button: "Deliver again",
+  },
 };
 
 function activityDetail(activity: DeliveryActivity): ReactNode {
@@ -1396,7 +1423,11 @@ function milestones(record: DeliveryRecord, attempts: DeliveryAttempt[], chain: 
     cells.push({
       label: "Removed",
       value: removed === undefined ? "yes" : <RelativeTime value={removed.startedUtc} />,
-      caption: record.status === "deleted" ? (record.blocked ? "blocked until its row changes or it is released" : "sent again when its row is read") : "delivered again since",
+      caption: record.status !== "deleted"
+        ? "delivered again since"
+        : removed?.phase === "source-removed"
+          ? "its source no longer holds the key"
+          : record.blocked ? "blocked until its row changes or it is released" : "sent again when its row is read",
       tone: "destructive",
       testId: "milestone-removed",
     });

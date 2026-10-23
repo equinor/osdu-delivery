@@ -102,6 +102,42 @@ public static class AttemptResult
     }
 
     /// <summary>
+    /// The result of taking out a record its source no longer holds (osdu/docs/reference/flow/removal.md): a removal's result,
+    /// and under <c>removal</c> the removal flow, its removal and run, why the source no longer holds the key, as of when, and
+    /// the file and row that listed it as removed.
+    /// </summary>
+    public static string SourceRemoval(string? correlationId, string? targetStateJson, string detail, SourceRemovalNote source)
+    {
+        ArgumentNullException.ThrowIfNull(source);
+        var result = JsonNode.Parse(Removal(correlationId, targetStateJson, detail))!.AsObject();
+        var removal = new JsonObject
+        {
+            ["flow"] = source.RemovalFlow,
+            ["entry"] = source.Entry,
+            ["removalRunId"] = source.RemovalRunId,
+            ["reason"] = source.Reason,
+            ["removedUtc"] = source.RemovedUtc.ToString("O", System.Globalization.CultureInfo.InvariantCulture),
+        };
+        if (source.RunId is { } run)
+        {
+            removal["runId"] = run.ToString("D");
+        }
+
+        if (source.FileName is { } file)
+        {
+            removal["fileName"] = file;
+        }
+
+        if (source.RowNumber is { } row)
+        {
+            removal["rowNumber"] = row;
+        }
+
+        result["removal"] = removal;
+        return result.ToJsonString();
+    }
+
+    /// <summary>
     /// The result of writing a record's version before the latest back as its current version: the correlation id its calls
     /// carried, the target state the record holds now (under <c>returned</c>), the two versions under <c>previous</c>
     /// (<c>replacedVersion</c>, the latest taken out of being current; <c>restoredVersion</c>, the one put back), and the

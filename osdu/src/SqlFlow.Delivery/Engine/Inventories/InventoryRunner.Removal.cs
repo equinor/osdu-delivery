@@ -482,7 +482,7 @@ public sealed partial class InventoryRunner
             {
                 await ledger.MarkRemovedAsync(
                     group.Key, group.Select(m => m.Key).ToList(), scope, actor, Now, string.Create(CultureInfo.InvariantCulture, $"inventory removal {removalId}"),
-                    deliverAgain: false, ct).ConfigureAwait(false);
+                    deliverAgain: false, ct: ct).ConfigureAwait(false);
             }
             catch (Exception ex) when (ex is DeliveryException or Microsoft.Data.SqlClient.SqlException or InvalidOperationException)
             {

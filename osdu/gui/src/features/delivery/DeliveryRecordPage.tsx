@@ -26,6 +26,7 @@ import { RecordParentChips } from "./RecordParentChips";
 import { settle } from "./answers";
 import { RecordRenderTab, type RenderResults } from "./RecordRenderTab";
 import { RecordSituation } from "./RecordSituation";
+import { removalApi, removedKeyOf } from "../../api/removals";
 import { stranded } from "./strandedRecord";
 import { RecordSourceTab } from "./RecordSourceTab";
 import { RedeliverDialog } from "./RedeliverDialog";
@@ -190,6 +191,18 @@ function DeliveryRecordContent({ flowId, deliveryKey }: DeliveryRecordRef) {
     },
     onError: (error) => { setAdoptOpen(false); fail(error); },
   });
+  // Lifting the ledger's deletion of the record's key, which a removal flow found its source no longer holds: a record taken
+  // out is delivered again at once by a deliver run scoped to it; one not taken out yet stays as it is.
+  const lift = useMutation({
+    mutationFn: () => removalApi.liftRecord(flowId, deliveryKey, true),
+    onSuccess: (result) => {
+      toast.success(
+        result.runId ? "Removal lifted: a deliver run delivers the record again now." : "Removal lifted.",
+        result.runId ? { action: { label: "Open run", onClick: () => navigate(`/runs/${result.runId}`) } } : undefined);
+      refresh();
+    },
+    onError: fail,
+  });
   // A read of the record from OSDU, shown on the OSDU tab and kept here so it is still there after a look at another
   // tab. A page opened with ?tab=osdu reads it once, as soon as the record is known to have an id OSDU may hold.
   const readable = query.data !== undefined && query.data.record.targetId !== null && query.data.record.status !== "deleted" && canOperate;
@@ -352,7 +365,14 @@ function DeliveryRecordContent({ flowId, deliveryKey }: DeliveryRecordRef) {
           )}
           {record.lastSubmissionId && <IdChip label="submission" value={record.lastSubmissionId} display={shortId(record.lastSubmissionId)} to={`/delivery/submissions/${record.lastSubmissionId}`} testId="record-submission-link" copyTestId="copy-record-submission" />}
         </div>
-        <RecordSituation record={record} waitsOn={detail.waitsOn} waitedOnBy={detail.waitedOnBy ?? []} />
+        <RecordSituation
+          record={record}
+          waitsOn={detail.waitsOn}
+          waitedOnBy={detail.waitedOnBy ?? []}
+          removedKey={removedKeyOf(detail.removedKey)}
+          onLift={canOperate ? () => lift.mutate() : undefined}
+          lifting={lift.isPending}
+        />
         <RecordUndoNotice artifacts={artifacts.data} onOpen={() => setTab("artifacts")} />
       </Card>
 

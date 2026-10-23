@@ -1,0 +1,33 @@
+# Flow: welldb-wellbore-05-removal
+#
+# Takes out of OSDU the wellbores the well database no longer holds. The wellbore folder under ../data/wellbore holds the
+# database's current cut, one file written whole and replaced each time (osdu/tools/SampleData), so the removal reads it
+# whole, every run, and compares its wellbore names with the ledger of welldb-wellbore-03-delivery. A wellbore that ledger
+# delivered and the cut no longer holds is taken out of OSDU reversibly, through that flow's own removal path, recorded in
+# its ledger, and kept out until a row of it newer than its removal arrives; a wellbore taken out is never asked of OSDU
+# again. The record key is the delivery flow's (wellbore_name), read from the column of the same name.
+#
+# A cut that lost most of its rows is more often a broken export than a mass removal, so a run that finds more than a fifth
+# of the compared wellbores gone takes out none of them and waits for an operator's approval on the flow's Removals tab.
+# A wellbore well logs or surveys still name stays in OSDU until they are gone (keepReferenced, the default).
+flowType: removal
+name: welldb-wellbore-05-removal
+description: The wellbores the well database no longer holds, taken out of OSDU.
+batch: welldb
+partitions: [dev]
+
+guard:
+  maxPercent: 20
+
+removals:
+  - flow: welldb-wellbore-03-delivery
+    keys:
+      type: csv
+      location: ../data/wellbore
+      options:
+        delimiter: ","
+        header: true
+        srcFile: "*.csv"
+
+# Nightly, after the wellbores are delivered (../schedules.yaml).
+schedule: welldb-removal

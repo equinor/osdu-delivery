@@ -519,7 +519,7 @@ public sealed partial class OsduLedger : ILedger
         // An unchanged record, or one a cache change waiting for approval holds back, carries nothing to write but the
         // submission pointer: one statement per chunk, however many a quiet run skips. A record with queued work stays with
         // the submission that queued it, or that submission's drain would never find it.
-        foreach (var chunk in records.Where(r => r.Kind is SkipKind.Unchanged or SkipKind.AwaitingApproval).Select(r => r.DeliveryKey.Value).Chunk(ChunkSize))
+        foreach (var chunk in records.Where(r => r.Kind is SkipKind.Unchanged or SkipKind.AwaitingApproval or SkipKind.SourceRemoved).Select(r => r.DeliveryKey.Value).Chunk(ChunkSize))
         {
             await db.DeliveryRecords
                 .Where(r => r.PartitionId == partition && r.FlowId == flowId && chunk.Contains(r.DeliveryKey)
@@ -2349,13 +2349,19 @@ public sealed partial class OsduLedger : ILedger
 
     public async Task MarkRemovedAsync(
         Guid flowId, IReadOnlyList<DeliveryKey> keys, RemovalScope scope, string worker, DateTime nowUtc, string? correlationId = null, bool deliverAgain = true,
-        CancellationToken ct = default)
+        IReadOnlyDictionary<DeliveryKey, SourceRemovalNote>? sources = null, CancellationToken ct = default)
     {
         ArgumentNullException.ThrowIfNull(keys);
         ArgumentException.ThrowIfNullOrWhiteSpace(worker);
         if (keys.Count == 0)
         {
             return;
+        }
+
+        if (sources is not null && (scope != RemovalScope.Record || deliverAgain || keys.Any(k => !sources.ContainsKey(k))))
+        {
+            throw new DeliveryException(
+                "A record its source no longer holds is taken out of OSDU reversibly (the record scope), each with why, and kept out by its deletion rather than asked to be planned again.");
         }
 
         var then = deliverAgain ? "the flow's next run reads its row again and delivers it" : "the next run that reads its row delivers it again";
@@ -2384,6 +2390,20 @@ public sealed partial class OsduLedger : ILedger
 
             foreach (var entity in entities)
             {
+                if (sources is not null)
+                {
+                    var source = sources[new DeliveryKey(entity.DeliveryKey)];
+                    var why = source.Describe(inOsdu: true);
+                    db.DeliveryAttempts.Add(SourceRemovalAttempt(entity, worker, AttemptOutcome.Deleted, source, why, correlationId, nowUtc));
+                    Retire(entity, why, nowUtc, deliverAgain: false);
+                    if (source.ActivityId is { } activity)
+                    {
+                        db.DeliveryActivityRecords.Add(new DeliveryActivityRecord { PartitionId = partition, FlowId = flowId, DeliveryKey = entity.DeliveryKey, ActivityId = activity });
+                    }
+
+                    continue;
+                }
+
                 MarkRemoved(db, entity, scope, worker, note, nowUtc, correlationId, deliverAgain);
             }
 
@@ -2425,6 +2445,16 @@ public sealed partial class OsduLedger : ILedger
         // ledger, and an inventory's removal of an id the ledger already holds as removed, ask for nothing themselves and
         // leave any request the record carried as it is: the one is followed by a run that reads every row, the other only
         // makes OSDU agree with what the ledger already says, and the operator's removal before it asked for what it asked.
+        Retire(entity, note, nowUtc, deliverAgain);
+    }
+
+    /// <summary>
+    /// What taking a record out of OSDU leaves of it in the ledger: marked removed and not blocked, every hash, version and
+    /// queued piece of work forgotten, the note as its last word, and, with <paramref name="deliverAgain"/>, asked to be planned
+    /// again. The id it claimed and the origin of the row it was last delivered from stay.
+    /// </summary>
+    private static void Retire(DeliveryRecord entity, string note, DateTime nowUtc, bool deliverAgain)
+    {
         entity.Status = StatusText.Of(RecordStatus.Deleted);
         entity.Blocked = false;
         entity.ProblemHash = null;
@@ -2432,6 +2462,7 @@ public sealed partial class OsduLedger : ILedger
         {
             entity.PlanRequestedUtc = nowUtc;
         }
+
         entity.PendingSourceFingerprint = null;
         entity.PendingSourceModifiedUtc = null;
         entity.TargetVersion = null;

@@ -1,0 +1,386 @@
+{
+  "version": 1,
+  "product": "OSDU Delivery",
+  "flowType": "removal",
+  "strictKeys": true,
+  "includeEnvelope": true,
+  "generatedFrom": "osdu/docs/reference/flow/removal.md and osdu/src/SqlFlow.Delivery/Documents/YamlModels.cs",
+  "naming": "The loader deserializes with YamlDotNet's CamelCaseNamingConvention and refuses any key it does not know.",
+  "keyCount": 58,
+  "keys": [
+    {
+      "path": "batch",
+      "type": "string",
+      "required": false,
+      "description": "Optional grouping label (the source system) the platform files the flow's pipeline and runs under. A blank value counts as none."
+    },
+    {
+      "path": "description",
+      "type": "string",
+      "required": false,
+      "description": "Optional text describing what the removals are for."
+    },
+    {
+      "path": "flowType",
+      "type": "enum(removal)",
+      "required": true,
+      "description": "The document kind: `removal`, which reads the keys a source holds now (a full read, every run), and optionally the keys a source lists as removed, compares them with the ledger of each delivery flow it names, and takes out of OSDU, through that delivery flow's own removal path and into its ledger, the records whose keys the source no longer holds. What it finds is the delivery ledger's deletions, one per key, worked through incrementally: a deletion taken out is never asked of OSDU again. It keeps no ledger of its own, and a run that finds more than its `guard` allows waits for an operator's approval.",
+      "enumValues": [
+        "removal"
+      ]
+    },
+    {
+      "path": "guard",
+      "type": "object",
+      "required": false,
+      "description": "When a removal waits for an operator's approval instead of taking anything out: a source that suddenly holds far fewer keys is more often a broken read than a real mass removal. A removal that finds more keys removed than the guard allows, or reads no key at all from a source that held some, holds what it found until an operator approves the count it was shown on the flow's Removals tab. Left out, `maxPercent` is 20 and `maxRecords` has no bound."
+    },
+    {
+      "path": "guard.maxPercent",
+      "type": "integer",
+      "required": false,
+      "description": "The share, 0 to 100, of the keys a removal compares (the ledger's records in its scope, and the record table's keys besides) it may find removed without an approval. 0 holds every removal for approval.",
+      "default": "20"
+    },
+    {
+      "path": "guard.maxRecords",
+      "type": "integer",
+      "required": false,
+      "description": "How many keys one removal may find removed without an approval, whatever their share, 0 or more. Left out, only `maxPercent` bounds it."
+    },
+    {
+      "path": "name",
+      "type": "string",
+      "required": true,
+      "description": "The removal flow's name: its pipeline identity, and the name its runs are kept under in each delivery ledger it writes to. At most 200 characters."
+    },
+    {
+      "path": "parameters",
+      "type": "map",
+      "required": false,
+      "description": "Optional: the flow's parameters, by name. `{name}` tokens are usable in a removal's `values` and in a key source's `location`; `{partition}` is always the partition the run removes in, and may not be declared."
+    },
+    {
+      "path": "parameters.<name>",
+      "type": "object",
+      "required": false,
+      "description": "One parameter; `<name>` is the name its `{name}` tokens use. A run supplying a value for a name the flow does not declare is refused."
+    },
+    {
+      "path": "parameters.<name>.default",
+      "type": "string",
+      "required": false,
+      "description": "The value used when a run supplies none."
+    },
+    {
+      "path": "parameters.<name>.description",
+      "type": "string",
+      "required": false,
+      "description": "Text describing what the parameter is for."
+    },
+    {
+      "path": "parameters.<name>.required",
+      "type": "boolean",
+      "required": false,
+      "description": "When true, a run that supplies no value, for a parameter without a default, fails with \"parameter 'name' is required\". A scheduled fire supplies only the schedule's `values`, so give it one there.",
+      "default": "false"
+    },
+    {
+      "path": "partitions",
+      "type": "list",
+      "required": false,
+      "description": "The OSDU data partitions the flow removes in, hard-coded: each by its `data-partition-id` written literally, never a reference, at least one, unique ignoring case. Leave it out to remove in every partition registered with the catalog. A run removes in one partition, since the ledgers it writes to are a partition's."
+    },
+    {
+      "path": "partitions[]",
+      "type": "string",
+      "required": false,
+      "description": "One partition the flow removes in, by its `data-partition-id`."
+    },
+    {
+      "path": "removals",
+      "type": "list",
+      "required": true,
+      "description": "The removals, at least one and at most 50, names unique ignoring case. Each names the delivery flow whose records it takes out and where it reads that flow's keys: `keys`, the keys the source holds now, `removed`, the keys it lists as removed, or both."
+    },
+    {
+      "path": "removals[]",
+      "type": "object",
+      "required": true,
+      "description": "One removal: the delivery flow (`flow`, and `interface` for a source with interfaces) whose ledger it compares and writes to, the values of that flow's parameters it compares under (`values`), and its key sources (`keys`, `removed`)."
+    },
+    {
+      "path": "removals[].flow",
+      "type": "string",
+      "required": true,
+      "description": "The delivery flow whose records the removal takes out, by its `name`, found in the same repository. The run reads its key from the delivery flow's record key, converts each key read to the record table's types, and derives the delivery key the ledger keys the record by, exactly as a delivery does; the records are taken out under that flow's ledger identity, through its own removal path, whichever pipeline delivers them."
+    },
+    {
+      "path": "removals[].interface",
+      "type": "string",
+      "required": false,
+      "description": "The interface of the delivery flow, for a source with interfaces: a letter followed by letters, digits, `_` and `-`. Left out for a flow in the single form."
+    },
+    {
+      "path": "removals[].keepReferenced",
+      "type": "boolean",
+      "required": false,
+      "description": "Whether a record other records in OSDU still name stays there until they are gone. True (the default) leaves such a record in OSDU, its deletion pending with outcome `referenced`, and the next run tries again; false takes it out whatever names it.",
+      "default": "true"
+    },
+    {
+      "path": "removals[].keys",
+      "type": "object",
+      "required": false,
+      "description": "The keys the source holds now, its complete key set, read whole every run: a key the ledger or the record table holds that this read does not is removed, as of when the read began. A date window (`options.initFromFileDate`, `initToFileDate`, `incrementalAfterDate`) is refused, since a part of the source would make every key outside it look removed. Leave it out for a removal that reads only `removed`. A key source is either a SQLFlow source reader (`type`, `location`, `options`: files of any format SQLFlow reads, their schema found as they are read) or a table or view of a source database (`connection`, `provider`, `object`, `filter`), never both."
+    },
+    {
+      "path": "removals[].keys.columns",
+      "type": "list",
+      "required": false,
+      "description": "The columns the record key is read from, in SQLFlow's transform column notation, each record key column once. Left out, each of the delivery flow's record key columns is read from a column of the same name. A column the source does not hold stops the run, naming the columns it does hold."
+    },
+    {
+      "path": "removals[].keys.columns[]",
+      "type": "object",
+      "required": false,
+      "description": "One column: the source column (`name`), the record key column it fills (`as`), and an expression over it (`expr`)."
+    },
+    {
+      "path": "removals[].keys.columns[].as",
+      "type": "string",
+      "required": false,
+      "description": "The delivery flow's record key column the value fills, when it is named otherwise than the source column. Left out, the source column's name."
+    },
+    {
+      "path": "removals[].keys.columns[].expr",
+      "type": "string",
+      "required": false,
+      "description": "An expression over the value, written `@ColName` whatever the column is called, as SQLFlow's transform columns write it (`UPPER(@ColName)`, `RIGHT('0000' + @ColName, 4)`), evaluated where the ledger is kept, in SQL Server, before the value is converted to the key column's type. One expression only: no statement, query, comment, `;` or other `@` variable."
+    },
+    {
+      "path": "removals[].keys.columns[].name",
+      "type": "string",
+      "required": true,
+      "description": "The source column the value is read from, matched ignoring case."
+    },
+    {
+      "path": "removals[].keys.connection",
+      "type": "string",
+      "required": false,
+      "description": "For a table source: the source database's connection, as a `${env:NAME}` or `${keyvault:vault/secret}` reference. A SQL Server one may be a connection string holding no secret; any other source system's is a whole reference. Required with `object`."
+    },
+    {
+      "path": "removals[].keys.filter",
+      "type": "string",
+      "required": false,
+      "description": "For a table source: a predicate narrowing the rows read, appended to the read's WHERE as written, so it carries its own leading `AND` (`AND status = 'active'`). A filter narrows the complete key set, so a key it leaves out looks removed: filter only rows that are not keys of the delivery flow's records."
+    },
+    {
+      "path": "removals[].keys.location",
+      "type": "string",
+      "required": false,
+      "description": "For a reader source: the folder, file, glob or URI the reader reads, relative to the flow file unless rooted, a URI or a `${env:NAME}` / `${keyvault:vault/secret}` reference; `{name}` tokens of the flow's parameters and `{partition}` are filled first. Required unless `options` names `srcPath`."
+    },
+    {
+      "path": "removals[].keys.object",
+      "type": "string",
+      "required": false,
+      "description": "For a table source: the table or view, a three-part `[database].[schema].[object]` name, as SQLFlow's ingestion flows name one, read through SQLFlow's source providers with the source system's own quoting."
+    },
+    {
+      "path": "removals[].keys.options",
+      "type": "map",
+      "required": false,
+      "description": "For a reader source: the reader's options, exactly as a SQLFlow file flow's source takes them (delimiter, sheet, header row, ...), keys matched ignoring case. The file lifecycle (`copyToPath`, `zipToPath`, `srcDeleteIngested`, `srcDeleteAtPath`) is refused: reading keys never copies, archives or deletes a source's files; so is `settledFilesOnly`, which is the engine's to set. A date window is refused here."
+    },
+    {
+      "path": "removals[].keys.options.<name>",
+      "type": "string",
+      "required": false,
+      "description": "One option of the reader, by its name, and its value as text."
+    },
+    {
+      "path": "removals[].keys.provider",
+      "type": "enum(mssql|sqlserver|azdb|mysql|postgres|postgresql|oracle)",
+      "required": false,
+      "description": "For a table source: the source system SQLFlow reads it with. Read ignoring case.",
+      "enumValues": [
+        "mssql",
+        "sqlserver",
+        "azdb",
+        "mysql",
+        "postgres",
+        "postgresql",
+        "oracle"
+      ],
+      "default": "mssql"
+    },
+    {
+      "path": "removals[].keys.removedAt",
+      "type": "object",
+      "required": false,
+      "description": "Not taken here: the source's current keys are removed when they are not there, as of when the read began, so they carry no moment. A document that sets it is refused; a source of removed keys (`removed`) says when each was removed."
+    },
+    {
+      "path": "removals[].keys.removedAt.as",
+      "type": "string",
+      "required": false,
+      "description": "Not taken: `keys` carries no removal moment."
+    },
+    {
+      "path": "removals[].keys.removedAt.expr",
+      "type": "string",
+      "required": false,
+      "description": "Not taken: `keys` carries no removal moment."
+    },
+    {
+      "path": "removals[].keys.removedAt.name",
+      "type": "string",
+      "required": false,
+      "description": "Not taken: `keys` carries no removal moment."
+    },
+    {
+      "path": "removals[].keys.type",
+      "type": "string",
+      "required": false,
+      "description": "For a reader source: the SQLFlow source reader, as a SQLFlow file flow's source names it: `csv`, `xls`, `xlsx`, `json`, `jsonl`, `ndjson`, `xml`, `parquet`, `prq`, `duckdb` or `delta`. Required with `location` or `options`."
+    },
+    {
+      "path": "removals[].name",
+      "type": "string",
+      "required": false,
+      "description": "The removal's name, unique in its flow ignoring case, at most 300 characters: what its runs, its approvals and the deletions it finds are kept under. Left out, the delivery flow's name, with `/<interface>` after it for an interface."
+    },
+    {
+      "path": "removals[].removed",
+      "type": "object",
+      "required": false,
+      "description": "A source listing the keys the source removed, each as of a moment (`removedAt`): a key it lists is removed, unless a row of the key arrived in the record table after that moment. It may be read in part (a date window is taken), since it only ever removes less. Leave it out for a removal that reads only `keys`. A key source is either a SQLFlow source reader (`type`, `location`, `options`: files of any format SQLFlow reads, their schema found as they are read) or a table or view of a source database (`connection`, `provider`, `object`, `filter`), never both."
+    },
+    {
+      "path": "removals[].removed.columns",
+      "type": "list",
+      "required": false,
+      "description": "The columns the record key is read from, in SQLFlow's transform column notation, each record key column once. Left out, each of the delivery flow's record key columns is read from a column of the same name. A column the source does not hold stops the run, naming the columns it does hold."
+    },
+    {
+      "path": "removals[].removed.columns[]",
+      "type": "object",
+      "required": false,
+      "description": "One column: the source column (`name`), the record key column it fills (`as`), and an expression over it (`expr`)."
+    },
+    {
+      "path": "removals[].removed.columns[].as",
+      "type": "string",
+      "required": false,
+      "description": "The delivery flow's record key column the value fills, when it is named otherwise than the source column. Left out, the source column's name."
+    },
+    {
+      "path": "removals[].removed.columns[].expr",
+      "type": "string",
+      "required": false,
+      "description": "An expression over the value, written `@ColName` whatever the column is called, as SQLFlow's transform columns write it (`UPPER(@ColName)`, `RIGHT('0000' + @ColName, 4)`), evaluated where the ledger is kept, in SQL Server, before the value is converted to the key column's type. One expression only: no statement, query, comment, `;` or other `@` variable."
+    },
+    {
+      "path": "removals[].removed.columns[].name",
+      "type": "string",
+      "required": true,
+      "description": "The source column the value is read from, matched ignoring case."
+    },
+    {
+      "path": "removals[].removed.connection",
+      "type": "string",
+      "required": false,
+      "description": "For a table source: the source database's connection, as a `${env:NAME}` or `${keyvault:vault/secret}` reference. A SQL Server one may be a connection string holding no secret; any other source system's is a whole reference. Required with `object`."
+    },
+    {
+      "path": "removals[].removed.filter",
+      "type": "string",
+      "required": false,
+      "description": "For a table source: a predicate narrowing the rows read, appended to the read's WHERE as written, so it carries its own leading `AND` (`AND status = 'active'`)."
+    },
+    {
+      "path": "removals[].removed.location",
+      "type": "string",
+      "required": false,
+      "description": "For a reader source: the folder, file, glob or URI the reader reads, relative to the flow file unless rooted, a URI or a `${env:NAME}` / `${keyvault:vault/secret}` reference; `{name}` tokens of the flow's parameters and `{partition}` are filled first. Required unless `options` names `srcPath`."
+    },
+    {
+      "path": "removals[].removed.object",
+      "type": "string",
+      "required": false,
+      "description": "For a table source: the table or view, a three-part `[database].[schema].[object]` name, as SQLFlow's ingestion flows name one, read through SQLFlow's source providers with the source system's own quoting."
+    },
+    {
+      "path": "removals[].removed.options",
+      "type": "map",
+      "required": false,
+      "description": "For a reader source: the reader's options, exactly as a SQLFlow file flow's source takes them (delimiter, sheet, header row, ...), keys matched ignoring case. The file lifecycle (`copyToPath`, `zipToPath`, `srcDeleteIngested`, `srcDeleteAtPath`) is refused: reading keys never copies, archives or deletes a source's files; so is `settledFilesOnly`, which is the engine's to set. A date window is taken."
+    },
+    {
+      "path": "removals[].removed.options.<name>",
+      "type": "string",
+      "required": false,
+      "description": "One option of the reader, by its name, and its value as text."
+    },
+    {
+      "path": "removals[].removed.provider",
+      "type": "enum(mssql|sqlserver|azdb|mysql|postgres|postgresql|oracle)",
+      "required": false,
+      "description": "For a table source: the source system SQLFlow reads it with. Read ignoring case.",
+      "enumValues": [
+        "mssql",
+        "sqlserver",
+        "azdb",
+        "mysql",
+        "postgres",
+        "postgresql",
+        "oracle"
+      ],
+      "default": "mssql"
+    },
+    {
+      "path": "removals[].removed.removedAt",
+      "type": "object",
+      "required": false,
+      "description": "The column holding the moment each key was removed: a key whose row arrived in the record table after that moment came back, and is not removed. Required for a table source; a reader source without one takes each file's date (`FileDate_DW`). A blank or unreadable moment stops the run, naming the rows."
+    },
+    {
+      "path": "removals[].removed.removedAt.as",
+      "type": "string",
+      "required": false,
+      "description": "Not taken: the removal moment fills no key column. A document that sets it is refused."
+    },
+    {
+      "path": "removals[].removed.removedAt.expr",
+      "type": "string",
+      "required": false,
+      "description": "An expression over the moment's value, written `@ColName` (`DATEADD(hour, -1, @ColName)`), evaluated in SQL Server before it is read as an instant. One expression only: no statement, query, comment, `;` or other `@` variable."
+    },
+    {
+      "path": "removals[].removed.removedAt.name",
+      "type": "string",
+      "required": true,
+      "description": "The source column holding the moment, matched ignoring case: a date, a date and time, or text SQL Server reads as one, taken as UTC unless it carries an offset."
+    },
+    {
+      "path": "removals[].removed.type",
+      "type": "string",
+      "required": false,
+      "description": "For a reader source: the SQLFlow source reader, as a SQLFlow file flow's source names it: `csv`, `xls`, `xlsx`, `json`, `jsonl`, `ndjson`, `xml`, `parquet`, `prq`, `duckdb` or `delta`. Required with `location` or `options`."
+    },
+    {
+      "path": "removals[].values",
+      "type": "map",
+      "required": false,
+      "description": "The values of the delivery flow's parameters the removal compares under, each a literal or a `{name}` token of this flow's parameters. They bind the delivery flow's record scope (`source.record.scope`), so only the records planned under those values, and the record table's rows in that scope, are compared. Never `partition`, which is the run's."
+    },
+    {
+      "path": "removals[].values.<name>",
+      "type": "string",
+      "required": false,
+      "description": "One parameter of the delivery flow, by its name, and the value its records were planned under."
+    }
+  ]
+}

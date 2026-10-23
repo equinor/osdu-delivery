@@ -127,6 +127,9 @@ other tables of the schema are explained with what they serve:
   [Dimension views](../flow/dimension-views.md).
 - `osdu.Inventory` and its tables: in
   [The tables an inventory keeps](../flow/inventory.md#the-tables-an-inventory-keeps).
+- `osdu.RemovedKey` (a ledger's deletions: the keys a removal flow found its source no longer holds), `osdu.RemovalRun` and
+  `osdu.RemovalKey`: in [Removal flow](../flow/removal.md#the-ledgers-deletions). A removal flow keeps no ledger of its
+  own; its runs and deletions are kept under the delivery flow's ledger identity.
 - `osdu.SearchTerm`, `osdu.SearchTermRefinement`: in [Search terms](search-terms.md).
 
 ### `osdu.Record`: the current state of one deliverable
@@ -172,7 +175,8 @@ One `osdu.Activity` row per run and per operator intervention, never deleted:
   by button, the API, the MCP tool or the schedule);
 - interventions: `release`, `adopt` (a record taking over the OSDU record at the id its key makes), `redeliver`, `rerender` (bring up to date), `delete` (a removal from OSDU),
   `restore-previous`, `purge` (deleting removed records from the ledger), `remove-dimension`, `inventory-remove`,
-  `inventory-repair` and `reassign-id`.
+  `inventory-repair`, `reassign-id`, `source-remove` (a removal flow taking out what the source no longer holds, in the
+  delivery flow's ledger) and `lift-removal` (an operator delivering such records again).
 
 Each row carries the actor (for a run, who asked for it or `schedule:<name>` for a run a schedule fired; `user:<name>` for
 an intervention from the GUI or the API and for a probe asked for, `cli:<user>@<machine>` for one from a workstation,

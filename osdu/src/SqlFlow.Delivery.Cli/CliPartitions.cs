@@ -86,6 +86,19 @@ internal static class CliPartitions
             : flow.ForRun(null, await RegistryAsync(context, flow.NeedsRegistry(null), ct).ConfigureAwait(false));
     }
 
+    /// <summary>
+    /// <paramref name="flow"/> bound for a command that reads its runs: to the partition named as it is, since a partition
+    /// taken out of the registry keeps the runs its removals kept, and as a run would bind it when none is named.
+    /// </summary>
+    public static async Task<RemovalFlowDefinition> RemovalAsync(CliVerbContext context, RemovalFlowDefinition flow, CancellationToken ct)
+    {
+        ArgumentNullException.ThrowIfNull(context);
+        ArgumentNullException.ThrowIfNull(flow);
+        return Requested(context) is { } named && !string.IsNullOrWhiteSpace(named)
+            ? flow.ForPartition(named)
+            : flow.ForRun(null, await RegistryAsync(context, flow.NeedsRegistry(null), ct).ConfigureAwait(false));
+    }
+
     private static async Task<RegisteredPartitions> RegistryAsync(CliVerbContext context, bool needed, CancellationToken ct)
         => needed
             ? await context.Services.GetRequiredService<IPartitionRegistry>().ReadAsync(ct).ConfigureAwait(false)

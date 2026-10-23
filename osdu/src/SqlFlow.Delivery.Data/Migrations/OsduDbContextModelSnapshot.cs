@@ -3284,6 +3284,268 @@ namespace SqlFlow.Delivery.Data.Migrations
                     b.ToTable("RecordIdentity", "osdu");
                 });
 
+            modelBuilder.Entity("SqlFlow.Delivery.Data.DeliveryRemovalKey", b =>
+                {
+                    b.Property<short>("PartitionId")
+                        .HasColumnType("smallint");
+
+                    b.Property<long>("RemovalRunId")
+                        .HasColumnType("bigint");
+
+                    b.Property<byte>("Side")
+                        .HasColumnType("tinyint");
+
+                    b.Property<Guid>("DeliveryKey")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("FileName")
+                        .HasMaxLength(800)
+                        .HasColumnType("nvarchar(800)");
+
+                    b.Property<DateTime?>("RemovedUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<long?>("RowNumber")
+                        .HasColumnType("bigint");
+
+                    b.Property<string>("SourceKeyJson")
+                        .HasMaxLength(2000)
+                        .HasColumnType("nvarchar(2000)");
+
+                    b.Property<DateTime?>("UpdatedUtc")
+                        .HasColumnType("datetime2");
+
+                    b.HasKey("PartitionId", "RemovalRunId", "Side", "DeliveryKey");
+
+                    b.ToTable("RemovalKey", "osdu");
+                });
+
+            modelBuilder.Entity("SqlFlow.Delivery.Data.DeliveryRemovalRun", b =>
+                {
+                    b.Property<short>("PartitionId")
+                        .HasColumnType("smallint");
+
+                    b.Property<long>("RemovalRunId")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<long>("RemovalRunId"));
+
+                    b.Property<long?>("ActivityId")
+                        .HasColumnType("bigint");
+
+                    b.Property<string>("Actor")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)");
+
+                    b.Property<long>("AlreadyGone")
+                        .HasColumnType("bigint");
+
+                    b.Property<long>("Approved")
+                        .HasColumnType("bigint");
+
+                    b.Property<string>("ApprovedBy")
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)");
+
+                    b.Property<long>("AwaitingApproval")
+                        .HasColumnType("bigint");
+
+                    b.Property<long>("Busy")
+                        .HasColumnType("bigint");
+
+                    b.Property<long>("CameBack")
+                        .HasColumnType("bigint");
+
+                    b.Property<long>("Compared")
+                        .HasColumnType("bigint");
+
+                    b.Property<DateTime?>("CompletedUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("DeliveryFlow")
+                        .IsRequired()
+                        .HasMaxLength(300)
+                        .HasColumnType("nvarchar(300)");
+
+                    b.Property<long>("Detected")
+                        .HasColumnType("bigint");
+
+                    b.Property<string>("Entry")
+                        .IsRequired()
+                        .HasMaxLength(300)
+                        .HasColumnType("nvarchar(300)");
+
+                    b.Property<string>("Error")
+                        .HasMaxLength(4000)
+                        .HasColumnType("nvarchar(4000)");
+
+                    b.Property<long>("Failed")
+                        .HasColumnType("bigint");
+
+                    b.Property<string>("FlowName")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)");
+
+                    b.Property<int>("GuardPercent")
+                        .HasColumnType("int");
+
+                    b.Property<long?>("GuardRecords")
+                        .HasColumnType("bigint");
+
+                    b.Property<long>("IngestionKeys")
+                        .HasColumnType("bigint");
+
+                    b.Property<long>("KeptOut")
+                        .HasColumnType("bigint");
+
+                    b.Property<Guid>("LedgerFlowId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<long>("Lifted")
+                        .HasColumnType("bigint");
+
+                    b.Property<long>("ListedKeys")
+                        .HasColumnType("bigint");
+
+                    b.Property<string>("Operation")
+                        .IsRequired()
+                        .HasMaxLength(16)
+                        .HasColumnType("nvarchar(16)");
+
+                    b.Property<long>("Referenced")
+                        .HasColumnType("bigint");
+
+                    b.Property<long>("Removed")
+                        .HasColumnType("bigint");
+
+                    b.Property<long>("RowsRead")
+                        .HasColumnType("bigint");
+
+                    b.Property<Guid?>("RunId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<long>("Settled")
+                        .HasColumnType("bigint");
+
+                    b.Property<long>("Shared")
+                        .HasColumnType("bigint");
+
+                    b.Property<long>("SourceKeys")
+                        .HasColumnType("bigint");
+
+                    b.Property<DateTime?>("SourceReadUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<DateTime>("StartedUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(16)
+                        .HasColumnType("nvarchar(16)");
+
+                    b.HasKey("PartitionId", "RemovalRunId");
+
+                    b.HasIndex("PartitionId", "LedgerFlowId", "RemovalRunId");
+
+                    b.HasIndex("PartitionId", "FlowName", "Entry", "RemovalRunId");
+
+                    b.ToTable("RemovalRun", "osdu");
+                });
+
+            modelBuilder.Entity("SqlFlow.Delivery.Data.DeliveryRemovedKey", b =>
+                {
+                    b.Property<short>("PartitionId")
+                        .HasColumnType("smallint");
+
+                    b.Property<Guid>("FlowId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("DeliveryKey")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("ApprovedBy")
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)");
+
+                    b.Property<DateTime?>("ApprovedUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<DateTime>("CreatedUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("Detail")
+                        .HasMaxLength(1000)
+                        .HasColumnType("nvarchar(1000)");
+
+                    b.Property<long>("DetectedRunId")
+                        .HasColumnType("bigint");
+
+                    b.Property<long?>("DoneRunId")
+                        .HasColumnType("bigint");
+
+                    b.Property<DateTime?>("DoneUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("Entry")
+                        .IsRequired()
+                        .HasMaxLength(300)
+                        .HasColumnType("nvarchar(300)");
+
+                    b.Property<string>("FileName")
+                        .HasMaxLength(800)
+                        .HasColumnType("nvarchar(800)");
+
+                    b.Property<string>("Outcome")
+                        .HasMaxLength(24)
+                        .HasColumnType("nvarchar(24)");
+
+                    b.Property<string>("Reason")
+                        .IsRequired()
+                        .HasMaxLength(16)
+                        .HasColumnType("nvarchar(16)");
+
+                    b.Property<string>("RemovalFlow")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)");
+
+                    b.Property<DateTime>("RemovedUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<long?>("RowNumber")
+                        .HasColumnType("bigint");
+
+                    b.Property<Guid?>("RunId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("SourceKeyJson")
+                        .HasMaxLength(2000)
+                        .HasColumnType("nvarchar(2000)");
+
+                    b.Property<string>("State")
+                        .IsRequired()
+                        .HasMaxLength(24)
+                        .HasColumnType("nvarchar(24)");
+
+                    b.Property<int>("Tries")
+                        .HasColumnType("int");
+
+                    b.Property<DateTime>("UpdatedUtc")
+                        .HasColumnType("datetime2");
+
+                    b.HasKey("PartitionId", "FlowId", "DeliveryKey");
+
+                    b.HasIndex("PartitionId", "DetectedRunId");
+
+                    b.HasIndex("PartitionId", "FlowId", "State", "DeliveryKey");
+
+                    b.ToTable("RemovedKey", "osdu");
+                });
+
             modelBuilder.Entity("SqlFlow.Delivery.Data.DeliveryRepositoryTemplate", b =>
                 {
                     b.Property<Guid>("Id")

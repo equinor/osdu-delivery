@@ -14,7 +14,8 @@ referenceRefs:
   - delivery-concept-removal-and-reversal
 related:
   - delivery-wiki-0013-inventory-flows
-updated: 2026-10-16
+  - delivery-wiki-0022-removal-flows
+updated: 2026-10-23
 ---
 # 0014: An inventory flow may remove the orphan, stale and forgotten ids it found, when its document allows it
 

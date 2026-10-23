@@ -627,6 +627,7 @@ public sealed class SubmissionIntake
             SkipTier.Stale => SkipKind.Stale,
             SkipTier.ContentHash => SkipKind.Rendered,
             SkipTier.Approval => SkipKind.AwaitingApproval,
+            SkipTier.SourceRemoved => SkipKind.SourceRemoved,
             _ => SkipKind.Unchanged,
         },
         Basis = PlanBasis.Of(entry.Existing),

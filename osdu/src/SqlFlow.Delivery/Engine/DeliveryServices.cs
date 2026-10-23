@@ -76,6 +76,7 @@ public static class DeliveryServices
         services.AddSingleton<IFlowDocumentKind, AssertionFlowKind>();
         services.AddSingleton<IFlowDocumentKind, DimensionFlowKind>();
         services.AddSingleton<IFlowDocumentKind, InventoryFlowKind>();
+        services.AddSingleton<IFlowDocumentKind, RemovalFlowKind>();
         // The repository sync's delivery half. It is given the module database when the host registered one, since
         // that is what decides whether its rows can ride the catalog's transaction or need a connection of their own.
         services.AddSingleton<ICatalogSyncExtension>(sp => new DeliveryCatalogSync(
@@ -133,6 +134,16 @@ public static class DeliveryServices
         services.AddSingleton<IFlowDocumentExecutor, AssertionExecutor>();
         services.AddSingleton<IFlowDocumentExecutor, DimensionExecutor>();
         services.AddSingleton<IFlowDocumentExecutor, InventoryExecutor>();
+        services.AddSingleton<IFlowDocumentExecutor, RemovalExecutor>();
+
+        // What a removal flow reads its keys through: SQLFlow's own source readers, connection resolution, connection factory and
+        // SQL dialects, as the platform registered them, so a removal reads every format and source system SQLFlow reads.
+        services.TryAddSingleton(sp => new Removals.RemovalKeySources(
+            sp.GetServices<SqlFlow.Core.Abstractions.ISourceReader>(),
+            sp.GetRequiredService<SqlFlow.Core.Connections.IConnectionResolver>(),
+            sp.GetRequiredService<SqlFlow.Core.Connections.IConnectionFactory>(),
+            sp.GetRequiredService<SqlFlow.Core.Connections.SourceProviderRegistry>(),
+            sp.GetRequiredService<ISecretResolver>()));
         // What runs long or writes is a node task: a value check across a scope, and a removal.
         services.AddSingleton<IComputeOperation, CheckValuesOperation>();
         services.AddSingleton<IComputeOperation, DeleteRecordOperation>();

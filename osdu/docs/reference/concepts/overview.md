@@ -64,7 +64,7 @@ needs, and nothing else.
 | The catalog, the repository sync, schedules and the run queue ([control plane](../../../../sqlflow/docs/reference/concepts/control-plane.md)) | The `osdu` schema beside the catalog: the ledger, templates, caches, partitions ([architecture](architecture.md)) |
 | Compute nodes that pull runs ([architecture and execution](../../../../sqlflow/docs/reference/concepts/architecture-and-execution.md)) | The executors that run the OSDU kinds on those nodes |
 | Lineage and its waves ([lineage graph](../../../../sqlflow/docs/reference/concepts/lineage-graph-and-plan.md)) | OSDU types, mappings, cache types and dimensions as lineage nodes ([lineage](lineage.md)) |
-| The `sqlflow` command line ([run](../../../../sqlflow/docs/reference/cli/run.md), [validate](../../../../sqlflow/docs/reference/cli/validate.md)) | The OSDU verbs: `check`, `preview`, `values`, `records`, `config`, `partition`, `cache`, `template`, `assertions`, `dimensions`, `inventory` |
+| The `sqlflow` command line ([run](../../../../sqlflow/docs/reference/cli/run.md), [validate](../../../../sqlflow/docs/reference/cli/validate.md)) | The OSDU verbs: `check`, `preview`, `values`, `records`, `config`, `partition`, `cache`, `template`, `assertions`, `dimensions`, `inventory`, `removal` |
 | The workbench GUI and the MCP server | The OSDU pages of the GUI, the delivery API under `/api/v1/delivery`, the `osdu-delivery-mcp` server |
 | Secret references, users, tokens and scopes ([connections and secrets](../../../../sqlflow/docs/reference/concepts/connections-and-secrets.md)) | Nothing of its own: the module reads secrets and checks people the platform's way |
 
@@ -146,13 +146,14 @@ deliveries that read it; the other four read what OSDU holds and run after the d
 | [Assertion](../flow/assertion.md) | Test what a partition holds once the data has landed, with a report per run |
 | [Dimension](../flow/dimension.md) | Keep the distinct values of an attribute of OSDU records, cleaned for people to pick from |
 | [Inventory](../flow/inventory.md) | Find every id a kind holds that no ledger accounts for, and remove what a flow allows |
+| [Removal](../flow/removal.md) | Take out of OSDU, once, the records whose keys the source no longer holds, on a schedule, with a guard |
 
 ## Where to look
 
 | Where | What you find there |
 | --- | --- |
-| The GUI, OSDU group in the side bar | Four sections. **Ledger**: Delivery (the overview), Records, Audit trail. **In OSDU**: Explorer (what OSDU holds, read live), Tests, Inventories, Dimensions. **Build**: Mappings (with the mapping builder), Templates, Cache. **Setup**: Partitions, Search terms. A title bar picker sets the partition every OSDU page reads ([GUI](gui.md)). |
-| The GUI, a flow's pipeline page | Tabs per kind: Delivery, Records, Issues, Submissions and Preview for a delivery flow; Retrievals, Cache versions, Tests with History and Reports, Dimensions, Inventories for the others. Each kind adds its own fields to the trigger dialog. |
+| The GUI, OSDU group in the side bar | Four sections. **Ledger**: Delivery (the overview), Records, Removals, Audit trail. **In OSDU**: Explorer (what OSDU holds, read live), Tests, Inventories, Dimensions. **Build**: Mappings (with the mapping builder), Templates, Cache. **Setup**: Partitions, Search terms. A title bar picker sets the partition every OSDU page reads ([GUI](gui.md)). |
+| The GUI, a flow's pipeline page | Tabs per kind: Delivery, Records, Issues, Submissions, Preview and Deletions for a delivery flow; Retrievals, Cache versions, Tests with History and Reports, Dimensions, Inventories, Removals for the others. Each kind adds its own fields to the trigger dialog. |
 | The `sqlflow` command line | SQLFlow's verbs plus the OSDU verbs: `check` and `preview` before a run, `records` after one, `template`, `cache`, `partition` and `config` to set an estate up ([CLI pages](../cli/run.md)). |
 | The API | Everything under `/api/v1/delivery`, on the control plane's authenticated routes ([API](api.md)). |
 | An AI assistant | `osdu-delivery-mcp`: SQLFlow's MCP server with the delivery tools added. It answers from metadata (states, ids, counts, history, definitions), never from record content or source rows, and a `!` question from the data an approved AI context opens, with a read-only query ([MCP server](../guides/mcp.md)). |

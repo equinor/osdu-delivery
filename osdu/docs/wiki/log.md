@@ -137,3 +137,20 @@ Revised [0021](decisions/0021-adopting-occupied-records.md): adoption is asked o
 next run claims each id at the version OSDU holds then; claiming at the click moved to Rejected, with why (old holds carry
 no id, the held version goes stale, the scale). Amended [0002](decisions/0002-client-supplied-ids.md) to match.
 Re-indexed 0021.
+
+## [2026-10-23] ingest | Removal flows, decision 0022
+
+Source: the change that adds the removal flow kind: its document and loader (`osdu/src/SqlFlow.Delivery/Documents/RemovalFlowKind.cs`,
+`RemovalDocumentMapper.cs`), the run (`osdu/src/SqlFlow.Delivery/Engine/Removals/RemovalRunner.cs`), the key read through
+SQLFlow's readers (`RemovalKeySources.cs`), the comparison and the deletions table (`osdu/src/SqlFlow.Delivery/Ledger/SqlServerLedgerBulk.Removal.cs`,
+migration `RemovalFlows`), the take-out through the delivery flow's removal path (`osdu/src/SqlFlow.Delivery/Engine/FlowRuntime.SourceRemoval.cs`),
+the plan's skip of removed keys (`osdu/src/SqlFlow.Delivery/Engine/Planning/Planner.cs`), and the reference pages it adds
+and changes ([removal flow](../reference/flow/removal.md), [sqlflow removal](../reference/cli/removal.md),
+[removal and reversal](../reference/concepts/removal-and-reversal.md#records-the-source-no-longer-holds)). Discussed with the
+human: a flow kind of its own on its own schedule, keys read from the source with a removed-keys list as a native part,
+staging built in, a full key read with an incremental take-out, and the deletions a table of the delivery ledger written
+whichever pipeline maintains the records.
+
+Added [0022](decisions/0022-removal-flows.md): why a removal flow reads the source's keys whole, why `matchKeys`, an
+operation of the delivery flow, the ingestion table, a per-run candidate table and a ledger of its own were rejected, and
+what the guard and the lift are for. Indexed 0022.

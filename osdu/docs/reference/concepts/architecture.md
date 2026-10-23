@@ -67,7 +67,7 @@ flow runs the same way on the control plane, on a node and from the command line
 
 | Registered | What it is |
 | --- | --- |
-| The flow kinds | `delivery`, `retrieval`, `cache`, `assertion`, `dimension`, `inventory`, each an `IFlowDocumentKind` |
+| The flow kinds | `delivery`, `retrieval`, `cache`, `assertion`, `dimension`, `inventory`, `removal`, each an `IFlowDocumentKind` |
 | The companion documents | `mapping` (owned by the delivery kind) and `dictionary`, each an `ICompanionDocumentKind` |
 | The executors | One `IFlowDocumentExecutor` per flow kind, behind SQLFlow's `DocumentExecutor` |
 | The node tasks | Two `IComputeOperation`s a node runs for the control plane: a value check across a scope, and a removal |
@@ -193,7 +193,7 @@ the `osdu` schema holds a foreign key into SQLFlow's tables: OSDU rows carry pla
 | The ledger | Submissions, records, attempts, work batches, leases, source watermarks, record identities, artifacts, reversals, purged records ([ledger](ledger.md)) |
 | The audit trail | Activities and the records each touched |
 | What flows render with | Templates, mapping and interface read models, cache definitions, cache versions and their items, update tags |
-| What the other kinds keep | Retrievals, assertion runs and results, dimensions with their values and changes, inventories with their records and removals |
+| What the other kinds keep | Retrievals, assertion runs and results, dimensions with their values and changes, inventories with their records and removals, removal runs and the deletions they find (kept under the delivery ledgers) |
 | Setup | Partitions, the central configuration, search terms and their refinements |
 | Dimension tables | `[osdu].[dim_<dimension>]`, created and widened at run time by a dimension flow's build, the one kind of table no migration creates |
 

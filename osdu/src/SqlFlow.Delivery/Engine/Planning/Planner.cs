@@ -131,6 +131,8 @@ public sealed class PlanSummary
     private long _deliveries;
     private long _skips;
     private long _awaitingApproval;
+
+    private long _sourceRemoved;
     private long _stale;
     private long _holds;
     private long _blocked;
@@ -159,6 +161,9 @@ public sealed class PlanSummary
     /// rather than counting them with the records it had no reason to send.
     /// </summary>
     public long AwaitingApproval => Interlocked.Read(ref _awaitingApproval);
+
+    /// <summary>Rows of keys the source removed, which the ledger keeps out: counted among the unchanged, and apart here.</summary>
+    public long SourceRemoved => Interlocked.Read(ref _sourceRemoved);
 
     /// <summary>Records skipped because the source carries an older version than the ledger already holds.</summary>
     public long Stale => Interlocked.Read(ref _stale);
@@ -196,6 +201,10 @@ public sealed class PlanSummary
                 break;
             case PlannedAction.Skip when entry.SkipTier == SkipTier.Approval:
                 Interlocked.Increment(ref _awaitingApproval);
+                break;
+            case PlannedAction.Skip when entry.SkipTier == SkipTier.SourceRemoved:
+                Interlocked.Increment(ref _sourceRemoved);
+                Interlocked.Increment(ref _skips);
                 break;
             case PlannedAction.Skip:
                 Interlocked.Increment(ref _skips);
@@ -237,6 +246,7 @@ public sealed class PlanSummary
 
     public override string ToString()
         => string.Create(CultureInfo.InvariantCulture, $"{Records} record(s): {Deliveries} to deliver, {Skips} unchanged, {AwaitingApproval} awaiting approval, {Stale} stale, {Holds} held, {Blocked} blocked, {Untracked} untracked")
+            + (SourceRemoved > 0 ? string.Create(CultureInfo.InvariantCulture, $"; of the unchanged, {SourceRemoved} removed by the source and kept out") : string.Empty)
             + (FailingAssertions > 0
                 ? string.Create(CultureInfo.InvariantCulture, $"; of the deliveries, {FailingAssertions} fail an assertion of the mapping, {HeldByAssertions} of them to be held before they are sent")
                 : string.Empty);
@@ -273,6 +283,9 @@ public sealed record DeliveryPlan
 
     /// <summary>Records a cache change waiting for approval holds back, counted apart from the unchanged.</summary>
     public int AwaitingApproval => Entries.Count(e => e.Action == PlannedAction.Skip && e.SkipTier == SkipTier.Approval);
+
+    /// <summary>Rows of keys the source removed, which the ledger keeps out; counted among the unchanged too.</summary>
+    public int SourceRemoved => Entries.Count(e => e.Action == PlannedAction.Skip && e.SkipTier == SkipTier.SourceRemoved);
 
     public int Holds => Entries.Count(e => e.Action == PlannedAction.Hold);
 
@@ -590,6 +603,12 @@ public sealed class Planner
             ? new Dictionary<DeliveryKey, RecordState>()
             : await _ledger.GetRecordsAsync(flow.Id, keyed.Where(k => k.Key is not null).Select(k => k.Key!.Value), ct).ConfigureAwait(false);
 
+        // The keys of the page a source removed, with the moment each removal stands for (osdu/docs/reference/flow/removal.md):
+        // one read a page, as the records are read.
+        var removedKeys = _ledger is null
+            ? new Dictionary<DeliveryKey, DateTime>()
+            : await _ledger.RemovedKeysAsync(flow.Id, keyed.Where(k => k.Key is not null).Select(k => k.Key!.Value).ToList(), ct).ConfigureAwait(false);
+
         // Records whose documents refer to records the run has not looked up yet, and the questions they wait on.
         var deferred = new List<PendingRender>();
         var unanswered = new Questions();
@@ -638,6 +657,22 @@ public sealed class Planner
             if (record.Hold is { } refusal)
             {
                 entries.Add(basis with { Reason = refusal });
+                continue;
+            }
+
+            // The source no longer holds the key, as a removal flow found: the ledger keeps it out, and the row is not delivered
+            // unless it changed after the moment its removal stands for, which is the key coming back. A row the table does not
+            // say when it changed is kept out too: nothing says it came back.
+            if (key is { } removedKey && removedKeys.TryGetValue(removedKey, out var removedAt)
+                && (record.Origin.UpdatedUtc is not { } changed || changed <= removedAt))
+            {
+                entries.Add(basis with
+                {
+                    Action = PlannedAction.Skip,
+                    SkipTier = SkipTier.SourceRemoved,
+                    Reason = string.Create(CultureInfo.InvariantCulture,
+                        $"the source no longer holds this key (removed as of {removedAt:yyyy-MM-ddTHH:mm:ssZ}), and the row is not newer: it is kept out. A newer row delivers it again, and so does 'Deliver again' on the record's page"),
+                });
                 continue;
             }
 
@@ -1271,6 +1306,7 @@ public static class PlanFormatting
                 SkipTier.Fingerprint => "skip (tier 1)",
                 SkipTier.Approval => "skip (awaiting approval)",
                 SkipTier.Stale => "skip (stale)",
+                SkipTier.SourceRemoved => "skip (removed by the source)",
                 _ => "skip (tier 2)",
             },
             PlannedAction.Create => "create",

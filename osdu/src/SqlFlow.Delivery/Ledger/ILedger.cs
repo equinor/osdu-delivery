@@ -142,6 +142,13 @@ public static class AttemptPhases
     /// there. The same run writes the record to that id.
     /// </summary>
     public const string Adopt = "adopt";
+
+    /// <summary>
+    /// A removal flow took the record out because its source no longer holds it (osdu/docs/reference/flow/removal.md): outcome
+    /// deleted when OSDU held it, skipped when OSDU did not (its queued work dropped). The result names the removal flow, the
+    /// run, why the source no longer holds the key and the file and row that said so.
+    /// </summary>
+    public const string SourceRemoved = "source-removed";
 }
 
 /// <summary>A record given a new OSDU id: the id OSDU lost, and the one it is written under from now on.</summary>
@@ -823,6 +830,12 @@ public enum SkipKind
     /// the document it has. A request to plan the record again stays, for the plan that runs once the change is decided.
     /// </summary>
     AwaitingApproval,
+
+    /// <summary>
+    /// Not delivered: the source no longer holds the key, and the ledger keeps it out (a deletion pending or removed) while
+    /// the row is not newer than the moment it was removed. A request to plan the record again is answered.
+    /// </summary>
+    SourceRemoved,
 }
 
 /// <summary>
@@ -2573,9 +2586,26 @@ public interface ILedger
     /// written. Either way every record gets its own attempt, saying which scope ran and who asked for it, because that
     /// attempt is how the removal is audited afterwards.
     /// </summary>
+    /// <remarks>
+    /// With <paramref name="sources"/> the records are taken out because their source no longer holds them (a removal flow,
+    /// osdu/docs/reference/flow/removal.md): each attempt says so (phase <see cref="AttemptPhases.SourceRemoved"/>, the removal
+    /// flow, run and the file and row that said so), carries the removal's run, and is named under its activity; nothing is
+    /// asked to be planned again, since what keeps the record out is the ledger's deletion of its key
+    /// (<see cref="DetectRemovalsAsync"/>).
+    /// </remarks>
     Task MarkRemovedAsync(
         Guid flowId, IReadOnlyList<DeliveryKey> keys, RemovalScope scope, string worker, DateTime nowUtc, string? correlationId = null, bool deliverAgain = true,
-        CancellationToken ct = default);
+        IReadOnlyDictionary<DeliveryKey, SourceRemovalNote>? sources = null, CancellationToken ct = default);
+
+    /// <summary>
+    /// Settles in the ledger records a removal flow found the source no longer holds, which OSDU does not hold either (never
+    /// delivered, or taken out already): what is queued for them is dropped and they are marked removed, nothing asked of
+    /// OSDU, each with an attempt (outcome skipped, phase <see cref="AttemptPhases.SourceRemoved"/>) saying why, named under the
+    /// removal's activity. A record already marked removed keeps its state and gains the attempt. Records a lease holds other
+    /// than <paramref name="holder"/>'s are passed over and returned.
+    /// </summary>
+    Task<IReadOnlyList<DeliveryKey>> SettleRemovedBySourceAsync(
+        Guid flowId, IReadOnlyDictionary<DeliveryKey, SourceRemovalNote> keys, string worker, string? holder, DateTime nowUtc, CancellationToken ct = default);
 
     /// <summary>
     /// What OSDU held of each record before the write that left the version <paramref name="current"/> names for it, as the
@@ -3122,4 +3152,117 @@ public interface ILedger
 
     /// <summary>How many activities match a listing, for paging.</summary>
     Task<int> CountActivitiesAsync(ActivityQuery query, CancellationToken ct = default);
+
+    // Removal flows (osdu/docs/reference/flow/removal.md): the runs a removal flow keeps under the ledgers of the delivery flows it
+    // names, the keys it stages, and the ledger's deletions: every key a source removed, with how far taking it out has come. The
+    // ledger flow is always the delivery flow's (or interface's): a removal flow keeps no ledger of its own.
+
+    /// <summary>
+    /// Opens a removal run under the delivery ledger <paramref name="ledgerFlowId"/>: it closes the runs of the same removal its
+    /// process left open (failed, saying so) and deletes the keys they staged, and returns the new run's number.
+    /// </summary>
+    Task<long> StartRemovalRunAsync(Guid ledgerFlowId, RemovalRunStart start, CancellationToken ct = default);
+
+    /// <summary>Records when the read of the source's current keys began: the moment the keys it does not hold are removed as of.</summary>
+    Task MarkRemovalSourceReadAsync(Guid ledgerFlowId, long removalRunId, DateTime sourceReadUtc, CancellationToken ct = default);
+
+    /// <summary>
+    /// Converts a batch of raw key values where the ledger is kept, as SQL Server converts text: each column's expression over
+    /// its raw value, then <c>TRY_CONVERT</c> to the record table's type, and the removal moment to a UTC instant. Returns one
+    /// converted row per raw row, in order; a value that does not convert is null, and the caller decides what that means.
+    /// </summary>
+    Task<IReadOnlyList<ConvertedRemovalKey>> ConvertRemovalKeysAsync(RemovalKeyConversion conversion, IReadOnlyList<RawRemovalKey> rows, CancellationToken ct = default);
+
+    /// <summary>
+    /// Stages derived keys of one side of a running removal (<see cref="SourceRemovals.SourceSide"/>,
+    /// <see cref="SourceRemovals.RemovedSide"/> or <see cref="SourceRemovals.IngestionSide"/>). A key staged on the side already is
+    /// kept once: for the removed side with the later removal moment. Returns how many keys the batch added to the side.
+    /// </summary>
+    Task<long> StageRemovalKeysAsync(Guid ledgerFlowId, long removalRunId, byte side, IReadOnlyList<StagedRemovalKey> keys, CancellationToken ct = default);
+
+    /// <summary>
+    /// Compares the staged keys with the ledger's records of the flow in the comparison's scope and with the ledger's deletions:
+    /// a key the source removed that the ledger holds no deletion of yet becomes one (pending, or waiting for approval when there
+    /// are more than the guard allows), a deletion whose key the source holds again or whose record was delivered again since is
+    /// lifted, and a deletion found again keeps the later moment. A plan writes nothing and counts what a run would find.
+    /// </summary>
+    Task<RemovalDetection> DetectRemovalsAsync(Guid ledgerFlowId, long removalRunId, RemovalComparison comparison, CancellationToken ct = default);
+
+    /// <summary>
+    /// Makes pending, as an operator approved, the deletions of the ledger <paramref name="removalFlow"/>'s removal
+    /// <paramref name="entry"/> found that wait for approval, when there are exactly <paramref name="expected"/> of them, as the
+    /// operator was shown; each keeps who approved it and when. Returns how many it made pending.
+    /// </summary>
+    /// <exception cref="DeliveryException">The ledger holds another number of them than the operator was shown; nothing was approved.</exception>
+    Task<long> ApproveRemovalsAsync(Guid ledgerFlowId, string removalFlow, string entry, long expected, string approvedBy, DateTime nowUtc, CancellationToken ct = default);
+
+    /// <summary>How many of the ledger's deletions <paramref name="removalFlow"/>'s removal <paramref name="entry"/> found wait for approval.</summary>
+    Task<long> CountAwaitingApprovalAsync(Guid ledgerFlowId, string removalFlow, string entry, CancellationToken ct = default);
+
+    /// <summary>The ledger's pending deletions, in key order after <paramref name="after"/>, at most <paramref name="max"/>: what taking them out works through.</summary>
+    Task<IReadOnlyList<RemovedKeyState>> PendingRemovalsAsync(Guid ledgerFlowId, DeliveryKey? after, int max, CancellationToken ct = default);
+
+    /// <summary>
+    /// Records what tries to take out deletions came to: a finishing outcome (<see cref="SourceRemovals.Finishing"/>) makes the
+    /// deletion removed, naming the run, and it is never asked of OSDU again; any other leaves it pending for the next run, with
+    /// the outcome and why. Either way the try is counted.
+    /// </summary>
+    Task SettleRemovalsAsync(Guid ledgerFlowId, long removalRunId, Guid? runId, IReadOnlyList<RemovalKeyOutcome> outcomes, DateTime nowUtc, CancellationToken ct = default);
+
+    /// <summary>Adds to a run's tallies.</summary>
+    Task AddRemovalTallyAsync(Guid ledgerFlowId, long removalRunId, RemovalTally tally, CancellationToken ct = default);
+
+    /// <summary>
+    /// Closes a run <paramref name="status"/> (<see cref="SourceRemovals.Completed"/>, <see cref="SourceRemovals.Guarded"/> or
+    /// <see cref="SourceRemovals.Failure"/>), saying why for a run that did not complete, and deletes the keys it staged.
+    /// </summary>
+    Task CompleteRemovalRunAsync(Guid ledgerFlowId, long removalRunId, string status, string? stoppedBy, long? activityId, DateTime nowUtc, CancellationToken ct = default);
+
+    /// <summary>A removal run, by its number in the partition; null when the partition holds none of that number.</summary>
+    Task<RemovalRunState?> GetRemovalRunAsync(string partition, long removalRunId, CancellationToken ct = default);
+
+    /// <summary>The runs of a removal flow in a partition, the newest first, of one removal when <paramref name="entry"/> names it.</summary>
+    Task<IReadOnlyList<RemovalRunState>> ListRemovalRunsAsync(string partition, string flowName, string? entry, int max, CancellationToken ct = default);
+
+    /// <summary>The removal runs that wrote to the ledger of <paramref name="ledgerFlowId"/>, the newest first.</summary>
+    Task<IReadOnlyList<RemovalRunState>> ListRemovalRunsOfLedgerAsync(Guid ledgerFlowId, int max, CancellationToken ct = default);
+
+    /// <summary>
+    /// The ledger's deletions, in key order after <paramref name="after"/>, at most <paramref name="max"/>, of one state when
+    /// <paramref name="state"/> names it, of those one removal run found when <paramref name="detectedRunId"/> names it.
+    /// </summary>
+    Task<IReadOnlyList<RemovedKeyState>> ListRemovedKeysAsync(
+        Guid ledgerFlowId, string? state, long? detectedRunId, DeliveryKey? after, int max, CancellationToken ct = default);
+
+    /// <summary>How many of the ledger's deletions are in each state.</summary>
+    Task<IReadOnlyDictionary<string, long>> RemovedKeyCountsAsync(Guid ledgerFlowId, CancellationToken ct = default);
+
+    /// <summary>
+    /// The keys among <paramref name="keys"/> the source removed that the ledger keeps out (pending or removed), with the moment
+    /// each removal stands for: what the plan skips a row of, unless the row is newer. One read for a page of keys.
+    /// </summary>
+    Task<IReadOnlyDictionary<DeliveryKey, DateTime>> RemovedKeysAsync(Guid flowId, IReadOnlyCollection<DeliveryKey> keys, CancellationToken ct = default);
+
+    /// <summary>The ledger's deletion of a key; null when it holds none.</summary>
+    Task<RemovedKeyState?> GetRemovedKeyAsync(Guid flowId, DeliveryKey key, CancellationToken ct = default);
+
+    /// <summary>
+    /// Lifts the deletions of <paramref name="keys"/>, as an operator asked: each key is no longer kept out, and a record the
+    /// removal took out is asked to be planned again, so the flow's next run reads its row and delivers it under its id; a record
+    /// still live is left as it is, its next changed row planned as any other. Every record lifted is named under
+    /// <paramref name="activityId"/>. Returns the keys whose deletion the ledger held; a key it held none of is left out.
+    /// </summary>
+    Task<IReadOnlySet<DeliveryKey>> LiftRemovedKeysAsync(Guid flowId, IReadOnlyCollection<DeliveryKey> keys, long? activityId, DateTime nowUtc, CancellationToken ct = default);
+
+    /// <summary>
+    /// The ids among <paramref name="ids"/> a record of another ledger of the flow's partition holds live (claimed or not, and not
+    /// removed): a removal leaves such an id in OSDU rather than take it from under that ledger.
+    /// </summary>
+    Task<IReadOnlySet<string>> SharedIdsAsync(Guid flowId, IReadOnlyCollection<string> ids, CancellationToken ct = default);
+
+    /// <summary>
+    /// The paths, relative to their repository's root, of the files the catalog's read model says declare delivery flow
+    /// <paramref name="flowName"/> (active interfaces only): where a removal flow finds the delivery flow it names.
+    /// </summary>
+    Task<IReadOnlyList<string>> DeliveryFlowPathsAsync(string flowName, CancellationToken ct = default);
 }

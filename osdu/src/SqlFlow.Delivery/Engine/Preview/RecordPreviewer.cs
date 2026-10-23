@@ -481,6 +481,7 @@ public sealed class RecordPreviewer
                     SkipTier.ContentHash => "contentHash",
                     SkipTier.Approval => "approval",
                     SkipTier.Stale => "stale",
+                    SkipTier.SourceRemoved => "sourceRemoved",
                     _ => decided.SkipTier.ToString(),
                 }
                 : null,

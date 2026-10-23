@@ -100,7 +100,7 @@ public sealed class LineageTests : IDisposable
             [
                 new DeliveryFlowKind(documents, templates ?? new MappingTemplateSource()),
                 new CacheFlowKind(documents), new RetrievalFlowKind(documents), new AssertionFlowKind(documents),
-                new DimensionFlowKind(documents), new InventoryFlowKind(documents),
+                new DimensionFlowKind(documents), new InventoryFlowKind(documents), new RemovalFlowKind(documents),
             ]);
     }
 
@@ -535,6 +535,7 @@ public sealed class LineageTests : IDisposable
             ("welldb-well-03-delivery", "welldb-osdu-06-inventory"),
             ("welldb-wellbore-03-delivery", "welldb-osdu-06-inventory"),
             ("welldb-welllog-03-header-delivery", "welldb-osdu-06-inventory"),
+            ("welldb-wellbore-03-delivery", "welldb-wellbore-05-removal"),
         })
         {
             Assert.True(WaveOf(report, writer) < WaveOf(report, reader), $"{writer} runs before {reader}");
@@ -542,6 +543,12 @@ public sealed class LineageTests : IDisposable
 
         Assert.DoesNotContain(report.Edges, e => e.Flow == "welldb-well-04-assertion" && e.Relation == LineageRelation.Writes);
         Assert.DoesNotContain(report.Edges, e => e.Flow == "welldb-osdu-06-inventory" && e.Relation == LineageRelation.Writes);
+
+        // The removal reads the wellbore cut the pre flow lands from, and what the wellbore delivery writes, and writes nothing
+        // another flow reads: what it takes out is the delivery's records, in the delivery's ledger.
+        Assert.DoesNotContain(report.Edges, e => e.Flow == "welldb-wellbore-05-removal" && e.Relation == LineageRelation.Writes);
+        Assert.Contains(report.Edges, e => e.Flow == "welldb-wellbore-05-removal" && e.Relation == LineageRelation.Reads
+            && report.Objects.Any(o => o.Key == e.ObjectKey && o.Name == InRepo("data/wellbore")));
         Assert.Contains(report.Edges, e => e.Flow == "welldb-welllog-05-dimensions" && e.Relation == LineageRelation.Reads && e.ObjectKey == TypeKey(Samples.WellLogKind));
         Assert.Contains(report.Edges, e => e.Flow == "welldb-welllog-05-dimensions" && e.Relation == LineageRelation.Writes);
         Assert.Contains(report.Edges, e => e.Flow == "welldb-welllog-05-dimensions" && e.Relation == LineageRelation.Reads

@@ -232,6 +232,33 @@ public static class IngestionSql
             """;
     }
 
+    /// <summary>
+    /// One page of the record table's keys in the scope, with each row's change moment and its value in the order the read
+    /// pages in (the last columns), resuming after the previous page's last value: every row, whatever its moment.
+    /// </summary>
+    public static string KeyPage(IngestionLayout layout, bool after)
+    {
+        ArgumentNullException.ThrowIfNull(layout);
+        var predicates = new List<string>();
+        if (layout.Scope.Count > 0)
+        {
+            predicates.Add(ScopePredicate(layout, "r"));
+        }
+
+        if (after)
+        {
+            predicates.Add(Above(layout, "r", AfterPrefix));
+        }
+
+        var where = predicates.Count == 0 ? string.Empty : "WHERE " + string.Join(" AND ", predicates);
+        return $"""
+            SELECT TOP ({PageParameter}) {KeyList(layout, "r")}, r.{SourceObjectName.Quote(layout.Updated)}, {OrderList(layout, "r")}
+            FROM {layout.Record.Quoted} r
+            {where}
+            ORDER BY {OrderList(layout, "r")};
+            """;
+    }
+
     /// <summary>How many records this selection is expected to meet.</summary>
     public static string CandidateCount(IngestionLayout layout, SourceSelectionKind kind, bool hasLower)
         => $"SELECT COUNT_BIG(*) FROM ({CandidateSet(layout, kind, hasLower, KeyBounds.None)}) q;";

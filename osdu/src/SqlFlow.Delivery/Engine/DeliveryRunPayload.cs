@@ -12,7 +12,7 @@ using SqlFlow.Delivery.Source;
 
 namespace SqlFlow.Delivery.Engine;
 
-/// <summary>The operations a run of the delivery, cache, retrieval, assertion, dimension and inventory kinds performs, by the names runs carry.</summary>
+/// <summary>The operations a run of the delivery, cache, retrieval, assertion, dimension, inventory and removal kinds performs, by the names runs carry.</summary>
 public static class DeliveryOperations
 {
     /// <summary>Plan the source and deliver what changed: the delivery kind's default.</summary>
@@ -86,7 +86,9 @@ public static class DeliveryOperations
     /// <summary>
     /// Remove from OSDU the ids of one finding an inventory found, as an operator asked
     /// (osdu/docs/reference/flow/inventory.md, What a removal does): an inventory flow's operation, run only for a flow
-    /// whose document allows it.
+    /// whose document allows it. A removal flow's default too: compare the keys its sources hold with the ledgers of the
+    /// delivery flows it names, and take out of OSDU, into those ledgers, the records whose keys the source no longer holds
+    /// (osdu/docs/reference/flow/removal.md, A run).
     /// </summary>
     public const string Remove = "remove";
 
@@ -290,7 +292,7 @@ public sealed record DeliveryRunPayload
     /// <summary>The central configuration set for one partition, by partition, which a run bound to it resolves with first.</summary>
     public const string PartitionReferencesProperty = "partitionReferences";
 
-    /// <summary>The partition a run deleting the ledger, or an inventory flow's remove run, acts in, named by whoever asked for it as confirmation.</summary>
+    /// <summary>The partition a run deleting the ledger, an inventory flow's remove run, or a removal flow's approved run acts in, named by whoever asked for it as confirmation.</summary>
     public const string ConfirmProperty = "confirm";
 
     /// <summary>The tests of an assertion flow a run runs, by name.</summary>
@@ -308,6 +310,15 @@ public sealed record DeliveryRunPayload
     /// <summary>The types of a cache flow a run refreshes or plans, by name.</summary>
     public const string TypesProperty = "types";
 
+    /// <summary>The removals of a removal flow a run carries out, by name.</summary>
+    public const string EntriesProperty = "entries";
+
+    /// <summary>
+    /// How many removed keys a removal flow's guard held for approval an operator approved, as the operator was shown them
+    /// (osdu/docs/reference/flow/removal.md, The guard).
+    /// </summary>
+    public const string ApproveProperty = "approve";
+
     /// <summary>What an inventory flow's remove run removes from OSDU (osdu/docs/reference/flow/inventory.md, Operations).</summary>
     public const string RemovalProperty = "removal";
 
@@ -322,7 +333,8 @@ public sealed record DeliveryRunPayload
 
     private static readonly string[] Properties =
         [ForceProperty, SubmissionIdProperty, RunIdProperty, RecordKeysProperty, RedeliverProperty, RerenderProperty, SlicesProperty, InterfaceProperty, InterfacesProperty, ReferencesProperty,
-            PartitionReferencesProperty, ConfirmProperty, TestsProperty, TagsProperty, DimensionsProperty, InventoriesProperty, RemovalProperty, SelectionProperty, TypesProperty];
+            PartitionReferencesProperty, ConfirmProperty, TestsProperty, TagsProperty, DimensionsProperty, InventoriesProperty, RemovalProperty, SelectionProperty, TypesProperty,
+            EntriesProperty, ApproveProperty];
 
     /// <summary>
     /// For every property a run asks something by (all but the central configuration, which every kind takes), the runs that
@@ -339,7 +351,7 @@ public sealed record DeliveryRunPayload
         [SlicesProperty] = "only a delivery flow's intake members plan slices",
         [InterfaceProperty] = "only a delivery flow's runs name an interface",
         [InterfacesProperty] = "only a delivery flow's runs select interfaces",
-        [ConfirmProperty] = "only a delivery flow's run deleting the ledger and an inventory flow's remove run name the partition they act in",
+        [ConfirmProperty] = "only a delivery flow's run deleting the ledger, an inventory flow's remove run and a removal flow's approved run name the partition they act in",
         [TestsProperty] = "only an assertion flow's runs select tests",
         [TagsProperty] = "only an assertion flow's runs select tests by tag",
         [DimensionsProperty] = "only a dimension flow's runs select dimensions",
@@ -347,6 +359,8 @@ public sealed record DeliveryRunPayload
         [RemovalProperty] = "only an inventory flow's remove run names what it removes",
         [SelectionProperty] = "only an inventory flow's match run names the selection it fills",
         [TypesProperty] = "only a cache flow's runs select types",
+        [EntriesProperty] = "only a removal flow's runs select removals",
+        [ApproveProperty] = "only a removal flow's remove run carries an approval",
     };
 
     /// <summary>The properties a delivery flow's runs take, besides the central configuration; which operation takes which is <see cref="Validate"/>'s.</summary>
@@ -354,6 +368,8 @@ public sealed record DeliveryRunPayload
         [ForceProperty, SubmissionIdProperty, RunIdProperty, RecordKeysProperty, RedeliverProperty, RerenderProperty, SlicesProperty, InterfaceProperty, InterfacesProperty, ConfirmProperty];
 
     private static readonly string[] RemovalProperties = ["finding", "scope", "expected", "ids", "selection"];
+
+    private static readonly string[] ApprovalProperties = ["expected"];
 
     public static DeliveryRunPayload None { get; } = new();
 
@@ -470,6 +486,15 @@ public sealed record DeliveryRunPayload
     /// </summary>
     public IReadOnlyList<string> Types { get; init; } = [];
 
+    /// <summary>The removals of a removal flow the run carries out, by name; with none, every removal of the flow.</summary>
+    public IReadOnlyList<string> Entries { get; init; } = [];
+
+    /// <summary>
+    /// The approval a removal flow's remove run carries: how many removed keys of the removal <see cref="Entries"/> names wait for
+    /// approval, as the operator was shown them, with <see cref="Confirm"/> naming the partition. Only that run carries it.
+    /// </summary>
+    public RemovalApproval? Approve { get; init; }
+
     /// <summary>True when the payload carries nothing.</summary>
     public bool IsEmpty => CarriesOnlyConfiguration && References.Count == 0 && PartitionReferences.Count == 0;
 
@@ -504,6 +529,8 @@ public sealed record DeliveryRunPayload
         Add(Removal is not null, RemovalProperty);
         Add(SelectionId is not null, SelectionProperty);
         Add(Types.Count > 0, TypesProperty);
+        Add(Entries.Count > 0, EntriesProperty);
+        Add(Approve is not null, ApproveProperty);
         return named;
 
         void Add(bool asks, string property)
@@ -629,6 +656,8 @@ public sealed record DeliveryRunPayload
             Removal = root[RemovalProperty] is null ? null : RemovalRequest(root[RemovalProperty]),
             SelectionId = root[SelectionProperty] is null ? null : Number(root[SelectionProperty], SelectionProperty),
             Types = Selection(root[TypesProperty], TypesProperty, "type names"),
+            Entries = RemovalEntries(root[EntriesProperty]),
+            Approve = root[ApproveProperty] is null ? null : ApprovalRequest(root[ApproveProperty]),
         };
     }
 
@@ -945,6 +974,16 @@ public sealed record DeliveryRunPayload
             root[SelectionProperty] = selection;
         }
 
+        if (Entries.Count > 0)
+        {
+            root[EntriesProperty] = new JsonArray(Entries.Select(e => (JsonNode?)JsonValue.Create(e)).ToArray());
+        }
+
+        if (Approve is { } approve)
+        {
+            root[ApproveProperty] = new JsonObject { ["expected"] = approve.Expected };
+        }
+
         return root.ToJsonString();
     }
 
@@ -1087,6 +1126,33 @@ public sealed record DeliveryRunPayload
     /// The removal a payload names, parsed strictly: a removable finding, a scope (record or everything), the count the operator
     /// was shown, and at most <see cref="InventoryRemovalRequest.MaxIds"/> distinct ids, each an OSDU id, whose number is that count.
     /// </summary>
+    /// <summary>
+    /// An approval of the removed keys a removal flow's guard held: how many wait for approval (<c>expected</c>), which the run
+    /// holds the ledger to before it makes them pending.
+    /// </summary>
+    private static RemovalApproval ApprovalRequest(JsonNode? node)
+    {
+        if (node is not JsonObject approval)
+        {
+            throw new SqlFlowException($"payload {ApproveProperty} must be an object naming expected: how many removed keys the operator was shown waiting for approval.");
+        }
+
+        foreach (var (name, _) in approval)
+        {
+            if (!ApprovalProperties.Contains(name, StringComparer.Ordinal))
+            {
+                throw new SqlFlowException($"payload {ApproveProperty}.{name} is not one of {string.Join(", ", ApprovalProperties)}.");
+            }
+        }
+
+        if (approval["expected"] is not JsonValue expectedValue || !expectedValue.TryGetValue<long>(out var expected) || expected < 1)
+        {
+            throw new SqlFlowException($"payload {ApproveProperty}.expected must be the number of keys the operator was shown, at least 1.");
+        }
+
+        return new RemovalApproval { Expected = expected };
+    }
+
     private static InventoryRemovalRequest RemovalRequest(JsonNode? node)
     {
         if (node is not JsonObject removal)
@@ -1186,6 +1252,43 @@ public sealed record DeliveryRunPayload
     /// array of names, each a name as a flow writes one (<see cref="SelectableNames.IsName"/>), none twice. Whether each names
     /// something of the flow is the run's to check, since a payload is validated before the flow document is read.
     /// </summary>
+    /// <summary>
+    /// The removals a removal flow's run names (<see cref="EntriesProperty"/>): at most as many as a flow declares, each a
+    /// removal's name as the flow keeps it (<see cref="RemovalNames"/>), which may carry a delivery flow's interface after a
+    /// slash, so the rule test, tag and dimension names keep to is not theirs.
+    /// </summary>
+    private static IReadOnlyList<string> RemovalEntries(JsonNode? node)
+    {
+        if (node is null)
+        {
+            return [];
+        }
+
+        if (node is not JsonArray array || array.Count > RemovalFlowDefinition.MaxEntries)
+        {
+            throw new SqlFlowException($"payload {EntriesProperty} must be an array of at most {RemovalFlowDefinition.MaxEntries} removal names.");
+        }
+
+        var names = new List<string>(array.Count);
+        foreach (var item in array)
+        {
+            var name = Text(item, EntriesProperty);
+            if (!RemovalNames.IsName(name))
+            {
+                throw new SqlFlowException($"payload {EntriesProperty} holds '{name}', which is not a removal's name: {RemovalNames.Rule}.");
+            }
+
+            if (names.Contains(name, StringComparer.OrdinalIgnoreCase))
+            {
+                throw new SqlFlowException($"payload {EntriesProperty} names '{name}' more than once.");
+            }
+
+            names.Add(name);
+        }
+
+        return names;
+    }
+
     private static IReadOnlyList<string> Selection(JsonNode? node, string property, string what)
     {
         if (node is null)

@@ -63,6 +63,9 @@ sourceRefs:
   - osdu/gui/src/features/delivery/assertions/AssertionTestSheet.tsx
   - osdu/gui/src/features/delivery/assertions/AssertionReportPage.tsx
   - osdu/gui/src/features/delivery/inventories/InventoryReport.tsx
+  - osdu/gui/src/features/delivery/removals/DeliveryRemovalsPage.tsx
+  - osdu/gui/src/features/delivery/removals/RemovedKeysGrid.tsx
+  - osdu/gui/src/features/delivery/removals/DeliveryDeletionsPanel.tsx
   - osdu/gui/src/features/delivery/dimensions/DeliveryDimensionsPage.tsx
   - osdu/gui/src/features/delivery/dimensions/DimensionWorkspace.tsx
   - osdu/gui/src/features/delivery/DeliveryDocumentsPage.tsx
@@ -102,8 +105,8 @@ scopes](../../../../sqlflow/docs/reference/concepts/authentication-and-identity.
   icon unfolds the group it names, and from then on each group and section starts as the person last left it in their
   browser;
 - a **Partition** picker in the title bar, which every OSDU page reads in;
-- tabs and header actions on the pipeline and run pages of the six kinds it adds (delivery, retrieval, cache, assertion,
-  dimension, inventory), and their fields in the trigger dialog;
+- tabs and header actions on the pipeline and run pages of the seven kinds it adds (delivery, retrieval, cache, assertion,
+  dimension, inventory, removal), and their fields in the trigger dialog;
 - a **records** category in the workbench's search.
 
 No flow is configured in the OSDU group. Flows of every kind, these included, are defined, synced and scheduled in
@@ -142,6 +145,7 @@ and a link that names a partition (`?partition=`) makes it the title bar's. See 
 | --- | --- | --- |
 | Ledger | Delivery | `/delivery` |
 | | Records | `/delivery/records` |
+| | Removals | `/delivery/removals` |
 | | Audit trail | `/delivery/activity` |
 | In OSDU | Explorer | `/delivery/explorer` |
 | | Assertions | `/delivery/assertions` |
@@ -189,13 +193,25 @@ or the ingestion file. Each hit says which value matched. A status picker (`pend
 a link to the record's OSDU tab; a row opens the record's page. The term, status and flow are in the address, so a
 lookup is a link.
 
+### Removals
+
+Every removal of the partition, from every removal flow: its delivery flow, that ledger's deletions by state (pending,
+waiting for approval, removed) and its last run, the ones waiting for approval marked. One opens under a compact heading
+(**Removals** › its name, a switcher to the others, **Run pipeline**): what it reads and compares under, its guard, its
+last run, and, when its guard held what it found, one line saying how many wait, why on hover, **Review** and **Approve**,
+whose dialog says what the approval does in the ledger and in OSDU and takes the partition typed back. Under it, a grid
+that fills the window and reads 200 deletions at a time as it is scrolled: one line of state tabs with their counts, each
+deletion's key (opening its record), why it counts as removed and as of when (the whole of it on hover, to copy), what
+taking it out came to, when it was found and done. Picked deletions are delivered again through **Deliver again**. **Runs**
+lists the removal's runs with what each read, found, took out and left. See [removal flows](../flow/removal.md).
+
 ### Audit trail
 
 Every run and intervention across flows, newest first: when, flow, partition, **Action**, **By** (a schedule, a person,
 the command line), **Result** and **Target** (the record, else the submission, else the run). It narrows by actor, flow,
 action (`deliver`, `intake`, `drain`, `verify`, `probe`, `sync`, `release`, `adopt`, `redeliver`, `rerender`, `delete`,
 `restore-previous`, `purge`, `reverse`, `undo`, `delete-ledger`, `remove-dimension`, `inventory-remove`, `inventory-repair`,
-`reassign-id`) and outcome. Runs
+`reassign-id`, `source-remove`, `lift-removal`) and outcome. Runs
 that changed nothing are left out until **Show idle runs**. An entry opens on its ids, **Parameters**, its captured
 **Log** (downloadable), and for a `deliver`, `replan`, `drain` or `intake` run that has ended, **Reverse this run**; a
 `reverse` entry shows its **Reversal**.
@@ -347,12 +363,16 @@ A run page gains, by kind:
 | assertion | **Open the report** | Tests, Passed, Failed, Warned, Errored, Skipped |
 | dimension | **Open dimensions** | Built, Failed, Skipped, Values, Keys |
 | inventory | **Open inventories** | Inventories, Would read, Completed, Failed, Listed, Raised |
+| removal | **Open removals** | Found removed, Removed, Held, Left (a plan: Would find, Would hold) |
 
 The other kinds' pipeline pages gain one tab each, which they open on: a retrieval flow **Retrievals** (every run with
 its window, location, counts and outcome); a cache flow **Cache versions** (the partition it fills and every version of
 its cache, with a **Cache page** link); an assertion flow **Assertions**, **History** (its assertions against recent
 runs, each with its pass rate and how often it flipped) and **Reports**; a dimension flow **Dimensions**; an inventory flow
-**Inventories**.
+**Inventories**; a removal flow **Removals** (each removal with its delivery flow, that ledger's deletions by state and its
+last run, **Approve** for what a guard held, and **Open** to the Removals page). A delivery flow also gains **Deletions**:
+the keys removal flows found its source no longer holds, as the Removals page's grid shows them, with **Deliver again** for
+picked records, and the removal runs that wrote to its ledger.
 
 ## In OSDU
 

@@ -178,7 +178,7 @@ public sealed record DeliveryRecordDetailDto(
     DeliveryRecordDto Record, Guid? PipelineId, Guid? RepoId, string? FlowName, string? Interface = null,
     DeliveryRecordLinkDto? WaitsOn = null, IReadOnlyList<DeliveryRecordLinkDto>? WaitedOnBy = null,
     IReadOnlyList<string>? KeyColumns = null, string? Partition = null,
-    DeliveryRecordLinkDto? Parent = null, IReadOnlyList<DeliveryRecordLinkDto>? ReadBy = null);
+    DeliveryRecordLinkDto? Parent = null, IReadOnlyList<DeliveryRecordLinkDto>? ReadBy = null, DeliveryRemovedKeyDto? RemovedKey = null);
 
 /// <summary>One delivery try, as the append-only history holds it: its outcome, and every step with what the target returned.</summary>
 public sealed record DeliveryAttemptDto(
@@ -374,6 +374,16 @@ public sealed record DeliveryReleaseRequest(IReadOnlyList<Guid>? Keys, bool Run 
 
 /// <summary>How many records a release released, and the run it queued when asked to.</summary>
 public sealed record DeliveryReleaseResult(int Released, Guid? RunId = null);
+
+/// <summary>
+/// A lift of the removals of a flow's records (osdu/docs/reference/flow/removal.md, Delivering a record again): the records
+/// <c>Keys</c> names, at most 1000. <c>Run</c> also queues a deliver run of the flow under the parameter values its last
+/// submission ran with, which delivers them again at once.
+/// </summary>
+public sealed record DeliveryLiftRequest(IReadOnlyList<Guid>? Keys, bool Run = false, string? Pool = null);
+
+/// <summary>How many records' removals a lift lifted (their keys no longer kept out), and the deliver run it queued when asked to.</summary>
+public sealed record DeliveryLiftResult(int Lifted, Guid? RunId = null);
 
 /// <summary>
 /// A release of one record. <c>Run</c> also queues a deliver run scoped to it, read under the parameter values it was last
@@ -612,6 +622,9 @@ public static class DeliveryEndpoints
 
         // The inventories of inventory flows: what OSDU serves set against the ledgers, by finding, a page at a time, and exports.
         DeliveryInventoryEndpoints.MapReads(delivery);
+
+        // Removal flows: a flow's removals in a partition, their runs, and the deletions a delivery ledger holds.
+        DeliveryRemovalEndpoints.MapReads(delivery);
         delivery.MapGet("/caches", ListCachesAsync).WithName("ListDeliveryCaches");
         delivery.MapGet("/cache/items", ListCachedItemsAsync).WithName("ListDeliveryCachedItems");
         delivery.MapGet("/cache/versions", ListCacheVersionsAsync).WithName("ListDeliveryCacheVersions");
@@ -668,6 +681,11 @@ public static class DeliveryEndpoints
         // Deleting a flow's whole ledger, every interface's, through a run of the pipeline that removes its records from OSDU first.
         DeliveryLedgerEndpoints.MapWrites(delivery);
         DeliveryInventoryEndpoints.MapWrites(delivery);
+
+        // The approval of what a removal flow's guard held, and an operator's lift of a deletion, which delivers its record again.
+        DeliveryRemovalEndpoints.MapWrites(delivery);
+        delivery.MapPost("/records/{flowId:guid}/{key:guid}/lift-removal", LiftRemovalAsync).WithName("LiftDeliveryRecordRemoval");
+        delivery.MapPost("/flows/{pipelineId:guid}/lift-removal", LiftFlowRemovalsAsync).WithName("LiftDeliveryFlowRemovals");
         delivery.MapPost("/ledger/prune", PruneAsync).WithName("PruneDeliveryLedger").RequireAuthorization(ControlPlanePolicies.Admin);
 
         // Purging a partition cache's history: its preview, and the purge itself, an admin's.
@@ -1158,9 +1176,11 @@ public static class DeliveryEndpoints
             }
         }
 
+        // The ledger's deletion of the record's key, when a removal flow found its source no longer holds it.
+        var removedKey = await ledger.GetRemovedKeyAsync(record.FlowId, record.DeliveryKey, ct).ConfigureAwait(false);
         return TypedResults.Ok(new DeliveryRecordDetailDto(
             ToDto(record), found?.Pipeline.Id, found?.Pipeline.RepoId, found?.Pipeline.Name, NamedInterface(found), waitsOn, waitedOnBy,
-            KeyColumnsOf(documents, found), NamedPartition(found), parent, readBy));
+            KeyColumnsOf(documents, found), NamedPartition(found), parent, readBy, removedKey is null ? null : DeliveryRemovalEndpoints.ToDto(removedKey)));
     }
 
     /// <summary>
@@ -2349,6 +2369,82 @@ public static class DeliveryEndpoints
         };
         var runId = await EnqueueRunAsync(db, dispatcher, flow, parameters, request.Pool, user, ct).ConfigureAwait(false);
         return TypedResults.Accepted($"/api/v1/runs/{runId}", new DeliveryReleaseResult(released, runId));
+    }
+
+    /// <summary>
+    /// Lifts, as the caller, the ledger's deletion of one record's key (osdu/docs/reference/flow/removal.md, Delivering a record
+    /// again): the key is no longer kept out, and the record is asked to be planned again, so the flow's next deliver run reads
+    /// its row and delivers it under its id. With <c>run</c>, a deliver run scoped to the record is queued, which does it at
+    /// once. A record whose key the ledger keeps out for no removal answers 409.
+    /// </summary>
+    private static async Task<Results<Ok<DeliveryLiftResult>, Accepted<DeliveryLiftResult>, ProblemHttpResult>> LiftRemovalAsync(
+        Guid flowId, Guid key, DeliveryRecordReleaseRequest? request, CatalogDbContext db, OsduDbContext osdu, DeliveryDocumentLoader documents, EngineContext engine,
+        DeliveryConfigStore config, ILedger ledger, IRunDispatcher dispatcher, ClaimsPrincipal user, CancellationToken ct)
+    {
+        var (flow, record, problem) = await ResolveForRecordAsync(db, osdu, documents, ledger, flowId, key, ct).ConfigureAwait(false);
+        if (flow is null || record is null)
+        {
+            return problem!;
+        }
+
+        using var runtime = FlowRuntime.ForTarget(await ConfiguredAsync(engine, config, flow, ct).ConfigureAwait(false), flow.Flow);
+        runtime.Actor = RequestActor.Label(user);
+        if ((await runtime.LiftRemovalsAsync([record.DeliveryKey], ct).ConfigureAwait(false)).Count == 0)
+        {
+            return TypedResults.Problem(
+                detail: "The ledger keeps this record's key out for no removal: no removal flow found its source no longer holds it.",
+                statusCode: StatusCodes.Status409Conflict, title: "Not removed by its source");
+        }
+
+        if (request is not { Run: true })
+        {
+            return TypedResults.Ok(new DeliveryLiftResult(1));
+        }
+
+        var last = record.LastSubmissionId is { } lastId ? await ledger.GetSubmissionAsync(lastId, ct).ConfigureAwait(false) : null;
+        var parameters = new RunParameters
+        {
+            Operation = DeliveryOperations.Deliver,
+            Values = SubmissionValues(last?.ParametersJson),
+            Payload = new DeliveryRunPayload { RecordKeys = [key], Interface = flow.Flow.Interface }.ToJson(),
+        };
+        var runId = await EnqueueRunAsync(db, dispatcher, flow, parameters, request.Pool, user, ct).ConfigureAwait(false);
+        return TypedResults.Accepted($"/api/v1/runs/{runId}", new DeliveryLiftResult(1, runId));
+    }
+
+    /// <summary>
+    /// Lifts, as the caller, the ledger's deletions of the records a request names, at most 1000 (osdu/docs/reference/flow/removal.md,
+    /// Delivering a record again), in one activity naming every record lifted; a key the ledger keeps out for no removal is
+    /// passed over and not counted. With <c>run</c>, a deliver run of the flow is queued under the parameter values its last
+    /// submission ran with, which delivers them again at once. Refused with 400 for a request that names no key or too many.
+    /// </summary>
+    private static async Task<Results<Ok<DeliveryLiftResult>, Accepted<DeliveryLiftResult>, ProblemHttpResult>> LiftFlowRemovalsAsync(
+        Guid pipelineId, DeliveryLiftRequest? request, [FromQuery(Name = "interface")] string? interfaceName, [FromQuery] string? partition, CatalogDbContext db,
+        DeliveryDocumentLoader documents, IPartitionRegistry partitions, EngineContext engine, DeliveryConfigStore config, ILedger ledger, IRunDispatcher dispatcher,
+        ClaimsPrincipal user, CancellationToken ct)
+    {
+        if (request?.Keys is not { Count: > 0 } named || named.Count > FlowRuntime.MaxLift)
+        {
+            return Invalid(string.Create(CultureInfo.InvariantCulture, $"keys: name from 1 to {FlowRuntime.MaxLift} records whose removal to lift."));
+        }
+
+        var (flow, problem) = await ResolveAsync(db, documents, partitions, pipelineId, interfaceName, partition, ct).ConfigureAwait(false);
+        if (flow is null)
+        {
+            return problem!;
+        }
+
+        using var runtime = FlowRuntime.ForTarget(await ConfiguredAsync(engine, config, flow, ct).ConfigureAwait(false), flow.Flow);
+        runtime.Actor = RequestActor.Label(user);
+        var lifted = await runtime.LiftRemovalsAsync(named.Distinct().Select(g => new DeliveryKey(g)).ToList(), ct).ConfigureAwait(false);
+        if (request is not { Run: true } || lifted.Count == 0)
+        {
+            return TypedResults.Ok(new DeliveryLiftResult(lifted.Count));
+        }
+
+        var latest = await ledger.ListSubmissionsAsync(flow.FlowId, 1, null, ct).ConfigureAwait(false);
+        var runId = await EnqueueRunAsync(db, dispatcher, flow, DeliverRun(flow, latest.Count > 0 ? latest[0].ParametersJson : null), request.Pool, user, ct).ConfigureAwait(false);
+        return TypedResults.Accepted($"/api/v1/runs/{runId}", new DeliveryLiftResult(lifted.Count, runId));
     }
 
     /// <summary>

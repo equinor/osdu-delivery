@@ -234,6 +234,63 @@ public sealed class SqlServerIngestionSource : IIngestionSource
         return command;
     }
 
+    public async Task<IReadOnlyList<SourceKeyColumn>> KeyColumnsAsync(CancellationToken ct = default)
+    {
+        await using var connection = await IngestionConnection.OpenAsync(_flow.Source.Connection, _flow.Name, _secrets, ct).ConfigureAwait(false);
+        var layout = await BuildLayoutAsync(connection, ct, guardScope: false).ConfigureAwait(false);
+        return layout.Key;
+    }
+
+    public async IAsyncEnumerable<IngestionKey> ReadKeysAsync(int pageSize, [EnumeratorCancellation] CancellationToken ct = default)
+    {
+        ArgumentOutOfRangeException.ThrowIfLessThan(pageSize, 1);
+        await using var connection = await IngestionConnection.OpenAsync(_flow.Source.Connection, _flow.Name, _secrets, ct).ConfigureAwait(false);
+        var layout = await BuildLayoutAsync(connection, ct).ConfigureAwait(false);
+        var keys = layout.Key.Count;
+        KeyTuple? after = null;
+        while (true)
+        {
+            ct.ThrowIfCancellationRequested();
+            var page = new List<(IngestionKey Key, KeyTuple Order)>(pageSize);
+            await using (var command = Command(connection, IngestionSql.KeyPage(layout, after is not null)))
+            {
+                BindScope(command, layout);
+                if (after is not null)
+                {
+                    BindOrder(command, layout, IngestionSql.AfterPrefix, after);
+                }
+
+                command.Parameters.Add(new SqlParameter(IngestionSql.PageParameter, SqlDbType.Int) { Value = pageSize });
+                await using var reader = await ExecuteReaderAsync(command, "read a page of the record table's keys", ct).ConfigureAwait(false);
+                while (await reader.ReadAsync(ct).ConfigureAwait(false))
+                {
+                    var key = ReadKey(reader, layout);
+                    var updated = SourceValues.Normalize(reader.GetValue(keys)) is DateTime moment ? DateTime.SpecifyKind(moment, DateTimeKind.Utc) : (DateTime?)null;
+                    var order = new string[layout.Order.Count];
+                    for (var i = 0; i < order.Length; i++)
+                    {
+                        order[i] = SourceRow.Stringify(SourceValues.Normalize(reader.GetValue(keys + 1 + i)))
+                            ?? throw new DeliveryException($"The record table {layout.Record} returned a null in column '{layout.Order[i].Name}', which cannot place a record.");
+                    }
+
+                    page.Add((new IngestionKey(key, updated), new KeyTuple(order)));
+                }
+            }
+
+            foreach (var (key, _) in page)
+            {
+                yield return key;
+            }
+
+            if (page.Count < pageSize)
+            {
+                yield break;
+            }
+
+            after = page[^1].Order;
+        }
+    }
+
     public async Task<IReadOnlyList<ScopeParameterValues>> ScopeValuesAsync(int max, CancellationToken ct = default)
     {
         ArgumentOutOfRangeException.ThrowIfLessThan(max, 1);

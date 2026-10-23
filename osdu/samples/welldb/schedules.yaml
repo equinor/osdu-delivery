@@ -10,7 +10,7 @@
 # it has run (`after:`), and lineage orders the flows inside each link: the wells are tested once they are delivered. The
 # cache refresh is a schedule of its own, which nothing waits for: the pipelines' cache steps keep the cache current
 # between refreshes. The logs come hourly, the dimensions over them after each hour's logs, and the inventory of what
-# OSDU holds weekly.
+# OSDU holds weekly; the wellbores the well database no longer holds are taken out after the master data.
 schedules:
   # Nightly: the reference values the estate's records refer to land, are keyed and are delivered.
   welldb-reference:
@@ -47,3 +47,9 @@ schedules:
   welldb-inventory:
     cron: "0 4 * * 0"
     timezone: UTC
+
+  # After the master data: the removal reads the well database's current wellbore cut whole and takes out of OSDU the
+  # wellbores it no longer holds, the ones a run has not taken out before; a run that finds too many gone waits for an
+  # operator's approval instead.
+  welldb-removal:
+    after: welldb-master

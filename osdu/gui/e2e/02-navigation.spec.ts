@@ -8,7 +8,7 @@ import { adminSession, expect, FIRST_PAGE_MS, seedSession, test } from "./helper
 // here needs the seeded estate: the navigation is the module's, whatever the catalog holds.
 
 const SECTIONS = [
-  { id: "ledger", label: "Ledger", entries: ["nav-delivery", "nav-delivery-records", "nav-delivery-activity"] },
+  { id: "ledger", label: "Ledger", entries: ["nav-delivery", "nav-delivery-records", "nav-delivery-removals", "nav-delivery-activity"] },
   {
     id: "in-osdu",
     label: "In OSDU",
@@ -123,7 +123,7 @@ test.describe("OSDU navigation", () => {
     // Down to the next entry, left to its section, left again folds the section, right opens it.
     const ledger = sectionHeader(adminPage.locator("#sidebar-section-osdu"), SECTIONS[0]);
     await adminPage.keyboard.press("ArrowDown");
-    await expect(adminPage.getByTestId("nav-delivery-activity")).toBeFocused();
+    await expect(adminPage.getByTestId("nav-delivery-removals")).toBeFocused();
     await adminPage.keyboard.press("ArrowLeft");
     await expect(ledger).toBeFocused();
     await adminPage.keyboard.press("ArrowLeft");

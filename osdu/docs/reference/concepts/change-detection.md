@@ -131,6 +131,7 @@ The plan takes each record read through these steps in order; the first that app
 | --- | --- |
 | A key column is empty | Held: `dataset key incomplete: every key column must be non-empty` |
 | A child dataset holds more rows than `maxRowsPerRecord` | Held, naming the dataset and the ceiling |
+| A [removal flow](../flow/removal.md) found the source no longer holds the key (its deletion is pending or removed), and the row is not newer than the removal (its `UpdatedDate_DW` at or before the moment, or none) | Skipped as **removed by the source**: kept out, nothing sent. A newer row is decided as any other, and the next removal run lifts the deletion |
 | The row is marked deleted | Held: a deleted row is never delivered. Removing the record from OSDU is a deliberate operation ([removal and reversal](removal-and-reversal.md)) |
 | A cache change tagged against the record waits for approval | Skipped as awaiting approval; OSDU keeps the document it has |
 | The record is held, failed, deleted or reverted, the source has not moved past the version it was left at, and the ledger did not ask for it to be planned again (a redelivery, a sync, a cache change) | Blocked until it is released or the source changes ([record lifecycle](record-lifecycle.md)) |

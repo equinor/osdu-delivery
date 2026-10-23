@@ -10,11 +10,11 @@ using SqlFlow.Delivery.Hosting;
 namespace SqlFlow.Delivery.Cli;
 
 /// <summary>
-/// The OSDU module as the <c>sqlflow</c> CLI composes it: the delivery, retrieval, cache, assertion, dimension and
-/// inventory flow kinds (so SQLFlow's own <c>validate</c>, <c>run</c> and <c>worker</c> verbs read and execute them),
+/// The OSDU module as the <c>sqlflow</c> CLI composes it: the delivery, retrieval, cache, assertion, dimension, inventory
+/// and removal flow kinds (so SQLFlow's own <c>validate</c>, <c>run</c> and <c>worker</c> verbs read and execute them),
 /// the ledger, templates and caches over the module's database, and the module's own verbs: <c>check</c>,
 /// <c>preview</c>, <c>values</c>, <c>records</c>, <c>config</c>, <c>partition</c>, <c>cache</c>, <c>template</c>,
-/// <c>assertions</c>, <c>dimensions</c>, <c>inventory</c> and <c>dev</c>, which sets a checkout up for a local run.
+/// <c>assertions</c>, <c>dimensions</c>, <c>inventory</c>, <c>removal</c> and <c>dev</c>, which sets a checkout up for a local run.
 /// </summary>
 /// <remarks>
 /// A command's database is the catalog the command line names (<c>--db</c>, else <c>${env:SQLFLOW_CATALOG_DB}</c>) unless
@@ -134,12 +134,21 @@ public sealed class DeliveryCliModule : ICliModule
                 "                                   counted by state, and the records holding it, those whose undo used",
                 "                                   every try first. The undo is a run: sqlflow run <flow.yaml> --operation",
                 "                                   undo (with --payload '{\"force\":true}' it retries those too) (needs --db)",
+                "sqlflow records removed <flow.yaml> [--interface <name>] [--partition <id>] [--state <state>] [--after <key>]",
+                "                        [--max <n>]",
+                "                                   The ledger's deletions: the keys a removal flow found its source no",
+                "                                   longer holds, in key order, each with why, as of when, and what taking",
+                "                                   it out came to; --state pending, awaiting-approval or removed shows one",
+                "                                   state, and the line under the page names the --after of the next (needs --db)",
+                "sqlflow records lift-removal <flow.yaml> --key <delivery key>... [--interface <name>] [--partition <id>]",
+                "                                   Lift the deletion of the records named: their keys are no longer kept",
+                "                                   out, and the flow's next run delivers each again under its id (needs --db)",
             ],
             DeliveryRecordVerbs.RecordsAsync)
         {
-            Subcommands = ["list", "show", "issues", "release", "adopt", "reverse", "reversals", "artifacts", "undos"],
+            Subcommands = ["list", "show", "issues", "release", "adopt", "reverse", "reversals", "artifacts", "undos", "removed", "lift-removal"],
             Flags = ["--contains", "--preview"],
-            ValueOptions = ["--interface", "--partition", "--search", "--status", "--max", "--key", "--attempts", "--issue", "--confirm", "--run", "--submission", "--outcome"],
+            ValueOptions = ["--interface", "--partition", "--search", "--status", "--max", "--key", "--attempts", "--issue", "--confirm", "--run", "--submission", "--outcome", "--state", "--after"],
         },
         new CliVerb(
             "config",
@@ -357,6 +366,23 @@ public sealed class DeliveryCliModule : ICliModule
         {
             Subcommands = ["list", "show", "records", "lookup", "runs", "export", "removals", "removal"],
             ValueOptions = ["--partition", "--finding", "--after", "--limit", "--out", "--outcome"],
+        },
+        new CliVerb(
+            "removal",
+            [
+                "sqlflow removal runs <removal.yaml> [--partition <id>] [--removal <name>] [--max <n>]",
+                "                                   A removal flow's runs in a partition, newest first: what each read",
+                "                                   from its sources, found removed, held for approval and took out of",
+                "                                   OSDU, and who ran it (needs --db)",
+                "sqlflow removal run <partition> <number>",
+                "                                   One run with every count it kept (needs --db). A removal is a run:",
+                "                                   sqlflow run <removal.yaml> --set partition=<id>; the delivery flow's",
+                "                                   deletions are 'sqlflow records removed <flow.yaml>'",
+            ],
+            DeliveryRemovalVerbs.RemovalAsync)
+        {
+            Subcommands = ["runs", "run"],
+            ValueOptions = ["--partition", "--removal", "--max"],
         },
         new CliVerb("dev", DeliveryDevVerbs.Usage, DeliveryDevVerbs.DevAsync)
         {

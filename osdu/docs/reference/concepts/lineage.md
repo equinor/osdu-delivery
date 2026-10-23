@@ -40,6 +40,7 @@ sourceRefs:
   - osdu/src/SqlFlow.Delivery/Documents/AssertionLineage.cs
   - osdu/src/SqlFlow.Delivery/Documents/DimensionLineage.cs
   - osdu/src/SqlFlow.Delivery/Documents/InventoryFlowKind.cs
+  - osdu/src/SqlFlow.Delivery/Documents/RemovalFlowKind.cs
   - osdu/src/SqlFlow.Delivery/Documents/DeliveryFlowKind.cs
   - osdu/src/SqlFlow.Delivery/Model/SourceDefinition.cs
   - osdu/src/SqlFlow.Delivery/Model/FlowDefinition.cs
@@ -109,6 +110,7 @@ A few rules follow from the identity:
 | `assertion` | Each test's kind, one type in one version, in every partition the flow tests | Nothing: its reports stay in the module database |
 | `dimension` | Each dimension's kind (wildcards allowed); the dictionary file each cleaning `map` step names | Each dimension, as a dimension node of its partition |
 | `inventory` | Each inventory's kind (wildcards allowed) | Nothing another flow reads |
+| `removal` | Each key source: a reader's files at their repository-relative location, a table on its connection; and the OSDU types each delivery flow it names writes | Nothing another flow reads: what it takes out is the delivery flow's records, in the delivery flow's ledger |
 
 The table reads are SQLFlow database nodes, on the identity SQLFlow gives every server reference, so a delivery flow
 reading `OsduData.silver.Wellbore` over `${env:OSDU_DATA_DB}` lands on the node the `ing` flow writes through the same
@@ -221,7 +223,8 @@ Reads and writes of OSDU types, cache types and dimensions order flows exactly a
 - A flow reading a cache type a pipeline's cache steps name runs after that pipeline as well as after the cache flow
   capturing it, and a pipeline whose before step searches a kind runs after the flows delivering it
   ([Pipelines bring the cache up to date](partition-cache.md#pipelines-bring-the-cache-up-to-date)).
-- Retrieval, assertion, dimension and inventory flows run after the delivery flows writing the kinds they read; a file
+- Retrieval, assertion, dimension and inventory flows run after the delivery flows writing the kinds they read, and a
+  removal flow after the delivery flows it names and the flows landing its keys; a file
   flow reading a retrieval's folder runs after the retrieval.
 - A delivery does not read a cache type when every cache flow capturing it also captures what the delivery writes: that
   cache flow runs after the delivery. Two other flows that each read what the other writes are not ordered against each

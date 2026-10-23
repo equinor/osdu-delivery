@@ -36,7 +36,7 @@ function partsOf(stats: DeliveryFlowStats): StatusPart[] {
     { key: "waiting", label: "waiting", count: stats.waiting, icon: Hourglass, fill: "bg-info/45", ink: "text-info", meaning: "Waiting for a record it refers to." },
     { key: "held", label: "held", count: stats.held, icon: PauseCircle, fill: "bg-warning", ink: "text-warning", meaning: "Held back until its row changes or someone releases it." },
     { key: "failed", label: "failed", count: stats.failed, icon: XCircle, fill: "bg-destructive", ink: "text-destructive", meaning: "Failed on every try." },
-    { key: "deleted", label: "deleted", count: stats.deleted, icon: Trash2, fill: "bg-muted-foreground/50", ink: "text-muted-foreground", meaning: "Removed from OSDU: by an operator, sent again when its row is read; by a reversal, blocked until its row changes or it is released." },
+    { key: "deleted", label: "deleted", count: stats.deleted, icon: Trash2, fill: "bg-muted-foreground/50", ink: "text-muted-foreground", meaning: "Removed from OSDU: by an operator, sent again when its row is read; by a reversal, blocked until its row changes or it is released; by a removal flow, kept out until a row of its key newer than its removal arrives." },
     {
       key: "reverted",
       label: "reverted",

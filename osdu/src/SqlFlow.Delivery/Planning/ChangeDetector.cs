@@ -50,6 +50,12 @@ public enum SkipTier
     /// delivered or queued: a replayed or late row, which must never take OSDU back to an earlier version.
     /// </summary>
     Stale,
+
+    /// <summary>
+    /// A removal flow found the source no longer holds the key (osdu/docs/reference/flow/removal.md), and the row is not newer
+    /// than the moment it was removed: the ledger keeps the key out, so the row is never delivered.
+    /// </summary>
+    SourceRemoved,
 }
 
 public sealed record ChangeDecision(PlannedAction Action, SkipTier SkipTier, bool DeliverMetadata, bool DeliverPayload, string Reason)

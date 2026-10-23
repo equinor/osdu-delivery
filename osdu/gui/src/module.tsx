@@ -1,5 +1,5 @@
 import {
-  ClipboardList, CloudDownload, DatabaseZap, FileCode2, Layers, LayoutTemplate, ListChecks, Network, PackageCheck, PackageSearch,
+  ClipboardList, CloudDownload, DatabaseZap, FileCode2, Layers, LayoutTemplate, ListChecks, ListX, Network, PackageCheck, PackageSearch,
   ScrollText, Shapes, Telescope, TextSearch,
 } from "lucide-react";
 import type { RunSummary } from "@/api/types";
@@ -15,12 +15,14 @@ import { DimensionRunActions, DimensionRunCounts } from "./features/delivery/dim
 import { DimensionTriggerFields } from "./features/delivery/dimensions/DimensionTriggerFields";
 import { InventoryRunActions, InventoryRunCounts } from "./features/delivery/inventories/InventoryRunHeader";
 import { InventoryTriggerFields } from "./features/delivery/inventories/InventoryTriggerFields";
+import { RemovalRunActions, RemovalRunCounts } from "./features/delivery/removals/RemovalRunHeader";
+import { RemovalTriggerFields } from "./features/delivery/removals/RemovalTriggerFields";
 import { DeliveryTriggerFields } from "./features/delivery/DeliveryTriggerFields";
 import { activePartition } from "./features/delivery/activePartition";
 import { PartitionSwitcher } from "./features/delivery/PartitionSwitcher";
 import { shortId } from "./features/delivery/idTail";
 
-// The OSDU Delivery module: its pages, its navigation, the panels of the delivery, retrieval, cache, assertion, dimension and inventory kinds on SQLFlow's
+// The OSDU Delivery module: its pages, its navigation, the panels of the delivery, retrieval, cache, assertion, dimension, inventory and removal kinds on SQLFlow's
 // pipeline, run and trigger pages, the delivery records in search, and the product's branding. Everything heavy (the
 // pages, the panels, anything with the code editor) loads with the surface that shows it.
 
@@ -40,6 +42,7 @@ const DeliveryAssertionsPage = lazyRoute("DeliveryAssertionsPage", () => import(
 const AssertionReportPage = lazyRoute("AssertionReportPage", () => import("./features/delivery/assertions/AssertionReportPage"));
 const DeliveryDimensionsPage = lazyRoute("DeliveryDimensionsPage", () => import("./features/delivery/dimensions/DeliveryDimensionsPage"));
 const DeliveryInventoriesPage = lazyRoute("DeliveryInventoriesPage", () => import("./features/delivery/inventories/DeliveryInventoriesPage"));
+const DeliveryRemovalsPage = lazyRoute("DeliveryRemovalsPage", () => import("./features/delivery/removals/DeliveryRemovalsPage"));
 const ExplorerPage = lazyRoute("ExplorerPage", () => import("./features/delivery/explorer/ExplorerPage"));
 const SearchTermsPage = lazyRoute("SearchTermsPage", () => import("./features/delivery/searchTerms/SearchTermsPage"));
 
@@ -87,6 +90,14 @@ const InventoriesPanel = lazyRoute(
   "InventoriesPanel",
   () => import("./features/delivery/inventories/InventoryFlowPanels").then((loaded) => ({ default: loaded.InventoriesPanel })),
 );
+const RemovalsPanel = lazyRoute(
+  "RemovalsPanel",
+  () => import("./features/delivery/removals/RemovalFlowPanels").then((loaded) => ({ default: loaded.RemovalsPanel })),
+);
+const DeliveryDeletionsPanel = lazyRoute(
+  "DeliveryDeletionsPanel",
+  () => import("./features/delivery/removals/DeliveryDeletionsPanel").then((loaded) => ({ default: loaded.DeliveryDeletionsPanel })),
+);
 const DeliveryRunCard = lazyRoute("DeliveryRunCard", () => import("./features/delivery/DeliveryRunCard"));
 const RecordSearchHits = lazyRoute(
   "RecordSearchHits",
@@ -95,7 +106,7 @@ const RecordSearchHits = lazyRoute(
 
 /**
  * The key census of every document this module adds, so the YAML editor documents, colours and checks them as it does
- * SQLFlow's own flows: the delivery, retrieval, cache, assertion, dimension and inventory flows by their flowType, the mapping and the dictionary
+ * SQLFlow's own flows: the delivery, retrieval, cache, assertion, dimension, inventory and removal flows by their flowType, the mapping and the dictionary
  * by their documentType. Each file loads when the editor first starts, not with the page.
  */
 const census: GuiModule["census"] = [
@@ -105,6 +116,7 @@ const census: GuiModule["census"] = [
   { flowType: "assertion", load: () => import("../../docs/census/keys.assertion.json?raw").then((file) => file.default) },
   { flowType: "dimension", load: () => import("../../docs/census/keys.dimension.json?raw").then((file) => file.default) },
   { flowType: "inventory", load: () => import("../../docs/census/keys.inventory.json?raw").then((file) => file.default) },
+  { flowType: "removal", load: () => import("../../docs/census/keys.removal.json?raw").then((file) => file.default) },
   { documentType: "mapping", load: () => import("../../docs/census/keys.mapping.json?raw").then((file) => file.default) },
   { documentType: "dictionary", load: () => import("../../docs/census/keys.dictionary.json?raw").then((file) => file.default) },
 ];
@@ -183,6 +195,15 @@ const deliveryKind: FlowKindContribution = {
       testId: "pipeline-tab-preview",
       render: (pipeline) => (
         <Deferred><DeliveryPreviewPanel pipelineId={pipeline.id} flowName={pipeline.name} /></Deferred>
+      ),
+    },
+    {
+      // The keys removal flows found the flow's source no longer holds: the ledger's deletions, whichever removal flow found them.
+      value: "deletions",
+      label: "Deletions",
+      testId: "pipeline-tab-deletions",
+      render: (pipeline) => (
+        <Deferred><DeliveryDeletionsPanel pipelineId={pipeline.id} flowName={pipeline.name} /></Deferred>
       ),
     },
   ],
@@ -316,6 +337,29 @@ const inventoryKind: FlowKindContribution = {
   trigger: { Fields: InventoryTriggerFields },
 };
 
+// A removal flow takes records out of OSDU through the delivery flow's own removal path and into its ledger, so it wears the
+// delivery flow's tone, with the glyph of keys no longer listed.
+const removalKind: FlowKindContribution = {
+  kind: "removal",
+  identity: { label: "Removal", icon: ListX, tone: "magenta" },
+  pipelineTabs: [
+    {
+      value: "removals",
+      label: "Removals",
+      testId: "pipeline-tab-removals",
+      render: (pipeline) => <Deferred><RemovalsPanel pipelineId={pipeline.id} /></Deferred>,
+    },
+  ],
+  defaultPipelineTab: "removals",
+  hiddenPipelineTabs: HIDDEN_PIPELINE_TABS,
+  runColumns,
+  run: runPanels({
+    headerActions: (run) => <RemovalRunActions run={run} />,
+    headerDetails: (run) => <RemovalRunCounts run={run} />,
+  }),
+  trigger: { Fields: RemovalTriggerFields },
+};
+
 export const osduDeliveryModule: GuiModule = {
   id: "osdu-delivery",
   routes: [
@@ -336,6 +380,7 @@ export const osduDeliveryModule: GuiModule = {
     { path: "/delivery/assertions/runs/:assertionRunId", component: AssertionReportPage },
     { path: "/delivery/dimensions", component: DeliveryDimensionsPage },
     { path: "/delivery/inventories", component: DeliveryInventoriesPage },
+    { path: "/delivery/removals", component: DeliveryRemovalsPage },
     // What OSDU holds, read live from it through a flow's credentials, under the operate policy, which every signed-in
     // user holds (only admin checks a scope).
     { path: "/delivery/explorer", component: ExplorerPage, requiredScope: "operate" },
@@ -365,6 +410,7 @@ export const osduDeliveryModule: GuiModule = {
   navItems: [
     { group: OSDU_GROUP, section: "ledger", label: "Delivery", to: "/delivery", icon: PackageCheck, testId: "nav-delivery" },
     { group: OSDU_GROUP, section: "ledger", label: "Records", to: "/delivery/records", icon: PackageSearch, testId: "nav-delivery-records" },
+    { group: OSDU_GROUP, section: "ledger", label: "Removals", to: "/delivery/removals", icon: ListX, testId: "nav-delivery-removals" },
     { group: OSDU_GROUP, section: "ledger", label: "Audit trail", to: "/delivery/activity", icon: ScrollText, testId: "nav-delivery-activity" },
     { group: OSDU_GROUP, section: "in-osdu", label: "Explorer", to: "/delivery/explorer", icon: Telescope, testId: "nav-delivery-explorer" },
     { group: OSDU_GROUP, section: "in-osdu", label: "Assertions", to: "/delivery/assertions", icon: ListChecks, testId: "nav-delivery-assertions" },
@@ -391,7 +437,7 @@ export const osduDeliveryModule: GuiModule = {
     { pattern: /^\/delivery\/submissions\/([^/]+)/, title: (match) => `Submission ${shortId(match[1])}` },
     { pattern: /^\/delivery\/assertions\/runs\/(\d+)/, title: (match) => `Report #${match[1]}` },
   ],
-  kinds: [deliveryKind, retrievalKind, cacheKind, assertionKind, dimensionKind, inventoryKind],
+  kinds: [deliveryKind, retrievalKind, cacheKind, assertionKind, dimensionKind, inventoryKind, removalKind],
   searchCategories: [
     {
       key: "records",

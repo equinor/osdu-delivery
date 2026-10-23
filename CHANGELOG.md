@@ -9,6 +9,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Records a source no longer holds are taken out of OSDU by a removal flow.** A `flowType: removal` document reads the
+  keys a source holds now, whole, from its files or a table, and optionally a list of the keys it removed, compares them
+  with a delivery flow's ledger on a schedule of its own, and takes out of OSDU (reversibly) each record whose key is gone,
+  once, recording it in that flow's ledger and keeping it out until a newer row arrives. A run that finds more gone than
+  its guard allows takes nothing out and waits for an approval on the new **Removals** page, where every deletion is listed
+  and can be delivered again; a delivery flow's **Deletions** tab, a record's page, `sqlflow removal` and
+  `sqlflow records removed` and `lift-removal` show the same ([Removal flow](osdu/docs/reference/flow/removal.md)).
 - **Records whose business keys OSDU already holds are adopted in one batch.** When the ids a flow's rows make from their
   keys are records OSDU already holds that no ledger claimed, written by an earlier deployment or another instance of the
   delivery, the records are held, and **Adopt (N)** on the flow's Delivery tab asks every one of them, records held so

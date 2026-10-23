@@ -21,6 +21,8 @@ keywords:
   - unit of work
   - artifacts
   - undo unfinished deliveries
+  - records the source no longer holds
+  - removal flow
 related:
   - delivery-concept-ledger
   - delivery-concept-artifacts-and-undo
@@ -31,6 +33,7 @@ related:
   - delivery-concept-api
   - delivery-guide-finding-orphans
   - delivery-concept-protocols
+  - delivery-flow-removal
 sourceRefs:
   - osdu/src/SqlFlow.Delivery/Engine/FlowRuntime.cs
   - osdu/src/SqlFlow.Delivery/Engine/RecordRemoval.cs
@@ -58,6 +61,8 @@ sourceRefs:
   - osdu/src/SqlFlow.Delivery.ControlPlane/Api/DeliveryReversalEndpoints.cs
   - osdu/src/SqlFlow.Delivery.Cli/DeliveryReversalVerbs.cs
   - osdu/src/SqlFlow.Delivery.Cli/DeliveryArtifactVerbs.cs
+  - osdu/src/SqlFlow.Delivery/Engine/FlowRuntime.SourceRemoval.cs
+  - osdu/src/SqlFlow.Delivery/Ledger/OsduLedger.Removal.cs
 ---
 
 # Removing records from OSDU, deleting the ledger, reversing a run and redelivering records
@@ -70,6 +75,7 @@ against the storage service's OpenAPI description; route-specific calls are in [
 | You want to | Use |
 | --- | --- |
 | Take records out of OSDU, reversibly | A removal at the `record` scope. |
+| Take out of OSDU what the source no longer holds, on a schedule | A [removal flow](../flow/removal.md). |
 | Make the version before the latest current again | A removal at the `previous` scope. |
 | Destroy a record's earlier versions, or the record for good | A removal at the `history` or `everything` scope. |
 | Forget records already removed from OSDU | Delete them from the ledger. |
@@ -372,6 +378,23 @@ sqlflow run flows/welldb-wellbore-03-delivery.yaml --set partition=dev --payload
 Without `recordKeys` a payload's `rerender` or `redeliver` reaches every delivered record of the flow; a run scoped to
 `recordKeys` with neither sends those records again whole.
 
+## Records the source no longer holds
+
+A [removal flow](../flow/removal.md) reads the keys a source holds now, whole, and the keys it lists as removed, compares
+them with a delivery flow's ledger, and takes out of OSDU the records whose keys are gone. What it finds is the ledger's
+own record of each deletion ([`osdu.RemovedKey`](../tables/removed-key.md)), kept under the delivery flow's ledger identity
+whichever pipeline runs the removal. Taking them out goes through the removal above, at the `record` scope (reversible),
+under the removal's lease, with what unfinished deliveries left undone first, and differs from an operator's removal in two
+ways:
+
+- **It is incremental.** Only the `pending` deletions are taken; one taken out is `removed` and never asked of OSDU again.
+- **The record is kept out, not delivered again.** The plan delivers no row of the key that is not newer than its removal,
+  and a record's attempt (phase `source-removed`) says which removal flow took it out and why. A newer row, the key coming
+  back in the source, or an operator's **Deliver again** lifts the deletion, and the record follows its source again.
+
+A run that finds more removed than its guard allows takes nothing out and waits for an operator's approval
+([The guard](../flow/removal.md#the-guard)).
+
 ## Syncing the ledger with the source
 
 A timeline sync consolidates the ledger with the ingestion tables, for one record (**Sync timeline** on its page), a
@@ -384,7 +407,7 @@ submission ran with, 1,000 records a page:
 | The row's arrival (`InsertedDate_DW`) is missing from the ledger, or differs | Writes it to the record. |
 | The row changed past both versions the ledger holds, and no plan saw it | Asks for the record to be planned; the next run reads it by key and decides it. |
 | The ingestion table marked the row deleted without the ledger knowing | Asks for it to be planned; the next run holds it as a deleted row. |
-| The row is gone from the table, or outside the record's scope | Writes a `skipped` attempt, phase `source-missing`, once. The record keeps its status: removing it from OSDU stays a removal someone asks for. |
+| The row is gone from the table, or outside the record's scope | Writes a `skipped` attempt, phase `source-missing`, once. The record keeps its status: removing it from OSDU stays a removal someone asks for, or a [removal flow](../flow/removal.md) finds. |
 | A record held because its row was deleted, whose row is no longer deleted | Counts it, for an operator to release. |
 | Everything agrees | Nothing. |
 
@@ -400,4 +423,5 @@ sqlflow run flows/welldb-wellbore-03-delivery.yaml --operation sync --set partit
 - [The delivery ledger](ledger.md) and [Record lifecycle](record-lifecycle.md).
 - [Routes](../flow/routes.md): what each route calls to remove a record.
 - [Finding orphans](../guides/finding-orphans.md): ids OSDU serves that no ledger accounts for.
+- [Removal flow](../flow/removal.md): taking out what a source no longer holds, on a schedule, with a guard.
 - [Operations runbook](../guides/operations-runbook.md): these actions, task by task.

@@ -252,7 +252,7 @@ public sealed record RunCounts(
 /// deliver run coordinates its own fan-out (osdu/docs/reference/concepts/submissions.md, Many nodes): intake slices
 /// first, then drains, each a member run of the same flow on any node of the pool, waited for and completed here.
 /// </summary>
-public sealed class FlowRuntime : IDisposable
+public sealed partial class FlowRuntime : IDisposable
 {
     private static readonly TimeSpan MemberPoll = TimeSpan.FromSeconds(5);
 
@@ -1726,7 +1726,7 @@ public sealed class FlowRuntime : IDisposable
         // answered for: a record whose call failed keeps the state it had, so a retry of the removal is
         // still the removal of a record that is still there.
         var settled = outcomes.Where(o => o.Succeeded).Select(o => o.Removal.Key).ToList();
-        await ledger.MarkRemovedAsync(Flow.Id, settled, scope.Scope(), Actor, _context.Time.GetUtcNow().UtcDateTime, correlation.Id, deliverAgain, ct).ConfigureAwait(false);
+        await ledger.MarkRemovedAsync(Flow.Id, settled, scope.Scope(), Actor, _context.Time.GetUtcNow().UtcDateTime, correlation.Id, deliverAgain, ct: ct).ConfigureAwait(false);
 
         // The extra step: what OSDU no longer holds goes from the ledger too, one line of each kept; a record whose unfinished
         // deliveries left something the undo could not take back stays, so nothing in OSDU loses the record that names it.

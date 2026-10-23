@@ -492,7 +492,7 @@ async fn the_products_documentation_and_flow_kinds_are_answered_by_sqlflows_own_
     assert!(related.iter().any(|id| !id.starts_with("delivery-")), "a guide leads to SQLFlow's pages too: {related:?}");
 
     // The flow-language tools know the kinds and documents the module adds.
-    for kind in ["delivery", "retrieval", "cache", "assertion", "dimension", "inventory"] {
+    for kind in ["delivery", "retrieval", "cache", "assertion", "dimension", "inventory", "removal"] {
         let keys = session.json("list_flow_keys", json!({ "flowType": kind })).await;
         assert!(keys["count"].as_u64().is_some_and(|count| count > 5), "{kind}: {keys}");
     }
@@ -589,6 +589,8 @@ const QUESTIONS: &[(&str, &[&str])] = &[
     ("join dimension tables into one view with typed columns", &["delivery-flow-dimension"]),
     ("find orphan records in osdu", &["delivery-guide-finding-orphans", "delivery-flow-inventory"]),
     ("select inventory ids by facility name and remove only those", &["delivery-flow-inventory"]),
+    ("take out of osdu the records whose keys the source no longer holds", &["delivery-flow-removal"]),
+    ("approve the removals a guard held", &["delivery-flow-removal"]),
     ("check a flow before running it", &["delivery-cli-check", "delivery-concept-preflight"]),
     ("getting started first delivery", &["delivery-guide-getting-started"]),
     ("one source delivers several kinds", &["delivery-flow-interfaces", "delivery-guide-multi-kind-source"]),
@@ -630,6 +632,7 @@ const TABLE_QUESTIONS: &[(&str, &str)] = &[
     ("the source file and row a delivery attempt was built from", "delivery-table-attempt"),
     ("which cache flow captured a cached record", "delivery-table-cache-member"),
     ("the orphan ids an inventory found", "delivery-table-inventory-record"),
+    ("the keys a source removed that wait to be taken out of osdu", "delivery-table-removed-key"),
     ("what a worker appended under its lease", "delivery-table-record-event"),
     ("who approved a cache change and its rollout", "delivery-table-update-tag"),
     ("the audit trail of interventions", "delivery-table-activity"),

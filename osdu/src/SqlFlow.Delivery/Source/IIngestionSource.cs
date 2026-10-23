@@ -238,7 +238,26 @@ public interface IIngestionSource
     /// source and whatever column it scopes by; it needs no parameter value itself, and reads no row of the scope.
     /// </summary>
     Task<IReadOnlyList<ScopeParameterValues>> ScopeValuesAsync(int max, CancellationToken ct = default);
+
+    /// <summary>
+    /// The record table's key columns, in the record key's order, with the SQL Server type each holds: what a removal converts
+    /// the keys its source holds to, so a key read there derives the delivery key a row of the table does
+    /// (osdu/docs/reference/flow/removal.md, How a key is read). Reads the table's shape and no row.
+    /// </summary>
+    Task<IReadOnlyList<SourceKeyColumn>> KeyColumnsAsync(CancellationToken ct = default);
+
+    /// <summary>
+    /// Every key the record table holds in this source's scope, with when its row last changed, in the order a read pages in,
+    /// <paramref name="pageSize"/> rows a statement: what a removal compares the source's keys with besides the ledger. Each key
+    /// is the text the plan derives the record's delivery key from.
+    /// </summary>
+    IAsyncEnumerable<IngestionKey> ReadKeysAsync(int pageSize, CancellationToken ct = default);
 }
+
+/// <summary>One key of the record table, as a removal reads it: the key tuple, and when its row last changed.</summary>
+/// <param name="Key">The key, each column as the text the plan derives the delivery key from.</param>
+/// <param name="UpdatedUtc">The row's <c>systemColumns.updated</c> moment.</param>
+public sealed record IngestionKey(KeyTuple Key, DateTime? UpdatedUtc);
 
 /// <summary>One value a scope parameter can take, and how many rows of the record table not marked deleted hold it.</summary>
 /// <param name="Value">The value as the parameter is given it: the column's value as invariant text.</param>

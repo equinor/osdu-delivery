@@ -55,8 +55,10 @@ public sealed class DeliveryModuleTests
         Assert.Contains(AssertionFlowDefinition.FlowTypeName, kinds);
         Assert.Contains(DimensionFlowDefinition.FlowTypeName, kinds);
         Assert.Contains(InventoryFlowDefinition.FlowTypeName, kinds);
-        Assert.Equal(6, executors.Count);
+        Assert.Contains(RemovalFlowDefinition.FlowTypeName, kinds);
+        Assert.Equal(7, executors.Count);
         Assert.Contains(executors, e => e is InventoryExecutor);
+        Assert.Contains(executors, e => e is RemovalExecutor);
 
         // A node runs only what scans or writes (a value check, a removal); what a person asks for and waits on is run by the
         // control plane itself, and is never offered to a node.

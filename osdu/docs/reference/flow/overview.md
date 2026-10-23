@@ -74,7 +74,7 @@ source files --file flow--> pre.Wellbore + pre.v_Wellbore --ing flow--> silver.W
 | Land the files | A file flow (no `flowType`) | SQLFlow: [source](../../../../sqlflow/docs/reference/flow/source.md), [pre-ingestion views](../../../../sqlflow/docs/reference/concepts/pre-ingestion-transform.md) |
 | Key the rows | `flowType: ing` | SQLFlow: [ingestion flows](../../../../sqlflow/docs/reference/flow/ing.md) |
 | Render and deliver | `flowType: delivery`, pinning a `documentType: mapping` | This corpus: [delivery flow](delivery.md), [mapping](mapping.md) |
-| Everything after delivery | `cache`, `retrieval`, `assertion`, `dimension`, `inventory` | This corpus, one page per kind |
+| Everything after delivery | `cache`, `retrieval`, `assertion`, `dimension`, `inventory`, `removal` | This corpus, one page per kind |
 
 SQLFlow's lineage orders all of them in waves, so a delivery runs after the `ing` flow that loads its table, and an
 assertion after the delivery that writes the type it tests ([lineage](../concepts/lineage.md)).
@@ -89,11 +89,12 @@ assertion after the delivery that writes the type it tests ([lineage](../concept
 | `flowType: assertion` | Assertion flow | Runs tests of what a partition holds (counts, values, references, schema conformance, bulk data) and keeps each run's report | `test` | [assertion](assertion.md) |
 | `flowType: dimension` | Dimension flow | Reads every distinct value of an attribute of OSDU records, cleans each into a value a person picks, and keeps both with the search filter they stand for | `build` | [dimension](dimension.md) |
 | `flowType: inventory` | Inventory flow | Keeps every id and version a kind holds in a partition and compares them with the ledgers: orphans, missing records, ids a ledger forgot | `build` | [inventory](inventory.md) |
+| `flowType: removal` | Removal flow | Reads the keys a source holds now, whole, and the keys it lists as removed, compares them with a delivery flow's ledger, and takes out of OSDU, once, the records the source no longer holds | `remove` | [removal](removal.md) |
 | `documentType: mapping` | Mapping | How one row of an ingestion table becomes one OSDU record of one kind, pinned by `Name@version` | (never runs) | [mapping](mapping.md) |
 | `documentType: dictionary` | Dictionary | A small lookup table kept in the repository, held in a partition's cache by a cache flow | (never runs) | [dictionary](dictionary.md) |
 
 The OSDU verbs of the `sqlflow` command line (`check`, `preview`, `values`, `records`, `cache`, `template`,
-`assertions`, `dimensions`, `inventory`, `config`, `partition`) work with these documents and what their runs record.
+`assertions`, `dimensions`, `inventory`, `removal`, `config`, `partition`) work with these documents and what their runs record.
 Running one is SQLFlow's `sqlflow run` or `sqlflow trigger` with the kind's operation
 ([running an OSDU flow](../cli/run.md)).
 
@@ -108,7 +109,7 @@ fails with SQLFlow's menu, followed by the registered kinds:
 ERROR  flows/x.yaml: unknown flowType 'deliver'. Use 'ing' for a table-to-table ingestion flow, ... or omit flowType
 for a file flow. Registered kinds: 'assertion' for run qualified tests of what an OSDU partition holds ..., 'cache' for
 capture OSDU reference data, dictionaries and ingestion tables into a versioned cache ..., 'delivery' for deliver records
-from ingestion tables into OSDU, 'dimension' for ..., 'inventory' for ..., 'retrieval' for ....
+from ingestion tables into OSDU, 'dimension' for ..., 'inventory' for ..., 'removal' for ..., 'retrieval' for ....
 ```
 
 A document with a `documentType` is a companion: `sqlflow validate` and the repository sync read it under its own type
@@ -176,10 +177,12 @@ first one listed):
 | assertion | `test`, `plan` |
 | dimension | `build`, `plan` |
 | inventory | `build`, `reconcile`, `plan`, `remove` |
+| removal | `remove`, `plan` |
 
 `plan` writes nothing to OSDU on every kind. Each kind also accepts a JSON payload (`--payload`) of its own and refuses
 what does not belong to it: a cache run takes only the configuration the control plane supplies, a retrieval run only
-`force`, an assertion run names `tests` or `tags`, a dimension run `dimensions`, an inventory run `inventories`. What each
+`force`, an assertion run names `tests` or `tags`, a dimension run `dimensions`, an inventory run `inventories`, a removal
+run `entries`. What each
 operation and payload does is on [running an OSDU flow](../cli/run.md).
 
 ### Run artifacts
@@ -199,8 +202,9 @@ OK  delivery 'welldb-wellbore-03-delivery' completed in 4.2186943s
 
 A node runs a flow from a snapshot of its one file unless the flow needs files beside it. A delivery flow always needs
 the repository tree, because its mappings live there. A cache flow needs it only when it holds a dictionary, and a
-dimension flow only when a cleaning step maps through a dictionary. Retrieval, assertion and inventory flows need nothing
-but their own document.
+dimension flow only when a cleaning step maps through a dictionary. A removal flow always needs it, because it opens the
+delivery flows it names and reads their mappings. Retrieval, assertion and inventory flows need nothing but their own
+document.
 
 ## The shape of each kind
 
@@ -469,6 +473,32 @@ inventories:
   # ... two more inventories
 ```
 
+### flowType: removal
+
+```yaml
+# flows/welldb-wellbore-05-removal.yaml: the whole file
+flowType: removal
+name: welldb-wellbore-05-removal
+description: The wellbores the well database no longer holds, taken out of OSDU.
+batch: welldb
+partitions: [dev]
+
+guard:
+  maxPercent: 20
+
+removals:
+  - flow: welldb-wellbore-03-delivery
+    keys:
+      type: csv
+      location: ../data/wellbore
+      options:
+        delimiter: ","
+        header: true
+        srcFile: "*.csv"
+
+schedule: welldb-removal
+```
+
 ## Laying out a repository
 
 An OSDU flow lives in a git repository the control plane syncs, next to what it renders with and the flows that feed
@@ -491,6 +521,7 @@ repo/
     flows/welldb-welllog-04-assertion.yaml      flowType: assertion
     flows/welldb-welllog-05-dimensions.yaml     flowType: dimension
     flows/welldb-06-inventory.yaml              flowType: inventory
+    flows/welldb-wellbore-05-removal.yaml       flowType: removal
     flows/welldb-retrieval-01-wellbores.yaml    flowType: retrieval
     mappings/Wellbore@1.0.0.yaml                documentType: mapping
     mappings/WellLog@1.0.0.yaml

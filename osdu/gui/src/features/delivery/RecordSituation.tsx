@@ -1,12 +1,15 @@
 import { useCallback, useState, useSyncExternalStore, type ReactNode } from "react";
 import { Link as RouterLink } from "react-router-dom";
-import { Ban, CircleAlert, Hourglass, KeyRound, Loader2, Send, Trash2, Undo2, type LucideIcon } from "lucide-react";
+import { Ban, CircleAlert, Hourglass, KeyRound, Loader2, RotateCcw, Send, ShieldAlert, Trash2, Undo2, type LucideIcon } from "lucide-react";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
+import { ExplainMark } from "@/components/ExplainTip";
 import { RelativeTime } from "@/components/RelativeTime";
 import { TruncatedText } from "@/components/TruncatedText";
 import type { DeliveryRecord, DeliveryRecordLink } from "../../api/delivery";
+import type { RemovedKey } from "../../api/removals";
+import { removalWhy } from "./removals/removalFormat";
 import { shortId } from "./idTail";
 import { stranded } from "./strandedRecord";
 
@@ -52,6 +55,49 @@ function useHasPassed(instantUtc: string | null): boolean {
     return () => window.clearInterval(timer);
   }, []);
   return useSyncExternalStore(subscribe, () => Number.isFinite(at) && Date.now() >= at);
+}
+
+/**
+ * The ledger's deletion of the record's key, when a removal flow found its source no longer holds it
+ * (osdu/docs/reference/flow/removal.md): taken out, about to be, or waiting for an operator's approval, with who found it and
+ * as of when (the whole of why on hover), and the way to lift it: a record taken out is delivered again under its id.
+ */
+function RemovalLine({ removedKey, onLift, lifting }: { removedKey: RemovedKey; onLift?: () => void; lifting: boolean }) {
+  const who = `removal flow ${removedKey.removalFlow} (${removedKey.entry})`;
+  const why = removedKey.reason === "listed" ? "its source listed the key as removed" : "its source's keys no longer held it";
+  const done = removedKey.state === "removed";
+  const held = removedKey.state === "awaiting-approval";
+  const action = onLift === undefined
+    ? null
+    : (
+      <Button
+        variant="outline"
+        size="xs"
+        className="ml-2 align-middle"
+        onClick={onLift}
+        disabled={lifting}
+        title={done
+          ? "Stop keeping the key out and deliver the record again under its id now. While the source still lacks the key, the removal flow's next run removes it again."
+          : "Stop keeping the key out: the record stays in OSDU. While the source still lacks the key, the removal flow's next run finds it removed again."}
+        data-testid="record-removal-lift"
+      >
+        {lifting ? <Loader2 className="animate-spin" /> : <RotateCcw />}
+        {done ? "Deliver again" : "Lift removal"}
+      </Button>
+    );
+  return (
+    <Line key="removal" tone={done ? "muted" : "warning"} icon={done ? Trash2 : held ? ShieldAlert : Hourglass} testId="record-removal">
+      <span>
+        {done
+          ? <>{`Removed by ${who}: ${why} `}<RelativeTime value={removedKey.removedUtc} />{". A row of the key newer than that is delivered again."}</>
+          : held
+            ? <>{`Found removed by ${who}: ${why} `}<RelativeTime value={removedKey.removedUtc} />{", with more keys than its guard allows, so nothing is done until an operator approves them on its Removals tab."}</>
+            : <>{`Found removed by ${who}: ${why} `}<RelativeTime value={removedKey.removedUtc} />{". Its next run takes the record out of OSDU; no row of the key older than that is delivered."}</>}
+      </span>
+      <ExplainMark title="Why removed" text={removalWhy(removedKey)} testId="record-removal-why" />
+      {action}
+    </Line>
+  );
 }
 
 function tries(count: number): string {
@@ -136,14 +182,22 @@ function Waiters({ record, waiters }: { record: DeliveryRecord; waiters: Deliver
  * this one. A delivered record with nothing wrong has no situation and gets no lines: the status pill and the milestones
  * say everything there is.
  */
-export function RecordSituation({ record, waitsOn, waitedOnBy }: {
+export function RecordSituation({ record, waitsOn, waitedOnBy, removedKey, onLift, lifting = false }: {
   record: DeliveryRecord;
   waitsOn: DeliveryRecordLink | null | undefined;
   /** The records whose waiting document refers to this one, the first `MAX_WAITERS_SHOWN`. */
   waitedOnBy: DeliveryRecordLink[];
+  /** The ledger's deletion of the record's key, when a removal flow found its source no longer holds it. */
+  removedKey?: RemovedKey;
+  /** Lifts that deletion; absent where the reader cannot. */
+  onLift?: () => void;
+  lifting?: boolean;
 }) {
   const leaseExpired = useHasPassed(record.leaseExpiresUtc);
   const lines: ReactNode[] = [];
+  if (removedKey !== undefined) {
+    lines.push(<RemovalLine key="removal" removedKey={removedKey} onLift={onLift} lifting={lifting} />);
+  }
 
   if (record.blocked) {
     lines.push(
@@ -282,6 +336,11 @@ export function RecordSituation({ record, waitsOn, waitedOnBy }: {
       }
       break;
     case "deleted":
+      // A record a removal flow took out says so in its own line, with the way to deliver it again.
+      if (removedKey?.state === "removed") {
+        break;
+      }
+
       lines.push(
         <Line key="deleted" tone="muted" icon={Trash2} testId="record-deleted">
           {record.blocked

@@ -13,6 +13,7 @@ checks for these documents in the GUI's YAML editor, and in the language server 
 | `keys.assertion.json` | An assertion flow, `flowType: assertion`: its source, defaults and tests, and every subject, condition and modifier an assertion takes. |
 | `keys.dimension.json` | A dimension flow, `flowType: dimension`: its source and the dimensions it builds, with their keys, labels, attributes and cleaning. |
 | `keys.inventory.json` | An inventory flow, `flowType: inventory`: its source, the inventories it reads and what a removal may take. |
+| `keys.removal.json` | A removal flow, `flowType: removal`: its guard and its removals, each with the delivery flow it writes to and its key sources (`keys`, `removed`). |
 | `keys.mapping.json` | A mapping, `documentType: mapping`: its header and its `record` tree, whose node grammar (every `$` word, modifier and setting) is described on `record.<name>`. |
 | `keys.dictionary.json` | A dictionary, `documentType: dictionary`. |
 

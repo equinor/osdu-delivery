@@ -40,6 +40,8 @@ public sealed class RunPayloadPerKindTests
         [DeliveryRunPayload.InventoriesProperty] = """{"inventories":["WellLogs"]}""",
         [DeliveryRunPayload.RemovalProperty] = """{"removal":{"finding":"orphan","scope":"record","expected":1}}""",
         [DeliveryRunPayload.SelectionProperty] = """{"selection":42}""",
+        [DeliveryRunPayload.EntriesProperty] = """{"entries":["wellbores"]}""",
+        [DeliveryRunPayload.ApproveProperty] = """{"approve":{"expected":3}}""",
     };
 
     /// <summary>What each kind's runs take besides the central configuration, as its documentation lists them.</summary>
@@ -57,6 +59,7 @@ public sealed class RunPayloadPerKindTests
         [DimensionFlowDefinition.FlowTypeName] = [DeliveryRunPayload.DimensionsProperty],
         [InventoryFlowDefinition.FlowTypeName] =
             [DeliveryRunPayload.InventoriesProperty, DeliveryRunPayload.RemovalProperty, DeliveryRunPayload.ConfirmProperty, DeliveryRunPayload.SelectionProperty],
+        [RemovalFlowDefinition.FlowTypeName] = [DeliveryRunPayload.EntriesProperty, DeliveryRunPayload.ApproveProperty, DeliveryRunPayload.ConfirmProperty],
     };
 
     private const string Configuration = """
@@ -71,6 +74,7 @@ public sealed class RunPayloadPerKindTests
         AssertionFlowDefinition.FlowTypeName => new AssertionFlowKind(Loader),
         DimensionFlowDefinition.FlowTypeName => new DimensionFlowKind(Loader),
         InventoryFlowDefinition.FlowTypeName => new InventoryFlowKind(Loader),
+        RemovalFlowDefinition.FlowTypeName => new RemovalFlowKind(Loader),
         _ => throw new ArgumentOutOfRangeException(nameof(flowType), flowType, "not one of the module's kinds"),
     };
 
@@ -125,7 +129,7 @@ public sealed class RunPayloadPerKindTests
         var dimension = new DimensionFlowKind(Loader);
         Assert.StartsWith("payload runId does not apply to a dimension flow", Refusal(dimension, Payloads[DeliveryRunPayload.RunIdProperty]), StringComparison.Ordinal);
         Assert.Equal(
-            "payload confirm does not apply to a dimension flow: only a delivery flow's run deleting the ledger and an inventory flow's remove run name the partition they act in; a dimension flow's payload names only dimensions.",
+            "payload confirm does not apply to a dimension flow: only a delivery flow's run deleting the ledger, an inventory flow's remove run and a removal flow's approved run name the partition they act in; a dimension flow's payload names only dimensions.",
             Refusal(dimension, Payloads[DeliveryRunPayload.ConfirmProperty]));
 
         Assert.Equal(
@@ -135,6 +139,13 @@ public sealed class RunPayloadPerKindTests
         Assert.Equal(
             "payload submissionId does not apply to a cache flow: only a delivery flow's runs name a submission; a cache flow's payload names only types.",
             Refusal(new CacheFlowKind(Loader), Payloads[DeliveryRunPayload.SubmissionIdProperty]));
+
+        Assert.Equal(
+            "payload inventories does not apply to a removal flow: only an inventory flow's runs select inventories; a removal flow's payload names only entries, approve and confirm.",
+            Refusal(new RemovalFlowKind(Loader), Payloads[DeliveryRunPayload.InventoriesProperty]));
+        Assert.Equal(
+            "payload entries does not apply to a delivery flow: only a removal flow's runs select removals; a delivery flow's payload names only force, submissionId, runId, recordKeys, redeliver, rerender, slices, interface, interfaces and confirm.",
+            Refusal(new DeliveryFlowKind(Loader), Payloads[DeliveryRunPayload.EntriesProperty]));
     }
 
     [Fact]
@@ -155,6 +166,10 @@ public sealed class RunPayloadPerKindTests
         new InventoryFlowKind(Loader).ValidateParameters(With(
             DeliveryOperations.Remove, "\"inventories\":[\"WellLogs\"],\"removal\":{\"finding\":\"orphan\",\"scope\":\"record\",\"expected\":1},\"confirm\":\"dev\""));
         new InventoryFlowKind(Loader).ValidateParameters(With(DeliveryOperations.Match, "\"inventories\":[\"WellLogs\"],\"selection\":7"));
+        new RemovalFlowKind(Loader).ValidateParameters(With(null, "\"entries\":[\"wellbores\"]"));
+        new RemovalFlowKind(Loader).ValidateParameters(With(DeliveryOperations.Plan, "\"entries\":[\"wellbores\"]"));
+        new RemovalFlowKind(Loader).ValidateParameters(With(
+            DeliveryOperations.Remove, "\"entries\":[\"wellbores\"],\"approve\":{\"expected\":3},\"confirm\":\"dev\""));
 
         // A property written as false or empty asks for nothing, so no kind refuses it, as the delivery kind never has.
         new CacheFlowKind(Loader).ValidateParameters(new RunParameters { Payload = """{"force":false,"recordKeys":[],"tests":[]}""" });

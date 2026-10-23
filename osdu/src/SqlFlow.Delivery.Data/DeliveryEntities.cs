@@ -3103,6 +3103,220 @@ public sealed class DeliveryConfigProperty
     public string UpdatedBy { get; set; } = string.Empty;
 }
 
+/// <summary>
+/// One run of one removal of a removal flow (osdu/docs/reference/flow/removal.md, A run): the removal flow and removal, the
+/// delivery flow's ledger it compared and wrote to, the platform run it ran as and who asked, what it read, what it found the
+/// source removed, and what taking the removed keys out came to. A run opens it <c>running</c>, adds to its tallies as it goes,
+/// and closes it <c>completed</c>, <c>guarded</c> (its guard held what it found for an operator's approval) or <c>failed</c>.
+/// </summary>
+public sealed class DeliveryRemovalRun
+{
+    /// <summary>The partition of the delivery flow's ledger the run wrote to, as the ledger directory numbers it: the first column of the key.</summary>
+    public short PartitionId { get; set; }
+
+    public long RemovalRunId { get; set; }
+
+    /// <summary>The removal flow, by name.</summary>
+    public string FlowName { get; set; } = string.Empty;
+
+    /// <summary>The removal of the flow, by name.</summary>
+    public string Entry { get; set; } = string.Empty;
+
+    /// <summary>The ledger identity of the delivery flow (or interface) whose records the removal compared and took out.</summary>
+    public Guid LedgerFlowId { get; set; }
+
+    /// <summary>The delivery flow as pages name it: its name, and its interface after a slash for a source with interfaces.</summary>
+    public string DeliveryFlow { get; set; } = string.Empty;
+
+    /// <summary>The platform run the removal ran as.</summary>
+    public Guid? RunId { get; set; }
+
+    /// <summary>remove or plan.</summary>
+    public string Operation { get; set; } = string.Empty;
+
+    public string Actor { get; set; } = string.Empty;
+
+    /// <summary>running, completed, guarded or failed.</summary>
+    public string Status { get; set; } = string.Empty;
+
+    public DateTime StartedUtc { get; set; }
+
+    public DateTime? CompletedUtc { get; set; }
+
+    /// <summary>When the read of the source's current keys began: the moment the keys it did not find are removed as of. Null for a removal that reads only removed keys.</summary>
+    public DateTime? SourceReadUtc { get; set; }
+
+    /// <summary>Rows its key sources returned.</summary>
+    public long RowsRead { get; set; }
+
+    /// <summary>Distinct keys the source's current key set held.</summary>
+    public long SourceKeys { get; set; }
+
+    /// <summary>Distinct keys the source of removed keys listed.</summary>
+    public long ListedKeys { get; set; }
+
+    /// <summary>Distinct keys the delivery flow's record table held in the removal's scope.</summary>
+    public long IngestionKeys { get; set; }
+
+    /// <summary>Distinct keys compared: the ledger's records in the scope and the record table's rows, which the guard's share is of.</summary>
+    public long Compared { get; set; }
+
+    /// <summary>Keys the run found the source removed that the ledger did not hold as removed yet: the rows it added to the ledger's removed keys.</summary>
+    public long Detected { get; set; }
+
+    /// <summary>Of them, the keys the guard held for an operator's approval.</summary>
+    public long AwaitingApproval { get; set; }
+
+    /// <summary>Keys waiting for approval an operator's approval the run carried out made pending.</summary>
+    public long Approved { get; set; }
+
+    public long Removed { get; set; }
+
+    public long AlreadyGone { get; set; }
+
+    /// <summary>Records the ledger held that OSDU did not: settled in the ledger with nothing asked of OSDU.</summary>
+    public long Settled { get; set; }
+
+    /// <summary>Keys only the record table held: kept out, so no run delivers them.</summary>
+    public long KeptOut { get; set; }
+
+    /// <summary>Records left in OSDU because other records still name them.</summary>
+    public long Referenced { get; set; }
+
+    /// <summary>Records left in OSDU because another ledger of the partition holds the same id live.</summary>
+    public long Shared { get; set; }
+
+    /// <summary>Records a worker or another removal held, taken by the next run.</summary>
+    public long Busy { get; set; }
+
+    public long Failed { get; set; }
+
+    /// <summary>Keys whose row arrived after the moment of their removal: the key came back, and nothing was taken out.</summary>
+    public long CameBack { get; set; }
+
+    /// <summary>Removed keys whose key the source holds again, or whose record was delivered again since: no longer kept out.</summary>
+    public long Lifted { get; set; }
+
+    /// <summary>The guard's share, 0 to 100, the run was held to.</summary>
+    public int GuardPercent { get; set; }
+
+    /// <summary>The guard's count the run was held to; null for none.</summary>
+    public long? GuardRecords { get; set; }
+
+    /// <summary>Who approved the keys waiting for approval this run made pending, for a run that carried out an approval.</summary>
+    public string? ApprovedBy { get; set; }
+
+    /// <summary>The activity on the delivery flow's ledger the run's removals are recorded under.</summary>
+    public long? ActivityId { get; set; }
+
+    /// <summary>Why the run stopped, or what its guard held, redacted; null for one that completed.</summary>
+    public string? Error { get; set; }
+}
+
+/// <summary>
+/// One key a running removal staged (osdu/docs/reference/flow/removal.md, A run): read from one of its sides (the source's
+/// current keys, its removed keys, or the delivery flow's record table) and derived to the delivery key the ledger keys the
+/// record by. The rows of a run are deleted when it closes; a run its process stopped leaves them for the next run of the
+/// same removal to delete.
+/// </summary>
+public sealed class DeliveryRemovalKey
+{
+    public short PartitionId { get; set; }
+
+    public long RemovalRunId { get; set; }
+
+    /// <summary>1, the source's current keys; 2, its removed keys; 3, the delivery flow's record table.</summary>
+    public byte Side { get; set; }
+
+    public Guid DeliveryKey { get; set; }
+
+    /// <summary>The key tuple, a JSON array of strings in the record key's order.</summary>
+    public string? SourceKeyJson { get; set; }
+
+    /// <summary>For the record table's side: when its row last changed (<c>UpdatedDate_DW</c>).</summary>
+    public DateTime? UpdatedUtc { get; set; }
+
+    /// <summary>For the removed side: when the source removed the key.</summary>
+    public DateTime? RemovedUtc { get; set; }
+
+    /// <summary>The file the key was read from, for a reader source.</summary>
+    public string? FileName { get; set; }
+
+    /// <summary>The key's row in that file, or in its table.</summary>
+    public long? RowNumber { get; set; }
+}
+
+/// <summary>
+/// A key a source removed (osdu/docs/reference/concepts/removal-and-reversal.md, Records the source no longer holds): the
+/// ledger's own record of a deletion, under the delivery flow's ledger identity, written by a removal flow. A removal run that
+/// finds a key the source no longer holds adds its row once (pending, or waiting for approval when the run's guard held what it
+/// found); taking it out of OSDU works through the pending rows alone and marks each removed, so a key taken out is never asked
+/// of OSDU again. A row of the key not newer than <see cref="RemovedUtc"/> is not delivered while the row is pending or removed;
+/// the key's return, a newer row delivered, or an operator's lift takes the row away and the record is delivered again.
+/// </summary>
+public sealed class DeliveryRemovedKey
+{
+    public short PartitionId { get; set; }
+
+    /// <summary>The ledger identity of the delivery flow (or interface) the key's records belong to.</summary>
+    public Guid FlowId { get; set; }
+
+    public Guid DeliveryKey { get; set; }
+
+    public string? SourceKeyJson { get; set; }
+
+    /// <summary>absent (the source's current keys no longer held it) or listed (the source listed it as removed).</summary>
+    public string Reason { get; set; } = string.Empty;
+
+    /// <summary>The moment the removal stands for: a row of the key not newer than it is not delivered.</summary>
+    public DateTime RemovedUtc { get; set; }
+
+    /// <summary>The file of the row that listed the key as removed.</summary>
+    public string? FileName { get; set; }
+
+    public long? RowNumber { get; set; }
+
+    /// <summary>awaiting-approval (the guard held it), pending (to be taken out) or removed (taken out, settled or kept out).</summary>
+    public string State { get; set; } = string.Empty;
+
+    /// <summary>What the last try came to: removed, already-gone, settled, kept-out, referenced, shared, busy or failed; null before the first.</summary>
+    public string? Outcome { get; set; }
+
+    /// <summary>Why it came to that outcome: the records still naming it, what OSDU answered, redacted.</summary>
+    public string? Detail { get; set; }
+
+    /// <summary>How many times a removal run tried to take it out.</summary>
+    public int Tries { get; set; }
+
+    /// <summary>The removal flow that found it, by name.</summary>
+    public string RemovalFlow { get; set; } = string.Empty;
+
+    /// <summary>The removal of that flow that found it.</summary>
+    public string Entry { get; set; } = string.Empty;
+
+    /// <summary>The removal run that found it.</summary>
+    public long DetectedRunId { get; set; }
+
+    /// <summary>The removal run that took it out (or settled or kept it out); null while it is not removed.</summary>
+    public long? DoneRunId { get; set; }
+
+    /// <summary>The platform run of the removal run that last acted on it.</summary>
+    public Guid? RunId { get; set; }
+
+    /// <summary>Who approved it, for a key the guard held.</summary>
+    public string? ApprovedBy { get; set; }
+
+    public DateTime? ApprovedUtc { get; set; }
+
+    /// <summary>When the removal run found it.</summary>
+    public DateTime CreatedUtc { get; set; }
+
+    /// <summary>When it was taken out; null while it is not removed.</summary>
+    public DateTime? DoneUtc { get; set; }
+
+    public DateTime UpdatedUtc { get; set; }
+}
+
 /// <summary>The EF model of the delivery ledger, in the <c>osdu</c> schema.</summary>
 public static class DeliveryModel
 {
@@ -3166,6 +3380,12 @@ public static class DeliveryModel
 
     /// <summary>The longest kind an inventory reads or a record of it carries.</summary>
     public const int MaxInventoryKindLength = 300;
+
+    /// <summary>
+    /// The longest name of a removal, and of the delivery flow it names as pages show it: a flow's name (200) and an interface's
+    /// (64) with the slash between them.
+    /// </summary>
+    public const int MaxRemovalNameLength = 300;
 
     /// <summary>The longest query an inventory narrows a search with.</summary>
     public const int MaxInventoryQueryLength = 4000;
@@ -3697,6 +3917,53 @@ public static class DeliveryModel
             e.Property(s => s.ModifyUser).HasMaxLength(MaxInventoryUserLength);
             // A build's ids by id: its merge reads them in this order, and a build's leftovers are deleted by run.
             e.HasIndex(s => new { s.PartitionId, s.InventoryRunId, s.TargetId });
+        });
+
+        modelBuilder.Entity<DeliveryRemovalRun>(e =>
+        {
+            e.ToTable("RemovalRun", SchemaName);
+            e.HasKey(r => new { r.PartitionId, r.RemovalRunId });
+            e.Property(r => r.RemovalRunId).ValueGeneratedOnAdd();
+            e.Property(r => r.FlowName).HasMaxLength(DeliveryLedger.MaxFlowNameLength).IsRequired();
+            e.Property(r => r.Entry).HasMaxLength(MaxRemovalNameLength).IsRequired();
+            e.Property(r => r.DeliveryFlow).HasMaxLength(MaxRemovalNameLength).IsRequired();
+            e.Property(r => r.Operation).HasMaxLength(16).IsRequired();
+            e.Property(r => r.Actor).HasMaxLength(200).IsRequired();
+            e.Property(r => r.Status).HasMaxLength(16).IsRequired();
+            e.Property(r => r.ApprovedBy).HasMaxLength(200);
+            e.Property(r => r.Error).HasMaxLength(4000);
+            // A removal's runs, newest first: the flow's page lists them, and a run closes the earlier ones its process left open.
+            e.HasIndex(r => new { r.PartitionId, r.FlowName, r.Entry, r.RemovalRunId });
+            // A delivery flow's removal runs, newest first: its page says what removal flows took out of its ledger.
+            e.HasIndex(r => new { r.PartitionId, r.LedgerFlowId, r.RemovalRunId });
+        });
+
+        modelBuilder.Entity<DeliveryRemovalKey>(e =>
+        {
+            e.ToTable("RemovalKey", SchemaName);
+            e.HasKey(k => new { k.PartitionId, k.RemovalRunId, k.Side, k.DeliveryKey });
+            e.Property(k => k.SourceKeyJson).HasMaxLength(2000);
+            e.Property(k => k.FileName).HasMaxLength(MaxSourceFileNameLength);
+        });
+
+        modelBuilder.Entity<DeliveryRemovedKey>(e =>
+        {
+            e.ToTable("RemovedKey", SchemaName);
+            e.HasKey(k => new { k.PartitionId, k.FlowId, k.DeliveryKey });
+            e.Property(k => k.SourceKeyJson).HasMaxLength(2000);
+            e.Property(k => k.Reason).HasMaxLength(16).IsRequired();
+            e.Property(k => k.FileName).HasMaxLength(MaxSourceFileNameLength);
+            e.Property(k => k.State).HasMaxLength(24).IsRequired();
+            e.Property(k => k.Outcome).HasMaxLength(24);
+            e.Property(k => k.Detail).HasMaxLength(1000);
+            e.Property(k => k.RemovalFlow).HasMaxLength(DeliveryLedger.MaxFlowNameLength).IsRequired();
+            e.Property(k => k.Entry).HasMaxLength(MaxRemovalNameLength).IsRequired();
+            e.Property(k => k.ApprovedBy).HasMaxLength(200);
+            // A ledger's removed keys of one state in key order: a removal takes the pending ones in turn, an approval the ones
+            // waiting for it, a page lists either, and the flow's statistics count each.
+            e.HasIndex(k => new { k.PartitionId, k.FlowId, k.State, k.DeliveryKey });
+            // What one removal run found: its page lists them.
+            e.HasIndex(k => new { k.PartitionId, k.DetectedRunId });
         });
 
         modelBuilder.Entity<DeliveryReversal>(e =>

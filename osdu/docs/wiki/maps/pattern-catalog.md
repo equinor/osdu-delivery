@@ -39,9 +39,12 @@ sourceRefs:
   - osdu/docs/census/keys.mapping.json
   - osdu/docs/census/keys.assertion.json
   - osdu/docs/census/keys.inventory.json
+  - osdu/docs/census/keys.removal.json
+  - osdu/src/SqlFlow.Delivery/Documents/RemovalFlowKind.cs
   - osdu/gui/src/module.tsx
 referenceRefs:
   - delivery-flow-overview
+  - delivery-flow-removal
   - delivery-flow-mapping-lookups
   - delivery-flow-cache
   - delivery-flow-interfaces
@@ -52,7 +55,8 @@ referenceRefs:
 related:
   - wiki-pattern-catalog
   - delivery-wiki-0018-template-folders
-updated: 2026-10-22
+  - delivery-wiki-0022-removal-flows
+updated: 2026-10-23
 ---
 
 # Pattern catalog: which delivery problem maps to which OSDU Delivery shape
@@ -169,6 +173,8 @@ The route is `target.protocol` (or, in a source with interfaces, follows from wh
 | A bad run must be undone | `sqlflow records reverse --run <id>` (or `--operation reverse`): what it created is removed, what it updated gets its earlier version back | [removal and reversal](../../reference/concepts/removal-and-reversal.md) |
 | A delivery stopped halfway and left datasets behind | `--operation undo`; deliver and drain runs also end with the same sweep | [removal and reversal](../../reference/concepts/removal-and-reversal.md) |
 | The ledger and the ingestion tables disagree | `--operation sync`: records what the ledger lacks, flags rows that changed unseen, reports rows that are gone; sends nothing | [removal and reversal](../../reference/concepts/removal-and-reversal.md) |
+| Records the source deleted must leave OSDU, and the ingestion loads incrementally | A removal flow on its own schedule: `keys` reads the source's complete key set whole (its files or its table), and what the ledger holds that it lacks is taken out once, through the delivery flow's removal path | [removal flow](../../reference/flow/removal.md), [0022](../decisions/0022-removal-flows.md) |
+| The source keeps a list of the keys it deleted | The same removal flow with `removed:` (a table or files, each key with `removedAt`); a key whose row came back after that moment stays | [removal flow](../../reference/flow/removal.md#what-a-run-finds) |
 | What OSDU holds may have drifted from what was sent | `--operation verify`; `verify.reconcile: true` has the next deliver run send drifted or missing records again | [running an OSDU flow](../../reference/cli/run.md), [delivery flow](../../reference/flow/delivery.md#verify) |
 | A run's legal tag is no longer valid | The deliver run checks it first and stops; fix the tag or the configuration | [protocols](../../reference/concepts/protocols.md) |
 | The target answers a status that retrying will not fix | `reliability.skipStatusCodes`: hold instead of retrying (400, 403, 404, 405, 409, 413, 415 and 422 already hold) | [delivery flow](../../reference/flow/delivery.md), [record lifecycle](../../reference/concepts/record-lifecycle.md) |

@@ -18,6 +18,9 @@ keywords:
   - undo
   - ledger lookup
   - source key
+  - removed keys
+  - ledger deletions
+  - lift removal
 cliCommand: records
 related:
   - delivery-concept-ledger
@@ -28,6 +31,7 @@ related:
   - delivery-cli-preview
   - delivery-flow-mapping-assertions
   - delivery-cli-db
+  - delivery-flow-removal
   - concept-cli-conventions
 sourceRefs:
   - osdu/src/SqlFlow.Delivery.Cli/DeliveryCliModule.cs
@@ -35,6 +39,7 @@ sourceRefs:
   - osdu/src/SqlFlow.Delivery.Cli/FindingLines.cs
   - osdu/src/SqlFlow.Delivery.Cli/DeliveryReversalVerbs.cs
   - osdu/src/SqlFlow.Delivery.Cli/DeliveryArtifactVerbs.cs
+  - osdu/src/SqlFlow.Delivery.Cli/DeliveryRemovalVerbs.cs
   - osdu/src/SqlFlow.Delivery.Cli/CliPartitions.cs
   - osdu/src/SqlFlow.Delivery/Ledger/ILedger.cs
   - osdu/src/SqlFlow.Delivery/Ledger/OsduLedger.cs
@@ -74,6 +79,8 @@ sqlflow records reverse   <flow.yaml> (--run <id> | --submission <id>) [--previe
 sqlflow records reversals <flow.yaml> [--run <id> | --submission <id>] [--outcome <outcome>] [--max <n>]
 sqlflow records artifacts <flow.yaml> --key <delivery key | source key> [--max <n>]
 sqlflow records undos     <flow.yaml> [--max <n>]
+sqlflow records removed   <flow.yaml> [--state <state>] [--after <delivery key>] [--max <n>]
+sqlflow records lift-removal <flow.yaml> --key <delivery key>...
 
 every form: [--interface <name>] [--partition <id>] [--db <conn-ref>] [--json] [-v|--verbose]
 ```
@@ -82,7 +89,7 @@ every form: [--interface <name>] [--partition <id>] [--db <conn-ref>] [--json] [
 
 | Argument or option | Description |
 | --- | --- |
-| subcommand | `list`, `show`, `issues`, `release`, `reverse`, `reversals`, `artifacts` or `undos`. Anything else prints `ERROR  say what to do with the records: list, show, issues, release, reverse, reversals, artifacts or undos.` and the usage, exit 1. |
+| subcommand | `list`, `show`, `issues`, `release`, `adopt`, `reverse`, `reversals`, `artifacts`, `undos`, `removed` or `lift-removal`. Anything else prints `ERROR  say what to do with the records: list, show, issues, release, adopt, reverse, reversals, artifacts, undos, removed or lift-removal.` and the usage, exit 1. |
 | `<flow.yaml>` | The delivery flow whose ledger is read. Without it: `ERROR  name the flow document whose records these are.` |
 | `--interface <name>` | The interface whose ledger is read. A source with several interfaces has to name one: `Flow '<name>' delivers <n> interfaces (<names>); name the one this operation is for.` |
 | `--partition <id>` | The partition whose ledger is read, for a flow that works in partitions (each partition keeps a ledger of its own). A partition named here is read as it is, even one taken out of the registry, since its records stay readable. Without it, the partition a run would take. |
@@ -335,6 +342,48 @@ With nothing left it says `no record holds anything an undo may still take.`
 `records` (each `deliveryKey`, `sourceKey`, `label`, `status`, `targetId`, `intent`, `pending`, `due`, `failed`,
 `failedExhausted`, `oldestUtc`, `nextUndoUtc`).
 
+## records removed
+
+The ledger's deletions: the keys a [removal flow](../flow/removal.md) found the flow's source no longer holds, whichever
+removal flow found them, in delivery key order, 50 unless `--max` says otherwise (at most 1,000). `--state` shows one state,
+`pending`, `awaiting-approval` or `removed`; a value that is none of them is refused, naming them. The line under a page
+names the `--after` of the next one.
+
+```text
+welldb-wellbore-03-delivery: 12 pending, 0 waiting for approval, 1040 removed
+  0f1c...  removed            ["Wellbore B-2 B"]
+      absent as of 2026-10-22T02:00:00Z; found by welldb-wellbore-05-removal (welldb-wellbore-03-delivery, run 13); removed after 1 try(ies)
+  1a7e...  pending            ["Wellbore C-1"]
+      listed as of 2026-10-20T08:15:00Z (removed/wellbores_2026-10-20.csv, row 9); found by welldb-wellbore-05-removal (welldb-wellbore-03-delivery, run 13); referenced after 2 try(ies)
+      other records in OSDU still name it (...), so it stays until they are gone; the next run checks again
+  more: --after 1a7e0000-0000-0000-0000-000000000000
+```
+
+Each deletion names its delivery key, its state and its key tuple; why its key counts as removed (`absent` from the
+source's keys, or `listed` as removed) and as of when, the file and row that listed it, the removal flow, removal and run
+that found it, what the last try came to and after how many, and why.
+
+`--json`: `flow`, `flowId`, `counts` (by state), `next` and `removed` (each `deliveryKey`, `sourceKey`, `record` (the
+ledger's record's status, left out when it holds none), `state`, `reason`, `removedUtc`, `fileName`, `rowNumber`,
+`outcome`, `detail`, `tries`, `removalFlow`, `removal`, `detectedRunId`, `doneRunId`, `approvedBy`, `approvedUtc`,
+`createdUtc`, `doneUtc`).
+
+## records lift-removal
+
+Lifts the deletions of the records `--key` names (at most 1,000), as `cli:<user>@<machine>`
+([Delivering a record again](../flow/removal.md#delivering-a-record-again)): their keys are no longer kept out, and a
+record the removal took out is asked to be planned again, so the flow's next run reads its row and delivers it under its
+id. Every record lifted is named under one `lift-removal` activity. While the source still does not hold a key, the removal
+flow's next run finds it removed again.
+
+```text
+welldb-wellbore-03-delivery: lifted the removal of 1 record(s); the flow's next run delivers them again.
+  1a7e0000-0000-0000-0000-000000000000: the ledger keeps its key out for no removal
+```
+
+A key the ledger holds no deletion of is named and passed over, and the command exits 1. `--json`: `flow`, `flowId`,
+`lifted` and `notRemoved`, the delivery keys of each.
+
 ## Examples
 
 The failed wellbores of the `dev` partition:
@@ -374,8 +423,8 @@ sqlflow records reverse flows/welldb-wellbore-03-delivery.yaml --partition dev -
 
 | Exit code | Condition |
 | --- | --- |
-| 0 | The answer was printed, or the release or reversal completed with no failed record. |
-| 1 | A usage error; the flow, its partition or interface could not be settled; no module database; a record, issue or reversal that does not exist; a reversal with a failed record; or `records reversals` naming a source with no reversal. Errors print one `ERROR  <message>` line on stderr, credentials redacted. |
+| 0 | The answer was printed, the release or reversal completed with no failed record, or every key a lift named was lifted. |
+| 1 | A usage error; the flow, its partition or interface could not be settled; no module database; a record, issue or reversal that does not exist; a reversal with a failed record; `records reversals` naming a source with no reversal; or a lift naming a key the ledger keeps out for no removal. Errors print one `ERROR  <message>` line on stderr, credentials redacted. |
 | 130 | Interrupted with Ctrl+C. |
 
 ## See also
@@ -385,4 +434,5 @@ sqlflow records reverse flows/welldb-wellbore-03-delivery.yaml --partition dev -
 - [Removal and reversal](../concepts/removal-and-reversal.md): reversing a run, unfinished deliveries and their undo.
 - [Operations runbook](../guides/operations-runbook.md): failed and held records, releasing, redelivering.
 - [Running an OSDU flow](run.md): the `undo`, `reverse` and `deliver` operations as runs.
+- [Removal flow](../flow/removal.md): how a removal flow finds the keys a source no longer holds, and the ledger's deletions.
 - [CLI conventions](../../../../sqlflow/docs/reference/concepts/cli-conventions.md): options, streams and exit codes shared by every command.

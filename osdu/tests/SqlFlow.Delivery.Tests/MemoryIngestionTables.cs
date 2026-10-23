@@ -80,6 +80,9 @@ public sealed class MemoryIngestionTables : IIngestionSourceFactory
     /// <summary>What a shape check reports as wrong with the tables, as the SQL Server source reports a missing table; null when nothing is.</summary>
     public string? ShapeProblem { get; set; }
 
+    /// <summary>The SQL Server type each record key column holds, as the SQL Server source introspects it; a column not named holds nvarchar(400).</summary>
+    public Dictionary<string, string> KeyTypes { get; } = new(StringComparer.OrdinalIgnoreCase);
+
     public MemoryRecord Add(MemoryRecord record)
     {
         ArgumentNullException.ThrowIfNull(record);
@@ -177,6 +180,25 @@ public sealed class MemoryIngestionTables : IIngestionSourceFactory
                 return new ScopeParameterValues(scope.Value, scope.Key, values.Take(max).ToList(), values.Count > max);
             }).ToList();
             return Task.FromResult<IReadOnlyList<ScopeParameterValues>>(listed);
+        }
+
+        public Task<IReadOnlyList<SourceKeyColumn>> KeyColumnsAsync(CancellationToken ct = default)
+            => Task.FromResult<IReadOnlyList<SourceKeyColumn>>(_flow.Source.Record.Key
+                .Select(k => new SourceKeyColumn(k, _tables.KeyTypes.TryGetValue(k, out var type) ? type : "nvarchar(400)"))
+                .ToList());
+
+        public async IAsyncEnumerable<IngestionKey> ReadKeysAsync(int pageSize, [EnumeratorCancellation] CancellationToken ct = default)
+        {
+            ArgumentOutOfRangeException.ThrowIfLessThan(pageSize, 1);
+            await Task.CompletedTask.ConfigureAwait(false);
+            var ordered = PrimaryKey is null
+                ? _tables.Records.Where(InScope).OrderBy(r => KeyOf(r).Json, StringComparer.Ordinal)
+                : _tables.Records.Where(InScope).OrderBy(IdOf);
+            foreach (var record in ordered)
+            {
+                ct.ThrowIfCancellationRequested();
+                yield return new IngestionKey(KeyOf(record), record.UpdatedUtc);
+            }
         }
 
         public Task<IReadOnlyList<KeyRange>> SliceBoundsAsync(SourceHeader header, int slices, CancellationToken ct = default)

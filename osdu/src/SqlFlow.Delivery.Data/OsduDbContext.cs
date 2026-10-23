@@ -16,7 +16,7 @@ public sealed class OsduDbContext : DbContext
     public const string MigrationsHistoryTable = "__EFMigrationsHistory";
 
     /// <summary>The module version the current migrations produce; written to <see cref="OsduSchemaVersion.ModuleVersion"/>.</summary>
-    public const string ModuleVersion = "1.57.0";
+    public const string ModuleVersion = "1.58.0";
 
     /// <summary>
     /// The oldest SQLFlow catalog migration this schema works with: the one that records the values the control plane
@@ -90,6 +90,15 @@ public sealed class OsduDbContext : DbContext
     public DbSet<DeliveryInventorySelection> DeliveryInventorySelections => Set<DeliveryInventorySelection>();
 
     public DbSet<DeliveryInventorySelectionItem> DeliveryInventorySelectionItems => Set<DeliveryInventorySelectionItem>();
+
+    /// <summary>The runs of removal flows, one row per removal per run.</summary>
+    public DbSet<DeliveryRemovalRun> DeliveryRemovalRuns => Set<DeliveryRemovalRun>();
+
+    /// <summary>The keys a running removal staged from its sources, until it closes.</summary>
+    public DbSet<DeliveryRemovalKey> DeliveryRemovalKeys => Set<DeliveryRemovalKey>();
+
+    /// <summary>The ledger's deletions: every key a source removed, and how far taking it out of OSDU has come.</summary>
+    public DbSet<DeliveryRemovedKey> DeliveryRemovedKeys => Set<DeliveryRemovedKey>();
 
     public DbSet<DeliveryRetrieval> DeliveryRetrievals => Set<DeliveryRetrieval>();
 
