@@ -300,8 +300,8 @@ sqlflow run lookups/welldb-unitalias-02-ing.yaml
 sqlflow run lookups/welldb-lookups-00-cache.yaml --set partition=dev    # or 'partition=*' for every registered partition
 ```
 
-The refresh writes into the module's database, so on a workstation `sqlflow` needs it (`SQLFLOW_OSDU_DB`, else the
-catalog's database: `--db`, by default `${env:SQLFLOW_CATALOG_DB}`), and `OSDU_DATA_DB` must resolve where it runs. In
+The refresh writes into the module's database, so on a workstation `sqlflow` needs it (the catalog's database: `--db`,
+by default `${env:SQLFLOW_CATALOG_DB}`), and `OSDU_DATA_DB` must resolve where it runs. In
 the GUI, **Refresh now** on the Cache page (a **Refresh** menu naming the flows, when several fill the partition) runs
 the same refresh for the partition picked in the title bar. Add `--operation plan` to count the rows the refresh would
 capture without writing anything.

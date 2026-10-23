@@ -6,6 +6,7 @@ using SqlFlow.Core.Secrets;
 using SqlFlow.Delivery.Documents;
 using SqlFlow.Delivery.Engine.Protocols;
 using SqlFlow.Delivery.Engine.Search;
+using SqlFlow.Delivery.Hosting;
 using SqlFlow.Delivery.Http;
 using SqlFlow.Delivery.Ledger;
 using SqlFlow.Delivery.Model;
@@ -375,7 +376,7 @@ public sealed partial class DimensionRunner
     {
         if (_flow.Target is not { } target)
         {
-            return $"Dimension flow '{_flow.Name}' declares views and no target.connection, the module's database as the pipelines reading the views name it.";
+            return $"Dimension flow '{_flow.Name}' declares views and no target.connection, the module's database as the pipelines reading the views name it (${{env:{OsduModuleDatabase.CatalogConnectionVariable}}}).";
         }
 
         var named = target.Connection.StartsWith("${", StringComparison.Ordinal) ? $"target.connection {target.Connection}" : "target.connection";
@@ -396,7 +397,7 @@ public sealed partial class DimensionRunner
             && string.Equals(module.Database, declared.Database, StringComparison.OrdinalIgnoreCase)
             && module.CreatedUtc == declared.CreatedUtc
                 ? null
-                : $"Dimension flow '{_flow.Name}': {named} reaches another database than this host's module database, so the lineage it declares would name tables and views the build does not write; nothing was built. Point it at the module's database.";
+                : $"Dimension flow '{_flow.Name}': {named} reaches another database than this host's module database, so the lineage it declares would name tables and views the build does not write; nothing was built. Point it at the module's database, the catalog's: ${{env:{OsduModuleDatabase.CatalogConnectionVariable}}}.";
     }
 
     /// <summary>Settles the field of every dimension the run selects and counts the records each would read, reading no value.</summary>

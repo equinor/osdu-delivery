@@ -33,7 +33,6 @@ public sealed class ConfiguredPartitionsApiTests
     {
         var configuration = new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?>
         {
-            ["Osdu:Database:Connection"] = "${env:SQLFLOW_OSDU_DB}",
             ["Osdu:Partitions:dev:Default"] = "true",
             ["Osdu:Partitions:dev:Description"] = "The development platform",
             ["Osdu:Partitions:dev:Properties:OSDU_URL"] = "https://osdu-dev.example.com",

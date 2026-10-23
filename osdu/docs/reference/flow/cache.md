@@ -357,8 +357,7 @@ and a cache run takes none of SQLFlow's per-run overrides: `--full`, a backfill 
 apply to 'cache' flows; a refresh sweeps every declared type in full.`, with or without a payload.
 
 A refresh writes into the module's database, so it needs it: on a node or the control plane it is always there; on a
-workstation, `sqlflow` reads it through `SQLFLOW_OSDU_DB`, else in the catalog's database (`--db`, by default
-`${env:SQLFLOW_CATALOG_DB}`). The
+workstation, `sqlflow` reads it in the catalog's database (`--db`, by default `${env:SQLFLOW_CATALOG_DB}`). The
 run's result lists every type with its origin, record count, `change` (`added`, `changed` or `unchanged`) and content
 hash, and `retention`: the days applied, how many versions keep their records, the versions pruned and the stored rows
 removed. Its log names the types that moved and what the retention pruned. A refresh that finds exactly what the

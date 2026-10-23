@@ -44,8 +44,6 @@ locals {
   sql_server_name = coalesce(var.sql_server_name, "osdu-sql-${local.suffix}")
 
   create_sql          = var.existing_sql_server == ""
-  osdu_database_name  = coalesce(var.osdu_database_name, var.catalog_database_name)
-  separate_osdu_db    = local.osdu_database_name != var.catalog_database_name
   sql_admin_password  = var.sql_admin_password == null ? "" : var.sql_admin_password
   has_sql_password    = nonsensitive(local.sql_admin_password != "")
   sql_entra_auth      = var.sql_authentication == "entra"
@@ -57,7 +55,6 @@ locals {
 
   # Secret names shared with the modules (their defaults match these).
   catalog_connection_secret_name = "osdu-delivery-catalog-db"
-  osdu_connection_secret_name    = "osdu-delivery-osdu-db"
   jwt_signing_key_secret_name    = "osdu-delivery-jwt-signing-key"
   admin_password_secret_name     = "osdu-delivery-admin-password"
   node_token_secret_name         = "osdu-delivery-node-token"
@@ -215,24 +212,24 @@ resource "azurerm_mssql_database" "catalog" {
   tags      = var.tags
 }
 
-# The delivery module's own database, created only when it is not the catalog's.
-resource "azurerm_mssql_database" "osdu" {
-  count = local.create_sql && local.separate_osdu_db ? 1 : 0
+# The delivery module's own database, which an estate could once keep apart from the catalog's. The osdu schema lives in
+# the catalog's database (osdu_database_name refuses a value), so a state still holding one forgets it rather than
+# destroying it: it holds a ledger, which belongs in the catalog's database.
+removed {
+  from = azurerm_mssql_database.osdu
 
-  name      = local.osdu_database_name
-  server_id = azurerm_mssql_server.this[0].id
-  sku_name  = var.sql_database_sku
-  collation = "SQL_Latin1_General_CP1_CI_AS"
-  tags      = var.tags
+  lifecycle {
+    destroy = false
+  }
 }
 
 locals {
   # The connections on the estate's server, and the databases this configuration creates for them: one per database
-  # name, whichever connections name it, and never the catalog's or the module's own.
+  # name, whichever connections name it, and never the catalog's, which holds the osdu schema too.
   server_connections = { for name, c in var.sql_connections : name => c if c.database != null }
   created_databases = toset([
     for name, c in local.server_connections : c.database
-    if local.create_sql && c.create && c.database != var.catalog_database_name && c.database != local.osdu_database_name
+    if local.create_sql && c.create && c.database != var.catalog_database_name
   ])
 }
 
@@ -270,7 +267,6 @@ locals {
   sql_credentials           = local.sql_entra_auth ? "Authentication=Active Directory Default" : "User ID=${var.sql_admin_login};Password=${local.quoted_sql_admin_password}"
   connection_string_tail    = "${local.sql_credentials};Encrypt=True;TrustServerCertificate=False;Connection Timeout=30"
   catalog_connection        = "Server=tcp:${local.sql_server_address};Initial Catalog=${var.catalog_database_name};${local.connection_string_tail}"
-  osdu_connection           = "Server=tcp:${local.sql_server_address};Initial Catalog=${local.osdu_database_name};${local.connection_string_tail}"
 
   # Each connection's vault secret: built here for one on the estate's server, put there by hand for one elsewhere.
   connection_secret_names = {
@@ -317,16 +313,10 @@ locals {
   sql_setup_entries = concat(
     [{
       name       = var.catalog_database_name
-      purpose    = local.separate_osdu_db ? "the catalog" : "the catalog, and the osdu schema beside it"
-      users      = concat([local.control_plane_user], local.separate_osdu_db ? [] : [local.worker_user], local.admin_users)
-      statements = concat(local.control_plane_owns, local.separate_osdu_db ? [] : local.worker_reaches_osdu_schema, local.admins_own)
-    }],
-    local.separate_osdu_db ? [{
-      name       = local.osdu_database_name
-      purpose    = "the osdu schema"
+      purpose    = "the catalog, and the osdu schema beside it"
       users      = concat([local.control_plane_user, local.worker_user], local.admin_users)
       statements = concat(local.control_plane_owns, local.worker_reaches_osdu_schema, local.admins_own)
-    }] : [],
+    }],
     [for name, c in local.server_connections : {
       name       = c.database
       purpose    = "${name}, the data the flows ${c.access == "write" ? "land, load and deliver from" : "read"}"
@@ -388,7 +378,6 @@ resource "azurerm_resource_deployment_script_azure_power_shell" "grants" {
 
   depends_on = [
     azurerm_mssql_database.catalog,
-    azurerm_mssql_database.osdu,
     azurerm_mssql_database.connection,
     azurerm_mssql_firewall_rule.allow_azure_services,
   ]
@@ -441,7 +430,7 @@ resource "terraform_data" "images" {
 # ------------------------------------------------------------------------------------------------------ secrets ---
 
 # The connection strings, which carry no credential under Entra authentication: derived from the server and the
-# databases, so this configuration writes them.
+# databases, so this configuration writes them. The catalog's is the module's too: the osdu schema lives in its database.
 resource "azurerm_key_vault_secret" "catalog_db" {
   name         = local.catalog_connection_secret_name
   value        = local.catalog_connection
@@ -453,12 +442,6 @@ resource "azurerm_key_vault_secret" "catalog_db" {
       error_message = "sql_admin_password is required with sql_authentication = \"password\"; set it, or use the default Entra authentication, where each app signs in as its own managed identity."
     }
   }
-}
-
-resource "azurerm_key_vault_secret" "osdu_db" {
-  name         = local.osdu_connection_secret_name
-  value        = local.osdu_connection
-  key_vault_id = azurerm_key_vault.this.id
 }
 
 resource "azurerm_key_vault_secret" "connection" {
@@ -669,9 +652,10 @@ locals {
     { "ControlPlane__Bootstrap__NodeTokenReference" = local.vault_reference[local.node_token_secret_name] },
   )
 
-  # A node holds its identity and the ledger's connection alone: everything its runs read is handed to each run.
+  # A node holds its identity and the catalog's connection alone, which it reads and writes the ledger in the osdu schema
+  # through: everything its runs read is handed to each run.
   worker_secret_env = [
-    { name = "SQLFLOW_OSDU_DB", secret_name = local.osdu_connection_secret_name },
+    { name = "SQLFLOW_CATALOG_DB", secret_name = local.catalog_connection_secret_name },
   ]
 }
 
@@ -698,7 +682,6 @@ module "control_plane" {
   key_vault_uri                = azurerm_key_vault.this.vault_uri
 
   catalog_connection_secret_name = local.catalog_connection_secret_name
-  osdu_connection_secret_name    = local.osdu_connection_secret_name
   jwt_signing_key_secret_name    = local.jwt_signing_key_secret_name
 
   # Compute belongs to the worker app; the API replica does API + scheduler + sync work only.
@@ -735,10 +718,8 @@ module "control_plane" {
   depends_on = [
     azurerm_resource_deployment_script_azure_power_shell.secrets,
     azurerm_key_vault_secret.catalog_db,
-    azurerm_key_vault_secret.osdu_db,
     azurerm_key_vault_secret.connection,
     azurerm_mssql_database.catalog,
-    azurerm_mssql_database.osdu,
     azurerm_mssql_database.connection,
     azurerm_mssql_firewall_rule.allow_azure_services,
   ]
@@ -766,8 +747,8 @@ module "worker" {
 
   depends_on = [
     azurerm_resource_deployment_script_azure_power_shell.secrets,
-    azurerm_key_vault_secret.osdu_db,
-    azurerm_mssql_database.osdu,
+    azurerm_key_vault_secret.catalog_db,
+    azurerm_mssql_database.catalog,
     azurerm_mssql_firewall_rule.allow_azure_services,
   ]
 }

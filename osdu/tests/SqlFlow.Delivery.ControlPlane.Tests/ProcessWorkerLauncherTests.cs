@@ -67,13 +67,14 @@ public sealed class ProcessWorkerLauncherTests : IDisposable
     [Fact]
     public async Task AStartedWorker_OpensTheModuleDatabaseTheControlPlaneOpens()
     {
-        // A local setup keeps the osdu schema in the catalog's database and sets no SQLFLOW_OSDU_DB, while a node reads
-        // that variable alone: the worker is handed the connection the control plane resolved, or it refuses to start.
+        // The osdu schema lives in the catalog's database, which a node reaches through SQLFLOW_CATALOG_DB alone: the worker
+        // is handed the connection the control plane resolved, whatever the control plane's own environment holds, or it
+        // refuses to start.
         using var launcher = Launcher(Script(sleeps: true));
 
         await launcher.LaunchAsync(new WorkerLaunch("worker-default-0123456789", ""), CancellationToken.None);
 
-        Assert.Equal(ModuleConnection, await ReadAsync("osdu.txt"));
+        Assert.Equal(ModuleConnection, await ReadAsync("catalog.txt"));
         Assert.DoesNotContain("module-db-for-tests", await ReadAsync("args.txt"), StringComparison.Ordinal);
     }
 
@@ -110,8 +111,7 @@ public sealed class ProcessWorkerLauncherTests : IDisposable
     [InlineData("ControlPlane__Jwt__SigningKey", true)]
     [InlineData("controlplane__catalog__connectionreference", true)]
     [InlineData("ControlPlane:Jwt:BootstrapSecret", true)]
-    [InlineData("SQLFLOW_CATALOG_DB", true)]
-    [InlineData("SQLFLOW_OSDU_DB", false)]
+    [InlineData("SQLFLOW_CATALOG_DB", false)]
     [InlineData("SQLFLOW_CONN_DWH", false)]
     [InlineData("SQLFLOW_AZURE_AUTH", false)]
     public void TheControlPlanesOwnVariables_AreTheOnesKeptBack(string key, bool kept)
@@ -277,7 +277,7 @@ public sealed class ProcessWorkerLauncherTests : IDisposable
             TimeProvider.System, NullLogger<ProcessWorkerLauncher>.Instance);
     }
 
-    /// <summary>A stand-in worker: records its arguments, its node name, its process id, the module database it was given
+    /// <summary>A stand-in worker: records its arguments, its node name, its process id, the catalog connection it was given
     /// and whether it was given a credential (never the credential), then waits a minute or exits with code 3.</summary>
     private string Script(bool sleeps)
     {
@@ -290,7 +290,7 @@ public sealed class ProcessWorkerLauncherTests : IDisposable
                 "if defined SQLFLOW_TOKEN (echo set> \"%~dp0token.txt\") else (echo missing> \"%~dp0token.txt\")",
                 "if defined " + ProbeVariable + " (echo leaked> \"%~dp0probe.txt\") else (echo scrubbed> \"%~dp0probe.txt\")",
                 "powershell -NoProfile -Command \"(Get-CimInstance Win32_Process -Filter ('ProcessId=' + $PID)).ParentProcessId\" > \"%~dp0pid.txt\"",
-                "echo %SQLFLOW_OSDU_DB%> \"%~dp0osdu.txt\"",
+                "echo %SQLFLOW_CATALOG_DB%> \"%~dp0catalog.txt\"",
                 "echo %SQLFLOW_NODE_NAME%> \"%~dp0name.txt\"",
                 sleeps ? "ping -n 60 127.0.0.1 > nul" : "exit /b 3",
                 string.Empty));
@@ -305,7 +305,7 @@ public sealed class ProcessWorkerLauncherTests : IDisposable
             "if [ -n \"$SQLFLOW_TOKEN\" ]; then echo set > \"$dir/token.txt\"; else echo missing > \"$dir/token.txt\"; fi",
             "if [ -n \"$" + ProbeVariable + "\" ]; then echo leaked > \"$dir/probe.txt\"; else echo scrubbed > \"$dir/probe.txt\"; fi",
             "echo $$ > \"$dir/pid.txt\"",
-            "echo \"$SQLFLOW_OSDU_DB\" > \"$dir/osdu.txt\"",
+            "echo \"$SQLFLOW_CATALOG_DB\" > \"$dir/catalog.txt\"",
             "echo \"$SQLFLOW_NODE_NAME\" > \"$dir/name.txt\"",
             sleeps ? "sleep 60" : "exit 3",
             string.Empty));

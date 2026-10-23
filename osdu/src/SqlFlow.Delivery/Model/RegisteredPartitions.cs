@@ -1,3 +1,5 @@
+using SqlFlow.Delivery.Hosting;
+
 namespace SqlFlow.Delivery.Model;
 
 /// <summary>One OSDU partition registered with the catalog (<c>osdu.Partition</c>): its name, what it is for, and whether it is the default.</summary>
@@ -81,5 +83,5 @@ public sealed class UnavailablePartitionRegistry : IPartitionRegistry
 
     public Task<RegisteredPartitions> ReadAsync(CancellationToken ct = default)
         => throw new DeliveryException(
-            "The partition registry lives in the module's database, which this host was started without. Start it with the module's connection (Osdu:Database:Connection or SQLFLOW_OSDU_DB), or with --db when the catalog's database holds the osdu schema.");
+            $"The partition registry lives in the module's database, which this host was started without. {OsduModuleDatabase.StartWithCatalogConnection}");
 }

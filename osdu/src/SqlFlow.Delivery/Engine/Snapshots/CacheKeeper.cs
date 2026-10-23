@@ -3,6 +3,7 @@ using Microsoft.Extensions.Logging;
 using SqlFlow.Delivery.Documents;
 using SqlFlow.Delivery.Engine.Protocols;
 using SqlFlow.Delivery.Engine.Search;
+using SqlFlow.Delivery.Hosting;
 using SqlFlow.Delivery.Identity;
 using SqlFlow.Delivery.Ledger;
 using SqlFlow.Delivery.Model;
@@ -138,7 +139,7 @@ public sealed class CacheKeeper
         ArgumentException.ThrowIfNullOrWhiteSpace(storagePath);
         ArgumentException.ThrowIfNullOrWhiteSpace(actor);
         var store = _context.Cache ?? throw new DeliveryException(
-            $"Pipeline '{pipeline}' brings the cache of partition '{scope}' up to date before it runs, and caches live in the module's database, which this host was started without.");
+            $"Pipeline '{pipeline}' brings the cache of partition '{scope}' up to date before it runs, and caches live in the module's database, which this host was started without. {OsduModuleDatabase.StartWithCatalogConnection}");
         var names = types.Select(t => t.TypeName).ToList();
 
         // A declaration whose query takes the cache flow's parameters can only be searched by that flow's run, which fills

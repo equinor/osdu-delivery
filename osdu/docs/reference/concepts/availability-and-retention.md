@@ -77,7 +77,7 @@ adds no dispatch capacity. Worker nodes scale from zero on the control plane's s
   schedule fires, no repository sync runs, no approved cache change rolls out, and the module's background passes (below)
   pause.
 - A worker node already delivering keeps delivering. It reaches OSDU with the flow's own credentials and the ledger with its
-  own module database connection (`SQLFLOW_OSDU_DB`), neither through the control plane, so records go on being claimed,
+  own connection to the catalog's database (`SQLFLOW_CATALOG_DB`), neither through the control plane, so records go on being claimed,
   sent and settled, and every attempt is written. Leave the nodes alone: a stopped node costs the runs it holds their
   progress.
 - `sqlflow run` on a workstation with the module database connection still delivers: it takes the ledger's own leases,
@@ -162,9 +162,9 @@ tables by time in the module's model rather than delete from them.
 
 ## Backup and restore
 
-- **Back up the `osdu` schema with SQLFlow's catalog.** By default the schema lives in the catalog's database, so one
-  backup covers both. Where the module has a database of its own, the two must restore to the same instant: a run row in
-  the catalog and the submission, records and attempts it wrote are one unit of work.
+- **Back up the `osdu` schema with SQLFlow's catalog.** The schema lives in the catalog's database, so one backup covers
+  both, and they restore to the same instant: a run row in the catalog and the submission, records and attempts it wrote
+  are one unit of work.
 - **The schema carries its version.** `[osdu].[__EFMigrationsHistory]` and `[osdu].[SchemaVersion]` come with the schema.
   A restore is usable only with a build that matches: a database behind the build is migrated on start, one ahead of it
   stops the host by name, and one paired with a SQLFlow catalog older than `SchemaVersion.MinimumCatalogMigration` is

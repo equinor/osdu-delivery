@@ -2,6 +2,7 @@ using System.Collections;
 using System.Globalization;
 using SqlFlow.Core;
 using SqlFlow.Delivery.Engine.Dimensions;
+using SqlFlow.Delivery.Hosting;
 using SqlFlow.Delivery.Ledger;
 using SqlFlow.Delivery.Model;
 using SqlFlow.Delivery.Source;
@@ -45,7 +46,7 @@ internal static class DimensionViewMapper
         if (target is null)
         {
             throw new FlowValidationException(
-                $"{source}: views needs target.connection: the module's database as the pipelines reading the views name it (target: {{ connection: ${{env:OSDU_DB}} }}), so SQLFlow orders those pipelines after this flow, and a build checks it reaches the module's own database.");
+                $"{source}: views needs target.connection: the module's database as the pipelines reading the views name it (target: {{ connection: ${{env:{OsduModuleDatabase.CatalogConnectionVariable}}} }}), so SQLFlow orders those pipelines after this flow, and a build checks it reaches the module's own database.");
         }
 
         if (declared.Count > DimensionViewSpec.MaxViews)

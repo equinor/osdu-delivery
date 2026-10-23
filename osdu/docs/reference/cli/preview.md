@@ -79,7 +79,7 @@ sqlflow preview <flow.yaml> [--interface <name>] [--partition <id>] [--key <key>
 | `--partition <id>` | string | as a run settles it | The partition to preview a flow that works in partitions in, settled as `sqlflow check` settles it ([sqlflow check](check.md)). |
 | `--set name=value` | repeatable | the declared defaults | Values for the flow's own parameters. They fill the scope the record is read from, as a run's values do; a name set more than once reads the rows of each of its values. |
 | `--out <file.json>` | path | none | Also write the preview as JSON to this file, whole: one preview, or an array of one per interface, every rendered document kept whatever its size. The folder must exist (`--out names <path>, in a folder that does not exist.`); a refused folder is said before anything renders. The text answer names the file after the document it prints (`written to <path>`). |
-| `--db <conn-ref>` | string | `${env:SQLFLOW_CATALOG_DB}` | The module database when the `osdu` schema lives in the catalog's database; `SQLFLOW_OSDU_DB` names it otherwise. See [The osdu module database in sqlflow db](db.md). |
+| `--db <conn-ref>` | string | `${env:SQLFLOW_CATALOG_DB}` | The catalog database, which holds the `osdu` schema. See [The osdu module database in sqlflow db](db.md). |
 | `--json` | switch | off | Print the preview as JSON on stdout instead of the text form. |
 
 ## What it needs

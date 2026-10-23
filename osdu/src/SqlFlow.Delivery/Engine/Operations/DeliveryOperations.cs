@@ -6,6 +6,7 @@ using SqlFlow.Core;
 using SqlFlow.Core.Compute;
 using SqlFlow.Core.Runs;
 using SqlFlow.Delivery.Engine.Protocols;
+using SqlFlow.Delivery.Hosting;
 using SqlFlow.Delivery.Http;
 using SqlFlow.Delivery.Identity;
 using SqlFlow.Delivery.Ledger;
@@ -102,7 +103,7 @@ public abstract class DeliveryOperation : IComputeOperation
     }
 
     protected ILedger RequireLedger()
-        => _context.Ledger ?? throw new SqlFlowException($"The '{Name}' operation needs the ledger, which lives in the module's database this node was started without (Osdu:Database:Connection or SQLFLOW_OSDU_DB).");
+        => _context.Ledger ?? throw new SqlFlowException($"The '{Name}' operation needs the ledger, which lives in the module's database this node was started without. {OsduModuleDatabase.StartWithCatalogConnection}");
 
     protected static string Actor(ComputeTaskPayload payload)
         => payload.Argument("actor") ?? "unknown";

@@ -54,7 +54,7 @@ sqlflow auth [--scope storage|keyvault|arm|<uri>]
 
 | Path | Where it runs | Scope to check |
 | --- | --- | --- |
-| Resolving a `${keyvault:vault/secret}` reference anywhere OSDU Delivery reads one: a flow's `target.auth` secrets, its source connection, a central configuration value that is itself a reference, the control plane's `Osdu:Database:Connection`, and the telemetry header and connection references. | The process that resolves it: a node for a run, the control plane for what it runs while a person waits. | `keyvault` |
+| Resolving a `${keyvault:vault/secret}` reference anywhere OSDU Delivery reads one: a flow's `target.auth` secrets, its source connection, a central configuration value that is itself a reference, and the telemetry header and connection references. | The process that resolves it: a node for a run, the control plane for what it runs while a person waits. | `keyvault` |
 | Reading the payload files a record points at (`source.payloads`, an interface's `files` and `bulk`). | The process running the flow: a node, or the CLI for a local `sqlflow run`. | `storage` |
 | Writing and reading a run's work batches (`source.work`). | The process running the flow. | `storage` |
 | Writing a retrieval flow's output (`target.location`). | The process running the flow. | `storage` |
@@ -85,9 +85,9 @@ plane and worker apps, so the identity `sqlflow auth` checks inside those contai
   Azure credential to obtain the OSDU token, and OSDU's entitlements decide what that principal may write. To check that
   end, probe the flow's target from its page in the GUI, which the control plane runs under the flow's own credentials
   ([Delivery flow](../flow/delivery.md)).
-- **Database logins.** The ingestion database and the module database are reached with their connection strings
-  (`${env:OSDU_DATA_DB}`, `SQLFLOW_OSDU_DB`); `sqlflow auth` does not test them. `sqlflow db status` tests the module
-  database ([sqlflow db](db.md)).
+- **Database logins.** The ingestion database and the catalog database, which holds the module's `osdu` schema, are
+  reached with their connection strings (`${env:OSDU_DATA_DB}`, `SQLFLOW_CATALOG_DB`); `sqlflow auth` does not test
+  them. `sqlflow db status` tests the module database ([sqlflow db](db.md)).
 - **The control plane's credential.** That is `sqlflow login` and `sqlflow whoami`
   ([Control-plane verbs](control-plane.md)).
 

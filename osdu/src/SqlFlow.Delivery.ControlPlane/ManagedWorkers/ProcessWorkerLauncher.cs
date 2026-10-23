@@ -22,10 +22,9 @@ namespace SqlFlow.Delivery.ControlPlane.ManagedWorkers;
 /// credential this control plane issues for it (valid a little longer than the worker may live, and accepted by the
 /// node protocol alone). The worker inherits the control plane's environment, so it reaches the same databases and
 /// secrets, except what only the control plane may hold: its own settings (<c>ControlPlane__*</c>, the token signing
-/// key among them) and the catalog connection, which a node never opens. Its module database is this control plane's:
-/// <c>SQLFLOW_OSDU_DB</c> is set, in its environment only, to the connection the control plane opens the osdu schema
-/// on, whichever way the control plane was given it (<c>Osdu:Database:Connection</c>, <c>SQLFLOW_OSDU_DB</c>, or the
-/// catalog's own database when neither is set, as a local setup usually has it), because a node reads that variable
+/// key and the catalog connection reference among them). Its module database is this control plane's, the osdu schema
+/// in the catalog's database: <c>SQLFLOW_CATALOG_DB</c> is set, in its environment only, to the connection the control
+/// plane opens it on, whichever way the control plane was given that connection, because a node reads that variable
 /// alone and refuses to start without it. Its output is written to the control plane's log under its name.
 /// </summary>
 /// <remarks>
@@ -143,8 +142,7 @@ public sealed partial class ProcessWorkerLauncher : IWorkerLauncher, IDisposable
             start.ArgumentList.Add(launch.Pool);
         }
 
-        // What only the control plane may hold never reaches a worker: its settings, the token signing key among them,
-        // and the catalog connection a node never opens.
+        // What only the control plane may hold never reaches a worker: its settings, the token signing key among them.
         foreach (var key in start.Environment.Keys.Where(IsControlPlaneOnly).ToList())
         {
             start.Environment.Remove(key);
@@ -153,7 +151,7 @@ public sealed partial class ProcessWorkerLauncher : IWorkerLauncher, IDisposable
         // The credential and the module database travel in the worker's environment only: never on its command line,
         // never in a log line.
         start.Environment["SQLFLOW_TOKEN"] = credential.Token;
-        start.Environment[OsduModuleDatabase.ConnectionVariable] = moduleDatabase;
+        start.Environment[OsduModuleDatabase.CatalogConnectionVariable] = moduleDatabase;
         start.Environment[NodeIdentity.EnvironmentVariable] = launch.Name;
         start.Environment.Remove("SQLFLOW_URL");
         start.Environment.Remove("SQLFLOW_WORKER_POOL");
@@ -194,11 +192,11 @@ public sealed partial class ProcessWorkerLauncher : IWorkerLauncher, IDisposable
     }
 
     /// <summary>Whether an environment variable belongs to the control plane alone: its settings (the token signing key,
-    /// the bootstrap secret, the catalog connection reference) and the catalog connection, which a node never opens.</summary>
+    /// the bootstrap secret, the catalog connection reference). The catalog's connection itself is the module database's,
+    /// which a worker is given as the control plane resolved it.</summary>
     public static bool IsControlPlaneOnly(string key)
         => key.StartsWith("ControlPlane__", StringComparison.OrdinalIgnoreCase)
-            || key.StartsWith("ControlPlane:", StringComparison.OrdinalIgnoreCase)
-            || string.Equals(key, "SQLFLOW_CATALOG_DB", StringComparison.OrdinalIgnoreCase);
+            || key.StartsWith("ControlPlane:", StringComparison.OrdinalIgnoreCase);
 
     public Task StopAsync(string workerName, CancellationToken ct)
     {

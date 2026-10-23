@@ -9,11 +9,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- **A delivery's work location can be the deployment's storage, so one run spreads over the workers.** `source.work`
-  may open with a reference, `work: ${env:LANDING_URL}/.work/welllog/{logSource}`, which each run resolves with the
-  values the control plane supplies; the work batches are then where every worker reaches them, and a delivery of
-  1,000 records or more fans out over member runs the autoscaler brings up nodes for. A flow whose work stays in
-  `../.work` keeps running on one node ([delivery flow, source](osdu/docs/reference/flow/delivery.md#source)).
+- **A delivery's work location may name the deployment's storage.** `source.work` may open with a reference,
+  `work: ${env:LANDING_URL}/.work/welllog/{logSource}`, which each run resolves with the values the control plane
+  supplies ([delivery flow, source](osdu/docs/reference/flow/delivery.md#source)).
 
 - **The workbench opens on a home page that asks the assistant.** Home greets you on the brand's navy with a question
   box: a question typed there, or one of the delivery questions it offers, opens the Assistant asking it. Under the
@@ -144,13 +142,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   assertion, dimension, inventory or retrieval flow takes `parallelism.concurrency` alone. A document that still writes
   one of them under `reliability` is refused, naming where it goes: move them in every flow when you upgrade
   ([parallelism](osdu/docs/reference/flow/delivery.md#parallelism)).
-- **A large delivery spreads across the fleet by default.** A submission of 1,000 records or more fans out over up to
-  eight member runs, one per work batch beyond the coordinating run's own, so an autoscaled pool brings up nodes for it;
-  `parallelism.fanOut: 0` keeps a flow on one run. It needs a `source.work` every node reaches: put it on storage (a
-  storage URI) to fan out, since a relative folder is in each node's own copy of the repository and keeps the delivery
-  on one run. A flow without `source.record.primaryKey` is no longer refused for
-  fanning out: its sending fans out and its planning stays on one run. `reliability.rateLimitRps` now holds for the
-  whole fan-out, and each run's trace says why it did not fan out ([many nodes](osdu/docs/reference/concepts/submissions.md#many-nodes)).
+- **A large delivery spreads across the fleet by default.** A submission of 1,000 records or more is split into shares
+  of its key slices, and the flow is queued again once per share, up to eight runs, each delivering its share from
+  whichever worker takes it, so an autoscaled pool brings up nodes for it and the flows need no change:
+  `source.work` stays a folder of each worker's own. `parallelism.fanOut: 0` keeps a flow on one run, and a flow without
+  `source.record.primaryKey`, which the slices are cut on, runs on one run as before. `reliability.rateLimitRps` now holds
+  for the whole fan-out, and each run's trace says why it did not fan out ([many nodes](osdu/docs/reference/concepts/submissions.md#many-nodes)).
 
 - **`--set` repeated for one name gives it a list.** `--set logSource=A --set logSource=B` used to keep `B`; it now gives
   `logSource` both values, which only a delivery flow's scope parameter takes, and any other parameter refuses. Give a name
@@ -282,6 +279,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Removed
 
+- **The module's second database connection, `SQLFLOW_OSDU_DB`.** The `osdu` schema lives in the catalog's database and
+  every tier reaches it through `SQLFLOW_CATALOG_DB`, worker nodes included: give each node `SQLFLOW_CATALOG_DB` in place
+  of `SQLFLOW_OSDU_DB`. `SQLFLOW_OSDU_DB`, `Osdu:Database:Connection`, the Terraform's `osdu_database_name` and the Bicep's
+  `osduDatabaseName` are refused by name, and an estate that kept the `osdu` schema in a database of its own brings it
+  into the catalog's database before upgrading ([where the osdu schema lives](osdu/docs/reference/cli/db.md#where-it-lives)).
 - **The library of saved templates.** The Templates page's Saved and Import file tabs, **Save template** and **Delete**,
   `POST` and `DELETE /api/v1/delivery/templates`, and `sqlflow template list`, `show` and `delete` are gone, and the
   upgrade's migration drops `[osdu].[Template]` with every version saved in it. Make each version an estate's documents
@@ -295,9 +297,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   filter matched, not just those the issue keeps blocked; the removal now carries the whole filter, and refuses one that
   matches more than 25,000 records when it runs as well as when it is asked
   ([Removing records from OSDU](osdu/docs/reference/concepts/removal-and-reversal.md#removing-records-from-osdu)).
-- **A delivery never waits for ever on member runs no node starts.** A coordinating run whose members stay queued, on a
-  pool with no place free, stops them and does their part itself: its sending at once, its planning after three minutes
-  ([many nodes](osdu/docs/reference/concepts/submissions.md#many-nodes)).
+- **A delivery never waits for ever on runs no node starts, and survives one that fails.** A coordinating run whose
+  slice runs stay queued for three minutes on a pool with no place free stops them and delivers their shares itself, as
+  it does the share of a slice run that failed ([many nodes](osdu/docs/reference/concepts/submissions.md#many-nodes)).
+- **A work batch file that is gone no longer fails the run.** A drain that cannot find a batch file, or finds a line of it
+  that is no work item, sends the rest and leaves those records to be planned again by the flow's next run
+  ([work batches](osdu/docs/reference/concepts/submissions.md#work-batches)).
 - **A submission planned again no longer writes over the batch files its queued records read from.** A record retried
   after its submission was planned again could read another record's document from a rewritten batch file; a new plan
   now writes its batches after the old ones, and a record whose line is not its own is held and planned again from its

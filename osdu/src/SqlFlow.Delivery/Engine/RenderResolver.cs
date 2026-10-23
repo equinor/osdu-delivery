@@ -2,6 +2,7 @@ using System.Globalization;
 using SqlFlow.Core;
 using SqlFlow.Core.Secrets;
 using SqlFlow.Delivery.Documents;
+using SqlFlow.Delivery.Hosting;
 using SqlFlow.Delivery.Model;
 using SqlFlow.Delivery.Rendering;
 using SqlFlow.Delivery.Snapshots;
@@ -231,7 +232,7 @@ public sealed class RenderResolver
         if (_cache is null)
         {
             throw new FlowValidationException(
-                $"{where}: mapping {mapping.Reference} reads the cache of partition '{scope}', and caches live in the module's database, which this host was started without. Start it with the module's connection (Osdu:Database:Connection or SQLFLOW_OSDU_DB), or with --db when the catalog's database holds the osdu schema.");
+                $"{where}: mapping {mapping.Reference} reads the cache of partition '{scope}', and caches live in the module's database, which this host was started without. {OsduModuleDatabase.StartWithCatalogConnection}");
         }
 
         var version = flow.Render.CacheVersion;

@@ -139,8 +139,8 @@ sqlflow run reference/osdu-reference-00-cache.yaml --set 'partition=*'   # dev, 
 ```
 
 A refresh sweeps every type in full and merges the capture into the partition's cache; the first refresh writes the
-cache's first version. On a workstation, `sqlflow` needs the module's database: `SQLFLOW_OSDU_DB`, else the catalog's
-(`--db`, by default `${env:SQLFLOW_CATALOG_DB}`). In the GUI, **Refresh now** on the Cache page (a **Refresh** menu
+cache's first version. On a workstation, `sqlflow` needs the module's database, the catalog's (`--db`, by default
+`${env:SQLFLOW_CATALOG_DB}`). In the GUI, **Refresh now** on the Cache page (a **Refresh** menu
 naming the flows, when several fill the partition) refreshes the partition picked in the title bar, and the flow's
 schedule refreshes both partitions every night.
 

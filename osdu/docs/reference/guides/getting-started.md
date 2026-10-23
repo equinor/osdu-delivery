@@ -119,7 +119,7 @@ OSDU_LEGAL_TAG=dev-welldb-public
 ```
 
 `SQLFLOW_CATALOG_DB` is the database every OSDU verb reads (templates, caches and the ledger live in its `osdu`
-schema); `--db <reference>` on a command overrides it, and `SQLFLOW_OSDU_DB` gives the module a database of its own.
+schema); `--db <reference>` on a command overrides it.
 The last three are what the four parameters every OSDU record needs default to when a flow supplies no value:
 `aclOwner`, `aclViewer` and `legalTag` take `${env:OSDU_ACL_OWNER}`, `${env:OSDU_ACL_VIEWER}` and `${env:OSDU_LEGAL_TAG}`,
 and `dataPartition` takes the partition the run delivers to.
@@ -570,8 +570,8 @@ On the control plane, the OSDU values this guide put in `.sqlflow/env` belong to
 `dev` and gives them as `Osdu:Partitions:dev:Properties:<NAME>` (the client secret as a `${keyvault:...}` reference), so
 every run bound to `dev` carries them ([configured partitions](../concepts/partitions.md#configured-partitions)). The
 control plane's start-up is not done (`/health/startup`) until at least one partition is registered. A node that runs a delivery needs the data
-database (`OSDU_DATA_DB`) in its own environment, and the module's database through `SQLFLOW_OSDU_DB`, since a node opens
-no catalog connection ([the node](../cli/worker.md)).
+database (`OSDU_DATA_DB`) in its own environment, and the catalog's database, which holds the `osdu` schema, through
+`SQLFLOW_CATALOG_DB` ([the node](../cli/worker.md)).
 
 ## What goes wrong
 
@@ -579,7 +579,7 @@ no catalog connection ([the node](../cli/worker.md)).
 | --- | --- | --- |
 | `mapping Wellbore@1.0.0 cannot render: no template folder on the path of ... holds template osdu:wks:master-data--Wellbore:1.3.0 version ...` | No template folder on the mapping's path holds that version. | Write it into the folder (step 4), and name the version it prints in the mapping, or leave the version out. |
 | `Mapping 'Wellbore@1.0.0' was not found under '...mappings'. Expected one of: Wellbore@1.0.0.yaml, ...` | The mapping file is not in the nearest `mappings/` folder, or is named differently. | Move or rename it, or set `render.mappings`. |
-| `... caches live in the module's database, which this host was started without.` | No module database: no `SQLFLOW_CATALOG_DB`, `--db` or `SQLFLOW_OSDU_DB`. | Set one (step 1). |
+| `... caches live in the module's database, which this host was started without.` | No module database: no `SQLFLOW_CATALOG_DB` and no `--db`. | Set one (step 1). |
 | `Environment variable 'OSDU_ACL_OWNER' is not set.` | A reference the flow or a default parameter names has no value here. | Add it to `.sqlflow/env` or the environment; on a control plane, to the partition's values in its configuration (`Osdu:Partitions:dev:Properties:OSDU_ACL_OWNER`) or to the central configuration (`sqlflow config set`). |
 | `source.record.key is [...] but mapping '...' keys its records by [...]` | The flow and the mapping name different key columns. | Name the same columns, in the same order. |
 | `... the source database does not allow snapshot isolation ...` | `OsduData` does not allow snapshot isolation. | Run the `ALTER DATABASE` above, or set `source.incremental.isolation: readCommitted`. |

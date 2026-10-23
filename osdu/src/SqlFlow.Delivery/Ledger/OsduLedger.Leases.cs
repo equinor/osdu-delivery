@@ -34,8 +34,11 @@ public sealed partial class OsduLedger
 
     public async Task<ClaimedWorkBatch?> ClaimWorkBatchAsync(
         Guid flowId, Guid? submissionId, string owner, TimeSpan lease, DateTime nowUtc, Guid? runId = null, WaitRules? waits = null, int attempts = 0,
-        CancellationToken ct = default)
+        BatchRange? batches = null, CancellationToken ct = default)
     {
+        var scoped = batches is not null;
+        var first = batches?.First ?? 0;
+        var beyond = batches?.Beyond ?? 0;
         var token = NewToken(owner);
         ArgumentOutOfRangeException.ThrowIfLessThanOrEqual(lease, TimeSpan.Zero);
 
@@ -55,7 +58,8 @@ public sealed partial class OsduLedger
         {
             var candidate = await ReadAsync(
                 db => db.DeliveryWorkBatches
-                    .Where(b => b.PartitionId == partition && b.FlowId == flowId && (submissionId == null || b.SubmissionId == submissionId) && b.Status == queued)
+                    .Where(b => b.PartitionId == partition && b.FlowId == flowId && (submissionId == null || b.SubmissionId == submissionId) && b.Status == queued
+                        && (!scoped || (b.Index >= first && b.Index < beyond)))
                     .OrderBy(b => b.CreatedUtc)
                     .ThenBy(b => b.Index)
                     .Select(b => new { b.SubmissionId, b.Index })
@@ -179,8 +183,11 @@ public sealed partial class OsduLedger
 
     public async Task<ClaimedRecords> ClaimAsync(
         Guid flowId, Guid? submissionId, string owner, int max, TimeSpan lease, DateTime nowUtc, Guid? runId = null, WaitRules? waits = null, int attempts = 0,
-        CancellationToken ct = default)
+        BatchRange? batches = null, CancellationToken ct = default)
     {
+        var scoped = batches is not null;
+        var first = batches?.First ?? 0;
+        var beyond = batches?.Beyond ?? 0;
         var token = NewToken(owner);
         ArgumentOutOfRangeException.ThrowIfLessThanOrEqual(lease, TimeSpan.Zero);
 
@@ -199,6 +206,7 @@ public sealed partial class OsduLedger
                 .Where(r => r.PartitionId == partition
                     && r.FlowId == flowId
                     && (submissionId == null || r.LastSubmissionId == submissionId)
+                    && (!scoped || (r.WorkBatch >= first && r.WorkBatch < beyond))
                     && r.Status == pending
                     && r.LeaseOwner == null
                     && (r.NextAttemptUtc == null || r.NextAttemptUtc <= nowUtc))

@@ -2,7 +2,7 @@
 id: delivery-wiki-0025-parallelism-and-default-fan-out
 title: "Decision 0025: What runs at once is a flow's parallelism, and a delivery fans out by default"
 type: decision
-summary: "Why parallelism left reliability, why a large delivery fans out by default, and how its coordinating run never waits on members no node starts."
+summary: "Why parallelism left reliability, why a large delivery fans out by default into slice runs that each deliver their share, and what was rejected."
 keywords:
   - parallelism
   - fan-out by default
@@ -12,6 +12,7 @@ keywords:
   - members no node starts
   - rate limit across a fan-out
   - batch file written again
+  - slice runs
 referenceRefs:
   - delivery-flow-delivery
   - delivery-concept-submissions
@@ -24,6 +25,10 @@ sourceRefs:
   - osdu/src/SqlFlow.Delivery/Documents/DeliveryDocumentLoader.cs
   - osdu/src/SqlFlow.Delivery/Documents/YamlModels.cs
   - osdu/src/SqlFlow.Delivery/Engine/FlowRuntime.cs
+  - osdu/src/SqlFlow.Delivery/Engine/FlowRuntime.FanOut.cs
+  - osdu/src/SqlFlow.Delivery/Ledger/OsduLedger.Leases.cs
+  - sqlflow/src/SqlFlow.Orchestration/IRunFanOut.cs
+  - sqlflow/src/SqlFlow.SqlServer/Export/ExportSegmentPlanner.cs
   - osdu/src/SqlFlow.Delivery/Engine/DeliveryRunPayload.cs
   - osdu/src/SqlFlow.Delivery/Engine/DeliveryExecutor.cs
   - osdu/src/SqlFlow.Delivery/Engine/TargetConnection.cs
@@ -75,43 +80,46 @@ balancing, and filed under reliability it went unnoticed.
 - **A delivery fans out by default, up to eight members.** The human chose the default over keeping fan-out opt-in: the
   pool and its autoscaler exist to spread work, and a delivery that never asks for it never scales. Eight was proposed
   and accepted. `fanOutMinRecords` (1,000) keeps a small delivery on one run, and 0 turns fan-out off.
-- **A delivery fans out only over a work location every node reaches.** Every member reads and writes the
-  submission's work batches on the node that runs it. A relative `source.work` resolves inside the copy of the
-  repository the node runs the flow from, which is a disk of its own on every worker, so batches one node wrote are
-  missing on the others; their records would be held as unreadable and planned again by the next run, which fans out
-  again. Fan-out therefore needs a storage URI or an absolute path (a deployment's shared mount), and a relative one keeps
-  the delivery on one run, its trace saying so. This was found when the human asked whether the estate's flows would
-  scale out unchanged: they write their work to `../.work`, so they do not until it moves to storage.
+- **A fan-out is the flow queued again once per share, each run delivering its share.** The fan-out first split a
+  delivery into two stages of member runs: intake members planned key slices into work batches, and drain members claimed
+  whatever batch came next and sent it. A batch file is written to `source.work`, which is a folder next to the flow file,
+  in the copy of the repository each node runs the flow from: a disk of its own on every worker. A drain member on one
+  node therefore asked for batch files another node had written, and a delivery spread over three workers kept to one.
+  Moving the work to storage every node reaches was built first (relative work placed under `LANDING_URL`), and the human
+  rejected it as the wrong design: one execution is split into sub-executions of the same pipeline, each with its filter,
+  and nothing passes between them. Each slice run now plans its slices, sends their batches from its own node, and keeps
+  at them until its share is settled; the worker claims only the batches and records of its share (a batch range, which
+  the per-slice batch numbering already made one range) and reads them back from the folder it wrote them to. The fan-out
+  itself is SQLFlow's run fan-out (`IRunFanOut`), which queues runs of the same pipeline with their parameters and
+  reports their results, as before. SQLFlow's export splits a table into key or date segments
+  (`sqlflow/src/SqlFlow.SqlServer/Export/ExportSegmentPlanner.cs`), and was looked at for the cut: it runs its segments as
+  threads of one run on one node, its key buckets are of equal width over the key values rather than of equal count, and
+  it is internal to SQLFlow's SQL Server project, so the delivery keeps its own cut on the candidate rows. A flow without
+  a primary key no longer fans out its sending, since that was the drain members; it runs on one run.
 - **The work location may name the deployment's storage.** `source.work` may open with a reference,
-  `${env:LANDING_URL}/.work/welllog/{logSource}`, which the runtime resolves as the run opens by the rule SQLFlow
-  already resolves a file flow's location with (`SourceLocations`, now public for one location): the storage account
-  every deployment creates or adopts, hands every run as `LANDING_URL` and grants its workers. A flow then moves
-  between deployments unchanged, where a storage URI written in it would name one environment's account. Rebasing
-  relative work folders onto a root the deployment configures was the other way, and would have needed a setting of
-  its own; the reference uses the one every deployment already has. A reference anywhere but at the start of the
-  location is refused, since the rest is a path under it; a payload root still refuses one.
-- **Members are bounded by the work.** The drain enqueued exactly `fanOut` members whatever the submission held, so a
-  fan-out of 64 over ten batches started 64 runs and most found nothing. It now enqueues one per queued work batch beyond
-  the one the coordinating run takes, up to `fanOut`, and decides on the records still to send rather than on what the
-  last plan counted, which a submission planned again undercounts. The intake was already bounded by its slices. Planning
-  fans out only when the record table names its identity primary key, the only thing it cuts slices on; without one the
-  sending still fans out, where loading the flow used to refuse a fan-out without one.
-- **A coordinating run never waits for ever on members no node starts.** A coordinating run holds a slot while it waits.
-  With fan-out on by default every large delivery waits on members, and on a pool that cannot grow (the development
-  host's built-in node, a pool of a fixed size, an autoscaled pool at its ceiling) every slot can hold a coordinating run
-  whose members queue behind it. The drain stops the members still queued as soon as its own
-  drain has left nothing to claim and none is running; they would find nothing. The intake, whose shares are dealt out
-  in advance, stops them once none has started or ended for three minutes, long enough for an autoscaler to bring up a
-  node, and plans their shares itself. Stopping single members, which would let the coordinating run take over a queued
-  share at once, was not done: SQLFlow cancels a fan-out by group and gives a run executed again its members back by
-  operation (`sqlflow/src/SqlFlow.Catalog/RunQueueStore.cs`), so it would have changed SQLFlow's node protocol, dispatcher
-  and catalog, where the grace keeps the change in the module.
-- **Intake members are enqueued before the coordinating run plans its own share,** where they used to be enqueued after
-  it, so the nodes plan beside it.
+  `${env:LANDING_URL}/.work/welllog/{logSource}`, which the runtime resolves as the run opens by the rule SQLFlow already
+  resolves a file flow's location with (`SourceLocations`, now public for one location). It was added for the two-stage
+  fan-out and stays as a work location like any other; a fan-out no longer needs it. A reference anywhere but at the
+  start of the location is refused, since the rest is a path under it; a payload root still refuses one.
+- **Slice runs are bounded by the work.** A read is cut into about a work batch of records a slice, at most 1,024, and the
+  slices are dealt into at most `fanOut` shares beside the coordinating run's own, so a small submission queues few runs
+  however high `fanOut` is. Fanning out needs the record table's identity primary key, the only thing slices are cut on.
+- **A coordinating run never waits for ever on slice runs no node starts, and takes over the share of one that failed.**
+  A coordinating run holds a slot while it waits, and on a pool that cannot grow (the development host's built-in node, a
+  pool of a fixed size, an autoscaled pool at its ceiling) every slot can hold a coordinating run whose slice runs queue
+  behind it. Once none is running and none has started or ended for three minutes, long enough for an autoscaler to bring
+  up a node, it stops the ones still queued and delivers their shares itself, as it does the share of a slice run that
+  failed. A share planned again is safe: what its run sent is passed over as unchanged; what it queued and did not send
+  has its documents on that run's node, is found missing, and is planned again by the flow's next run rather than failing
+  this one. Stopping single runs, which would let the coordinating run take over a queued share at once, was not done:
+  SQLFlow cancels a fan-out by group and gives a run executed again its members back by operation
+  (`sqlflow/src/SqlFlow.Catalog/RunQueueStore.cs`), so it would have changed SQLFlow's node protocol, dispatcher and
+  catalog, where the grace keeps the change in the module.
+- **Slice runs are queued before the coordinating run delivers its own share,** so the nodes deliver beside it.
 - **A rate limit holds for the fan-out as a whole.** Each run built its own limiter from `reliability.rateLimitRps`, so a
   fan-out sent the declared rate once per run; on by default, a flow that set a rate to spare a service would have sent
-  nine times it. Each run now sends under its share, the rate divided between the coordinating run and its members; the
-  member's payload carries the share (`rateShare`), and no state is shared between the runs.
+  nine times it. Each run now sends under its share, the rate divided between the coordinating run and its slice runs;
+  a slice run's payload carries the share (`rateShare`), and no state is shared between the runs.
 - **A share planned again never writes over a batch file a queued record reads from.** A plan of a share started its
   batch numbers at the share's base, and the records it passed over as already queued kept their references into files
   it then wrote again; a record retried by its reference could read another record's line. This was found while checking

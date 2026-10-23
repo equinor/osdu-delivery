@@ -21,7 +21,7 @@ public class DimensionViewDocumentTests
         source:
           endpoint: ${env:OSDU_URL}
         target:
-          connection: ${env:WELLDB_OSDU_DB}
+          connection: ${env:SQLFLOW_CATALOG_DB}
         dimensions:
           - name: LogCurve
             kind: "osdu:wks:work-product-component--WellLog:*"
@@ -111,7 +111,7 @@ public class DimensionViewDocumentTests
         Assert.Equal("Curve", view.Name);
         Assert.Equal("v_dim_Curve", view.ViewName);
         Assert.Equal("LogCurve", view.From);
-        Assert.Equal(["${env:WELLDB_OSDU_DB}"], new[] { flow.Target!.Connection });
+        Assert.Equal(["${env:SQLFLOW_CATALOG_DB}"], new[] { flow.Target!.Connection });
         Assert.Equal(
             [("WellLogID", "WellLog", "WellLog"), ("WellLog.SamplingDomainTypeID", "Domain", "SamplingDomain"), ("CurveUnitID", "Unit", "Unit"), ("WellLog.WellboreID", "Wellbore", "Wellbore")],
             view.Joins.Select(j => (j.On, j.To, j.As)));
@@ -166,14 +166,14 @@ public class DimensionViewDocumentTests
 
         var objects = DimensionLineage.Describe(flow).Objects;
 
-        Assert.All(objects, o => Assert.Equal((LineageRelation.Writes, "${env:WELLDB_OSDU_DB}", "osdu"), (o.Relation, o.ConnectionReference, o.Schema)));
+        Assert.All(objects, o => Assert.Equal((LineageRelation.Writes, "${env:SQLFLOW_CATALOG_DB}", "osdu"), (o.Relation, o.ConnectionReference, o.Schema)));
         Assert.Equal(
             ["dim_LogCurve", "dim_WellLog", "dim_Unit", "dim_Domain", "dim_Wellbore", "dim_WellboreSource", "v_dim_Curve"],
             objects.Select(o => o.Name));
         Assert.Equal(LineageNodeKind.View, objects[^1].Kind);
 
         // Without a target, a flow declares no table: nothing tells which connection a reader would name.
-        var plain = Parse(Head.ReplaceLineEndings("\n").Replace("target:\n  connection: ${env:WELLDB_OSDU_DB}\n", string.Empty, StringComparison.Ordinal));
+        var plain = Parse(Head.ReplaceLineEndings("\n").Replace("target:\n  connection: ${env:SQLFLOW_CATALOG_DB}\n", string.Empty, StringComparison.Ordinal));
         Assert.Empty(DimensionLineage.Describe(plain).Objects);
     }
 
@@ -191,7 +191,7 @@ public class DimensionViewDocumentTests
 
     [Fact]
     public void The_target_connection_is_a_credential_reference_of_the_flow()
-        => Assert.Contains(new KeyValuePair<string, string>("target.connection", "${env:WELLDB_OSDU_DB}"), Parse(Head + Curve).CredentialReferences());
+        => Assert.Contains(new KeyValuePair<string, string>("target.connection", "${env:SQLFLOW_CATALOG_DB}"), Parse(Head + Curve).CredentialReferences());
 
     [Fact]
     public void A_view_keeps_the_rows_its_where_holds_for_in_its_statement_and_in_every_statement_its_check_reads()
@@ -227,13 +227,13 @@ public class DimensionViewDocumentTests
     [InlineData("connection: 'Server=db;Database=osdu;User ID=x;Password=hunter2'", "literal password")]
     [InlineData("connection: ''", "target.connection")]
     public void A_target_connection_holds_references_only(string connection, string reason)
-        => Assert.Contains(reason, Refused(Head.Replace("connection: ${env:WELLDB_OSDU_DB}", connection, StringComparison.Ordinal) + Curve), StringComparison.Ordinal);
+        => Assert.Contains(reason, Refused(Head.Replace("connection: ${env:SQLFLOW_CATALOG_DB}", connection, StringComparison.Ordinal) + Curve), StringComparison.Ordinal);
 
     [Fact]
     public void Views_need_the_target_connection()
         => Assert.Contains(
             "views needs target.connection",
-            Refused(Head.ReplaceLineEndings("\n").Replace("target:\n  connection: ${env:WELLDB_OSDU_DB}\n", string.Empty, StringComparison.Ordinal) + Curve),
+            Refused(Head.ReplaceLineEndings("\n").Replace("target:\n  connection: ${env:SQLFLOW_CATALOG_DB}\n", string.Empty, StringComparison.Ordinal) + Curve),
             StringComparison.Ordinal);
 
     [Theory]

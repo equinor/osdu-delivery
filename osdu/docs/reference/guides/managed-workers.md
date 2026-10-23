@@ -71,7 +71,7 @@ What each part does:
   scheduler of a job component at its name and `schedulerPort`, reachable only by the application's own components,
   so it needs no credential.
 - **`worker`**: the job component. Nothing runs until the control plane starts a job. Its variables and Key Vault
-  secrets are every worker's: the node token, `SQLFLOW_OSDU_DB`, the flows' connections,
+  secrets are every worker's: the node token, `SQLFLOW_CATALOG_DB`, the flows' connections,
   `SQLFLOW_URL=http://controlplane:8080`.
 - **Each job** the control plane starts carries only the worker's name (its `jobId` and `SQLFLOW_NODE_NAME`), its pool
   (`SQLFLOW_WORKER_POOL`), its drain window, its time limit, `backoffLimit: 0`, and the pool's CPU and memory when
@@ -112,10 +112,9 @@ launcher builds the worker host and starts the control plane API-only with the `
 worker is a `SqlFlow.Delivery.Worker.Host` process, named `worker-<pool>-<id>`, polling `http://localhost:5000`. It
 inherits the control plane's environment (the same `.sqlflow\env`, so the same databases and Azure sign-in), and gets
 a credential in its environment only, issued by the control plane for it: the `node` scope only, refused everywhere
-but the node protocol. Its module database is the control plane's: `SQLFLOW_OSDU_DB` is set in its environment to the
-connection the control plane opens the `osdu` schema on, whichever way the control plane was given it, so a setup that
-keeps the `osdu` schema in the catalog's database and sets no `SQLFLOW_OSDU_DB` still starts its workers (a worker
-never gets the catalog connection, and reads that variable alone). Its output appears in the control plane's window
+but the node protocol. Its module database is the control plane's, the catalog's: `SQLFLOW_CATALOG_DB` is set in its
+environment to the connection the control plane opens the catalog and the `osdu` schema on, whichever way the control
+plane was given it (a worker reads that variable alone). Its output appears in the control plane's window
 under its name, and it loads its own copy of the current cache version when it starts. `dev.bat api` does the same without the GUI. `dev.bat single` (and F5)
 starts no workers: the control plane runs runs on its own node, and the Nodes page says that nothing there starts a
 worker. `dev.bat managed` still names the default.
@@ -157,7 +156,7 @@ tooltip says why:
   does not accept; its answer follows.
 - **"it ended ... before its first poll"**: the job ran and exited without ever polling. The worker's own log says
   why; the usual causes are a missing `SQLFLOW_TOKEN` secret ("no node credential"), a token without the `node` scope,
-  or a missing `SQLFLOW_OSDU_DB` ("the worker refuses to start").
+  or a missing `SQLFLOW_CATALOG_DB` ("the worker refuses to start").
 - **"it ended ... after its first poll, unasked"**: the worker started, then died within ten minutes (out of memory
   while warming up, a module that failed after start). Its job's log says why.
 - **"the platform never listed it"**: a start answered with an error that might have created the job did not (three lists

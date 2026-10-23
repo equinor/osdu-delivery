@@ -284,8 +284,7 @@ OK  'welldb-welllog-03-ddms-delivery' is valid (delivery: OsduData.silver.WellLo
 ## 5. Check, preview, deliver
 
 Check the flow against the template, the cache and the route before anything is sent. These commands read the templates
-and the cache from the module's database: the one `--db` names, else `SQLFLOW_CATALOG_DB`, or `SQLFLOW_OSDU_DB` when the
-module has a database of its own:
+and the cache from the module's database, the catalog's: the one `--db` names, else `SQLFLOW_CATALOG_DB`:
 
 ```bash
 sqlflow check flows/welldb-welllog-03-ddms-delivery.yaml --partition dev

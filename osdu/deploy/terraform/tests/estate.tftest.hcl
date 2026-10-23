@@ -144,13 +144,8 @@ run "the_core_estate_has_no_assistant_and_its_configuration_names_every_value" {
   }
 
   assert {
-    condition     = length(azurerm_mssql_database.osdu) == 0 && length(azurerm_mssql_database.catalog) == 1
-    error_message = "The osdu schema lives in the catalog database by default."
-  }
-
-  assert {
-    condition     = strcontains(azurerm_key_vault_secret.osdu_db.value, "Initial Catalog=OsduDelivery;")
-    error_message = "The module's connection names the metadata database when the schema lives there."
+    condition     = length(azurerm_mssql_database.catalog) == 1 && strcontains(azurerm_key_vault_secret.catalog_db.value, "Initial Catalog=OsduDelivery;")
+    error_message = "The osdu schema lives in the catalog database, reached through the catalog's one connection."
   }
 
   assert {
@@ -165,7 +160,6 @@ run "the_core_estate_has_no_assistant_and_its_configuration_names_every_value" {
   assert {
     condition = alltrue([for value in [
       azurerm_key_vault_secret.catalog_db.value,
-      azurerm_key_vault_secret.osdu_db.value,
       azurerm_key_vault_secret.connection["OSDU_DATA_DB"].value,
     ] : strcontains(value, "Authentication=Active Directory Default;") && !strcontains(value, "Password=") && !strcontains(value, "User ID=")])
     error_message = "By default the apps sign in as their managed identities, with no credential in any connection."
@@ -186,8 +180,8 @@ run "the_core_estate_has_no_assistant_and_its_configuration_names_every_value" {
   }
 
   assert {
-    condition     = local.worker_secret_env == [{ name = "SQLFLOW_OSDU_DB", secret_name = "osdu-delivery-osdu-db" }]
-    error_message = "A node carries its identity and the ledger's connection alone: everything its runs read is handed to each run."
+    condition     = local.worker_secret_env == [{ name = "SQLFLOW_CATALOG_DB", secret_name = "osdu-delivery-catalog-db" }]
+    error_message = "A node carries its identity and the catalog's connection, which holds the ledger, alone: everything its runs read is handed to each run."
   }
 
   assert {
@@ -425,7 +419,6 @@ run "an_existing_managed_instance_with_its_databases_signs_in_with_entra" {
   assert {
     condition = alltrue([for value in [
       azurerm_key_vault_secret.catalog_db.value,
-      azurerm_key_vault_secret.osdu_db.value,
       azurerm_key_vault_secret.connection["OSDU_DATA_DB"].value,
     ] : strcontains(value, "Authentication=Active Directory Default;") && !strcontains(value, "Password=") && !strcontains(value, "User ID=")])
     error_message = "Under Entra authentication no connection carries a credential."
@@ -612,25 +605,14 @@ run "password_authentication_without_a_password_is_refused" {
   expect_failures = [azurerm_key_vault_secret.catalog_db]
 }
 
-run "a_separate_osdu_database_is_created_and_wired" {
-  command = apply
+run "a_separate_osdu_database_is_refused" {
+  command = plan
 
   variables {
     osdu_database_name = "OsduLedger"
   }
 
-  assert {
-    condition     = length(azurerm_mssql_database.osdu) == 1 && strcontains(azurerm_key_vault_secret.osdu_db.value, "Initial Catalog=OsduLedger;")
-    error_message = "A named osdu database is created and its connection names it."
-  }
-
-  assert {
-    condition = (
-      contains(one([for d in local.sql_setup_databases : d.statements if d.name == "OsduLedger"]), "GRANT SELECT, INSERT, UPDATE, DELETE, EXECUTE, ALTER, REFERENCES ON SCHEMA::osdu TO [osdu-delivery-worker-id];") &&
-      !contains(one([for d in local.sql_setup_databases : d.statements if d.name == "OsduDelivery"]), "IF SCHEMA_ID(N'osdu') IS NULL EXEC(N'CREATE SCHEMA [osdu];');")
-    )
-    error_message = "The worker reaches the osdu schema where it lives, and nothing of the catalog."
-  }
+  expect_failures = [var.osdu_database_name]
 }
 
 run "an_externally_managed_registration_is_referenced_not_created" {
@@ -885,7 +867,7 @@ run "a_github_app_reads_the_estates_github_repositories_that_name_no_token" {
   }
 
   assert {
-    condition     = local.worker_secret_env == [{ name = "SQLFLOW_OSDU_DB", secret_name = "osdu-delivery-osdu-db" }]
+    condition     = local.worker_secret_env == [{ name = "SQLFLOW_CATALOG_DB", secret_name = "osdu-delivery-catalog-db" }]
     error_message = "A worker needs nothing new for the App: the credential reference reaches it with each run."
   }
 }

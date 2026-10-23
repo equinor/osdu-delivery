@@ -6,7 +6,7 @@
     "_generator": {
       "name": "bicep",
       "version": "0.44.1.10279",
-      "templateHash": "9354237782121804585"
+      "templateHash": "9350317425932088938"
     }
   },
   "definitions": {
@@ -98,7 +98,7 @@
       },
       "defaultValue": [],
       "metadata": {
-        "description": "Environment variables a node itself reads from the vault, beside its node token: SQLFLOW_OSDU_DB, the ledger's connection, which a node opens and its runs do not carry. Everything a run reads besides is handed to the run by the control plane."
+        "description": "Environment variables a node itself reads from the vault, beside its node token: SQLFLOW_CATALOG_DB, the catalog's connection, which the node reads and writes the ledger in the `osdu` schema through. Everything a run reads besides is handed to the run by the control plane."
       }
     },
     "acrName": {

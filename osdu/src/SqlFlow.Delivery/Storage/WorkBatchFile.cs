@@ -168,19 +168,23 @@ public static class WorkBatchFile
         return false;
     }
 
-    /// <summary>Streams every item of a batch file in order, with each line's reference.</summary>
+    /// <summary>
+    /// Streams every item of a batch file in order, with each line's reference. A batch that is not there to read (the file
+    /// is gone, or a line of it is not a work item) is <see cref="WorkDocumentMissingException"/> once the items before it
+    /// are read, which no retry mends; any other failure (the store did not answer) is thrown as it came.
+    /// </summary>
     public static async IAsyncEnumerable<(WorkItem Item, DocumentRef Reference)> ReadAllAsync(
         FileStoreRegistry stores, string workRoot, Guid submissionId, int batch, [EnumeratorCancellation] CancellationToken ct = default)
     {
         ArgumentNullException.ThrowIfNull(stores);
         var path = PathFor(workRoot, submissionId, batch);
-        await using var stream = await stores.For(path).OpenReadAsync(new FileRef { Path = path, Name = Path.GetFileName(path) }, ct).ConfigureAwait(false);
+        await using var stream = await OpenBatchAsync(stores, path, ct).ConfigureAwait(false);
         var buffer = new byte[1 << 16];
         var line = new MemoryStream();
         long offset = 0;
         long lineStart = 0;
         int read;
-        while ((read = await stream.ReadAsync(buffer, ct).ConfigureAwait(false)) > 0)
+        while ((read = await ReadBatchAsync(stream, buffer, path, ct).ConfigureAwait(false)) > 0)
         {
             var start = 0;
             for (var i = 0; i < read; i++)
@@ -193,7 +197,8 @@ public static class WorkBatchFile
                 line.Write(buffer, start, i - start);
                 if (line.Length > 0)
                 {
-                    yield return (Decode(line.GetBuffer().AsSpan(0, (int)line.Length)), new DocumentRef(batch, lineStart, (int)line.Length));
+                    var reference = new DocumentRef(batch, lineStart, (int)line.Length);
+                    yield return (DecodeLine(line.GetBuffer().AsSpan(0, (int)line.Length), path, reference), reference);
                 }
 
                 line.SetLength(0);
@@ -207,7 +212,44 @@ public static class WorkBatchFile
 
         if (line.Length > 0)
         {
-            yield return (Decode(line.GetBuffer().AsSpan(0, (int)line.Length)), new DocumentRef(batch, lineStart, (int)line.Length));
+            var reference = new DocumentRef(batch, lineStart, (int)line.Length);
+            yield return (DecodeLine(line.GetBuffer().AsSpan(0, (int)line.Length), path, reference), reference);
+        }
+    }
+
+    private static async Task<Stream> OpenBatchAsync(FileStoreRegistry stores, string path, CancellationToken ct)
+    {
+        try
+        {
+            return await stores.For(path).OpenReadAsync(new FileRef { Path = path, Name = Path.GetFileName(path) }, ct).ConfigureAwait(false);
+        }
+        catch (Exception ex) when (IsNotFound(ex))
+        {
+            throw new WorkDocumentMissingException($"{path}: the batch file is gone; the work location was pruned, or is on a node other than this one.", ex);
+        }
+    }
+
+    private static async Task<int> ReadBatchAsync(Stream stream, byte[] buffer, string path, CancellationToken ct)
+    {
+        try
+        {
+            return await stream.ReadAsync(buffer, ct).ConfigureAwait(false);
+        }
+        catch (Exception ex) when (IsNotFound(ex))
+        {
+            throw new WorkDocumentMissingException($"{path}: the batch file went while it was read; the work location was pruned.", ex);
+        }
+    }
+
+    private static WorkItem DecodeLine(ReadOnlySpan<byte> line, string path, DocumentRef reference)
+    {
+        try
+        {
+            return Decode(line);
+        }
+        catch (Exception ex) when (ex is DeliveryException or JsonException)
+        {
+            throw new WorkDocumentMissingException($"{path}: document {reference} is not a work item any more; the work location was rewritten. {ex.Message}", ex);
         }
     }
 

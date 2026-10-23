@@ -871,16 +871,19 @@ public sealed record DeliveryRunPayload
         switch (operation)
         {
             case DeliveryOperations.Deliver:
-                Refuse(Slices.Count > 0, SlicesProperty, operation, "only an intake member plans slices");
-                Refuse(RateShare is not null, RateShareProperty, operation, "only a fan-out member shares its coordinating run's rate limit");
+                Refuse(Slices.Count > 0 && SubmissionId is null, SlicesProperty, operation, "slices are cut from the submission their coordinating run registered, which submissionId names");
+                Refuse(Slices.Count > 0 && Slices.Max() - Slices.Min() + 1 != Slices.Count, SlicesProperty, operation, "a slice run delivers a share of neighbouring key slices, as its coordinating run deals them out");
+                Refuse(RateShare is not null && Slices.Count == 0, RateShareProperty, operation, "only a slice run of a fan-out shares its coordinating run's rate limit");
+                Refuse(Slices.Count > 0 && Redeliver is not null, RedeliverProperty, operation, "a slice run delivers what its share plans; its coordinating run marked what is sent again");
+                Refuse(Slices.Count > 0 && Rerender, RerenderProperty, operation, "a slice run delivers what its share plans; its coordinating run asked for records to be rendered again");
                 Refuse(Redeliver is not null && SubmissionId is not null, RedeliverProperty, operation, "a run on a submission delivers what that submission planned");
                 Refuse(Rerender && SubmissionId is not null, RerenderProperty, operation, "a run on a submission delivers what that submission planned");
                 Refuse(Rerender && Redeliver is not null, RerenderProperty, operation,
                     "rerender sends what renders differently and redeliver sends whatever the hashes say; name one");
                 break;
             case DeliveryOperations.Plan:
-                Refuse(Slices.Count > 0, SlicesProperty, operation, "only an intake member plans slices");
-                Refuse(RateShare is not null, RateShareProperty, operation, "only a fan-out member shares its coordinating run's rate limit");
+                Refuse(Slices.Count > 0, SlicesProperty, operation, "only a run of a fan-out plans slices");
+                Refuse(RateShare is not null, RateShareProperty, operation, "only a run of a fan-out shares its coordinating run's rate limit");
                 Refuse(Redeliver is not null, RedeliverProperty, operation, "a plan sends nothing");
                 Refuse(Rerender && SubmissionId is not null, RerenderProperty, operation, "a plan of a submission reads the rows that submission recorded");
                 break;
@@ -895,33 +898,33 @@ public sealed record DeliveryRunPayload
                 Refuse(RecordKeys.Count > 0, RecordKeysProperty, operation, "a drain delivers the batches a submission planned");
                 Refuse(Redeliver is not null, RedeliverProperty, operation, "a drain delivers what was planned");
                 Refuse(Rerender, RerenderProperty, operation, "a drain delivers what was planned");
-                Refuse(Slices.Count > 0, SlicesProperty, operation, "only an intake member plans slices");
+                Refuse(Slices.Count > 0, SlicesProperty, operation, "only a run of a fan-out plans slices");
                 Refuse(RateShare is not null && SubmissionId is null, RateShareProperty, operation, "a member shares the rate of the run whose submission it works on, which submissionId names");
                 break;
             case DeliveryOperations.Verify:
-                Refuse(RateShare is not null, RateShareProperty, operation, "only a fan-out member shares its coordinating run's rate limit");
+                Refuse(RateShare is not null, RateShareProperty, operation, "only a run of a fan-out shares its coordinating run's rate limit");
                 Refuse(SubmissionId is not null, SubmissionIdProperty, operation, "a verify reads the ledger's delivered records, not a submission");
                 Refuse(Redeliver is not null, RedeliverProperty, operation, "a verify sends nothing");
                 Refuse(Rerender, RerenderProperty, operation, "a verify sends nothing");
-                Refuse(Slices.Count > 0, SlicesProperty, operation, "only an intake member plans slices");
+                Refuse(Slices.Count > 0, SlicesProperty, operation, "only a run of a fan-out plans slices");
                 break;
             case DeliveryOperations.Sync:
-                Refuse(RateShare is not null, RateShareProperty, operation, "only a fan-out member shares its coordinating run's rate limit");
+                Refuse(RateShare is not null, RateShareProperty, operation, "only a run of a fan-out shares its coordinating run's rate limit");
                 Refuse(Force, ForceProperty, operation, "a sync passes no gate: it reads every row it is given");
                 Refuse(SubmissionId is not null, SubmissionIdProperty, operation, "a sync reads the rows of the ledger's records, not a submission's");
                 Refuse(Redeliver is not null, RedeliverProperty, operation, "a sync sends nothing");
                 Refuse(Rerender, RerenderProperty, operation, "a sync sends nothing");
-                Refuse(Slices.Count > 0, SlicesProperty, operation, "only an intake member plans slices");
+                Refuse(Slices.Count > 0, SlicesProperty, operation, "only a run of a fan-out plans slices");
                 break;
             case DeliveryOperations.Reverse:
-                Refuse(RateShare is not null, RateShareProperty, operation, "only a fan-out member shares its coordinating run's rate limit");
+                Refuse(RateShare is not null, RateShareProperty, operation, "only a run of a fan-out shares its coordinating run's rate limit");
                 Refuse(SubmissionId is null && RunId is null, SubmissionIdProperty, operation, "a reverse run names what it reverses, a submissionId or a runId");
                 Refuse(SubmissionId is not null && RunId is not null, RunIdProperty, operation, "a reverse run reverses one submission or one run, not both");
                 Refuse(Force, ForceProperty, operation, "a reversal passes no gate: it takes every record its source delivered");
                 Refuse(RecordKeys.Count > 0, RecordKeysProperty, operation, "a reversal takes every record its source delivered");
                 Refuse(Redeliver is not null, RedeliverProperty, operation, "a reversal puts back what OSDU held; it sends nothing the flow renders");
                 Refuse(Rerender, RerenderProperty, operation, "a reversal puts back what OSDU held; it renders nothing");
-                Refuse(Slices.Count > 0, SlicesProperty, operation, "only an intake member plans slices");
+                Refuse(Slices.Count > 0, SlicesProperty, operation, "only a run of a fan-out plans slices");
                 Refuse(Interfaces.Count > 0, InterfacesProperty, operation, "a reversal works in one interface's ledger, which 'interface' names");
                 break;
             case DeliveryOperations.DeleteLedger:
@@ -936,8 +939,8 @@ public sealed record DeliveryRunPayload
                 Refuse(RecordKeys.Count > 0, RecordKeysProperty, operation, "deleting the ledger takes every record of it; remove records with a removal");
                 Refuse(Redeliver is not null, RedeliverProperty, operation, "deleting the ledger sends nothing");
                 Refuse(Rerender, RerenderProperty, operation, "deleting the ledger renders nothing");
-                Refuse(RateShare is not null, RateShareProperty, operation, "only a fan-out member shares its coordinating run's rate limit");
-                Refuse(Slices.Count > 0, SlicesProperty, operation, "only an intake member plans slices");
+                Refuse(RateShare is not null, RateShareProperty, operation, "only a run of a fan-out shares its coordinating run's rate limit");
+                Refuse(Slices.Count > 0, SlicesProperty, operation, "only a run of a fan-out plans slices");
                 break;
             case DeliveryOperations.Remove:
                 if (Scope is not { } removing)
@@ -959,25 +962,25 @@ public sealed record DeliveryRunPayload
                 Refuse(SubmissionId is not null, SubmissionIdProperty, operation, "a removal names its records by recordKeys or by a filter, which can name a submission");
                 Refuse(Redeliver is not null, RedeliverProperty, operation, "a removal sends nothing the flow renders");
                 Refuse(Rerender, RerenderProperty, operation, "a removal renders nothing");
-                Refuse(RateShare is not null, RateShareProperty, operation, "only a fan-out member shares its coordinating run's rate limit");
-                Refuse(Slices.Count > 0, SlicesProperty, operation, "only an intake member plans slices");
+                Refuse(RateShare is not null, RateShareProperty, operation, "only a run of a fan-out shares its coordinating run's rate limit");
+                Refuse(Slices.Count > 0, SlicesProperty, operation, "only a run of a fan-out plans slices");
                 Refuse(Interfaces.Count > 0, InterfacesProperty, operation, "a removal works in one interface's ledger, which 'interface' names");
                 break;
             case DeliveryOperations.Undo:
-                Refuse(RateShare is not null, RateShareProperty, operation, "only a fan-out member shares its coordinating run's rate limit");
+                Refuse(RateShare is not null, RateShareProperty, operation, "only a run of a fan-out shares its coordinating run's rate limit");
                 Refuse(SubmissionId is not null, SubmissionIdProperty, operation, "an undo takes what every unfinished delivery of the ledger left, not a submission's");
                 Refuse(RecordKeys.Count > 0, RecordKeysProperty, operation, "an undo takes what every unfinished delivery of the ledger left");
                 Refuse(Redeliver is not null, RedeliverProperty, operation, "an undo sends nothing the flow renders");
                 Refuse(Rerender, RerenderProperty, operation, "an undo renders nothing");
-                Refuse(Slices.Count > 0, SlicesProperty, operation, "only an intake member plans slices");
+                Refuse(Slices.Count > 0, SlicesProperty, operation, "only a run of a fan-out plans slices");
                 break;
             case DeliveryOperations.Replan:
-                Refuse(RateShare is not null, RateShareProperty, operation, "only a fan-out member shares its coordinating run's rate limit");
+                Refuse(RateShare is not null, RateShareProperty, operation, "only a run of a fan-out shares its coordinating run's rate limit");
                 Refuse(SubmissionId is not null, SubmissionIdProperty, operation, "a replan reads every row of the scope under a submission of its own");
                 Refuse(RecordKeys.Count > 0, RecordKeysProperty, operation, "a replan reads every row of the scope; scope a deliver run to records instead");
                 Refuse(Redeliver is not null, RedeliverProperty, operation, "a replan decides by each record's hashes");
                 Refuse(Rerender, RerenderProperty, operation, "a replan reads the rows of the scope; bring delivered records up to date with a deliver run");
-                Refuse(Slices.Count > 0, SlicesProperty, operation, "only an intake member plans slices");
+                Refuse(Slices.Count > 0, SlicesProperty, operation, "only a run of a fan-out plans slices");
                 break;
             default:
                 throw new SqlFlowException($"'{operation}' is not an operation of a delivery flow.");

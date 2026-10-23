@@ -93,7 +93,7 @@ every form: [--interface <name>] [--partition <id>] [--db <conn-ref>] [--json] [
 | `<flow.yaml>` | The delivery flow whose ledger is read. Without it: `ERROR  name the flow document whose records these are.` |
 | `--interface <name>` | The interface whose ledger is read. A source with several interfaces has to name one: `Flow '<name>' delivers <n> interfaces (<names>); name the one this operation is for.` |
 | `--partition <id>` | The partition whose ledger is read, for a flow that works in partitions (each partition keeps a ledger of its own). A partition named here is read as it is, even one taken out of the registry, since its records stay readable. Without it, the partition a run would take. |
-| `--db <conn-ref>` | The module database when the `osdu` schema lives in the catalog's database; `SQLFLOW_OSDU_DB` names it otherwise. Without a module database every form fails with `Records live in the module's database. Run 'sqlflow records' with --db <conn-ref>, or set the catalog variable.` See [The osdu module database in sqlflow db](db.md). |
+| `--db <conn-ref>` | The catalog database, which holds the `osdu` schema. Without it every form fails with `Records live in the module's database. Run 'sqlflow records' with --db <conn-ref>, or set the catalog variable.` See [The osdu module database in sqlflow db](db.md). |
 | `--json` | One JSON document on stdout instead of the text form. Keys are sorted and properties without a value are left out. |
 
 Records are named the way the product shows them: a **delivery key** (a UUID, which `records list` prints as 32

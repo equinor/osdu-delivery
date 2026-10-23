@@ -17,9 +17,9 @@ namespace SqlFlow.Delivery.Cli;
 /// <c>assertions</c>, <c>dimensions</c>, <c>inventory</c>, <c>removal</c> and <c>dev</c>, which sets a checkout up for a local run.
 /// </summary>
 /// <remarks>
-/// A command's database is the catalog the command line names (<c>--db</c>, else <c>${env:SQLFLOW_CATALOG_DB}</c>) unless
-/// the module has a connection of its own in <c>SQLFLOW_OSDU_DB</c>. A worker node opens no catalog connection at all, so
-/// there the module always reads its database through that reference, and says so when it is unset.
+/// The module's database is the catalog's, which holds the <c>osdu</c> schema: a command opens it on the catalog the command
+/// line names (<c>--db</c>, else <c>${env:SQLFLOW_CATALOG_DB}</c>), and a worker node, which SQLFlow gives no catalog
+/// connection, through <c>${env:SQLFLOW_CATALOG_DB}</c>, and says so when it is unset.
 /// </remarks>
 public sealed class DeliveryCliModule : ICliModule
 {
@@ -398,12 +398,11 @@ public sealed class DeliveryCliModule : ICliModule
     {
         ArgumentNullException.ThrowIfNull(services);
 
-        // A node has no catalog connection, so its module database is always the module's own reference; a command uses
-        // the catalog the command line names unless the environment gives the module a database of its own.
-        services.AddDatabase(OsduModuleDatabase.Create(
-            services.Scope == CliServiceScope.Worker
-                ? OsduModuleDatabase.EnvironmentReference
-                : OsduModuleDatabase.ResolveReference(null, Environment.GetEnvironmentVariable)));
+        // The module's database is the catalog's: a command opens it on the catalog the command line names, and a node,
+        // which SQLFlow gives no catalog connection, through the catalog's environment variable.
+        OsduModuleDatabase.RefuseRetiredSettings(
+            name => !string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable(name.Replace(":", "__", StringComparison.Ordinal))));
+        services.AddDatabase(services.Scope == CliServiceScope.Worker ? OsduModuleDatabase.CreateForNode() : OsduModuleDatabase.Create());
 
         services.Services.AddDeliveryKind();
         services.Services.AddDeliveryLedger();

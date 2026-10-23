@@ -2,13 +2,14 @@
 # node that polls the control plane's dispatcher for work. Nodes expose nothing (no ingress; outbound HTTPS to the
 # control plane, SQL to the ingestion database their flows read, HTTPS to the OSDU endpoint, and git for a pinned run
 # without a snapshot) and scale 0..N on the control plane's own replica target through the built-in KEDA metrics-api
-# scaler, so an idle pool costs nothing and no catalog credential reaches this tier at all.
+# scaler, so an idle pool costs nothing.
 #
 # THE OSDU LEDGER ON A NODE. The delivery engine reads and writes the ledger in the `osdu` schema per record while it
-# plans and delivers, and a node opens no catalog connection, so the module database needs a connection reference of
-# its own on this tier: SQLFLOW_OSDU_DB in secret_env. Without it the node refuses to start. Everything a run reads
-# beside it (the data databases, the landing storage, the OSDU platform) is handed to each run by the control plane, so
-# a node carries nothing else.
+# plans and delivers. The schema lives in the catalog's database, and SQLFlow itself gives a node no catalog
+# connection, so the node is given the catalog's: SQLFLOW_CATALOG_DB in secret_env. Under Entra authentication it
+# carries no credential, and the node's identity holds grants on the `osdu` schema alone there. Without it the node
+# refuses to start. Everything a run reads beside it (the data databases, the landing storage, the OSDU platform) is
+# handed to each run by the control plane, so a node carries nothing else.
 #
 # Deploy one copy per pool (set name and pool together). Secrets come from the estate's Key Vault, read by the app's
 # user-assigned managed identity; that same identity resolves ${keyvault:...} references at run time.

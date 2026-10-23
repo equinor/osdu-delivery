@@ -199,7 +199,7 @@ The route is `target.protocol` (or, in a source with interfaces, follows from wh
 | --- | --- | --- |
 | Run the chain on a schedule | Join the pre, ing and OSDU flows to one schedule; a fire runs them in lineage order, and the schedule's `values` supply a flow's parameters | [SQLFlow: schedule](../../../../sqlflow/docs/reference/flow/schedule.md), [delivery flow](../../reference/flow/delivery.md) |
 | Be told when a delivery fails | SQLFlow's notifications, for every OSDU kind; `lifecycle: development` while building | [notifications](../../reference/guides/notifications.md) |
-| Nodes inside a customer network | A worker with `SQLFLOW_OSDU_DB` and the flows' references in its own environment | [worker](../../reference/cli/worker.md), [deployment](../../reference/guides/deployment.md) |
+| Nodes inside a customer network | A worker with `SQLFLOW_CATALOG_DB` (a login on the `osdu` schema alone) and the flows' references in its own environment | [worker](../../reference/cli/worker.md), [deployment](../../reference/guides/deployment.md) |
 | Ask an assistant about the estate, or a `!` question about the data an approved AI context opens | `osdu-delivery-mcp`: metadata, and a `!` question's read-only query | [MCP server](../../reference/guides/mcp.md) |
 | See why a flow runs after another | `sqlflow lineage <folder> --explain <flow>`, or the lineage graph | [lineage](../../reference/concepts/lineage.md) |
 

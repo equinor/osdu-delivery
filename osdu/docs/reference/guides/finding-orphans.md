@@ -120,8 +120,7 @@ database, and compares every id with every ledger of the partition:
 sqlflow run flows/welldb-06-inventory.yaml --set partition=dev
 ```
 
-The module's database is the catalog's (`SQLFLOW_CATALOG_DB`, or `--db <conn-ref>`) unless `SQLFLOW_OSDU_DB` names one
-of its own. Between builds, `--operation reconcile` compares the inventory as its last build left it with the ledgers as
+The module's database is the catalog's (`SQLFLOW_CATALOG_DB`, or `--db <conn-ref>`). Between builds, `--operation reconcile` compares the inventory as its last build left it with the ledgers as
 they stand now, reading from storage only the ids a ledger expects; it is the quick check after a delivery or a cleanup.
 
 ## 3. Read the report

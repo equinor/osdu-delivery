@@ -4,6 +4,7 @@ using SqlFlow.Core;
 using SqlFlow.Core.Runs;
 using SqlFlow.Delivery.Documents;
 using SqlFlow.Delivery.Engine.Search;
+using SqlFlow.Delivery.Hosting;
 using SqlFlow.Delivery.Ledger;
 using SqlFlow.Delivery.Model;
 using SqlFlow.Delivery.Snapshots;
@@ -127,7 +128,7 @@ public sealed class CacheRefresher
         ArgumentNullException.ThrowIfNull(values);
         ArgumentException.ThrowIfNullOrWhiteSpace(actor);
         var store = _context.Cache ?? throw new DeliveryException(
-            $"Cache flow '{flow.Name}' writes into the cache of its partition, which lives in the module's database, and this host was started without it. Run it through the control plane or a node, or start the CLI with the module's connection (Osdu:Database:Connection or SQLFLOW_OSDU_DB), or with --db when the catalog's database holds the osdu schema.");
+            $"Cache flow '{flow.Name}' writes into the cache of its partition, which lives in the module's database, and this host was started without it. Run it through the control plane or a node, or start the CLI with it. {OsduModuleDatabase.StartWithCatalogConnection}");
         // The capture is keyed by the partition the flow actually reaches, the way a render's read of that cache is, so a
         // document naming its partition ${env:...} captures into the partition's cache rather than into one named after
         // the text. Both sides resolve, so both sides agree.
@@ -355,7 +356,7 @@ public sealed class CacheRefresher
     /// <summary>The ledger a dimension type's members are read from: the module's, which every host that refreshes a cache has.</summary>
     private ILedger DimensionLedger(CacheDefinition flow, ReferenceTypeSpec type)
         => _context.Ledger ?? throw new DeliveryException(
-            $"Cache flow '{flow.Name}' holds {type.Describe()}, whose members live in the module's database, and this host was started without it. Run it through the control plane or a node, or start the CLI with the module's connection.");
+            $"Cache flow '{flow.Name}' holds {type.Describe()}, whose members live in the module's database, and this host was started without it. Run it through the control plane or a node, or start the CLI with it. {OsduModuleDatabase.StartWithCatalogConnection}");
 
     /// <summary>A path as a message names it: from the folder holding the dictionaries directory, so it reads dictionaries/Name.yaml.</summary>
     private static string Shown(string full, string flowFolder)

@@ -1147,6 +1147,31 @@ public enum WorkBatchStatus
 }
 
 /// <summary>
+/// A range of a submission's work batch numbers, from <see cref="First"/> up to, but not including, <see cref="Beyond"/>:
+/// the batches a fan-out's slice run plans its key slices into, each slice's in a namespace of its own
+/// (osdu/docs/reference/concepts/submissions.md, Many nodes). The run claims and waits for the records of these batches
+/// alone, whose files are on its own node.
+/// </summary>
+public readonly record struct BatchRange
+{
+    public BatchRange(int first, int beyond)
+    {
+        ArgumentOutOfRangeException.ThrowIfNegative(first);
+        ArgumentOutOfRangeException.ThrowIfLessThanOrEqual(beyond, first);
+        First = first;
+        Beyond = beyond;
+    }
+
+    public int First { get; }
+
+    public int Beyond { get; }
+
+    public bool Contains(int batch) => batch >= First && batch < Beyond;
+
+    public override string ToString() => string.Create(System.Globalization.CultureInfo.InvariantCulture, $"batches {First} to {Beyond - 1}");
+}
+
+/// <summary>
 /// One work batch of a submission (osdu/docs/reference/concepts/submissions.md, Work batches): a file of rendered
 /// documents and its progress.
 /// </summary>
@@ -1976,9 +2001,13 @@ public interface ILedger
     /// <see cref="ClaimedRecords.None"/> when nothing was due. The lease keeps <paramref name="attempts"/>, the tries the
     /// flow gives a record, so whoever recovers it after it ran out fails a record that used them up (0 for none).
     /// </summary>
+    /// <remarks>
+    /// With <paramref name="batches"/> only records queued in those work batches are claimed: a fan-out's slice run
+    /// claims its own (osdu/docs/reference/concepts/submissions.md, Many nodes).
+    /// </remarks>
     Task<ClaimedRecords> ClaimAsync(
         Guid flowId, Guid? submissionId, string owner, int max, TimeSpan lease, DateTime nowUtc, Guid? runId = null, WaitRules? waits = null, int attempts = 0,
-        CancellationToken ct = default);
+        BatchRange? batches = null, CancellationToken ct = default);
 
     /// <summary>
     /// Holds the records of <paramref name="keys"/> no lease holds under one new lease for <paramref name="owner"/>, a
@@ -2278,10 +2307,17 @@ public interface ILedger
     /// </summary>
     Task<IReadOnlyList<PartitionRecords>> DeliveredPartitionsAsync(Guid flowId, CancellationToken ct = default);
 
-    Task<bool> HasPendingAsync(Guid flowId, Guid? submissionId, DateTime nowUtc, CancellationToken ct = default);
+    /// <summary>
+    /// Whether the flow (or submission) holds a record still to send: pending, or being sent. With
+    /// <paramref name="batches"/>, only records queued in those work batches count.
+    /// </summary>
+    Task<bool> HasPendingAsync(Guid flowId, Guid? submissionId, DateTime nowUtc, BatchRange? batches = null, CancellationToken ct = default);
 
-    /// <summary>The earliest retry time among pending records that are not yet due, or null when nothing waits.</summary>
-    Task<DateTime?> NextDueAsync(Guid flowId, Guid? submissionId, DateTime nowUtc, CancellationToken ct = default);
+    /// <summary>
+    /// The earliest retry time among pending records that are not yet due, or null when nothing waits. With
+    /// <paramref name="batches"/>, only records queued in those work batches count.
+    /// </summary>
+    Task<DateTime?> NextDueAsync(Guid flowId, Guid? submissionId, DateTime nowUtc, BatchRange? batches = null, CancellationToken ct = default);
 
     /// <summary>
     /// When the earliest lease of the flow runs out, or of the submission (its batches, and any lease holding one of its
@@ -2348,11 +2384,11 @@ public interface ILedger
     /// <paramref name="owner"/>, after recovering the flow's leases that ran out, and has the lease hold the batch's
     /// pending records that are due, except those left waiting as <paramref name="waits"/> says (see
     /// <see cref="ClaimAsync"/>). Null when nothing is claimable. The lease keeps <paramref name="attempts"/> as
-    /// <see cref="ClaimAsync"/>'s does.
+    /// <see cref="ClaimAsync"/>'s does. With <paramref name="batches"/> only a batch in that range is claimed.
     /// </summary>
     Task<ClaimedWorkBatch?> ClaimWorkBatchAsync(
         Guid flowId, Guid? submissionId, string owner, TimeSpan lease, DateTime nowUtc, Guid? runId = null, WaitRules? waits = null, int attempts = 0,
-        CancellationToken ct = default);
+        BatchRange? batches = null, CancellationToken ct = default);
 
     /// <summary>
     /// Sends back to pending the flow's waiting records (the ones named, or all of them) whose wait is over: the record

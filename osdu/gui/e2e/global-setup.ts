@@ -140,7 +140,6 @@ export default function globalSetup(): void {
       sourceDir: sourceDir.replace(/\\/g, "/"),
       headSha,
       dataDb: E2E.dataDb,
-      osduDb: E2E.osduDb,
     }, null, 2),
   );
 
@@ -244,7 +243,6 @@ export interface FixtureMeta {
   /** The commit the sync has to reach before the seed assertions hold. */
   headSha: string;
   dataDb: string;
-  osduDb: string;
 }
 
 /**

@@ -1,7 +1,7 @@
 #!/bin/sh
-# Composes the node's invocation from the container's environment. A node opens no catalog connection: the host
-# reads the control plane's URL from SQLFLOW_URL, the node credential from SQLFLOW_TOKEN and the OSDU module database
-# connection from SQLFLOW_OSDU_DB itself, so none of them appears on the command line or in `ps` output.
+# Composes the node's invocation from the container's environment. The host reads the control plane's URL from
+# SQLFLOW_URL, the node credential from SQLFLOW_TOKEN and the catalog database's connection, which holds the `osdu`
+# schema, from SQLFLOW_CATALOG_DB itself, so none of them appears on the command line or in `ps` output.
 set -e
 
 # Start from an empty option list, so a `docker run` argument can never be mixed into the composed invocation.

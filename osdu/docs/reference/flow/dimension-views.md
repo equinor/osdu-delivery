@@ -44,7 +44,7 @@ and drops a view the flow no longer declares.
 
 ```yaml
 target:
-  connection: ${env:SQLFLOW_OSDU_DB}      # the module's database, named as the pipelines reading the views name it
+  connection: ${env:SQLFLOW_CATALOG_DB}   # the module's database, the catalog's, named as the pipelines reading the views name it
 views:
   - name: Curve                           # osdu.v_dim_Curve
     description: Every curve of every well log, with its log and the curve's unit.
@@ -149,7 +149,7 @@ resolves to. A table of facts for analytical queries is an ingestion flow readin
 flowType: ing
 name: welldb-welllog-08-curve-table-ing
 connections:
-  osduDelivery: ${env:SQLFLOW_OSDU_DB}    # the same reference as the dimension flow's target.connection
+  osduDelivery: ${env:SQLFLOW_CATALOG_DB} # the same reference as the dimension flow's target.connection
   warehouse: ${env:WAREHOUSE_DB}
 source:
   server: osduDelivery

@@ -4,6 +4,7 @@ using SqlFlow.Catalog;
 using SqlFlow.Core;
 using SqlFlow.Core.Secrets;
 using SqlFlow.Delivery.Data;
+using SqlFlow.Delivery.Hosting;
 using SqlFlow.Delivery.Snapshots;
 
 namespace SqlFlow.Delivery.Catalog;
@@ -86,7 +87,7 @@ public sealed class DeliveryConfigStore
     /// <summary>The module database, or a failure naming what the host was started without.</summary>
     private OsduDbContext Open()
         => (_contexts ?? throw new FlowValidationException(
-            "The central configuration lives in the module's database, which this host was started without. Start it with the module's connection (Osdu:Database:Connection or SQLFLOW_OSDU_DB)."))();
+            $"The central configuration lives in the module's database, which this host was started without. {OsduModuleDatabase.StartWithCatalogConnection}"))();
 
     /// <summary>
     /// What a run of a flow of <paramref name="repoId"/> is given, in its two layers: the values set for no partition (the

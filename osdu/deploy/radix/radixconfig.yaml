@@ -376,9 +376,8 @@ spec:
             # The worker's node credential: the vault's node-token, the same secret the control plane's
             # ControlPlane__Bootstrap__NodeTokenReference names, resolved by the worker with its identity when it starts.
             SQLFLOW_TOKEN: ${keyvault:<dev key vault>/node-token}
-            # The osdu schema the worker verifies before it polls, in the catalog database; and the catalog itself, which
-            # the estate's dimension and curve flows name.
-            SQLFLOW_OSDU_DB: Server=tcp:<dev sql server>.database.windows.net,1433;Database=OsduDelivery;Authentication=Active Directory Default;Encrypt=True;
+            # The catalog database, which holds the osdu schema the worker verifies before it polls and the ledger it
+            # writes, and which the estate's dimension and curve flows name.
             SQLFLOW_CATALOG_DB: Server=tcp:<dev sql server>.database.windows.net,1433;Database=OsduDelivery;Authentication=Active Directory Default;Encrypt=True;
             OSDU_DATA_DB: Server=tcp:<dev sql server>.database.windows.net,1433;Database=OsduData;Authentication=Active Directory Default;Encrypt=True;
             # The OSDU values a run needs come with the run, from the partition it is bound to (the control plane's
@@ -391,7 +390,6 @@ spec:
               clientId: <test worker identity client id>
           variables:
             SQLFLOW_TOKEN: ${keyvault:<test key vault>/node-token}
-            SQLFLOW_OSDU_DB: Server=tcp:<test sql server>.database.windows.net,1433;Database=OsduDelivery;Authentication=Active Directory Default;Encrypt=True;
             SQLFLOW_CATALOG_DB: Server=tcp:<test sql server>.database.windows.net,1433;Database=OsduDelivery;Authentication=Active Directory Default;Encrypt=True;
             OSDU_DATA_DB: Server=tcp:<test sql server>.database.windows.net,1433;Database=OsduData;Authentication=Active Directory Default;Encrypt=True;
         - environment: prod
@@ -401,6 +399,5 @@ spec:
               clientId: <prod worker identity client id>
           variables:
             SQLFLOW_TOKEN: ${keyvault:<prod key vault>/node-token}
-            SQLFLOW_OSDU_DB: Server=tcp:<prod sql server>.database.windows.net,1433;Database=OsduDelivery;Authentication=Active Directory Default;Encrypt=True;
             SQLFLOW_CATALOG_DB: Server=tcp:<prod sql server>.database.windows.net,1433;Database=OsduDelivery;Authentication=Active Directory Default;Encrypt=True;
             OSDU_DATA_DB: Server=tcp:<prod sql server>.database.windows.net,1433;Database=OsduData;Authentication=Active Directory Default;Encrypt=True;

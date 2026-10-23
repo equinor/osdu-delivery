@@ -36,9 +36,8 @@ spec:
           ports:
             - containerPort: 8080
           env:
-            # The metadata database: SQLFlow's catalog schema, and the delivery module's `osdu` schema beside it.
-            # Startup migrates and verifies both. The module is given no connection of its own, which is what
-            # keeps its schema here; an estate that must separate them sets Osdu__Database__Connection as well.
+            # The metadata database: SQLFlow's catalog schema, and the delivery module's `osdu` schema beside it,
+            # reached through this one connection. Startup migrates and verifies both.
             - name: ControlPlane__Catalog__ConnectionReference
               valueFrom:
                 secretKeyRef: { name: osdu-delivery-secrets, key: catalog-connection }

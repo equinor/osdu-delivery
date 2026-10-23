@@ -368,6 +368,16 @@ public sealed class DeliveryExecutor : IFlowDocumentExecutor
 
         switch (operation)
         {
+            case DeliveryOperations.Deliver when payload.Slices.Count > 0:
+                // A slice run of a fan-out: its coordinating run brought records up to date, answered the run's requests and
+                // closes the submission; this run delivers the share its payload names.
+                var sliceRun = await runtime.RunAsync(force, ct).ConfigureAwait(false);
+                var sliceOutcome = DeliverOutcome.OfShare(sliceRun, operation, source, selection.Describe(), payload.Slices);
+                LogOutcome(log, string.Create(
+                    CultureInfo.InvariantCulture,
+                    $"slices {sliceOutcome.Share!.Slices}: {sliceOutcome.Planned} planned, {sliceOutcome.Delivered} delivered, {sliceOutcome.SkippedUnchanged + sliceOutcome.UnchangedAtPush} unchanged, {sliceOutcome.Held} held, {sliceOutcome.Failed} failed of submission {sliceOutcome.SubmissionId:D}"));
+                return sliceOutcome;
+
             case DeliveryOperations.Deliver:
             case DeliveryOperations.Replan:
                 if (payload.Rerender)
@@ -820,8 +830,7 @@ public sealed record DeliverOutcome(
     long Failed,
     long Retried,
     int Batches,
-    int IntakeMembers,
-    int DrainMembers,
+    int Members,
     bool NothingToDo,
     Guid? RequestedSubmissionId,
     long RequestedRecords,
@@ -847,6 +856,55 @@ public sealed record DeliverOutcome(
     public Snapshots.CacheStepOutcome? CacheAfter { get; init; }
 
     /// <summary>
+    /// What a slice run of a fan-out planned of the key slices it delivered, which its coordinating run adds into the
+    /// submission's totals (osdu/docs/reference/concepts/submissions.md, Many nodes); null for a run that delivers no share.
+    /// </summary>
+    public IntakeOutcome? Share { get; init; }
+
+    /// <summary>The outcome of a slice run that delivered <paramref name="slices"/>: its own counts, and what it planned of them.</summary>
+    public static DeliverOutcome OfShare(RunResult run, string operation, string source, string selection, IReadOnlyList<int> slices)
+    {
+        ArgumentNullException.ThrowIfNull(run);
+        ArgumentNullException.ThrowIfNull(slices);
+        return From(run, operation, source, selection, Engine.RequestedPasses.None) with { Share = IntakeOutcome.From(run.Intake, source, selection, slices) };
+    }
+
+    /// <summary>
+    /// What a slice run reported it planned, read back from its run row (the run's <c>result</c>); null when the row carries
+    /// no outcome, or one with no share in it.
+    /// </summary>
+    public static IntakeOutcome? ShareOf(string? json)
+    {
+        if (string.IsNullOrWhiteSpace(json))
+        {
+            return null;
+        }
+
+        try
+        {
+            using var document = JsonDocument.Parse(json);
+            if (document.RootElement.ValueKind != JsonValueKind.Object)
+            {
+                return null;
+            }
+
+            foreach (var property in document.RootElement.EnumerateObject())
+            {
+                if (string.Equals(property.Name, nameof(Share), StringComparison.OrdinalIgnoreCase) && property.Value.ValueKind == JsonValueKind.Object)
+                {
+                    return IntakeOutcome.Parse(property.Value.GetRawText());
+                }
+            }
+
+            return null;
+        }
+        catch (JsonException)
+        {
+            return null;
+        }
+    }
+
+    /// <summary>
     /// A run's counts are its own work (<see cref="RunResult.Own"/>): a run re-sending two records of a delivered submission
     /// reports two, and one that found the submission already completed reports none, while a fan-out root reports the
     /// submission it covers. The submission's own totals come alongside.
@@ -861,7 +919,7 @@ public sealed record DeliverOutcome(
         return new DeliverOutcome(
             operation, s.SubmissionId, source, selection, s.Status.ToString().ToLowerInvariant(), s.RecordCount,
             own.Planned, own.SkippedUnchanged, own.AwaitingApproval, own.SkippedStale, own.UnchangedAtPush, own.Blocked, own.Delivered, own.Held, own.Failed, own.Retried, own.Batches,
-            run.IntakeMembers, run.DrainMembers, run.Intake.NothingToDo && run.Work.Processed == 0, requested.FirstSubmissionId, requested.Planned, s.Error, totals, own.Waiting,
+            run.Members, run.Intake.NothingToDo && run.Work.Processed == 0, requested.FirstSubmissionId, requested.Planned, s.Error, totals, own.Waiting,
             requested.Passes)
         {
             Undone = run.Undone,

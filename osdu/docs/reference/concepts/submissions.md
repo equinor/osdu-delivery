@@ -225,57 +225,47 @@ own `reliability.leaseSeconds` belongs to a live worker and is left alone with a
 
 ## Many nodes
 
-A delivery fans out by default. A submission of at least `parallelism.fanOutMinRecords` records (1,000 by default) is spread
-over member runs of the same flow, at most `parallelism.fanOut` of them (8 by default; 0 keeps everything on the run that
-claimed the work). The members are queued runs of the flow's pool like any other, so an autoscaler that holds the pool at the
+A delivery fans out by default. A submission of at least `parallelism.fanOutMinRecords` records (1,000 by default) is split
+into shares, and the flow is queued again once per share beyond the coordinating run's own, at most `parallelism.fanOut`
+runs (8 by default; 0 keeps everything on the run that claimed the work). Each is a deliver run of the same flow filtered
+to its share, a **slice run**, queued in the flow's pool like any other run, so an autoscaler that holds the pool at the
 control plane's replica target brings up nodes for them
 ([SQLFlow's dispatcher](../../../../sqlflow/docs/reference/concepts/control-plane.md#the-dispatcher)). They appear as a run
 family on the run's page.
 
-**Where the work batches are.** Every member reads and writes the submission's [work batches](#work-batches), on whichever
-node runs it, so a delivery fans out only when its `source.work` is a storage URI or an absolute path every node reaches:
-on a deployment, its storage, `work: ${env:LANDING_URL}/.work/welllog/{logSource}`, which every run resolves with the
-values the control plane supplies and every worker is granted.
-A relative `source.work` is a folder in the copy of the repository each node runs the flow from, which no other node
-reads; a flow with one plans and sends on one run, and its trace says so:
-`The intake is not fanned out: source.work '../.work/{logSource}' is a folder in this node's copy of the repository, which no other node reads; write it on storage every node reaches, such as the deployment's (${env:LANDING_URL}/.work/...), to fan out.`
+**Cutting the read.** The coordinating run cuts the candidate keys into contiguous slices on the record table's identity
+primary key (`source.record.primaryKey`), about a work batch each and at most 1,024, records the cut on the submission, and
+deals the slices out as shares of neighbouring slices: one to itself and one to each slice run. A flow without a primary
+key, a read of one work batch, and a run outside the fleet are not cut: the run plans and sends everything itself.
 
-**Planning.** When the record table names its identity primary key (`source.record.primaryKey`), the coordinating run cuts
-the candidate keys into contiguous slices on it, about a work batch each and at most 1,024, records the cut on the
-submission, and deals the slices out as shares to itself and up to `fanOut` intake members. It enqueues the members first
-and plans its own share while they plan theirs, then finalises the submission with every member's totals. Without a
-primary key the read is planned on the coordinating run, and only the sending fans out.
+**Each run delivers its share.** A slice run plans its slices into [work batches](#work-batches) on its own node, numbered
+in its slices' namespace, sends those batches, and keeps at them until every record of its share is settled, waiting out
+retries. It claims only the batches and records of its own share, and reads them back from the folder it wrote them to,
+so no run reads another run's batches and which node runs which share does not matter: `source.work` stays a folder next
+to the flow file, in each node's own copy of the repository. The coordinating run queues the slice runs first, delivers
+its own share the same way while they deliver theirs, then waits for them, finalises the submission with the totals of
+every share, and closes it. A slice run never closes the submission, moves the watermark, or brings the cache up to date:
+its coordinating run does that once for the whole delivery.
 
-**Sending.** Every drainer claims the oldest queued work batch, so the batches spread over whoever runs. When the submission
-still has at least `fanOutMinRecords` records to send (a submission planned again counts the ones an earlier pass queued),
-the coordinating run enqueues one drain member per queued batch beyond the one it takes itself, up to `fanOut`, and drains
-beside them: a submission of three batches gets two members, however high `fanOut` is. A drain member that fails leaves its records to
-the coordinating run, which keeps draining until the submission is settled.
-
-**Members no node starts.** A member waits in the queue until a node with a free place takes it, and every place of the pool
-can be holding work, the coordinating run's own among them. A coordinating run therefore never waits for ever on members
-no node has started:
-
-| Phase | It stops waiting when | And then |
-| --- | --- | --- |
-| Planning | no member is running, and none has started or ended for 3 minutes, long enough for an autoscaler to bring up a node | stops the members still queued and plans their shares itself |
-| Sending | its own drain has left nothing to claim, and no member is running | stops the members still queued, which would find nothing to send |
-
-A member a node takes at the moment it is stopped is asked to stop too. What it planned or sent stays, and a share it had
-begun is planned again safely: the records it queued are passed over as already queued, and the new plan writes its work
-batches after the ones those records read from ([Work batches](#work-batches)). A member that fails on its own stops the
-coordinating run with
-`Intake member <slot> (run <id>) <status>: <error>. The submission stays planned as far as it got: re-run it to finish the intake now, or the flow's next deliver run takes it over, sends what it planned and closes it, and plans the rest in its own window.`
-A coordinating run that fails or is cancelled stops its members with it.
+**Slice runs that do not deliver their share.** A slice run waits in the queue until a node with a free place takes it,
+and every place of the pool can be holding work, the coordinating run's own among them. A coordinating run therefore never
+waits for ever: once no slice run is running and none has started or ended for 3 minutes, long enough for an autoscaler to
+bring up a node, it stops the ones still queued and delivers their shares itself. It does the same for a slice run that
+failed, with a line on its trace:
+`Slice run <slot> (run <id>) failed: <error>; this run delivers its slices <slices>.`
+Planning a share again is safe: the records its run sent are unchanged and passed over, and the rows it never reached are
+planned now. A record it had queued and not sent has its document in a batch file on that run's node; the coordinating run
+finds the document missing, and the record is held, to be planned again by the flow's next run
+([Work batches](#work-batches)). A coordinating run that fails or is cancelled stops its slice runs with it.
 
 **The rate limit.** `reliability.rateLimitRps` holds for the fan-out as a whole. Each run sends under its share of the rate,
-the rate divided between the coordinating run and its members; a member's payload names the share (`rateShare`,
-[running an OSDU flow](../cli/run.md)), and the coordinating run takes the whole rate back once its members have ended.
-`parallelism.concurrency` is each run's own, so a fan-out of eight members has up to nine times as many records in flight.
+the rate divided between the coordinating run and its slice runs; a slice run's payload names the share (`rateShare`,
+[running an OSDU flow](../cli/run.md)), and the coordinating run takes the whole rate back once its slice runs have ended.
+`parallelism.concurrency` is each run's own, so a fan-out of eight slice runs has up to nine times as many records in
+flight.
 
-Why a run did not fan out is on its trace: `The intake is not fanned out: 400 candidate record(s), fewer than parallelism.fanOutMinRecords (1000).`,
-and the same for the drain, with the reason (no primary key to cut the read on, one work batch to send, a run outside the
-fleet).
+Why a run did not fan out is on its trace: `The delivery is not fanned out: 400 candidate record(s), fewer than parallelism.fanOutMinRecords (1000).`,
+with the reason (no primary key to cut the read on, one work batch, a run outside the fleet).
 
 Records of one flow written by many nodes never wait on each other for long: no statement writes more than 1,000 records,
 a worker writes only its lease row and the append-only tables while it sends, staging locks only records that exist, and a
@@ -286,7 +276,7 @@ statement the database ends as a deadlock victim is run again, up to five runs i
 A submission whose run stops before it settled (its node was lost, its process ended, it ran out of attempts, a
 command-line run was killed) is not left for a drain by hand: the flow's next deliver run takes it over.
 
-**Every run that works on a submission holds it.** The deliver run that plans it, each intake member of a fan-out, and a
+**Every run that works on a submission holds it.** The deliver run that plans it, each slice run of a fan-out, and a
 drain that names a submission take a shared, session-owned application lock on the module's database,
 `SqlFlow.Delivery.Submission:<id>` (`sp_getapplock`), on a connection of their own, from before the submission is
 registered or reopened until they are done with it. Any number of runs hold one submission at once, as a fan-out's

@@ -6,6 +6,7 @@ using SqlFlow.Catalog;
 using SqlFlow.Core.Abstractions;
 using SqlFlow.Core.Secrets;
 using SqlFlow.Delivery.Catalog;
+using SqlFlow.Delivery.Hosting;
 using SqlFlow.Delivery.Model;
 using SqlFlow.Delivery.Data;
 using SqlFlow.Delivery.Documents;
@@ -35,8 +36,9 @@ public static class DeliveryServices
 {
     /// <summary>What a host is told when an operation needs the module's database and it has none.</summary>
     public const string NoLedgerMessage =
-        "This host has no osdu database connection (Osdu:Database:Connection or SQLFLOW_OSDU_DB); the delivery ledger and caches are unavailable. "
-        + "Without them only validation and planning against the flow document are available, since a render reads any cache it reads from that database.";
+        "This host has no osdu database connection; the delivery ledger and caches are unavailable. "
+        + "Without them only validation and planning against the flow document are available, since a render reads any cache it reads from that database. "
+        + OsduModuleDatabase.StartWithCatalogConnection;
 
     public static IServiceCollection AddDeliveryKind(this IServiceCollection services)
     {
@@ -77,11 +79,9 @@ public static class DeliveryServices
         services.AddSingleton<IFlowDocumentKind, DimensionFlowKind>();
         services.AddSingleton<IFlowDocumentKind, InventoryFlowKind>();
         services.AddSingleton<IFlowDocumentKind, RemovalFlowKind>();
-        // The repository sync's delivery half. It is given the module database when the host registered one, since
-        // that is what decides whether its rows can ride the catalog's transaction or need a connection of their own.
+        // The repository sync's delivery half, whose rows ride the catalog's transaction: the osdu schema is in its database.
         services.AddSingleton<ICatalogSyncExtension>(sp => new DeliveryCatalogSync(
             sp.GetRequiredService<DeliveryDocumentLoader>(),
-            sp.GetService<IDbContextFactory<OsduDbContext>>(),
             sp.GetService<ISecretResolver>()));
         // Where a synced repository's files are on this host, which a template read outside a run of its own repository is
         // read from: the catalog this host names says where each repository's last sync put them. The control plane

@@ -69,7 +69,7 @@ output "sql_setup_script" {
 }
 
 output "sql_server_fqdn" {
-  description = "SQL server address (the connection strings are in Key Vault: osdu-delivery-catalog-db, osdu-delivery-osdu-db, and one per SQL connection)."
+  description = "SQL server address (the connection strings are in Key Vault: osdu-delivery-catalog-db, which holds the osdu schema too, and one per SQL connection)."
   value       = local.create_sql ? azurerm_mssql_server.this[0].fully_qualified_domain_name : var.existing_sql_server
 }
 

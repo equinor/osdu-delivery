@@ -69,7 +69,7 @@ Every form also takes `--db <conn-ref>`, `--json` and `-v`. An inventory is name
 
 | Option | Meaning |
 | --- | --- |
-| `--db <conn-ref>` | The database the module's tables live in: the catalog's (`--db`, else `${env:SQLFLOW_CATALOG_DB}`) unless `SQLFLOW_OSDU_DB` gives the module its own. |
+| `--db <conn-ref>` | The database the module's tables live in: the catalog's (`--db`, else `${env:SQLFLOW_CATALOG_DB}`). |
 | `--json` | Writes exactly one JSON document to the console; notes go to the error stream. |
 | `--finding <finding>` | One of `orphan`, `missing`, `undoing`, `forgotten`, `stale`, `unconfirmed`, `drifted`, `unlisted`, `foreign`, `superseded`, `tracked`, `gone`, `unreconciled`. |
 

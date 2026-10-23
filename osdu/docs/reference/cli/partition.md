@@ -69,8 +69,8 @@ sqlflow partition remove <name>                                 [--db <conn-ref>
 
 The registry is the table `[osdu].[Partition]` in the module's database: one row per partition, with what it is for, who
 registered it and when, a flag for the one default, and a flag for each partition the configuration names. The verb works on the database directly, not through the control
-plane, so it needs the catalog connection (`--db`, else `${env:SQLFLOW_CATALOG_DB}`), or `SQLFLOW_OSDU_DB` when the
-`osdu` schema has a database of its own (see [sqlflow db](db.md)).
+plane, so it needs the catalog connection (`--db`, else `${env:SQLFLOW_CATALOG_DB}`), whose database holds the `osdu`
+schema (see [sqlflow db](db.md)).
 
 What the registry decides, and what it does not:
 
@@ -123,7 +123,7 @@ exactly one.
 | --- | --- | --- | --- |
 | `--description <text>` | string | none | `add`: what the partition is for. `describe`: required; the new text, and an empty value (`--description ""`) clears it. |
 | `--default` | flag | off | `add` only: make the new partition the default, taking the mark from the one that had it. Refused while a configured partition is the default. |
-| `--db <conn-ref>` | connection reference | `${env:SQLFLOW_CATALOG_DB}` | The catalog database, which holds the `osdu` schema unless `SQLFLOW_OSDU_DB` names its own. |
+| `--db <conn-ref>` | connection reference | `${env:SQLFLOW_CATALOG_DB}` | The catalog database, which holds the `osdu` schema. |
 | `--json` | flag | off | Writes the partition (or for `list`, the array) as JSON instead of text. `remove` prints text either way. |
 
 ## Behavior and output

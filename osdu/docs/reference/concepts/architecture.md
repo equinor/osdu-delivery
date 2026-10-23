@@ -12,7 +12,7 @@ keywords:
   - worker host
   - osdu schema
   - module database
-  - SQLFLOW_OSDU_DB
+  - SQLFLOW_CATALOG_DB
   - ingestion database
   - catalog database
   - adddeliverykind
@@ -80,9 +80,10 @@ cache store, the central configuration and the partition registry over the `osdu
 validate and plan against the documents, and says so when asked for more:
 
 ```text
-This host has no osdu database connection (Osdu:Database:Connection or SQLFLOW_OSDU_DB); the delivery ledger, templates
-and caches are unavailable. Without them only validation and planning against the flow document are available, since a
-render reads its template, and any cache it reads, from that database.
+This host has no osdu database connection; the delivery ledger and caches are unavailable. Without them only validation
+and planning against the flow document are available, since a render reads any cache it reads from that database. The
+osdu schema lives in the catalog's database: start the host with the catalog's connection (SQLFLOW_CATALOG_DB, or --db on
+the command line).
 ```
 
 ## The hosts
@@ -121,7 +122,7 @@ Nothing in the vendored `sqlflow/` names OSDU. Each point below is generic, and 
 | Host modules (`IControlPlaneModule`, `ICliModule`, `McpModule`) and branding (`ProductBranding`) | The module itself in each host, and the product's name |
 | Flow kinds, companion documents and executors | The eight document kinds and six executors above |
 | Run parameters (operation, values, payload, requester) | Each kind's operations and payload, carried by a run or a schedule fire |
-| Fan-out (`IRunFanOut`) | A large delivery spreading its intake and drain over member runs |
+| Fan-out (`IRunFanOut`) | A large delivery queued again once per share of its key slices, each run delivering its share |
 | Compute operations (`IComputeOperation`) | The value check and the removal a node runs |
 | Module database (`ModuleDatabase`, `IsReachableOn`) | `OsduDbContext` over the `osdu` schema, migrated, reported and verified with the catalog |
 | Catalog sync extension (`ICatalogSyncExtension`) | Mappings, cache definitions and interfaces as rows, and the question whether lineage must be computed again |
@@ -142,38 +143,29 @@ answers the direct operations above while the request waits. Every delivery, ret
 and inventory run it queues carries the central configuration (`sqlflow config`) when one is set, so a flow's
 `${env:NAME}` resolves from one place before it falls back to the node ([control plane](control-plane.md)).
 
-**A node** pulls runs and node tasks over SQLFlow's node protocol and opens no catalog connection. The delivery engine
-reads and writes the ledger per record while it plans and delivers, so a node always reaches the module's database
-through its own reference, `SQLFLOW_OSDU_DB`. A node without it refuses to start
-(`ERROR  the worker refuses to start: Environment variable 'SQLFLOW_OSDU_DB' is not set.`), so it never takes a run
+**A node** pulls runs and node tasks over SQLFlow's node protocol, and SQLFlow gives it no catalog connection. The
+delivery engine reads and writes the ledger per record while it plans and delivers, so the module opens the catalog's
+database, which holds the `osdu` schema, through `SQLFLOW_CATALOG_DB` itself, ideally with a login whose rights cover the
+`osdu` schema alone. A node without it refuses to start
+(`ERROR  the worker refuses to start: Environment variable 'SQLFLOW_CATALOG_DB' is not set.`), so it never takes a run
 ([worker](../cli/worker.md)). Every other credential a flow names (the ingestion database, the OSDU endpoint, payload
 storage) also resolves on the node.
 
-**The command line** runs a flow locally through the same executors. Its module database is the one `SQLFLOW_OSDU_DB`
-names, or else the catalog the command names (`--db`, else `${env:SQLFLOW_CATALOG_DB}`), which is where the `osdu`
-schema sits by default.
+**The command line** runs a flow locally through the same executors. Its module database is the catalog the command
+names (`--db`, else `${env:SQLFLOW_CATALOG_DB}`), which holds the `osdu` schema.
 
 ## The databases
 
 | Database | Holds | Reached by |
 | --- | --- | --- |
-| The catalog database | SQLFlow's catalog (pipelines, runs, schedules, lineage, users) and, by default, the `osdu` schema beside it | The control plane and the CLI (`SQLFLOW_CATALOG_DB`). A node never opens the catalog; when the `osdu` schema is here, a node reaches that schema alone, through `SQLFLOW_OSDU_DB` |
-| The module database, when separate | The `osdu` schema alone | `SQLFLOW_OSDU_DB` or `Osdu:Database:Connection` on the control plane, and `SQLFLOW_OSDU_DB` on every node |
+| The catalog database | SQLFlow's catalog (pipelines, runs, schedules, lineage, users) and the `osdu` schema beside it | The control plane and the CLI (`SQLFLOW_CATALOG_DB`), which own both. A node reaches the `osdu` schema alone, through `SQLFLOW_CATALOG_DB` with a login of its own |
 | The ingestion database (`OsduData` in this corpus's examples) | The `pre` tables the file flows land and the keyed ingestion tables the OSDU flows read | The flows' own connection references (`${env:OSDU_DATA_DB}`), resolved where each flow runs |
 
-Keeping the `osdu` schema in the catalog's database is the default and what the shipped deployments do. An estate that
-must keep the two apart (on Azure SQL no statement reaches across two databases) gives the module a connection of its
-own, which must be a secret reference:
-
-```text
-The connection of module 'osdu' must be a secret reference, ${env:NAME} or ${keyvault:NAME}, or absent to use the catalog
-connection; the value given is not one (it is not shown).
-```
-
-Decide before the first migrate: the setting decides where the module's tables are created. The one place that writes
-module rows together with the catalog, the repository sync, joins the catalog's transaction when the module's rows are
-reachable on its connection, and otherwise commits on the module's own connection and is written to be repeatable, so the
-next sync settles what a failed one left behind.
+The `osdu` schema always lives in the catalog's database, reached through the catalog's one connection: the module has
+no connection of its own. `SQLFLOW_OSDU_DB` and `Osdu:Database:Connection`, which once gave it a database apart, are no
+longer settings, and a host started with either refuses to start, naming it ([`sqlflow db`](../cli/db.md#errors)). The one
+place that writes module rows together with the catalog, the repository sync, joins the catalog's transaction, so its
+rows commit or roll back with the sync.
 
 The ingestion database a delivery flow reads must allow snapshot isolation (the default read isolation), so a record and
 its child rows are read as one moment. A database that does not fails the run with

@@ -88,7 +88,7 @@ Every form also takes `--partition <id>`, `--db <conn-ref>`, `--json` and `-v`.
 | `<flow.yaml>` | The dimension flow's file. Its dimensions are named as it declares them now. |
 | `--partition <id>` | The partition whose dimensions are read. Left out, it is settled as a run settles it: the registry's default among the flow's partitions, else its only partition. A named partition is taken as it is, so a partition taken out of the registry keeps its dimensions readable; for a flow that names its partitions, it has to be one of them. A flow whose partition is its `source.headers` takes none. |
 | `--dimension <name>` | The dimension, by its name in the flow (ignoring case). Required by every form but `list`, `search`, `views` and `remove-view`. |
-| `--db <conn-ref>` | The database the module's tables live in: the catalog's (`--db`, else `${env:SQLFLOW_CATALOG_DB}`) unless `SQLFLOW_OSDU_DB` gives the module its own. |
+| `--db <conn-ref>` | The database the module's tables live in: the catalog's (`--db`, else `${env:SQLFLOW_CATALOG_DB}`). |
 | `--json` | Writes exactly one JSON document to the console; notes go to the error stream. |
 | `--max <n>` | The most rows a page lists, 1 to 1,000; 50 when left out. |
 

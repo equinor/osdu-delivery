@@ -2,12 +2,12 @@
 id: delivery-cli-worker
 title: "sqlflow worker in OSDU Delivery: what a delivery node needs beyond a SQLFlow node"
 type: cli-command
-summary: "The OSDU Delivery worker host and what a node needs to deliver: SQLFLOW_OSDU_DB, the flows' credentials, the network guard and the start-up check."
+summary: "The OSDU Delivery worker host and what a node needs to deliver: SQLFLOW_CATALOG_DB, the flows' credentials, the network guard and the start-up check."
 keywords:
   - worker node
   - compute node
   - delivery node
-  - sqlflow_osdu_db
+  - sqlflow_catalog_db
   - worker host
   - node credentials
   - module database on a node
@@ -82,12 +82,14 @@ task of the module also drains on nodes: a value check of a mapping across a sco
 person asks and waits on (a probe of a target, a record read back, a preview, a scope's values, the explorer) is not a
 node task: the control plane runs it while the request waits.
 
-## The module database: SQLFLOW_OSDU_DB
+## The module database: SQLFLOW_CATALOG_DB
 
 The delivery engine reads and writes the `osdu` schema record by record while it plans and delivers: that is what makes
-every attempt and outcome traceable. A node opens no catalog connection, so on a node the module database is always the
-reference `${env:SQLFLOW_OSDU_DB}`, whatever the catalog database is. The variable holds the connection string of the
-database that holds the `osdu` schema: the catalog's own database in the default estate, or the module's own.
+every attempt and outcome traceable. The `osdu` schema lives in the catalog's database, and SQLFlow gives a node no
+catalog connection, so the module opens that database through the reference `${env:SQLFLOW_CATALOG_DB}` itself. The
+variable holds the catalog database's connection string, ideally with a login whose rights cover the `osdu` schema
+alone. It is the only database connection a node is given; there is no second one for the module, and a node started
+with the retired `SQLFLOW_OSDU_DB` refuses to start ([sqlflow db](db.md#errors)).
 
 Before it polls for work, the node verifies that database against its build, as the control plane does at startup (the
 catalog migration the module needs is not checked here, since a node has no catalog):
@@ -99,7 +101,7 @@ OK   module 'osdu' (schema 'osdu', own connection): current at '<last-migration>
 A node without the variable, or over a module database that is missing, behind, ahead or diverged, does not start:
 
 ```text
-ERROR  the worker refuses to start: Environment variable 'SQLFLOW_OSDU_DB' is not set.
+ERROR  the worker refuses to start: Environment variable 'SQLFLOW_CATALOG_DB' is not set.
 ERROR  the worker refuses to start: The database of module 'osdu' (schema 'osdu', own connection) is behind this build: 2 migration(s) are not applied (...). Apply them with 'sqlflow db migrate'.
 ```
 
@@ -115,7 +117,7 @@ partition's values from the control plane's configuration
 | What | Typical reference | Used for |
 | --- | --- | --- |
 | The data database | `${env:OSDU_DATA_DB}` | Reading the keyed ingestion tables the OSDU flow delivers from, and a cache flow's lookup tables. |
-| The metadata database | `${env:SQLFLOW_CATALOG_DB}` | Only a flow that reads the `osdu` schema's dimension views; the node itself never opens it. |
+| The metadata database | `${env:SQLFLOW_CATALOG_DB}` | A flow that reads the `osdu` schema's dimension views. It is the node's own variable too, which the module reads the ledger through ([the module database](#the-module-database-sqlflow_catalog_db)). |
 | The OSDU endpoint and its credentials | `${env:OSDU_URL}`, `${env:OSDU_TOKEN_URL}`, `${env:OSDU_CLIENT_ID}`, `${env:OSDU_CLIENT_SECRET}`, `${env:OSDU_SCOPE}` | The flow's `target` (or a cache, retrieval or assertion flow's `source`) and its token request. |
 | The destination parameters | `${env:OSDU_DATA_PARTITION}`, `${env:OSDU_ACL_OWNER}`, `${env:OSDU_ACL_VIEWER}`, `${env:OSDU_LEGAL_TAG}` | The mapping parameters the OSDU flow kind supplies when a flow does not set them. A flow bound to a partition takes `dataPartition` from its partition, or from its `data-partition-id` header, instead. |
 | Azure storage | `SQLFLOW_AZURE_AUTH` and the `AZURE_*` family | Reading payload files and writing work batches and retrieval output on `abfss://`, `wasbs://` or blob and dfs `https://` locations, and resolving `${keyvault:...}` references. See [sqlflow auth](auth.md). |
@@ -175,7 +177,7 @@ docker build -f osdu/deploy/docker/worker.Dockerfile -t osdu-delivery-worker:lat
 docker run -d \
   -e SQLFLOW_URL="https://sqlflow.example.com" \
   -e SQLFLOW_TOKEN="$NODE_TOKEN" \
-  -e SQLFLOW_OSDU_DB="$OSDU_MODULE_CONNECTION" \
+  -e SQLFLOW_CATALOG_DB="$NODE_CATALOG_CONNECTION" \
   -e OSDU_DATA_DB="$INGESTION_CONNECTION" \
   -e SQLFLOW_WORKER_POOL="osdu" \
   osdu-delivery-worker:latest
@@ -184,7 +186,7 @@ docker run -d \
 The entrypoint composes the node's options from `SQLFLOW_WORKER_POOL`, `SQLFLOW_WORKER_POLL_SECONDS` and
 `SQLFLOW_WORKER_DRAIN_SECONDS` (all optional), so the control plane URL, the token and the database connections never
 appear on the command line or in `ps` output. The container exposes no ports. The shipped Kubernetes manifest
-(`osdu/deploy/k8s/worker-pool.yaml`) mounts `SQLFLOW_OSDU_DB` from a secret and, like the Azure template
+(`osdu/deploy/k8s/worker-pool.yaml`) mounts `SQLFLOW_CATALOG_DB` from a secret and, like the Azure template
 (`osdu/deploy/bicep/worker.bicep`), sets the termination grace period to 600 seconds, above the default 540-second
 drain. The Azure template also sets `SQLFLOW_AZURE_AUTH=mi` with the app's managed identity, so `${keyvault:...}`
 references and storage resolve as that identity.
@@ -195,7 +197,8 @@ Beyond SQLFlow's (0 after a clean drain, 1 when the URL or token is missing):
 
 | Condition | Exit code | Output |
 | --- | --- | --- |
-| `SQLFLOW_OSDU_DB` unset, or the module database is not current | 1 | `ERROR  the worker refuses to start: <reason>` before the node polls |
+| `SQLFLOW_CATALOG_DB` unset, or the module database is not current | 1 | `ERROR  the worker refuses to start: <reason>` before the node polls |
+| `SQLFLOW_OSDU_DB` set | 1 | `ERROR  CLI module 'osdu' failed to configure its services: SQLFLOW_OSDU_DB is no longer a setting; ...` |
 | An `OSDU_TELEMETRY_*` value the setting cannot take | 1 | `ERROR  CLI module 'osdu' failed to configure its services: <reason>` |
 | The worker host given the `worker` verb, or any other positional argument | 1 | `ERROR  this host is the OSDU Delivery worker; ...` |
 | A hosted service of the node (the metrics export) fails to start | 1 | `ERROR  the worker refuses to start: hosted service <type> failed to start: <reason>` before the node polls |

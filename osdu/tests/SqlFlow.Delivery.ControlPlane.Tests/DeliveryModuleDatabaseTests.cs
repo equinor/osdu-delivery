@@ -14,16 +14,12 @@ using Xunit;
 namespace SqlFlow.ControlPlane.Tests;
 
 /// <summary>
-/// Where the module's rows are written when the repository sync reconciles them, against real SQL Server databases.
-/// An estate can keep SQLFlow's catalog and the OSDU Delivery module in one database or in two, and on Azure SQL two
-/// means no cross-database statement and possibly two servers, so the two shapes are not one code path with a setting:
-/// in one database the rows are part of the sync's own transaction, and in two they are written and committed on the
-/// module's connection. Both are proven here, over the sample estate, with the catalog database watched for anything
-/// the module might have written into it.
-/// <para>These tests need a reachable SQL Server whose login may create a database: SQLFlow's catalog is the suites'
-/// scratch database (<see cref="OsduScratchDatabase"/>), created for each test and dropped when it ends, and a module of
-/// its own is the suites' test database (<see cref="OsduTestServer"/>). A server that refuses to create the scratch
-/// database fails the tests.</para>
+/// Where the module's rows are written when the repository sync reconciles them, against a real SQL Server database. The
+/// <c>osdu</c> schema lives in the catalog's database, so the rows are written on the catalog's connection and are part of
+/// the sync's own transaction: they commit and roll back with it. Proven here over the sample estate.
+/// <para>These tests need a reachable SQL Server whose login may create a database: the estate is the suites' scratch
+/// database (<see cref="OsduScratchDatabase"/>), created for each test and dropped when it ends. A server that refuses to
+/// create it fails the tests.</para>
 /// </summary>
 [Collection(SqlServerSuite.Name)]
 [Trait("Category", "Integration")]
@@ -62,77 +58,46 @@ public sealed class DeliveryModuleDatabaseTests
     }
 
     [Fact]
-    public async Task A_module_database_of_its_own_takes_the_rows_and_the_catalog_database_never_sees_them()
+    public async Task The_rows_commit_and_roll_back_with_the_sync()
     {
-        await using var estate = await TestEstate.CreateAsync(separateDatabases: true);
+        await using var estate = await TestEstate.CreateAsync();
         using var repository = new SampleRepository();
         var warnings = new List<string>();
 
-        var result = await SyncAsync(estate, repository.Root, warnings, commit: false);
-
+        var rolledBack = await SyncAsync(estate, repository.Root, warnings, commit: false);
         Assert.Empty(warnings);
-        Assert.True(result.Added > 0, "the sample estate reconciles to rows");
-
-        // The rows are the module database's, and they are there although the catalog's transaction rolled back: an
-        // isolated module commits its own work, because nothing can enlist two Azure SQL databases in one transaction.
-        await using (var module = estate.ModuleContext())
-        {
-            Assert.Equal(
-                SampleMappings,
-                await ReferencesAsync(module));
-            Assert.NotEmpty(await module.DeliveryCacheDefinitions.Where(d => d.RepoId == Repo).ToListAsync());
-            Assert.NotEmpty(await module.DeliveryInterfaces.Where(i => i.RepoId == Repo).ToListAsync());
-        }
-
-        // And read back through the module's own store, which is how the GUI and a run reach them.
-        var declaration = await new OsduCacheStore(estate.ModuleContext).DeclarationAsync(SampleScope, CancellationToken.None);
-        Assert.NotEmpty(declaration.TypeNames);
-
-        // The catalog database is untouched: not a row, not a table, not even the module's schema. This is the whole
-        // point of the shape, and it is also why the sync cannot have reached the module's rows through this connection.
-        Assert.Equal(0, await ScalarAsync(estate.CatalogConnectionString, "SELECT COUNT(*) FROM sys.tables"));
-        Assert.Equal(0, await ScalarAsync(estate.CatalogConnectionString, "SELECT COUNT(*) FROM sys.schemas WHERE name = 'osdu'"));
-    }
-
-    [Theory]
-    [InlineData(true)]
-    [InlineData(false)]
-    public async Task In_one_database_the_rows_commit_and_roll_back_with_the_sync(bool moduleDatabaseDeclared)
-    {
-        // Two ways to say the same estate: a deployment that points the module at the database the catalog is in, and
-        // one that declares no module connection at all, which is the default and means the catalog's own database.
-        await using var estate = await TestEstate.CreateAsync(separateDatabases: false, declareModule: moduleDatabaseDeclared);
-        using var repository = new SampleRepository();
-
-        var rolledBack = await SyncAsync(estate, repository.Root, new List<string>(), commit: false);
-        Assert.True(rolledBack.Added > 0);
+        Assert.True(rolledBack.Added > 0, "the sample estate reconciles to rows");
         await using (var module = estate.ModuleContext())
         {
             // The sync's transaction is what the rows were written under, so its rollback took them with it.
             Assert.Empty(await module.DeliveryMappings.Where(m => m.RepoId == Repo).ToListAsync());
             Assert.Empty(await module.DeliveryInterfaces.Where(i => i.RepoId == Repo).ToListAsync());
+            Assert.Empty(await module.DeliveryCacheDefinitions.Where(d => d.RepoId == Repo).ToListAsync());
         }
 
         var committed = await SyncAsync(estate, repository.Root, new List<string>(), commit: true);
         Assert.Equal(rolledBack.Added, committed.Added);
         await using (var module = estate.ModuleContext())
         {
-            Assert.Equal(
-                SampleMappings,
-                await ReferencesAsync(module));
+            Assert.Equal(SampleMappings, await ReferencesAsync(module));
+            Assert.NotEmpty(await module.DeliveryInterfaces.Where(i => i.RepoId == Repo).ToListAsync());
         }
+
+        // And read back through the module's own store, which is how the GUI and a run reach them.
+        var declaration = await new OsduCacheStore(estate.ModuleContext).DeclarationAsync(SampleScope, CancellationToken.None);
+        Assert.NotEmpty(declaration.TypeNames);
     }
 
     [Fact]
-    public async Task A_mapping_change_is_read_from_wherever_the_module_database_is()
+    public async Task A_mapping_change_is_read_on_the_catalogs_connection()
     {
         // The lineage check asks the catalog about the graph it stores before it asks the module about its mappings, so
-        // this estate's catalog database holds SQLFlow's catalog, as the database a sync runs against always does.
-        await using var estate = await TestEstate.CreateAsync(separateDatabases: true, withCatalog: true);
+        // this estate's database holds SQLFlow's catalog beside the osdu schema, as the database a sync runs against does.
+        await using var estate = await TestEstate.CreateAsync(withCatalog: true);
         using var repository = new SampleRepository();
-        await SyncAsync(estate, repository.Root, new List<string>(), commit: false);
+        await SyncAsync(estate, repository.Root, new List<string>(), commit: true);
 
-        // The lineage check reads the mapping rows the sync wrote, which are a database and a connection away.
+        // The lineage check reads the mapping rows the sync wrote, on the connection it was handed.
         Assert.False(await ChangedAsync(estate, repository.Root));
 
         var mapping = SampleEstate.MappingIn(repository.Root, "Wellbore@1.0.0");
@@ -143,15 +108,14 @@ public sealed class DeliveryModuleDatabaseTests
 
     /// <summary>
     /// One reconciliation, given exactly what the repository sync gives the extension: the catalog's context inside the
-    /// catalog's transaction. <paramref name="commit"/> says what becomes of that transaction, which is what separates
-    /// the rows that ride it from the rows an isolated module database committed on its own connection.
+    /// catalog's transaction. <paramref name="commit"/> says what becomes of that transaction, and so of the module's rows.
     /// </summary>
     private static async Task<CatalogSyncExtensionResult> SyncAsync(
         TestEstate estate, string root, ICollection<string> warnings, bool commit)
     {
-        await using var catalog = CatalogDatabase.Create(estate.CatalogConnectionString);
+        await using var catalog = CatalogDatabase.Create(estate.ConnectionString);
         await using var transaction = await catalog.Database.BeginTransactionAsync();
-        var result = await estate.Sync().SyncAsync(catalog, Repo, root, Now, warnings, CancellationToken.None);
+        var result = await Sync().SyncAsync(catalog, Repo, root, Now, warnings, CancellationToken.None);
         if (commit)
         {
             await transaction.CommitAsync();
@@ -166,9 +130,15 @@ public sealed class DeliveryModuleDatabaseTests
 
     private static async Task<bool> ChangedAsync(TestEstate estate, string root)
     {
-        await using var catalog = CatalogDatabase.Create(estate.CatalogConnectionString);
-        return await estate.Sync().LineageInputsChangedAsync(catalog, Repo, root, CancellationToken.None);
+        await using var catalog = CatalogDatabase.Create(estate.ConnectionString);
+        return await Sync().LineageInputsChangedAsync(catalog, Repo, root, CancellationToken.None);
     }
+
+    /// <summary>
+    /// The sync as a host composes it: the delivery loader and the resolver that turns a document's ${env:...} into the
+    /// partition a cache is keyed by, which is what a capture and a render both key it under.
+    /// </summary>
+    private static DeliveryCatalogSync Sync() => new(new DeliveryDocumentLoader(), new SecretResolver([new EnvSecretProvider()]));
 
     /// <summary>The mapping references a reconciliation left, ordered here rather than by the server's collation.</summary>
     private static async Task<string[]> ReferencesAsync(OsduDbContext module)
@@ -176,15 +146,6 @@ public sealed class DeliveryModuleDatabaseTests
         var references = await module.DeliveryMappings.Where(m => m.RepoId == Repo).Select(m => m.Reference).ToListAsync();
         references.Sort(StringComparer.Ordinal);
         return [.. references];
-    }
-
-    private static async Task<int> ScalarAsync(string connectionString, string sql)
-    {
-        await using var connection = new SqlConnection(connectionString);
-        await connection.OpenAsync();
-        await using var command = connection.CreateCommand();
-        command.CommandText = sql;
-        return Convert.ToInt32(await command.ExecuteScalarAsync(), System.Globalization.CultureInfo.InvariantCulture);
     }
 
     /// <summary>The sample estate copied to a temp directory, and removed with the test.</summary>
@@ -207,110 +168,67 @@ public sealed class DeliveryModuleDatabaseTests
     }
 
     /// <summary>
-    /// The databases a test runs against: SQLFlow's catalog in the suites' scratch database, created empty for the test and
-    /// dropped when it ends, and the OSDU Delivery module either beside it in the same database or in a database of its
-    /// own, which is the suites' test database with the module's schema emptied. The module's schema is migrated exactly
-    /// as a host migrates it, into a database provisioned first, which is what a deployment does.
+    /// The database a test runs against: the suites' scratch database, created empty for the test and dropped when it ends,
+    /// holding the module's <c>osdu</c> schema, migrated exactly as a host migrates it into a database provisioned first,
+    /// and, for a test that reads it, SQLFlow's catalog beside it.
     /// </summary>
     private sealed class TestEstate : IAsyncDisposable
     {
-        private readonly OsduScratchDatabase _catalog;
-        private readonly OsduTestDatabase? _module;
-        private readonly string? _moduleConnectionString;
+        private readonly OsduScratchDatabase _database;
 
-        private TestEstate(OsduScratchDatabase catalog, OsduTestDatabase? module, string? moduleConnectionString)
-        {
-            _catalog = catalog;
-            _module = module;
-            _moduleConnectionString = moduleConnectionString;
-        }
+        private TestEstate(OsduScratchDatabase database) => _database = database;
 
-        /// <summary>SQLFlow's catalog database.</summary>
-        public string CatalogConnectionString => _catalog.ConnectionString;
+        /// <summary>The estate's one database: the catalog's, which holds the osdu schema.</summary>
+        public string ConnectionString => _database.ConnectionString;
 
         /// <summary>
-        /// Two databases, or one holding both. With <paramref name="declareModule"/> false the module is given no connection
-        /// of its own, which is how a host that keeps the <c>osdu</c> schema in the catalog's database is configured. With
-        /// <paramref name="withCatalog"/> the catalog's database is migrated to SQLFlow's catalog, for a test that reads it;
-        /// the others only need its connection and its transaction.
+        /// The estate's database with the module's schema migrated, and with <paramref name="withCatalog"/> SQLFlow's catalog
+        /// too, for a test that reads it; the others only need the catalog's connection and its transaction.
         /// </summary>
-        public static async Task<TestEstate> CreateAsync(bool separateDatabases, bool declareModule = true, bool withCatalog = false)
+        public static async Task<TestEstate> CreateAsync(bool withCatalog = false)
         {
-            OsduScratchDatabase catalog;
+            OsduScratchDatabase database;
             try
             {
-                catalog = await OsduScratchDatabase.CreateAsync();
+                database = await OsduScratchDatabase.CreateAsync();
             }
             catch (SqlException ex)
             {
                 throw new InvalidOperationException(
-                    "These tests prove where the module's rows land by keeping SQLFlow's catalog in a database of its own, the suites' "
-                    + $"scratch database, which they create beside the test database and drop again. This server refused: {ex.Message}",
+                    "These tests sync into an estate of their own, the suites' scratch database, which they create beside the test "
+                    + $"database and drop again. This server refused: {ex.Message}",
                     ex);
             }
 
-            OsduTestDatabase? module = null;
             try
             {
-                module = separateDatabases ? new OsduTestDatabase() : null;
-                var moduleConnectionString = module?.ConnectionString ?? (declareModule ? catalog.ConnectionString : null);
-
                 // The module's schema, migrated into the database that is to hold it, as 'sqlflow db migrate' does.
                 await ModuleDatabases.MigrateAsync(
                     OsduModuleDatabase.Create(),
-                    module?.ConnectionString ?? catalog.ConnectionString,
+                    database.ConnectionString,
                     allowCreate: false,
                     appliedBy: "module database tests",
                     appliedUtc: Now,
                     catalogAppliedMigrations: CatalogDatabase.KnownMigrations);
                 if (withCatalog)
                 {
-                    await CatalogDatabase.MigrateAsync(catalog.ConnectionString);
+                    await CatalogDatabase.MigrateAsync(database.ConnectionString);
                 }
 
-                return new TestEstate(catalog, module, moduleConnectionString);
+                return new TestEstate(database);
             }
             catch
             {
                 // Whatever was taken before the failure is still this test's to give back.
-                module?.Dispose();
-                await catalog.DisposeAsync();
+                await database.DisposeAsync();
                 throw;
             }
         }
 
-        /// <summary>
-        /// The sync as a host composes it: the delivery loader, the module database when the host has one, and the
-        /// resolver that turns a document's ${env:...} into the partition a cache is keyed by, which is what a capture and
-        /// a render both key it under.
-        /// </summary>
-        public DeliveryCatalogSync Sync()
-            => new(
-                new DeliveryDocumentLoader(),
-                _moduleConnectionString is null ? null : new ModuleContexts(_moduleConnectionString),
-                new SecretResolver([new EnvSecretProvider()]));
+        /// <summary>A context on the estate's database, for reading what a sync left.</summary>
+        public OsduDbContext ModuleContext() => new(OsduDbContext.SqlServerOptions(ConnectionString));
 
-        /// <summary>A context on the database the module's rows are in, for reading what a sync left.</summary>
-        public OsduDbContext ModuleContext()
-            => new(OsduDbContext.SqlServerOptions(_moduleConnectionString ?? CatalogConnectionString));
-
-        public async ValueTask DisposeAsync()
-        {
-            try
-            {
-                // The scratch database clears its own connection pool and evicts any session left on it before it drops.
-                await _catalog.DisposeAsync();
-            }
-            finally
-            {
-                _module?.Dispose();
-            }
-        }
-    }
-
-    /// <summary>Contexts on one connection string, as a host's module database registration hands them to the module.</summary>
-    private sealed class ModuleContexts(string connectionString) : IDbContextFactory<OsduDbContext>
-    {
-        public OsduDbContext CreateDbContext() => new(OsduDbContext.SqlServerOptions(connectionString));
+        /// <summary>The scratch database clears its own connection pool and evicts any session left on it before it drops.</summary>
+        public ValueTask DisposeAsync() => _database.DisposeAsync();
     }
 }

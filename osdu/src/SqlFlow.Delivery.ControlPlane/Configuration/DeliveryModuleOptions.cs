@@ -162,22 +162,6 @@ public sealed class SchemaRepositoryOptions
 }
 
 /// <summary>
-/// Where the module's own database lives (section <c>Osdu:Database</c>). Left empty, the <c>osdu</c> schema sits in the
-/// catalog's database, which is what a control plane does unless a deployment gives the module a database of its own.
-/// </summary>
-public sealed class OsduDatabaseOptions
-{
-    /// <summary>The configuration section the control plane module binds this from.</summary>
-    public const string SectionName = "Osdu:Database";
-
-    /// <summary>
-    /// A <c>${env:NAME}</c> or <c>${keyvault:NAME}</c> reference to the connection string of the database holding the
-    /// <c>osdu</c> schema; never a connection string itself. Empty means the catalog's own database.
-    /// </summary>
-    public string? Connection { get; set; }
-}
-
-/// <summary>
 /// The OSDU partitions this deployment delivers to (section <c>Osdu:Partitions</c>, one child per data-partition-id), with
 /// the values their runs resolve their flows' references with. The control plane registers them and writes their values
 /// when it starts (<see cref="ConfiguredPartitions"/>), so a deployment comes up with its partitions in place, and keeps

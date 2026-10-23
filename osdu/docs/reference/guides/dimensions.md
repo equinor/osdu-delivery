@@ -64,8 +64,7 @@ dimension writes then finds logs. The kind is the one your search will read.
 A dimension reading a `data` path learns how the index stores it from the template of every kind its pattern matches in
 the partition, as the template folders on the flow's path hold it. Put the template of each in a folder on the flow's
 path ([template folders](../concepts/templates.md#template-folders)). The commands in this guide read and write the
-module's database, which is the catalog's (`SQLFLOW_CATALOG_DB`, or `--db <conn-ref>`) unless `SQLFLOW_OSDU_DB` names one
-of its own:
+module's database, which is the catalog's (`SQLFLOW_CATALOG_DB`, or `--db <conn-ref>`):
 
 ```bash
 sqlflow template capture --kind osdu:wks:work-product-component--WellLog:1.4.0 --out welldb/templates/osdu_wks_work-product-component--WellLog_1.4.0.json

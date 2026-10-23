@@ -57,7 +57,7 @@ variable "private_networks" {
 }
 
 variable "secret_env" {
-  description = "Environment variables a node itself reads from the vault, beside its node token: SQLFLOW_OSDU_DB, the ledger's connection, which a node opens and its runs do not carry. Everything a run reads besides is handed to the run by the control plane."
+  description = "Environment variables a node itself reads from the vault, beside its node token: SQLFLOW_CATALOG_DB, the catalog's connection, which the node reads and writes the ledger in the `osdu` schema through. Everything a run reads besides is handed to the run by the control plane."
   type = list(object({
     name        = string
     secret_name = string

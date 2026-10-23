@@ -80,7 +80,7 @@ sqlflow values <flow.yaml> [--interface <name>] [--partition <id>] [--target <os
 | `--skip <n>` | whole number | `0` | Example records of each finding passed over before the samples are taken: the next page of examples. |
 | `--rows <file.csv>` | path | none | Write every failing row to a CSV file as the check meets it, however many there are (see [The --rows file](#the---rows-file)). The text answer then ends with `Every failing row is in <path>.` |
 | `--out <file.json>` | path | none | Also write the whole check as JSON to this file. |
-| `--db <conn-ref>` | string | `${env:SQLFLOW_CATALOG_DB}` | The module database when the `osdu` schema lives in the catalog's database; `SQLFLOW_OSDU_DB` names it otherwise. See [The osdu module database in sqlflow db](db.md). |
+| `--db <conn-ref>` | string | `${env:SQLFLOW_CATALOG_DB}` | The catalog database, which holds the `osdu` schema. See [The osdu module database in sqlflow db](db.md). |
 | `--json` | switch | off | Print the check as JSON on stdout instead of the text form. |
 
 `--max-rows`, `--samples` and `--skip` take digits only. Anything else stops the command with

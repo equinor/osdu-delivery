@@ -2,9 +2,9 @@
 # for work, with the OSDU Delivery module installed so it can execute every OSDU flow kind (delivery, retrieval,
 # cache, assertion, dimension and inventory) as well as SQLFlow's own.
 #
-# The image publishes osdu/hosts/SqlFlow.Delivery.Worker.Host. It opens no catalog connection: the run's definition,
-# its YAML and its trace travel over the node protocol. It needs OUTBOUND HTTPS to the control plane, OUTBOUND SQL to
-# the OSDU module database and to the ingestion database its flows read, outbound git to the repository remotes (for
+# The image publishes osdu/hosts/SqlFlow.Delivery.Worker.Host. The run's definition, its YAML and its trace travel
+# over the node protocol. It needs OUTBOUND HTTPS to the control plane, OUTBOUND SQL to the catalog database (for the
+# `osdu` schema alone) and to the ingestion database its flows read, outbound git to the repository remotes (for
 # SHA-pinned runs without a snapshot), and outbound HTTPS to the OSDU endpoint; it exposes nothing, so it never sits
 # behind an ingress. Scale it on the control plane's replica target (osdu/deploy/k8s for the KEDA setup), not on
 # traffic.
@@ -13,8 +13,8 @@
 #   SQLFLOW_URL                   the control plane's URL (required)
 #   SQLFLOW_TOKEN                 the node credential: a token minted with the 'node' scope, or a ${env:...} /
 #                                 ${keyvault:...} reference to one (required)
-#   SQLFLOW_OSDU_DB               the OSDU module database connection the ledger is read and written through
-#                                 (required: without it the node refuses to start)
+#   SQLFLOW_CATALOG_DB            the catalog database's connection, which the ledger in the `osdu` schema is read
+#                                 and written through (required: without it the node refuses to start)
 #   SQLFLOW_WORKER_POOL           comma-separated pools this node serves (optional; empty = untargeted runs only)
 #   SQLFLOW_WORKER_POLL_SECONDS   queue poll cadence (optional)
 #   SQLFLOW_WORKER_DRAIN_SECONDS  how long a stopping node finishes what it holds (optional)

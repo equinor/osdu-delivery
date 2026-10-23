@@ -170,7 +170,7 @@ sent at each renewal of its lease, so the record table trails the trace by at mo
 
 **You see** a submission whose status stays `planned` or `running` after its run ended, with batches still `queued`.
 
-**Do:** nothing, usually. Its run stopped part way (a node went away, a drain member failed, a command-line run was
+**Do:** nothing, usually. Its run stopped part way (a node went away, a slice run failed, a command-line run was
 killed): a run the platform executes again resumes it; otherwise the flow's next deliver run takes it over once no run
 holds it and its leases have run out, sends what it holds and closes it, its log naming the submission
 ([Recovering a stopped submission](../concepts/submissions.md#recovering-a-stopped-submission)). A submission a run

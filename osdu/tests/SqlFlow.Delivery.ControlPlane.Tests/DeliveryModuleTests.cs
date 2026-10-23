@@ -109,7 +109,7 @@ public sealed class DeliveryModuleTests
         Assert.Equal(DeliveryModel.SchemaName, database.Schema);
         Assert.Equal(OsduDbContext.ModuleVersion, database.Version);
         Assert.Equal(OsduDbContext.MinimumCatalogMigration, database.MinimumCatalogMigration);
-        // No connection of its own: the osdu schema lives in the catalog's database unless a deployment says otherwise.
+        // No connection of its own: the osdu schema lives in the catalog's database.
         Assert.Null(database.ConnectionReference);
         Assert.Equal("module 'osdu' (schema 'osdu', catalog connection)", database.Describe());
     }
@@ -182,6 +182,22 @@ public sealed class DeliveryModuleTests
     }
 
     [Fact]
+    public async Task ASettingThatGaveTheModuleADatabaseOfItsOwn_StopsTheHost_NamingWhatReplacedIt()
+    {
+        // The osdu schema lives in the catalog's database. A deployment still naming a database of the module's own would,
+        // were it ignored, start an empty ledger in the catalog's database, so the host refuses it instead.
+        await using var factory = Host().WithSetting("Osdu:Database:Connection", "${env:LEDGER_DB}");
+
+        var error = Assert.ThrowsAny<Exception>(() => factory.CreateClient());
+
+        var module = Module(error);
+        Assert.Equal(OsduSchema.Module, module.ModuleName);
+        Assert.Contains("Osdu:Database:Connection is no longer a setting", module.Message, StringComparison.Ordinal);
+        Assert.Contains("SQLFLOW_CATALOG_DB", module.Message, StringComparison.Ordinal);
+        Assert.DoesNotContain("LEDGER_DB", module.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public async Task TheHost_CarriesTheProductsBranding()
     {
         await using var factory = Host().WithBranding(OsduDeliveryBranding.Product);
@@ -195,25 +211,27 @@ public sealed class DeliveryModuleTests
     }
 
     /// <summary>
-    /// The module's database declaration: its own connection is a secret reference or nothing at all, and the version row
-    /// its migrate records is the one status and startup verification read back.
+    /// The module's database declaration: the catalog's database, on the catalog's connection or, on a node, through the
+    /// catalog's environment variable; the settings that once gave it a database of its own are refused; and the version
+    /// row its migrate records is the one status and startup verification read back.
     /// </summary>
     [Fact]
-    public async Task TheModuleDatabase_TakesAReferenceOrTheCatalogConnection_AndRoundTripsItsVersionRow()
+    public async Task TheModuleDatabase_IsTheCatalogs_RefusesItsRetiredSettings_AndRoundTripsItsVersionRow()
     {
-        var own = OsduModuleDatabase.Create(OsduModuleDatabase.EnvironmentReference);
-        Assert.Equal("${env:SQLFLOW_OSDU_DB}", own.ConnectionReference);
-        Assert.Equal("module 'osdu' (schema 'osdu', own connection)", own.Describe());
+        Assert.Null(OsduModuleDatabase.Create().ConnectionReference);
+        var node = OsduModuleDatabase.CreateForNode();
+        Assert.Equal("${env:SQLFLOW_CATALOG_DB}", node.ConnectionReference);
+        Assert.Equal("module 'osdu' (schema 'osdu', own connection)", node.Describe());
 
-        // A connection string where a reference belongs usually carries a password, so it is refused without echoing it.
-        var refused = Assert.Throws<ModuleDatabaseException>(() => OsduModuleDatabase.Create("Server=db;User ID=sa;Password=hunter2"));
-        Assert.Equal(OsduSchema.Module, refused.Module);
-        Assert.DoesNotContain("hunter2", refused.Message, StringComparison.Ordinal);
-
-        // The configured option wins over the environment, and neither means the catalog's own database.
-        Assert.Equal("${keyvault:v/osdu}", OsduModuleDatabase.ResolveReference("${keyvault:v/osdu}", _ => "ignored"));
-        Assert.Equal(OsduModuleDatabase.EnvironmentReference, OsduModuleDatabase.ResolveReference(null, _ => "Server=..."));
-        Assert.Null(OsduModuleDatabase.ResolveReference(null, _ => null));
+        // Each retired setting is refused by its name, never by its value; a host given neither goes on.
+        OsduModuleDatabase.RefuseRetiredSettings(_ => false);
+        foreach (var retired in new[] { "Osdu:Database:Connection", "SQLFLOW_OSDU_DB" })
+        {
+            var refused = Assert.Throws<InvalidOperationException>(
+                () => OsduModuleDatabase.RefuseRetiredSettings(name => string.Equals(name, retired, StringComparison.Ordinal)));
+            Assert.StartsWith($"{retired} is no longer a setting;", refused.Message, StringComparison.Ordinal);
+            Assert.Contains("SQLFLOW_CATALOG_DB", refused.Message, StringComparison.Ordinal);
+        }
 
         // The after-migrate and read-version hooks are the module's own, and they keep exactly one row.
         var database = OsduModuleDatabase.Create();

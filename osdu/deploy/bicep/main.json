@@ -6,7 +6,7 @@
     "_generator": {
       "name": "bicep",
       "version": "0.44.1.10279",
-      "templateHash": "7348496145866376427"
+      "templateHash": "12133270592178534504"
     }
   },
   "definitions": {
@@ -565,7 +565,7 @@
       "type": "string",
       "defaultValue": "",
       "metadata": {
-        "description": "Address of an existing SQL Server or Azure SQL Managed Instance whose databases the estate uses, instead of creating a server here: host or host,port (a Managed Instance's private FQDN, its public endpoint with ,3342, or any reachable SQL Server). Set, nothing SQL is created: no server, firewall rule or database. The databases named by catalogDatabaseName, osduDatabaseName when apart, and each of sqlConnections must already exist there, the network path is yours to provide (for a VNet-only Managed Instance, set infrastructureSubnetId so the apps reach its VNet), and an Entra administrator of the server runs the sqlSetupScript output to grant the apps their access. Only their connection secrets are written here. Empty creates an Azure SQL logical server and the databases."
+        "description": "Address of an existing SQL Server or Azure SQL Managed Instance whose databases the estate uses, instead of creating a server here: host or host,port (a Managed Instance's private FQDN, its public endpoint with ,3342, or any reachable SQL Server). Set, nothing SQL is created: no server, firewall rule or database. The databases named by catalogDatabaseName and each of sqlConnections must already exist there, the network path is yours to provide (for a VNet-only Managed Instance, set infrastructureSubnetId so the apps reach its VNet), and an Entra administrator of the server runs the sqlSetupScript output to grant the apps their access. Only their connection secrets are written here. Empty creates an Azure SQL logical server and the databases."
       }
     },
     "infrastructureSubnetId": {
@@ -914,18 +914,11 @@
         "description": "Name of the estate's setup identity: the managed identity the deployment's own steps run as (osdu/deploy/setup/Setup-Estate.ps1), the Entra administrator of the SQL server created here and a Key Vault Secrets Officer of the estate's vault. No app runs as it."
       }
     },
-    "osduDatabaseName": {
-      "type": "string",
-      "defaultValue": "[parameters('catalogDatabaseName')]",
-      "metadata": {
-        "description": "Name of the database holding the module's `osdu` schema (the record ledger, mappings, templates and the OSDU cache). The catalog's database by default, so all of the metadata is in one; name another to keep it apart (a second database is then created for it), which cannot be changed after the first migrate."
-      }
-    },
     "sqlDatabaseSku": {
       "type": "string",
       "defaultValue": "S1",
       "metadata": {
-        "description": "SKU name of the metadata database, e.g. S1 (ignored when existingSqlServer is set; the osdu database takes it too when apart). It carries the catalog, the run journal and the delivery ledger: modest, but polled continuously, so avoid serverless auto-pause."
+        "description": "SKU name of the metadata database, e.g. S1 (ignored when existingSqlServer is set). It carries the catalog, the run journal and the delivery ledger: modest, but polled continuously, so avoid serverless auto-pause."
       }
     },
     "forceUpdateTag": {
@@ -947,9 +940,9 @@
     "propertiesHoldingSecrets": "[map(filter(items(parameters('properties')), lambda('property', and(__bicep.namesASecret(lambdaVariables('property').key), not(__bicep.isWholeReference(lambdaVariables('property').value))))), lambda('property', lambdaVariables('property').key))]",
     "propertiesChecked": "[if(not(empty(variables('propertiesMisnamed'))), fail(format('A property is named as a flow spells it in ${{env:NAME}}: a letter or underscore, then letters, digits and underscores, at most 64 characters. Not so: {0}.', join(variables('propertiesMisnamed'), ', '))), if(not(empty(variables('propertiesHoldingSecrets'))), fail(format('A property whose name says it is a secret (ending in SECRET, PASSWORD or TOKEN, or naming an API key) takes a ${{keyvault:<vault>/<secret>}} reference, never the secret itself. Not so: {0}.', join(variables('propertiesHoldingSecrets'), ', '))), parameters('properties')))]",
     "sqlConnectionsMisnamed": "[filter(objectKeys(parameters('sqlConnections')), lambda('name', not(__bicep.isEnvironmentName(lambdaVariables('name')))))]",
-    "sqlConnectionsNamedAsEstateDatabases": "[filter(objectKeys(parameters('sqlConnections')), lambda('name', or(equals(toUpper(lambdaVariables('name')), 'SQLFLOW_CATALOG_DB'), equals(toUpper(lambdaVariables('name')), 'SQLFLOW_OSDU_DB'))))]",
+    "sqlConnectionsNamedAsEstateDatabases": "[filter(objectKeys(parameters('sqlConnections')), lambda('name', equals(toUpper(lambdaVariables('name')), 'SQLFLOW_CATALOG_DB')))]",
     "sqlConnectionsNotOneOrTheOther": "[map(filter(items(parameters('sqlConnections')), lambda('c', equals(empty(coalesce(tryGet(lambdaVariables('c').value, 'database'), '')), empty(coalesce(tryGet(lambdaVariables('c').value, 'secretName'), ''))))), lambda('c', lambdaVariables('c').key))]",
-    "sqlConnectionsChecked": "[if(not(empty(variables('sqlConnectionsMisnamed'))), fail(format('A connection is named as a flow spells it in ${{env:NAME}}: a letter or underscore, then letters, digits and underscores, at most 64 characters. Not so: {0}.', join(variables('sqlConnectionsMisnamed'), ', '))), if(not(empty(variables('sqlConnectionsNamedAsEstateDatabases'))), fail(format('SQLFLOW_CATALOG_DB and SQLFLOW_OSDU_DB are the estate''s own databases, set by this template; name the connection otherwise. Not so: {0}.', join(variables('sqlConnectionsNamedAsEstateDatabases'), ', '))), if(not(empty(variables('sqlConnectionsNotOneOrTheOther'))), fail(format('Each SQL connection names exactly one of database (on the estate''s server) and secretName (a vault secret holding the connection string of a database elsewhere). Not so: {0}.', join(variables('sqlConnectionsNotOneOrTheOther'), ', '))), parameters('sqlConnections'))))]",
+    "sqlConnectionsChecked": "[if(not(empty(variables('sqlConnectionsMisnamed'))), fail(format('A connection is named as a flow spells it in ${{env:NAME}}: a letter or underscore, then letters, digits and underscores, at most 64 characters. Not so: {0}.', join(variables('sqlConnectionsMisnamed'), ', '))), if(not(empty(variables('sqlConnectionsNamedAsEstateDatabases'))), fail(format('SQLFLOW_CATALOG_DB is the estate''s own database, set by this template; name the connection otherwise. Not so: {0}.', join(variables('sqlConnectionsNamedAsEstateDatabases'), ', '))), if(not(empty(variables('sqlConnectionsNotOneOrTheOther'))), fail(format('Each SQL connection names exactly one of database (on the estate''s server) and secretName (a vault secret holding the connection string of a database elsewhere). Not so: {0}.', join(variables('sqlConnectionsNotOneOrTheOther'), ', '))), parameters('sqlConnections'))))]",
     "sqlAdminsWithoutGuid": "[map(filter(parameters('sqlAdmins'), lambda('a', not(__bicep.isGuid(lambdaVariables('a').objectId)))), lambda('a', lambdaVariables('a').name))]",
     "sqlAdminsChecked": "[if(not(empty(variables('sqlAdminsWithoutGuid'))), fail(format('Each of sqlAdmins has type user or group and an objectId that is a GUID. Not so: {0}.', join(variables('sqlAdminsWithoutGuid'), ', '))), parameters('sqlAdmins'))]",
     "repositoriesMisnamed": "[filter(objectKeys(parameters('repositories')), lambda('name', not(__bicep.isRepositoryName(lambdaVariables('name')))))]",
@@ -962,13 +955,11 @@
     "landingStorageChecked": "[if(equals(parameters('landingStorage'), null()), null(), if(not(__bicep.isContainerName(coalesce(tryGet(parameters('landingStorage'), 'container'), 'landing'))), fail('landingStorage.container is a container name: 3 to 63 lowercase letters, digits and hyphens.'), if(not(__bicep.isEnvironmentName(coalesce(tryGet(parameters('landingStorage'), 'referenceName'), 'LANDING_URL'))), fail('landingStorage.referenceName is named as a flow spells it in ${env:NAME}: a letter or underscore, then letters, digits and underscores, at most 64 characters.'), if(and(not(empty(coalesce(tryGet(parameters('landingStorage'), 'existingAccountId'), ''))), if(equals(length(split(coalesce(tryGet(parameters('landingStorage'), 'existingAccountId'), ''), '/')), 9), not(__bicep.isStorageAccountPath(split(coalesce(tryGet(parameters('landingStorage'), 'existingAccountId'), ''), '/'))), true())), fail('landingStorage.existingAccountId is a storage account''s resource id: /subscriptions/<id>/resourceGroups/<group>/providers/Microsoft.Storage/storageAccounts/<name>.'), parameters('landingStorage')))))]",
     "sqlAdminLoginChecked": "[if(and(equals(parameters('sqlAuthentication'), 'password'), empty(parameters('sqlAdminPassword'))), fail('sqlAdminPassword is required with sqlAuthentication password; set it, or use the default Entra authentication, where each app signs in as its own managed identity.'), parameters('sqlAdminLogin'))]",
     "catalogConnectionSecretName": "osdu-delivery-catalog-db",
-    "osduConnectionSecretName": "osdu-delivery-osdu-db",
     "jwtSigningKeySecretName": "osdu-delivery-jwt-signing-key",
     "adminPasswordSecretName": "osdu-delivery-admin-password",
     "nodeTokenSecretName": "osdu-delivery-node-token",
     "setupScript": "<#\n.SYNOPSIS\n    The steps of an OSDU Delivery deployment that need a person's rights rather than an app's, run inside the\n    deployment itself by its setup identity, so a deployment needs no step by hand after it: the same script for the\n    Terraform estate (osdu/deploy/terraform) and the Bicep one (osdu/deploy/bicep, the Marketplace package).\n\n.DESCRIPTION\n    Runs as an Azure deployment script (AzurePowerShell) under the estate's setup identity, a user-assigned managed\n    identity the deployment creates: Key Vault Secrets Officer on the estate's vault, and the Entra administrator of the\n    SQL server the deployment creates.\n\n    -Step Secrets (before the apps are created): writes each secret the deployment generates (the JWT signing key, the\n    initial admin's password, the node credential the workers present) into the vault when the vault does not hold it,\n    and never changes one it holds, so a value rotated by hand stays. No generated value leaves the container: not in\n    an output, not in a log line, not in Terraform state.\n\n    -Step Grants (once the apps' identities exist): connects to each database as the setup identity and creates the\n    database users the apps sign in as (each app as its own managed identity, and the people the deployment names), with\n    the roles each needs. Every statement can run again; running the step on every deployment keeps the grants as the\n    deployment says.\n\n    The step's input is SETUP_SPEC, one JSON document the deployment builds:\n\n        {\n          \"vault\": \"<vault name>\",\n          \"generated\": [ { \"name\": \"<secret name>\", \"kind\": \"signing-key | password | node-token\" } ],\n          \"sql\": {\n            \"server\": \"<server FQDN>\",\n            \"databases\": [\n              {\n                \"name\": \"<database>\",\n                \"users\": [ { \"name\": \"<user name>\", \"id\": \"<client id of an identity, object id of a person or group>\", \"type\": \"E | X\" } ],\n                \"statements\": [ \"<T-SQL run after the users exist>\" ]\n              }\n            ]\n          }\n        }\n\n    \"type\" is E for an identity or a person and X for a group (CREATE USER ... WITH SID, TYPE), so no directory lookup\n    is needed and the setup identity needs no Microsoft Graph permission. \"sql\" is null when the deployment does not\n    administer the server (an existing server, or SQL authentication).\n\n.PARAMETER Step\n    Secrets or Grants.\n#>\n[CmdletBinding()]\nparam(\n    [Parameter(Mandatory)]\n    [ValidateSet('Secrets', 'Grants')]\n    [string] $Step\n)\n\nSet-StrictMode -Version Latest\n$ErrorActionPreference = 'Stop'\n\n# How long a step keeps trying through what settles on its own after a deployment: a role assignment the vault does not\n# honour yet, an SQL administrator the server does not know yet.\n$SettleBudget = [TimeSpan]::FromMinutes(10)\n\nfunction Write-Step([string] $Message) {\n    # The deployment script's log; never its outputs, which carry only what the step reports by name.\n    Write-Host \"[$Step] $Message\"\n}\n\nfunction Get-Spec {\n    $json = $env:SETUP_SPEC\n    if ([string]::IsNullOrWhiteSpace($json)) {\n        throw 'SETUP_SPEC is not set: the deployment passes the setup step its input as one JSON document.'\n    }\n\n    return $json | ConvertFrom-Json -Depth 20\n}\n\nfunction Invoke-Settled([string] $What, [scriptblock] $Action) {\n    # Runs $Action until it succeeds or the settle budget is spent, waiting longer each time; the last error is the\n    # one reported, with what was being done.\n    $deadline = [DateTime]::UtcNow + $SettleBudget\n    $delay = 5\n    while ($true) {\n        try {\n            return & $Action\n        }\n        catch {\n            if ([DateTime]::UtcNow -ge $deadline) {\n                throw \"$What did not succeed within $([int]$SettleBudget.TotalMinutes) minutes: $($_.Exception.Message)\"\n            }\n\n            Write-Step \"$What is not possible yet ($($_.Exception.Message)); trying again in $delay s.\"\n            Start-Sleep -Seconds $delay\n            $delay = [Math]::Min($delay * 2, 60)\n        }\n    }\n}\n\nfunction New-Secret([string] $Kind) {\n    $bytes = [System.Security.Cryptography.RandomNumberGenerator]::GetBytes(48)\n    switch ($Kind) {\n        'signing-key' {\n            # 384 bits, well above the 256 an HS256 key needs.\n            return [Convert]::ToBase64String($bytes)\n        }\n        'password' {\n            # 32 letters and digits: about 190 bits, typed nowhere, read from the vault when a person needs it.\n            $alphabet = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789'\n            $chars = for ($i = 0; $i -lt 32; $i++) { $alphabet[[System.Security.Cryptography.RandomNumberGenerator]::GetInt32($alphabet.Length)] }\n            return -join $chars\n        }\n        'node-token' {\n            # SQLFlow's own token form: sqlf_ and 43 base64url characters (256 bits).\n            $token = [Convert]::ToBase64String($bytes[0..31]).TrimEnd('=').Replace('+', '-').Replace('/', '_')\n            return \"sqlf_$token\"\n        }\n        default {\n            throw \"SETUP_SPEC names a generated secret of kind '$Kind'; the kinds are signing-key, password and node-token.\"\n        }\n    }\n}\n\nfunction Invoke-Secrets($Spec) {\n    if ([string]::IsNullOrWhiteSpace($Spec.vault)) {\n        throw 'SETUP_SPEC names no vault.'\n    }\n\n    $kept = @()\n    $written = @()\n    foreach ($secret in @($Spec.generated)) {\n        $name = [string] $secret.name\n        $existing = Invoke-Settled \"Reading secret '$name' in vault '$($Spec.vault)'\" {\n            try {\n                Get-AzKeyVaultSecret -VaultName $Spec.vault -Name $name -ErrorAction Stop\n            }\n            catch {\n                # A secret the vault does not hold is the answer, not a failure to retry.\n                if ($_.Exception.Message -match 'not found|NotFound|SecretNotFound|\\(404\\)') {\n                    return $null\n                }\n\n                throw\n            }\n        }\n\n        if ($null -ne $existing) {\n            $kept += $name\n            continue\n        }\n\n        $value = ConvertTo-SecureString (New-Secret ([string] $secret.kind)) -AsPlainText -Force\n        Invoke-Settled \"Writing secret '$name' in vault '$($Spec.vault)'\" {\n            try {\n                Set-AzKeyVaultSecret -VaultName $Spec.vault -Name $name -SecretValue $value -ContentType 'generated by the deployment' -ErrorAction Stop | Out-Null\n            }\n            catch {\n                # A secret deleted earlier is kept by the vault's soft delete under its name; it is the deployment's\n                # own, so it is taken back rather than left blocking the name.\n                if ($_.Exception.Message -match 'deleted but recoverable') {\n                    Undo-AzKeyVaultSecretRemoval -VaultName $Spec.vault -Name $name -ErrorAction Stop | Out-Null\n                    return\n                }\n\n                throw\n            }\n        } | Out-Null\n        $written += $name\n    }\n\n    Write-Step \"kept $(if ($kept.Count) { $kept -join ', ' } else { 'none' }); generated $(if ($written.Count) { $written -join ', ' } else { 'none' }).\"\n    return @{ generated = ($written -join ','); kept = ($kept -join ',') }\n}\n\nfunction Get-SqlToken {\n    $token = (Get-AzAccessToken -ResourceUrl 'https://database.windows.net/' -ErrorAction Stop).Token\n    if ($token -is [securestring]) {\n        return [System.Net.NetworkCredential]::new('', $token).Password\n    }\n\n    return [string] $token\n}\n\nfunction ConvertTo-SqlSid([string] $Id) {\n    # The SID of an Entra principal is its id's bytes in the order .NET writes a Guid.\n    $guid = [Guid]::Parse($Id)\n    return '0x' + [Convert]::ToHexString($guid.ToByteArray())\n}\n\nfunction ConvertTo-SqlName([string] $Name) {\n    return '[' + $Name.Replace(']', ']]') + ']'\n}\n\nfunction ConvertTo-SqlString([string] $Value) {\n    return \"N'\" + $Value.Replace(\"'\", \"''\") + \"'\"\n}\n\nfunction Test-SqlClient {\n    # PowerShell 7 carries System.Data.SqlClient; when the container's does not, the SqlServer module's Invoke-Sqlcmd\n    # takes the same access token.\n    if ($null -ne ('System.Data.SqlClient.SqlConnection' -as [type])) {\n        return $true\n    }\n\n    try {\n        Add-Type -AssemblyName System.Data.SqlClient -ErrorAction Stop\n        return $true\n    }\n    catch {\n        if (-not (Get-Module -ListAvailable -Name SqlServer)) {\n            Write-Step 'System.Data.SqlClient is not available; installing the SqlServer module for Invoke-Sqlcmd.'\n            Install-Module -Name SqlServer -Scope CurrentUser -Force -AllowClobber -ErrorAction Stop\n        }\n\n        Import-Module SqlServer -ErrorAction Stop\n        return $false\n    }\n}\n\nfunction Invoke-SqlBatch([string] $Server, [string] $Database, [string[]] $Statements, [bool] $SqlClient) {\n    Invoke-Settled \"Connecting to database '$Database' on '$Server' as the setup identity\" {\n        $token = Get-SqlToken\n        if (-not $SqlClient) {\n            foreach ($statement in $Statements) {\n                Invoke-Sqlcmd -ServerInstance \"tcp:$Server,1433\" -Database $Database -AccessToken $token -Query $statement -QueryTimeout 120 -Encrypt Mandatory -ErrorAction Stop | Out-Null\n            }\n\n            return\n        }\n\n        $connection = [System.Data.SqlClient.SqlConnection]::new(\"Server=tcp:$Server,1433;Initial Catalog=$Database;Encrypt=True;TrustServerCertificate=False;Connection Timeout=30\")\n        try {\n            $connection.AccessToken = $token\n            $connection.Open()\n            foreach ($statement in $Statements) {\n                $command = $connection.CreateCommand()\n                try {\n                    $command.CommandText = $statement\n                    $command.CommandTimeout = 120\n                    [void] $command.ExecuteNonQuery()\n                }\n                finally {\n                    $command.Dispose()\n                }\n            }\n        }\n        finally {\n            $connection.Dispose()\n        }\n    } | Out-Null\n}\n\nfunction Invoke-Grants($Spec) {\n    if ($null -eq $Spec.sql) {\n        Write-Step 'the deployment administers no SQL server here; nothing to grant.'\n        return @{ databases = '' }\n    }\n\n    $server = [string] $Spec.sql.server\n    $sqlClient = Test-SqlClient\n    $done = @()\n    foreach ($database in @($Spec.sql.databases)) {\n        $statements = @()\n        foreach ($user in @($database.users)) {\n            if ($user.type -notin 'E', 'X') {\n                throw \"SETUP_SPEC gives user '$($user.name)' type '$($user.type)'; a user is E (an identity or a person) or X (a group).\"\n            }\n\n            $statements += \"IF USER_ID($(ConvertTo-SqlString $user.name)) IS NULL CREATE USER $(ConvertTo-SqlName $user.name) WITH SID = $(ConvertTo-SqlSid $user.id), TYPE = $($user.type);\"\n        }\n\n        $statements += @($database.statements | ForEach-Object { [string] $_ })\n        Invoke-SqlBatch -Server $server -Database ([string] $database.name) -Statements $statements -SqlClient $sqlClient\n        $done += [string] $database.name\n        Write-Step \"granted in $($database.name): $(@($database.users).Count) user(s), $(@($database.statements).Count) statement(s).\"\n    }\n\n    return @{ databases = ($done -join ',') }\n}\n\n$spec = Get-Spec\n$DeploymentScriptOutputs = switch ($Step) {\n    'Secrets' { Invoke-Secrets $spec }\n    'Grants' { Invoke-Grants $spec }\n}\n",
     "createSql": "[empty(parameters('existingSqlServer'))]",
-    "separateOsduDb": "[not(equals(parameters('osduDatabaseName'), parameters('catalogDatabaseName')))]",
     "sqlEntraAuth": "[equals(parameters('sqlAuthentication'), 'entra')]",
     "grantsHere": "[and(variables('sqlEntraAuth'), variables('createSql'))]",
     "mcpOn": "[or(parameters('mcpEnabled'), not(empty(parameters('mcpImage'))))]",
@@ -978,7 +969,7 @@
     "keyVaultSecretsOfficerRoleId": "b86a8fe4-44ce-4948-aee5-eccb2c155cd7",
     "sqlConnectionList": "[map(items(variables('sqlConnectionsChecked')), lambda('c', createObject('name', lambdaVariables('c').key, 'database', coalesce(tryGet(lambdaVariables('c').value, 'database'), ''), 'create', coalesce(tryGet(lambdaVariables('c').value, 'create'), true()), 'access', coalesce(tryGet(lambdaVariables('c').value, 'access'), 'write'), 'secretName', if(empty(coalesce(tryGet(lambdaVariables('c').value, 'secretName'), '')), format('osdu-delivery-conn-{0}', replace(toLower(lambdaVariables('c').key), '_', '-')), coalesce(tryGet(lambdaVariables('c').value, 'secretName'), '')))))]",
     "serverConnections": "[filter(variables('sqlConnectionList'), lambda('c', not(empty(lambdaVariables('c').database))))]",
-    "createdDatabases": "[if(variables('createSql'), union(map(filter(variables('serverConnections'), lambda('c', and(and(lambdaVariables('c').create, not(equals(lambdaVariables('c').database, parameters('catalogDatabaseName')))), not(equals(lambdaVariables('c').database, parameters('osduDatabaseName')))))), lambda('c', lambdaVariables('c').database)), createArray()), createArray())]",
+    "createdDatabases": "[if(variables('createSql'), union(map(filter(variables('serverConnections'), lambda('c', and(lambdaVariables('c').create, not(equals(lambdaVariables('c').database, parameters('catalogDatabaseName')))))), lambda('c', lambdaVariables('c').database)), createArray()), createArray())]",
     "quotedSqlAdminPassword": "[format('''{0}''', replace(parameters('sqlAdminPassword'), '''', ''''''))]",
     "sqlCredentials": "[if(variables('sqlEntraAuth'), 'Authentication=Active Directory Default', format('User ID={0};Password={1}', variables('sqlAdminLoginChecked'), variables('quotedSqlAdminPassword')))]",
     "connectionStringTail": "[format('{0};Encrypt=True;TrustServerCertificate=False;Connection Timeout=30', variables('sqlCredentials'))]",
@@ -1202,23 +1193,6 @@
         "sqlServer"
       ]
     },
-    "osduDatabase": {
-      "condition": "[and(variables('createSql'), variables('separateOsduDb'))]",
-      "type": "Microsoft.Sql/servers/databases",
-      "apiVersion": "2023-08-01-preview",
-      "name": "[format('{0}/{1}', parameters('sqlServerName'), parameters('osduDatabaseName'))]",
-      "location": "[parameters('location')]",
-      "tags": "[parameters('tags')]",
-      "sku": {
-        "name": "[parameters('sqlDatabaseSku')]"
-      },
-      "properties": {
-        "collation": "SQL_Latin1_General_CP1_CI_AS"
-      },
-      "dependsOn": [
-        "sqlServer"
-      ]
-    },
     "connectionDatabases": {
       "copy": {
         "name": "connectionDatabases",
@@ -1246,18 +1220,6 @@
       "name": "[format('{0}/{1}', parameters('keyVaultName'), variables('catalogConnectionSecretName'))]",
       "properties": {
         "value": "[format('Server=tcp:{0};Initial Catalog={1};{2}', if(variables('createSql'), format('{0},1433', reference('sqlServer').fullyQualifiedDomainName), if(contains(parameters('existingSqlServer'), ','), parameters('existingSqlServer'), format('{0},1433', parameters('existingSqlServer')))), parameters('catalogDatabaseName'), variables('connectionStringTail'))]"
-      },
-      "dependsOn": [
-        "keyVault",
-        "sqlServer"
-      ]
-    },
-    "osduDbSecret": {
-      "type": "Microsoft.KeyVault/vaults/secrets",
-      "apiVersion": "2023-07-01",
-      "name": "[format('{0}/{1}', parameters('keyVaultName'), variables('osduConnectionSecretName'))]",
-      "properties": {
-        "value": "[format('Server=tcp:{0};Initial Catalog={1};{2}', if(variables('createSql'), format('{0},1433', reference('sqlServer').fullyQualifiedDomainName), if(contains(parameters('existingSqlServer'), ','), parameters('existingSqlServer'), format('{0},1433', parameters('existingSqlServer')))), parameters('osduDatabaseName'), variables('connectionStringTail'))]"
       },
       "dependsOn": [
         "keyVault",
@@ -1301,7 +1263,7 @@
         "environmentVariables": [
           {
             "name": "SETUP_SPEC",
-            "value": "[string(createObject('vault', parameters('keyVaultName'), 'generated', createArray(), 'sql', createObject('server', reference('sqlServer').fullyQualifiedDomainName, 'databases', map(map(items(groupBy(concat(createArray(createObject('name', parameters('catalogDatabaseName'), 'purpose', if(variables('separateOsduDb'), 'the catalog', 'the catalog, and the osdu schema beside it'), 'users', concat(createArray(createObject('name', format('{0}-id', parameters('controlPlaneName')), 'id', reference('controlPlaneIdentity').clientId, 'type', 'E')), if(variables('separateOsduDb'), createArray(), createArray(createObject('name', format('{0}-id', parameters('workerName')), 'id', reference('workerIdentity').clientId, 'type', 'E'))), variables('adminUsers')), 'statements', concat(variables('controlPlaneOwns'), if(variables('separateOsduDb'), createArray(), variables('workerReachesOsduSchema')), variables('adminsOwn')))), if(variables('separateOsduDb'), createArray(createObject('name', parameters('osduDatabaseName'), 'purpose', 'the osdu schema', 'users', concat(createArray(createObject('name', format('{0}-id', parameters('controlPlaneName')), 'id', reference('controlPlaneIdentity').clientId, 'type', 'E'), createObject('name', format('{0}-id', parameters('workerName')), 'id', reference('workerIdentity').clientId, 'type', 'E')), variables('adminUsers')), 'statements', concat(variables('controlPlaneOwns'), variables('workerReachesOsduSchema'), variables('adminsOwn')))), createArray()), map(variables('serverConnections'), lambda('c', createObject('name', lambdaVariables('c').database, 'purpose', format('{0}, the data the flows {1}', lambdaVariables('c').name, if(equals(lambdaVariables('c').access, 'write'), 'land, load and deliver from', 'read')), 'users', concat(createArray(createObject('name', format('{0}-id', parameters('controlPlaneName')), 'id', reference('controlPlaneIdentity').clientId, 'type', 'E'), createObject('name', format('{0}-id', parameters('workerName')), 'id', reference('workerIdentity').clientId, 'type', 'E')), variables('adminUsers')), 'statements', concat(variables('controlPlaneReads'), if(equals(lambdaVariables('c').access, 'write'), variables('workerWrites'), variables('workerReads')), variables('adminsOwn')))))), lambda('entry', lambdaVariables('entry').name))), lambda('database', createObject('name', lambdaVariables('database').key, 'purpose', join(reduce(lambdaVariables('database').value, createArray(), lambda('purposes', 'entry', union(lambdaVariables('purposes'), createArray(lambdaVariables('entry').purpose)))), '; '), 'users', reduce(lambdaVariables('database').value, createArray(), lambda('users', 'entry', union(lambdaVariables('users'), lambdaVariables('entry').users))), 'statements', reduce(lambdaVariables('database').value, createArray(), lambda('statements', 'entry', union(lambdaVariables('statements'), lambdaVariables('entry').statements)))))), lambda('database', createObject('name', lambdaVariables('database').name, 'users', lambdaVariables('database').users, 'statements', lambdaVariables('database').statements))))))]"
+            "value": "[string(createObject('vault', parameters('keyVaultName'), 'generated', createArray(), 'sql', createObject('server', reference('sqlServer').fullyQualifiedDomainName, 'databases', map(map(items(groupBy(concat(createArray(createObject('name', parameters('catalogDatabaseName'), 'purpose', 'the catalog, and the osdu schema beside it', 'users', concat(createArray(createObject('name', format('{0}-id', parameters('controlPlaneName')), 'id', reference('controlPlaneIdentity').clientId, 'type', 'E'), createObject('name', format('{0}-id', parameters('workerName')), 'id', reference('workerIdentity').clientId, 'type', 'E')), variables('adminUsers')), 'statements', concat(variables('controlPlaneOwns'), variables('workerReachesOsduSchema'), variables('adminsOwn')))), map(variables('serverConnections'), lambda('c', createObject('name', lambdaVariables('c').database, 'purpose', format('{0}, the data the flows {1}', lambdaVariables('c').name, if(equals(lambdaVariables('c').access, 'write'), 'land, load and deliver from', 'read')), 'users', concat(createArray(createObject('name', format('{0}-id', parameters('controlPlaneName')), 'id', reference('controlPlaneIdentity').clientId, 'type', 'E'), createObject('name', format('{0}-id', parameters('workerName')), 'id', reference('workerIdentity').clientId, 'type', 'E')), variables('adminUsers')), 'statements', concat(variables('controlPlaneReads'), if(equals(lambdaVariables('c').access, 'write'), variables('workerWrites'), variables('workerReads')), variables('adminsOwn')))))), lambda('entry', lambdaVariables('entry').name))), lambda('database', createObject('name', lambdaVariables('database').key, 'purpose', join(reduce(lambdaVariables('database').value, createArray(), lambda('purposes', 'entry', union(lambdaVariables('purposes'), createArray(lambdaVariables('entry').purpose)))), '; '), 'users', reduce(lambdaVariables('database').value, createArray(), lambda('users', 'entry', union(lambdaVariables('users'), lambdaVariables('entry').users))), 'statements', reduce(lambdaVariables('database').value, createArray(), lambda('statements', 'entry', union(lambdaVariables('statements'), lambdaVariables('entry').statements)))))), lambda('database', createObject('name', lambdaVariables('database').name, 'users', lambdaVariables('database').users, 'statements', lambdaVariables('database').statements))))))]"
           }
         ],
         "retentionInterval": "P1D",
@@ -1313,7 +1275,6 @@
         "catalogDatabase",
         "connectionDatabases",
         "controlPlaneIdentity",
-        "osduDatabase",
         "setupIdentity",
         "sqlAllowAzureServices",
         "sqlServer",
@@ -1676,9 +1637,6 @@
           "catalogConnectionSecretName": {
             "value": "[variables('catalogConnectionSecretName')]"
           },
-          "osduConnectionSecretName": {
-            "value": "[variables('osduConnectionSecretName')]"
-          },
           "jwtSigningKeySecretName": {
             "value": "[variables('jwtSigningKeySecretName')]"
           },
@@ -1743,7 +1701,7 @@
             "_generator": {
               "name": "bicep",
               "version": "0.44.1.10279",
-              "templateHash": "15894664579577347775"
+              "templateHash": "6158723738976405923"
             }
           },
           "parameters": {
@@ -1783,14 +1741,7 @@
               "type": "string",
               "defaultValue": "osdu-delivery-catalog-db",
               "metadata": {
-                "description": "Key Vault secret name for the catalog ADO.NET connection string."
-              }
-            },
-            "osduConnectionSecretName": {
-              "type": "string",
-              "defaultValue": "osdu-delivery-osdu-db",
-              "metadata": {
-                "description": "Key Vault secret name for the OSDU Delivery module database connection string, which startup migrates and verifies after the catalog. Point it at a secret holding the catalog connection to keep the `osdu` schema in the catalog database."
+                "description": "Key Vault secret name for the catalog ADO.NET connection string, which the delivery module's `osdu` schema is reached through too."
               }
             },
             "jwtSigningKeySecretName": {
@@ -2027,11 +1978,6 @@
                 "identity": "[resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', format('{0}-id', parameters('name')))]"
               },
               {
-                "name": "osdu-db",
-                "keyVaultUrl": "[format('{0}secrets/{1}', variables('vaultUri'), parameters('osduConnectionSecretName'))]",
-                "identity": "[resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', format('{0}-id', parameters('name')))]"
-              },
-              {
                 "name": "jwt-signing-key",
                 "keyVaultUrl": "[format('{0}secrets/{1}', variables('vaultUri'), parameters('jwtSigningKeySecretName'))]",
                 "identity": "[resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', format('{0}-id', parameters('name')))]"
@@ -2128,7 +2074,7 @@
                         "cpu": "[json('0.5')]",
                         "memory": "1.0Gi"
                       },
-                      "env": "[concat(createArray(createObject('name', 'SQLFLOW_CATALOG_DB', 'secretRef', 'catalog-db'), createObject('name', 'SQLFLOW_OSDU_DB', 'secretRef', 'osdu-db'), createObject('name', 'SQLFLOW_AZURE_AUTH', 'value', 'mi'), createObject('name', 'AZURE_CLIENT_ID', 'value', reference('identity').clientId), createObject('name', 'ControlPlane__Jwt__SigningKey', 'secretRef', 'jwt-signing-key'), createObject('name', 'ControlPlane__Jwt__Issuer', 'value', parameters('jwtIssuer')), createObject('name', 'ControlPlane__Jwt__Audience', 'value', parameters('jwtAudience')), createObject('name', 'ControlPlane__Worker__Enabled', 'value', if(parameters('workerEnabled'), 'true', 'false'))), variables('bootstrapEnv'), variables('corsEnv'), variables('proxyEnv'), variables('entraEnv'), variables('assistantEnv'), variables('aiContextEnv'), variables('privateNetworksEnv'), variables('settingsEnv'))]",
+                      "env": "[concat(createArray(createObject('name', 'SQLFLOW_CATALOG_DB', 'secretRef', 'catalog-db'), createObject('name', 'SQLFLOW_AZURE_AUTH', 'value', 'mi'), createObject('name', 'AZURE_CLIENT_ID', 'value', reference('identity').clientId), createObject('name', 'ControlPlane__Jwt__SigningKey', 'secretRef', 'jwt-signing-key'), createObject('name', 'ControlPlane__Jwt__Issuer', 'value', parameters('jwtIssuer')), createObject('name', 'ControlPlane__Jwt__Audience', 'value', parameters('jwtAudience')), createObject('name', 'ControlPlane__Worker__Enabled', 'value', if(parameters('workerEnabled'), 'true', 'false'))), variables('bootstrapEnv'), variables('corsEnv'), variables('proxyEnv'), variables('entraEnv'), variables('assistantEnv'), variables('aiContextEnv'), variables('privateNetworksEnv'), variables('settingsEnv'))]",
                       "probes": [
                         {
                           "type": "Liveness",
@@ -2205,8 +2151,6 @@
         "keyVault",
         "managedEnvironment",
         "mcp",
-        "osduDatabase",
-        "osduDbSecret",
         "registry",
         "setupSecrets",
         "sqlAllowAzureServices"
@@ -2250,8 +2194,8 @@
           "secretEnv": {
             "value": [
               {
-                "name": "SQLFLOW_OSDU_DB",
-                "secretName": "[variables('osduConnectionSecretName')]"
+                "name": "SQLFLOW_CATALOG_DB",
+                "secretName": "[variables('catalogConnectionSecretName')]"
               }
             ]
           },
@@ -2276,7 +2220,7 @@
             "_generator": {
               "name": "bicep",
               "version": "0.44.1.10279",
-              "templateHash": "9354237782121804585"
+              "templateHash": "9350317425932088938"
             }
           },
           "definitions": {
@@ -2368,7 +2312,7 @@
               },
               "defaultValue": [],
               "metadata": {
-                "description": "Environment variables a node itself reads from the vault, beside its node token: SQLFLOW_OSDU_DB, the ledger's connection, which a node opens and its runs do not carry. Everything a run reads besides is handed to the run by the control plane."
+                "description": "Environment variables a node itself reads from the vault, beside its node token: SQLFLOW_CATALOG_DB, the catalog's connection, which the node reads and writes the ledger in the `osdu` schema through. Everything a run reads besides is handed to the run by the control plane."
               }
             },
             "acrName": {
@@ -2594,10 +2538,10 @@
         }
       },
       "dependsOn": [
+        "catalogDatabase",
+        "catalogDbSecret",
         "keyVault",
         "managedEnvironment",
-        "osduDatabase",
-        "osduDbSecret",
         "registry",
         "setupSecrets",
         "sqlAllowAzureServices",
@@ -3572,12 +3516,12 @@
       "metadata": {
         "description": "With existingSqlServer under Entra authentication, the T-SQL an Entra administrator of that server runs, database by database, to create the apps' users; every statement can run again. Empty otherwise: on a server created here the deployment grants them itself."
       },
-      "value": "[if(and(variables('sqlEntraAuth'), not(variables('createSql'))), format('{0}\n', join(concat(createArray('-- OSDU Delivery: the database users its apps (and the people sqlAdmins names) sign in as, under Entra authentication', '-- (each app as its own managed identity, no password anywhere), on a server this configuration does not administer.', format('-- Run as an Entra administrator of {0}, connected to each database below in turn (Azure SQL Database does not', parameters('existingSqlServer')), '-- switch databases with USE); every statement can run again. Until they have run, the control plane reports its first', '-- start-up step as failed and retries it, and a worker cannot start.'), flatten(map(map(items(groupBy(concat(createArray(createObject('name', parameters('catalogDatabaseName'), 'purpose', if(variables('separateOsduDb'), 'the catalog', 'the catalog, and the osdu schema beside it'), 'users', concat(createArray(createObject('name', format('{0}-id', parameters('controlPlaneName')), 'id', reference('controlPlaneIdentity').clientId, 'type', 'E')), if(variables('separateOsduDb'), createArray(), createArray(createObject('name', format('{0}-id', parameters('workerName')), 'id', reference('workerIdentity').clientId, 'type', 'E'))), variables('adminUsers')), 'statements', concat(variables('controlPlaneOwns'), if(variables('separateOsduDb'), createArray(), variables('workerReachesOsduSchema')), variables('adminsOwn')))), if(variables('separateOsduDb'), createArray(createObject('name', parameters('osduDatabaseName'), 'purpose', 'the osdu schema', 'users', concat(createArray(createObject('name', format('{0}-id', parameters('controlPlaneName')), 'id', reference('controlPlaneIdentity').clientId, 'type', 'E'), createObject('name', format('{0}-id', parameters('workerName')), 'id', reference('workerIdentity').clientId, 'type', 'E')), variables('adminUsers')), 'statements', concat(variables('controlPlaneOwns'), variables('workerReachesOsduSchema'), variables('adminsOwn')))), createArray()), map(variables('serverConnections'), lambda('c', createObject('name', lambdaVariables('c').database, 'purpose', format('{0}, the data the flows {1}', lambdaVariables('c').name, if(equals(lambdaVariables('c').access, 'write'), 'land, load and deliver from', 'read')), 'users', concat(createArray(createObject('name', format('{0}-id', parameters('controlPlaneName')), 'id', reference('controlPlaneIdentity').clientId, 'type', 'E'), createObject('name', format('{0}-id', parameters('workerName')), 'id', reference('workerIdentity').clientId, 'type', 'E')), variables('adminUsers')), 'statements', concat(variables('controlPlaneReads'), if(equals(lambdaVariables('c').access, 'write'), variables('workerWrites'), variables('workerReads')), variables('adminsOwn')))))), lambda('entry', lambdaVariables('entry').name))), lambda('database', createObject('name', lambdaVariables('database').key, 'purpose', join(reduce(lambdaVariables('database').value, createArray(), lambda('purposes', 'entry', union(lambdaVariables('purposes'), createArray(lambdaVariables('entry').purpose)))), '; '), 'users', reduce(lambdaVariables('database').value, createArray(), lambda('users', 'entry', union(lambdaVariables('users'), lambdaVariables('entry').users))), 'statements', reduce(lambdaVariables('database').value, createArray(), lambda('statements', 'entry', union(lambdaVariables('statements'), lambdaVariables('entry').statements)))))), lambda('database', concat(createArray('', format('-- {0}: {1}', lambdaVariables('database').name, lambdaVariables('database').purpose)), map(lambdaVariables('database').users, lambda('user', format('IF USER_ID(N''{0}'') IS NULL CREATE USER [{1}] FROM EXTERNAL PROVIDER;', replace(lambdaVariables('user').name, '''', ''''''), replace(lambdaVariables('user').name, ']', ']]')))), lambdaVariables('database').statements))))), '\n')), '')]"
+      "value": "[if(and(variables('sqlEntraAuth'), not(variables('createSql'))), format('{0}\n', join(concat(createArray('-- OSDU Delivery: the database users its apps (and the people sqlAdmins names) sign in as, under Entra authentication', '-- (each app as its own managed identity, no password anywhere), on a server this configuration does not administer.', format('-- Run as an Entra administrator of {0}, connected to each database below in turn (Azure SQL Database does not', parameters('existingSqlServer')), '-- switch databases with USE); every statement can run again. Until they have run, the control plane reports its first', '-- start-up step as failed and retries it, and a worker cannot start.'), flatten(map(map(items(groupBy(concat(createArray(createObject('name', parameters('catalogDatabaseName'), 'purpose', 'the catalog, and the osdu schema beside it', 'users', concat(createArray(createObject('name', format('{0}-id', parameters('controlPlaneName')), 'id', reference('controlPlaneIdentity').clientId, 'type', 'E'), createObject('name', format('{0}-id', parameters('workerName')), 'id', reference('workerIdentity').clientId, 'type', 'E')), variables('adminUsers')), 'statements', concat(variables('controlPlaneOwns'), variables('workerReachesOsduSchema'), variables('adminsOwn')))), map(variables('serverConnections'), lambda('c', createObject('name', lambdaVariables('c').database, 'purpose', format('{0}, the data the flows {1}', lambdaVariables('c').name, if(equals(lambdaVariables('c').access, 'write'), 'land, load and deliver from', 'read')), 'users', concat(createArray(createObject('name', format('{0}-id', parameters('controlPlaneName')), 'id', reference('controlPlaneIdentity').clientId, 'type', 'E'), createObject('name', format('{0}-id', parameters('workerName')), 'id', reference('workerIdentity').clientId, 'type', 'E')), variables('adminUsers')), 'statements', concat(variables('controlPlaneReads'), if(equals(lambdaVariables('c').access, 'write'), variables('workerWrites'), variables('workerReads')), variables('adminsOwn')))))), lambda('entry', lambdaVariables('entry').name))), lambda('database', createObject('name', lambdaVariables('database').key, 'purpose', join(reduce(lambdaVariables('database').value, createArray(), lambda('purposes', 'entry', union(lambdaVariables('purposes'), createArray(lambdaVariables('entry').purpose)))), '; '), 'users', reduce(lambdaVariables('database').value, createArray(), lambda('users', 'entry', union(lambdaVariables('users'), lambdaVariables('entry').users))), 'statements', reduce(lambdaVariables('database').value, createArray(), lambda('statements', 'entry', union(lambdaVariables('statements'), lambdaVariables('entry').statements)))))), lambda('database', concat(createArray('', format('-- {0}: {1}', lambdaVariables('database').name, lambdaVariables('database').purpose)), map(lambdaVariables('database').users, lambda('user', format('IF USER_ID(N''{0}'') IS NULL CREATE USER [{1}] FROM EXTERNAL PROVIDER;', replace(lambdaVariables('user').name, '''', ''''''), replace(lambdaVariables('user').name, ']', ']]')))), lambdaVariables('database').statements))))), '\n')), '')]"
     },
     "sqlServerFqdn": {
       "type": "string",
       "metadata": {
-        "description": "SQL server address (the connection strings are in Key Vault: osdu-delivery-catalog-db, osdu-delivery-osdu-db, and one per SQL connection)."
+        "description": "SQL server address (the connection strings are in Key Vault: osdu-delivery-catalog-db, which holds the osdu schema too, and one per SQL connection)."
       },
       "value": "[if(variables('createSql'), reference('sqlServer').fullyQualifiedDomainName, parameters('existingSqlServer'))]"
     },

@@ -54,24 +54,22 @@ when the estate has it.
 
   | Database | Holds | Reached as | Grows with |
   | --- | --- | --- | --- |
-  | `OsduDelivery` | the metadata: SQLFlow's catalog schema (pipelines, runs, schedules, lineage, sources, users) and the delivery module's `osdu` schema beside it (the record ledger, mappings, templates, OSDU caches, dimension tables and views) | `SQLFLOW_CATALOG_DB` (the control plane's catalog, and on a node the flows that read the dimension views) and `SQLFLOW_OSDU_DB` (the module; a node's ledger) | the estate's activity, and every record ever delivered |
+  | `OsduDelivery` | the metadata: SQLFlow's catalog schema (pipelines, runs, schedules, lineage, sources, users) and the delivery module's `osdu` schema beside it (the record ledger, mappings, templates, OSDU caches, dimension tables and views) | `SQLFLOW_CATALOG_DB`: the control plane's catalog connection, and on a node the same variable for the ledger and the flows that read the dimension views | the estate's activity, and every record ever delivered |
   | `OsduData` | the data: what pre-ingestion lands from the source systems, and the keyed ingestion tables the OSDU flows read, each in a schema of its own | `${env:OSDU_DATA_DB}`, on the control plane and on every node | the source data |
 
   The two schemas of the metadata database stay separate things: their own EF contexts, their own migration
-  histories, their own versions, and no foreign key between them. That is what lets an estate that has to keep
-  them in two databases do so: name that database in `SQLFLOW_OSDU_DB` (or `Osdu:Database:Connection`), on the
-  control plane and on every node, and the module's rows are written and committed there instead. An estate on
-  Azure SQL that wants them apart has no other option, since no statement there reaches across two databases.
-  The choice cannot be changed by editing the setting afterwards, so make it before the first migrate.
+  histories, their own versions, and no foreign key between them. They share the database and its one connection,
+  `SQLFLOW_CATALOG_DB`: the module has no connection of its own, and a host started with the retired
+  `SQLFLOW_OSDU_DB` or `Osdu:Database:Connection` refuses to start.
 
   The metadata database needs no setting of its own. The **source** database a flow reads is allowed snapshot
   isolation once, so a record and its child rows are read as one instant (Azure SQL Database allows it by
   default): `ALTER DATABASE [OsduData] SET ALLOW_SNAPSHOT_ISOLATION ON;`
 - **The OSDU ledger on a node.** The delivery engine reads and writes the `osdu` schema per record while it plans
-  and delivers, and a node opens no catalog connection, so every node needs the module's connection in
-  `SQLFLOW_OSDU_DB`: a node without it refuses to start and takes no work. The values a run's flows resolve beside it
-  (`SQLFLOW_CATALOG_DB` for the flows that build and read the dimension tables and views, `OSDU_DATA_DB`, the landing
-  storage) reach the run one of two ways: on Azure the control plane's configuration sets them for every run
+  and delivers. SQLFlow gives a node no catalog connection, so every node is given the catalog database's in
+  `SQLFLOW_CATALOG_DB`, with a login on the `osdu` schema alone: a node without it refuses to start and takes no work.
+  The flows that build and read the dimension tables and views name the same variable. The values a run's flows
+  resolve beside it (`OSDU_DATA_DB`, the landing storage) reach the run one of two ways: on Azure the control plane's configuration sets them for every run
   (`Osdu:Properties:<NAME>`, below) and the run carries them to its node, so a node holds nothing else; in the compose
   and Kubernetes layouts they are the node's own environment variables. See
   [../docs/reference/concepts/environment-variables.md](../docs/reference/concepts/environment-variables.md).
@@ -507,7 +505,7 @@ The layout and the reasoning behind it:
   and the flows' `${env:...}` references, which a person's reads of a flow (a probe, a record read back, a preview,
   a source read) and the explorer's reads of a partition resolve there as a run resolves them on a node; both get the git credentials (the
   GitHub App's ID and key, and the git token) for a source naming none; nodes get a node token, a connection to the
-  `osdu` schema of their own (mounted as both `SQLFLOW_OSDU_DB` and `SQLFLOW_CATALOG_DB`),
+  `osdu` schema of their own (mounted as `SQLFLOW_CATALOG_DB`),
   the data connection (`OSDU_DATA_DB`) and every other `${env:...}` reference their pool's flows use, and never the
   catalog's own credential. Keep `controlplane.yaml`'s flow references and the pools' the same. The control plane
   reads; nothing it does delivers, and no run passes through it.

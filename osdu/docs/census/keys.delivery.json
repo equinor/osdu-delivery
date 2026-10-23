@@ -1606,14 +1606,14 @@
       "path": "parallelism.fanOut",
       "type": "integer",
       "required": false,
-      "description": "The most member runs a submission of `fanOutMinRecords` records or more spreads over across the fleet, 0 to 64; never more than it has work batches for beyond the coordinating run's own. It needs a `source.work` every node reaches (a storage URI, or an absolute path on shared storage): a relative one keeps the delivery on one run. Planning fans out only when the record table names its `primaryKey`, whose ranges the members read; without one, only the sending fans out. 0 runs everything on the node that claimed the run.",
+      "description": "The most slice runs a submission of `fanOutMinRecords` records or more spreads over across the fleet, 0 to 64: runs of the same flow, each delivering a share of its key slices from whichever node takes it; never more than it has slices for beyond the coordinating run's own. It fans out only when the record table names its `primaryKey`, which the slices are cut on. 0 runs everything on the node that claimed the run.",
       "default": "8"
     },
     {
       "path": "parallelism.fanOutMinRecords",
       "type": "integer",
       "required": false,
-      "description": "Below this many records a submission never fans out, neither its planning nor its sending; at least 1.",
+      "description": "Below this many records a submission never fans out; at least 1.",
       "default": "1000"
     },
     {
@@ -2131,7 +2131,7 @@
       "path": "source.work",
       "type": "string",
       "required": true,
-      "description": "Where the intake writes its work batches (the rendered documents the drains read back): a directory or storage prefix the nodes can write, relative to the flow file when relative. It takes `{parameter}` tokens, whose values must not contain `/`, `\\` or `..`. It may open with a `${...}` reference (`${env:LANDING_URL}/.work/welllog/{logSource}`), which the run resolves with its own values as it opens; a reference anywhere else in it is refused. A relative folder is in each node's own copy of the repository, so a flow with one never fans out; a storage URI, or an absolute path on storage every node mounts, lets it."
+      "description": "Where the intake writes its work batches (the rendered documents the drains read back): a directory or storage prefix the nodes can write, relative to the flow file when relative. It takes `{parameter}` tokens, whose values must not contain `/`, `\\` or `..`. It may open with a `${...}` reference (`${env:LANDING_URL}/.work/welllog/{logSource}`), which the run resolves with its own values as it opens; a reference anywhere else in it is refused. A relative folder is in each node's own copy of the repository, where each run of a fan-out writes and reads its own share's batches."
     },
     {
       "path": "target",

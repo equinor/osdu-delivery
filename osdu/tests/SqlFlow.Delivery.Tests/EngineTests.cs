@@ -841,18 +841,19 @@ public class DeliverRunScopeTests
         Assert.Contains("every unfinished delivery of the ledger left", Refused(new DeliveryRunPayload { RecordKeys = [Guid.NewGuid()] }), StringComparison.Ordinal);
         Assert.Contains("an undo sends nothing the flow renders", Refused(new DeliveryRunPayload { Redeliver = RedeliverScopes.All }), StringComparison.Ordinal);
         Assert.Contains("an undo renders nothing", Refused(new DeliveryRunPayload { Rerender = true }), StringComparison.Ordinal);
-        Assert.Contains("only an intake member plans slices", Refused(new DeliveryRunPayload { Slices = [0] }), StringComparison.Ordinal);
+        Assert.Contains("only a run of a fan-out plans slices", Refused(new DeliveryRunPayload { Slices = [0] }), StringComparison.Ordinal);
     }
 
     [Fact]
     public void The_payload_a_run_carries_is_checked_against_the_operation_it_travels_with()
     {
-        // The kind validates its own arguments at every trust boundary, so a member's payload can never ask a drain to
+        // The kind validates its own arguments at every trust boundary, so a slice run's payload can never ask a drain to
         // plan slices, or a replan to name the records it reads.
         var slices = new DeliveryRunPayload { SubmissionId = Guid.NewGuid(), Slices = [0, 1] };
+        slices.Validate(DeliveryOperations.Deliver);
         slices.Validate(DeliveryOperations.Intake);
         Assert.Contains(
-            "only an intake member plans slices",
+            "only a run of a fan-out plans slices",
             Assert.Throws<SqlFlowException>(() => slices.Validate(DeliveryOperations.Drain)).Message,
             StringComparison.Ordinal);
 
@@ -947,7 +948,7 @@ public class DeliverOutcomeTests
     {
         var submission = Submission(planned: 5000, delivered: 4990);
         var root = DeliverOutcome.From(
-            new RunResult(new IntakeResult(submission, null, new IntakeCounts(5000, 1250, 0, 0, 0, 0, 3), AlreadyProcessed: false), new WorkerSummary(40, 40, 0, 0, 0, 1), submission, IntakeMembers: 3, DrainMembers: 4),
+            new RunResult(new IntakeResult(submission, null, new IntakeCounts(5000, 1250, 0, 0, 0, 0, 3), AlreadyProcessed: false), new WorkerSummary(40, 40, 0, 0, 0, 1), submission, Members: 3),
             DeliveryOperations.Deliver, Source, "full", RequestedPasses.None);
 
         Assert.Equal(5000, root.Planned);

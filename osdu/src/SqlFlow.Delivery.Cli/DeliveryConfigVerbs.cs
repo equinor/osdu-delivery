@@ -165,8 +165,7 @@ public static class DeliveryConfigVerbs
 
     /// <summary>
     /// The catalog a repository is checked in: the connection the command line names (<c>--db</c>, else
-    /// <c>${env:SQLFLOW_CATALOG_DB}</c>), resolved as SQLFlow's own database verbs resolve it. The module's database may be
-    /// one of its own (<c>SQLFLOW_OSDU_DB</c>), so the catalog is named apart from it.
+    /// <c>${env:SQLFLOW_CATALOG_DB}</c>), resolved as SQLFlow's own database verbs resolve it.
     /// </summary>
     /// <exception cref="FlowValidationException">The reference does not resolve to a connection.</exception>
     private static CatalogDbContext OpenCatalog(ModuleCommand context)

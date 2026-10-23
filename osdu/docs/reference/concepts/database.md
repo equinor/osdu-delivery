@@ -33,9 +33,9 @@ sourceRefs:
 The OSDU Delivery module keeps everything it records in the `osdu` schema, owned by its own EF Core context
 (`OsduDbContext`), with its own migration history (`[osdu].[__EFMigrationsHistory]`) and its own schema version
 ([`osdu.SchemaVersion`](../tables/schema-version.md)). SQLFlow's catalog model holds no table of it, and no table of it has
-a foreign key into SQLFlow's tables: a row names a run, a pipeline or a repository by its id alone. By default the schema
-lives in the catalog's database; `SQLFLOW_OSDU_DB` gives the module a database of its own
-([Architecture](architecture.md), [`sqlflow db`](../cli/db.md)).
+a foreign key into SQLFlow's tables: a row names a run, a pipeline or a repository by its id alone. The schema lives in
+the catalog's database, reached through the catalog's one connection ([Architecture](architecture.md),
+[`sqlflow db`](../cli/db.md)).
 
 Each table has a page of its own, of type `table`, in [`osdu/docs/reference/tables/`](../tables/): what one row is, every
 column with its SQL type, nullability and what it holds, every key and index with what it serves, and what writes and

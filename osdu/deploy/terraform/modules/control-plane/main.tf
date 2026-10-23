@@ -24,7 +24,6 @@ locals {
   secrets = concat(
     [
       { name = "catalog-db", secret_name = var.catalog_connection_secret_name },
-      { name = "osdu-db", secret_name = var.osdu_connection_secret_name },
       { name = "jwt-signing-key", secret_name = var.jwt_signing_key_secret_name },
     ],
     var.bootstrap_admin_password_secret_name == "" ? [] : [
@@ -35,11 +34,10 @@ locals {
   # Every environment variable, each either a plain value or a reference to one of the secrets above.
   env = concat(
     [
-      # The catalog connection; the control plane's default ConnectionReference (${env:SQLFLOW_CATALOG_DB}) reads
-      # exactly this variable.
+      # The catalog connection, which holds the delivery module's `osdu` schema too; the control plane's default
+      # ConnectionReference (${env:SQLFLOW_CATALOG_DB}) reads exactly this variable, and startup migrates and verifies
+      # the catalog and then the module.
       { name = "SQLFLOW_CATALOG_DB", value = null, secret = "catalog-db" },
-      # Where the delivery module's `osdu` schema is, which startup migrates and verifies after the catalog.
-      { name = "SQLFLOW_OSDU_DB", value = null, secret = "osdu-db" },
       # Resolve ${keyvault:...}/cloud-storage credentials at run time via this managed identity.
       { name = "SQLFLOW_AZURE_AUTH", value = "mi", secret = null },
       { name = "AZURE_CLIENT_ID", value = azurerm_user_assigned_identity.this.client_id, secret = null },

@@ -59,7 +59,7 @@ verbs work against it unchanged. This page covers what is different when they ar
 | Verbs | Talk to | Need |
 | --- | --- | --- |
 | SQLFlow's control-plane verbs (`trigger`, `runs`, `schedules`, ...) | The control plane's `/api/v1` | `--url` or `SQLFLOW_URL`, and a token (`sqlflow login`, `--token` or `SQLFLOW_TOKEN`). |
-| The OSDU verbs (`check`, `preview`, `values`, `records`, `config`, `partition`, `cache`, `template`, `assertions`, `dimensions`, `inventory`) | The module's database directly | `--db` or `SQLFLOW_CATALOG_DB` (and `SQLFLOW_OSDU_DB` when the `osdu` schema has a database of its own). None of them calls the control plane. |
+| The OSDU verbs (`check`, `preview`, `values`, `records`, `config`, `partition`, `cache`, `template`, `assertions`, `dimensions`, `inventory`) | The module's database directly | `--db` or `SQLFLOW_CATALOG_DB`, the catalog database, which holds the `osdu` schema. None of them calls the control plane. |
 
 So a terminal that can reach the control plane but not the database can trigger and follow OSDU runs, but cannot read a
 ledger with `sqlflow records`; it reads records through the GUI or the delivery API instead

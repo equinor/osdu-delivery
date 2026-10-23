@@ -2,15 +2,16 @@
 // dispatcher for work. Nodes expose nothing (no ingress; outbound HTTPS to the control plane, outbound SQL to the
 // data databases their flows read, outbound HTTPS to the OSDU endpoint, and outbound git for a pinned run
 // without a snapshot) and scale 0..N on the control plane's own replica target through the built-in KEDA
-// metrics-api scaler, so an idle pool costs nothing and no catalog credential reaches this tier at all. A
-// cold-started replica needs only its environment: it polls, is handed a run with its definition and the values it
-// resolves with, fetches the snapshotted YAML (or materializes the pinned commit), executes, streams the trace, and
-// reports back.
+// metrics-api scaler, so an idle pool costs nothing. A cold-started replica needs only its environment: it polls,
+// is handed a run with its definition and the values it resolves with, fetches the snapshotted YAML (or
+// materializes the pinned commit), executes, streams the trace, and reports back.
 //
 // THE OSDU LEDGER ON A NODE. The delivery engine reads and writes the ledger in the `osdu` schema per record
-// while it plans and delivers, and a node opens no catalog connection, so the module database needs a connection
-// reference of its own on this tier: SQLFLOW_OSDU_DB in secretEnv, pointing at a Key Vault secret holding the
-// connection string (osdu/docs/reference/concepts/environment-variables.md). Without it the node refuses to start.
+// while it plans and delivers. The schema lives in the catalog's database, and SQLFlow itself gives a node no catalog
+// connection, so the node is given the catalog's: SQLFLOW_CATALOG_DB in secretEnv, pointing at the Key Vault secret
+// holding the connection string (osdu/docs/reference/concepts/environment-variables.md). Under Entra authentication it
+// carries no credential, and the node's identity holds grants on the `osdu` schema alone there. Without it the node
+// refuses to start.
 // Everything a run reads beside it (the data databases, the landing storage, the OSDU platform and its client secret)
 // is handed to each run by the control plane, from the estate's configuration, as values and ${keyvault:...}
 // references this app's identity resolves; so a node carries nothing else.
@@ -22,7 +23,7 @@
 //   az deployment group create -g <rg> -f worker.bicep \
 //     -p managedEnvironmentId=<env-id> image=<registry>/osdu-delivery-worker:<tag> keyVaultName=<kv> \
 //        controlPlaneUrl=https://<control-plane-fqdn> nodeTokenSecretName=osdu-delivery-node-token \
-//        secretEnv='[{"name": "SQLFLOW_OSDU_DB", "secretName": "osdu-delivery-osdu-db"}]'
+//        secretEnv='[{"name": "SQLFLOW_CATALOG_DB", "secretName": "osdu-delivery-catalog-db"}]'
 
 @description('A variable a node reads from the vault.')
 type secretEnvironmentVariable = {
@@ -61,7 +62,7 @@ param pool string = ''
 @description('The private ranges (CIDR, comma separated) the nodes may reach, for an environment integrated into a VNet whose OSDU, storage accounts or proxy resolve to private addresses (SQLFLOW_DELIVERY_PRIVATE_NETWORKS). Empty reaches public addresses only; loopback, link-local and cloud metadata addresses are never reachable.')
 param privateNetworks string = ''
 
-@description('Environment variables a node itself reads from the vault, beside its node token: SQLFLOW_OSDU_DB, the ledger\'s connection, which a node opens and its runs do not carry. Everything a run reads besides is handed to the run by the control plane.')
+@description('Environment variables a node itself reads from the vault, beside its node token: SQLFLOW_CATALOG_DB, the catalog\'s connection, which the node reads and writes the ledger in the `osdu` schema through. Everything a run reads besides is handed to the run by the control plane.')
 param secretEnv secretEnvironmentVariable[] = []
 
 @description('Name of a container registry in THIS resource group: the template grants the app identity AcrPull on it and configures the pull. Leave empty for a public registry, or one you authorize yourself via acrLoginServer.')

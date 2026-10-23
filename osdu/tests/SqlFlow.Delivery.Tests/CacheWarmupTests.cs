@@ -130,7 +130,7 @@ public class CacheWarmupTests
     [Fact]
     public async Task A_host_without_the_module_database_starts_and_reads_nothing_ahead()
     {
-        // A node started without SQLFLOW_OSDU_DB: the ledger source answers no cache, and the node must still start.
+        // A node started without SQLFLOW_CATALOG_DB: the ledger source answers no cache, and the node must still start.
         var services = new ServiceCollection()
             .AddSingleton<ILogger<CacheWarmupService>>(new ListLogger())
             .AddDeliveryLedger(_ => null)

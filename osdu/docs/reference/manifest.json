@@ -917,12 +917,12 @@
       "path": "cli/worker.md",
       "title": "sqlflow worker in OSDU Delivery: what a delivery node needs beyond a SQLFlow node",
       "type": "cli-command",
-      "summary": "The OSDU Delivery worker host and what a node needs to deliver: SQLFLOW_OSDU_DB, the flows' credentials, the network guard and the start-up check.",
+      "summary": "The OSDU Delivery worker host and what a node needs to deliver: SQLFLOW_CATALOG_DB, the flows' credentials, the network guard and the start-up check.",
       "keywords": [
         "worker node",
         "compute node",
         "delivery node",
-        "sqlflow_osdu_db",
+        "sqlflow_catalog_db",
         "worker host",
         "node credentials",
         "module database on a node",
@@ -1043,7 +1043,7 @@
         "worker host",
         "osdu schema",
         "module database",
-        "SQLFLOW_OSDU_DB",
+        "SQLFLOW_CATALOG_DB",
         "ingestion database",
         "catalog database",
         "adddeliverykind",
@@ -1512,7 +1512,7 @@
       "id": "delivery-concept-environment-variables",
       "corpus": "reference",
       "path": "concepts/environment-variables.md",
-      "title": "Environment variables OSDU Delivery adds (SQLFLOW_OSDU_DB, SQLFLOW_DELIVERY_*, Osdu__Partitions__*, OSDU_TELEMETRY_*) and which tier reads each",
+      "title": "Environment variables OSDU Delivery adds or reads (SQLFLOW_CATALOG_DB on a node, SQLFLOW_DELIVERY_*, Osdu__Partitions__*, OSDU_TELEMETRY_*) and which tier reads each",
       "type": "concept",
       "summary": "Every environment variable and secret reference OSDU Delivery adds to SQLFlow's, which tier reads it, and where a flow's references resolve from.",
       "keywords": [
@@ -4307,7 +4307,7 @@
         "managed instance",
         "images",
         "osdu-delivery-worker",
-        "sqlflow_osdu_db",
+        "sqlflow_catalog_db",
         "osdu_partitions",
         "configure partitions",
         "osdudelivery and osdudata databases",
@@ -7510,7 +7510,7 @@
       "path": "decisions/0025-parallelism-and-default-fan-out.md",
       "title": "Decision 0025: What runs at once is a flow's parallelism, and a delivery fans out by default",
       "type": "decision",
-      "summary": "Why parallelism left reliability, why a large delivery fans out by default, and how its coordinating run never waits on members no node starts.",
+      "summary": "Why parallelism left reliability, why a large delivery fans out by default into slice runs that each deliver their share, and what was rejected.",
       "keywords": [
         "parallelism",
         "fan-out by default",
@@ -7519,7 +7519,8 @@
         "replica target",
         "members no node starts",
         "rate limit across a fan-out",
-        "batch file written again"
+        "batch file written again",
+        "slice runs"
       ],
       "related": [
         "delivery-wiki-0006-work-batches"
@@ -7529,6 +7530,10 @@
         "osdu/src/SqlFlow.Delivery/Documents/DeliveryDocumentLoader.cs",
         "osdu/src/SqlFlow.Delivery/Documents/YamlModels.cs",
         "osdu/src/SqlFlow.Delivery/Engine/FlowRuntime.cs",
+        "osdu/src/SqlFlow.Delivery/Engine/FlowRuntime.FanOut.cs",
+        "osdu/src/SqlFlow.Delivery/Ledger/OsduLedger.Leases.cs",
+        "sqlflow/src/SqlFlow.Orchestration/IRunFanOut.cs",
+        "sqlflow/src/SqlFlow.SqlServer/Export/ExportSegmentPlanner.cs",
         "osdu/src/SqlFlow.Delivery/Engine/DeliveryRunPayload.cs",
         "osdu/src/SqlFlow.Delivery/Engine/DeliveryExecutor.cs",
         "osdu/src/SqlFlow.Delivery/Engine/TargetConnection.cs",
@@ -7540,6 +7545,36 @@
         "osdu/deploy/terraform/modules/worker/main.tf",
         "sqlflow/src/SqlFlow.Core/Engine/SourceLocations.cs",
         "osdu/tests/SqlFlow.Delivery.Tests/ScaleEngineTests.cs"
+      ]
+    },
+    {
+      "id": "delivery-wiki-0026-one-database-connection",
+      "corpus": "wiki",
+      "path": "decisions/0026-one-database-connection.md",
+      "title": "Decision 0026: The osdu schema lives in the catalog's database, reached through its one connection",
+      "type": "decision",
+      "summary": "Why the module has no database connection of its own, why SQLFLOW_OSDU_DB is refused rather than ignored, and why the control plane owns the osdu schema.",
+      "keywords": [
+        "one database connection",
+        "SQLFLOW_OSDU_DB retired",
+        "SQLFLOW_CATALOG_DB",
+        "module database",
+        "osdu schema in the catalog database",
+        "node connection",
+        "control plane owns the osdu schema"
+      ],
+      "related": [],
+      "sourceRefs": [
+        "osdu/src/SqlFlow.Delivery/Hosting/OsduModuleDatabase.cs",
+        "osdu/src/SqlFlow.Delivery.ControlPlane/DeliveryControlPlaneModule.cs",
+        "osdu/src/SqlFlow.Delivery.Cli/DeliveryCliModule.cs",
+        "osdu/src/SqlFlow.Delivery.ControlPlane/ManagedWorkers/ProcessWorkerLauncher.cs",
+        "osdu/src/SqlFlow.Delivery/Catalog/DeliveryCatalogSync.cs",
+        "osdu/deploy/terraform/main.tf",
+        "osdu/deploy/terraform/variables.tf",
+        "osdu/deploy/bicep/main.bicep",
+        "osdu/deploy/k8s/worker-pool.yaml",
+        "sqlflow/src/SqlFlow.Catalog/Modules/ModuleDatabaseConnections.cs"
       ]
     },
     {

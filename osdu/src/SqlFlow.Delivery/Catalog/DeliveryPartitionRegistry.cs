@@ -1,6 +1,7 @@
 using Microsoft.EntityFrameworkCore;
 using SqlFlow.Core;
 using SqlFlow.Delivery.Data;
+using SqlFlow.Delivery.Hosting;
 using SqlFlow.Delivery.Model;
 
 namespace SqlFlow.Delivery.Catalog;
@@ -25,7 +26,7 @@ public sealed class DeliveryPartitionRegistry : IPartitionRegistry
     public bool Available => _contexts is not null;
 
     private OsduDbContext Open() => (_contexts ?? throw new DeliveryException(
-        "The partition registry lives in the module's database, which this host was started without. Start it with the module's connection (Osdu:Database:Connection or SQLFLOW_OSDU_DB), or with --db when the catalog's database holds the osdu schema."))();
+        $"The partition registry lives in the module's database, which this host was started without. {OsduModuleDatabase.StartWithCatalogConnection}"))();
 
     public async Task<RegisteredPartitions> ReadAsync(CancellationToken ct = default)
     {

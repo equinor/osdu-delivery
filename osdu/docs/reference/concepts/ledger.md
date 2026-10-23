@@ -73,9 +73,8 @@ last migration, when and by whom, and the oldest SQLFlow catalog migration it ne
 key into SQLFlow's catalog: a ledger row names a run, a pipeline or a repository by its id alone. See
 [Architecture](architecture.md) and [`sqlflow db`](../cli/db.md).
 
-By default the schema lives in the catalog's database. A deployment can give the module a database of its own with
-`SQLFLOW_OSDU_DB` (or `Osdu:Database:Connection`). A worker node never opens a catalog connection; it reaches the ledger
-through that module connection, and a node started without it refuses every operation that needs the ledger.
+The schema lives in the catalog's database. SQLFlow gives a worker node no catalog connection, so the module reaches the
+ledger there through `SQLFLOW_CATALOG_DB` itself, and a node started without it refuses to start.
 
 ## Ledgers, flows and partitions
 

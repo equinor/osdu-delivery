@@ -83,11 +83,6 @@ export const E2E = {
   // The metadata database: SQLFlow's catalog schema (pipelines, runs, schedules, lineage, sources, users) and the
   // delivery module's osdu schema beside it (the ledger, the mappings, the templates and the partition caches).
   catalogDb,
-  // Where the module's osdu schema is. The catalog's database, which is the shape the product ships and the one every
-  // spec here runs against; SQLFLOW_E2E_OSDU_DB points the suite at an estate that keeps it apart instead, which is
-  // what an estate on Azure SQL has to do. A node is given this connection either way, since a node opens no catalog
-  // connection at all.
-  osduDb: process.env.SQLFLOW_E2E_OSDU_DB ?? catalogDb,
   // Where the chain's source and ingestion tables live: the suite's one database, where the pre and ingestion flows
   // create their own schemas. SQLFLOW_E2E_DATA_DB moves them to a database of their own, the shape of a real estate,
   // where the source data is the volume; the seed spec creates that database when it is missing.
@@ -170,14 +165,6 @@ export default defineConfig({
         // password, and a literal secret never goes into configuration.
         ControlPlane__Catalog__ConnectionReference: "${env:SQLFLOW_E2E_CATALOG_CONNECTION}",
         SQLFLOW_E2E_CATALOG_CONNECTION: E2E.catalogDb,
-        // The module is given no connection of its own, which is what puts its osdu schema in the catalog's database:
-        // the shipped shape, and the one the host has to keep working. Only an estate that separated them declares it.
-        ...(process.env.SQLFLOW_E2E_OSDU_DB
-          ? {
-            Osdu__Database__Connection: "${env:SQLFLOW_E2E_OSDU_CONNECTION}",
-            SQLFLOW_E2E_OSDU_CONNECTION: E2E.osduDb,
-          }
-          : {}),
         // The sample flows read their ingestion tables through this reference. Without it a plan cannot open the tables
         // the seed loaded, and every delivery run fails on a connection it cannot resolve.
         OSDU_DATA_DB: E2E.dataDb,

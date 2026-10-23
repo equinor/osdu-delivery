@@ -80,23 +80,22 @@ publishes; no migration creates them and `status` does not count them (see [Dime
 
 ### Where it lives
 
-By default the `osdu` schema sits in the catalog's own database, beside SQLFlow's `catalog` schema. A deployment can give
-it a database of its own instead, by a connection reference that each host reads:
+The `osdu` schema lives in the catalog's database, beside SQLFlow's `catalog` schema, and every host reaches it through
+the catalog's one connection:
 
 | Host | The module database is |
 | --- | --- |
-| The CLI (`sqlflow db`, `config`, `partition`, `template`, `check`, `run` and the other commands) | `${env:SQLFLOW_OSDU_DB}` when that variable is set, else the catalog database (`--db`, else `${env:SQLFLOW_CATALOG_DB}`). |
-| The control plane | The `Osdu:Database:Connection` setting (a `${env:...}` or `${keyvault:...}` reference, never a connection string; anything else is refused at startup without echoing it), else `${env:SQLFLOW_OSDU_DB}` when set, else the catalog database. |
-| A worker node | Always `${env:SQLFLOW_OSDU_DB}`: a node has no catalog connection (see [sqlflow worker](worker.md)). |
+| The CLI (`sqlflow db`, `config`, `partition`, `template`, `check`, `run` and the other commands) | The catalog database: `--db`, else `${env:SQLFLOW_CATALOG_DB}`. |
+| The control plane | The catalog database, on the connection it opens the catalog on (`ControlPlane:Catalog:ConnectionReference`, by default `${env:SQLFLOW_CATALOG_DB}`). |
+| A worker node | `${env:SQLFLOW_CATALOG_DB}`: SQLFlow gives a node no catalog connection, so the module opens the catalog's database through that variable itself (see [sqlflow worker](worker.md)). |
 
-At run time a node's login needs to reach the `osdu` schema only. Which shape an estate has (one database or two) is
-chosen before the first `migrate`: pointing the setting at another database afterwards finds an empty or different
-schema there, and nothing moves the rows across.
+At run time a node's login needs to reach the `osdu` schema only. The module has no connection of its own:
+`SQLFLOW_OSDU_DB` and the control plane's `Osdu:Database:Connection` are no longer settings, and a host started with
+either refuses to start, naming it ([Errors](#errors)). Ignoring one would move the ledger: the host would migrate an
+empty `osdu` schema in the catalog's database and deliver everything again.
 
 Work that has to commit with the catalog (a repository sync writing mappings, a run queued with its submission) joins
-the catalog's connection and transaction when the `osdu` schema is reachable on it. Given a database of its own, which
-Azure SQL allows no statement to reach across, the module commits its own work on its own connection, written to be
-repeatable so the next run or sync settles what a failure left behind.
+the catalog's connection and transaction.
 
 ## migrate
 
@@ -114,7 +113,8 @@ OK   catalog database current at '<last-migration>' (N migration(s) applied, 0 p
 OK   module 'osdu' (schema 'osdu', catalog connection): current at '<last-migration>' (N migration(s) applied, 0 pending; build version <version>, recorded version <version>, catalog has '<catalog-migration>').
 ```
 
-The description says `own connection` instead of `catalog connection` when the module has a database of its own.
+A worker node's start-up check describes it as `own connection` instead: the node opens the catalog's database
+through `SQLFLOW_CATALOG_DB` itself, since SQLFlow gives a node no catalog connection.
 
 ## status
 
@@ -131,7 +131,7 @@ module 'osdu' (schema 'osdu', catalog connection): behind this build (N migratio
 | State | Meaning |
 | --- | --- |
 | current | Every migration this build knows is applied, none it does not know, and the catalog has the migration the module needs. |
-| the database does not exist | The database the module's connection names is missing. `migrate --create` provisions it. |
+| the database does not exist | The catalog database the connection names is missing. `migrate --create` provisions it. |
 | behind this build | Migrations this build knows are not applied. `migrate` applies them. |
 | ahead of this build | The database has migrations this build does not know (`unknown to this build:` lines): a newer build migrated it. Run that build. |
 | diverged from this build | Both of the above. |
@@ -149,10 +149,8 @@ fi
 
 ## --module osdu
 
-`--module osdu` limits `migrate` or `status` to the module database. When the module has a database of its own
-(`SQLFLOW_OSDU_DB` is set), it needs no catalog connection at all, and the catalog migration the module needs is then
-not checked (`catalog migration '<name>' not checked`). When the module is on the catalog connection, the catalog is read
-to check that migration but is not migrated. `--module` with `sync`, or a name no module registers, is refused:
+`--module osdu` limits `migrate` or `status` to the module database. The catalog is read to check the catalog migration
+the module needs, but is not migrated. `--module` with `sync`, or a name no module registers, is refused:
 
 ```text
 ERROR  --module applies to 'db migrate' and 'db status' only.
@@ -200,18 +198,19 @@ Failures print `ERROR  <phase> '<subcommand>' failed: <message>`, where the phas
 
 | Message | Cause |
 | --- | --- |
-| `The database of module 'osdu' (schema 'osdu', own connection) does not exist (<target>). Refusing to create it automatically. Provision it explicitly with 'sqlflow db migrate --create', or point the module's connection at an existing database.` | `migrate` without `--create` against a missing module database. |
+| `The database of module 'osdu' (schema 'osdu', catalog connection) does not exist (<target>). Refusing to create it automatically. Provision it explicitly with 'sqlflow db migrate --create', or point the module's connection at an existing database.` | `migrate --module osdu` without `--create` against a missing catalog database. |
 | `The schema 'osdu' in <target> holds <n> table(s) but no migration history of module 'osdu'. Refusing to create the module's tables beside objects it did not create. If the schema really belongs to the module, migrate it explicitly with 'sqlflow db migrate --create'.` | An `osdu` schema created by something else. |
 | `The database of module 'osdu' (...) is ahead of this build: it has <n> migration(s) this build does not know (<names>; build version <v>, recorded version <v>). Run a build of module 'osdu' that includes them.` | A newer build migrated the database. |
 | `Module 'osdu' needs the catalog migration '<migration>', which the catalog has not applied. Migrate the catalog first ('sqlflow db migrate').` | `migrate --module osdu` on the catalog connection while the catalog is behind. |
-| `The connection of module 'osdu' must be a secret reference, ${env:NAME} or ${keyvault:NAME}, or absent to use the catalog connection; the value given is not one (it is not shown).` | `Osdu:Database:Connection` holds a connection string instead of a reference. |
+| `SQLFLOW_OSDU_DB is no longer a setting; the osdu schema lives in the catalog's database, which SQLFLOW_CATALOG_DB names. Remove it. If it named another database, that database holds the ledger: bring its osdu schema into the catalog's database before the host starts, or the host would start an empty ledger there.` | A command, a worker node or the control plane was started with `SQLFLOW_OSDU_DB` set. The CLI prints it after `CLI module 'osdu' failed to configure its services:`. |
+| `Osdu:Database:Connection is no longer a setting; ...` | The control plane was started with `Osdu:Database:Connection` (`Osdu__Database__Connection`), with the same advice. |
 
 ## Exit behavior
 
 | Exit code | Meaning |
 | --- | --- |
 | 0 | `migrate` or `sync` succeeded; `status` found every database current. |
-| 1 | A refusal or failure above, an unresolvable `--db` or `SQLFLOW_OSDU_DB`, or a misused `--module`. |
+| 1 | A refusal or failure above, an unresolvable `--db` or `SQLFLOW_CATALOG_DB`, or a misused `--module`. |
 | 2 | `status` found a database that is not current (the catalog's pending migrations, or the module's state other than current). |
 
 ## For contributors: adding a migration
@@ -234,7 +233,7 @@ migration touches `osdu`.
 
 - [sqlflow db](../../../../sqlflow/docs/reference/cli/db.md): the verb, the catalog and its guards.
 - [Architecture](../concepts/architecture.md): the module on SQLFlow, the hosts and the databases.
-- [sqlflow worker](worker.md): why a node needs `SQLFLOW_OSDU_DB`.
+- [sqlflow worker](worker.md): why a node needs `SQLFLOW_CATALOG_DB`.
 - [Control plane](../concepts/control-plane.md): the module's configuration on the control plane.
 - [Deploying OSDU Delivery](../guides/deployment.md): when the databases are created.
 - [The shadow catalog](../../../../sqlflow/docs/reference/concepts/shadow-catalog.md): what a sync projects for SQLFlow.

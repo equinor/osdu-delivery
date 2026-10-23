@@ -400,7 +400,7 @@ public sealed class SubmissionIntake
 
         // A submission planned again (a re-run, or a run resuming what its interrupted attempt left) can still hold records
         // an earlier pass queued, which this pass found already queued: it is complete only once none is left to send.
-        var complete = counts.Planned == 0 && !await _ledger.HasPendingAsync(flow.Id, submissionId, now, ct).ConfigureAwait(false);
+        var complete = counts.Planned == 0 && !await _ledger.HasPendingAsync(flow.Id, submissionId, now, ct: ct).ConfigureAwait(false);
         submission = submission with
         {
             Status = complete ? SubmissionStatus.Completed : SubmissionStatus.Planned,
@@ -1107,7 +1107,7 @@ public sealed class SubmissionIntake
         var held = await _ledger.CountAsync(flowId, submissionId, RecordStatus.Held, ct).ConfigureAwait(false);
         var failed = await _ledger.CountAsync(flowId, submissionId, RecordStatus.Failed, ct).ConfigureAwait(false);
         var waiting = await _ledger.CountAsync(flowId, submissionId, RecordStatus.Waiting, ct).ConfigureAwait(false);
-        var stillPending = await _ledger.HasPendingAsync(flowId, submissionId, _time.GetUtcNow().UtcDateTime, ct).ConfigureAwait(false);
+        var stillPending = await _ledger.HasPendingAsync(flowId, submissionId, _time.GetUtcNow().UtcDateTime, ct: ct).ConfigureAwait(false);
         var now = _time.GetUtcNow().UtcDateTime;
         var wasClosed = submission.Status is SubmissionStatus.Completed or SubmissionStatus.Failed;
         var stop = stopped is not null && (stillPending || submission.Status == SubmissionStatus.Received);

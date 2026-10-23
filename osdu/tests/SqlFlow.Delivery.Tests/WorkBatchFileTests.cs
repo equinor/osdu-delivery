@@ -95,4 +95,51 @@ public class WorkBatchFileTests
         Directory.Delete(Path.GetDirectoryName(path)!, recursive: true);
         await Assert.ThrowsAsync<WorkDocumentMissingException>(() => WorkBatchFile.ReadOneAsync(stores, root, submission, refs[0]));
     }
+
+    /// <summary>
+    /// A drain reads its batch whole. A batch that is not there (pruned, or written on a node this one does not reach) and a
+    /// line that is not a work item any more are missing, which the drain turns into records to plan again, after the items
+    /// before them are read.
+    /// </summary>
+    [Fact]
+    public async Task A_batch_that_is_not_there_to_read_whole_is_missing_after_the_items_before_it()
+    {
+        var root = Samples.NewTempDirectory();
+        var stores = Samples.Stores();
+        var submission = Guid.NewGuid();
+
+        var gone = await Assert.ThrowsAsync<WorkDocumentMissingException>(() => ReadAllAsync(stores, root, submission, 3));
+        Assert.Contains("the batch file is gone", gone.Message, StringComparison.Ordinal);
+
+        var first = new WorkItem(Guid.NewGuid(), "dev:x:1", "{\"id\":\"dev:x:1\",\"data\":{\"n\":1}}");
+        await using (var writer = await WorkBatchWriter.OpenAsync(stores, root, submission, 3))
+        {
+            await writer.WriteAsync(first);
+        }
+
+        var path = WorkBatchFile.PathFor(root, submission, 3);
+        await File.AppendAllTextAsync(path, "\nnot a work item\n");
+        var read = new List<Guid>();
+        var rewritten = await Assert.ThrowsAsync<WorkDocumentMissingException>(async () =>
+        {
+            await foreach (var (item, _) in WorkBatchFile.ReadAllAsync(stores, root, submission, 3))
+            {
+                read.Add(item.Key);
+            }
+        });
+
+        Assert.Equal([first.Key], read);
+        Assert.Contains("is not a work item any more", rewritten.Message, StringComparison.Ordinal);
+    }
+
+    private static async Task<int> ReadAllAsync(FileStoreRegistry stores, string root, Guid submission, int batch)
+    {
+        var count = 0;
+        await foreach (var _ in WorkBatchFile.ReadAllAsync(stores, root, submission, batch))
+        {
+            count++;
+        }
+
+        return count;
+    }
 }

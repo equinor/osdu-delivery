@@ -48,7 +48,7 @@ public sealed class DeliveryDimensionViewApiTests
             source:
               endpoint: http://localhost
             target:
-              connection: ${env:SQLFLOW_OSDU_DB}
+              connection: ${env:SQLFLOW_CATALOG_DB}
             dimensions:
               - name: {{log}}
                 kind: "osdu:wks:work-product-component--WellLog:*"

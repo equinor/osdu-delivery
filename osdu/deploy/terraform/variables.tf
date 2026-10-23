@@ -79,7 +79,7 @@ variable "acr_login_server" {
 # ------------------------------------------------------------------------------------------------------- network ---
 
 variable "existing_sql_server" {
-  description = "Address of an existing SQL Server or Azure SQL Managed Instance whose databases the estate uses, instead of creating a server here: host or host,port (a Managed Instance's private FQDN <mi>.<dns-zone>.database.windows.net, its public endpoint <mi>.public.<dns-zone>.database.windows.net,3342, or any reachable SQL Server). Set, nothing SQL is created: no server, firewall rule or database. The databases named by catalog_database_name, osdu_database_name when apart, and each of sql_connections must already exist there, the network path is yours to provide (for a VNet-only Managed Instance, set infrastructure_subnet_id so the apps reach its VNet), and an Entra administrator of the server runs the sql_setup_script output to grant the apps their access. Only their connection secrets are written here. Empty creates an Azure SQL logical server and the databases."
+  description = "Address of an existing SQL Server or Azure SQL Managed Instance whose databases the estate uses, instead of creating a server here: host or host,port (a Managed Instance's private FQDN <mi>.<dns-zone>.database.windows.net, its public endpoint <mi>.public.<dns-zone>.database.windows.net,3342, or any reachable SQL Server). Set, nothing SQL is created: no server, firewall rule or database. The databases named by catalog_database_name and each of sql_connections must already exist there, the network path is yours to provide (for a VNet-only Managed Instance, set infrastructure_subnet_id so the apps reach its VNet), and an Entra administrator of the server runs the sql_setup_script output to grant the apps their access. Only their connection secrets are written here. Empty creates an Azure SQL logical server and the databases."
   type        = string
   default     = ""
 }
@@ -278,8 +278,8 @@ variable "sql_connections" {
   }
 
   validation {
-    condition     = alltrue([for name in keys(var.sql_connections) : !contains(["SQLFLOW_CATALOG_DB", "SQLFLOW_OSDU_DB"], upper(name))])
-    error_message = "SQLFLOW_CATALOG_DB and SQLFLOW_OSDU_DB are the estate's own databases, set by this configuration; name the connection otherwise."
+    condition     = alltrue([for name in keys(var.sql_connections) : upper(name) != "SQLFLOW_CATALOG_DB"])
+    error_message = "SQLFLOW_CATALOG_DB is the estate's own database, set by this configuration; name the connection otherwise."
   }
 
   validation {
@@ -531,9 +531,14 @@ variable "setup_identity_name" {
 }
 
 variable "osdu_database_name" {
-  description = "Name of the database holding the module's `osdu` schema (the record ledger, mappings, templates and the OSDU cache). Null keeps it in the catalog's database; name another to keep it apart, which cannot be changed after the first migrate."
+  description = "No longer a setting: the module's `osdu` schema (the record ledger, mappings, templates and the OSDU cache) lives in the catalog's database, catalog_database_name. Kept only to refuse a value, so an estate that named a database of its own is told rather than started on an empty ledger."
   type        = string
   default     = null
+
+  validation {
+    condition     = var.osdu_database_name == null
+    error_message = "osdu_database_name is no longer a setting; the osdu schema lives in the catalog's database, catalog_database_name. Remove it. If it named another database, that database holds the ledger: bring its osdu schema into the catalog's database before applying, or the apps would start an empty ledger there."
+  }
 }
 
 variable "sql_database_sku" {

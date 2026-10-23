@@ -35,15 +35,9 @@ variable "key_vault_uri" {
 }
 
 variable "catalog_connection_secret_name" {
-  description = "Key Vault secret name for the catalog ADO.NET connection string."
+  description = "Key Vault secret name for the catalog ADO.NET connection string, which the delivery module's `osdu` schema is reached through too."
   type        = string
   default     = "osdu-delivery-catalog-db"
-}
-
-variable "osdu_connection_secret_name" {
-  description = "Key Vault secret name for the OSDU Delivery module database connection string, which startup migrates and verifies after the catalog. Point it at a secret holding the catalog connection to keep the `osdu` schema in the catalog database."
-  type        = string
-  default     = "osdu-delivery-osdu-db"
 }
 
 variable "jwt_signing_key_secret_name" {

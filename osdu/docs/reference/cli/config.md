@@ -68,8 +68,8 @@ sqlflow config remove <name> [--repo <id>] [--partition <id>] [--db <conn-ref>]
 A property is a name and a value, kept in `[osdu].[ConfigProperty]` in the module's database. The name is the one a flow
 spells in `${env:NAME}`. The value is a non-secret value (an endpoint URL, a legal tag, an entitlements group) or a
 `${env:...}` or `${keyvault:vault/secret}` reference that the node resolves. The verb talks to the database directly, not
-to the control plane, so it needs the catalog connection (`--db`, else `${env:SQLFLOW_CATALOG_DB}`), or `SQLFLOW_OSDU_DB`
-when the `osdu` schema has a database of its own (see [sqlflow db](db.md)).
+to the control plane, so it needs the catalog connection (`--db`, else `${env:SQLFLOW_CATALOG_DB}`), whose database holds
+the `osdu` schema (see [sqlflow db](db.md)).
 
 A property is set at one of four scopes:
 
@@ -174,7 +174,7 @@ values the same way at start.
 | `--partition <id>` | data-partition-id | none (no particular partition) | The partition the property is set for, or read for. |
 | `--value <value>` | string | none | `set` only, required: the value or reference. |
 | `--description <text>` | string | none | `set` only: what the property is for, trimmed. Replaced by every `set`, and cleared when left out. |
-| `--db <conn-ref>` | connection reference | `${env:SQLFLOW_CATALOG_DB}` | The catalog database, which holds the `osdu` schema unless `SQLFLOW_OSDU_DB` names its own. |
+| `--db <conn-ref>` | connection reference | `${env:SQLFLOW_CATALOG_DB}` | The catalog database, which holds the `osdu` schema. |
 | `--json` | flag | off | Writes one JSON document to stdout instead of text (not for `remove`). |
 
 ## Behavior and output

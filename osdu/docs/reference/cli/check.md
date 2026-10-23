@@ -80,7 +80,7 @@ sqlflow check <flow.yaml> [--interface <name>] [--partition <id>] [--set name=va
 | `--partition <id>` | string | as a run settles it | The partition to check a flow that works in partitions in. Without it: the registry's default when the flow serves it, else the flow's only listed partition. A flow whose partition is its `target.headers.data-partition-id` takes none. |
 | `--set name=value` | repeatable | the declared defaults | A value for one of the flow's own `parameters`; a name set more than once is given the list of its values, which a parameter `source.record.scope` binds reads as one scope. A required parameter with no value fails with `<file>: parameter '<name>' is required. Supply it with --set <name>=value or the run's values.`; a name the flow does not declare fails with `<file>: parameter '<name>' is not declared under parameters.` The partition is not a parameter here: name it with `--partition`. |
 | `--connect` | switch | off | Also open the flow's ingestion tables on this machine, through the flow's own `source.connection`, and report what a run would read now (see below). Needs that reference to resolve here. |
-| `--db <conn-ref>` | string | `${env:SQLFLOW_CATALOG_DB}` | Where the module database is when the `osdu` schema lives in the catalog's database. `SQLFLOW_OSDU_DB`, when set, names the module database instead. See [The osdu module database in sqlflow db](db.md). |
+| `--db <conn-ref>` | string | `${env:SQLFLOW_CATALOG_DB}` | The catalog database, which holds the `osdu` schema. See [The osdu module database in sqlflow db](db.md). |
 | `--json` | switch | off | Print the facts as one JSON document on stdout instead of the text form. |
 
 An option the verb does not read is refused before anything runs, with the nearest known option when one is a near
@@ -133,11 +133,11 @@ names by its registration is read from the Register service when the flow runs, 
 
 The templates are read from the repository's files. Caches and the partition registry live in the module database, so
 `check` needs it for a mapping that reads a cache and for a flow that leaves its partitions to the registry:
-`--db <conn-ref>` (or `SQLFLOW_CATALOG_DB`) when the `osdu` schema is in the catalog's database, or `SQLFLOW_OSDU_DB`.
+`--db <conn-ref>` (or `SQLFLOW_CATALOG_DB`), the catalog's database, which holds the `osdu` schema.
 Without either it stops at the first thing it has to read from there:
 
 ```text
-ERROR  <file>: mapping WellLog@1.4.0 reads the cache of partition 'dev', and caches live in the module's database, which this host was started without. Start it with the module's connection (Osdu:Database:Connection or SQLFLOW_OSDU_DB), or with --db when the catalog's database holds the osdu schema.
+ERROR  <file>: mapping WellLog@1.4.0 reads the cache of partition 'dev', and caches live in the module's database, which this host was started without. The osdu schema lives in the catalog's database: start the host with the catalog's connection (SQLFLOW_CATALOG_DB, or --db on the command line).
 ```
 
 The check that needs no database is [`sqlflow validate`](validate.md).

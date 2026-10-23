@@ -14,7 +14,7 @@ keywords:
   - managed instance
   - images
   - osdu-delivery-worker
-  - sqlflow_osdu_db
+  - sqlflow_catalog_db
   - osdu_partitions
   - configure partitions
   - osdudelivery and osdudata databases
@@ -114,19 +114,18 @@ the node's options (`--pool` from `SQLFLOW_WORKER_POOL`, `--poll-seconds`, `--dr
 run another verb.
 
 What brings the workers up is queued runs, and a delivery queues more than one: a submission of 1,000 records or more fans
-out by default over up to eight member runs of the same flow, which the replica target counts like any other queued run,
+out by default over up to eight slice runs of the same flow, which the replica target counts like any other queued run,
 so a large delivery scales the pool out and an idle one lets it go back
 ([submissions](../concepts/submissions.md#many-nodes), `parallelism` on the [delivery flow](../flow/delivery.md#parallelism)).
-Its members read and write the delivery's work batches on whichever node runs them, so a flow fans out only when its
-`source.work` is on storage every node reaches, such as the deployment's own, `${env:LANDING_URL}/.work/<flow>`; a relative
-`source.work` is a folder in each worker's own copy of the repository, and keeps the delivery on one run.
+Each slice run delivers its own share of the records from the worker that takes it, its work batches in that worker's own
+copy of the repository, so the workers need no storage in common for it.
 The pool never grows past its ceiling (`worker_max_replicas` in Terraform, `workerMaxReplicas` in Bicep, 10 by default).
 
 ## The databases
 
 | Database (shipped names) | Holds | Reached as |
 | --- | --- | --- |
-| `OsduDelivery` | The metadata: SQLFlow's catalog schema and the module's `osdu` schema beside it (the ledger, mappings, templates, caches, partitions, central configuration, and the dimension tables and views). | The control plane's catalog connection; on a node `SQLFLOW_OSDU_DB` (the `osdu` schema), and `SQLFLOW_CATALOG_DB` for the flows that read the dimension views, which the node itself never opens. |
+| `OsduDelivery` | The metadata: SQLFlow's catalog schema and the module's `osdu` schema beside it (the ledger, mappings, templates, caches, partitions, central configuration, and the dimension tables and views). | `SQLFLOW_CATALOG_DB`: the control plane's catalog connection, which owns both schemas; on a node the same variable with a login on the `osdu` schema alone, for the ledger and for the flows that read the dimension views. |
 | `OsduData` | The data the flows work in: what the pre flows land from the source files, the keyed tables the ingestion flows load, and what the delivery flows read, each in a schema of its own. | `${env:OSDU_DATA_DB}`, on the control plane and the nodes alike. |
 
 The flows name both databases in three-part names (`OsduData.silver.Wellbore`, `OsduDelivery.osdu.v_dim_<view>`), so
@@ -136,12 +135,11 @@ schema. SQLFlow never creates the data database: the compose stack's `dbinit` se
 Terraform deployments create each database their SQL connections name on the server they create, and elsewhere it is
 provisioned with the server.
 
-**Decide where the `osdu` schema lives before the first migrate.** By default it sits in the catalog's database. An estate
-that must keep it apart (Azure SQL lets no statement reach across two databases) names its database in
-`Osdu:Database:Connection` (or `SQLFLOW_OSDU_DB`) on the control plane, and points every node at it; the choice cannot be
-changed by editing the setting afterwards. In the Bicep templates this is `osduDatabaseName`, in the Terraform
-`osdu_database_name`. Both can also point the whole estate at an existing server or Managed Instance whose databases
-already exist (`existingSqlServer`, `existing_sql_server`), creating nothing SQL; the apps sign in as their own managed
+**The `osdu` schema lives in the catalog's database**, reached through the catalog's one connection: the module has no
+connection or database of its own. `SQLFLOW_OSDU_DB` and `Osdu:Database:Connection` are no longer settings, and a host
+started with either refuses to start; the Terraform refuses `osdu_database_name`, and the Bicep templates no longer
+declare `osduDatabaseName`. The Bicep and Terraform deployments can point the whole estate at an existing server or
+Managed Instance whose databases already exist (`existingSqlServer`, `existing_sql_server`), creating nothing SQL; the apps sign in as their own managed
 identities by default, with no password in any connection.
 
 The source database a delivery flow reads allows snapshot isolation once, so a record and its child rows are read as one
@@ -154,19 +152,19 @@ flow that cannot have it declares `source.incremental.isolation: readCommitted`;
 | Tier | OSDU Delivery adds |
 | --- | --- |
 | Control plane | The partitions it delivers to, with their values (`Osdu__Partitions__<data-partition-id>__...`, below); the values every run of every kind resolves with, set for no partition (`Osdu__Properties__<NAME>`: `OSDU_DATA_DB`, `SQLFLOW_CATALOG_DB` for the flows that read the dimension views, a storage account's location), which also serve a person's reads run here (a flow's probe, read-back, preview and source read, and the explorer's reads of a partition); `SQLFLOW_DELIVERY_PRIVATE_NETWORKS`; the other `Osdu:*` settings it needs. It never delivers. |
-| Node | `SQLFLOW_OSDU_DB`, the connection of the database holding the `osdu` schema with a login on that schema alone; `SQLFLOW_DELIVERY_PRIVATE_NETWORKS` when a target resolves to a private address. Every run carries the values its flows resolve, so a node needs no flow's variable, though one set in its own environment still answers a reference no value of the run's covers. A node opens no catalog connection. |
+| Node | `SQLFLOW_CATALOG_DB`, the connection of the catalog's database, which holds the `osdu` schema, with a login on that schema alone; `SQLFLOW_DELIVERY_PRIVATE_NETWORKS` when a target resolves to a private address. Every run carries the values its flows resolve, so a node needs no flow's variable, though one set in its own environment still answers a reference no value of the run's covers. SQLFlow itself opens no catalog connection on a node; the module opens the `osdu` schema through this one. |
 | GUI | Nothing beyond SQLFlow's `SQLFLOW_API_BASE_URL`. |
 | MCP server | Optional; holds no credential ([the MCP server](mcp.md#running-it-as-a-service)). |
 
-Without `SQLFLOW_OSDU_DB` a node refuses to start (`ERROR  the worker refuses to start: ...`), and it also refuses a
+Without `SQLFLOW_CATALOG_DB` a node refuses to start (`ERROR  the worker refuses to start: ...`), and it also refuses a
 module database that is missing, behind or ahead of its build. Every variable is listed in
 [environment variables](../concepts/environment-variables.md).
 
 The Bicep and Terraform deployments give the control plane the data databases (`sqlConnections`, `sql_connections`,
 `OSDU_DATA_DB` by default), the metadata database as `SQLFLOW_CATALOG_DB`, the landing storage as `LANDING_URL` and any
 further value (`properties`) as `Osdu__Properties__<NAME>`, each a setting or a `${keyvault:...}` reference, so a node
-there holds its node credential and `SQLFLOW_OSDU_DB` alone. The compose and Kubernetes layouts still give a node
-`OSDU_DATA_DB` and `SQLFLOW_CATALOG_DB` in its own environment. Values the central configuration holds, the
+there holds its node credential and `SQLFLOW_CATALOG_DB` alone. The compose and Kubernetes layouts still give a node
+`OSDU_DATA_DB` in its own environment. Values the central configuration holds, the
 partitions' among them, need no variable on any tier: no template gives a node `OSDU_URL`, `OSDU_TOKEN_URL`,
 `OSDU_SCOPE`, `OSDU_CLIENT_ID`, the ACLs or the legal tag any more, since every run carries its partition's values, and
 `OSDU_DATA_PARTITION` is gone too (only a flow bound to no partition reads it). Those variables still work on a
@@ -220,7 +218,7 @@ The shipped templates carry these settings on the control plane alone:
 2. **Mint a node token.** Sign in as the admin and mint a personal access token with the `node` scope
    (`POST /api/v1/me/tokens` with scopes `["node"]`, or the GUI's token page). It can only be minted once the control plane
    runs, which is why a first start has two steps.
-3. **Deploy the workers** with that token as `SQLFLOW_TOKEN`, `SQLFLOW_OSDU_DB`, and the references their flows use.
+3. **Deploy the workers** with that token as `SQLFLOW_TOKEN`, `SQLFLOW_CATALOG_DB`, and the references their flows use.
 4. **Register the flow repository** as a managed repository source, so the pre, ingestion and OSDU flows, the mappings and
    the cache flows are synced and their schedules fire.
 5. **Fill each partition's cache** with a refresh run of its cache flows. The templates the mappings fill come with the
@@ -249,7 +247,7 @@ The GUI is on `http://localhost:8081` and the API on `http://localhost:5000`.
 
 `osdu/deploy/k8s` holds `namespace.yaml`, `controlplane.yaml`, `gui.yaml`, `ingress.yaml`, `worker-pool.yaml` (one pool;
 copy it per pool), `mcp.yaml` (optional, adds `/mcp` to the same host) and `secrets.example.yaml`, which names every key of
-the `osdu-delivery-secrets` secret, including `osdu-module-connection` (the node's `SQLFLOW_OSDU_DB`). The layout is
+the `osdu-delivery-secrets` secret, including `node-catalog-connection` (the node's `SQLFLOW_CATALOG_DB`, with a login on the `osdu` schema alone). The layout is
 SQLFlow's: one host with `/api` to the control plane and `/` to the GUI, so no CORS.
 
 ### Azure Container Apps
@@ -287,7 +285,6 @@ OSDU Delivery's Bicep parameters beyond SQLFlow's:
 | `sqlConnections` | The SQL databases the flows read and write, by the name a flow spells (`{"OSDU_DATA_DB": {"database": "OsduData"}}`): a database on the estate's server (`create`, `access` write or read), or `secretName`, a vault secret holding the connection string of a database elsewhere. Every run is given each as a `${keyvault:...}` reference. |
 | `sqlAdmins` | The people or groups (`name`, `objectId`, `type`) made owners of every database, inside every deployment. |
 | `catalogDatabaseName` | The metadata database, `OsduDelivery` by default. |
-| `osduDatabaseName` | The database holding the `osdu` schema; the catalog's database by default. |
 | `landingStorage` | The storage account the flows read their files from, created or adopted, granted to the apps, and given to every run as `LANDING_URL` (`abfss://<container>@<account>.dfs.core.windows.net`). |
 | `repositories` | The flow repositories the control plane syncs, registered at its start and kept as configured; a private one is read with the estate's GitHub App (`githubApp`, unless it sets `useGitHubApp` to false) or names the vault secret holding its own token (`credentialSecretName`, which wins). |
 | `githubApp` | The GitHub App the estate's GitHub repositories are read with: `appId` (its client ID), `privateKeySecretName` (the vault secret a person puts its `.pem` in), and for GitHub Enterprise `apiUrl`. Each repository on the App's GitHub that names no token gets `${githubapp:app=<appId>;key=keyvault:<vault>/<privateKeySecretName>}` as its credential reference, which the control plane and each worker resolve with their own identity; the output `githubAppPrivateKeySecret` names the secret. |
@@ -302,7 +299,7 @@ The Terraform takes the same choices under snake-case names:
 | `osdu_partitions` | The partitions, a map by data-partition-id of `{ default, description, url, token_url, scope, client_id, client_secret_name, acl_owner, acl_viewer, legal_tag, properties }`. At least one; with several, exactly one `default = true`; property names as a flow spells them, and a property whose name says it is a secret only as a `${keyvault:...}` or `${env:...}` reference. `url`, `token_url`, `scope` and `client_id` become `OSDU_URL`, `OSDU_TOKEN_URL`, `OSDU_SCOPE` and `OSDU_CLIENT_ID`, the three optional ones `OSDU_ACL_OWNER`, `OSDU_ACL_VIEWER` and `OSDU_LEGAL_TAG`. The client secret is never a variable: it is read from `osdu-<partition>-client-secret` (or `client_secret_name`) in the vault. |
 | `sql_connections`, `sql_admins`, `landing_storage`, `repositories`, `github_app`, `properties` | As the Bicep's `sqlConnections`, `sqlAdmins`, `landingStorage`, `repositories` (with `use_github_app`), `githubApp` (`app_id`, `private_key_secret_name`, `api_url`) and `properties`. The output `github_app_private_key_secret` names the vault secret the App's key goes in, and `deploy.ps1 -Infrastructure` says when it is not there yet. |
 | `catalog_database_name` | `OsduDelivery` by default. |
-| `osdu_database_name` | The database holding the `osdu` schema; the catalog's by default. |
+| `osdu_database_name` | No longer a setting: any value is refused, since the `osdu` schema lives in the catalog's database. |
 | `image_tag`, `mcp_enabled` | The images are the repository's, `<registry>/osdu-delivery-<app>:<image_tag>`, unless an app's image variable names one; `mcp_enabled` deploys the MCP server. An image is set when its app is created, and later applies leave it: the deploy scripts roll the apps forward. |
 
 The `osdu_partitions` output lists each partition with whether it is the default and the vault secret its client secret is

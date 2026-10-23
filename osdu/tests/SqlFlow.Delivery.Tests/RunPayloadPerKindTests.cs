@@ -260,8 +260,9 @@ public sealed class RunPayloadPerKindTests
     }
 
     /// <summary>
-    /// How many runs of a fan-out share the flow's rate limit travels with each member: only an intake or drain member on its
-    /// coordinating run's submission carries it, and it counts the coordinating run and at most every member a flow allows.
+    /// How many runs of a fan-out share the flow's rate limit travels with each of its runs: only a slice run (or an intake or
+    /// drain of the coordinating run's submission) carries it, and it counts the coordinating run and at most every run a
+    /// flow allows.
     /// </summary>
     [Fact]
     public void A_rate_share_travels_with_a_fan_out_member_and_counts_the_runs_that_share_the_rate()
@@ -277,11 +278,12 @@ public sealed class RunPayloadPerKindTests
         DeliveryRunPayload.Parse("{" + Submission + ",\"slices\":[1],\"rateShare\":65}").Validate(DeliveryOperations.Intake);
         Assert.Null(DeliveryRunPayload.Parse("{" + Submission + "}").RateShare);
 
+        DeliveryRunPayload.Parse("{" + Submission + ",\"slices\":[2,3],\"rateShare\":3}").Validate(DeliveryOperations.Deliver);
         Assert.Equal(
-            "payload rateShare does not apply to the deliver operation: only a fan-out member shares its coordinating run's rate limit.",
+            "payload rateShare does not apply to the deliver operation: only a slice run of a fan-out shares its coordinating run's rate limit.",
             Refusal("""{"rateShare":2}""", DeliveryOperations.Deliver));
         Assert.Equal(
-            "payload rateShare does not apply to the verify operation: only a fan-out member shares its coordinating run's rate limit.",
+            "payload rateShare does not apply to the verify operation: only a run of a fan-out shares its coordinating run's rate limit.",
             Refusal("""{"rateShare":2}""", DeliveryOperations.Verify));
         Assert.Equal(
             "payload rateShare does not apply to the drain operation: a member shares the rate of the run whose submission it works on, which submissionId names.",

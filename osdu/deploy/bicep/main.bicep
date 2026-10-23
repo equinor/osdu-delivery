@@ -278,7 +278,7 @@ param acrLoginServer string = ''
 
 // ----------------------------------------------------------------------------------------------------- network ---
 
-@description('Address of an existing SQL Server or Azure SQL Managed Instance whose databases the estate uses, instead of creating a server here: host or host,port (a Managed Instance\'s private FQDN, its public endpoint with ,3342, or any reachable SQL Server). Set, nothing SQL is created: no server, firewall rule or database. The databases named by catalogDatabaseName, osduDatabaseName when apart, and each of sqlConnections must already exist there, the network path is yours to provide (for a VNet-only Managed Instance, set infrastructureSubnetId so the apps reach its VNet), and an Entra administrator of the server runs the sqlSetupScript output to grant the apps their access. Only their connection secrets are written here. Empty creates an Azure SQL logical server and the databases.')
+@description('Address of an existing SQL Server or Azure SQL Managed Instance whose databases the estate uses, instead of creating a server here: host or host,port (a Managed Instance\'s private FQDN, its public endpoint with ,3342, or any reachable SQL Server). Set, nothing SQL is created: no server, firewall rule or database. The databases named by catalogDatabaseName and each of sqlConnections must already exist there, the network path is yours to provide (for a VNet-only Managed Instance, set infrastructureSubnetId so the apps reach its VNet), and an Entra administrator of the server runs the sqlSetupScript output to grant the apps their access. Only their connection secrets are written here. Empty creates an Azure SQL logical server and the databases.')
 param existingSqlServer string = ''
 
 @description('Resource id of a VNet subnet to integrate the Container Apps environment into: a workload-profiles environment needs a subnet of at least /27 delegated to Microsoft.App/environments. Empty deploys the environment without VNet integration.')
@@ -439,10 +439,7 @@ param catalogDatabaseName string = 'OsduDelivery'
 @description('Name of the estate\'s setup identity: the managed identity the deployment\'s own steps run as (osdu/deploy/setup/Setup-Estate.ps1), the Entra administrator of the SQL server created here and a Key Vault Secrets Officer of the estate\'s vault. No app runs as it.')
 param setupIdentityName string = 'osdu-delivery-setup'
 
-@description('Name of the database holding the module\'s `osdu` schema (the record ledger, mappings, templates and the OSDU cache). The catalog\'s database by default, so all of the metadata is in one; name another to keep it apart (a second database is then created for it), which cannot be changed after the first migrate.')
-param osduDatabaseName string = catalogDatabaseName
-
-@description('SKU name of the metadata database, e.g. S1 (ignored when existingSqlServer is set; the osdu database takes it too when apart). It carries the catalog, the run journal and the delivery ledger: modest, but polled continuously, so avoid serverless auto-pause.')
+@description('SKU name of the metadata database, e.g. S1 (ignored when existingSqlServer is set). It carries the catalog, the run journal and the delivery ledger: modest, but polled continuously, so avoid serverless auto-pause.')
 param sqlDatabaseSku string = 'S1'
 
 @description('Changes on every deployment by default, so the setup steps run each time: a generated secret deleted from the vault is generated again, and the database grants are kept as this deployment says. Leave it to its default.')
@@ -485,12 +482,12 @@ var propertiesChecked = !empty(propertiesMisnamed)
       : properties
 
 var sqlConnectionsMisnamed = filter(objectKeys(sqlConnections), name => !isEnvironmentName(name))
-var sqlConnectionsNamedAsEstateDatabases = filter(objectKeys(sqlConnections), name => toUpper(name) == 'SQLFLOW_CATALOG_DB' || toUpper(name) == 'SQLFLOW_OSDU_DB')
+var sqlConnectionsNamedAsEstateDatabases = filter(objectKeys(sqlConnections), name => toUpper(name) == 'SQLFLOW_CATALOG_DB')
 var sqlConnectionsNotOneOrTheOther = map(filter(items(sqlConnections), c => empty(c.value.?database ?? '') == empty(c.value.?secretName ?? '')), c => c.key)
 var sqlConnectionsChecked = !empty(sqlConnectionsMisnamed)
   ? fail('A connection is named as a flow spells it in \${env:NAME}: a letter or underscore, then letters, digits and underscores, at most 64 characters. Not so: ${join(sqlConnectionsMisnamed, ', ')}.')
   : !empty(sqlConnectionsNamedAsEstateDatabases)
-      ? fail('SQLFLOW_CATALOG_DB and SQLFLOW_OSDU_DB are the estate\'s own databases, set by this template; name the connection otherwise. Not so: ${join(sqlConnectionsNamedAsEstateDatabases, ', ')}.')
+      ? fail('SQLFLOW_CATALOG_DB is the estate\'s own database, set by this template; name the connection otherwise. Not so: ${join(sqlConnectionsNamedAsEstateDatabases, ', ')}.')
       : !empty(sqlConnectionsNotOneOrTheOther)
           ? fail('Each SQL connection names exactly one of database (on the estate\'s server) and secretName (a vault secret holding the connection string of a database elsewhere). Not so: ${join(sqlConnectionsNotOneOrTheOther, ', ')}.')
           : sqlConnections
@@ -539,7 +536,6 @@ var sqlAdminLoginChecked = sqlAuthentication == 'password' && empty(sqlAdminPass
 
 // Secret names shared with the per-tier templates (their defaults match these).
 var catalogConnectionSecretName = 'osdu-delivery-catalog-db'
-var osduConnectionSecretName = 'osdu-delivery-osdu-db'
 var jwtSigningKeySecretName = 'osdu-delivery-jwt-signing-key'
 var adminPasswordSecretName = 'osdu-delivery-admin-password'
 var nodeTokenSecretName = 'osdu-delivery-node-token'
@@ -548,7 +544,6 @@ var nodeTokenSecretName = 'osdu-delivery-node-token'
 var setupScript = loadTextContent('../setup/Setup-Estate.ps1')
 
 var createSql = empty(existingSqlServer)
-var separateOsduDb = osduDatabaseName != catalogDatabaseName
 var sqlEntraAuth = sqlAuthentication == 'entra'
 var grantsHere = sqlEntraAuth && createSql
 
@@ -752,20 +747,6 @@ resource catalogDatabase 'Microsoft.Sql/servers/databases@2023-08-01-preview' = 
   }
 }
 
-// The delivery module's own database, created only when it is not the catalog's.
-resource osduDatabase 'Microsoft.Sql/servers/databases@2023-08-01-preview' = if (createSql && separateOsduDb) {
-  parent: sqlServer
-  name: osduDatabaseName
-  location: location
-  tags: tags
-  sku: {
-    name: sqlDatabaseSku
-  }
-  properties: {
-    collation: 'SQL_Latin1_General_CP1_CI_AS'
-  }
-}
-
 // The SQL connections, each with the vault secret it is read from: built here for one on the estate's server, put there
 // by hand for one elsewhere.
 var sqlConnectionList = map(items(sqlConnectionsChecked), c => {
@@ -780,9 +761,9 @@ var sqlConnectionList = map(items(sqlConnectionsChecked), c => {
 var serverConnections = filter(sqlConnectionList, c => !empty(c.database))
 
 // The databases this template creates for them: one per database name, whichever connections name it, and never the
-// catalog's or the module's own.
+// catalog's, which holds the osdu schema too.
 var createdDatabases = createSql
-  ? union(map(filter(serverConnections, c => c.create && c.database != catalogDatabaseName && c.database != osduDatabaseName), c => c.database), [])
+  ? union(map(filter(serverConnections, c => c.create && c.database != catalogDatabaseName), c => c.database), [])
   : []
 
 // The data databases the flows work in: the pre-ingestion flows land the source files there, the ingestion flows load
@@ -822,14 +803,6 @@ resource catalogDbSecret 'Microsoft.KeyVault/vaults/secrets@2023-07-01' = {
   name: catalogConnectionSecretName
   properties: {
     value: 'Server=tcp:${sqlServerAddress};Initial Catalog=${catalogDatabaseName};${connectionStringTail}'
-  }
-}
-
-resource osduDbSecret 'Microsoft.KeyVault/vaults/secrets@2023-07-01' = {
-  parent: keyVault
-  name: osduConnectionSecretName
-  properties: {
-    value: 'Server=tcp:${sqlServerAddress};Initial Catalog=${osduDatabaseName};${connectionStringTail}'
   }
 }
 
@@ -890,21 +863,11 @@ var sqlSetupEntries = concat(
   [
     {
       name: catalogDatabaseName
-      purpose: separateOsduDb ? 'the catalog' : 'the catalog, and the osdu schema beside it'
-      users: concat([controlPlaneUser], separateOsduDb ? [] : [workerUser], adminUsers)
-      statements: concat(controlPlaneOwns, separateOsduDb ? [] : workerReachesOsduSchema, adminsOwn)
+      purpose: 'the catalog, and the osdu schema beside it'
+      users: concat([controlPlaneUser, workerUser], adminUsers)
+      statements: concat(controlPlaneOwns, workerReachesOsduSchema, adminsOwn)
     }
   ],
-  separateOsduDb
-    ? [
-        {
-          name: osduDatabaseName
-          purpose: 'the osdu schema'
-          users: concat([controlPlaneUser, workerUser], adminUsers)
-          statements: concat(controlPlaneOwns, workerReachesOsduSchema, adminsOwn)
-        }
-      ]
-    : [],
   map(serverConnections, c => {
     name: c.database
     purpose: '${c.name}, the data the flows ${c.access == 'write' ? 'land, load and deliver from' : 'read'}'
@@ -984,7 +947,6 @@ resource setupGrants 'Microsoft.Resources/deploymentScripts@2023-08-01' = if (gr
   }
   dependsOn: [
     catalogDatabase
-    osduDatabase
     connectionDatabases
     sqlAllowAzureServices
   ]
@@ -1218,7 +1180,6 @@ module controlPlane 'control-plane.bicep' = {
     image: controlPlaneImageReference
     keyVaultName: keyVault.name
     catalogConnectionSecretName: catalogConnectionSecretName
-    osduConnectionSecretName: osduConnectionSecretName
     jwtSigningKeySecretName: jwtSigningKeySecretName
     // Compute belongs to the worker app; the API replica does API + scheduler + sync work only.
     workerEnabled: false
@@ -1253,16 +1214,15 @@ module controlPlane 'control-plane.bicep' = {
     controlPlaneIdentity
     setupSecrets
     catalogDbSecret
-    osduDbSecret
     connectionSecrets
     catalogDatabase
-    osduDatabase
     connectionDatabases
     sqlAllowAzureServices
   ]
 }
 
-// A node holds its identity and the ledger's connection alone: everything its runs read is handed to each run.
+// A node holds its identity and the catalog's connection alone, which it reads and writes the ledger in the osdu schema
+// through: everything its runs read is handed to each run.
 module worker 'worker.bicep' = {
   name: 'osdu-delivery-worker-app'
   params: {
@@ -1277,8 +1237,8 @@ module worker 'worker.bicep' = {
     privateNetworks: privateNetworks
     secretEnv: [
       {
-        name: 'SQLFLOW_OSDU_DB'
-        secretName: osduConnectionSecretName
+        name: 'SQLFLOW_CATALOG_DB'
+        secretName: catalogConnectionSecretName
       }
     ]
     acrName: acrName
@@ -1289,8 +1249,8 @@ module worker 'worker.bicep' = {
   dependsOn: [
     workerIdentity
     setupSecrets
-    osduDbSecret
-    osduDatabase
+    catalogDbSecret
+    catalogDatabase
     sqlAllowAzureServices
   ]
 }
@@ -1402,7 +1362,7 @@ output sqlAuthentication string = sqlAuthentication
 @description('With existingSqlServer under Entra authentication, the T-SQL an Entra administrator of that server runs, database by database, to create the apps\' users; every statement can run again. Empty otherwise: on a server created here the deployment grants them itself.')
 output sqlSetupScript string = sqlSetupScript
 
-@description('SQL server address (the connection strings are in Key Vault: osdu-delivery-catalog-db, osdu-delivery-osdu-db, and one per SQL connection).')
+@description('SQL server address (the connection strings are in Key Vault: osdu-delivery-catalog-db, which holds the osdu schema too, and one per SQL connection).')
 output sqlServerFqdn string = createSql ? sqlServer!.properties.fullyQualifiedDomainName : existingSqlServer
 
 @description('The SQL connections every run is given, by the name a flow spells: the vault secret each is read from.')

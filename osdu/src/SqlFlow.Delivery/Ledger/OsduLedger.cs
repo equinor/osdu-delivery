@@ -1088,7 +1088,7 @@ public sealed partial class OsduLedger : ILedger
             .ToList();
     }
 
-    public async Task<bool> HasPendingAsync(Guid flowId, Guid? submissionId, DateTime nowUtc, CancellationToken ct = default)
+    public async Task<bool> HasPendingAsync(Guid flowId, Guid? submissionId, DateTime nowUtc, BatchRange? batches = null, CancellationToken ct = default)
     {
         if (await PartitionOfAsync(flowId, ct).ConfigureAwait(false) is not { } partition)
         {
@@ -1097,17 +1097,21 @@ public sealed partial class OsduLedger : ILedger
 
         var pending = StatusText.Of(RecordStatus.Pending);
         var delivering = StatusText.Of(RecordStatus.Delivering);
+        var scoped = batches is not null;
+        var first = batches?.First ?? 0;
+        var beyond = batches?.Beyond ?? 0;
         return await ReadAsync(
             db => db.DeliveryRecords.AnyAsync(
                 r => r.PartitionId == partition
                     && r.FlowId == flowId
                     && (submissionId == null || r.LastSubmissionId == submissionId)
+                    && (!scoped || (r.WorkBatch >= first && r.WorkBatch < beyond))
                     && (r.Status == pending || r.Status == delivering),
                 ct),
             ct).ConfigureAwait(false);
     }
 
-    public async Task<DateTime?> NextDueAsync(Guid flowId, Guid? submissionId, DateTime nowUtc, CancellationToken ct = default)
+    public async Task<DateTime?> NextDueAsync(Guid flowId, Guid? submissionId, DateTime nowUtc, BatchRange? batches = null, CancellationToken ct = default)
     {
         if (await PartitionOfAsync(flowId, ct).ConfigureAwait(false) is not { } partition)
         {
@@ -1115,9 +1119,14 @@ public sealed partial class OsduLedger : ILedger
         }
 
         var pending = StatusText.Of(RecordStatus.Pending);
+        var scoped = batches is not null;
+        var first = batches?.First ?? 0;
+        var beyond = batches?.Beyond ?? 0;
         return await ReadAsync(
             db => db.DeliveryRecords
-                .Where(r => r.PartitionId == partition && r.FlowId == flowId && (submissionId == null || r.LastSubmissionId == submissionId) && r.Status == pending && r.NextAttemptUtc != null && r.NextAttemptUtc > nowUtc)
+                .Where(r => r.PartitionId == partition && r.FlowId == flowId && (submissionId == null || r.LastSubmissionId == submissionId)
+                    && (!scoped || (r.WorkBatch >= first && r.WorkBatch < beyond))
+                    && r.Status == pending && r.NextAttemptUtc != null && r.NextAttemptUtc > nowUtc)
                 .MinAsync(r => r.NextAttemptUtc, ct),
             ct).ConfigureAwait(false);
     }

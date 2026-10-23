@@ -22,7 +22,7 @@ public class DimensionViewTemplateTests
         source:
           endpoint: ${env:OSDU_URL}
         target:
-          connection: ${env:WELLDB_OSDU_DB}
+          connection: ${env:SQLFLOW_CATALOG_DB}
         dimensions:
           - name: LogCurve
             kind: osdu:wks:work-product-component--WellLog:1.4.0

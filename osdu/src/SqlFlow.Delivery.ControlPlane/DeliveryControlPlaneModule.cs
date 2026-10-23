@@ -46,7 +46,6 @@ public sealed class DeliveryControlPlaneModule : IControlPlaneModule
     {
         ArgumentNullException.ThrowIfNull(services);
 
-        var database = services.AddOptions<OsduDatabaseOptions>(OsduDatabaseOptions.SectionName);
         var rollout = services.AddOptions<CacheRolloutOptions>(CacheRolloutOptions.SectionName, options => options.Validate());
         var warmup = services.AddOptions<CacheWarmupOptions>(CacheWarmupOptions.SectionName, options => options.Validate());
         var repository = services.AddOptions<SchemaRepositoryOptions>(SchemaRepositoryOptions.SectionName, options => options.Validate());
@@ -54,10 +53,11 @@ public sealed class DeliveryControlPlaneModule : IControlPlaneModule
         var telemetry = services.AddOptions<TelemetryOptions>(TelemetryOptions.SectionName, options => options.Validate());
         services.AddOptions<ConfiguredPartitionsOptions>(ConfiguredPartitionsOptions.SectionName, options => options.Validate());
 
-        // The module's database: the osdu schema in the catalog's own database unless the deployment gives it one of its
-        // own. Bootstrap migrates it after the catalog, and readiness stays red until it verifies against this build.
-        services.AddDatabase(OsduModuleDatabase.Create(
-            OsduModuleDatabase.ResolveReference(database.Connection, Environment.GetEnvironmentVariable)));
+        // The module's database: the osdu schema in the catalog's database, on the catalog's connection. Bootstrap migrates
+        // it after the catalog, and readiness stays red until it verifies against this build.
+        OsduModuleDatabase.RefuseRetiredSettings(name => services.Configuration.GetSection(name).Exists()
+            || !string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable(name)));
+        services.AddDatabase(OsduModuleDatabase.Create());
 
         // Where a synced repository's files are on this host, which a template is read from outside a run of its own
         // repository: this control plane's catalog says where each repository's last sync put them. Registered before the
@@ -222,7 +222,8 @@ public sealed class DeliveryControlPlaneModule : IControlPlaneModule
         services.Services.AddSingleton<IWorkerLauncher>(provider => new RadixWorkerLauncher(
             () => provider.GetRequiredService<IHttpClientFactory>().CreateClient(RadixWorkerLauncher.HttpClientName), radix,
             provider.GetRequiredService<TimeProvider>(), Environment.GetEnvironmentVariable(RadixWorkerLauncher.CommitVariable)));
-        // A local worker opens the module database this control plane opens, whichever way the control plane was given it.
+        // A local worker opens the module database this control plane opens: the catalog's, on the connection the control
+        // plane resolved for it, whichever way the control plane was given it.
         services.Services.AddSingleton<IWorkerLauncher>(provider => new ProcessWorkerLauncher(
             process, managed.MaxLifetimeHours, provider.GetRequiredService<TokenIssuer>(), provider.GetRequiredService<IServer>(),
             () => provider.GetRequiredService<IModuleDatabaseConnections>()

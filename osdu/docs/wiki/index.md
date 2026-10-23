@@ -132,6 +132,9 @@ other packages adopt the same contract.
   why the settings that say how much runs at once left `reliability`, why a large delivery fans out by default and is
   bounded by its work batches, how a coordinating run stops members no node starts and does their part, why a rate limit
   holds for the fan-out as a whole, and why a share planned again writes its batches after the ones it wrote.
+- [0026: the osdu schema lives in the catalog's database, reached through its one connection](decisions/0026-one-database-connection.md) -
+  why the module has no database connection of its own, why a node reads the ledger through `SQLFLOW_CATALOG_DB`, why
+  the retired `SQLFLOW_OSDU_DB` is refused rather than ignored, and why the control plane owns the `osdu` schema.
 
 ## Coverage
 

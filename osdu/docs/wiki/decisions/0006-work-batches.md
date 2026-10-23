@@ -39,9 +39,10 @@ memory at the mercy of the source's size.
   `osdu.WorkBatch` carries one row per file with its status, lease and counts.
 - A drain leases a whole batch, reads the documents by range, and hands the protocol up to `batchSize`
   records per request. Completion is bulk (a table-valued merge on SQL Server).
-- A submission of at least `parallelism.fanOutMinRecords` records spreads its intake (by key slice) and its drains (by
-  batch) over member runs across the fleet, as one run family; since [0025](0025-parallelism-and-default-fan-out.md)
-  it does so by default, and the settings that say how much runs at once are the flow's `parallelism`.
+- A submission of at least `parallelism.fanOutMinRecords` records is split by key slice over runs of the same flow
+  across the fleet, as one run family, each planning and sending its own share's batches; since
+  [0025](0025-parallelism-and-default-fan-out.md) it does so by default, and the settings that say how much runs at once
+  are the flow's `parallelism`.
 
 ## Consequences
 

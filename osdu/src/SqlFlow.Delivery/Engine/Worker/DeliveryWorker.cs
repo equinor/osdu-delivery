@@ -116,6 +116,19 @@ public sealed class DeliveryWorker
     public WaitRules Waits { get; init; } = WaitRules.WaitForAll;
 
     /// <summary>
+    /// The work batches this worker claims and waits for, or null for every batch of what it drains: a fan-out's slice run
+    /// works on the batches it planned its own slices into, whose files are on its node, and on no other run's
+    /// (osdu/docs/reference/concepts/submissions.md, Many nodes).
+    /// </summary>
+    public BatchRange? Batches { get; init; }
+
+    /// <summary>
+    /// Where this worker reads the documents of the batches it claims, or null for the work location the submission
+    /// records: a slice run reads its batches back from the folder it wrote them to on its own node.
+    /// </summary>
+    public string? WorkRoot { get; init; }
+
+    /// <summary>
     /// The gate every document goes through immediately before it is sent (<see cref="ValidationGate"/>): its verdict, the
     /// records it holds under the flow's <c>target.validation</c>, and under <c>target.verifyReferences: storage</c> the
     /// records whose references storage does not hold. Null sends every record unchecked, which only a worker built for a
@@ -209,7 +222,7 @@ public sealed class DeliveryWorker
             }
 
             var now = _time.GetUtcNow().UtcDateTime;
-            var nextDue = await _ledger.NextDueAsync(_flow.Id, submissionId, now, ct).ConfigureAwait(false);
+            var nextDue = await _ledger.NextDueAsync(_flow.Id, submissionId, now, Batches, ct).ConfigureAwait(false);
             if (nextDue is null)
             {
                 break;
@@ -242,7 +255,7 @@ public sealed class DeliveryWorker
     public async Task<WorkerSummary> PassAsync(Guid? submissionId, CancellationToken ct = default)
     {
         var now = _time.GetUtcNow().UtcDateTime;
-        var claimed = await _ledger.ClaimWorkBatchAsync(_flow.Id, submissionId, _workerId, Lease, now, RunId, Waits, _flow.Reliability.Retry.Attempts, ct).ConfigureAwait(false);
+        var claimed = await _ledger.ClaimWorkBatchAsync(_flow.Id, submissionId, _workerId, Lease, now, RunId, Waits, _flow.Reliability.Retry.Attempts, Batches, ct).ConfigureAwait(false);
         if (claimed is not null)
         {
             _logger.LogInformation(
@@ -253,7 +266,7 @@ public sealed class DeliveryWorker
             return summary with { Waiting = summary.Waiting + waited };
         }
 
-        var due = await _ledger.ClaimAsync(_flow.Id, submissionId, _workerId, _flow.Parallelism.BatchSize, Lease, now, RunId, Waits, _flow.Reliability.Retry.Attempts, ct).ConfigureAwait(false);
+        var due = await _ledger.ClaimAsync(_flow.Id, submissionId, _workerId, _flow.Parallelism.BatchSize, Lease, now, RunId, Waits, _flow.Reliability.Retry.Attempts, Batches, ct).ConfigureAwait(false);
         var waitedDue = await ReportWaitingAsync(due.Waiting, submissionId, ct).ConfigureAwait(false);
         if (due.Lease is not { } lease)
         {
@@ -393,15 +406,27 @@ public sealed class DeliveryWorker
 
         var submission = await SubmissionAsync(batch.SubmissionId, ct).ConfigureAwait(false);
         var wanted = records.ToDictionary(r => r.DeliveryKey.Value);
-        await foreach (var (item, _) in WorkBatchFile.ReadAllAsync(_stores, submission.WorkLocation ?? throw MissingWorkLocation(submission), batch.SubmissionId, batch.Index, ct).ConfigureAwait(false))
+        try
         {
-            if (wanted.Remove(item.Key, out var record))
+            await foreach (var (item, _) in WorkBatchFile.ReadAllAsync(_stores, WorkRoot ?? submission.WorkLocation ?? throw MissingWorkLocation(submission), batch.SubmissionId, batch.Index, ct).ConfigureAwait(false))
             {
-                loaded.Add((record, item));
+                if (wanted.Remove(item.Key, out var record))
+                {
+                    loaded.Add((record, item));
+                }
             }
         }
+        catch (WorkDocumentMissingException ex)
+        {
+            // The batch is not there to read, or not as it was written: its records are the flow's to plan again, as a record
+            // whose own document is missing is, while a store that did not answer fails the lease as it came.
+            _logger.LogWarning(
+                "Batch {Batch} of submission {SubmissionId} could not be read for {Records} record(s): {Message}",
+                batch.Index, batch.SubmissionId, wanted.Count, HeaderRedaction.RedactMessage(ex.Message));
+        }
 
-        // Leased records the file does not hold (the work location was pruned) are held, not silently dropped.
+        // Leased records the file does not hold (the work location was pruned) are planned again by the flow's next run, not
+        // silently dropped.
         foreach (var missing in wanted.Values)
         {
             loaded.Add((missing, null));
@@ -1618,7 +1643,7 @@ public sealed class DeliveryWorker
         }
 
         var submission = await SubmissionAsync(submissionId, ct).ConfigureAwait(false);
-        if (submission.WorkLocation is null)
+        if ((WorkRoot ?? submission.WorkLocation) is not { } workRoot)
         {
             return null;
         }
@@ -1628,7 +1653,7 @@ public sealed class DeliveryWorker
         WorkItem item;
         try
         {
-            item = await WorkBatchFile.ReadOneAsync(_stores, submission.WorkLocation, submissionId, reference, ct).ConfigureAwait(false);
+            item = await WorkBatchFile.ReadOneAsync(_stores, workRoot, submissionId, reference, ct).ConfigureAwait(false);
         }
         catch (WorkDocumentMissingException ex)
         {

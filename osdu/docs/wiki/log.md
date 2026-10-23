@@ -248,3 +248,33 @@ one execution, not run many pipelines.
 Amended [0025](decisions/0025-parallelism-and-default-fan-out.md): `source.work` may open with a reference the run
 resolves, so a flow writes its work batches to `${env:LANDING_URL}/.work/...` and fans out on every deployment
 unchanged, in place of the rebasing it had named as the way.
+
+## [2026-10-23] ingest | One database connection, decision 0026
+
+Source: a colleague's deployment of three database connections, two of them to the one metadata database, and the code
+the human sent me to: the module's database declaration (`osdu/src/SqlFlow.Delivery/Hosting/OsduModuleDatabase.cs`),
+how each host resolved it (`DeliveryControlPlaneModule.cs`, `DeliveryCliModule.cs`, the local worker launcher), the
+repository sync's two paths (`osdu/src/SqlFlow.Delivery/Catalog/DeliveryCatalogSync.cs`), SQLFlow's node, which has no
+catalog connection (`sqlflow/src/SqlFlow.Catalog/Modules/ModuleDatabaseConnections.cs`), and the deployments' second
+secret and variable (`osdu/deploy/terraform/main.tf`, `osdu/deploy/bicep/main.bicep`, the compose, Kubernetes and Radix
+layouts). The human, in their words: there is just one catalog database, no need for duplicate connections, consolidate
+every hard-coded lookup of it, and the control plane needs access to the osdu schema, which OSDU Delivery requires
+though SQLFlow does not.
+
+Added [0026](decisions/0026-one-database-connection.md): why the `osdu` schema lives in the catalog's database and every
+host reaches it through the catalog's connection, a node through `SQLFLOW_CATALOG_DB`; why `SQLFLOW_OSDU_DB`,
+`Osdu:Database:Connection` and `osdu_database_name` are refused rather than ignored; why the control plane owns the
+schema; and why a database of the module's own was dropped. Brought the pattern catalog's nodes-in-a-customer-network
+row to the variable. Indexed 0026.
+
+## [2026-10-23] ingest | A fan-out is the flow queued once per share, decision 0025 amended
+
+Source: the human's review of the two-stage fan-out and of the shared work folder built for it: one pipeline
+execution is split into sub-executions of the same pipeline, each with its filter, and nothing passes between them.
+Read with SQLFlow's run fan-out (`sqlflow/src/SqlFlow.Orchestration/IRunFanOut.cs`) and its export segments
+(`sqlflow/src/SqlFlow.SqlServer/Export/ExportSegmentPlanner.cs`), which the human asked to reuse where they fit.
+
+Amended [0025](decisions/0025-parallelism-and-default-fan-out.md): each run of a fan-out delivers its own share of the
+key slices from its own node, on SQLFlow's run fan-out, in place of intake and drain members over a shared work folder;
+the export's segment planner was looked at for the cut and not taken. [0006](decisions/0006-work-batches.md) says the
+same.

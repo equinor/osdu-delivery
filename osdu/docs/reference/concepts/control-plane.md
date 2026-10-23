@@ -89,15 +89,14 @@ themselves are listed in [the delivery API](api.md).
 
 ### The module database and its connection
 
-The connection is resolved once, at composition:
+The module database is the catalog's: the control plane opens the `osdu` schema on the catalog's own connection
+(`ControlPlane:Catalog:ConnectionReference`, by default `${env:SQLFLOW_CATALOG_DB}`), one metadata database with the
+`osdu` schema beside SQLFlow's catalog schema. The control plane owns both: it migrates and verifies the catalog and then
+the module at startup, and reads and writes the ledger, the mappings, the templates and the caches there.
 
-1. `Osdu:Database:Connection`, when set: a `${env:NAME}` or `${keyvault:NAME}` reference, never a connection string.
-2. Otherwise `${env:SQLFLOW_OSDU_DB}`, when that variable is set.
-3. Otherwise the catalog's own connection (`ControlPlane:Catalog:ConnectionReference`), which is what the shipped
-   deployments do: one metadata database, the `osdu` schema beside SQLFlow's catalog schema.
-
-A value that is not a reference stops the host:
-`The connection of module 'osdu' must be a secret reference, ${env:NAME} or ${keyvault:NAME}, or absent to use the catalog connection; the value given is not one (it is not shown).`
+The module has no connection of its own. A control plane started with `Osdu:Database:Connection` or `SQLFLOW_OSDU_DB`,
+which once gave it one, stops, naming the setting:
+`Osdu:Database:Connection is no longer a setting; the osdu schema lives in the catalog's database, which SQLFLOW_CATALOG_DB names. Remove it. ...`
 A database that is missing, behind this build, ahead of it or diverged, or a catalog without the migration the module
 needs, also stops it with a message naming the migrations, for example
 `The database of ... is behind this build: 2 migration(s) are not applied (...). Apply them with 'sqlflow db migrate'.`
@@ -175,7 +174,6 @@ with a message naming it, for example
 
 | Key | Default | Notes |
 | --- | --- | --- |
-| `Osdu:Database:Connection` | empty | A reference to the database holding the `osdu` schema; empty uses `SQLFLOW_OSDU_DB`, then the catalog's database. |
 | `Osdu:Partitions:<data-partition-id>:Default` | `false` | `true` on the partition a run that names none runs in; exactly one of several, and one partition alone is the default without it. |
 | `Osdu:Partitions:<data-partition-id>:Description` | none | What the partition is for; at most 400 characters. |
 | `Osdu:Partitions:<data-partition-id>:Properties:<NAME>` | none | A value the runs bound to the partition resolve `${env:NAME}` with (`OSDU_URL`, `OSDU_CLIENT_ID`, ...); at most 64 partitions and 64 values each. A name ending in `SECRET`, `PASSWORD` or `TOKEN`, or naming an API key, takes only a `${keyvault:...}` or `${env:...}` reference, and a refusal never repeats the value ([configured partitions](partitions.md#configured-partitions)). |
@@ -210,9 +208,6 @@ Osdu__Partitions__dev__Properties__OSDU_CLIENT_SECRET=${keyvault:welldb-vault/os
 Osdu__TargetProbe__Enabled=true
 Osdu__TargetProbe__IntervalMinutes=30
 Osdu__TargetProbe__Pipelines=welldb-wellbore-03-delivery,welldb-welllog-03-delivery
-
-# Keep the osdu schema in a database of its own (choose before the first migrate).
-Osdu__Database__Connection=${keyvault:delivery-vault/osdu-module-db}
 ```
 
 ## See also

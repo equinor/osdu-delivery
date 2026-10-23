@@ -1,6 +1,6 @@
 ---
 id: delivery-concept-environment-variables
-title: "Environment variables OSDU Delivery adds (SQLFLOW_OSDU_DB, SQLFLOW_DELIVERY_*, Osdu__Partitions__*, OSDU_TELEMETRY_*) and which tier reads each"
+title: "Environment variables OSDU Delivery adds or reads (SQLFLOW_CATALOG_DB on a node, SQLFLOW_DELIVERY_*, Osdu__Partitions__*, OSDU_TELEMETRY_*) and which tier reads each"
 type: concept
 summary: "Every environment variable and secret reference OSDU Delivery adds to SQLFlow's, which tier reads it, and where a flow's references resolve from."
 keywords:
@@ -76,7 +76,8 @@ needs.
 
 | Variable | Read by | Meaning |
 | --- | --- | --- |
-| `SQLFLOW_OSDU_DB` | node (always), CLI and control plane (when set) | The connection string of the database holding the `osdu` schema: the ledger, mappings, templates, caches, partitions and central configuration. Hosts read it as the reference `${env:SQLFLOW_OSDU_DB}`. A node opens no catalog connection, so it always needs it; the control plane and the CLI use it only when it is set, and otherwise use the catalog's database (on the control plane, `Osdu:Database:Connection` wins over it). A node's login needs rights on schema `osdu` alone; whatever runs `sqlflow db migrate` (or the control plane's bootstrap) needs the rights to create it. |
+| `SQLFLOW_CATALOG_DB` | node (always), CLI and control plane (SQLFlow's own variable) | The catalog database's connection string. The `osdu` schema lives in that database: the ledger, mappings, templates, caches, partitions and central configuration. SQLFlow gives a node no catalog connection, so on a node the module reads it as the reference `${env:SQLFLOW_CATALOG_DB}` itself, and always needs it; the control plane and the CLI open the `osdu` schema on the catalog connection they already have. A node's login needs rights on schema `osdu` alone; whatever runs `sqlflow db migrate` (or the control plane's bootstrap) needs the rights to create it. |
+| `SQLFLOW_OSDU_DB` | no tier (retired) | No longer a setting: the module has no connection of its own. A node, a command or the control plane started with it refuses to start: `SQLFLOW_OSDU_DB is no longer a setting; the osdu schema lives in the catalog's database, which SQLFLOW_CATALOG_DB names. ...` ([`sqlflow db`](../cli/db.md#errors)). |
 | `SQLFLOW_DELIVERY_PRIVATE_NETWORKS` | every process that reaches OSDU: node, control plane, CLI | The private ranges a flow may reach, as CIDR ranges or single addresses separated by commas, semicolons or white space (`10.20.0.0/16,fd12:3456::/48`): the ranges an OSDU, a storage account or a proxy behind a private endpoint resolves to. Empty by default, which reaches public addresses only. Checked against the address a URL names and every address a host name resolves to, on every redirect. Link-local and cloud metadata addresses and the Azure wireserver are never reachable, whatever it lists. |
 | `SQLFLOW_DELIVERY_ALLOW_LOOPBACK` | node, control plane, CLI | `true` lets a flow target a loopback address (a local OSDU stub, the tests). Off by default. |
 | `SQLFLOW_DELIVERY_ALLOW_INSECURE_TLS` | node, control plane, CLI | `true` lets a flow that declares `reliability.verifyTls: false` run in this process. Off by default: a repository document cannot take a process off TLS on its own. Trusting the issuing authority on that host is the better fix. |
@@ -85,11 +86,12 @@ needs.
 
 What happens when one is wrong:
 
-- A node started without `SQLFLOW_OSDU_DB` refuses to start: `ERROR  the worker refuses to start:` followed by
-  `Environment variable 'SQLFLOW_OSDU_DB' is not set.` It also refuses a module database that is missing, behind or ahead
-  of its build.
-- A CLI or control plane with no module database answers any operation that needs one with
-  `This host has no osdu database connection (Osdu:Database:Connection or SQLFLOW_OSDU_DB); the delivery ledger, templates and caches are unavailable.`
+- A node started without `SQLFLOW_CATALOG_DB` refuses to start: `ERROR  the worker refuses to start:` followed by
+  `Environment variable 'SQLFLOW_CATALOG_DB' is not set.` It also refuses a module database that is missing, behind or
+  ahead of its build.
+- A host with no module database answers any operation that needs one with
+  `This host has no osdu database connection; the delivery ledger and caches are unavailable. ...`, ending with what to
+  start it with: the catalog's connection.
 - A flow asking for `verifyTls: false` without the switch is refused:
   `This flow declares reliability.verifyTls: false, and this deployment verifies every certificate. A deployment that has to reach a target with a self-signed or enterprise-internal certificate sets SQLFLOW_DELIVERY_ALLOW_INSECURE_TLS=true on the nodes that reach it; the honest fix is to trust the issuing authority on those nodes instead.`
 - A loopback target without its switch is refused as `a loopback address, which only a process with SQLFLOW_DELIVERY_ALLOW_LOOPBACK reaches`.
@@ -124,8 +126,8 @@ compose and Kubernetes layouts do. The examples in this documentation use these 
 | Reference | Points at |
 | --- | --- |
 | `${env:OSDU_DATA_DB}` | The data database (`OsduData`): the pre flows land the source files there, the ingestion flows load the keyed tables, and the delivery flow's `source.connection` reads them, each in a schema of its own. The shipped deployment assets give it under this name to every run (Bicep, Terraform) or to the control plane and the nodes (compose, Kubernetes). |
-| `${env:SQLFLOW_CATALOG_DB}` | The metadata database (`OsduDelivery`), for a flow that reads the `osdu` schema's dimension views (`OsduDelivery.osdu.v_dim_<view>`). The control plane has it as SQLFlow's catalog; the shipped assets give it to the runs as well, for those flows only: a node itself never opens it. |
-| `${env:LANDING_URL}` | The landing storage the Bicep and Terraform deployments create or adopt (`abfss://<container>@<account>.dfs.core.windows.net`), for a flow whose source location names it (`${env:LANDING_URL}/<folder>`), and for a delivery flow's work location (`${env:LANDING_URL}/.work/<flow>`), which every node of a fan-out reaches. |
+| `${env:SQLFLOW_CATALOG_DB}` | The metadata database (`OsduDelivery`), for a flow that reads the `osdu` schema's dimension views (`OsduDelivery.osdu.v_dim_<view>`). The control plane has it as SQLFlow's catalog, a node as the connection the module reads the ledger through, and the Bicep and Terraform deployments give it to the runs as well. |
+| `${env:LANDING_URL}` | The landing storage the Bicep and Terraform deployments create or adopt (`abfss://<container>@<account>.dfs.core.windows.net`), for a flow whose source location names it (`${env:LANDING_URL}/<folder>`), and for a delivery flow's work location when it names one (`${env:LANDING_URL}/.work/<flow>`). |
 | `${env:OSDU_URL}` | The OSDU endpoint (`target.endpoint`). |
 | `${env:OSDU_TOKEN_URL}`, `${env:OSDU_CLIENT_ID}`, `${env:OSDU_CLIENT_SECRET}`, `${env:OSDU_SCOPE}` | The OAuth2 client-credentials exchange (`target.auth`). |
 
@@ -212,9 +214,9 @@ it is one; other properties are set with [sqlflow config](../cli/config.md) (`co
 
 | Tier | Beyond SQLFlow's own variables |
 | --- | --- |
-| Control plane | The partitions it delivers to, as `Osdu__Partitions__<data-partition-id>__Default`, `__Description` and `__Properties__<NAME>`; `Osdu:Database:Connection` or `SQLFLOW_OSDU_DB` only when the `osdu` schema is in a database of its own; every `${env:...}` reference the flows use that no partition's values give (`OSDU_DATA_DB` among them), as `Osdu__Properties__<NAME>` for every run or as its own variables; `SQLFLOW_DELIVERY_PRIVATE_NETWORKS` (and the two switches, where the nodes have them). The other `Osdu:*` settings ([the control plane](control-plane.md#configuration)). |
-| Node | `SQLFLOW_OSDU_DB` (required); the `${env:...}` references its pool's flows use that neither a partition's values nor `Osdu:Properties` give (in the compose and Kubernetes layouts `OSDU_DATA_DB`, and `SQLFLOW_CATALOG_DB` for the flows that read the dimension views); `SQLFLOW_DELIVERY_PRIVATE_NETWORKS` and the switches it needs; `OSDU_TELEMETRY_*` when its metrics are exported. |
-| CLI | `SQLFLOW_OSDU_DB` when the `osdu` schema is not in the database `--db` names; the references of the flows it runs locally; the network switches. |
+| Control plane | The partitions it delivers to, as `Osdu__Partitions__<data-partition-id>__Default`, `__Description` and `__Properties__<NAME>`; every `${env:...}` reference the flows use that no partition's values give (`OSDU_DATA_DB` among them), as `Osdu__Properties__<NAME>` for every run or as its own variables; `SQLFLOW_DELIVERY_PRIVATE_NETWORKS` (and the two switches, where the nodes have them). The other `Osdu:*` settings ([the control plane](control-plane.md#configuration)). |
+| Node | `SQLFLOW_CATALOG_DB` (required), which the ledger is read and written through and the flows that read the dimension views name; the `${env:...}` references its pool's flows use that neither a partition's values nor `Osdu:Properties` give (in the compose and Kubernetes layouts `OSDU_DATA_DB`); `SQLFLOW_DELIVERY_PRIVATE_NETWORKS` and the switches it needs; `OSDU_TELEMETRY_*` when its metrics are exported. |
+| CLI | The catalog connection (`--db`, else `SQLFLOW_CATALOG_DB`), which the `osdu` schema is read through; the references of the flows it runs locally; the network switches. |
 | MCP server | Its own variables ([the MCP server](../guides/mcp.md#running-it-as-a-service)); no secret. |
 
 Where the tiers have the flow references as their own variables, keep the control plane's list the same as the nodes':

@@ -53,11 +53,8 @@ param image string
 @description('Name of an existing Key Vault holding the catalog connection, the JWT signing key and the initial admin\'s password; the app identity is granted Key Vault Secrets User on it.')
 param keyVaultName string
 
-@description('Key Vault secret name for the catalog ADO.NET connection string.')
+@description('Key Vault secret name for the catalog ADO.NET connection string, which the delivery module\'s `osdu` schema is reached through too.')
 param catalogConnectionSecretName string = 'osdu-delivery-catalog-db'
-
-@description('Key Vault secret name for the OSDU Delivery module database connection string, which startup migrates and verifies after the catalog. Point it at a secret holding the catalog connection to keep the `osdu` schema in the catalog database.')
-param osduConnectionSecretName string = 'osdu-delivery-osdu-db'
 
 @description('Key Vault secret name for the JWT signing key (at least 32 bytes): the one the deployment generates into the vault.')
 param jwtSigningKeySecretName string = 'osdu-delivery-jwt-signing-key'
@@ -189,11 +186,6 @@ var baseSecrets = [
     identity: identity.id
   }
   {
-    name: 'osdu-db'
-    keyVaultUrl: '${vaultUri}secrets/${osduConnectionSecretName}'
-    identity: identity.id
-  }
-  {
     name: 'jwt-signing-key'
     keyVaultUrl: '${vaultUri}secrets/${jwtSigningKeySecretName}'
     identity: identity.id
@@ -209,17 +201,12 @@ var bootstrapSecrets = empty(bootstrapAdminPasswordSecretName) ? [] : [
 ]
 
 var baseEnv = [
-  // The catalog connection; the control plane's default ConnectionReference (${env:SQLFLOW_CATALOG_DB}) reads
-  // exactly this variable.
+  // The catalog connection, which holds the delivery module's `osdu` schema too; the control plane's default
+  // ConnectionReference (${env:SQLFLOW_CATALOG_DB}) reads exactly this variable, and startup migrates and verifies the
+  // catalog and then the module.
   {
     name: 'SQLFLOW_CATALOG_DB'
     secretRef: 'catalog-db'
-  }
-  // Where the delivery module's `osdu` schema is, which startup migrates and verifies after the catalog. This is
-  // the catalog's own database unless the estate separated them, and the secret is built to match.
-  {
-    name: 'SQLFLOW_OSDU_DB'
-    secretRef: 'osdu-db'
   }
   // Resolve ${keyvault:...}/cloud-storage credentials at run time via this managed identity.
   {

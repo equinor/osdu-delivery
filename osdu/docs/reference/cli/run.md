@@ -113,7 +113,7 @@ window is anchored on an OSDU flow. `--assertions-only` is refused for every kin
 
 | Kind | Needs the module database for |
 | --- | --- |
-| `delivery` | Every operation: the ledger, the templates and the partition's cache live there. Without it a run fails, for example with `This host has no osdu database connection (Osdu:Database:Connection or SQLFLOW_OSDU_DB); the delivery ledger, templates and caches are unavailable. ...` |
+| `delivery` | Every operation: the ledger, the templates and the partition's cache live there. Without it a run fails, for example with `This host has no osdu database connection; the delivery ledger and caches are unavailable. ...` |
 | `cache` | `refresh`: it writes the version into the partition's cache. |
 | `assertion` | `test`: it keeps the report there. |
 | `dimension` | `build`: it keeps the builds there, and reads the templates of the kinds the dimensions read. |
@@ -121,9 +121,8 @@ window is anchored on an OSDU flow. `--assertions-only` is refused for every kin
 | `removal` | Every operation: it compares with the delivery ledgers kept there, and keeps its runs and the deletions it finds in them. |
 | `retrieval` | Nothing; when it has one, each `retrieve` is recorded in the flow's ledger. |
 
-On a workstation the module database is the catalog's (`--db`, else `${env:SQLFLOW_CATALOG_DB}`) unless
-`SQLFLOW_OSDU_DB` names one of its own ([The osdu module database in sqlflow db](db.md)). A node takes it from
-`SQLFLOW_OSDU_DB` alone. The flow's own references (its ingestion connection, the OSDU endpoint and credentials) resolve
+The module database is the catalog's: on a workstation `--db`, else `${env:SQLFLOW_CATALOG_DB}`, and on a node
+`${env:SQLFLOW_CATALOG_DB}` alone ([The osdu module database in sqlflow db](db.md)). The flow's own references (its ingestion connection, the OSDU endpoint and credentials) resolve
 on the machine that runs it, from the central configuration a run carries first ([sqlflow config](config.md)) and the
 environment after. The control plane attaches that configuration to the runs it queues of every OSDU kind (an
 inventory's `remove` run included); a `sqlflow run` on a workstation carries none and resolves from the environment
@@ -204,8 +203,8 @@ no engine path could honour is refused before anything is queued.
 | `rerender` | `true`/`false` | Bring records up to date: render the named records, or every delivered record, again under today's rules and let each record's hashes decide, so only what renders differently is sent. A `plan` with `rerender` renders every record it reads and says what that would send. |
 | `interface` | text | The one interface of a source the run works on. A run on records or slices, a `remove` run, and a `reverse` of a run, of a source with several interfaces has to name it; a run on a submission finds its interface from the submission. |
 | `interfaces` | array of text | The interfaces a run of a source runs, each once (at most 200); every interface when left out. |
-| `slices` | array of whole numbers | The key slices of `submissionId` an `intake` member plans: 0 to 1023, each once. Written by a fan-out, not by hand. |
-| `rateShare` | whole number | How many runs of a fan-out share the flow's `reliability.rateLimitRps`, 2 to 65: an `intake` or `drain` member sends under that share of it ([submissions](../concepts/submissions.md#many-nodes)). Written by a fan-out, not by hand. |
+| `slices` | array of whole numbers | The key slices of `submissionId` a slice run delivers (`deliver`) or an `intake` plans: 0 to 1023, each once, neighbours on a `deliver`. Written by a fan-out, not by hand. |
+| `rateShare` | whole number | How many runs of a fan-out share the flow's `reliability.rateLimitRps`, 2 to 65: a slice run sends under that share of it ([submissions](../concepts/submissions.md#many-nodes)). Written by a fan-out, not by hand. |
 | `confirm` | text | The partition a `delete-ledger` run acts in, as the person who asked typed it. Required by `delete-ledger` and taken by no other operation of a delivery flow (an inventory flow's `remove` takes its own). |
 | `scope` | text | How much of each record a `remove` run takes: `record` (reversibly), `previous` (the version before the latest written back), `history` (the earlier versions) or `everything` ([the scopes](../concepts/removal-and-reversal.md#removing-records-from-osdu)). Required by `remove`, exactly as written. |
 | `filter` | object | The listing a `remove` run empties instead of naming `recordKeys`: `status`, `search` with `mode` (`prefix` or `contains`), `submissionId`, `deliveredBySubmissionId`, `runId`, `drifted` and `issue`, as the records list names them. The run resolves it when it removes the records and refuses a filter that matches more than 25,000. Any other property is refused. |
@@ -216,7 +215,7 @@ Which fields each operation takes:
 
 | Operation | Takes | Refuses |
 | --- | --- | --- |
-| `deliver` | `force`, `submissionId`, `recordKeys`, `redeliver`, `rerender`, `interface`, `interfaces` | `slices`, `rateShare`; `redeliver` or `rerender` with `submissionId`; `rerender` with `redeliver` |
+| `deliver` | `force`, `submissionId`, `recordKeys`, `redeliver`, `rerender`, `slices` and `rateShare` (with `submissionId`), `interface`, `interfaces` | `slices` with `redeliver` or `rerender`; `rateShare` without `slices`; `redeliver` or `rerender` with `submissionId`; `rerender` with `redeliver` |
 | `plan` | `force`, `submissionId`, `recordKeys`, `rerender`, `interface`, `interfaces` | `redeliver`, `slices`, `rateShare`; `rerender` with `submissionId` |
 | `intake` | `force`, `submissionId`, `recordKeys`, `slices` and `rateShare` (with `submissionId`), `interface`, `interfaces` | `redeliver`, `rerender` |
 | `drain` | `submissionId`, `rateShare` (with `submissionId`), `interface`, `interfaces` | `force`, `recordKeys`, `redeliver`, `rerender`, `slices` |
@@ -273,7 +272,7 @@ carries the run's result object (camelCase, enum values as names, `operation` fi
 
 | Run | Result carries |
 | --- | --- |
-| `deliver`, `replan` | `operation`, `submissionId`, `source`, `selection`, `status`, `recordCount`, this run's `planned`, `skippedUnchanged`, `awaitingApproval`, `skippedStale`, `unchangedAtPush`, `blocked`, `delivered`, `held`, `failed`, `retried`, `waiting` and `batches`, the fan-out (`intakeMembers`, `drainMembers`), the passes over records asked to be planned again (`requestedPasses`, `requestedSubmissionId`, `requestedRecords`), `nothingToDo`, `error`, the submission's totals across every run (`submission`), what the closing sweep undid (`undone`) and `rowsLoaded` (the records delivered). |
+| `deliver`, `replan` | `operation`, `submissionId`, `source`, `selection`, `status`, `recordCount`, this run's `planned`, `skippedUnchanged`, `awaitingApproval`, `skippedStale`, `unchangedAtPush`, `blocked`, `delivered`, `held`, `failed`, `retried`, `waiting` and `batches`, the slice runs it queued (`members`), what a slice run planned of its share (`share`, as an `intake` result), the passes over records asked to be planned again (`requestedPasses`, `requestedSubmissionId`, `requestedRecords`), `nothingToDo`, `error`, the submission's totals across every run (`submission`), what the closing sweep undid (`undone`) and `rowsLoaded` (the records delivered). |
 | `plan` | `records`, `deliveries` (of them `metadata` and `payload`), `skips`, `awaitingApproval`, `stale`, `holds`, `blocked`, `untracked`, `slices`, `skippedWholeRun` and `skipReason`, `issues`, `renderedEvery`, of the deliveries those whose document fails an assertion of the mapping (`failingAssertions`) and those the check before sending would hold for one (`heldByAssertions`; [mapping assertions](../flow/mapping-assertions.md)), and `sample`: the first 20 records a delivery would send, each with its key, label, source key, action and reason. |
 | `intake` | `submissionId`, `slices`, `records`, `planned`, `skippedUnchanged`, `awaitingApproval`, `skippedStale`, `held`, `blocked`, `untracked`, `batches`, `alreadyProcessed`. |
 | `drain` | `submissionId`, `processed`, `delivered`, `unchanged`, `retried`, `held`, `failed`, `batches`, `waiting`, `undone`. |

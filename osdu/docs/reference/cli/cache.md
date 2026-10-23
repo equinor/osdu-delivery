@@ -68,9 +68,9 @@ sqlflow run osdu-reference-00-cache.yaml --operation plan --set partition=dev   
 That is also how a lookup table gets into the cache: a cache flow's `table`, `dictionary` or `dimension` type is
 captured from its origin by a refresh, and `cache import` refuses it ([lookup table guide](../guides/lookup-table-cache.md)).
 
-Every subcommand needs the module's database: `SQLFLOW_OSDU_DB` when the `osdu` schema has a database of its own, or else
-the catalog's database, named by `--db` (default `${env:SQLFLOW_CATALOG_DB}`). Without either, the command fails before
-it reads anything (`Environment variable 'SQLFLOW_CATALOG_DB' is not set.`).
+Every subcommand needs the module's database, which is the catalog's database, named by `--db` (default
+`${env:SQLFLOW_CATALOG_DB}`). Without it, the command fails before it reads anything
+(`Environment variable 'SQLFLOW_CATALOG_DB' is not set.`).
 
 ## Arguments
 
@@ -89,7 +89,7 @@ it reads anything (`Environment variable 'SQLFLOW_CATALOG_DB' is not set.`).
 | `--from-dir <dir>` | `import` | The directory of type files. Required: `name the directory the type files are in with --from-dir.` |
 | `--keep-days <n>` | `prune` | How many days of replaced versions keep their records, a whole number from 0 to 36500; the partition's retention when left out. |
 | `--dry-run` | `prune` | Say what the purge would prune, and change nothing. |
-| `--db <conn-ref>` | all | The catalog connection reference, used for the `osdu` schema when `SQLFLOW_OSDU_DB` is not set. |
+| `--db <conn-ref>` | all | The catalog connection reference, which the `osdu` schema is read and written through. |
 | `--json` | all | Print JSON instead of text. |
 
 ## cache list
@@ -197,7 +197,7 @@ and `deferred`. The Cache page's History tab offers the same purge to an admin.
 | --- | --- |
 | `name the partition or the cache document.` | No target after `list` or `import`. |
 | `'<verb>' is not a cache subcommand.` | A subcommand other than `list` or `import`. |
-| `Environment variable 'SQLFLOW_CATALOG_DB' is not set.` | No `--db`, no `SQLFLOW_CATALOG_DB`, no `SQLFLOW_OSDU_DB`. |
+| `Environment variable 'SQLFLOW_CATALOG_DB' is not set.` | No `--db` and no `SQLFLOW_CATALOG_DB`. |
 | `The directory '<dir>' to import cached types from does not exist.` | A wrong `--from-dir`. |
 | `The directory '<dir>' holds no cached type files ({Name}.json), so there is nothing to import.` | An empty directory. |
 | `the cache flow builds a cache for dev, test; name the one the files belong to with --partition.` | `import` with `--partition '*'`. |

@@ -260,7 +260,7 @@ where each record's files are.
 | `incremental.pageSize` | integer | 1000 | Records per page, 1 to 100000. |
 | `incremental.isolation` | `snapshot` \| `readCommitted` | `snapshot` | How a page's record rows and child rows see the database. `snapshot` reads them as one moment and needs `ALLOW_SNAPSHOT_ISOLATION ON`. |
 | `incremental.commandTimeoutSeconds` | integer | 0 | Seconds a read may run; 0 is bounded by the run's cancellation alone. |
-| `work` | string | required | Where the intake writes its work batches (the rendered documents the drains read back): a folder or storage prefix every node can write, relative to the flow file, with `{parameter}` tokens. A relative folder is in each node's own copy of the repository, so a flow with one never [fans out](../concepts/submissions.md#many-nodes); the deployment's storage (`${env:LANDING_URL}/.work/welllog/{logSource}`), another storage URI, or an absolute path on storage every node mounts lets it. A parameter the run gives several values fills its token with them joined by `+` (`../.work/COMPOSITE+WIRELINE`). It may open with a `${...}` reference, which the run resolves with its own values as it opens, as SQLFlow resolves a file flow's location; a reference anywhere else in it is refused. |
+| `work` | string | required | Where the intake writes its work batches (the rendered documents the drains read back): a folder or storage prefix every node can write, relative to the flow file, with `{parameter}` tokens. A relative folder is in each node's own copy of the repository, which is where each run of a [fan-out](../concepts/submissions.md#many-nodes) writes and reads its own share's batches. A parameter the run gives several values fills its token with them joined by `+` (`../.work/COMPOSITE+WIRELINE`). It may open with a `${...}` reference, which the run resolves with its own values as it opens, as SQLFlow resolves a file flow's location; a reference anywhere else in it is refused. |
 
 `updated` has to exist, named or left at its default. `deleted`, `inserted`, `fileName` and `rowNumber` named explicitly
 have to exist: a run (and `sqlflow check --connect`) is refused naming the key, the column and the table, so a misspelt
@@ -529,16 +529,17 @@ and an interface lays its own keys over it, except `interfaces`, which is the so
 | Key | Type | Default | Meaning |
 | --- | --- | --- | --- |
 | `concurrency` | integer | 8 | Records a run sends at once; verify and reverse runs work this many at once too. At least 1. |
-| `fanOut` | integer | 8 | The most member runs a submission spreads over across the fleet, 0 to 64; never more than it has work batches for beyond the coordinating run's own. It needs a `source.work` every node reaches (a storage URI, or an absolute path on shared storage): a relative one keeps the delivery on one run. Planning fans out only when `source.record.primaryKey` is named. 0 keeps everything on the run that claimed the work. |
+| `fanOut` | integer | 8 | The most slice runs a submission spreads over across the fleet, 0 to 64: runs of the same flow, each delivering a share of its key slices from whichever node takes it; never more than it has slices for beyond the coordinating run's own. It fans out only when `source.record.primaryKey` is named. 0 keeps everything on the run that claimed the work. |
 | `fanOutMinRecords` | integer | 1000 | Below this many records a submission never fans out. At least 1. |
 | `renderers` | integer | 0 | Renderers on one node, 0 to 256; 0 is half the processors, at least one. |
 | `batchRecords` | integer | 500 | Rendered documents per work batch file, 1 to 100000: one claim of a drain, one unit of progress. |
 | `batchSize` | integer | 50 | Records claimed from the ledger in one round trip when records are retried outside a work batch. |
 | `interfaces` | integer | 4 | The interface form only: how many interfaces of one wave run at once, 1 to 32 ([interfaces](interfaces.md#order)). |
 
-A delivery fans out by default: a submission of 1,000 records or more spreads over member runs across the fleet, and an
-autoscaler brings up nodes for them, once its `source.work` is on storage every node reaches. How a submission is planned, cut, leased and drained across nodes, and what a
-coordinating run does with members no node starts, is on [submissions](../concepts/submissions.md#many-nodes).
+A delivery fans out by default: a submission of 1,000 records or more is split into shares of its key slices, each
+delivered by a run of the same flow on whichever node takes it, and an autoscaler brings up nodes for them. How a
+submission is cut and delivered across nodes, and what a coordinating run does with slice runs that do not deliver their
+share, is on [submissions](../concepts/submissions.md#many-nodes).
 
 These settings were written under `reliability` before. A document that still writes one there is refused, naming where
 it goes now:

@@ -75,7 +75,7 @@ two mappings need.
   `SamplingDomain` dictionary).
 - **The command line with the module's database.** `check`, `values` and `preview` read the template from the template
   folders of your working copy, and the cache from the module's database: `--db <reference>`, else
-  `SQLFLOW_CATALOG_DB`, unless the module has a connection of its own in `SQLFLOW_OSDU_DB`. `values` and `preview` also open the flow's ingestion tables on your machine through
+  `SQLFLOW_CATALOG_DB`. `values` and `preview` also open the flow's ingestion tables on your machine through
   the flow's own connection reference, and ask the platform whatever the mapping's searches ask.
 
 ## 1. Put the template in a template folder

@@ -84,7 +84,7 @@ sqlflow run welldb-welllog-04-assertion.yaml --set partition=dev --payload '{"te
 | `--format <f>` | `report` | `json` | `json`, `md` (or `markdown`), `html`, or `junit` (or `xml`). Anything else fails with `--format '<value>' is not one of json, md, html, junit.` |
 | `--out <file>` | `report` | stdout | Write the report to this file (its folder is created) instead of the console. |
 | `--json` | `list`, `status` | off | Print one JSON document instead of text. |
-| `--db <conn-ref>` | all | `${env:SQLFLOW_CATALOG_DB}` | The catalog database the module's tables are read from, unless `SQLFLOW_OSDU_DB` gives the module a database of its own. See [The module database](db.md). |
+| `--db <conn-ref>` | all | `${env:SQLFLOW_CATALOG_DB}` | The catalog database, which holds the `osdu` schema the module's tables are read from. See [The module database](db.md). |
 
 Without a module database every form fails with
 `Assertion reports live in the module's database. Run 'sqlflow assertions' with --db <conn-ref>, or set the catalog variable.`

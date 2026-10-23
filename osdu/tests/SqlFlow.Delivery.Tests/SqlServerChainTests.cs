@@ -289,7 +289,7 @@ public class SqlServerChainTests
         await estate.RunIngestionChainAsync();
         Assert.Equal(Records, await estate.CountAsync(estate.SilverSchema, "WellLog"));
 
-        // The fan-out needs a dispatcher and a run to belong to; the members run inline here, each on a runtime of its
+        // The fan-out needs a dispatcher and a run to belong to; the slice runs run inline here, each on a runtime of its
         // own over the same engine, which is what another node would do with the slices it was dealt.
         var flow = estate.DeliveryFlow();
         var dispatcher = new InlineDispatcher(flow);
@@ -301,16 +301,16 @@ public class SqlServerChainTests
 
         var result = await runtime.RunAsync(force: false);
 
-        Assert.Equal(2, result.IntakeMembers);
+        Assert.Equal(2, result.Members);
         Assert.Equal(SubmissionStatus.Completed, result.Submission.Status);
         Assert.Equal(Records, result.Submission.Planned);
         Assert.Equal(Records, result.Submission.Delivered);
         Assert.Equal(Records, estate.Protocol.Deliveries.Count);
 
-        // Every record was planned exactly once: no key reached two members.
+        // Every record was planned exactly once: no key reached two slice runs.
         Assert.Equal(Records, estate.Protocol.Deliveries.Select(d => d.Key).Distinct().Count());
 
-        // Each member numbered its batches in a namespace of its own, so two members never wrote the same batch.
+        // Each slice run numbered its batches in a namespace of its own, so two runs never wrote the same batch.
         var batches = await estate.Ledger.ListWorkBatchesAsync(result.Submission.SubmissionId, 1000, 0);
         Assert.Equal(result.Submission.BatchCount, batches.Count);
         Assert.Equal(batches.Count, batches.Select(b => b.Index).Distinct().Count());
@@ -321,11 +321,12 @@ public class SqlServerChainTests
         var window = SourceWindowDescription.Parse(result.Submission.SourceWindowJson)!;
         Assert.Equal("RecId", window.SlicedOn);
         Assert.Equal(result.Submission.Slices, window.Slices.Count);
-        var intakeMembers = dispatcher.Enqueued.Where(e => e.Operation == DeliveryOperations.Intake).ToList();
-        Assert.Equal(2, intakeMembers.Count);
+        var sliceRuns = dispatcher.Enqueued.Where(e => e.Operation == DeliveryOperations.Deliver).ToList();
+        Assert.Equal(2, sliceRuns.Count);
+        Assert.Equal(dispatcher.Enqueued.Count, sliceRuns.Count);
         Assert.Equal(
-            intakeMembers.SelectMany(e => e.Payload.Slices).Distinct().Count(),
-            intakeMembers.Sum(e => e.Payload.Slices.Count));
+            sliceRuns.SelectMany(e => e.Payload.Slices).Distinct().Count(),
+            sliceRuns.Sum(e => e.Payload.Slices.Count));
         await using var db = estate.Context();
         var watermarks = await db.DeliverySourceWatermarks.Where(w => w.FlowId == estate.FlowId).ToListAsync();
         var watermark = Assert.Single(watermarks);
@@ -369,9 +370,9 @@ public class SqlServerChainTests
                 (runs[1], next, WellLogVersions.NextKind, partition),
             })
             {
-                // Planned by the coordinator and its intake nodes, sent by the drain nodes and the coordinator: every row once.
+                // Planned and sent by the coordinator and its slice runs, each its own share: every row once.
                 Assert.Empty(run.Nodes.Failures);
-                Assert.Equal((Nodes, Nodes), (run.Result.IntakeMembers, run.Result.DrainMembers));
+                Assert.Equal(Nodes, run.Result.Members);
                 Assert.Equal(SubmissionStatus.Completed, run.Result.Submission.Status);
                 Assert.Equal((Records, Records), (run.Result.Submission.Planned, run.Result.Submission.Delivered));
                 var sent = estate.Protocol.Deliveries.Where(d => d.Document["kind"]!.GetValue<string>() == kind).ToList();
@@ -587,18 +588,19 @@ public class SqlServerChainTests
             foreach (var item in interfaces)
             {
                 var result = item.GetProperty("result");
-                Assert.Equal((Nodes, Nodes), (result.GetProperty("intakeMembers").GetInt32(), result.GetProperty("drainMembers").GetInt32()));
+                Assert.Equal(Nodes, result.GetProperty("members").GetInt32());
             }
 
-            // Every member was told the interface it works on, and each interface had both kinds of member.
+            // Every slice run was told the interface it works on, and delivered a share of it.
             foreach (var iface in ledgers.Keys)
             {
                 var members = nodes.Enqueued.Where(m => m.Payload.Interface == iface).ToList();
-                Assert.Equal(Nodes, members.Count(m => m.Operation == DeliveryOperations.Intake));
-                Assert.Equal(Nodes, members.Count(m => m.Operation == DeliveryOperations.Drain));
+                Assert.Equal(Nodes, members.Count);
+                Assert.All(members, m => Assert.Equal(DeliveryOperations.Deliver, m.Operation));
+                Assert.All(members, m => Assert.NotEmpty(m.Payload.Slices));
             }
 
-            Assert.Equal(4 * Nodes, nodes.Enqueued.Count);
+            Assert.Equal(2 * Nodes, nodes.Enqueued.Count);
 
             // Every record was sent once, every wellbore before the first well log.
             var sent = estate.Protocol.Deliveries.Select(d => d.Document["kind"]!.GetValue<string>()).ToList();
@@ -1049,13 +1051,11 @@ public class SqlServerChainTests
     }
 
     /// <summary>
-    /// A fan-out whose members run inline, each on its own runtime over the same engine, as another node of the pool
+    /// A fan-out whose slice runs run inline, each on its own runtime over the same engine, as another node of the pool
     /// would run the slices it was dealt.
     /// </summary>
     private sealed class InlineDispatcher : IFanOutDispatcher
     {
-        private static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web);
-
         private readonly FlowDefinition _flow;
         private readonly Dictionary<Guid, FanOutMemberState> _members = [];
         private readonly Dictionary<Guid, List<Guid>> _groups = [];
@@ -1080,7 +1080,7 @@ public class SqlServerChainTests
             {
                 var runId = Guid.NewGuid();
                 ids.Add(runId);
-                var (operation, payload, resultJson) = await RunMemberAsync(Engine!, _flow, member, runId, ct);
+                var (operation, payload, resultJson) = await FanOutMembers.RunAsync(Engine!, _flow, member, runId, ct);
                 Enqueued.Add((operation, payload));
                 _members[runId] = new FanOutMemberState(runId, ids.Count, "succeeded", null, resultJson);
             }
@@ -1096,37 +1096,6 @@ public class SqlServerChainTests
         }
 
         public Task CancelAsync(FanOutHandle handle, CancellationToken ct = default) => Task.CompletedTask;
-
-        /// <summary>
-        /// Runs one member as a node runs it: an intake of the slices it was dealt, or a drain of the submission, on a runtime
-        /// of its own over <paramref name="engine"/>. Returns what the node journals as the member's result.
-        /// </summary>
-        public static async Task<(string Operation, DeliveryRunPayload Payload, string ResultJson)> RunMemberAsync(
-            EngineContext engine, FlowDefinition flow, RunParameters member, Guid runId, CancellationToken ct)
-        {
-            var operation = DeliveryOperations.Of(member);
-            var payload = DeliveryRunPayload.Parse(member);
-            payload.Validate(operation);
-            if (operation == DeliveryOperations.Intake)
-            {
-                // A member run reaches the executor, which takes the partition it names off its values and binds the flow to
-                // it: a member of a run bound to a partition names that partition, and is never a parameter of the flow.
-                var (partition, values) = PartitionNames.SplitRunValues(member.Values, keptAsParameter: false);
-                Assert.Equal(flow.Partition, partition);
-                using var runtime = await FlowRuntime.CreateAsync(engine, flow, values, ct);
-                runtime.RunId = runId;
-                runtime.SubmissionId = payload.SubmissionId;
-                runtime.Slices = payload.Slices;
-                var intake = await runtime.IntakeAsync(payload.Force, ct);
-                return (operation, payload, JsonSerializer.Serialize(
-                    IntakeOutcome.From(intake, flow.Source.Record.Object, runtime.Selection.Describe(), payload.Slices), Json));
-            }
-
-            using var target = FlowRuntime.ForTarget(engine, flow);
-            target.RunId = runId;
-            var drained = await target.WorkAsync(once: false, payload.SubmissionId, ct);
-            return (operation, payload, JsonSerializer.Serialize(DrainOutcome.From(drained, payload.SubmissionId), Json));
-        }
     }
 
     /// <summary>
@@ -1358,7 +1327,7 @@ public class SqlServerChainTests
 
             try
             {
-                return (await InlineDispatcher.RunMemberAsync(engine, _flow, member, runId, ct)).ResultJson;
+                return (await FanOutMembers.RunAsync(engine, _flow, member, runId, ct)).ResultJson;
             }
             catch (Exception ex)
             {

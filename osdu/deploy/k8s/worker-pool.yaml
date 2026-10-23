@@ -5,15 +5,14 @@
 # snapshotted YAML (or materializes the pinned commit from git), executes, streams the trace, and reports back
 # over the node protocol.
 #
-# The delivery engine reads and writes the `osdu` ledger per record while it plans and delivers, and a node has no
-# catalog connection, so the module database is reached through a connection of its own on this tier: the
-# osdu-module-connection secret, mounted below as SQLFLOW_OSDU_DB
+# The delivery engine reads and writes the `osdu` ledger per record while it plans and delivers. The `osdu` schema
+# lives in the catalog's database, which SQLFlow itself gives a node no connection to, so the node is given one with a
+# login of this tier's own: the node-catalog-connection secret, mounted below as SQLFLOW_CATALOG_DB
 # (osdu/docs/reference/concepts/environment-variables.md). Without it a node refuses to start and takes no work,
 # because a delivery is written to the ledger record by record.
 #
 # Requires KEDA installed in the cluster (https://keda.sh): the metrics-api scaler reads the pool's replica target
-# from the control plane (GET /api/v1/node/scale-target), authenticated with the same node token the nodes use,
-# so no catalog credential reaches this tier at all.
+# from the control plane (GET /api/v1/node/scale-target), authenticated with the same node token the nodes use.
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -59,22 +58,17 @@ spec:
             - name: SQLFLOW_GIT_TOKEN
               valueFrom:
                 secretKeyRef: { name: osdu-delivery-secrets, key: git-token }
-            # The delivery ledger, per record, as the run plans and delivers. This is the metadata database, the
-            # same one the control plane's catalog is in, reached with a login of this tier's own.
-            - name: SQLFLOW_OSDU_DB
+            # The metadata database, the one the control plane's catalog is in, reached with a login of this tier's
+            # own, never the catalog's credential: the delivery ledger per record as a run plans and delivers, and the
+            # osdu schema's dimension tables and views the flows that build and read them name (${env:SQLFLOW_CATALOG_DB}).
+            - name: SQLFLOW_CATALOG_DB
               valueFrom:
-                secretKeyRef: { name: osdu-delivery-secrets, key: osdu-module-connection }
+                secretKeyRef: { name: osdu-delivery-secrets, key: node-catalog-connection }
             # The private ranges (CIDR, comma separated) the delivery engine may reach, when the OSDU, its storage or
             # a proxy resolves to a private address. Empty reaches public addresses only; loopback, link-local and
             # cloud metadata addresses are never reachable.
             - name: SQLFLOW_DELIVERY_PRIVATE_NETWORKS
               value: ""
-            # The metadata database under the name the control plane reads it by, for the flows that build and read
-            # the osdu schema's dimension tables and views (${env:SQLFLOW_CATALOG_DB}); the node itself never opens it.
-            # It is the database the ledger is in, reached with this tier's own login, never the catalog's credential.
-            - name: SQLFLOW_CATALOG_DB
-              valueFrom:
-                secretKeyRef: { name: osdu-delivery-secrets, key: osdu-module-connection }
             # Every ${env:...} reference the pool's flows use that no partition supplies resolves HERE, on the node,
             # and in the control plane, which answers a person's reads of a flow (a probe, a read-back, a preview, the
             # explorer) under the same credentials: keep this list and controlplane.yaml's the same. Mount one entry

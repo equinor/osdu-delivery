@@ -60,10 +60,8 @@ services:
         condition: service_healthy
     environment:
       # The metadata database. Startup applies SQLFlow's migrations to the catalog schema and then the delivery
-      # module's to the `osdu` schema beside it, and verifies both against this build. The module is given no
-      # connection of its own here, which is what keeps its schema in this database. An estate that has to keep
-      # them apart (Azure SQL reaches across no two databases) sets Osdu:Database:Connection or SQLFLOW_OSDU_DB
-      # to a database of its own, before the first migrate; it cannot be moved afterwards.
+      # module's to the `osdu` schema beside it, and verifies both against this build. The `osdu` schema always
+      # lives in the catalog's database, reached through this one connection.
       ControlPlane__Catalog__ConnectionReference: "Server=mssql;Database=OsduDelivery;User ID=sa;Password=${MSSQL_SA_PASSWORD};TrustServerCertificate=True"
       ControlPlane__Jwt__SigningKey: ${SQLFLOW_JWT_SIGNING_KEY:?set SQLFLOW_JWT_SIGNING_KEY in .env}
       ControlPlane__Jwt__BootstrapSecret: ${SQLFLOW_BOOTSTRAP_SECRET:?set SQLFLOW_BOOTSTRAP_SECRET in .env}
@@ -145,17 +143,14 @@ services:
     environment:
       # The node polls the control plane's dispatcher for work over the node protocol, authenticated with a
       # personal access token minted with the `node` scope (an admin: POST /api/v1/me/tokens with scopes
-      # ["node"]). It opens no catalog connection: the run's definition, its YAML, its lineage context and its
-      # trace all travel over that protocol.
+      # ["node"]). The run's definition, its YAML, its lineage context and its trace all travel over that protocol;
+      # the node's one database connection is the module's, below.
       SQLFLOW_URL: http://controlplane:8080
       SQLFLOW_TOKEN: ${SQLFLOW_NODE_TOKEN:?mint a node-scoped token from the control plane and set SQLFLOW_NODE_TOKEN in .env}
-      # The delivery engine reads and writes the `osdu` ledger per record while it plans and delivers, and a node
-      # has no catalog connection at all, so the metadata database is reached through its own reference here. It
-      # is the same database the control plane's catalog is in, since that is where the `osdu` schema lives; a
-      # deployment gives this tier a login with rights on schema `osdu` alone.
-      SQLFLOW_OSDU_DB: "Server=mssql;Database=OsduDelivery;User ID=sa;Password=${MSSQL_SA_PASSWORD};TrustServerCertificate=True"
-      # The metadata database again, under the name the control plane reads it by: the flows that build and read the
-      # osdu schema's dimension tables and views name it (${env:SQLFLOW_CATALOG_DB}); the node itself never opens it.
+      # The metadata database, the one the control plane's catalog is in. The delivery engine reads and writes the
+      # `osdu` ledger there per record while it plans and delivers, and the flows that build and read the osdu
+      # schema's dimension tables and views name it (${env:SQLFLOW_CATALOG_DB}). A deployment gives this tier a login
+      # with rights on schema `osdu` alone.
       SQLFLOW_CATALOG_DB: "Server=mssql;Database=OsduDelivery;User ID=sa;Password=${MSSQL_SA_PASSWORD};TrustServerCertificate=True"
       # The data database the flows work in: pre-ingestion lands the source files there, the ingestion flows load the
       # keyed tables, and the OSDU flows read them.

@@ -142,19 +142,19 @@ run "a_worker_carries_its_node_token_and_the_ledger_s_connection_alone" {
     image                  = "osdutest.azurecr.io/osdu-delivery-worker:abc1234"
     control_plane_url      = "https://osdu-delivery-control-plane.calm-sea.westeurope.azurecontainerapps.io"
     node_token_secret_name = "osdu-delivery-node-token"
-    secret_env             = [{ name = "SQLFLOW_OSDU_DB", secret_name = "osdu-delivery-osdu-db" }]
+    secret_env             = [{ name = "SQLFLOW_CATALOG_DB", secret_name = "osdu-delivery-catalog-db" }]
   }
 
   assert {
-    condition     = sort([for e in azurerm_container_app.this.template[0].container[0].env : e.name if e.secret_name != null]) == tolist(["SQLFLOW_OSDU_DB", "SQLFLOW_TOKEN"])
-    error_message = "A node reads its node token and the ledger's connection from the vault, and nothing else: its runs are handed the rest."
+    condition     = sort([for e in azurerm_container_app.this.template[0].container[0].env : e.name if e.secret_name != null]) == tolist(["SQLFLOW_CATALOG_DB", "SQLFLOW_TOKEN"])
+    error_message = "A node reads its node token and the catalog's connection, which holds the ledger, from the vault, and nothing else: its runs are handed the rest."
   }
 
   assert {
     condition = (
       sort([for s in azurerm_container_app.this.secret : s.key_vault_secret_id]) == tolist([
+        "https://osdu-kv-test.vault.azure.net/secrets/osdu-delivery-catalog-db",
         "https://osdu-kv-test.vault.azure.net/secrets/osdu-delivery-node-token",
-        "https://osdu-kv-test.vault.azure.net/secrets/osdu-delivery-osdu-db",
       ])
     )
     error_message = "Every secret is a reference into the estate's vault, never a value."

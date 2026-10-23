@@ -84,9 +84,8 @@ public sealed class ManagedWorkersModuleTests
     [Fact]
     public async Task TheProcessLauncher_HandsAWorkerTheModuleDatabaseThisControlPlaneOpens()
     {
-        // A local setup keeps the osdu schema in the catalog's database and sets no SQLFLOW_OSDU_DB. A worker never gets
-        // the catalog connection and reads that variable alone, so it is handed the connection this control plane opens
-        // the module database on, or it refuses to start.
+        // The osdu schema lives in the catalog's database, which a worker reaches through SQLFLOW_CATALOG_DB alone, so it
+        // is handed the connection this control plane opens the catalog and the module database on, or it refuses to start.
         var folder = Directory.CreateTempSubdirectory("sqlflow-module-launcher-").FullName;
         try
         {
@@ -99,15 +98,12 @@ public sealed class ManagedWorkersModuleTests
             var launcher = factory.Services.GetServices<IWorkerLauncher>().Single(l => l.Name == ProcessWorkerLauncher.LauncherName);
 
             await launcher.LaunchAsync(new WorkerLaunch("worker-default-0123456789", ""), CancellationToken.None);
-            var handed = await ReadWhenWrittenAsync(Path.Combine(folder, "osdu.txt"));
+            var handed = await ReadWhenWrittenAsync(Path.Combine(folder, "catalog.txt"));
 
             var opened = factory.Services.GetRequiredService<IModuleDatabaseConnections>()
                 .ConnectionString(factory.Services.GetRequiredService<ModuleDatabase<OsduDbContext>>());
             Assert.Equal(opened, handed);
-            if (string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable(OsduModuleDatabase.ConnectionVariable)))
-            {
-                Assert.Equal(factory.Services.GetRequiredService<CatalogConnectionProvider>().ConnectionString, handed);
-            }
+            Assert.Equal(factory.Services.GetRequiredService<CatalogConnectionProvider>().ConnectionString, handed);
         }
         finally
         {
@@ -158,19 +154,19 @@ public sealed class ManagedWorkersModuleTests
             .WithSetting("ControlPlane:Worker:Enabled", "false")
             .WithSetting("Osdu:SchemaRepository:WarmOnStart", "false");
 
-    /// <summary>A stand-in worker host that records the module database it was handed, then exits.</summary>
+    /// <summary>A stand-in worker host that records the catalog connection it was handed, then exits.</summary>
     private static string StandInWorker(string folder)
     {
         if (OperatingSystem.IsWindows())
         {
             var path = Path.Combine(folder, "worker.cmd");
             // The redirection comes first: a value ending in a digit (ConnectRetryCount=0) would otherwise read as "0>".
-            File.WriteAllText(path, "@echo off\r\n> \"%~dp0osdu.txt\" echo %SQLFLOW_OSDU_DB%\r\n");
+            File.WriteAllText(path, "@echo off\r\n> \"%~dp0catalog.txt\" echo %" + OsduModuleDatabase.CatalogConnectionVariable + "%\r\n");
             return path;
         }
 
         var script = Path.Combine(folder, "worker.sh");
-        File.WriteAllText(script, "#!/bin/sh\necho \"$SQLFLOW_OSDU_DB\" > \"$(dirname \"$0\")/osdu.txt\"\n");
+        File.WriteAllText(script, "#!/bin/sh\necho \"$" + OsduModuleDatabase.CatalogConnectionVariable + "\" > \"$(dirname \"$0\")/catalog.txt\"\n");
         File.SetUnixFileMode(script, UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute);
         return script;
     }
