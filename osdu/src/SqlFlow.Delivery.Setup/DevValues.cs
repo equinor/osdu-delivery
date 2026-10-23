@@ -29,16 +29,6 @@ internal static partial class DevValues
     /// <summary>The shortest password the control plane gives a local user.</summary>
     public const int MinPasswordLength = 12;
 
-    /// <summary>
-    /// The settings that once gave the delivery module a database of its own, as an environment spells them: every host now
-    /// refuses to start while one is set (osdu/docs/reference/cli/db.md, Errors). The hosts' list is
-    /// <c>OsduModuleDatabase.RetiredSettings</c>, which this project does not reference; a test holds the two alike.
-    /// </summary>
-    public static readonly IReadOnlyList<string> RetiredSettings = ["Osdu__Database__Connection", "SQLFLOW_OSDU_DB"];
-
-    /// <summary>The catalog's connection, which holds the delivery module's <c>osdu</c> schema too.</summary>
-    public const string CatalogName = "SQLFLOW_CATALOG_DB";
-
     // The host's GitHub App, as SQLFlow reads it (SqlFlow.SourceControl's GitHubAppEnvironment, and
     // sqlflow/docs/reference/guides/github-app.md): its client ID, and its private key as a value or as a file.
     public const string GitHubAppIdName = "SQLFLOW_GITHUB_APP_ID";

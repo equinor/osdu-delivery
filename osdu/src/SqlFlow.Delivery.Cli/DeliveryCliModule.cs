@@ -400,8 +400,6 @@ public sealed class DeliveryCliModule : ICliModule
 
         // The module's database is the catalog's: a command opens it on the catalog the command line names, and a node,
         // which SQLFlow gives no catalog connection, through the catalog's environment variable.
-        OsduModuleDatabase.RefuseRetiredSettings(
-            name => !string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable(name.Replace(":", "__", StringComparison.Ordinal))));
         services.AddDatabase(services.Scope == CliServiceScope.Worker ? OsduModuleDatabase.CreateForNode() : OsduModuleDatabase.Create());
 
         services.Services.AddDeliveryKind();

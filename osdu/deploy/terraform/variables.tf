@@ -531,14 +531,9 @@ variable "setup_identity_name" {
 }
 
 variable "osdu_database_name" {
-  description = "No longer a setting: the module's `osdu` schema (the record ledger, mappings, templates and the OSDU cache) lives in the catalog's database, catalog_database_name. Kept only to refuse a value, so an estate that named a database of its own is told rather than started on an empty ledger."
+  description = "No longer read, and ignored when set: the module's `osdu` schema (the record ledger, mappings, templates and the OSDU cache) lives in the catalog's database, catalog_database_name. Kept so an environment file that still sets it applies unchanged."
   type        = string
   default     = null
-
-  validation {
-    condition     = var.osdu_database_name == null
-    error_message = "osdu_database_name is no longer a setting; the osdu schema lives in the catalog's database, catalog_database_name. Remove it. If it named another database, that database holds the ledger: bring its osdu schema into the catalog's database before applying, or the apps would start an empty ledger there."
-  }
 }
 
 variable "sql_database_sku" {

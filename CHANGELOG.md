@@ -282,8 +282,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **The module's second database connection, `SQLFLOW_OSDU_DB`.** The `osdu` schema lives in the catalog's database and
   every tier reaches it through `SQLFLOW_CATALOG_DB`, worker nodes included: give each node `SQLFLOW_CATALOG_DB` in place
   of `SQLFLOW_OSDU_DB`. `SQLFLOW_OSDU_DB`, `Osdu:Database:Connection`, the Terraform's `osdu_database_name` and the Bicep's
-  `osduDatabaseName` are refused by name (`dev.bat check` names one left in `.sqlflow/env`), and an estate that kept the
-  `osdu` schema in a database of its own brings it into the catalog's database before upgrading ([where the osdu schema lives](osdu/docs/reference/cli/db.md#where-it-lives)).
+  `osduDatabaseName` are no longer read, and a deployment that still sets them starts and deploys as before, ignoring
+  them; an estate that kept the `osdu` schema in a database of its own brings it into the catalog's database before
+  upgrading ([where the osdu schema lives](osdu/docs/reference/cli/db.md#where-it-lives)).
 - **The library of saved templates.** The Templates page's Saved and Import file tabs, **Save template** and **Delete**,
   `POST` and `DELETE /api/v1/delivery/templates`, and `sqlflow template list`, `show` and `delete` are gone, and the
   upgrade's migration drops `[osdu].[Template]` with every version saved in it. Make each version an estate's documents

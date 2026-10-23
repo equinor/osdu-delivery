@@ -605,14 +605,20 @@ run "password_authentication_without_a_password_is_refused" {
   expect_failures = [azurerm_key_vault_secret.catalog_db]
 }
 
-run "a_separate_osdu_database_is_refused" {
-  command = plan
+run "an_osdu_database_name_an_environment_file_still_sets_is_ignored" {
+  command = apply
 
   variables {
     osdu_database_name = "OsduLedger"
   }
 
-  expect_failures = [var.osdu_database_name]
+  assert {
+    condition = (
+      [for d in local.sql_setup_databases : d.name] == ["OsduData", "OsduDelivery"] &&
+      local.worker_secret_env == [{ name = "SQLFLOW_CATALOG_DB", secret_name = "osdu-delivery-catalog-db" }]
+    )
+    error_message = "Nothing is created or granted for it, and every tier reaches the osdu schema in the catalog's database."
+  }
 }
 
 run "an_externally_managed_registration_is_referenced_not_created" {

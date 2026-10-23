@@ -7553,7 +7553,7 @@
       "path": "decisions/0026-one-database-connection.md",
       "title": "Decision 0026: The osdu schema lives in the catalog's database, reached through its one connection",
       "type": "decision",
-      "summary": "Why the module has no database connection of its own, why SQLFLOW_OSDU_DB is refused rather than ignored, and why the control plane owns the osdu schema.",
+      "summary": "Why the module has no database connection of its own, why a host ignores the retired SQLFLOW_OSDU_DB, and why the control plane owns the osdu schema.",
       "keywords": [
         "one database connection",
         "SQLFLOW_OSDU_DB retired",
@@ -7574,8 +7574,7 @@
         "osdu/deploy/terraform/variables.tf",
         "osdu/deploy/bicep/main.bicep",
         "osdu/deploy/k8s/worker-pool.yaml",
-        "sqlflow/src/SqlFlow.Catalog/Modules/ModuleDatabaseConnections.cs",
-        "osdu/src/SqlFlow.Delivery.Setup/DevReadiness.cs"
+        "sqlflow/src/SqlFlow.Catalog/Modules/ModuleDatabaseConnections.cs"
       ]
     },
     {

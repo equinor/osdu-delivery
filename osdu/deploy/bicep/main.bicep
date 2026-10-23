@@ -436,6 +436,10 @@ param sqlServerName string = 'osdu-sql-${uniqueString(resourceGroup().id)}'
 @description('The metadata database: SQLFlow\'s catalog (pipelines, runs, schedules, lineage, sources, users) and, beside it, the module\'s `osdu` schema. Every run is given it as \${env:SQLFLOW_CATALOG_DB}, through which the flows read the osdu schema\'s views, and the flows name it in three-part names, so keep the name they use.')
 param catalogDatabaseName string = 'OsduDelivery'
 
+@description('No longer read, and ignored when set: the module\'s `osdu` schema (the record ledger, mappings, templates and the OSDU cache) lives in the catalog\'s database, catalogDatabaseName. Kept so a parameters file that still sets it deploys unchanged.')
+#disable-next-line no-unused-params
+param osduDatabaseName string = ''
+
 @description('Name of the estate\'s setup identity: the managed identity the deployment\'s own steps run as (osdu/deploy/setup/Setup-Estate.ps1), the Entra administrator of the SQL server created here and a Key Vault Secrets Officer of the estate\'s vault. No app runs as it.')
 param setupIdentityName string = 'osdu-delivery-setup'
 

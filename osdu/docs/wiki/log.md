@@ -289,3 +289,16 @@ the name among the file's extra settings and gone on.
 Amended [0026](decisions/0026-one-database-connection.md): a retired setting in the file or the terminal is an error of
 the check, so the launcher stops before it starts anything, with a fix that says whether the value names the catalog's
 own database.
+
+## [2026-10-23] ingest | A host ignores a retired module connection, decision 0026 amended
+
+Source: the human, after the refusal stopped their `dev.bat`: an environment variable the application does not use
+should do no harm, a deployed application's environment cannot always be changed, so it has to be handled
+gracefully, and the old variable is to be ignored rather than used or expected to be gone. The code that read it:
+the hosts' refusal (`osdu/src/SqlFlow.Delivery/Hosting/OsduModuleDatabase.cs`, called from
+`DeliveryControlPlaneModule.cs` and `DeliveryCliModule.cs`), the local check's error
+(`osdu/src/SqlFlow.Delivery.Setup/DevReadiness.cs`), and the deployments' `osdu_database_name` and `osduDatabaseName`.
+
+Amended [0026](decisions/0026-one-database-connection.md): the retired settings are ignored, by the hosts, the local
+check and the deployments; refusing them, and reading the old variable as a node's fallback, are recorded as rejected,
+with what the refusal had guarded and where that case now sits.

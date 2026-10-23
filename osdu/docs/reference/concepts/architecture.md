@@ -163,7 +163,7 @@ names (`--db`, else `${env:SQLFLOW_CATALOG_DB}`), which holds the `osdu` schema.
 
 The `osdu` schema always lives in the catalog's database, reached through the catalog's one connection: the module has
 no connection of its own. `SQLFLOW_OSDU_DB` and `Osdu:Database:Connection`, which once gave it a database apart, are no
-longer settings, and a host started with either refuses to start, naming it ([`sqlflow db`](../cli/db.md#errors)). The one
+longer read, and a host still given either ignores it ([`sqlflow db`](../cli/db.md#where-it-lives)). The one
 place that writes module rows together with the catalog, the repository sync, joins the catalog's transaction, so its
 rows commit or roll back with the sync.
 

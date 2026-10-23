@@ -6,7 +6,7 @@
     "_generator": {
       "name": "bicep",
       "version": "0.44.1.10279",
-      "templateHash": "12133270592178534504"
+      "templateHash": "13409535901875583049"
     }
   },
   "definitions": {
@@ -905,6 +905,13 @@
       "defaultValue": "OsduDelivery",
       "metadata": {
         "description": "The metadata database: SQLFlow's catalog (pipelines, runs, schedules, lineage, sources, users) and, beside it, the module's `osdu` schema. Every run is given it as ${env:SQLFLOW_CATALOG_DB}, through which the flows read the osdu schema's views, and the flows name it in three-part names, so keep the name they use."
+      }
+    },
+    "osduDatabaseName": {
+      "type": "string",
+      "defaultValue": "",
+      "metadata": {
+        "description": "No longer read, and ignored when set: the module's `osdu` schema (the record ledger, mappings, templates and the OSDU cache) lives in the catalog's database, catalogDatabaseName. Kept so a parameters file that still sets it deploys unchanged."
       }
     },
     "setupIdentityName": {

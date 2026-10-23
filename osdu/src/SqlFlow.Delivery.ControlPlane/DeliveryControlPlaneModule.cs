@@ -55,8 +55,6 @@ public sealed class DeliveryControlPlaneModule : IControlPlaneModule
 
         // The module's database: the osdu schema in the catalog's database, on the catalog's connection. Bootstrap migrates
         // it after the catalog, and readiness stays red until it verifies against this build.
-        OsduModuleDatabase.RefuseRetiredSettings(name => services.Configuration.GetSection(name).Exists()
-            || !string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable(name)));
         services.AddDatabase(OsduModuleDatabase.Create());
 
         // Where a synced repository's files are on this host, which a template is read from outside a run of its own

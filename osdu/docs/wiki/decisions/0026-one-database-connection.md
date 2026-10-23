@@ -2,7 +2,7 @@
 id: delivery-wiki-0026-one-database-connection
 title: "Decision 0026: The osdu schema lives in the catalog's database, reached through its one connection"
 type: decision
-summary: "Why the module has no database connection of its own, why SQLFLOW_OSDU_DB is refused rather than ignored, and why the control plane owns the osdu schema."
+summary: "Why the module has no database connection of its own, why a host ignores the retired SQLFLOW_OSDU_DB, and why the control plane owns the osdu schema."
 keywords:
   - one database connection
   - SQLFLOW_OSDU_DB retired
@@ -29,7 +29,6 @@ sourceRefs:
   - osdu/deploy/bicep/main.bicep
   - osdu/deploy/k8s/worker-pool.yaml
   - sqlflow/src/SqlFlow.Catalog/Modules/ModuleDatabaseConnections.cs
-  - osdu/src/SqlFlow.Delivery.Setup/DevReadiness.cs
 updated: 2026-10-23
 ---
 # 0026: The osdu schema lives in the catalog's database, reached through its one connection
@@ -65,11 +64,11 @@ should be no duplicate connections, and every hard-coded lookup of the second on
   control plane and a command open it on the connection they open the catalog on. A node, which SQLFlow still gives no
   catalog connection, opens it through `${env:SQLFLOW_CATALOG_DB}` itself; the managed-worker launcher hands a local
   worker that variable as the control plane resolved it. A node's login keeps its grants on the `osdu` schema alone.
-- **The settings of a second connection are refused, never ignored.** A host started with `SQLFLOW_OSDU_DB` or
-  `Osdu:Database:Connection` stops, naming the setting and `SQLFLOW_CATALOG_DB`, in the words SQLFlow uses for its own
-  retired settings. The Terraform refuses any `osdu_database_name`; the Bicep templates no longer declare
-  `osduDatabaseName`, which ARM refuses in turn. Ignoring one would move the ledger: a host pointed at a separate ledger
-  database would migrate an empty `osdu` schema in the catalog's database and deliver every record again.
+- **The settings of a second connection are not read, and a host still given one ignores it.** `SQLFLOW_OSDU_DB` and
+  `Osdu:Database:Connection` neither change where the module's database is nor stop a host from starting, and the
+  Terraform's `osdu_database_name` and the Bicep's `osduDatabaseName` are accepted and ignored, so an environment file
+  or a parameters file that still sets them deploys unchanged. The human, on the first refusal: a deployed application's
+  environment cannot always be changed, so an unused variable has to be handled gracefully.
 - **The control plane owns the `osdu` schema.** It migrates and verifies the catalog and then the module at startup,
   serves the ledger, the mappings, the templates and the caches to the GUI and the API, and reads each data database for
   the reads a person waits on. That access is the module's requirement, not SQLFlow's, and the one connection carries it.
@@ -80,6 +79,17 @@ should be no duplicate connections, and every hard-coded lookup of the second on
 
 ## Alternatives rejected
 
+- **Refusing the retired settings at startup**, which this decision first did, in the words SQLFlow uses for its own
+  retired settings, so that an estate whose `osdu` schema really sat in a database of its own would not start on an empty
+  ledger in the catalog's. Every shipped deployment pointed the variable at the catalog's own database, so the refusal
+  guarded nothing there and stopped deployments whose settings their operators cannot change; the human chose to ignore
+  the settings instead. The case it guarded is left to the upgrade: such an estate brings its `osdu` schema into the
+  catalog's database first.
+- **Reading `SQLFLOW_OSDU_DB` in place of a missing `SQLFLOW_CATALOG_DB` on a node**, as a fallback for a node whose
+  settings predate this decision: the human asked that the old variable be ignored rather than used. The Terraform and
+  Bicep deployments give each node `SQLFLOW_CATALOG_DB` when they apply, and the compose, Kubernetes and Radix layouts
+  already gave it.
+
 - **Keeping `SQLFLOW_OSDU_DB` as an optional override**: it was already optional, and every deployment still wrote and
   mounted it, pointing at the catalog's database. Two names for one database is the duplicate the human asked to remove.
 - **Keeping a database of the module's own as an option for Azure SQL**: no estate used it, and it alone kept the second
@@ -89,11 +99,9 @@ should be no duplicate connections, and every hard-coded lookup of the second on
 ## Consequences
 
 - An estate has one connection string for its metadata database: one Key Vault secret, one variable on every tier.
-- A Terraform state holding a separate `osdu` database forgets it rather than destroying it (a `removed` block), and the
-  apply refuses until `osdu_database_name` is gone; that database's `osdu` schema is brought into the catalog's
-  database by hand before the hosts start again.
+- A Terraform state holding a separate `osdu` database forgets it rather than destroying it (a `removed` block); that
+  database's `osdu` schema is brought into the catalog's database by hand before the hosts start again.
 - A node's start-up check describes the module as `own connection`, SQLFlow's word for a module database opened through
   a reference, though the reference is the catalog's.
-- A developer's `.sqlflow/env` still naming `SQLFLOW_OSDU_DB` stopped `dev.bat` halfway: the check said ready, the
-  migration and then the control plane refused. `dev.bat check` now names a retired setting, in the file or the
-  terminal, as an error, so the launcher stops before it starts anything, and says whether removing it loses nothing.
+- A developer's `.sqlflow/env` still naming `SQLFLOW_OSDU_DB` starts as before; `dev.bat check` lists it among the names
+  the template does not set.

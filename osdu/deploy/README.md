@@ -59,8 +59,8 @@ when the estate has it.
 
   The two schemas of the metadata database stay separate things: their own EF contexts, their own migration
   histories, their own versions, and no foreign key between them. They share the database and its one connection,
-  `SQLFLOW_CATALOG_DB`: the module has no connection of its own, and a host started with the retired
-  `SQLFLOW_OSDU_DB` or `Osdu:Database:Connection` refuses to start.
+  `SQLFLOW_CATALOG_DB`: the module has no connection of its own, and a host still given the retired
+  `SQLFLOW_OSDU_DB` or `Osdu:Database:Connection` ignores it.
 
   The metadata database needs no setting of its own. The **source** database a flow reads is allowed snapshot
   isolation once, so a record and its child rows are read as one instant (Azure SQL Database allows it by

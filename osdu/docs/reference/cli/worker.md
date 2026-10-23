@@ -88,8 +88,8 @@ The delivery engine reads and writes the `osdu` schema record by record while it
 every attempt and outcome traceable. The `osdu` schema lives in the catalog's database, and SQLFlow gives a node no
 catalog connection, so the module opens that database through the reference `${env:SQLFLOW_CATALOG_DB}` itself. The
 variable holds the catalog database's connection string, ideally with a login whose rights cover the `osdu` schema
-alone. It is the only database connection a node is given; there is no second one for the module, and a node started
-with the retired `SQLFLOW_OSDU_DB` refuses to start ([sqlflow db](db.md#errors)).
+alone. It is the only database connection a node is given; there is no second one for the module, and a node still
+given the retired `SQLFLOW_OSDU_DB` ignores it ([sqlflow db](db.md#where-it-lives)).
 
 Before it polls for work, the node verifies that database against its build, as the control plane does at startup (the
 catalog migration the module needs is not checked here, since a node has no catalog):
@@ -198,7 +198,6 @@ Beyond SQLFlow's (0 after a clean drain, 1 when the URL or token is missing):
 | Condition | Exit code | Output |
 | --- | --- | --- |
 | `SQLFLOW_CATALOG_DB` unset, or the module database is not current | 1 | `ERROR  the worker refuses to start: <reason>` before the node polls |
-| `SQLFLOW_OSDU_DB` set | 1 | `ERROR  CLI module 'osdu' failed to configure its services: SQLFLOW_OSDU_DB is no longer a setting; ...` |
 | An `OSDU_TELEMETRY_*` value the setting cannot take | 1 | `ERROR  CLI module 'osdu' failed to configure its services: <reason>` |
 | The worker host given the `worker` verb, or any other positional argument | 1 | `ERROR  this host is the OSDU Delivery worker; ...` |
 | A hosted service of the node (the metrics export) fails to start | 1 | `ERROR  the worker refuses to start: hosted service <type> failed to start: <reason>` before the node polls |

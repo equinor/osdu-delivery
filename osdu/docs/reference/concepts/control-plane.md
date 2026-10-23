@@ -94,9 +94,8 @@ The module database is the catalog's: the control plane opens the `osdu` schema 
 `osdu` schema beside SQLFlow's catalog schema. The control plane owns both: it migrates and verifies the catalog and then
 the module at startup, and reads and writes the ledger, the mappings, the templates and the caches there.
 
-The module has no connection of its own. A control plane started with `Osdu:Database:Connection` or `SQLFLOW_OSDU_DB`,
-which once gave it one, stops, naming the setting:
-`Osdu:Database:Connection is no longer a setting; the osdu schema lives in the catalog's database, which SQLFLOW_CATALOG_DB names. Remove it. ...`
+The module has no connection of its own. `Osdu:Database:Connection` and `SQLFLOW_OSDU_DB`, which once gave it one, are
+no longer read: a control plane still given either starts as it would without it.
 A database that is missing, behind this build, ahead of it or diverged, or a catalog without the migration the module
 needs, also stops it with a message naming the migrations, for example
 `The database of ... is behind this build: 2 migration(s) are not applied (...). Apply them with 'sqlflow db migrate'.`

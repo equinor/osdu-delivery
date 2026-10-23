@@ -213,7 +213,7 @@ resource "azurerm_mssql_database" "catalog" {
 }
 
 # The delivery module's own database, which an estate could once keep apart from the catalog's. The osdu schema lives in
-# the catalog's database (osdu_database_name refuses a value), so a state still holding one forgets it rather than
+# the catalog's database (osdu_database_name is no longer read), so a state still holding one forgets it rather than
 # destroying it: it holds a ledger, which belongs in the catalog's database.
 removed {
   from = azurerm_mssql_database.osdu

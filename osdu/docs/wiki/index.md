@@ -134,7 +134,7 @@ other packages adopt the same contract.
   holds for the fan-out as a whole, and why a share planned again writes its batches after the ones it wrote.
 - [0026: the osdu schema lives in the catalog's database, reached through its one connection](decisions/0026-one-database-connection.md) -
   why the module has no database connection of its own, why a node reads the ledger through `SQLFLOW_CATALOG_DB`, why
-  the retired `SQLFLOW_OSDU_DB` is refused rather than ignored, and why the control plane owns the `osdu` schema.
+  a host ignores the retired `SQLFLOW_OSDU_DB` rather than refusing it, and why the control plane owns the `osdu` schema.
 
 ## Coverage
 

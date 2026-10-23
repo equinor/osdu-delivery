@@ -1,6 +1,5 @@
 using System.Text.Json.Nodes;
 using SqlFlow.Core.Secrets;
-using SqlFlow.Delivery.Hosting;
 using SqlFlow.Delivery.Setup;
 using Xunit;
 
@@ -264,42 +263,22 @@ public sealed class DevReadinessTests : IDisposable
     }
 
     [Fact]
-    public void A_retired_module_connection_is_an_error_that_stops_the_launcher_and_says_whether_anything_moves()
-    {
-        // The osdu schema lives in the catalog's database, so a line naming that database again goes with nothing lost.
-        var same = Evaluate(new Spec { Env = [.. ReadyEnv, "SQLFLOW_OSDU_DB=Server=LOCALHOST,1433;Database=osdudelivery;Integrated Security=True"] });
-
-        var finding = Single(same, "SQLFLOW_OSDU_DB");
-        Assert.Equal(FindingStatus.Error, finding.Status);
-        Assert.Contains("every host refuses to start while it is set", finding.Detail, StringComparison.Ordinal);
-        Assert.Equal("It names the catalog's database, so nothing is lost: remove it from .sqlflow/env.", Assert.Single(finding.Fixes));
-        Assert.False(same.Ready);
-        Assert.DoesNotContain(All(same), f => f.Label == "Also set");
-
-        // One naming another database holds a ledger, which has to move before the line goes; one set in the terminal is
-        // cleared there.
-        var spec = new Spec { Env = [.. ReadyEnv, "Osdu__Database__Connection=${keyvault:vault/ledger}"] };
-        spec.Terminal["SQLFLOW_OSDU_DB"] = "Server=localhost;Database=OsduLedger;Integrated Security=True";
-        var other = Evaluate(spec);
-
-        Assert.Contains("bring that database's osdu schema into the catalog's database first, then remove it from .sqlflow/env.", Assert.Single(Single(other, "Osdu__Database__Connection").Fixes), StringComparison.Ordinal);
-        Assert.EndsWith("then clear it in this terminal (set SQLFLOW_OSDU_DB=) and in Windows' environment variables.", Assert.Single(Single(other, "SQLFLOW_OSDU_DB").Fixes), StringComparison.Ordinal);
-        Assert.DoesNotContain(All(other), f => f.Detail.Contains("OsduLedger", StringComparison.Ordinal));
-    }
-
-    [Fact]
-    public void The_retired_module_connections_are_the_ones_the_hosts_refuse()
-        => Assert.Equal(
-            OsduModuleDatabase.RetiredSettings.Select(name => name.Replace(":", "__", StringComparison.Ordinal)).Order(StringComparer.Ordinal),
-            DevValues.RetiredSettings.Order(StringComparer.Ordinal));
-
-    [Fact]
     public void A_misspelt_name_is_suggested_and_other_names_are_listed()
     {
         var report = Evaluate(new Spec { Env = [.. ReadyEnv, "ControlPlane__Cors__AllowedOrigin__0=http://localhost:5173", "MY_FLOW_VALUE=1", "Osdu__Partitions__dev__Description=x"] });
 
         Assert.Contains("did you mean ControlPlane__Cors__AllowedOrigins__0?", Single(report, "ControlPlane__Cors__AllowedOrigin__0").Detail, StringComparison.Ordinal);
         Assert.Equal("MY_FLOW_VALUE", Single(report, "Also set").Detail);
+    }
+
+    [Fact]
+    public void A_setting_the_hosts_no_longer_read_is_listed_and_stops_nothing()
+    {
+        // SQLFLOW_OSDU_DB once gave the delivery module a connection of its own; the hosts ignore it now, and so does the check.
+        var report = Evaluate(new Spec { Env = [.. ReadyEnv, "SQLFLOW_OSDU_DB=Server=localhost;Database=OsduDelivery;Integrated Security=True"] });
+
+        Assert.True(report.Ready);
+        Assert.Equal("SQLFLOW_OSDU_DB", Single(report, "Also set").Detail);
     }
 
     [Fact]

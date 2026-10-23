@@ -136,9 +136,9 @@ Terraform deployments create each database their SQL connections name on the ser
 provisioned with the server.
 
 **The `osdu` schema lives in the catalog's database**, reached through the catalog's one connection: the module has no
-connection or database of its own. `SQLFLOW_OSDU_DB` and `Osdu:Database:Connection` are no longer settings, and a host
-started with either refuses to start; the Terraform refuses `osdu_database_name`, and the Bicep templates no longer
-declare `osduDatabaseName`. The Bicep and Terraform deployments can point the whole estate at an existing server or
+connection or database of its own. `SQLFLOW_OSDU_DB` and `Osdu:Database:Connection` are no longer read, and a host still
+given either ignores it; the Terraform's `osdu_database_name` and the Bicep's `osduDatabaseName` are ignored the same
+way, so an environment file that still sets them deploys unchanged. The Bicep and Terraform deployments can point the whole estate at an existing server or
 Managed Instance whose databases already exist (`existingSqlServer`, `existing_sql_server`), creating nothing SQL; the apps sign in as their own managed
 identities by default, with no password in any connection.
 
@@ -299,7 +299,7 @@ The Terraform takes the same choices under snake-case names:
 | `osdu_partitions` | The partitions, a map by data-partition-id of `{ default, description, url, token_url, scope, client_id, client_secret_name, acl_owner, acl_viewer, legal_tag, properties }`. At least one; with several, exactly one `default = true`; property names as a flow spells them, and a property whose name says it is a secret only as a `${keyvault:...}` or `${env:...}` reference. `url`, `token_url`, `scope` and `client_id` become `OSDU_URL`, `OSDU_TOKEN_URL`, `OSDU_SCOPE` and `OSDU_CLIENT_ID`, the three optional ones `OSDU_ACL_OWNER`, `OSDU_ACL_VIEWER` and `OSDU_LEGAL_TAG`. The client secret is never a variable: it is read from `osdu-<partition>-client-secret` (or `client_secret_name`) in the vault. |
 | `sql_connections`, `sql_admins`, `landing_storage`, `repositories`, `github_app`, `properties` | As the Bicep's `sqlConnections`, `sqlAdmins`, `landingStorage`, `repositories` (with `use_github_app`), `githubApp` (`app_id`, `private_key_secret_name`, `api_url`) and `properties`. The output `github_app_private_key_secret` names the vault secret the App's key goes in, and `deploy.ps1 -Infrastructure` says when it is not there yet. |
 | `catalog_database_name` | `OsduDelivery` by default. |
-| `osdu_database_name` | No longer a setting: any value is refused, since the `osdu` schema lives in the catalog's database. |
+| `osdu_database_name` | No longer read: a value is ignored, since the `osdu` schema lives in the catalog's database. |
 | `image_tag`, `mcp_enabled` | The images are the repository's, `<registry>/osdu-delivery-<app>:<image_tag>`, unless an app's image variable names one; `mcp_enabled` deploys the MCP server. An image is set when its app is created, and later applies leave it: the deploy scripts roll the apps forward. |
 
 The `osdu_partitions` output lists each partition with whether it is the default and the vault secret its client secret is
