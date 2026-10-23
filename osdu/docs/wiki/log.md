@@ -236,3 +236,15 @@ member on another node would miss the batches the coordinating run wrote.
 Amended [0025](decisions/0025-parallelism-and-default-fan-out.md): a delivery fans out only when its `source.work` is a
 storage URI or an absolute path, a relative one keeps it on one run and its trace says why, and rebasing relative work
 folders onto a deployment's storage root is named as the way to let unchanged flows fan out, not done here.
+
+## [2026-10-23] ingest | The work location names the deployment's storage, decision 0025 amended
+
+Source: the human's dev pool, where one delivery ran on one of three workers because its `source.work` was
+`../.work`, and the deployment's storage reference every run is handed (`LANDING_URL`, `osdu/deploy/terraform/variables.tf`,
+`osdu/deploy/bicep/main.bicep`) with SQLFlow's rule for a location that names one
+(`sqlflow/src/SqlFlow.Core/Engine/SourceLocations.cs`). The human's aim, in their words: start several nodes within
+one execution, not run many pipelines.
+
+Amended [0025](decisions/0025-parallelism-and-default-fan-out.md): `source.work` may open with a reference the run
+resolves, so a flow writes its work batches to `${env:LANDING_URL}/.work/...` and fans out on every deployment
+unchanged, in place of the rebasing it had named as the way.

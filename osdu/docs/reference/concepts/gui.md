@@ -194,7 +194,7 @@ flow that delivers only to other partitions says where, without counts. The head
 what is typed. A card opens the flow's Delivery tab. A card shows what a flow's run did within seconds of the run
 ending: the page checks each flow's newest run every five seconds (every three while one is queued or running), and reads
 a flow's counts again when its newest run starts, moves on or ends, and at every check while it runs. The counts are also
-read every 15 seconds, for what no run does (a release, a removal).
+read every 15 seconds, for what no run does (a release).
 
 ### Records
 
@@ -292,7 +292,9 @@ reversal's card shows its state, its records by outcome and its runs.
   **Purge earlier versions**, **Purge everything**, or **Leave as it is** (for records already removed), each with the
   call it makes and whether it can be undone; then **In the ledger**, **Delete from the ledger**, offered with a choice
   that leaves the records out of OSDU. A permanent choice, or deleting from the ledger, asks for the data partition to be
-  typed back. See [removal and reversal](removal-and-reversal.md).
+  typed back. Confirmed, it queues a `remove` run of the flow, listed under **Runs** with the flow's other runs: **Open
+  run** on the notice opens it, and the flow's views read again within seconds of it ending. See
+  [removal and reversal](removal-and-reversal.md).
 - **Delete ledger** (a flow's Delivery tab): removes every record of every interface from OSDU, reversibly, then deletes
   the ledgers whole; the next run reads every row and delivers each as a new record. The partition is typed back first.
 - **Redeliver**: **Bring up to date** renders the records again and sends only what renders differently, showing first
@@ -378,7 +380,7 @@ A run page gains, by kind:
 
 | Kind | Header actions | Counts |
 | --- | --- | --- |
-| delivery | **Records of this run**; **Reverse this run** once a `deliver`, `replan`, `drain` or `intake` run has ended | Planned, Delivered, Held, Failed, Unchanged, Waiting; the submission as a chip |
+| delivery | **Records of this run**; **Reverse this run** once a `deliver`, `replan`, `drain` or `intake` run has ended | Planned, Delivered, Held, Failed, Unchanged, Waiting; the submission as a chip. A `remove` run: Selected, Removed (Restored for a step back), Already gone, Skipped, Failed, and Deleted from the ledger when it was asked to, with what it was asked to take and its summary line |
 | cache | **Open the cache** | |
 | assertion | **Open the report** | Tests, Passed, Failed, Warned, Errored, Skipped |
 | dimension | **Open dimensions** | Built, Failed, Skipped, Values, Keys |

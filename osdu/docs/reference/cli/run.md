@@ -15,6 +15,7 @@ keywords:
   - verify
   - reverse
   - undo
+  - remove records
   - delete-ledger
   - refresh
   - trigger
@@ -97,7 +98,7 @@ Parameter '<assignment>' must be written as name=value.
 At most 32 parameter values can be supplied.
 payload must be at most 64000 characters of JSON.
 --payload is not valid JSON: <parser message>
-operation must be one of deliver, plan, intake, drain, verify, replan, sync, reverse, undo, delete-ledger for 'delivery' flows; '<name>' is not.
+operation must be one of deliver, plan, intake, drain, verify, replan, sync, reverse, undo, remove, delete-ledger for 'delivery' flows; '<name>' is not.
 ```
 
 SQLFlow's backfill flags (`--full`, `--from`/`--to`, `--file-pattern`, `--source-filter`) have no meaning for an OSDU
@@ -162,6 +163,7 @@ parameter instead. A partition named for a flow that follows the registry has to
 | | `sync` | Read the ledger's records from the ingestion tables and consolidate the ledger: record what it lacks, flag rows that changed unseen for the next run, report rows that are gone. Sends nothing. | no |
 | | `reverse` | Put OSDU back as it was before one run or submission: remove what it created, restore the version it replaced, and block those records until their source changes or they are released. | yes |
 | | `undo` | Undo what deliveries that did not complete left in OSDU. Deliver runs, and drains of the whole flow, end with the same sweep. | yes |
+| | `remove` | Remove the records the payload names, by key or by a listing filter, from OSDU to the extent its `scope` asks, and with `purgeLedger` delete each one OSDU answered for from the ledger too. **Remove** on the Records tab and on a record's page queues it ([Removing records from OSDU](../concepts/removal-and-reversal.md#removing-records-from-osdu)). | yes |
 | | `delete-ledger` | Remove every record of the ledger from OSDU (reversibly), then delete the whole ledger, so the next run reads every row and delivers each as a new record. | yes |
 | `retrieval` | `retrieve` (default) | Retrieve the records the query matches into files on the lake, from where the last run stopped. | no |
 | | `plan` | Count what the query matches and say where a retrieve would write. | no |
@@ -197,14 +199,17 @@ no engine path could honour is refused before anything is queued.
 | `force` | `true`/`false` | Look at every record past the whole-run gates (the tier 0 skip and an already completed submission). Each record's own hashes still decide what is sent; to send records again, use `redeliver`. A `verify` with `force` checks records verified in the last 24 hours too; an `undo` with `force` also takes the undos that failed as often as the sweep tries. |
 | `submissionId` | UUID | The submission the run works on: a re-run, a fan-out member's share, or the submission a `reverse` run reverses. |
 | `runId` | UUID | The run a `reverse` run reverses. Only `reverse` takes it. |
-| `recordKeys` | array of UUIDs | The delivery keys the run is scoped to: at most 1,000, each once. A `deliver` run sends the named records again (everything of them, unless `redeliver` names a part). |
+| `recordKeys` | array of UUIDs | The delivery keys the run is scoped to: at most 1,000, each once, or the 25,000 one removal takes on a `remove` run. A `deliver` run sends the named records again (everything of them, unless `redeliver` names a part); a `remove` run removes them. |
 | `redeliver` | text | What a `deliver` run sends again, changed or not: `all`, `record` (the document; its datasets and bulk data keep what OSDU holds), `files`, `bulk`, `workflow`, or the older names `metadata` (the record) and `payload` (the files or the bulk data). Without `recordKeys`, every record the flow has delivered in the partition. A part the route does not send is refused, naming the parts it does. |
 | `rerender` | `true`/`false` | Bring records up to date: render the named records, or every delivered record, again under today's rules and let each record's hashes decide, so only what renders differently is sent. A `plan` with `rerender` renders every record it reads and says what that would send. |
-| `interface` | text | The one interface of a source the run works on. A run on records or slices, and a `reverse` of a run, of a source with several interfaces has to name it; a run on a submission finds its interface from the submission. |
+| `interface` | text | The one interface of a source the run works on. A run on records or slices, a `remove` run, and a `reverse` of a run, of a source with several interfaces has to name it; a run on a submission finds its interface from the submission. |
 | `interfaces` | array of text | The interfaces a run of a source runs, each once (at most 200); every interface when left out. |
 | `slices` | array of whole numbers | The key slices of `submissionId` an `intake` member plans: 0 to 1023, each once. Written by a fan-out, not by hand. |
 | `rateShare` | whole number | How many runs of a fan-out share the flow's `reliability.rateLimitRps`, 2 to 65: an `intake` or `drain` member sends under that share of it ([submissions](../concepts/submissions.md#many-nodes)). Written by a fan-out, not by hand. |
 | `confirm` | text | The partition a `delete-ledger` run acts in, as the person who asked typed it. Required by `delete-ledger` and taken by no other operation of a delivery flow (an inventory flow's `remove` takes its own). |
+| `scope` | text | How much of each record a `remove` run takes: `record` (reversibly), `previous` (the version before the latest written back), `history` (the earlier versions) or `everything` ([the scopes](../concepts/removal-and-reversal.md#removing-records-from-osdu)). Required by `remove`, exactly as written. |
+| `filter` | object | The listing a `remove` run empties instead of naming `recordKeys`: `status`, `search` with `mode` (`prefix` or `contains`), `submissionId`, `deliveredBySubmissionId`, `runId`, `drifted` and `issue`, as the records list names them. The run resolves it when it removes the records and refuses a filter that matches more than 25,000. Any other property is refused. |
+| `purgeLedger` | `true`/`false` | With `scope` `record` or `everything`, a `remove` run also deletes from the ledger each record OSDU answered for, keeping one line of it. |
 | `references`, `partitionReferences` | objects | The central configuration the control plane supplies with every delivery, cache, retrieval, assertion, dimension and inventory run it queues ([sqlflow config](config.md)). Not written by hand. |
 
 Which fields each operation takes:
@@ -220,15 +225,16 @@ Which fields each operation takes:
 | `sync` | `recordKeys`, `interface`, `interfaces` | `force`, `submissionId`, `redeliver`, `rerender`, `slices`, `rateShare` |
 | `reverse` | `submissionId` or `runId` (exactly one), `interface` | `force`, `recordKeys`, `redeliver`, `rerender`, `slices`, `rateShare`, `interfaces` |
 | `undo` | `force`, `interface`, `interfaces` | `submissionId`, `recordKeys`, `redeliver`, `rerender`, `slices`, `rateShare` |
+| `remove` | `scope` (required), `recordKeys` or `filter` (exactly one), `purgeLedger` (with `scope` `record` or `everything`), `interface` | `force`, `submissionId`, `redeliver`, `rerender`, `slices`, `rateShare`, `interfaces` |
 | `delete-ledger` | `confirm` (required), `interface`, `interfaces` | `force`, `submissionId`, `recordKeys`, `redeliver`, `rerender`, `slices`, `rateShare` |
 
 Across every operation: `submissionId` and `recordKeys` never together; `interface` and `interfaces` never together;
 `interfaces` never with `submissionId`, `recordKeys` or `slices`; `runId` only on `reverse`; `confirm` only on
-`delete-ledger`; and `tests`, `tags`, `dimensions`, `inventories`, `removal`, `entries` and `approve`, which belong to the other kinds, never.
+`delete-ledger`; `scope`, `filter` and `purgeLedger` only on `remove`; and `tests`, `tags`, `dimensions`, `inventories`, `removal`, `entries` and `approve`, which belong to the other kinds, never.
 A refusal names the field and why, for example
 `payload redeliver does not apply to the plan operation: a plan sends nothing.`, and a property of another kind is
 refused in the shape every kind uses (below):
-`payload tests does not apply to a delivery flow: only an assertion flow's runs select tests; a delivery flow's payload names only force, submissionId, runId, recordKeys, redeliver, rerender, slices, interface, interfaces and confirm.`
+`payload tests does not apply to a delivery flow: only an assertion flow's runs select tests; a delivery flow's payload names only force, submissionId, runId, recordKeys, redeliver, rerender, slices, rateShare, interface, interfaces, confirm, scope, filter and purgeLedger.`
 
 A redelivery or a release of many records is planned by the next deliver run whole: the records the ledger was asked
 to plan again are read by key, 5,000 to a pass and each pass in a submission of its own, before the run's own pass.
@@ -275,6 +281,7 @@ carries the run's result object (camelCase, enum values as names, `operation` fi
 | `sync` | `checked`, `inAgreement`, `arrivalsRecorded`, `changedUnseen`, `deletedUnseen`, `plansRequested`, `restored`, `notFound`, `notFoundRecorded`, `foundAgain`, `withoutKey`, `notInLedger`, `notFoundSample`. |
 | `reverse` | `reversalId`, `source`, `sourceId`, `records`, `taken`, `restored`, `removed`, `skipped`, `failed`, `open`, and `outcomes` across every run of the reversal. |
 | `undo` | `records`, `removed`, `restored`, `gone`, `kept`, `superseded`, `failed`. |
+| `remove` (delivery) | `scope`, `selected`, `removed`, `restored`, `alreadyGone`, `skipped`, `failed`, `purged` (of those removed or already gone, the ones deleted from the ledger), `records` (at most 200, failures first, each with its `deliveryKey`, `sourceKey`, `label`, `targetId`, `outcome`, `detail` and `submissionId`), `truncated`, `undone`, `cacheAfter`, `summary` and `rowsLoaded` (the records it changed in OSDU). A run OSDU refused any record of fails and still carries all of it. |
 | `delete-ledger` | `partition`, `removed`, `alreadyGone`, `alreadyRemoved`, `neverInOsdu`, and what was deleted: `records`, `submissions`, `workBatches`, `watermarks`, `reversals`; `undone`. |
 | A source with interfaces | `operation`, `source` and `interfaces`, each with its `interface`, `flowId`, `ledger`, `route`, `routeReason`, `waitsFor`, `waitReasons`, `wave`, `state` (`completed`, `stopped` or `skipped`), `reason`, `startedUtc`, `completedUtc` and `result` (what a run of it alone returns), with totals added up. |
 | `refresh` | `scope` (the partition), `flow`, `version`, `previousVersion`, `written`, `capturedUtc`, `types` (each with its origin, records, change and the delivered records its changes reach) and `systemProperties`. A run over several partitions gives `partitions`, each with its `outcome` or `error`. |

@@ -65,6 +65,7 @@ sourceRefs:
   - osdu/src/SqlFlow.Delivery/Http/AuthResolver.cs
   - osdu/src/SqlFlow.Delivery/Http/HttpClientBuilder.cs
   - osdu/src/SqlFlow.Delivery/Http/UrlGuard.cs
+  - sqlflow/src/SqlFlow.Core/Engine/SourceLocations.cs
   - sqlflow/src/SqlFlow.Yaml/YamlDocumentLoader.cs
 ---
 
@@ -259,7 +260,7 @@ where each record's files are.
 | `incremental.pageSize` | integer | 1000 | Records per page, 1 to 100000. |
 | `incremental.isolation` | `snapshot` \| `readCommitted` | `snapshot` | How a page's record rows and child rows see the database. `snapshot` reads them as one moment and needs `ALLOW_SNAPSHOT_ISOLATION ON`. |
 | `incremental.commandTimeoutSeconds` | integer | 0 | Seconds a read may run; 0 is bounded by the run's cancellation alone. |
-| `work` | string | required | Where the intake writes its work batches (the rendered documents the drains read back): a folder or storage prefix every node can write, relative to the flow file, with `{parameter}` tokens. A relative folder is in each node's own copy of the repository, so a flow with one never [fans out](../concepts/submissions.md#many-nodes); a storage URI, or an absolute path on storage every node mounts, lets it. A parameter the run gives several values fills its token with them joined by `+` (`../.work/COMPOSITE+WIRELINE`). A `${...}` reference is refused, as in a payload `root`. |
+| `work` | string | required | Where the intake writes its work batches (the rendered documents the drains read back): a folder or storage prefix every node can write, relative to the flow file, with `{parameter}` tokens. A relative folder is in each node's own copy of the repository, so a flow with one never [fans out](../concepts/submissions.md#many-nodes); the deployment's storage (`${env:LANDING_URL}/.work/welllog/{logSource}`), another storage URI, or an absolute path on storage every node mounts lets it. A parameter the run gives several values fills its token with them joined by `+` (`../.work/COMPOSITE+WIRELINE`). It may open with a `${...}` reference, which the run resolves with its own values as it opens, as SQLFlow resolves a file flow's location; a reference anywhere else in it is refused. |
 
 `updated` has to exist, named or left at its default. `deleted`, `inserted`, `fileName` and `rowNumber` named explicitly
 have to exist: a run (and `sqlflow check --connect`) is refused naming the key, the column and the table, so a misspelt
@@ -268,9 +269,21 @@ table carries them. `~` opts a column out (`fileName: ~`), except `updated`. The
 [provenance columns](../../../../sqlflow/docs/reference/concepts/provenance-and-row-keys.md) are SQLFlow's; a delivery
 reads them as they are.
 
-A location (`work`, a payload `root`) is substituted from the run's parameters and read as written, so a `${...}`
-reference in it is refused when the flow loads:
-`<file>: source.work '<location>' holds a ${...} reference, and a location is not resolved from one: write the path or storage URI itself, and vary it per run or environment with a {parameter} token declared under parameters.`
+A payload `root` is substituted from the run's parameters and read as written, so a `${...}` reference in it is refused
+when the flow loads:
+`<file>: source.payloads.las.root '<location>' holds a ${...} reference, and a location is not resolved from one: write the path or storage URI itself, and vary it per run or environment with a {parameter} token declared under parameters.`
+`work` alone may open with a reference, so the work batches go to the storage the deployment configures, which every
+node of a fan-out reaches, and the flow moves between deployments unchanged:
+
+```yaml
+source:
+  work: ${env:LANDING_URL}/.work/welllog/{logSource}
+```
+
+The run resolves it as it opens, with the values the control plane supplies, and stops before anything is read when it
+cannot: `The source.work '${env:LANDING_URL}/.work/welllog/{logSource}' names a reference that does not resolve: ...`.
+A reference anywhere but at its start is refused:
+`<file>: source.work 'work/${env:WORK_ROOT}' names a reference other than at its start. A work location that names one is the reference's value with a path after it, such as ${env:LANDING_URL}/.work/welllog/{logSource}.`
 
 ```yaml
 source:
@@ -627,6 +640,7 @@ the document loads; its values are checked by each run, as a trigger's are.
 | `sync` | Reads the ledger's records from the ingestion tables and consolidates the ledger; sends nothing. |
 | `reverse` | Puts OSDU back as it was before one run or submission. |
 | `undo` | Undoes what deliveries that did not complete left in OSDU. |
+| `remove` | Removes the records the payload names from OSDU to the extent its scope asks, and from the ledger with `purgeLedger`: what **Remove** on the Records tab queues. |
 | `delete-ledger` | Removes every record of the ledger from OSDU (reversibly), then deletes the ledger; the payload names the partition to confirm. |
 
 The payload each operation takes, the result and the exit codes are on [running an OSDU flow](../cli/run.md).
@@ -644,7 +658,8 @@ Every message starts with the file. A sample of what `sqlflow validate` refuses:
 | A child join missing a key column | `source.datasets.curves.join does not cover key column 'log_source' of the record table; every key column must be joined, or a child row could belong to several records.` |
 | A scope on an undeclared parameter | `source.record.scope binds column 'log_source' to parameter 'source', which is not declared under parameters.` |
 | An undeclared token | `source.work uses '{source}', which is not declared under parameters.` |
-| A reference in a location | `source.work '${env:WORK_ROOT}' holds a ${...} reference, and a location is not resolved from one: write the path or storage URI itself, and vary it per run or environment with a {parameter} token declared under parameters.` |
+| A reference in a payload root | `source.payloads.las.root '${env:LAS_ROOT}' holds a ${...} reference, and a location is not resolved from one: write the path or storage URI itself, and vary it per run or environment with a {parameter} token declared under parameters.` |
+| A reference inside the work location | `source.work 'work/${env:WORK_ROOT}' names a reference other than at its start. A work location that names one is the reference's value with a path after it, such as ${env:LANDING_URL}/.work/welllog/{logSource}.` |
 | A literal password | `source.connection carries a literal password. A flow document holds references only: put the connection string, or its password, behind ${keyvault:vault/secret} or ${env:NAME}, or connect with Azure AD (Authentication=Active Directory Default).` |
 | A literal secret | `target.auth.secretRef holds a literal value, and it is the credential the flow authenticates with (the token, the API key, the password or the client secret). A flow document holds references only: ...` |
 | A literal credential header | `target.headers.Authorization holds a literal value, and the header carries a credential; it holds a reference, after its scheme when it has one (Bearer ${env:NAME}). ...` |

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import { Link as RouterLink, useNavigate, useSearchParams } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link2, Loader2, Radar, RefreshCcw, RefreshCw, Trash2, Unlock } from "lucide-react";
@@ -37,13 +37,10 @@ import { useFollowDeliveryRuns } from "./followRuns";
 import { RemovalDialog, type RemovalSelection } from "./RemovalDialog";
 import { DeleteLedgerDialog } from "./DeleteLedgerDialog";
 import { OpenUndosCard, UndoUnfinishedButton } from "./DeliveryOpenUndos";
-import { UndoneFirst } from "./ArtifactMarks";
-import { undoneFirst } from "../../api/artifacts";
 import { RedeliverDialog, type RedeliverSelection } from "./RedeliverDialog";
 import { AdoptDialog, type AdoptSelection } from "./AdoptDialog";
 import { PLANNED_PER_PASS, ReleaseDialog } from "./ReleaseDialog";
 import { failureText } from "./answers";
-import { isTerminalTask, taskResultJson, useComputeTask } from "./useComputeTask";
 import { shortId } from "./idTail";
 
 const ALL = "all";
@@ -123,7 +120,6 @@ export function DeliveryFlowPanel({ pipelineId, flowName, section }: { pipelineI
   const [matched, setMatched] = useState(0);
   const [matchedCapped, setMatchedCapped] = useState(false);
   const [removeOpen, setRemoveOpen] = useState(false);
-  const [removalTaskId, setRemovalTaskId] = useState<string | null>(null);
   // The records a redelivery was opened for: the selection, the filtered listing, or every delivered record.
   const [redeliverFor, setRedeliverFor] = useState<RedeliverSelection | null>(null);
   // The records an adoption was opened for: every record held for an id OSDU holds, or the selection.
@@ -175,7 +171,6 @@ export function DeliveryFlowPanel({ pipelineId, flowName, section }: { pipelineI
       return next.size === known.size && [...next].every((key) => known.has(key)) ? known : next;
     });
   }, []);
-  const removal = useComputeTask(removalTaskId);
 
   // The overview shows the source in the partition in view: its counts are every interface's, with the breakdown below
   // them. The records and submissions views show one interface, because that is what their ledgers are.
@@ -194,15 +189,6 @@ export function DeliveryFlowPanel({ pipelineId, flowName, section }: { pipelineI
     enabled: ready && section !== "records" && (!many || interfaceName !== null),
     refetchInterval: 10000,
   });
-
-  // A removal that finished on a node changed the ledger for every record it touched: refetch the list and the
-  // stats once the task settles, so the page shows what it did without a manual reload.
-  const finishedRemoval = isTerminalTask(removal.data) ? removal.data!.taskId : null;
-  useEffect(() => {
-    if (finishedRemoval !== null) {
-      void queryClient.invalidateQueries({ queryKey: ["delivery"] });
-    }
-  }, [finishedRemoval, queryClient]);
 
   // A probe asks the target's info endpoint under the flow's credentials and answers at once, reachable or not. It is
   // recorded on the audit trail whatever it found (a probe that could not run is a failed entry), so the trail's listings
@@ -273,7 +259,6 @@ export function DeliveryFlowPanel({ pipelineId, flowName, section }: { pipelineI
   const blocked = s ? releasable(s) : 0;
   const probeResult = probeTarget.data;
   const probeJson = probeResult === undefined ? null : JSON.stringify(probeResult, null, 2);
-  const removalJson = isTerminalTask(removal.data) ? taskResultJson(removal.data) : null;
   // What the ledger in view is called wherever the view names it: the flow, its interface, and its partition.
   const ledgerName = ledgerLabel(flowName, scope);
   // The partition the ledgers are kept in, which deleting them asks to be typed back: the one in view, or for a flow whose
@@ -563,20 +548,6 @@ export function DeliveryFlowPanel({ pipelineId, flowName, section }: { pipelineI
             data-testid="delivery-records-table"
           />
           )}
-          {removalTaskId !== null && (
-            <Card className="gap-2 rounded-lg p-3" data-testid="delivery-removal-result">
-              <div className="flex items-center gap-2 text-[13px] font-medium">
-                Removal
-                <Badge variant="outline">{removal.data?.status ?? "queued"}</Badge>
-                {removal.data?.claimedByNode && <span className="font-mono text-[11px] text-muted-foreground">{removal.data.claimedByNode}</span>}
-              </div>
-              {removal.data?.error && <p className="text-[13px] text-destructive">{removal.data.error}</p>}
-              {isTerminalTask(removal.data) && <UndoneFirst undone={undoneFirst(removal.data?.result)} testId="delivery-removal-undone" />}
-              {removalJson !== null && (
-                <CodeView value={removalJson} language="json" height={260} data-testid="delivery-removal-json" />
-              )}
-            </Card>
-          )}
           <RemovalDialog
             open={removeOpen}
             onClose={() => setRemoveOpen(false)}
@@ -591,10 +562,16 @@ export function DeliveryFlowPanel({ pipelineId, flowName, section }: { pipelineI
             }}
             onQueued={(accepted) => {
               clearSelection();
-              setRemovalTaskId(accepted.taskId);
-              toast.success(accepted.scope === "previous"
-                ? `Restoring the previous version of ${accepted.records.toLocaleString()} record(s): queued on a node.`
-                : `Removal of ${accepted.records.toLocaleString()} record(s) queued on a node.`);
+              // A remove run of the flow: the page follows the flow's runs, so its counts and records move once it ends.
+              const records = `${accepted.records.toLocaleString()} record${accepted.records === 1 ? "" : "s"}`;
+              toast.success(
+                accepted.scope === "previous"
+                  ? `Restoring the previous version of ${records}: queued as a run.`
+                  : accepted.purgeLedger
+                    ? `Removal of ${records}, then deletion from the ledger: queued as a run.`
+                    : `Removal of ${records}: queued as a run.`,
+                { action: { label: "Open run", onClick: () => navigate(`/runs/${accepted.runId}`) } });
+              void queryClient.invalidateQueries({ queryKey: ["delivery"] });
             }}
           />
         </>

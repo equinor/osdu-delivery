@@ -3,6 +3,7 @@ using SqlFlow.Core.Runs;
 using SqlFlow.Delivery.Documents;
 using SqlFlow.Delivery.Engine;
 using SqlFlow.Delivery.Engine.Planning;
+using SqlFlow.Delivery.Ledger;
 using SqlFlow.Delivery.Model;
 using SqlFlow.Delivery.Protocols;
 using SqlFlow.Delivery.Snapshots;
@@ -35,6 +36,9 @@ public sealed class RunPayloadPerKindTests
         [DeliveryRunPayload.InterfaceProperty] = """{"interface":"logs"}""",
         [DeliveryRunPayload.InterfacesProperty] = """{"interfaces":["logs"]}""",
         [DeliveryRunPayload.ConfirmProperty] = """{"confirm":"dev"}""",
+        [DeliveryRunPayload.ScopeProperty] = """{"scope":"record"}""",
+        [DeliveryRunPayload.FilterProperty] = """{"filter":{"status":"failed"}}""",
+        [DeliveryRunPayload.PurgeLedgerProperty] = """{"purgeLedger":true}""",
         [DeliveryRunPayload.TestsProperty] = """{"tests":["wellbores"]}""",
         [DeliveryRunPayload.TagsProperty] = """{"tags":["smoke"]}""",
         [DeliveryRunPayload.DimensionsProperty] = """{"dimensions":["Field"]}""",
@@ -53,6 +57,7 @@ public sealed class RunPayloadPerKindTests
             DeliveryRunPayload.ForceProperty, DeliveryRunPayload.SubmissionIdProperty, DeliveryRunPayload.RunIdProperty, DeliveryRunPayload.RecordKeysProperty,
             DeliveryRunPayload.RedeliverProperty, DeliveryRunPayload.RerenderProperty, DeliveryRunPayload.SlicesProperty, DeliveryRunPayload.RateShareProperty,
             DeliveryRunPayload.InterfaceProperty, DeliveryRunPayload.InterfacesProperty, DeliveryRunPayload.ConfirmProperty,
+            DeliveryRunPayload.ScopeProperty, DeliveryRunPayload.FilterProperty, DeliveryRunPayload.PurgeLedgerProperty,
         ],
         [RetrievalDefinition.FlowTypeName] = [DeliveryRunPayload.ForceProperty],
         [CacheDefinition.FlowTypeName] = [],
@@ -145,7 +150,7 @@ public sealed class RunPayloadPerKindTests
             "payload inventories does not apply to a removal flow: only an inventory flow's runs select inventories; a removal flow's payload names only entries, approve and confirm.",
             Refusal(new RemovalFlowKind(Loader), Payloads[DeliveryRunPayload.InventoriesProperty]));
         Assert.Equal(
-            "payload entries does not apply to a delivery flow: only a removal flow's runs select removals; a delivery flow's payload names only force, submissionId, runId, recordKeys, redeliver, rerender, slices, rateShare, interface, interfaces and confirm.",
+            "payload entries does not apply to a delivery flow: only a removal flow's runs select removals; a delivery flow's payload names only force, submissionId, runId, recordKeys, redeliver, rerender, slices, rateShare, interface, interfaces, confirm, scope, filter and purgeLedger.",
             Refusal(new DeliveryFlowKind(Loader), Payloads[DeliveryRunPayload.EntriesProperty]));
     }
 
@@ -158,6 +163,9 @@ public sealed class RunPayloadPerKindTests
         new DeliveryFlowKind(Loader).ValidateParameters(With(null, "\"force\":true,\"interfaces\":[\"logs\"]"));
         new DeliveryFlowKind(Loader).ValidateParameters(With(DeliveryOperations.Reverse, "\"runId\":\"0d1e6f3c-9a4b-4c1e-8e7a-2b3c4d5e6f71\",\"interface\":\"logs\""));
         new DeliveryFlowKind(Loader).ValidateParameters(With(DeliveryOperations.DeleteLedger, "\"confirm\":\"dev\""));
+        new DeliveryFlowKind(Loader).ValidateParameters(With(
+            DeliveryOperations.Remove, "\"interface\":\"logs\",\"recordKeys\":[\"0d1e6f3c-9a4b-4c1e-8e7a-2b3c4d5e6f72\"],\"scope\":\"record\",\"purgeLedger\":true"));
+        new DeliveryFlowKind(Loader).ValidateParameters(With(DeliveryOperations.Remove, "\"filter\":{\"status\":\"failed\"},\"scope\":\"everything\""));
         new RetrievalFlowKind(Loader).ValidateParameters(With(null, "\"force\":true"));
         new CacheFlowKind(Loader).ValidateParameters(With(null, string.Empty));
         new CacheFlowKind(Loader).ValidateParameters(With(DeliveryOperations.Plan, "\"types\":[\"UnitOfMeasure\"]"));
@@ -174,6 +182,81 @@ public sealed class RunPayloadPerKindTests
 
         // A property written as false or empty asks for nothing, so no kind refuses it, as the delivery kind never has.
         new CacheFlowKind(Loader).ValidateParameters(new RunParameters { Payload = """{"force":false,"recordKeys":[],"tests":[]}""" });
+    }
+
+    /// <summary>
+    /// What a remove run takes (osdu/docs/reference/concepts/removal-and-reversal.md, Removing records from OSDU): how much of
+    /// each record goes, its records by key or by the listing filter, every part of that filter, and the ledger step only with
+    /// a scope that takes the records out of OSDU; nothing a removal does not do, and none of it on another operation.
+    /// </summary>
+    [Fact]
+    public void A_remove_run_names_how_much_goes_and_its_records_and_nothing_a_removal_does_not_do()
+    {
+        static string Refusal(string payload, string operation)
+            => Assert.Throws<SqlFlowException>(() => DeliveryRunPayload.Parse(payload).Validate(operation)).Message;
+
+        const string Key = "\"recordKeys\":[\"0d1e6f3c-9a4b-4c1e-8e7a-2b3c4d5e6f72\"]";
+        var byKey = DeliveryRunPayload.Parse("{\"interface\":\"logs\"," + Key + ",\"scope\":\"record\",\"purgeLedger\":true}");
+        byKey.Validate(DeliveryOperations.Remove);
+        Assert.Equal((RemovalChoice.Record, true), (byKey.Scope, byKey.PurgeLedger));
+        Assert.Equal("{" + Key + ",\"interface\":\"logs\",\"scope\":\"record\",\"purgeLedger\":true}", byKey.ToJson());
+
+        // The filter travels whole, the issue the listing was narrowed to included, and reads back as the listing it was.
+        var issue = ProblemSignature.Of("Unit 'ft' is not in the reference cache");
+        var listing = new RecordQuery
+        {
+            Status = RecordStatus.Failed,
+            Problem = issue,
+            Search = "NO_15",
+            DeliveredBySubmissionId = Guid.Parse("0d1e6f3c-9a4b-4c1e-8e7a-2b3c4d5e6f70"),
+        };
+        var byFilter = new DeliveryRunPayload { Filter = listing, Scope = RemovalChoice.Everything };
+        var back = DeliveryRunPayload.Parse(byFilter.ToJson());
+        back.Validate(DeliveryOperations.Remove);
+        Assert.Equal(listing, back.Filter);
+        Assert.Contains($"\"issue\":\"{ProblemSignature.Format(issue)}\"", byFilter.ToJson(), StringComparison.Ordinal);
+
+        // A removal takes as many keys as one removal may, past the thousand any other run is scoped to.
+        var keys = Enumerable.Range(0, DeliveryRunPayload.MaxRecordKeys + 1).Select(_ => Guid.NewGuid()).ToList();
+        DeliveryRunPayload.Parse(new DeliveryRunPayload { RecordKeys = keys, Scope = RemovalChoice.Record }.ToJson()).Validate(DeliveryOperations.Remove);
+        Assert.Contains(
+            "one run is scoped to at most 1000 records",
+            Refusal(new DeliveryRunPayload { RecordKeys = keys }.ToJson()!, DeliveryOperations.Deliver),
+            StringComparison.Ordinal);
+
+        Assert.Equal(
+            "payload scope is required by the remove operation: name how much of each record goes, record, previous, history or everything.",
+            Refusal("{" + Key + "}", DeliveryOperations.Remove));
+        Assert.StartsWith("payload names no records for the remove operation", Refusal("""{"scope":"record"}""", DeliveryOperations.Remove), StringComparison.Ordinal);
+        foreach (var (json, why) in new[]
+        {
+            ("{" + Key + ",\"filter\":{},\"scope\":\"record\"}", "by recordKeys or by filter, not both"),
+            ("{" + Key + ",\"scope\":\"history\",\"purgeLedger\":true}", "not with history"),
+            ("{" + Key + ",\"scope\":\"previous\",\"purgeLedger\":true}", "not with previous"),
+            ("{" + Key + ",\"scope\":\"record\",\"force\":true}", "passes no gate"),
+            ("{" + Key + ",\"scope\":\"record\",\"redeliver\":\"all\"}", "sends nothing"),
+            ("""{"filter":{},"scope":"record","interfaces":["logs"]}""", "one interface's ledger"),
+            ("""{"filter":{},"scope":"record","submissionId":"0d1e6f3c-9a4b-4c1e-8e7a-2b3c4d5e6f70"}""", "which can name a submission"),
+        })
+        {
+            Assert.Contains(why, Refusal(json, DeliveryOperations.Remove), StringComparison.Ordinal);
+        }
+
+        // None of it applies to another operation, and what it names is read as strictly as the rest of the payload.
+        Assert.StartsWith("payload scope does not apply to the deliver operation", Refusal("""{"scope":"record"}""", DeliveryOperations.Deliver), StringComparison.Ordinal);
+        Assert.StartsWith("payload filter does not apply to the sync operation", Refusal("""{"filter":{}}""", DeliveryOperations.Sync), StringComparison.Ordinal);
+        Assert.StartsWith(
+            "payload purgeLedger does not apply to the delete-ledger operation",
+            Refusal("""{"confirm":"dev","purgeLedger":true}""", DeliveryOperations.DeleteLedger),
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "payload scope must be one of record, previous, history or everything",
+            Assert.Throws<SqlFlowException>(() => DeliveryRunPayload.Parse("""{"scope":"purge"}""")).Message,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "payload filter must be a JSON object",
+            Assert.Throws<SqlFlowException>(() => DeliveryRunPayload.Parse("""{"filter":"failed"}""")).Message,
+            StringComparison.Ordinal);
     }
 
     /// <summary>

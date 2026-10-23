@@ -171,7 +171,7 @@ first one listed):
 
 | Kind | Operations |
 | --- | --- |
-| delivery | `deliver`, `plan`, `intake`, `drain`, `verify`, `replan`, `sync`, `reverse`, `undo`, `delete-ledger` |
+| delivery | `deliver`, `plan`, `intake`, `drain`, `verify`, `replan`, `sync`, `reverse`, `undo`, `remove`, `delete-ledger` |
 | cache | `refresh`, `plan` |
 | retrieval | `retrieve`, `plan` |
 | assertion | `test`, `plan` |

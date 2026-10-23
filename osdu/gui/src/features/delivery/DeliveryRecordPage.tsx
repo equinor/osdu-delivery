@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import { Navigate, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Eraser, Link2, RefreshCw, RotateCcw, Send, ShieldCheck, Trash2, Unlock } from "lucide-react";
@@ -9,7 +9,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { isApiError } from "@/api/client";
 import { useAuth } from "@/auth/AuthContext";
-import { deliveryApi, flowLedgerRoute, ledgerLabel, type DeliveryFlowScope, type DeliveryRecordRef, type RemovalScope } from "../../api/delivery";
+import { deliveryApi, flowLedgerRoute, ledgerLabel, type DeliveryFlowScope, type DeliveryRecordRef } from "../../api/delivery";
 import { artifactApi } from "../../api/artifacts";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { CorrelationError } from "@/components/CorrelationError";
@@ -32,8 +32,6 @@ import { RecordSourceTab } from "./RecordSourceTab";
 import { RedeliverDialog } from "./RedeliverDialog";
 import { ReleaseDialog } from "./ReleaseDialog";
 import { RemovalDialog } from "./RemovalDialog";
-import { TaskResultCard } from "./TaskResultCard";
-import { isTerminalTask, useComputeTask } from "./useComputeTask";
 import { useRecordOsduRead } from "./useRecordOsduRead";
 import { shortId } from "./idTail";
 
@@ -44,14 +42,6 @@ import { shortId } from "./idTail";
  */
 const RECORD_TABS = ["timeline", "source", "render", "osdu", "artifacts"] as const;
 type RecordTab = (typeof RECORD_TABS)[number];
-
-/** What the task card under the header calls a removal this page queued, by its scope. */
-const REMOVAL_LABELS: Record<RemovalScope, string> = {
-  record: "Remove from OSDU",
-  previous: "Restore the previous version",
-  history: "Purge history in OSDU",
-  everything: "Purge from OSDU",
-};
 
 /** The tabs the page's earlier tabs went by, and the tab each now lands on, so an old link still lands somewhere. */
 const EARLIER_TABS = new Map<string, RecordTab>([
@@ -95,8 +85,6 @@ function DeliveryRecordContent({ flowId, deliveryKey }: DeliveryRecordRef) {
   const [redeliverOpen, setRedeliverOpen] = useState(false);
   const [adoptOpen, setAdoptOpen] = useState(false);
   const [removeOpen, setRemoveOpen] = useState(false);
-  // The removal a node runs for this record, shown under the header whatever tab is open, since it changes the record.
-  const [removal, setRemoval] = useState<{ taskId: string; label: string } | null>(null);
   // A render of the record from its current source row, with a read of what OSDU holds beside it, shown on the Render
   // tab where it was asked for; kept here so it is still there after a look at another tab.
   const [renderResults, setRenderResults] = useState<RenderResults | null>(null);
@@ -139,19 +127,10 @@ function DeliveryRecordContent({ flowId, deliveryKey }: DeliveryRecordRef) {
     queryFn: () => artifactApi.recordArtifacts(ref, RECORD_ARTIFACTS_SHOWN),
     refetchInterval: 15000,
   });
-  const removalTask = useComputeTask(removal?.taskId ?? null);
   useTabTitle(query.data ? (query.data.record.label ?? query.data.record.sourceKey) : undefined);
 
   const refresh = useCallback(() => void queryClient.invalidateQueries({ queryKey: ["delivery"] }), [queryClient]);
 
-  // A removal that finished on a node changed the ledger (the record is now deleted and blocked): refetch the
-  // record once the task reaches a terminal state, so the page reflects it without a manual reload.
-  const finishedRemoval = isTerminalTask(removalTask.data) ? removalTask.data?.taskId ?? null : null;
-  useEffect(() => {
-    if (finishedRemoval !== null) {
-      refresh();
-    }
-  }, [finishedRemoval, refresh]);
   const fail = (error: unknown) => toast.error(isApiError(error) ? error.detail ?? error.title : String(error));
 
   const verify = useMutation({
@@ -378,8 +357,6 @@ function DeliveryRecordContent({ flowId, deliveryKey }: DeliveryRecordRef) {
 
       <RecordMilestones record={record} attempts={attempts.data} chain={chain.data} />
 
-      {removal !== null && <TaskResultCard key={removal.taskId} label={removal.label} task={removalTask.data} testId="record-task" />}
-
       <Tabs value={tab} onValueChange={(next) => setTab(tabFromParam(next))}>
         <TabsList data-testid="record-tabs">
           <TabsTrigger value="timeline" data-testid="record-tab-timeline">Timeline</TabsTrigger>
@@ -489,13 +466,13 @@ function DeliveryRecordContent({ flowId, deliveryKey }: DeliveryRecordRef) {
             refresh();
           }}
           onQueued={(accepted) => {
-            setRemoval({
-              taskId: accepted.taskId,
-              label: REMOVAL_LABELS[accepted.scope],
-            });
-            toast.success(accepted.scope === "previous"
-              ? "Restoring the previous version: queued on a node."
-              : accepted.purgeLedger ? "Removal, then deletion from the ledger: queued on a node." : "Removal queued on a node.");
+            // A remove run of the flow: the record's own reads poll, so its state moves once the run has removed it.
+            toast.success(
+              accepted.scope === "previous"
+                ? "Restoring the previous version: queued as a run."
+                : accepted.purgeLedger ? "Removal, then deletion from the ledger: queued as a run." : "Removal: queued as a run.",
+              { action: { label: "Open run", onClick: () => navigate(`/runs/${accepted.runId}`) } });
+            refresh();
           }}
         />
       )}

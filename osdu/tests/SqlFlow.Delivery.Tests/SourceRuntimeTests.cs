@@ -535,6 +535,82 @@ public sealed class SourceRuntimeTests : IDisposable
     }
 
     [Fact]
+    public async Task A_remove_run_takes_the_records_it_names_out_of_osdu_in_its_interface_and_out_of_the_ledger_when_asked()
+    {
+        var source = Load(SourceYaml());
+        var engine = Engine(await EstateAsync());
+        Assert.True((await RunAsync(engine, source)).Success);
+        var ledger = engine.Ledger!;
+        var logs = FlowId.Of("wells/welllogs");
+        var keys = (await ledger.ListKeysAsync(logs, new RecordQuery(), 10)).Take(2).Select(k => k.Value).ToList();
+
+        // A source of several interfaces removes in one interface's ledger, which the run has to name.
+        var nameless = await RunAsync(engine, source, DeliveryOperations.Remove, new DeliveryRunPayload { Filter = new RecordQuery(), Scope = RemovalChoice.Record });
+        Assert.False(nameless.Success);
+        Assert.Contains("a removal works in one interface's ledger, which 'interface' names in its payload", nameless.Error, StringComparison.Ordinal);
+        Assert.Empty(_protocols["welllogs"].Deletes);
+
+        var result = await RunAsync(engine, source, DeliveryOperations.Remove, new DeliveryRunPayload
+        {
+            Interface = "welllogs",
+            RecordKeys = keys,
+            Scope = RemovalChoice.Record,
+            PurgeLedger = true,
+        });
+
+        Assert.True(result.Success, result.Error);
+        var outcome = Assert.IsType<RemoveRunOutcome>(result.Result);
+        Assert.Equal(("record", 2, 2, 2, 0), (outcome.Scope, outcome.Selected, outcome.Removed, outcome.Purged, outcome.Failed));
+        Assert.Equal(2, outcome.RowsLoaded);
+        Assert.Equal(2, _protocols["welllogs"].Deletes.Count);
+        Assert.All(_protocols["welllogs"].Deletes, d => Assert.Equal(RemovalScope.Record, d.Scope));
+        Assert.Empty(_protocols["wellbores"].Deletes);
+
+        // What OSDU answered for is gone from the ledger, and the wellbores the well logs refer to are as they were.
+        Assert.Equal(3, (await ledger.StatsAsync(logs, _clock.GetUtcNow().UtcDateTime)).Total);
+        Assert.Equal(2, (await ledger.StatsAsync(FlowId.Of("wells/wellbores"), _clock.GetUtcNow().UtcDateTime)).Delivered);
+
+        // The removal's activity names the run that made it, and the run's artifact says what it did, for the run page.
+        var activity = Assert.Single(await ledger.ListActivitiesAsync(new ActivityQuery { FlowId = logs, Kind = "delete" }));
+        Assert.Equal(result.RunId, activity.RunId);
+        Assert.Equal("completed", activity.Outcome);
+        var artifact = JsonDocument.Parse(await File.ReadAllTextAsync(Path.Combine(result.RunDirectory!, "run.json"))).RootElement.GetProperty("result");
+        Assert.Equal(("remove", 2L, 2), (artifact.GetProperty("operation").GetString(), artifact.GetProperty("rowsLoaded").GetInt64(), artifact.GetProperty("purged").GetInt32()));
+    }
+
+    [Fact]
+    public async Task A_remove_run_ends_failed_when_osdu_refuses_a_record_and_still_says_what_became_of_each()
+    {
+        var source = Load(SourceYaml());
+        var engine = Engine(await EstateAsync());
+        Assert.True((await RunAsync(engine, source)).Success);
+        var ledger = engine.Ledger!;
+        var logs = FlowId.Of("wells/welllogs");
+        var refused = (await ledger.GetRecordAsync(logs, (await ledger.ListKeysAsync(logs, new RecordQuery(), 10))[0]))!;
+        _protocols["welllogs"].Refuse.Add(refused.TargetId!);
+
+        // Every record the listing matches, resolved by the run itself.
+        var result = await RunAsync(engine, source, DeliveryOperations.Remove, new DeliveryRunPayload
+        {
+            Interface = "welllogs",
+            Filter = new RecordQuery { Status = RecordStatus.Delivered },
+            Scope = RemovalChoice.Record,
+            PurgeLedger = true,
+        });
+
+        Assert.False(result.Success);
+        var outcome = Assert.IsType<RemoveRunOutcome>(result.Result);
+        Assert.Equal((5, 4, 1, 4), (outcome.Selected, outcome.Removed, outcome.Failed, outcome.Purged));
+        Assert.Equal(refused.DeliveryKey.Value, Assert.Single(outcome.Records, r => r.Outcome == "failed").DeliveryKey);
+        Assert.Contains("1 of 5 record(s) of 'wells/welllogs' could not be removed from OSDU: ", result.Error, StringComparison.Ordinal);
+        Assert.Contains("the fake target refuses this removal", result.Error, StringComparison.Ordinal);
+
+        // The record OSDU refused stays in the ledger as it was; the others went from OSDU and from the ledger.
+        Assert.Equal(RecordStatus.Delivered, (await ledger.GetRecordAsync(logs, refused.DeliveryKey))!.Status);
+        Assert.Equal(1, (await ledger.StatsAsync(logs, _clock.GetUtcNow().UtcDateTime)).Total);
+    }
+
+    [Fact]
     public async Task The_preflight_refuses_interfaces_that_refer_to_each_other_until_after_says_which_goes_first()
     {
         // Both wellbore interfaces fill osdu.data.KickOffWellbore, which refers to wellbores: each could refer to the other's.

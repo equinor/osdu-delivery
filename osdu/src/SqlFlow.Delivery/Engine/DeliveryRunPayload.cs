@@ -3,6 +3,7 @@ using System.Text.Json;
 using System.Text.Json.Nodes;
 using SqlFlow.Core;
 using SqlFlow.Core.Runs;
+using SqlFlow.Delivery.Engine.Operations;
 using SqlFlow.Delivery.Ledger;
 using SqlFlow.Delivery.Data;
 using SqlFlow.Delivery.Model;
@@ -88,7 +89,10 @@ public static class DeliveryOperations
     /// (osdu/docs/reference/flow/inventory.md, What a removal does): an inventory flow's operation, run only for a flow
     /// whose document allows it. A removal flow's default too: compare the keys its sources hold with the ledgers of the
     /// delivery flows it names, and take out of OSDU, into those ledgers, the records whose keys the source no longer holds
-    /// (osdu/docs/reference/flow/removal.md, A run).
+    /// (osdu/docs/reference/flow/removal.md, A run). A delivery flow's operation as well: remove the records of one ledger
+    /// the payload names (<c>recordKeys</c>, or the listing <c>filter</c> every match of which goes) to the extent its
+    /// <c>scope</c> asks, and with <c>purgeLedger</c> delete each one OSDU answered for from the ledger too
+    /// (osdu/docs/reference/concepts/removal-and-reversal.md, Removing records from OSDU).
     /// </summary>
     public const string Remove = "remove";
 
@@ -286,8 +290,8 @@ public static class RedeliverScopes
 
 /// <summary>
 /// The kind-owned arguments of a run of this module's kinds (<see cref="RunParameters.Payload"/>): for a delivery run,
-/// whether it forces a re-plan, the submission it works on, the records it is scoped to and what of them it redelivers, and
-/// the key slices a fan-out member plans; the tests, dimensions and inventories a run of the other kinds selects; and the
+/// whether it forces a re-plan, the submission it works on, the records it is scoped to and what of them it redelivers or
+/// removes, and the key slices a fan-out member plans; the tests, dimensions and inventories a run of the other kinds selects; and the
 /// central configuration the control plane supplies to every one of them. Parsed strictly: an unknown property, a wrong
 /// type or a value out of range is refused with a message naming it, at every trust boundary the platform validates a run
 /// at, and each kind refuses every property it does not take (<see cref="RefuseOtherThan"/>).
@@ -330,6 +334,15 @@ public sealed record DeliveryRunPayload
 
     /// <summary>The partition a run deleting the ledger, an inventory flow's remove run, or a removal flow's approved run acts in, named by whoever asked for it as confirmation.</summary>
     public const string ConfirmProperty = "confirm";
+
+    /// <summary>How much of each record a delivery flow's remove run takes: record, previous, history or everything.</summary>
+    public const string ScopeProperty = "scope";
+
+    /// <summary>The listing a delivery flow's remove run empties: every record of the ledger it matches, resolved when the run removes them.</summary>
+    public const string FilterProperty = "filter";
+
+    /// <summary>Whether a delivery flow's remove run also deletes from the ledger each record OSDU answered for.</summary>
+    public const string PurgeLedgerProperty = "purgeLedger";
 
     /// <summary>The tests of an assertion flow a run runs, by name.</summary>
     public const string TestsProperty = "tests";
@@ -375,8 +388,8 @@ public sealed record DeliveryRunPayload
 
     private static readonly string[] Properties =
         [ForceProperty, SubmissionIdProperty, RunIdProperty, RecordKeysProperty, RedeliverProperty, RerenderProperty, SlicesProperty, RateShareProperty, InterfaceProperty, InterfacesProperty, ReferencesProperty,
-            PartitionReferencesProperty, ConfirmProperty, TestsProperty, TagsProperty, DimensionsProperty, InventoriesProperty, RemovalProperty, SelectionProperty, TypesProperty,
-            EntriesProperty, ApproveProperty];
+            PartitionReferencesProperty, ConfirmProperty, ScopeProperty, FilterProperty, PurgeLedgerProperty, TestsProperty, TagsProperty, DimensionsProperty, InventoriesProperty, RemovalProperty,
+            SelectionProperty, TypesProperty, EntriesProperty, ApproveProperty];
 
     /// <summary>
     /// For every property a run asks something by (all but the central configuration, which every kind takes), the runs that
@@ -395,6 +408,9 @@ public sealed record DeliveryRunPayload
         [InterfaceProperty] = "only a delivery flow's runs name an interface",
         [InterfacesProperty] = "only a delivery flow's runs select interfaces",
         [ConfirmProperty] = "only a delivery flow's run deleting the ledger, an inventory flow's remove run and a removal flow's approved run name the partition they act in",
+        [ScopeProperty] = "only a delivery flow's remove run names how much of each record it removes",
+        [FilterProperty] = "only a delivery flow's remove run names the listing it empties",
+        [PurgeLedgerProperty] = "only a delivery flow's remove run deletes what it removes from the ledger",
         [TestsProperty] = "only an assertion flow's runs select tests",
         [TagsProperty] = "only an assertion flow's runs select tests by tag",
         [DimensionsProperty] = "only a dimension flow's runs select dimensions",
@@ -408,7 +424,8 @@ public sealed record DeliveryRunPayload
 
     /// <summary>The properties a delivery flow's runs take, besides the central configuration; which operation takes which is <see cref="Validate"/>'s.</summary>
     private static readonly string[] DeliveryProperties =
-        [ForceProperty, SubmissionIdProperty, RunIdProperty, RecordKeysProperty, RedeliverProperty, RerenderProperty, SlicesProperty, RateShareProperty, InterfaceProperty, InterfacesProperty, ConfirmProperty];
+        [ForceProperty, SubmissionIdProperty, RunIdProperty, RecordKeysProperty, RedeliverProperty, RerenderProperty, SlicesProperty, RateShareProperty, InterfaceProperty, InterfacesProperty, ConfirmProperty,
+            ScopeProperty, FilterProperty, PurgeLedgerProperty];
 
     private static readonly string[] RemovalProperties = ["finding", "scope", "expected", "ids", "selection"];
 
@@ -476,6 +493,26 @@ public sealed record DeliveryRunPayload
     /// deletion is never one click away from a trigger dialog.
     /// </summary>
     public string? Confirm { get; init; }
+
+    /// <summary>
+    /// How much of each record a remove run takes (osdu/docs/reference/concepts/removal-and-reversal.md, Removing records
+    /// from OSDU): the record reversibly, the latest version given back its previous one, the earlier versions, or the record
+    /// and every version. Only a remove run names it, and it has to.
+    /// </summary>
+    public RemovalChoice? Scope { get; init; }
+
+    /// <summary>
+    /// The listing a remove run empties instead of naming its records by <see cref="RecordKeys"/>: every record of the ledger
+    /// it matches, resolved against the ledger when the run removes them, so "every record this submission delivered" travels
+    /// as a filter rather than as thousands of keys. Only a remove run names it.
+    /// </summary>
+    public RecordQuery? Filter { get; init; }
+
+    /// <summary>
+    /// Whether a remove run that takes its records out of OSDU (<see cref="Scope"/> record or everything) also deletes from the
+    /// ledger each record OSDU answered for, keeping one line of it. Only a remove run asks it.
+    /// </summary>
+    public bool PurgeLedger { get; init; }
 
     /// <summary>
     /// The central configuration the control plane supplied with this run: the values a flow's ${env:NAME} references
@@ -573,6 +610,9 @@ public sealed record DeliveryRunPayload
         Add(Interface is not null, InterfaceProperty);
         Add(Interfaces.Count > 0, InterfacesProperty);
         Add(Confirm is not null, ConfirmProperty);
+        Add(Scope is not null, ScopeProperty);
+        Add(Filter is not null, FilterProperty);
+        Add(PurgeLedger, PurgeLedgerProperty);
         Add(Tests.Count > 0, TestsProperty);
         Add(Tags.Count > 0, TagsProperty);
         Add(Dimensions.Count > 0, DimensionsProperty);
@@ -699,6 +739,9 @@ public sealed record DeliveryRunPayload
             Interface = root[InterfaceProperty] is null ? null : Text(root[InterfaceProperty], InterfaceProperty),
             Interfaces = Names(root[InterfacesProperty]),
             Confirm = root[ConfirmProperty] is null ? null : Text(root[ConfirmProperty], ConfirmProperty),
+            Scope = root[ScopeProperty] is null ? null : RemovalScopeOf(root[ScopeProperty]),
+            Filter = root[FilterProperty] is null ? null : ListingFilter(root[FilterProperty]),
+            PurgeLedger = Boolean(root, PurgeLedgerProperty),
             References = ReferenceMap(root[ReferencesProperty], ReferencesProperty),
             PartitionReferences = PartitionReferenceMap(root[PartitionReferencesProperty]),
             Tests = Selection(root[TestsProperty], TestsProperty, "test names"),
@@ -720,7 +763,14 @@ public sealed record DeliveryRunPayload
     public void Validate(string operation)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(operation);
-        if (RecordKeys.Count > MaxRecordKeys)
+
+        // A removal takes as many records as one removal may; every other run is scoped to a run's worth of them.
+        if (operation == DeliveryOperations.Remove && RecordKeys.Count > RemovalLimits.MaxSelection)
+        {
+            throw new SqlFlowException($"payload recordKeys holds {RecordKeys.Count} keys; one removal takes at most {RemovalLimits.MaxSelection} records.");
+        }
+
+        if (operation != DeliveryOperations.Remove && RecordKeys.Count > MaxRecordKeys)
         {
             throw new SqlFlowException($"payload recordKeys holds {RecordKeys.Count} keys; one run is scoped to at most {MaxRecordKeys} records.");
         }
@@ -753,6 +803,13 @@ public sealed record DeliveryRunPayload
         if (Confirm is not null && operation != DeliveryOperations.DeleteLedger)
         {
             throw new SqlFlowException($"payload {ConfirmProperty} does not apply to the {operation} operation: only a run deleting the ledger names the partition it acts in.");
+        }
+
+        if (operation != DeliveryOperations.Remove)
+        {
+            Refuse(Scope is not null, ScopeProperty, operation, "only a remove run names how much of each record it removes");
+            Refuse(Filter is not null, FilterProperty, operation, "only a remove run names the listing it empties");
+            Refuse(PurgeLedger, PurgeLedgerProperty, operation, "only a remove run deletes what it removes from the ledger");
         }
 
         if (Redeliver is { } scope && !RedeliverScopes.Names.Contains(scope, StringComparer.OrdinalIgnoreCase))
@@ -882,6 +939,30 @@ public sealed record DeliveryRunPayload
                 Refuse(RateShare is not null, RateShareProperty, operation, "only a fan-out member shares its coordinating run's rate limit");
                 Refuse(Slices.Count > 0, SlicesProperty, operation, "only an intake member plans slices");
                 break;
+            case DeliveryOperations.Remove:
+                if (Scope is not { } removing)
+                {
+                    throw new SqlFlowException(
+                        $"payload {ScopeProperty} is required by the {operation} operation: name how much of each record goes, record, previous, history or everything.");
+                }
+
+                if (RecordKeys.Count == 0 && Filter is null)
+                {
+                    throw new SqlFlowException(
+                        $"payload names no records for the {operation} operation: a removal names them by {RecordKeysProperty}, or by {FilterProperty}, the listing every match of which it removes.");
+                }
+
+                Refuse(RecordKeys.Count > 0 && Filter is not null, FilterProperty, operation, "a removal names its records by recordKeys or by filter, not both");
+                Refuse(PurgeLedger && removing is not (RemovalChoice.Record or RemovalChoice.Everything), PurgeLedgerProperty, operation,
+                    $"a record is deleted from the ledger only with a removal that takes it out of OSDU (record or everything), not with {RemovalScopes.Wire(removing)}");
+                Refuse(Force, ForceProperty, operation, "a removal passes no gate: it takes the records it names");
+                Refuse(SubmissionId is not null, SubmissionIdProperty, operation, "a removal names its records by recordKeys or by a filter, which can name a submission");
+                Refuse(Redeliver is not null, RedeliverProperty, operation, "a removal sends nothing the flow renders");
+                Refuse(Rerender, RerenderProperty, operation, "a removal renders nothing");
+                Refuse(RateShare is not null, RateShareProperty, operation, "only a fan-out member shares its coordinating run's rate limit");
+                Refuse(Slices.Count > 0, SlicesProperty, operation, "only an intake member plans slices");
+                Refuse(Interfaces.Count > 0, InterfacesProperty, operation, "a removal works in one interface's ledger, which 'interface' names");
+                break;
             case DeliveryOperations.Undo:
                 Refuse(RateShare is not null, RateShareProperty, operation, "only a fan-out member shares its coordinating run's rate limit");
                 Refuse(SubmissionId is not null, SubmissionIdProperty, operation, "an undo takes what every unfinished delivery of the ledger left, not a submission's");
@@ -965,6 +1046,21 @@ public sealed record DeliveryRunPayload
         if (Confirm is { } confirm)
         {
             root[ConfirmProperty] = confirm;
+        }
+
+        if (Scope is { } removalScope)
+        {
+            root[ScopeProperty] = RemovalScopes.Wire(removalScope);
+        }
+
+        if (Filter is { } listing)
+        {
+            root[FilterProperty] = JsonNode.Parse(RemovalFilter.ToJson(listing));
+        }
+
+        if (PurgeLedger)
+        {
+            root[PurgeLedgerProperty] = true;
         }
 
         if (References.Count > 0)
@@ -1103,6 +1199,10 @@ public sealed record DeliveryRunPayload
             ? number
             : throw new SqlFlowException($"payload {property} must be the number of what it names, a whole number of at least 1.");
 
+    /// <summary>
+    /// The delivery keys a payload names, at most as many as one removal takes; how many the operation it travels with takes is
+    /// <see cref="Validate"/>'s to say.
+    /// </summary>
     private static IReadOnlyList<Guid> Keys(JsonNode? node)
     {
         if (node is null)
@@ -1115,13 +1215,25 @@ public sealed record DeliveryRunPayload
             throw new SqlFlowException($"payload {RecordKeysProperty} must be an array of delivery key UUIDs.");
         }
 
-        if (array.Count > MaxRecordKeys)
+        if (array.Count > RemovalLimits.MaxSelection)
         {
-            throw new SqlFlowException($"payload {RecordKeysProperty} holds {array.Count} keys; one run is scoped to at most {MaxRecordKeys} records.");
+            throw new SqlFlowException($"payload {RecordKeysProperty} holds {array.Count} keys; a run names at most {RemovalLimits.MaxSelection} records.");
         }
 
         return array.Select(item => Id(item, RecordKeysProperty)).ToList();
     }
+
+    /// <summary>How much of each record a remove run takes, by its name on the wire, which has to be one of the four exactly.</summary>
+    private static RemovalChoice RemovalScopeOf(JsonNode? node)
+        => RemovalScopes.TryParse(Text(node, ScopeProperty), out var scope)
+            ? scope
+            : throw new SqlFlowException($"payload {ScopeProperty} must be one of record, previous, history or everything.");
+
+    /// <summary>The listing a remove run empties, read as strictly as the payload around it: every part of it, and nothing else.</summary>
+    private static RecordQuery ListingFilter(JsonNode? node)
+        => node is JsonObject filter
+            ? RemovalFilter.FromJson(filter.ToJsonString())
+            : throw new SqlFlowException($"payload {FilterProperty} must be a JSON object: the listing filter every match of which the run removes.");
 
     /// <summary>
     /// The central configuration a payload carries: a JSON object of reference name to value, refused property by

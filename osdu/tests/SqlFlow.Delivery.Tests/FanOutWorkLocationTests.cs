@@ -18,7 +18,7 @@ public sealed class FanOutWorkLocationTests
         var reason = FlowRuntime.WorkStaysOnThisNode(work);
 
         Assert.Equal(
-            $"source.work '{work}' is a folder in this node's copy of the repository, which no other node reads; put it on storage every node reaches (a storage URI) to fan out",
+            $"source.work '{work}' is a folder in this node's copy of the repository, which no other node reads; write it on storage every node reaches, such as the deployment's (${{env:LANDING_URL}}/.work/...), to fan out",
             reason);
     }
 

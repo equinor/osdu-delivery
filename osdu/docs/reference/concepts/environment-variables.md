@@ -125,7 +125,7 @@ compose and Kubernetes layouts do. The examples in this documentation use these 
 | --- | --- |
 | `${env:OSDU_DATA_DB}` | The data database (`OsduData`): the pre flows land the source files there, the ingestion flows load the keyed tables, and the delivery flow's `source.connection` reads them, each in a schema of its own. The shipped deployment assets give it under this name to every run (Bicep, Terraform) or to the control plane and the nodes (compose, Kubernetes). |
 | `${env:SQLFLOW_CATALOG_DB}` | The metadata database (`OsduDelivery`), for a flow that reads the `osdu` schema's dimension views (`OsduDelivery.osdu.v_dim_<view>`). The control plane has it as SQLFlow's catalog; the shipped assets give it to the runs as well, for those flows only: a node itself never opens it. |
-| `${env:LANDING_URL}` | The landing storage the Bicep and Terraform deployments create or adopt (`abfss://<container>@<account>.dfs.core.windows.net`), for a flow whose source location names it (`${env:LANDING_URL}/<folder>`). |
+| `${env:LANDING_URL}` | The landing storage the Bicep and Terraform deployments create or adopt (`abfss://<container>@<account>.dfs.core.windows.net`), for a flow whose source location names it (`${env:LANDING_URL}/<folder>`), and for a delivery flow's work location (`${env:LANDING_URL}/.work/<flow>`), which every node of a fan-out reaches. |
 | `${env:OSDU_URL}` | The OSDU endpoint (`target.endpoint`). |
 | `${env:OSDU_TOKEN_URL}`, `${env:OSDU_CLIENT_ID}`, `${env:OSDU_CLIENT_SECRET}`, `${env:OSDU_SCOPE}` | The OAuth2 client-credentials exchange (`target.auth`). |
 

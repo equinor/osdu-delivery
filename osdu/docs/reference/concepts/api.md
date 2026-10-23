@@ -89,9 +89,9 @@ in the `X-Osdu-Partition` header (the title bar's partition), else every partiti
 waits on (a probe, a read-back, a source read, a preview, a scope's values, every explorer read) runs in the control
 plane with the flow's own credentials and answers in the response; a failure is a problem saying which side failed: 502
 (OSDU or the ingestion tables refused or failed), 504 (no answer in time) or 422 (the flow cannot serve the request),
-every resolved secret redacted. A value check and a removal are compute tasks for a node: 202 with
-`/api/v1/compute/tasks/{taskId}` to poll. A redelivery, a sync, a verify, a reversal and a ledger deletion are runs: 202
-with `/api/v1/runs/{runId}` to follow. The control plane never delivers.
+every resolved secret redacted. A value check is a compute task for a node: 202 with `/api/v1/compute/tasks/{taskId}` to
+poll. A redelivery, a sync, a verify, a removal, a reversal and a ledger deletion are runs: 202 with `/api/v1/runs/{runId}`
+to follow. The control plane never delivers.
 
 **Paging.** `page`/`pageSize` lists use the platform's pages (50 by default, at most 200). Cursor lists take `after` and
 `limit` and answer `next`, the value to pass as `after`.
@@ -174,8 +174,8 @@ Each runs in the control plane with the flow's credentials and answers JSON; not
 | Route | Policy | Parameters | Answers |
 | --- | --- | --- | --- |
 | `POST /flows/{pipelineId}/records/remove/preview` | operate | body as `remove`; `interface`, `partition` | What a removal would take away, and from which target. |
-| `POST /flows/{pipelineId}/records/remove` | operate | body `scope` (`record`, `previous`, `history`, `everything`), `keys` or `filter` with `expected`, `purgeLedger`; `interface`, `partition` | 202 with a compute task that removes the records from OSDU. `purgeLedger` (with `record` or `everything` only) also deletes from the ledger each record OSDU answered for. |
-| `POST /records/{flowId}/{key}/delete` | operate | body `scope`, `purgeLedger` | The same removal for one record. |
+| `POST /flows/{pipelineId}/records/remove` | operate | body `scope` (`record`, `previous`, `history`, `everything`), `keys` or `filter` with `expected`, `purgeLedger`, `pool`; `interface`, `partition` | 202 with `runId`, `status`, `scope`, `records` and `purgeLedger`: the `remove` run of the flow that removes the records from OSDU. `purgeLedger` (with `record` or `everything` only) also deletes from the ledger each record OSDU answered for. |
+| `POST /records/{flowId}/{key}/delete` | operate | body `scope`, `purgeLedger`, `pool` | The same removal for one record. |
 | `POST /flows/{pipelineId}/records/purge` | operate | body `keys` or `filter` with `expected`, or neither; `interface`, `partition` | Deletes records already removed from OSDU from the ledger, asking nothing of OSDU; a record OSDU may still hold is counted as left. |
 | `POST /records/{flowId}/{key}/purge` | operate | | The same for one record; 409 for a record OSDU may still hold. |
 | `POST /flows/{pipelineId}/ledger/delete` | operate | body `confirm` (the partition the ledger is kept in), `pool`; `partition` | 202 with the run that removes every record of every interface from OSDU, then deletes each ledger. 400 without a matching `confirm`; 409 when no ledger exists or a deletion is already queued or running. |

@@ -1703,6 +1703,8 @@ export interface DeliveryRemovalRequest {
    * when, its OSDU id and last version). Refused with the other scopes.
    */
   purgeLedger?: boolean;
+  /** The pool the remove run is queued on; any node when absent. */
+  pool?: string | null;
 }
 
 /** What a removal would act on, and from where: the contents of the confirmation. */
@@ -1752,9 +1754,12 @@ export interface DeliveryLedgerDeleteAccepted {
   interfaces: string[];
 }
 
-/** A removal was queued on a node. */
+/**
+ * A removal was queued as a remove run of the flow, listed with its runs: the run to watch, how many records it acts on, and
+ * whether it deletes them from the ledger too.
+ */
 export interface DeliveryRemovalAccepted {
-  taskId: string;
+  runId: string;
   status: RunStatus;
   scope: RemovalScope;
   records: number;
@@ -4042,7 +4047,7 @@ export const deliveryApi = {
   /** What a removal would act on, without removing anything: the confirmation's contents. */
   previewRemoval: (pipelineId: string, request: DeliveryRemovalRequest, scope?: DeliveryFlowScope) =>
     post<DeliveryRemovalPreview>(flowPath(pipelineId, "/records/remove/preview", scope), request),
-  /** Queues the removal of the selected records, or of every record the filter matches, on a node. */
+  /** Queues the remove run of the selected records, or of every record the filter matches: a run of the flow, listed with its runs. */
   removeRecords: (pipelineId: string, request: DeliveryRemovalRequest, scope?: DeliveryFlowScope) =>
     post<DeliveryRemovalAccepted>(flowPath(pipelineId, "/records/remove", scope), request),
   /**

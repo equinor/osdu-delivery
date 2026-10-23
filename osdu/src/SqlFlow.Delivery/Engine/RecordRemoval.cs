@@ -63,8 +63,10 @@ public sealed record RemovalSelection
                 search = Filter.Search,
                 mode = Filter.Mode.ToString().ToLowerInvariant(),
                 submissionId = Filter.SubmissionId,
+                deliveredBySubmissionId = Filter.DeliveredBySubmissionId,
                 runId = Filter.RunId,
                 drifted = Filter.Drifted,
+                issue = Filter.Problem is { } issue ? ProblemSignature.Format(issue) : null,
             },
         };
 }

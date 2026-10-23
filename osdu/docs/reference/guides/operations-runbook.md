@@ -310,8 +310,10 @@ sqlflow run flows/welldb-wellbore-03-delivery.yaml --operation sync --set partit
 **Do:** **Remove** on the record's page or the Records tab selection. Pick **Remove the record** (reversible),
 **Restore the previous version**, **Purge earlier versions** or **Purge everything**, and, with a choice that leaves them
 out of OSDU, **Delete from the ledger** if their history should go too. The dialog names the exact call for the flow's
-route and asks for the partition to be typed back for anything permanent. A removed record is delivered again by the next
-run that reads its row; a row that should stay out of OSDU is taken out of the source.
+route and asks for the partition to be typed back for anything permanent. The removal is a `remove` run of the flow:
+follow it under **Runs** or with **Open run** on the notice. It waits for a run of the pipeline in progress to end, and a
+removal OSDU refused records of ends failed, naming them; ask again for those once what refused them is settled. A removed
+record is delivered again by the next run that reads its row; a row that should stay out of OSDU is taken out of the source.
 See [Removal and reversal](../concepts/removal-and-reversal.md#removing-records-from-osdu).
 
 ## A run delivered the wrong thing

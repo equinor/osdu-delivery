@@ -2131,7 +2131,7 @@
       "path": "source.work",
       "type": "string",
       "required": true,
-      "description": "Where the intake writes its work batches (the rendered documents the drains read back): a directory or storage prefix the nodes can write, relative to the flow file when relative. It takes `{parameter}` tokens, whose values must not contain `/`, `\\` or `..`. A `${...}` reference is refused: a location is not resolved from one; vary it with a `{parameter}` token. A relative folder is in each node's own copy of the repository, so a flow with one never fans out; a storage URI, or an absolute path on storage every node mounts, lets it."
+      "description": "Where the intake writes its work batches (the rendered documents the drains read back): a directory or storage prefix the nodes can write, relative to the flow file when relative. It takes `{parameter}` tokens, whose values must not contain `/`, `\\` or `..`. It may open with a `${...}` reference (`${env:LANDING_URL}/.work/welllog/{logSource}`), which the run resolves with its own values as it opens; a reference anywhere else in it is refused. A relative folder is in each node's own copy of the repository, so a flow with one never fans out; a storage URI, or an absolute path on storage every node mounts, lets it."
     },
     {
       "path": "target",

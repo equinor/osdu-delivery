@@ -1123,9 +1123,9 @@ internal sealed class FixedProtocolFactory : IProtocolFactory
 }
 
 /// <summary>
-/// The contract the API and the node share: the scope on the wire, and the listing filter a removal carries when
-/// the operator asked for "every record this matches". A drift here would aim a removal at the wrong records or at
-/// the wrong depth, so it is pinned rather than assumed.
+/// The contract the API and the remove run share: the scope on the wire, the flag that deletes from the ledger too, and the
+/// listing filter a removal carries when the operator asked for "every record this matches". A drift here would aim a
+/// removal at the wrong records or at the wrong depth, so it is pinned rather than assumed.
 /// </summary>
 [Trait("Category", "Integration")]
 public class RemovalContractTests
@@ -1137,10 +1137,14 @@ public class RemovalContractTests
     [InlineData("everything", RemovalChoice.Everything)]
     public void Scopes_round_trip_through_their_wire_names(string wire, RemovalChoice scope)
     {
-        Assert.Equal(scope, Engine.Operations.RemovalScopes.Parse(wire));
         Assert.Equal(wire, Engine.Operations.RemovalScopes.Wire(scope));
         Assert.True(Engine.Operations.RemovalScopes.TryParse(wire, out var parsed));
         Assert.Equal(scope, parsed);
+
+        // The remove run reads the scope its payload carries by the same names, and writes it back the same way.
+        var payload = DeliveryRunPayload.Parse($$"""{"scope":"{{wire}}","recordKeys":["11111111-1111-1111-1111-111111111111"]}""");
+        Assert.Equal(scope, payload.Scope);
+        Assert.Contains($"\"scope\":\"{wire}\"", payload.ToJson(), StringComparison.Ordinal);
     }
 
     [Theory]
@@ -1160,20 +1164,25 @@ public class RemovalContractTests
 
     [Theory]
     [InlineData(null, false)]
-    [InlineData("", false)]
     [InlineData("false", false)]
     [InlineData("true", true)]
     public void The_extra_step_s_flag_reads_only_true_or_false(string? wire, bool purge)
-        => Assert.Equal(purge, Engine.Operations.RemovalScopes.ParsePurgeLedger(wire));
+    {
+        var json = wire is null ? """{"scope":"record"}""" : $$"""{"scope":"record","purgeLedger":{{wire}}}""";
+        Assert.Equal(purge, DeliveryRunPayload.Parse(json).PurgeLedger);
+    }
 
     [Theory]
-    [InlineData("True")]
-    [InlineData("yes")]
+    [InlineData("\"true\"")]
+    [InlineData("\"yes\"")]
     [InlineData("1")]
     public void A_mistyped_extra_step_is_refused_rather_than_read_as_either(string wire)
     {
         // A flag read as true would delete history nobody asked to delete; read as false, it would quietly keep what was asked gone.
-        Assert.Throws<SqlFlowException>(() => Engine.Operations.RemovalScopes.ParsePurgeLedger(wire));
+        Assert.Contains(
+            "payload purgeLedger must be true or false",
+            Assert.Throws<SqlFlowException>(() => DeliveryRunPayload.Parse($$"""{"scope":"record","purgeLedger":{{wire}}}""")).Message,
+            StringComparison.Ordinal);
     }
 
     [Theory]
@@ -1186,7 +1195,12 @@ public class RemovalContractTests
         // Defaulting would pick a removal depth the operator never asked for, which is the one mistake this
         // vocabulary exists to prevent.
         Assert.False(Engine.Operations.RemovalScopes.TryParse(wire, out _));
-        Assert.Throws<SqlFlowException>(() => Engine.Operations.RemovalScopes.Parse(wire));
+
+        // A remove run refuses it as well: written, as a scope it does not know; left out, as one it has to have.
+        var json = wire is null
+            ? """{"recordKeys":["11111111-1111-1111-1111-111111111111"]}"""
+            : $$"""{"scope":"{{wire}}","recordKeys":["11111111-1111-1111-1111-111111111111"]}""";
+        Assert.Throws<SqlFlowException>(() => DeliveryRunPayload.Parse(json).Validate(DeliveryOperations.Remove));
     }
 
     [Fact]
@@ -1204,6 +1218,7 @@ public class RemovalContractTests
             DeliveredBySubmissionId = deliveredBy,
             RunId = run,
             Drifted = true,
+            Problem = ProblemSignature.Of("Unit 'ft' is not in the reference cache"),
         };
 
         var back = Engine.Operations.RemovalFilter.FromJson(Engine.Operations.RemovalFilter.ToJson(query));
@@ -1215,6 +1230,11 @@ public class RemovalContractTests
         Assert.Equal(deliveredBy, back.DeliveredBySubmissionId);
         Assert.Equal(run, back.RunId);
         Assert.True(back.Drifted);
+
+        // The issue the listing was narrowed to travels too: without it, the run would remove every record the rest of the
+        // filter matches, more than the operator was shown and counted.
+        Assert.Equal(query.Problem, back.Problem);
+        Assert.Equal(query, back);
     }
 
     [Fact]
@@ -1226,8 +1246,20 @@ public class RemovalContractTests
         Assert.Null(back.SubmissionId);
         Assert.Null(back.DeliveredBySubmissionId);
         Assert.Null(back.RunId);
+        Assert.Null(back.Problem);
         Assert.False(back.Drifted);
         Assert.Equal(SearchMode.Prefix, back.Mode);
+    }
+
+    [Theory]
+    [InlineData("""{"status":"delivered","owner":"alice"}""", "could not be mapped")]
+    [InlineData("""{"status":"lost"}""", "payload filter status 'lost' is not a record status")]
+    [InlineData("""{"issue":"not-an-issue"}""", "payload filter issue 'not-an-issue' is not an issue")]
+    public void A_filter_naming_what_the_listing_does_not_know_is_refused_rather_than_widened(string filter, string why)
+    {
+        // A part the run did not read would leave the filter wider than the listing the operator counted.
+        var refused = Assert.Throws<SqlFlowException>(() => Engine.Operations.RemovalFilter.FromJson(filter));
+        Assert.Contains(why, refused.Message, StringComparison.Ordinal);
     }
 
     [Fact]

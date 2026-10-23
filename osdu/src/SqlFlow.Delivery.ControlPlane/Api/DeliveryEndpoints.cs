@@ -454,10 +454,10 @@ public sealed record DeliveryRecordFilterDto(
 /// by <c>keys</c> or by <c>filter</c> (every record the listing matches), never both. <c>expected</c> is the count
 /// the operator was shown: when it no longer matches what the filter resolves to, the removal is refused rather
 /// than run against a set that changed underneath them. <c>purgeLedger</c>, with record or everything, also deletes each
-/// record OSDU answered for from the ledger, keeping one line of it.
+/// record OSDU answered for from the ledger, keeping one line of it. <c>pool</c> names the pool the remove run is queued on.
 /// </summary>
 public sealed record DeliveryRemovalRequest(
-    string? Scope, IReadOnlyList<Guid>? Keys, DeliveryRecordFilterDto? Filter, int? Expected, bool PurgeLedger = false);
+    string? Scope, IReadOnlyList<Guid>? Keys, DeliveryRecordFilterDto? Filter, int? Expected, bool PurgeLedger = false, string? Pool = null);
 
 /// <summary>
 /// Which of a flow's records a sync reads: those <c>Keys</c> names, every one <c>Filter</c> matches (resolved to keys when the
@@ -500,8 +500,11 @@ public static class DeliveryRerender
     public const int PreviewRecords = DeliveryRunPayload.MaxRecordKeys;
 }
 
-/// <summary>A removal was queued on a node: the task to watch, how many records it will act on, and whether it deletes them from the ledger too.</summary>
-public sealed record DeliveryRemovalAccepted(Guid TaskId, string Status, string Scope, int Records, bool PurgeLedger = false);
+/// <summary>
+/// A removal was queued as a remove run of the flow (osdu/docs/reference/concepts/removal-and-reversal.md, Removing records
+/// from OSDU): the run to watch, how many records it will act on, and whether it deletes them from the ledger too.
+/// </summary>
+public sealed record DeliveryRemovalAccepted(Guid RunId, string Status, string Scope, int Records, bool PurgeLedger = false);
 
 /// <summary>
 /// Records already removed from OSDU to delete from the ledger: those <c>Keys</c> names, every one <c>Filter</c> matches (refused
@@ -2943,7 +2946,7 @@ public static class DeliveryEndpoints
 
     /// <summary>
     /// One record's removal. It is the many-record path with a selection of one, so a single delete and a bulk
-    /// delete are the same operation, the same ledger writes and the same result shape.
+    /// delete are the same remove run, the same ledger writes and the same result shape.
     /// </summary>
     private static async Task<Results<Accepted<DeliveryRemovalAccepted>, ProblemHttpResult>> DeleteRecordAsync(
         Guid flowId, Guid key, DeliveryRemovalRequest? request, CatalogDbContext db, OsduDbContext osdu, DeliveryDocumentLoader documents, ILedger ledger, IRunDispatcher dispatcher,
@@ -2966,7 +2969,7 @@ public static class DeliveryEndpoints
             return refused;
         }
 
-        return await EnqueueRemovalAsync(db, dispatcher, flow, scope, purgeLedger, KeyArguments([key]), 1, user, ct).ConfigureAwait(false);
+        return await EnqueueRemovalAsync(db, dispatcher, flow, scope, purgeLedger, [key], null, 1, request?.Pool, user, ct).ConfigureAwait(false);
     }
 
     /// <summary>
@@ -3006,7 +3009,7 @@ public static class DeliveryEndpoints
                     statusCode: StatusCodes.Status400BadRequest, title: "Too many records");
             }
 
-            return await EnqueueRemovalAsync(db, dispatcher, flow, scope, request.PurgeLedger, KeyArguments(request.Keys), request.Keys.Count, user, ct).ConfigureAwait(false);
+            return await EnqueueRemovalAsync(db, dispatcher, flow, scope, request.PurgeLedger, request.Keys, null, request.Keys.Count, request.Pool, user, ct).ConfigureAwait(false);
         }
 
         if (request.Filter is null)
@@ -3053,8 +3056,7 @@ public static class DeliveryEndpoints
                 statusCode: StatusCodes.Status409Conflict, title: "The selection changed");
         }
 
-        var arguments = new Dictionary<string, string>(StringComparer.Ordinal) { ["filter"] = RemovalFilter.ToJson(query) };
-        return await EnqueueRemovalAsync(db, dispatcher, flow, scope, request.PurgeLedger, arguments, matched.Count, user, ct).ConfigureAwait(false);
+        return await EnqueueRemovalAsync(db, dispatcher, flow, scope, request.PurgeLedger, [], query, matched.Count, request.Pool, user, ct).ConfigureAwait(false);
     }
 
     /// <summary>What a removal would take away, and from where: the confirmation's contents, computed not guessed.</summary>
@@ -3134,9 +3136,6 @@ public static class DeliveryEndpoints
             detail: $"'{scope ?? "(none)"}' is not a removal scope. Use record (reversible), previous (the version before the latest written back as current, reversible), history (earlier versions only) or everything (the record and every version).",
             statusCode: StatusCodes.Status400BadRequest, title: "Invalid removal scope");
 
-    private static Dictionary<string, string> KeyArguments(IReadOnlyList<Guid> keys)
-        => new(StringComparer.Ordinal) { ["deliveryKeys"] = string.Join(',', keys.Select(k => k.ToString("D"))) };
-
     /// <summary>A removal that deletes from the ledger what it does not take out of OSDU: refused, since only a record OSDU no longer holds may go.</summary>
     private static ProblemHttpResult? PurgeRefused(RemovalChoice scope, bool purgeLedger)
         => purgeLedger && scope is not (RemovalChoice.Record or RemovalChoice.Everything)
@@ -3146,30 +3145,38 @@ public static class DeliveryEndpoints
                 title: "Invalid removal")
             : null;
 
+    /// <summary>
+    /// Queues the remove run of <paramref name="flow"/>'s interface (osdu/docs/reference/concepts/removal-and-reversal.md,
+    /// Removing records from OSDU) under the caller's name: a run of the pipeline, so it is listed with the flow's runs, never
+    /// runs beside another run of the pipeline, and carries its records in its payload, by <paramref name="keys"/> or by the
+    /// listing <paramref name="filter"/> the run resolves when it removes them. <paramref name="records"/> is how many the
+    /// request names, or the filter matched when it was counted.
+    /// </summary>
     private static async Task<Results<Accepted<DeliveryRemovalAccepted>, ProblemHttpResult>> EnqueueRemovalAsync(
-        CatalogDbContext db, IRunDispatcher dispatcher, FlowContext flow, RemovalChoice scope, bool purgeLedger, Dictionary<string, string> arguments,
-        int records, ClaimsPrincipal user, CancellationToken ct)
+        CatalogDbContext db, IRunDispatcher dispatcher, FlowContext flow, RemovalChoice scope, bool purgeLedger, IReadOnlyList<Guid> keys, RecordQuery? filter,
+        int records, string? pool, ClaimsPrincipal user, CancellationToken ct)
     {
         if (PurgeRefused(scope, purgeLedger) is { } refused)
         {
             return refused;
         }
 
-        arguments["scope"] = RemovalScopes.Wire(scope);
-        if (purgeLedger)
+        var parameters = new RunParameters
         {
-            arguments["purgeLedger"] = "true";
-        }
-
-        var queued = await EnqueueOperationAsync(db, dispatcher, flow, DeleteRecordOperation.OperationName, arguments, user, ct).ConfigureAwait(false);
-        if (queued.Result is not Accepted<ComputeTaskAccepted> accepted || accepted.Value is null)
-        {
-            return (ProblemHttpResult)queued.Result;
-        }
-
+            Operation = DeliveryOperations.Remove,
+            Payload = new DeliveryRunPayload
+            {
+                Interface = flow.Flow.Interface,
+                RecordKeys = keys,
+                Filter = filter,
+                Scope = scope,
+                PurgeLedger = purgeLedger,
+            }.ToJson(),
+        };
+        var runId = await EnqueueRunAsync(db, dispatcher, flow, parameters, pool, user, ct).ConfigureAwait(false);
         return TypedResults.Accepted(
-            accepted.Location,
-            new DeliveryRemovalAccepted(accepted.Value.TaskId, accepted.Value.Status, RemovalScopes.Wire(scope), records, purgeLedger));
+            $"/api/v1/runs/{runId}",
+            new DeliveryRemovalAccepted(runId, RunStatuses.Queued, RemovalScopes.Wire(scope), records, purgeLedger));
     }
 
     /// <summary>

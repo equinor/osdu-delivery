@@ -111,11 +111,17 @@ holds as removed ([Inventory flows](../flow/inventory.md)), which only makes OSD
 removal runs, so "every record this submission delivered" travels as a filter rather than as thousands of keys. The filter
 has two ways of naming a submission's records: `submissionId` is the records the submission last planned, and
 `deliveredBy` is the records it delivered, resolved through its delivered attempts, which stay its own however many
-submissions touch them later. One removal takes at most 25,000 records; a filter that matches more is refused with
+submissions touch them later. The filter carries every part of the listing it was taken from, the issue a listing is
+narrowed to included, so the run removes the records the operator counted and no others. One removal takes at most 25,000
+records; a filter that matches more is refused, when the removal is asked for and again when the run resolves it, with
 `The filter matches more than 25000 records as far as the listing counts; a removal takes at most 25000 at a time. Narrow the filter and remove in parts.`
 A filter that matches another count than the operator was shown is refused too (`The selection changed`).
 
-**How it runs.** Records are removed in chunks of 500, batched into one request where the route and the scope allow it
+**How it runs.** A removal is a run of the pipeline with the operation `remove`, listed under **Runs** and on the flow's
+runs with its trace, its run log and its outcome. Its payload names the interface, `scope`, `purgeLedger`, and the records
+by `recordKeys` or by `filter` ([Running an OSDU flow](../cli/run.md)). As a run of the pipeline it never runs beside
+another of them: one asked for while a delivery of the pipeline runs starts once that run ends, and the next delivery
+waits for it. Records are removed in chunks of 500, batched into one request where the route and the scope allow it
 (only the reversible scope has a bulk call), each record with its own attempt and the chunk's correlation id. A record
 OSDU has already lost is reported as `already-gone` and settled as removed; a record with no OSDU id, or one that never
 queued a document (so this flow wrote nothing to OSDU under that id), is skipped. While a chunk is removed, its records
@@ -129,8 +135,10 @@ when the chunk ends, whatever its outcome, and a removal that stops lets its rec
 nothing is charged to a record and no attempt is written for the hold. A step back to the previous version holds nothing:
 it passes over a record with work queued or under a lease itself. What an unfinished delivery of a record
 left is undone before the record is removed ([below](#unfinished-deliveries-and-their-undo)). The removal is an activity
-of kind `delete` (or `restore-previous`), and its result carries the counts and up to 200 per-record outcomes, failures
-first.
+of kind `delete` (or `restore-previous`) naming the run, and the run's result carries the counts and up to 200 per-record
+outcomes, failures first. A removal OSDU refused any record of ends failed, saying how many and why the first ones failed:
+`<n> of <m> record(s) of '<flow>' could not be removed from OSDU: <record>: <why>; ...`. Every other record was removed,
+and the ones refused stay in the ledger as they were, to be removed again once what refused them is settled.
 
 **Routes.** The `ddms` route calls what the DDMS serving the records offers (a Wellbore DDMS, Well Delivery or RAFS record
 is removed with a `DELETE` of its own), the `dspdm` and `etp` routes write rows and objects that keep no deleted copies or
@@ -140,9 +148,15 @@ dialog shows the exact call each scope makes for the flow before anything is que
 **Where.** **Remove** on a record's page and on a flow's Records tab selection opens the one removal dialog: an **In OSDU**
 part (**Remove the record**, **Restore the previous version**, **Purge earlier versions**, **Purge everything**, and
 **Leave as it is** for records removed already) and an **In the ledger** part (**Delete from the ledger**, offered only with
-a choice that leaves the records out of OSDU). Anything permanent asks for the partition to be typed back. The API is
+a choice that leaves the records out of OSDU). Anything permanent asks for the partition to be typed back. Once the
+removal is queued, **Open run** on the notice opens its run. The API is
 `POST /api/v1/delivery/records/{flowId}/{key}/delete` and `POST /api/v1/delivery/flows/{pipelineId}/records/remove` (with
-`/remove/preview`), each queuing the removal as a task for a node. There is no CLI verb for a removal.
+`/remove/preview`), each queuing the `remove` run and answering its `runId`. From a terminal, the run itself (a source of
+several interfaces names the one it removes in, with `"interface"`):
+
+```bash
+sqlflow run flows/welldb-wellbore-03-delivery.yaml --operation remove --set partition=dev   --payload '{"recordKeys":["<delivery key>"],"scope":"record","purgeLedger":true}'
+```
 
 ### Restoring the previous version
 

@@ -152,7 +152,8 @@ Everything outside `interfaces` is the source's, shared by every interface: `nam
 the services under it), and the defaults an interface may override: `source.lastModified`, `source.systemColumns`,
 `source.incremental`, `render.cacheVersion`, `render.parameters`, `change`, `reliability`, `parallelism`, `verify`, `failWhen`, `cache`,
 `target.protocolOptions` and `target.validation`. The keys are the single form's ([delivery flow](delivery.md)); as
-there, `source.work` and every payload `root` hold no `${...}` reference, since a location is read as written.
+there, every payload `root` holds no `${...}` reference, since it is read as written, and `source.work` may open with
+one the run resolves (`${env:LANDING_URL}/.work/...`).
 
 What belongs to one interface is refused at the source level, each by name:
 

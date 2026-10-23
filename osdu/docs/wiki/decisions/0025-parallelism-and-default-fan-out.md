@@ -33,6 +33,7 @@ sourceRefs:
   - sqlflow/src/SqlFlow.Catalog/ScaleTargetStore.cs
   - sqlflow/src/SqlFlow.Catalog/RunQueueStore.cs
   - osdu/deploy/terraform/modules/worker/main.tf
+  - sqlflow/src/SqlFlow.Core/Engine/SourceLocations.cs
   - osdu/tests/SqlFlow.Delivery.Tests/ScaleEngineTests.cs
 related:
   - delivery-wiki-0006-work-batches
@@ -80,8 +81,15 @@ balancing, and filed under reliability it went unnoticed.
   missing on the others; their records would be held as unreadable and planned again by the next run, which fans out
   again. Fan-out therefore needs a storage URI or an absolute path (a deployment's shared mount), and a relative one keeps
   the delivery on one run, its trace saying so. This was found when the human asked whether the estate's flows would
-  scale out unchanged: they write their work to `../.work`, so they do not until it moves to storage. Rebasing relative
-  work folders onto a storage root the deployment configures would let them fan out unchanged; it was not done here.
+  scale out unchanged: they write their work to `../.work`, so they do not until it moves to storage.
+- **The work location may name the deployment's storage.** `source.work` may open with a reference,
+  `${env:LANDING_URL}/.work/welllog/{logSource}`, which the runtime resolves as the run opens by the rule SQLFlow
+  already resolves a file flow's location with (`SourceLocations`, now public for one location): the storage account
+  every deployment creates or adopts, hands every run as `LANDING_URL` and grants its workers. A flow then moves
+  between deployments unchanged, where a storage URI written in it would name one environment's account. Rebasing
+  relative work folders onto a root the deployment configures was the other way, and would have needed a setting of
+  its own; the reference uses the one every deployment already has. A reference anywhere but at the start of the
+  location is refused, since the rest is a path under it; a payload root still refuses one.
 - **Members are bounded by the work.** The drain enqueued exactly `fanOut` members whatever the submission held, so a
   fan-out of 64 over ten batches started 64 runs and most found nothing. It now enqueues one per queued work batch beyond
   the one the coordinating run takes, up to `fanOut`, and decides on the records still to send rather than on what the

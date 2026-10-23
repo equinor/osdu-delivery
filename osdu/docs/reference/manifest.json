@@ -714,6 +714,7 @@
         "verify",
         "reverse",
         "undo",
+        "remove records",
         "delete-ledger",
         "refresh",
         "trigger",
@@ -929,7 +930,6 @@
         "private networks",
         "worker container image",
         "delivery-check-values",
-        "delivery-delete",
         "positional argument refused",
         "hosted service failed to start"
       ],
@@ -3059,6 +3059,7 @@
         "osdu/src/SqlFlow.Delivery/Http/AuthResolver.cs",
         "osdu/src/SqlFlow.Delivery/Http/HttpClientBuilder.cs",
         "osdu/src/SqlFlow.Delivery/Http/UrlGuard.cs",
+        "sqlflow/src/SqlFlow.Core/Engine/SourceLocations.cs",
         "sqlflow/src/SqlFlow.Yaml/YamlDocumentLoader.cs"
       ]
     },
@@ -7537,6 +7538,7 @@
         "sqlflow/src/SqlFlow.Catalog/ScaleTargetStore.cs",
         "sqlflow/src/SqlFlow.Catalog/RunQueueStore.cs",
         "osdu/deploy/terraform/modules/worker/main.tf",
+        "sqlflow/src/SqlFlow.Core/Engine/SourceLocations.cs",
         "osdu/tests/SqlFlow.Delivery.Tests/ScaleEngineTests.cs"
       ]
     },

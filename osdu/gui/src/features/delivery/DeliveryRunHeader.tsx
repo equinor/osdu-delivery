@@ -5,7 +5,7 @@ import type { RunDetail } from "@/api/types";
 import { DetailPair } from "@/components/DetailPair";
 import { IdChip } from "@/components/IdChip";
 import { ledgerLabel } from "../../api/delivery";
-import { DELIVERING_OPERATIONS, runRecordCounts, runResult, runScope, runSubmissionId } from "./runOutcome";
+import { DELIVERING_OPERATIONS, runRecordCounts, runRemovalCounts, runRequest, runResult, runScope, runSubmissionId } from "./runOutcome";
 import { ReverseButton } from "./ReverseButton";
 import { shortId } from "./idTail";
 
@@ -88,8 +88,36 @@ export function DeliveryRunMeta({ run }: { run: RunDetail }) {
     );
 }
 
+/**
+ * What a remove run did to the records it selected: removed (or, a step back, restored), already gone, skipped, failed, and
+ * deleted from the ledger when it was asked to.
+ */
+function RemovalCounts({ run }: { run: RunDetail }) {
+  const counts = runRemovalCounts(runResult(run));
+  const request = runRequest(run);
+  const previous = request.removalScope === "previous";
+  return (
+    <>
+      <DetailPair label="Selected"><RecordCount value={counts?.selected ?? null} testId="run-removal-selected" /></DetailPair>
+      <DetailPair label={previous ? "Restored" : "Removed"}>
+        <RecordCount value={(previous ? counts?.restored : counts?.removed) ?? null} testId="run-removal-removed" />
+      </DetailPair>
+      {!previous && <DetailPair label="Already gone"><RecordCount value={counts?.alreadyGone ?? null} testId="run-removal-gone" /></DetailPair>}
+      <DetailPair label="Skipped"><RecordCount value={counts?.skipped ?? null} testId="run-removal-skipped" /></DetailPair>
+      <DetailPair label="Failed"><RecordCount value={counts?.failed ?? null} testId="run-removal-failed" /></DetailPair>
+      {request.purgeLedger && (
+        <DetailPair label="Deleted from the ledger"><RecordCount value={counts?.purged ?? null} testId="run-removal-purged" /></DetailPair>
+      )}
+    </>
+  );
+}
+
 /** The record counts a delivery run reported, in place of the row counts SQLFlow's own runs carry. */
 export function DeliveryRunCounts({ run }: { run: RunDetail }) {
+  if (run.operation === "remove") {
+    return <RemovalCounts run={run} />;
+  }
+
   const counts = runRecordCounts(runResult(run));
   return (
     <>

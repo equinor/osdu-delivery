@@ -60,9 +60,9 @@ public sealed class DeliveryModuleTests
         Assert.Contains(executors, e => e is InventoryExecutor);
         Assert.Contains(executors, e => e is RemovalExecutor);
 
-        // A node runs only what scans or writes (a value check, a removal); what a person asks for and waits on is run by the
-        // control plane itself, and is never offered to a node.
-        Assert.Equal(["delivery-check-values", "delivery-delete"], operations.Order(StringComparer.Ordinal).ToList());
+        // A node task is only what scans long (a value check): a removal writes, so it is a run of the flow, listed with its
+        // runs; what a person asks for and waits on is run by the control plane itself, and is never offered to a node.
+        Assert.Equal(["delivery-check-values"], operations);
         Assert.Equal(
             ["delivery-explore", "delivery-preview", "delivery-probe", "delivery-read", "delivery-scope-values", "delivery-source"],
             factory.Services.GetRequiredService<DirectOperations>().Names.Order(StringComparer.Ordinal).ToList());

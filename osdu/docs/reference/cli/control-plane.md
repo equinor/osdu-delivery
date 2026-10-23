@@ -129,14 +129,16 @@ sqlflow pipelines list --repo welldb --kind cache
 
 ## Compute tasks of the module
 
-A value check of a mapping across a scope and a removal of records from OSDU are queued as compute tasks, drained by the
-nodes. They appear in SQLFlow's task listing under their operation names:
+A value check of a mapping across a scope is queued as a compute task, drained by the nodes. It appears in SQLFlow's task
+listing under its operation name:
 
 ```bash
 sqlflow datasources tasks --operation delivery-check-values
-sqlflow datasources tasks --operation delivery-delete
 sqlflow datasources task <id>
 ```
+
+A removal of records from OSDU is not a compute task: it is a `remove` run of the flow, listed with its runs
+([Removing records from OSDU](../concepts/removal-and-reversal.md#removing-records-from-osdu)).
 
 ## Search
 

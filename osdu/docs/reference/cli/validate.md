@@ -143,9 +143,11 @@ In the folder mode each document is one line, and `--json` reports each document
   ERROR  <file>: source.connection carries a literal password. A flow document holds references only: put the connection string, or its password, behind ${keyvault:vault/secret} or ${env:NAME}, or connect with Azure AD (Authentication=Active Directory Default).
   ```
 
-- **Locations.** A file location (a delivery flow's `source.work` and payload `root`s, a retrieval flow's
-  `target.location`) holds no `${...}` reference: it is substituted from the run's parameters and read as written.
-  `<file>: source.work '<location>' holds a ${...} reference, and a location is not resolved from one: write the path or storage URI itself, and vary it per run or environment with a {parameter} token declared under parameters.`
+- **Locations.** A file location (a delivery flow's payload `root`s, a retrieval flow's `target.location`) holds no
+  `${...}` reference: it is substituted from the run's parameters and read as written.
+  `<file>: source.payloads.las.root '<location>' holds a ${...} reference, and a location is not resolved from one: write the path or storage URI itself, and vary it per run or environment with a {parameter} token declared under parameters.`
+  A delivery flow's `source.work` may open with one (`${env:LANDING_URL}/.work/welllog/{logSource}`), which the run
+  resolves; a reference anywhere else in it is refused.
 
 ## Delivery flow
 

@@ -9,6 +9,7 @@ using SqlFlow.Core.Runs;
 using SqlFlow.Delivery.Documents;
 using SqlFlow.Delivery.Engine.FanOut;
 using SqlFlow.Delivery.Engine.Intake;
+using SqlFlow.Delivery.Engine.Operations;
 using SqlFlow.Delivery.Engine.Planning;
 using SqlFlow.Delivery.Engine.Worker;
 using SqlFlow.Delivery.Identity;
@@ -25,8 +26,8 @@ namespace SqlFlow.Delivery.Engine;
 
 /// <summary>
 /// Runs one delivery flow document as one platform run. The run's operation (deliver, plan, intake, drain, verify,
-/// replan, sync, reverse, undo, delete-ledger: <see cref="DeliveryFlowKind.DeliveryOperationList"/>) and its payload (the
-/// submission or run it works on, the records it is scoped to, the key slices a member plans, the interfaces it runs)
+/// replan, sync, reverse, undo, remove, delete-ledger: <see cref="DeliveryFlowKind.DeliveryOperationList"/>) and its payload
+/// (the submission or run it works on, the records it is scoped to or removes, the key slices a member plans, the interfaces it runs)
 /// decide what it reads out of the flow's ingestion tables and what it does with it; the engine's log becomes the run
 /// log and the live trace; the outcome becomes <c>run.json</c> and the run row's projected counts. Every ledger activity
 /// and attempt the run writes carries the run id, so a record's history links back to the run that produced it and the
@@ -140,6 +141,13 @@ public sealed class DeliveryExecutor : IFlowDocumentExecutor
             error = RunFailure.Describe(incomplete);
             LogFailed(log, operation, error, null);
             result = incomplete.Outcome;
+        }
+        catch (RecordsNotRemovedException refused)
+        {
+            // A removal OSDU refused records of ends failed, and its outcome still says what became of every record.
+            error = RunFailure.Describe(refused);
+            LogFailed(log, operation, error, null);
+            result = refused.Outcome;
         }
         catch (Exception ex)
         {
@@ -267,6 +275,12 @@ public sealed class DeliveryExecutor : IFlowDocumentExecutor
             {
                 throw new DeliveryException(
                     $"Flow '{source.Name}' delivers {source.Interfaces.Count} interface(s) ({string.Join(", ", source.Names)}); a reversal of a run works in one interface's ledger, which 'interface' names in its payload.");
+            }
+
+            if (operation == DeliveryOperations.Remove)
+            {
+                throw new DeliveryException(
+                    $"Flow '{source.Name}' delivers {source.Interfaces.Count} interface(s) ({string.Join(", ", source.Names)}); a removal works in one interface's ledger, which 'interface' names in its payload.");
             }
 
             source.Select(payload.Interfaces);
@@ -424,6 +438,15 @@ public sealed class DeliveryExecutor : IFlowDocumentExecutor
                 var undone = await runtime.UndoUnfinishedAsync(payload.Force, ct).ConfigureAwait(false);
                 LogOutcome(log, $"undo: {undone.Describe()}");
                 return UndoRunOutcome.From(operation, undone);
+
+            case DeliveryOperations.Remove:
+                var removing = payload.Scope ?? throw new DeliveryException("A remove run names how much of each record goes (payload scope), and this one names none.");
+                var removal = await runtime.RemoveAsync(
+                    keys.Count > 0 ? RemovalSelection.Of(keys) : RemovalSelection.Of(payload.Filter ?? throw new DeliveryException("A remove run names its records (payload recordKeys or filter), and this one names none.")),
+                    removing, payload.PurgeLedger, ct).ConfigureAwait(false);
+                LogOutcome(log, $"remove: {removal.Describe()}");
+                var removed = RemoveRunOutcome.From(operation, removal);
+                return removed.Failed > 0 ? throw new RecordsNotRemovedException(flow, removed) : removed;
 
             case DeliveryOperations.DeleteLedger:
                 var confirm = payload.Confirm ?? throw new DeliveryException("A run deleting the ledger names the partition it acts in (payload confirm), and this one names none.");
@@ -1063,6 +1086,74 @@ public sealed record DeleteLedgerOutcome(
     public string Describe() => string.Create(
         CultureInfo.InvariantCulture,
         $"{Removed} removed from OSDU (reversible), {AlreadyGone} already gone, {AlreadyRemoved} removed before, {NeverInOsdu} never in OSDU; {Records} record(s), {Submissions} submission(s) and {Watermarks} watermark(s) deleted from the ledger");
+}
+
+/// <summary>
+/// The <c>result</c> of a remove run (osdu/docs/reference/concepts/removal-and-reversal.md, Removing records from OSDU): how
+/// much of each record it took, how many it selected and what became of them, how many it deleted from the ledger as well,
+/// and up to <see cref="RemovalLimits.MaxReported"/> records with their own outcome, failures first. Every record's outcome
+/// is on its history whatever the cap leaves out.
+/// </summary>
+public sealed record RemoveRunOutcome(
+    string Operation, string Scope, int Selected, int Removed, int Restored, int AlreadyGone, int Skipped, int Failed, int Purged,
+    IReadOnlyList<RemovalRecordResult> Records, bool Truncated)
+{
+    /// <summary>The run's headline count on the run row (<c>result.rowsLoaded</c>): the records it changed in OSDU.</summary>
+    public long RowsLoaded => Removed + Restored;
+
+    /// <summary>What unfinished deliveries of the records left, undone before anything was removed.</summary>
+    public UndoSummary Undone { get; init; } = UndoSummary.Empty;
+
+    /// <summary>What the pipeline's after step did with what the removal changed in OSDU (osdu/docs/reference/flow/delivery.md, cache); null when it names none.</summary>
+    public Snapshots.CacheStepOutcome? CacheAfter { get; init; }
+
+    /// <summary>The line the activity trail and the run log carry for the whole removal.</summary>
+    public string Summary { get; init; } = string.Empty;
+
+    public static RemoveRunOutcome From(string operation, RemovalSummary summary)
+    {
+        ArgumentNullException.ThrowIfNull(summary);
+        return new RemoveRunOutcome(
+            operation, RemovalScopes.Wire(summary.Scope), summary.Selected, summary.Removed, summary.Restored, summary.AlreadyGone, summary.Skipped,
+            summary.Failed, summary.Purged, summary.Records, summary.Truncated)
+        {
+            Undone = summary.Undone,
+            CacheAfter = summary.CacheAfter,
+            Summary = summary.Describe(),
+        };
+    }
+}
+
+/// <summary>
+/// A remove run OSDU refused records of: the run fails, so the run board says the removal was not done whole, and its outcome
+/// still says what became of every record, the ones it did remove included. Asking again for the records that failed does the
+/// rest.
+/// </summary>
+public sealed class RecordsNotRemovedException : DeliveryException
+{
+    /// <summary>How many of the failed records the message names, with why each failed.</summary>
+    public const int Named = 3;
+
+    public RecordsNotRemovedException(FlowDefinition flow, RemoveRunOutcome outcome)
+        : base(Describe(flow, outcome))
+    {
+        Outcome = outcome;
+    }
+
+    public RemoveRunOutcome Outcome { get; }
+
+    private static string Describe(FlowDefinition flow, RemoveRunOutcome outcome)
+    {
+        ArgumentNullException.ThrowIfNull(flow);
+        ArgumentNullException.ThrowIfNull(outcome);
+        var failed = outcome.Records.Where(r => r.Outcome == "failed").Take(Named)
+            .Select(r => $"{r.Label ?? r.SourceKey ?? r.DeliveryKey.ToString("D")}: {r.Detail}")
+            .ToList();
+        var what = outcome.Scope == RemovalScopes.Wire(RemovalChoice.Previous) ? "put back at the version before the latest" : "removed from OSDU";
+        return string.Create(
+            CultureInfo.InvariantCulture,
+            $"{outcome.Failed} of {outcome.Selected} record(s) of '{flow.Label}' could not be {what}: {string.Join("; ", failed)}{(outcome.Failed > failed.Count ? $"; and {outcome.Failed - failed.Count} more" : string.Empty)}. {outcome.Summary}. Each record's history says why; ask for the ones that failed again once what refused them is settled.");
+    }
 }
 
 /// <summary>The <c>result</c> of a run that failed before producing an outcome.</summary>

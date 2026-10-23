@@ -3,6 +3,7 @@ using System.Globalization;
 using System.Text.Json;
 using Microsoft.Extensions.Logging;
 using SqlFlow.Core;
+using SqlFlow.Core.Engine;
 using SqlFlow.Core.Runs;
 using SqlFlow.Core.Secrets;
 using SqlFlow.Delivery.Documents;
@@ -414,6 +415,16 @@ public sealed partial class FlowRuntime : IDisposable
     {
         ArgumentNullException.ThrowIfNull(context);
         ArgumentNullException.ThrowIfNull(flow);
+
+        // A work location that names a reference (${env:LANDING_URL}/.work/...) is resolved once, as the run opens, with the
+        // run's own values, by the rule SQLFlow resolves a file flow's location with; every member of a fan-out resolves it
+        // the same way from the configuration it is handed, so all of them write and read the same batches.
+        if (SourceLocations.NamesReference(flow.Source.Work))
+        {
+            var work = await SourceLocations.ResolveAsync(flow.Source.Work, "source.work", context.Secrets, ct).ConfigureAwait(false);
+            flow = flow with { Source = flow.Source with { Work = work } };
+        }
+
         var values = FlowParameters.Resolve(flow, parameters);
         var layout = DeliveryLayout.Resolve(flow);
         var mappings = new MappingCatalog(layout.MappingsDirectory, context.Documents);
@@ -1616,6 +1627,8 @@ public sealed partial class FlowRuntime : IDisposable
     /// </summary>
     public Task<RemovalSummary> RemoveAsync(RemovalSelection selection, RemovalChoice scope, bool purgeLedger = false, CancellationToken ct = default)
     {
+        // A selection by filter is resolved here, when the removal runs: whoever queued it (the API, which counted it, or a run
+        // triggered by hand, which did not), what it matches now is what it removes, and never a part of it.
         ArgumentNullException.ThrowIfNull(selection);
         if (purgeLedger && scope is not (RemovalChoice.Record or RemovalChoice.Everything))
         {
@@ -1629,8 +1642,7 @@ public sealed partial class FlowRuntime : IDisposable
         {
             var removalStarted = _context.Time.GetUtcNow().UtcDateTime;
             var ledger = RequireLedger();
-            var keys = selection.Keys
-                ?? await ledger.ListKeysAsync(Flow.Id, selection.Filter!, RemovalLimits.MaxSelection, ct).ConfigureAwait(false);
+            var keys = selection.Keys ?? await FilteredKeysAsync(ledger, selection.Filter!, ct).ConfigureAwait(false);
             var protocol = await ProtocolAsync(ct).ConfigureAwait(false);
             var results = new List<RemovalRecordResult>(keys.Count);
 
@@ -1673,6 +1685,24 @@ public sealed partial class FlowRuntime : IDisposable
             };
             return (summary, summary.Describe(), results.Count == 1 ? results[0].SubmissionId : null, false);
         }, ct);
+    }
+
+    /// <summary>
+    /// The records a removal's listing filter matches now, as the listing counts them. A filter that matches more than one
+    /// removal takes is refused, as the API refuses it, so a removal never takes the part of what it matches that the listing's
+    /// order happens to put first.
+    /// </summary>
+    private async Task<IReadOnlyList<DeliveryKey>> FilteredKeysAsync(ILedger ledger, RecordQuery filter, CancellationToken ct)
+    {
+        var matched = await ledger.CountAsync(Flow.Id, filter, RemovalLimits.MaxSelection + 1, ct).ConfigureAwait(false);
+        if (!matched.Exact || matched.Count > RemovalLimits.MaxSelection)
+        {
+            throw new DeliveryException(string.Create(
+                CultureInfo.InvariantCulture,
+                $"The filter matches more than {RemovalLimits.MaxSelection} records as far as the listing counts; a removal takes at most {RemovalLimits.MaxSelection} at a time. Narrow the filter and remove in parts."));
+        }
+
+        return await ledger.ListKeysAsync(Flow.Id, filter, RemovalLimits.MaxSelection, ct).ConfigureAwait(false);
     }
 
     /// <summary>
@@ -2456,7 +2486,7 @@ public sealed partial class FlowRuntime : IDisposable
         var declared = work.Trim();
         return declared.Contains("://", StringComparison.Ordinal) || Path.IsPathRooted(declared)
             ? null
-            : $"source.work '{declared}' is a folder in this node's copy of the repository, which no other node reads; put it on storage every node reaches (a storage URI) to fan out";
+            : $"source.work '{declared}' is a folder in this node's copy of the repository, which no other node reads; write it on storage every node reaches, such as the deployment's (${{env:LANDING_URL}}/.work/...), to fan out";
     }
 
     /// <summary>Why <paramref name="records"/> <paramref name="what"/> are too few to fan out, or null when they are enough.</summary>

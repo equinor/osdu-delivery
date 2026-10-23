@@ -1,4 +1,4 @@
-import { useQuery, type UseQueryOptions } from "@tanstack/react-query";
+import type { UseQueryOptions } from "@tanstack/react-query";
 import { datasourceApi } from "@/api/endpoints";
 import type { ComputeTask } from "@/api/types";
 
@@ -8,9 +8,9 @@ const TERMINAL = new Set(["succeeded", "failed", "cancelled", "skipped"]);
 const WAIT_MS = 10_000;
 
 /**
- * The query that polls one compute task a node runs for the delivery pages (a removal, a value check) until it has
- * finished, through SQLFlow's compute task endpoint. Each request long-polls, so the result arrives in
- * one round trip once a node has produced it. Shared by {@link useComputeTask} and by a page that polls several at once.
+ * The query that polls one compute task a node runs for the delivery pages (a value check) until it has finished, through
+ * SQLFlow's compute task endpoint. Each request long-polls, so the result arrives in one round trip once a node has produced
+ * it. A page that polls several at once gives each its own.
  */
 export function computeTaskQuery(taskId: string | null): UseQueryOptions<ComputeTask> {
   return {
@@ -28,18 +28,6 @@ export function computeTaskQuery(taskId: string | null): UseQueryOptions<Compute
       return task !== undefined && TERMINAL.has(task.status) ? false : 250;
     },
   };
-}
-
-/** Polls one compute task to its end; see {@link computeTaskQuery}. */
-export function useComputeTask(taskId: string | null) {
-  return useQuery(computeTaskQuery(taskId));
-}
-
-/** The task's result as indented JSON, once a node produced one; null before that, and for a task that reported none. */
-export function taskResultJson(task: ComputeTask | undefined): string | null {
-  return task === undefined || task.result === null || task.result === undefined
-    ? null
-    : JSON.stringify(task.result, null, 2);
 }
 
 export function isTerminalTask(task: ComputeTask | undefined): boolean {

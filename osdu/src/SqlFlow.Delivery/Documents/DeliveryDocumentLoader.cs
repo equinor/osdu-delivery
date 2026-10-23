@@ -1708,8 +1708,44 @@ internal static partial class FlowMapper
             throw new FlowValidationException($"{source}: {paths.Shared("source.incremental.commandTimeoutSeconds")} must not be negative (0 lets a read run as long as the run does).");
         }
 
-        CheckLocation(flow, src.Work, "source.work", source);
+        CheckWorkLocation(flow, src.Work, source);
     }
+
+    /// <summary>
+    /// The work location: as <see cref="CheckLocation"/> checks a location, except that it may open with a reference
+    /// (<c>${env:LANDING_URL}/.work/welllog/{logSource}</c>), which the run resolves with its own values when it opens, so the
+    /// work batches go to the storage the deployment configures, every node of a fan-out reaches them, and the flow moves
+    /// between deployments unchanged (osdu/docs/reference/flow/delivery.md, source). A reference anywhere else in it would
+    /// write under a folder named after the value, so it is refused.
+    /// </summary>
+    private static void CheckWorkLocation(FlowDefinition flow, string work, string source)
+    {
+        if (!work.Contains("${", StringComparison.Ordinal))
+        {
+            CheckLocation(flow, work, "source.work", source);
+            return;
+        }
+
+        var opening = WorkReference().Match(work);
+        var rest = opening.Success ? work[opening.Length..] : work;
+        if (!opening.Success || rest.Contains("${", StringComparison.Ordinal))
+        {
+            throw new FlowValidationException(
+                $"{source}: source.work '{work}' names a reference other than at its start. A work location that names one is the reference's value with a path after it, such as ${{env:LANDING_URL}}/.work/welllog/{{logSource}}.");
+        }
+
+        foreach (var token in Tokens(rest))
+        {
+            if (!flow.Parameters.ContainsKey(token))
+            {
+                throw new FlowValidationException($"{source}: source.work uses '{{{token}}}', which is not declared under parameters.");
+            }
+        }
+    }
+
+    /// <summary>A work location that opens with one <c>${scheme:locator}</c> reference.</summary>
+    [System.Text.RegularExpressions.GeneratedRegex(@"^\$\{[A-Za-z]+:[^}]+\}")]
+    private static partial System.Text.RegularExpressions.Regex WorkReference();
 
     internal static void CheckObject(string declared, string key, string source)
     {
@@ -1746,10 +1782,10 @@ internal static partial class FlowMapper
     }
 
     /// <summary>
-    /// Refuses a <c>${...}</c> reference in a file location of any kind's flow (a delivery flow's work and payload roots, a
-    /// retrieval flow's target). No file location in the product is resolved from a reference, SQLFlow's own included: the
-    /// location is substituted from the run's parameters and read as written, so a run would read or write under a folder
-    /// named after the reference. What varies per run or environment is a <c>{parameter}</c> token instead.
+    /// Refuses a <c>${...}</c> reference in a file location of any kind's flow (a delivery flow's payload roots, a retrieval
+    /// flow's target): such a location is substituted from the run's parameters and read as written, so a run would read or
+    /// write under a folder named after the reference. What varies per run is a <c>{parameter}</c> token instead. A delivery
+    /// flow's work location is the one that may open with a reference (<see cref="CheckWorkLocation"/>).
     /// </summary>
     internal static void RefuseLocationReference(string location, string key, string source)
     {

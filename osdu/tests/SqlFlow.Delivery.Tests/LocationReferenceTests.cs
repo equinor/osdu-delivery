@@ -5,9 +5,9 @@ using Xunit;
 namespace SqlFlow.Delivery.Tests;
 
 /// <summary>
-/// A file location a flow declares is written out: no file location in the product is resolved from a <c>${...}</c>
-/// reference, so a delivery flow's work root and every payload root refuse one, as a retrieval flow's target does, with
-/// the same message; what varies per run or environment is a declared <c>{parameter}</c>.
+/// A file location a flow declares is written out: every payload root refuses a <c>${...}</c> reference, as a retrieval
+/// flow's target does, with the same message, and what varies per run is a declared <c>{parameter}</c>. The work root
+/// alone may open with a reference, which the run resolves, so the work batches go to the deployment's storage.
 /// </summary>
 public class LocationReferenceTests
 {
@@ -47,14 +47,36 @@ public class LocationReferenceTests
     public void Locations_written_out_with_declared_parameters_are_read()
         => Assert.Equal("welllog-delivery", new DeliveryDocumentLoader().ParseSource(Flow.ReplaceLineEndings("\n"), "flows/welllog.yaml").Name);
 
+    /// <summary>
+    /// The work root may open with a reference, which the run resolves with its own values as it opens, so the work batches
+    /// go to the storage the deployment configures and every node of a fan-out reaches them.
+    /// </summary>
     [Fact]
-    public void A_reference_in_the_work_root_is_refused()
+    public void The_work_root_may_open_with_a_reference_the_run_resolves()
     {
-        var message = Refused(With("work: work/{region}", "work: ${env:WORK_ROOT}/{region}"));
+        var source = new DeliveryDocumentLoader().ParseSource(With("work: work/{region}", "work: ${env:LANDING_URL}/.work/welllog/{region}"), "flows/welllog.yaml");
+
+        Assert.Equal("${env:LANDING_URL}/.work/welllog/{region}", Assert.Single(source.Interfaces).Source.Work);
+    }
+
+    [Theory]
+    [InlineData("work/${env:WORK_ROOT}/{region}")]
+    [InlineData("${env:LANDING_URL}/${env:WORK_FOLDER}/{region}")]
+    public void A_reference_elsewhere_in_the_work_root_is_refused(string work)
+    {
+        var message = Refused(With("work: work/{region}", "work: " + work));
 
         Assert.Equal(
-            "flows/welllog.yaml: source.work '${env:WORK_ROOT}/{region}' holds a ${...} reference, and a location is not resolved from one: write the path or storage URI itself, and vary it per run or environment with a {parameter} token declared under parameters.",
+            $"flows/welllog.yaml: source.work '{work}' names a reference other than at its start. A work location that names one is the reference's value with a path after it, such as ${{env:LANDING_URL}}/.work/welllog/{{logSource}}.",
             message);
+    }
+
+    [Fact]
+    public void A_token_after_the_work_root_s_reference_is_a_declared_parameter()
+    {
+        var message = Refused(With("work: work/{region}", "work: ${env:LANDING_URL}/.work/{basin}"));
+
+        Assert.Equal("flows/welllog.yaml: source.work uses '{basin}', which is not declared under parameters.", message);
     }
 
     [Fact]

@@ -15,7 +15,6 @@ keywords:
   - private networks
   - worker container image
   - delivery-check-values
-  - delivery-delete
   - positional argument refused
   - hosted service failed to start
 related:
@@ -78,10 +77,10 @@ ERROR  this host is the OSDU Delivery worker and takes the node's options only (
 
 `sqlflow worker` run from the OSDU Delivery CLI is the same node. Either way the module registers on the node's
 services, so a run of a delivery, retrieval, cache, assertion, dimension or inventory flow executes exactly as it does
-with `sqlflow run`. Two compute tasks of the module also drain on nodes: a value check of a mapping across a scope
-(`delivery-check-values`) and a removal of records from OSDU (`delivery-delete`). What a person asks and waits on (a
-probe of a target, a record read back, a preview, a scope's values, the explorer) is not a node task: the control plane
-runs it while the request waits.
+with `sqlflow run`, a removal of records from OSDU included, which is a `remove` run of the delivery flow. One compute
+task of the module also drains on nodes: a value check of a mapping across a scope (`delivery-check-values`). What a
+person asks and waits on (a probe of a target, a record read back, a preview, a scope's values, the explorer) is not a
+node task: the control plane runs it while the request waits.
 
 ## The module database: SQLFLOW_OSDU_DB
 

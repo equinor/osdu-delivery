@@ -71,15 +71,15 @@ Which tool:
 - Tests and dimensions: delivery_assertions, delivery_assertion_runs, delivery_dimensions. Retrievals: delivery_retrievals.
 
 Running an OSDU flow: trigger_run with the kind's own arguments, never fullLoad or a backfill window.
-- operation: delivery takes deliver (default), plan, intake, drain, verify, replan, sync, reverse, undo,
+- operation: delivery takes deliver (default), plan, intake, drain, verify, replan, sync, reverse, undo, remove,
   delete-ledger; cache takes refresh (default), plan; retrieval takes retrieve (default), plan; assertion takes test
   (default), plan; dimension takes build (default), plan; inventory takes build (default), reconcile, plan, remove;
-  removal takes remove (default), plan. plan changes nothing and is the safe first step. reverse, undo, delete-ledger,
-  an inventory's remove and a removal flow's remove change or remove what OSDU holds: run one only when the person
-  asked for that exact operation.
+  removal takes remove (default), plan. plan changes nothing and is the safe first step. reverse, undo, remove,
+  delete-ledger, an inventory's remove and a removal flow's remove change or remove what OSDU holds: run one only when
+  the person asked for that exact operation.
 - values: the flow's parameters by name (delivery_flow lists them), and partition for a flow that names its partitions.
 - payload: for delivery, force, submissionId, runId, recordKeys, redeliver, rerender, slices, interface, interfaces,
-  confirm; for retrieval, force; for assertion, tests and tags; for dimension, dimensions; for inventory, inventories,
+  confirm, and for its remove scope, filter and purgeLedger; for retrieval, force; for assertion, tests and tags; for dimension, dimensions; for inventory, inventories,
   removal and confirm; for removal, entries (an approval, approve and confirm, is given in the GUI). A kind refuses any
   other property. get_doc(\"delivery-cli-run\") has the full table.
 

@@ -32,9 +32,43 @@ const REDELIVER_LABELS: Record<string, string> = {
   workflow: "the workflow run only",
 };
 
+/** What a remove run takes of each record, as the removal dialog names its choices. */
+const REMOVAL_LABELS: Record<string, string> = {
+  record: "remove from OSDU (reversible)",
+  previous: "restore the previous version",
+  history: "purge earlier versions",
+  everything: "purge everything",
+};
+
+/** The parts of a listing filter, by the names the records list gives them, in the order it shows them. */
+const FILTER_PARTS: [field: string, label: string][] = [
+  ["status", "status"],
+  ["issue", "issue"],
+  ["submissionId", "submission"],
+  ["deliveredBySubmissionId", "delivered by"],
+  ["runId", "run"],
+];
+
+/** The listing a remove run empties, as one line: every part it names, the search with how it matches. */
+function filterText(filter: Record<string, unknown>): string {
+  const parts = FILTER_PARTS
+    .filter(([field]) => typeof filter[field] === "string" && filter[field] !== "")
+    .map(([field, label]) => `${label} ${String(filter[field])}`);
+  if (typeof filter.search === "string" && filter.search !== "") {
+    parts.push(`${filter.mode === "contains" ? "contains" : "starts with"} ${filter.search}`);
+  }
+
+  if (filter.drifted === true) {
+    parts.push("drifted");
+  }
+
+  return parts.length === 0 ? "every record of the ledger" : `every record matching ${parts.join(", ")}`;
+}
+
 /**
  * What a delivery, retrieval, cache, assertion or dimension run was asked to do (its operation, the payload its trigger sent,
- * the flow parameter values it was given) and, once it finished, what it reported; for a dimension run, the views it wrote.
+ * the flow parameter values it was given) and, once it finished, what it reported; for a remove run, what became of the
+ * records it took; for a dimension run, the views it wrote.
  */
 export default function DeliveryRunCard({ run }: { run: RunDetail }) {
   const request = runRequest(run);
@@ -57,7 +91,9 @@ export default function DeliveryRunCard({ run }: { run: RunDetail }) {
   const reversalId = reversal.data?.[0]?.reversalId ?? null;
   const result = runResult(run);
   const undone = run.operation === "undo" ? undoRunCounts(result) : null;
-  const ledgerUndone = run.operation === "delete-ledger" ? undoneFirst(result) : null;
+  // Deleting the ledger and a removal each undo what unfinished deliveries left before they remove anything.
+  const ledgerUndone = run.operation === "delete-ledger" || run.operation === "remove" ? undoneFirst(result) : null;
+  const removalSummary = run.operation === "remove" && typeof result?.summary === "string" ? result.summary : null;
   // A deliver, replan or drain run ends with the sweep that undoes what unfinished deliveries left.
   const sweptUndone = run.operation === null || run.operation === "deliver" || run.operation === "replan" || run.operation === "drain" ? undoneFirst(result) : null;
   // A pipeline's cache steps: what it brought up to date before it rendered, and what it put into the cache after.
@@ -85,8 +121,17 @@ export default function DeliveryRunCard({ run }: { run: RunDetail }) {
               )}
               {request.recordKeys.length > 0 && (
                 <Badge variant="secondary">
-                  {request.recordKeys.length} scoped {request.recordKeys.length === 1 ? "record" : "records"}
+                  {request.recordKeys.length} {run.operation === "remove" ? "" : "scoped "}{request.recordKeys.length === 1 ? "record" : "records"}
                 </Badge>
+              )}
+              {request.removalScope !== null && (
+                <Badge variant="secondary" data-testid="run-removal-scope">
+                  {REMOVAL_LABELS[request.removalScope] ?? request.removalScope}
+                </Badge>
+              )}
+              {request.purgeLedger && <Badge variant="secondary" data-testid="run-purge-ledger">then delete from the ledger</Badge>}
+              {request.filter !== null && (
+                <Badge variant="secondary" className="font-mono" data-testid="run-removal-filter">{filterText(request.filter)}</Badge>
               )}
               {request.redeliver !== null && (
                 <Badge variant="secondary" data-testid="run-redeliver">
@@ -122,6 +167,13 @@ export default function DeliveryRunCard({ run }: { run: RunDetail }) {
       )}
 
       {reversalId !== null && <ReversalCard reversalId={reversalId} />}
+
+      {removalSummary !== null && (
+        <Card className="gap-1 rounded-lg p-3" data-testid="run-removal">
+          <h2 className="text-[13px] font-medium">Removal</h2>
+          <p className="text-[12.5px] text-muted-foreground" data-testid="run-removal-summary">{removalSummary}</p>
+        </Card>
+      )}
 
       {/* What an undo run took back, what deleting the ledger undid before it removed anything, and what a delivery run's sweep undid. */}
       {run.operation === "undo" && undone !== null && (

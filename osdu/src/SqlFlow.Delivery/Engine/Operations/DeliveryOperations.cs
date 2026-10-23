@@ -17,8 +17,9 @@ namespace SqlFlow.Delivery.Engine.Operations;
 
 /// <summary>
 /// The ad-hoc operations of a flow: what the GUI's buttons do when they need OSDU or the ingestion tables rather than the
-/// ledger. A person's reads run in the control plane as they are asked (<see cref="DirectOperations"/>); what scans or
-/// writes (a value check, a removal) is queued for a node. Either way the payload is the same: it names the flow
+/// ledger. A person's reads run in the control plane as they are asked (<see cref="DirectOperations"/>); what scans (a value
+/// check) is queued for a node. What writes to OSDU or the ledger (a removal among them) is a run of the flow instead, so it
+/// is listed with the flow's runs and never runs beside another of them. Either way the payload is the same: it names the flow
 /// (<c>sourceRef</c>) whose target and credentials it uses and carries the flow file's location (<c>repoRoot</c> +
 /// <c>relativePath</c> as the catalog knows them, or an absolute <c>flowFile</c>), and the process running it resolves every
 /// credential itself, exactly as it does for a run. The document must declare the named flow, so a stale catalog can never
@@ -290,84 +291,8 @@ public sealed class ReadRecordOperation : DeliveryOperation
 }
 
 /// <summary>
-/// <c>delivery-delete</c>: removes records from OSDU through the flow's protocol and records what happened to each
-/// one in the ledger under the requesting <c>actor</c>. <c>scope</c> says how much goes (<c>record</c> reversibly,
-/// <c>previous</c> for the latest version, the one before it written back as current, <c>history</c> for the earlier
-/// versions only, <c>everything</c> for the record and all its versions), <c>purgeLedger</c> (<c>true</c>, with record or
-/// everything) also deletes each record removed from the ledger, keeping one line of it, and the records are named either by
-/// <c>deliveryKeys</c> (a comma-separated list, one key for the single-record case) or by <c>filter</c> (the listing
-/// whose every match is to be removed), resolved here against the ledger.
-/// </summary>
-public sealed class DeleteRecordOperation : DeliveryOperation
-{
-    public const string OperationName = "delivery-delete";
-
-    public DeleteRecordOperation(EngineContext context)
-        : base(context)
-    {
-    }
-
-    public override string Name => OperationName;
-
-    protected override async Task<object> RunAsync(EngineContext context, FlowDefinition flow, ComputeTaskPayload payload, CancellationToken ct)
-    {
-        var scope = RemovalScopes.Parse(payload.Argument("scope"));
-        var purgeLedger = RemovalScopes.ParsePurgeLedger(payload.Argument("purgeLedger"));
-        var selection = ReadSelection(payload);
-        RequireLedger();
-        using var runtime = FlowRuntime.ForTarget(context, flow);
-        runtime.Actor = Actor(payload);
-        var summary = await runtime.RemoveAsync(selection, scope, purgeLedger, ct).ConfigureAwait(false);
-        return new
-        {
-            flow = flow.Label,
-            scope = RemovalScopes.Wire(scope),
-            summary.Selected,
-            summary.Removed,
-            summary.Restored,
-            summary.AlreadyGone,
-            summary.Purged,
-            summary.Skipped,
-            summary.Failed,
-            summary.Truncated,
-            // What the records' unfinished deliveries left, undone before anything was removed.
-            undone = summary.Undone,
-
-            // What the pipeline's after step did with what the removal changed in OSDU; absent when it names none.
-            cacheAfter = summary.CacheAfter,
-            records = summary.Records,
-            summary = summary.Describe(),
-            actor = runtime.Actor,
-            removedUtc = context.Time.GetUtcNow().UtcDateTime,
-        };
-    }
-
-    /// <summary>The keys the caller listed, or the listing filter it asked to have emptied. Exactly one of the two.</summary>
-    private static RemovalSelection ReadSelection(ComputeTaskPayload payload)
-    {
-        var listed = payload.Argument("deliveryKeys");
-        var filter = payload.Argument("filter");
-        if (!string.IsNullOrWhiteSpace(listed))
-        {
-            var keys = listed
-                .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
-                .Select(DeliveryKey.Parse)
-                .ToList();
-            return RemovalSelection.Of(keys);
-        }
-
-        if (string.IsNullOrWhiteSpace(filter))
-        {
-            throw new SqlFlowException("A removal needs either 'deliveryKeys' or 'filter'; the task carries neither.");
-        }
-
-        return RemovalSelection.Of(RemovalFilter.FromJson(filter));
-    }
-}
-
-/// <summary>
-/// A removal's <c>scope</c> on the wire: the lower-case names of the <see cref="RemovalChoice"/>s the API, the task payload
-/// and the GUI all use.
+/// A removal's <c>scope</c> on the wire: the lower-case names of the <see cref="RemovalChoice"/>s the API, the remove run's
+/// payload and the GUI all use.
 /// </summary>
 public static class RemovalScopes
 {
@@ -380,24 +305,7 @@ public static class RemovalScopes
         _ => throw new ArgumentOutOfRangeException(nameof(scope)),
     };
 
-    /// <summary>Parses a wire scope. Null is not a default: a removal must say how much it takes.</summary>
-    public static RemovalChoice Parse(string? wire)
-        => TryParse(wire, out var scope)
-            ? scope
-            : throw new SqlFlowException($"'{wire ?? "(none)"}' is not a removal scope; use record, previous, history or everything.");
-
-    /// <summary>
-    /// Parses the removal's <c>purgeLedger</c> argument: absent or <c>false</c> leaves the ledger as the removal leaves it,
-    /// <c>true</c> deletes what OSDU confirmed removed from it. Anything else is refused rather than read as either, since
-    /// a mistyped flag must neither delete history nor quietly keep it.
-    /// </summary>
-    public static bool ParsePurgeLedger(string? wire) => wire switch
-    {
-        null or "" or "false" => false,
-        "true" => true,
-        _ => throw new SqlFlowException($"'{wire}' is not what purgeLedger takes; use true or false."),
-    };
-
+    /// <summary>Reads a wire scope, exactly as written. Null is not a default: a removal must say how much it takes.</summary>
     public static bool TryParse(string? wire, out RemovalChoice scope)
     {
         switch (wire)
@@ -412,15 +320,23 @@ public static class RemovalScopes
 }
 
 /// <summary>
-/// The listing filter of a removal, carried through the task payload as JSON. It is the same filter the records
-/// list is built from, so what an operator selected with "every record matching this" is what the node resolves.
+/// The listing filter of a removal, as a remove run's payload carries it (<c>filter</c>). It is the filter the records list
+/// is built from, every part of it, the issue included, so what an operator selected with "every record matching this" is
+/// what the run removes and never more: a part left out here would widen the set the run resolves past the one the operator
+/// was shown and counted. A property it does not know is refused, as the payload around it refuses one.
 /// </summary>
 public sealed class RemovalFilter
 {
+    private static readonly JsonSerializerOptions Strict = new(DeliveryOperation.JsonOptions)
+    {
+        UnmappedMemberHandling = JsonUnmappedMemberHandling.Disallow,
+    };
+
     public string? Status { get; set; }
 
     public string? Search { get; set; }
 
+    /// <summary>How the search matches: <c>contains</c>, or a prefix when left out.</summary>
     public string? Mode { get; set; }
 
     public Guid? SubmissionId { get; set; }
@@ -430,45 +346,75 @@ public sealed class RemovalFilter
 
     public Guid? RunId { get; set; }
 
-    public bool Drifted { get; set; }
+    /// <summary>Only drifted records when true; left out, every record.</summary>
+    public bool? Drifted { get; set; }
+
+    /// <summary>The issue whose blocked records the listing keeps: the sixteen characters the flow's issues listing gives it.</summary>
+    public string? Issue { get; set; }
 
     public static RecordQuery FromJson(string json)
     {
-        var filter = JsonSerializer.Deserialize<RemovalFilter>(json, DeliveryOperation.JsonOptions)
-            ?? throw new SqlFlowException("The removal's filter is not a JSON object.");
+        RemovalFilter? filter;
+        try
+        {
+            filter = JsonSerializer.Deserialize<RemovalFilter>(json, Strict);
+        }
+        catch (JsonException ex)
+        {
+            throw new SqlFlowException($"payload filter is not a listing filter: {ex.Message}", ex);
+        }
+
+        if (filter is null)
+        {
+            throw new SqlFlowException("payload filter is not a JSON object.");
+        }
+
         RecordStatus? status = null;
         if (!string.IsNullOrWhiteSpace(filter.Status))
         {
             status = Enum.TryParse<RecordStatus>(filter.Status, ignoreCase: true, out var parsed)
                 ? parsed
-                : throw new SqlFlowException($"'{filter.Status}' is not a record status.");
+                : throw new SqlFlowException($"payload filter status '{filter.Status}' is not a record status.");
+        }
+
+        long? problem = null;
+        if (!string.IsNullOrWhiteSpace(filter.Issue))
+        {
+            problem = ProblemSignature.TryParse(filter.Issue.Trim().ToLowerInvariant(), out var issue)
+                ? issue
+                : throw new SqlFlowException(
+                    $"payload filter issue '{filter.Issue}' is not an issue: an issue is the {ProblemSignature.TextLength} characters the flow's issues listing gives it.");
         }
 
         return new RecordQuery
         {
             Status = status,
+            Problem = problem,
             Search = string.IsNullOrWhiteSpace(filter.Search) ? null : filter.Search.Trim(),
             Mode = string.Equals(filter.Mode, "contains", StringComparison.OrdinalIgnoreCase) ? SearchMode.Contains : SearchMode.Prefix,
             SubmissionId = filter.SubmissionId,
             DeliveredBySubmissionId = filter.DeliveredBySubmissionId,
             RunId = filter.RunId,
-            Drifted = filter.Drifted,
+            Drifted = filter.Drifted == true,
         };
     }
 
     public static string ToJson(RecordQuery query)
     {
         ArgumentNullException.ThrowIfNull(query);
+
+        // Only the parts that narrow the listing are written, so the run's payload says what was asked and no more.
         return JsonSerializer.Serialize(
             new RemovalFilter
             {
                 Status = query.Status?.ToString().ToLowerInvariant(),
                 Search = query.Search,
-                Mode = query.Mode == SearchMode.Contains ? "contains" : "prefix",
+                Mode = query.Mode == SearchMode.Contains ? "contains" : null,
                 SubmissionId = query.SubmissionId,
                 DeliveredBySubmissionId = query.DeliveredBySubmissionId,
                 RunId = query.RunId,
-                Drifted = query.Drifted,
+                Drifted = query.Drifted ? true : null,
+                Issue = query.Problem is { } issue ? ProblemSignature.Format(issue) : null,
             },
             DeliveryOperation.JsonOptions);
     }

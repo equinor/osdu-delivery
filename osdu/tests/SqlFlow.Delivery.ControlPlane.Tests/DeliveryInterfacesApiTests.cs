@@ -11,6 +11,7 @@ using SqlFlow.Core.Identity;
 using SqlFlow.Delivery.ControlPlane;
 using SqlFlow.Delivery.Data;
 using SqlFlow.Delivery.Documents;
+using SqlFlow.Delivery.Engine;
 using SqlFlow.Delivery.Identity;
 using SqlFlow.Delivery.Ledger;
 using SqlFlow.Delivery.Tests;
@@ -275,6 +276,42 @@ public sealed class DeliveryInterfacesApiTests
 
             Assert.NotNull(await ledger.GetRecordAsync(logsLedger, key));
 
+            // A removal is queued as a remove run of the pipeline, listed with its runs, naming the interface it works in, its
+            // records and how much of each goes. The worker is off here, so neither run below changes the record.
+            using (var queued = await SendJsonAsync(
+                client, token, HttpMethod.Post, $"/api/v1/delivery/flows/{pipelineId:D}/records/remove?interface=welllogs",
+                new { scope = "record", keys = new[] { key.Value }, purgeLedger = true }))
+            {
+                var body = await queued.Content.ReadAsStringAsync();
+                Assert.True(queued.StatusCode == HttpStatusCode.Accepted, body);
+                var accepted = JsonDocument.Parse(body).RootElement;
+                var runId = accepted.GetProperty("runId").GetGuid();
+                Assert.Equal(
+                    ("record", 1, true),
+                    (accepted.GetProperty("scope").GetString(), accepted.GetProperty("records").GetInt32(), accepted.GetProperty("purgeLedger").GetBoolean()));
+                Assert.Equal($"/api/v1/runs/{runId:D}", queued.Headers.Location?.OriginalString);
+                await using var db = CatalogDatabase.Create(cs);
+                var run = await db.Runs.AsNoTracking().SingleAsync(r => r.RunId == runId);
+                Assert.Equal((DeliveryOperations.Remove, pipelineId, RunStatuses.Queued), (run.Operation, run.PipelineId, run.Status));
+                var payload = DeliveryRunPayload.Parse(run.Payload);
+                Assert.Equal(("welllogs", RemovalChoice.Record, true), (payload.Interface, payload.Scope, payload.PurgeLedger));
+                Assert.Equal([key.Value], payload.RecordKeys);
+            }
+
+            // By filter, the listing travels to the run whole, which resolves it when it removes the records.
+            using (var byFilter = await SendJsonAsync(
+                client, token, HttpMethod.Post, $"/api/v1/delivery/flows/{pipelineId:D}/records/remove?interface=welllogs",
+                new { scope = "everything", filter = new { status = "pending" }, expected = 1 }))
+            {
+                var body = await byFilter.Content.ReadAsStringAsync();
+                Assert.True(byFilter.StatusCode == HttpStatusCode.Accepted, body);
+                var runId = JsonDocument.Parse(body).RootElement.GetProperty("runId").GetGuid();
+                await using var db = CatalogDatabase.Create(cs);
+                var payload = DeliveryRunPayload.Parse((await db.Runs.AsNoTracking().SingleAsync(r => r.RunId == runId)).Payload);
+                Assert.Equal((RemovalChoice.Everything, RecordStatus.Pending), (payload.Scope, payload.Filter?.Status));
+                Assert.Empty(payload.RecordKeys);
+            }
+
             // A record OSDU may still hold is not deleted from the ledger alone, and the preview counts none of it as removed.
             using (var notRemoved = await SendAsync(client, token, HttpMethod.Post, $"/api/v1/delivery/records/{logsLedger:D}/{key.Value:D}/purge"))
             {
@@ -330,6 +367,8 @@ public sealed class DeliveryInterfacesApiTests
             await using (var db = CatalogDatabase.Create(cs))
             {
                 await db.ComputeTasks.Where(t => t.SourceRef == flowName).ExecuteDeleteAsync();
+                await db.RunEvents.Where(e => e.RepoId == repoId).ExecuteDeleteAsync();
+                await db.Runs.Where(r => r.RepoId == repoId).ExecuteDeleteAsync();
                 await db.Pipelines.Where(p => p.RepoId == repoId).ExecuteDeleteAsync();
                 await db.Repos.Where(r => r.Id == repoId).ExecuteDeleteAsync();
             }

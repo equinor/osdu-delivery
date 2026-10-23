@@ -1,6 +1,7 @@
 using System.Text.Json;
 using SqlFlow.Core;
 using SqlFlow.Core.Runs;
+using SqlFlow.Core.Secrets;
 using SqlFlow.Delivery.Engine;
 using SqlFlow.Delivery.Engine.FanOut;
 using SqlFlow.Delivery.Engine.Intake;
@@ -310,6 +311,56 @@ public class ScaleEngineTests : IDisposable
         Assert.Equal(SubmissionStatus.Completed, result.Submission.Status);
         Assert.Equal(5, result.Submission.Delivered);
         Assert.Equal(Path.Combine(_root, "work"), result.Submission.WorkLocation);
+    }
+
+    /// <summary>
+    /// A work location that names the deployment's storage (<c>${env:LANDING_URL}/...</c>) is resolved with the run's own
+    /// values as the run opens, so the coordinating run and its members write and read the same batches, and the delivery
+    /// fans out over it.
+    /// </summary>
+    [Fact]
+    public async Task A_work_location_naming_the_deployment_s_storage_is_resolved_and_the_delivery_fans_out_over_it()
+    {
+        var tables = await EstateAsync();
+        var ledger = _db.Ledger(_clock);
+        var protocol = new FakeProtocol();
+        var local = Samples.LocalFlow(_root);
+        var flow = local with
+        {
+            Source = local.Source with { Work = "${env:LANDING_URL}/.work/welllog" },
+            Parallelism = local.Parallelism with { FanOut = 2, FanOutMinRecords = 1, BatchRecords = 1 },
+        };
+        var landing = Path.Combine(_root, "landing");
+        using var supplied = SuppliedReferences.Supply(new Dictionary<string, string>(StringComparer.Ordinal) { ["LANDING_URL"] = landing });
+        var dispatcher = new InlineDispatcher(flow);
+        var engine = Samples.Engine(ledger, _clock, sources: tables) with { Protocols = new FakeProtocolFactory(protocol), FanOut = dispatcher };
+        dispatcher.Engine = engine;
+        using var runtime = await FlowRuntime.CreateAsync(engine, flow, SampleEstate.Values);
+        await ledger.RegisterAsync(runtime.Flow);
+        runtime.RunId = Guid.NewGuid();
+        runtime.Actor = "test";
+
+        var result = await runtime.RunAsync(force: false);
+
+        Assert.Equal((2, 2), (result.IntakeMembers, result.DrainMembers));
+        Assert.Equal(SubmissionStatus.Completed, result.Submission.Status);
+        Assert.Equal(5, result.Submission.Delivered);
+        Assert.Equal(Path.Combine(landing, ".work", "welllog"), result.Submission.WorkLocation);
+        Assert.True(File.Exists(WorkBatchFile.PathFor(result.Submission.WorkLocation!, result.Submission.SubmissionId, 0)));
+    }
+
+    [Fact]
+    public async Task A_work_location_naming_a_reference_the_run_cannot_resolve_stops_it_before_anything_is_read()
+    {
+        var tables = await EstateAsync();
+        var engine = Samples.Engine(_db.Ledger(_clock), _clock, sources: tables);
+        var local = Samples.LocalFlow(_root);
+        var flow = local with { Source = local.Source with { Work = "${env:OSDU_TEST_NO_SUCH_WORK_ROOT}/.work" } };
+
+        var refused = await Assert.ThrowsAsync<SqlFlowException>(() => FlowRuntime.CreateAsync(engine, flow, SampleEstate.Values));
+
+        Assert.StartsWith("The source.work '${env:OSDU_TEST_NO_SUCH_WORK_ROOT}/.work' names a reference that does not resolve", refused.Message, StringComparison.Ordinal);
+        Assert.Equal(0, tables.Opens);
     }
 
     /// <summary>

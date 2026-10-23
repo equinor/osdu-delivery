@@ -85,7 +85,7 @@ A run of a delivery flow performs one operation, the one it names (`sqlflow run 
 | `replan` | Read every row of the scope again and deliver what renders differently. |
 | `verify` | Read back delivered records from OSDU and record `match`, `drifted` or `missing`: up to 5,000 records a run, those not verified in the last 24 hours unless forced. |
 | `sync` | Consolidate the ledger with the ingestion tables; renders and sends nothing ([Removal and reversal](removal-and-reversal.md#syncing-the-ledger-with-the-source)). |
-| `reverse`, `undo`, `delete-ledger` | Put back what a run delivered, undo unfinished deliveries, delete the ledger ([Removal and reversal](removal-and-reversal.md)). |
+| `reverse`, `undo`, `remove`, `delete-ledger` | Put back what a run delivered, undo unfinished deliveries, remove records, delete the ledger ([Removal and reversal](removal-and-reversal.md)). |
 
 Every operation of a source with interfaces runs each interface it selects in order ([Interfaces](../flow/interfaces.md)),
 each under its own ledger identity, as a run of that interface alone would.
@@ -233,10 +233,12 @@ control plane's replica target brings up nodes for them
 family on the run's page.
 
 **Where the work batches are.** Every member reads and writes the submission's [work batches](#work-batches), on whichever
-node runs it, so a delivery fans out only when its `source.work` is a storage URI or an absolute path every node reaches.
+node runs it, so a delivery fans out only when its `source.work` is a storage URI or an absolute path every node reaches:
+on a deployment, its storage, `work: ${env:LANDING_URL}/.work/welllog/{logSource}`, which every run resolves with the
+values the control plane supplies and every worker is granted.
 A relative `source.work` is a folder in the copy of the repository each node runs the flow from, which no other node
 reads; a flow with one plans and sends on one run, and its trace says so:
-`The intake is not fanned out: source.work '../.work/{logSource}' is a folder in this node's copy of the repository, which no other node reads; put it on storage every node reaches (a storage URI) to fan out.`
+`The intake is not fanned out: source.work '../.work/{logSource}' is a folder in this node's copy of the repository, which no other node reads; write it on storage every node reaches, such as the deployment's (${env:LANDING_URL}/.work/...), to fan out.`
 
 **Planning.** When the record table names its identity primary key (`source.record.primaryKey`), the coordinating run cuts
 the candidate keys into contiguous slices on it, about a work batch each and at most 1,024, records the cut on the

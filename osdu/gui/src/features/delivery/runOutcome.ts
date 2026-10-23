@@ -62,6 +62,35 @@ export function runRecordCounts(result: Record<string, unknown> | null): RunReco
   };
 }
 
+/** What a remove run reported of the records it selected; each null when the run reports none of it. */
+export interface RunRemovalCounts {
+  selected: number | null;
+  removed: number | null;
+  restored: number | null;
+  alreadyGone: number | null;
+  skipped: number | null;
+  failed: number | null;
+  /** Of the records removed or already gone, those deleted from the ledger as well. */
+  purged: number | null;
+}
+
+/** The counts a remove run reported; null before it finished, and for every other run. */
+export function runRemovalCounts(result: Record<string, unknown> | null): RunRemovalCounts | null {
+  if (result === null || result.operation !== "remove") {
+    return null;
+  }
+
+  return {
+    selected: count(result, "selected"),
+    removed: count(result, "removed"),
+    restored: count(result, "restored"),
+    alreadyGone: count(result, "alreadyGone"),
+    skipped: count(result, "skipped"),
+    failed: count(result, "failed"),
+    purged: count(result, "purged"),
+  };
+}
+
 /** What one of a pipeline's cache steps said: before or after the run, its sentence, and whether it left the cache as it was. */
 export interface RunCacheStep {
   step: "before" | "after";
@@ -129,6 +158,12 @@ export interface RunRequest {
   reversesRun: string | null;
   /** The one interface of a source the run works on, when it names one. */
   interfaceName: string | null;
+  /** How much of each record a remove run takes (record, previous, history, everything); null for every other run. */
+  removalScope: string | null;
+  /** Whether a remove run deletes from the ledger too what OSDU answered for. */
+  purgeLedger: boolean;
+  /** The listing a remove run empties, its parts as the payload names them; null for a removal by key and every other run. */
+  filter: Record<string, unknown> | null;
 }
 
 function names(value: unknown): string[] {
@@ -152,6 +187,9 @@ export function runRequest(run: RunDetail): RunRequest {
     tags: names(payload.tags),
     reversesRun: typeof payload.runId === "string" && UUID.test(payload.runId) ? payload.runId : null,
     interfaceName: typeof payload.interface === "string" ? payload.interface : null,
+    removalScope: typeof payload.scope === "string" ? payload.scope : null,
+    purgeLedger: payload.purgeLedger === true,
+    filter: isRecord(payload.filter) ? payload.filter : null,
   };
 }
 
