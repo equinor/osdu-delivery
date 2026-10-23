@@ -211,16 +211,25 @@ public sealed class DeliveryModuleTests
 
     /// <summary>
     /// The module's database declaration: the catalog's database, on the catalog's connection or, on a node, through the
-    /// catalog's environment variable; and the version row its migrate records is the one status and startup verification
-    /// read back.
+    /// catalog's environment variable, or the one a node's older settings gave it in; and the version row its migrate
+    /// records is the one status and startup verification read back.
     /// </summary>
     [Fact]
     public async Task TheModuleDatabase_IsTheCatalogs_AndRoundTripsItsVersionRow()
     {
         Assert.Null(OsduModuleDatabase.Create().ConnectionReference);
-        var node = OsduModuleDatabase.CreateForNode();
+
+        // A node reads SQLFLOW_CATALOG_DB, whatever else its settings give.
+        var node = OsduModuleDatabase.CreateForNode(NodeEnvironment(("SQLFLOW_CATALOG_DB", "Server=db;Database=OsduDelivery"), ("SQLFLOW_OSDU_DB", "Server=db;Database=OsduDelivery")));
         Assert.Equal("${env:SQLFLOW_CATALOG_DB}", node.ConnectionReference);
         Assert.Equal("module 'osdu' (schema 'osdu', own connection)", node.Describe());
+
+        // A node whose settings predate it, and give the catalog's connection in SQLFLOW_OSDU_DB alone, reads that instead.
+        var older = OsduModuleDatabase.CreateForNode(NodeEnvironment(("SQLFLOW_OSDU_DB", "Server=db;Database=OsduDelivery")));
+        Assert.Equal("${env:SQLFLOW_OSDU_DB}", older.ConnectionReference);
+
+        // A node given neither names the variable it needs when it opens the database.
+        Assert.Equal("${env:SQLFLOW_CATALOG_DB}", OsduModuleDatabase.CreateForNode(NodeEnvironment(("SQLFLOW_OSDU_DB", " "))).ConnectionReference);
 
         // The after-migrate and read-version hooks are the module's own, and they keep exactly one row.
         var database = OsduModuleDatabase.Create();
@@ -381,6 +390,10 @@ public sealed class DeliveryModuleTests
         var kept = configured.Services.GetRequiredService<IOptions<SqlFlow.ControlPlane.Configuration.ControlPlaneOptions>>().Value.Assistant.Mcp.AllowedTools;
         Assert.Equal(["delivery_record"], kept);
     }
+
+    /// <summary>An environment holding <paramref name="variables"/> alone, as a node's would.</summary>
+    private static Func<string, string?> NodeEnvironment(params (string Name, string Value)[] variables)
+        => name => variables.FirstOrDefault(v => string.Equals(v.Name, name, StringComparison.Ordinal)).Value;
 
     /// <summary>The control plane with the module, and without the settings a test host must not act on (no network warm-up).</summary>
     private static ControlPlaneAppFactory Host()

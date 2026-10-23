@@ -69,6 +69,13 @@ should be no duplicate connections, and every hard-coded lookup of the second on
   Terraform's `osdu_database_name` and the Bicep's `osduDatabaseName` are accepted and ignored, so an environment file
   or a parameters file that still sets them deploys unchanged. The human, on the first refusal: a deployed application's
   environment cannot always be changed, so an unused variable has to be handled gracefully.
+- **A node given `SQLFLOW_OSDU_DB` alone reads the catalog's connection from it, as a temporary workaround.** A node
+  given `SQLFLOW_CATALOG_DB` reads that and ignores the old variable. This was first rejected, the human having asked
+  that the old variable be ignored rather than used, until the dev workers deployed from the fork crash-looped: their
+  image rolled forward to this decision while their settings, which an administrator deployed and the human cannot
+  change, still gave `SQLFLOW_OSDU_DB` alone. Every such deployment set it to the catalog's connection, so the node reads
+  the same database either way, and it warns as it starts. The Terraform is left as it is: its next apply gives the
+  nodes `SQLFLOW_CATALOG_DB`.
 - **The control plane owns the `osdu` schema.** It migrates and verifies the catalog and then the module at startup,
   serves the ledger, the mappings, the templates and the caches to the GUI and the API, and reads each data database for
   the reads a person waits on. That access is the module's requirement, not SQLFlow's, and the one connection carries it.
@@ -85,11 +92,6 @@ should be no duplicate connections, and every hard-coded lookup of the second on
   guarded nothing there and stopped deployments whose settings their operators cannot change; the human chose to ignore
   the settings instead. The case it guarded is left to the upgrade: such an estate brings its `osdu` schema into the
   catalog's database first.
-- **Reading `SQLFLOW_OSDU_DB` in place of a missing `SQLFLOW_CATALOG_DB` on a node**, as a fallback for a node whose
-  settings predate this decision: the human asked that the old variable be ignored rather than used. The Terraform and
-  Bicep deployments give each node `SQLFLOW_CATALOG_DB` when they apply, and the compose, Kubernetes and Radix layouts
-  already gave it.
-
 - **Keeping `SQLFLOW_OSDU_DB` as an optional override**: it was already optional, and every deployment still wrote and
   mounted it, pointing at the catalog's database. Two names for one database is the duplicate the human asked to remove.
 - **Keeping a database of the module's own as an option for Azure SQL**: no estate used it, and it alone kept the second

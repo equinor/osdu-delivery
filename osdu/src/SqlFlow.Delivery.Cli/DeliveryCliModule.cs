@@ -19,7 +19,8 @@ namespace SqlFlow.Delivery.Cli;
 /// <remarks>
 /// The module's database is the catalog's, which holds the <c>osdu</c> schema: a command opens it on the catalog the command
 /// line names (<c>--db</c>, else <c>${env:SQLFLOW_CATALOG_DB}</c>), and a worker node, which SQLFlow gives no catalog
-/// connection, through <c>${env:SQLFLOW_CATALOG_DB}</c>, and says so when it is unset.
+/// connection, through <c>${env:SQLFLOW_CATALOG_DB}</c>, and says so when it is unset. A node whose settings predate it and
+/// give <c>SQLFLOW_OSDU_DB</c> alone reads the catalog's connection from that, and warns as it starts.
 /// </remarks>
 public sealed class DeliveryCliModule : ICliModule
 {
@@ -399,8 +400,22 @@ public sealed class DeliveryCliModule : ICliModule
         ArgumentNullException.ThrowIfNull(services);
 
         // The module's database is the catalog's: a command opens it on the catalog the command line names, and a node,
-        // which SQLFlow gives no catalog connection, through the catalog's environment variable.
-        services.AddDatabase(services.Scope == CliServiceScope.Worker ? OsduModuleDatabase.CreateForNode() : OsduModuleDatabase.Create());
+        // which SQLFlow gives no catalog connection, through the catalog's environment variable, or the one its settings
+        // gave the catalog's connection in before, when it has that alone.
+        if (services.Scope == CliServiceScope.Worker)
+        {
+            var database = OsduModuleDatabase.CreateForNode(Environment.GetEnvironmentVariable);
+            if (database.ConnectionReference == OsduModuleDatabase.LegacyNodeReference)
+            {
+                Console.Error.WriteLine($"WARN  {OsduModuleDatabase.LegacyNodeNotice}");
+            }
+
+            services.AddDatabase(database);
+        }
+        else
+        {
+            services.AddDatabase(OsduModuleDatabase.Create());
+        }
 
         services.Services.AddDeliveryKind();
         services.Services.AddDeliveryLedger();

@@ -302,3 +302,14 @@ the hosts' refusal (`osdu/src/SqlFlow.Delivery/Hosting/OsduModuleDatabase.cs`, c
 Amended [0026](decisions/0026-one-database-connection.md): the retired settings are ignored, by the hosts, the local
 check and the deployments; refusing them, and reading the old variable as a node's fallback, are recorded as rejected,
 with what the refusal had guarded and where that case now sits.
+
+## [2026-10-24] ingest | A node reads the old variable when it lacks the new one, decision 0026 amended
+
+Source: the dev workers deployed from the fork, which crash-looped on the latest code: their settings, deployed by an
+administrator, give `SQLFLOW_OSDU_DB` and not `SQLFLOW_CATALOG_DB`, and the human cannot change them. The human asked
+for the worker to support both names, in the C# code alone, as a temporary workaround. The code:
+`osdu/src/SqlFlow.Delivery/Hosting/OsduModuleDatabase.cs` (`CreateForNode`) and
+`osdu/src/SqlFlow.Delivery.Cli/DeliveryCliModule.cs`.
+
+Amended [0026](decisions/0026-one-database-connection.md): the node's fallback moved from the rejected alternatives
+into the decision, with why it was first rejected and what changed.
