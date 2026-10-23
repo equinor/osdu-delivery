@@ -14,7 +14,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   a tag on a canonical template, and each record links its child of that kind, the record with the same minted id, once
   OSDU holds it; until then the property is left out and the record is never held for it. When the child lands, the
   record is planned again and its flow's next run sends it with the link, its document alone. The mapping builder offers
-  a **Child record** input and a template's sheet names its children ([Mapping $child](osdu/docs/reference/flow/mapping-child.md)).
+  a **Child record** input and a template's sheet names its children ([Mapping $child](osdu/docs/reference/flow/mapping-child.md);
+  the whole shape, both templates, mappings and flows, in [Linked records](osdu/docs/reference/guides/linked-records.md)).
 - **Records a source no longer holds are taken out of OSDU by a removal flow.** A `flowType: removal` document reads the
   keys a source holds now, whole, from its files or a table, and optionally a list of the keys it removed, compares them
   with a delivery flow's ledger on a schedule of its own, and takes out of OSDU (reversibly) each record whose key is gone,

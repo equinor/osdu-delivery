@@ -66,6 +66,8 @@ Which tool:
   delivery_cache_changes for what awaits approval.
 - Mappings and schemas: delivery_mappings, delivery_templates, delivery_osdu_schemas, delivery_osdu_schema_compare.
   Writing a mapping: delivery_scaffold_mapping, then delivery_check_mapping until valid, then propose_pipelines.
+  A custom copy of a canonical kind, delivered beside it and linked to it both ways (the custom template's
+  x-osdu-inheriting-from-kind, $parent in its mapping, $child in the canonical mapping): delivery-guide-linked-records.
 - Tests and dimensions: delivery_assertions, delivery_assertion_runs, delivery_dimensions. Retrievals: delivery_retrievals.
 
 Running an OSDU flow: trigger_run with the kind's own arguments, never fullLoad or a backfill window.

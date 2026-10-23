@@ -25,6 +25,7 @@ related:
   - delivery-wiki-0004-preserved-keys
   - delivery-wiki-0002-client-supplied-ids
   - delivery-wiki-0023-child-links
+  - delivery-wiki-linked-canonical-and-custom-records
 sourceRefs:
   - osdu/src/SqlFlow.Delivery/Templates/TemplateParent.cs
   - osdu/src/SqlFlow.Delivery/Documents/MappingMapper.Record.cs

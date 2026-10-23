@@ -23,6 +23,7 @@ related:
   - delivery-wiki-0019-linked-templates
   - delivery-wiki-0002-client-supplied-ids
   - delivery-wiki-0009-searched-references
+  - delivery-wiki-linked-canonical-and-custom-records
 sourceRefs:
   - osdu/src/SqlFlow.Delivery/Documents/MappingMapper.Record.cs
   - osdu/src/SqlFlow.Delivery/Rendering/EntryValues.cs

@@ -2672,7 +2672,8 @@
         "delivery-concept-architecture",
         "delivery-table-repository-template",
         "delivery-flow-mapping-parent",
-        "delivery-flow-mapping-child"
+        "delivery-flow-mapping-child",
+        "delivery-guide-linked-records"
       ],
       "sourceRefs": [
         "osdu/src/SqlFlow.Delivery/Templates/OsduTemplate.cs",
@@ -3620,6 +3621,7 @@
       ],
       "yamlPath": "record.<property>.$child (documentType: mapping)",
       "related": [
+        "delivery-guide-linked-records",
         "delivery-flow-mapping-parent",
         "delivery-concept-templates",
         "delivery-flow-mapping",
@@ -3836,7 +3838,8 @@
         "delivery-flow-ddms",
         "delivery-table-record",
         "delivery-table-attempt",
-        "delivery-flow-mapping-child"
+        "delivery-flow-mapping-child",
+        "delivery-guide-linked-records"
       ],
       "sourceRefs": [
         "osdu/src/SqlFlow.Delivery/Templates/TemplateParent.cs",
@@ -4508,6 +4511,59 @@
       ]
     },
     {
+      "id": "delivery-guide-linked-records",
+      "corpus": "reference",
+      "path": "guides/linked-records.md",
+      "title": "Delivering a custom record beside its canonical record, linked both ways: a linked template, $parent and $child",
+      "type": "guide",
+      "summary": "Copy a canonical kind into a custom template linked to it, deliver both records from the same rows, and link them both ways with $parent and $child.",
+      "keywords": [
+        "linked records",
+        "interlinked records",
+        "custom template",
+        "canonical kind",
+        "custom schema",
+        "link both ways",
+        "parent and child",
+        "$parent",
+        "$child",
+        "x-osdu-inheriting-from-kind",
+        "ExtensionProperties link",
+        "tag link",
+        "custom well log",
+        "DDMSDatasets",
+        "same minted id"
+      ],
+      "related": [
+        "delivery-flow-mapping-parent",
+        "delivery-flow-mapping-child",
+        "delivery-concept-templates",
+        "delivery-flow-mapping",
+        "delivery-flow-routes",
+        "delivery-flow-ddms",
+        "delivery-concept-lineage",
+        "delivery-concept-change-detection",
+        "delivery-cli-check",
+        "delivery-cli-records",
+        "delivery-guide-writing-a-mapping"
+      ],
+      "sourceRefs": [
+        "osdu/src/SqlFlow.Delivery/Templates/TemplateParent.cs",
+        "osdu/src/SqlFlow.Delivery/Documents/MappingMapper.Record.cs",
+        "osdu/src/SqlFlow.Delivery/Rendering/EntryValues.cs",
+        "osdu/src/SqlFlow.Delivery/Rendering/MappingRenderer.cs",
+        "osdu/src/SqlFlow.Delivery/Engine/OsduRecordSearch.cs",
+        "osdu/src/SqlFlow.Delivery/Engine/RouteChecks.cs",
+        "osdu/src/SqlFlow.Delivery/Validation/Preflight.cs",
+        "osdu/src/SqlFlow.Delivery/Ledger/OsduLedger.Parents.cs",
+        "osdu/src/SqlFlow.Delivery/Ledger/OsduLedger.Children.cs",
+        "osdu/src/SqlFlow.Delivery/Documents/DeliveryLineage.cs",
+        "osdu/src/SqlFlow.Delivery.Cli/DeliveryRecordVerbs.cs",
+        "osdu/tests/SqlFlow.Delivery.Tests/ParentDeliveryTests.cs",
+        "osdu/tests/SqlFlow.Delivery.Tests/ChildDeliveryTests.cs"
+      ]
+    },
+    {
       "id": "delivery-guide-lookup-table-cache",
       "corpus": "reference",
       "path": "guides/lookup-table-cache.md",
@@ -5014,7 +5070,8 @@
         "delivery-cli-check",
         "delivery-cli-values",
         "delivery-cli-preview",
-        "delivery-concept-templates"
+        "delivery-concept-templates",
+        "delivery-guide-linked-records"
       ],
       "sourceRefs": [
         "osdu/src/SqlFlow.Delivery.Cli/DeliveryVerbs.cs",
@@ -7249,7 +7306,8 @@
         "delivery-wiki-0009-searched-references",
         "delivery-wiki-0004-preserved-keys",
         "delivery-wiki-0002-client-supplied-ids",
-        "delivery-wiki-0023-child-links"
+        "delivery-wiki-0023-child-links",
+        "delivery-wiki-linked-canonical-and-custom-records"
       ],
       "sourceRefs": [
         "osdu/src/SqlFlow.Delivery/Templates/TemplateParent.cs",
@@ -7381,7 +7439,8 @@
       "related": [
         "delivery-wiki-0019-linked-templates",
         "delivery-wiki-0002-client-supplied-ids",
-        "delivery-wiki-0009-searched-references"
+        "delivery-wiki-0009-searched-references",
+        "delivery-wiki-linked-canonical-and-custom-records"
       ],
       "sourceRefs": [
         "osdu/src/SqlFlow.Delivery/Documents/MappingMapper.Record.cs",
@@ -7392,6 +7451,40 @@
         "osdu/src/SqlFlow.Delivery/Ledger/OsduLedger.Children.cs",
         "osdu/src/SqlFlow.Delivery/Documents/DeliveryLineage.cs",
         "osdu/tests/SqlFlow.Delivery.Tests/ChildLedgerTests.cs"
+      ]
+    },
+    {
+      "id": "delivery-wiki-linked-canonical-and-custom-records",
+      "corpus": "wiki",
+      "path": "patterns/linked-canonical-and-custom-records.md",
+      "title": "Pattern: a custom record beside its canonical record, linked both ways and supplementing each other",
+      "type": "pattern",
+      "summary": "When OSDU's schema lacks what a source knows: a custom copy of the kind, linked to it, the two records reading and linking each other.",
+      "keywords": [
+        "linked records",
+        "interlinked records",
+        "custom template",
+        "canonical kind",
+        "custom schema",
+        "$parent",
+        "$child",
+        "link both ways",
+        "x-osdu-inheriting-from-kind",
+        "ExtensionProperties"
+      ],
+      "related": [
+        "delivery-wiki-0019-linked-templates",
+        "delivery-wiki-0023-child-links",
+        "delivery-wiki-0018-template-folders",
+        "delivery-wiki-pattern-catalog"
+      ],
+      "sourceRefs": [
+        "osdu/src/SqlFlow.Delivery/Templates/TemplateParent.cs",
+        "osdu/src/SqlFlow.Delivery/Rendering/EntryValues.cs",
+        "osdu/src/SqlFlow.Delivery/Engine/RouteChecks.cs",
+        "osdu/src/SqlFlow.Delivery/Ledger/OsduLedger.Parents.cs",
+        "osdu/src/SqlFlow.Delivery/Ledger/OsduLedger.Children.cs",
+        "osdu/tests/SqlFlow.Delivery.Tests/ChildDeliveryTests.cs"
       ]
     },
     {
@@ -7419,6 +7512,7 @@
       "related": [
         "wiki-pattern-catalog",
         "delivery-wiki-0018-template-folders",
+        "delivery-wiki-linked-canonical-and-custom-records",
         "delivery-wiki-0022-removal-flows"
       ],
       "sourceRefs": [

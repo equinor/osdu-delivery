@@ -173,3 +173,17 @@ why the child is looked up in storage rather than assumed from the key, why `Lin
 in the canonical template, a hold and a lineage edge were rejected, and why the ledger finds the records to plan again by
 the unique segment they share with their children rather than by the child's `ParentId`. Added a
 [pattern catalog](maps/pattern-catalog.md) row for linking a canonical record to its custom record. Indexed 0023.
+
+## [2026-10-23] ingest | Linked canonical and custom records, the first pattern page
+
+Source: the production estate's well log folder after the canonical WellLog mapping linked its custom records
+(`$child` in a property of `ExtensionProperties`), which the human ran and confirmed linking both ways, and the guide
+added beside it ([linked records](../reference/guides/linked-records.md)). Discussed with the human: the pattern has to be
+findable by the MCP server, with the code each piece needs.
+
+Added the wiki's first pattern page, [a custom record beside its canonical record, linked both ways](patterns/linked-canonical-and-custom-records.md):
+the problem, the shape, why it is this shape, what to watch for, and the estate folder that runs it, described by what it
+delivers. The guide carries the code (the custom template, both mappings, both flows, the checks, what each run does).
+Pointed the pattern catalog's two rows, 0019 and 0023 at it, and the `$parent`, `$child`, templates and writing-a-mapping
+pages at the guide. The MCP server's instructions name the guide beside the mapping tools, and its templates tool says a
+template's detail lists its children. Indexed the page under a new Patterns heading.

@@ -18,6 +18,7 @@ keywords:
   - child landed
   - plan again
 related:
+  - delivery-guide-linked-records
   - delivery-flow-mapping-parent
   - delivery-concept-templates
   - delivery-flow-mapping
@@ -218,6 +219,8 @@ the custom ones that read them, and neither waits for the other ([lineage](../co
 
 ## Related
 
+- [Linked records](../guides/linked-records.md): the guide that builds a custom record beside its canonical record, linked
+  both ways, every piece as code.
 - [Mapping $parent](mapping-parent.md): the custom record reading sections of its canonical parent, the other direction.
 - [Templates](../concepts/templates.md#linked-templates): custom templates, and how one is linked to its parent.
 - [Mapping value nodes](mapping-values.md): `$when`, `$assert` and the other words beside `$child`.

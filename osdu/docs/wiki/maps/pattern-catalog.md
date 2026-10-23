@@ -55,6 +55,7 @@ referenceRefs:
 related:
   - wiki-pattern-catalog
   - delivery-wiki-0018-template-folders
+  - delivery-wiki-linked-canonical-and-custom-records
   - delivery-wiki-0022-removal-flows
 updated: 2026-10-23
 ---
@@ -113,8 +114,8 @@ it is.
 | Start a mapping from an OSDU schema | Put the template in a `templates` folder on the mapping's path (`sqlflow template capture --out`, or **Download** on the Templates page's Browse OSDU tab), sync the repository, then the mapping builder | [templates](../../reference/concepts/templates.md#template-folders), [writing a mapping](../../reference/guides/writing-a-mapping.md) |
 | Two projects of one repository fill different versions of one kind | A `templates` folder in each project: a document reads the nearest folder holding the kind, and may name its kind alone | [templates](../../reference/concepts/templates.md#template-folders) |
 | A kind of one's own, or one extended for a project | `sqlflow template import <file> --kind <kind> --out <folder>/<file>.json`, committed with the mappings; the next sync uses it | [templates](../../reference/concepts/templates.md#templates-of-ones-own), [sqlflow template](../../reference/cli/template.md) |
-| A custom copy of a canonical kind that also needs what only the canonical record holds (a log's DDMS curve files) | Link the custom template to the canonical kind (`x-osdu-inheriting-from-kind`), key both mappings alike, and take the sections with `$parent`; a storage flow delivers the custom records after the canonical flow | [mapping $parent](../../reference/flow/mapping-parent.md), [0019](../decisions/0019-linked-templates.md) |
-| The canonical record should point at the custom record beside it, as the custom one points at its parent | `$child: <custom kind>` in the canonical mapping, on a property of `ExtensionProperties` or a tag (the canonical schema stays as OSDU publishes it); the first delivery goes out without the link, and the custom record landing makes the canonical flow's next run add it | [mapping $child](../../reference/flow/mapping-child.md), [0023](../decisions/0023-child-links.md) |
+| A custom copy of a canonical kind that also needs what only the canonical record holds (a log's DDMS curve files) | Link the custom template to the canonical kind (`x-osdu-inheriting-from-kind`), key both mappings alike, and take the sections with `$parent`; a storage flow delivers the custom records after the canonical flow | [linked records](../patterns/linked-canonical-and-custom-records.md), [the guide](../../reference/guides/linked-records.md), [mapping $parent](../../reference/flow/mapping-parent.md), [0019](../decisions/0019-linked-templates.md) |
+| The canonical record should point at the custom record beside it, as the custom one points at its parent | `$child: <custom kind>` in the canonical mapping, on a property of `ExtensionProperties` or a tag (the canonical schema stays as OSDU publishes it); the first delivery goes out without the link, and the custom record landing makes the canonical flow's next run add it | [linked records](../patterns/linked-canonical-and-custom-records.md), [the guide](../../reference/guides/linked-records.md), [mapping $child](../../reference/flow/mapping-child.md), [0023](../decisions/0023-child-links.md) |
 | A property only applies to some rows | `$when: <condition>` on the node | [mapping values](../../reference/flow/mapping-values.md), [expressions](../../reference/flow/mapping-expressions.md) |
 | An empty value should leave the property out rather than hold the record | `$required: false` | [mapping values](../../reference/flow/mapping-values.md) |
 | A value needs computing (concatenation, arithmetic, a choice) | `$expr` | [expressions](../../reference/flow/mapping-expressions.md) |

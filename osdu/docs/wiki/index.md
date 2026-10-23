@@ -47,6 +47,13 @@ own. Filter by the `type` values below to narrow a search to one kind of page.
 - [Pattern catalog](maps/pattern-catalog.md) - problem-first index: where a lookup belongs, one kind or
   interfaces, which route, retrieval or explorer, assertions, orphans, and the page for each. **Start here.**
 
+### Patterns
+
+- [A custom record beside its canonical record, linked both ways](patterns/linked-canonical-and-custom-records.md) -
+  when OSDU's schema lacks what a source knows: a custom copy of the kind linked to it, both records delivered from the
+  same rows, the custom one reading its parent with `$parent` and the canonical one linking it back with `$child`, and
+  the estate folder that runs it.
+
 ### Decisions
 
 The design left these decisions open, and the implementation had to choose for each of them to ship working

@@ -43,6 +43,7 @@ related:
   - delivery-table-repository-template
   - delivery-flow-mapping-parent
   - delivery-flow-mapping-child
+  - delivery-guide-linked-records
 sourceRefs:
   - osdu/src/SqlFlow.Delivery/Templates/OsduTemplate.cs
   - osdu/src/SqlFlow.Delivery/Templates/TemplateChain.cs
@@ -376,7 +377,8 @@ template **linked** to the canonical kind lets its records read that: each recor
 canonical kind with the same minted id in the canonical entity type's namespace, and a mapping takes sections of it
 with [`$parent`](../flow/mapping-parent.md). The canonical record is the custom one's parent, and the custom record its
 **child**: a mapping of the canonical kind can link it with [`$child`](../flow/mapping-child.md), written once OSDU holds
-the child, so the two records are linked both ways.
+the child, so the two records are linked both ways. [Linked records](../guides/linked-records.md) builds the whole shape,
+both templates, both mappings and both flows.
 
 The link is the key the OSDU data definitions name a kind's parents with, written in the template file:
 

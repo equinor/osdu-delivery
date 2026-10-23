@@ -28,6 +28,7 @@ related:
   - delivery-cli-values
   - delivery-cli-preview
   - delivery-concept-templates
+  - delivery-guide-linked-records
 sourceRefs:
   - osdu/src/SqlFlow.Delivery.Cli/DeliveryVerbs.cs
   - osdu/src/SqlFlow.Delivery.Cli/DeliveryValueCheckVerbs.cs
@@ -58,7 +59,9 @@ loop sends anything to OSDU.
 
 The language itself is on [the mapping document](../flow/mapping.md), [mapping values](../flow/mapping-values.md),
 [mapping lookups](../flow/mapping-lookups.md), [modifiers](../flow/mapping-modifiers.md) and
-[expressions](../flow/mapping-expressions.md). This page is the path through them.
+[expressions](../flow/mapping-expressions.md). This page is the path through them. For a custom copy of a canonical kind,
+delivered beside it and linked to it both ways, [linked records](linked-records.md) adds what the custom template and the
+two mappings need.
 
 ## What you need first
 

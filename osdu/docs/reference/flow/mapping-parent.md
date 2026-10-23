@@ -33,6 +33,7 @@ related:
   - delivery-table-record
   - delivery-table-attempt
   - delivery-flow-mapping-child
+  - delivery-guide-linked-records
 yamlPath: "record.<property>.$parent (documentType: mapping)"
 sourceRefs:
   - osdu/src/SqlFlow.Delivery/Templates/TemplateParent.cs
@@ -269,6 +270,8 @@ for the link.
 
 ## Related
 
+- [Linked records](../guides/linked-records.md): the guide that builds a custom record beside its canonical record, linked
+  both ways, every piece as code.
 - [Mapping $child](mapping-child.md): the canonical record linking the custom record that reads it, the other direction.
 - [Templates](../concepts/templates.md#linked-templates): custom templates, and how one is linked to its parent.
 - [Mapping value nodes](mapping-values.md): `$required`, `$coalesce`, `$when` and the other words beside `$parent`.
