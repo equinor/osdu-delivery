@@ -205,3 +205,22 @@ Added [0024](decisions/0024-scope-value-lists.md): why the list travels as JSON 
 why only a scope parameter takes one, why the set is one scope with one watermark and per-value watermarks were rejected,
 why the work root joins the values and a payload root refuses them, why a removal compares by subset rather than by
 equality or membership, and why `--set` repeated gives a list. Indexed 0024.
+
+## [2026-10-23] ingest | Parallelism and default fan-out, decision 0025
+
+Source: a delivery of about 5,000 records the human watched run on one worker of an autoscaled pool, the scale rule
+(`osdu/deploy/terraform/modules/worker/main.tf`) and the replica target it reads (`sqlflow/src/SqlFlow.Catalog/ScaleTargetStore.cs`),
+and the change that followed: the `parallelism` block (`osdu/src/SqlFlow.Delivery/Model/FlowDefinition.cs`,
+`Documents/DeliveryDocumentLoader.cs`), the fan-out in `Engine/FlowRuntime.cs`, the rate share
+(`Engine/DeliveryRunPayload.cs`, `Engine/TargetConnection.cs`, `Http/RateLimiter.cs`), the batch numbering of a share
+planned again (`Engine/Intake/SubmissionIntake.cs`) and the check of a document read by its range
+(`Engine/Worker/DeliveryWorker.cs`), with SQLFlow's fan-out cancel and rejoin (`sqlflow/src/SqlFlow.Catalog/RunQueueStore.cs`).
+Discussed with the human: the block's name (fan-out is load balancing, not reliability), splitting it rather than
+renaming it whole, and fan-out on by default.
+
+Added [0025](decisions/0025-parallelism-and-default-fan-out.md): why parallelism is a block of its own and the old keys
+are refused by name, why each kind takes only what it uses, why fan-out is on by default and bounded by the queued
+batches, how a coordinating run stops members no node starts (at once for the drain, after a grace for the intake) and
+why stopping single members was left to SQLFlow's group cancel, why the rate limit is shared, and the batch file rewrite
+found on the way. Brought [0006](decisions/0006-work-batches.md) and the pattern catalog's spread-over-nodes row to the
+new keys. Indexed 0025.

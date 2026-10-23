@@ -253,7 +253,7 @@ public sealed class AssertionRunner
         var storage = new StorageRecords(client, flow.Source.RecordQueryPath);
         var legal = new LegalTagValidator(client, flow.Source.LegalPath + "/legaltags:validate", _context.Time);
         var bulk = new WellboreBulk(client, flow.Source.DdmsRoot);
-        var concurrency = Math.Max(1, flow.Reliability.Concurrency);
+        var concurrency = Math.Max(1, flow.Parallelism.Concurrency);
         await Parallel.ForEachAsync(
             runnable,
             new ParallelOptions { MaxDegreeOfParallelism = concurrency, CancellationToken = ct },

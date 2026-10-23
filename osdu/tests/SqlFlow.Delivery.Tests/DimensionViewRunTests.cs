@@ -51,7 +51,8 @@ public sealed class DimensionViewRunTests : IDisposable
           aggregationSize: 50
         target:
           connection: ${env:{{TargetVariable}}}
-        reliability: { concurrency: 2, retry: { attempts: 1, baseDelayMs: 1, maxDelayMs: 1 } }
+        reliability: { retry: { attempts: 1, baseDelayMs: 1, maxDelayMs: 1 } }
+        parallelism: { concurrency: 2 }
         dimensions:
           - name: TestCurve
             kind: "osdu:wks:work-product-component--WellLog:*"

@@ -81,7 +81,7 @@ cause and running again is all it takes.
 ## When a document is read
 
 Loading a flow refuses what is wrong in the document itself: unknown and duplicate keys, a floating mapping reference, a
-literal password or other literal secret, a `${...}` reference in a location, malformed names and bounds, cross-key rules such as a fan-out without a primary key, and, in the
+literal password or other literal secret, a `${...}` reference in a location, malformed names and bounds, cross-key rules such as a header beside `partitions`, and, in the
 interface form, a misplaced key, an `after:` cycle or two interfaces keeping one ledger. The messages are on the
 [delivery flow](../flow/delivery.md#validation-errors) and [interfaces](../flow/interfaces.md#load-errors) pages.
 

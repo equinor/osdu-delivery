@@ -117,13 +117,9 @@ internal static partial class AssertionMapper
             Defaults = defaults,
             FailRunOn = FlowMapper.ParseEnum(y.FailRunOn, FailRunOn.Error, "failRunOn", source),
             Tests = MapTests(y.Tests, parameters, partitions, followsRegistry, defaults, source),
-            Reliability = FlowMapper.MapReliability(y.Reliability, source),
+            Reliability = FlowMapper.MapReliability(y.Reliability, "an assertion flow", takesConcurrency: true, source),
+            Parallelism = FlowMapper.MapRunParallelism(y.Parallelism, source),
         };
-
-        if (flow.Reliability.Concurrency < 1)
-        {
-            throw new FlowValidationException($"{source}: reliability.concurrency must be at least 1.");
-        }
 
         return flow;
     }

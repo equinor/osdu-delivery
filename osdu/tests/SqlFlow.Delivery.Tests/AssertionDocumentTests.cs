@@ -32,7 +32,8 @@ public sealed class AssertionDocumentTests
           maxRecords: 500
           examples: 5
         failRunOn: warning
-        reliability: { concurrency: 2, retry: { attempts: 1, baseDelayMs: 1, maxDelayMs: 1 } }
+        reliability: { retry: { attempts: 1, baseDelayMs: 1, maxDelayMs: 1 } }
+        parallelism: { concurrency: 2 }
         tests:
           - name: wellbores
             description: Every wellbore the well database delivered is there, whole.

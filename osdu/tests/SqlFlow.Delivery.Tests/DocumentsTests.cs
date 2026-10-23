@@ -44,8 +44,9 @@ public class YamlDocumentLoaderTests
           protocol: ddms
           protocolOptions: { payload: curves, recordMethod: POST }
         reliability:
-          concurrency: 2
           retry: { attempts: 5, backoff: fixed }
+        parallelism:
+          concurrency: 2
         """;
 
     /// <summary>
@@ -149,7 +150,7 @@ public class YamlDocumentLoaderTests
     public void Parses_inline_flow_with_defaults()
     {
         var flow = new DeliveryDocumentLoader().ParseFlow(Flow, "inline.yaml");
-        Assert.Equal(2, flow.Reliability.Concurrency);
+        Assert.Equal(2, flow.Parallelism.Concurrency);
         Assert.Equal(BackoffKind.Fixed, flow.Reliability.Retry.Backoff);
         Assert.Equal(5, flow.Reliability.Retry.Attempts);
         Assert.Equal(FlowSystemColumns.DefaultUpdated, flow.Source.SystemColumns.Updated);
@@ -160,23 +161,81 @@ public class YamlDocumentLoaderTests
         Assert.Equal(ChangeDetection.RenderedHash, flow.Change.Detect);
     }
 
+    /// <summary>
+    /// What runs at once, and across the fleet, is a flow's parallelism, and reliability keeps what makes a request hold: a
+    /// document that still writes a moved setting under reliability is refused and told the key it is written as now.
+    /// </summary>
+    [Theory]
+    [InlineData("concurrency: 3", "concurrency", "parallelism.concurrency")]
+    [InlineData("fanOut: 3", "fanOut", "parallelism.fanOut")]
+    [InlineData("fanOutMinRecords: 3", "fanOutMinRecords", "parallelism.fanOutMinRecords")]
+    [InlineData("renderParallelism: 3", "renderParallelism", "parallelism.renderers")]
+    [InlineData("batchRecords: 3", "batchRecords", "parallelism.batchRecords")]
+    [InlineData("batchSize: 3", "batchSize", "parallelism.batchSize")]
+    [InlineData("parallelInterfaces: 3", "parallelInterfaces", "parallelism.interfaces")]
+    public void A_setting_that_moved_to_parallelism_is_refused_under_reliability_naming_its_key_now(string setting, string was, string now)
+    {
+        var yaml = Flow.ReplaceLineEndings("\n").Replace(
+            "  retry: { attempts: 5, backoff: fixed }\n", "  retry: { attempts: 5, backoff: fixed }\n  " + setting + "\n", StringComparison.Ordinal);
+
+        var refused = Assert.Throws<FlowValidationException>(() => new DeliveryDocumentLoader().ParseFlow(yaml, "flow.yaml"));
+
+        Assert.Equal(
+            $"flow.yaml: reliability.{was} is now {now}: what runs at once, and across the fleet, is the flow's parallelism, and reliability keeps what makes a request hold. Move it.",
+            refused.Message);
+    }
+
     [Fact]
-    public void A_fan_out_needs_the_record_table_s_identity_primary_key()
+    public void The_parallelism_block_says_what_runs_at_once()
+    {
+        var yaml = Flow.ReplaceLineEndings("\n").Replace(
+            "  concurrency: 2", "  concurrency: 2\n  renderers: 3\n  batchRecords: 40\n  batchSize: 20\n  fanOutMinRecords: 5000", StringComparison.Ordinal);
+
+        var parallelism = new DeliveryDocumentLoader().ParseFlow(yaml, "flow.yaml").Parallelism;
+
+        Assert.Equal(new FlowParallelism { Concurrency = 2, Renderers = 3, BatchRecords = 40, BatchSize = 20, FanOutMinRecords = 5000 }, parallelism);
+        Assert.Equal(3, parallelism.EffectiveRenderers);
+    }
+
+    [Theory]
+    [InlineData("concurrency: 0", "parallelism.concurrency must be at least 1.")]
+    [InlineData("renderers: -1", "parallelism.renderers must be between 0 and 256.")]
+    [InlineData("renderers: 257", "parallelism.renderers must be between 0 and 256.")]
+    [InlineData("batchRecords: 0", "parallelism.batchRecords must be between 1 and 100000.")]
+    [InlineData("batchRecords: 100001", "parallelism.batchRecords must be between 1 and 100000.")]
+    [InlineData("fanOut: -1", "parallelism.fanOut must be between 0 and 64.")]
+    [InlineData("fanOut: 65", "parallelism.fanOut must be between 0 and 64.")]
+    [InlineData("fanOutMinRecords: 0", "parallelism.fanOutMinRecords must be at least 1.")]
+    public void A_parallelism_setting_out_of_range_is_refused_naming_its_key(string setting, string expected)
+    {
+        var yaml = Flow.ReplaceLineEndings("\n").Replace("  concurrency: 2", "  " + setting, StringComparison.Ordinal);
+
+        var refused = Assert.Throws<FlowValidationException>(() => new DeliveryDocumentLoader().ParseFlow(yaml, "flow.yaml"));
+
+        Assert.Equal("flow.yaml: " + expected, refused.Message);
+    }
+
+    /// <summary>
+    /// A flow fans out unless it says otherwise, and needs no identity primary key to: without one its read is planned on the
+    /// coordinating run and its sending still fans out; with one the read is cut on it and planned across the fleet too.
+    /// </summary>
+    [Fact]
+    public void A_flow_fans_out_by_default_and_needs_no_primary_key_to()
     {
         var loader = new DeliveryDocumentLoader();
         var flow = Flow.ReplaceLineEndings("\n");
-        Assert.Null(loader.ParseFlow(flow, "f").Source.Record.PrimaryKey);
+        var parsed = loader.ParseFlow(flow, "f");
+        Assert.Null(parsed.Source.Record.PrimaryKey);
+        Assert.Equal(FlowParallelism.DefaultFanOut, parsed.Parallelism.FanOut);
+        Assert.Equal(1000, parsed.Parallelism.FanOutMinRecords);
 
-        // Without one, a flow reads by its record key on one node; asked to fan out, it is refused and told what to name.
-        var fanned = flow.Replace("  concurrency: 2\n", "  concurrency: 2\n  fanOut: 4\n", StringComparison.Ordinal);
-        var refused = Assert.Throws<FlowValidationException>(() => loader.ParseFlow(fanned, "f.yaml"));
-        Assert.StartsWith("f.yaml:", refused.Message, StringComparison.Ordinal);
-        Assert.Contains("source.record.primaryKey names none", refused.Message, StringComparison.Ordinal);
-        Assert.Contains("target.identityColumn", refused.Message, StringComparison.Ordinal);
+        var fanned = flow.Replace("  concurrency: 2", "  concurrency: 2\n  fanOut: 4", StringComparison.Ordinal);
+        Assert.Equal(4, loader.ParseFlow(fanned, "f").Parallelism.FanOut);
+        Assert.Equal(0, loader.ParseFlow(flow.Replace("  concurrency: 2", "  concurrency: 2\n  fanOut: 0", StringComparison.Ordinal), "f").Parallelism.FanOut);
 
         var keyed = fanned.Replace("    key: [source_project, log_id]\n", "    key: [source_project, log_id]\n    primaryKey: RecId\n", StringComparison.Ordinal);
-        var parsed = loader.ParseFlow(keyed, "f");
-        Assert.Equal(("RecId", 4), (parsed.Source.Record.PrimaryKey, parsed.Reliability.FanOut));
+        var parsedKeyed = loader.ParseFlow(keyed, "f");
+        Assert.Equal(("RecId", 4), (parsedKeyed.Source.Record.PrimaryKey, parsedKeyed.Parallelism.FanOut));
 
         var bracketed = Assert.Throws<FlowValidationException>(() => loader.ParseFlow(keyed.Replace("primaryKey: RecId", "primaryKey: \"[RecId]\"", StringComparison.Ordinal), "f"));
         Assert.Contains("source.record.primaryKey", bracketed.Message, StringComparison.Ordinal);

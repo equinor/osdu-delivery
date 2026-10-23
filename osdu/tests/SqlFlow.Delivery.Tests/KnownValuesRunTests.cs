@@ -72,7 +72,8 @@ public sealed class KnownValuesRunTests : IDisposable
         source:
           endpoint: http://localhost
         defaults: { examples: 50, indexSettleSeconds: 0 }
-        reliability: { concurrency: 2, retry: { attempts: 1, baseDelayMs: 1, maxDelayMs: 1 } }
+        reliability: { retry: { attempts: 1, baseDelayMs: 1, maxDelayMs: 1 } }
+        parallelism: { concurrency: 2 }
         tests:
           - name: curves
             kind: {{WellLog}}

@@ -169,7 +169,7 @@ source:
       url: ${env:OSDU_TOKEN_URL}
       body: { scope: "${env:OSDU_SCOPE}" }
 
-reliability: { concurrency: 4 }
+parallelism: { concurrency: 4 }
 
 dimensions:
   - name: Wellbore
@@ -233,7 +233,8 @@ type ...`).
 | `dimensions` | list | required | The dimensions, at least 1 and at most 100, names unique ignoring case. |
 | `target` | map | none | `connection`: the module's database, as the pipelines reading the flow's tables and views name it. Required with `views`. See [Views](#views). |
 | `views` | list | none | Views over the flow's dimension tables, at most 50. See [Views](#views). |
-| `reliability` | map | delivery defaults | The HTTP settings a delivery flow takes ([delivery flow](delivery.md)), and `concurrency` (default 8, at least 1): how many dimensions build at once, and how many requests each asks of the search at once (value ranges, label and attribute searches, cursors). `parallelInterfaces` is refused. |
+| `reliability` | map | delivery defaults | The HTTP settings a delivery flow takes ([delivery flow](delivery.md)): timeout, retry, rate limit, TLS, URL allowlist and response size. |
+| `parallelism` | map | defaults | `concurrency` (default 8, at least 1): how many dimensions build at once, and how many requests each asks of the search at once (value ranges, label and attribute searches, cursors). A dimension flow takes no other parallelism key. It was `reliability.concurrency` before: a document that still writes that is refused, naming `parallelism.concurrency`, and a delivery flow's setting written under `reliability` (`fanOut`, `batchRecords`) is refused as one to remove. |
 | `incremental` | map | none | How a build loads the dimensions after their first full load. Left out, every build loads every dimension in full. See [Full and incremental loads](#full-and-incremental-loads). |
 | `schedule`, `mode`, `lifecycle` | | none | SQLFlow's envelope keys ([schedule](../../../../sqlflow/docs/reference/flow/schedule.md), [flow overview](../../../../sqlflow/docs/reference/flow/overview.md)). A schedule's `values` may name the partition (`partition: dev`) and the flow's parameters. |
 

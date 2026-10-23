@@ -99,42 +99,37 @@
       "path": "reliability",
       "type": "object",
       "required": false,
-      "description": "The HTTP settings for the platform's searches, as on a delivery flow: timeout, retry, rate limit, TLS, URL allowlist and response size. `reliability.parallelInterfaces` is refused."
+      "description": "The HTTP settings for the platform's searches, as on a delivery flow: timeout, retry, rate limit, TLS, URL allowlist and response size."
     },
     {
       "path": "reliability.batchRecords",
       "type": "integer",
       "required": false,
-      "description": "A delivery flow's setting: rendered documents per work batch file. The loader accepts it as on a delivery flow; a cache flow does not use it.",
-      "default": "500"
+      "description": "Not a setting here any more: a delivery flow writes it as `parallelism.batchRecords`, and a cache flow has no use for it. A document that still declares it is refused when it loads; remove it."
     },
     {
       "path": "reliability.batchSize",
       "type": "integer",
       "required": false,
-      "description": "A delivery flow's setting: records claimed per ledger round trip when retrying records. The loader accepts it as on a delivery flow; a cache flow does not use it.",
-      "default": "50"
+      "description": "Not a setting here any more: a delivery flow writes it as `parallelism.batchSize`, and a cache flow has no use for it. A document that still declares it is refused when it loads; remove it."
     },
     {
       "path": "reliability.concurrency",
       "type": "integer",
       "required": false,
-      "description": "A delivery flow's setting: how many record batches its worker sends at once. The loader accepts it as on a delivery flow; a cache flow does not use it.",
-      "default": "8"
+      "description": "Not a setting here any more: a delivery flow writes it as `parallelism.concurrency`, and a cache flow has no use for it. A document that still declares it is refused when it loads; remove it."
     },
     {
       "path": "reliability.fanOut",
       "type": "integer",
       "required": false,
-      "description": "A delivery flow's setting: the member runs a large submission spreads over. The loader accepts it as on a delivery flow; a cache flow does not use it.",
-      "default": "0"
+      "description": "Not a setting here any more: a delivery flow writes it as `parallelism.fanOut`, and a cache flow has no use for it. A document that still declares it is refused when it loads; remove it."
     },
     {
       "path": "reliability.fanOutMinRecords",
       "type": "integer",
       "required": false,
-      "description": "A delivery flow's setting: below this many records a submission never fans out. The loader accepts it as on a delivery flow; a cache flow does not use it.",
-      "default": "1000"
+      "description": "Not a setting here any more: a delivery flow writes it as `parallelism.fanOutMinRecords`, and a cache flow has no use for it. A document that still declares it is refused when it loads; remove it."
     },
     {
       "path": "reliability.leaseSeconds",
@@ -161,7 +156,7 @@
       "path": "reliability.parallelInterfaces",
       "type": "integer",
       "required": false,
-      "description": "A delivery source's setting: how many of its interfaces run at once. A cache flow runs no interfaces, so the loader refuses it here."
+      "description": "Not a setting here any more: a delivery flow writes it as `parallelism.interfaces`, and a cache flow has no use for it. A document that still declares it is refused when it loads; remove it."
     },
     {
       "path": "reliability.rateLimitRps",
@@ -174,8 +169,7 @@
       "path": "reliability.renderParallelism",
       "type": "integer",
       "required": false,
-      "description": "A delivery flow's setting: renderers in the intake pipeline on one node, 0 to 256 (0 takes half the machine's processors, at least one). The loader accepts it as on a delivery flow; a cache flow does not use it.",
-      "default": "0"
+      "description": "Not a setting here any more: a delivery flow writes it as `parallelism.renderers`, and a cache flow has no use for it. A document that still declares it is refused when it loads; remove it."
     },
     {
       "path": "reliability.retry",

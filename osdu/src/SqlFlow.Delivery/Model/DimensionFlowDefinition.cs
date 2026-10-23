@@ -62,6 +62,9 @@ public sealed record DimensionFlowDefinition
 
     public FlowReliability Reliability { get; init; } = new();
 
+    /// <summary>How many dimensions build at once, and how many requests each asks of the search at once (<c>parallelism.concurrency</c>).</summary>
+    public RunParallelism Parallelism { get; init; } = new();
+
     /// <summary>
     /// How a build loads the flow's dimensions after their first full load (osdu/docs/reference/flow/dimension.md, Full
     /// and incremental loads): null for a flow that loads every dimension in full on every build.

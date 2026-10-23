@@ -19,6 +19,9 @@ internal sealed class TargetConnection : IDisposable
     private Task<OsduHttpClient>? _client;
     private bool _disposed;
 
+    /// <summary>How many runs of a fan-out share the flow's rate limit with this one; 1 when it has the rate to itself.</summary>
+    private int _rateShare = 1;
+
     public TargetConnection(EngineContext context, FlowDefinition flow)
     {
         ArgumentNullException.ThrowIfNull(context);
@@ -77,9 +80,29 @@ internal sealed class TargetConnection : IDisposable
         }
     }
 
+    /// <summary>
+    /// Has this connection send under <paramref name="runs"/>'s share of the flow's <c>reliability.rateLimitRps</c> from now on,
+    /// whether its stack is made yet or not: the runs of a fan-out each hold a connection of their own and divide the rate
+    /// between them (osdu/docs/reference/concepts/submissions.md, Many nodes). 1 takes the whole rate back.
+    /// </summary>
+    public void ShareRateLimit(int runs)
+    {
+        ArgumentOutOfRangeException.ThrowIfLessThan(runs, 1);
+        lock (_gate)
+        {
+            ObjectDisposedException.ThrowIf(_disposed, this);
+            _rateShare = runs;
+            _http?.RateLimit.Share(runs);
+        }
+    }
+
     /// <summary>The stack every call to the target goes through, watched by the run's trace when the context serves a run.</summary>
     private HttpRuntime NewHttp()
-        => new(_flow.Reliability, _context.Secrets, _context.Time, allowLoopback: EngineContext.LoopbackAllowed, observer: _context.HttpObserver);
+    {
+        var http = new HttpRuntime(_flow.Reliability, _context.Secrets, _context.Time, allowLoopback: EngineContext.LoopbackAllowed, observer: _context.HttpObserver);
+        http.RateLimit.Share(_rateShare);
+        return http;
+    }
 
     public void Dispose()
     {

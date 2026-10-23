@@ -171,7 +171,7 @@ key never passes silently.
 | `types` | list | yes | none | The types the flow caches, at least one, each from one origin. |
 | `onChange` | `auto` or `approve` | no | `auto` | What a changed cached value does to the records already built from it; a type may override it. See [onChange](#onchange). |
 | `retentionDays` | integer, 1 to 36500 | no | `7` | How many days the partition's cache keeps the records of a version after a newer one replaced it; every refresh and import prunes the rest. See [retentionDays](#retentiondays). |
-| `reliability` | map | no | defaults | The HTTP settings of the OSDU searches, written as on a [delivery flow](delivery.md). |
+| `reliability` | map | no | defaults | The HTTP settings of the OSDU searches, written as on a [delivery flow](delivery.md): timeout, retry, rate limit, TLS, URL allowlist and response size. A cache flow has no `parallelism` block, and refuses a parallelism setting written under `reliability` (`reliability.concurrency is not a setting here any more: a delivery flow writes it as parallelism.concurrency, and a cache flow has no use for it. Remove it.`). |
 | `schedule`, `mode`, `lifecycle` | | no | none | SQLFlow's envelope, as on every flow ([schedule](../../../../sqlflow/docs/reference/flow/schedule.md)); a fire runs a refresh. |
 
 `makeCurrent` is no longer a setting: a flow that still declares it fails with `makeCurrent is not a setting any more:

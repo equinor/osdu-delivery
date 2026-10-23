@@ -336,6 +336,11 @@ public sealed class DeliveryExecutor : IFlowDocumentExecutor
         var flow = runtime.Flow;
         var keys = payload.RecordKeys.Select(k => new DeliveryKey(k)).ToList();
         var selection = SourceSelection.Incremental(null);
+        if (payload.RateShare is { } share)
+        {
+            // A fan-out member sends under its share of the flow's rate limit, so the fan-out as a whole keeps to the rate.
+            runtime.ShareRateLimit(share);
+        }
         if (ReadsSource(operation))
         {
             runtime.SubmissionId = payload.SubmissionId;
@@ -635,7 +640,7 @@ public sealed class DeliveryExecutor : IFlowDocumentExecutor
         var summary = new PlanSummary();
         var sample = new List<PlanSampleEntry>(PlanSampled);
         long shown = 0;
-        await foreach (var entry in planner.EntriesAsync(header, null, runtime.Flow.Reliability.EffectiveRenderParallelism, summary, ct).ConfigureAwait(false))
+        await foreach (var entry in planner.EntriesAsync(header, null, runtime.Flow.Parallelism.EffectiveRenderers, summary, ct).ConfigureAwait(false))
         {
             if (shown++ < PlanEntriesLogged)
             {

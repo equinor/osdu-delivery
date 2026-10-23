@@ -662,13 +662,13 @@ public class SqlServerChainTests
                 data-partition-id: {{Samples.SampleCacheScope}}
               protocolOptions:
                 ddmsRoot: /api/os-wellbore-ddms
-            reliability:
+            parallelism:
               concurrency: 8
               batchSize: 50
               batchRecords: 20
               fanOut: {{nodes.ToString(CultureInfo.InvariantCulture)}}
               fanOutMinRecords: 1
-              parallelInterfaces: 2
+              interfaces: 2
             interfaces:
               wellbores:
                 record: { object: {{Table("Wellbore")}}, key: [facility_name], primaryKey: RecId }
@@ -723,7 +723,7 @@ public class SqlServerChainTests
         await estate.WritePayloadsAsync(logs);
         await estate.RunIngestionChainAsync();
         var shipped = estate.DeliveryFlow();
-        var flow = shipped with { Reliability = shipped.Reliability with { Concurrency = 1 } };
+        var flow = shipped with { Parallelism = shipped.Parallelism with { Concurrency = 1 } };
         using var runtime = await FlowRuntime.CreateAsync(estate.Engine, flow, SampleEstate.Values);
         runtime.Selection = SourceSelection.Full();
         var intake = await runtime.IntakeAsync(force: false);

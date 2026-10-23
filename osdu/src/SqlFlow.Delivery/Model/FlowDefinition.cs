@@ -198,6 +198,8 @@ public sealed record FlowDefinition
 
     public FlowReliability Reliability { get; init; } = new();
 
+    public FlowParallelism Parallelism { get; init; } = new();
+
     public FlowVerify Verify { get; init; } = new();
 
     /// <summary>
@@ -984,10 +986,13 @@ public enum ManifestReference
     Auto,
 }
 
+/// <summary>
+/// What makes a flow's requests hold (osdu/docs/reference/flow/delivery.md, reliability): retries, timeouts, the rate limit,
+/// TLS, the addresses it may reach, response and request ceilings, and how long a lease on a record lasts. How much runs at
+/// once, on one node and across the fleet, is the flow's <see cref="FlowParallelism"/>.
+/// </summary>
 public sealed record FlowReliability
 {
-    public int Concurrency { get; init; } = 8;
-
     public FlowRetry Retry { get; init; } = new();
 
     /// <summary>Non-retryable statuses that mark a record held instead of failing the run.</summary>
@@ -1012,9 +1017,34 @@ public sealed record FlowReliability
 
     /// <summary>How long a worker's lease on a record lasts before a sweep may reclaim it.</summary>
     public int LeaseSeconds { get; init; } = 300;
+}
 
-    /// <summary>Records claimed per ledger round trip when retrying individual records.</summary>
-    public int BatchSize { get; init; } = 50;
+/// <summary>
+/// How much of a delivery flow's work runs at once (osdu/docs/reference/flow/delivery.md, parallelism): within one run, and
+/// across the fleet, where a large submission fans out to member runs the nodes share. The assertion, dimension, inventory
+/// and retrieval kinds take <see cref="RunParallelism"/>, and a cache flow none.
+/// </summary>
+public sealed record FlowParallelism
+{
+    /// <summary>The records one run sends at once; a verify or reverse run reads this many at once too. Default 8.</summary>
+    public int Concurrency { get; init; } = 8;
+
+    /// <summary>
+    /// The most member runs a deliver run spreads a submission of at least <see cref="FanOutMinRecords"/> records over across
+    /// the fleet, planning first (when the record table names its identity primary key), then sending, never more than it
+    /// has work batches for (osdu/docs/reference/concepts/submissions.md, Many nodes). <see cref="DefaultFanOut"/> unless the
+    /// flow says otherwise; 0 keeps everything on the run that claimed the work.
+    /// </summary>
+    public int FanOut { get; init; } = DefaultFanOut;
+
+    /// <summary>How many member runs a large submission spreads over unless the flow says otherwise.</summary>
+    public const int DefaultFanOut = 8;
+
+    /// <summary>Fan out only when the source holds at least this many candidate records, or a submission this many planned ones. Default 1000.</summary>
+    public int FanOutMinRecords { get; init; } = 1000;
+
+    /// <summary>Render batches rendered at once on one node. 0 means half the processors, at least one.</summary>
+    public int Renderers { get; init; }
 
     /// <summary>
     /// Records per work batch: one file of rendered documents the intake writes, one claim a drain takes, one unit of
@@ -1022,24 +1052,33 @@ public sealed record FlowReliability
     /// </summary>
     public int BatchRecords { get; init; } = 500;
 
-    /// <summary>
-    /// How many additional runs a deliver run fans its work out to across the fleet: intake partitions first, then
-    /// drains (osdu/docs/reference/concepts/submissions.md, Many nodes). 0 runs everything on the node that claimed the
-    /// run.
-    /// </summary>
-    public int FanOut { get; init; }
-
-    /// <summary>Fan out only when the source holds at least this many candidate records, or a submission this many planned ones. Default 1000.</summary>
-    public int FanOutMinRecords { get; init; } = 1000;
-
-    /// <summary>Render batches rendered concurrently on one node. 0 means half the processors, at least one.</summary>
-    public int RenderParallelism { get; init; }
+    /// <summary>Records claimed per ledger round trip when retrying individual records.</summary>
+    public int BatchSize { get; init; } = 50;
 
     /// <summary>The largest fan-out a flow may declare.</summary>
     public const int MaxFanOut = 64;
 
-    /// <summary>The effective render parallelism for this host.</summary>
-    public int EffectiveRenderParallelism => RenderParallelism > 0 ? RenderParallelism : Math.Max(1, Environment.ProcessorCount / 2);
+    /// <summary>The most renderers a flow may declare.</summary>
+    public const int MaxRenderers = 256;
+
+    /// <summary>The most records a work batch may hold.</summary>
+    public const int MaxBatchRecords = 100_000;
+
+    /// <summary>The renderers on this host.</summary>
+    public int EffectiveRenderers => Renderers > 0 ? Renderers : Math.Max(1, Environment.ProcessorCount / 2);
+}
+
+/// <summary>
+/// The <c>parallelism</c> of an assertion, dimension, inventory or retrieval flow: what one run works on at once. None of
+/// them fans out across the fleet.
+/// </summary>
+public sealed record RunParallelism
+{
+    /// <summary>
+    /// What one run works on at once: an assertion run's tests (and each test's requests in flight), a dimension build's
+    /// dimensions (and each one's searches), an inventory build's version lists, a retrieval's kinds. Default 8.
+    /// </summary>
+    public int Concurrency { get; init; } = 8;
 }
 
 public enum BackoffKind

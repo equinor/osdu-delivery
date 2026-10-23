@@ -254,9 +254,18 @@ public sealed record RunCounts(
 /// </summary>
 public sealed partial class FlowRuntime : IDisposable
 {
-    private static readonly TimeSpan MemberPoll = TimeSpan.FromSeconds(5);
-
     private static readonly TimeSpan MemberProgress = TimeSpan.FromSeconds(60);
+
+    /// <summary>How often a coordinating run asks the platform how its fan-out members are doing.</summary>
+    internal TimeSpan MemberPoll { get; set; } = TimeSpan.FromSeconds(5);
+
+    /// <summary>
+    /// How long a coordinating run that planned its own share waits for intake members no node has started, when none is
+    /// running and none started or finished meanwhile, before it plans their shares itself (osdu/docs/reference/concepts/
+    /// submissions.md, Many nodes). Long enough for an autoscaler to bring up a node for them; past it the pool has no place
+    /// free, every slot holding work its own runs wait on, and waiting longer could wait for ever.
+    /// </summary>
+    internal TimeSpan MemberStartGrace { get; set; } = TimeSpan.FromMinutes(3);
 
     private static readonly TimeSpan LeaseSettle = TimeSpan.FromSeconds(30);
 
@@ -373,6 +382,13 @@ public sealed partial class FlowRuntime : IDisposable
 
     /// <summary>The key slices a fan-out member plans of its coordinating run's submission; null plans the whole read.</summary>
     public IReadOnlyList<int>? Slices { get; set; }
+
+    /// <summary>
+    /// Has this run send under <paramref name="runs"/>'s share of the flow's <c>reliability.rateLimitRps</c>: a fan-out member
+    /// does for the whole of its run (its payload names the share), a coordinating run while its members run. 1 takes the
+    /// whole rate back.
+    /// </summary>
+    public void ShareRateLimit(int runs) => _target.ShareRateLimit(runs);
 
     /// <summary>
     /// What judges this run's records for the interface as a whole, or null when nothing does: the planning reports what it
@@ -686,7 +702,7 @@ public sealed partial class FlowRuntime : IDisposable
 
     /// <summary>Intake plus drain, fanned out across the fleet when the flow asks for it: the <c>deliver</c> operation.</summary>
     public Task<RunResult> RunAsync(bool force, CancellationToken ct = default)
-        => TrackAsync("deliver", new { force, source = Flow.Source.Record.Object, selection = Selection.Describe(), parameters = Parameters, fanOut = Flow.Reliability.FanOut }, null, async () =>
+        => TrackAsync("deliver", new { force, source = Flow.Source.Record.Object, selection = Selection.Describe(), parameters = Parameters, fanOut = Flow.Parallelism.FanOut }, null, async () =>
         {
             var started = _context.Time.GetUtcNow().UtcDateTime;
             await EnsureLegalTagsAsync(ct).ConfigureAwait(false);
@@ -766,6 +782,13 @@ public sealed partial class FlowRuntime : IDisposable
                 }
 
                 await SettleStoppedAsync().ConfigureAwait(false);
+                throw;
+            }
+            catch when (handle is not null)
+            {
+                // A root that fails ends its members before its failure is reported, as a cancelled one does: the platform ends
+                // them only once it writes the failure, and a member left working meanwhile works for a run that is gone.
+                await CancelMembersAsync(handle).ConfigureAwait(false);
                 throw;
             }
             finally
@@ -2277,9 +2300,11 @@ public sealed partial class FlowRuntime : IDisposable
     }
 
     /// <summary>
-    /// The intake, spread across the fleet when the flow declares a fan-out, this run can enqueue members and the read
-    /// is big enough: the candidate keys are cut into contiguous slices, every member plans its share of them, this run
-    /// plans its own, waits for the members, and finalises the submission with the totals.
+    /// The intake, spread across the fleet when the flow fans out, this run can enqueue members, and the read is big enough
+    /// and can be cut (osdu/docs/reference/concepts/submissions.md, Many nodes): the candidate keys are cut into contiguous
+    /// slices on the record table's identity primary key, the members are enqueued with their shares, this run plans its own
+    /// share beside them, waits for them, plans the shares of members no node started, and finalises the submission with
+    /// the totals.
     /// </summary>
     private async Task<(IntakeResult Result, int Members)> IntakeWithFanOutAsync(bool force, Action<FanOutHandle?> track, CancellationToken ct)
     {
@@ -2295,28 +2320,41 @@ public sealed partial class FlowRuntime : IDisposable
         SubmissionId = submission.SubmissionId;
         var header = prepared.Header;
         var dispatcher = _context.Dispatcher;
-        var fanOut = Flow.Reliability.FanOut;
-        var slices = KeySlices.Count(header.Source.EstimatedCandidates, Flow.Reliability.BatchRecords);
-        var applies = fanOut > 0 && dispatcher.Available && RunId is not null && slices >= 2
-            && header.Source.EstimatedCandidates >= Flow.Reliability.FanOutMinRecords
-            && slices - 1 <= SubmissionIntake.MaxFanOutPartition;
+        var candidates = header.Source.EstimatedCandidates;
+        var slices = KeySlices.Count(candidates, Flow.Parallelism.BatchRecords);
+        var withheld = FanOutUnavailable()
+            ?? TooFewToFanOut(candidates, "candidate record(s)")
+            ?? (Flow.Source.Record.PrimaryKey is null
+                ? $"the record table names no identity primary key ({KeyPaths.Of(Flow).Record}.primaryKey) to cut the read on, so it is planned here; the sending still fans out"
+                : null)
+            ?? (slices < 2 || slices - 1 > SubmissionIntake.MaxFanOutPartition
+                ? string.Create(CultureInfo.InvariantCulture, $"the read is one work batch ({Flow.Parallelism.BatchRecords} records)")
+                : null);
+
         // The candidates are cut on the record table's identity primary key; when they sit so close together that fewer
         // than two ranges come out, the read is one run's. A submission planned again that was cut before keeps its cut:
         // the members it already has (a run the platform executes again gets them back) plan the ranges they were dealt,
         // and a new cut would leave rows between the two to nobody.
-        var ranges = !applies ? []
+        var ranges = withheld is not null ? []
             : prepared.Window is { Slices.Count: >= 2 } cut ? Recorded(cut)
             : await Planner.SliceBoundsAsync(header, slices, ct).ConfigureAwait(false);
-        if (ranges.Count < 2)
+        var shares = ranges.Count < 2 ? [] : KeySlices.Shares(ranges.Count, Flow.Parallelism.FanOut + 1);
+        var memberShares = shares.Skip(1).Where(s => s.Count > 0).ToList();
+        if (memberShares.Count == 0)
         {
+            if (withheld is not null && Flow.Parallelism.FanOut > 0)
+            {
+                _log.LogInformation("The intake is not fanned out: {Reason}.", withheld);
+            }
+
             var own = await intake.PlanSlicesAsync(Flow, prepared, null, ct).ConfigureAwait(false);
             var finalized = await intake.FinalizePlanningAsync(Flow, submission.SubmissionId, Parameters, own, ct).ConfigureAwait(false);
             return (new IntakeResult(finalized, header, own, AlreadyProcessed: false), 0);
         }
 
         prepared = await intake.RecordSlicesAsync(prepared, ranges, ct).ConfigureAwait(false);
-        var shares = KeySlices.Shares(ranges.Count, fanOut + 1);
-        var members = shares.Skip(1).Where(s => s.Count > 0).Select(share => new RunParameters
+        var runs = memberShares.Count + 1;
+        var members = memberShares.Select(share => new RunParameters
         {
             Operation = DeliveryOperations.Intake,
             Values = MemberValues(Parameters),
@@ -2327,33 +2365,86 @@ public sealed partial class FlowRuntime : IDisposable
                 Force = force,
                 Interface = Flow.Interface,
                 References = _context.Supplied,
+                RateShare = runs,
             }.ToJson(),
         }).ToList();
 
-        var totals = await intake.PlanSlicesAsync(Flow, prepared, shares[0], ct).ConfigureAwait(false);
+        // The members are enqueued before this run plans its own share, so the nodes plan theirs while it does.
+        var enqueued = _context.Time.GetUtcNow();
         var handle = await dispatcher.EnqueueAsync(members, ct).ConfigureAwait(false);
         track(handle);
-        _log.LogInformation(
-            "Fanned the intake of {Records} candidate record(s) in {Slices} slice(s) out to {Members} member run(s) (group {GroupId}); this run planned slices {Own}.",
-            header.Source.EstimatedCandidates, ranges.Count, members.Count, handle.GroupId, KeySlices.Describe(shares[0]));
-        var state = await WaitForMembersAsync(handle, "intake", ct).ConfigureAwait(false);
-        track(null);
-
-        foreach (var member in state.Members)
+        if (handle.RunIds.Count != members.Count)
         {
-            if (!member.Succeeded)
+            throw new DeliveryException(
+                string.Create(CultureInfo.InvariantCulture, $"The platform answered the intake fan-out of submission {submission.SubmissionId:D} with {handle.RunIds.Count} member run(s) for the {members.Count} shares it was given, so which run plans which share cannot be told. The submission stays planned as far as it got, and the flow's next deliver run takes it over."));
+        }
+
+        _log.LogInformation(
+            "Fanned the intake of {Records} candidate record(s) in {Slices} slice(s) out to {Members} member run(s) (group {GroupId}); this run plans slices {Own} beside them.",
+            candidates, ranges.Count, members.Count, handle.GroupId, KeySlices.Describe(shares[0]));
+        IntakeCounts totals;
+        MemberWait wait;
+        ShareRateLimit(runs);
+        try
+        {
+            totals = await intake.PlanSlicesAsync(Flow, prepared, shares[0], ct).ConfigureAwait(false);
+            wait = await WaitForMembersAsync(handle, "intake", enqueued, MemberStartGrace, ct).ConfigureAwait(false);
+        }
+        finally
+        {
+            ShareRateLimit(1);
+        }
+
+        track(null);
+        var taken = new List<int>();
+        var takenMembers = 0;
+        for (var i = 0; i < handle.RunIds.Count; i++)
+        {
+            var runId = handle.RunIds[i];
+            var member = wait.State.Members.FirstOrDefault(m => m.RunId == runId)
+                ?? throw new DeliveryException($"Intake member run {runId:D} is missing from the state of its fan-out (group {handle.GroupId:D}). The submission stays planned as far as it got, and the flow's next deliver run takes it over.");
+            if (member.Succeeded)
             {
-                throw new DeliveryException($"Intake member {member.Slot} (run {member.RunId:D}) {member.Status}: {member.Error ?? "no error recorded"}. The submission stays planned as far as it got: re-run it to finish the intake now, or the flow's next deliver run takes it over, sends what it planned and closes it, and plans the rest in its own window.");
+                var outcome = IntakeOutcome.Parse(member.ResultJson)
+                    ?? throw new DeliveryException($"Intake member {member.Slot} (run {member.RunId:D}) reported no outcome.");
+                totals = totals.Add(outcome.ToCounts());
+                continue;
             }
 
-            var outcome = IntakeOutcome.Parse(member.ResultJson)
-                ?? throw new DeliveryException($"Intake member {member.Slot} (run {member.RunId:D}) reported no outcome.");
-            totals = totals.Add(outcome.ToCounts());
+            if (wait.Stopped.Contains(runId))
+            {
+                // Stopped by this run before a node started it, or as one did: its share is planned here. A share a stopped
+                // member had begun is planned again safely, its records already queued passed over and its batch files kept.
+                taken.AddRange(memberShares[i]);
+                takenMembers++;
+                continue;
+            }
+
+            throw new DeliveryException($"Intake member {member.Slot} (run {member.RunId:D}) {member.Status}: {member.Error ?? "no error recorded"}. The submission stays planned as far as it got: re-run it to finish the intake now, or the flow's next deliver run takes it over, sends what it planned and closes it, and plans the rest in its own window.");
+        }
+
+        if (taken.Count > 0)
+        {
+            taken.Sort();
+            _log.LogInformation("Planning slices {Slices} here, the shares of {Members} intake member(s) no node started.", KeySlices.Describe(taken), takenMembers);
+            totals = totals.Add(await intake.PlanSlicesAsync(Flow, prepared, taken, ct).ConfigureAwait(false));
         }
 
         var settledSubmission = await intake.FinalizePlanningAsync(Flow, submission.SubmissionId, Parameters, totals, ct).ConfigureAwait(false);
         return (new IntakeResult(settledSubmission, header, totals, AlreadyProcessed: false), members.Count);
     }
+
+    /// <summary>Why this run fans nothing out whatever its work, or null when it can: the flow turned it off, or the run cannot enqueue members.</summary>
+    private string? FanOutUnavailable()
+        => Flow.Parallelism.FanOut <= 0 ? "parallelism.fanOut is 0"
+            : !_context.Dispatcher.Available || RunId is null ? "this run cannot enqueue member runs: it runs outside the fleet"
+            : null;
+
+    /// <summary>Why <paramref name="records"/> <paramref name="what"/> are too few to fan out, or null when they are enough.</summary>
+    private string? TooFewToFanOut(long records, string what)
+        => records < Flow.Parallelism.FanOutMinRecords
+            ? string.Create(CultureInfo.InvariantCulture, $"{records} {what}, fewer than parallelism.fanOutMinRecords ({Flow.Parallelism.FanOutMinRecords})")
+            : null;
 
     /// <summary>The key ranges a submission recorded it was cut into, in slice order.</summary>
     private static IReadOnlyList<KeyRange> Recorded(SourceWindowDescription cut)
@@ -2376,46 +2467,97 @@ public sealed partial class FlowRuntime : IDisposable
     }
 
     /// <summary>
-    /// The drain, with member drains across the fleet when the flow declares a fan-out and the submission is big
-    /// enough: this run drains too, waits for the members, then settles whatever their leases or backoffs left.
+    /// The drain, with member drains across the fleet when the flow fans out and the submission is big enough: one member
+    /// per work batch beyond the one this run takes, up to <c>parallelism.fanOut</c>. Every drainer claims the oldest queued
+    /// batch, so the batches spread over whoever runs. This run drains too, waits for the members that run, stops the ones no
+    /// node started once there is nothing left for them, then settles whatever their leases or backoffs left.
     /// </summary>
     private async Task<(WorkerSummary Work, int Members)> DrainWithFanOutAsync(SubmissionState submission, Action<FanOutHandle?> track, CancellationToken ct)
     {
-        var dispatcher = _context.Dispatcher;
-        var fanOut = Flow.Reliability.FanOut;
-        var members = 0;
-        FanOutHandle? handle = null;
-        if (fanOut > 0 && dispatcher.Available && RunId is not null && submission.Planned >= Flow.Reliability.FanOutMinRecords)
+        var ledger = RequireLedger();
+        var worker = await WorkerAsync(ct).ConfigureAwait(false);
+
+        // What the submission still has to send decides, not what this pass planned: a submission planned again counts the
+        // records an earlier pass queued as passed over, and they are sent all the same.
+        var withheld = FanOutUnavailable();
+        long toSend = 0;
+        long queued = 0;
+        var wanted = 0;
+        if (withheld is null)
         {
-            var parameters = Enumerable.Range(0, fanOut)
+            toSend = await ledger.CountAsync(Flow.Id, submission.SubmissionId, RecordStatus.Pending, ct).ConfigureAwait(false);
+            withheld = TooFewToFanOut(toSend, "record(s) to send");
+        }
+
+        if (withheld is null)
+        {
+            queued = await ledger.CountWorkBatchesAsync(submission.SubmissionId, WorkBatchStatus.Queued, ct).ConfigureAwait(false);
+            wanted = (int)Math.Min(Flow.Parallelism.FanOut, Math.Max(0, queued - 1));
+            if (wanted == 0)
+            {
+                withheld = string.Create(CultureInfo.InvariantCulture, $"{queued} work batch(es) to send, which this run takes itself");
+            }
+        }
+
+        FanOutHandle? handle = null;
+        if (withheld is null)
+        {
+            var parameters = Enumerable.Range(0, wanted)
                 .Select(_ => new RunParameters
                 {
                     Operation = DeliveryOperations.Drain,
                     Values = MemberValues(System.Collections.ObjectModel.ReadOnlyDictionary<string, string>.Empty),
-                    Payload = new DeliveryRunPayload { SubmissionId = submission.SubmissionId, Interface = Flow.Interface, References = _context.Supplied }.ToJson(),
+                    Payload = new DeliveryRunPayload
+                    {
+                        SubmissionId = submission.SubmissionId,
+                        Interface = Flow.Interface,
+                        References = _context.Supplied,
+                        RateShare = wanted + 1,
+                    }.ToJson(),
                 })
                 .ToList();
-            handle = await dispatcher.EnqueueAsync(parameters, ct).ConfigureAwait(false);
+            handle = await _context.Dispatcher.EnqueueAsync(parameters, ct).ConfigureAwait(false);
             track(handle);
-            members = parameters.Count;
-            _log.LogInformation("Fanned the drain of {Planned} record(s) in {Batches} batch(es) out to {Members} member run(s) (group {GroupId}); this run drains too.", submission.Planned, submission.BatchCount, members, handle.GroupId);
+            _log.LogInformation(
+                "Fanned the drain of {Records} record(s) in {Batches} queued batch(es) out to {Members} member run(s) (group {GroupId}); this run drains too.",
+                toSend, queued, handle.RunIds.Count, handle.GroupId);
+        }
+        else if (Flow.Parallelism.FanOut > 0)
+        {
+            _log.LogInformation("The drain is not fanned out: {Reason}.", withheld);
         }
 
-        var worker = await WorkerAsync(ct).ConfigureAwait(false);
-        var total = await worker.DrainAsync(submission.SubmissionId, ct).ConfigureAwait(false);
+        WorkerSummary total;
         if (handle is not null)
         {
-            var state = await WaitForMembersAsync(handle, "drain", ct).ConfigureAwait(false);
-            track(null);
-            foreach (var member in state.Members.Where(m => !m.Succeeded))
+            ShareRateLimit(handle.RunIds.Count + 1);
+        }
+
+        try
+        {
+            total = await worker.DrainAsync(submission.SubmissionId, ct).ConfigureAwait(false);
+            if (handle is not null)
             {
-                _log.LogWarning("Drain member {Slot} (run {RunId}) {Status}: {Error}; its records are picked up here.", member.Slot, member.RunId, member.Status, member.Error ?? "no error recorded");
+                // Nothing is left to claim once this run's drain returns: a member still running holds batches of its own and is
+                // waited for, and one no node has started would find nothing, so it is stopped rather than waited for.
+                var wait = await WaitForMembersAsync(handle, "drain", _context.Time.GetUtcNow(), TimeSpan.Zero, ct).ConfigureAwait(false);
+                track(null);
+                foreach (var member in wait.State.Members.Where(m => !m.Succeeded && !wait.Stopped.Contains(m.RunId)))
+                {
+                    _log.LogWarning("Drain member {Slot} (run {RunId}) {Status}: {Error}; its records are picked up here.", member.Slot, member.RunId, member.Status, member.Error ?? "no error recorded");
+                }
+            }
+        }
+        finally
+        {
+            if (handle is not null)
+            {
+                ShareRateLimit(1);
             }
         }
 
         // Whatever is left belongs to nobody alive: leases held by a member that died expire and are reclaimed,
         // records in backoff come due. Keep draining until the submission is settled or the run is cancelled.
-        var ledger = RequireLedger();
         while (await ledger.HasPendingAsync(Flow.Id, submission.SubmissionId, _context.Time.GetUtcNow().UtcDateTime, ct).ConfigureAwait(false))
         {
             ct.ThrowIfCancellationRequested();
@@ -2439,23 +2581,66 @@ public sealed partial class FlowRuntime : IDisposable
             }
         }
 
-        return (total, members);
+        return (total, handle?.RunIds.Count ?? 0);
     }
 
-    private async Task<FanOutState> WaitForMembersAsync(FanOutHandle handle, string what, CancellationToken ct)
+    /// <summary>What waiting for a fan-out's members came to: their state once every one ended, and the ones this run stopped.</summary>
+    private sealed record MemberWait(FanOutState State, IReadOnlySet<Guid> Stopped);
+
+    /// <summary>
+    /// Waits until every member of <paramref name="handle"/> has ended. A member no node has started is not waited for for
+    /// ever: once none is running and no member has started or ended for <paramref name="stall"/> since
+    /// <paramref name="since"/>, the ones still queued are stopped (the platform cancels a queued member outright, and asks
+    /// one a node took meanwhile to stop) and named in <see cref="MemberWait.Stopped"/>, for this run to do what they were
+    /// to do. Every slot of the pool can be holding work its own runs wait on, a coordinating run's own slot among them, so
+    /// waiting on would wait for ever.
+    /// </summary>
+    private async Task<MemberWait> WaitForMembersAsync(FanOutHandle handle, string what, DateTimeOffset since, TimeSpan stall, CancellationToken ct)
     {
         var dispatcher = _context.Dispatcher;
         var lastProgress = _context.Time.GetUtcNow();
+        var lastChange = since;
+        var seen = (Running: 0, Ended: 0);
+        var stopping = false;
+        IReadOnlySet<Guid> stopped = new HashSet<Guid>();
         while (true)
         {
             var state = await dispatcher.StateAsync(handle, ct).ConfigureAwait(false);
             if (state.AllTerminal)
             {
                 _log.LogInformation("The {What} members finished: {State}.", what, state);
-                return state;
+                return new MemberWait(state, stopped);
             }
 
             var now = _context.Time.GetUtcNow();
+            var shape = (Running: state.Running, Ended: state.Members.Count(m => m.IsTerminal));
+            if (shape != seen)
+            {
+                seen = shape;
+                lastChange = now;
+            }
+
+            if (!stopping && state.Running == 0 && now - lastChange >= stall)
+            {
+                stopping = true;
+                stopped = state.Members.Where(m => !m.IsTerminal).Select(m => m.RunId).ToHashSet();
+                if (stall > TimeSpan.Zero)
+                {
+                    _log.LogInformation(
+                        "No node has started {Count} {What} member(s) in {Seconds}s and none is running: every place in the pool holds work. This run stops them and does their part itself.",
+                        stopped.Count, what, (int)(now - lastChange).TotalSeconds);
+                }
+                else
+                {
+                    _log.LogInformation("{Count} {What} member(s) no node started are stopped: nothing is left for them.", stopped.Count, what);
+                }
+
+                await dispatcher.CancelAsync(handle, ct).ConfigureAwait(false);
+
+                // Asked again at once: the queued ones have ended by now, and one a node took meanwhile ends when it hears the stop.
+                continue;
+            }
+
             if (_context.Trace is { } trace ? trace.ProgressDue("members", now) : now - lastProgress >= MemberProgress)
             {
                 lastProgress = now;

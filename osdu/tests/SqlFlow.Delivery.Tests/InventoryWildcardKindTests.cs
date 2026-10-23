@@ -45,7 +45,8 @@ public sealed class InventoryWildcardKindTests : IDisposable
         inventories:
           - name: WellLogs
             kind: "{{kind}}"
-        reliability: { concurrency: 2, retry: { attempts: 1, baseDelayMs: 1, maxDelayMs: 1 } }
+        reliability: { retry: { attempts: 1, baseDelayMs: 1, maxDelayMs: 1 } }
+        parallelism: { concurrency: 2 }
         """;
 
     private void Add(string key, string kind)

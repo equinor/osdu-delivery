@@ -42,7 +42,8 @@ public sealed class RetrievalTests : IDisposable
           location: "{root}/out/{region}"
           rollRecords: 2
           compression: gzip
-        reliability: { concurrency: 1, retry: { attempts: 2, baseDelayMs: 1, maxDelayMs: 1 } }
+        reliability: { retry: { attempts: 2, baseDelayMs: 1, maxDelayMs: 1 } }
+        parallelism: { concurrency: 1 }
         """;
 
     private readonly OsduTestDatabase _db = new();
@@ -95,7 +96,7 @@ public sealed class RetrievalTests : IDisposable
         Assert.Equal("modifyTime", flow.Source.Incremental!.Field);
         Assert.Equal(new DateTime(2026, 1, 1, 0, 0, 0, DateTimeKind.Utc), flow.Source.Incremental.Since);
         Assert.Equal(5, flow.Source.Incremental.LagMinutes);
-        Assert.Equal(1, flow.Reliability.Concurrency);
+        Assert.Equal(1, flow.Parallelism.Concurrency);
         Assert.Empty(flow.CredentialReferences());
 
         var kind = new RetrievalFlowKind(loader);

@@ -294,7 +294,7 @@ public sealed partial class DimensionRunner
         var gate = new Lock();
         await Parallel.ForEachAsync(
             building,
-            new ParallelOptions { MaxDegreeOfParallelism = Math.Max(1, _flow.Reliability.Concurrency), CancellationToken = ct },
+            new ParallelOptions { MaxDegreeOfParallelism = Math.Max(1, _flow.Parallelism.Concurrency), CancellationToken = ct },
             async (dimension, token) =>
             {
                 var summary = await BuildOneAsync(ledger, search, templates, dimension, partition, load, runId, actor, token).ConfigureAwait(false);
@@ -646,7 +646,7 @@ public sealed partial class DimensionRunner
         _log.LogInformation("dimension {Dimension}: reading {Kind} {Path} as {Field}", dimension.Name, dimension.Kind, dimension.Path, field.AggregateBy);
         var values = await DistinctValues.ReadAsync(
             new SearchDistinctSource(search, dimension.Kind, query, field),
-            new DistinctReadOptions(_flow.Source.AggregationSize, dimension.MaxValues, resolved.Repeats, Concurrency: Math.Max(1, _flow.Reliability.Concurrency)),
+            new DistinctReadOptions(_flow.Source.AggregationSize, dimension.MaxValues, resolved.Repeats, Concurrency: Math.Max(1, _flow.Parallelism.Concurrency)),
             _log, ct).ConfigureAwait(false);
         progress.Read = load.Stamp(Counts(values, templatesJson, 0, [], KeyLabels.None));
 
@@ -665,7 +665,7 @@ public sealed partial class DimensionRunner
         RecordRead? records = null;
         if (incremental is not null)
         {
-            records = await new DimensionRecordReader(search, _log, Math.Max(1, _flow.Reliability.Concurrency))
+            records = await new DimensionRecordReader(search, _log, Math.Max(1, _flow.Parallelism.Concurrency))
                 .ReadAsync(dimension, [new DimensionScope(query, values)], field, keyColumns!, ct).ConfigureAwait(false);
             notes.Add(string.Create(CultureInfo.InvariantCulture,
                 $"{records.Read - records.Unidentified} record(s) kept by their unique key ({incremental.RecordKey}) with the {records.Held.Count} key(s) they hold, for incremental loads{(records.Unidentified > 0 ? $"; {records.Unidentified} hold no single value at a key column and are not kept, so an incremental load does not read again what they held" : string.Empty)}."));
@@ -702,7 +702,7 @@ public sealed partial class DimensionRunner
         var throughKeys = dimension.Attributes.Where(a => !a.IsCollected).ToList();
         var reads = dimension.Label.Count > 0 || throughKeys.Count > 0;
         var collects = dimension.Attributes.Any(a => a.IsCollected);
-        var concurrency = Math.Max(1, _flow.Reliability.Concurrency);
+        var concurrency = Math.Max(1, _flow.Parallelism.Concurrency);
         var together = reads && collects && concurrency > 1;
         var forLabels = together ? concurrency / 2 : concurrency;
         var forCollected = together ? concurrency - forLabels : concurrency;
@@ -877,7 +877,7 @@ public sealed partial class DimensionRunner
         var gate = new Lock();
         await Parallel.ForEachAsync(
             toCount,
-            new ParallelOptions { MaxDegreeOfParallelism = Math.Max(1, _flow.Reliability.Concurrency), CancellationToken = ct },
+            new ParallelOptions { MaxDegreeOfParallelism = Math.Max(1, _flow.Parallelism.Concurrency), CancellationToken = ct },
             async (item, token) =>
             {
                 try

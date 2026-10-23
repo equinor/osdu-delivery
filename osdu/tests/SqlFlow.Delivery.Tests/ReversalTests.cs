@@ -988,7 +988,8 @@ public sealed class ReversalTests : IDisposable
                 Auth = new TargetAuth { Type = TargetAuthType.None },
                 Headers = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase) { ["data-partition-id"] = "dev" },
             },
-            Reliability = flow.Reliability with { Concurrency = 4, Retry = new FlowRetry { Attempts = 1, BaseDelayMs = 1, MaxDelayMs = 1 } },
+            Reliability = flow.Reliability with { Retry = new FlowRetry { Attempts = 1, BaseDelayMs = 1, MaxDelayMs = 1 } },
+            Parallelism = flow.Parallelism with { Concurrency = 4 },
         };
     }
 

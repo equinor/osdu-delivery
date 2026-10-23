@@ -88,6 +88,9 @@ public sealed record InventoryFlowDefinition
 
     public FlowReliability Reliability { get; init; } = new();
 
+    /// <summary>How many version lists a build reads at once (<c>parallelism.concurrency</c>).</summary>
+    public RunParallelism Parallelism { get; init; } = new();
+
     /// <summary>
     /// The ledger identity the flow's inventories are kept under: derived from the name and the bound partition for a flow
     /// that works in partitions, so each partition keeps inventories of its own, and from the name alone for a flow whose

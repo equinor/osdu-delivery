@@ -267,9 +267,9 @@ target:
       body:
         scope: ${env:OSDU_SCOPE}
 
-reliability:
+parallelism:
   concurrency: 8
-  parallelInterfaces: 2
+  interfaces: 2
 
 failWhen:
   failedPercent: 20

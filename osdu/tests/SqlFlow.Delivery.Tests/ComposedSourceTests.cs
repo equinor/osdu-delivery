@@ -74,10 +74,11 @@ public sealed class ComposedSourceTests : IDisposable
                 wellbore:
                   root: {{FakeOsduPlatform.DdmsRoot}}
             reliability:
-              concurrency: 1
-              renderParallelism: 1
-              parallelInterfaces: 1
               retry: { attempts: 1 }
+            parallelism:
+              concurrency: 1
+              renderers: 1
+              interfaces: 1
             interfaces:
               welllogs:
                 record: { object: {{WellLogTable}}, key: [source_project, log_id], primaryKey: RecId, scope: { log_source: logSource } }

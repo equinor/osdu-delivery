@@ -203,6 +203,7 @@ no engine path could honour is refused before anything is queued.
 | `interface` | text | The one interface of a source the run works on. A run on records or slices, and a `reverse` of a run, of a source with several interfaces has to name it; a run on a submission finds its interface from the submission. |
 | `interfaces` | array of text | The interfaces a run of a source runs, each once (at most 200); every interface when left out. |
 | `slices` | array of whole numbers | The key slices of `submissionId` an `intake` member plans: 0 to 1023, each once. Written by a fan-out, not by hand. |
+| `rateShare` | whole number | How many runs of a fan-out share the flow's `reliability.rateLimitRps`, 2 to 65: an `intake` or `drain` member sends under that share of it ([submissions](../concepts/submissions.md#many-nodes)). Written by a fan-out, not by hand. |
 | `confirm` | text | The partition a `delete-ledger` run acts in, as the person who asked typed it. Required by `delete-ledger` and taken by no other operation of a delivery flow (an inventory flow's `remove` takes its own). |
 | `references`, `partitionReferences` | objects | The central configuration the control plane supplies with every delivery, cache, retrieval, assertion, dimension and inventory run it queues ([sqlflow config](config.md)). Not written by hand. |
 
@@ -210,16 +211,16 @@ Which fields each operation takes:
 
 | Operation | Takes | Refuses |
 | --- | --- | --- |
-| `deliver` | `force`, `submissionId`, `recordKeys`, `redeliver`, `rerender`, `interface`, `interfaces` | `slices`; `redeliver` or `rerender` with `submissionId`; `rerender` with `redeliver` |
-| `plan` | `force`, `submissionId`, `recordKeys`, `rerender`, `interface`, `interfaces` | `redeliver`, `slices`; `rerender` with `submissionId` |
-| `intake` | `force`, `submissionId`, `recordKeys`, `slices` (with `submissionId`), `interface`, `interfaces` | `redeliver`, `rerender` |
-| `drain` | `submissionId`, `interface`, `interfaces` | `force`, `recordKeys`, `redeliver`, `rerender`, `slices` |
-| `verify` | `force`, `recordKeys`, `interface`, `interfaces` | `submissionId`, `redeliver`, `rerender`, `slices` |
-| `replan` | `force`, `interface`, `interfaces` | `submissionId`, `recordKeys`, `redeliver`, `rerender`, `slices` |
-| `sync` | `recordKeys`, `interface`, `interfaces` | `force`, `submissionId`, `redeliver`, `rerender`, `slices` |
-| `reverse` | `submissionId` or `runId` (exactly one), `interface` | `force`, `recordKeys`, `redeliver`, `rerender`, `slices`, `interfaces` |
-| `undo` | `force`, `interface`, `interfaces` | `submissionId`, `recordKeys`, `redeliver`, `rerender`, `slices` |
-| `delete-ledger` | `confirm` (required), `interface`, `interfaces` | `force`, `submissionId`, `recordKeys`, `redeliver`, `rerender`, `slices` |
+| `deliver` | `force`, `submissionId`, `recordKeys`, `redeliver`, `rerender`, `interface`, `interfaces` | `slices`, `rateShare`; `redeliver` or `rerender` with `submissionId`; `rerender` with `redeliver` |
+| `plan` | `force`, `submissionId`, `recordKeys`, `rerender`, `interface`, `interfaces` | `redeliver`, `slices`, `rateShare`; `rerender` with `submissionId` |
+| `intake` | `force`, `submissionId`, `recordKeys`, `slices` and `rateShare` (with `submissionId`), `interface`, `interfaces` | `redeliver`, `rerender` |
+| `drain` | `submissionId`, `rateShare` (with `submissionId`), `interface`, `interfaces` | `force`, `recordKeys`, `redeliver`, `rerender`, `slices` |
+| `verify` | `force`, `recordKeys`, `interface`, `interfaces` | `submissionId`, `redeliver`, `rerender`, `slices`, `rateShare` |
+| `replan` | `force`, `interface`, `interfaces` | `submissionId`, `recordKeys`, `redeliver`, `rerender`, `slices`, `rateShare` |
+| `sync` | `recordKeys`, `interface`, `interfaces` | `force`, `submissionId`, `redeliver`, `rerender`, `slices`, `rateShare` |
+| `reverse` | `submissionId` or `runId` (exactly one), `interface` | `force`, `recordKeys`, `redeliver`, `rerender`, `slices`, `rateShare`, `interfaces` |
+| `undo` | `force`, `interface`, `interfaces` | `submissionId`, `recordKeys`, `redeliver`, `rerender`, `slices`, `rateShare` |
+| `delete-ledger` | `confirm` (required), `interface`, `interfaces` | `force`, `submissionId`, `recordKeys`, `redeliver`, `rerender`, `slices`, `rateShare` |
 
 Across every operation: `submissionId` and `recordKeys` never together; `interface` and `interfaces` never together;
 `interfaces` never with `submissionId`, `recordKeys` or `slices`; `runId` only on `reverse`; `confirm` only on

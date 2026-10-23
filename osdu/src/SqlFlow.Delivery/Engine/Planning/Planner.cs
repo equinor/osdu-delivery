@@ -564,7 +564,7 @@ public sealed class Planner
         var header = await OpenAsync(flow, resolved, parameters, selection, gate: !force, stored: null, ct: ct).ConfigureAwait(false);
         var summary = new PlanSummary();
         var entries = new List<PlanEntry>();
-        await foreach (var entry in EntriesAsync(header, null, flow.Reliability.EffectiveRenderParallelism, summary, ct).ConfigureAwait(false))
+        await foreach (var entry in EntriesAsync(header, null, flow.Parallelism.EffectiveRenderers, summary, ct).ConfigureAwait(false))
         {
             entries.Add(entry);
         }

@@ -88,7 +88,7 @@ public sealed class ReversalRunner
     internal int PageSize { get; init; } = ReversalLimits.Page;
 
     /// <summary>OSDU reads made at once: the flow's own concurrency, at least one.</summary>
-    private int Concurrency => Math.Max(1, _flow.Reliability.Concurrency);
+    private int Concurrency => Math.Max(1, _flow.Parallelism.Concurrency);
 
     private DateTime Now => _time.GetUtcNow().UtcDateTime;
 

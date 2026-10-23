@@ -134,8 +134,10 @@ defaults:
 failRunOn: error
 
 reliability:
-  concurrency: 4
   retry: { attempts: 4, backoff: exponential, baseDelayMs: 500, maxDelayMs: 30000 }
+
+parallelism:
+  concurrency: 4
 
 tests:
   - name: logs-delivered
@@ -223,7 +225,8 @@ The document is read strictly: an unknown key fails validation naming it.
 | `defaults` | map | no | see below | What a test takes when it says nothing itself. |
 | `failRunOn` | string | no | `error` | Which outcomes fail the platform run: `error`, `warning` or `never` (see [Outcomes](#outcomes)). |
 | `tests` | list | yes | none | The tests, 1 to 500. |
-| `reliability` | map | no | defaults | The HTTP settings, as on a [delivery flow](delivery.md), and `concurrency`: how many tests run at once, and how many requests one test has in flight (default 8, at least 1). `parallelInterfaces` is refused. |
+| `reliability` | map | no | defaults | The HTTP settings, as on a [delivery flow](delivery.md): timeout, retry, rate limit, TLS, URL allowlist and response size. |
+| `parallelism` | map | no | defaults | `concurrency`: how many tests run at once, and how many requests one test has in flight (default 8, at least 1). An assertion flow fans nothing out across the fleet, so it takes no other parallelism key. It was `reliability.concurrency` before: a document that still writes that is refused, naming `parallelism.concurrency`, and a delivery flow's setting written under `reliability` (`fanOut`, `batchRecords`) is refused as one to remove. |
 | `schedule`, `mode`, `lifecycle` | | no | none | SQLFlow's envelope keys: see [schedule](../../../../sqlflow/docs/reference/flow/schedule.md). |
 
 ### source
@@ -483,7 +486,7 @@ at a time in JSON). Only kinds the DDMS keeps bulk data for take it:
 | `work-product-component--WellPressureTestRawMeasurement` | `wellpressuretestrawmeasurement` |
 
 `rowCount`, `columns`, `column`, a column `aggregate` and `monotonic` need it. Each record's bulk data is held to each
-assertion on its own, records in parallel up to `reliability.concurrency`, and the assertion holds when every record's
+assertion on its own, records in parallel up to `parallelism.concurrency`, and the assertion holds when every record's
 does. A record the DDMS holds no bulk data for (it answers 404) fails, so does one lacking a column an assertion names,
 and so does one the DDMS answers a page of without a column the read asked for:
 `the DDMS answered the page of its bulk data from row <n> without the column <c>, which the read asked for and its description lists`.
@@ -660,7 +663,7 @@ Notifications fire on it as on any failed run.
 
 | Operation | What it does |
 | --- | --- |
-| `test` (default) | Selects the tests, checks them against their templates, runs them (up to `reliability.concurrency` at once) and keeps the report. Needs the module's database. |
+| `test` (default) | Selects the tests, checks them against their templates, runs them (up to `parallelism.concurrency` at once) and keeps the report. Needs the module's database. |
 | `plan` | Selects and checks the same tests and counts what each matches and would read, evaluating nothing and recording nothing. It needs the module's database only for the templates. |
 
 The payload takes `tests` (names) and `tags` and nothing else; a test runs when it is named or carries one of the tags,

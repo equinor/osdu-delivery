@@ -33,6 +33,9 @@ public sealed record RetrievalDefinition
 
     public FlowReliability Reliability { get; init; } = new();
 
+    /// <summary>How many kinds are retrieved at once (<c>parallelism.concurrency</c>).</summary>
+    public RunParallelism Parallelism { get; init; } = new();
+
     /// <summary>The secret references the source declares, keyed by document path; references only, never values.</summary>
     public IEnumerable<KeyValuePair<string, string>> CredentialReferences()
     {

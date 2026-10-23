@@ -11,7 +11,9 @@ keywords:
   - "submission"
 referenceRefs:
   - delivery-concept-submissions
-updated: 2026-10-16
+related:
+  - delivery-wiki-0025-parallelism-and-default-fan-out
+updated: 2026-10-23
 ---
 # 0006: Rendered documents live in work batch files, not in the ledger
 
@@ -32,13 +34,14 @@ memory at the mercy of the source's size.
 ## Decision
 
 - The intake streams the source through a bounded rendering pipeline and writes the rendered documents to JSON Lines
-  work batch files under the flow's work location (`source.work`), `reliability.batchRecords` documents per file.
+  work batch files under the flow's work location (`source.work`), `parallelism.batchRecords` documents per file.
 - The record row carries the batch number and the document's byte range (`WorkBatch`, `PendingDocumentRef`);
   `osdu.WorkBatch` carries one row per file with its status, lease and counts.
 - A drain leases a whole batch, reads the documents by range, and hands the protocol up to `batchSize`
   records per request. Completion is bulk (a table-valued merge on SQL Server).
-- A submission above `reliability.fanOutMinRecords` on a flow with `reliability.fanOut` spreads its intake
-  (by key slice) and its drains (by batch) over member runs across the fleet, as one run family.
+- A submission of at least `parallelism.fanOutMinRecords` records spreads its intake (by key slice) and its drains (by
+  batch) over member runs across the fleet, as one run family; since [0025](0025-parallelism-and-default-fan-out.md)
+  it does so by default, and the settings that say how much runs at once are the flow's `parallelism`.
 
 ## Consequences
 

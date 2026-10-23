@@ -72,6 +72,9 @@ public sealed record AssertionFlowDefinition
 
     public FlowReliability Reliability { get; init; } = new();
 
+    /// <summary>How many tests run at once, and how many requests one test has in flight (<c>parallelism.concurrency</c>).</summary>
+    public RunParallelism Parallelism { get; init; } = new();
+
     /// <summary>
     /// The ledger identity the flow's results are kept under: derived from the name and the bound partition for a flow that
     /// works in partitions, so each partition keeps a report of its own, and from the name alone for a flow whose partition

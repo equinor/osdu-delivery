@@ -38,7 +38,7 @@ public class ScaleEngineTests : IDisposable
         var ledger = _db.Ledger(_clock);
         var engine = Samples.Engine(ledger, _clock, sources: tables);
         var local = Samples.LocalFlow(_root);
-        var flow = local with { Reliability = local.Reliability with { BatchRecords = 2 } };
+        var flow = local with { Parallelism = local.Parallelism with { BatchRecords = 2 } };
         using var runtime = await FlowRuntime.CreateAsync(engine, flow, SampleEstate.Values);
         await ledger.RegisterAsync(runtime.Flow);
         var protocol = new FakeProtocol();
@@ -150,7 +150,7 @@ public class ScaleEngineTests : IDisposable
         var ledger = _db.Ledger(_clock);
         var protocol = new FakeProtocol();
         var local = Samples.LocalFlow(_root);
-        var flow = local with { Reliability = local.Reliability with { FanOut = 2, FanOutMinRecords = 1, BatchRecords = 1 } };
+        var flow = local with { Parallelism = local.Parallelism with { FanOut = 2, FanOutMinRecords = 1, BatchRecords = 1 } };
         var dispatcher = new InlineDispatcher(flow);
         var engine = Samples.Engine(ledger, _clock, sources: tables) with { Protocols = new FakeProtocolFactory(protocol), FanOut = dispatcher };
         dispatcher.Engine = engine;
@@ -194,6 +194,242 @@ public class ScaleEngineTests : IDisposable
         Assert.Contains(activities, a => a.Kind == "deliver" && a.Outcome == "completed");
         Assert.Contains(activities, a => a.Kind == "intake" && a.Outcome == "completed");
         Assert.Contains(activities, a => a.Kind == "drain" && a.Outcome == "completed");
+    }
+
+    /// <summary>
+    /// A flow fans out by default: the drain enqueues one member per work batch beyond the one the coordinating run takes, up
+    /// to parallelism.fanOut, and every member carries how many runs share the flow's rate limit.
+    /// </summary>
+    [Fact]
+    public async Task A_drain_fans_out_one_member_per_batch_beyond_its_own_and_every_member_shares_the_rate_limit()
+    {
+        var tables = await EstateAsync();
+        var ledger = _db.Ledger(_clock);
+        var protocol = new FakeProtocol();
+        var local = Samples.LocalFlow(_root);
+        Assert.Equal(FlowParallelism.DefaultFanOut, local.Parallelism.FanOut);
+        var flow = local with { Parallelism = local.Parallelism with { FanOutMinRecords = 1, BatchRecords = 2 } };
+        var dispatcher = new InlineDispatcher(flow);
+        var engine = Samples.Engine(ledger, _clock, sources: tables) with { Protocols = new FakeProtocolFactory(protocol), FanOut = dispatcher };
+        dispatcher.Engine = engine;
+        using var runtime = await FlowRuntime.CreateAsync(engine, flow, SampleEstate.Values);
+        await ledger.RegisterAsync(runtime.Flow);
+        runtime.RunId = Guid.NewGuid();
+        runtime.Actor = "test";
+
+        var result = await runtime.RunAsync(force: false);
+
+        Assert.Equal(SubmissionStatus.Completed, result.Submission.Status);
+        Assert.Equal(5, result.Submission.Delivered);
+        var batches = await ledger.ListWorkBatchesAsync(result.Submission.SubmissionId, 10, 0);
+        Assert.True(batches.Count >= 3, $"five records at two to a batch fill at least three batches; {batches.Count} were written");
+
+        // Five candidates at two to a slice: two slices, one of them a member's. A member per batch beyond the coordinating
+        // run's own, far fewer than the eight the flow allows, so no member is enqueued with nothing to take.
+        Assert.Equal(1, result.IntakeMembers);
+        Assert.Equal(Math.Min(FlowParallelism.DefaultFanOut, batches.Count - 1), result.DrainMembers);
+        var intake = dispatcher.Enqueued.Where(e => e.Operation == DeliveryOperations.Intake).ToList();
+        var drains = dispatcher.Enqueued.Where(e => e.Operation == DeliveryOperations.Drain).ToList();
+        Assert.Equal(result.DrainMembers, drains.Count);
+        Assert.All(intake, e => Assert.Equal(2, e.Payload.RateShare));
+        Assert.All(drains, e => Assert.Equal(drains.Count + 1, e.Payload.RateShare));
+    }
+
+    /// <summary>
+    /// A coordinating run never waits for ever on members no node starts. When every place in the pool holds work, its own
+    /// slot among them, the intake members are stopped once the start grace has passed with none started, and their shares
+    /// are planned here; the drain members are stopped as soon as this run's drain leaves nothing for them. Every record is
+    /// planned once and delivered once.
+    /// </summary>
+    [Fact]
+    public async Task A_run_whose_members_no_node_starts_does_their_part_itself()
+    {
+        var tables = await EstateAsync();
+        var ledger = _db.Ledger(_clock);
+        var protocol = new FakeProtocol();
+        var local = Samples.LocalFlow(_root);
+        var flow = local with { Parallelism = local.Parallelism with { FanOut = 2, FanOutMinRecords = 1, BatchRecords = 1 } };
+        var dispatcher = new UnstartedDispatcher(_clock, TimeSpan.FromMinutes(1));
+        var engine = Samples.Engine(ledger, _clock, sources: tables) with { Protocols = new FakeProtocolFactory(protocol), FanOut = dispatcher };
+        using var runtime = await FlowRuntime.CreateAsync(engine, flow, SampleEstate.Values);
+        await ledger.RegisterAsync(runtime.Flow);
+        runtime.RunId = Guid.NewGuid();
+        runtime.Actor = "test";
+        runtime.MemberPoll = TimeSpan.FromMilliseconds(10);
+        runtime.MemberStartGrace = TimeSpan.FromMinutes(3);
+
+        var result = await runtime.RunAsync(force: false);
+
+        Assert.Equal(2, result.IntakeMembers);
+        Assert.Equal(2, result.DrainMembers);
+        Assert.Equal(SubmissionStatus.Completed, result.Submission.Status);
+        Assert.Equal(5, result.Submission.Planned);
+        Assert.Equal(5, result.Submission.Delivered);
+        Assert.Equal(5, protocol.Deliveries.Count);
+        Assert.Equal(5, protocol.Deliveries.Select(d => d.Key).Distinct().Count());
+
+        // The intake members were stopped only once the grace had passed on the run's clock with none started; the drain's as
+        // soon as this run had drained, the first time it asked after them.
+        Assert.Equal([DeliveryOperations.Intake, DeliveryOperations.Drain], dispatcher.Cancelled.Select(c => c.Operation));
+        Assert.True(dispatcher.Cancelled[0].After >= TimeSpan.FromMinutes(3), $"the intake members were stopped after {dispatcher.Cancelled[0].After}");
+        Assert.Equal(TimeSpan.FromMinutes(1), dispatcher.Cancelled[1].After);
+
+        var batches = await ledger.ListWorkBatchesAsync(result.Submission.SubmissionId, 10, 0);
+        Assert.Equal(5, batches.Count);
+        Assert.All(batches, b => Assert.Equal(WorkBatchStatus.Done, b.Status));
+    }
+
+    /// <summary>
+    /// A submission planned again (a run resuming it, a member executed again, a coordinating run planning a stopped member's
+    /// share) passes over the records it already queued, which keep reading their documents from the batch files they were
+    /// written to. The new plan writes its batches after those, so no file a queued record reads from is written again.
+    /// </summary>
+    [Fact]
+    public async Task A_submission_planned_again_writes_its_batches_after_the_ones_its_queued_records_read_from()
+    {
+        var tables = await EstateAsync();
+        var ledger = _db.Ledger(_clock);
+        var engine = Samples.Engine(ledger, _clock, sources: tables);
+        var local = Samples.LocalFlow(_root);
+        var flow = local with { Parallelism = local.Parallelism with { BatchRecords = 2 } };
+        using var runtime = await FlowRuntime.CreateAsync(engine, flow, SampleEstate.Values);
+        await ledger.RegisterAsync(runtime.Flow);
+
+        var first = await runtime.Intake.IntakeAsync(flow, runtime.Mapping, runtime.Parameters, runtime.Request, force: false);
+        var submissionId = first.Submission.SubmissionId;
+        var work = first.Submission.WorkLocation!;
+        Assert.Equal(3, first.Counts.Batches);
+        var queued = (await ledger.GetRecordAsync(flow.Id, SampleEstate.Key(0)))!;
+        Assert.Equal(0, DocumentRef.Parse(queued.PendingDocumentRef!).Batch);
+
+        // One record changes within the window the submission recorded, and the submission is planned again.
+        SampleEstate.Change(tables.Records[4], "creator", "HAL", tables.Records[4].UpdatedUtc, SampleWellLogs.UpdatedUtc(4).AddHours(2));
+        runtime.SubmissionId = submissionId;
+        var again = await runtime.Intake.IntakeAsync(flow, runtime.Mapping, runtime.Parameters, runtime.Request, force: false);
+
+        Assert.Equal(1, again.Counts.Planned);
+        Assert.Equal(1, again.Counts.Batches);
+        var batches = await ledger.ListWorkBatchesAsync(submissionId, 10, 0);
+        Assert.Equal([0, 1, 2, 3], batches.Select(b => b.Index));
+        var changed = (await ledger.GetRecordAsync(flow.Id, SampleEstate.Key(4)))!;
+        Assert.Equal(3, DocumentRef.Parse(changed.PendingDocumentRef!).Batch);
+
+        // The record queued first still reads its own document from the batch it was written to.
+        var item = await WorkBatchFile.ReadOneAsync(runtime.Context.Stores, work, submissionId, DocumentRef.Parse(queued.PendingDocumentRef!));
+        Assert.Equal(SampleEstate.Key(0).Value, item.Key);
+        var keys = new List<Guid>();
+        await foreach (var (entry, _) in WorkBatchFile.ReadAllAsync(runtime.Context.Stores, work, submissionId, 0))
+        {
+            keys.Add(entry.Key);
+        }
+
+        Assert.Equal(new[] { SampleEstate.Key(0).Value, SampleEstate.Key(1).Value }.Order(), keys.Order());
+    }
+
+    /// <summary>
+    /// A record retried outside its batch reads its document by offset from the batch file it was queued in. A line there that
+    /// belongs to another record (the file was written again since) is never sent under it: the record is held, to be planned
+    /// again from its row.
+    /// </summary>
+    [Fact]
+    public async Task A_retried_record_never_sends_a_document_its_batch_file_now_holds_for_another_record()
+    {
+        var tables = await EstateAsync();
+        var ledger = _db.Ledger(_clock);
+        var engine = Samples.Engine(ledger, _clock, sources: tables);
+        var local = Samples.LocalFlow(_root);
+        var flow = local with { Parallelism = local.Parallelism with { BatchRecords = 2 } };
+        using var runtime = await FlowRuntime.CreateAsync(engine, flow, SampleEstate.Values);
+        await ledger.RegisterAsync(runtime.Flow);
+        var protocol = new FakeProtocol();
+        var failed = false;
+        protocol.Before = (work, ct) =>
+        {
+            if (!failed && work.Key == SampleEstate.Key(0))
+            {
+                failed = true;
+                throw new OsduStatusException(503, "HTTP 503 Service Unavailable");
+            }
+
+            return Task.CompletedTask;
+        };
+
+        var intake = await runtime.Intake.IntakeAsync(flow, runtime.Mapping, runtime.Parameters, runtime.Request, force: false);
+        var submissionId = intake.Submission.SubmissionId;
+        var first = await Worker(runtime, protocol, ledger).DrainAsync(submissionId);
+        Assert.Equal(4, first.Delivered);
+        var waiting = (await ledger.GetRecordAsync(flow.Id, SampleEstate.Key(0)))!;
+        Assert.Equal(RecordStatus.Pending, waiting.Status);
+        var reference = DocumentRef.Parse(waiting.PendingDocumentRef!);
+
+        // The batch file is written again, another record's document where the retried record's was, padded to its length.
+        var other = WorkBatchFile.Encode(new WorkItem(SampleEstate.Key(1).Value, "dev:master-data--Other:1", "{}", null));
+        Assert.True(other.Length <= reference.Length);
+        var rewritten = new byte[reference.Offset + reference.Length + 1];
+        Array.Fill(rewritten, (byte)' ');
+        other.CopyTo(rewritten, checked((int)reference.Offset));
+        rewritten[^1] = (byte)'\n';
+        await File.WriteAllBytesAsync(WorkBatchFile.PathFor(intake.Submission.WorkLocation!, submissionId, reference.Batch), rewritten);
+
+        _clock.Advance(TimeSpan.FromMinutes(2));
+        var deliveries = protocol.Deliveries.Count;
+        var second = await Worker(runtime, protocol, ledger, "retrier").DrainAsync(submissionId);
+
+        Assert.Equal(0, second.Delivered);
+        Assert.Equal(deliveries, protocol.Deliveries.Count);
+        var held = (await ledger.GetRecordAsync(flow.Id, SampleEstate.Key(0)))!;
+        Assert.Equal(RecordStatus.Held, held.Status);
+        Assert.Contains("could not be read", held.LastError, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// A fan-out no node ever starts: every member stays queued until it is cancelled, and the platform's clock moves on by
+    /// <c>step</c> each time the state is asked, so a run waiting on it sees time pass as it would.
+    /// </summary>
+    private sealed class UnstartedDispatcher(TestClock clock, TimeSpan step) : IFanOutDispatcher
+    {
+        private readonly Dictionary<Guid, (string Operation, DateTimeOffset Enqueued, List<FanOutMemberState> Members)> _groups = [];
+
+        /// <summary>Every fan-out cancelled, in order: its members' operation, and how long after it was enqueued.</summary>
+        public List<(string Operation, TimeSpan After)> Cancelled { get; } = [];
+
+        public bool Available => true;
+
+        public Task<FanOutHandle> EnqueueAsync(IReadOnlyList<RunParameters> members, CancellationToken ct = default)
+        {
+            var groupId = Guid.NewGuid();
+            var states = new List<FanOutMemberState>();
+            var operation = DeliveryOperations.Of(members[0]);
+            for (var i = 0; i < members.Count; i++)
+            {
+                DeliveryRunPayload.Parse(members[i]).Validate(operation);
+                states.Add(new FanOutMemberState(Guid.NewGuid(), i + 1, "queued", null, null));
+            }
+
+            _groups[groupId] = (operation, clock.GetUtcNow(), states);
+            return Task.FromResult(new FanOutHandle(groupId, states.Select(s => s.RunId).ToList()));
+        }
+
+        public Task<FanOutState> StateAsync(FanOutHandle handle, CancellationToken ct = default)
+        {
+            clock.Advance(step);
+            return Task.FromResult(new FanOutState([.. _groups[handle.GroupId].Members]));
+        }
+
+        public Task CancelAsync(FanOutHandle handle, CancellationToken ct = default)
+        {
+            var (operation, enqueued, members) = _groups[handle.GroupId];
+            Cancelled.Add((operation, clock.GetUtcNow() - enqueued));
+            for (var i = 0; i < members.Count; i++)
+            {
+                if (members[i].Status == "queued")
+                {
+                    members[i] = members[i] with { Status = "cancelled", Error = "cancelled: the run that fanned it out cancelled its fan-out." };
+                }
+            }
+
+            return Task.CompletedTask;
+        }
     }
 
     /// <summary>A fan-out that runs every member inline, on its own runtime over the same engine, as another node would.</summary>

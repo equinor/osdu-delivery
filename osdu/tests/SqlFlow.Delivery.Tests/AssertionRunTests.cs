@@ -29,7 +29,8 @@ public sealed class AssertionRunTests : IDisposable
         source:
           endpoint: http://localhost
         defaults: { examples: 10 }
-        reliability: { concurrency: 3, retry: { attempts: 1, baseDelayMs: 1, maxDelayMs: 1 } }
+        reliability: { retry: { attempts: 1, baseDelayMs: 1, maxDelayMs: 1 } }
+        parallelism: { concurrency: 3 }
         tests:
           - name: wellbores
             tags: [smoke]
@@ -185,7 +186,8 @@ public sealed class AssertionRunTests : IDisposable
         source:
           endpoint: http://localhost
         defaults: { indexSettleSeconds: 120 }
-        reliability: { concurrency: 2, retry: { attempts: 1, baseDelayMs: 1, maxDelayMs: 1 } }
+        reliability: { retry: { attempts: 1, baseDelayMs: 1, maxDelayMs: 1 } }
+        parallelism: { concurrency: 2 }
         tests:
           - name: wellbores
             kind: {{Wellbore}}

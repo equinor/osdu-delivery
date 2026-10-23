@@ -24,7 +24,8 @@ public sealed class AssertionRunReasonTests : IDisposable
         source:
           endpoint: http://localhost
         defaults: { examples: 5, indexSettleSeconds: 0 }
-        reliability: { concurrency: 2, retry: { attempts: 1, baseDelayMs: 1, maxDelayMs: 1 } }
+        reliability: { retry: { attempts: 1, baseDelayMs: 1, maxDelayMs: 1 } }
+        parallelism: { concurrency: 2 }
         tests:
           - name: counted
             kind: {{Wellbore}}
@@ -63,7 +64,8 @@ public sealed class AssertionRunReasonTests : IDisposable
         source:
           endpoint: {{endpoint}}
         defaults: { indexSettleSeconds: 0 }
-        reliability: { concurrency: 1, retry: { attempts: 1, baseDelayMs: 1, maxDelayMs: 1 } }
+        reliability: { retry: { attempts: 1, baseDelayMs: 1, maxDelayMs: 1 } }
+        parallelism: { concurrency: 1 }
         tests:
           - name: present
             {{(misspelledPartitions.Length > 0 ? "partitions: [test]" : string.Empty)}}

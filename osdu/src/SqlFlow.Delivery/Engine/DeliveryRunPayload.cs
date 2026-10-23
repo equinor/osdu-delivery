@@ -312,6 +312,12 @@ public sealed record DeliveryRunPayload
 
     public const string SlicesProperty = "slices";
 
+    /// <summary>
+    /// How many runs of a fan-out share the flow's <c>reliability.rateLimitRps</c>: the coordinating run and its members
+    /// (osdu/docs/reference/concepts/submissions.md, Many nodes).
+    /// </summary>
+    public const string RateShareProperty = "rateShare";
+
     public const string InterfaceProperty = "interface";
 
     public const string InterfacesProperty = "interfaces";
@@ -361,8 +367,14 @@ public sealed record DeliveryRunPayload
     /// <summary>The most test names, and the most tags, one run selects.</summary>
     public const int MaxSelected = AssertionFlowDefinition.MaxTests;
 
+    /// <summary>The fewest runs a fan-out shares a rate between: its coordinating run and one member.</summary>
+    public const int MinRateShare = 2;
+
+    /// <summary>The most runs a fan-out shares a rate between: its coordinating run and the most members a flow declares.</summary>
+    public const int MaxRateShare = FlowParallelism.MaxFanOut + 1;
+
     private static readonly string[] Properties =
-        [ForceProperty, SubmissionIdProperty, RunIdProperty, RecordKeysProperty, RedeliverProperty, RerenderProperty, SlicesProperty, InterfaceProperty, InterfacesProperty, ReferencesProperty,
+        [ForceProperty, SubmissionIdProperty, RunIdProperty, RecordKeysProperty, RedeliverProperty, RerenderProperty, SlicesProperty, RateShareProperty, InterfaceProperty, InterfacesProperty, ReferencesProperty,
             PartitionReferencesProperty, ConfirmProperty, TestsProperty, TagsProperty, DimensionsProperty, InventoriesProperty, RemovalProperty, SelectionProperty, TypesProperty,
             EntriesProperty, ApproveProperty];
 
@@ -379,6 +391,7 @@ public sealed record DeliveryRunPayload
         [RedeliverProperty] = "only a delivery flow's deliver runs send records again",
         [RerenderProperty] = "only a delivery flow's runs bring records up to date",
         [SlicesProperty] = "only a delivery flow's intake members plan slices",
+        [RateShareProperty] = "only a delivery flow's fan-out members share its rate limit",
         [InterfaceProperty] = "only a delivery flow's runs name an interface",
         [InterfacesProperty] = "only a delivery flow's runs select interfaces",
         [ConfirmProperty] = "only a delivery flow's run deleting the ledger, an inventory flow's remove run and a removal flow's approved run name the partition they act in",
@@ -395,7 +408,7 @@ public sealed record DeliveryRunPayload
 
     /// <summary>The properties a delivery flow's runs take, besides the central configuration; which operation takes which is <see cref="Validate"/>'s.</summary>
     private static readonly string[] DeliveryProperties =
-        [ForceProperty, SubmissionIdProperty, RunIdProperty, RecordKeysProperty, RedeliverProperty, RerenderProperty, SlicesProperty, InterfaceProperty, InterfacesProperty, ConfirmProperty];
+        [ForceProperty, SubmissionIdProperty, RunIdProperty, RecordKeysProperty, RedeliverProperty, RerenderProperty, SlicesProperty, RateShareProperty, InterfaceProperty, InterfacesProperty, ConfirmProperty];
 
     private static readonly string[] RemovalProperties = ["finding", "scope", "expected", "ids", "selection"];
 
@@ -440,6 +453,13 @@ public sealed record DeliveryRunPayload
 
     /// <summary>The key slices of <see cref="SubmissionId"/> an intake member plans.</summary>
     public IReadOnlyList<int> Slices { get; init; } = [];
+
+    /// <summary>
+    /// How many runs share the flow's rate limit with a fan-out member: its coordinating run and every member of the fan-out
+    /// it belongs to. The member sends under that share of <c>reliability.rateLimitRps</c>, so the fan-out as a whole keeps
+    /// to the rate the flow declares. Null for every other run, which has the rate to itself.
+    /// </summary>
+    public int? RateShare { get; init; }
 
     /// <summary>
     /// The one interface of the source the run works on: what a fan-out member, a record-scoped run and a run on a
@@ -549,6 +569,7 @@ public sealed record DeliveryRunPayload
         Add(Redeliver is not null, RedeliverProperty);
         Add(Rerender, RerenderProperty);
         Add(Slices.Count > 0, SlicesProperty);
+        Add(RateShare is not null, RateShareProperty);
         Add(Interface is not null, InterfaceProperty);
         Add(Interfaces.Count > 0, InterfacesProperty);
         Add(Confirm is not null, ConfirmProperty);
@@ -674,6 +695,7 @@ public sealed record DeliveryRunPayload
             Redeliver = root[RedeliverProperty] is null ? null : Text(root[RedeliverProperty], RedeliverProperty),
             Rerender = Boolean(root, RerenderProperty),
             Slices = SliceList(root[SlicesProperty]),
+            RateShare = root[RateShareProperty] is null ? null : Share(root[RateShareProperty]),
             Interface = root[InterfaceProperty] is null ? null : Text(root[InterfaceProperty], InterfaceProperty),
             Interfaces = Names(root[InterfacesProperty]),
             Confirm = root[ConfirmProperty] is null ? null : Text(root[ConfirmProperty], ConfirmProperty),
@@ -748,6 +770,12 @@ public sealed record DeliveryRunPayload
             throw new SqlFlowException("payload slices names a slice more than once.");
         }
 
+        if (RateShare is { } share && (share < MinRateShare || share > MaxRateShare))
+        {
+            throw new SqlFlowException(
+                string.Create(System.Globalization.CultureInfo.InvariantCulture, $"payload {RateShareProperty} is {share}; a fan-out's runs number {MinRateShare} to {MaxRateShare}, its coordinating run and at most {FlowParallelism.MaxFanOut} members."));
+        }
+
         if (Interface is { } named && !SourceDefinition.IsInterfaceName(named))
         {
             throw new SqlFlowException($"payload interface '{named}' is not an interface name: a letter followed by letters, digits, '_' and '-'.");
@@ -787,6 +815,7 @@ public sealed record DeliveryRunPayload
         {
             case DeliveryOperations.Deliver:
                 Refuse(Slices.Count > 0, SlicesProperty, operation, "only an intake member plans slices");
+                Refuse(RateShare is not null, RateShareProperty, operation, "only a fan-out member shares its coordinating run's rate limit");
                 Refuse(Redeliver is not null && SubmissionId is not null, RedeliverProperty, operation, "a run on a submission delivers what that submission planned");
                 Refuse(Rerender && SubmissionId is not null, RerenderProperty, operation, "a run on a submission delivers what that submission planned");
                 Refuse(Rerender && Redeliver is not null, RerenderProperty, operation,
@@ -794,6 +823,7 @@ public sealed record DeliveryRunPayload
                 break;
             case DeliveryOperations.Plan:
                 Refuse(Slices.Count > 0, SlicesProperty, operation, "only an intake member plans slices");
+                Refuse(RateShare is not null, RateShareProperty, operation, "only a fan-out member shares its coordinating run's rate limit");
                 Refuse(Redeliver is not null, RedeliverProperty, operation, "a plan sends nothing");
                 Refuse(Rerender && SubmissionId is not null, RerenderProperty, operation, "a plan of a submission reads the rows that submission recorded");
                 break;
@@ -801,6 +831,7 @@ public sealed record DeliveryRunPayload
                 Refuse(Redeliver is not null, RedeliverProperty, operation, "an intake sends nothing");
                 Refuse(Rerender, RerenderProperty, operation, "an intake sends nothing; bring records up to date with a deliver run");
                 Refuse(Slices.Count > 0 && SubmissionId is null, SlicesProperty, operation, "slices are cut from the submission their coordinating run registered, which submissionId names");
+                Refuse(RateShare is not null && SubmissionId is null, RateShareProperty, operation, "a member shares the rate of the run whose submission it works on, which submissionId names");
                 break;
             case DeliveryOperations.Drain:
                 Refuse(Force, ForceProperty, operation, "a drain plans nothing to force");
@@ -808,14 +839,17 @@ public sealed record DeliveryRunPayload
                 Refuse(Redeliver is not null, RedeliverProperty, operation, "a drain delivers what was planned");
                 Refuse(Rerender, RerenderProperty, operation, "a drain delivers what was planned");
                 Refuse(Slices.Count > 0, SlicesProperty, operation, "only an intake member plans slices");
+                Refuse(RateShare is not null && SubmissionId is null, RateShareProperty, operation, "a member shares the rate of the run whose submission it works on, which submissionId names");
                 break;
             case DeliveryOperations.Verify:
+                Refuse(RateShare is not null, RateShareProperty, operation, "only a fan-out member shares its coordinating run's rate limit");
                 Refuse(SubmissionId is not null, SubmissionIdProperty, operation, "a verify reads the ledger's delivered records, not a submission");
                 Refuse(Redeliver is not null, RedeliverProperty, operation, "a verify sends nothing");
                 Refuse(Rerender, RerenderProperty, operation, "a verify sends nothing");
                 Refuse(Slices.Count > 0, SlicesProperty, operation, "only an intake member plans slices");
                 break;
             case DeliveryOperations.Sync:
+                Refuse(RateShare is not null, RateShareProperty, operation, "only a fan-out member shares its coordinating run's rate limit");
                 Refuse(Force, ForceProperty, operation, "a sync passes no gate: it reads every row it is given");
                 Refuse(SubmissionId is not null, SubmissionIdProperty, operation, "a sync reads the rows of the ledger's records, not a submission's");
                 Refuse(Redeliver is not null, RedeliverProperty, operation, "a sync sends nothing");
@@ -823,6 +857,7 @@ public sealed record DeliveryRunPayload
                 Refuse(Slices.Count > 0, SlicesProperty, operation, "only an intake member plans slices");
                 break;
             case DeliveryOperations.Reverse:
+                Refuse(RateShare is not null, RateShareProperty, operation, "only a fan-out member shares its coordinating run's rate limit");
                 Refuse(SubmissionId is null && RunId is null, SubmissionIdProperty, operation, "a reverse run names what it reverses, a submissionId or a runId");
                 Refuse(SubmissionId is not null && RunId is not null, RunIdProperty, operation, "a reverse run reverses one submission or one run, not both");
                 Refuse(Force, ForceProperty, operation, "a reversal passes no gate: it takes every record its source delivered");
@@ -844,9 +879,11 @@ public sealed record DeliveryRunPayload
                 Refuse(RecordKeys.Count > 0, RecordKeysProperty, operation, "deleting the ledger takes every record of it; remove records with a removal");
                 Refuse(Redeliver is not null, RedeliverProperty, operation, "deleting the ledger sends nothing");
                 Refuse(Rerender, RerenderProperty, operation, "deleting the ledger renders nothing");
+                Refuse(RateShare is not null, RateShareProperty, operation, "only a fan-out member shares its coordinating run's rate limit");
                 Refuse(Slices.Count > 0, SlicesProperty, operation, "only an intake member plans slices");
                 break;
             case DeliveryOperations.Undo:
+                Refuse(RateShare is not null, RateShareProperty, operation, "only a fan-out member shares its coordinating run's rate limit");
                 Refuse(SubmissionId is not null, SubmissionIdProperty, operation, "an undo takes what every unfinished delivery of the ledger left, not a submission's");
                 Refuse(RecordKeys.Count > 0, RecordKeysProperty, operation, "an undo takes what every unfinished delivery of the ledger left");
                 Refuse(Redeliver is not null, RedeliverProperty, operation, "an undo sends nothing the flow renders");
@@ -854,6 +891,7 @@ public sealed record DeliveryRunPayload
                 Refuse(Slices.Count > 0, SlicesProperty, operation, "only an intake member plans slices");
                 break;
             case DeliveryOperations.Replan:
+                Refuse(RateShare is not null, RateShareProperty, operation, "only a fan-out member shares its coordinating run's rate limit");
                 Refuse(SubmissionId is not null, SubmissionIdProperty, operation, "a replan reads every row of the scope under a submission of its own");
                 Refuse(RecordKeys.Count > 0, RecordKeysProperty, operation, "a replan reads every row of the scope; scope a deliver run to records instead");
                 Refuse(Redeliver is not null, RedeliverProperty, operation, "a replan decides by each record's hashes");
@@ -907,6 +945,11 @@ public sealed record DeliveryRunPayload
         if (Slices.Count > 0)
         {
             root[SlicesProperty] = new JsonArray(Slices.Select(s => (JsonNode?)JsonValue.Create(s)).ToArray());
+        }
+
+        if (RateShare is { } share)
+        {
+            root[RateShareProperty] = share;
         }
 
         if (Interface is { } named)
@@ -1047,6 +1090,12 @@ public sealed record DeliveryRunPayload
         => Guid.TryParse(Text(node, property), out var id)
             ? id
             : throw new SqlFlowException($"payload {property} must be a UUID.");
+
+    /// <summary>A rate share as the payload writes it: a whole number; <see cref="Validate"/> checks its range.</summary>
+    private static int Share(JsonNode? node)
+        => node is JsonValue value && value.TryGetValue<int>(out var share)
+            ? share
+            : throw new SqlFlowException($"payload {RateShareProperty} must be a whole number: how many runs of the fan-out share the rate limit.");
 
     /// <summary>A number a payload names something by, such as a selection: a whole number, at least 1.</summary>
     private static long Number(JsonNode? node, string property)

@@ -84,7 +84,7 @@ public sealed class Verifier
         var progressGate = new Lock();
         var lastProgress = _time.GetUtcNow();
 
-        using var gate = new SemaphoreSlim(Math.Max(1, _flow.Reliability.Concurrency));
+        using var gate = new SemaphoreSlim(Math.Max(1, _flow.Parallelism.Concurrency));
 
         // The protocol says how many records one read of the target covers; a storage target answers a hundred at a
         // time, so a pass over a large estate costs a handful of requests rather than one per record. A protocol
@@ -92,7 +92,7 @@ public sealed class Verifier
         var chunks = records.Chunk(Math.Max(1, _protocol.MaxVerifyBatch)).ToList();
         _logger.LogInformation(
             "Verifying {Count} delivered record(s) against OSDU in {Reads} read(s) of up to {Batch}, {Concurrency} at a time{Reconcile}.",
-            records.Count, chunks.Count, Math.Max(1, _protocol.MaxVerifyBatch), Math.Max(1, _flow.Reliability.Concurrency),
+            records.Count, chunks.Count, Math.Max(1, _protocol.MaxVerifyBatch), Math.Max(1, _flow.Parallelism.Concurrency),
             reconcile ? ", reconciling what drifted" : string.Empty);
         var tasks = chunks.Select(async chunk =>
         {

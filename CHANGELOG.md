@@ -127,6 +127,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **What runs at once is a flow's `parallelism` block; `reliability` keeps what makes a request hold.** `concurrency`,
+  `fanOut`, `fanOutMinRecords`, `batchRecords` and `batchSize` move from `reliability` to `parallelism`,
+  `renderParallelism` becomes `parallelism.renderers` and `parallelInterfaces` `parallelism.interfaces`, and an
+  assertion, dimension, inventory or retrieval flow takes `parallelism.concurrency` alone. A document that still writes
+  one of them under `reliability` is refused, naming where it goes: move them in every flow when you upgrade
+  ([parallelism](osdu/docs/reference/flow/delivery.md#parallelism)).
+- **A large delivery spreads across the fleet by default.** A submission of 1,000 records or more fans out over up to
+  eight member runs, one per work batch beyond the coordinating run's own, so an autoscaled pool brings up nodes for it;
+  `parallelism.fanOut: 0` keeps a flow on one run. A flow without `source.record.primaryKey` is no longer refused for
+  fanning out: its sending fans out and its planning stays on one run. `reliability.rateLimitRps` now holds for the
+  whole fan-out, and each run's trace says why it did not fan out ([many nodes](osdu/docs/reference/concepts/submissions.md#many-nodes)).
+
 - **`--set` repeated for one name gives it a list.** `--set logSource=A --set logSource=B` used to keep `B`; it now gives
   `logSource` both values, which only a delivery flow's scope parameter takes, and any other parameter refuses. Give a name
   once to give it one value ([sqlflow run](osdu/docs/reference/cli/run.md#the-kind-arguments)).
@@ -264,6 +276,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   says ([Upgrading an estate](osdu/docs/reference/concepts/templates.md#upgrading-an-estate-that-saved-templates-in-the-database)).
 
 ### Fixed
+
+- **A delivery never waits for ever on member runs no node starts.** A coordinating run whose members stay queued, on a
+  pool with no place free, stops them and does their part itself: its sending at once, its planning after three minutes
+  ([many nodes](osdu/docs/reference/concepts/submissions.md#many-nodes)).
+- **A submission planned again no longer writes over the batch files its queued records read from.** A record retried
+  after its submission was planned again could read another record's document from a rewritten batch file; a new plan
+  now writes its batches after the old ones, and a record whose line is not its own is held and planned again from its
+  row ([work batches](osdu/docs/reference/concepts/submissions.md#work-batches)).
 
 - **A storage account reached only over its Data Lake endpoint works.** The landing storage, work and known-state
   locations and every other Azure Storage location are read and written over the account's Blob or Data Lake (`dfs`)

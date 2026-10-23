@@ -114,8 +114,10 @@ defaults:
 failRunOn: error
 
 reliability:
-  concurrency: 4
   retry: { attempts: 4, backoff: exponential, baseDelayMs: 500, maxDelayMs: 30000 }
+
+parallelism:
+  concurrency: 4
 
 tests:
   - name: logs-delivered

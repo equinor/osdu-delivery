@@ -64,11 +64,13 @@ Not pruned by retention: an attempt names its batch. Deleting a delivery flow's 
 | --- | --- | --- | --- | --- | --- |
 | `PK_WorkBatch` | `PartitionId`, `SubmissionId`, `Index` | primary key | none | none | A batch by its partition, submission and place. |
 | `IX_WorkBatch_PartitionId_FlowId_Status_CreatedUtc` | `PartitionId`, `FlowId`, `Status`, `CreatedUtc` | index | none | none | The claim: the oldest queued batch of a flow, or of a submission. |
-| `IX_WorkBatch_SubmissionId_Index` | `SubmissionId`, `Index` | unique | none | `Status` | A batch named by its submission and place, and a submission's batches in order, counted by status from the index: the batch's identity is unique on its own. |
+| `IX_WorkBatch_SubmissionId_Index` | `SubmissionId`, `Index` | unique | none | `Status` | A batch named by its submission and place, and a submission's batches in order, counted by status from the index (the queued ones a drain fans out over), and the highest place a share has written: the batch's identity is unique on its own. |
 
 ## Written and read by
 
 - **Written** by the intake when it writes a batch file (`SubmissionIntake.cs`), and by the worker's claim and the
   lease's close, which set its status, lease and counts (`OsduLedger.Leases.cs`, `DeliveryWorker.cs`).
-- **Read** by the claims of the workers draining a submission, by a submission's progress, and by the lease recovery that
-  hands an abandoned batch back.
+- **Read** by the claims of the workers draining a submission, by a submission's progress, by the lease recovery that
+  hands an abandoned batch back, by a deliver run counting the queued batches it fans its drain out over, and by a plan of
+  a share planned before, which writes its batches after the highest place the share has already written
+  ([submissions](../concepts/submissions.md#work-batches)).

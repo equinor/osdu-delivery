@@ -334,7 +334,7 @@ public sealed partial class InventoryRunner
             var reads = new InventoryVersionsRead[due.Count];
             await Parallel.ForEachAsync(
                 Enumerable.Range(0, due.Count),
-                new ParallelOptions { MaxDegreeOfParallelism = Math.Max(1, _flow.Reliability.Concurrency), CancellationToken = ct },
+                new ParallelOptions { MaxDegreeOfParallelism = Math.Max(1, _flow.Parallelism.Concurrency), CancellationToken = ct },
                 async (i, token) =>
                 {
                     // A record storage no longer holds keeps no versions, read at the version the build saw, so it is not read again.

@@ -43,7 +43,7 @@ public sealed partial record SourceDefinition
     /// </summary>
     public required IReadOnlyList<FlowDefinition> Interfaces { get; init; }
 
-    /// <summary>How many interfaces with nothing left to wait for run at once (<c>reliability.parallelInterfaces</c>).</summary>
+    /// <summary>How many interfaces with nothing left to wait for run at once (<c>parallelism.interfaces</c>).</summary>
     public int ParallelInterfaces { get; init; } = DefaultParallelInterfaces;
 
     /// <summary>The first interface: every interface carries the source's shared connection, target and parameters.</summary>

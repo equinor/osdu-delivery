@@ -253,7 +253,7 @@ public sealed class DeliveryWorker
             return summary with { Waiting = summary.Waiting + waited };
         }
 
-        var due = await _ledger.ClaimAsync(_flow.Id, submissionId, _workerId, _flow.Reliability.BatchSize, Lease, now, RunId, Waits, _flow.Reliability.Retry.Attempts, ct).ConfigureAwait(false);
+        var due = await _ledger.ClaimAsync(_flow.Id, submissionId, _workerId, _flow.Parallelism.BatchSize, Lease, now, RunId, Waits, _flow.Reliability.Retry.Attempts, ct).ConfigureAwait(false);
         var waitedDue = await ReportWaitingAsync(due.Waiting, submissionId, ct).ConfigureAwait(false);
         if (due.Lease is not { } lease)
         {
@@ -593,7 +593,7 @@ public sealed class DeliveryWorker
         }
 
         var groups = Group(loaded, Math.Max(1, _protocol.MaxBatch));
-        using var gate = new SemaphoreSlim(Math.Max(1, _flow.Reliability.Concurrency));
+        using var gate = new SemaphoreSlim(Math.Max(1, _flow.Parallelism.Concurrency));
         var tasks = groups.Select(async group =>
         {
             void NeverStarted()
@@ -1625,15 +1625,29 @@ public sealed class DeliveryWorker
 
         // A document that is not there is the record's to plan again; a store that did not answer fails the try as it came,
         // so the lease hands the record back and a later try reads again.
+        WorkItem item;
         try
         {
-            return await WorkBatchFile.ReadOneAsync(_stores, submission.WorkLocation, submissionId, reference, ct).ConfigureAwait(false);
+            item = await WorkBatchFile.ReadOneAsync(_stores, submission.WorkLocation, submissionId, reference, ct).ConfigureAwait(false);
         }
         catch (WorkDocumentMissingException ex)
         {
             _logger.LogWarning("The pending document of {SourceKey} could not be read from batch {Batch}: {Message}", record.SourceKey, reference.Batch, HeaderRedaction.RedactMessage(ex.Message));
             return null;
         }
+
+        // The line a reference reads is the record's only while the file is the one the reference was taken from. A line that
+        // names another record is never sent under this one: the record's document is missing, and the record is planned
+        // again.
+        if (item.Key != record.DeliveryKey.Value)
+        {
+            _logger.LogWarning(
+                "The pending document of {SourceKey} could not be read from batch {Batch}: document {Reference} belongs to record {Other}, so the batch file was written again since the record was queued.",
+                record.SourceKey, reference.Batch, reference, item.Key);
+            return null;
+        }
+
+        return item;
     }
 
     private Task<SubmissionState> SubmissionAsync(Guid submissionId, CancellationToken ct)

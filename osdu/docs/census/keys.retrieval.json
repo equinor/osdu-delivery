@@ -6,7 +6,7 @@
   "includeEnvelope": true,
   "generatedFrom": "osdu/docs/reference/flow/retrieval.md and osdu/src/SqlFlow.Delivery/Documents/YamlModels.cs",
   "naming": "The loader deserializes with YamlDotNet's CamelCaseNamingConvention and refuses any key it does not know.",
-  "keyCount": 77,
+  "keyCount": 79,
   "keys": [
     {
       "path": "batch",
@@ -34,6 +34,19 @@
       "type": "string",
       "required": true,
       "description": "The retrieval flow's name: its pipeline identity. The flow id is derived from it the same way a delivery flow's is."
+    },
+    {
+      "path": "parallelism",
+      "type": "object",
+      "required": false,
+      "description": "What one run works on at once: `concurrency`, the kinds retrieved at once. A retrieval flow fans nothing out across the fleet."
+    },
+    {
+      "path": "parallelism.concurrency",
+      "type": "integer",
+      "required": false,
+      "description": "The kinds retrieved at once, each on its own search cursor. At least 1; at most 64 run at once.",
+      "default": "8"
     },
     {
       "path": "parameters",
@@ -70,42 +83,37 @@
       "path": "reliability",
       "type": "object",
       "required": false,
-      "description": "The HTTP settings, as on a delivery flow (timeout, retry, rate limit, TLS, URL allowlist and response size), and `concurrency`: the kinds retrieved at once. `reliability.parallelInterfaces` is refused."
+      "description": "The HTTP settings, as on a delivery flow: timeout, retry, rate limit, TLS, URL allowlist and response size. What runs at once is `parallelism`."
     },
     {
       "path": "reliability.batchRecords",
       "type": "integer",
       "required": false,
-      "description": "A delivery flow's setting: rendered documents per work batch file. The loader accepts it as on a delivery flow; a retrieval flow does not use it.",
-      "default": "500"
+      "description": "Not a setting here any more: a delivery flow writes it as `parallelism.batchRecords`, and a retrieval flow has no use for it. A document that still declares it is refused when it loads; remove it."
     },
     {
       "path": "reliability.batchSize",
       "type": "integer",
       "required": false,
-      "description": "A delivery flow's setting: records claimed per ledger round trip when retrying records. The loader accepts it as on a delivery flow; a retrieval flow does not use it.",
-      "default": "50"
+      "description": "Not a setting here any more: a delivery flow writes it as `parallelism.batchSize`, and a retrieval flow has no use for it. A document that still declares it is refused when it loads; remove it."
     },
     {
       "path": "reliability.concurrency",
       "type": "integer",
       "required": false,
-      "description": "The kinds retrieved at once, each on its own search cursor. At least 1; at most 64 run at once.",
-      "default": "8"
+      "description": "Not a setting here any more: it is written as `parallelism.concurrency`, since what runs at once, and across the fleet, is the flow's parallelism, and reliability keeps what makes a request hold. A document that still declares it here is refused when it loads, naming where it goes."
     },
     {
       "path": "reliability.fanOut",
       "type": "integer",
       "required": false,
-      "description": "A delivery flow's setting: the member runs a large submission spreads over. The loader accepts it as on a delivery flow; a retrieval flow does not use it.",
-      "default": "0"
+      "description": "Not a setting here any more: a delivery flow writes it as `parallelism.fanOut`, and a retrieval flow has no use for it. A document that still declares it is refused when it loads; remove it."
     },
     {
       "path": "reliability.fanOutMinRecords",
       "type": "integer",
       "required": false,
-      "description": "A delivery flow's setting: below this many records a submission never fans out. The loader accepts it as on a delivery flow; a retrieval flow does not use it.",
-      "default": "1000"
+      "description": "Not a setting here any more: a delivery flow writes it as `parallelism.fanOutMinRecords`, and a retrieval flow has no use for it. A document that still declares it is refused when it loads; remove it."
     },
     {
       "path": "reliability.leaseSeconds",
@@ -132,7 +140,7 @@
       "path": "reliability.parallelInterfaces",
       "type": "integer",
       "required": false,
-      "description": "A delivery source's setting: how many of its interfaces run at once. A retrieval flow runs no interfaces, so the loader refuses it here."
+      "description": "Not a setting here any more: a delivery flow writes it as `parallelism.interfaces`, and a retrieval flow has no use for it. A document that still declares it is refused when it loads; remove it."
     },
     {
       "path": "reliability.rateLimitRps",
@@ -145,8 +153,7 @@
       "path": "reliability.renderParallelism",
       "type": "integer",
       "required": false,
-      "description": "A delivery flow's setting: renderers in the intake pipeline on one node, 0 to 256 (0 takes half the machine's processors, at least one). The loader accepts it as on a delivery flow; a retrieval flow does not use it.",
-      "default": "0"
+      "description": "Not a setting here any more: a delivery flow writes it as `parallelism.renderers`, and a retrieval flow has no use for it. A document that still declares it is refused when it loads; remove it."
     },
     {
       "path": "reliability.retry",
@@ -433,7 +440,7 @@
       "path": "source.kinds",
       "type": "list",
       "required": false,
-      "description": "The kinds to retrieve. Each is one search cursor, and they run concurrently up to `reliability.concurrency`. The same kind listed twice is refused.",
+      "description": "The kinds to retrieve. Each is one search cursor, and they run concurrently up to `parallelism.concurrency`. The same kind listed twice is refused.",
       "appliesWhen": "Give `source.kind` (one kind) or `source.kinds` (a list); at least one kind is required."
     },
     {

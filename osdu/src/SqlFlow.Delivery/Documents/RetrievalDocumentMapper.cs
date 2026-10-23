@@ -93,7 +93,8 @@ internal static class RetrievalMapper
                 RollRecords = target.RollRecords ?? 100_000,
                 Manifest = string.IsNullOrWhiteSpace(target.Manifest) ? "manifest.json" : target.Manifest!.Trim(),
             },
-            Reliability = FlowMapper.MapReliability(y.Reliability, source),
+            Reliability = FlowMapper.MapReliability(y.Reliability, "a retrieval flow", takesConcurrency: true, source),
+            Parallelism = FlowMapper.MapRunParallelism(y.Parallelism, source),
         };
 
         Validate(flow, source);
@@ -197,11 +198,6 @@ internal static class RetrievalMapper
             {
                 throw new FlowValidationException($"{source}: target.location uses '{{{token}}}', which is neither a run token ({{run}}, {{date}}) nor declared under parameters.");
             }
-        }
-
-        if (flow.Reliability.Concurrency < 1)
-        {
-            throw new FlowValidationException($"{source}: reliability.concurrency must be at least 1.");
         }
     }
 }

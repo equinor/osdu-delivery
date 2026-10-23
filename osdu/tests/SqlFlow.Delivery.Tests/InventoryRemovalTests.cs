@@ -60,7 +60,8 @@ public sealed class InventoryRemovalTests : IDisposable
         inventories:
           - name: WellLogs
             kind: "{{Kind}}"
-        reliability: { concurrency: 2, retry: { attempts: 1, baseDelayMs: 1, maxDelayMs: 1 } }
+        reliability: { retry: { attempts: 1, baseDelayMs: 1, maxDelayMs: 1 } }
+        parallelism: { concurrency: 2 }
         """;
 
     private JsonObject Add(string key, long version = 3, string creator = Estate)

@@ -490,9 +490,10 @@ public sealed class RunTraceDeliveryTests : IDisposable
                 wellbore:
                   root: {{Root}}
             reliability:
-              concurrency: 1
-              renderParallelism: 1
               retry: { attempts: 1 }
+            parallelism:
+              concurrency: 1
+              renderers: 1
             interfaces:
               welllogs:
                 record: { object: {{WellLogTable}}, key: [source_project, log_id], primaryKey: RecId, scope: { log_source: logSource } }

@@ -120,7 +120,7 @@ In the folder mode each document is one line, and `--json` reports each document
 
 - **Parameters.** Every `{name}` token in a value that takes substitution names a declared parameter
   (`<file>: source.work uses '{region}', which is not declared under parameters.`).
-- **Ranges and forms** of the settings: `reliability.concurrency must be at least 1.`, a service path starts with `/`,
+- **Ranges and forms** of the settings: `parallelism.concurrency must be at least 1.`, a service path starts with `/`,
   a kind is `authority:source:entityType:version`, and so on.
 - **Credentials.** SQLFlow's credential-hygiene check warns about a flow's credential references that embed a secret
   keyword (`password=`, `secret=` and the like) without failing. The module's loaders go further and refuse a literal
@@ -162,9 +162,9 @@ In the folder mode each document is one line, and `--json` reports each document
   workflow's stages) are checked against the route that uses them.
 - `target.auth` is complete for its type: `oauth2ClientCredentials` needs a `token` block, `bearer`, `apiKeyHeader` and
   `basic` need `secretRef`, and `apiKeyHeader` needs `headerName`.
-- `change.detect`, `change.payloadDetect`, the `reliability` settings, `failWhen` and `target.protocolOptions` (media
-  types, a manifest section, upload expiry, batch size up to 500) keep to their ranges; `reliability.fanOut` needs
-  `source.record.primaryKey`.
+- `change.detect`, `change.payloadDetect`, the `reliability` and `parallelism` settings, `failWhen` and
+  `target.protocolOptions` (media types, a manifest section, upload expiry, batch size up to 500) keep to their ranges,
+  and a parallelism setting written under `reliability` is refused, naming where it goes.
 - In the interface form: interface names are unique ignoring case, keys that belong to an interface are not written at
   the source level, `after:` names other interfaces of the document, and interfaces that wait for each other through
   `after:` are refused (`the interfaces wellbores -> welllogs -> wellbores wait for each other through after:, so none of them could run first.`).

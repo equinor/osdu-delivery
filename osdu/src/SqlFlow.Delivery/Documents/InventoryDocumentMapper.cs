@@ -96,13 +96,9 @@ internal static class InventoryMapper
             MaxMissingChecks = maxMissingChecks,
             Inventories = MapInventories(y.Inventories, parameters, read, source),
             Removal = MapRemoval(y.Removal, source),
-            Reliability = FlowMapper.MapReliability(y.Reliability, source),
+            Reliability = FlowMapper.MapReliability(y.Reliability, "an inventory flow", takesConcurrency: true, source),
+            Parallelism = FlowMapper.MapRunParallelism(y.Parallelism, source),
         };
-
-        if (flow.Reliability.Concurrency < 1)
-        {
-            throw new FlowValidationException($"{source}: reliability.concurrency must be at least 1.");
-        }
 
         return flow;
     }

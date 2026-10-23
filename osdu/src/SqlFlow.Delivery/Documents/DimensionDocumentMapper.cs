@@ -111,14 +111,10 @@ internal static class DimensionMapper
             Dimensions = dimensions,
             Target = target,
             Views = DimensionViewMapper.MapViews(y.Views, target, name, dimensions, source),
-            Reliability = FlowMapper.MapReliability(y.Reliability, source),
+            Reliability = FlowMapper.MapReliability(y.Reliability, "a dimension flow", takesConcurrency: true, source),
+            Parallelism = FlowMapper.MapRunParallelism(y.Parallelism, source),
             Incremental = MapIncremental(y.Incremental, source),
         };
-
-        if (flow.Reliability.Concurrency < 1)
-        {
-            throw new FlowValidationException($"{source}: reliability.concurrency must be at least 1.");
-        }
 
         return flow;
     }

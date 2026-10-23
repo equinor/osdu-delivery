@@ -2410,6 +2410,14 @@ public interface ILedger
 
     Task<IReadOnlyList<WorkBatchState>> ListWorkBatchesAsync(Guid submissionId, int max, int offset, CancellationToken ct = default);
 
+    /// <summary>
+    /// The highest work batch number <paramref name="submissionId"/> has registered from <paramref name="first"/> up to, but
+    /// not including, <paramref name="beyond"/>: one share's namespace of batch numbers. Null when it has none there. A plan of a
+    /// share that was planned before writes its batches after it, so no batch file a record already points into is
+    /// written again.
+    /// </summary>
+    Task<int?> LastWorkBatchIndexAsync(Guid submissionId, int first, int beyond, CancellationToken ct = default);
+
     Task<long> CountWorkBatchesAsync(Guid submissionId, WorkBatchStatus? status, CancellationToken ct = default);
 
     /// <summary>

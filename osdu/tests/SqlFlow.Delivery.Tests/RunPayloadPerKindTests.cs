@@ -31,6 +31,7 @@ public sealed class RunPayloadPerKindTests
         [DeliveryRunPayload.RedeliverProperty] = """{"redeliver":"all"}""",
         [DeliveryRunPayload.RerenderProperty] = """{"rerender":true}""",
         [DeliveryRunPayload.SlicesProperty] = """{"slices":[0]}""",
+        [DeliveryRunPayload.RateShareProperty] = """{"rateShare":3}""",
         [DeliveryRunPayload.InterfaceProperty] = """{"interface":"logs"}""",
         [DeliveryRunPayload.InterfacesProperty] = """{"interfaces":["logs"]}""",
         [DeliveryRunPayload.ConfirmProperty] = """{"confirm":"dev"}""",
@@ -50,8 +51,8 @@ public sealed class RunPayloadPerKindTests
         [FlowDefinition.FlowTypeName] =
         [
             DeliveryRunPayload.ForceProperty, DeliveryRunPayload.SubmissionIdProperty, DeliveryRunPayload.RunIdProperty, DeliveryRunPayload.RecordKeysProperty,
-            DeliveryRunPayload.RedeliverProperty, DeliveryRunPayload.RerenderProperty, DeliveryRunPayload.SlicesProperty, DeliveryRunPayload.InterfaceProperty,
-            DeliveryRunPayload.InterfacesProperty, DeliveryRunPayload.ConfirmProperty,
+            DeliveryRunPayload.RedeliverProperty, DeliveryRunPayload.RerenderProperty, DeliveryRunPayload.SlicesProperty, DeliveryRunPayload.RateShareProperty,
+            DeliveryRunPayload.InterfaceProperty, DeliveryRunPayload.InterfacesProperty, DeliveryRunPayload.ConfirmProperty,
         ],
         [RetrievalDefinition.FlowTypeName] = [DeliveryRunPayload.ForceProperty],
         [CacheDefinition.FlowTypeName] = [],
@@ -144,7 +145,7 @@ public sealed class RunPayloadPerKindTests
             "payload inventories does not apply to a removal flow: only an inventory flow's runs select inventories; a removal flow's payload names only entries, approve and confirm.",
             Refusal(new RemovalFlowKind(Loader), Payloads[DeliveryRunPayload.InventoriesProperty]));
         Assert.Equal(
-            "payload entries does not apply to a delivery flow: only a removal flow's runs select removals; a delivery flow's payload names only force, submissionId, runId, recordKeys, redeliver, rerender, slices, interface, interfaces and confirm.",
+            "payload entries does not apply to a delivery flow: only a removal flow's runs select removals; a delivery flow's payload names only force, submissionId, runId, recordKeys, redeliver, rerender, slices, rateShare, interface, interfaces and confirm.",
             Refusal(new DeliveryFlowKind(Loader), Payloads[DeliveryRunPayload.EntriesProperty]));
     }
 
@@ -173,6 +174,42 @@ public sealed class RunPayloadPerKindTests
 
         // A property written as false or empty asks for nothing, so no kind refuses it, as the delivery kind never has.
         new CacheFlowKind(Loader).ValidateParameters(new RunParameters { Payload = """{"force":false,"recordKeys":[],"tests":[]}""" });
+    }
+
+    /// <summary>
+    /// How many runs of a fan-out share the flow's rate limit travels with each member: only an intake or drain member on its
+    /// coordinating run's submission carries it, and it counts the coordinating run and at most every member a flow allows.
+    /// </summary>
+    [Fact]
+    public void A_rate_share_travels_with_a_fan_out_member_and_counts_the_runs_that_share_the_rate()
+    {
+        const string Submission = "\"submissionId\":\"0d1e6f3c-9a4b-4c1e-8e7a-2b3c4d5e6f70\"";
+        static string Refusal(string payload, string operation)
+            => Assert.Throws<SqlFlowException>(() => DeliveryRunPayload.Parse(payload).Validate(operation)).Message;
+
+        var drain = DeliveryRunPayload.Parse("{" + Submission + ",\"rateShare\":9}");
+        drain.Validate(DeliveryOperations.Drain);
+        Assert.Equal(9, drain.RateShare);
+        Assert.Equal("{" + Submission + ",\"rateShare\":9}", drain.ToJson());
+        DeliveryRunPayload.Parse("{" + Submission + ",\"slices\":[1],\"rateShare\":65}").Validate(DeliveryOperations.Intake);
+        Assert.Null(DeliveryRunPayload.Parse("{" + Submission + "}").RateShare);
+
+        Assert.Equal(
+            "payload rateShare does not apply to the deliver operation: only a fan-out member shares its coordinating run's rate limit.",
+            Refusal("""{"rateShare":2}""", DeliveryOperations.Deliver));
+        Assert.Equal(
+            "payload rateShare does not apply to the verify operation: only a fan-out member shares its coordinating run's rate limit.",
+            Refusal("""{"rateShare":2}""", DeliveryOperations.Verify));
+        Assert.Equal(
+            "payload rateShare does not apply to the drain operation: a member shares the rate of the run whose submission it works on, which submissionId names.",
+            Refusal("""{"rateShare":2}""", DeliveryOperations.Drain));
+        Assert.Equal(
+            "payload rateShare is 1; a fan-out's runs number 2 to 65, its coordinating run and at most 64 members.",
+            Refusal("{" + Submission + ",\"rateShare\":1}", DeliveryOperations.Drain));
+        Assert.StartsWith("payload rateShare is 66;", Refusal("{" + Submission + ",\"rateShare\":66}", DeliveryOperations.Intake), StringComparison.Ordinal);
+        Assert.Equal(
+            "payload rateShare must be a whole number: how many runs of the fan-out share the rate limit.",
+            Assert.Throws<SqlFlowException>(() => DeliveryRunPayload.Parse("""{"rateShare":"two"}""")).Message);
     }
 
     [Fact]

@@ -1,3 +1,4 @@
+using System.Collections.Frozen;
 using System.Globalization;
 using SqlFlow.Core;
 using SqlFlow.Delivery.Model;
@@ -526,11 +527,12 @@ internal static partial class FlowMapper
         var path = source == "<inline>" ? null : source;
         var partitions = MapPartitions(y.Partitions, source);
         var ledgerPartition = MapKeepLedger(y.KeepLedger, partitions, source);
+        RefuseMoved(y.Reliability, "reliability", "parallelism", DeliveryParallelismKeys, _ => string.Empty, source);
         if (y.Interfaces is null)
         {
-            if (y.Reliability?.ParallelInterfaces is not null)
+            if (y.Parallelism?.Interfaces is not null)
             {
-                throw new FlowValidationException($"{source}: reliability.parallelInterfaces says how many interfaces run at once, and the document declares no interfaces.");
+                throw new FlowValidationException($"{source}: parallelism.interfaces says how many interfaces run at once, and the document declares no interfaces.");
             }
 
             var flow = WithLedgerPartition(MapFlow(y, source, KeyPaths.Single, partitions), ledgerPartition, source);
@@ -547,7 +549,7 @@ internal static partial class FlowMapper
             Batch = batch,
             DeclaresInterfaces = true,
             Interfaces = MapInterfaces(y, name, source, partitions).Select(f => WithLedgerPartition(f, ledgerPartition, source)).ToList(),
-            ParallelInterfaces = MapParallelInterfaces(y.Reliability, source),
+            ParallelInterfaces = MapParallelInterfaces(y.Parallelism, source),
         };
     }
 
@@ -751,6 +753,7 @@ internal static partial class FlowMapper
                 Validation = MapValidation(target.Validation, paths, source),
             },
             Reliability = MapReliability(y.Reliability, source, paths),
+            Parallelism = MapParallelism(y.Parallelism),
             Verify = new FlowVerify { Reconcile = y.Verify?.Reconcile ?? false },
             FailWhen = MapFailWhen(y.FailWhen, source, paths),
             Cache = MapCacheSteps(y.Cache, source, paths),
@@ -877,9 +880,12 @@ internal static partial class FlowMapper
 
             var at = $"interfaces.{interfaceName}";
             var i = declared ?? throw new FlowValidationException($"{source}: {at} declares nothing; an interface needs at least its record and its mapping.");
-            if (i.Reliability?.ParallelInterfaces is not null)
+            RefuseMoved(
+                i.Reliability, $"{at}.reliability", $"{at}.parallelism", InterfaceParallelismKeys,
+                _ => "how many interfaces run at once is the source's setting, parallelism.interfaces. Set it there.", source);
+            if (i.Parallelism?.Interfaces is not null)
             {
-                throw new FlowValidationException($"{source}: {at}.reliability.parallelInterfaces is the source's setting: how many of its interfaces run at once. Set it under reliability.");
+                throw new FlowValidationException($"{source}: {at}.parallelism.interfaces is the source's setting: how many of its interfaces run at once. Set it under parallelism.");
             }
 
             var paths = KeyPaths.ForInterface(interfaceName);
@@ -1071,6 +1077,7 @@ internal static partial class FlowMapper
                 Validation = YamlOverlay.Apply(target.Validation, i.Validation),
             },
             Reliability = YamlOverlay.Apply(y.Reliability, i.Reliability),
+            Parallelism = YamlOverlay.Apply(y.Parallelism, i.Parallelism),
             Verify = YamlOverlay.Apply(y.Verify, i.Verify),
             FailWhen = YamlOverlay.Apply(y.FailWhen, i.FailWhen),
 
@@ -1395,12 +1402,12 @@ internal static partial class FlowMapper
         }
     }
 
-    private static int MapParallelInterfaces(FlowReliabilityYaml? reliability, string source)
+    private static int MapParallelInterfaces(FlowParallelismYaml? parallelism, string source)
     {
-        var parallel = reliability?.ParallelInterfaces ?? SourceDefinition.DefaultParallelInterfaces;
+        var parallel = parallelism?.Interfaces ?? SourceDefinition.DefaultParallelInterfaces;
         return parallel is < 1 or > SourceDefinition.MaxParallelInterfaces
             ? throw new FlowValidationException(
-                string.Create(CultureInfo.InvariantCulture, $"{source}: reliability.parallelInterfaces must be between 1 and {SourceDefinition.MaxParallelInterfaces}."))
+                string.Create(CultureInfo.InvariantCulture, $"{source}: parallelism.interfaces must be between 1 and {SourceDefinition.MaxParallelInterfaces}."))
             : parallel;
     }
 
@@ -1791,41 +1798,35 @@ internal static partial class FlowMapper
                 $"{source}: {paths.Shared("change.payloadDetect")} is lastModified, but the {flow.Target.Protocol} protocol delivers no payload files to take the watermark from.");
         }
 
-        if (flow.Reliability.Concurrency < 1)
-        {
-            throw new FlowValidationException($"{source}: {paths.Shared("reliability.concurrency")} must be at least 1.");
-        }
-
         if (flow.Reliability.Retry.Attempts < 1)
         {
             throw new FlowValidationException($"{source}: {paths.Shared("reliability.retry.attempts")} must be at least 1.");
         }
 
-        if (flow.Reliability.BatchRecords is < 1 or > 100_000)
+        if (flow.Parallelism.Concurrency < 1)
         {
-            throw new FlowValidationException($"{source}: {paths.Shared("reliability.batchRecords")} must be between 1 and 100000.");
+            throw new FlowValidationException($"{source}: {paths.Shared("parallelism.concurrency")} must be at least 1.");
         }
 
-        if (flow.Reliability.FanOut is < 0 or > FlowReliability.MaxFanOut)
-        {
-            throw new FlowValidationException($"{source}: {paths.Shared("reliability.fanOut")} must be between 0 and {FlowReliability.MaxFanOut}.");
-        }
-
-        if (flow.Reliability.FanOutMinRecords < 1)
-        {
-            throw new FlowValidationException($"{source}: {paths.Shared("reliability.fanOutMinRecords")} must be at least 1.");
-        }
-
-        if (flow.Reliability.FanOut > 0 && flow.Source.Record.PrimaryKey is null)
+        if (flow.Parallelism.BatchRecords is < 1 or > FlowParallelism.MaxBatchRecords)
         {
             throw new FlowValidationException(
-                $"{source}: {paths.Shared("reliability.fanOut")} spreads a submission over ranges of the record table's identity primary key, and {paths.Record}.primaryKey names none. "
-                + $"Name the column (the ingestion flow creates it with target.identityColumn, for example RecId), or set {paths.Shared("reliability.fanOut")} to 0.");
+                string.Create(CultureInfo.InvariantCulture, $"{source}: {paths.Shared("parallelism.batchRecords")} must be between 1 and {FlowParallelism.MaxBatchRecords}."));
         }
 
-        if (flow.Reliability.RenderParallelism is < 0 or > 256)
+        if (flow.Parallelism.FanOut is < 0 or > FlowParallelism.MaxFanOut)
         {
-            throw new FlowValidationException($"{source}: {paths.Shared("reliability.renderParallelism")} must be between 0 and 256.");
+            throw new FlowValidationException($"{source}: {paths.Shared("parallelism.fanOut")} must be between 0 and {FlowParallelism.MaxFanOut}.");
+        }
+
+        if (flow.Parallelism.FanOutMinRecords < 1)
+        {
+            throw new FlowValidationException($"{source}: {paths.Shared("parallelism.fanOutMinRecords")} must be at least 1.");
+        }
+
+        if (flow.Parallelism.Renderers is < 0 or > FlowParallelism.MaxRenderers)
+        {
+            throw new FlowValidationException($"{source}: {paths.Shared("parallelism.renderers")} must be between 0 and {FlowParallelism.MaxRenderers}.");
         }
 
         // Every OSDU service makes data-partition-id a required header (openapi storage v2, file v2, search v2,
@@ -2688,15 +2689,93 @@ internal static partial class FlowMapper
         };
     }
 
-    /// <summary>The reliability block of a retrieval or cache flow, which runs no interfaces.</summary>
-    internal static FlowReliability MapReliability(FlowReliabilityYaml? r, string source)
+    /// <summary>The parallelism keys a delivery source takes.</summary>
+    private static readonly FrozenSet<string> DeliveryParallelismKeys =
+        new[] { "concurrency", "fanOut", "fanOutMinRecords", "renderers", "batchRecords", "batchSize", "interfaces" }.ToFrozenSet(StringComparer.Ordinal);
+
+    /// <summary>The parallelism keys an interface of a source lays over the source's: all but how many interfaces run at once.</summary>
+    private static readonly FrozenSet<string> InterfaceParallelismKeys = DeliveryParallelismKeys.Where(k => k != "interfaces").ToFrozenSet(StringComparer.Ordinal);
+
+    /// <summary>The parallelism key an assertion, dimension, inventory or retrieval flow takes.</summary>
+    private static readonly FrozenSet<string> RunParallelismKeys = new[] { "concurrency" }.ToFrozenSet(StringComparer.Ordinal);
+
+    /// <summary>
+    /// The settings that moved from <c>reliability</c> to <c>parallelism</c>: the name <c>reliability</c> knew each by, the
+    /// key it is written as now, and whether a block sets it.
+    /// </summary>
+    private static readonly (string Was, string Now, Func<FlowReliabilityYaml, bool> Set)[] MovedToParallelism =
+    [
+        ("concurrency", "concurrency", r => r.Concurrency is not null),
+        ("fanOut", "fanOut", r => r.FanOut is not null),
+        ("fanOutMinRecords", "fanOutMinRecords", r => r.FanOutMinRecords is not null),
+        ("renderParallelism", "renderers", r => r.RenderParallelism is not null),
+        ("batchRecords", "batchRecords", r => r.BatchRecords is not null),
+        ("batchSize", "batchSize", r => r.BatchSize is not null),
+        ("parallelInterfaces", "interfaces", r => r.ParallelInterfaces is not null),
+    ];
+
+    /// <summary>
+    /// Refuses a setting a <c>reliability</c> block still declares that moved to <c>parallelism</c>
+    /// (osdu/docs/reference/flow/delivery.md, parallelism), naming where it is written now: <paramref name="at"/> is where
+    /// the block sits and <paramref name="parallelismAt"/> its parallelism beside it. A setting the flow's
+    /// <paramref name="takes"/> leaves out is refused with <paramref name="unused"/>, which says why from the key's new name.
+    /// </summary>
+    private static void RefuseMoved(
+        FlowReliabilityYaml? r, string at, string parallelismAt, FrozenSet<string> takes, Func<string, string> unused, string source)
     {
-        if (r?.ParallelInterfaces is not null)
+        if (r is null)
         {
-            throw new FlowValidationException($"{source}: reliability.parallelInterfaces says how many interfaces of a delivery flow run at once; this flow declares none.");
+            return;
         }
 
+        foreach (var (was, now, set) in MovedToParallelism)
+        {
+            if (!set(r))
+            {
+                continue;
+            }
+
+            throw new FlowValidationException(takes.Contains(now)
+                ? $"{source}: {at}.{was} is now {parallelismAt}.{now}: what runs at once, and across the fleet, is the flow's parallelism, and reliability keeps what makes a request hold. Move it."
+                : $"{source}: {at}.{was} is not a setting here any more: {unused(now)}");
+        }
+    }
+
+    /// <summary>
+    /// The reliability block of a flow of another kind, which runs no interfaces and fans nothing out. <paramref name="kind"/>
+    /// names the kind in a message ("an assertion flow"); <paramref name="takesConcurrency"/> says whether the kind reads
+    /// <c>parallelism.concurrency</c>, which a cache flow does not.
+    /// </summary>
+    internal static FlowReliability MapReliability(FlowReliabilityYaml? r, string kind, bool takesConcurrency, string source)
+    {
+        RefuseMoved(
+            r, "reliability", "parallelism", takesConcurrency ? RunParallelismKeys : FrozenSet<string>.Empty,
+            now => $"a delivery flow writes it as parallelism.{now}, and {kind} has no use for it. Remove it.", source);
         return MapReliability(r, source, KeyPaths.Single);
+    }
+
+    /// <summary>The parallelism block of an assertion, dimension, inventory or retrieval flow: what one run works on at once.</summary>
+    internal static RunParallelism MapRunParallelism(RunParallelismYaml? p, string source)
+    {
+        var parallelism = new RunParallelism { Concurrency = p?.Concurrency ?? new RunParallelism().Concurrency };
+        return parallelism.Concurrency < 1
+            ? throw new FlowValidationException($"{source}: parallelism.concurrency must be at least 1.")
+            : parallelism;
+    }
+
+    /// <summary>A delivery flow's parallelism block, or an interface's laid over its source's; <see cref="Validate"/> checks the ranges.</summary>
+    private static FlowParallelism MapParallelism(FlowParallelismYaml? p)
+    {
+        var defaults = new FlowParallelism();
+        return p is null ? defaults : new FlowParallelism
+        {
+            Concurrency = p.Concurrency ?? defaults.Concurrency,
+            FanOut = p.FanOut ?? defaults.FanOut,
+            FanOutMinRecords = p.FanOutMinRecords ?? defaults.FanOutMinRecords,
+            Renderers = p.Renderers ?? defaults.Renderers,
+            BatchRecords = p.BatchRecords ?? defaults.BatchRecords,
+            BatchSize = p.BatchSize ?? defaults.BatchSize,
+        };
     }
 
     private static FlowReliability MapReliability(FlowReliabilityYaml? r, string source, KeyPaths paths)
@@ -2710,7 +2789,6 @@ internal static partial class FlowMapper
         var retryDefaults = new FlowRetry();
         return new FlowReliability
         {
-            Concurrency = r.Concurrency ?? defaults.Concurrency,
             Retry = r.Retry is null ? retryDefaults : new FlowRetry
             {
                 Attempts = r.Retry.Attempts ?? retryDefaults.Attempts,
@@ -2729,11 +2807,6 @@ internal static partial class FlowMapper
             MaxResponseBytes = r.MaxResponseBytes ?? defaults.MaxResponseBytes,
             MaxRequestBodyBytes = r.MaxRequestBodyBytes ?? defaults.MaxRequestBodyBytes,
             LeaseSeconds = r.LeaseSeconds ?? defaults.LeaseSeconds,
-            BatchSize = r.BatchSize ?? defaults.BatchSize,
-            BatchRecords = r.BatchRecords ?? defaults.BatchRecords,
-            FanOut = r.FanOut ?? defaults.FanOut,
-            FanOutMinRecords = r.FanOutMinRecords ?? defaults.FanOutMinRecords,
-            RenderParallelism = r.RenderParallelism ?? defaults.RenderParallelism,
         };
     }
 

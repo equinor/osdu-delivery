@@ -6,7 +6,7 @@
   "includeEnvelope": true,
   "generatedFrom": "osdu/docs/reference/flow/delivery.md and osdu/src/SqlFlow.Delivery/Documents/YamlModels.cs",
   "naming": "The loader deserializes with YamlDotNet's CamelCaseNamingConvention and refuses any key it does not know.",
-  "keyCount": 493,
+  "keyCount": 509,
   "keys": [
     {
       "path": "batch",
@@ -434,6 +434,60 @@
       "type": "string",
       "required": true,
       "description": "The pinned mapping that renders the interface's records, `Name@version`, as `render.mapping` pins it in the single form; a floating reference is refused."
+    },
+    {
+      "path": "interfaces.<name>.parallelism",
+      "type": "object",
+      "required": false,
+      "description": "The source's `parallelism` block, with this interface's keys laid over it key by key; `interfaces` is refused here."
+    },
+    {
+      "path": "interfaces.<name>.parallelism.batchRecords",
+      "type": "integer",
+      "required": false,
+      "description": "Rendered documents per work batch: one file the intake writes, one claim a drain takes, one unit of progress a submission shows. 1 to 100000. Set here, it overrides the source's value for this interface.",
+      "default": "the source's value, else 500"
+    },
+    {
+      "path": "interfaces.<name>.parallelism.batchSize",
+      "type": "integer",
+      "required": false,
+      "description": "Records a worker claims from the ledger per round trip when it retries records outside a work batch. Set here, it overrides the source's value for this interface.",
+      "default": "the source's value, else 50"
+    },
+    {
+      "path": "interfaces.<name>.parallelism.concurrency",
+      "type": "integer",
+      "required": false,
+      "description": "How many requests (one record, or one batch of records) a run has in flight at once, and how many reads a verify or reverse run makes at once. At least 1. Set here, it overrides the source's value for this interface.",
+      "default": "the source's value, else 8"
+    },
+    {
+      "path": "interfaces.<name>.parallelism.fanOut",
+      "type": "integer",
+      "required": false,
+      "description": "The most member runs a submission of `fanOutMinRecords` records or more spreads over across the fleet, 0 to 64; never more than it has work batches for beyond the coordinating run's own. Planning fans out only when the record table names its `primaryKey`, whose ranges the members read; without one, only the sending fans out. 0 runs everything on the node that claimed the run. Set here, it overrides the source's value for this interface.",
+      "default": "the source's value, else 8"
+    },
+    {
+      "path": "interfaces.<name>.parallelism.fanOutMinRecords",
+      "type": "integer",
+      "required": false,
+      "description": "Below this many records a submission never fans out, neither its planning nor its sending; at least 1. Set here, it overrides the source's value for this interface.",
+      "default": "the source's value, else 1000"
+    },
+    {
+      "path": "interfaces.<name>.parallelism.interfaces",
+      "type": "integer",
+      "required": false,
+      "description": "Refused here: how many interfaces run at once is the source's own setting. Set it under the top-level `parallelism`."
+    },
+    {
+      "path": "interfaces.<name>.parallelism.renderers",
+      "type": "integer",
+      "required": false,
+      "description": "Renderers in the intake pipeline on one node, 0 to 256; 0 takes half the machine's processors, at least one. Set here, it overrides the source's value for this interface.",
+      "default": "the source's value, else 0"
     },
     {
       "path": "interfaces.<name>.protocolOptions",
@@ -873,7 +927,7 @@
       "path": "interfaces.<name>.record.primaryKey",
       "type": "string",
       "required": false,
-      "description": "The record table's identity primary key (the ingestion flow's `target.identityColumn`, such as `RecId`): an integer identity column that is the table's single-column primary key. A read pages by it and a fan-out cuts its slices on it; it is required when `reliability.fanOut` is above 0."
+      "description": "The record table's identity primary key (the ingestion flow's `target.identityColumn`, such as `RecId`): an integer identity column that is the table's single-column primary key. A read pages by it, and a fan-out cuts the read into slices on it; without it the read is planned on one run and only the sending fans out."
     },
     {
       "path": "interfaces.<name>.record.scope",
@@ -891,42 +945,37 @@
       "path": "interfaces.<name>.reliability",
       "type": "object",
       "required": false,
-      "description": "The source's `reliability` block, with this interface's keys laid over it key by key; `parallelInterfaces` is refused here."
+      "description": "The source's `reliability` block, with this interface's keys laid over it key by key."
     },
     {
       "path": "interfaces.<name>.reliability.batchRecords",
       "type": "integer",
       "required": false,
-      "description": "Rendered documents per work batch: one file the intake writes, one claim a drain takes, one unit of progress a submission shows. 1 to 100000. Set here, it overrides the source's value for this interface.",
-      "default": "the source's value, else 500"
+      "description": "Not a setting here any more: it is written as `interfaces.<name>.parallelism.batchRecords`, since what runs at once, and across the fleet, is the flow's parallelism, and reliability keeps what makes a request hold. A document that still declares it here is refused when it loads, naming where it goes."
     },
     {
       "path": "interfaces.<name>.reliability.batchSize",
       "type": "integer",
       "required": false,
-      "description": "Records a worker claims from the ledger per round trip. Set here, it overrides the source's value for this interface.",
-      "default": "the source's value, else 50"
+      "description": "Not a setting here any more: it is written as `interfaces.<name>.parallelism.batchSize`, since what runs at once, and across the fleet, is the flow's parallelism, and reliability keeps what makes a request hold. A document that still declares it here is refused when it loads, naming where it goes."
     },
     {
       "path": "interfaces.<name>.reliability.concurrency",
       "type": "integer",
       "required": false,
-      "description": "How many requests (one record, or one batch of records) a worker has in flight at once, and how many reads a verify pass runs at once. At least 1. Set here, it overrides the source's value for this interface.",
-      "default": "the source's value, else 8"
+      "description": "Not a setting here any more: it is written as `interfaces.<name>.parallelism.concurrency`, since what runs at once, and across the fleet, is the flow's parallelism, and reliability keeps what makes a request hold. A document that still declares it here is refused when it loads, naming where it goes."
     },
     {
       "path": "interfaces.<name>.reliability.fanOut",
       "type": "integer",
       "required": false,
-      "description": "Member runs a large submission spreads over, 0 to 64; 0 runs everything on the node that claimed the run. It needs the record table's `primaryKey`, whose ranges the members read. Set here, it overrides the source's value for this interface.",
-      "default": "the source's value, else 0"
+      "description": "Not a setting here any more: it is written as `interfaces.<name>.parallelism.fanOut`, since what runs at once, and across the fleet, is the flow's parallelism, and reliability keeps what makes a request hold. A document that still declares it here is refused when it loads, naming where it goes."
     },
     {
       "path": "interfaces.<name>.reliability.fanOutMinRecords",
       "type": "integer",
       "required": false,
-      "description": "Below this many records a submission never fans out; at least 1. Set here, it overrides the source's value for this interface.",
-      "default": "the source's value, else 1000"
+      "description": "Not a setting here any more: it is written as `interfaces.<name>.parallelism.fanOutMinRecords`, since what runs at once, and across the fleet, is the flow's parallelism, and reliability keeps what makes a request hold. A document that still declares it here is refused when it loads, naming where it goes."
     },
     {
       "path": "interfaces.<name>.reliability.leaseSeconds",
@@ -953,7 +1002,7 @@
       "path": "interfaces.<name>.reliability.parallelInterfaces",
       "type": "integer",
       "required": false,
-      "description": "Refused here: how many interfaces run at once is the source's own setting. Set it under the top-level `reliability`."
+      "description": "Not a setting here any more: how many interfaces run at once is the source's `parallelism.interfaces`. A document that still declares it here is refused when it loads."
     },
     {
       "path": "interfaces.<name>.reliability.rateLimitRps",
@@ -966,8 +1015,7 @@
       "path": "interfaces.<name>.reliability.renderParallelism",
       "type": "integer",
       "required": false,
-      "description": "Renderers in the intake pipeline on one node, 0 to 256; 0 takes half the machine's processors, at least one. Set here, it overrides the source's value for this interface.",
-      "default": "the source's value, else 0"
+      "description": "Not a setting here any more: it is written as `interfaces.<name>.parallelism.renderers`, since what runs at once, and across the fleet, is the flow's parallelism, and reliability keeps what makes a request hold. A document that still declares it here is refused when it loads, naming where it goes."
     },
     {
       "path": "interfaces.<name>.reliability.retry",
@@ -1528,6 +1576,62 @@
       "description": "The flow's name: its pipeline in the catalog, its schedules and its run history; the flow id is derived from it. In the single form the ledger keeps the flow under this name (at most 200 characters); an interface's ledger is kept under `<name>/<interface>`."
     },
     {
+      "path": "parallelism",
+      "type": "object",
+      "required": false,
+      "description": "What runs at once: the records a run sends at once, the renderers on one node, the work batches, and how far a large submission fans out across the fleet to member runs. In a source with interfaces it applies to every interface, each able to lay its own keys over it, except `interfaces`, the source's own."
+    },
+    {
+      "path": "parallelism.batchRecords",
+      "type": "integer",
+      "required": false,
+      "description": "Rendered documents per work batch: one file the intake writes, one claim a drain takes, one unit of progress a submission shows. 1 to 100000.",
+      "default": "500"
+    },
+    {
+      "path": "parallelism.batchSize",
+      "type": "integer",
+      "required": false,
+      "description": "Records a worker claims from the ledger per round trip when it retries records outside a work batch.",
+      "default": "50"
+    },
+    {
+      "path": "parallelism.concurrency",
+      "type": "integer",
+      "required": false,
+      "description": "How many requests (one record, or one batch of records) a run has in flight at once, and how many reads a verify or reverse run makes at once. At least 1.",
+      "default": "8"
+    },
+    {
+      "path": "parallelism.fanOut",
+      "type": "integer",
+      "required": false,
+      "description": "The most member runs a submission of `fanOutMinRecords` records or more spreads over across the fleet, 0 to 64; never more than it has work batches for beyond the coordinating run's own. Planning fans out only when the record table names its `primaryKey`, whose ranges the members read; without one, only the sending fans out. 0 runs everything on the node that claimed the run.",
+      "default": "8"
+    },
+    {
+      "path": "parallelism.fanOutMinRecords",
+      "type": "integer",
+      "required": false,
+      "description": "Below this many records a submission never fans out, neither its planning nor its sending; at least 1.",
+      "default": "1000"
+    },
+    {
+      "path": "parallelism.interfaces",
+      "type": "integer",
+      "required": false,
+      "description": "How many interfaces of one wave run at once, 1 to 32. It is the source's own setting: refused on an interface and in a document that declares no interfaces.",
+      "default": "4",
+      "appliesWhen": "Documents that declare `interfaces`."
+    },
+    {
+      "path": "parallelism.renderers",
+      "type": "integer",
+      "required": false,
+      "description": "Renderers in the intake pipeline on one node, 0 to 256; 0 takes half the machine's processors, at least one.",
+      "default": "0"
+    },
+    {
       "path": "parameters",
       "type": "map",
       "required": false,
@@ -1575,42 +1679,37 @@
       "path": "reliability",
       "type": "object",
       "required": false,
-      "description": "How deliveries run: concurrency, retries, timeouts, the URL guard, leases, batches and fan-out. In a source with interfaces it applies to every interface, each able to lay its own keys over it."
+      "description": "What makes a request hold: retries, timeouts, the rate limit, TLS, the URL guard, the response and request ceilings, and how long a lease on a record lasts. In a source with interfaces it applies to every interface, each able to lay its own keys over it. What runs at once is `parallelism`."
     },
     {
       "path": "reliability.batchRecords",
       "type": "integer",
       "required": false,
-      "description": "Rendered documents per work batch: one file the intake writes, one claim a drain takes, one unit of progress a submission shows. 1 to 100000.",
-      "default": "500"
+      "description": "Not a setting here any more: it is written as `parallelism.batchRecords`, since what runs at once, and across the fleet, is the flow's parallelism, and reliability keeps what makes a request hold. A document that still declares it here is refused when it loads, naming where it goes."
     },
     {
       "path": "reliability.batchSize",
       "type": "integer",
       "required": false,
-      "description": "Records a worker claims from the ledger per round trip.",
-      "default": "50"
+      "description": "Not a setting here any more: it is written as `parallelism.batchSize`, since what runs at once, and across the fleet, is the flow's parallelism, and reliability keeps what makes a request hold. A document that still declares it here is refused when it loads, naming where it goes."
     },
     {
       "path": "reliability.concurrency",
       "type": "integer",
       "required": false,
-      "description": "How many requests (one record, or one batch of records) a worker has in flight at once, and how many reads a verify pass runs at once. At least 1.",
-      "default": "8"
+      "description": "Not a setting here any more: it is written as `parallelism.concurrency`, since what runs at once, and across the fleet, is the flow's parallelism, and reliability keeps what makes a request hold. A document that still declares it here is refused when it loads, naming where it goes."
     },
     {
       "path": "reliability.fanOut",
       "type": "integer",
       "required": false,
-      "description": "Member runs a large submission spreads over, 0 to 64; 0 runs everything on the node that claimed the run. It needs the record table's `primaryKey`, whose ranges the members read.",
-      "default": "0"
+      "description": "Not a setting here any more: it is written as `parallelism.fanOut`, since what runs at once, and across the fleet, is the flow's parallelism, and reliability keeps what makes a request hold. A document that still declares it here is refused when it loads, naming where it goes."
     },
     {
       "path": "reliability.fanOutMinRecords",
       "type": "integer",
       "required": false,
-      "description": "Below this many records a submission never fans out; at least 1.",
-      "default": "1000"
+      "description": "Not a setting here any more: it is written as `parallelism.fanOutMinRecords`, since what runs at once, and across the fleet, is the flow's parallelism, and reliability keeps what makes a request hold. A document that still declares it here is refused when it loads, naming where it goes."
     },
     {
       "path": "reliability.leaseSeconds",
@@ -1637,9 +1736,7 @@
       "path": "reliability.parallelInterfaces",
       "type": "integer",
       "required": false,
-      "description": "How many interfaces of one wave run at once, 1 to 32. It is the source's own setting: refused on an interface and in a document that declares no interfaces.",
-      "default": "4",
-      "appliesWhen": "Documents that declare `interfaces`."
+      "description": "Not a setting here any more: it is written as `parallelism.interfaces`, since what runs at once, and across the fleet, is the flow's parallelism, and reliability keeps what makes a request hold. A document that still declares it here is refused when it loads, naming where it goes."
     },
     {
       "path": "reliability.rateLimitRps",
@@ -1652,8 +1749,7 @@
       "path": "reliability.renderParallelism",
       "type": "integer",
       "required": false,
-      "description": "Renderers in the intake pipeline on one node, 0 to 256; 0 takes half the machine's processors, at least one.",
-      "default": "0"
+      "description": "Not a setting here any more: it is written as `parallelism.renderers`, since what runs at once, and across the fleet, is the flow's parallelism, and reliability keeps what makes a request hold. A document that still declares it here is refused when it loads, naming where it goes."
     },
     {
       "path": "reliability.retry",
@@ -1976,7 +2072,7 @@
       "path": "source.record.primaryKey",
       "type": "string",
       "required": false,
-      "description": "The record table's identity primary key (the ingestion flow's `target.identityColumn`, such as `RecId`): an integer identity column that is the table's single-column primary key. A read pages by it and a fan-out cuts its slices on it; it is required when `reliability.fanOut` is above 0."
+      "description": "The record table's identity primary key (the ingestion flow's `target.identityColumn`, such as `RecId`): an integer identity column that is the table's single-column primary key. A read pages by it, and a fan-out cuts the read into slices on it; without it the read is planned on one run and only the sending fans out."
     },
     {
       "path": "source.record.scope",

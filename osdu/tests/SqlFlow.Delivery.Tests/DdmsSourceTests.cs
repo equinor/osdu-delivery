@@ -73,10 +73,11 @@ public sealed class DdmsSourceTests : IDisposable
                 wellbore:
                   root: {{Root}}
             reliability:
-              concurrency: 1
-              renderParallelism: 1
-              parallelInterfaces: 1
               retry: { attempts: 1 }
+            parallelism:
+              concurrency: 1
+              renderers: 1
+              interfaces: 1
             interfaces:
               trajectories:
                 record: { object: {{TrajectoryTable}}, key: [source_project, survey_id], primaryKey: RecId }

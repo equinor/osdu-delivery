@@ -1258,6 +1258,13 @@ public sealed partial class OsduLedger : ILedger
             },
             ct);
 
+    public Task<int?> LastWorkBatchIndexAsync(Guid submissionId, int first, int beyond, CancellationToken ct = default)
+        => ReadAsync(
+            db => db.DeliveryWorkBatches
+                .Where(b => b.SubmissionId == submissionId && b.Index >= first && b.Index < beyond)
+                .MaxAsync(b => (int?)b.Index, ct),
+            ct);
+
     public Task<long> CountWorkBatchesAsync(Guid submissionId, WorkBatchStatus? status, CancellationToken ct = default)
         => ReadAsync(
             db =>

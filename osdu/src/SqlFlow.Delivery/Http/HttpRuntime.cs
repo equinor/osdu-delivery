@@ -38,7 +38,8 @@ public sealed class HttpRuntime : IDisposable
 
         Observer = observer;
         Retry = new RetryPolicy(reliability.Retry, clock);
-        Data = new HttpExecutor(_client, Retry, new RateLimiter(reliability.RateLimitRps, clock), new UrlGuard(reliability.UrlAllowlist, Network), reliability.MaxResponseBytes, clock, observer);
+        RateLimit = new RateLimiter(reliability.RateLimitRps, clock);
+        Data = new HttpExecutor(_client, Retry, RateLimit, new UrlGuard(reliability.UrlAllowlist, Network), reliability.MaxResponseBytes, clock, observer);
         Auth = new HttpExecutor(_client, Retry, new RateLimiter(0, clock), new UrlGuard([], Network), 1024 * 1024, clock, observer);
         Secrets = secrets;
         AuthResolver = new AuthResolver(secrets, clock);
@@ -64,6 +65,12 @@ public sealed class HttpRuntime : IDisposable
     public HttpMessageInvoker Invoker => _client;
 
     public HttpExecutor Data { get; }
+
+    /// <summary>
+    /// The flow's <c>reliability.rateLimitRps</c> as every data request takes its turn under it; a fan-out divides it between
+    /// its runs (<see cref="RateLimiter.Share"/>). Token requests are not limited.
+    /// </summary>
+    public RateLimiter RateLimit { get; }
 
     public HttpExecutor Auth { get; }
 

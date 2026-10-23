@@ -405,7 +405,7 @@ source:
   endpoint: ${env:OSDU_URL}
   # ... auth as on the delivery flow, and ddmsRoot
 
-# ... defaults, failRunOn, reliability
+# ... defaults, failRunOn, reliability, parallelism
 
 tests:
   - name: logs-delivered
@@ -464,7 +464,7 @@ source:
   # ... auth as on the delivery flow
   read: search
 
-# ... owners, maxMissingChecks, removal, reliability
+# ... owners, maxMissingChecks, removal, reliability, parallelism
 
 inventories:
   - name: Wellbores

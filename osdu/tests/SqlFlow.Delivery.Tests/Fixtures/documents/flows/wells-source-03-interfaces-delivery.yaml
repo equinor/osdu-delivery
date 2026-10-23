@@ -46,10 +46,12 @@ target:
       root: /api/os-wellbore-ddms
 
 reliability:
-  concurrency: 8
   retry: { attempts: 4, backoff: exponential, baseDelayMs: 500, maxDelayMs: 30000 }
   timeoutSeconds: 100
   leaseSeconds: 300
+
+parallelism:
+  concurrency: 8
   batchSize: 50
 
 interfaces:

@@ -12,6 +12,9 @@ keywords:
   - claim
   - fan-out
   - many nodes
+  - autoscaling
+  - parallelism.fanOut
+  - rate limit across a fan-out
   - watermark
   - submission status
   - record-scoped run
@@ -42,6 +45,10 @@ sourceRefs:
   - osdu/src/SqlFlow.Delivery/Engine/DeliveryExecutor.cs
   - osdu/src/SqlFlow.Delivery/Engine/DeliveryRunPayload.cs
   - osdu/src/SqlFlow.Delivery/Engine/FlowRuntime.cs
+  - osdu/src/SqlFlow.Delivery/Engine/FanOut/IFanOutDispatcher.cs
+  - osdu/src/SqlFlow.Delivery/Engine/TargetConnection.cs
+  - osdu/src/SqlFlow.Delivery/Http/RateLimiter.cs
+  - osdu/src/SqlFlow.Delivery/Storage/WorkBatchFile.cs
   - osdu/src/SqlFlow.Delivery/Engine/Intake/SubmissionIntake.cs
   - osdu/src/SqlFlow.Delivery/Engine/Intake/SubmissionHolds.cs
   - osdu/src/SqlFlow.Delivery/Ledger/SubmissionHold.cs
@@ -138,11 +145,18 @@ and not forced, in which case nothing is done. A `drain` with `submissionId` sen
 ## Work batches
 
 The intake streams the rendered documents into JSON Lines files under the flow's work location (`source.work`),
-`reliability.batchRecords` documents a file (500 by default). `osdu.WorkBatch` holds one row per file: its submission and
+`parallelism.batchRecords` documents a file (500 by default). `osdu.WorkBatch` holds one row per file: its submission and
 index, location, record count, status (`queued`, `running`, `done`, `failed`), the lease draining it, and how its drain ended
 (delivered, held, failed, retrying, waiting). A record points at its batch and its `batch:offset:length` range; the document
 itself is never stored in the database. The work location needs write access from every node that runs the flow, and its
 files are part of the submission's evidence until the submission completes.
+
+Each share of a [fan-out](#many-nodes) numbers its batches in a range of its own, so members never collide. A share planned
+again (a run resuming its submission, a member the platform executes again, a coordinating run planning the share of a
+member it stopped) passes over the records it already queued, which keep reading their documents from the files they were
+written to, and writes its batches after those, so no file a queued record reads from is written again. A record whose
+document is read back by its range checks that the line there is its own; one that is not is held, and the flow's next run
+plans it again from its row.
 
 ## Planning in bounded memory
 
@@ -153,14 +167,14 @@ next one is full:
 | Stage | What it holds at a time |
 | --- | --- |
 | **The read.** The candidate keys are read a page at a time in key order (the identity primary key when the flow declares `source.record.primaryKey`, else the record key), `source.incremental.pageSize` keys a page (1,000 by default, at most 100,000). One command per page returns the page's rows with their child datasets, under `source.incremental.isolation` (snapshot by default); a page the database ends as a deadlock victim is read again, up to four reads in all. The records are cut into render batches of 200. | One page of records, and the render batch being filled |
-| **The renderers.** `reliability.renderParallelism` renderers (half the node's processors when 0, at least one, at most 256) each take a render batch, look its 200 records up in the ledger in one lookup, and decide and render each ([What is decided for each record read](change-detection.md#what-is-decided-for-each-record-read)). | Between the read and the renderers, at most twice the render parallelism of render batches; one batch per renderer in hand |
-| **The intake.** One consumer takes each batch of plan entries, writes every document to send into the open [work batch](#work-batches) file, and writes the ledger: skipped and held records 200 at a time, records to send when the work batch reaches `reliability.batchRecords`. | Between the renderers and the intake, at most twice the render parallelism of batches of plan entries; one work batch's ledger rows |
+| **The renderers.** `parallelism.renderers` renderers (half the node's processors when 0, at least one, at most 256) each take a render batch, look its 200 records up in the ledger in one lookup, and decide and render each ([What is decided for each record read](change-detection.md#what-is-decided-for-each-record-read)). | Between the read and the renderers, at most twice the render parallelism of render batches; one batch per renderer in hand |
+| **The intake.** One consumer takes each batch of plan entries, writes every document to send into the open [work batch](#work-batches) file, and writes the ledger: skipped and held records 200 at a time, records to send when the work batch reaches `parallelism.batchRecords`. | Between the renderers and the intake, at most twice the render parallelism of batches of plan entries; one work batch's ledger rows |
 
 **When a stage falls behind.** When the renderers fall behind the read, the channel between them fills and the read waits
 on its next batch, so no further page is read until a renderer takes one. When the intake falls behind (a slow work
 location, a busy ledger), the channel before it fills, the renderers wait to hand on their entries, and the read stops in
 turn. Nothing is dropped and nothing spills to disk: the slowest stage sets the pace. What a node holds for a plan is set
-by the page size, the render parallelism and `reliability.batchRecords`, whatever the size of the table.
+by the page size, the renderers and `parallelism.batchRecords`, whatever the size of the table.
 
 **Order and failure.** The renderers finish batches in any order, so entries reach the intake in no particular order; each
 record is decided on its own, and a whole-scope plan moves the watermark only when its planning has finished. A failure
@@ -178,7 +192,7 @@ flow, the submission, the batch, the owner, and an expiry.
 
 - **Claim.** A drain claims the oldest queued batch of the flow (or of one submission): the lease row and the batch's move
   to `running` commit together, so two workers never hold one batch. Records due for a retry outside a running batch are
-  claimed `reliability.batchSize` at a time (50 by default, at most 500). Either way a record moves from `pending` to
+  claimed `parallelism.batchSize` at a time (50 by default, at most 500). Either way a record moves from `pending` to
   `delivering` by a compare-and-swap that also adds one to its tries, so two leases never hold one record.
 - **Renew.** The worker renews its one lease row every half lease (at least a second apart). The lease lasts
   `reliability.leaseSeconds` (300 by default). A renewal that finds the lease taken over stops the worker.
@@ -211,14 +225,49 @@ own `reliability.leaseSeconds` belongs to a live worker and is left alone with a
 
 ## Many nodes
 
-`reliability.fanOut` spreads one submission over member runs across the fleet. When the read holds at least
-`reliability.fanOutMinRecords` candidates (1,000 by default), the coordinating run cuts the candidate keys into slices on the
-record table's identity primary key (`source.record.primaryKey`), hands slices to up to `fanOut` intake members, plans its
-own share, and finalises the submission with every member's totals. A member that fails stops the coordinating run with
+A delivery fans out by default. A submission of at least `parallelism.fanOutMinRecords` records (1,000 by default) is spread
+over member runs of the same flow, at most `parallelism.fanOut` of them (8 by default; 0 keeps everything on the run that
+claimed the work). The members are queued runs of the flow's pool like any other, so an autoscaler that holds the pool at the
+control plane's replica target brings up nodes for them
+([SQLFlow's dispatcher](../../../../sqlflow/docs/reference/concepts/control-plane.md#the-dispatcher)). They appear as a run
+family on the run's page.
+
+**Planning.** When the record table names its identity primary key (`source.record.primaryKey`), the coordinating run cuts
+the candidate keys into contiguous slices on it, about a work batch each and at most 1,024, records the cut on the
+submission, and deals the slices out as shares to itself and up to `fanOut` intake members. It enqueues the members first
+and plans its own share while they plan theirs, then finalises the submission with every member's totals. Without a
+primary key the read is planned on the coordinating run, and only the sending fans out.
+
+**Sending.** Every drainer claims the oldest queued work batch, so the batches spread over whoever runs. When the submission
+still has at least `fanOutMinRecords` records to send (a submission planned again counts the ones an earlier pass queued),
+the coordinating run enqueues one drain member per queued batch beyond the one it takes itself, up to `fanOut`, and drains
+beside them: a submission of three batches gets two members, however high `fanOut` is. A drain member that fails leaves its records to
+the coordinating run, which keeps draining until the submission is settled.
+
+**Members no node starts.** A member waits in the queue until a node with a free place takes it, and every place of the pool
+can be holding work, the coordinating run's own among them. A coordinating run therefore never waits for ever on members
+no node has started:
+
+| Phase | It stops waiting when | And then |
+| --- | --- | --- |
+| Planning | no member is running, and none has started or ended for 3 minutes, long enough for an autoscaler to bring up a node | stops the members still queued and plans their shares itself |
+| Sending | its own drain has left nothing to claim, and no member is running | stops the members still queued, which would find nothing to send |
+
+A member a node takes at the moment it is stopped is asked to stop too. What it planned or sent stays, and a share it had
+begun is planned again safely: the records it queued are passed over as already queued, and the new plan writes its work
+batches after the ones those records read from ([Work batches](#work-batches)). A member that fails on its own stops the
+coordinating run with
 `Intake member <slot> (run <id>) <status>: <error>. The submission stays planned as far as it got: re-run it to finish the intake now, or the flow's next deliver run takes it over, sends what it planned and closes it, and plans the rest in its own window.`
-The drain fans out the same way, `fanOut` drain members beside the coordinating run; a drain member that fails leaves its
-records to the coordinating run, which keeps draining until the submission is settled. The members appear as a run family
-on the run's page.
+A coordinating run that fails or is cancelled stops its members with it.
+
+**The rate limit.** `reliability.rateLimitRps` holds for the fan-out as a whole. Each run sends under its share of the rate,
+the rate divided between the coordinating run and its members; a member's payload names the share (`rateShare`,
+[running an OSDU flow](../cli/run.md)), and the coordinating run takes the whole rate back once its members have ended.
+`parallelism.concurrency` is each run's own, so a fan-out of eight members has up to nine times as many records in flight.
+
+Why a run did not fan out is on its trace: `The intake is not fanned out: 400 candidate record(s), fewer than parallelism.fanOutMinRecords (1000).`,
+and the same for the drain, with the reason (no primary key to cut the read on, one work batch to send, a run outside the
+fleet).
 
 Records of one flow written by many nodes never wait on each other for long: no statement writes more than 1,000 records,
 a worker writes only its lease row and the append-only tables while it sends, staging locks only records that exist, and a

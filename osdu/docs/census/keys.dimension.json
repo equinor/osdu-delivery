@@ -6,7 +6,7 @@
   "includeEnvelope": true,
   "generatedFrom": "osdu/docs/reference/flow/dimension.md and osdu/src/SqlFlow.Delivery/Documents/YamlModels.cs",
   "naming": "The loader deserializes with YamlDotNet's CamelCaseNamingConvention and refuses any key it does not know.",
-  "keyCount": 122,
+  "keyCount": 124,
   "keys": [
     {
       "path": "batch",
@@ -374,42 +374,37 @@
       "path": "reliability",
       "type": "object",
       "required": false,
-      "description": "The HTTP settings (timeout, retry, rate limit, TLS, URL allowlist and response size), and `concurrency`: how much a build asks of the search at once. `reliability.parallelInterfaces` is refused."
+      "description": "The HTTP settings: timeout, retry, rate limit, TLS, URL allowlist and response size. What runs at once is `parallelism`."
     },
     {
       "path": "reliability.batchRecords",
       "type": "integer",
       "required": false,
-      "description": "A delivery flow's setting: rendered documents per work batch file. The loader accepts it as on a delivery flow; a dimension flow does not use it.",
-      "default": "500"
+      "description": "Not a setting here any more: a delivery flow writes it as `parallelism.batchRecords`, and a dimension flow has no use for it. A document that still declares it is refused when it loads; remove it."
     },
     {
       "path": "reliability.batchSize",
       "type": "integer",
       "required": false,
-      "description": "A delivery flow's setting: records claimed per ledger round trip when retrying records. The loader accepts it as on a delivery flow; a dimension flow does not use it.",
-      "default": "50"
+      "description": "Not a setting here any more: a delivery flow writes it as `parallelism.batchSize`, and a dimension flow has no use for it. A document that still declares it is refused when it loads; remove it."
     },
     {
       "path": "reliability.concurrency",
       "type": "integer",
       "required": false,
-      "description": "How much a build asks of the search at once: the ranges of a field's values, the searches that read labels and attributes, and the cursors of a pass over the records a collected attribute is read from. At least 1; 1 asks one thing at a time.",
-      "default": "8"
+      "description": "Not a setting here any more: it is written as `parallelism.concurrency`, since what runs at once, and across the fleet, is the flow's parallelism, and reliability keeps what makes a request hold. A document that still declares it here is refused when it loads, naming where it goes."
     },
     {
       "path": "reliability.fanOut",
       "type": "integer",
       "required": false,
-      "description": "A delivery flow's setting: the member runs a large submission spreads over. The loader accepts it as on a delivery flow; a dimension flow does not use it.",
-      "default": "0"
+      "description": "Not a setting here any more: a delivery flow writes it as `parallelism.fanOut`, and a dimension flow has no use for it. A document that still declares it is refused when it loads; remove it."
     },
     {
       "path": "reliability.fanOutMinRecords",
       "type": "integer",
       "required": false,
-      "description": "A delivery flow's setting: below this many records a submission never fans out. The loader accepts it as on a delivery flow; a dimension flow does not use it.",
-      "default": "1000"
+      "description": "Not a setting here any more: a delivery flow writes it as `parallelism.fanOutMinRecords`, and a dimension flow has no use for it. A document that still declares it is refused when it loads; remove it."
     },
     {
       "path": "reliability.leaseSeconds",
@@ -436,7 +431,7 @@
       "path": "reliability.parallelInterfaces",
       "type": "integer",
       "required": false,
-      "description": "A delivery source's setting: how many of its interfaces run at once. An assertion flow runs no interfaces, so the loader refuses it here."
+      "description": "Not a setting here any more: a delivery flow writes it as `parallelism.interfaces`, and a dimension flow has no use for it. A document that still declares it is refused when it loads; remove it."
     },
     {
       "path": "reliability.rateLimitRps",
@@ -449,8 +444,7 @@
       "path": "reliability.renderParallelism",
       "type": "integer",
       "required": false,
-      "description": "A delivery flow's setting: renderers in the intake pipeline on one node, 0 to 256 (0 takes half the machine's processors, at least one). The loader accepts it as on a delivery flow; a dimension flow does not use it.",
-      "default": "0"
+      "description": "Not a setting here any more: a delivery flow writes it as `parallelism.renderers`, and a dimension flow has no use for it. A document that still declares it is refused when it loads; remove it."
     },
     {
       "path": "reliability.retry",
@@ -548,6 +542,19 @@
       "required": false,
       "description": "Whether the platform's TLS certificate is verified. `false` also needs `SQLFLOW_DELIVERY_ALLOW_INSECURE_TLS=true` on the node, or the run is refused.",
       "default": "true"
+    },
+    {
+      "path": "parallelism",
+      "type": "object",
+      "required": false,
+      "description": "What one run works on at once: `concurrency`, how much a build asks of the search at once. A dimension flow fans nothing out across the fleet."
+    },
+    {
+      "path": "parallelism.concurrency",
+      "type": "integer",
+      "required": false,
+      "description": "How much a build asks of the search at once: the dimensions built at once, the ranges of a field's values, the searches that read labels and attributes, and the cursors of a pass over the records a collected attribute is read from. At least 1; 1 asks one thing at a time.",
+      "default": "8"
     },
     {
       "path": "source",

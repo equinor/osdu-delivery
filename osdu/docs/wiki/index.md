@@ -128,6 +128,10 @@ other packages adopt the same contract.
   why a run value may be a list SQLFlow carries as JSON array text, why only a scope parameter takes one, why the set is
   one scope with one watermark, why a removal compares a record whose values all lie in its own, and why `--set`
   repeated gives a list.
+- [0025: what runs at once is a flow's parallelism, and a delivery fans out by default](decisions/0025-parallelism-and-default-fan-out.md) -
+  why the settings that say how much runs at once left `reliability`, why a large delivery fans out by default and is
+  bounded by its work batches, how a coordinating run stops members no node starts and does their part, why a rate limit
+  holds for the fan-out as a whole, and why a share planned again writes its batches after the ones it wrote.
 
 ## Coverage
 

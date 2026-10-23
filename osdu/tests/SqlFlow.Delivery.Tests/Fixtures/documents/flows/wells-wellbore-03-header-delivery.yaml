@@ -47,11 +47,13 @@ target:
   protocol: storage
 
 reliability:
-  concurrency: 8
   retry: { attempts: 4, backoff: exponential, baseDelayMs: 500, maxDelayMs: 30000 }
   skipStatusCodes: [409]
   timeoutSeconds: 100
   leaseSeconds: 300
+
+parallelism:
+  concurrency: 8
   batchSize: 50
 
 schedule:

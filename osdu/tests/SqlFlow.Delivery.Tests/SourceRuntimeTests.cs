@@ -155,10 +155,11 @@ public sealed class SourceRuntimeTests : IDisposable
               protocolOptions:
                 ddmsRoot: /api/os-wellbore-ddms
             reliability:
-              concurrency: 1
-              renderParallelism: 1
-              parallelInterfaces: 1
               retry: { attempts: 3, recordBaseDelayMinutes: 1 }
+            parallelism:
+              concurrency: 1
+              renderers: 1
+              interfaces: 1
             interfaces:
               wellbores:
                 record: { object: {{WellboreTable}}, key: [facility_name], primaryKey: RecId }
@@ -641,7 +642,7 @@ public sealed class SourceRuntimeTests : IDisposable
     [Fact]
     public async Task A_fan_out_member_is_told_which_interface_it_works_on()
     {
-        var yaml = SourceYaml().Replace("  parallelInterfaces: 1\n", "  parallelInterfaces: 1\n  fanOut: 1\n  fanOutMinRecords: 1\n  batchRecords: 1\n", StringComparison.Ordinal);
+        var yaml = SourceYaml().Replace("  interfaces: 1\n", "  interfaces: 1\n  fanOut: 1\n  fanOutMinRecords: 1\n  batchRecords: 1\n", StringComparison.Ordinal);
         var source = Load(yaml);
         var estate = await EstateAsync();
         var engine = Engine(estate);
@@ -654,6 +655,10 @@ public sealed class SourceRuntimeTests : IDisposable
         Assert.All(members.Enqueued, member => Assert.Equal("welllogs", member.Payload.Interface));
         Assert.Contains(members.Enqueued, member => member.Operation == DeliveryOperations.Intake);
         Assert.Contains(members.Enqueued, member => member.Operation == DeliveryOperations.Drain);
+
+        // One member beside the coordinating run: each sends under half the flow's rate limit, taken from its payload by the
+        // executor that runs it.
+        Assert.All(members.Enqueued, member => Assert.Equal(2, member.Payload.RateShare));
         Assert.Equal(5, (await engine.Ledger!.StatsAsync(FlowId.Of("wells/welllogs"), _clock.GetUtcNow().UtcDateTime)).Delivered);
     }
 

@@ -40,7 +40,8 @@ public sealed class RetrievalWindowTests : IDisposable
           incremental: { field: modifyTime, since: "{{since}}", lagMinutes: {{lagMinutes}} }
         target:
           location: "{{location}}"
-        reliability: { concurrency: 1, retry: { attempts: 1, baseDelayMs: 1, maxDelayMs: 1 } }
+        reliability: { retry: { attempts: 1, baseDelayMs: 1, maxDelayMs: 1 } }
+        parallelism: { concurrency: 1 }
         """;
 
     private sealed record Retrieval(RetrievalRunner Runner, FakeHttpHandler Handler, HttpRuntime Runtime, OsduLedger Ledger) : IDisposable

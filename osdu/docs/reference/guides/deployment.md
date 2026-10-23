@@ -113,6 +113,12 @@ The worker host is the `sqlflow worker` verb with the OSDU module installed and 
 the node's options (`--pool` from `SQLFLOW_WORKER_POOL`, `--poll-seconds`, `--drain-seconds`), and it refuses to be told to
 run another verb.
 
+What brings the workers up is queued runs, and a delivery queues more than one: a submission of 1,000 records or more fans
+out by default over up to eight member runs of the same flow, which the replica target counts like any other queued run,
+so a large delivery scales the pool out and an idle one lets it go back
+([submissions](../concepts/submissions.md#many-nodes), `parallelism` on the [delivery flow](../flow/delivery.md#parallelism)).
+The pool never grows past its ceiling (`worker_max_replicas` in Terraform, `workerMaxReplicas` in Bicep, 10 by default).
+
 ## The databases
 
 | Database (shipped names) | Holds | Reached as |

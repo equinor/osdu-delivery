@@ -42,6 +42,8 @@ internal sealed class FlowYaml
 
     public FlowReliabilityYaml? Reliability { get; set; }
 
+    public FlowParallelismYaml? Parallelism { get; set; }
+
     public FlowVerifyYaml? Verify { get; set; }
 
     public FailWhenYaml? FailWhen { get; set; }
@@ -101,6 +103,8 @@ internal sealed class InterfaceYaml
     public FlowChangeYaml? Change { get; set; }
 
     public FlowReliabilityYaml? Reliability { get; set; }
+
+    public FlowParallelismYaml? Parallelism { get; set; }
 
     public FlowVerifyYaml? Verify { get; set; }
 
@@ -766,10 +770,13 @@ internal sealed class ProtocolOptionsYaml
     public string? ContentSchemaVersion { get; set; }
 }
 
+/// <summary>
+/// The <c>reliability</c> block: what makes a flow's requests hold. The settings that moved to <c>parallelism</c> are read
+/// only so the loader can refuse each with the key it is now written as (<see cref="FlowMapper"/>), rather than with a bare
+/// "unknown key".
+/// </summary>
 internal sealed class FlowReliabilityYaml
 {
-    public int? Concurrency { get; set; }
-
     public FlowRetryYaml? Retry { get; set; }
 
     public List<int>? SkipStatusCodes { get; set; }
@@ -788,18 +795,54 @@ internal sealed class FlowReliabilityYaml
 
     public int? LeaseSeconds { get; set; }
 
+    /// <summary>Moved to <c>parallelism.concurrency</c>; refused here.</summary>
+    public int? Concurrency { get; set; }
+
+    /// <summary>Moved to <c>parallelism.batchSize</c>; refused here.</summary>
     public int? BatchSize { get; set; }
 
+    /// <summary>Moved to <c>parallelism.batchRecords</c>; refused here.</summary>
     public int? BatchRecords { get; set; }
+
+    /// <summary>Moved to <c>parallelism.fanOut</c>; refused here.</summary>
+    public int? FanOut { get; set; }
+
+    /// <summary>Moved to <c>parallelism.fanOutMinRecords</c>; refused here.</summary>
+    public int? FanOutMinRecords { get; set; }
+
+    /// <summary>Moved to <c>parallelism.renderers</c>; refused here.</summary>
+    public int? RenderParallelism { get; set; }
+
+    /// <summary>Moved to <c>parallelism.interfaces</c>; refused here.</summary>
+    public int? ParallelInterfaces { get; set; }
+}
+
+/// <summary>
+/// A delivery flow's <c>parallelism</c> block: what one run works on at once, and how far a large submission fans out across
+/// the fleet. In a source with interfaces an interface lays its own keys over the source's, except <see cref="Interfaces"/>.
+/// </summary>
+internal sealed class FlowParallelismYaml
+{
+    public int? Concurrency { get; set; }
 
     public int? FanOut { get; set; }
 
     public int? FanOutMinRecords { get; set; }
 
-    public int? RenderParallelism { get; set; }
+    public int? Renderers { get; set; }
+
+    public int? BatchRecords { get; set; }
+
+    public int? BatchSize { get; set; }
 
     /// <summary>A source's setting only: how many of its interfaces run at once.</summary>
-    public int? ParallelInterfaces { get; set; }
+    public int? Interfaces { get; set; }
+}
+
+/// <summary>The <c>parallelism</c> block of an assertion, dimension, inventory or retrieval flow: what one run works on at once.</summary>
+internal sealed class RunParallelismYaml
+{
+    public int? Concurrency { get; set; }
 }
 
 internal sealed class FlowRetryYaml
@@ -928,6 +971,8 @@ internal sealed class RetrievalYaml
     public RetrievalTargetYaml? Target { get; set; }
 
     public FlowReliabilityYaml? Reliability { get; set; }
+
+    public RunParallelismYaml? Parallelism { get; set; }
 }
 
 internal sealed class CacheYaml
@@ -1102,6 +1147,8 @@ internal sealed class AssertionYaml
     public List<AssertionTestYaml>? Tests { get; set; }
 
     public FlowReliabilityYaml? Reliability { get; set; }
+
+    public RunParallelismYaml? Parallelism { get; set; }
 }
 
 internal sealed class AssertionSourceYaml
@@ -1425,6 +1472,8 @@ internal sealed class InventoryFlowYaml
     public InventoryRemovalYaml? Removal { get; set; }
 
     public FlowReliabilityYaml? Reliability { get; set; }
+
+    public RunParallelismYaml? Parallelism { get; set; }
 }
 
 internal sealed class InventoryRemovalYaml
@@ -1610,6 +1659,8 @@ internal sealed class DimensionFlowYaml
     public List<DimensionViewYaml>? Views { get; set; }
 
     public FlowReliabilityYaml? Reliability { get; set; }
+
+    public RunParallelismYaml? Parallelism { get; set; }
 
     /// <summary>How a build loads the dimensions after their first full load; left out, every build loads them in full.</summary>
     public DimensionIncrementalYaml? Incremental { get; set; }
