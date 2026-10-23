@@ -77,6 +77,7 @@ public sealed class RemovalFlowKind : IFlowDocumentKind
     public void ValidateParameters(RunParameters parameters)
     {
         ArgumentNullException.ThrowIfNull(parameters);
+        DeliveryOperations.RefuseSeveralValues(parameters, RemovalFlowDefinition.FlowTypeName, scopeTakesSeveral: false);
         DeliveryOperations.RefuseBuiltInOverrides(parameters, RemovalFlowDefinition.FlowTypeName, "a removal reads every key its sources hold; name the removals to carry out in the payload.");
         var payload = DeliveryRunPayload.Parse(parameters);
         payload.RefuseOtherThan(

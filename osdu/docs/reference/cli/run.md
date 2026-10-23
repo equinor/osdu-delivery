@@ -86,7 +86,7 @@ and they are recorded on the run, so its history says exactly what was asked.
 | Option | Shape | Meaning |
 | --- | --- | --- |
 | `--operation <name>` | 1 to 32 characters: lower-case letters, digits and `-`, starting with a letter | Which of the kind's operations the run performs. Left out, the kind's default. |
-| `--set name=value` | repeatable; at most 32; a name is an identifier of at most 64 characters, a value at most 1,000 characters without control characters | A run value: one of the flow's own `parameters`, or `partition` (see [The partition](#the-partition)). A later `--set` of the same name wins. |
+| `--set name=value` | repeatable; at most 32 names; a name is an identifier of at most 64 characters, a value at most 1,000 characters without control characters | A run value: one of the flow's own `parameters`, or `partition` (see [The partition](#the-partition)). A name set more than once is given the list of its values, at most 100 of them, which only a parameter a delivery flow's `source.record.scope` binds takes ([several values of a scope parameter](../flow/delivery.md#several-values-of-a-scope-parameter)); every other parameter refuses a list. |
 | `--payload <json>` or `--payload @<file>` | one JSON object, at most 64,000 characters, inline or read from a file | The kind's own arguments (see [The payload](#the-payload)). |
 
 What SQLFlow refuses before the run starts, each as one `ERROR  <message>` line and exit 1:

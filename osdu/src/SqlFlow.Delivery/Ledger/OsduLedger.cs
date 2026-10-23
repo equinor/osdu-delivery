@@ -3414,6 +3414,12 @@ public sealed partial class OsduLedger : ILedger
     /// <summary>The longest scope key (the flow's parameter values) a watermark is kept under.</summary>
     public const int MaxWatermarkScopeLength = 400;
 
+    /// <summary>Why a scope key of <paramref name="length"/> characters keeps no watermark.</summary>
+    public static string WatermarkScopeTooLong(int length)
+        => string.Create(
+            CultureInfo.InvariantCulture,
+            $"The parameter values of this run make a scope key of {length} characters; the ledger keeps a watermark under at most {MaxWatermarkScopeLength}. Shorten the flow's parameter values, or give a parameter fewer values at once.");
+
     public async Task<SourceWatermark?> GetWatermarkAsync(Guid flowId, string scope, CancellationToken ct = default)
     {
         ArgumentNullException.ThrowIfNull(scope);
@@ -3431,8 +3437,7 @@ public sealed partial class OsduLedger : ILedger
         ArgumentNullException.ThrowIfNull(watermark);
         if (watermark.Scope.Length > MaxWatermarkScopeLength)
         {
-            throw new DeliveryException(
-                string.Create(CultureInfo.InvariantCulture, $"The parameter values of this run make a scope key of {watermark.Scope.Length} characters; the ledger keeps a watermark under at most {MaxWatermarkScopeLength}. Shorten the flow's parameter values."));
+            throw new DeliveryException(WatermarkScopeTooLong(watermark.Scope.Length));
         }
 
         var through = DateTime.SpecifyKind(watermark.UpdatedThroughUtc, DateTimeKind.Utc);

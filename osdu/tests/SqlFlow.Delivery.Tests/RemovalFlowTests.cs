@@ -5,6 +5,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
 using SqlFlow.Core.Abstractions;
 using SqlFlow.Core.Connections;
+using SqlFlow.Core.Runs;
 using SqlFlow.Core.Secrets;
 using SqlFlow.Delivery.Documents;
 using SqlFlow.Delivery.Engine;
@@ -109,11 +110,14 @@ public sealed class RemovalFlowTests : IDisposable
     /// <summary>The engine every runtime of a test shares: the ledger, the in-memory ingestion tables and the fake protocol.</summary>
     private EngineContext Engine() => Samples.Engine(_ledger, _clock, sources: _tables) with { Protocols = new FakeProtocolFactory(_protocol) };
 
-    /// <summary>Every sample log delivered once, through the delivery flow a removal names, and the clock moved an hour on.</summary>
-    private async Task DeliverEverythingAsync()
+    /// <summary>
+    /// Every sample log delivered once, through the delivery flow a removal names, under the sample's log source or the
+    /// <paramref name="values"/> given, and the clock moved an hour on.
+    /// </summary>
+    private async Task DeliverEverythingAsync(IReadOnlyDictionary<string, string>? values = null)
     {
         _tables = await SampleEstate.BuildAsync(_root, Now.AddMinutes(-5), time: _clock);
-        _delivery = await FlowRuntime.CreateAsync(Engine(), Samples.LocalFlow(_root), SampleEstate.Values);
+        _delivery = await FlowRuntime.CreateAsync(Engine(), Samples.LocalFlow(_root), values ?? SampleEstate.Values);
         _runtimes.Add(_delivery);
         await _ledger.RegisterAsync(_delivery.Flow);
         var run = await DeliverAsync();
@@ -474,6 +478,41 @@ public sealed class RemovalFlowTests : IDisposable
 
         Assert.Equal((SourceRemovals.Completed, 0L, 0L), (elsewhere.Status, elsewhere.Tally.Compared, elsewhere.Tally.Detected));
         Assert.Empty(await DeletionsAsync());
+    }
+
+    [Fact]
+    public async Task A_removal_under_a_list_compares_the_records_planned_under_any_of_its_values()
+    {
+        await DeliverEverythingAsync();
+        KeysFile("current", Enumerable.Range(1, Logs.Count - 1));
+
+        var removal = Assert.Single((await RemoveAsync(Removal(Csv("keys", "current"), logSource: $"[{SampleWellLogs.LogSource}, CPI]"))).Removals);
+
+        Assert.Equal((SourceRemovals.Completed, (long)Logs.Count, 1L, 1L), (removal.Status, removal.Tally.Compared, removal.Tally.Detected, removal.Tally.Removed));
+        Assert.Equal(RecordStatus.Deleted, (await RecordAsync(0)).Status);
+    }
+
+    [Fact]
+    public async Task Records_planned_under_a_set_of_values_are_compared_by_a_removal_naming_every_one_of_them_and_by_no_narrower_one()
+    {
+        await DeliverEverythingAsync(new Dictionary<string, string>(StringComparer.Ordinal)
+        {
+            ["logSource"] = RunValueList.Of(["CPI", SampleWellLogs.LogSource]),
+        });
+
+        // The source no longer holds the first log, whose row is gone from the record table too: only the ledger knows it.
+        _tables.Records.RemoveAt(0);
+        KeysFile("current", Enumerable.Range(1, Logs.Count - 1));
+
+        // A record planned under the set may hold either value, so a removal of one of them does not compare it from the
+        // ledger; it compares the record table's rows of its own value only, and the source holds every one of them.
+        var narrower = Assert.Single((await RemoveAsync(Removal(Csv("keys", "current")))).Removals);
+        Assert.Equal((SourceRemovals.Completed, Logs.Count - 1L, 0L), (narrower.Status, narrower.Tally.Compared, narrower.Tally.Detected));
+        Assert.Empty(await DeletionsAsync());
+
+        var whole = Assert.Single((await RemoveAsync(Removal(Csv("keys", "current"), logSource: $"[CPI, {SampleWellLogs.LogSource}]"))).Removals);
+        Assert.Equal((SourceRemovals.Completed, (long)Logs.Count, 1L, 1L), (whole.Status, whole.Tally.Compared, whole.Tally.Detected, whole.Tally.Removed));
+        Assert.Equal(Key(0), Assert.Single(await DeletionsAsync()).Key);
     }
 
     [Fact]

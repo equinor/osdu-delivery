@@ -8,7 +8,8 @@ import { Textarea } from "@/components/ui/textarea";
 import type { TriggerBodyContribution, TriggerFieldsProps } from "@/modules/registry";
 import { removalApi, type RemovalFlow, type RemovalParameter } from "../../../api/removals";
 import { useActivePartition } from "../activePartition";
-import { parseValues } from "../runValues";
+import type { RunValue } from "@/api/types";
+import { parseValues, valuesToFields, valuesToLines } from "../runValues";
 import { ledgerName } from "./removalFormat";
 
 /** The run value naming the partition a run removes in (osdu/docs/reference/concepts/partitions.md, The partition a run targets). */
@@ -77,10 +78,10 @@ export function RemovalTriggerFields({ pipelineId, operation, initialValues, ini
   });
   const flow = board.data;
   const [fields, setFields] = useState<Record<string, string>>(
-    () => Object.fromEntries(Object.entries(initialValues).filter(([name]) => name !== PARTITION)),
+    () => valuesToFields(initialValues, PARTITION),
   );
   const [valuesText, setValuesText] = useState(
-    () => Object.entries(initialValues).filter(([name]) => name !== PARTITION).map(([name, value]) => `${name}=${value}`).join("\n"),
+    () => valuesToLines(initialValues, PARTITION),
   );
   const [picked, setPicked] = useState<ReadonlySet<string>>(() => new Set(stringsOf(initialPayload?.[OWNED_KEY])));
   const [carried] = useState<Record<string, unknown>>(
@@ -97,7 +98,7 @@ export function RemovalTriggerFields({ pipelineId, operation, initialValues, ini
       ?? (PARTITION in parsed.values ? "The partition is not a flow parameter: a run removes in the partition picked in the title bar." : null)
       ?? partitionError
       ?? (missing.length > 0 ? `The flow declares no removal named ${missing.join(", ")}; clear ${missing.length === 1 ? "it" : "them"} to run.` : null);
-    const values: Record<string, string> = { ...parsed.values };
+    const values: Record<string, RunValue> = { ...parsed.values };
     if (partition !== null) {
       values[PARTITION] = partition;
     }

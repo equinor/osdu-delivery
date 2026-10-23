@@ -152,7 +152,7 @@ Each removal:
 | `flow` | yes | The delivery flow whose records it takes out, by name ([The delivery flow](#the-delivery-flow)). |
 | `interface` | no | The interface of that flow, for a source with interfaces. |
 | `name` | no | The removal's name, at most 300 characters: what its runs, approvals and deletions are kept under. Left out, the flow's name, with `/<interface>` for an interface. |
-| `values` | no | The delivery flow's parameter values the comparison is scoped by, each a literal or a `{name}` token. They bind its `source.record.scope`, so only the records planned under them, and the record table's rows in that scope, are compared; a scoped flow needs a value for every parameter its scope binds. |
+| `values` | no | The delivery flow's parameter values the comparison is scoped by, each a literal or a `{name}` token, or a sequence of them for a parameter its scope reads several values of (`logSource: [COMPOSITE, WIRELINE]`). They bind its `source.record.scope`, so only the records planned under them, and the record table's rows in that scope, are compared; a scoped flow needs a value for every parameter its scope binds. |
 | `keepReferenced` | no | `true` (the default): a record other records in OSDU still name stays there until they are gone. `false` takes it out whatever names it. |
 | `keys` | one of the two | The keys the source holds now, its complete key set, read whole every run. |
 | `removed` | one of the two | A list of the keys the source removed, each with the moment it was removed. |
@@ -243,7 +243,12 @@ step with its counts, and its result lists every removal with its tally.
 ## What a run finds
 
 The comparison covers the delivery ledger's records whose last submission carried the removal's scope values (every record
-of a flow whose records carry no scope), and the record table's keys in that scope that the ledger holds no record of. Of those, a key is **found removed** when:
+of a flow whose records carry no scope), and the record table's keys in that scope that the ledger holds no record of. A
+submission given several values of a parameter ([several values of a scope
+parameter](delivery.md#several-values-of-a-scope-parameter)) carried the removal's scope when every one of them is among
+the removal's values: a removal of `[COMPOSITE, WIRELINE]` compares the records planned under `COMPOSITE`, under
+`WIRELINE` and under both, and a removal of `COMPOSITE` alone compares no record planned under both, since such a record may
+hold either value and the removal reads the rows of one. Of those, a key is **found removed** when:
 
 - `keys` is read and does not hold it (`absent`, as of when the read began), or
 - `removed` lists it with a moment, and `keys`, when read, does not hold it after that moment (`listed`, as of the moment

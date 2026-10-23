@@ -66,6 +66,7 @@ public sealed class RetrievalFlowKind : IFlowDocumentKind
     public void ValidateParameters(RunParameters parameters)
     {
         ArgumentNullException.ThrowIfNull(parameters);
+        DeliveryOperations.RefuseSeveralValues(parameters, RetrievalDefinition.FlowTypeName, scopeTakesSeveral: false);
         DeliveryOperations.RefuseBuiltInOverrides(
             parameters, RetrievalDefinition.FlowTypeName, "force in the payload restarts an incremental retrieval at its declared start.");
 

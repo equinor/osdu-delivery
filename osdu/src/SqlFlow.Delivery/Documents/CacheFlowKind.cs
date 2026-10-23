@@ -85,6 +85,7 @@ public sealed class CacheFlowKind : IFlowDocumentKind
     public void ValidateParameters(RunParameters parameters)
     {
         ArgumentNullException.ThrowIfNull(parameters);
+        DeliveryOperations.RefuseSeveralValues(parameters, CacheDefinition.FlowTypeName, scopeTakesSeveral: false);
         DeliveryOperations.RefuseBuiltInOverrides(parameters, CacheDefinition.FlowTypeName, "a refresh sweeps every declared type in full.");
 
         // The control plane supplies its central configuration to every run of the module's kinds in the payload; a cache

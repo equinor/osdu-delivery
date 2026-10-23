@@ -8,6 +8,7 @@ import { Card } from "@/components/ui/card";
 import { ExplainMark } from "@/components/ExplainTip";
 import { RelativeTime } from "@/components/RelativeTime";
 import { RichTooltip } from "@/components/RichTooltip";
+import { runValueAssignment } from "@/lib/runValues";
 import { removalApi, type RemovalEntry, type RemovalFlow, type RemovalSource, type RemovedKeyState } from "../../../api/removals";
 import { ProblemView } from "../TemplateSheet";
 import { DeletionCounts, RemovalRunPill } from "./RemovalBadges";
@@ -132,11 +133,11 @@ export function RemovalEntryView({ flow, entry, view, state, onShow, omitName = 
           {entry.removed !== undefined && <SourceFact label="Removed" source={entry.removed} testId="removal-entry-removed" />}
           <Fact
             label="Under"
-            value={values.length === 0 ? "every record" : values.map(([name, value]) => `${name}=${value}`).join(", ")}
+            value={values.length === 0 ? "every record" : values.map(([name, value]) => runValueAssignment(name, value)).join(", ")}
             title="Compared under"
             body={values.length === 0
               ? "Every record of the ledger is compared."
-              : `Only the records the delivery flow planned under these values, and the record table's rows in that scope, are compared:\n${values.map(([name, value]) => `${name}=${value}`).join("\n")}`}
+              : `Only the records the delivery flow planned under these values (a list: under any of its values), and the record table's rows in that scope, are compared:\n${values.map(([name, value]) => runValueAssignment(name, value)).join("\n")}`}
             testId="removal-entry-scope"
           />
           <Fact label="Guard" value={`${flow.guardPercent}%${flow.guardRecords === undefined ? "" : `, ${flow.guardRecords.toLocaleString("en-US")}`}`} title="Guard" body={`${guardLine(flow)}.`} testId="removal-entry-guard" />

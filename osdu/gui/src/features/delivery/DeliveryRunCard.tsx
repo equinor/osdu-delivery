@@ -4,6 +4,7 @@ import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Card } from "@/components/ui/card";
 import type { RunDetail } from "@/api/types";
+import { runValueAssignment } from "@/lib/runValues";
 import { CodeView } from "@/components/CodeView";
 import { deliveryApi, type ReversalSource } from "../../api/delivery";
 import { prettyJson } from "./prettyJson";
@@ -113,7 +114,7 @@ export default function DeliveryRunCard({ run }: { run: RunDetail }) {
                 <Badge key={`tag-${tag}`} variant="secondary" className="font-mono" data-testid="run-tags-picked">#{tag}</Badge>
               ))}
               {values.map(([name, value]) => (
-                <Badge key={name} variant="secondary" className="font-mono">{name}={value}</Badge>
+                <Badge key={name} variant="secondary" className="font-mono">{runValueAssignment(name, value)}</Badge>
               ))}
             </div>
           </AlertDescription>

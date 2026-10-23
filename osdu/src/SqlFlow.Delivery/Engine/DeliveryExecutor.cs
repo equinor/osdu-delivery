@@ -676,21 +676,19 @@ public sealed class DeliveryExecutor : IFlowDocumentExecutor
     /// <summary>How many of the records a plan would send its outcome names, so a reader sees which ones without the run's log.</summary>
     internal const int PlanSampled = 20;
 
-    /// <summary>The flow parameter values a submission recorded as JSON; none when it recorded none.</summary>
+    /// <summary>
+    /// The flow parameter values a submission recorded as JSON (<see cref="RunParameters.ValuesToJson"/>: a parameter given
+    /// several values recorded as their array); none when it recorded none.
+    /// </summary>
     internal static IReadOnlyDictionary<string, string> ParseValues(string? json)
     {
-        if (string.IsNullOrWhiteSpace(json))
-        {
-            return new Dictionary<string, string>(StringComparer.Ordinal);
-        }
-
         try
         {
-            return JsonSerializer.Deserialize<Dictionary<string, string>>(json) ?? new Dictionary<string, string>(StringComparer.Ordinal);
+            return RunParameters.ValuesFromJson(json);
         }
-        catch (JsonException ex)
+        catch (SqlFlowException ex)
         {
-            throw new DeliveryException($"The submission's recorded parameters are not valid JSON: {ex.Message}", ex);
+            throw new DeliveryException($"The submission's recorded parameters are not valid: {ex.Message}", ex);
         }
     }
 

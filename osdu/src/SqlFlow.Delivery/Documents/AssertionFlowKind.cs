@@ -70,6 +70,7 @@ public sealed class AssertionFlowKind : IFlowDocumentKind
     public void ValidateParameters(RunParameters parameters)
     {
         ArgumentNullException.ThrowIfNull(parameters);
+        DeliveryOperations.RefuseSeveralValues(parameters, AssertionFlowDefinition.FlowTypeName, scopeTakesSeveral: false);
         DeliveryOperations.RefuseBuiltInOverrides(parameters, AssertionFlowDefinition.FlowTypeName, "a test reads what OSDU holds now; name the tests to run in the payload.");
 
         // A run names the tests it runs, by name or by tag, beside the central configuration.

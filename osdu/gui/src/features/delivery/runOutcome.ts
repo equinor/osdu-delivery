@@ -158,7 +158,8 @@ export function runRequest(run: RunDetail): RunRequest {
 /** The ledger a run worked in, as a page scopes the flow's requests: the interface its payload names and its partition value. */
 export function runScope(run: RunDetail): { interfaceName: string | null; partition: string | null } {
   const request = runRequest(run);
-  return { interfaceName: request.interfaceName, partition: run.values?.partition ?? null };
+  const partition = run.values?.partition;
+  return { interfaceName: request.interfaceName, partition: typeof partition === "string" ? partition : null };
 }
 
 /** The operations of a delivery flow whose runs send records to OSDU, which a reversal can undo. */

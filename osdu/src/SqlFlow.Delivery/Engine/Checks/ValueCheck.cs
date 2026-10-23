@@ -120,7 +120,8 @@ public sealed record ValueCheckAsked
 
     public long SkipSamples { get; init; }
 
-    /// <summary>The flow parameter values the scope was read with.</summary>
+    /// <summary>The flow parameter values the scope was read with, a parameter given several as their array.</summary>
+    [System.Text.Json.Serialization.JsonConverter(typeof(SqlFlow.Core.Runs.RunValuesJsonConverter))]
     public IReadOnlyDictionary<string, string> Values { get; init; } = new Dictionary<string, string>(StringComparer.Ordinal);
 }
 

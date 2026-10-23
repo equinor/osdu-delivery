@@ -2541,6 +2541,9 @@ public sealed partial class FlowRuntime : IDisposable
         return step.Result;
     }
 
+    /// <summary>How an activity records what it was asked: run values as every recorded run value is, a list as its array.</summary>
+    private static readonly JsonSerializerOptions ActivityParametersJson = new() { Converters = { new RunValuesJsonConverter() } };
+
     /// <summary>
     /// Runs one operation under its activity: started before it, completed with what the operation says of itself (its
     /// summary, the submission it worked on, and whether it changed nothing), or settled as failed or cancelled. Only a run
@@ -2571,7 +2574,7 @@ public sealed partial class FlowRuntime : IDisposable
             Kind = kind,
             Actor = Actor,
             StartedUtc = started,
-            ParametersJson = parameters is null ? null : JsonSerializer.Serialize(parameters),
+            ParametersJson = parameters is null ? null : JsonSerializer.Serialize(parameters, ActivityParametersJson),
             DeliveryKey = key?.Value,
             RunId = RunId,
         }, ct).ConfigureAwait(false);

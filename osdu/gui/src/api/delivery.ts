@@ -4,7 +4,7 @@
 // with TanStack Query.
 
 import { del, get, getText, post, put, type QueryParams } from "@/api/client";
-import type { ComputeTaskAccepted, PagedResult, RunStatus } from "@/api/types";
+import type { ComputeTaskAccepted, PagedResult, RunStatus, RunValue } from "@/api/types";
 import type { PageQuery } from "@/api/endpoints";
 import type { AssertionAction, AssertionFindings, AssertionStage } from "./validation";
 
@@ -1240,7 +1240,7 @@ export interface DeliveryPreviewAsked {
   passedOverWhy: string[];
   /** How many records the scope holds, when the preview read the scope's first. */
   scopeRecords?: number | null;
-  values: Record<string, string>;
+  values: Record<string, RunValue>;
 }
 
 /** The render inputs a preview's document comes from. */
@@ -1469,7 +1469,7 @@ export interface DeliveryMappingFlow {
  */
 export interface DeliveryValueCheckRequest {
   targets?: string[];
-  values?: Record<string, string>;
+  values?: Record<string, RunValue>;
   maxRows?: number;
   samples?: number;
   skipSamples?: number;
@@ -1582,7 +1582,7 @@ export interface DeliveryValueCheck {
   interface?: string | null;
   flowId: string;
   inputs: { mapping: string; kind: string; templateVersion: string; cachePartition?: string | null; cacheVersion?: string | null };
-  asked: { targets: string[]; maxRows: number; samples: number; skipSamples: number; values: Record<string, string> };
+  asked: { targets: string[]; maxRows: number; samples: number; skipSamples: number; values: Record<string, RunValue> };
   rows: DeliveryValueCheckRows;
   variables: DeliveryValueCheckVariable[];
   issues: string[];
@@ -4014,7 +4014,7 @@ export const deliveryApi = {
    * OSDU id the ledger holds, or a JSON array of the key's parts), rendered as a delivery would render it and sent nowhere.
    * `values` fill the flow's parameters; the declared defaults fill the rest. Answered at once.
    */
-  preview: (pipelineId: string, request: { key?: string | null; values?: Record<string, string> }, scope?: DeliveryFlowScope) =>
+  preview: (pipelineId: string, request: { key?: string | null; values?: Record<string, RunValue> }, scope?: DeliveryFlowScope) =>
     post<DeliveryRecordPreview>(flowPath(pipelineId, "/preview", scope), request),
   /** Previews this record, rendered from its current source row as a delivery would render it now. Answered at once. */
   previewRecord: (record: DeliveryRecordRef) => post<DeliveryRecordPreview>(`${recordApiPath(record)}/preview`),

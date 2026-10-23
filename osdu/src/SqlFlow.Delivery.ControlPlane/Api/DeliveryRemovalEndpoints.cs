@@ -65,7 +65,7 @@ public sealed record DeliveryRemovalSourceDto(
 /// removal's last run.
 /// </summary>
 public sealed record DeliveryRemovalEntryDto(
-    string Name, string Flow, string? Interface, IReadOnlyDictionary<string, string> Values, bool KeepReferenced, DeliveryRemovalSourceDto? Keys,
+    string Name, string Flow, string? Interface, [property: System.Text.Json.Serialization.JsonConverter(typeof(SqlFlow.Core.Runs.RunValuesJsonConverter))] IReadOnlyDictionary<string, string> Values, bool KeepReferenced, DeliveryRemovalSourceDto? Keys,
     DeliveryRemovalSourceDto? Removed, Guid? DeliveryPipelineId, Guid? LedgerFlowId, long AwaitingApproval, IReadOnlyDictionary<string, long> Deletions,
     DeliveryRemovalRunDto? LastRun);
 

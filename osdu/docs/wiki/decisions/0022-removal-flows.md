@@ -21,6 +21,7 @@ related:
   - delivery-wiki-0013-inventory-flows
   - delivery-wiki-0014-inventory-removals
   - delivery-wiki-0002-client-supplied-ids
+  - delivery-wiki-0024-scope-value-lists
 sourceRefs:
   - osdu/src/SqlFlow.Delivery/Documents/RemovalFlowKind.cs
   - osdu/src/SqlFlow.Delivery/Engine/Removals/RemovalRunner.cs

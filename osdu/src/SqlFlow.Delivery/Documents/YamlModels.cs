@@ -1529,8 +1529,8 @@ internal sealed class RemovalEntryYaml
     /// <summary>The interface of that flow, for a source with interfaces.</summary>
     public string? Interface { get; set; }
 
-    /// <summary>The values of the delivery flow's parameters the comparison is scoped by.</summary>
-    public Dictionary<string, string>? Values { get; set; }
+    /// <summary>The values of the delivery flow's parameters the comparison is scoped by, each one value or a list.</summary>
+    public Dictionary<string, RunValueYaml?>? Values { get; set; }
 
     /// <summary>Whether a record other records still name stays in OSDU until they are gone (the default).</summary>
     public bool? KeepReferenced { get; set; }

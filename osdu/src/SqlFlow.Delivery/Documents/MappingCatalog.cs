@@ -1,4 +1,5 @@
 using SqlFlow.Core;
+using SqlFlow.Core.Runs;
 using SqlFlow.Delivery.Model;
 using SqlFlow.Delivery.Templates;
 
@@ -103,26 +104,37 @@ public sealed class MappingCatalog
 /// <summary>Resolves a flow's declared parameters against supplied values and substitutes tokens.</summary>
 public static class FlowParameters
 {
+    /// <summary>The separator a location puts between the values of a parameter a run gives several (<see cref="WorkLocation"/>).</summary>
+    public const char LocationListSeparator = '+';
+
     /// <summary>
     /// Returns the effective parameter values: supplied values, then defaults; throws when a required parameter is
-    /// missing or an undeclared one is supplied.
+    /// missing or an undeclared one is supplied. A parameter <c>source.record.scope</c> binds may be given several values
+    /// (a <see cref="RunValueList"/>), which select the rows holding any of them; they resolve to their set, in ordinal
+    /// order and each once, so the same values named in another order are the same scope.
     /// </summary>
     public static IReadOnlyDictionary<string, string> Resolve(FlowDefinition flow, IReadOnlyDictionary<string, string>? supplied)
     {
         ArgumentNullException.ThrowIfNull(flow);
-        return Resolve(flow.Parameters, flow.SourcePath ?? flow.Name, supplied);
+        return Resolve(flow.Parameters, flow.SourcePath ?? flow.Name, supplied, flow.Source.Record.Scope.Values);
     }
 
-    /// <summary>The same resolution over any declared parameter set (a retrieval flow's, say); <paramref name="where"/> names the document in errors.</summary>
-    public static IReadOnlyDictionary<string, string> Resolve(IReadOnlyDictionary<string, FlowParameter> parameters, string where, IReadOnlyDictionary<string, string>? supplied)
+    /// <summary>
+    /// The same resolution over any declared parameter set (a retrieval flow's, say); <paramref name="where"/> names the
+    /// document in errors. Only the parameters <paramref name="takingSeveral"/> names may be given several values; a list
+    /// given to any other is refused, since a query or a location it fills takes one.
+    /// </summary>
+    public static IReadOnlyDictionary<string, string> Resolve(
+        IReadOnlyDictionary<string, FlowParameter> parameters, string where, IReadOnlyDictionary<string, string>? supplied, IEnumerable<string>? takingSeveral = null)
     {
         ArgumentNullException.ThrowIfNull(parameters);
+        var several = takingSeveral?.ToHashSet(StringComparer.Ordinal) ?? [];
         var values = new Dictionary<string, string>(StringComparer.Ordinal);
         foreach (var (name, parameter) in parameters)
         {
             if (supplied is not null && supplied.TryGetValue(name, out var v))
             {
-                values[name] = v;
+                values[name] = RunValueList.IsList(v) ? SetOf(name, v, several, where) : v;
             }
             else if (parameter.Default is not null)
             {
@@ -148,20 +160,61 @@ public static class FlowParameters
         return values;
     }
 
-    /// <summary>Substitutes <c>{name}</c> tokens in a string from the resolved values.</summary>
+    /// <summary>
+    /// The values a scope parameter is given as a set: each once, in ordinal order, so the scope a run reads (and the
+    /// watermark it keeps) is the same whatever order the values were named in.
+    /// </summary>
+    private static string SetOf(string name, string list, HashSet<string> several, string where)
+    {
+        var items = RunValueList.Items(list);
+        if (!several.Contains(name))
+        {
+            throw new FlowValidationException(several.Count == 0
+                ? $"{where}: parameter '{name}' is given {items.Count} values, and takes one."
+                : $"{where}: parameter '{name}' is given {items.Count} values, and takes one: only a parameter source.record.scope binds ({string.Join(", ", several.Order(StringComparer.Ordinal))}) takes several.");
+        }
+
+        return RunValueList.Of(items.Distinct(StringComparer.Ordinal).Order(StringComparer.Ordinal));
+    }
+
+    /// <summary>
+    /// Substitutes <c>{name}</c> tokens in a string from the resolved values. A token whose parameter the run gives several
+    /// values is refused: the text it fills (a query, a location) takes one.
+    /// </summary>
     public static string Substitute(string text, IReadOnlyDictionary<string, string> values)
     {
         ArgumentNullException.ThrowIfNull(text);
         ArgumentNullException.ThrowIfNull(values);
         return System.Text.RegularExpressions.Regex.Replace(text, @"\{(?<name>[A-Za-z0-9_]+)\}", m =>
-            values.TryGetValue(m.Groups["name"].Value, out var v) ? v : m.Value);
+        {
+            var name = m.Groups["name"].Value;
+            if (!values.TryGetValue(name, out var v))
+            {
+                return m.Value;
+            }
+
+            return RunValueList.IsList(v)
+                ? throw new FlowValidationException(
+                    $"Parameter '{name}' is given {RunValueList.Items(v).Count} values, and '{{{name}}}' fills '{text}', which takes one; run one value at a time.")
+                : v;
+        });
     }
 
-    /// <summary>The work root the intake writes batches under: <c>source.work</c> with its tokens substituted, resolved against the flow file.</summary>
+    /// <summary>
+    /// The work root the intake writes batches under: <c>source.work</c> with its tokens substituted, resolved against the
+    /// flow file. A parameter the run gives several values fills its token with them joined by <see cref="LocationListSeparator"/>
+    /// (<c>COMPOSITE+WIRELINE</c>): the root only keeps one run's batches apart from another's, and a set of values names a
+    /// folder of its own as one value does.
+    /// </summary>
     public static string WorkLocation(FlowDefinition flow, IReadOnlyDictionary<string, string> values)
     {
         ArgumentNullException.ThrowIfNull(flow);
-        return ResolvePath(flow, flow.Source.Work, values, "source.work");
+        ArgumentNullException.ThrowIfNull(values);
+        var joined = values.ToDictionary(
+            v => v.Key,
+            v => RunValueList.IsList(v.Value) ? string.Join(LocationListSeparator, RunValueList.Items(v.Value)) : v.Value,
+            StringComparer.Ordinal);
+        return ResolvePath(flow, flow.Source.Work, joined, "source.work");
     }
 
     /// <summary>
@@ -188,7 +241,8 @@ public static class FlowParameters
     /// A location a flow declares (a work root or a payload root), its tokens substituted and resolved: a
     /// storage URI as written, a rooted path as it is, a relative path against the flow file's folder. A parameter value that
     /// would climb out of the declared location (a separator or '..') is refused, because these locations bound what a run
-    /// may read and write.
+    /// may read and write; so is a parameter the run gives several values, since the files a payload root names sit under one
+    /// of them (<see cref="WorkLocation"/> joins them first).
     /// </summary>
     public static string ResolvePath(FlowDefinition flow, string declared, IReadOnlyDictionary<string, string> values, string what)
     {
@@ -198,6 +252,12 @@ public static class FlowParameters
         var where = flow.SourcePath ?? flow.Name;
         foreach (var token in FlowMapper.Tokens(declared))
         {
+            if (values.TryGetValue(token, out var several) && RunValueList.IsList(several))
+            {
+                throw new FlowValidationException(
+                    $"{where}: parameter '{token}' is given {RunValueList.Items(several).Count} values, and {what} is a location that takes one: run one value at a time.");
+            }
+
             if (values.TryGetValue(token, out var value)
                 && (value.Contains('/', StringComparison.Ordinal) || value.Contains('\\', StringComparison.Ordinal) || value.Contains("..", StringComparison.Ordinal)))
             {

@@ -27,7 +27,8 @@ sourceRefs:
 The watermark of one flow scope: the upper bound of the last whole-scope plan that completed, so the next incremental
 plan reads the rows the ingestion tables changed after it ([Submissions](../concepts/submissions.md),
 [Change detection](../concepts/change-detection.md)). A scope is the set of parameter values a run supplies, so a flow
-run once per slice of its table keeps one watermark per slice.
+run once per slice of its table keeps one watermark per slice, and a run given several values of a scope parameter one for
+the set ([several values of a scope parameter](../flow/delivery.md#several-values-of-a-scope-parameter)).
 
 Not pruned: a watermark is state. Deleting a delivery flow's ledger deletes its watermarks.
 

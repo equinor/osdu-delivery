@@ -2,6 +2,7 @@ using System.Globalization;
 using System.Text.Json;
 using Microsoft.Extensions.Logging;
 using SqlFlow.Core;
+using SqlFlow.Core.Runs;
 using SqlFlow.Delivery.Documents;
 using SqlFlow.Delivery.Engine.Planning;
 using SqlFlow.Delivery.Identity;
@@ -188,6 +189,14 @@ public sealed class SubmissionIntake
         var now = _time.GetUtcNow().UtcDateTime;
         var workRoot = FlowParameters.WorkLocation(flow, parameters);
 
+        // A read of the whole scope keeps its watermark under the scope's key once it completes, so a key the ledger cannot
+        // keep (a parameter given many values, say) refuses the run here, before a record is planned, not after they went out.
+        if (request.Selection.CoversScope && flow.Change.UseSourceVersions
+            && Planner.ScopeKey(parameters) is { Length: > OsduLedger.MaxWatermarkScopeLength } key)
+        {
+            throw new DeliveryException(OsduLedger.WatermarkScopeTooLong(key.Length));
+        }
+
         var existing = request.SubmissionId is { } named
             ? await _ledger.GetSubmissionAsync(named, ct).ConfigureAwait(false)
                 ?? throw new DeliveryException($"Submission {named:D} is not in the ledger.")
@@ -288,7 +297,8 @@ public sealed class SubmissionIntake
                 FlowName = flow.Label,
                 MappingReference = resolved.Mapping.Reference,
                 RenderContext = resolved.Context.Canonical(),
-                ParametersJson = JsonSerializer.Serialize(parameters),
+                // As every recorded run value is: a parameter given several values as their array.
+                ParametersJson = RunParameters.ValuesToJson(parameters) ?? "{}",
                 Kind = SourceWindowDescription.Name(selection.Kind),
                 SourceConnection = flow.Source.Connection,
                 SourceObject = flow.Source.Record.Object,

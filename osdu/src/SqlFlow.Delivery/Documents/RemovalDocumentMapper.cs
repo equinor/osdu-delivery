@@ -164,7 +164,7 @@ internal static partial class RemovalMapper
     }
 
     private static IReadOnlyDictionary<string, string> MapValues(
-        Dictionary<string, string>? declared, IReadOnlyDictionary<string, FlowParameter> parameters, string path, string source)
+        Dictionary<string, RunValueYaml?>? declared, IReadOnlyDictionary<string, FlowParameter> parameters, string path, string source)
     {
         var values = new Dictionary<string, string>(StringComparer.Ordinal);
         foreach (var (name, value) in declared ?? [])
@@ -180,13 +180,17 @@ internal static partial class RemovalMapper
                     $"{source}: {path}.{PartitionNames.RunValue} is set; the partition is the run's, never a value of the delivery flow. Remove it.");
             }
 
-            if (value is null)
+            if (value is null || value.Items.Count == 0)
             {
-                throw new FlowValidationException($"{source}: {path}.{name} has no value; give the delivery flow's parameter a value, or remove it.");
+                throw new FlowValidationException($"{source}: {path}.{name} has no value; give the delivery flow's parameter a value, or a list of values, or remove it.");
             }
 
-            CheckTokens(value, parameters, $"{path}.{name}", source);
-            values[name.Trim()] = value;
+            foreach (var item in value.Items)
+            {
+                CheckTokens(item, parameters, $"{path}.{name}", source);
+            }
+
+            values[name.Trim()] = value.Text;
         }
 
         return values;

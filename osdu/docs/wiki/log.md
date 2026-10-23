@@ -187,3 +187,21 @@ delivers. The guide carries the code (the custom template, both mappings, both f
 Pointed the pattern catalog's two rows, 0019 and 0023 at it, and the `$parent`, `$child`, templates and writing-a-mapping
 pages at the guide. The MCP server's instructions name the guide beside the mapping tools, and its templates tool says a
 template's detail lists its children. Indexed the page under a new Patterns heading.
+
+## [2026-10-23] ingest | Several values of a scope parameter, decision 0024
+
+Source: the change that lets a run give a scope parameter several values: SQLFlow's run values
+(`sqlflow/src/SqlFlow.Core/Runs/RunValueList.cs`, `RunValuesJsonConverter.cs`, `RunParameters.cs`, the schedule's
+`values` in `sqlflow/src/SqlFlow.Yaml/YamlRunValues.cs`, the GUI's `RunValue`), and the module's use of them: which
+parameters take several (`osdu/src/SqlFlow.Delivery/Documents/MappingCatalog.cs`, `DeliveryRunPayload.cs`), the `IN` read
+(`osdu/src/SqlFlow.Delivery/Source/IngestionSql.cs`), the watermark guard (`Engine/Intake/SubmissionIntake.cs`), the
+removal's comparison (`Ledger/SqlServerLedgerBulk.Removal.cs`), the scope field
+(`osdu/gui/src/features/delivery/ScopeParameterFields.tsx`), and the reference pages it changed ([several values of a
+scope parameter](../reference/flow/delivery.md#several-values-of-a-scope-parameter), [removal](../reference/flow/removal.md#what-a-run-finds)).
+Discussed with the human: of keeping one value per run, dropping the scope, and taking several values, the last, made in
+SQLFlow as a general improvement and extended by the module.
+
+Added [0024](decisions/0024-scope-value-lists.md): why the list travels as JSON array text in the map every kind reads,
+why only a scope parameter takes one, why the set is one scope with one watermark and per-value watermarks were rejected,
+why the work root joins the values and a payload root refuses them, why a removal compares by subset rather than by
+equality or membership, and why `--set` repeated gives a list. Indexed 0024.

@@ -33,6 +33,8 @@ public sealed class DeliveryDocumentLoader
         // scalar keeps the type YAML reads it as, so Count: 5 is a number and Count: "5" is text.
         .WithAttemptingUnquotedStringTypeDeserialization()
         .WithDuplicateKeyChecking()
+        // A run value keeps the text its scalar is written with, and a sequence of them is a list (RunValueYaml).
+        .WithTypeConverter(new RunValueYamlConverter())
         .Build();
 
     /// <summary>Loads a delivery flow document as a source: every interface it declares, or the one its single form is.</summary>

@@ -13,6 +13,7 @@ import { DetailPair } from "@/components/DetailPair";
 import { IdChip } from "@/components/IdChip";
 import { RelativeTime } from "@/components/RelativeTime";
 import { TruncatedText } from "@/components/TruncatedText";
+import { runValueAssignment } from "@/lib/runValues";
 import {
   deliveryRecordRoute,
   type DeliveryPreviewAction,
@@ -305,7 +306,7 @@ export function RecordPreviewView({ preview }: { preview: DeliveryRecordPreview 
           <p data-testid="preview-reason">{preview.reason}</p>
           <p className="text-[12px] text-muted-foreground">
             {`Asked for ${askedText}`}
-            {values.length > 0 ? `, with ${values.map(([name, value]) => `${name}=${value}`).join(", ")}` : ""}
+            {values.length > 0 ? `, with ${values.map(([name, value]) => runValueAssignment(name, value)).join(", ")}` : ""}
             {asked.keyColumns.length > 0 ? `. The records are keyed by ${asked.keyColumns.join(", ")}.` : "."}
           </p>
           {asked.passedOverWhy.length > 0 && (
@@ -411,7 +412,7 @@ export function RecordPreviewView({ preview }: { preview: DeliveryRecordPreview 
           </DetailPair>
           {values.length > 0 && (
             <DetailPair label="Scope">
-              <span className="font-mono text-[12px]">{values.map(([name, value]) => `${name}=${value}`).join(", ")}</span>
+              <span className="font-mono text-[12px]">{values.map(([name, value]) => runValueAssignment(name, value)).join(", ")}</span>
             </DetailPair>
           )}
         </div>

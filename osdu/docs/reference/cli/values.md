@@ -74,7 +74,7 @@ sqlflow values <flow.yaml> [--interface <name>] [--partition <id>] [--target <os
 | `--target <osdu.path>` | repeatable | every entry of the mapping | A property to check, as a template path (`osdu.data.FacilityName`, `osdu.data.Curves[].CurveUnit`), or a group (`osdu.data.VerticalMeasurement`) for everything it holds. It checks every entry that fills the property, something inside it, or a value holding it, and nothing else, so the platform is asked nothing for another property. Repeat it for more. |
 | `--interface <name>` | string | every interface | Check one interface of a source. A source is otherwise checked one interface at a time. `--target` needs it on a source with several interfaces: `ERROR  a variable is one of an interface's mapping; name the interface with --interface (<names>).` |
 | `--partition <id>` | string | as a run settles it | The partition to check a flow that works in partitions in, settled as `sqlflow check` settles it. |
-| `--set name=value` | repeatable | the declared defaults | Values for the flow's own parameters. They fill the scope the rows are read from, as a run's values do. |
+| `--set name=value` | repeatable | the declared defaults | Values for the flow's own parameters. They fill the scope the rows are read from, as a run's values do; a name set more than once reads the rows of each of its values. |
 | `--max-rows <n>` | whole number | `10000` | The rows to read, in the order a run reads them. `0` reads the whole scope. |
 | `--samples <n>` | whole number | `20` | Example records each finding names, at most 500. |
 | `--skip <n>` | whole number | `0` | Example records of each finding passed over before the samples are taken: the next page of examples. |

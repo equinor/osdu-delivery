@@ -150,6 +150,36 @@ public static class DeliveryOperations
             throw new SqlFlowException($"{string.Join(", ", named)} do(es) not apply to '{flowType}' flows; {instead}");
         }
     }
+
+    /// <summary>
+    /// Refuses a run value given several values (a <see cref="RunValueList"/>) that the kind cannot apply: the partition for
+    /// every kind, since a run acts in one partition, and every parameter of a kind whose parameters each fill a query or a
+    /// location. A delivery flow's parameters that its record scope binds take several (<paramref name="scopeTakesSeveral"/>);
+    /// which those are is the flow's to say, so its run settles the rest (Documents.FlowParameters.Resolve).
+    /// </summary>
+    public static void RefuseSeveralValues(RunParameters parameters, string flowType, bool scopeTakesSeveral)
+    {
+        ArgumentNullException.ThrowIfNull(parameters);
+        foreach (var (name, value) in parameters.Values)
+        {
+            if (!RunValueList.IsList(value))
+            {
+                continue;
+            }
+
+            var count = RunValueList.Items(value).Count;
+            if (string.Equals(name, PartitionNames.RunValue, StringComparison.Ordinal))
+            {
+                throw new SqlFlowException($"{PartitionNames.RunValue} is given {count} values; a run acts in one partition.");
+            }
+
+            if (!scopeTakesSeveral)
+            {
+                throw new SqlFlowException(
+                    $"Parameter '{name}' is given {count} values; a parameter of '{flowType}' flows takes one, since it fills a query or a location.");
+            }
+        }
+    }
 }
 
 /// <summary>

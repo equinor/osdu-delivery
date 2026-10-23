@@ -9,7 +9,8 @@ import { SearchInput } from "@/components/SearchInput";
 import type { TriggerBodyContribution, TriggerFieldsProps } from "@/modules/registry";
 import { inventoryApi, type InventoryFlow, type InventoryParameter } from "../../../api/inventories";
 import { useActivePartition } from "../activePartition";
-import { parseValues } from "../runValues";
+import type { RunValue } from "@/api/types";
+import { parseValues, valuesToFields, valuesToLines } from "../runValues";
 import { kindEntity } from "../assertions/assertionFormat";
 import { inventoriesPayload } from "./inventoryFormat";
 
@@ -98,10 +99,10 @@ export function InventoryTriggerFields({ pipelineId, initialValues, initialPaylo
   });
   const flow = board.data;
   const [fields, setFields] = useState<Record<string, string>>(
-    () => Object.fromEntries(Object.entries(initialValues).filter(([name]) => name !== PARTITION)),
+    () => valuesToFields(initialValues, PARTITION),
   );
   const [valuesText, setValuesText] = useState(
-    () => Object.entries(initialValues).filter(([name]) => name !== PARTITION).map(([name, value]) => `${name}=${value}`).join("\n"),
+    () => valuesToLines(initialValues, PARTITION),
   );
   const [picked, setPicked] = useState<ReadonlySet<string>>(() => new Set(stringsOf(initialPayload?.[OWNED_KEY])));
   const [filter, setFilter] = useState("");
@@ -127,7 +128,7 @@ export function InventoryTriggerFields({ pipelineId, initialValues, initialPaylo
       ?? partitionError
       ?? ([...picked].some((name) => !INVENTORY_NAME.test(name)) ? "An inventory's name is a letter or digit, then letters, digits, '.', '_' and '-'." : null)
       ?? (missing.length > 0 ? `The flow declares no inventory named ${missing.join(", ")}; clear ${missing.length === 1 ? "it" : "them"} to run.` : null);
-    const values: Record<string, string> = { ...parsed.values };
+    const values: Record<string, RunValue> = { ...parsed.values };
     if (partition !== null) {
       values[PARTITION] = partition;
     }

@@ -326,7 +326,12 @@ partitions is read in the title bar's partition.
   **Download JSON**.
 
 A parameter the flow's `source.record.scope` binds to a column lists the values that column holds, with their row counts,
-wherever a scope is given values (the Preview tab, the value check, the trigger dialog).
+wherever a scope is given values (the Preview tab, the value check, the trigger dialog), and takes several: a value picked
+from the list, or typed and added with Enter, joins the field, picking it again drops it, and Backspace in an empty field
+drops the last. The value being typed counts as one of them as it stands. A form shows every value picked; the value
+check's line shows the first and how many more, each named on hover. A value the column holds no row of is marked once
+the list closes. The run reads the rows holding any of the values
+([several values of a scope parameter](../flow/delivery.md#several-values-of-a-scope-parameter)).
 
 ### When the title bar's partition is not the flow's
 

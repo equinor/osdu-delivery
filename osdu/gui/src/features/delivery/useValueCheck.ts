@@ -2,7 +2,7 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useRef, use
 import { useMutation, useQueries, useQuery } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { isApiError } from "@/api/client";
-import type { ComputeTask } from "@/api/types";
+import type { ComputeTask, RunValue } from "@/api/types";
 import { useAuth } from "@/auth/AuthContext";
 import {
   deliveryApi,
@@ -32,6 +32,7 @@ import {
   within,
   type OutcomeKey,
 } from "./valueCheck";
+import { missingParameters, scopeValuesToSend, type ScopeFieldValues } from "./scopeValues";
 
 /** Which variables the tree narrows to after a check: any that fails (an assertion included), or those failing one way. */
 export type FailingFilter = "any" | "held" | "invalid" | "empty" | "asserted";
@@ -52,7 +53,7 @@ export interface CheckMeta {
   /** The variables it was asked for; null for every variable of the mapping. */
   targets: string[] | null;
   rows: DeliveryValueCheckRows;
-  values: Record<string, string>;
+  values: Record<string, RunValue>;
   maxRows: number;
   cacheVersion: string | null;
   notes: string[];
@@ -80,7 +81,7 @@ interface PendingTask {
   targets: string[] | null;
   /** For the next page of one finding: the variable, and the finding's key. */
   page: { target: string; finding: string } | null;
-  values: Record<string, string>;
+  values: Record<string, RunValue>;
   maxRows: number;
 }
 
@@ -201,8 +202,8 @@ export interface ValueCheckSession {
   /** The scope's parameters, the values given, and giving one. */
   parameters: DeliveryParameter[];
   keyColumns: string[];
-  values: Record<string, string>;
-  setValue: (name: string, value: string) => void;
+  values: ScopeFieldValues;
+  setValue: (name: string, value: RunValue) => void;
   /** The rows a check reads; 0 for the whole scope. */
   maxRows: number;
   setMaxRows: (rows: number) => void;
@@ -252,12 +253,6 @@ export function useValueCheckContext(): ValueCheckSession | null {
   return useContext(ValueCheckContext);
 }
 
-function trimmed(parameters: DeliveryParameter[], values: Record<string, string>): Record<string, string> {
-  return Object.fromEntries(parameters
-    .map((parameter) => [parameter.name, (values[parameter.name] ?? "").trim()] as const)
-    .filter(([, value]) => value !== ""));
-}
-
 /**
  * The value check of one mapping document: the flows that render with it in the title bar's partition (a check reads a
  * flow's rows), the scope's values and the row budget, the checks queued on nodes and polled to their end, and what they
@@ -296,7 +291,7 @@ export function useValueCheckSession(mappingId: string, reference: string): Valu
   const parameters = useMemo(() => described?.parameters ?? [], [described]);
   const keyColumns = described?.keyColumns ?? [];
 
-  const [values, setValues] = useState<Record<string, string>>({});
+  const [values, setValues] = useState<ScopeFieldValues>({});
   const [maxRows, setMaxRows] = useState(DEFAULT_ROW_BUDGET);
   const [filter, setFilter] = useState<FailingFilter | null>(null);
   const [focus, setFocus] = useState<{ path: string; nonce: number } | null>(null);
@@ -364,7 +359,7 @@ export function useValueCheckSession(mappingId: string, reference: string): Valu
   });
 
   const { mutate } = queue;
-  const missing = parameters.filter((p) => p.required && (p.default === null || p.default === undefined) && (values[p.name] ?? "").trim() === "");
+  const missing = missingParameters(parameters, scopeValuesToSend(parameters, values));
   let blocked: string | null = null;
   if (!canOperate) {
     blocked = "A check runs on a node, which takes a signed-in session.";
@@ -390,7 +385,7 @@ export function useValueCheckSession(mappingId: string, reference: string): Valu
       flow,
       targets,
       page: null,
-      values: trimmed(parameters, values),
+      values: scopeValuesToSend(parameters, values),
       maxRows,
       samples: targets === null ? SAMPLES_ALL : SAMPLES_ONE,
       skipSamples: 0,

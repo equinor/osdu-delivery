@@ -6,6 +6,7 @@
 // here, and a page tests it with `=== undefined` or `??`, never `=== null`.
 
 import { get, post } from "@/api/client";
+import type { RunValue } from "@/api/types";
 import { flowPath, type DeliveryFlowScope } from "./delivery";
 
 /** Where a deletion stands: waiting for an operator's approval, waiting to be taken out, or done. */
@@ -149,7 +150,7 @@ export interface RemovalEntry {
   flow: string;
   interface?: string;
   /** The delivery flow's parameter values it compares under. */
-  values: Record<string, string>;
+  values: Record<string, RunValue>;
   keepReferenced: boolean;
   /** The source's current, complete key set. */
   keys?: RemovalSource;

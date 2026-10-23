@@ -124,6 +124,10 @@ other packages adopt the same contract.
   why the link back to a custom record is a `$child` node the canonical mapping writes in an open property, why the child
   is looked up rather than assumed, why it never holds its parent, and how the ledger finds the records a landing child
   links.
+- [0024: a scope parameter takes several values in one run, the set is its scope, and SQLFlow carries the list](decisions/0024-scope-value-lists.md) -
+  why a run value may be a list SQLFlow carries as JSON array text, why only a scope parameter takes one, why the set is
+  one scope with one watermark, why a removal compares a record whose values all lie in its own, and why `--set`
+  repeated gives a list.
 
 ## Coverage
 

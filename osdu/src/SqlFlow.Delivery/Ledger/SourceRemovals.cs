@@ -351,8 +351,9 @@ public sealed record RemovalComparison
     public DateTime? SourceReadUtc { get; init; }
 
     /// <summary>
-    /// The scope the comparison covers: the delivery flow's parameter values its records were planned under, by parameter, which
-    /// a record's last submission must carry; empty for a flow whose records carry no scope.
+    /// The scope the comparison covers: the delivery flow's parameter values its records were planned under, by parameter, each
+    /// one value or a list (<see cref="SqlFlow.Core.Runs.RunValueList"/>). A record is compared when its last submission
+    /// carried every one of these parameters with values all among them; empty for a flow whose records carry no scope.
     /// </summary>
     public IReadOnlyDictionary<string, string> Scope { get; init; } = new Dictionary<string, string>(StringComparer.Ordinal);
 

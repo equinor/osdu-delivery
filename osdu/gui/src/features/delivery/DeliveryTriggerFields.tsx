@@ -6,12 +6,14 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
+import type { RunValue } from "@/api/types";
 import { useAuth } from "@/auth/AuthContext";
 import type { TriggerBodyContribution, TriggerFieldsProps } from "@/modules/registry";
 import { deliveryApi, type DeliveryFlowScope, type DeliveryParameter } from "../../api/delivery";
 import { useActivePartition } from "./activePartition";
-import { lines, parseValues } from "./runValues";
+import { lines, parseValues, singleValue, valuesToLines } from "./runValues";
 import { ScopeParameterFields } from "./ScopeParameterFields";
+import { missingParameters, scopeValuesToSend, type ScopeFieldValues } from "./scopeValues";
 import { PLANNED_PER_PASS } from "./ReleaseDialog";
 import { counted } from "./assertions/assertionFormat";
 
@@ -174,18 +176,12 @@ function isRedeliverScope(value: unknown): value is RedeliverScope {
 
 /**
  * The values of a flow's parameter fields as a run takes them: each given value trimmed, an empty one left out so the
- * parameter's default applies, and a required parameter without a default and without a value the error.
+ * parameter's default applies, several values of a parameter the scope reads as their list, and a required parameter
+ * without a default and without a value the error.
  */
-function fieldsToValues(parameters: DeliveryParameter[], fields: Record<string, string>): { values: Record<string, string>; error: string | null } {
-  const values: Record<string, string> = {};
-  for (const parameter of parameters) {
-    const value = (fields[parameter.name] ?? "").trim();
-    if (value !== "") {
-      values[parameter.name] = value;
-    }
-  }
-
-  const missing = parameters.filter((p) => p.required && (p.default === null || p.default === undefined) && values[p.name] === undefined);
+function fieldsToValues(parameters: DeliveryParameter[], fields: ScopeFieldValues): { values: Record<string, RunValue>; error: string | null } {
+  const values = scopeValuesToSend(parameters, fields);
+  const missing = missingParameters(parameters, values);
   return {
     values,
     error: missing.length === 0
@@ -209,13 +205,11 @@ export function DeliveryTriggerFields({ flowKind, pipelineId, operation, initial
   // operator was looking at. A run being repeated ran in a partition of its own; it runs in the title bar's now, and the
   // fields say so.
   const [active] = useActivePartition();
-  const [ranIn] = useState<string | null>(() => initialValues[PARTITION] ?? null);
-  const [valuesText, setValuesText] = useState(
-    () => Object.entries(initialValues).filter(([name]) => name !== PARTITION).map(([name, value]) => `${name}=${value}`).join("\n"),
-  );
+  const [ranIn] = useState<string | null>(() => singleValue(initialValues, PARTITION));
+  const [valuesText, setValuesText] = useState(() => valuesToLines(initialValues, PARTITION));
   // A delivery flow's parameters are fields, each offering what the flow's scope reads it against; a run being repeated
   // opens with the values it was given.
-  const [fieldValues, setFieldValues] = useState<Record<string, string>>(
+  const [fieldValues, setFieldValues] = useState<ScopeFieldValues>(
     () => Object.fromEntries(Object.entries(initialValues).filter(([name]) => name !== PARTITION)),
   );
   const { hasScope } = useAuth();
@@ -351,7 +345,7 @@ export function DeliveryTriggerFields({ flowKind, pipelineId, operation, initial
       payload.types = [...pickedTypes].sort((a, b) => a.localeCompare(b));
     }
 
-    const values: Record<string, string> = { ...parsed.values };
+    const values: Record<string, RunValue> = { ...parsed.values };
     if (partition !== null) {
       values[PARTITION] = partition;
     }
@@ -458,7 +452,8 @@ export function DeliveryTriggerFields({ flowKind, pipelineId, operation, initial
             )}
           {declared.parameters.length > 0 && (
             <p className="text-xs text-muted-foreground">
-              The values fill the flow&apos;s record scope; a parameter the scope reads offers the values its column holds.
+              The values fill the flow&apos;s record scope; a parameter the scope reads offers the values its column holds, and
+              takes several to read the rows of each in one run.
             </p>
           )}
         </div>
@@ -475,7 +470,7 @@ export function DeliveryTriggerFields({ flowKind, pipelineId, operation, initial
             data-testid="trigger-values"
           />
           <p className="text-xs text-muted-foreground">
-            Values for the parameters the flow declares, one name=value per line.
+            Values for the parameters the flow declares, one name=value per line; a name on several lines takes each value.
           </p>
         </div>
       )}

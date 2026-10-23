@@ -88,7 +88,7 @@ export function ValueCheckBar({ session }: { session: ValueCheckSession }) {
               canRead={session.canOperate}
               prefix="value-check"
               layout="inline"
-              className="w-56"
+              className="w-64"
             />
             <Select value={String(session.maxRows)} onValueChange={(value) => session.setMaxRows(Number(value))}>
               <SelectTrigger size="sm" className="h-8 w-36 text-[12px]" aria-label="How many rows to read" data-testid="value-check-rows">

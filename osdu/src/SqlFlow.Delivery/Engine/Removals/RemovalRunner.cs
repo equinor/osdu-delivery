@@ -1,6 +1,7 @@
 using System.Globalization;
 using Microsoft.Extensions.Logging;
 using SqlFlow.Core;
+using SqlFlow.Core.Runs;
 using SqlFlow.Delivery.Documents;
 using SqlFlow.Delivery.Engine.Snapshots;
 using SqlFlow.Delivery.Http;
@@ -396,7 +397,8 @@ public sealed class RemovalRunner
 
     /// <summary>
     /// The values of the delivery flow's parameters the removal compares under: its <c>values</c>, each <c>{name}</c> token filled
-    /// from this flow's values and <c>{partition}</c> from the run's partition, then the delivery flow's defaults.
+    /// from this flow's values and <c>{partition}</c> from the run's partition (in every value of a list), then the delivery
+    /// flow's defaults.
     /// </summary>
     private IReadOnlyDictionary<string, string> DeliveryValues(RemovalEntry entry, FlowDefinition delivery)
     {
@@ -410,7 +412,9 @@ public sealed class RemovalRunner
                     $"{entry.Path}.values.{name} names no parameter of delivery flow '{delivery.Label}'; it declares {(delivery.Parameters.Count == 0 ? "none" : string.Join(", ", delivery.Parameters.Keys))}.");
             }
 
-            supplied[name] = FlowParameters.Substitute(value, tokens);
+            supplied[name] = RunValueList.IsList(value)
+                ? RunValueList.Of(RunValueList.Items(value).Select(item => FlowParameters.Substitute(item, tokens)))
+                : FlowParameters.Substitute(value, tokens);
         }
 
         try

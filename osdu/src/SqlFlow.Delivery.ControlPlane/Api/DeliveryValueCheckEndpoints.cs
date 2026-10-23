@@ -42,7 +42,7 @@ public sealed record DeliveryMappingFlowDto(
 /// </summary>
 public sealed record DeliveryValueCheckRequest(
     IReadOnlyList<string>? Targets,
-    IReadOnlyDictionary<string, string>? Values,
+    [property: System.Text.Json.Serialization.JsonConverter(typeof(SqlFlow.Core.Runs.RunValuesJsonConverter))] IReadOnlyDictionary<string, string>? Values,
     long? MaxRows,
     int? Samples,
     long? SkipSamples,

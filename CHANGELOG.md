@@ -9,6 +9,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **One run delivers several values of a scope parameter.** Give a parameter `source.record.scope` binds a list (several
+  picked in its field in the GUI, `--set` repeated on the CLI, an array in a trigger, a sequence in a schedule's or a
+  removal's `values`) and the run reads the rows holding any of them, as one scope with one watermark
+  ([several values of a scope parameter](osdu/docs/reference/flow/delivery.md#several-values-of-a-scope-parameter)).
+
 - **A canonical record links the custom records that stand beside it with `$child`.** A mapping of a kind other templates
   are linked to writes `$child: <kind>` on a property its template has room for, a property of `ExtensionProperties` or
   a tag on a canonical template, and each record links its child of that kind, the record with the same minted id, once
@@ -116,6 +121,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   ([The OSDU menu](osdu/docs/reference/concepts/gui.md#the-osdu-menu)).
 
 ### Changed
+
+- **`--set` repeated for one name gives it a list.** `--set logSource=A --set logSource=B` used to keep `B`; it now gives
+  `logSource` both values, which only a delivery flow's scope parameter takes, and any other parameter refuses. Give a name
+  once to give it one value ([sqlflow run](osdu/docs/reference/cli/run.md#the-kind-arguments)).
 
 - **A source's Interfaces table fits its panel instead of scrolling sideways.** Why an interface goes by its route is on
   the route's hover, with a copy beside it; the kind takes the width the other columns leave, clipped from the left with

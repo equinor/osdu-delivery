@@ -4,6 +4,7 @@ using System.Text.Json.Nodes;
 using System.Text.Json.Serialization;
 using SqlFlow.Core;
 using SqlFlow.Core.Compute;
+using SqlFlow.Core.Runs;
 using SqlFlow.Delivery.Engine.Protocols;
 using SqlFlow.Delivery.Http;
 using SqlFlow.Delivery.Identity;
@@ -106,24 +107,20 @@ public abstract class DeliveryOperation : IComputeOperation
         => payload.Argument("actor") ?? "unknown";
 
     /// <summary>
-    /// The flow parameter values the task carries in <c>values</c> (a JSON object of strings), which fill the record scope's
-    /// predicate when the operation reads the ingestion tables; none when it carries none.
+    /// The flow parameter values the task carries in <c>values</c> (a JSON object of strings, and of arrays of strings for a
+    /// parameter given several), which fill the record scope's predicate when the operation reads the ingestion tables; none
+    /// when it carries none.
     /// </summary>
     protected static IReadOnlyDictionary<string, string> Values(ComputeTaskPayload payload)
     {
         ArgumentNullException.ThrowIfNull(payload);
-        if (payload.Argument("values") is not { } json)
-        {
-            return new Dictionary<string, string>(StringComparer.Ordinal);
-        }
-
         try
         {
-            return JsonSerializer.Deserialize<Dictionary<string, string>>(json) ?? new Dictionary<string, string>(StringComparer.Ordinal);
+            return RunParameters.ValuesFromJson(payload.Argument("values"));
         }
-        catch (JsonException ex)
+        catch (SqlFlowException ex)
         {
-            throw new SqlFlowException($"The task's 'values' argument is not a JSON object of strings: {ex.Message}", ex);
+            throw new SqlFlowException($"The task's 'values' argument is not valid: {ex.Message}", ex);
         }
     }
 

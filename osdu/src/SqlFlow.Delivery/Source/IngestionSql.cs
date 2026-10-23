@@ -23,6 +23,15 @@ public sealed record IngestionDataset(
     string? Deleted,
     int MaxRowsPerRecord);
 
+/// <summary>One column of the scope predicate as the SQL builders see it.</summary>
+/// <param name="Column">The record table's column.</param>
+/// <param name="Parameter">The run parameter whose value fills it.</param>
+/// <param name="Values">
+/// How many values the run gives the parameter: one compares the column with it, several select the rows holding any of
+/// them (<c>IN</c>). A read that fills no scope (the listing of the values a scope can be given) counts one.
+/// </param>
+public sealed record IngestionScope(string Column, string Parameter, int Values = 1);
+
 /// <summary>
 /// A flow's source as the SQL builders see it, once the flow's declarations have been checked against the tables: the record
 /// table with its key columns and their SQL types, the system columns the tables actually carry, the scope predicate and the
@@ -48,8 +57,8 @@ public sealed record IngestionLayout
     /// <summary>The record table's soft-delete column, when it carries one.</summary>
     public string? Deleted { get; init; }
 
-    /// <summary>The scope predicate: record column to the run parameter that fills it, in declaration order.</summary>
-    public IReadOnlyList<KeyValuePair<string, string>> Scope { get; init; } = [];
+    /// <summary>The scope predicate: each record column with the run parameter that fills it, in declaration order.</summary>
+    public IReadOnlyList<IngestionScope> Scope { get; init; } = [];
 
     /// <summary>The child datasets, in name order.</summary>
     public IReadOnlyList<IngestionDataset> Datasets { get; init; } = [];
@@ -93,7 +102,10 @@ public static class IngestionSql
     /// <summary>The prefix of the parameters holding a key range's inclusive upper bound.</summary>
     public const string ToPrefix = "@t";
 
-    /// <summary>The prefix of the parameters holding the scope values.</summary>
+    /// <summary>
+    /// The prefix of the parameters holding the scope values: <c>@scope0</c> holds the first column's one value, and
+    /// <c>@scope0_0</c>, <c>@scope0_1</c> and on each of its values when the run gives it several.
+    /// </summary>
     public const string ScopePrefix = "@scope";
 
     /// <summary>The parameter naming the table whose columns are read.</summary>
@@ -460,7 +472,20 @@ public static class IngestionSql
     }
 
     private static string ScopePredicate(IngestionLayout layout, string alias)
-        => string.Join(" AND ", layout.Scope.Select((s, i) => $"{alias}.{SourceObjectName.Quote(s.Key)} = {ScopePrefix}{i.ToString(CultureInfo.InvariantCulture)}"));
+        => string.Join(" AND ", layout.Scope.Select((s, i) =>
+        {
+            var column = $"{alias}.{SourceObjectName.Quote(s.Column)}";
+            return s.Values == 1
+                ? $"{column} = {ScopeParameter(i)}"
+                : $"{column} IN ({string.Join(", ", Enumerable.Range(0, s.Values).Select(j => ScopeParameter(i, j)))})";
+        }));
+
+    /// <summary>The parameter holding the one value of the scope's <paramref name="column"/>th column.</summary>
+    public static string ScopeParameter(int column) => ScopePrefix + column.ToString(CultureInfo.InvariantCulture);
+
+    /// <summary>The parameter holding the <paramref name="value"/>th of the values the run gives the scope's <paramref name="column"/>th column.</summary>
+    public static string ScopeParameter(int column, int value)
+        => ScopePrefix + column.ToString(CultureInfo.InvariantCulture) + "_" + value.ToString(CultureInfo.InvariantCulture);
 
     /// <summary>A row is above the value the parameters hold, comparing part by part in the order the read pages in.</summary>
     private static string Above(IngestionLayout layout, string alias, string prefix) => Compare(layout.Order, alias, prefix, ">");

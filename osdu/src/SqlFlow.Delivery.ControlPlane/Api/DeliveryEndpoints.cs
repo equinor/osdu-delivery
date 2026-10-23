@@ -83,7 +83,7 @@ public sealed record DeliveryParameterDto(string Name, bool Required, string? De
 /// A preview of one record of a flow: the record's key, or none for the scope's first record, and the flow parameter values
 /// the scope is read with (the declared defaults fill what is not given).
 /// </summary>
-public sealed record DeliveryPreviewRequest(string? Key, IReadOnlyDictionary<string, string>? Values);
+public sealed record DeliveryPreviewRequest(string? Key, [property: System.Text.Json.Serialization.JsonConverter(typeof(SqlFlow.Core.Runs.RunValuesJsonConverter))] IReadOnlyDictionary<string, string>? Values);
 
 /// <summary>
 /// A read of one OSDU record through a flow's route and credentials, by its id (a version or a trailing colon is dropped),
@@ -2595,18 +2595,13 @@ public static class DeliveryEndpoints
     /// <summary>The flow parameter values a submission was opened with; none when it recorded none or is unknown.</summary>
     internal static IReadOnlyDictionary<string, string> SubmissionValues(string? parametersJson)
     {
-        if (string.IsNullOrWhiteSpace(parametersJson))
-        {
-            return new Dictionary<string, string>(StringComparer.Ordinal);
-        }
-
         try
         {
-            return System.Text.Json.JsonSerializer.Deserialize<Dictionary<string, string>>(parametersJson) ?? new Dictionary<string, string>(StringComparer.Ordinal);
+            return RunParameters.ValuesFromJson(parametersJson);
         }
-        catch (System.Text.Json.JsonException ex)
+        catch (SqlFlowException ex)
         {
-            throw new DeliveryException($"The submission's recorded parameters are not valid JSON: {ex.Message}", ex);
+            throw new DeliveryException($"The submission's recorded parameters are not valid: {ex.Message}", ex);
         }
     }
 
@@ -2809,7 +2804,7 @@ public static class DeliveryEndpoints
 
         if (values.Count > 0)
         {
-            var json = JsonSerializer.Serialize(values);
+            var json = RunParameters.ValuesToJson(values)!;
             if (json.Length > ComputeTaskPayload.MaxArgumentLength)
             {
                 return Invalid($"The parameter values are {json.Length} characters as JSON; a preview carries at most {ComputeTaskPayload.MaxArgumentLength}.");

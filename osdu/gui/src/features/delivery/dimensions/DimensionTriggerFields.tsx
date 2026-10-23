@@ -9,7 +9,8 @@ import { SearchInput } from "@/components/SearchInput";
 import type { TriggerBodyContribution, TriggerFieldsProps } from "@/modules/registry";
 import { deliveryApi, type DeliveryDimensionFlow, type DeliveryParameter } from "../../../api/delivery";
 import { useActivePartition } from "../activePartition";
-import { parseValues } from "../runValues";
+import type { RunValue } from "@/api/types";
+import { parseValues, valuesToFields, valuesToLines } from "../runValues";
 import { counted, kindEntity } from "../assertions/assertionFormat";
 import { dimensionsPayload } from "./dimensionFormat";
 
@@ -95,10 +96,10 @@ export function DimensionTriggerFields({ pipelineId, initialValues, initialPaylo
   });
   const flow = board.data?.flows[0];
   const [fields, setFields] = useState<Record<string, string>>(
-    () => Object.fromEntries(Object.entries(initialValues).filter(([name]) => name !== PARTITION)),
+    () => valuesToFields(initialValues, PARTITION),
   );
   const [valuesText, setValuesText] = useState(
-    () => Object.entries(initialValues).filter(([name]) => name !== PARTITION).map(([name, value]) => `${name}=${value}`).join("\n"),
+    () => valuesToLines(initialValues, PARTITION),
   );
   const [picked, setPicked] = useState<ReadonlySet<string>>(() => new Set(stringsOf(initialPayload?.[OWNED_KEY])));
   const [filter, setFilter] = useState("");
@@ -126,7 +127,7 @@ export function DimensionTriggerFields({ pipelineId, initialValues, initialPaylo
       ?? partitionError
       ?? ([...picked].some((name) => !DIMENSION_NAME.test(name)) ? "A dimension's name is a letter or digit, then letters, digits, '.', '_' and '-'." : null)
       ?? (missing.length > 0 ? `The flow declares no dimension named ${missing.join(", ")}; clear ${missing.length === 1 ? "it" : "them"} to build.` : null);
-    const values: Record<string, string> = { ...parsed.values };
+    const values: Record<string, RunValue> = { ...parsed.values };
     if (partition !== null) {
       values[PARTITION] = partition;
     }

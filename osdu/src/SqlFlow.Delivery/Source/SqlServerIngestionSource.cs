@@ -6,6 +6,7 @@ using Microsoft.Data.SqlClient;
 using Microsoft.Extensions.Logging;
 using SqlFlow.Catalog;
 using SqlFlow.Core;
+using SqlFlow.Core.Runs;
 using SqlFlow.Core.Secrets;
 using SqlFlow.Delivery.Documents;
 using SqlFlow.Delivery.Model;
@@ -301,7 +302,7 @@ public sealed class SqlServerIngestionSource : IIngestionSource
         var record = _tables[SourceDatasets.Record];
         var where = KeyPaths.Where(_flow);
         var listed = new List<ScopeParameterValues>(layout.Scope.Count);
-        foreach (var (column, parameter) in layout.Scope)
+        foreach (var (column, parameter, _) in layout.Scope)
         {
             var declared = Column(record, layout.Record, column, $"{where}: {_keys.Name("source.record.scope")} binds parameter '{parameter}' to column '{column}'");
             await using var command = Command(connection, IngestionSql.ScopeValues(layout, declared.Name));
@@ -482,7 +483,9 @@ public sealed class SqlServerIngestionSource : IIngestionSource
             PrimaryKey = primaryKey,
             Updated = updated.Name,
             Deleted = deleted?.Name,
-            Scope = source.Record.Scope.Select(s => new KeyValuePair<string, string>(s.Key, s.Value)).ToList(),
+            Scope = source.Record.Scope
+                .Select(s => new IngestionScope(s.Key, s.Value, _values.TryGetValue(s.Value, out var given) ? RunValueList.Items(given).Count : 1))
+                .ToList(),
             Datasets = datasets,
         };
 
@@ -719,14 +722,30 @@ public sealed class SqlServerIngestionSource : IIngestionSource
         var record = _tables[SourceDatasets.Record];
         for (var i = 0; i < layout.Scope.Count; i++)
         {
-            var (column, parameter) = layout.Scope[i];
+            var (column, parameter, count) = layout.Scope[i];
             if (!_values.TryGetValue(parameter, out var value))
             {
                 throw new DeliveryException(
                     $"Flow '{_flow.Label}': {_keys.Name("source.record.scope")} binds column '{column}' to parameter '{parameter}', and this run supplies no value for it. Supply it with --set {parameter}=value or the run's values.");
             }
 
-            command.Parameters.Add(record[column].Parameter(IngestionSql.ScopePrefix + i.ToString(CultureInfo.InvariantCulture), value));
+            var items = RunValueList.Items(value);
+            if (items.Count != count)
+            {
+                throw new DeliveryException(
+                    $"Flow '{_flow.Label}': the read was laid out for {count} value(s) of parameter '{parameter}', and the run gives it {items.Count}.");
+            }
+
+            if (count == 1)
+            {
+                command.Parameters.Add(record[column].Parameter(IngestionSql.ScopeParameter(i), items[0]));
+                continue;
+            }
+
+            for (var j = 0; j < items.Count; j++)
+            {
+                command.Parameters.Add(record[column].Parameter(IngestionSql.ScopeParameter(i, j), items[j]));
+            }
         }
     }
 

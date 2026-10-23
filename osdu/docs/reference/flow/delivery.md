@@ -17,6 +17,8 @@ keywords:
   - reliability
   - fan-out
   - schedule values
+  - several values of a parameter
+  - scope parameter list
   - deliver to osdu
   - literal secret refused
   - credential header
@@ -232,12 +234,12 @@ where each record's files are.
 | `record.object` | string | required | The record table's three-part name, `[database].[schema].[table]` (`OsduData.silver.WellLog`). |
 | `record.key` | list | required | The key columns, in order: the ing flow's `load.keyColumns`. They must name the same columns, in the same order, as the mapping's `dataset.key`. |
 | `record.primaryKey` | string | none | The table's identity primary key (the ing flow's `target.identityColumn`, such as `RecId`). Required with `reliability.fanOut` above 0. See [The identity primary key](#the-identity-primary-key). |
-| `record.scope` | map | none | Column to parameter: each entry becomes a typed `[column] = @parameter` predicate, so a run reads only the rows of its parameter values. The value is bound, never substituted into SQL. |
+| `record.scope` | map | none | Column to parameter: each entry becomes a typed `[column] = @parameter` predicate, so a run reads only the rows of its parameter values. A parameter the run gives several values reads the rows holding any of them, `[column] IN (@p0, @p1, ...)` ([Several values of a scope parameter](#several-values-of-a-scope-parameter)). A value is bound, never substituted into SQL. |
 | `datasets.<name>.object` | string | required | A child table's three-part name. The mapping reads it under `<name>` (a `$forEach` over it, or `$dataset.<column>`). |
 | `datasets.<name>.join` | map | required | Child column to record key column. Every record key column must be joined. |
 | `datasets.<name>.orderBy` | list | none | The order of a record's child rows. |
 | `datasets.<name>.maxRowsPerRecord` | integer | 100000 | The most child rows one record may carry, 1 to 1000000. A record over it is held. |
-| `payloads.<name>.root` | string | required | The folder or storage prefix a record's files must sit under. Relative to the flow file; `{parameter}` tokens allowed. A `${...}` reference is refused: a location is not resolved from one. |
+| `payloads.<name>.root` | string | required | The folder or storage prefix a record's files must sit under. Relative to the flow file; `{parameter}` tokens allowed, each taking one value. A `${...}` reference is refused: a location is not resolved from one. |
 | `payloads.<name>.locationColumn` | string | none | The record column holding the record's folder, relative to `root` or absolute under it. Required when the route sends the payload. |
 | `payloads.<name>.pattern` | string | `*` | A file name glob under the record's folder, without a path. |
 | `payloads.<name>.hashColumn` | string | none | The record column holding the payload's content hash. Required unless `change.payloadDetect` is `lastModified`. |
@@ -252,7 +254,7 @@ where each record's files are.
 | `incremental.pageSize` | integer | 1000 | Records per page, 1 to 100000. |
 | `incremental.isolation` | `snapshot` \| `readCommitted` | `snapshot` | How a page's record rows and child rows see the database. `snapshot` reads them as one moment and needs `ALLOW_SNAPSHOT_ISOLATION ON`. |
 | `incremental.commandTimeoutSeconds` | integer | 0 | Seconds a read may run; 0 is bounded by the run's cancellation alone. |
-| `work` | string | required | Where the intake writes its work batches (the rendered documents the drains read back): a folder or storage prefix every node can write, relative to the flow file, with `{parameter}` tokens. A `${...}` reference is refused, as in a payload `root`. |
+| `work` | string | required | Where the intake writes its work batches (the rendered documents the drains read back): a folder or storage prefix every node can write, relative to the flow file, with `{parameter}` tokens. A parameter the run gives several values fills its token with them joined by `+` (`../.work/COMPOSITE+WIRELINE`). A `${...}` reference is refused, as in a payload `root`. |
 
 `updated` has to exist, named or left at its default. `deleted`, `inserted`, `fileName` and `rowNumber` named explicitly
 have to exist: a run (and `sqlflow check --connect`) is refused naming the key, the column and the table, so a misspelt
@@ -419,7 +421,9 @@ are what the catalog lists as the flow's credential references.
 
 ## Parameters
 
-A flow parameter is a run value supplied with `--set name=value`, a trigger's values or a schedule's `values`.
+A flow parameter is a run value supplied with `--set name=value`, a trigger's values or a schedule's `values`. A
+parameter `source.record.scope` binds may be given several values ([Several values of a scope
+parameter](#several-values-of-a-scope-parameter)); every other parameter takes one.
 
 | Key | Type | Default | Meaning |
 | --- | --- | --- | --- |
@@ -433,6 +437,34 @@ instead. A token or a scope naming an undeclared parameter is refused when the d
 undeclared one is refused when it starts. Each distinct set of values is a scope of its own, with its own watermark.
 
 Mapping parameters are different: they go under `render.parameters` ([render](#render)).
+
+### Several values of a scope parameter
+
+A run reads the rows of several values of a scope parameter at once when it is given a list of them: `--set` repeated
+on the CLI (`--set logSource=COMPOSITE --set logSource=WIRELINE`), an array in a trigger's values
+(`"values": { "logSource": ["COMPOSITE", "WIRELINE"] }`), a sequence in a schedule's `values`
+(`logSource: [COMPOSITE, WIRELINE]`), or several picked in the parameter's field in the GUI. The read selects the rows
+holding any of them, `[log_source] IN (@p0, @p1)`, each bound as a value of the column's own type, so one run plans and
+delivers what a run of each value would.
+
+- **The set is the scope.** The values are taken as a set, each once and in ordinal order, so the same values named in
+  another order are the same scope. A set keeps one watermark of its own, beside the watermark each single value keeps, and
+  its submissions record the set (`{"logSource":["COMPOSITE","WIRELINE"]}`), so a record's redelivery reads the scope it
+  was planned under. A list of one value is that value.
+- **Only a scope parameter takes several.** A list given to any other parameter is refused when the run starts:
+  `<file>: parameter 'region' is given 2 values, and takes one: only a parameter source.record.scope binds (logSource) takes
+  several.` So is a list for `partition` (`partition is given 2 values; a run acts in one partition.`), and a list of more
+  than 100 values or over 16,000 characters.
+- **Locations.** A list fills a `{parameter}` token in `source.work` with its values joined by `+`, since the work root
+  only keeps one run's batches apart from another's. A payload `root` takes one value, since a record's files sit under one
+  of them: `<file>: parameter 'logSource' is given 2 values, and source.payloads.curves.root is a location that takes one:
+  run one value at a time.` Name the record's folder in its `locationColumn` instead, and the root needs no token.
+- **The watermark's key.** A set whose scope key passes the 400 characters the ledger keeps a watermark under is refused
+  before anything is planned: `The parameter values of this run make a scope key of <n> characters; the ledger keeps a
+  watermark under at most 400. Shorten the flow's parameter values, or give a parameter fewer values at once.`
+
+A removal compares the records planned under a set when its own `values` name every value of the set
+([removal](removal.md#what-a-run-finds)).
 
 ## Partitions
 
@@ -554,7 +586,7 @@ the schedule. A delivery flow uses two more keys of it, which SQLFlow passes to 
 | Key | Meaning |
 | --- | --- |
 | `operation` | What every fire runs; `deliver` when left out. |
-| `values` | Run values every fire supplies: the flow's parameters, and `partition`. |
+| `values` | Run values every fire supplies: the flow's parameters, and `partition`. A parameter `source.record.scope` binds may take a sequence (`logSource: [COMPOSITE, WIRELINE]`), which every fire reads as one scope. |
 
 A fire supplies nothing on its own, so a flow with a required parameter gives the schedule a value for it, or every fired
 run fails with `parameter '<name>' is required`. The schedule's operation is checked against the operations below when

@@ -3002,6 +3002,8 @@
         "reliability",
         "fan-out",
         "schedule values",
+        "several values of a parameter",
+        "scope parameter list",
         "deliver to osdu",
         "literal secret refused",
         "credential header",
@@ -7407,7 +7409,8 @@
       "related": [
         "delivery-wiki-0013-inventory-flows",
         "delivery-wiki-0014-inventory-removals",
-        "delivery-wiki-0002-client-supplied-ids"
+        "delivery-wiki-0002-client-supplied-ids",
+        "delivery-wiki-0024-scope-value-lists"
       ],
       "sourceRefs": [
         "osdu/src/SqlFlow.Delivery/Documents/RemovalFlowKind.cs",
@@ -7451,6 +7454,41 @@
         "osdu/src/SqlFlow.Delivery/Ledger/OsduLedger.Children.cs",
         "osdu/src/SqlFlow.Delivery/Documents/DeliveryLineage.cs",
         "osdu/tests/SqlFlow.Delivery.Tests/ChildLedgerTests.cs"
+      ]
+    },
+    {
+      "id": "delivery-wiki-0024-scope-value-lists",
+      "corpus": "wiki",
+      "path": "decisions/0024-scope-value-lists.md",
+      "title": "Decision 0024: A scope parameter takes several values in one run, the set is its scope, and SQLFlow carries the list",
+      "type": "decision",
+      "summary": "Why a run value may be a list, carried by SQLFlow as JSON array text, why only a scope parameter takes one, and why the set is a scope of its own.",
+      "keywords": [
+        "several values",
+        "scope parameter",
+        "run value list",
+        "source.record.scope",
+        "watermark",
+        "removal scope",
+        "--set repeated",
+        "RunValueList"
+      ],
+      "related": [
+        "delivery-wiki-0022-removal-flows"
+      ],
+      "sourceRefs": [
+        "sqlflow/src/SqlFlow.Core/Runs/RunValueList.cs",
+        "sqlflow/src/SqlFlow.Core/Runs/RunValuesJsonConverter.cs",
+        "sqlflow/src/SqlFlow.Core/Runs/RunParameters.cs",
+        "sqlflow/src/SqlFlow.Yaml/YamlRunValues.cs",
+        "osdu/src/SqlFlow.Delivery/Documents/MappingCatalog.cs",
+        "osdu/src/SqlFlow.Delivery/Source/IngestionSql.cs",
+        "osdu/src/SqlFlow.Delivery/Source/SqlServerIngestionSource.cs",
+        "osdu/src/SqlFlow.Delivery/Engine/Intake/SubmissionIntake.cs",
+        "osdu/src/SqlFlow.Delivery/Engine/DeliveryRunPayload.cs",
+        "osdu/src/SqlFlow.Delivery/Ledger/SqlServerLedgerBulk.Removal.cs",
+        "osdu/gui/src/features/delivery/ScopeParameterFields.tsx",
+        "osdu/tests/SqlFlow.Delivery.Tests/ScopeValueListRunTests.cs"
       ]
     },
     {

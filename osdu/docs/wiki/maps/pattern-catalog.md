@@ -82,7 +82,7 @@ The examples use one estate throughout: a well database exported as files (`well
 | Every delivered record must point back at its file and row | Nothing to add: the file flow's `FileName_DW` and `RowNumber_DW` ride through to the ledger (`source.systemColumns` renames them; a renamed provenance column the table lacks is refused) | [delivery flow](../../reference/flow/delivery.md), [the ledger](../../reference/concepts/ledger.md) |
 | A record has child rows (a log's curves) | `source.datasets` with a `join` on the key, repeated in the mapping with `$forEach` | [delivery flow](../../reference/flow/delivery.md), [mapping values](../../reference/flow/mapping-values.md) |
 | A large table should page fast and spread over nodes | `source.record.primaryKey` (the `ing` flow's `identityColumn`), then `reliability.fanOut` | [delivery flow](../../reference/flow/delivery.md), [submissions](../../reference/concepts/submissions.md) |
-| One flow should serve several slices of one table (one log source each) | `parameters` plus `source.record.scope`, each run naming its value | [delivery flow](../../reference/flow/delivery.md) |
+| One flow should serve several slices of one table (one log source each) | `parameters` plus `source.record.scope`, each run naming its value, or several values to read their slices in one run ([0024](../decisions/0024-scope-value-lists.md)) | [delivery flow](../../reference/flow/delivery.md#several-values-of-a-scope-parameter) |
 
 ## Where a lookup belongs
 

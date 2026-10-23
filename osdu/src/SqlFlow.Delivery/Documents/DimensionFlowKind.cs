@@ -75,6 +75,7 @@ public sealed class DimensionFlowKind : IFlowDocumentKind
     public void ValidateParameters(RunParameters parameters)
     {
         ArgumentNullException.ThrowIfNull(parameters);
+        DeliveryOperations.RefuseSeveralValues(parameters, DimensionFlowDefinition.FlowTypeName, scopeTakesSeveral: false);
 
         // A full load, and the window an incremental load reads, are SQLFlow's own: a build takes them as SQLFlow's flows do.
         // Whether the flow loads incrementally, which a window needs, is the document's to say, and the run checks it.

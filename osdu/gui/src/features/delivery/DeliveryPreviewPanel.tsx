@@ -8,22 +8,24 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useAuth } from "@/auth/AuthContext";
-import { deliveryApi, type DeliveryParameter, type DeliveryRecordPreview } from "../../api/delivery";
+import { deliveryApi, type DeliveryRecordPreview } from "../../api/delivery";
 import { InterfacePicker } from "./InterfacePicker";
 import { OutsidePartition } from "./PartitionNotice";
 import { useInterfaceChoice } from "./useInterfaceChoice";
 import { RecordPreviewView } from "./RecordPreviewView";
 import { ScopeParameterFields } from "./ScopeParameterFields";
+import { missingParameters, scopeValuesToSend, type ScopeFieldValues } from "./scopeValues";
 import { ProblemView, TaskProgress } from "./TemplateSheet";
 
 /** The longest key the control plane takes; a longer text is a paste of something else. */
 const MAX_KEY = 4000;
 
 /**
- * The scope's values a link names (`previewValues`, a JSON object of strings), as a value check's record links carry them;
- * none when the link names none or names them in any other form.
+ * The scope's values a link names (`previewValues`, a JSON object of strings, and of arrays of strings for a parameter
+ * given several), as a value check's record links carry them; none when the link names none or names them in any other
+ * form.
  */
-function linkedValues(text: string | null): Record<string, string> {
+function linkedValues(text: string | null): ScopeFieldValues {
   if (text === null) {
     return {};
   }
@@ -31,18 +33,12 @@ function linkedValues(text: string | null): Record<string, string> {
   try {
     const parsed: unknown = JSON.parse(text);
     return parsed !== null && typeof parsed === "object" && !Array.isArray(parsed)
-      ? Object.fromEntries(Object.entries(parsed).filter((entry): entry is [string, string] => typeof entry[1] === "string"))
+      ? Object.fromEntries(Object.entries(parsed).filter((entry): entry is [string, string | string[]] => typeof entry[1] === "string"
+        || (Array.isArray(entry[1]) && entry[1].every((item) => typeof item === "string"))))
       : {};
   } catch {
     return {};
   }
-}
-
-/** The values a preview is sent: those given, trimmed; a parameter left empty takes its declared default on the node. */
-function valuesToSend(parameters: DeliveryParameter[], values: Record<string, string>): Record<string, string> {
-  return Object.fromEntries(parameters
-    .map((parameter) => [parameter.name, (values[parameter.name] ?? "").trim()] as const)
-    .filter(([, value]) => value !== ""));
 }
 
 /**
@@ -63,7 +59,7 @@ export function DeliveryPreviewPanel({ pipelineId, flowName }: { pipelineId: str
   const [searchParams, setSearchParams] = useSearchParams();
   const linkedKey = searchParams.get("previewKey");
   const [key, setKey] = useState(linkedKey ?? "");
-  const [values, setValues] = useState<Record<string, string>>(() => linkedValues(searchParams.get("previewValues")));
+  const [values, setValues] = useState<ScopeFieldValues>(() => linkedValues(searchParams.get("previewValues")));
   // What the last preview answered: kept while the next one runs, so the page does not jump, and replaced when the next
   // one lands. A preview that fails says why in its place.
   const [result, setResult] = useState<DeliveryRecordPreview | null>(null);
@@ -85,13 +81,14 @@ export function DeliveryPreviewPanel({ pipelineId, flowName }: { pipelineId: str
   const preview = useMutation({
     mutationFn: () => deliveryApi.preview(
       pipelineId,
-      { key: key.trim() === "" ? null : key.trim(), values: valuesToSend(parameters, values) },
+      // A parameter left empty takes its declared default on the node.
+      { key: key.trim() === "" ? null : key.trim(), values: scopeValuesToSend(parameters, values) },
       scope),
     onSuccess: setResult,
     onError: () => setResult(null),
   });
 
-  const missing = parameters.filter((p) => p.required && (p.default === null || p.default === undefined) && (values[p.name] ?? "").trim() === "");
+  const missing = missingParameters(parameters, scopeValuesToSend(parameters, values));
   const tooLong = key.trim().length > MAX_KEY;
   const running = preview.isPending;
   const blocked = !canOperate || current === undefined || missing.length > 0 || tooLong || running;

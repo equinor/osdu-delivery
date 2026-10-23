@@ -73,6 +73,7 @@ public sealed class InventoryFlowKind : IFlowDocumentKind
     public void ValidateParameters(RunParameters parameters)
     {
         ArgumentNullException.ThrowIfNull(parameters);
+        DeliveryOperations.RefuseSeveralValues(parameters, InventoryFlowDefinition.FlowTypeName, scopeTakesSeveral: false);
         DeliveryOperations.RefuseBuiltInOverrides(parameters, InventoryFlowDefinition.FlowTypeName, "a build reads every id the kind holds; name the inventories to build in the payload.");
         // A run names the inventories it works on, a remove run what it removes and the partition it acts in, and a match run
         // the selection it fills, beside the central configuration; which operation takes which is settled below.

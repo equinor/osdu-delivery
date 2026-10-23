@@ -31,7 +31,7 @@ public sealed class DeliveryCliModule : ICliModule
         new CliVerb(
             "check",
             [
-                "sqlflow check    <flow.yaml> [--interface <name>] [--partition <id>] [--set k=v] [--connect]",
+                "sqlflow check    <flow.yaml> [--interface <name>] [--partition <id>] [--set k=v]... [--connect]",
                 "                                   The delivery preflight: the flow's documents, its mapping against the",
                 "                                   template it fills, read from the template folders on the mapping's path,",
                 "                                   and the version of the cache it reads (needs --db when the mapping reads",
@@ -51,7 +51,7 @@ public sealed class DeliveryCliModule : ICliModule
         new CliVerb(
             "preview",
             [
-                "sqlflow preview  <flow.yaml> [--interface <name>] [--partition <id>] [--key <key>] [--set k=v] [--out <file.json>]",
+                "sqlflow preview  <flow.yaml> [--interface <name>] [--partition <id>] [--key <key>] [--set k=v]... [--out <file.json>]",
                 "                                   Render one record as a delivery would, and send nothing: the scope's",
                 "                                   first record, or the one --key names (a delivery key, an OSDU id the",
                 "                                   ledger holds, a source key, or a JSON array of the key's parts). Says what",
@@ -67,7 +67,7 @@ public sealed class DeliveryCliModule : ICliModule
         new CliVerb(
             "values",
             [
-                "sqlflow values   <flow.yaml> [--interface <name>] [--partition <id>] [--target <osdu.path>]... [--set k=v]",
+                "sqlflow values   <flow.yaml> [--interface <name>] [--partition <id>] [--target <osdu.path>]... [--set k=v]...",
                 "                 [--max-rows <n>] [--samples <n>] [--skip <n>] [--rows <file.csv>] [--out <file.json>]",
                 "                                   Find the rows that will not give the mapping's variables the values the",
                 "                                   template expects: every row of the scope rendered as a delivery renders it,",

@@ -1,6 +1,7 @@
 using System.Globalization;
 using System.Runtime.CompilerServices;
 using Microsoft.Extensions.Logging;
+using SqlFlow.Core.Runs;
 using SqlFlow.Delivery.Model;
 using SqlFlow.Delivery.Planning;
 using SqlFlow.Delivery.Rendering;
@@ -337,8 +338,11 @@ public sealed class MemoryIngestionTables : IIngestionSourceFactory
         {
             foreach (var (column, parameter) in _flow.Source.Record.Scope)
             {
-                var wanted = _values.TryGetValue(parameter, out var value) ? value : null;
-                if (!string.Equals(SourceRow.Stringify(record.Row.TryGetValue(column, out var held) ? held : null), wanted, StringComparison.Ordinal))
+                var holds = SourceRow.Stringify(record.Row.TryGetValue(column, out var held) ? held : null);
+                var inScope = _values.TryGetValue(parameter, out var value)
+                    ? RunValueList.Items(value).Contains(holds, StringComparer.Ordinal)
+                    : holds is null;
+                if (!inScope)
                 {
                     return false;
                 }

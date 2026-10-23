@@ -223,9 +223,22 @@ internal static partial class SqlServerLedgerBulk
                     SELECT 1 FROM [osdu].[Submission] s
                     WHERE s.[PartitionId] = r.[PartitionId] AND s.[SubmissionId] = r.[LastSubmissionId]
                       AND NOT EXISTS (
+                          -- @scope holds each parameter's values as an array; a submission carries a parameter as one value or
+                          -- as an array of them. It is in the comparison when it carries every parameter, each with values
+                          -- all among the removal's. The path takes OPENJSON's key collation and the JSON the column's, so
+                          -- what is read from it is given one, as every comparison here is binary.
                           SELECT 1 FROM OPENJSON(@scope) v
-                          WHERE ISNULL(JSON_VALUE(s.[ParametersJson], N'$."' + v.[key] + N'"'), NCHAR(1)) COLLATE Latin1_General_100_BIN2
-                                <> v.[value] COLLATE Latin1_General_100_BIN2)));
+                          CROSS APPLY (SELECT JSON_VALUE(s.[ParametersJson], N'$."' + v.[key] + N'"') COLLATE Latin1_General_100_BIN2 AS [One],
+                                              JSON_QUERY(s.[ParametersJson], N'$."' + v.[key] + N'"') COLLATE Latin1_General_100_BIN2 AS [Several]) c
+                          WHERE (c.[One] IS NULL AND c.[Several] IS NULL)
+                             OR EXISTS (
+                                  SELECT 1
+                                  FROM (SELECT c.[One] AS [value] WHERE c.[One] IS NOT NULL
+                                        UNION ALL
+                                        SELECT a.[value] COLLATE Latin1_General_100_BIN2 FROM OPENJSON(c.[Several]) a) carried
+                                  WHERE NOT EXISTS (
+                                      SELECT 1 FROM OPENJSON(v.[value]) named
+                                      WHERE named.[value] COLLATE Latin1_General_100_BIN2 = carried.[value])))));
 
             DECLARE @compared bigint =
                 (SELECT COUNT_BIG(*) FROM #RemovalLedger WHERE [Status] <> N'deleted')
@@ -363,7 +376,12 @@ internal static partial class SqlServerLedgerBulk
             command.Parameters.Add(new SqlParameter("@readsRemoved", SqlDbType.Bit) { Value = comparison.ReadsRemoved });
             command.Parameters.Add(new SqlParameter("@sourceRead", SqlDbType.DateTime2) { Value = comparison.SourceReadUtc is { } read ? read : DBNull.Value });
             command.Parameters.Add(new SqlParameter("@margin", SqlDbType.Int) { Value = (int)SourceRemovals.ClockMargin.TotalSeconds });
-            command.Parameters.Add(new SqlParameter("@scope", SqlDbType.NVarChar, -1) { Value = comparison.Scope.Count == 0 ? DBNull.Value : JsonSerializer.Serialize(comparison.Scope) });
+            command.Parameters.Add(new SqlParameter("@scope", SqlDbType.NVarChar, -1)
+            {
+                Value = comparison.Scope.Count == 0
+                    ? DBNull.Value
+                    : JsonSerializer.Serialize(comparison.Scope.ToDictionary(s => s.Key, s => SqlFlow.Core.Runs.RunValueList.Items(s.Value), StringComparer.Ordinal)),
+            });
             command.Parameters.Add(new SqlParameter("@write", SqlDbType.Bit) { Value = comparison.Write });
             command.Parameters.Add(new SqlParameter("@removalFlow", SqlDbType.NVarChar, DeliveryLedger.MaxFlowNameLength) { Value = comparison.RemovalFlow });
             command.Parameters.Add(new SqlParameter("@entry", SqlDbType.NVarChar, DeliveryModel.MaxRemovalNameLength) { Value = comparison.Entry });

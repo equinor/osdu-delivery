@@ -2,6 +2,7 @@ using System.Globalization;
 using Microsoft.Data.SqlClient;
 using Microsoft.Extensions.Logging.Abstractions;
 using SqlFlow.Core;
+using SqlFlow.Core.Runs;
 using SqlFlow.Delivery.Model;
 using SqlFlow.Delivery.Source;
 using Xunit;
@@ -294,6 +295,19 @@ public sealed class SqlServerIngestionSourceTests
         var scoped = estate.Engine.Sources.Open(
             flow, new Dictionary<string, string>(StringComparer.Ordinal) { ["logSource"] = "CPI", ["region"] = "9" }, NullLoggerFactory.Instance);
         Assert.Equal(1, (await scoped.OpenAsync(SourceSelection.Full(), null)).EstimatedCandidates);
+
+        // Several values select the rows holding any of them, each bound as a value of the column's own type: CPI and
+        // COMPOSITE in region 9 are two rows, and CPI in regions 7 and 9 is one.
+        var sources = estate.Engine.Sources.Open(
+            flow,
+            new Dictionary<string, string>(StringComparer.Ordinal) { ["logSource"] = RunValueList.Of(["CPI", "COMPOSITE"]), ["region"] = "9" },
+            NullLoggerFactory.Instance);
+        Assert.Equal(2, (await sources.OpenAsync(SourceSelection.Full(), null)).EstimatedCandidates);
+        var regions = estate.Engine.Sources.Open(
+            flow,
+            new Dictionary<string, string>(StringComparer.Ordinal) { ["logSource"] = "CPI", ["region"] = RunValueList.Of(["7", "9"]) },
+            NullLoggerFactory.Instance);
+        Assert.Equal(1, (await regions.OpenAsync(SourceSelection.Full(), null)).EstimatedCandidates);
 
         // A scope bound to a column the table does not hold is refused, naming the column and the parameter.
         var missing = flow with

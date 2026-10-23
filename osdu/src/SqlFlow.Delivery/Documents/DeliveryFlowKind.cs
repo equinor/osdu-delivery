@@ -136,6 +136,7 @@ public sealed class DeliveryFlowKind : IFlowDocumentKind, ICompanionDocumentKind
     public void ValidateParameters(RunParameters parameters)
     {
         ArgumentNullException.ThrowIfNull(parameters);
+        DeliveryOperations.RefuseSeveralValues(parameters, FlowDefinition.FlowTypeName, scopeTakesSeveral: true);
         DeliveryOperations.RefuseBuiltInOverrides(
             parameters, FlowDefinition.FlowTypeName,
             "the replan operation reads every row of the scope again, and recordKeys in the payload scope a run to chosen records.");

@@ -9,7 +9,8 @@ import { SearchInput } from "@/components/SearchInput";
 import type { TriggerBodyContribution, TriggerFieldsProps } from "@/modules/registry";
 import { deliveryApi, type DeliveryAssertionFlow, type DeliveryParameter } from "../../../api/delivery";
 import { useActivePartition } from "../activePartition";
-import { parseValues } from "../runValues";
+import type { RunValue } from "@/api/types";
+import { parseValues, valuesToFields, valuesToLines } from "../runValues";
 import { TagChip } from "./AssertionBadges";
 import { counted, disabledWhy, kindEntity, selectionPayload } from "./assertionFormat";
 
@@ -95,10 +96,10 @@ export function AssertionTriggerFields({ pipelineId, initialValues, initialPaylo
   });
   const flow = board.data?.flows[0];
   const [fields, setFields] = useState<Record<string, string>>(
-    () => Object.fromEntries(Object.entries(initialValues).filter(([name]) => name !== PARTITION)),
+    () => valuesToFields(initialValues, PARTITION),
   );
   const [valuesText, setValuesText] = useState(
-    () => Object.entries(initialValues).filter(([name]) => name !== PARTITION).map(([name, value]) => `${name}=${value}`).join("\n"),
+    () => valuesToLines(initialValues, PARTITION),
   );
   const [tests, setTests] = useState<ReadonlySet<string>>(() => new Set(stringsOf(initialPayload?.tests)));
   const [tags, setTags] = useState<ReadonlySet<string>>(() => new Set(stringsOf(initialPayload?.tags)));
@@ -133,7 +134,7 @@ export function AssertionTriggerFields({ pipelineId, initialValues, initialPaylo
       ?? ([...tests].some((name) => !TEST_NAME.test(name)) ? "An assertion's name is a letter or digit, then letters, digits, '.', '_' and '-'." : null)
       ?? (missing.length > 0 ? `The flow has no assertion named ${missing.join(", ")}; clear ${missing.length === 1 ? "it" : "them"} to run.` : null)
       ?? (unusedTags.length > 0 ? `No assertion of the flow carries the tag ${unusedTags.join(", ")}; clear ${unusedTags.length === 1 ? "it" : "them"} to run.` : null);
-    const values: Record<string, string> = { ...parsed.values };
+    const values: Record<string, RunValue> = { ...parsed.values };
     if (partition !== null) {
       values[PARTITION] = partition;
     }
