@@ -139,6 +139,21 @@ current version, and how many delivery flows deliver there; **Partitions** opens
 carries the choice (as the `X-Osdu-Partition` header), so a flow that names its partitions is read in the picked one,
 and a link that names a partition (`?partition=`) makes it the title bar's. See [partitions](partitions.md).
 
+## The home page
+
+The workbench opens on **Home**: SQLFlow's home page, with what this product adds to it. At the top, on the brand's
+navy, a greeting, the product's line and **Ask the assistant**: a question typed there, or one of the three offered,
+opens the **Assistant** asking it in a fresh conversation
+([the chat assistant](../../../../sqlflow/docs/reference/guides/chat-assistant.md#asking-from-the-home-page)). The questions
+offered are about deliveries, and the assistant's delivery tools answer them: which delivery flows have held or failed
+records and why, what changed in the partition's cache since yesterday, and which mappings deliver well logs and what
+they read from the source. When the assistant is not configured, the box says so.
+
+Under SQLFlow's headline counts, **Delivery** says what the delivery flows hold in the title bar's partition: how much of
+it is delivered, a bar of the records by where they stand, and their counts (delivered, pending, held, failed, drifted,
+delivered in the last 24 hours), added up exactly as the [Delivery](#delivery) page adds them. **Find a record** looks a
+record up by any of its keys, and **Open Delivery** opens the page. The newest runs and the runs by state follow.
+
 ## The OSDU menu
 
 | Section | Entry | Page |

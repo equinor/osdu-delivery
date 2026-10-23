@@ -1,52 +1,20 @@
-import { useState, type FormEvent } from "react";
 import { useNavigate } from "react-router-dom";
-import { useQueries, useQuery } from "@tanstack/react-query";
-import { PackageCheck, PackageSearch } from "lucide-react";
+import { PackageCheck } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
-import { SearchInput } from "@/components/SearchInput";
 import { isApiError } from "@/api/client";
-import { deliveryApi, type DeliveryFlowStats } from "../../api/delivery";
+import type { DeliveryFlowStats } from "../../api/delivery";
 import type { PipelineSummary } from "@/api/types";
 import { CorrelationError } from "@/components/CorrelationError";
 import { EmptyState } from "@/components/EmptyState";
 import { Page } from "@/components/Page";
 import { PageHeader } from "@/components/PageHeader";
 import { RelativeTime } from "@/components/RelativeTime";
-import { fetchAllPipelines } from "@/features/pipelines/fetchAllPipelines";
-import { useActivePartition } from "./activePartition";
 import { SubmissionStatusBadge } from "./DeliveryBadges";
-import { useFollowDeliveryRuns } from "./followRuns";
-
-/**
- * One count of a flow's records. A tone says what the records it counts are (delivered, held), so a count of none takes
- * no tone: a zero is the absence of the thing, and is drawn as quietly as an empty cell.
- */
-function Count({ label, value, tone }: { label: string; value: number; tone?: "success" | "warning" | "destructive" | "info" }) {
-  const color = value === 0
-    ? "text-muted-foreground"
-    : tone === "success" ? "text-success" : tone === "warning" ? "text-warning" : tone === "destructive" ? "text-destructive" : tone === "info" ? "text-info" : "";
-  return (
-    <div className="min-w-0">
-      <div className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">{label}</div>
-      <div className={`font-mono text-lg tabular-nums ${color}`}>{value.toLocaleString()}</div>
-    </div>
-  );
-}
-
-/**
- * The partitions a flow's counts say it delivers to: those it names or serves, or the one its header's ledger is kept
- * under; null while that is not known (a flow whose partition is its header's, before it has run).
- */
-function deliversTo(stats: DeliveryFlowStats | undefined): string[] | null {
-  if (stats === undefined) {
-    return null;
-  }
-
-  return stats.partitions ?? (stats.headerPartition ? [stats.headerPartition] : null);
-}
+import { Count } from "./DeliveryCounts";
+import { deliversTo, useDeliveryTotals, type DeliveryTotals } from "./deliveryTotals";
+import { FindRecordForm } from "./FindRecordForm";
 
 /**
  * One delivery flow's card, in the workbench's partition. A flow that delivers there is counted there, and its partition
@@ -135,36 +103,8 @@ function FlowCard({ pipeline, stats, active, elsewhere, onOpen }: {
   );
 }
 
-/** The way from the estate's front door to one record: a term typed here opens the Records page looked up for it. */
-function FindRecordForm() {
-  const navigate = useNavigate();
-  const [term, setTerm] = useState("");
-  const submit = (event: FormEvent) => {
-    event.preventDefault();
-    const trimmed = term.trim();
-    navigate(trimmed === "" ? "/delivery/records" : `/delivery/records?q=${encodeURIComponent(trimmed)}`);
-  };
-
-  return (
-    <form className="flex flex-wrap items-center gap-2" onSubmit={submit} data-testid="delivery-find-record">
-      <SearchInput
-        value={term}
-        onChange={setTerm}
-        placeholder="Find a record: source key, OSDU id, key or file"
-        label="Find a record"
-        testId="delivery-find-record-term"
-        className="sm:w-80"
-      />
-      <Button type="submit" variant="outline" size="sm" data-testid="delivery-find-record-go">
-        <PackageSearch />
-        Look up
-      </Button>
-    </form>
-  );
-}
-
 /** The page's one line of totals: the flows that deliver to the workbench's partition, and what they hold there. */
-function subtitle(flows: number, active: string | null, totals: { total: number; delivered: number; pending: number; held: number; failed: number; drifted: number }) {
+function subtitle(flows: number, active: string | null, totals: DeliveryTotals) {
   const where = active === null ? "" : ` in ${active}`;
   return `${flows} delivery flow${flows === 1 ? "" : "s"}${where}: ${totals.delivered.toLocaleString()} of ${totals.total.toLocaleString()} records delivered, `
     + `${totals.pending.toLocaleString()} pending, ${totals.held.toLocaleString()} held, ${totals.failed.toLocaleString()} failed, ${totals.drifted.toLocaleString()} drifted.`;
@@ -176,41 +116,7 @@ function subtitle(flows: number, active: string | null, totals: { total: number;
  */
 export default function DeliveryOverviewPage() {
   const navigate = useNavigate();
-  const flows = useQuery({
-    queryKey: ["pipelines", "grouped", "", "delivery", ""],
-    queryFn: () => fetchAllPipelines({ kind: "delivery" }),
-  });
-  const pipelines = flows.data?.items ?? [];
-  const [active] = useActivePartition();
-  // The counts poll on their own for what no run does (a release, a removal); a run's outcome reaches them through its
-  // flow's newest run, within seconds of it.
-  useFollowDeliveryRuns(null, pipelines.length > 0);
-  const whole = useQueries({
-    queries: pipelines.map((pipeline) => ({
-      queryKey: ["delivery", "stats", pipeline.id],
-      queryFn: () => deliveryApi.stats(pipeline.id),
-      refetchInterval: 15000,
-    })),
-  });
-  // A flow that names or serves the workbench's partition is counted in it, unless its whole counts already are that
-  // partition's (a flow of one partition, or one whose partition is its header's); the whole flow's counts say which
-  // partitions it delivers to. A flow that delivers only elsewhere is not the workbench partition's, and is not added up.
-  const inActive = useQueries({
-    queries: pipelines.map((pipeline, index) => {
-      const counted = whole[index]?.data;
-      return {
-        queryKey: ["delivery", "stats", pipeline.id, null, active],
-        queryFn: () => deliveryApi.stats(pipeline.id, { partition: active }),
-        enabled: active !== null && (counted?.partitions ?? []).includes(active) && counted?.partition !== active,
-        refetchInterval: 15000,
-      };
-    }),
-  });
-  const stats = pipelines.map((_, index) => (inActive[index]?.data !== undefined ? inActive[index] : whole[index]));
-  const elsewhere = pipelines.map((_, index) => {
-    const delivers = deliversTo(whole[index]?.data);
-    return active !== null && delivers !== null && !delivers.includes(active);
-  });
+  const { flows, pipelines, active, stats, elsewhere, totals } = useDeliveryTotals();
 
   if (flows.isError) {
     return (
@@ -219,18 +125,6 @@ export default function DeliveryOverviewPage() {
       </Page>
     );
   }
-
-  const totals = stats.reduce(
-    (acc, q, index) => {
-      const s = q.data;
-      if (!s || elsewhere[index]) {
-        return acc;
-      }
-
-      return { total: acc.total + s.total, delivered: acc.delivered + s.delivered, pending: acc.pending + s.pending + s.delivering, held: acc.held + s.held, failed: acc.failed + s.failed, drifted: acc.drifted + s.drifted };
-    },
-    { total: 0, delivered: 0, pending: 0, held: 0, failed: 0, drifted: 0 },
-  );
 
   return (
     <Page data-testid="page-delivery">

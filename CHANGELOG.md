@@ -9,6 +9,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **The workbench opens on a home page that asks the assistant.** Home greets you on the brand's navy with a question
+  box: a question typed there, or one of the delivery questions it offers, opens the Assistant asking it. Under the
+  headline counts, Delivery says how much of the title bar's partition is delivered, with Find a record and Open
+  Delivery, and the newest runs sit beside the runs by state ([the home page](osdu/docs/reference/concepts/gui.md#the-home-page)).
+
 - **One run delivers several values of a scope parameter.** Give a parameter `source.record.scope` binds a list (several
   picked in its field in the GUI, `--set` repeated on the CLI, an array in a trigger, a sequence in a schedule's or a
   removal's `values`) and the run reads the rows holding any of them, as one scope with one watermark

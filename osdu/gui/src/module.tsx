@@ -27,6 +27,10 @@ import { shortId } from "./features/delivery/idTail";
 // pages, the panels, anything with the code editor) loads with the surface that shows it.
 
 const DeliveryOverviewPage = lazyRoute("DeliveryOverviewPage", () => import("./features/delivery/DeliveryOverviewPage"));
+const DeliveryHomeSection = lazyRoute(
+  "DeliveryHomeSection",
+  () => import("./features/delivery/DeliveryHomeSection").then((loaded) => ({ default: loaded.DeliveryHomeSection })),
+);
 const DeliveryRecordsPage = lazyRoute("DeliveryRecordsPage", () => import("./features/delivery/DeliveryRecordsPage"));
 const DeliveryRecordPage = lazyRoute("DeliveryRecordPage", () => import("./features/delivery/DeliveryRecordPage"));
 const OsduRecordWindowPage = lazyRoute("OsduRecordWindowPage", () => import("./features/delivery/OsduRecordWindowPage"));
@@ -452,6 +456,15 @@ export const osduDeliveryModule: GuiModule = {
   // The workbench opens on the page, with the activity bar beside it: the side bar starts closed until the person opens
   // it, its menu folded to the headers of its groups and sections, and from then on both start as they last left them.
   sideBar: { closedOnFirstVisit: true, menuCollapsedOnFirstVisit: true },
+  // The home page: questions for the assistant that its delivery tools answer, and what the partition's flows hold.
+  home: {
+    prompts: [
+      "Which delivery flows have held or failed records, and why?",
+      "What changed in this partition's cache since yesterday?",
+      "Which mappings deliver well logs, and what do they read from the source?",
+    ],
+    sections: [{ id: "osdu-delivery", component: DeliveryHomeSection }],
+  },
   branding: {
     productName: "OSDU Delivery",
     attribution: "powered by SQLFlow",
