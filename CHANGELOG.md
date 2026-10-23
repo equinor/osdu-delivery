@@ -265,6 +265,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **A storage account reached only over its Data Lake endpoint works.** The landing storage, work and known-state
+  locations and every other Azure Storage location are read and written over the account's Blob or Data Lake (`dfs`)
+  endpoint, whichever the deployment's network reaches, so a network with a private endpoint for `dfs` alone no longer
+  fails with `403 AuthorizationFailure`; `SQLFLOW_AZURE_STORAGE_ENDPOINT` fixes the choice
+  ([Azure Storage endpoints](sqlflow/docs/reference/concepts/azure-storage-endpoints.md)).
 - **A write OSDU skips as unchanged lands at the version OSDU holds.** With `skipDuplicates`, the ledger recorded the
   version it last knew for a skipped record, which another writer may have moved, and recorded a skipped record OSDU held
   soft-deleted as delivered while OSDU served nothing; the route now reads the version, and brings such a record back

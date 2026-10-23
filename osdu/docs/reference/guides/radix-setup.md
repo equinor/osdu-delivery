@@ -25,6 +25,7 @@ related:
   - guide-chat-assistant
   - concept-authentication-and-identity
   - guide-github-app
+  - concept-azure-storage-endpoints
 sourceRefs:
   - osdu/deploy/radix/radixconfig.yaml
   - osdu/deploy/radix/radix-deploy.workflow.yml
@@ -221,6 +222,11 @@ cluster, in one of two ways:
   subscription must be allowed to have endpoints in Radix's first.
 - **Firewall**: admit the cluster's egress addresses, which the Radix API's configuration lists as
   `clusterEgressIps`.
+
+The landing storage account admits the cluster the same two ways. Its private endpoint can be for its `blob` or its
+`dfs` sub-resource, with that sub-resource's `privatelink` DNS zone: the estate reads and writes the account over
+the one that resolves to the private endpoint, and the other answering `403 AuthorizationFailure` from its public
+address is then expected ([Azure Storage endpoints](../../../../sqlflow/docs/reference/concepts/azure-storage-endpoints.md)).
 
 An OSDU, storage account or proxy that resolves to a private address must also be listed in
 `SQLFLOW_DELIVERY_PRIVATE_NETWORKS` (both on the control plane and on the worker); empty, a flow reaches public

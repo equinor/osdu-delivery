@@ -1,7 +1,6 @@
 using Azure;
-using Azure.Storage.Blobs;
-using Azure.Storage.Blobs.Models;
 using SqlFlow.Azure;
+using SqlFlow.Azure.Storage;
 using SqlFlow.Core;
 using SqlFlow.Core.Abstractions;
 using SqlFlow.Core.Model;
@@ -364,17 +363,22 @@ public sealed class LocalFileReader : IFileReader
 }
 
 /// <summary>
-/// Writes blobs under the same credential the platform's <see cref="AzureBlobFileStore"/> reads with, so a
-/// snapshot store, a work location or a known-state location on the lake needs no second identity.
+/// Writes to Azure Storage through SQLFlow's <see cref="AzureStorageAccess"/>, the same access and credential the
+/// platform's <see cref="AzureBlobFileStore"/> reads with: a snapshot store, a work location or a known-state location
+/// on the lake needs no second identity, and is reached over the account's Blob or Data Lake endpoint, whichever this
+/// host can reach.
 /// </summary>
 public sealed class AzureBlobFileWriter : IFileWriter
 {
-    private readonly IAzureCredentialFactory _credentials;
+    /// <summary>The size of one block (Blob endpoint) or append (Data Lake endpoint) of a streamed write.</summary>
+    private const int BufferSize = 4 * 1024 * 1024;
 
-    public AzureBlobFileWriter(IAzureCredentialFactory credentials)
+    private readonly AzureStorageAccess _storage;
+
+    public AzureBlobFileWriter(AzureStorageAccess storage)
     {
-        ArgumentNullException.ThrowIfNull(credentials);
-        _credentials = credentials;
+        ArgumentNullException.ThrowIfNull(storage);
+        _storage = storage;
     }
 
     public bool CanHandle(string location) => AzureBlobLocation.IsAzureStorageUri(location);
@@ -382,51 +386,51 @@ public sealed class AzureBlobFileWriter : IFileWriter
     public async Task WriteAsync(string location, Stream content, CancellationToken ct = default)
     {
         ArgumentNullException.ThrowIfNull(content);
-        var blob = Blob(_credentials, location);
+        var parsed = AzureBlobLocation.Parse(location);
         try
         {
-            await blob.UploadAsync(content, overwrite: true, ct).ConfigureAwait(false);
+            await _storage.Container(parsed).UploadAsync(parsed.BlobPath, content, overwrite: true, contentHash: null, ct).ConfigureAwait(false);
         }
         catch (RequestFailedException ex)
         {
-            throw new DeliveryException($"Could not write '{location}' (status {ex.Status}): {ex.Message}", ex);
+            throw new DeliveryException($"Could not write '{location}'{Over(ex)} (status {ex.Status}): {ex.Message}", ex);
         }
     }
 
-    /// <summary>A block blob written in 4 MB blocks as bytes arrive; committed when the stream is disposed.</summary>
+    /// <summary>Written in 4 MB parts as bytes arrive; committed when the stream is disposed.</summary>
     public async Task<Stream> OpenWriteAsync(string location, CancellationToken ct = default)
     {
-        var blob = Blob(_credentials, location);
+        var parsed = AzureBlobLocation.Parse(location);
         try
         {
-            return await blob.OpenWriteAsync(overwrite: true, new BlobOpenWriteOptions { BufferSize = 4 * 1024 * 1024 }, ct).ConfigureAwait(false);
+            return await _storage.Container(parsed).OpenWriteAsync(parsed.BlobPath, BufferSize, ct).ConfigureAwait(false);
         }
         catch (RequestFailedException ex)
         {
-            throw new DeliveryException($"Could not open '{location}' for writing (status {ex.Status}): {ex.Message}", ex);
+            throw new DeliveryException($"Could not open '{location}' for writing{Over(ex)} (status {ex.Status}): {ex.Message}", ex);
         }
     }
 
-    internal static BlobClient Blob(IAzureCredentialFactory credentials, string location)
-    {
-        var parsed = AzureBlobLocation.Parse(location);
-        var service = new BlobServiceClient(parsed.BlobServiceEndpoint, credentials.Create());
-        return service.GetBlobContainerClient(parsed.Container).GetBlobClient(parsed.BlobPath);
-    }
+    /// <summary>" over the dfs endpoint" (or blob) when the storage layer recorded where the failed request went.</summary>
+    internal static string Over(Exception ex)
+        => AzureStorageFailures.EndpointOf(ex) is { } endpoint ? $" over the {endpoint.HostLabel()} endpoint" : string.Empty;
 }
 
 /// <summary>
-/// Seekable and range reads over Azure Storage: a seekable blob stream fetches ranges on demand (parquet footers
-/// and row groups without the rest of the file), and a range read fetches one slice of a work batch.
+/// Seekable and range reads over Azure Storage: a seekable stream fetches ranges on demand (parquet footers and row
+/// groups without the rest of the file), and a range read fetches one slice of a work batch. Both go through SQLFlow's
+/// <see cref="AzureStorageAccess"/>, over the account's Blob or Data Lake endpoint, whichever this host can reach.
 /// </summary>
 public sealed class AzureBlobFileReader : IFileReader
 {
-    private readonly IAzureCredentialFactory _credentials;
+    private const int BufferSize = 4 * 1024 * 1024;
 
-    public AzureBlobFileReader(IAzureCredentialFactory credentials)
+    private readonly AzureStorageAccess _storage;
+
+    public AzureBlobFileReader(AzureStorageAccess storage)
     {
-        ArgumentNullException.ThrowIfNull(credentials);
-        _credentials = credentials;
+        ArgumentNullException.ThrowIfNull(storage);
+        _storage = storage;
     }
 
     public bool CanHandle(string location) => AzureBlobLocation.IsAzureStorageUri(location);
@@ -434,30 +438,27 @@ public sealed class AzureBlobFileReader : IFileReader
     public async Task<Stream> OpenSeekableAsync(FileRef file, CancellationToken ct = default)
     {
         ArgumentNullException.ThrowIfNull(file);
+        var parsed = AzureBlobLocation.Parse(file.Path);
         try
         {
-            return await AzureBlobFileWriter.Blob(_credentials, file.Path)
-                .OpenReadAsync(new BlobOpenReadOptions(allowModifications: false) { BufferSize = 4 * 1024 * 1024 }, ct)
-                .ConfigureAwait(false);
+            return await _storage.Container(parsed).OpenSeekableReadAsync(parsed.BlobPath, BufferSize, ct).ConfigureAwait(false);
         }
         catch (RequestFailedException ex)
         {
-            throw new DeliveryException($"Could not open '{file.Path}' (status {ex.Status}): {ex.Message}", ex);
+            throw new DeliveryException($"Could not open '{file.Path}'{AzureBlobFileWriter.Over(ex)} (status {ex.Status}): {ex.Message}", ex);
         }
     }
 
     public async Task<Stream> OpenRangeAsync(string path, long offset, long length, CancellationToken ct = default)
     {
+        var parsed = AzureBlobLocation.Parse(path);
         try
         {
-            var response = await AzureBlobFileWriter.Blob(_credentials, path)
-                .DownloadStreamingAsync(new BlobDownloadOptions { Range = new HttpRange(offset, length) }, ct)
-                .ConfigureAwait(false);
-            return response.Value.Content;
+            return await _storage.Container(parsed).OpenReadAsync(parsed.BlobPath, offset, length, ct).ConfigureAwait(false);
         }
         catch (RequestFailedException ex)
         {
-            throw new DeliveryException($"Could not read '{path}' at {offset} (status {ex.Status}): {ex.Message}", ex);
+            throw new DeliveryException($"Could not read '{path}' at {offset}{AzureBlobFileWriter.Over(ex)} (status {ex.Status}): {ex.Message}", ex);
         }
     }
 }

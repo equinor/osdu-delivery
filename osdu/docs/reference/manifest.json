@@ -4941,7 +4941,8 @@
         "delivery-guide-deployment",
         "guide-chat-assistant",
         "concept-authentication-and-identity",
-        "guide-github-app"
+        "guide-github-app",
+        "concept-azure-storage-endpoints"
       ],
       "sourceRefs": [
         "osdu/deploy/radix/radixconfig.yaml",

@@ -283,7 +283,10 @@ own identity. How the Kubernetes layout maps onto Container Apps:
   ranges, comma separated). Loopback, link-local and cloud metadata addresses stay unreachable whatever it lists.
 - **Landing storage**: `landingStorage='{}'` creates an account with a hierarchical namespace, reached by identity
   alone (shared keys off), and its `landing` container; `{"existingAccountId": "<account resource id>",
-  "container": "<container>"}` adopts an account and container you have. `referenceName` renames `LANDING_URL`.
+  "container": "<container>"}` adopts an account and container you have. `referenceName` renames `LANDING_URL`. An
+  adopted account reached over Azure Private Link needs a private endpoint for its `blob` or its `dfs` sub-resource,
+  with that sub-resource's `privatelink` DNS zone linked to the environment's VNet: the estate reads and writes over
+  whichever of the two this network reaches ([Azure Storage endpoints](../../sqlflow/docs/reference/concepts/azure-storage-endpoints.md)).
 - **Repositories**: `repositories` names each flow repository the control plane syncs (`remoteUrl`, `branch`,
   `syncIntervalSeconds`, and for a private one either the estate's `githubApp` or its own `credentialSecretName`,
   with `credentialUsername` for a host that pairs the token with a username, such as Bitbucket; `useGitHubApp: false`
