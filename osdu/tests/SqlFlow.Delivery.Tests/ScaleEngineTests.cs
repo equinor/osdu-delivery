@@ -280,6 +280,39 @@ public class ScaleEngineTests : IDisposable
     }
 
     /// <summary>
+    /// A relative work location is a folder in the copy of the repository each node runs the flow from, which no other node
+    /// reads, so a delivery with one stays on its own run whatever its size: nothing is enqueued, and it plans and sends it
+    /// all.
+    /// </summary>
+    [Fact]
+    public async Task A_delivery_whose_work_location_no_other_node_reaches_stays_on_one_run()
+    {
+        var tables = await EstateAsync();
+        var ledger = _db.Ledger(_clock);
+        var protocol = new FakeProtocol();
+        var local = Samples.InFolder(Samples.LocalFlow(_root), _root);
+        var flow = local with
+        {
+            Source = local.Source with { Work = "../work" },
+            Parallelism = local.Parallelism with { FanOut = 2, FanOutMinRecords = 1, BatchRecords = 1 },
+        };
+        var dispatcher = new UnstartedDispatcher(_clock, TimeSpan.FromMinutes(1));
+        var engine = Samples.Engine(ledger, _clock, sources: tables) with { Protocols = new FakeProtocolFactory(protocol), FanOut = dispatcher };
+        using var runtime = await FlowRuntime.CreateAsync(engine, flow, SampleEstate.Values);
+        await ledger.RegisterAsync(runtime.Flow);
+        runtime.RunId = Guid.NewGuid();
+        runtime.Actor = "test";
+
+        var result = await runtime.RunAsync(force: false);
+
+        Assert.Equal((0, 0), (result.IntakeMembers, result.DrainMembers));
+        Assert.Equal(0, dispatcher.Enqueued);
+        Assert.Equal(SubmissionStatus.Completed, result.Submission.Status);
+        Assert.Equal(5, result.Submission.Delivered);
+        Assert.Equal(Path.Combine(_root, "work"), result.Submission.WorkLocation);
+    }
+
+    /// <summary>
     /// A submission planned again (a run resuming it, a member executed again, a coordinating run planning a stopped member's
     /// share) passes over the records it already queued, which keep reading their documents from the batch files they were
     /// written to. The new plan writes its batches after those, so no file a queued record reads from is written again.
@@ -392,6 +425,9 @@ public class ScaleEngineTests : IDisposable
 
         /// <summary>Every fan-out cancelled, in order: its members' operation, and how long after it was enqueued.</summary>
         public List<(string Operation, TimeSpan After)> Cancelled { get; } = [];
+
+        /// <summary>How many fan-outs were enqueued.</summary>
+        public int Enqueued => _groups.Count;
 
         public bool Available => true;
 

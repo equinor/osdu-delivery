@@ -232,6 +232,12 @@ control plane's replica target brings up nodes for them
 ([SQLFlow's dispatcher](../../../../sqlflow/docs/reference/concepts/control-plane.md#the-dispatcher)). They appear as a run
 family on the run's page.
 
+**Where the work batches are.** Every member reads and writes the submission's [work batches](#work-batches), on whichever
+node runs it, so a delivery fans out only when its `source.work` is a storage URI or an absolute path every node reaches.
+A relative `source.work` is a folder in the copy of the repository each node runs the flow from, which no other node
+reads; a flow with one plans and sends on one run, and its trace says so:
+`The intake is not fanned out: source.work '../.work/{logSource}' is a folder in this node's copy of the repository, which no other node reads; put it on storage every node reaches (a storage URI) to fan out.`
+
 **Planning.** When the record table names its identity primary key (`source.record.primaryKey`), the coordinating run cuts
 the candidate keys into contiguous slices on it, about a work batch each and at most 1,024, records the cut on the
 submission, and deals the slices out as shares to itself and up to `fanOut` intake members. It enqueues the members first

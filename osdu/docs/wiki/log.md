@@ -224,3 +224,15 @@ batches, how a coordinating run stops members no node starts (at once for the dr
 why stopping single members was left to SQLFlow's group cancel, why the rate limit is shared, and the batch file rewrite
 found on the way. Brought [0006](decisions/0006-work-batches.md) and the pattern catalog's spread-over-nodes row to the
 new keys. Indexed 0025.
+
+## [2026-10-23] ingest | A fan-out needs a work location every node reaches, decision 0025 amended
+
+Source: the human's question whether the estate's flows would scale out unchanged, and the code it sent me to: how a
+work location resolves (`osdu/src/SqlFlow.Delivery/Documents/MappingCatalog.cs`, `ResolvePath`), where a node puts the
+copy of the repository it runs a flow from (`sqlflow/src/SqlFlow.Node/RunWorker.cs`, the version cache under the node's
+temp folder), and the estate's flows, which write their work to `../.work`. Each worker has a disk of its own, so a
+member on another node would miss the batches the coordinating run wrote.
+
+Amended [0025](decisions/0025-parallelism-and-default-fan-out.md): a delivery fans out only when its `source.work` is a
+storage URI or an absolute path, a relative one keeps it on one run and its trace says why, and rebasing relative work
+folders onto a deployment's storage root is named as the way to let unchanged flows fan out, not done here.

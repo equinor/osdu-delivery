@@ -2434,11 +2434,30 @@ public sealed partial class FlowRuntime : IDisposable
         return (new IntakeResult(settledSubmission, header, totals, AlreadyProcessed: false), members.Count);
     }
 
-    /// <summary>Why this run fans nothing out whatever its work, or null when it can: the flow turned it off, or the run cannot enqueue members.</summary>
+    /// <summary>
+    /// Why this run fans nothing out whatever its work, or null when it can: the flow turned it off, the run cannot enqueue
+    /// members, or its work location is not one other nodes reach.
+    /// </summary>
     private string? FanOutUnavailable()
         => Flow.Parallelism.FanOut <= 0 ? "parallelism.fanOut is 0"
             : !_context.Dispatcher.Available || RunId is null ? "this run cannot enqueue member runs: it runs outside the fleet"
-            : null;
+            : WorkStaysOnThisNode(Flow.Source.Work);
+
+    /// <summary>
+    /// Why work batches written to <paramref name="work"/> stay on the node that writes them, or null when every node reaches
+    /// them. A relative <c>source.work</c> resolves inside the copy of the repository the node runs the flow from, which no
+    /// other node reads: a member on another node would find none of the batch files this run wrote, and this run none of
+    /// a member's. A storage URI is shared, and so is an absolute path, which a deployment puts on storage every node
+    /// mounts (osdu/docs/reference/concepts/submissions.md, Many nodes).
+    /// </summary>
+    internal static string? WorkStaysOnThisNode(string work)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(work);
+        var declared = work.Trim();
+        return declared.Contains("://", StringComparison.Ordinal) || Path.IsPathRooted(declared)
+            ? null
+            : $"source.work '{declared}' is a folder in this node's copy of the repository, which no other node reads; put it on storage every node reaches (a storage URI) to fan out";
+    }
 
     /// <summary>Why <paramref name="records"/> <paramref name="what"/> are too few to fan out, or null when they are enough.</summary>
     private string? TooFewToFanOut(long records, string what)

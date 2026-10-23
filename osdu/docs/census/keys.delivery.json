@@ -466,7 +466,7 @@
       "path": "interfaces.<name>.parallelism.fanOut",
       "type": "integer",
       "required": false,
-      "description": "The most member runs a submission of `fanOutMinRecords` records or more spreads over across the fleet, 0 to 64; never more than it has work batches for beyond the coordinating run's own. Planning fans out only when the record table names its `primaryKey`, whose ranges the members read; without one, only the sending fans out. 0 runs everything on the node that claimed the run. Set here, it overrides the source's value for this interface.",
+      "description": "The most member runs a submission of `fanOutMinRecords` records or more spreads over across the fleet, 0 to 64; never more than it has work batches for beyond the coordinating run's own. It needs a `source.work` every node reaches (a storage URI, or an absolute path on shared storage): a relative one keeps the delivery on one run. Planning fans out only when the record table names its `primaryKey`, whose ranges the members read; without one, only the sending fans out. 0 runs everything on the node that claimed the run. Set here, it overrides the source's value for this interface.",
       "default": "the source's value, else 8"
     },
     {
@@ -1606,7 +1606,7 @@
       "path": "parallelism.fanOut",
       "type": "integer",
       "required": false,
-      "description": "The most member runs a submission of `fanOutMinRecords` records or more spreads over across the fleet, 0 to 64; never more than it has work batches for beyond the coordinating run's own. Planning fans out only when the record table names its `primaryKey`, whose ranges the members read; without one, only the sending fans out. 0 runs everything on the node that claimed the run.",
+      "description": "The most member runs a submission of `fanOutMinRecords` records or more spreads over across the fleet, 0 to 64; never more than it has work batches for beyond the coordinating run's own. It needs a `source.work` every node reaches (a storage URI, or an absolute path on shared storage): a relative one keeps the delivery on one run. Planning fans out only when the record table names its `primaryKey`, whose ranges the members read; without one, only the sending fans out. 0 runs everything on the node that claimed the run.",
       "default": "8"
     },
     {
@@ -2131,7 +2131,7 @@
       "path": "source.work",
       "type": "string",
       "required": true,
-      "description": "Where the intake writes its work batches (the rendered documents the drains read back): a directory or storage prefix the nodes can write, relative to the flow file when relative. It takes `{parameter}` tokens, whose values must not contain `/`, `\\` or `..`. A `${...}` reference is refused: a location is not resolved from one; vary it with a `{parameter}` token."
+      "description": "Where the intake writes its work batches (the rendered documents the drains read back): a directory or storage prefix the nodes can write, relative to the flow file when relative. It takes `{parameter}` tokens, whose values must not contain `/`, `\\` or `..`. A `${...}` reference is refused: a location is not resolved from one; vary it with a `{parameter}` token. A relative folder is in each node's own copy of the repository, so a flow with one never fans out; a storage URI, or an absolute path on storage every node mounts, lets it."
     },
     {
       "path": "target",

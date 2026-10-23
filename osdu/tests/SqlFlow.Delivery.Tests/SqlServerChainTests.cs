@@ -639,6 +639,10 @@ public class SqlServerChainTests
     private static string SourceDocument(SqlServerIngestionFixture estate, string name, int nodes)
     {
         string Table(string table) => $"\"[{estate.DatabaseName}].[{estate.SilverSchema}].[{table}]\"";
+
+        // Every node of a fan-out reads and writes the work location, so it is one they all reach: an absolute path, as
+        // shared storage is on a deployment. A relative one is a folder in each node's own copy of the repository.
+        var work = Path.Combine(estate.Root, ".work", name);
         return $$"""
             flowType: delivery
             name: {{name}}
@@ -647,7 +651,7 @@ public class SqlServerChainTests
             source:
               connection: ${env:{{estate.ConnectionVariable}}}
               lastModified: update_date
-              work: ../.work/{{name}}/{logSource}
+              work: '{{work}}/{logSource}'
             render:
               parameters:
                 dataPartition: dev

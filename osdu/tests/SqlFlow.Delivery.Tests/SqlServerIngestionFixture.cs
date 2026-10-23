@@ -569,7 +569,7 @@ public sealed class SqlServerIngestionFixture : IAsyncDisposable
             // one normalized text; the rewrites below are line based and would otherwise match nothing.
             var folder = WellboreChainDocuments.Contains(name) ? Path.Combine(Samples.FixtureDocuments, "flows") : Path.Combine(Samples.Source, "flows");
             var shipped = File.ReadAllText(Path.Combine(folder, name + ".yaml")).ReplaceLineEndings("\n");
-            var generated = Generate(shipped, name, databaseName, suffix, variable, fanOut, batchRecords);
+            var generated = Generate(shipped, name, databaseName, suffix, variable, fanOut, batchRecords, root);
             File.WriteAllText(Path.Combine(root, "flows", Rename(name, suffix) + ".yaml"), generated);
         }
     }
@@ -578,7 +578,7 @@ public sealed class SqlServerIngestionFixture : IAsyncDisposable
     /// One shipped document as this fixture runs it: the same flow, naming this database, these schemas, this connection
     /// reference and, for the OSDU flow, a target no test ever calls.
     /// </summary>
-    private static string Generate(string shipped, string name, string databaseName, string suffix, string variable, int fanOut, int batchRecords)
+    private static string Generate(string shipped, string name, string databaseName, string suffix, string variable, int fanOut, int batchRecords, string root)
     {
         var text = Rename(Replace(shipped.ReplaceLineEndings("\n"), "${env:OSDU_DATA_DB}", "${env:" + variable + "}", name), suffix);
         text = QualifyObjectNames(text, name, databaseName, suffix);
@@ -602,6 +602,10 @@ public sealed class SqlServerIngestionFixture : IAsyncDisposable
                     "\n  concurrency: 8\n",
                     $"\n  concurrency: 8\n  fanOut: {fanOut.ToString(CultureInfo.InvariantCulture)}\n  fanOutMinRecords: 1\n",
                     name);
+
+                // Every node of a fan-out reads and writes the work location, so it is one they all reach: an absolute path,
+                // as shared storage is on a deployment, where the shipped relative one is a folder in each node's own copy.
+                text = Replace(text, "\n  work: ../.work/{logSource}\n", $"\n  work: '{Path.Combine(root, ".work")}/{{logSource}}'\n", name);
             }
 
             if (batchRecords > 0)

@@ -135,7 +135,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   ([parallelism](osdu/docs/reference/flow/delivery.md#parallelism)).
 - **A large delivery spreads across the fleet by default.** A submission of 1,000 records or more fans out over up to
   eight member runs, one per work batch beyond the coordinating run's own, so an autoscaled pool brings up nodes for it;
-  `parallelism.fanOut: 0` keeps a flow on one run. A flow without `source.record.primaryKey` is no longer refused for
+  `parallelism.fanOut: 0` keeps a flow on one run. It needs a `source.work` every node reaches: put it on storage (a
+  storage URI) to fan out, since a relative folder is in each node's own copy of the repository and keeps the delivery
+  on one run. A flow without `source.record.primaryKey` is no longer refused for
   fanning out: its sending fans out and its planning stays on one run. `reliability.rateLimitRps` now holds for the
   whole fan-out, and each run's trace says why it did not fan out ([many nodes](osdu/docs/reference/concepts/submissions.md#many-nodes)).
 

@@ -74,6 +74,14 @@ balancing, and filed under reliability it went unnoticed.
 - **A delivery fans out by default, up to eight members.** The human chose the default over keeping fan-out opt-in: the
   pool and its autoscaler exist to spread work, and a delivery that never asks for it never scales. Eight was proposed
   and accepted. `fanOutMinRecords` (1,000) keeps a small delivery on one run, and 0 turns fan-out off.
+- **A delivery fans out only over a work location every node reaches.** Every member reads and writes the
+  submission's work batches on the node that runs it. A relative `source.work` resolves inside the copy of the
+  repository the node runs the flow from, which is a disk of its own on every worker, so batches one node wrote are
+  missing on the others; their records would be held as unreadable and planned again by the next run, which fans out
+  again. Fan-out therefore needs a storage URI or an absolute path (a deployment's shared mount), and a relative one keeps
+  the delivery on one run, its trace saying so. This was found when the human asked whether the estate's flows would
+  scale out unchanged: they write their work to `../.work`, so they do not until it moves to storage. Rebasing relative
+  work folders onto a storage root the deployment configures would let them fan out unchanged; it was not done here.
 - **Members are bounded by the work.** The drain enqueued exactly `fanOut` members whatever the submission held, so a
   fan-out of 64 over ten batches started 64 runs and most found nothing. It now enqueues one per queued work batch beyond
   the one the coordinating run takes, up to `fanOut`, and decides on the records still to send rather than on what the
@@ -107,8 +115,8 @@ balancing, and filed under reliability it went unnoticed.
 
 - An estate's documents that write a moved key are refused until they are moved, each refusal naming its key; the
   documents move in one change with the upgrade, since the old version does not know `parallelism`.
-- A large delivery queues up to eight members, and an autoscaled pool brings up nodes for them; a flow wanting one run
-  sets `parallelism.fanOut: 0`. Each run keeps its own `parallelism.concurrency`, so the records in flight against OSDU
+- A large delivery whose `source.work` is on storage queues up to eight members, and an autoscaled pool brings up nodes
+  for them; a flow wanting one run sets `parallelism.fanOut: 0`. A flow with a relative `source.work` is unchanged: one run. Each run keeps its own `parallelism.concurrency`, so the records in flight against OSDU
   multiply by the runs; the rate limit is what bounds them as a whole.
 - Every run's trace says why it did not fan out, which is the first thing to read when a pool does not scale.
 - On a pool with no place free, a fanned-out intake takes up to three minutes longer than one run planning alone; a
