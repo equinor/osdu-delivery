@@ -2816,6 +2816,11 @@ namespace SqlFlow.Delivery.Data.Migrations
                     b.Property<long?>("CacheSetId")
                         .HasColumnType("bigint");
 
+                    b.Property<string>("ChildLinkKey")
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)")
+                        .UseCollation("Latin1_General_100_BIN2");
+
                     b.Property<string>("ClaimedTargetId")
                         .HasMaxLength(500)
                         .HasColumnType("nvarchar(500)")
@@ -3030,6 +3035,9 @@ namespace SqlFlow.Delivery.Data.Migrations
                         .HasFilter("[HeldCacheSetId] IS NOT NULL");
 
                     b.HasIndex("LastSubmissionId", "WorkBatch");
+
+                    b.HasIndex("PartitionId", "ChildLinkKey")
+                        .HasFilter("[ChildLinkKey] IS NOT NULL");
 
                     b.HasIndex("PartitionId", "DeliveryKey");
 

@@ -45,6 +45,7 @@ internal static partial class MappingMapper
     internal const string UnverifiedKey = "$unverified";
     internal const string LookupKey = "$lookup";
     internal const string ParentKey = "$parent";
+    internal const string ChildKey = "$child";
     internal const string FindAllKey = "$findAll";
     internal const string AssertKey = "$assert";
 
@@ -58,7 +59,7 @@ internal static partial class MappingMapper
     internal const string CacheReference = Marker + MappingSource.CachePrefix;
 
     /// <summary>The keys a value node reads its value with; naming one of them makes a map a value node.</summary>
-    internal static readonly IReadOnlyList<string> SourceKeys = [FromKey, ExprKey, ValueKey, CacheKey, SearchKey, LookupKey, ParentKey, CoalesceKey];
+    internal static readonly IReadOnlyList<string> SourceKeys = [FromKey, ExprKey, ValueKey, CacheKey, SearchKey, LookupKey, ParentKey, ChildKey, CoalesceKey];
 
     /// <summary>The settings a value node takes beside the key it reads its value with.</summary>
     internal static readonly IReadOnlyList<string> ValueSettings = [FindByKey, FindAllKey, ModifiersKey, WhenKey, RequiredKey, IgnoreSeparatorsKey, UnverifiedKey, AssertKey, DescriptionKey];
@@ -77,7 +78,7 @@ internal static partial class MappingMapper
 
     /// <summary>Every word of the mapping language a key of the record tree can be.</summary>
     internal static readonly IReadOnlyList<string> NodeKeys =
-        [FromKey, ExprKey, ValueKey, CacheKey, SearchKey, LookupKey, ParentKey, CoalesceKey, ForEachKey, ItemKey, WhereKey, FindByKey, FindAllKey, ModifiersKey, WhenKey, RequiredKey, IgnoreSeparatorsKey, UnverifiedKey, AssertKey, DescriptionKey];
+        [FromKey, ExprKey, ValueKey, CacheKey, SearchKey, LookupKey, ParentKey, ChildKey, CoalesceKey, ForEachKey, ItemKey, WhereKey, FindByKey, FindAllKey, ModifiersKey, WhenKey, RequiredKey, IgnoreSeparatorsKey, UnverifiedKey, AssertKey, DescriptionKey];
 
     /// <summary>The value keys, as a message lists them.</summary>
     private static string SourceList => string.Join(", ", SourceKeys.Take(SourceKeys.Count - 1)) + " or " + SourceKeys[^1];
@@ -603,6 +604,7 @@ internal static partial class MappingMapper
             ExprKey => new MappingSource { Kind = MappingSourceKind.Expression, Expression = Expression(Get(map, ExprKey), ExprKey, scope, at) },
             CacheKey => CacheSource(RequiredText(map, CacheKey, at), at),
             ParentKey => ParentSource(RequiredText(map, ParentKey, at), scope, at),
+            ChildKey => ChildSource(RequiredText(map, ChildKey, at), scope, at),
             _ => SearchSource(RequiredText(map, SearchKey, at), at),
         };
 
@@ -612,6 +614,7 @@ internal static partial class MappingMapper
             {
                 MappingSourceKind.Expression => $"{at}: {FindByKey} selects the record a {CacheKey} or a {SearchKey} node reads; this node computes its value with {ExprKey}.",
                 MappingSourceKind.Parent => $"{at}: {FindByKey} selects the record a {CacheKey} or a {SearchKey} node reads; this node reads its record's parent, which is found by the record's own id.",
+                MappingSourceKind.Child => $"{at}: {FindByKey} selects the record a {CacheKey} or a {SearchKey} node reads; this node links one of its record's children, which is found by the record's own id.",
                 _ => $"{at}: {FindByKey} selects the record a {CacheKey} or a {SearchKey} node reads; this node reads the column {Written(read.Column!, scope)}.",
             });
         }
@@ -643,6 +646,23 @@ internal static partial class MappingMapper
             }
 
             findAll = FindAllLines(Get(map, FindAllKey), read, scope, at);
+        }
+
+        if (read.Kind == MappingSourceKind.Child)
+        {
+            // The reference is OSDU's own id of the child, so there is nothing a modifier could change into another link; and a
+            // child is never a reason to hold its parent: a parent waiting for a child that reads it would wait for ever.
+            if (Has(map, ModifiersKey))
+            {
+                throw new FlowValidationException(
+                    $"{at}: {ModifiersKey} change a value the row gives, and a {ChildKey} node writes the reference to the record's child as OSDU names it, with the version separator and no version; remove {ModifiersKey}.");
+            }
+
+            if (Flag(map, RequiredKey, at) == true)
+            {
+                throw new FlowValidationException(
+                    $"{at}: a {ChildKey} node never holds its record: the link is written once OSDU holds the child, and left out until then, since a parent waiting for a child that waits for its parent would wait for ever; remove {RequiredKey}.");
+            }
         }
 
         var findBy = read.Resolves && findAll is null ? FindByLines(Get(map, FindByKey), read, scope, at) : [];
@@ -690,13 +710,14 @@ internal static partial class MappingMapper
                 $"{at}: {UnverifiedKey} lets an id the node builds with id or ref go out when the cache holds no record under it, and this node builds no id; build one, or remove {UnverifiedKey}.");
         }
 
-        var required = Flag(map, RequiredKey, at) ?? true;
+        var required = Flag(map, RequiredKey, at) ?? read.Kind != MappingSourceKind.Child;
         var notIncoming = read.ReadsRow
             ? null
             : read.Kind switch
             {
                 MappingSourceKind.Search => "this node's value is the id a search of the platform finds",
                 MappingSourceKind.Parent => "this node's value is read from the record's parent",
+                MappingSourceKind.Child => "this node's value is the reference to one of the record's children",
                 _ => "this node's value comes from the partition's cache",
             };
         return new MappingEntry
@@ -933,6 +954,12 @@ internal static partial class MappingMapper
                 throw new FlowValidationException($"{alternativeAt} repeats rows with {ForEachKey}, and an alternative of {CoalesceKey} reads one value.");
             }
 
+            if (Has(alternative, ChildKey))
+            {
+                throw new FlowValidationException(
+                    $"{alternativeAt}: a {ChildKey} node links one of the record's children, and gives nothing while OSDU does not hold it, which no other value stands in for; write it as a node of its own, or, to link several children, as the items of a list.");
+            }
+
             foreach (var setting in CoalesceSettings.Where(setting => Has(alternative, setting)))
             {
                 throw new FlowValidationException(
@@ -1001,6 +1028,36 @@ internal static partial class MappingMapper
         }
 
         return new MappingSource { Kind = MappingSourceKind.Parent, ParentPath = path };
+    }
+
+    /// <summary>
+    /// <c>$child: welldb:wks:work-product-component--WellLogDetail:1.0.0</c>: the reference to the record's child of that kind, a
+    /// kind whose template is linked to the mapping's own (osdu/docs/reference/flow/mapping-child.md). The child is found by the
+    /// record's own id, so a node under a <c>$forEach</c>, which renders a row of a child dataset, has no child of its own.
+    /// </summary>
+    private static MappingSource ChildSource(string text, TreeScope scope, string at)
+    {
+        const string Example = ChildKey + ": welldb:wks:work-product-component--WellLogDetail:1.0.0";
+        var kind = text.Trim();
+        if (scope.Child is not null)
+        {
+            throw new FlowValidationException(
+                $"{at}: {ChildKey} links one of the record's children, which are found by the record's own id, and a row of {scope.Child} has none of its own; write the link outside the {ForEachKey}.");
+        }
+
+        if (!FlowMapper.IsRecordKind(kind))
+        {
+            throw new FlowValidationException(
+                $"{at}: {ChildKey} names the kind of the child it links, 'authority:source:group--Entity:major.minor.patch', as {Example}; '{text}' is not one.");
+        }
+
+        if (!Identity.TargetId.EntityTypeFromKind(kind).Contains("--", StringComparison.Ordinal))
+        {
+            throw new FlowValidationException(
+                $"{at}: {ChildKey} '{kind}' names an abstract schema, which no record is of; name the kind of the custom template linked to this one, as {Example}.");
+        }
+
+        return new MappingSource { Kind = MappingSourceKind.Child, ChildKind = kind };
     }
 
     /// <summary><c>$search: Wellbore</c>: one of the mapping's searches, which gives the id of the one record it finds.</summary>

@@ -2026,6 +2026,11 @@ export interface DeliveryTemplateDetail {
   variables: DeliveryTemplateVariable[];
   /** The kind the template is linked to as its parent, whose records its mappings read with $parent; null for none. */
   parent?: string | null;
+  /**
+   * The kinds of the repository's templates linked to this one as their parent, whose records a mapping of this template
+   * can link as children with $child; empty when none is.
+   */
+  children?: string[];
 }
 
 /**
@@ -2201,10 +2206,11 @@ export interface DeliveryBuilderCache {
  * id of a record found by searching the platform, a value an expression computes from the row, the first of several
  * alternatives that gives a value ($coalesce), a field of the record one of the mapping's lookups finds ($lookup), a list
  * (of values whose items are fixed values and value nodes, or of objects whose items are groups and fixed objects), a
- * group: an item of a list of objects, the object its properties give, or a section of the record's parent ($parent), for a
- * template linked to a parent.
+ * group: an item of a list of objects, the object its properties give, a section of the record's parent ($parent), for a
+ * template linked to a parent, or the link to one of the record's children ($child), for a template other templates are
+ * linked to.
  */
-export type MappingDraftInput = "Dataset" | "Repeat" | "Cache" | "Static" | "Search" | "Expression" | "Coalesce" | "Lookup" | "List" | "Group" | "Parent";
+export type MappingDraftInput = "Dataset" | "Repeat" | "Cache" | "Static" | "Search" | "Expression" | "Coalesce" | "Lookup" | "List" | "Group" | "Parent" | "Child";
 
 export type MappingDraftModifierKind = "trim" | "upper" | "lower" | "split" | "replace" | "equals" | "date" | "number" | "id" | "ref";
 
@@ -2275,6 +2281,8 @@ export interface MappingDraftEntry {
   lookup: string | null;
   /** Parent: the path of the section of the record's parent it takes, from the record's root, such as data.DDMSDatasets. */
   parentPath?: string | null;
+  /** Child: the kind of the child it links, a custom template linked to this one, such as welldb:wks:work-product-component--WellLogDetail:1.0.0. */
+  childKind?: string | null;
   findBy: MappingDraftFind[];
   /** Cache: every matching row read ($findAll) in place of findBy lines; null for an entry that finds one record. */
   findAll: MappingDraftFindAll | null;

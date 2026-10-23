@@ -1310,6 +1310,7 @@
         "delivery-cli-run",
         "delivery-flow-mapping",
         "delivery-flow-mapping-parent",
+        "delivery-flow-mapping-child",
         "concept-upsert-and-change-detection",
         "concept-provenance-and-row-keys"
       ],
@@ -1840,7 +1841,8 @@
         "delivery-concept-templates",
         "delivery-flow-interfaces",
         "delivery-concept-osdu-order",
-        "delivery-flow-mapping-parent"
+        "delivery-flow-mapping-parent",
+        "delivery-flow-mapping-child"
       ],
       "sourceRefs": [
         "osdu/src/SqlFlow.Delivery/Documents/OsduLineage.cs",
@@ -2161,6 +2163,7 @@
         "delivery-concept-templates",
         "delivery-concept-record-lifecycle",
         "delivery-flow-mapping-parent",
+        "delivery-flow-mapping-child",
         "cli-validate"
       ],
       "sourceRefs": [
@@ -2297,7 +2300,8 @@
         "delivery-cli-records",
         "delivery-flow-delivery",
         "delivery-flow-mapping-assertions",
-        "delivery-flow-mapping-parent"
+        "delivery-flow-mapping-parent",
+        "delivery-flow-mapping-child"
       ],
       "sourceRefs": [
         "osdu/src/SqlFlow.Delivery/Ledger/ILedger.cs",
@@ -2655,7 +2659,8 @@
         "linked template",
         "parent kind",
         "x-osdu-inheriting-from-kind",
-        "custom schema"
+        "custom schema",
+        "child kind"
       ],
       "related": [
         "delivery-flow-mapping",
@@ -2666,7 +2671,8 @@
         "delivery-concept-lineage",
         "delivery-concept-architecture",
         "delivery-table-repository-template",
-        "delivery-flow-mapping-parent"
+        "delivery-flow-mapping-parent",
+        "delivery-flow-mapping-child"
       ],
       "sourceRefs": [
         "osdu/src/SqlFlow.Delivery/Templates/OsduTemplate.cs",
@@ -3485,6 +3491,7 @@
         "delivery-flow-mapping-expressions",
         "delivery-flow-mapping-lookups",
         "delivery-flow-mapping-parent",
+        "delivery-flow-mapping-child",
         "delivery-flow-mapping-modifiers",
         "delivery-flow-mapping-assertions",
         "delivery-concept-templates",
@@ -3586,6 +3593,62 @@
         "osdu/tests/SqlFlow.Delivery.Tests/MappingAssertionRenderTests.cs",
         "osdu/tests/SqlFlow.Delivery.Tests/MappingAssertionLedgerTests.cs",
         "osdu/tests/SqlFlow.Delivery.Tests/ValidationGateTests.cs",
+        "osdu/docs/census/keys.mapping.json"
+      ]
+    },
+    {
+      "id": "delivery-flow-mapping-child",
+      "corpus": "reference",
+      "path": "flow/mapping-child.md",
+      "title": "Mapping $child: a canonical record links the custom records that stand beside it, once OSDU holds them",
+      "type": "flow-reference",
+      "summary": "How a record links its children, the records of the custom templates linked to its kind with the same minted id, found in OSDU as it renders.",
+      "keywords": [
+        "$child",
+        "child record",
+        "linked template",
+        "custom template",
+        "canonical record",
+        "interlinked records",
+        "link to custom record",
+        "x-osdu-inheriting-from-kind",
+        "ExtensionProperties",
+        "tags",
+        "same id other namespace",
+        "child landed",
+        "plan again"
+      ],
+      "yamlPath": "record.<property>.$child (documentType: mapping)",
+      "related": [
+        "delivery-flow-mapping-parent",
+        "delivery-concept-templates",
+        "delivery-flow-mapping",
+        "delivery-flow-mapping-values",
+        "delivery-concept-preflight",
+        "delivery-concept-change-detection",
+        "delivery-concept-record-lifecycle",
+        "delivery-concept-lineage",
+        "delivery-table-record"
+      ],
+      "sourceRefs": [
+        "osdu/src/SqlFlow.Delivery/Documents/MappingMapper.Record.cs",
+        "osdu/src/SqlFlow.Delivery/Model/MappingDefinition.cs",
+        "osdu/src/SqlFlow.Delivery/Rendering/EntryValues.cs",
+        "osdu/src/SqlFlow.Delivery/Rendering/MappingRenderer.cs",
+        "osdu/src/SqlFlow.Delivery/Rendering/IRecordSearch.cs",
+        "osdu/src/SqlFlow.Delivery/Rendering/SearchFields.cs",
+        "osdu/src/SqlFlow.Delivery/Engine/OsduRecordSearch.cs",
+        "osdu/src/SqlFlow.Delivery/Engine/RenderResolver.cs",
+        "osdu/src/SqlFlow.Delivery/Engine/Planning/Planner.cs",
+        "osdu/src/SqlFlow.Delivery/Engine/Intake/SubmissionIntake.cs",
+        "osdu/src/SqlFlow.Delivery/Validation/Preflight.cs",
+        "osdu/src/SqlFlow.Delivery/Ledger/OsduLedger.Children.cs",
+        "osdu/src/SqlFlow.Delivery/Documents/DeliveryLineage.cs",
+        "osdu/src/SqlFlow.Delivery/Templates/MappingBuilder.cs",
+        "osdu/tests/SqlFlow.Delivery.Tests/ChildMappingTests.cs",
+        "osdu/tests/SqlFlow.Delivery.Tests/ChildRenderTests.cs",
+        "osdu/tests/SqlFlow.Delivery.Tests/ChildRecordReadTests.cs",
+        "osdu/tests/SqlFlow.Delivery.Tests/ChildLedgerTests.cs",
         "osdu/docs/census/keys.mapping.json"
       ]
     },
@@ -3772,7 +3835,8 @@
         "delivery-concept-lineage",
         "delivery-flow-ddms",
         "delivery-table-record",
-        "delivery-table-attempt"
+        "delivery-table-attempt",
+        "delivery-flow-mapping-child"
       ],
       "sourceRefs": [
         "osdu/src/SqlFlow.Delivery/Templates/TemplateParent.cs",
@@ -3828,6 +3892,7 @@
         "delivery-flow-mapping-expressions",
         "delivery-flow-mapping-lookups",
         "delivery-flow-mapping-parent",
+        "delivery-flow-mapping-child",
         "delivery-flow-mapping-modifiers",
         "delivery-flow-mapping-assertions",
         "delivery-concept-preflight",
@@ -7183,7 +7248,8 @@
         "delivery-wiki-0018-template-folders",
         "delivery-wiki-0009-searched-references",
         "delivery-wiki-0004-preserved-keys",
-        "delivery-wiki-0002-client-supplied-ids"
+        "delivery-wiki-0002-client-supplied-ids",
+        "delivery-wiki-0023-child-links"
       ],
       "sourceRefs": [
         "osdu/src/SqlFlow.Delivery/Templates/TemplateParent.cs",
@@ -7293,6 +7359,39 @@
         "osdu/src/SqlFlow.Delivery/Ledger/SqlServerLedgerBulk.Removal.cs",
         "osdu/src/SqlFlow.Delivery/Engine/Planning/Planner.cs",
         "osdu/src/SqlFlow.Delivery.Data/DeliveryEntities.cs"
+      ]
+    },
+    {
+      "id": "delivery-wiki-0023-child-links",
+      "corpus": "wiki",
+      "path": "decisions/0023-child-links.md",
+      "title": "Decision 0023: A canonical record links its children as it renders, once OSDU holds them, and a child landing plans it again",
+      "type": "decision",
+      "summary": "Why a canonical record links its custom children with $child, written in an open property, looked up as it renders, never held for them.",
+      "keywords": [
+        "$child",
+        "child record",
+        "interlinked records",
+        "linked template",
+        "canonical record",
+        "ExtensionProperties",
+        "tags",
+        "ChildLinkKey"
+      ],
+      "related": [
+        "delivery-wiki-0019-linked-templates",
+        "delivery-wiki-0002-client-supplied-ids",
+        "delivery-wiki-0009-searched-references"
+      ],
+      "sourceRefs": [
+        "osdu/src/SqlFlow.Delivery/Documents/MappingMapper.Record.cs",
+        "osdu/src/SqlFlow.Delivery/Rendering/EntryValues.cs",
+        "osdu/src/SqlFlow.Delivery/Rendering/MappingRenderer.cs",
+        "osdu/src/SqlFlow.Delivery/Engine/OsduRecordSearch.cs",
+        "osdu/src/SqlFlow.Delivery/Validation/Preflight.cs",
+        "osdu/src/SqlFlow.Delivery/Ledger/OsduLedger.Children.cs",
+        "osdu/src/SqlFlow.Delivery/Documents/DeliveryLineage.cs",
+        "osdu/tests/SqlFlow.Delivery.Tests/ChildLedgerTests.cs"
       ]
     },
     {

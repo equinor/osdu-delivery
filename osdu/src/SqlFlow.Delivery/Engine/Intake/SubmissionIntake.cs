@@ -639,6 +639,7 @@ public sealed class SubmissionIntake
         SourceInsertedUtc = entry.Origin.InsertedUtc,
         PayloadModifiedUtc = entry.PayloadModifiedUtc,
         RenderContext = entry.SkipTier == SkipTier.ContentHash ? renderContext : null,
+        ChildLinkKey = entry.SkipTier == SkipTier.ContentHash ? entry.Render?.ChildLinkKey : null,
         RunId = RunId,
     };
 
@@ -1015,6 +1016,8 @@ public sealed class SubmissionIntake
         // The parent the held render read, or found missing: the ledger plans the record again when it lands.
         ParentId = entry.Render?.Parent?.Id,
         PendingParentVersion = entry.Render?.Parent?.Version,
+        // The children the held render looked for: what a child landing finds the record by once its hold is lifted.
+        ChildLinkKey = entry.Render?.ChildLinkKey,
         Basis = PlanBasis.Of(entry.Existing),
     };
 
@@ -1049,6 +1052,8 @@ public sealed class SubmissionIntake
         // The parent the document's sections were taken from, and its version: what the record's history traces them to.
         ParentId = entry.Render!.Parent?.Id,
         PendingParentVersion = entry.Render.Parent?.Version,
+        // The children the document links, or was rendered without: a child landing plans the record again.
+        ChildLinkKey = entry.Render.ChildLinkKey,
         Basis = PlanBasis.Of(entry.Existing),
     };
 

@@ -4,13 +4,14 @@ namespace SqlFlow.Delivery.Rendering;
 
 /// <summary>
 /// What one render met on its way: the questions it asked of the platform that the run could not answer yet, the answers
-/// it used, the parent it read, and which alternative each <c>$coalesce</c> node took its value from. It belongs to one
-/// render, never to the renderer, which the plan's parallel workers share.
+/// it used, the parent it read, the children it looked for, and which alternative each <c>$coalesce</c> node took its value
+/// from. It belongs to one render, never to the renderer, which the plan's parallel workers share.
 /// </summary>
 internal sealed class RenderTrail
 {
     private List<PlatformQuestion>? _unanswered;
     private List<SearchUsage>? _used;
+    private List<ChildUsage>? _children;
     private Dictionary<(string Target, int Alternative), CoalesceChoice>? _chosen;
 
     /// <summary>
@@ -30,6 +31,9 @@ internal sealed class RenderTrail
 
     /// <summary>The record's parent as the render read it (osdu/docs/reference/flow/mapping-parent.md); null when it read none.</summary>
     public ParentUsage? Parent { get; private set; }
+
+    /// <summary>The record's children as the render looked for them (osdu/docs/reference/flow/mapping-child.md), each once, in the order it met them.</summary>
+    public IReadOnlyList<ChildUsage> Children => _children ?? (IReadOnlyList<ChildUsage>)[];
 
     /// <summary>The answers the render consulted, each once, in the order it consulted them.</summary>
     public IReadOnlyList<SearchUsage> Used => _used ?? (IReadOnlyList<SearchUsage>)[];
@@ -62,6 +66,17 @@ internal sealed class RenderTrail
     /// <summary>Notes the parent <paramref name="question"/> asked for as <paramref name="answer"/> gives it.</summary>
     public void Read(ParentQuestion question, ParentAnswer answer)
         => Parent ??= new ParentUsage(question.Id, question.Kind, answer.Found, answer.Version);
+
+    /// <summary>Notes the child <paramref name="question"/> looked for as <paramref name="answer"/> gives it.</summary>
+    public void Link(ChildQuestion question, ChildAnswer answer)
+    {
+        var usage = new ChildUsage(question.Id, question.Kind, answer.Found, answer.Version);
+        _children ??= [];
+        if (!_children.Contains(usage))
+        {
+            _children.Add(usage);
+        }
+    }
 
     /// <summary>Notes that the node filling <paramref name="target"/> took its value from its alternative number <paramref name="alternative"/>.</summary>
     public void Choose(string target, int alternative, int of, string origin, bool unverified)

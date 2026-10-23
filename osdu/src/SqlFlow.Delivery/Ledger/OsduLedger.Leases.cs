@@ -802,6 +802,9 @@ public sealed partial class OsduLedger
 
                 // The records that read one of these as their parent render again from what landed.
                 await PlanChildrenOfAsync(partition, slice.Landed, nowUtc, ct).ConfigureAwait(false);
+
+                // The records that link one of these as their child render again, and link it.
+                await PlanParentsOfAsync(partition, slice.Landed, nowUtc, ct).ConfigureAwait(false);
             }
 
             applied += slice.Applied;

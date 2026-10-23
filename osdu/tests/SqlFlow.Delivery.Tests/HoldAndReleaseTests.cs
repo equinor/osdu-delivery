@@ -1643,6 +1643,8 @@ public sealed class HoldAndReleaseTests : IDisposable
 
             public bool TryRead(ParentQuestion question, [NotNullWhen(true)] out ParentAnswer? answer) => inner.TryRead(question, out answer);
 
+            public bool TryRead(ChildQuestion question, [NotNullWhen(true)] out ChildAnswer? answer) => inner.TryRead(question, out answer);
+
             public async Task AnswerAsync(IReadOnlyCollection<PlatformQuestion> questions, CancellationToken ct = default)
             {
                 if (questions.Count > 0)

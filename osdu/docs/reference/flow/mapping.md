@@ -23,6 +23,7 @@ related:
   - delivery-flow-mapping-expressions
   - delivery-flow-mapping-lookups
   - delivery-flow-mapping-parent
+  - delivery-flow-mapping-child
   - delivery-flow-mapping-modifiers
   - delivery-flow-mapping-assertions
   - delivery-concept-templates
@@ -580,6 +581,7 @@ The node, condition and expression messages are on [mapping values](mapping-valu
 - [Mapping lookups](mapping-lookups.md) and [mapping modifiers](mapping-modifiers.md).
 - [Mapping assertions](mapping-assertions.md): `$assert`, the rules a property's value must meet.
 - [Mapping $parent](mapping-parent.md): a custom template's records reading sections of their canonical parent.
+- [Mapping $child](mapping-child.md): a canonical record linking the custom records that stand beside it.
 - [Templates](../concepts/templates.md): the template folders a mapping reads, and where `template.version` comes from.
 - [Delivery flow](delivery.md): `render.mapping`, `render.parameters`, `source.record` and `source.datasets`.
 - [Writing a mapping](../guides/writing-a-mapping.md): from a template to a mapping that passes the preflight.

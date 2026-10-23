@@ -372,6 +372,30 @@ public sealed class LineageTests : IDisposable
     }
 
     [Fact]
+    public void A_canonical_mapping_linking_its_children_reads_none_of_them_so_the_custom_flow_still_runs_after_it()
+    {
+        // The custom log reads its parent, and the canonical WellLog links the custom log as its child: were the link a
+        // read, each flow would wait for the other.
+        CustomLog("""
+                DDMSDatasets: { $parent: data.DDMSDatasets }
+            """);
+        var canonical = PathOf("mappings/WellLog@1.4.0.yaml");
+        var written = File.ReadAllText(canonical).ReplaceLineEndings("\n");
+        Assert.Contains("\n  data:\n", written, StringComparison.Ordinal);
+        File.WriteAllText(canonical, written.Replace(
+            "\n  data:\n",
+            $"\n  data:\n    ExtensionProperties:\n      CustomLogID: {{ $child: {CustomLogKind} }}\n",
+            StringComparison.Ordinal));
+
+        var lineage = Describe("flows/welldb-welllog-03-header-delivery.yaml");
+
+        Assert.True(lineage.Warnings.Count == 0, string.Join(" | ", lineage.Warnings));
+        Assert.DoesNotContain(Assert.Single(lineage.Derivations).From, d => d.Name == CustomLogKind);
+        var (_, report) = Scan();
+        Assert.True(WaveOf(report, "welldb-welllog-03-header-delivery") < WaveOf(report, "welldb-customlog-03-delivery"));
+    }
+
+    [Fact]
     public void A_mapping_over_a_linked_template_that_reads_no_parent_section_reads_no_parent_kind()
     {
         // The link is the template's; a mapping filling the custom template from its own rows alone waits for no parent.

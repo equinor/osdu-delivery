@@ -564,6 +564,13 @@ public sealed partial class OsduLedger : ILedger
 
                 entity.SourceKeyJson = Truncate(skip.SourceKeyJson, 2000) ?? entity.SourceKeyJson;
 
+                // A render that sent nothing still looked for the record's children, or no longer does under a mapping that
+                // stopped linking them: what it found decides which landings plan the record again.
+                if (skip.Kind == SkipKind.Rendered)
+                {
+                    entity.ChildLinkKey = skip.ChildLinkKey;
+                }
+
                 // A record the ledger parked (held, failed or reverted) that OSDU holds a version of, and that the plan
                 // found rendering exactly that version, or (released, so no longer blocked) carrying a row older than it:
                 // OSDU holds what the source has to give, so the record is delivered again, with nothing sent. Left
@@ -957,9 +964,11 @@ public sealed partial class OsduLedger : ILedger
                 // releases the record. What the document OSDU holds was built from stays the record's cache set.
                 entity.HeldCacheSetId = record.CacheSetId;
 
-                // The parent the held render read, or found missing, so the parent landing plans the record again.
+                // The parent the held render read, or found missing, so the parent landing plans the record again; and the
+                // children it looked for, so a child landing finds it once its hold is lifted.
                 entity.ParentId = record.ParentId;
                 entity.PendingParentVersion = record.PendingParentVersion;
+                entity.ChildLinkKey = record.ChildLinkKey;
                 held.Add(record.DeliveryKey);
                 db.DeliveryAttempts.Add(new DeliveryAttempt
                 {
@@ -4056,6 +4065,7 @@ public sealed partial class OsduLedger : ILedger
         ParentId = r.ParentId,
         ParentVersion = r.ParentVersion,
         PendingParentVersion = r.PendingParentVersion,
+        ChildLinkKey = r.ChildLinkKey,
         PlanRequestedUtc = r.PlanRequestedUtc,
         CreatedUtc = r.CreatedUtc,
         UpdatedUtc = r.UpdatedUtc,

@@ -14,6 +14,14 @@ namespace SqlFlow.Delivery.Rendering;
 /// </summary>
 public sealed record ResolvedParent(TemplateParent Link, SchemaSnapshot? Schema, string? Problem);
 
+/// <summary>
+/// The template of a kind a mapping links its records to as their children (<c>$child</c>), settled from the template folders
+/// on the mapping's path as a kind named alone is: what says the kind is linked to the mapping's own
+/// (osdu/docs/reference/flow/mapping-child.md). <paramref name="Schema"/> is null when it cannot be read, and
+/// <paramref name="Problem"/> says why.
+/// </summary>
+public sealed record ResolvedChild(string Kind, SchemaSnapshot? Schema, string? Problem);
+
 /// <summary>One search a mapping declares, with how each property its findBy lines compare is indexed.</summary>
 /// <param name="Declaration">The search as the mapping declares it.</param>
 /// <param name="Fields">Each property compared, by the path the mapping writes, as the searched kind's schema indexes it.</param>
@@ -47,11 +55,28 @@ public sealed class ResolvedSearches
     /// </summary>
     public ResolvedParent? Parent { get; private init; }
 
+    /// <summary>
+    /// The templates of the kinds the mapping links its records to as their children, by the kind its <c>$child</c> nodes
+    /// write; empty for a mapping that links none.
+    /// </summary>
+    public IReadOnlyDictionary<string, ResolvedChild> Children { get; private init; } = new Dictionary<string, ResolvedChild>(StringComparer.Ordinal);
+
     /// <summary>These searches with <paramref name="parent"/>, the parent's template, beside them.</summary>
     public ResolvedSearches WithParent(ResolvedParent parent)
     {
         ArgumentNullException.ThrowIfNull(parent);
-        return new ResolvedSearches(Searches, Problems) { Parent = parent };
+        return new ResolvedSearches(Searches, Problems) { Parent = parent, Children = Children };
+    }
+
+    /// <summary>These searches with <paramref name="children"/>, the templates of the kinds the mapping links as children, beside them.</summary>
+    public ResolvedSearches WithChildren(IEnumerable<ResolvedChild> children)
+    {
+        ArgumentNullException.ThrowIfNull(children);
+        return new ResolvedSearches(Searches, Problems)
+        {
+            Parent = Parent,
+            Children = children.ToDictionary(child => child.Kind, StringComparer.Ordinal),
+        };
     }
 
     /// <summary>

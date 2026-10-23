@@ -326,6 +326,7 @@ public sealed class MappingRenderer
             CacheUsages = Distinct(usages),
             SearchUsages = searched.Used,
             Parent = searched.Parent,
+            Children = searched.Children,
             Unanswered = searched.Unanswered,
             Choices = searched.Chosen,
             Assertions = asserted,
@@ -428,6 +429,7 @@ public sealed class MappingRenderer
         {
             SearchQuestion search => $"searching {search.Kind} for {search.Field} '{search.Value}' got no answer from the platform",
             ParentQuestion parent => $"reading the parent record {parent.Id} ({parent.Kind}) got no answer from the platform",
+            ChildQuestion child => $"looking for the child record {child.Id} ({child.Kind}) got no answer from the platform",
             _ => throw new ArgumentException($"A question of {question.GetType().Name} is not one a render asks.", nameof(question)),
         };
     }
@@ -450,6 +452,28 @@ public sealed class MappingRenderer
             ? TargetId.Compose(_context.DataPartition, parent.EntityType, key)
             : TargetId.ComposeFromKey(_context.DataPartition, parent.EntityType, keyValues, out _);
         return id is null ? null : new ParentQuestion(id, parent.Kind, _parentSections);
+    }
+
+    /// <summary>
+    /// The question that looks for the record's child of <paramref name="kind"/>, the record <paramref name="row"/> renders
+    /// (osdu/docs/reference/flow/mapping-child.md): the record whose id is the record's own with the child's entity type, made
+    /// from the same key the same way, as the child's own render makes its parent's. Null when the row's key is not complete
+    /// (the record is held for that already), or its id cannot be made.
+    /// </summary>
+    internal ChildQuestion? ChildOf(SourceRow row, string kind)
+    {
+        ArgumentNullException.ThrowIfNull(row);
+        ArgumentException.ThrowIfNullOrWhiteSpace(kind);
+        if (DeriveKey(row, out var keyValues) is not { } key)
+        {
+            return null;
+        }
+
+        var entityType = TargetId.EntityTypeFromKind(kind);
+        var id = _mapping.Dataset.IdFrom == MappingIdSource.DeliveryKey
+            ? TargetId.Compose(_context.DataPartition, entityType, key)
+            : TargetId.ComposeFromKey(_context.DataPartition, entityType, keyValues, out _);
+        return id is null ? null : new ChildQuestion(id, kind);
     }
 
     /// <summary>
@@ -1055,6 +1079,20 @@ public sealed record RenderResult
     /// sections were taken from, or that the platform holds none. Null for a record whose mapping reads no parent.
     /// </summary>
     public ParentUsage? Parent { get; init; }
+
+    /// <summary>
+    /// The record's children as the render looked for them (osdu/docs/reference/flow/mapping-child.md): each one's id, and
+    /// whether the platform held it, so the document links it. Empty for a record whose mapping links none, or whose render
+    /// stopped before it reached a <c>$child</c> node.
+    /// </summary>
+    public IReadOnlyList<ChildUsage> Children { get; init; } = [];
+
+    /// <summary>
+    /// The unique segment the record's children's ids share with the id the record's key gives, when the render looked for
+    /// any (<see cref="Children"/>): what the ledger keeps so a child landing finds the records that link it. Null when it
+    /// looked for none.
+    /// </summary>
+    public string? ChildLinkKey => Children.Count == 0 ? null : Identity.TargetId.Unique(Children[0].Id);
 
     /// <summary>
     /// Questions the render needed answered and the run had not asked yet. A result carrying any of these is not

@@ -27,7 +27,7 @@ public class ParentRecordReadTests
     /// Storage, answering each request by the ids it names: the records it holds, the ids it calls invalid, and the ids it
     /// asks to retry (as many times as given). Safe under the concurrent requests a run sends.
     /// </summary>
-    private sealed class Storage : HttpMessageHandler
+    internal sealed class Storage : HttpMessageHandler
     {
         private readonly ConcurrentDictionary<string, int> _retries = new(StringComparer.Ordinal);
 
@@ -85,7 +85,7 @@ public class ParentRecordReadTests
         }
     }
 
-    private static (OsduRecordSearch Search, HttpRuntime Runtime) Search(HttpMessageHandler handler, int attempts = 1)
+    internal static (OsduRecordSearch Search, HttpRuntime Runtime) Search(HttpMessageHandler handler, int attempts = 1)
     {
         var runtime = new HttpRuntime(
             new FlowReliability { Retry = new FlowRetry { Attempts = attempts, BaseDelayMs = 1, MaxDelayMs = 1 } },
@@ -226,7 +226,7 @@ public class ParentRecordReadTests
         using (search)
         {
             var failed = await Assert.ThrowsAsync<DeliveryException>(() => search.AnswerAsync([Question("slow")]));
-            Assert.Contains($"asked twice to retry reading the parent record {LinkedTemplates.ParentId("slow")}", failed.Message, StringComparison.Ordinal);
+            Assert.Contains($"asked twice to retry reading the record {LinkedTemplates.ParentId("slow")} the run's renders read by id", failed.Message, StringComparison.Ordinal);
             Assert.False(search.TryRead(Question("slow"), out _));
 
             // Nothing was kept for it, so the next round reads it again, and storage answers this time.

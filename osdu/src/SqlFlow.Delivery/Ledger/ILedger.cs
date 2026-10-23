@@ -585,7 +585,13 @@ public sealed record RecordState
     /// <summary>The version of the parent the pending work was rendered from; null when it read none.</summary>
     public long? PendingParentVersion { get; init; }
 
-    /// <summary>When the ledger asked for the record to be planned again (a redeliver, a release, a cache rollout, a parent that landed); null once a plan took it.</summary>
+    /// <summary>
+    /// For a record whose render looked for its children (osdu/docs/reference/flow/mapping-child.md): the unique segment their
+    /// OSDU ids share with the id the record's key gives; null for a record whose mapping links none.
+    /// </summary>
+    public string? ChildLinkKey { get; init; }
+
+    /// <summary>When the ledger asked for the record to be planned again (a redeliver, a release, a cache rollout, a parent or a child that landed); null once a plan took it.</summary>
     public DateTime? PlanRequestedUtc { get; init; }
 
     public DateTime CreatedUtc { get; init; }
@@ -884,6 +890,13 @@ public sealed record SkippedRecord
 
     /// <summary>The render context the record was rendered under (a rendered skip advances the record to it).</summary>
     public string? RenderContext { get; init; }
+
+    /// <summary>
+    /// For a rendered skip, the unique segment of the ids of the children the render looked for (<see cref="RecordState.ChildLinkKey"/>),
+    /// null when it looked for none: a record rendered again under a mapping that now links its children keeps it although
+    /// nothing is sent, so the children landing later find it.
+    /// </summary>
+    public string? ChildLinkKey { get; init; }
 
     /// <summary>The platform run of the intake, for the attempt a stale or identical skip writes.</summary>
     public Guid? RunId { get; init; }

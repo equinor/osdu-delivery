@@ -132,6 +132,10 @@ public sealed class DeliveryTemplateApiTests
             Assert.Null(detail.Parent);
             var customDetail = await ReadAsync<DeliveryTemplateDetailDto>(await SendAsync(client, reader, HttpMethod.Get, TemplateUrl("detail", repoId, "templates/custom.json")));
             Assert.Equal((LinkedTemplates.CustomKind, (string?)kind), (customDetail.Kind, customDetail.Parent));
+
+            // The canonical template names the custom one linked to it as a child its mappings can link; the custom one has none.
+            Assert.Equal([LinkedTemplates.CustomKind], detail.Children);
+            Assert.Empty(customDetail.Children);
             using (var schema = await SendAsync(client, reader, HttpMethod.Get, TemplateUrl("schema", repoId, "templates/thing.json")))
             {
                 Assert.Equal(HttpStatusCode.OK, schema.StatusCode);

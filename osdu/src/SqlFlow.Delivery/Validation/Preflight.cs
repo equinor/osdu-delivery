@@ -3,6 +3,7 @@ using System.Text.RegularExpressions;
 using SqlFlow.Core;
 using SqlFlow.Delivery.Documents;
 using SqlFlow.Delivery.Engine.Assertions;
+using SqlFlow.Delivery.Identity;
 using SqlFlow.Delivery.Source;
 using SqlFlow.Delivery.Model;
 using SqlFlow.Delivery.Rendering;
@@ -71,6 +72,12 @@ public static partial class Preflight
         if (mapping.ReadsParent)
         {
             CheckParent(mapping, schema, searches?.Parent, issues, where);
+        }
+
+        // 4d. A mapping that links its records' children links kinds whose templates are linked to its own.
+        if (mapping.LinksChildren)
+        {
+            CheckChildren(mapping, searches?.Children, issues, where);
         }
 
         MappingRenderer renderer;
@@ -168,6 +175,64 @@ public static partial class Preflight
                 {
                     issues.Add(ValidationIssue.Error(
                         $"{where}: {node.Where} takes the parent's {path}, {given}, where template {mapping.Template.Kind} takes {ShapeOf(filled)} at {node.Target.Text}.", node.Target.Text));
+                }
+            }
+        }
+    }
+
+    /// <summary>
+    /// A mapping that links its records' children (<c>$child</c>, osdu/docs/reference/flow/mapping-child.md): each kind it
+    /// links is of an entity type other than its own, so a record and its child never share an id; the folders on the
+    /// mapping's path hold the kind's template; and that template is linked to a kind of the mapping's own entity type, so
+    /// the records it links are the ones that stand beside its own. Where the link is written is checked node by node, as
+    /// any value is (<see cref="CheckChild"/>).
+    /// </summary>
+    private static void CheckChildren(MappingDefinition mapping, IReadOnlyDictionary<string, ResolvedChild>? resolved, List<ValidationIssue> issues, string where)
+    {
+        foreach (var entry in mapping.Entries)
+        {
+            foreach (var node in entry.ValueNodes.Where(n => n.Source is { Kind: MappingSourceKind.Child }))
+            {
+                var kind = node.Source!.ChildKind!;
+                var entityType = TargetId.EntityTypeFromKind(kind);
+                if (string.Equals(entityType, mapping.EntityType, StringComparison.Ordinal))
+                {
+                    issues.Add(ValidationIssue.Error(
+                        $"{where}: {node.Where} links the record's child of {kind}, a {entityType} record as the mapping's own records are, so a record and its child would have the same OSDU id; a child is a record of a linked template, which takes an entity type of its own.",
+                        node.Target.Text));
+                    continue;
+                }
+
+                if (resolved is null || !resolved.TryGetValue(kind, out var child))
+                {
+                    issues.Add(ValidationIssue.Error(
+                        $"{where}: {node.Where} links the record's child of {kind}, and that template was not loaded for this check, so nothing says whether it is linked to {mapping.Template.Kind}.",
+                        node.Target.Text));
+                    continue;
+                }
+
+                if (child.Schema is not { } template)
+                {
+                    issues.Add(ValidationIssue.Error(
+                        $"{where}: {node.Where} links the record's child of {kind}, and that template cannot be read: {child.Problem}",
+                        node.Target.Text));
+                    continue;
+                }
+
+                if (template.Parent is not { } link)
+                {
+                    issues.Add(ValidationIssue.Error(template.ParentProblem is { } problem
+                        ? $"{where}: {node.Where} links the record's child of {kind}, and that template names no parent that can be read: {problem}."
+                        : $"{where}: {node.Where} links the record's child of {kind}, and that template is linked to no parent, so its records are no record's children; a custom template names the kind its records stand beside in its {TemplateParent.Key}, as [{{ \"name\": \"{mapping.EntityType.Split("--")[^1]}\", \"kind\": \"{mapping.Template.Kind}\" }}].",
+                        node.Target.Text));
+                    continue;
+                }
+
+                if (!string.Equals(link.EntityType, mapping.EntityType, StringComparison.Ordinal))
+                {
+                    issues.Add(ValidationIssue.Error(
+                        $"{where}: {node.Where} links the record's child of {kind}, and that template is linked to {link.Kind}, a {link.EntityType} record, where this mapping renders {mapping.EntityType} records, so the records it links are not this mapping's records' children.",
+                        node.Target.Text));
                 }
             }
         }
@@ -356,6 +421,39 @@ public static partial class Preflight
         {
             CheckSearch(entry, variable, renderer, issues, name);
         }
+        else if (entry.Source.Kind == MappingSourceKind.Child)
+        {
+            CheckChild(entry, variable, renderer, issues, name);
+        }
+    }
+
+    /// <summary>
+    /// A <c>$child</c> node writes the reference to the record's child, <c>{partition}:{entityType}:{unique}:</c>, as text: the
+    /// variable takes text without a format, and a reference of the child's entity type passes its relationship and its
+    /// pattern, judged on a reference of that shape. A variable without either, a property of an open object such as
+    /// <c>ExtensionProperties</c> or a tag, takes any reference, which is where a canonical template, whose schema the estate
+    /// does not change, carries the link.
+    /// </summary>
+    private static void CheckChild(MappingEntry entry, TemplateVariable variable, MappingRenderer renderer, List<ValidationIssue> issues, string name)
+    {
+        var target = entry.Target.Text;
+        var property = renderer.Schema.Resolve(entry.Target.SchemaPath);
+        var listed = variable.Shape == TemplateVariableShape.ValueList;
+        var written = listed ? variable.ItemType ?? "any" : variable.Type;
+        var format = listed ? property?.ItemFormat : variable.Format;
+        if (written is not ("string" or "any") || format is not null)
+        {
+            issues.Add(ValidationIssue.Error(
+                $"{name}: a $child node writes the reference to the record's child as text, and the template takes {(format is null ? $"a {written}" : $"a {format} string")} at {target}."));
+            return;
+        }
+
+        var partition = renderer.ParameterValue(RenderContext.DataPartitionParameter) is { Length: > 0 } given ? given : "partition";
+        var sample = TargetId.Reference(partition, TargetId.EntityTypeFromKind(entry.Source!.ChildKind!), new string('0', 32));
+        if (IdValues.Problem(sample, property) is { } problem)
+        {
+            issues.Add(ValidationIssue.Error($"{name}: the link to the record's child of {entry.Source.ChildKind} is written as '{sample}', which {target} does not take: {problem}."));
+        }
     }
 
     /// <summary>
@@ -471,6 +569,13 @@ public static partial class Preflight
             // A section of the parent is written whole, an object or a list of objects as the parent holds it; whether its
             // shape fits the variable is judged against the parent's own template (CheckParent).
             return null;
+        }
+
+        if (entry.Source.Kind == MappingSourceKind.Child)
+        {
+            return shape is TemplateVariableShape.Value or TemplateVariableShape.ValueList || (shape == TemplateVariableShape.Whole && variable.Type == "any")
+                ? null
+                : $"{entry.Source} is the reference to one of the record's children, one value, and {target} is {Describe(variable)}.";
         }
 
         if (entry.FindAll is not null)

@@ -255,6 +255,14 @@ public sealed class DeliveryRecord
     /// <summary>The version of the parent the pending work was rendered from; null when it read none.</summary>
     public long? PendingParentVersion { get; set; }
 
+    /// <summary>
+    /// For a record whose render looked for its children (osdu/docs/reference/flow/mapping-child.md): the unique segment their
+    /// OSDU ids share with the id the record's key gives, everything after the entity type; null for a record whose mapping
+    /// links none. Set as the render that looked is recorded (work queued, a hold, a render that sent nothing), so a child
+    /// that lands asks the records that link it to be planned again.
+    /// </summary>
+    public string? ChildLinkKey { get; set; }
+
     public string? PendingRenderContext { get; set; }
 
     public string? PendingSourceFingerprint { get; set; }
@@ -3500,6 +3508,7 @@ public static class DeliveryModel
             OptionalOsduId(e.Property(r => r.ClaimedTargetId)).HasMaxLength(MaxTargetIdLength);
             OptionalOsduId(e.Property(r => r.WaitingFor)).HasMaxLength(MaxTargetIdLength);
             OptionalOsduId(e.Property(r => r.ParentId)).HasMaxLength(MaxTargetIdLength);
+            OptionalOsduId(e.Property(r => r.ChildLinkKey)).HasMaxLength(MaxTargetIdLength);
             OptionalOsduId(e.Property(r => r.OccupiedTargetId)).HasMaxLength(MaxTargetIdLength);
             e.Property(r => r.Status).HasMaxLength(16).IsRequired();
             e.Property(r => r.LastVerifyOutcome).HasMaxLength(16);
@@ -3527,6 +3536,9 @@ public static class DeliveryModel
             e.HasIndex(r => new { r.HeldCacheSetId, r.Status }).HasFilter("[HeldCacheSetId] IS NOT NULL");
             // A parent that lands finds the records of its partition that read it, of whatever flow, to plan them again.
             e.HasIndex(r => new { r.PartitionId, r.ParentId }).HasFilter("[ParentId] IS NOT NULL");
+            // A child that lands finds the records of its partition that link it, of whatever flow, by the unique segment of
+            // its id, to plan them again.
+            e.HasIndex(r => new { r.PartitionId, r.ChildLinkKey }).HasFilter("[ChildLinkKey] IS NOT NULL");
             // One OSDU record, one flow: the database refuses a second flow's claim on an id, whatever races the intakes
             // run. An id names its partition, so this stays unique across every partition.
             e.HasIndex(r => r.ClaimedTargetId).IsUnique().HasFilter("[ClaimedTargetId] IS NOT NULL");

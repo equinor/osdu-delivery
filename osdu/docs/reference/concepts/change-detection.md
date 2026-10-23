@@ -29,6 +29,7 @@ related:
   - delivery-cli-run
   - delivery-flow-mapping
   - delivery-flow-mapping-parent
+  - delivery-flow-mapping-child
   - concept-upsert-and-change-detection
   - concept-provenance-and-row-keys
 sourceRefs:
@@ -247,6 +248,14 @@ from. When a record of any flow lands under that id, through the ledger, every r
 again (one held because the parent was not in OSDU is released first), and its flow's next run renders it from what the
 parent now holds and sends it only if it renders differently. The parent's version itself is not part of the render
 context: a parent delivered again with the same sections sends nothing ([mapping $parent](../flow/mapping-parent.md#when-the-parent-changes)).
+
+## A child landing reaching records
+
+A record that links its children with `$child` writes the link into its document, before the document is hashed, once
+OSDU holds the child, and keeps the unique segment its children's ids share. When a record of any flow lands under an id
+with that segment in another entity type, through the ledger, every record linking it that is not blocked is asked to be
+planned again, and its flow's next run renders it and sends it only if it renders differently: a child landing for the
+first time adds the link, one delivered again changes nothing ([mapping $child](../flow/mapping-child.md#when-a-child-lands)).
 
 ## A record keeps the OSDU id it claimed
 

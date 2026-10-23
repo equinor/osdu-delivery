@@ -21,6 +21,7 @@ const SOURCE_LABEL: Record<MappingDraftInput, string> = {
   List: "Every value these give, in order, each once",
   Group: "The object its properties give",
   Parent: "Section of the record's parent",
+  Child: "Link to the record's child, once OSDU holds it",
 };
 
 /** One end of the pipeline: where the value comes from, or the property it lands on. */

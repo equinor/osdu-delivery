@@ -30,6 +30,7 @@ related:
   - delivery-flow-interfaces
   - delivery-concept-osdu-order
   - delivery-flow-mapping-parent
+  - delivery-flow-mapping-child
 sourceRefs:
   - osdu/src/SqlFlow.Delivery/Documents/OsduLineage.cs
   - osdu/src/SqlFlow.Delivery/Documents/DeliveryLineage.cs
@@ -134,6 +135,7 @@ ordered after the cache flow. A mapping reads the cache in two ways, and lineage
 | Cached records by what they are | An `id` modifier whose template names the entity type, `ref` written in full (`ref: reference-data--UnitOfMeasure`), or a bare `ref` | Every cache type of the partition, declared by a cache flow of the same repository, that holds records of that entity type |
 | The platform, as it renders | A `searches` entry and `$search` | The kind the search looks in, wildcards allowed |
 | The record's parent, as it renders | `$parent`, in a mapping whose template is linked to a parent ([mapping $parent](../flow/mapping-parent.md)) | The parent's kind, as the template's link names it |
+| The record's children, as it renders | `$child` ([mapping $child](../flow/mapping-child.md)) | Nothing: the record goes out without a link while the child is not there, and the ledger plans it again when the child lands, so the flow delivering the children, which reads its parents, still runs after it |
 
 Which entity type a bare `ref` (or one naming the entity alone) points to is told by the template the mapping fills.
 Lineage reads it as a run does, from the template folders on the mapping's path in the checkout it scans

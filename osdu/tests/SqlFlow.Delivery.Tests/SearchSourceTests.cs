@@ -759,6 +759,13 @@ public class SearchSourceTests
             return true;
         }
 
+        /// <summary>The platform holds no child: the mappings these tests render link none.</summary>
+        public bool TryRead(ChildQuestion question, [System.Diagnostics.CodeAnalysis.NotNullWhen(true)] out ChildAnswer? answer)
+        {
+            answer = ChildAnswer.None;
+            return true;
+        }
+
         public Task AnswerAsync(IReadOnlyCollection<PlatformQuestion> questions, CancellationToken ct = default)
         {
             foreach (var question in questions.OfType<SearchQuestion>().Where(q => !_answers.ContainsKey(q)))
@@ -796,6 +803,13 @@ public class SearchSourceTests
         public bool TryRead(ParentQuestion question, [System.Diagnostics.CodeAnalysis.NotNullWhen(true)] out ParentAnswer? answer)
         {
             answer = ParentAnswer.None;
+            return true;
+        }
+
+        /// <summary>The platform holds no child: the mappings these tests render link none.</summary>
+        public bool TryRead(ChildQuestion question, [System.Diagnostics.CodeAnalysis.NotNullWhen(true)] out ChildAnswer? answer)
+        {
+            answer = ChildAnswer.None;
             return true;
         }
 

@@ -23,6 +23,7 @@ related:
   - delivery-flow-mapping-expressions
   - delivery-flow-mapping-lookups
   - delivery-flow-mapping-parent
+  - delivery-flow-mapping-child
   - delivery-flow-mapping-modifiers
   - delivery-flow-mapping-assertions
   - delivery-concept-preflight
@@ -126,6 +127,7 @@ A value node reads its value with exactly one of these:
 | `$search` | The id of the one record a search of the platform finds by `$findBy`, in one of the mapping's `searches`. See [mapping lookups](mapping-lookups.md). |
 | `$lookup` | A field of the record a lookup of the `lookups` block finds (`wellbore.id`). See [mapping lookups](mapping-lookups.md). |
 | `$parent` | A section of the record's parent, by its path (`data.DDMSDatasets`), for a template linked to a parent. See [mapping $parent](mapping-parent.md). |
+| `$child` | The reference to the record's child of a kind (`welldb:wks:work-product-component--WellLogDetail:1.0.0`) whose template is linked to the mapping's own, once OSDU holds it. See [mapping $child](mapping-child.md). |
 | `$coalesce` | The first of two or more alternatives that gives a value. See [$coalesce](#coalesce-the-first-value-that-is-there). |
 
 and takes its settings beside it:
@@ -134,7 +136,7 @@ and takes its settings beside it:
 | --- | --- | --- |
 | `$modifiers` | Changes to an incoming dataset value, top to bottom. See [mapping modifiers](mapping-modifiers.md). | `$from`, `$expr`, `$cache`, `$search`, and `$parent` on a single value |
 | `$when` | A condition: when the property applies to the row. See [$when](#when-when-a-property-applies). | every node |
-| `$required` | What an empty value does: `true` (the default) holds the record, `false` leaves the property out. See [$required](#required-what-an-empty-value-does). | every node but `$value` |
+| `$required` | What an empty value does: `true` (the default) holds the record, `false` leaves the property out. See [$required](#required-what-an-empty-value-does). | every node but `$value`; only `false` on `$child`, its default |
 | `$description` | Free text. | every node |
 | `$findBy` | Which record to read: one line or a list, tried in order. | `$cache`, `$search` |
 | `$findAll` | Every cached row that matches, read as a list. | `$cache` |
@@ -214,6 +216,10 @@ platform gives is never modified.
 the same minted id, from the platform as the record renders, and copies it whole; a single value it reads passes
 through its `$modifiers` as a column's does ([mapping $parent](mapping-parent.md)).
 
+`$child` links the record's child, the record of a custom template linked to the mapping's own kind with the same minted
+id, by its reference once OSDU holds it, and leaves the property out until then without holding the record
+([mapping $child](mapping-child.md)).
+
 ## Changing a value: $modifiers
 
 `$modifiers` is a list applied top to bottom to the incoming value: `trim`, `upper`, `lower`, `split`, `replace`,
@@ -237,7 +243,9 @@ property belongs in the record is then unknown.
 ## $required: what an empty value does
 
 `$required` is `true` by default: a value the node should give and does not holds the record, and the ledger records why.
-`$required: false` leaves the property out instead. It never introduces a value, and it never lets a mistake through.
+`$required: false` leaves the property out instead. It never introduces a value, and it never lets a mistake through. A
+`$child` node is the one exception: its default is `false`, and `$required: true` is refused, since a child is never a
+reason to hold its parent ([mapping $child](mapping-child.md#what-a-child-node-gives)).
 
 | Situation | `$required: true` (default) | `$required: false` |
 | --- | --- | --- |

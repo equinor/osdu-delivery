@@ -6,7 +6,8 @@ namespace SqlFlow.Delivery.Rendering;
 
 /// <summary>
 /// What a run knows about records it must find on the platform, and how it learns the rest: the records a mapping searches
-/// for, and the parent a record of a linked template reads sections of (osdu/docs/reference/flow/mapping-parent.md).
+/// for, the parent a record of a linked template reads sections of (osdu/docs/reference/flow/mapping-parent.md), and the
+/// children a record links (osdu/docs/reference/flow/mapping-child.md).
 /// </summary>
 /// <remarks>
 /// <para>
@@ -48,8 +49,14 @@ public interface IRecordSearch
     bool TryRead(ParentQuestion question, [NotNullWhen(true)] out ParentAnswer? answer);
 
     /// <summary>
-    /// Answers every question in <paramref name="questions"/> this run has not answered yet, searches and parents alike, so
-    /// the renders that asked them can run again and finish. Asking for none does nothing.
+    /// Whether the platform holds the record's child, as this run looked it up, or false when it has not been looked up yet
+    /// (osdu/docs/reference/flow/mapping-child.md). A child the platform does not hold is an answer too, and is not asked again.
+    /// </summary>
+    bool TryRead(ChildQuestion question, [NotNullWhen(true)] out ChildAnswer? answer);
+
+    /// <summary>
+    /// Answers every question in <paramref name="questions"/> this run has not answered yet, searches, parents and children
+    /// alike, so the renders that asked them can run again and finish. Asking for none does nothing.
     /// </summary>
     /// <exception cref="DeliveryException">
     /// The platform could not be asked: it was unreachable, refused the run's credentials, or failed after its retries.
@@ -122,6 +129,47 @@ public sealed record ParentAnswer
 /// <param name="Found">Whether the platform holds the parent.</param>
 /// <param name="Version">The version read; null when the platform holds no parent.</param>
 public sealed record ParentUsage(string Id, string Kind, bool Found, long? Version);
+
+/// <summary>
+/// What looking for one of a record's children came to (osdu/docs/reference/flow/mapping-child.md): the platform holds it, at
+/// a version, or holds none the flow may read. Nothing else of the child is read: the link is its id.
+/// </summary>
+public sealed record ChildAnswer
+{
+    private ChildAnswer(string? kind, long? version)
+    {
+        Kind = kind;
+        Version = version;
+    }
+
+    /// <summary>The kind the child the platform holds is of; null when it holds none.</summary>
+    public string? Kind { get; }
+
+    /// <summary>The version of the child the platform holds; null when it holds none.</summary>
+    public long? Version { get; }
+
+    public bool Found => Kind is not null;
+
+    /// <summary>The platform holds no record under the child's id the flow may read: none was delivered yet, it was deleted, or the flow's identity may not view it.</summary>
+    public static ChildAnswer None { get; } = new(null, null);
+
+    /// <summary>The child the platform holds, of kind <paramref name="kind"/> at version <paramref name="version"/>.</summary>
+    public static ChildAnswer Of(string kind, long version)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(kind);
+        return new ChildAnswer(kind, version);
+    }
+}
+
+/// <summary>
+/// One of a record's children as its render looked for it, kept so a record says which links its document carries and why one
+/// is missing (osdu/docs/reference/flow/mapping-child.md, What the ledger keeps).
+/// </summary>
+/// <param name="Id">The child's OSDU id, without a version.</param>
+/// <param name="Kind">The kind the mapping names the child by.</param>
+/// <param name="Found">Whether the platform holds the child, so the document links it.</param>
+/// <param name="Version">The version of the child the platform held; null when it held none.</param>
+public sealed record ChildUsage(string Id, string Kind, bool Found, long? Version);
 
 /// <summary>What asking the platform one question came to.</summary>
 public enum SearchOutcome
@@ -233,6 +281,12 @@ public sealed class NoRecordSearch : IRecordSearch
     public bool TryRead(ParentQuestion question, [NotNullWhen(true)] out ParentAnswer? answer)
     {
         answer = ParentAnswer.None;
+        return true;
+    }
+
+    public bool TryRead(ChildQuestion question, [NotNullWhen(true)] out ChildAnswer? answer)
+    {
+        answer = ChildAnswer.None;
         return true;
     }
 

@@ -154,3 +154,22 @@ whichever pipeline maintains the records.
 Added [0022](decisions/0022-removal-flows.md): why a removal flow reads the source's keys whole, why `matchKeys`, an
 operation of the delivery flow, the ingestion table, a per-run candidate table and a ledger of its own were rejected, and
 what the guard and the lift are for. Indexed 0022.
+
+## [2026-10-23] ingest | Child links and $child, decision 0023
+
+Source: the change that lets a canonical record link the custom records of the templates linked to its kind: the
+`$child` node and its render (`osdu/src/SqlFlow.Delivery/Documents/MappingMapper.Record.cs`,
+`osdu/src/SqlFlow.Delivery/Rendering/EntryValues.cs`), the storage look-up of children beside parents
+(`osdu/src/SqlFlow.Delivery/Engine/OsduRecordSearch.cs`), the ledger's `ChildLinkKey` and the landing hook
+(`osdu/src/SqlFlow.Delivery/Ledger/OsduLedger.Children.cs`, migration `RecordChildLinks`), the end to end suite
+(`osdu/tests/SqlFlow.Delivery.Tests/ChildDeliveryTests.cs`), and the reference pages it added and changed
+([mapping $child](../reference/flow/mapping-child.md), [templates](../reference/concepts/templates.md#linked-templates)).
+Discussed with the human: optional, written only where the template has room and the mapping says; the canonical schema
+never changed, so the link goes in `ExtensionProperties` or a tag; links made as the record renders, before its hash, so
+the first delivery has none and the delivery after the child lands carries it.
+
+Added [0023](decisions/0023-child-links.md): why the mapping says where and the custom template's link says which kinds,
+why the child is looked up in storage rather than assumed from the key, why `LineageAssertions`, `Artefacts`, a property
+in the canonical template, a hold and a lineage edge were rejected, and why the ledger finds the records to plan again by
+the unique segment they share with their children rather than by the child's `ParentId`. Added a
+[pattern catalog](maps/pattern-catalog.md) row for linking a canonical record to its custom record. Indexed 0023.

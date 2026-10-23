@@ -136,6 +136,21 @@ public sealed record MappingDefinition
     /// <summary>True when the mapping reads a section of its records' parent.</summary>
     public bool ReadsParent => Entries.SelectMany(e => e.ValueNodes).Any(n => n.Source?.Kind == MappingSourceKind.Parent);
 
+    /// <summary>
+    /// The kinds whose records the mapping links its records to as their children (<c>$child</c>), each once, in ordinal order:
+    /// what a run looks for of each record, and empty for a mapping that links none (osdu/docs/reference/flow/mapping-child.md).
+    /// </summary>
+    public IReadOnlyList<string> ChildKinds() => Entries
+        .SelectMany(e => e.ValueNodes)
+        .Where(n => n.Source is { Kind: MappingSourceKind.Child, ChildKind: not null })
+        .Select(n => n.Source!.ChildKind!)
+        .Distinct(StringComparer.Ordinal)
+        .Order(StringComparer.Ordinal)
+        .ToList();
+
+    /// <summary>True when the mapping links its records to a child of theirs.</summary>
+    public bool LinksChildren => Entries.SelectMany(e => e.ValueNodes).Any(n => n.Source?.Kind == MappingSourceKind.Child);
+
     /// <summary>The access list and legal block, as the static entries for them declare them (parameter tokens unexpanded).</summary>
     public required MappingEnvelope Envelope { get; init; }
 
@@ -260,6 +275,14 @@ public enum MappingSourceKind
     /// the canonical record holds, such as the bulk data a domain service wrote there.
     /// </summary>
     Parent,
+
+    /// <summary>
+    /// The reference to one of the record's children (<c>$child</c>, osdu/docs/reference/flow/mapping-child.md): the record of a
+    /// kind whose template is linked to the mapping's own kind, whose OSDU id is the record's own with the child's entity type,
+    /// looked for on the platform as the run needs it. A canonical record links the custom records that stand beside it, and
+    /// is written without the link while the child is not there.
+    /// </summary>
+    Child,
 }
 
 /// <summary>Where an entry's value comes from.</summary>
@@ -272,6 +295,9 @@ public sealed record MappingSource
 
     /// <summary>The prefix a section of the record's parent is named with: <c>parent.data.DDMSDatasets</c>.</summary>
     public const string ParentPrefix = "parent";
+
+    /// <summary>The prefix the reference to one of the record's children is named with: <c>child.welldb:wks:work-product-component--WellLogDetail:1.0.0</c>.</summary>
+    public const string ChildPrefix = "child";
 
     public required MappingSourceKind Kind { get; init; }
 
@@ -297,6 +323,12 @@ public sealed record MappingSource
     public string? ParentPath { get; init; }
 
     /// <summary>
+    /// For a child source: the kind of the child it links to, as written (<c>welldb:wks:work-product-component--WellLogDetail:1.0.0</c>),
+    /// a kind whose template names the mapping's own kind as its parent.
+    /// </summary>
+    public string? ChildKind { get; init; }
+
+    /// <summary>
     /// For a node written with <c>$lookup</c>, the lookup it reads (<see cref="MappingDefinition.Lookups"/>): its cached type
     /// is the lookup's, and the entry carries the lookup's findBy lines and modifiers, so it finds the record every other
     /// reader of the lookup finds. Null for any other source.
@@ -312,6 +344,7 @@ public sealed record MappingSource
         MappingSourceKind.DatasetRows => $"{DatasetColumn.Prefix}.{Child}",
         MappingSourceKind.Expression => Expression!.Text,
         MappingSourceKind.Parent => $"{ParentPrefix}.{ParentPath}",
+        MappingSourceKind.Child => $"{ChildPrefix}.{ChildKind}",
         _ when Lookup is not null => $"{MappingLookup.Prefix}.{Lookup}.{CacheField}",
         _ => $"{Prefix}.{CacheType}.{CacheField}",
     };
@@ -818,10 +851,20 @@ public sealed record MappingSearch(string Name, string Kind, TemplateReference S
 
 /// <summary>
 /// Something a render needs from the platform before it can finish, which the run asks for between two renders of a row
-/// (<see cref="Rendering.IRecordSearch"/>): a search (<see cref="SearchQuestion"/>), or the record's parent read by its id
-/// (<see cref="ParentQuestion"/>). Two renders asking the same question ask one question, so a run asks it once.
+/// (<see cref="Rendering.IRecordSearch"/>): a search (<see cref="SearchQuestion"/>), the record's parent read by its id
+/// (<see cref="ParentQuestion"/>), or whether one of its children is there (<see cref="ChildQuestion"/>). Two renders asking
+/// the same question ask one question, so a run asks it once.
 /// </summary>
 public abstract record PlatformQuestion;
+
+/// <summary>
+/// One of the record's children, looked for in the platform's storage by its OSDU id: the record of a kind whose template is
+/// linked to the mapping's own kind, whose id is the record's own with the child's entity type
+/// (osdu/docs/reference/flow/mapping-child.md). Only whether storage holds it is read, and the version it holds.
+/// </summary>
+/// <param name="Id">The child's OSDU id, without a version.</param>
+/// <param name="Kind">The kind the mapping names the child by.</param>
+public sealed record ChildQuestion(string Id, string Kind) : PlatformQuestion;
 
 /// <summary>
 /// The record's parent, to be read from the platform's storage by its OSDU id: the record of the kind the mapping's template

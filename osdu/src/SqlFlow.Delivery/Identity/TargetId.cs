@@ -161,6 +161,18 @@ public static class TargetId
         => $"{dataPartition}:{entityType}:{unique}:";
 
     /// <summary>
+    /// The unique segment of an OSDU id without a version, everything after its entity type (<c>p:t:k</c> gives <c>k</c>, and
+    /// <c>p:t:a:b</c> gives <c>a:b</c>): what a record and the records of a linked template minted from the same key share.
+    /// Null when <paramref name="id"/> is not an id of three segments.
+    /// </summary>
+    public static string? Unique(string id)
+    {
+        ArgumentNullException.ThrowIfNull(id);
+        var parts = id.Split(':', 3);
+        return parts.Length == 3 && parts[0].Length > 0 && parts[1].Length > 0 && parts[2].Length > 0 ? parts[2] : null;
+    }
+
+    /// <summary>
     /// A record reference without its version: <c>p:t:k:</c> and <c>p:t:k:123</c> become <c>p:t:k</c>. The unique
     /// segment of an OSDU id may itself hold colons, so only a trailing empty or all-digit segment is taken as the version.
     /// </summary>

@@ -25,9 +25,9 @@ namespace SqlFlow.Delivery.Tests;
 [Trait("Category", "Integration")]
 public sealed class ParentDeliveryTests : IDisposable
 {
-    private const string WellLogKind = "osdu:wks:work-product-component--WellLog:1.4.0";
-    private const string CustomKind = "welldb:wks:work-product-component--CustomLog:1.0.0";
-    private const string CustomFlowName = "welldb-customlog-03-delivery";
+    internal const string WellLogKind = "osdu:wks:work-product-component--WellLog:1.4.0";
+    internal const string CustomKind = "welldb:wks:work-product-component--CustomLog:1.0.0";
+    internal const string CustomFlowName = "welldb-customlog-03-delivery";
 
     /// <summary>The log whose parent the platform does not hold when the custom flow first renders it.</summary>
     private const int Orphan = 1;
@@ -62,7 +62,7 @@ public sealed class ParentDeliveryTests : IDisposable
     /// The sample WellLog template copied under the custom kind, linked to WellLog 1.4.0, with the pass type the well database
     /// records for a log, which the canonical template has no property for.
     /// </summary>
-    private static SchemaSnapshot CustomTemplate()
+    internal static SchemaSnapshot CustomTemplate()
     {
         var root = (JsonObject)Samples.SampleTemplate(WellLogKind).Root.DeepClone();
         root["$id"] = "https://schema.example.org/json/work-product-component/CustomLog.1.0.0.json";
@@ -75,7 +75,7 @@ public sealed class ParentDeliveryTests : IDisposable
     }
 
     /// <summary>The sample WellLog mapping as the custom template's: the same dataset and key, the pass type, and the DDMS references from the parent.</summary>
-    private static string CustomMapping(string version)
+    internal static string CustomMapping(string version)
     {
         var text = File.ReadAllText(Path.Combine(Samples.Mappings, "WellLog@1.4.0.yaml")).ReplaceLineEndings("\n");
         text = Replace(text, "\nname: WellLog\nversion: 1.4.0\n", "\nname: CustomLog\nversion: 1.0.0\n");
@@ -90,7 +90,7 @@ public sealed class ParentDeliveryTests : IDisposable
             """);
     }
 
-    private static string Replace(string text, string from, string to)
+    internal static string Replace(string text, string from, string to)
     {
         Assert.Equal(1, text.Split(from).Length - 1);
         return text.Replace(from, to, StringComparison.Ordinal);

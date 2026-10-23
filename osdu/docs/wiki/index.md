@@ -113,6 +113,10 @@ other packages adopt the same contract.
   why records a source dropped are found by a flow kind of its own reading the source rather than by `matchKeys` or the
   ingestion table, why its deletions are the delivery ledger's, taken out once each, and why a guard holds a run that
   finds too many.
+- [0023: a canonical record links its children as it renders, once OSDU holds them, and a child landing plans it again](decisions/0023-child-links.md) -
+  why the link back to a custom record is a `$child` node the canonical mapping writes in an open property, why the child
+  is looked up rather than assumed, why it never holds its parent, and how the ledger finds the records a landing child
+  links.
 
 ## Coverage
 

@@ -114,6 +114,14 @@ internal static partial class EntryValues
                 return null;
             }
         }
+        else if (entry.Source.Kind == MappingSourceKind.Child)
+        {
+            raw = ToChild(entry, root, renderer, holds, searched);
+            if (raw is null)
+            {
+                return null;
+            }
+        }
         else
         {
             raw = entry.FindAll is not null
@@ -498,6 +506,43 @@ internal static partial class EntryValues
         }
 
         return modified;
+    }
+
+    /// <summary>
+    /// The value of a <c>$child</c> node (osdu/docs/reference/flow/mapping-child.md): the reference to the record's child of the
+    /// node's kind, the record whose OSDU id is the record's own with the child's entity type, with the version separator and no
+    /// version, so the link names whichever version of the child is latest. Whether the platform holds the child is asked
+    /// between two renders, as a search is: a render that meets it first stops there, naming it, and the caller asks and
+    /// renders again. A child the platform does not hold gives no value and the property is left out, never a hold: the
+    /// record is written without the link and linked once the child lands. The mapping refuses <c>$required</c> on the node,
+    /// so the one evaluation that asks it as required is <see cref="WhyEmpty"/>'s, which says why from what is noted here.
+    /// </summary>
+    private static string? ToChild(MappingEntry entry, SourceRow root, MappingRenderer renderer, List<string> holds, RenderTrail searched)
+    {
+        // A row without a complete key has no id, and no child; it is held for its key already.
+        if (renderer.ChildOf(root, entry.Source!.ChildKind!) is not { } question)
+        {
+            return null;
+        }
+
+        if (!renderer.Search.TryRead(question, out var answer))
+        {
+            searched.Ask(question);
+            return null;
+        }
+
+        searched.Link(question, answer);
+        if (answer.Found)
+        {
+            return WithVersionSeparator(question.Id);
+        }
+
+        if (entry.Required)
+        {
+            holds.Add($"{entry.Target.Text}: the record's child {question.Id} ({question.Kind}) is not in OSDU, or the flow's identity may not read it, so the record goes out without the link until it lands");
+        }
+
+        return null;
     }
 
     /// <summary>

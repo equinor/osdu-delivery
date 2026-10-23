@@ -873,6 +873,7 @@ export default function MappingBuilderPage() {
           variables={detail.data?.variables ?? []}
           cacheTypes={cache?.types ?? []}
           parent={detail.data?.parent ?? null}
+          childKinds={detail.data?.children ?? []}
           issues={issues}
           onSave={saveEntry}
           onClose={() => setEditing(null)}

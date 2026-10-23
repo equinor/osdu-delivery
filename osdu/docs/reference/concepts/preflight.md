@@ -30,6 +30,7 @@ related:
   - delivery-concept-templates
   - delivery-concept-record-lifecycle
   - delivery-flow-mapping-parent
+  - delivery-flow-mapping-child
   - cli-validate
 sourceRefs:
   - osdu/src/SqlFlow.Delivery/Documents/MappingMapper.cs
@@ -127,7 +128,10 @@ Then the gate checks, collecting every finding:
    matched exactly on the platform, as that schema says the property is indexed.
 3. **The parent.** A mapping that reads `$parent` fills a template linked to one parent of another entity type, the
    folders on its path hold the parent's template, and every path it reads is a property of that template, of a shape the
-   property it fills can take ([mapping $parent](../flow/mapping-parent.md#what-the-preflight-checks)).
+   property it fills can take ([mapping $parent](../flow/mapping-parent.md#what-the-preflight-checks)). A mapping that
+   links its children with `$child` links kinds of another entity type whose templates the folders on its path hold and
+   name its own entity type as their parent, on properties that take a reference of the child's entity type
+   ([mapping $child](../flow/mapping-child.md#what-the-preflight-checks)).
 4. **Every property is a variable of the template.** It exists at that version, it is not one OSDU Delivery writes
    (`id`, `kind`) or OSDU sets (`version`, `createTime`, `createUser`, `modifyTime`, `modifyUser`), and it is not a list
    of objects inside another list's items.

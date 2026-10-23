@@ -12,7 +12,7 @@ using SqlFlow.Delivery.Rendering;
 namespace SqlFlow.Delivery.Engine;
 
 /// <summary>
-/// Builds the search a flow's mapping answers its <c>search.</c> sources and its <c>$parent</c> nodes from. A seam like
+/// Builds the search a flow's mapping answers its <c>search.</c> sources, its <c>$parent</c> nodes and its <c>$child</c> nodes from. A seam like
 /// <see cref="IProtocolFactory"/>: a host asks the platform the flow delivers to, and a suite that delivers to no platform
 /// answers from what it was given.
 /// </summary>
@@ -36,7 +36,8 @@ public sealed class PlatformRecordSearchFactory : IRecordSearchFactory
         ArgumentNullException.ThrowIfNull(target);
         ArgumentNullException.ThrowIfNull(loggers);
 
-        // A record's parent is read where the flow's route reads records back by id: its own path when it names one.
+        // A record's parent, and its children, are read where the flow's route reads records back by id: its own path when it
+        // names one.
         return new OsduRecordSearch(
             target, loggers.CreateLogger<OsduRecordSearch>(), flow.Target.ProtocolOptions.RecordQueryPath ?? OsduManifestProtocol.DefaultRecordQueryPath);
     }
@@ -47,7 +48,8 @@ public sealed class PlatformRecordSearchFactory : IRecordSearchFactory
 /// question, sent under the flow's own target, auth and partition, asking for the ids of at most a handful of the
 /// records that match exactly. One record is the answer; none is an answer too; several are named so the hold says
 /// which records answer to the value. Reads the records' parents from the storage service the same way
-/// (osdu/docs/reference/flow/mapping-parent.md): by id, a hundred to a request (<see cref="StorageRecords"/>).
+/// (osdu/docs/reference/flow/mapping-parent.md), and looks their children up there (osdu/docs/reference/flow/mapping-child.md):
+/// by id, a hundred to a request (<see cref="StorageRecords"/>), the parents and children of one round in the same requests.
 /// </summary>
 /// <remarks>
 /// <para>
@@ -68,6 +70,11 @@ public sealed class PlatformRecordSearchFactory : IRecordSearchFactory
 /// <see cref="MaxKeptParents"/> parents, each trimmed to the sections its mapping reads: a render reads its parent right
 /// after the round that read it, and a run reading one parent per record never holds them all.
 /// </para>
+/// <para>
+/// A child is looked up the same way, and only whether storage hands it over is kept, with its kind and version: a child
+/// storage does not hand over is not linked, and the record goes out without the link. A run keeps at most
+/// <see cref="MaxKeptChildren"/> answers about children, the oldest let go first.
+/// </para>
 /// </remarks>
 public sealed class OsduRecordSearch : IRecordSearch, IDisposable
 {
@@ -80,6 +87,9 @@ public sealed class OsduRecordSearch : IRecordSearch, IDisposable
     /// <summary>How many parents a run keeps read at once; the oldest is let go first.</summary>
     public const int MaxKeptParents = 20_000;
 
+    /// <summary>How many answers about children a run keeps at once; the oldest is let go first.</summary>
+    public const int MaxKeptChildren = 20_000;
+
     /// <summary>How much of a refusal's body a hold reason quotes.</summary>
     private const int RefusalPreview = 500;
 
@@ -91,6 +101,8 @@ public sealed class OsduRecordSearch : IRecordSearch, IDisposable
     private readonly ConcurrentDictionary<SearchQuestion, Lazy<Task<SearchAnswer>>> _asking = new();
     private readonly ConcurrentDictionary<ParentQuestion, ParentAnswer> _parents = new();
     private readonly ConcurrentQueue<ParentQuestion> _parentsKept = new();
+    private readonly ConcurrentDictionary<ChildQuestion, ChildAnswer> _children = new();
+    private readonly ConcurrentQueue<ChildQuestion> _childrenKept = new();
     private readonly ConcurrentDictionary<string, TaskCompletionSource<JsonElement?>> _reading = new(StringComparer.Ordinal);
     private readonly SemaphoreSlim _slots = new(MaxConcurrentQueries, MaxConcurrentQueries);
     private readonly string _recordPath;
@@ -120,12 +132,18 @@ public sealed class OsduRecordSearch : IRecordSearch, IDisposable
         return _parents.TryGetValue(question, out answer);
     }
 
+    public bool TryRead(ChildQuestion question, [NotNullWhen(true)] out ChildAnswer? answer)
+    {
+        ArgumentNullException.ThrowIfNull(question);
+        return _children.TryGetValue(question, out answer);
+    }
+
     public async Task AnswerAsync(IReadOnlyCollection<PlatformQuestion> questions, CancellationToken ct = default)
     {
         ArgumentNullException.ThrowIfNull(questions);
         await Task.WhenAll(
             SearchAsync(questions.OfType<SearchQuestion>().ToList(), ct),
-            ReadParentsAsync(questions.OfType<ParentQuestion>().ToList(), ct)).ConfigureAwait(false);
+            ReadByIdAsync(questions.OfType<ParentQuestion>().ToList(), questions.OfType<ChildQuestion>().ToList(), ct)).ConfigureAwait(false);
     }
 
     /// <summary>Asks the search questions of <paramref name="questions"/> this run has not answered yet.</summary>
@@ -148,21 +166,23 @@ public sealed class OsduRecordSearch : IRecordSearch, IDisposable
     }
 
     /// <summary>
-    /// Reads the parents <paramref name="questions"/> name that this run has not read yet: each id once, however many records
-    /// ask for it, a hundred to a request, at most <see cref="MaxConcurrentQueries"/> requests in flight, and an id another
-    /// caller is reading already awaited rather than read twice.
+    /// Reads the parents <paramref name="parents"/> name, and looks up the children <paramref name="children"/> name, that this
+    /// run has not answered yet: each id once, however many records ask for it, a hundred to a request, at most
+    /// <see cref="MaxConcurrentQueries"/> requests in flight, and an id another caller is reading already awaited rather than
+    /// read twice.
     /// </summary>
-    private async Task ReadParentsAsync(IReadOnlyList<ParentQuestion> questions, CancellationToken ct)
+    private async Task ReadByIdAsync(IReadOnlyList<ParentQuestion> parents, IReadOnlyList<ChildQuestion> children, CancellationToken ct)
     {
-        var wanted = questions.Where(q => !_parents.ContainsKey(q)).Distinct().ToList();
-        if (wanted.Count == 0)
+        var wanted = parents.Where(q => !_parents.ContainsKey(q)).Distinct().ToList();
+        var looked = children.Where(q => !_children.ContainsKey(q)).Distinct().ToList();
+        if (wanted.Count == 0 && looked.Count == 0)
         {
             return;
         }
 
         var mine = new List<(string Id, TaskCompletionSource<JsonElement?> Read)>();
         var reads = new Dictionary<string, Task<JsonElement?>>(StringComparer.Ordinal);
-        foreach (var id in wanted.Select(q => q.Id).Distinct(StringComparer.Ordinal))
+        foreach (var id in wanted.Select(q => q.Id).Concat(looked.Select(q => q.Id)).Distinct(StringComparer.Ordinal))
         {
             var read = new TaskCompletionSource<JsonElement?>(TaskCreationOptions.RunContinuationsAsynchronously);
             var reading = _reading.GetOrAdd(id, read);
@@ -177,19 +197,35 @@ public sealed class OsduRecordSearch : IRecordSearch, IDisposable
         try
         {
             await Task.WhenAll(mine.Chunk(StorageRecords.Batch).Select(chunk => ReadChunkAsync(chunk, ct))).ConfigureAwait(false);
-            var answered = 0;
-            var found = 0;
-            foreach (var question in wanted)
+            if (wanted.Count > 0)
             {
-                var record = await reads[question.Id].WaitAsync(ct).ConfigureAwait(false);
-                var answer = record is { } held ? Answer(question, held) : ParentAnswer.None;
-                Keep(question, answer);
-                answered++;
-                found += answer.Found ? 1 : 0;
+                var found = 0;
+                foreach (var question in wanted)
+                {
+                    var record = await reads[question.Id].WaitAsync(ct).ConfigureAwait(false);
+                    var answer = record is { } held ? Answer(question, held) : ParentAnswer.None;
+                    Keep(question, answer);
+                    found += answer.Found ? 1 : 0;
+                }
+
+                _log.LogInformation(
+                    "Read {Count} parent record(s) from storage: {Found} found, {Missing} not held.", wanted.Count, found, wanted.Count - found);
             }
 
-            _log.LogInformation(
-                "Read {Count} parent record(s) from storage: {Found} found, {Missing} not held.", answered, found, answered - found);
+            if (looked.Count > 0)
+            {
+                var found = 0;
+                foreach (var question in looked)
+                {
+                    var record = await reads[question.Id].WaitAsync(ct).ConfigureAwait(false);
+                    var answer = record is { } held ? Answer(question, held) : ChildAnswer.None;
+                    Keep(question, answer);
+                    found += answer.Found ? 1 : 0;
+                }
+
+                _log.LogInformation(
+                    "Looked up {Count} child record(s) in storage: {Found} found and linked, {Missing} not held.", looked.Count, found, looked.Count - found);
+            }
         }
         finally
         {
@@ -202,7 +238,7 @@ public sealed class OsduRecordSearch : IRecordSearch, IDisposable
         }
     }
 
-    /// <summary>Reads one request's worth of parents and settles each id's read with the record, or null when storage holds none.</summary>
+    /// <summary>Reads one request's worth of parents and children and settles each id's read with the record, or null when storage holds none.</summary>
     private async Task ReadChunkAsync((string Id, TaskCompletionSource<JsonElement?> Read)[] chunk, CancellationToken ct)
     {
         await _slots.WaitAsync(ct).ConfigureAwait(false);
@@ -213,8 +249,8 @@ public sealed class OsduRecordSearch : IRecordSearch, IDisposable
             if (read.Unanswered.Count > 0)
             {
                 throw new DeliveryException(
-                    $"The storage service asked twice to retry reading the parent record{(read.Unanswered.Count == 1 ? string.Empty : "s")} {string.Join(", ", read.Unanswered.Take(5))}{(read.Unanswered.Count > 5 ? $" and {read.Unanswered.Count - 5} more" : string.Empty)}; "
-                    + "nothing says whether it holds them, so no record waiting on one is held for a parent it may hold.");
+                    $"The storage service asked twice to retry reading the record{(read.Unanswered.Count == 1 ? string.Empty : "s")} {string.Join(", ", read.Unanswered.Take(5))}{(read.Unanswered.Count > 5 ? $" and {read.Unanswered.Count - 5} more" : string.Empty)} the run's renders read by id; "
+                    + "nothing says whether it holds them, so no record is held for a parent it may hold, or written without the link to a child it may hold.");
             }
 
             var records = new Dictionary<string, JsonElement>(StringComparer.Ordinal);
@@ -295,6 +331,39 @@ public sealed class OsduRecordSearch : IRecordSearch, IDisposable
         }
 
         return ParentAnswer.Of(sections, kind, version);
+    }
+
+    /// <summary>
+    /// The answer a child storage holds gives <paramref name="question"/>: its kind and its version. A record of another entity
+    /// type under the child's id is storage answering something else, and fails.
+    /// </summary>
+    internal static ChildAnswer Answer(ChildQuestion question, JsonElement record)
+    {
+        ArgumentNullException.ThrowIfNull(question);
+        var entityType = question.Id.Split(':') is { Length: >= 3 } parts ? parts[1] : string.Empty;
+        var kind = record.TryGetProperty("kind", out var kindValue) && kindValue.ValueKind == JsonValueKind.String ? kindValue.GetString() : null;
+        if (string.IsNullOrWhiteSpace(kind) || kind.Split(':') is not { Length: 4 } kindParts || !string.Equals(kindParts[2], entityType, StringComparison.Ordinal))
+        {
+            throw new DeliveryException(
+                $"The storage service answered the child record {question.Id} with a record of {(string.IsNullOrWhiteSpace(kind) ? "no kind" : kind)}, and a child of {question.Kind} is a {entityType} record.");
+        }
+
+        var version = record.TryGetProperty("version", out var versionValue) && versionValue.TryGetInt64(out var number) ? number : 0;
+        return ChildAnswer.Of(kind, version);
+    }
+
+    /// <summary>Keeps <paramref name="answer"/> for the run, letting the oldest go past <see cref="MaxKeptChildren"/>.</summary>
+    private void Keep(ChildQuestion question, ChildAnswer answer)
+    {
+        if (_children.TryAdd(question, answer))
+        {
+            _childrenKept.Enqueue(question);
+        }
+
+        while (_children.Count > MaxKeptChildren && _childrenKept.TryDequeue(out var oldest))
+        {
+            _children.TryRemove(oldest, out _);
+        }
     }
 
     /// <summary>Keeps <paramref name="answer"/> for the run, letting the oldest go past <see cref="MaxKeptParents"/>.</summary>

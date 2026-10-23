@@ -59,6 +59,12 @@ public enum MappingDraftInput
     /// the template is linked to with the same minted id, read from the platform as the record renders.
     /// </summary>
     Parent,
+
+    /// <summary>
+    /// The reference to one of the record's children (<c>$child</c>, osdu/docs/reference/flow/mapping-child.md): the record of a
+    /// kind whose template is linked to this one, with the same minted id, written once the platform holds it.
+    /// </summary>
+    Child,
 }
 
 /// <summary>
@@ -175,6 +181,9 @@ public sealed record MappingDraftEntry
 
     /// <summary>For a parent input: the path of the section of the record's parent it takes, from the record's root (<c>data.DDMSDatasets</c>).</summary>
     public string? ParentPath { get; init; }
+
+    /// <summary>For a child input: the kind of the child it links (<c>welldb:wks:work-product-component--WellLogDetail:1.0.0</c>), whose template is linked to this one.</summary>
+    public string? ChildKind { get; init; }
 
     public IReadOnlyList<MappingDraftFind> FindBy { get; init; } = [];
 
@@ -1028,6 +1037,12 @@ public static partial class MappingBuilder
                 continue;
             }
 
+            if (alternative.Input == MappingDraftInput.Child)
+            {
+                error($"{name}: a child link gives nothing while OSDU does not hold the child, which no other value stands in for; make it an entry of its own, or, to link several children, the items of a list.", target);
+                continue;
+            }
+
             if (i > 0 && entry.Alternatives[i - 1].Input == MappingDraftInput.Static)
             {
                 error($"{name} is never tried: the fixed value before it always gives a value. Make the fixed value the last alternative.", target);
@@ -1068,6 +1083,40 @@ public static partial class MappingBuilder
         if (entry.FindBy.Count > 0 || entry.FindAll is not null || entry.IgnoreSeparators || entry.Unverified)
         {
             error($"{name}: the parent is found by the record's own id, so a parent input takes no findBy lines, find all, folded separators or unverified ids.", target);
+        }
+    }
+
+    /// <summary>
+    /// What a child input lacks (osdu/docs/reference/flow/mapping-child.md): the kind of the child it links, a record kind,
+    /// read by an entry of the record rather than of a repeater's items, and nothing that finds, matches or changes a value,
+    /// since the child is found by the record's own id and the link is its id. A child never holds its record, so the entry
+    /// is never required. Whether the kind's template is linked to this one is the preflight's to judge.
+    /// </summary>
+    private static void ChildIssues(MappingDraftEntry entry, string name, string target, string? scope, Action<string, string?> error)
+    {
+        var kind = entry.ChildKind?.Trim() ?? string.Empty;
+        if (kind.Length == 0)
+        {
+            error($"{name}: name the kind of the child to link, a custom template linked to this one, such as welldb:wks:work-product-component--WellLogDetail:1.0.0.", target);
+        }
+        else if (!FlowMapper.IsRecordKind(kind) || !Identity.TargetId.EntityTypeFromKind(kind).Contains("--", StringComparison.Ordinal))
+        {
+            error($"{name}: '{kind}' is not the kind of a record, 'authority:source:group--Entity:major.minor.patch'.", target);
+        }
+
+        if (scope is not null)
+        {
+            error($"{name}: a row of {scope} has no children of its own; link the child from an entry outside the repeated array.", target);
+        }
+
+        if (entry.FindBy.Count > 0 || entry.FindAll is not null || entry.Modifiers.Count > 0 || entry.IgnoreSeparators || entry.Unverified)
+        {
+            error($"{name}: the child is found by the record's own id and linked by its own, so a child input takes no findBy lines, find all, modifiers, folded separators or unverified ids.", target);
+        }
+
+        if (entry.Required)
+        {
+            error($"{name}: a child link never holds its record: it is written once OSDU holds the child and left out until then, so the entry is not required.", target);
         }
     }
 
@@ -1183,6 +1232,9 @@ public static partial class MappingBuilder
                 break;
             case MappingDraftInput.Parent:
                 ParentIssues(entry, name, target, scope, error);
+                break;
+            case MappingDraftInput.Child:
+                ChildIssues(entry, name, target, scope, error);
                 break;
             case MappingDraftInput.Static:
                 StaticIssue(entry, name, error);
@@ -1520,10 +1572,12 @@ public static partial class MappingBuilder
                     MappingSourceKind.Search => MappingDraftInput.Search,
                     MappingSourceKind.Expression => MappingDraftInput.Expression,
                     MappingSourceKind.Parent => MappingDraftInput.Parent,
+                    MappingSourceKind.Child => MappingDraftInput.Child,
                     _ => MappingDraftInput.Cache,
                 },
             Expression = source?.Expression?.Text,
             ParentPath = source?.ParentPath,
+            ChildKind = source?.ChildKind,
             Column = source?.Column is { } column ? ColumnText(column) : null,
             Child = source?.Child,
             CacheType = source?.CacheType,
@@ -1838,11 +1892,14 @@ public static partial class MappingBuilder
             MappingDraftInput.Dataset => (MappingMapper.FromKey, ScopedColumn(entry.Column ?? string.Empty, scope)),
             MappingDraftInput.Search => (MappingMapper.SearchKey, entry.CacheType?.Trim() ?? string.Empty),
             MappingDraftInput.Parent => (MappingMapper.ParentKey, entry.ParentPath?.Trim() ?? string.Empty),
+            MappingDraftInput.Child => (MappingMapper.ChildKey, entry.ChildKind?.Trim() ?? string.Empty),
             _ => (MappingMapper.CacheKey, $"{entry.CacheType?.Trim()}.{entry.CacheField?.Trim()}"),
         };
 
+        // A child link is never required, and the node says so by leaving $required out.
         var findAll = entry.Input == MappingDraftInput.Cache ? entry.FindAll : null;
-        var bare = entry.FindBy.Count == 0 && findAll is null && entry.Modifiers.Count == 0 && string.IsNullOrWhiteSpace(entry.When) && entry.Required
+        var bare = entry.FindBy.Count == 0 && findAll is null && entry.Modifiers.Count == 0 && string.IsNullOrWhiteSpace(entry.When)
+            && (entry.Required || entry.Input == MappingDraftInput.Child)
             && !(entry.Input == MappingDraftInput.Cache && entry.IgnoreSeparators) && !entry.Unverified && string.IsNullOrWhiteSpace(entry.Description)
             && entry.Assertions.Count == 0;
         if (bare)
@@ -2108,7 +2165,7 @@ public static partial class MappingBuilder
             line(inner + MappingMapper.WhenKey + ": " + ExpressionScalar(entry.When.Trim()));
         }
 
-        if (entry.Input != MappingDraftInput.Static && !entry.Required)
+        if (entry.Input is not (MappingDraftInput.Static or MappingDraftInput.Child) && !entry.Required)
         {
             line(inner + MappingMapper.RequiredKey + ": false");
         }

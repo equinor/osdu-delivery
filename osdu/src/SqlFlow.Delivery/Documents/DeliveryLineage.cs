@@ -261,6 +261,11 @@ public static class DeliveryLineage
                 LineageRelation.Reads, endpoint, partition, parent.Kind, who, $"the parent of the records mapping '{mapping.Reference}' renders", warnings));
         }
 
+        // A record that links its children ($child, osdu/docs/reference/flow/mapping-child.md) reads none of them: it is
+        // written without the link while a child is not there, and the ledger plans it again when one lands. Read here, the
+        // kinds it links would order the flow after the flows delivering its children, which run after it when they read
+        // their parent, and neither of the two could run first.
+
         if (cache.Untold.Count > 0)
         {
             var listed = string.Join(", ", cache.Untold.Take(MaxNamedVariables))

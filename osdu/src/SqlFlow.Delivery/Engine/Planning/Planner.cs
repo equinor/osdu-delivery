@@ -865,14 +865,16 @@ public sealed class Planner
     /// asks a search entry's lines one at a time, and a line that finds nothing exactly may ask again regardless of case
     /// where the partition keeps a lowercased copy of text. A $coalesce node asks its searching alternatives one after
     /// another, so it counts the lines of all of them. A mapping that reads its records' parent reads it in one round of its
-    /// own, which a $coalesce may reach only after its searching alternatives. Each round answers what the one before it asked.
+    /// own, which a $coalesce may reach only after its searching alternatives, and one that links its records' children looks
+    /// them up in one more, since a $when on a link may read what an earlier round gave. Each round answers what the one
+    /// before it asked.
     /// </summary>
     internal static int SearchRounds(MappingDefinition mapping)
         => (2 * mapping.Entries
             .Select(e => e.ValueNodes.Where(node => node.Source?.Kind == MappingSourceKind.Search).Sum(node => node.FindBy.Count))
             .Where(lines => lines > 0)
             .DefaultIfEmpty(1)
-            .Max()) + (mapping.ReadsParent ? 1 : 0);
+            .Max()) + (mapping.ReadsParent ? 1 : 0) + (mapping.LinksChildren ? 1 : 0);
 
     /// <summary>The distinct questions a batch's records wait on, in the order they were first asked.</summary>
     private sealed class Questions

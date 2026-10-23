@@ -431,7 +431,9 @@ columns**, how the **OSDU id** is made (from the delivery key, or the key's valu
 variable is listed, each filled as a **Dataset column**, **Repeat child rows**, **Cache**, **Lookup**, **Platform
 search**, **Expression**, **Static value**, **First value of**, **List of values** or **Object**, or left **Not
 filled**; for a template linked to a parent, also as **Parent record**, a section of the record's parent by its path,
-offered at the variable's own path ([mapping $parent](../flow/mapping-parent.md)); the YAML and its check against the template and the cache's current version follow every edit. **Copy YAML**
+offered at the variable's own path ([mapping $parent](../flow/mapping-parent.md)); for a template other templates of the
+repository are linked to, also as **Child record**, the link to the record's child of one of those kinds, never required
+and never an alternative of **First value of** ([mapping $child](../flow/mapping-child.md)); the YAML and its check against the template and the cache's current version follow every edit. **Copy YAML**
 takes it; **Propose to repository** opens a pull request through SQLFlow's proposal endpoint (**Open pull request**)
 that writes the mapping into the `mappings` folder beside the template folder holding its template, so that folder is
 on its path ([template folders](templates.md#template-folders)). A repository that holds no template yet says how to
@@ -447,7 +449,7 @@ records them. Two tabs:
   file, each with the kind and version it holds (or why it holds none) and when its repository's sync last saw it; a
   template linked to a canonical kind shows a link beside its kind, naming the parent on hover
   ([linked templates](templates.md#linked-templates)). A file opens laid out as a template, with its repository and
-  path, and the kind it is linked to; **Download** saves it as a template file under its
+  path, the kind it is linked to, and each kind of the repository linked to it, as a **Child**; **Download** saves it as a template file under its
   own name, to keep in another repository's template folder. A link naming a kind and version opens the file holding
   it, and says so when no repository holds it.
 - **Browse OSDU**: the OSDU data definitions, the Open Group's public repository of OSDU schemas, by **Release**,

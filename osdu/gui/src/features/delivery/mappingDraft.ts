@@ -112,6 +112,7 @@ export function emptyEntry(target: string, input: MappingDraftInput): MappingDra
     cacheField: null,
     lookup: null,
     parentPath: null,
+    childKind: null,
     findBy: [],
     findAll: null,
     modifiers: [],
@@ -215,8 +216,9 @@ export function newModifier(kind: MappingDraftModifierKind): MappingDraftModifie
  * a lookup, a search of the platform or a static value, and a list of values from items that are each one of those; a
  * list of objects from a repeater, a static list, or a list whose items are objects of properties each filled on its
  * own; an object only from a static value. A section of the record's parent fills any shape, for a template linked to a
- * parent (the editor offers it only then). The legal lists are static, and the access lists static or a list of values
- * that keeps a fixed value every record carries.
+ * parent, and the link to one of the record's children a value, for a template other templates are linked to (the editor
+ * offers each only then). The legal lists are static, and the access lists static or a list of values that keeps a fixed
+ * value every record carries.
  */
 export function inputsFor(variable: Pick<DeliveryTemplateVariable, "shape" | "path">): MappingDraftInput[] {
   if (ACCESS_TARGETS.includes(variable.path)) {
@@ -229,9 +231,9 @@ export function inputsFor(variable: Pick<DeliveryTemplateVariable, "shape" | "pa
 
   switch (variable.shape) {
     case "Value":
-      return ["Dataset", "Expression", "Cache", "Lookup", "Search", "Parent", "Static", "Coalesce"];
+      return ["Dataset", "Expression", "Cache", "Lookup", "Search", "Parent", "Child", "Static", "Coalesce"];
     case "ValueList":
-      return ["Dataset", "Expression", "Cache", "Lookup", "Search", "Parent", "Static", "Coalesce", "List"];
+      return ["Dataset", "Expression", "Cache", "Lookup", "Search", "Parent", "Child", "Static", "Coalesce", "List"];
     case "GroupList":
       return ["Repeat", "List", "Parent", "Static"];
     case "Group":
@@ -309,6 +311,8 @@ export function entrySummary(entry: MappingDraftEntry): string {
       return groupText(entry, entrySummary);
     case "Parent":
       return `parent.${entry.parentPath ?? ""}`;
+    case "Child":
+      return `child.${entry.childKind ?? ""}`;
   }
 }
 

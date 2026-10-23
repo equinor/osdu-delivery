@@ -24,6 +24,7 @@ related:
   - delivery-wiki-0009-searched-references
   - delivery-wiki-0004-preserved-keys
   - delivery-wiki-0002-client-supplied-ids
+  - delivery-wiki-0023-child-links
 sourceRefs:
   - osdu/src/SqlFlow.Delivery/Templates/TemplateParent.cs
   - osdu/src/SqlFlow.Delivery/Documents/MappingMapper.Record.cs
@@ -34,7 +35,7 @@ sourceRefs:
   - osdu/src/SqlFlow.Delivery/Ledger/OsduLedger.Parents.cs
   - osdu/src/SqlFlow.Delivery/Documents/DeliveryLineage.cs
   - osdu/tests/SqlFlow.Delivery.Tests/ParentDeliveryTests.cs
-updated: 2026-10-22
+updated: 2026-10-23
 ---
 # 0019: A custom template is linked to its canonical kind, and its records read their parent from OSDU
 
@@ -116,3 +117,5 @@ reader able to move from one to the other without a lookup.
   parents.
 - The record page links a record and its parent both ways, and the mapping builder offers the parent as an input,
   defaulting to the variable's own path, since a custom template is a copy of its parent.
+- The link in OSDU ran one way, from the custom record to its parent. [0023](0023-child-links.md) adds the other: the
+  canonical record links its custom child with `$child`, resting on the same template link.

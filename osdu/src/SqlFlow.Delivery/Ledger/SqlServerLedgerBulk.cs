@@ -74,6 +74,7 @@ internal static partial class SqlServerLedgerBulk
             [CacheSetId] bigint NULL,
             [ParentId] nvarchar(500) COLLATE Latin1_General_100_BIN2 NULL,
             [PendingParentVersion] bigint NULL,
+            [ChildLinkKey] nvarchar(500) COLLATE Latin1_General_100_BIN2 NULL,
             [SeenPlanRequestedUtc] datetime2 NULL,
             [AnswersAnyRequest] bit NOT NULL,
             PRIMARY KEY ([Slice], [FlowId], [DeliveryKey]),
@@ -190,7 +191,7 @@ internal static partial class SqlServerLedgerBulk
                 [PendingPayloadModifiedUtc] = s.[PendingPayloadModifiedUtc],
                 [PendingPayloadLocation] = s.[PendingPayloadLocation], [PendingMetadata] = s.[PendingMetadata], [PendingPayload] = s.[PendingPayload],
                 [PendingReferences] = s.[PendingReferences], [WaitingFor] = NULL,
-                [CacheSetId] = s.[CacheSetId], [ParentId] = s.[ParentId], [PendingParentVersion] = s.[PendingParentVersion], [Blocked] = 0, [ProblemHash] = NULL,
+                [CacheSetId] = s.[CacheSetId], [ParentId] = s.[ParentId], [PendingParentVersion] = s.[PendingParentVersion], [ChildLinkKey] = s.[ChildLinkKey], [Blocked] = 0, [ProblemHash] = NULL,
                 [PlanRequestedUtc] = CASE WHEN s.[AnswersAnyRequest] = 1 OR t.[PlanRequestedUtc] = s.[SeenPlanRequestedUtc] THEN NULL ELSE t.[PlanRequestedUtc] END, [UpdatedUtc] = @now
         FROM [osdu].[Record] AS t WITH (FORCESEEK ({{RecordKey}} ([PartitionId], [FlowId], [DeliveryKey])))
         INNER JOIN #PendingStage AS s ON t.[PartitionId] = @partitionId AND t.[FlowId] = s.[FlowId] AND t.[DeliveryKey] = s.[DeliveryKey]
@@ -207,12 +208,12 @@ internal static partial class SqlServerLedgerBulk
                 [PendingDocumentRef], [WorkBatch], [PendingRenderContext], [PendingSourceFingerprint], [PendingSourceModifiedUtc],
                 [PendingSourceFileName], [PendingSourceRowNumber], [PendingSourceUpdatedUtc], [SourceInsertedUtc],
                 [PendingMetadataHash], [PendingPayloadHash], [PendingPayloadModifiedUtc],
-                [PendingPayloadLocation], [PendingMetadata], [PendingPayload], [PendingReferences], [CacheSetId], [ParentId], [PendingParentVersion], [Blocked], [CreatedUtc], [UpdatedUtc])
+                [PendingPayloadLocation], [PendingMetadata], [PendingPayload], [PendingReferences], [CacheSetId], [ParentId], [PendingParentVersion], [ChildLinkKey], [Blocked], [CreatedUtc], [UpdatedUtc])
         SELECT @partitionId, s.[DeliveryKey], s.[FlowId], s.[SourceKey], s.[SourceKeyJson], s.[Label], s.[MappingName], s.[TargetId], s.[TargetId] COLLATE Latin1_General_100_BIN2, N'pending', s.[LastSubmissionId], 0,
                 s.[PendingDocumentRef], s.[WorkBatch], s.[PendingRenderContext], s.[PendingSourceFingerprint], s.[PendingSourceModifiedUtc],
                 s.[PendingSourceFileName], s.[PendingSourceRowNumber], s.[PendingSourceUpdatedUtc], s.[SourceInsertedUtc],
                 s.[PendingMetadataHash], s.[PendingPayloadHash], s.[PendingPayloadModifiedUtc],
-                s.[PendingPayloadLocation], s.[PendingMetadata], s.[PendingPayload], s.[PendingReferences], s.[CacheSetId], s.[ParentId], s.[PendingParentVersion], 0, @now, @now
+                s.[PendingPayloadLocation], s.[PendingMetadata], s.[PendingPayload], s.[PendingReferences], s.[CacheSetId], s.[ParentId], s.[PendingParentVersion], s.[ChildLinkKey], 0, @now, @now
         FROM #PendingStage AS s
         WHERE s.[Slice] = @slice AND s.[Existing] = 0;
         SELECT @updated + @@ROWCOUNT;
@@ -890,6 +891,7 @@ internal static partial class SqlServerLedgerBulk
         table.Columns.Add("CacheSetId", typeof(long));
         table.Columns.Add("ParentId", typeof(string));
         table.Columns.Add("PendingParentVersion", typeof(long));
+        table.Columns.Add("ChildLinkKey", typeof(string));
         table.Columns.Add("SeenPlanRequestedUtc", typeof(DateTime));
         table.Columns.Add("AnswersAnyRequest", typeof(bool));
         var position = 0;
@@ -902,7 +904,7 @@ internal static partial class SqlServerLedgerBulk
                 Value(Truncate(r.PendingSourceFileName, DeliveryModel.MaxSourceFileNameLength)), Value(r.PendingSourceRowNumber), Value(r.PendingSourceUpdatedUtc),
                 Value(r.SourceInsertedUtc), Value(r.PendingMetadataHash), Value(r.PendingPayloadHash),
                 Value(r.PendingPayloadModifiedUtc), Value(r.PendingPayloadLocation), r.PendingMetadata, r.PendingPayload,
-                Value(RecordReferences.Encode(r.PendingReferences)), Value(r.CacheSetId), Value(r.ParentId), Value(r.PendingParentVersion),
+                Value(RecordReferences.Encode(r.PendingReferences)), Value(r.CacheSetId), Value(r.ParentId), Value(r.PendingParentVersion), Value(r.ChildLinkKey),
                 Value(r.Basis?.PlanRequestedUtc), r.Basis is null);
         }
 

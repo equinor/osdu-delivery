@@ -32,6 +32,7 @@ related:
   - delivery-flow-ddms
   - delivery-table-record
   - delivery-table-attempt
+  - delivery-flow-mapping-child
 yamlPath: "record.<property>.$parent (documentType: mapping)"
 sourceRefs:
   - osdu/src/SqlFlow.Delivery/Templates/TemplateParent.cs
@@ -268,6 +269,7 @@ for the link.
 
 ## Related
 
+- [Mapping $child](mapping-child.md): the canonical record linking the custom record that reads it, the other direction.
 - [Templates](../concepts/templates.md#linked-templates): custom templates, and how one is linked to its parent.
 - [Mapping value nodes](mapping-values.md): `$required`, `$coalesce`, `$when` and the other words beside `$parent`.
 - [Mapping lookups](mapping-lookups.md): `$search`, the other value read from the platform as a record renders.

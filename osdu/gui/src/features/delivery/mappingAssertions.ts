@@ -244,6 +244,8 @@ function valueOrigin(input: MappingDraftInput): string {
       return "a search of the platform";
     case "Parent":
       return "the record's parent";
+    case "Child":
+      return "the link to the record's child";
     case "Coalesce":
       return "the first alternative that gives one";
     case "Repeat":

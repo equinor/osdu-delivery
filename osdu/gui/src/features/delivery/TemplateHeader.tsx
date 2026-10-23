@@ -116,6 +116,17 @@ export function TemplateHeader({ kind, detail, source, actions }: TemplateHeader
               <CopyButton iconOnly label="Copy the parent kind" text={detail.parent} testId="templates-view-parent-copy" />
             </Fact>
           )}
+          {(detail.children ?? []).map((child) => (
+            <Fact key={child} icon={Link2} label="Child" testId="templates-view-child">
+              <span
+                className="min-w-0 break-all font-mono"
+                title="A template linked to this one: each record of this template can link the record of that kind with the same minted id, with $child, once OSDU holds it."
+              >
+                {child}
+              </span>
+              <CopyButton iconOnly label="Copy the child kind" text={child} testId="templates-view-child-copy" />
+            </Fact>
+          ))}
         </dl>
       )}
     </SheetHeader>

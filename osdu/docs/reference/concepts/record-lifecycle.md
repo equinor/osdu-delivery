@@ -37,6 +37,7 @@ related:
   - delivery-flow-delivery
   - delivery-flow-mapping-assertions
   - delivery-flow-mapping-parent
+  - delivery-flow-mapping-child
 sourceRefs:
   - osdu/src/SqlFlow.Delivery/Ledger/ILedger.cs
   - osdu/src/SqlFlow.Delivery/Ledger/OsduLedger.cs
@@ -317,6 +318,10 @@ parent with `$parent`) is held at its render, keeping no document, and its paren
 release: when the parent lands through the ledger, delivered by any flow of the partition, the record is released under
 a `release` activity whose actor is `parent`, and its flow's next run renders it from the parent
 ([mapping $parent](../flow/mapping-parent.md#when-the-parent-changes)).
+
+A child is never a reason to hold its parent: a record linking its children with `$child` goes out without the link to a
+child OSDU does not hold yet, and when the child lands through the ledger the record is asked to be planned again, with
+no activity, so its flow's next run adds the link ([mapping $child](../flow/mapping-child.md#when-a-child-lands)).
 
 ## Adopting a record OSDU already holds
 

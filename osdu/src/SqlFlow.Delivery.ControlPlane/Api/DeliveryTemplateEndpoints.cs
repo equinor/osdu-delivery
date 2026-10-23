@@ -72,6 +72,13 @@ public sealed record DeliveryTemplateDetailDto(
     /// from its <c>x-osdu-inheriting-from-kind</c>; null for a template linked to none.
     /// </summary>
     public string? Parent { get; init; }
+
+    /// <summary>
+    /// The kinds of the repository's templates linked to this template's entity type as their parent, in ordinal order: the
+    /// children a mapping of this template can link with <c>$child</c> (osdu/docs/reference/flow/mapping-child.md). Empty for a
+    /// template none is linked to, and for one that is not a repository's file.
+    /// </summary>
+    public IReadOnlyList<string> Children { get; init; } = [];
 }
 
 /// <summary>A release of the OSDU data definitions: its tag, the commit it names, when that was committed, and its schema folder on the web.</summary>
@@ -304,7 +311,32 @@ public static class DeliveryTemplateEndpoints
         var names = await RepositoryNamesAsync(db, ct).ConfigureAwait(false);
         var types = string.IsNullOrWhiteSpace(scope) ? [] : await CatalogCacheReader.TypesAsync(osdu, scope.Trim(), ct).ConfigureAwait(false);
         var file = new DeliveryTemplateFileDto(repoId!.Value, names.GetValueOrDefault(repoId.Value, repoId.Value.ToString("D")), path!.Trim());
-        return TypedResults.Ok(Detail(OsduTemplate.From(schema), file, types) with { Parent = schema.Parent?.Kind });
+        var children = await LinkedChildrenAsync(osdu, repoId.Value, schema.Kind, ct).ConfigureAwait(false);
+        return TypedResults.Ok(Detail(OsduTemplate.From(schema), file, types) with { Parent = schema.Parent?.Kind, Children = children });
+    }
+
+    /// <summary>
+    /// The kinds of repository <paramref name="repoId"/>'s templates whose recorded parent is of the entity type of
+    /// <paramref name="kind"/>, each once, in ordinal order: the kinds a mapping of it can link as children. Read from the
+    /// index the repository's last sync recorded, nothing from a file.
+    /// </summary>
+    private static async Task<IReadOnlyList<string>> LinkedChildrenAsync(OsduDbContext osdu, Guid repoId, string kind, CancellationToken ct)
+    {
+        // The sync records a kind and a parent only once it read them as kinds, so the entity type is the third segment.
+        static string? EntityTypeOf(string? written) => written?.Split(':') is { Length: 4 } parts && parts[2].Length > 0 ? parts[2] : null;
+        if (EntityTypeOf(kind) is not { } entityType)
+        {
+            return [];
+        }
+
+        var files = await RepositoryTemplates.FilesAsync(osdu, repoId, ct).ConfigureAwait(false);
+        return files
+            .Where(f => string.Equals(EntityTypeOf(f.Parent), entityType, StringComparison.Ordinal)
+                && EntityTypeOf(f.Kind) is { } own && !string.Equals(own, entityType, StringComparison.Ordinal))
+            .Select(f => f.Kind)
+            .Distinct(StringComparer.Ordinal)
+            .Order(StringComparer.Ordinal)
+            .ToList();
     }
 
     /// <summary>
