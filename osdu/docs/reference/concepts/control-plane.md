@@ -41,6 +41,7 @@ sourceRefs:
   - osdu/src/SqlFlow.Delivery.ControlPlane/Background/SearchTermCatalogRefreshService.cs
   - osdu/src/SqlFlow.Delivery.ControlPlane/Background/RecordIdentityBackfillService.cs
   - osdu/src/SqlFlow.Delivery.ControlPlane/Background/RecordProblemBackfillService.cs
+  - osdu/src/SqlFlow.Delivery.ControlPlane/Background/LedgerMoveService.cs
   - osdu/src/SqlFlow.Delivery.ControlPlane/Background/ConfiguredRunDispatcher.cs
   - osdu/src/SqlFlow.Delivery.ControlPlane/Background/CentralConfigurationStep.cs
   - osdu/src/SqlFlow.Delivery.ControlPlane/Background/PartitionReadiness.cs
@@ -160,6 +161,7 @@ configuration (`Osdu:Partitions:<partition>:Properties`, below), and any propert
 | Search term refresh | Once at start | Writes the search terms of every repository with delivery flows again, keeping what people made of them; a repository with no delivery flow left loses its terms. Retried every 30 seconds until a pass completes. |
 | Record identity backfill | At start, then every 6 hours | Fills the identity index for records the ledger held before the index existed, 500 records a page with a 250 ms pause between pages. |
 | Record issue backfill | At start, then every 10 minutes | Sorts blocked records the ledger holds no issue for into their issues, 500 a page with a 250 ms pause. |
+| Ledger move | Every 15 seconds | Moves the ledger of each name of a document the repository sync found to the newest name, which owns it, 1,000 rows a statement, under a lock on the ledger it moves into; a move waiting for work in flight, or another replica's, is taken up on a later pass ([Renaming a pipeline](renaming-a-pipeline.md)). |
 
 Every service runs on each replica that starts. The rollout and the backfills are written so two replicas at once cost
 duplicated work and never a wrong result; the warm-up fills each replica's own memory.

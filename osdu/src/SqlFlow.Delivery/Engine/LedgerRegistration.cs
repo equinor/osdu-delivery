@@ -54,7 +54,14 @@ public static class LedgerRegistration
     /// </param>
     /// <param name="ct">Stops the registration.</param>
     /// <returns>The ledger's directory entry, naming the partition its rows are kept under.</returns>
-    /// <exception cref="SqlFlowException">The partition is unknown, or the ledger belongs to another partition; the message says which.</exception>
+    /// <exception cref="SqlFlowException">
+    /// The partition is unknown, the ledger belongs to another partition, or the move of a renamed pipeline's ledger into it
+    /// cannot be finished now; the message says which.
+    /// </exception>
+    /// <remarks>
+    /// A move of the ledger of the pipeline this one replaced, which the repository sync asked for, is finished before the
+    /// entry is returned (<see cref="ILedger.CompleteLedgerMovesAsync"/>), so whatever registered the ledger reads it whole.
+    /// </remarks>
     public static async Task<LedgerEntry> RegisterAsync(ILedger ledger, FlowDefinition flow, ISecretResolver secrets, bool keptWhenUnresolved, CancellationToken ct = default)
     {
         ArgumentNullException.ThrowIfNull(ledger);
@@ -68,13 +75,16 @@ public static class LedgerRegistration
         {
             if (await ledger.GetLedgerAsync(flow.Id, ct).ConfigureAwait(false) is { Partition: not null } kept)
             {
+                await ledger.CompleteLedgerMovesAsync(flow.Id, ct).ConfigureAwait(false);
                 return kept;
             }
 
             throw;
         }
 
-        return await ledger.RegisterLedgerAsync(Entry(flow, partition), ct).ConfigureAwait(false);
+        var entry = await ledger.RegisterLedgerAsync(Entry(flow, partition), ct).ConfigureAwait(false);
+        await ledger.CompleteLedgerMovesAsync(flow.Id, ct).ConfigureAwait(false);
+        return entry;
     }
 
     /// <summary>The directory entry of <paramref name="flow"/>'s ledger in <paramref name="partition"/>.</summary>

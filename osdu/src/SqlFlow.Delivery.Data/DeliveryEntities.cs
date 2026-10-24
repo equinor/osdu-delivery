@@ -1801,6 +1801,14 @@ public sealed class DeliveryInterface
 
     public string RelativePath { get; set; } = string.Empty;
 
+    /// <summary>
+    /// SHA-256, in lowercase hex, of the flow document as parsed with its name and path left out, and of the mapping document
+    /// it pins: the same for a pipeline renamed, so the repository sync moves the ledger of each of a pipeline's names to the
+    /// one it found last. Null for a row written before it was recorded, until the control plane's backfill or the next sync
+    /// records it.
+    /// </summary>
+    public string? DocumentHash { get; set; }
+
     /// <summary>False once the repository no longer declares the interface.</summary>
     public bool Active { get; set; } = true;
 
@@ -4619,6 +4627,7 @@ public static class DeliveryModel
             e.Property(i => i.RelativePath).HasMaxLength(1000).IsRequired();
             e.Property(i => i.Partition).HasMaxLength(200).IsRequired();
             e.Property(i => i.TargetPartition).HasMaxLength(200).IsRequired().HasDefaultValue(string.Empty);
+            e.Property(i => i.DocumentHash).HasMaxLength(64);
             e.HasIndex(i => new { i.RepoId, i.FlowName, i.Interface, i.Partition }).IsUnique();
             // A record's page, a submission's page and the record search find the pipeline behind a ledger identity.
             e.HasIndex(i => i.LedgerFlowId);

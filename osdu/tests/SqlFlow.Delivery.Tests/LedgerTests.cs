@@ -1572,7 +1572,7 @@ public class SqlLedgerTests : IAsyncLifetime, IDisposable
         var gone = Assert.Single((await Ledger.UpsertPendingAsync(other, [Pending("a", Guid.NewGuid()) with { FlowId = other }])).Conflicts);
         Assert.Equal((owner, "welldb-welllog", "welldb-welllog", false), (gone.OwnerFlowId, gone.OwnerFlowName, gone.OwnerLedger, gone.OwnerDeclared));
         Assert.Contains($"already claimed by flow 'welldb-welllog' ({owner:D}), which no repository declares any more", gone.Describe(), StringComparison.Ordinal);
-        Assert.Contains("keep its ledger with ledger: welldb-welllog in this flow's document", gone.Describe(), StringComparison.Ordinal);
+        Assert.Contains("keep the ledger with ledger: welldb-welllog in this flow's document", gone.Describe(), StringComparison.Ordinal);
 
         // A pipeline a repository declares keeps it: two flows want one id, and the refusal says only how to part them.
         await using (var context = _db.CreateDbContext())

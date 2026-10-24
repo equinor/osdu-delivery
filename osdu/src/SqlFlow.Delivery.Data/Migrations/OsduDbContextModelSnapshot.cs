@@ -1801,6 +1801,10 @@ namespace SqlFlow.Delivery.Data.Migrations
                         .HasMaxLength(64)
                         .HasColumnType("nvarchar(64)");
 
+                    b.Property<string>("DocumentHash")
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
+
                     b.Property<DateTime>("FirstSeenUtc")
                         .HasColumnType("datetime2");
 

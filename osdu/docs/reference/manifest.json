@@ -1387,6 +1387,7 @@
         "osdu/src/SqlFlow.Delivery.ControlPlane/Background/SearchTermCatalogRefreshService.cs",
         "osdu/src/SqlFlow.Delivery.ControlPlane/Background/RecordIdentityBackfillService.cs",
         "osdu/src/SqlFlow.Delivery.ControlPlane/Background/RecordProblemBackfillService.cs",
+        "osdu/src/SqlFlow.Delivery.ControlPlane/Background/LedgerMoveService.cs",
         "osdu/src/SqlFlow.Delivery.ControlPlane/Background/ConfiguredRunDispatcher.cs",
         "osdu/src/SqlFlow.Delivery.ControlPlane/Background/CentralConfigurationStep.cs",
         "osdu/src/SqlFlow.Delivery.ControlPlane/Background/PartitionReadiness.cs",
@@ -2415,6 +2416,49 @@
       ]
     },
     {
+      "id": "delivery-concept-renaming-a-pipeline",
+      "corpus": "reference",
+      "path": "concepts/renaming-a-pipeline.md",
+      "title": "Renaming a pipeline: the repository sync moves its ledger to the new name",
+      "type": "concept",
+      "summary": "A renamed delivery flow keeps its records, history and OSDU ids: a ledger belongs to its document, and the sync moves it to the newest name.",
+      "keywords": [
+        "rename a pipeline",
+        "renamed flow",
+        "rename a flow file",
+        "ledger move",
+        "ledger-move",
+        "keep the ledger",
+        "records gone after a rename",
+        "already claimed by flow",
+        "which no repository declares any more",
+        "document hash",
+        "copied file"
+      ],
+      "related": [
+        "delivery-flow-interfaces",
+        "delivery-concept-ledger",
+        "delivery-concept-submissions",
+        "delivery-guide-operations-runbook",
+        "delivery-concept-control-plane",
+        "delivery-concept-removal-and-reversal"
+      ],
+      "sourceRefs": [
+        "osdu/src/SqlFlow.Delivery/Ledger/LedgerMoves.cs",
+        "osdu/src/SqlFlow.Delivery/Ledger/OsduLedger.Moves.cs",
+        "osdu/src/SqlFlow.Delivery/Ledger/SqlServerLedgerBulk.Moves.cs",
+        "osdu/src/SqlFlow.Delivery/Ledger/ILedger.cs",
+        "osdu/src/SqlFlow.Delivery/Catalog/DeliveryDocumentHash.cs",
+        "osdu/src/SqlFlow.Delivery/Catalog/DeliveryInterfaceCatalog.cs",
+        "osdu/src/SqlFlow.Delivery.ControlPlane/Background/InterfaceCatalogBackfillService.cs",
+        "osdu/src/SqlFlow.Delivery/Catalog/DeliveryCatalogSync.cs",
+        "osdu/src/SqlFlow.Delivery/Engine/LedgerRegistration.cs",
+        "osdu/src/SqlFlow.Delivery/Documents/DeliveryDocumentLoader.cs",
+        "osdu/src/SqlFlow.Delivery.ControlPlane/Background/LedgerMoveService.cs",
+        "osdu/gui/src/features/delivery/RecordJourney.tsx"
+      ]
+    },
+    {
       "id": "delivery-concept-run-trace-and-metrics",
       "corpus": "reference",
       "path": "concepts/run-trace-and-metrics.md",
@@ -3292,7 +3336,6 @@
         "parallelinterfaces",
         "ledger adoption",
         "renamed flow",
-        "rename a flow",
         "keep the ledger",
         "waiting record",
         "x-osdu-relationship",
@@ -7886,6 +7929,38 @@
         "osdu/gui/src/features/delivery/inventories/duplicates/DuplicateKeyParts.tsx",
         "osdu/gui/src/features/delivery/inventories/duplicates/DuplicateKeyBuilder.tsx",
         "osdu/gui/src/features/delivery/inventories/duplicates/duplicateDocument.ts"
+      ]
+    },
+    {
+      "id": "delivery-wiki-0028-renamed-pipelines-move-their-ledger",
+      "corpus": "wiki",
+      "path": "decisions/0028-renamed-pipelines-move-their-ledger.md",
+      "title": "Decision 0028: a ledger belongs to its document, and the repository sync moves it to the document's newest name",
+      "type": "decision",
+      "summary": "Why a ledger follows its document's hash to the newest name, why its rows move rather than its identity being aliased, and why the sync only asks.",
+      "keywords": [
+        "rename a pipeline",
+        "renamed flow",
+        "ledger move",
+        "document hash",
+        "copied file",
+        "repository sync"
+      ],
+      "related": [
+        "delivery-wiki-0021-adopting-occupied-records",
+        "delivery-wiki-0005-ledger-retention"
+      ],
+      "sourceRefs": [
+        "osdu/src/SqlFlow.Delivery/Catalog/DeliveryDocumentHash.cs",
+        "osdu/src/SqlFlow.Delivery/Catalog/DeliveryInterfaceCatalog.cs",
+        "osdu/src/SqlFlow.Delivery/Catalog/DeliveryCatalogSync.cs",
+        "osdu/src/SqlFlow.Delivery/Ledger/LedgerMoves.cs",
+        "osdu/src/SqlFlow.Delivery/Ledger/OsduLedger.Moves.cs",
+        "osdu/src/SqlFlow.Delivery/Ledger/SqlServerLedgerBulk.Moves.cs",
+        "osdu/src/SqlFlow.Delivery/Engine/LedgerRegistration.cs",
+        "osdu/src/SqlFlow.Delivery.ControlPlane/Background/LedgerMoveService.cs",
+        "osdu/src/SqlFlow.Delivery.ControlPlane/Background/InterfaceCatalogBackfillService.cs",
+        "sqlflow/src/SqlFlow.Catalog/CatalogSync.cs"
       ]
     },
     {

@@ -60,3 +60,5 @@ gone ids writes a row only for each id it kept ([Removing gone ids](../flow/inve
 - **Written** by each chunk or round of a removal (`SqlServerLedgerBulk.InventoryRemoval.cs`).
 - **Read** by a removal's items, `GET /api/v1/delivery/inventories/{partition}/removals/{removalId}/items`, and the
   lookup by OSDU id (`GET /api/v1/delivery/inventories/lookup`).
+- **Rewritten** by a ledger move (`OsduLedger.Moves.cs`), which puts the rows of a renamed pipeline's old ledger under
+  its new identity, a slice at a time ([Renaming a pipeline](../concepts/renaming-a-pipeline.md)).

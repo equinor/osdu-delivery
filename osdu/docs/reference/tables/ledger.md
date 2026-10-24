@@ -36,7 +36,8 @@ is refused, naming both. So which partition a record, a submission or an audit e
 alone, and the flow id in the delivery API's record routes is this identity, not the pipeline id, which keeps a record's
 history reachable after its flow leaves the repository.
 
-Rows are never deleted by retention.
+Rows are never deleted by retention. A ledger moved to the pipeline that replaced the one that kept it loses its row
+once its records are under the new identity ([Renaming a pipeline](../concepts/renaming-a-pipeline.md)).
 
 ## Columns
 
@@ -60,7 +61,9 @@ Rows are never deleted by retention.
 ## Written and read by
 
 - **Written** by the ledger directory (`OsduLedger.Directory.cs`) when a delivery, retrieval, assertion, dimension or
-  inventory run binds its flow and registers its ledger.
+  inventory run binds its flow and registers its ledger; by the repository sync asking for a ledger move
+  (`LedgerMoves.cs`), which registers the renamed pipeline's ledger in the old one's partition; and by the move
+  (`OsduLedger.Moves.cs`), which deletes the old ledger's row.
 - **Read** by every ledger operation that resolves a ledger to its partition, by the record search across flows, by
   the pipeline and partition endpoints of the control plane, and by the intake's claim check (`SqlServerLedgerBulk.cs`),
   which names the ledger of the record that claimed an id so a held record can say how a renamed flow keeps it.

@@ -720,6 +720,7 @@ public sealed class DeliveryCatalogSync : ICatalogSyncExtension
         OsduDbContext context, Guid repoId, string root, DateTime nowUtc, ICollection<string> warnings, CancellationToken ct)
     {
         var sources = new List<RepositorySource>();
+        var unread = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         var invalid = 0;
         foreach (var file in EnumerateYaml(root))
         {
@@ -731,7 +732,8 @@ public sealed class DeliveryCatalogSync : ICatalogSyncExtension
             }
             catch (IOException)
             {
-                // The mapping pass reports an unreadable file; one warning per file is enough.
+                // The mapping pass reports an unreadable file; one warning per file is enough. Its pipeline only looks gone.
+                unread.Add(Relative(root, file));
                 continue;
             }
 
@@ -747,13 +749,27 @@ public sealed class DeliveryCatalogSync : ICatalogSyncExtension
             }
             catch (FlowValidationException)
             {
+                unread.Add(relative);
                 invalid++;
             }
         }
 
         var kinds = await MappingKindsAsync(context, repoId, ct).ConfigureAwait(false);
-        var counts = await DeliveryInterfaceCatalog.ReconcileAsync(context, repoId, sources, kinds, nowUtc, warnings, ct).ConfigureAwait(false);
+        var mappings = await MappingHashesAsync(context, repoId, ct).ConfigureAwait(false);
+        var counts = await DeliveryInterfaceCatalog.ReconcileAsync(
+            context, repoId, sources, kinds, mappings, nowUtc, warnings, new LedgerMoveGuard(Asks: true, unread), ct).ConfigureAwait(false);
         return (new CatalogSyncExtensionResult(counts.Added, counts.Updated, counts.Unchanged, counts.Removed, invalid), sources);
+    }
+
+    /// <summary>The content hash of every mapping document the repository's rows hold, valid or not, by reference.</summary>
+    public static async Task<IReadOnlyDictionary<string, string>> MappingHashesAsync(OsduDbContext context, Guid repoId, CancellationToken ct)
+    {
+        ArgumentNullException.ThrowIfNull(context);
+        var rows = await context.DeliveryMappings.AsNoTracking()
+            .Where(m => m.RepoId == repoId)
+            .Select(m => new { m.Reference, m.ContentHash })
+            .ToListAsync(ct).ConfigureAwait(false);
+        return rows.ToDictionary(m => m.Reference, m => m.ContentHash, StringComparer.Ordinal);
     }
 
     /// <summary>The OSDU kind of every valid mapping the repository's rows hold, by reference.</summary>

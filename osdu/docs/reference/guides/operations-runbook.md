@@ -227,18 +227,16 @@ have loaded the row, the run scoped to the record reads it by key.
 ## Every record is held after a flow was renamed
 
 **You see** every record of a flow whose `name` changed held with
-`OSDU id <id> is already claimed by flow '<old name>' (<id>), which no repository declares any more, ...`, and the
-repository sync warned `<file>: flow '<new name>' was declared as '<old name>' before, ...`.
+`OSDU id <id> is already claimed by flow '<old name>' (<id>), which no repository declares any more, ...`.
 
-**Do:** a flow keeps its ledger under its name, so the rename started an empty ledger, and the old name's records stayed
-in the old one with the OSDU ids they claimed. Nothing was sent. Keep the old ledger
-([Renaming a flow](../flow/interfaces.md#renaming-a-flow)):
+**Do:** a flow keeps its ledger under its name, so the renamed flow ran on a new, empty ledger while the old name's records
+stayed in the old one with the OSDU ids they claimed. Nothing was sent. Sync the repository: the sync finds that the flow
+is the old one's document under a new name and moves that ledger to it within seconds (a `ledger-move` entry by
+`service:repository-sync` on the Activity page), the records it held give way to the old ones, and its next run sends only
+what changed ([Renaming a pipeline](../concepts/renaming-a-pipeline.md)).
 
-1. Delete the renamed flow's own ledger, which holds only the records it held and claimed no id: **Delete ledger** on its
-   Delivery tab, with the partition typed back. It removes nothing from OSDU.
-2. Write `ledger: <old name>` at the top of the flow (on each interface of a renamed source, `ledger: <old name>/<interface>`)
-   and sync the repository.
-3. Run the flow. Its records carry on with their history and their OSDU ids, and only what changed is sent.
+When the flow was also changed in the same commit (or the sync warns that the ledgers are in different partitions), keep
+the old ledger with `ledger: <old name>` in the flow.
 
 ## A record is held because another flow owns its OSDU id
 

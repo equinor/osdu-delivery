@@ -2,7 +2,7 @@ import { useLayoutEffect, useMemo, useState, type ReactNode } from "react";
 import { Link as RouterLink } from "react-router-dom";
 import { format, formatDistanceToNow } from "date-fns";
 import {
-  ArchiveRestore, CheckCircle2, ChevronRight, CircleDashed, CircleDot, Database, DatabaseZap, Eraser, FileInput, FilePen,
+  ArchiveRestore, ArrowRightLeft, CheckCircle2, ChevronRight, CircleDashed, CircleDot, Database, DatabaseZap, Eraser, FileInput, FilePen,
   FileQuestion, FileX2, Hourglass, Layers, Link2, PauseCircle, RefreshCw, ScanSearch, ShieldCheck, Trash2, Undo2, XCircle,
   type LucideIcon,
 } from "lucide-react";
@@ -1168,6 +1168,27 @@ function activityEntry(activity: DeliveryActivity, record: DeliveryRecord, resul
       outcome: shape?.outcome ?? null,
       verifies: shape !== null,
       testId: "journey-verified",
+    };
+  }
+
+  // The record's ledger moved to the pipeline that replaced the one that kept it (a renamed pipeline): the record changed
+  // pipelines, not state, so this opens no chapter, and its summary names both pipelines.
+  if (activity.kind === "ledger-move") {
+    return {
+      ...entryDefaults(),
+      id: `activity-${activity.activityId}`,
+      at: activity.startedUtc,
+      lane: "ledger",
+      title: "Moved with its ledger to the pipeline that replaced its own",
+      tone: failed ? "destructive" : "muted",
+      icon: ArrowRightLeft,
+      actor: activity.actor,
+      facts: [!failed && activity.summary],
+      then,
+      error: failed ? activity.summary : null,
+      more: activityDetail(activity),
+      order: 2,
+      testId: "journey-ledger-move",
     };
   }
 

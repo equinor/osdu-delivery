@@ -54,3 +54,5 @@ Not pruned: a watermark is state. Deleting a delivery flow's ledger deletes its 
 
 - **Written** by the ledger when a whole-scope plan completes (`OsduLedger.cs`).
 - **Read** by the intake, which starts an incremental plan's window from it.
+- **Rewritten** by a ledger move (`OsduLedger.Moves.cs`), which puts the rows of a renamed pipeline's old ledger under
+  its new identity, a slice at a time ([Renaming a pipeline](../concepts/renaming-a-pipeline.md)).

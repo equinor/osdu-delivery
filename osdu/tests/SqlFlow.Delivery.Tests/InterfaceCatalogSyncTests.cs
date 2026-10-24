@@ -221,43 +221,130 @@ public sealed class InterfaceCatalogSyncTests : IDisposable
         Assert.DoesNotContain(rows, r => r.Interface == "cores");
     }
 
-    [Fact]
-    public async Task A_flow_renamed_in_its_file_is_reported_while_the_ledger_of_its_old_name_holds_the_ids_its_records_claimed()
+    private const string OldName = "welldb-welllog-03-header-delivery";
+    private const string NewName = "welldb-welllog-03-v140-header-delivery";
+    private const string OldFile = "flows/welldb-welllog-03-header-delivery.yaml";
+    private const string NewFile = "flows/welldb-welllog-03-v140-header-delivery.yaml";
+
+    /// <summary>The sample delivery flow under <paramref name="name"/>.</summary>
+    private static string Flow(string name) => File.ReadAllText(Samples.Flow).ReplaceLineEndings("\n")
+        .Replace($"name: {OldName}\n", $"name: {name}\n", StringComparison.Ordinal);
+
+    /// <summary>The flow synced under its old name, with a record its runs delivered: the OSDU id it claimed.</summary>
+    private async Task<OsduLedger> DeliveredAsync(string name = OldName, string file = OldFile, string key = "a")
     {
-        const string OldName = "welldb-welllog-03-header-delivery";
-        const string NewName = OldName + "-v140";
-        const string Document = "flows/welldb-welllog-03-header-delivery.yaml";
-        var flow = File.ReadAllText(Samples.Flow).ReplaceLineEndings("\n");
-        Write(Document, flow);
+        Write(file, Flow(name));
         Assert.Empty((await SyncAsync()).Warnings);
-
-        // Runs of the flow claimed an OSDU id under its name. Renamed, it would start an empty ledger and hold that record.
         var ledger = _module.Ledger(new TestClock());
-        var old = FlowId.Of(OldName);
-        await ledger.RegisterAsync(old, "dev", OldName);
-        await ledger.UpsertPendingAsync(old, [Claiming(old, "a")]);
-        var renamed = flow.Replace($"name: {OldName}\n", $"name: {NewName}\n", StringComparison.Ordinal);
-        Write(Document, renamed);
-        var warning = Assert.Single((await SyncAsync()).Warnings);
-        Assert.StartsWith(
-            $"{Document}: flow '{NewName}' was declared as '{OldName}' before, and a flow keeps its ledger under its name, so it starts an empty ledger in partition 'dev' "
-            + $"while the records '{OldName}' delivered stay in '{OldName}' with the OSDU ids they claimed.",
-            warning,
-            StringComparison.Ordinal);
-        Assert.Contains($"Keep the ledger with ledger: {OldName}, and the records carry on", warning, StringComparison.Ordinal);
+        await ledger.RegisterAsync(FlowId.Of(name), "dev", name);
+        await ledger.UpsertPendingAsync(FlowId.Of(name), [Claiming(FlowId.Of(name), key)]);
+        return ledger;
+    }
 
-        // Keeping the old ledger with ledger: quiets it, and the flow's new name describes that ledger.
-        Write(Document, renamed.Replace($"name: {NewName}\n", $"name: {NewName}\nledger: {OldName}\n", StringComparison.Ordinal));
-        Assert.Empty((await SyncAsync()).Warnings);
-        Assert.Equal((NewName, old), (await RowsAsync()).Where(r => r.Active).Select(r => (r.FlowName, r.LedgerFlowId)).Single());
+    private void Delete(string relative) => File.Delete(Path.Combine(_root, relative.Replace('/', Path.DirectorySeparatorChar)));
 
-        // Renamed again without it, the warning is back until the new ledger claims an id of its own, which says it is meant.
-        Write(Document, renamed);
-        Assert.Single((await SyncAsync()).Warnings);
-        var fresh = FlowId.Of(NewName);
-        await ledger.RegisterAsync(fresh, "dev", NewName);
-        await ledger.UpsertPendingAsync(fresh, [Claiming(fresh, "b")]);
+    private async Task<List<Data.DeliveryActivity>> MovesAsync()
+    {
+        await using var db = _module.CreateDbContext();
+        return await db.DeliveryActivities.AsNoTracking().Where(a => a.Kind == LedgerMoves.Kind).OrderBy(a => a.ActivityId).ToListAsync();
+    }
+
+    [Fact]
+    public async Task A_pipeline_renamed_with_its_file_has_its_ledger_moved_right_after_the_sync()
+    {
+        var ledger = await DeliveredAsync();
+
+        // Renamed, and its file with it: the sync pairs the two by what they read and asks for the move, without a word.
+        Delete(OldFile);
+        Write(NewFile, Flow(NewName));
         Assert.Empty((await SyncAsync()).Warnings);
+        var asked = Assert.Single(await MovesAsync());
+        Assert.Equal((FlowId.Of(NewName), LedgerMoves.Running, LedgerMoves.Actor), (asked.FlowId, asked.Outcome, asked.Actor));
+        Assert.Equal("dev", (await ledger.GetLedgerAsync(FlowId.Of(NewName)))!.Partition);
+
+        // The control plane's pass moves it: the record is the renamed pipeline's, and the old ledger is gone.
+        var moved = Assert.Single(await ledger.CompleteLedgerMovesAsync(null));
+        Assert.Equal(("completed", 1L), (moved.Outcome, moved.Records));
+        Assert.Equal("dev:work-product-component--WellLog:a", Assert.Single(await ledger.ListAsync(FlowId.Of(NewName), new RecordQuery())).ClaimedTargetId);
+        Assert.Null(await ledger.GetLedgerAsync(FlowId.Of(OldName)));
+
+        // Later syncs find nothing more to move.
+        Assert.Empty((await SyncAsync()).Warnings);
+        Assert.Single(await MovesAsync());
+        Assert.Empty(await ledger.CompleteLedgerMovesAsync(null));
+    }
+
+    [Fact]
+    public async Task A_file_copied_by_mistake_takes_the_ledger_and_deleting_the_copy_gives_it_back()
+    {
+        var ledger = await DeliveredAsync();
+
+        // A copy of the document under another name: the copy, found last, owns the ledger, and the sync says so.
+        Write("flows/copy.yaml", Flow("welldb-welllog-copy"));
+        var warning = Assert.Single((await SyncAsync(new DateTime(2026, 9, 16, 13, 0, 0, DateTimeKind.Utc))).Warnings);
+        Assert.Equal(
+            $"flows/copy.yaml, {OldFile}: '{OldName}', 'welldb-welllog-copy' are one document under 2 names, so 'welldb-welllog-copy', the one found last, keeps its ledger, "
+            + "and a run of any other holds every record whose id that ledger claimed. Delete the copy that is a mistake; its ledger then goes back to the one that stays.",
+            warning);
+        var copied = Assert.Single(await ledger.CompleteLedgerMovesAsync(null));
+        Assert.Equal(("completed", 1L, FlowId.Of("welldb-welllog-copy")), (copied.Outcome, copied.Records, copied.To));
+        Assert.Single(await ledger.ListAsync(FlowId.Of("welldb-welllog-copy"), new RecordQuery()));
+
+        // The copy goes: the ledger goes back to the document's one name.
+        Delete("flows/copy.yaml");
+        Assert.Empty((await SyncAsync(new DateTime(2026, 9, 16, 14, 0, 0, DateTimeKind.Utc))).Warnings);
+        var back = Assert.Single(await ledger.CompleteLedgerMovesAsync(null));
+        Assert.Equal(("completed", 1L, FlowId.Of(OldName)), (back.Outcome, back.Records, back.To));
+        Assert.Equal("dev:work-product-component--WellLog:a", Assert.Single(await ledger.ListAsync(FlowId.Of(OldName), new RecordQuery())).ClaimedTargetId);
+        Assert.Equal(2, (await MovesAsync()).Count);
+    }
+
+    [Fact]
+    public async Task A_document_that_does_not_parse_or_differs_beyond_its_name_keeps_its_ledger()
+    {
+        await DeliveredAsync();
+
+        // Renamed and edited: another document, so the old ledger stays where it is.
+        Delete(OldFile);
+        Write(NewFile, Flow(NewName).Replace("flowType: delivery\n", "flowType: delivery\ndescription: The Recall well logs, renamed.\n", StringComparison.Ordinal));
+        Assert.Empty((await SyncAsync(new DateTime(2026, 9, 16, 13, 0, 0, DateTimeKind.Utc))).Warnings);
+        Assert.Empty(await MovesAsync());
+
+        // The old document comes back unreadable beside a copy of it under another name: the old pipeline only looks gone,
+        // so its ledger stays where it is.
+        Write(OldFile, Flow(OldName).Replace("source:\n", "sauce:\n", StringComparison.Ordinal));
+        Write("flows/copy.yaml", Flow("welldb-welllog-copy"));
+        var (warnings, result) = await SyncAsync(new DateTime(2026, 9, 16, 14, 0, 0, DateTimeKind.Utc));
+        Assert.Equal(1, result.Invalid);
+        Assert.Empty(warnings);
+        Assert.Empty(await MovesAsync());
+    }
+
+    [Fact]
+    public async Task A_pipeline_renamed_with_its_mapping_edited_is_another_pipeline_and_keeps_its_ledger_apart()
+    {
+        // The flow with its mapping and template, delivered under its old name.
+        const string Mapping = "mappings/WellLog@1.4.0.yaml";
+        var mapping = File.ReadAllText(Path.Combine(Samples.Mappings, "WellLog@1.4.0.yaml"));
+        Write(Mapping, mapping);
+        Write("templates/osdu_wks_work-product-component--WellLog_1.4.0.json", File.ReadAllText(Path.Combine(Samples.TemplateFiles, "osdu_wks_work-product-component--WellLog_1.4.0.json")));
+        Write(OldFile, Flow(OldName));
+        await SyncAsync();
+        var ledger = _module.Ledger(new TestClock());
+        await ledger.RegisterAsync(FlowId.Of(OldName), "dev", OldName);
+        await ledger.UpsertPendingAsync(FlowId.Of(OldName), [Claiming(FlowId.Of(OldName), "a")]);
+
+        // Renamed, and the mapping it pins edited in the same commit: what renders it changed, so it is another pipeline.
+        Delete(OldFile);
+        Write(NewFile, Flow(NewName));
+        Write(Mapping, mapping + "\n# Edited with the rename.\n");
+        await SyncAsync(new DateTime(2026, 9, 16, 13, 0, 0, DateTimeKind.Utc));
+        Assert.Empty(await MovesAsync());
+
+        // The mapping put back as it was: the same pipeline under its new name, which takes the ledger.
+        Write(Mapping, mapping);
+        await SyncAsync(new DateTime(2026, 9, 16, 14, 0, 0, DateTimeKind.Utc));
+        Assert.Equal(FlowId.Of(NewName), Assert.Single(await MovesAsync()).FlowId);
     }
 
     /// <summary>Work for a record of <paramref name="flow"/> that queues a document, which claims the record's OSDU id.</summary>

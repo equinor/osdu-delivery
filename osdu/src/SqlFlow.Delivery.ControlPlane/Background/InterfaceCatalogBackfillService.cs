@@ -76,9 +76,9 @@ public sealed partial class InterfaceCatalogBackfillService : BackgroundService
     }
 
     /// <summary>
-    /// One pass: every repository with delivery pipelines and no interface rows, or with an active row whose cache version
-    /// is not recorded, is described from its catalog copies; the active rows of every repository the catalog holds no
-    /// delivery pipeline of become inactive.
+    /// One pass: every repository with delivery pipelines and no interface rows, with an active row whose cache version is
+    /// not recorded, or with a row whose document hash is not, is described from its catalog copies, the pipelines it no
+    /// longer declares included; the active rows of every repository the catalog holds no delivery pipeline of become inactive.
     /// </summary>
     public async Task BackfillAsync(CancellationToken ct)
     {
@@ -92,10 +92,16 @@ public sealed partial class InterfaceCatalogBackfillService : BackgroundService
             .ToListAsync(ct).ConfigureAwait(false);
 
         // Per described repository: whether it has active rows, and whether any of them was written before the cache
-        // version an interface renders against was recorded.
+        // version an interface renders against was recorded, or any row, of a pipeline it declares or one it no longer does,
+        // before the document's hash was, which a sync pairs a renamed pipeline with the one it replaced by.
         var described = (await osdu.DeliveryInterfaces.AsNoTracking()
                 .GroupBy(i => i.RepoId)
-                .Select(g => new { RepoId = g.Key, Active = g.Count(i => i.Active), Unrecorded = g.Count(i => i.Active && i.CacheVersion == null) })
+                .Select(g => new
+                {
+                    RepoId = g.Key,
+                    Active = g.Count(i => i.Active),
+                    Unrecorded = g.Count(i => (i.Active && i.CacheVersion == null) || i.DocumentHash == null),
+                })
                 .ToListAsync(ct).ConfigureAwait(false))
             .ToDictionary(d => d.RepoId, d => new DescribedRepository(d.RepoId, d.Active > 0, d.Unrecorded > 0));
 
@@ -132,8 +138,9 @@ public sealed partial class InterfaceCatalogBackfillService : BackgroundService
 
             var warnings = new List<string>();
             var kinds = await DeliveryCatalogSync.MappingKindsAsync(osdu, repository.Key, ct).ConfigureAwait(false);
+            var mappings = await DeliveryCatalogSync.MappingHashesAsync(osdu, repository.Key, ct).ConfigureAwait(false);
             var counts = await DeliveryInterfaceCatalog.ReconcileAsync(
-                osdu, repository.Key, sources, kinds, _clock.GetUtcNow().UtcDateTime, warnings, ct).ConfigureAwait(false);
+                osdu, repository.Key, sources, kinds, mappings, _clock.GetUtcNow().UtcDateTime, warnings, LedgerMoveGuard.None, ct).ConfigureAwait(false);
             LogBackfilled(repository.Key, counts.Added + counts.Updated, sources.Count, unreadable);
             foreach (var warning in warnings)
             {
@@ -149,7 +156,7 @@ public sealed partial class InterfaceCatalogBackfillService : BackgroundService
             ct.ThrowIfCancellationRequested();
             var warnings = new List<string>();
             var counts = await DeliveryInterfaceCatalog.ReconcileAsync(
-                osdu, orphaned, [], new Dictionary<string, string>(), _clock.GetUtcNow().UtcDateTime, warnings, ct).ConfigureAwait(false);
+                osdu, orphaned, [], new Dictionary<string, string>(), new Dictionary<string, string>(), _clock.GetUtcNow().UtcDateTime, warnings, LedgerMoveGuard.None, ct).ConfigureAwait(false);
             LogRetired(orphaned, counts.Removed);
         }
     }

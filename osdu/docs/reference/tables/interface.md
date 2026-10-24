@@ -56,6 +56,7 @@ Rows are kept: an interface the repository no longer declares is marked inactive
 | `RecordObject` | `nvarchar(400)` | no | The record table it reads. |
 | `AfterJson` | `nvarchar(4000)` | no | The interfaces of the document it waits for (`after:`), as a JSON array of names. |
 | `RelativePath` | `nvarchar(1000)` | no | The flow document's file, relative to the repository root. |
+| `DocumentHash` | `nvarchar(64)` | yes | SHA-256, in lowercase hex, of the flow document as parsed with its name and path left out, and of the content hash of the mapping document each interface pins ([`osdu.Mapping`](mapping.md)): one pipeline under two names has one hash, so the repository sync moves the ledger of each name to the one it found last ([Renaming a pipeline](../concepts/renaming-a-pipeline.md)). Null for a row written before it was recorded, until the control plane's backfill describes the repository again from its catalog copies. |
 | `Active` | `bit` | no | Clear once the repository no longer declares the interface. |
 | `FirstSeenUtc` | `datetime2` | no | When a sync first found it. |
 | `LastSeenUtc` | `datetime2` | no | When a sync last found it. |

@@ -66,3 +66,5 @@ Self-clearing: closing or recovering a lease deletes it, so the table holds in-f
   removal holding records (`OsduLedger.Leases.cs`, `OsduLedger.Holds.cs`).
 - **Read** by the sweep that finds leases that ran out, by a run waiting on its submission's leases, and by a record's
   page, which names the lease delivering it.
+- **Rewritten** by a ledger move (`OsduLedger.Moves.cs`), which puts the rows of a renamed pipeline's old ledger under
+  its new identity, a slice at a time ([Renaming a pipeline](../concepts/renaming-a-pipeline.md)).

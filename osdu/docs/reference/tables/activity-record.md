@@ -55,3 +55,5 @@ Never pruned: these rows are records' histories.
 - **Written** by the ledger's bulk statements that release, redeliver, reverse, reconcile or delete records
   (`SqlServerLedgerBulk.Problems.cs`, `SqlServerLedgerBulk.Reversals.cs`, `SqlServerLedgerBulk.Purges.cs`).
 - **Read** by a record's Timeline and `GET /records/{flowId}/{key}/activities`.
+- **Rewritten** by a ledger move (`OsduLedger.Moves.cs`), which puts the rows of a renamed pipeline's old ledger under
+  its new identity, a slice at a time ([Renaming a pipeline](../concepts/renaming-a-pipeline.md)).

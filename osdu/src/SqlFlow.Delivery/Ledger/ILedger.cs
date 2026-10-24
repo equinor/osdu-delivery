@@ -963,11 +963,13 @@ public sealed record TargetIdConflict(
         }
 
         // The flow that claimed it is gone from every repository: most often this flow under its old name, since a flow keeps
-        // its ledger under its name and a rename starts an empty one.
+        // its ledger under its name and a rename starts an empty one. The repository sync moves such a ledger to the pipeline
+        // that replaced it (LedgerMoves); a hold meets it only before that sync, or where the sync could not pair the two.
         return $"OSDU id {TargetId} is already claimed by {flow}, which no repository declares any more, and one OSDU record belongs to one flow. "
-            + "A flow keeps its ledger under its name, so a renamed flow starts an empty one: when this flow is that one renamed, keep its ledger with "
-            + $"ledger: {ledger} in this flow's document (interfaces.<name>.ledger for an interface of a source), and its records carry on with their history "
-            + $"and their OSDU ids. Otherwise deliver {Elsewhere}";
+            + "When this flow replaced it, the repository sync moves that ledger here, with its records' history and OSDU ids, once it finds this flow is "
+            + "the same document under a new name: sync the repository and run this flow again. "
+            + $"Where the document changed beyond its name, keep the ledger with ledger: {ledger} in this flow's document (interfaces.<name>.ledger for an interface of a source). "
+            + $"Otherwise deliver {Elsewhere}";
     }
 }
 
@@ -1960,6 +1962,19 @@ public interface ILedger
 
     /// <summary>The ledgers of <paramref name="partition"/> (by its data-partition-id), or every ledger when it is null.</summary>
     Task<IReadOnlyList<LedgerEntry>> ListLedgersAsync(string? partition, CancellationToken ct = default);
+
+    /// <summary>
+    /// Carries out the moves of renamed pipelines' ledgers the repository sync asked for (<see cref="LedgerMoves"/>,
+    /// osdu/docs/reference/concepts/renaming-a-pipeline.md): every one, for the control plane's pass after a sync, which
+    /// leaves a move another process is making, or one waiting for work in flight, to a later pass; or only those into
+    /// <paramref name="into"/>, for a run of the renamed pipeline about to read its ledger, which waits for a move another
+    /// process is making and is refused while one cannot be made yet.
+    /// </summary>
+    /// <exception cref="DeliveryException">
+    /// <paramref name="into"/> was named and a move into it could not be finished now: work is in flight on either ledger,
+    /// or another process kept moving it past the wait. The message says which; nothing of the run should go on.
+    /// </exception>
+    Task<IReadOnlyList<LedgerMoveResult>> CompleteLedgerMovesAsync(Guid? into, CancellationToken ct = default);
 
     Task<SubmissionState?> GetSubmissionAsync(Guid submissionId, CancellationToken ct = default);
 

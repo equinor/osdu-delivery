@@ -96,6 +96,53 @@ public sealed class InterfaceCatalogBackfillTests : IDisposable
         }
     }
 
+    [Fact]
+    public async Task Rows_written_before_document_hashes_get_them_from_the_catalog_copies_of_removed_pipelines_too()
+    {
+        var repoId = Guid.NewGuid();
+        const string OldName = "welldb-welllog-03-header-delivery";
+        const string NewName = "welldb-welllog-03-v140-header-delivery";
+        var yaml = (await File.ReadAllTextAsync(Samples.Flow)).ReplaceLineEndings("\n");
+        await SeedCatalogAsync(repoId, [
+            (OldName, "flows/" + OldName + ".yaml", yaml, false),
+            (NewName, "flows/" + NewName + ".yaml", yaml.Replace($"name: {OldName}\n", $"name: {NewName}\n", StringComparison.Ordinal), true),
+        ]);
+
+        try
+        {
+            // A rename synced before the hash was recorded: the old name's row inactive, the new one's active, neither hashed.
+            await using (var db = _module.CreateDbContext())
+            {
+                var old = Row(repoId, OldName, "dev");
+                old.Active = false;
+                db.DeliveryInterfaces.AddRange(old, Row(repoId, NewName, "dev"));
+                await db.SaveChangesAsync();
+            }
+
+            await BackfillAsync();
+
+            // Both rows carry the one document's hash, from the catalog's copies; the old one stays inactive, and the backfill
+            // asks for no move, which is the sync's to ask.
+            await using (var db = _module.CreateDbContext())
+            {
+                var rows = await db.DeliveryInterfaces.AsNoTracking().Where(r => r.RepoId == repoId).ToListAsync();
+                var old = Assert.Single(rows, r => r.FlowName == OldName);
+                var renamed = Assert.Single(rows, r => r.FlowName == NewName);
+                Assert.False(old.Active);
+                Assert.True(renamed.Active);
+                Assert.NotNull(old.DocumentHash);
+                Assert.Equal(old.DocumentHash, renamed.DocumentHash);
+                Assert.False(await db.DeliveryActivities.AnyAsync(a => a.Kind == Delivery.Ledger.LedgerMoves.Kind));
+            }
+        }
+        finally
+        {
+            await using var catalog = _module.CreateCatalogContext();
+            await catalog.Pipelines.Where(p => p.RepoId == repoId).ExecuteDeleteAsync();
+            await catalog.Repos.Where(r => r.Id == repoId).ExecuteDeleteAsync();
+        }
+    }
+
     /// <summary>Runs one pass of the start-up description over the test database, as the control plane does when it starts.</summary>
     private async Task BackfillAsync()
     {
@@ -108,12 +155,16 @@ public sealed class InterfaceCatalogBackfillTests : IDisposable
             .BackfillAsync(CancellationToken.None);
     }
 
-    /// <summary>A repository in the catalog with the delivery flows given, as a sync copies them.</summary>
-    private async Task SeedCatalogAsync(Guid repoId, IReadOnlyList<(string Name, string Path, string Yaml)> flows)
+    /// <summary>A repository in the catalog with the delivery flows given, as a sync copies them, every one declared.</summary>
+    private Task SeedCatalogAsync(Guid repoId, IReadOnlyList<(string Name, string Path, string Yaml)> flows)
+        => SeedCatalogAsync(repoId, flows.Select(f => (f.Name, f.Path, f.Yaml, true)).ToList());
+
+    /// <summary>A repository in the catalog with the delivery flows given, each declared or one the repository no longer declares.</summary>
+    private async Task SeedCatalogAsync(Guid repoId, IReadOnlyList<(string Name, string Path, string Yaml, bool Active)> flows)
     {
         await using var catalog = _module.CreateCatalogContext();
         catalog.Repos.Add(new CatalogRepo { Id = repoId, Name = "backfill-" + repoId.ToString("N")[..10], FirstSeenUtc = Now, LastSyncUtc = Now });
-        foreach (var (name, path, yaml) in flows)
+        foreach (var (name, path, yaml, active) in flows)
         {
             catalog.Pipelines.Add(new CatalogPipeline
             {
@@ -125,7 +176,7 @@ public sealed class InterfaceCatalogBackfillTests : IDisposable
                 ContentHash = new string('0', 64),
                 Yaml = yaml,
                 DefinitionJson = string.Create(CultureInfo.InvariantCulture, $$"""{"name":"{{name}}","flowKind":"delivery"}"""),
-                Active = true,
+                Active = active,
                 Wave = 0,
                 FirstSeenUtc = Now,
                 LastSeenUtc = Now,

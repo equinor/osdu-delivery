@@ -1260,7 +1260,8 @@ public class EndToEndTests : IDisposable
             var held = await ledger.GetRecordAsync(renamed.Flow.Id, SampleEstate.Key(0));
             Assert.Equal(RecordStatus.Held, held!.Status);
             Assert.Contains($"already claimed by flow '{OldName}' ({original:D}), which no repository declares any more", held.LastError, StringComparison.Ordinal);
-            Assert.Contains($"keep its ledger with ledger: {OldName} in this flow's document", held.LastError, StringComparison.Ordinal);
+            Assert.Contains("the repository sync moves that ledger here", held.LastError, StringComparison.Ordinal);
+            Assert.Contains($"keep the ledger with ledger: {OldName} in this flow's document", held.LastError, StringComparison.Ordinal);
         }
 
         // With ledger: naming the old name, it is the same ledger: nothing changed in the source, so nothing is sent or held,
@@ -1284,6 +1285,74 @@ public class EndToEndTests : IDisposable
             var (again, _) = await RunAsync(kept, keptProtocol, ledger, force: true);
             Assert.Equal(1, again.Delivered);
             Assert.Equal(record.ClaimedTargetId, Assert.Single(keptProtocol.Deliveries).TargetId);
+        }
+    }
+
+    [Fact]
+    public async Task A_renamed_pipeline_s_run_finishes_the_move_the_sync_asked_for_and_carries_on_where_the_old_name_stopped()
+    {
+        const string OldName = "welldb-welllog-03-header-delivery";
+        const string NewName = "welldb-welllog-03-header-delivery-v140";
+        var tables = await EstateAsync();
+        var (logs, logProtocol, ledger) = await RuntimeAsync(tables);
+        Guid original;
+        using (logs)
+        {
+            Assert.Equal(LogCount, (await RunAsync(logs, logProtocol, ledger)).Work.Delivered);
+            original = logs.Flow.Id;
+        }
+
+        // Before the sync pairs the two, the renamed pipeline holds every record the old name claimed, in a ledger of its own.
+        Guid renamedId;
+        var (renamed, renamedProtocol, _) = await RuntimeAsync(tables, flow => flow with { Name = NewName });
+        using (renamed)
+        {
+            renamedId = renamed.Flow.Id;
+            await RunAsync(renamed, renamedProtocol, ledger);
+            Assert.All(await ledger.ListAsync(renamedId, new RecordQuery()), r => Assert.Equal(RecordStatus.Held, r.Status));
+        }
+
+        var historyBefore = (await ledger.ListAttemptsAsync(original, SampleEstate.Key(0), 50)).Count;
+        await using (var context = _db.CreateDbContext())
+        {
+            var partition = await context.DeliveryLedgers.Where(l => l.FlowId == original).Select(l => l.PartitionId).SingleAsync();
+            Assert.Equal(LedgerMoveAsk.Asked, await LedgerMoves.RequestAsync(
+                context, new LedgerMoveRequest(partition, original, OldName, OldName, renamedId, NewName, string.Empty, NewName, Guid.NewGuid()), Now, CancellationToken.None));
+        }
+
+        // The renamed pipeline's next run binds its ledger, which finishes the move first: the old records, with their history
+        // and claims, are its own, the records it had held gave way to them, and nothing changed in the source, so nothing is sent.
+        var (moved, movedProtocol, _) = await RuntimeAsync(tables, flow => flow with { Name = NewName });
+        using (moved)
+        {
+            Assert.Empty(await ledger.ListAsync(original, new RecordQuery()));
+            Assert.Null(await ledger.GetLedgerAsync(original));
+            var records = await ledger.ListAsync(renamedId, new RecordQuery());
+            Assert.Equal(LogCount, records.Count);
+            Assert.All(records, r => Assert.Equal((RecordStatus.Delivered, r.TargetId), (r.Status, r.ClaimedTargetId)));
+            var history = await ledger.ListAttemptsAsync(renamedId, SampleEstate.Key(0), 50);
+            Assert.Equal(historyBefore + 1, history.Count);
+            Assert.Contains(history, a => a.Outcome == AttemptOutcome.Delivered);
+            Assert.Contains(history, a => a.Outcome == AttemptOutcome.Held);
+
+            var move = Assert.Single(await ledger.ListActivitiesAsync(new ActivityQuery { FlowId = renamedId, Kind = LedgerMoves.Kind }));
+            Assert.Equal(("completed", LedgerMoves.Actor), (move.Outcome, move.Actor));
+            Assert.Equal(
+                $"moved {LogCount} record(s) of '{OldName}' to '{NewName}', which replaced it in its repository, with their history, their OSDU ids and the reading position; "
+                + $"{LogCount} record(s) '{NewName}' had held, which claimed no OSDU id, gave way to them",
+                move.Summary);
+            Assert.Empty(await ledger.CompleteLedgerMovesAsync(null));
+
+            await RunAsync(moved, movedProtocol, ledger);
+            Assert.Empty(movedProtocol.Deliveries);
+
+            // A redelivery the renamed pipeline asks for reaches the record the old name delivered, at the id it claimed.
+            await moved.RedeliverAsync([SampleEstate.Key(0)], RedeliverScope.All);
+            var record = await ledger.GetRecordAsync(renamedId, SampleEstate.Key(0));
+            moved.Selection = SourceSelection.ForKeys([KeyTuple.FromJson(record!.SourceKeyJson!)]);
+            var (again, _) = await RunAsync(moved, movedProtocol, ledger, force: true);
+            Assert.Equal(1, again.Delivered);
+            Assert.Equal(record.ClaimedTargetId, Assert.Single(movedProtocol.Deliveries).TargetId);
         }
     }
 

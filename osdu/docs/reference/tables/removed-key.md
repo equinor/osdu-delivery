@@ -83,3 +83,5 @@ when the record is delivered again from a newer row, or when an operator lifts i
 - **Read** by the delivery flow's plan, a page of keys at a time (`Planner.cs`), the deletions grid of the Removals page and
   of the delivery flow's Deletions tab, a record's page, `GET /api/v1/delivery/removals/ledgers/{ledgerFlowId}/keys`, and
   `sqlflow records removed`.
+- **Rewritten** by a ledger move (`OsduLedger.Moves.cs`), which puts the rows of a renamed pipeline's old ledger under
+  its new identity, a slice at a time ([Renaming a pipeline](../concepts/renaming-a-pipeline.md)).

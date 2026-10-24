@@ -170,3 +170,5 @@ this table through its status indexes on every call; nothing keeps a running tot
 - **Read** by the worker's claims, every plan's change gates, a flow's statistics and Records and Issues tabs, the record
   search across flows, a record's page, `sqlflow records` and the delivery API's record routes
   ([The delivery ledger](../concepts/ledger.md#finding-records)).
+- **Rewritten** by a ledger move (`OsduLedger.Moves.cs`), which puts the rows of a renamed pipeline's old ledger under
+  its new identity, a slice at a time ([Renaming a pipeline](../concepts/renaming-a-pipeline.md)).

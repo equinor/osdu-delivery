@@ -34,7 +34,8 @@ public sealed class ClaimConflictTests
             $"OSDU id dev:work-product-component--WellLog:a is already claimed by flow 'welldb-welllog' ({Owner:D}), which no repository declares any more, and one OSDU record belongs to one flow. ",
             described,
             StringComparison.Ordinal);
-        Assert.Contains("keep its ledger with ledger: welldb-welllog in this flow's document (interfaces.<name>.ledger for an interface of a source)", described, StringComparison.Ordinal);
+        Assert.Contains("When this flow replaced it, the repository sync moves that ledger here", described, StringComparison.Ordinal);
+        Assert.Contains("Where the document changed beyond its name, keep the ledger with ledger: welldb-welllog in this flow's document (interfaces.<name>.ledger for an interface of a source)", described, StringComparison.Ordinal);
         Assert.EndsWith("Otherwise deliver this flow to another data partition, or give its mapping a dataset.system or key that yields other OSDU ids.", described, StringComparison.Ordinal);
 
         // With no ledger name from the directory, the flow's name is the one to keep; with neither, nothing is suggested.

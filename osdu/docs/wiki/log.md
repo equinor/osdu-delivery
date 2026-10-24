@@ -389,3 +389,20 @@ Amended [0027](decisions/0027-inventory-duplicate-checks.md): a check downloads 
 own and groups them in SQL, any key of what it downloaded groups again at once, a pick reads the copies of the groups an
 operator settles on with the records naming them counted a batch to a search, and keys compare equal values only; reading
 OSDU per copy and comparisons per property are recorded as rejected.
+
+## [2026-10-24] ingest | A renamed pipeline's ledger moved by the repository sync, decision 0028
+
+Source: the human's report that renaming delivery pipelines lost their delivery records and held every record, their
+judgement that a `ledger:` key and a deleted ledger were needless steps for a routine rename, and their direction that the
+repository sync check whether a removed pipeline's file was renamed and move its records automatically; then their rule
+that a document's hash says whether it is the same document, that a ledger is owned by the hash and its last known file
+name, and that a file duplicated by mistake takes the ledger. Read with the
+code it became (`osdu/src/SqlFlow.Delivery/Catalog/DeliveryInterfaceCatalog.cs`,
+`osdu/src/SqlFlow.Delivery/Ledger/OsduLedger.Moves.cs`, `osdu/src/SqlFlow.Delivery/Ledger/SqlServerLedgerBulk.Moves.cs`)
+and SQLFlow's sync (`sqlflow/src/SqlFlow.Catalog/CatalogSync.cs`), whose write phase is one serializable transaction.
+
+Wrote [0028](decisions/0028-renamed-pipelines-move-their-ledger.md): a ledger owned by its document's hash and the name a
+sync found last, moving the rows rather than aliasing the identity, the held records that give way with their history
+kept, the sync asking and the move running in slices that the control plane or the owner's run makes, and the
+alternatives rejected (`ledger:` alone, pairing by what two pipelines read, pairing by path, a claim button, a catalog
+identity, moving in the sync's transaction).

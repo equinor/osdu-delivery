@@ -229,7 +229,7 @@ partition, **Action**, **By** (a schedule, a person, the command line), **Result
 submission, else the run). It narrows by actor, flow,
 action (`deliver`, `intake`, `drain`, `verify`, `probe`, `sync`, `release`, `adopt`, `redeliver`, `rerender`, `delete`,
 `restore-previous`, `purge`, `reverse`, `undo`, `delete-ledger`, `remove-dimension`, `inventory-remove`, `inventory-repair`,
-`reassign-id`, `source-remove`, `lift-removal`) and outcome. Runs
+`reassign-id`, `source-remove`, `lift-removal`, `ledger-move`) and outcome. Runs
 that changed nothing are left out until **Show idle runs**. An entry opens on its ids, **Parameters**, its captured
 **Log** (downloadable), and for a `deliver`, `replan`, `drain` or `intake` run that has ended, **Reverse this run**; a
 `reverse` entry shows its **Reversal**. The flow is in the address (`flow`, the ledger's flow id), so one flow's trail is

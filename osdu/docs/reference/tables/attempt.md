@@ -86,3 +86,5 @@ the server has it (SQL Server 2019 and later, Azure SQL), since every drain appe
   (`OsduLedger.cs`, `SqlServerLedgerBulk.cs`).
 - **Read** by a record's Timeline, `sqlflow records show --attempts`, the delivery API's `/attempts` route, a
   submission's counts when it closes, a run's record listing, and the prune (`POST /api/v1/delivery/ledger/prune`).
+- **Rewritten** by a ledger move (`OsduLedger.Moves.cs`), which puts the rows of a renamed pipeline's old ledger under
+  its new identity, a slice at a time ([Renaming a pipeline](../concepts/renaming-a-pipeline.md)).

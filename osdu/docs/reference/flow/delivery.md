@@ -216,7 +216,7 @@ schedule:
 | `parameters` | map | no | The flow's own run parameters. See [Parameters](#parameters). |
 | `partitions` | list | no | The OSDU data partitions the flow may deliver to. See [Partitions](#partitions). |
 | `keepLedger` | string | no | For a flow that serves every registered partition: the partition that keeps the ledger the flow kept before. See [Partitions](#partitions). |
-| `ledger` | string | no | In the single form, the name of an existing ledger the flow keeps instead of its own: a renamed flow names its old name, so its records carry on. See [Renaming a flow](interfaces.md#renaming-a-flow). |
+| `ledger` | string | no | In the single form, the name of an existing ledger the flow keeps instead of its own, for a flow renamed and changed at once, which the repository sync does not take for the same document, as it does a plain rename. See [Renaming a pipeline](../concepts/renaming-a-pipeline.md). |
 | `source` | map | yes | Where the records come from. See [source](#source). |
 | `render` | map | yes | The pinned mapping and what it renders with. See [render](#render). |
 | `change` | map | no | How a change is decided. See [change](#change). |
