@@ -105,7 +105,10 @@ What may be pruned and what never is: [Availability and retention](availability-
 | [`osdu.InventoryRemoval`](../tables/inventory-removal.md) | A removal of an inventory's ids an operator asked for |
 | [`osdu.InventoryRemovalItem`](../tables/inventory-removal-item.md) | What one removal did to one id |
 | [`osdu.InventorySelection`](../tables/inventory-selection.md) | A match of an operator's conditions against an inventory |
-| [`osdu.InventorySelectionItem`](../tables/inventory-selection-item.md) | An id a match found holding what its conditions ask |
+| [`osdu.InventorySelectionItem`](../tables/inventory-selection-item.md) | An id a match found holding what its conditions ask, or a copy a duplicate check picked to remove |
+| [`osdu.InventoryDuplicateCheck`](../tables/inventory-duplicate-check.md) | A check of an inventory's ids for duplicate records, by an operator's key |
+| [`osdu.InventoryDuplicateGroup`](../tables/inventory-duplicate-group.md) | A group of ids a duplicate check found sharing a key, and the copy it keeps |
+| [`osdu.InventoryDuplicateMember`](../tables/inventory-duplicate-member.md) | An id a duplicate check read: its key, how complete it is, and its role in its group |
 
 ### Removals
 

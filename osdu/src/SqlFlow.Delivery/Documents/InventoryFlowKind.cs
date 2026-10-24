@@ -53,7 +53,7 @@ public sealed class InventoryFlowKind : IFlowDocumentKind
 
     public string FlowType => InventoryFlowDefinition.FlowTypeName;
 
-    public string Description => "keep every id and version OSDU kinds hold in a partition, and report where the ledgers disagree with it: orphans, missing records, undos left to do, and ids a ledger forgot; an operator selects its ids by what OSDU holds, and a flow that allows it removes the orphan, stale and forgotten ids an operator picks or selects";
+    public string Description => "keep every id and version OSDU kinds hold in a partition, and report where the ledgers disagree with it: orphans, missing records, undos left to do, and ids a ledger forgot; an operator selects its ids by what OSDU holds or finds its duplicate records by a key, and a flow that allows it removes the orphan, stale and forgotten ids an operator picks or selects";
 
     public IReadOnlyList<FlowKindOperation> Operations { get; } =
     [
@@ -62,6 +62,7 @@ public sealed class InventoryFlowKind : IFlowDocumentKind
         new(DeliveryOperations.Plan, "Plan", "Count the records each inventory would read, and say what would stop it, reading no id and keeping nothing.", WritesTarget: false),
         new(DeliveryOperations.Remove, "Remove", "Remove from OSDU the ids of one finding an inventory found (orphan, stale or forgotten), each checked again first, for a flow whose document allows it; the inventory's page asks for it.", WritesTarget: true),
         new(DeliveryOperations.Match, "Match", "Find which ids of an inventory hold what an operator's conditions ask in OSDU, through the search, and keep them as the selection the inventory's page opened; nothing in OSDU changes.", WritesTarget: false),
+        new(DeliveryOperations.Duplicates, "Duplicates", "Find which ids of an inventory are copies of one another by the key the inventory's page opened a check with, read each group's copies from storage and pick the most complete to keep; nothing in OSDU changes.", WritesTarget: false),
     ];
 
     public RegisteredFlowDocument Parse(string yaml, string source)
@@ -75,12 +76,14 @@ public sealed class InventoryFlowKind : IFlowDocumentKind
         ArgumentNullException.ThrowIfNull(parameters);
         DeliveryOperations.RefuseSeveralValues(parameters, InventoryFlowDefinition.FlowTypeName, scopeTakesSeveral: false);
         DeliveryOperations.RefuseBuiltInOverrides(parameters, InventoryFlowDefinition.FlowTypeName, "a build reads every id the kind holds; name the inventories to build in the payload.");
-        // A run names the inventories it works on, a remove run what it removes and the partition it acts in, and a match run
-        // the selection it fills, beside the central configuration; which operation takes which is settled below.
+        // A run names the inventories it works on, a remove run what it removes and the partition it acts in, a match run the
+        // selection it fills, and a duplicates run the check it fills, beside the central configuration; which operation takes
+        // which is settled below.
         var payload = DeliveryRunPayload.Parse(parameters);
         payload.RefuseOtherThan(
             InventoryFlowDefinition.FlowTypeName,
-            [DeliveryRunPayload.InventoriesProperty, DeliveryRunPayload.RemovalProperty, DeliveryRunPayload.ConfirmProperty, DeliveryRunPayload.SelectionProperty]);
+            [DeliveryRunPayload.InventoriesProperty, DeliveryRunPayload.RemovalProperty, DeliveryRunPayload.ConfirmProperty, DeliveryRunPayload.SelectionProperty,
+                DeliveryRunPayload.DuplicateCheckProperty]);
 
         var operation = Operation(parameters);
         if (operation == DeliveryOperations.Remove)
@@ -110,9 +113,23 @@ public sealed class InventoryFlowKind : IFlowDocumentKind
             throw new SqlFlowException(
                 $"payload {DeliveryRunPayload.SelectionProperty} does not apply to the {operation} operation: only a match run names the selection it fills.");
         }
+
+        if (operation == DeliveryOperations.Duplicates)
+        {
+            if (payload.DuplicateCheckId is null || payload.Inventories.Count != 1)
+            {
+                throw new SqlFlowException(
+                    "A duplicates run names the one inventory it checks (inventories) and the check it fills (duplicateCheck), which the inventory's page opens with the key to compare the records by; ask for a check from there.");
+            }
+        }
+        else if (payload.DuplicateCheckId is not null)
+        {
+            throw new SqlFlowException(
+                $"payload {DeliveryRunPayload.DuplicateCheckProperty} does not apply to the {operation} operation: only a duplicates run names the check it fills.");
+        }
     }
 
-    /// <summary>The operation an inventory flow runs: build (its default), reconcile, plan, remove or match.</summary>
+    /// <summary>The operation an inventory flow runs: build (its default), reconcile, plan, remove, match or duplicates.</summary>
     public static string Operation(RunParameters parameters)
     {
         ArgumentNullException.ThrowIfNull(parameters);
@@ -123,8 +140,9 @@ public sealed class InventoryFlowKind : IFlowDocumentKind
             DeliveryOperations.Plan => DeliveryOperations.Plan,
             DeliveryOperations.Remove => DeliveryOperations.Remove,
             DeliveryOperations.Match => DeliveryOperations.Match,
+            DeliveryOperations.Duplicates => DeliveryOperations.Duplicates,
             var other => throw new SqlFlowException(
-                $"An inventory flow runs the {DeliveryOperations.Build}, {DeliveryOperations.Reconcile}, {DeliveryOperations.Plan}, {DeliveryOperations.Remove} and {DeliveryOperations.Match} operations; '{other}' is not one of them."),
+                $"An inventory flow runs the {DeliveryOperations.Build}, {DeliveryOperations.Reconcile}, {DeliveryOperations.Plan}, {DeliveryOperations.Remove}, {DeliveryOperations.Match} and {DeliveryOperations.Duplicates} operations; '{other}' is not one of them."),
         };
     }
 }

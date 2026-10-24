@@ -1,7 +1,7 @@
 namespace SqlFlow.Delivery.Ledger;
 
 /// <summary>
-/// Repairing what an inventory found missing (osdu/docs/reference/flow/inventory.md, Repairing missing ids): records a
+/// Repairing what an inventory found missing (osdu/docs/reference/flow/inventory-removals.md, Repairing missing ids): records a
 /// ledger delivered that OSDU no longer holds are delivered again through their own flows, under the id they claimed (a
 /// soft-deleted record brought back, a purged one written again) or, when the operator asks, under a new one.
 /// </summary>

@@ -337,3 +337,29 @@ Amended [0025](decisions/0025-parallelism-and-default-fan-out.md): every kind ta
 reasons the earlier choice of `concurrency` on the other kinds and a name per kind were rejected, and the consequences
 restated in the delivery's keys. [0006](decisions/0006-work-batches.md) names the keys its decision rests on by their
 names now.
+
+## [2026-10-24] ingest | Duplicate records found on an inventory, decision 0027
+
+Source: the human's request for a duplicate check (by any part of the document, attached to one type of record, ending in
+a set of ids that can be deleted, the least complete copy deleted), their direction that it extend the inventory with an
+interface as rich as the explorer's, and their point that the attribute count tells a copy with DDMS bulk data from one
+without. Read with the code it became (`osdu/src/SqlFlow.Delivery/Engine/Inventories/InventoryRunner.Duplicates.cs`,
+`osdu/src/SqlFlow.Delivery/Engine/Inventories/InventoryDuplicatePicker.cs`,
+`osdu/src/SqlFlow.Delivery/Engine/Protocols/WellboreDdmsBulkLink.cs`).
+
+Wrote [0027](decisions/0027-inventory-duplicate-checks.md): the key and the check as a run of the inventory flow, why the
+fullest copy is kept and a ledger's copy never picked, the selection and the removal's check of the copy kept, and the
+alternatives rejected (a live check in the explorer, the assertion's `unique`, reading the DDMS, keeping documents, fuzzy
+matching, removing without an operator).
+
+## [2026-10-24] lint | Inventory reference in pages of one topic
+
+The inventory flow's reference page had grown past what the MCP index takes as one page, and the human asked for pages
+small enough that a search lands on the part that answers it. The page now holds the document, its operations and their
+payload, and a table of the pages of the flow: [inventory builds](../reference/flow/inventory-builds.md) (the findings,
+what a build does, the tables), [selecting ids](../reference/flow/inventory-selections.md),
+[inventory removals](../reference/flow/inventory-removals.md) (with repairing missing ids and removing gone ids) and
+[finding duplicate records](../reference/flow/inventory-duplicates.md). Each run error moved to the page of its operation.
+[0013](decisions/0013-inventory-flows.md), [0014](decisions/0014-inventory-removals.md),
+[0015](decisions/0015-lost-records.md) and [0027](decisions/0027-inventory-duplicate-checks.md) name the page that holds
+their topic in `referenceRefs`, and the [pattern catalog](maps/pattern-catalog.md) gained the duplicate check's row.

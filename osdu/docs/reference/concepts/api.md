@@ -30,6 +30,7 @@ sourceRefs:
   - osdu/src/SqlFlow.Delivery.ControlPlane/DeliveryControlPlaneModule.cs
   - osdu/src/SqlFlow.Delivery.ControlPlane/Api/DeliveryEndpoints.cs
   - osdu/src/SqlFlow.Delivery.ControlPlane/Api/DirectOperationRunner.cs
+  - osdu/src/SqlFlow.Delivery.ControlPlane/Api/DeliveryInventoryEndpoints.Duplicates.cs
   - osdu/src/SqlFlow.Delivery.ControlPlane/Api/WorkbenchPartition.cs
   - osdu/src/SqlFlow.Delivery.ControlPlane/Api/DeliveryArtifactEndpoints.cs
   - osdu/src/SqlFlow.Delivery.ControlPlane/Api/DeliveryAssertionEndpoints.cs
@@ -356,7 +357,15 @@ See [the explorer](explorer.md) and [search terms](search-terms.md).
 | `GET /inventories/{partition}/{inventoryId}/records` | read | `finding`, `selection`, `after`, `limit` (100, at most 1,000) | A page of its ids; with `selection`, only those the selection holds, each with the version and values its match read. |
 | `GET /inventories/{partition}/{inventoryId}/runs` | read | `limit` (30, at most 200) | Its builds and reconciles. |
 | `GET /inventories/{partition}/{inventoryId}/export` | read | `finding`, `selection` | Its ids as CSV; with `selection`, only those the selection holds, with a column for each property its conditions ask. |
-| `GET /inventories/{partition}/{inventoryId}/selections/{selectionId}` | read | | One selection: where its match stands, whether it is stale, what it read and found, and its ids counted by finding. 404 for one of another inventory. |
+| `GET /inventories/{partition}/{inventoryId}/selections/{selectionId}` | read | | One selection: where its match stands, whether it is stale, what it read and found, and its ids counted by finding; for one a duplicate check made, the check and its key. 404 for one of another inventory. |
+| `GET /inventories/{partition}/{inventoryId}/duplicates` | read | `limit` (20, at most 100) | Its duplicate checks, newest first, each as it stands. |
+| `GET /inventories/{partition}/{inventoryId}/duplicates/{checkId}` | read | | One check: its key, where it stands (and what it reads, while it runs), whether it is stale, what it read and found, its groups counted by outcome once it completed, and whether the selection last made of its picks still stands. 404 for one of another inventory. |
+| `GET /inventories/{partition}/{inventoryId}/duplicates/{checkId}/groups` | read | `outcome` (`review`, `picked`, `chosen`, `settled`, `pending`), `after`, `limit` (50, at most 500) | A page of its groups, the largest first, each with its copies (every copy beside the inventory's row of it) when it holds at most 100. 400 for another outcome. |
+| `GET /inventories/{partition}/{inventoryId}/duplicates/{checkId}/groups/{groupNumber}/copies` | read | `after`, `limit` (100, at most 1,000) | A page of one group's copies: how a group too large to list with its page is read. 404 for a group the check does not hold. |
+| `GET /inventories/{partition}/{inventoryId}/duplicates/{checkId}/export` | read | | Every copy of every group as CSV, a column for each property of the key. |
+| `POST /inventories/{partition}/{inventoryId}/duplicates` | operate | body `key` (each `path` and `compare`), `refresh`, `pool` | Finds the ids that are copies of one another by the key: 200 with the check already made of the same key against the inventory's last build, else 202 with a new one queued as a `duplicates` run of the flow. 400 for a key that is not one; 409 for an inventory never built or no longer declared. |
+| `POST /inventories/{partition}/{inventoryId}/duplicates/{checkId}/groups/{groupNumber}/keep` | operate | body `inventoryRecordId` | Keeps that copy of the group, recorded as the caller's choice, the group judged again with it kept; null takes a choice back. 200 with the group. 400 for a copy not of the group or not held by storage; 409 for a check not completed, stale, a group whose copies it did not read, or a flow no longer declared. |
+| `POST /inventories/{partition}/{inventoryId}/duplicates/{checkId}/selection` | operate | | Makes the copies the check picked to remove a selection a removal takes: 200 with the selection already made when no choice was written since, else 201. 409 for a check not completed, stale, or one that picked nothing. |
 | `GET /inventories/{partition}/{inventoryId}/removals` | read | `limit` | Its removals, newest first. |
 | `GET /inventories/{partition}/removals/{removalId}` | read | | One removal. |
 | `GET /inventories/{partition}/removals/{removalId}/items` | read | `outcome`, `after`, `limit` | What the removal did to each id. |

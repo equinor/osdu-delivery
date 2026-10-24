@@ -19,7 +19,7 @@ namespace SqlFlow.Delivery.Cli;
 /// lists its builds and reconciles, and <c>export</c> writes its ids as CSV, by the same code as the API's download;
 /// <c>removals</c> lists the removals an operator asked of it, and <c>removal</c> pages through what one did to each id.
 /// Building is a run like any other: <c>sqlflow run &lt;flow.yaml&gt; --payload '{"inventories":["name"]}'</c>, and so is a
-/// removal, with <c>--operation remove</c> and the payload the inventory's page sends (osdu/docs/reference/flow/inventory.md,
+/// removal, with <c>--operation remove</c> and the payload the inventory's page sends (osdu/docs/reference/flow/inventory-removals.md,
 /// What a removal does).
 /// </summary>
 internal static class DeliveryInventoryVerbs

@@ -11,11 +11,12 @@ keywords:
   - "ledger drift"
 referenceRefs:
   - delivery-flow-inventory
+  - delivery-flow-inventory-builds
   - delivery-guide-finding-orphans
 related:
   - delivery-wiki-0012-atomic-delivery
   - delivery-wiki-0014-inventory-removals
-updated: 2026-10-16
+updated: 2026-10-24
 ---
 # 0013: Inventory flows read what OSDU serves and compare it with every ledger of the partition
 

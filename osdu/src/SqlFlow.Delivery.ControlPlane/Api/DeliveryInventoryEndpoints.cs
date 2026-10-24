@@ -82,7 +82,7 @@ public sealed record DeliveryInventoryRemovalRequest(
     string? Finding, string? Scope, long? Expected, IReadOnlyList<string>? Ids, string? Confirm, string? Pool, long? Selection = null);
 
 /// <summary>
-/// A repair of an inventory's missing ids an operator asks for (osdu/docs/reference/flow/inventory.md, Repairing missing
+/// A repair of an inventory's missing ids an operator asks for (osdu/docs/reference/flow/inventory-removals.md, Repairing missing
 /// ids): how many ids the operator was shown, the ids when they picked them, whether each record is given a new OSDU id
 /// rather than delivered again under its own (<c>newIds</c>, which needs the partition typed back as <c>confirm</c>), and
 /// the pool the delivery runs are queued on.
@@ -172,7 +172,7 @@ public sealed record DeliveryInventoryFlowDto(
 /// inventories of a partition, an inventory flow's inventories, one inventory with its counts by finding, owners and last
 /// runs, its ids of one finding a page at a time (keyset paged by the inventory's own numbering), its runs, a lookup of an
 /// OSDU id across the partition's inventories, and an export of its ids as CSV, written as it is read; the selections an
-/// operator makes of its ids by what OSDU holds (osdu/docs/reference/flow/inventory.md, Selecting ids by what OSDU holds),
+/// operator makes of its ids by what OSDU holds (osdu/docs/reference/flow/inventory-selections.md, Selecting ids by what OSDU holds),
 /// each matched by a run of the flow; and the removals an operator asks of what an inventory found (What a removal does),
 /// each queued as a run of the flow and read back with what it did to every id. Every read answers from the module's
 /// database, nothing here talks to OSDU, and building an inventory, matching its ids or removing from it is a run like any
@@ -215,12 +215,20 @@ public static partial class DeliveryInventoryEndpoints
         delivery.MapGet("/inventories/{partition}/removals/{removalId:long}", GetRemovalAsync).WithName("GetDeliveryInventoryRemoval");
         delivery.MapGet("/inventories/{partition}/removals/{removalId:long}/items", ListRemovalItemsAsync).WithName("ListDeliveryInventoryRemovalItems");
         delivery.MapGet("/inventories/{partition}/{inventoryId:int}/selections/{selectionId:long}", GetSelectionAsync).WithName("GetDeliveryInventorySelection");
+        delivery.MapGet("/inventories/{partition}/{inventoryId:int}/duplicates", ListDuplicateChecksAsync).WithName("ListDeliveryInventoryDuplicateChecks");
+        delivery.MapGet("/inventories/{partition}/{inventoryId:int}/duplicates/{checkId:long}", GetDuplicateCheckAsync).WithName("GetDeliveryInventoryDuplicateCheck");
+        delivery.MapGet("/inventories/{partition}/{inventoryId:int}/duplicates/{checkId:long}/groups", ListDuplicateGroupsAsync).WithName("ListDeliveryInventoryDuplicateGroups");
+        delivery.MapGet("/inventories/{partition}/{inventoryId:int}/duplicates/{checkId:long}/groups/{groupNumber:int}/copies", ListDuplicateCopiesAsync)
+            .WithName("ListDeliveryInventoryDuplicateCopies");
+        delivery.MapGet("/inventories/{partition}/{inventoryId:int}/duplicates/{checkId:long}/export", ExportDuplicatesAsync).WithName("ExportDeliveryInventoryDuplicates");
     }
 
     /// <summary>
     /// The routes that queue work as the caller, under the operate policy, which every signed-in user passes (only admin checks a
-    /// scope): a removal takes records out of OSDU, or gone ids out of the inventory; a repair delivers missing records again; and a
-    /// match reads OSDU's search with the flow's own credentials, as the explorer reads it with a flow's.
+    /// scope): a removal takes records out of OSDU, or gone ids out of the inventory; a repair delivers missing records again; a
+    /// match reads OSDU's search with the flow's own credentials, as the explorer reads it with a flow's; a duplicate check reads
+    /// OSDU's search and storage the same way; and an operator's choice of the copy a group of duplicates keeps, and the selection
+    /// made of a check's picks, decide what a removal by that selection takes.
     /// </summary>
     public static void MapWrites(RouteGroupBuilder delivery)
     {
@@ -228,10 +236,14 @@ public static partial class DeliveryInventoryEndpoints
         delivery.MapPost("/inventories/{partition}/{inventoryId:int}/removals", RemoveAsync).WithName("RemoveDeliveryInventoryRecords");
         delivery.MapPost("/inventories/{partition}/{inventoryId:int}/repairs", RepairAsync).WithName("RepairDeliveryInventoryRecords");
         delivery.MapPost("/inventories/{partition}/{inventoryId:int}/selections", SelectAsync).WithName("SelectDeliveryInventoryRecords");
+        delivery.MapPost("/inventories/{partition}/{inventoryId:int}/duplicates", CheckDuplicatesAsync).WithName("CheckDeliveryInventoryDuplicates");
+        delivery.MapPost("/inventories/{partition}/{inventoryId:int}/duplicates/{checkId:long}/groups/{groupNumber:int}/keep", KeepDuplicateAsync)
+            .WithName("KeepDeliveryInventoryDuplicate");
+        delivery.MapPost("/inventories/{partition}/{inventoryId:int}/duplicates/{checkId:long}/selection", SelectDuplicatesAsync).WithName("SelectDeliveryInventoryDuplicates");
     }
 
     /// <summary>
-    /// Delivers again the records behind an inventory's missing ids, as the caller (osdu/docs/reference/flow/inventory.md,
+    /// Delivers again the records behind an inventory's missing ids, as the caller (osdu/docs/reference/flow/inventory-removals.md,
     /// Repairing missing ids): each through the flow that delivered it, marked as OSDU having lost it so its route brings a
     /// soft-deleted record back under its id and writes a purged one again under it, or, with <c>newIds</c>, given a new
     /// OSDU id it is written under. A deliver run of each flow is queued. Every id must be a missing id of the inventory:
@@ -460,7 +472,7 @@ public static partial class DeliveryInventoryEndpoints
 
     /// <summary>
     /// Queues the run that removes the ids of one finding of an inventory, as the caller
-    /// (osdu/docs/reference/flow/inventory.md, What a removal does): every id of the finding, those picked, or those a selection
+    /// (osdu/docs/reference/flow/inventory-removals.md, What a removal does): every id of the finding, those picked, or those a selection
     /// holds; from OSDU, or, for gone ids, from the inventory alone, which the flow's removal policy does not govern since nothing
     /// is asked of OSDU. Refused with 400 for a request that does not say what it removes, whose scope does not fit its finding,
     /// that names both ids and a selection, or whose confirmation names another partition; with 409 when the flow does not allow
@@ -540,8 +552,9 @@ public static partial class DeliveryInventoryEndpoints
 
             if (Stale(inventory, selection))
             {
-                return Problem(StatusCodes.Status409Conflict, "Selection stale",
-                    $"Inventory '{inventory.Name}' was built again since selection {selectionId} was matched: match its conditions again, and remove what the new match holds. Nothing was queued.");
+                return Problem(StatusCodes.Status409Conflict, "Selection stale", selection.DuplicateCheckId is { } check
+                    ? $"Inventory '{inventory.Name}' was built again since duplicate check {check} picked the copies selection {selectionId} holds: check for duplicates again, and remove what the new check picks. Nothing was queued."
+                    : $"Inventory '{inventory.Name}' was built again since selection {selectionId} was matched: match its conditions again, and remove what the new match holds. Nothing was queued.");
             }
 
             var selected = (await ledger.InventorySelectionCountsAsync(inventory.Partition, selectionId, ct).ConfigureAwait(false)).Of(finding);
@@ -719,7 +732,7 @@ public static partial class DeliveryInventoryEndpoints
         {
             if (await ledger.GetInventorySelectionAsync(partition, selectionId, ct).ConfigureAwait(false) is { } selection)
             {
-                selections[selectionId] = Summary(selection);
+                selections[selectionId] = Summary(selection, await DuplicateKeyOfAsync(ledger, partition, selection, ct).ConfigureAwait(false));
             }
         }
 

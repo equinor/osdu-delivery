@@ -389,7 +389,7 @@ public sealed record InventoryRemovalRequest
     public IReadOnlyList<string> Ids { get; init; } = [];
 
     /// <summary>
-    /// The selection whose ids of the finding are removed (osdu/docs/reference/flow/inventory.md, Selecting ids by what OSDU
+    /// The selection whose ids of the finding are removed (osdu/docs/reference/flow/inventory-selections.md, Selecting ids by what OSDU
     /// holds): those that held what the operator's conditions asked in OSDU. Null removes every id of the finding, or those
     /// <see cref="Ids"/> names; a removal names ids or a selection, not both.
     /// </summary>

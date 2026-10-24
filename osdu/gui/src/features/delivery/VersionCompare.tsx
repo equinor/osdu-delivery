@@ -49,12 +49,108 @@ function VersionSelect({ value, versions, latest, ledgerVersion, onChange, label
   );
 }
 
+/** One side of a comparison: what it is called, and its document once read, or why it could not be. */
+export interface ComparedSide {
+  label: string;
+  record: Record<string, unknown> | null;
+  loading: boolean;
+  error: string | null;
+}
+
+/**
+ * Two documents compared, the left as the earlier: what moved is counted (added, changed, removed, from the left's point of
+ * view), the two stand side by side with their unchanged stretches folded, and every moved value is listed with its path and
+ * both values. `prepare` takes out of each document what always differs between the two and so says nothing (the fields OSDU
+ * stamps on every version; for two records, their ids too). `same` is what the counts say when the two sides are one.
+ */
+export function DocumentCompare({ left, right, prepare, same, testId = "osdu-version-compare", partsId = "osdu-version" }: {
+  left: ComparedSide;
+  right: ComparedSide;
+  prepare: (record: Record<string, unknown>) => Record<string, unknown>;
+  /** What the counts say when the two sides are the same document; null when they never are. */
+  same?: string | null;
+  /** The test id of the whole, its counts and its problem. */
+  testId?: string;
+  /** The test id the side-by-side documents and the list of differences are named after. */
+  partsId?: string;
+}) {
+  const compared = useMemo(() => {
+    if (left.record === null || right.record === null) {
+      return null;
+    }
+
+    const before = prepare(left.record);
+    const after = prepare(right.record);
+    return { ...differences(after, before), original: canonicalText(before), modified: canonicalText(after) };
+  }, [left.record, right.record, prepare]);
+
+  const counts = compared === null
+    ? null
+    : (["added", "changed", "removed"] as Moved[]).map((kind) => ({ kind, count: compared.items.filter((item) => moved(item) === kind).length }));
+  const columns: Column<JsonDifference>[] = [
+    {
+      id: "path",
+      header: "Path",
+      render: (row) => (
+        <span className="inline-flex min-w-0 items-center gap-1.5">
+          <ChangeGlyph change={moved(row)} />
+          <span className="font-mono text-[12px] break-all">{row.path || "(the record)"}</span>
+        </span>
+      ),
+    },
+    { id: "from", header: left.label, fill: true, render: (row) => <TruncatedText text={row.preview === undefined ? null : shortValue(row.preview)} mono maxWidth={360} /> },
+    { id: "to", header: right.label, fill: true, render: (row) => <TruncatedText text={row.osdu === undefined ? null : shortValue(row.osdu)} mono maxWidth={360} /> },
+  ];
+  const problem = left.error ?? right.error;
+
+  return (
+    <div className="flex min-h-0 flex-col gap-3" data-testid={testId}>
+      <div className="flex flex-wrap items-center justify-end gap-3" data-testid={`${testId}-counts`}>
+        {(left.loading || right.loading) && (
+          <span className="inline-flex items-center gap-1.5 text-[12px] text-muted-foreground">
+            <Loader2 className="size-3.5 animate-spin" />
+            Reading the documents
+          </span>
+        )}
+        {counts !== null && (same !== undefined && same !== null
+          ? <span className="text-[12px] text-muted-foreground">{same}</span>
+          : compared!.items.length === 0
+            ? <span className="text-[12px] text-muted-foreground">Nothing differs between the two</span>
+            : counts.map(({ kind, count }) => <ChangeCount key={kind} change={kind} count={count} className={count === 0 ? "opacity-50" : undefined} />))}
+        {compared?.truncated && <span className="text-[12px] text-muted-foreground">{`the first ${compared.items.length} differences`}</span>}
+      </div>
+      {problem !== null && (
+        <Alert variant="destructive" data-testid={`${testId}-error`}>
+          <AlertTitle>A document could not be read</AlertTitle>
+          <AlertDescription className="whitespace-pre-wrap">{problem}</AlertDescription>
+        </Alert>
+      )}
+      {compared !== null && (
+        <>
+          <DiffView
+            original={compared.original}
+            modified={compared.modified}
+            language="json"
+            height={420}
+            foldUnchanged
+            sideLabels={{ original: left.label, modified: right.label }}
+            data-testid={`${partsId}-diff`}
+          />
+          {compared.items.length > 0 && (
+            <DataTable columns={columns} rows={compared.items} rowKey={(row) => `${row.kind}|${row.path}`} emptyMessage="No differences." data-testid={`${partsId}-differences`} />
+          )}
+        </>
+      )}
+      {compared === null && problem === null && <div className="h-[420px] animate-pulse rounded-md bg-muted/40" aria-hidden />}
+    </div>
+  );
+}
+
 /**
  * Two versions of one record compared: any two of those OSDU keeps, picked on either side, the earlier on the left by
- * default. What moved is counted (added, changed, removed, from the left's point of view), the two documents stand side by
- * side with their unchanged stretches folded, and every moved value is listed with its path and both values. A version is
- * read once and kept: a version of a record never changes, so swapping back and forth reads nothing again. The fields OSDU
- * stamps on every version (its number, who wrote it when) are left out, since they always differ.
+ * default, as {@link DocumentCompare} compares two documents. A version is read once and kept: a version of a record
+ * never changes, so swapping back and forth reads nothing again. The fields OSDU stamps on every version (its number, who
+ * wrote it when) are left out, since they always differ.
  */
 export function VersionCompare({ id, versions, latestVersion, latestRecord, ledgerVersion, readVersion, from, to }: {
   id: string;
@@ -81,58 +177,28 @@ export function VersionCompare({ id, versions, latestVersion, latestRecord, ledg
     })),
   });
 
-  const documentOf = (version: number): { record: Record<string, unknown> | null; loading: boolean; error: string | null } => {
+  const sideOf = (version: number): ComparedSide => {
+    const label = `Version ${version}`;
     if (version === latestVersion) {
-      return { record: latestRecord, loading: false, error: null };
+      return { label, record: latestRecord, loading: false, error: null };
     }
 
     const read = reads[asked.indexOf(version)];
     if (read === undefined || read.isPending) {
-      return { record: null, loading: true, error: null };
+      return { label, record: null, loading: true, error: null };
     }
 
     if (read.isError) {
-      return { record: null, loading: false, error: read.error instanceof Error ? read.error.message : String(read.error) };
+      return { label, record: null, loading: false, error: read.error instanceof Error ? read.error.message : String(read.error) };
     }
 
     return read.data.found && read.data.record
-      ? { record: read.data.record, loading: false, error: null }
-      : { record: null, loading: false, error: `OSDU keeps no version ${version} of this record.` };
+      ? { label, record: read.data.record, loading: false, error: null }
+      : { label, record: null, loading: false, error: `OSDU keeps no version ${version} of this record.` };
   };
 
-  const earlier = documentOf(left);
-  const later = documentOf(right);
-  const compared = useMemo(() => {
-    if (earlier.record === null || later.record === null) {
-      return null;
-    }
-
-    const before = withoutOsduFields(earlier.record);
-    const after = withoutOsduFields(later.record);
-    return { ...differences(after, before), original: canonicalText(before), modified: canonicalText(after) };
-  }, [earlier.record, later.record]);
-
-  const counts = compared === null
-    ? null
-    : (["added", "changed", "removed"] as Moved[]).map((kind) => ({ kind, count: compared.items.filter((item) => moved(item) === kind).length }));
-  const columns: Column<JsonDifference>[] = [
-    {
-      id: "path",
-      header: "Path",
-      render: (row) => (
-        <span className="inline-flex min-w-0 items-center gap-1.5">
-          <ChangeGlyph change={moved(row)} />
-          <span className="font-mono text-[12px] break-all">{row.path || "(the record)"}</span>
-        </span>
-      ),
-    },
-    { id: "from", header: `Version ${left}`, fill: true, render: (row) => <TruncatedText text={row.preview === undefined ? null : shortValue(row.preview)} mono maxWidth={360} /> },
-    { id: "to", header: `Version ${right}`, fill: true, render: (row) => <TruncatedText text={row.osdu === undefined ? null : shortValue(row.osdu)} mono maxWidth={360} /> },
-  ];
-  const problem = earlier.error ?? later.error;
-
   return (
-    <div className="flex min-h-0 flex-col gap-3" data-testid="osdu-version-compare">
+    <div className="flex min-h-0 flex-col gap-3">
       <div className="flex flex-wrap items-center gap-2">
         <VersionSelect value={left} versions={versions} latest={latestVersion} ledgerVersion={ledgerVersion} onChange={setLeft} label="The version on the left" testId="osdu-compare-from" />
         <Button
@@ -147,44 +213,13 @@ export function VersionCompare({ id, versions, latestVersion, latestRecord, ledg
           <ArrowLeftRight />
         </Button>
         <VersionSelect value={right} versions={versions} latest={latestVersion} ledgerVersion={ledgerVersion} onChange={setRight} label="The version on the right" testId="osdu-compare-to" />
-        <div className="ml-auto flex flex-wrap items-center gap-3" data-testid="osdu-version-compare-counts">
-          {(earlier.loading || later.loading) && (
-            <span className="inline-flex items-center gap-1.5 text-[12px] text-muted-foreground">
-              <Loader2 className="size-3.5 animate-spin" />
-              Reading the versions
-            </span>
-          )}
-          {counts !== null && (left === right
-            ? <span className="text-[12px] text-muted-foreground">The same version on both sides</span>
-            : compared!.items.length === 0
-              ? <span className="text-[12px] text-muted-foreground">Nothing changed between the two versions</span>
-              : counts.map(({ kind, count }) => <ChangeCount key={kind} change={kind} count={count} className={count === 0 ? "opacity-50" : undefined} />))}
-          {compared?.truncated && <span className="text-[12px] text-muted-foreground">{`the first ${compared.items.length} differences`}</span>}
-        </div>
       </div>
-      {problem !== null && (
-        <Alert variant="destructive" data-testid="osdu-version-compare-error">
-          <AlertTitle>A version could not be read</AlertTitle>
-          <AlertDescription className="whitespace-pre-wrap">{problem}</AlertDescription>
-        </Alert>
-      )}
-      {compared !== null && (
-        <>
-          <DiffView
-            original={compared.original}
-            modified={compared.modified}
-            language="json"
-            height={420}
-            foldUnchanged
-            sideLabels={{ original: `Version ${left}`, modified: `Version ${right}` }}
-            data-testid="osdu-version-diff"
-          />
-          {compared.items.length > 0 && (
-            <DataTable columns={columns} rows={compared.items} rowKey={(row) => `${row.kind}|${row.path}`} emptyMessage="No differences." data-testid="osdu-version-differences" />
-          )}
-        </>
-      )}
-      {compared === null && problem === null && <div className="h-[420px] animate-pulse rounded-md bg-muted/40" aria-hidden />}
+      <DocumentCompare
+        left={sideOf(left)}
+        right={sideOf(right)}
+        prepare={withoutOsduFields}
+        same={left === right ? "The same version on both sides" : null}
+      />
     </div>
   );
 }

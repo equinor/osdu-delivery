@@ -18,6 +18,8 @@ keywords:
   - clean up osdu partition
 related:
   - delivery-flow-inventory
+  - delivery-flow-inventory-builds
+  - delivery-flow-inventory-removals
   - delivery-cli-inventory
   - delivery-concept-removal-and-reversal
   - delivery-concept-ledger
@@ -149,7 +151,7 @@ infers them: every identity that created at least 1% of the ids a ledger claims,
 | Finding | What it means | What to do |
 | --- | --- | --- |
 | `orphan` | OSDU serves an id no ledger knows, created by an owner. | Find where it came from (its kind, `createUser`, `createTime`, a `lookup`). Remove it (step 5), or deliver it again through a flow so a ledger holds it. |
-| `missing` | A ledger delivered it, or minted it, and storage does not hold it. | **Deliver again** from the missing tab: under its own id (a soft-deleted record restored, a purged one written again) or under a new one ([repairing missing ids](../flow/inventory.md#repairing-missing-ids)); or remove it from its ledger if it should be gone ([removal and reversal](../concepts/removal-and-reversal.md)). |
+| `missing` | A ledger delivered it, or minted it, and storage does not hold it. | **Deliver again** from the missing tab: under its own id (a soft-deleted record restored, a purged one written again) or under a new one ([repairing missing ids](../flow/inventory-removals.md#repairing-missing-ids)); or remove it from its ledger if it should be gone ([removal and reversal](../concepts/removal-and-reversal.md)). |
 | `undoing` | An unfinished delivery left it and its undo is due or failed. | Let the undo run, or run the delivery flow's `undo` operation ([removal and reversal](../concepts/removal-and-reversal.md)). |
 | `forgotten` | Its record was purged from its ledger, or a delivery of such a record minted it, and OSDU still serves it. | Remove it (a flow allowing `forgotten`), or deliver it again. |
 | `stale` | A ledger marks it removed, or an undo removed or kept it, and OSDU still serves it. | Look at the record's history; remove it again from its ledger, or from the inventory (a flow allowing `stale`), which records the removal on the record. |
@@ -167,7 +169,7 @@ ids or **Select all**, and **Remove**: the dialog leaves OSDU as it is and remov
 partition is typed back. From the command line the payload is
 `{"inventories": ["WellLogs"], "removal": {"finding": "gone", "scope": "inventory", "expected": 60955}, "confirm": "dev"}`.
 It needs no `removal` in the document, asks nothing of OSDU, and keeps a gone id a ledger still expects
-([removing gone ids](../flow/inventory.md#removing-gone-ids)).
+([removing gone ids](../flow/inventory-removals.md#removing-gone-ids)).
 
 ## 5. Allow removal, and remove the orphans
 

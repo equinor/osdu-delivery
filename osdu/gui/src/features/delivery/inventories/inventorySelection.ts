@@ -7,7 +7,7 @@ import { filtersText, filterSentence } from "../explorer/explorerModel";
 import { termOf, useSearchTerms } from "../explorer/explorerTerms";
 import type { InventoryRef } from "./inventoryFormat";
 
-// Selecting an inventory's ids by what OSDU holds (osdu/docs/reference/flow/inventory.md, Selecting ids by what OSDU holds):
+// Selecting an inventory's ids by what OSDU holds (osdu/docs/reference/flow/inventory-selections.md, Selecting ids by what OSDU holds):
 // the conditions in the page's address open a selection, the match made of them already or a new one the control plane queues
 // as a run of the flow, and the page follows it until it ends. Its ids are then the grid's, counted by finding on the tabs.
 
@@ -108,6 +108,34 @@ export function useInventorySelection(inventory: InventoryRef, conditions: reado
   }
 
   return { phase: phaseOf(selection), selection, matchAgain, matchingAgain: false };
+}
+
+/**
+ * A selection named by its number (a duplicate check's picks, made a selection), followed as one a match fills is; none while
+ * no number is given. Its way to read OSDU again is the one given (a duplicate check's, on its own tab), since no conditions
+ * made it.
+ */
+export function useInventorySelectionById(inventory: InventoryRef, selectionId: number | null, again: () => void): InventorySelectionState {
+  const followed = useQuery({
+    queryKey: ["delivery", "inventories", "selection", inventory.partition, inventory.inventoryId, selectionId],
+    queryFn: () => inventoryApi.selection(inventory.partition, inventory.inventoryId, selectionId!),
+    enabled: selectionId !== null,
+    refetchInterval: (query) => (isUnderWay(query.state.data) ? UNDER_WAY_MS : SETTLED_MS),
+    retry: false,
+  });
+
+  if (selectionId === null) {
+    return { phase: "none", matchAgain: again, matchingAgain: false };
+  }
+
+  if (followed.isError) {
+    return { phase: "refused", problem: followed.error, matchAgain: again, matchingAgain: false };
+  }
+
+  const selection = followed.data;
+  return selection === undefined
+    ? { phase: "asking", matchAgain: again, matchingAgain: false }
+    : { phase: phaseOf(selection), selection, matchAgain: again, matchingAgain: false };
 }
 
 /** A selection's ids counted by finding, every finding the inventory counts, zero for one it holds none of; null before it completed. */

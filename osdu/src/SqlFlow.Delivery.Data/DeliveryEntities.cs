@@ -858,7 +858,7 @@ public sealed class DeliveryArtifact
 }
 
 /// <summary>
-/// One inventory of an inventory flow in a partition (osdu/docs/reference/flow/inventory.md, The tables an inventory
+/// One inventory of an inventory flow in a partition (osdu/docs/reference/flow/inventory-builds.md, The tables an inventory
 /// keeps): what it reads, the owners its last reconcile used and how it knew them, and its last build and reconcile. Its
 /// counts by finding are read from its records.
 /// </summary>
@@ -1048,7 +1048,7 @@ public sealed class DeliveryInventoryVersion
 }
 
 /// <summary>
-/// One removal of an inventory's ids an operator asked for (osdu/docs/reference/flow/inventory.md, What a removal does):
+/// One removal of an inventory's ids an operator asked for (osdu/docs/reference/flow/inventory-removals.md, What a removal does):
 /// the run it was, who asked, the finding and how much of each record it removes, how many ids the operator was shown, and
 /// what it came to. Every id it reached is a <see cref="DeliveryInventoryRemovalItem"/>.
 /// </summary>
@@ -1106,7 +1106,7 @@ public sealed class DeliveryInventoryRemoval
 }
 
 /// <summary>
-/// The ids of an inventory that hold what an operator's conditions ask in OSDU (osdu/docs/reference/flow/inventory.md,
+/// The ids of an inventory that hold what an operator's conditions ask in OSDU (osdu/docs/reference/flow/inventory-selections.md,
 /// Selecting ids by what OSDU holds): the conditions as the operator wrote them and as the search was asked them, how the
 /// match read OSDU and what it found, and the build of the inventory it was matched against. Every id it found is a
 /// <see cref="DeliveryInventorySelectionItem"/>. A match runs as a run of the inventory flow; a removal may take its ids.
@@ -1189,6 +1189,13 @@ public sealed class DeliveryInventorySelection
 
     /// <summary>Why the match failed, redacted; null for one that did not.</summary>
     public string? Error { get; set; }
+
+    /// <summary>
+    /// The duplicate check whose picks the selection holds (<see cref="DeliveryInventoryDuplicateCheck"/>): the copies of each
+    /// group of duplicates it picked to remove, rather than the ids that hold what conditions ask. Null for a selection a match
+    /// filled.
+    /// </summary>
+    public long? DuplicateCheckId { get; set; }
 }
 
 /// <summary>One id of an inventory a match found holding what its conditions ask: the version the index holds and the values it holds there.</summary>
@@ -1205,6 +1212,185 @@ public sealed class DeliveryInventorySelectionItem
 
     /// <summary>What it held at each property the conditions ask, property to values (JSON), cut to the column.</summary>
     public string? ValuesJson { get; set; }
+
+    /// <summary>
+    /// For an id of a selection a duplicate check made: the inventory row of the copy its group keeps, which a removal checks
+    /// storage still holds before it removes this one. Null for an id a match found.
+    /// </summary>
+    public long? KeptInventoryRecordId { get; set; }
+}
+
+/// <summary>
+/// A check of an inventory's ids for duplicate records (osdu/docs/reference/flow/inventory-duplicates.md): the
+/// key an operator compares the records by, as written, where the check stands and what it found, and the build of the
+/// inventory it read. The ids that share their key with another are the <see cref="DeliveryInventoryDuplicateMember"/> rows of
+/// its <see cref="DeliveryInventoryDuplicateGroup"/> rows. A check runs as a run of the inventory flow; the copies it picks
+/// to remove become a selection a removal takes.
+/// </summary>
+public sealed class DeliveryInventoryDuplicateCheck
+{
+    public short PartitionId { get; set; }
+
+    public long InventoryDuplicateCheckId { get; set; }
+
+    public int InventoryId { get; set; }
+
+    /// <summary>The platform run the check ran as; null until it is queued.</summary>
+    public Guid? RunId { get; set; }
+
+    /// <summary>Who asked for the check.</summary>
+    public string Actor { get; set; } = string.Empty;
+
+    /// <summary>The key as the operator wrote it, in one spelling (JSON): each property compared and how.</summary>
+    public string KeyJson { get; set; } = string.Empty;
+
+    /// <summary>A SHA-256 of <see cref="KeyJson"/> in hex, by which the same key asked again of the same build finds the check already made.</summary>
+    public string KeyHash { get; set; } = string.Empty;
+
+    /// <summary>queued, running, completed, failed or expired.</summary>
+    public string Status { get; set; } = string.Empty;
+
+    /// <summary>What a running check is doing: <c>keys</c> (reading every id's key) or <c>copies</c> (reading the copies of each group); null otherwise.</summary>
+    public string? Phase { get; set; }
+
+    /// <summary>What the reader should know of how the check read OSDU (JSON list).</summary>
+    public string? NotesJson { get; set; }
+
+    /// <summary>The inventory's last build when the check read OSDU; a later build makes the check stale.</summary>
+    public long? BuildRunId { get; set; }
+
+    /// <summary>The ids the inventory served when the check started.</summary>
+    public long Candidates { get; set; }
+
+    /// <summary>The records the search returned while the check read the keys.</summary>
+    public long Checked { get; set; }
+
+    /// <summary>The inventory's ids that hold a value at one of the key's properties at least.</summary>
+    public long Keyed { get; set; }
+
+    /// <summary>The inventory's ids that hold no value at any of the key's properties, passed over.</summary>
+    public long Unkeyed { get; set; }
+
+    /// <summary>Records the search returned that the inventory serves no row of: written since its last build, or outside its query.</summary>
+    public long Outside { get; set; }
+
+    /// <summary>Ids the search returned at another version than the inventory listed: changed since its last build.</summary>
+    public long Changed { get; set; }
+
+    /// <summary>The groups of ids that share a key.</summary>
+    public long Groups { get; set; }
+
+    /// <summary>The ids in those groups.</summary>
+    public long Copies { get; set; }
+
+    /// <summary>The groups whose copies the check has read and judged, which a page following it counts against <see cref="Groups"/>.</summary>
+    public long GroupsJudged { get; set; }
+
+    /// <summary>The groups whose copy to keep is settled: picked by the check, or chosen by an operator.</summary>
+    public long Decided { get; set; }
+
+    /// <summary>The groups left for an operator to look at.</summary>
+    public long Review { get; set; }
+
+    /// <summary>The copies picked to remove.</summary>
+    public long ToRemove { get; set; }
+
+    /// <summary>The requests the check sent: searches and storage reads.</summary>
+    public long Requests { get; set; }
+
+    /// <summary>The selection last made of the copies picked to remove; null until one is made.</summary>
+    public long? SelectionId { get; set; }
+
+    /// <summary>When an operator last chose the copy a group keeps, which a selection made before then no longer reflects.</summary>
+    public DateTime? ChosenUtc { get; set; }
+
+    public DateTime CreatedUtc { get; set; }
+
+    public DateTime? StartedUtc { get; set; }
+
+    public DateTime? CompletedUtc { get; set; }
+
+    /// <summary>Why the check failed, redacted; null for one that did not.</summary>
+    public string? Error { get; set; }
+}
+
+/// <summary>
+/// One group of ids a duplicate check found sharing a key: how many copies, the values they share, and how it came out: the copy
+/// it keeps and why, picked by the check or chosen by an operator (who, and when), or left for review with why.
+/// </summary>
+public sealed class DeliveryInventoryDuplicateGroup
+{
+    public short PartitionId { get; set; }
+
+    public long InventoryDuplicateCheckId { get; set; }
+
+    /// <summary>The group's number within its check: the largest group first.</summary>
+    public int GroupNumber { get; set; }
+
+    /// <summary>The key its copies share, as each id's row keeps it.</summary>
+    public byte[] KeyHash { get; set; } = [];
+
+    public int Copies { get; set; }
+
+    /// <summary>What its first copy holds at each property of the key, property to values (JSON), cut to the column.</summary>
+    public string? ValuesJson { get; set; }
+
+    /// <summary><c>pending</c> (its copies not read yet), <c>picked</c>, <c>chosen</c>, <c>review</c> or <c>settled</c>.</summary>
+    public string Outcome { get; set; } = string.Empty;
+
+    /// <summary>Why the group came out as it did, in a line.</summary>
+    public string? Reason { get; set; }
+
+    /// <summary>The inventory row of the copy the group keeps; null while none is decided.</summary>
+    public long? KeptInventoryRecordId { get; set; }
+
+    /// <summary>The operator who chose the copy kept, when one did.</summary>
+    public string? ChosenBy { get; set; }
+
+    public DateTime? ChosenUtc { get; set; }
+}
+
+/// <summary>
+/// One id of an inventory a duplicate check read: the hash of its key and what it holds there, the version the index held; once
+/// its group's copies are read, what storage held of it, how many values it holds under <c>data</c> and how many records name
+/// it; and its role in its group (kept, picked to remove, left, or left for review) with why.
+/// </summary>
+public sealed class DeliveryInventoryDuplicateMember
+{
+    public short PartitionId { get; set; }
+
+    public long InventoryDuplicateCheckId { get; set; }
+
+    public long InventoryRecordId { get; set; }
+
+    public byte[] KeyHash { get; set; } = [];
+
+    /// <summary>Its group; null while the check reads the keys, before the ids that share none are let go.</summary>
+    public int? GroupNumber { get; set; }
+
+    /// <summary>The version the search index held of it when the check read its key.</summary>
+    public long? IndexedVersion { get; set; }
+
+    /// <summary>What it held at each property of the key, property to values (JSON), cut to the column.</summary>
+    public string? ValuesJson { get; set; }
+
+    /// <summary>What storage answered for it when its group's copies were read: <c>held</c>, <c>missing</c> or <c>unanswered</c>; null before.</summary>
+    public string? StorageState { get; set; }
+
+    /// <summary>The version storage held when its group's copies were read.</summary>
+    public long? StoredVersion { get; set; }
+
+    /// <summary>How many values it holds under <c>data</c>, each item of a list counted on its own: how complete the copy is.</summary>
+    public int? Attributes { get; set; }
+
+    /// <summary>How many records name it, as OSDU's search counts them.</summary>
+    public long? MentionedBy { get; set; }
+
+    /// <summary><c>keep</c>, <c>remove</c>, <c>leave</c>, <c>review</c> or <c>gone</c>; null before its group's copies are read.</summary>
+    public string? Role { get; set; }
+
+    /// <summary>Why it has its role, in a line.</summary>
+    public string? Reason { get; set; }
 }
 
 /// <summary>What one removal did to one id: removed, already gone, skipped or failed, at the version it found, and why.</summary>
@@ -3410,6 +3596,12 @@ public static class DeliveryModel
     /// <summary>The length of a selection's conditions key: a SHA-256 in hex.</summary>
     public const int SelectionKeyLength = 64;
 
+    /// <summary>The length of the hash a duplicate check keeps of each id's key: a SHA-256, in bytes.</summary>
+    public const int DuplicateKeyHashLength = 32;
+
+    /// <summary>The longest line a duplicate check keeps of why a group came out as it did, or why a copy has its role.</summary>
+    public const int MaxDuplicateReasonLength = 1000;
+
     /// <summary>
     /// The longest identity token, and the longest display value beside it: 200 characters keep the
     /// (token, flow, key) primary key well under SQL Server's 1700-byte limit for a nonclustered index key, and a
@@ -3916,6 +4108,54 @@ public static class DeliveryModel
             // A selection's ids in the inventory's own order: the grid pages through them, and a removal joins them by row.
             e.HasKey(i => new { i.PartitionId, i.InventorySelectionId, i.InventoryRecordId });
             e.Property(i => i.ValuesJson).HasMaxLength(MaxSelectionValuesLength);
+        });
+
+        modelBuilder.Entity<DeliveryInventoryDuplicateCheck>(e =>
+        {
+            e.ToTable("InventoryDuplicateCheck", SchemaName);
+            e.HasKey(c => new { c.PartitionId, c.InventoryDuplicateCheckId });
+            e.Property(c => c.InventoryDuplicateCheckId).ValueGeneratedOnAdd();
+            e.Property(c => c.Actor).HasMaxLength(200).IsRequired();
+            e.Property(c => c.KeyJson).IsRequired();
+            e.Property(c => c.KeyHash).HasMaxLength(SelectionKeyLength).IsUnicode(false).IsRequired();
+            e.Property(c => c.Status).HasMaxLength(16).IsRequired();
+            e.Property(c => c.Phase).HasMaxLength(16);
+            e.Property(c => c.Error).HasMaxLength(4000);
+            // The same key asked again of an inventory finds the newest check made of it; the tab lists an inventory's checks, newest first.
+            e.HasIndex(c => new { c.PartitionId, c.InventoryId, c.KeyHash, c.InventoryDuplicateCheckId });
+            e.HasIndex(c => new { c.PartitionId, c.InventoryId, c.InventoryDuplicateCheckId });
+            // The checks a sweep retires, oldest first.
+            e.HasIndex(c => new { c.PartitionId, c.CreatedUtc });
+        });
+
+        modelBuilder.Entity<DeliveryInventoryDuplicateGroup>(e =>
+        {
+            e.ToTable("InventoryDuplicateGroup", SchemaName);
+            // A check's groups in order, largest first: the list pages through them, and the copies pass reads them so.
+            e.HasKey(g => new { g.PartitionId, g.InventoryDuplicateCheckId, g.GroupNumber });
+            e.Property(g => g.KeyHash).HasMaxLength(DuplicateKeyHashLength).IsFixedLength().IsRequired();
+            e.Property(g => g.ValuesJson).HasMaxLength(MaxSelectionValuesLength);
+            e.Property(g => g.Outcome).HasMaxLength(16).IsRequired();
+            e.Property(g => g.Reason).HasMaxLength(MaxDuplicateReasonLength);
+            e.Property(g => g.ChosenBy).HasMaxLength(200);
+            // The groups of one outcome in order: the list's tabs page through them.
+            e.HasIndex(g => new { g.PartitionId, g.InventoryDuplicateCheckId, g.Outcome, g.GroupNumber });
+        });
+
+        modelBuilder.Entity<DeliveryInventoryDuplicateMember>(e =>
+        {
+            e.ToTable("InventoryDuplicateMember", SchemaName);
+            // A check's ids in the inventory's own order: a page of keys joins them by row, and a selection is made of them.
+            e.HasKey(m => new { m.PartitionId, m.InventoryDuplicateCheckId, m.InventoryRecordId });
+            e.Property(m => m.KeyHash).HasMaxLength(DuplicateKeyHashLength).IsFixedLength().IsRequired();
+            e.Property(m => m.ValuesJson).HasMaxLength(MaxSelectionValuesLength);
+            e.Property(m => m.StorageState).HasMaxLength(16);
+            e.Property(m => m.Role).HasMaxLength(16);
+            e.Property(m => m.Reason).HasMaxLength(MaxDuplicateReasonLength);
+            // The ids that share a key: the grouping counts them, and numbers each row with its group.
+            e.HasIndex(m => new { m.PartitionId, m.InventoryDuplicateCheckId, m.KeyHash });
+            // A group's copies in order: the list shows them, and the copies pass reads them so.
+            e.HasIndex(m => new { m.PartitionId, m.InventoryDuplicateCheckId, m.GroupNumber, m.InventoryRecordId });
         });
 
         modelBuilder.Entity<DeliveryInventoryScan>(e =>

@@ -16,7 +16,7 @@ public sealed class OsduDbContext : DbContext
     public const string MigrationsHistoryTable = "__EFMigrationsHistory";
 
     /// <summary>The module version the current migrations produce; written to <see cref="OsduSchemaVersion.ModuleVersion"/>.</summary>
-    public const string ModuleVersion = "1.59.0";
+    public const string ModuleVersion = "1.60.0";
 
     /// <summary>
     /// The oldest SQLFlow catalog migration this schema works with: the one that records the values the control plane
@@ -90,6 +90,15 @@ public sealed class OsduDbContext : DbContext
     public DbSet<DeliveryInventorySelection> DeliveryInventorySelections => Set<DeliveryInventorySelection>();
 
     public DbSet<DeliveryInventorySelectionItem> DeliveryInventorySelectionItems => Set<DeliveryInventorySelectionItem>();
+
+    /// <summary>The checks of inventories for duplicate records, each with the key it compares the records by.</summary>
+    public DbSet<DeliveryInventoryDuplicateCheck> DeliveryInventoryDuplicateChecks => Set<DeliveryInventoryDuplicateCheck>();
+
+    /// <summary>The groups of ids a duplicate check found sharing a key, each with the copy it keeps.</summary>
+    public DbSet<DeliveryInventoryDuplicateGroup> DeliveryInventoryDuplicateGroups => Set<DeliveryInventoryDuplicateGroup>();
+
+    /// <summary>The ids a duplicate check read, each with its key, how complete it is and its role in its group.</summary>
+    public DbSet<DeliveryInventoryDuplicateMember> DeliveryInventoryDuplicateMembers => Set<DeliveryInventoryDuplicateMember>();
 
     /// <summary>The runs of removal flows, one row per removal per run.</summary>
     public DbSet<DeliveryRemovalRun> DeliveryRemovalRuns => Set<DeliveryRemovalRun>();

@@ -3,7 +3,7 @@ using System.Globalization;
 namespace SqlFlow.Delivery.Ledger;
 
 /// <summary>
-/// What an inventory finds of an id (osdu/docs/reference/flow/inventory.md, The findings): what OSDU serves of it set
+/// What an inventory finds of an id (osdu/docs/reference/flow/inventory-builds.md, The findings): what OSDU serves of it set
 /// against what the ledgers of the partition hold of it.
 /// </summary>
 public static class InventoryFindings

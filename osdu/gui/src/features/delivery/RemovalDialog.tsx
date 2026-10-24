@@ -44,7 +44,7 @@ export type RemovalSelection =
   | { kind: "filter"; filter: DeliveryRecordFilter; expected: number };
 
 /**
- * What an inventory's removal acts on (osdu/docs/reference/flow/inventory.md, What a removal does): the ids of one finding,
+ * What an inventory's removal acts on (osdu/docs/reference/flow/inventory-removals.md, What a removal does): the ids of one finding,
  * those picked or every one, as many as the operator was shown, through the inventory flow's own source as its policy says;
  * or, gone ids, from the inventory alone, which no policy governs.
  */

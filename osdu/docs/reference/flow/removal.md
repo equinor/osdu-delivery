@@ -33,6 +33,7 @@ related:
   - delivery-concept-ledger
   - delivery-flow-delivery
   - delivery-flow-inventory
+  - delivery-flow-inventory-removals
   - delivery-table-removed-key
   - delivery-table-removal-run
   - delivery-table-removal-key

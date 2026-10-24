@@ -420,9 +420,13 @@ picked records, and the removal runs that wrote to its ledger.
   **Removals**, **Run pipeline**, **Export the ids as CSV**, and **Remove** for picked ids where the flow allows it,
   through the removal dialog. An id opens as OSDU holds it in the workbench's bottom panel. **Filter** selects the ids
   by what OSDU holds, as the explorer's conditions: the tabs then count the matching ids of each finding, the grid lists
-  them with the values the conditions ask, and every matching id of a removable finding can be removed at once. See
-  [inventory flows](../flow/inventory.md) and
-  [selecting ids by what OSDU holds](../flow/inventory.md#selecting-ids-by-what-osdu-holds).
+  them with the values the conditions ask, and every matching id of a removable finding can be removed at once. The
+  **Duplicates** tab finds the records OSDU holds more than once: a key of the properties their copies hold alike, built
+  from the kind's properties or a copy's values, **Find duplicates**, the groups by outcome with the copy each keeps and
+  why, **Keep** and **Compare** on their copies, and **Select the copies to remove**, which opens them on the Ids tab for a
+  removal. See [inventory flows](../flow/inventory.md),
+  [selecting ids by what OSDU holds](../flow/inventory-selections.md) and
+  [finding duplicate records](../flow/inventory-duplicates.md).
 - **Dimensions**: a strip of facts (dimensions, values, what needs a look, when last built), then each dimension flow's
   dimensions as cards, with **Run pipeline** per flow and **Build a search**. One dimension opens on the page's width
   with **Export** (the table, values or keys as CSV or JSON Lines), **Run pipeline**, and tabs **Table**, **Values**,

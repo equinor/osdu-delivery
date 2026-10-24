@@ -23,7 +23,7 @@ using SqlFlow.Delivery.Templates;
 namespace SqlFlow.Delivery.ControlPlane.Api;
 
 /// <summary>
-/// A match an operator asks of an inventory's ids (osdu/docs/reference/flow/inventory.md, Selecting ids by what OSDU holds):
+/// A match an operator asks of an inventory's ids (osdu/docs/reference/flow/inventory-selections.md, Selecting ids by what OSDU holds):
 /// the conditions, as the explorer writes them (a property, how the platform indexes it, and what it must hold; or a search
 /// term, a column of a source system), whether to read OSDU again rather than take the match already made of the same
 /// conditions against the same build (<c>refresh</c>), and the pool its run is queued on.
@@ -36,17 +36,22 @@ public sealed record DeliveryInventorySelectionRequest(IReadOnlyList<DeliveryExp
 /// to and how the match read OSDU, what it had to say, the properties its rows carry, how far it got and what it found (the
 /// inventory's ids that hold what the conditions ask, records outside the inventory, ids matched at another version), the
 /// search requests it sent, how many of its ids have each finding now (<c>Counts</c>, once it completed), its run, who
-/// asked and when, and why it failed.
+/// asked and when, and why it failed. A selection a duplicate check made of its picks names the check and its key
+/// (<c>DuplicateCheckId</c>, <c>DuplicateKey</c>) and holds no conditions.
 /// </summary>
 public sealed record DeliveryInventorySelectionDto(
     long SelectionId, int InventoryId, string Partition, string Status, bool Stale, IReadOnlyList<DeliveryExplorerFilterDto> Conditions, string? Query,
     string? Direction, IReadOnlyList<string> Notes, IReadOnlyList<string> Columns, long Candidates, long ToCheck, long Checked, long Matched, long Outside,
     long Changed, long Requests, IReadOnlyList<DeliveryInventoryCountDto>? Counts, Guid? RunId, string Actor, DateTime CreatedUtc, DateTime? StartedUtc,
-    DateTime? CompletedUtc, string? Error);
+    DateTime? CompletedUtc, string? Error, long? DuplicateCheckId = null, IReadOnlyList<DeliveryDuplicateKeyPropertyDto>? DuplicateKey = null);
 
-/// <summary>The selection a removal took its ids from, as the removal names it: its number, where it stands, its conditions and query, what it matched and when.</summary>
+/// <summary>
+/// The selection a removal took its ids from, as the removal names it: its number, where it stands, its conditions and query,
+/// what it matched and when; or the duplicate check whose picks it holds, with the check's key.
+/// </summary>
 public sealed record DeliveryInventorySelectionSummaryDto(
-    long SelectionId, string Status, IReadOnlyList<DeliveryExplorerFilterDto> Conditions, string? Query, long Matched, DateTime? MatchedUtc);
+    long SelectionId, string Status, IReadOnlyList<DeliveryExplorerFilterDto> Conditions, string? Query, long Matched, DateTime? MatchedUtc,
+    long? DuplicateCheckId = null, IReadOnlyList<DeliveryDuplicateKeyPropertyDto>? DuplicateKey = null);
 
 public static partial class DeliveryInventoryEndpoints
 {
@@ -55,7 +60,7 @@ public static partial class DeliveryInventoryEndpoints
 
     /// <summary>
     /// Queues the match of an inventory's ids against an operator's conditions, as the caller
-    /// (osdu/docs/reference/flow/inventory.md, Selecting ids by what OSDU holds): each condition naming a search term is carried
+    /// (osdu/docs/reference/flow/inventory-selections.md, Selecting ids by what OSDU holds): each condition naming a search term is carried
     /// through its mapping, every condition is checked as the explorer checks it, and a selection is opened and filled by a
     /// match run of the inventory flow, through its own source. The same conditions asked again of the same build answer with
     /// the match made of them already (200), unless <c>refresh</c> asks for OSDU to be read again; a new match answers 202.
@@ -265,12 +270,19 @@ public static partial class DeliveryInventoryEndpoints
         return new DeliveryInventorySelectionDto(
             s.InventorySelectionId, s.InventoryId, inventory.Partition, s.Status, Stale(inventory, s), ConditionsOf(s.ConditionsJson), s.Query, s.Direction,
             ListOf(s.NotesJson), ListOf(s.ColumnsJson), s.Candidates, s.ToCheck, s.Checked, s.Matched, s.Outside, s.Changed, s.Requests, counts, s.RunId, s.Actor,
-            Utc(s.CreatedUtc), Utc(s.StartedUtc), Utc(s.CompletedUtc), s.Error);
+            Utc(s.CreatedUtc), Utc(s.StartedUtc), Utc(s.CompletedUtc), s.Error, s.DuplicateCheckId,
+            await DuplicateKeyOfAsync(ledger, inventory.Partition, s, ct).ConfigureAwait(false));
     }
 
     /// <summary>A selection as a removal names it.</summary>
-    private static DeliveryInventorySelectionSummaryDto Summary(InventorySelectionState s)
-        => new(s.InventorySelectionId, s.Status, ConditionsOf(s.ConditionsJson), s.Query, s.Matched, Utc(s.CompletedUtc));
+    private static DeliveryInventorySelectionSummaryDto Summary(InventorySelectionState s, IReadOnlyList<DeliveryDuplicateKeyPropertyDto>? key)
+        => new(s.InventorySelectionId, s.Status, ConditionsOf(s.ConditionsJson), s.Query, s.Matched, Utc(s.CompletedUtc), s.DuplicateCheckId, key);
+
+    /// <summary>The key of the duplicate check that made a selection, while the partition keeps the check; null for a selection a match filled.</summary>
+    private static async Task<IReadOnlyList<DeliveryDuplicateKeyPropertyDto>?> DuplicateKeyOfAsync(ILedger ledger, string partition, InventorySelectionState s, CancellationToken ct)
+        => s.DuplicateCheckId is { } checkId && await ledger.GetInventoryDuplicateCheckAsync(partition, checkId, ct).ConfigureAwait(false) is { } check
+            ? KeyOf(check.KeyJson)
+            : null;
 
     /// <summary>Whether the inventory was built again since a completed selection was matched: its ids then say less than a new match would.</summary>
     private static bool Stale(InventoryState inventory, InventorySelectionState selection)

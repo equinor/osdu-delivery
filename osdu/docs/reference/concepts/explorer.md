@@ -32,6 +32,7 @@ related:
   - delivery-flow-mapping-assertions
   - delivery-flow-dimension
   - delivery-flow-inventory
+  - delivery-flow-inventory-selections
   - delivery-concept-partitions
 sourceRefs:
   - osdu/src/SqlFlow.Delivery.ControlPlane/Api/DeliveryExplorerEndpoints.cs
@@ -264,7 +265,7 @@ value typed for one is the source's own, carried through the mapping before OSDU
 Across every type, only the record's own properties and the name properties are offered. A schema that cannot be read is
 a note at the foot of the list.
 
-An [inventory](../flow/inventory.md#selecting-ids-by-what-osdu-holds) selects its ids by the same conditions, made in the
+An [inventory](../flow/inventory-selections.md) selects its ids by the same conditions, made in the
 same editor on the inventory's kind and asked of OSDU through the inventory flow's own source.
 
 ## A record

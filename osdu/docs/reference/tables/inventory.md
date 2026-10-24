@@ -14,6 +14,7 @@ keywords:
 related:
   - delivery-concept-database
   - delivery-flow-inventory
+  - delivery-flow-inventory-builds
   - delivery-guide-finding-orphans
   - delivery-table-inventory-run
   - delivery-table-inventory-record
@@ -30,7 +31,7 @@ One inventory of an [inventory flow](../flow/inventory.md) in a partition: what 
 used and how it knew them, and its last build and reconcile. Its counts by finding are read from its records in
 [`osdu.InventoryRecord`](inventory-record.md), never kept here. An inventory flow keeps its tables under its own ledger
 in the partition (kind `inventory`), and no table of an inventory has a foreign key into another
-([The tables an inventory keeps](../flow/inventory.md#the-tables-an-inventory-keeps)).
+([The tables an inventory keeps](../flow/inventory-builds.md#the-tables-an-inventory-keeps)).
 
 ## Columns
 

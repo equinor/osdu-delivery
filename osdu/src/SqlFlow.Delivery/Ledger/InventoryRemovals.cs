@@ -3,7 +3,7 @@ using System.Globalization;
 namespace SqlFlow.Delivery.Ledger;
 
 /// <summary>
-/// Removing what an inventory found (osdu/docs/reference/flow/inventory.md, What a removal does;
+/// Removing what an inventory found (osdu/docs/reference/flow/inventory-removals.md, What a removal does;
 /// osdu/docs/wiki/decisions/0014-inventory-removals.md): which findings may be removed, how much of a record a
 /// removal takes, and what it came to for each id. The ids OSDU serves go from OSDU; the gone ids, which OSDU no longer
 /// serves, go from the inventory.

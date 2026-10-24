@@ -588,7 +588,10 @@ const QUESTIONS: &[(&str, &[&str])] = &[
     ("distinct values of a field", &["delivery-flow-dimension", "delivery-guide-dimensions"]),
     ("join dimension tables into one view with typed columns", &["delivery-flow-dimension"]),
     ("find orphan records in osdu", &["delivery-guide-finding-orphans", "delivery-flow-inventory"]),
-    ("select inventory ids by facility name and remove only those", &["delivery-flow-inventory"]),
+    ("select inventory ids by facility name and remove only those", &["delivery-flow-inventory-selections"]),
+    ("find duplicate records in osdu and keep the most complete copy", &["delivery-flow-inventory-duplicates"]),
+    ("what an inventory build does with the ids it reads", &["delivery-flow-inventory-builds"]),
+    ("deliver again the missing records an inventory found", &["delivery-flow-inventory-removals"]),
     ("take out of osdu the records whose keys the source no longer holds", &["delivery-flow-removal"]),
     ("approve the removals a guard held", &["delivery-flow-removal"]),
     ("check a flow before running it", &["delivery-cli-check", "delivery-concept-preflight"]),
@@ -726,6 +729,33 @@ async fn a_record_is_found_by_what_the_caller_holds_and_linked_to_its_page() {
         hits["items"][0]["links"]["flow"],
         json!(format!("https://delivery.example.com/pipelines/{PIPELINE}"))
     );
+    // Its OSDU id opens the explorer on it, in the partition the id starts with, since the hit does not name one.
+    assert_eq!(
+        hits["items"][0]["links"]["osdu"],
+        json!("https://delivery.example.com/delivery/explorer?id=dev%3Amaster-data--Wellbore%3AW-1&partition=dev")
+    );
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_landed_records_trace_opens_it_in_the_explorer() {
+    let base = format!("/api/v1/delivery/records/{FLOW}/{KEY}");
+    let estate = Estate::start(vec![(
+        route(format!("GET {base}")),
+        200,
+        json!({ "record": { "deliveryKey": KEY, "flowId": FLOW, "status": "delivered", "partition": "test",
+                            "targetId": "test:master-data--Wellbore:W-1", "targetVersion": 1760000000000001_i64 },
+                "pipelineId": PIPELINE, "flowName": "wells", "partition": "test" }),
+    )])
+    .await;
+    let mut session = Session::open(&estate).await;
+
+    let trace = session.json("delivery_record", json!({ "flowId": FLOW, "deliveryKey": KEY, "include": [] })).await;
+
+    let explorer = json!("https://delivery.example.com/delivery/explorer?id=test%3Amaster-data--Wellbore%3AW-1&partition=test");
+    assert_eq!(trace["record"]["record"]["links"]["osdu"], explorer);
+    // The trace is about that record, so the envelope carries its explorer link beside its page.
+    assert_eq!(trace["links"]["osdu"], explorer);
+    assert_eq!(trace["links"]["page"], json!(format!("https://delivery.example.com/delivery/records/{FLOW}/{KEY}")));
 }
 
 #[tokio::test(flavor = "multi_thread")]
@@ -765,6 +795,7 @@ async fn a_records_whole_trace_is_one_call_and_carries_no_content() {
     assert_eq!(trace["chain"]["changes"][0]["fileName"], json!("wells_2026-10-01.csv"));
     assert_eq!(trace["activities"][0]["actor"], json!("schedule:hourly"));
     assert_eq!(trace["links"]["page"], json!(format!("https://delivery.example.com/delivery/records/{FLOW}/{KEY}")));
+    assert!(trace["links"]["osdu"].is_null(), "a record that never landed has nothing in OSDU to open");
     assert!(trace["readingThis"].is_string());
 
     // The run log is cut short in a trace, and says how long it was.
@@ -1143,6 +1174,11 @@ async fn a_cache_change_is_returned_without_the_values_that_changed() {
     assert_eq!(change["path"], json!("data.FacilityName"));
     assert_eq!(change["affectedRecords"], json!(40));
     assert_eq!(change["waitingFlows"][0]["records"], json!(40));
+    assert_eq!(
+        change["links"]["osdu"],
+        json!("https://delivery.example.com/delivery/explorer?id=dev%3Amaster-data--Wellbore%3AW-1&partition=dev"),
+        "the cached record the change is to opens in the explorer"
+    );
     let text = changes.to_string();
     for data in ["Well One", "Well 1H", "oldValue", "newValue"] {
         assert!(!text.contains(data), "the answer carries {data}: {text}");

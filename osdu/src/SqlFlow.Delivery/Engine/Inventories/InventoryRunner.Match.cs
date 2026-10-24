@@ -50,7 +50,7 @@ public sealed partial class InventoryRunner
 {
     /// <summary>
     /// Finds which ids of an inventory hold what an operator's conditions ask in OSDU, and keeps them as the selection the
-    /// control plane opened with those conditions (osdu/docs/reference/flow/inventory.md, Selecting ids by what OSDU holds).
+    /// control plane opened with those conditions (osdu/docs/reference/flow/inventory-selections.md, Selecting ids by what OSDU holds).
     /// The conditions are written as the explorer writes them, a source column read through other records first, and asked of
     /// the search through the flow's own source. The match counts the records they find in the inventory's kind (one
     /// request), then reads them whichever way sends fewer searches: every record they find, joined with the inventory's ids
@@ -77,6 +77,12 @@ public sealed partial class InventoryRunner
                 : $"Inventory '{spec.Name}' has not been built in '{partition}', so it holds no id to match; build it first. Nothing was matched.";
             await ledger.FailInventorySelectionAsync(partition, selectionId, why, Now, CancellationToken.None).ConfigureAwait(false);
             throw new DeliveryException(why);
+        }
+
+        if (await ledger.GetInventorySelectionAsync(partition, selectionId, ct).ConfigureAwait(false) is { DuplicateCheckId: { } check })
+        {
+            throw new DeliveryException(
+                $"Selection {selectionId} of '{partition}' holds the copies duplicate check {check} picked to remove; a match fills only a selection opened with conditions. Nothing was matched.");
         }
 
         var selection = await ledger.StartInventorySelectionAsync(flowId, state.InventoryId, selectionId, runId, state.LastBuildRunId, Now, ct).ConfigureAwait(false)
@@ -351,6 +357,18 @@ public sealed partial class InventoryRunner
             }
         }
 
+        return FitValues(held);
+    }
+
+    /// <summary>
+    /// Values a row keeps of a record, property to values, as JSON within <see cref="DeliveryModel.MaxSelectionValuesLength"/>:
+    /// values are left off the end of the longest list until it fits, so a row always says what it holds first, and a property
+    /// is dropped once its list is down to one value that still does not fit. Null when nothing is held, or nothing fits.
+    /// <paramref name="held"/> is cut in place.
+    /// </summary>
+    internal static string? FitValues(Dictionary<string, List<string>> held)
+    {
+        ArgumentNullException.ThrowIfNull(held);
         while (held.Count > 0)
         {
             var json = JsonSerializer.Serialize(held);

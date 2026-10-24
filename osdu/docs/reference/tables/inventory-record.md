@@ -15,6 +15,7 @@ keywords:
 related:
   - delivery-concept-database
   - delivery-flow-inventory
+  - delivery-flow-inventory-builds
   - delivery-guide-finding-orphans
   - delivery-table-inventory
   - delivery-table-artifact
@@ -32,7 +33,7 @@ One id an [inventory](inventory.md) holds, or a ledger of its partition expects:
 as OSDU served them, when it was first listed, last changed and found gone, and what the ledgers hold of it (the
 finding). The reconcile sets every row's finding from the delivery ledgers' [`osdu.Record`](record.md),
 [`osdu.Artifact`](artifact.md) and [`osdu.PurgedRecord`](purged-record.md), and never writes them
-([The findings](../flow/inventory.md#the-findings)).
+([The findings](../flow/inventory-builds.md#the-findings)).
 
 Rows leave the table only through a removal of gone ids; a removal from OSDU marks its ids gone and keeps them.
 
@@ -55,7 +56,7 @@ Rows leave the table only through a removal of gone ids; a removal from OSDU mar
 | `GoneUtc` | `datetime2` | yes | When a complete build first did not list it; null while OSDU serves it. |
 | `VersionsAt` | `bigint` | yes | The latest version its versions were read at (`versions: all`), so a rebuild reads versions only for what moved ([`osdu.InventoryVersion`](inventory-version.md)). |
 | `CheckedUtc` | `datetime2` | yes | When a reconcile last asked storage for it while a ledger expected it and the read did not list it; null when none has. The ids a ledger expects are asked for least recently asked first, so builds bounded by `maxMissingChecks` take turns through them. |
-| `Finding` | `nvarchar(16)` | no | What the ledgers hold of it: `tracked`, `drifted`, `unconfirmed`, `stale`, `superseded`, `undoing`, `forgotten`, `orphan`, `foreign`, `missing`, `unlisted`, `gone` or `unreconciled` ([The findings](../flow/inventory.md#the-findings)). |
+| `Finding` | `nvarchar(16)` | no | What the ledgers hold of it: `tracked`, `drifted`, `unconfirmed`, `stale`, `superseded`, `undoing`, `forgotten`, `orphan`, `foreign`, `missing`, `unlisted`, `gone` or `unreconciled` ([The findings](../flow/inventory-builds.md#the-findings)). |
 | `FindingUtc` | `datetime2` | no | When its finding became what it is; rewriting the same finding keeps the time. |
 | `LedgerFlowId` | `uniqueidentifier` | yes | The ledger that claims it, when one does. |
 | `DeliveryKey` | `uniqueidentifier` | yes | The record of that ledger that claims it. |

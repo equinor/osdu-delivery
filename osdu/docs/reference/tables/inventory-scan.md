@@ -13,6 +13,7 @@ keywords:
 related:
   - delivery-concept-database
   - delivery-flow-inventory
+  - delivery-flow-inventory-builds
   - delivery-table-inventory-run
   - delivery-table-inventory-record
 sourceRefs:
@@ -28,7 +29,7 @@ lists 10,000 rows a bulk copy, each in its own transaction, so nothing of [`osdu
 changes while the read runs, and a read that fails part way leaves the inventory as the last complete build left it. The
 merge deletes the run's rows in the transaction that merges them; a failed run's rows are deleted when it closes, and
 those of a run whose process stopped are deleted by the next run of the inventory
-([How a build moves rows through the scan](../flow/inventory.md#how-a-build-moves-rows-through-the-scan)).
+([How a build moves rows through the scan](../flow/inventory-builds.md#how-a-build-moves-rows-through-the-scan)).
 
 ## Columns
 

@@ -3,7 +3,7 @@ using SqlFlow.Delivery.Data;
 
 namespace SqlFlow.Delivery.Ledger;
 
-// The inventories of inventory flows (osdu/docs/reference/flow/inventory.md, The tables an inventory keeps): every id an
+// The inventories of inventory flows (osdu/docs/reference/flow/inventory-builds.md, The tables an inventory keeps): every id an
 // OSDU kind holds in a partition, kept under the inventory flow's ledger and compared with every ledger of the
 // partition. The rows are the flow's; the comparisons read the other ledgers' records, artifacts and purged records,
 // never write them.

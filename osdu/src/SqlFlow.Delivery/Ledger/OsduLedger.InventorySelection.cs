@@ -4,7 +4,7 @@ using SqlFlow.Delivery.Data;
 
 namespace SqlFlow.Delivery.Ledger;
 
-// Selecting an inventory's ids by what OSDU holds (osdu/docs/reference/flow/inventory.md, Selecting ids by what OSDU holds):
+// Selecting an inventory's ids by what OSDU holds (osdu/docs/reference/flow/inventory-selections.md, Selecting ids by what OSDU holds):
 // the selections an operator's conditions make, kept under the inventory's partition with every id their match found. The
 // control plane opens a selection and reads it; the inventory flow's match run fills it.
 public sealed partial class OsduLedger
@@ -55,7 +55,7 @@ public sealed partial class OsduLedger
 
         return await ReadAsync(
             db => db.DeliveryInventorySelections.AsNoTracking()
-                .Where(s => s.PartitionId == id && s.InventoryId == inventoryId && s.ConditionsKey == conditionsKey
+                .Where(s => s.PartitionId == id && s.InventoryId == inventoryId && s.ConditionsKey == conditionsKey && s.DuplicateCheckId == null
                     && (s.Status == InventorySelections.Queued || s.Status == InventorySelections.Running
                         || (s.Status == InventorySelections.Completed && s.BuildRunId == buildRunId)))
                 .OrderByDescending(s => s.InventorySelectionId)
@@ -119,8 +119,9 @@ public sealed partial class OsduLedger
         await using var db = Open();
         var row = await db.DeliveryInventorySelections
             .FirstOrDefaultAsync(s => s.PartitionId == partition && s.InventorySelectionId == selectionId && s.InventoryId == inventoryId, ct).ConfigureAwait(false);
-        if (row is null)
+        if (row is null || row.DuplicateCheckId is not null)
         {
+            // A selection a duplicate check made holds that check's picks; no match fills it.
             return null;
         }
 
@@ -376,5 +377,6 @@ public sealed partial class OsduLedger
         StartedUtc = s.StartedUtc is { } started ? DateTime.SpecifyKind(started, DateTimeKind.Utc) : null,
         CompletedUtc = s.CompletedUtc is { } completed ? DateTime.SpecifyKind(completed, DateTimeKind.Utc) : null,
         Error = s.Error,
+        DuplicateCheckId = s.DuplicateCheckId,
     };
 }

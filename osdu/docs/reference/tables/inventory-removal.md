@@ -13,6 +13,7 @@ keywords:
 related:
   - delivery-concept-database
   - delivery-flow-inventory
+  - delivery-flow-inventory-removals
   - delivery-table-inventory-removal-item
   - delivery-table-inventory-selection
   - delivery-table-activity
@@ -30,7 +31,7 @@ One removal of an [inventory](inventory.md)'s ids an operator asked for: the run
 much of each record it removes, how many ids the operator was shown, and what it came to. Every id it reached is an
 [`osdu.InventoryRemovalItem`](inventory-removal-item.md). A `remove` run opens it `running`, adds to its tallies with
 every chunk or round, and closes it `completed` or `failed`
-([What a removal does](../flow/inventory.md#what-a-removal-does), [decision 0014](../../wiki/decisions/0014-inventory-removals.md)).
+([What a removal does](../flow/inventory-removals.md#what-a-removal-does), [decision 0014](../../wiki/decisions/0014-inventory-removals.md)).
 
 ## Columns
 

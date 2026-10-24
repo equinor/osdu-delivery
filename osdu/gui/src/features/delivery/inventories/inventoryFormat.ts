@@ -191,7 +191,7 @@ export function inventoriesPayload(names: readonly string[]): Record<string, unk
 }
 
 /** The questions an inventory's report answers, a tab each: which ids have which finding, what its runs did, and what was removed. */
-export type InventoryView = "ids" | "runs" | "removals";
+export type InventoryView = "ids" | "duplicates" | "runs" | "removals";
 
 /** What the address names as the finding in view: one finding, every id (`all`), or none, which opens on the first raised. */
 export type FindingPick = string | null;

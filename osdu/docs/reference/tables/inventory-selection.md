@@ -14,6 +14,7 @@ keywords:
 related:
   - delivery-concept-database
   - delivery-flow-inventory
+  - delivery-flow-inventory-selections
   - delivery-table-inventory-selection-item
   - delivery-table-inventory-removal
   - delivery-concept-search-terms
@@ -22,6 +23,7 @@ sourceRefs:
   - osdu/src/SqlFlow.Delivery/Ledger/OsduLedger.InventorySelection.cs
   - osdu/src/SqlFlow.Delivery/Ledger/SqlServerLedgerBulk.InventorySelection.cs
   - osdu/src/SqlFlow.Delivery.Data/Migrations/20261020222949_InventorySelections.cs
+  - osdu/src/SqlFlow.Delivery/Ledger/SqlServerLedgerBulk.InventoryDuplicates.cs
 ---
 
 # osdu.InventorySelection: the ids of an inventory that hold what an operator's conditions ask in OSDU
@@ -30,7 +32,7 @@ The ids of an [inventory](inventory.md) that hold what an operator's conditions 
 wrote them and as the search was asked them, how the match read OSDU and what it found, and the build of the inventory it
 was matched against. Every id it found is an [`osdu.InventorySelectionItem`](inventory-selection-item.md). A match runs as
 a run of the inventory flow, and a removal may take its ids
-([Selecting ids by what OSDU holds](../flow/inventory.md#selecting-ids-by-what-osdu-holds)). Added by migration
+([Selecting ids by what OSDU holds](../flow/inventory-selections.md)). Added by migration
 `InventorySelections`.
 
 The control plane opens a selection `queued`; the `match` run starts it against the inventory's last build, adds to its
@@ -66,6 +68,7 @@ it; and the next match of the partition retires those older than a week.
 | `StartedUtc` | `datetime2` | yes | When the match started. |
 | `CompletedUtc` | `datetime2` | yes | When it closed. |
 | `Error` | `nvarchar(4000)` | yes | Why the match failed, redacted; null for one that did not. |
+| `DuplicateCheckId` | `bigint` | yes | The [duplicate check](inventory-duplicate-check.md) whose picks the selection holds: the copies of each group it picked to remove, made a selection completed against the build the check read, with no conditions (`ConditionsJson` is `[]`, and its `ConditionsKey` names the check, so no lookup of conditions finds it) and no match. Null for a selection a match filled. |
 
 ## Keys and indexes
 
@@ -77,7 +80,8 @@ it; and the next match of the partition retires those older than a week.
 
 ## Written and read by
 
-- **Written** by the control plane when an operator asks for a match, and by the `match` run of the inventory flow
+- **Written** by the control plane when an operator asks for a match, or makes a selection of a duplicate check's picks
+  (`SqlServerLedgerBulk.InventoryDuplicates.cs`, in one transaction with its ids), and by the `match` run of the inventory flow
   (`OsduLedger.InventorySelection.cs`, `SqlServerLedgerBulk.InventorySelection.cs`).
 - **Read** by the inventory report's selection, `GET /api/v1/delivery/inventories/{partition}/{inventoryId}/selections/{selectionId}`,
   a removal by the selection, and the **Removals** tab.

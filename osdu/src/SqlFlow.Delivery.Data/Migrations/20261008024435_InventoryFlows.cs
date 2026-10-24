@@ -6,7 +6,7 @@ using Microsoft.EntityFrameworkCore.Migrations;
 namespace SqlFlow.Delivery.Data.Migrations
 {
     /// <summary>
-    /// Keeps the inventories of inventory flows (osdu/docs/reference/flow/inventory.md, The tables an inventory keeps):
+    /// Keeps the inventories of inventory flows (osdu/docs/reference/flow/inventory-builds.md, The tables an inventory keeps):
     /// <c>osdu.Inventory</c>, one row per inventory of a flow in a partition; <c>osdu.InventoryRun</c>, one per build or
     /// reconcile; <c>osdu.InventoryRecord</c>, one per id an inventory holds or a ledger expects, unique on the inventory and
     /// the id, indexed in order within the inventory for the grid of every id and the export, by finding for the report, and by

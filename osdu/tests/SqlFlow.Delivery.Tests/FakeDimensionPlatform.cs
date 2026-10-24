@@ -14,7 +14,8 @@ namespace SqlFlow.Delivery.Tests;
 /// matched record counted, each object of a nested array counted as one); a keyword sub-field that keeps no text longer than
 /// 256 characters and keeps a null as the text null; a plain number's groups without keys when <see cref="NumberKeysMissing"/>
 /// says so; the first records a query matches, up to its limit, holding the fields it returns; cursor paging; and exact counts. Its query parser reads exactly the forms a dimension writes: clauses joined by
-/// AND, NOT, a group of ORs, the nested form, _exists_, a range, a value and a list of values. Every request is recorded as
+/// AND, NOT, a group of ORs, the nested form, _exists_, a range, a value and a list of values; and the phrase with no field
+/// that the records naming an id are found by, searched in every text of a record but its id. Every request is recorded as
 /// <see cref="FakeHttpHandler"/> records them, so the contract harness checks them.
 /// </summary>
 internal sealed class FakeDimensionPlatform : HttpMessageHandler
@@ -408,6 +409,14 @@ internal sealed class FakeDimensionPlatform : HttpMessageHandler
                 : Values(record, field).Any(v => !v.IsNull);
         }
 
+        // A phrase with no field is searched in every value of the record, as the service searches its text: the record's own id
+        // aside, which is a field of its own, any text holding the phrase, ignoring case.
+        if (clause.StartsWith('"'))
+        {
+            var phrase = Unquote(clause);
+            return record is JsonObject whole && whole.Where(p => p.Key != "id").Any(p => Phrased(p.Value, phrase));
+        }
+
         var colon = clause.IndexOf(':', StringComparison.Ordinal);
         var name = clause[..colon];
         var operand = clause[(colon + 1)..];
@@ -434,6 +443,15 @@ internal sealed class FakeDimensionPlatform : HttpMessageHandler
         var wanted = Unquote(operand);
         return keys.Any(k => k == wanted || DimensionValueText.CanonicalNumber(k) is { } n && n == DimensionValueText.CanonicalNumber(wanted));
     }
+
+    /// <summary>Whether any text inside <paramref name="node"/> holds <paramref name="phrase"/>, ignoring case.</summary>
+    private static bool Phrased(JsonNode? node, string phrase) => node switch
+    {
+        JsonObject obj => obj.Any(p => Phrased(p.Value, phrase)),
+        JsonArray array => array.Any(item => Phrased(item, phrase)),
+        JsonValue value when value.GetValueKind() == System.Text.Json.JsonValueKind.String => value.GetValue<string>().Contains(phrase, StringComparison.OrdinalIgnoreCase),
+        _ => false,
+    };
 
     private static string? Bound(string text) => text.Trim() == "*" ? null : Unquote(text.Trim());
 

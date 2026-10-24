@@ -86,7 +86,7 @@ public static class DeliveryOperations
 
     /// <summary>
     /// Remove from OSDU the ids of one finding an inventory found, as an operator asked
-    /// (osdu/docs/reference/flow/inventory.md, What a removal does): an inventory flow's operation, run only for a flow
+    /// (osdu/docs/reference/flow/inventory-removals.md, What a removal does): an inventory flow's operation, run only for a flow
     /// whose document allows it. A removal flow's default too: compare the keys its sources hold with the ledgers of the
     /// delivery flows it names, and take out of OSDU, into those ledgers, the records whose keys the source no longer holds
     /// (osdu/docs/reference/flow/removal.md, A run). A delivery flow's operation as well: remove the records of one ledger
@@ -97,11 +97,18 @@ public static class DeliveryOperations
     public const string Remove = "remove";
 
     /// <summary>
-    /// Find which ids of an inventory hold what an operator's conditions ask in OSDU (osdu/docs/reference/flow/inventory.md,
+    /// Find which ids of an inventory hold what an operator's conditions ask in OSDU (osdu/docs/reference/flow/inventory-selections.md,
     /// Selecting ids by what OSDU holds), and keep them as the selection the payload names: an inventory flow's operation,
     /// which reads OSDU's search and changes nothing there.
     /// </summary>
     public const string Match = "match";
+
+    /// <summary>
+    /// Find which ids of an inventory are copies of one another by the key an operator compares them by
+    /// (osdu/docs/reference/flow/inventory-duplicates.md), and keep the groups, with the copy each keeps, as the
+    /// check the payload names: an inventory flow's operation, which reads OSDU's search and storage and changes nothing there.
+    /// </summary>
+    public const string Duplicates = "duplicates";
 
     /// <summary>The operation a run of a delivery flow performs: the one it names, or <see cref="Deliver"/>.</summary>
     public static string Of(RunParameters parameters)
@@ -372,10 +379,16 @@ public sealed record DeliveryRunPayload
     public const string RemovalProperty = "removal";
 
     /// <summary>
-    /// The selection an inventory flow's match run fills (osdu/docs/reference/flow/inventory.md, Selecting ids by what OSDU
+    /// The selection an inventory flow's match run fills (osdu/docs/reference/flow/inventory-selections.md, Selecting ids by what OSDU
     /// holds), by its number: the control plane opens it with the operator's conditions and queues the run.
     /// </summary>
     public const string SelectionProperty = "selection";
+
+    /// <summary>
+    /// The duplicate check an inventory flow's duplicates run fills (osdu/docs/reference/flow/inventory-duplicates.md, Finding duplicate
+    /// records), by its number: the control plane opens it with the operator's key and queues the run.
+    /// </summary>
+    public const string DuplicateCheckProperty = "duplicateCheck";
 
     /// <summary>The most test names, and the most tags, one run selects.</summary>
     public const int MaxSelected = AssertionFlowDefinition.MaxTests;
@@ -389,7 +402,7 @@ public sealed record DeliveryRunPayload
     private static readonly string[] Properties =
         [ForceProperty, SubmissionIdProperty, RunIdProperty, RecordKeysProperty, RedeliverProperty, RerenderProperty, SlicesProperty, RateShareProperty, InterfaceProperty, InterfacesProperty, ReferencesProperty,
             PartitionReferencesProperty, ConfirmProperty, ScopeProperty, FilterProperty, PurgeLedgerProperty, TestsProperty, TagsProperty, DimensionsProperty, InventoriesProperty, RemovalProperty,
-            SelectionProperty, TypesProperty, EntriesProperty, ApproveProperty];
+            SelectionProperty, DuplicateCheckProperty, TypesProperty, EntriesProperty, ApproveProperty];
 
     /// <summary>
     /// For every property a run asks something by (all but the central configuration, which every kind takes), the runs that
@@ -417,6 +430,7 @@ public sealed record DeliveryRunPayload
         [InventoriesProperty] = "only an inventory flow's runs select inventories",
         [RemovalProperty] = "only an inventory flow's remove run names what it removes",
         [SelectionProperty] = "only an inventory flow's match run names the selection it fills",
+        [DuplicateCheckProperty] = "only an inventory flow's duplicates run names the check it fills",
         [TypesProperty] = "only a cache flow's runs select types",
         [EntriesProperty] = "only a removal flow's runs select removals",
         [ApproveProperty] = "only a removal flow's remove run carries an approval",
@@ -564,8 +578,14 @@ public sealed record DeliveryRunPayload
     /// </summary>
     public long? SelectionId { get; init; }
 
-    /// <summary>True when the payload selects inventories of an inventory flow, names what one removes, or the selection one fills.</summary>
-    public bool SelectsInventories => Inventories.Count > 0 || Removal is not null || SelectionId is not null;
+    /// <summary>
+    /// The duplicate check an inventory flow's duplicates run fills, by its number, for the inventory <see cref="Inventories"/>
+    /// names. Only that run carries it.
+    /// </summary>
+    public long? DuplicateCheckId { get; init; }
+
+    /// <summary>True when the payload selects inventories of an inventory flow, names what one removes, the selection one fills, or the duplicate check one fills.</summary>
+    public bool SelectsInventories => Inventories.Count > 0 || Removal is not null || SelectionId is not null || DuplicateCheckId is not null;
 
     /// <summary>
     /// The types of a cache flow the run refreshes or plans, by name (osdu/docs/reference/flow/cache.md, Operations and the
@@ -619,6 +639,7 @@ public sealed record DeliveryRunPayload
         Add(Inventories.Count > 0, InventoriesProperty);
         Add(Removal is not null, RemovalProperty);
         Add(SelectionId is not null, SelectionProperty);
+        Add(DuplicateCheckId is not null, DuplicateCheckProperty);
         Add(Types.Count > 0, TypesProperty);
         Add(Entries.Count > 0, EntriesProperty);
         Add(Approve is not null, ApproveProperty);
@@ -750,6 +771,7 @@ public sealed record DeliveryRunPayload
             Inventories = Selection(root[InventoriesProperty], InventoriesProperty, "inventory names"),
             Removal = root[RemovalProperty] is null ? null : RemovalRequest(root[RemovalProperty]),
             SelectionId = root[SelectionProperty] is null ? null : Number(root[SelectionProperty], SelectionProperty),
+            DuplicateCheckId = root[DuplicateCheckProperty] is null ? null : Number(root[DuplicateCheckProperty], DuplicateCheckProperty),
             Types = Selection(root[TypesProperty], TypesProperty, "type names"),
             Entries = RemovalEntries(root[EntriesProperty]),
             Approve = root[ApproveProperty] is null ? null : ApprovalRequest(root[ApproveProperty]),
@@ -1144,6 +1166,11 @@ public sealed record DeliveryRunPayload
         if (SelectionId is { } selection)
         {
             root[SelectionProperty] = selection;
+        }
+
+        if (DuplicateCheckId is { } check)
+        {
+            root[DuplicateCheckProperty] = check;
         }
 
         if (Entries.Count > 0)

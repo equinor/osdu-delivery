@@ -20,7 +20,11 @@ keywords:
   - chat assistant
   - sqlflow_control_plane_url
   - operator action
+  - gui links
+  - osdu id link
+  - explorer link
 related:
+  - delivery-concept-explorer
   - guide-chat-assistant
   - guide-slack-assistant
   - concept-authentication-and-identity
@@ -155,8 +159,29 @@ caller's name.
 | Approve or reject pending cache changes. | `delivery_decide_cache_changes` |
 
 An OSDU flow is run with SQLFlow's `trigger_run`, which carries the kind's `operation`, `values` and `payload`
-([running an OSDU flow](../cli/run.md)). Results carry links into the GUI (a record's page, a submission's, an assertion
-run's report, a partition's cache page, a mapping in the builder); set `SQLFLOW_GUI_URL` to make them absolute.
+([running an OSDU flow](../cli/run.md)).
+
+### Links into the GUI
+
+Results carry links into the GUI, in a `links` object on each row: a record's page, a submission's, an assertion run's
+report, a partition's cache page, a mapping in the builder. Set `SQLFLOW_GUI_URL` to make them absolute, which the
+Slack assistant and a desktop client need; unset, they are root-relative, which is right for the GUI's own chat.
+
+Every OSDU id a row names also opens in the GUI's [explorer](../concepts/explorer.md), on that record, in its partition:
+`/delivery/explorer?id=<id>&partition=<partition>`. The partition is the one the row names, else the one the id starts
+with (an OSDU record id is `{data-partition-id}:{object-type}:{id}`), and the explorer makes it the title bar's, so the
+record is read where it is whichever partition the reader last worked in. The instructions ask the assistant to make
+each OSDU id it names the link itself.
+
+| Link | The OSDU id it opens |
+| --- | --- |
+| `osdu` | The record the row is or landed as: a record's `targetId` (on a hit, a record, a flow's records, and the records a record waits for, is waited for by, reads as its parent or is read by), the cached record a cache change is to (`itemId`, when it is an OSDU id of the cache's partition: a lookup table's key is not), and an id a record's pending document refers to (`references`). |
+| `osduParent` | The record a record of a linked template reads as its parent (`parentId`). |
+| `osduOccupied` | The record OSDU already holds at the id a held record's key makes, which no ledger claimed (`occupiedTargetId`). |
+
+`delivery_record` puts the record's `osdu` link on its answer's own `links` too, beside its page, once the record has
+landed. A record that has not landed has no OSDU id and no explorer link. Opening the explorer reads OSDU through the
+partition's connection, as the explorer always does; the server itself still reads nothing from OSDU.
 
 ## Documentation and flow language
 

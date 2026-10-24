@@ -14,6 +14,7 @@ keywords:
 related:
   - delivery-concept-database
   - delivery-flow-inventory
+  - delivery-flow-inventory-removals
   - delivery-table-inventory-removal
   - delivery-table-inventory-record
 sourceRefs:
@@ -26,7 +27,7 @@ sourceRefs:
 
 What one [removal](inventory-removal.md) did to one id: removed, already gone, skipped or failed, at the version it found,
 and why. Written by each chunk or round of the removal, in the transaction that acts on the inventory's rows. A removal of
-gone ids writes a row only for each id it kept ([Removing gone ids](../flow/inventory.md#removing-gone-ids)).
+gone ids writes a row only for each id it kept ([Removing gone ids](../flow/inventory-removals.md#removing-gone-ids)).
 
 ## Columns
 

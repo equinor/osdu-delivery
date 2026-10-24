@@ -376,7 +376,7 @@ A record OSDU lost (a verify with `reconcile`, or an inventory's **Deliver again
 its own id, its verify outcome `missing` telling the storage route to bring a soft-deleted record back first (`PATCH
 /records/{id}` with `{"deleted": false}`) so the keys the write keeps of it are kept; a purged one is written again under
 the same id. Asked for, an inventory gives such a record a new OSDU id instead, written under it from then on
-([repairing missing ids](../flow/inventory.md#repairing-missing-ids)).
+([repairing missing ids](../flow/inventory-removals.md#repairing-missing-ids)).
 
 The request is the ledger's (`PlanRequestedUtc`), so whichever run meets the record next, a scheduled one included, plans
 it, 5,000 records a pass. In the GUI, **Redeliver** (a flow's Records tab selection, a flow's Delivery tab for every

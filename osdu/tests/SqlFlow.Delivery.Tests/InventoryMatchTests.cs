@@ -17,7 +17,7 @@ using Xunit;
 namespace SqlFlow.Delivery.Tests;
 
 /// <summary>
-/// Selecting an inventory's ids by what OSDU holds (osdu/docs/reference/flow/inventory.md, Selecting ids by what OSDU holds),
+/// Selecting an inventory's ids by what OSDU holds (osdu/docs/reference/flow/inventory-selections.md, Selecting ids by what OSDU holds),
 /// over the module's database on SQL Server and a platform that serves search, storage's reads and its removals: a match asks
 /// the conditions of the search through the flow's own source and keeps the inventory's ids that hold what they ask, matched
 /// by the OSDU id, with the version the index holds and the values each holds; it reads whichever way sends fewer searches,

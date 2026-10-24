@@ -338,6 +338,36 @@ public class InventoryDocumentTests
     }
 
     [Fact]
+    public void A_duplicates_run_names_one_inventory_and_the_check_it_fills_and_no_other_run_names_a_check()
+    {
+        var check = DeliveryRunPayload.Parse("""{ "inventories": ["WellLogs"], "duplicateCheck": 7 }""");
+        Assert.Equal((7L, true), (check.DuplicateCheckId!.Value, check.SelectsInventories));
+        Assert.Equal("""{"inventories":["WellLogs"],"duplicateCheck":7}""", check.ToJson());
+        Assert.Contains("payload duplicateCheck must be the number", Assert.Throws<SqlFlowException>(() => DeliveryRunPayload.Parse("""{ "duplicateCheck": 0 }""")).Message, StringComparison.Ordinal);
+
+        var kind = new InventoryFlowKind(new DeliveryDocumentLoader());
+        kind.ValidateParameters(new RunParameters { Operation = DeliveryOperations.Duplicates, Payload = check.ToJson() });
+        Assert.Equal(DeliveryOperations.Duplicates, InventoryFlowKind.Operation(new RunParameters { Operation = DeliveryOperations.Duplicates }));
+        Assert.Contains("names the one inventory it checks (inventories) and the check it fills (duplicateCheck)", Assert.Throws<SqlFlowException>(() => kind.ValidateParameters(new RunParameters
+        {
+            Operation = DeliveryOperations.Duplicates, Payload = """{ "inventories": ["WellLogs"] }""",
+        })).Message, StringComparison.Ordinal);
+        Assert.Contains("names the one inventory it checks", Assert.Throws<SqlFlowException>(() => kind.ValidateParameters(new RunParameters
+        {
+            Operation = DeliveryOperations.Duplicates, Payload = """{ "inventories": ["WellLogs", "Wells"], "duplicateCheck": 7 }""",
+        })).Message, StringComparison.Ordinal);
+        Assert.Contains("payload duplicateCheck does not apply to the match operation", Assert.Throws<SqlFlowException>(() => kind.ValidateParameters(new RunParameters
+        {
+            Operation = DeliveryOperations.Match, Payload = """{ "inventories": ["WellLogs"], "selection": 12, "duplicateCheck": 7 }""",
+        })).Message, StringComparison.Ordinal);
+        Assert.Contains("payload selection does not apply to the duplicates operation", Assert.Throws<SqlFlowException>(() => kind.ValidateParameters(new RunParameters
+        {
+            Operation = DeliveryOperations.Duplicates, Payload = """{ "inventories": ["WellLogs"], "selection": 12, "duplicateCheck": 7 }""",
+        })).Message, StringComparison.Ordinal);
+        Assert.Contains("is not one of them", Assert.Throws<SqlFlowException>(() => InventoryFlowKind.Operation(new RunParameters { Operation = "dedupe" })).Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void A_remove_run_names_one_inventory_what_it_removes_and_the_partition_it_confirms_and_no_other_run_takes_a_removal()
     {
         var payload = DeliveryRunPayload.Parse("""{ "inventories": ["WellLogs"], "confirm": "dev", "removal": { "finding": "orphan", "scope": "record", "expected": 2, "ids": ["dev:wpc--WellLog:a", "dev:wpc--WellLog:b"] } }""");
@@ -395,12 +425,14 @@ public class InventoryDocumentTests
     }
 
     [Fact]
-    public void The_kind_offers_build_reconcile_plan_remove_and_match_and_neither_a_plan_nor_a_match_writes_the_inventories()
+    public void The_kind_offers_build_reconcile_plan_remove_match_and_duplicates_and_neither_a_plan_a_match_nor_a_check_writes_the_inventories()
     {
         var kind = new InventoryFlowKind(new DeliveryDocumentLoader());
 
         Assert.Equal("inventory", kind.FlowType);
-        Assert.Equal([("build", true), ("reconcile", true), ("plan", false), ("remove", true), ("match", false)], kind.Operations.Select(o => (o.Name, o.WritesTarget)));
+        Assert.Equal(
+            [("build", true), ("reconcile", true), ("plan", false), ("remove", true), ("match", false), ("duplicates", false)],
+            kind.Operations.Select(o => (o.Name, o.WritesTarget)));
         var document = Assert.IsType<InventoryFlowDocument>(kind.Parse(Head + WellLogs, "flows/inventory.yaml"));
         Assert.Equal(("welllog-inventory", "inventory", "reconciliation"), (document.Name, document.Kind, document.Batch));
         Assert.Equal(("${env:OSDU_URL}", InventoryFlowDocument.InventoriesTarget), (document.SourceReference, document.TargetReference));

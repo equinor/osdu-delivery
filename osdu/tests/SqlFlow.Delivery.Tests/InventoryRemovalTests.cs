@@ -13,7 +13,7 @@ using Xunit;
 namespace SqlFlow.Delivery.Tests;
 
 /// <summary>
-/// Removing what an inventory found (osdu/docs/reference/flow/inventory.md, What a removal does), over the module's database
+/// Removing what an inventory found (osdu/docs/reference/flow/inventory-removals.md, What a removal does), over the module's database
 /// on SQL Server and a platform that serves search, storage's reads and its removals: a removal is refused before anything is
 /// read unless the flow allows it, the partition is confirmed and the inventory holds what the operator was shown; every id
 /// is checked again just before it goes and what moved is skipped; what passes is soft deleted 500 ids a request, or purged

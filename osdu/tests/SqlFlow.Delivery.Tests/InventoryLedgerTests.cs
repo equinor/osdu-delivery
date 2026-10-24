@@ -8,7 +8,7 @@ using Xunit;
 namespace SqlFlow.Delivery.Tests;
 
 /// <summary>
-/// An inventory's tables on SQL Server (osdu/docs/reference/flow/inventory.md, The tables an inventory keeps): a complete
+/// An inventory's tables on SQL Server (osdu/docs/reference/flow/inventory-builds.md, The tables an inventory keeps): a complete
 /// read merged into the inventory, adding, changing and marking gone, and a read never merged changing nothing; every id
 /// OSDU serves compared with the ledgers of the partition (the records that claim ids, the artifacts deliveries recorded,
 /// the records purged from a ledger) into its finding; the ids a ledger expects that the read did not list told missing,

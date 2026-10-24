@@ -5,7 +5,7 @@ using SqlFlow.Delivery.Data;
 
 namespace SqlFlow.Delivery.Ledger;
 
-// Removing what an inventory found (osdu/docs/reference/flow/inventory.md, What a removal does): the ids a removal may
+// Removing what an inventory found (osdu/docs/reference/flow/inventory-removals.md, What a removal does): the ids a removal may
 // act on, each with the finding the inventory recorded and the finding the reconcile's own rule gives it now, read a
 // chunk at a time; and what a chunk came to, written with the inventory rows it changed in one transaction.
 internal static partial class SqlServerLedgerBulk

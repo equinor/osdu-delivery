@@ -125,7 +125,7 @@ other tables of the schema are explained with what they serve:
   (what each build's check of a view found in a partition, the newest 50 of each kept) and each `osdu.v_dim_<view>`: in
   [Dimension views](../flow/dimension-views.md).
 - `osdu.Inventory` and its tables: in
-  [The tables an inventory keeps](../flow/inventory.md#the-tables-an-inventory-keeps).
+  [The tables an inventory keeps](../flow/inventory-builds.md#the-tables-an-inventory-keeps).
 - `osdu.RemovedKey` (a ledger's deletions: the keys a removal flow found its source no longer holds), `osdu.RemovalRun` and
   `osdu.RemovalKey`: in [Removal flow](../flow/removal.md#the-ledgers-deletions). A removal flow keeps no ledger of its
   own; its runs and deletions are kept under the delivery flow's ledger identity.

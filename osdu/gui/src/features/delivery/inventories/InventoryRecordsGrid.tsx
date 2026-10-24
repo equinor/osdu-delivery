@@ -51,7 +51,7 @@ const OPEN_ROW: CSSProperties = { backgroundColor: "var(--accent)" };
 const UNSEARCHED: readonly string[] = ["missing", "unlisted", "gone"];
 
 /**
- * The ids an operator's conditions select (osdu/docs/reference/flow/inventory.md, Selecting ids by what OSDU holds): where
+ * The ids an operator's conditions select (osdu/docs/reference/flow/inventory-selections.md, Selecting ids by what OSDU holds): where
  * their match stands, the conditions as a sentence, and how to drop them.
  */
 export interface GridSelection {

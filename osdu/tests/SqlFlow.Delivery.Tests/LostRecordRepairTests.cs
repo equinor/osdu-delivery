@@ -14,7 +14,7 @@ using Xunit;
 namespace SqlFlow.Delivery.Tests;
 
 /// <summary>
-/// A record OSDU lost, as the storage route writes it (osdu/docs/reference/flow/inventory.md, Repairing missing ids): one
+/// A record OSDU lost, as the storage route writes it (osdu/docs/reference/flow/inventory-removals.md, Repairing missing ids): one
 /// OSDU no longer held when it was last looked for is brought back from its soft delete under its id before it is written,
 /// so the keys the write keeps of it are read from it; a purged one is written again under its id without being read; one
 /// OSDU serves already is written as any other; credentials that are no owner of it fail it and write nothing. Against a
@@ -148,7 +148,7 @@ public sealed class StorageRestoreFirstTests
 }
 
 /// <summary>
-/// Records OSDU lost, delivered again through their flow's ordinary deliver run (osdu/docs/reference/flow/inventory.md,
+/// Records OSDU lost, delivered again through their flow's ordinary deliver run (osdu/docs/reference/flow/inventory-removals.md,
 /// Repairing missing ids): marked as lost, a record is sent again under its id with the route told to bring it back first,
 /// and the mark goes with the write that lands; given a new OSDU id, it is written under that id from then on, whatever its
 /// mapping makes from its key, with both ids in its history and its search entries naming the new one. Only a record the

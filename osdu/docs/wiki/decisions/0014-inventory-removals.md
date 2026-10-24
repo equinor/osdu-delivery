@@ -11,15 +11,18 @@ keywords:
   - "soft delete"
 referenceRefs:
   - delivery-flow-inventory
+  - delivery-flow-inventory-removals
+  - delivery-flow-inventory-selections
   - delivery-concept-removal-and-reversal
 related:
   - delivery-wiki-0013-inventory-flows
   - delivery-wiki-0022-removal-flows
-updated: 2026-10-23
+  - delivery-wiki-0027-inventory-duplicate-checks
+updated: 2026-10-24
 ---
 # 0014: An inventory flow may remove the orphan, stale and forgotten ids it found, when its document allows it
 
-Status: proposed. Documented in [inventory flow](../../reference/flow/inventory.md) (What a removal does). Amends
+Status: proposed. Documented in [inventory removals](../../reference/flow/inventory-removals.md#what-a-removal-does). Amends
 [0013](0013-inventory-flows.md), whose inventories only read OSDU.
 
 ## Context

@@ -14,9 +14,9 @@ namespace SqlFlow.Delivery.Engine;
 
 /// <summary>
 /// Runs one inventory flow document as one platform run (osdu/docs/reference/flow/inventory.md, Operations). The run's
-/// parameters select the operation: build (the default), reconcile, plan, remove or match; the payload names the inventories,
-/// none naming every one (a removal names one, with what it removes and the partition it confirms; a match names one, with
-/// the selection it fills); the partition run
+/// parameters select the operation: build (the default), reconcile, plan, remove, match or duplicates; the payload names the
+/// inventories, none naming every one (a removal names one, with what it removes and the partition it confirms; a match names
+/// one, with the selection it fills; a duplicates run names one, with the check it fills); the partition run
 /// value names the partition, settled as every run of the module settles it. The engine's log becomes the run log and
 /// live trace, the outcome becomes <c>run.json</c>, and every build and reconcile is kept with its inventory. A run in
 /// which an inventory failed ends failed, still carrying its outcome, with every other inventory done.
@@ -91,6 +91,13 @@ public sealed class InventoryExecutor : IFlowDocumentExecutor
             log.LogError("{Operation} failed: {Error}", operation, error);
             result = stopped.Outcome;
         }
+        catch (InventoryDuplicatesFailedException stopped)
+        {
+            // The check stopped: the run ends failed, its outcome saying why, and the check holds no group.
+            error = stopped.Message;
+            log.LogError("{Operation} failed: {Error}", operation, error);
+            result = stopped.Outcome;
+        }
         catch (Exception ex)
         {
             // The run boundary: every failure ends the run as a recorded one. An unexpected kind is a defect, so its stack
@@ -145,6 +152,10 @@ public sealed class InventoryExecutor : IFlowDocumentExecutor
             DeliveryOperations.Match => await runner.MatchAsync(
                 payload.Inventories.Count == 1 ? payload.Inventories[0] : throw new DeliveryException("A match run names the one inventory it matches."),
                 payload.SelectionId ?? throw new DeliveryException("A match run names the selection it fills (selection)."),
+                runId, actor, ct).ConfigureAwait(false),
+            DeliveryOperations.Duplicates => await runner.FindDuplicatesAsync(
+                payload.Inventories.Count == 1 ? payload.Inventories[0] : throw new DeliveryException("A duplicates run names the one inventory it checks."),
+                payload.DuplicateCheckId ?? throw new DeliveryException("A duplicates run names the check it fills (duplicateCheck)."),
                 runId, actor, ct).ConfigureAwait(false),
             DeliveryOperations.Reconcile => await runner.ReconcileAsync(payload.Inventories, runId, actor, ct).ConfigureAwait(false),
             _ => await runner.BuildAsync(payload.Inventories, runId, actor, ct).ConfigureAwait(false),

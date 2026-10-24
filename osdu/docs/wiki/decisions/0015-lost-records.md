@@ -15,17 +15,18 @@ keywords:
   - "repair"
 referenceRefs:
   - delivery-flow-inventory
+  - delivery-flow-inventory-removals
   - delivery-concept-removal-and-reversal
 related:
   - delivery-wiki-0002-client-supplied-ids
   - delivery-wiki-0004-preserved-keys
   - delivery-wiki-0013-inventory-flows
   - delivery-wiki-0021-adopting-occupied-records
-updated: 2026-10-22
+updated: 2026-10-24
 ---
 # 0015: A record OSDU lost is delivered again under its own id, and under a new one only when an operator asks
 
-Status: proposed. Reference: [inventory flow, Repairing missing ids](../../reference/flow/inventory.md#repairing-missing-ids). Amends
+Status: proposed. Reference: [inventory removals, Repairing missing ids](../../reference/flow/inventory-removals.md#repairing-missing-ids). Amends
 [0002](0002-client-supplied-ids.md), whose records keep the id they first claimed.
 
 ## Context

@@ -17,6 +17,8 @@ keywords:
 cliCommand: inventory
 related:
   - delivery-flow-inventory
+  - delivery-flow-inventory-builds
+  - delivery-flow-inventory-removals
   - delivery-guide-finding-orphans
   - delivery-cli-run
   - delivery-concept-ledger
@@ -187,7 +189,7 @@ sqlflow inventory export dev 5 --finding orphan --out welllog-orphans.csv
 The removals asked of the inventory, newest first (20 unless `--limit` says otherwise, at most 200): what each removed
 (the finding, ids picked, those of a selection or every one), soft deleted or purged, where it stands, its tallies, who
 asked and why one stopped. A removal that took the ids of a selection reads `of selection <n>`
-([Selecting ids by what OSDU holds](../flow/inventory.md#selecting-ids-by-what-osdu-holds)); `GET
+([Selecting ids by what OSDU holds](../flow/inventory-selections.md)); `GET
 /api/v1/delivery/inventories/{partition}/{inventoryId}/selections/{n}` says which conditions made it.
 
 ```text

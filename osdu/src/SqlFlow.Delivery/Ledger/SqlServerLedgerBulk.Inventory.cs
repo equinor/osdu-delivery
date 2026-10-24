@@ -5,7 +5,7 @@ using SqlFlow.Delivery.Data;
 
 namespace SqlFlow.Delivery.Ledger;
 
-// The inventories of inventory flows (osdu/docs/reference/flow/inventory.md, The tables an inventory keeps): a build's
+// The inventories of inventory flows (osdu/docs/reference/flow/inventory-builds.md, The tables an inventory keeps): a build's
 // read staged in osdu.InventoryScan, merged into osdu.InventoryRecord once whole, and every id compared with the ledgers
 // of the partition in set-based statements, each a seek on an index of the table it joins (osdu.Record by its claimed
 // id, osdu.Artifact and osdu.PurgedRecord by OSDU id).

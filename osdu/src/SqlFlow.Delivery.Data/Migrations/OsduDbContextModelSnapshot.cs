@@ -1958,6 +1958,229 @@ namespace SqlFlow.Delivery.Data.Migrations
                     b.ToTable("Inventory", "osdu");
                 });
 
+            modelBuilder.Entity("SqlFlow.Delivery.Data.DeliveryInventoryDuplicateCheck", b =>
+                {
+                    b.Property<short>("PartitionId")
+                        .HasColumnType("smallint");
+
+                    b.Property<long>("InventoryDuplicateCheckId")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<long>("InventoryDuplicateCheckId"));
+
+                    b.Property<string>("Actor")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)");
+
+                    b.Property<long?>("BuildRunId")
+                        .HasColumnType("bigint");
+
+                    b.Property<long>("Candidates")
+                        .HasColumnType("bigint");
+
+                    b.Property<long>("Changed")
+                        .HasColumnType("bigint");
+
+                    b.Property<long>("Checked")
+                        .HasColumnType("bigint");
+
+                    b.Property<DateTime?>("ChosenUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<DateTime?>("CompletedUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<long>("Copies")
+                        .HasColumnType("bigint");
+
+                    b.Property<DateTime>("CreatedUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<long>("Decided")
+                        .HasColumnType("bigint");
+
+                    b.Property<string>("Error")
+                        .HasMaxLength(4000)
+                        .HasColumnType("nvarchar(4000)");
+
+                    b.Property<long>("Groups")
+                        .HasColumnType("bigint");
+
+                    b.Property<long>("GroupsJudged")
+                        .HasColumnType("bigint");
+
+                    b.Property<int>("InventoryId")
+                        .HasColumnType("int");
+
+                    b.Property<string>("KeyHash")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .IsUnicode(false)
+                        .HasColumnType("varchar(64)");
+
+                    b.Property<string>("KeyJson")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<long>("Keyed")
+                        .HasColumnType("bigint");
+
+                    b.Property<string>("NotesJson")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<long>("Outside")
+                        .HasColumnType("bigint");
+
+                    b.Property<string>("Phase")
+                        .HasMaxLength(16)
+                        .HasColumnType("nvarchar(16)");
+
+                    b.Property<long>("Requests")
+                        .HasColumnType("bigint");
+
+                    b.Property<long>("Review")
+                        .HasColumnType("bigint");
+
+                    b.Property<Guid?>("RunId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<long?>("SelectionId")
+                        .HasColumnType("bigint");
+
+                    b.Property<DateTime?>("StartedUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(16)
+                        .HasColumnType("nvarchar(16)");
+
+                    b.Property<long>("ToRemove")
+                        .HasColumnType("bigint");
+
+                    b.Property<long>("Unkeyed")
+                        .HasColumnType("bigint");
+
+                    b.HasKey("PartitionId", "InventoryDuplicateCheckId");
+
+                    b.HasIndex("PartitionId", "CreatedUtc");
+
+                    b.HasIndex("PartitionId", "InventoryId", "InventoryDuplicateCheckId");
+
+                    b.HasIndex("PartitionId", "InventoryId", "KeyHash", "InventoryDuplicateCheckId");
+
+                    b.ToTable("InventoryDuplicateCheck", "osdu");
+                });
+
+            modelBuilder.Entity("SqlFlow.Delivery.Data.DeliveryInventoryDuplicateGroup", b =>
+                {
+                    b.Property<short>("PartitionId")
+                        .HasColumnType("smallint");
+
+                    b.Property<long>("InventoryDuplicateCheckId")
+                        .HasColumnType("bigint");
+
+                    b.Property<int>("GroupNumber")
+                        .HasColumnType("int");
+
+                    b.Property<string>("ChosenBy")
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)");
+
+                    b.Property<DateTime?>("ChosenUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<int>("Copies")
+                        .HasColumnType("int");
+
+                    b.Property<long?>("KeptInventoryRecordId")
+                        .HasColumnType("bigint");
+
+                    b.Property<byte[]>("KeyHash")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("binary(32)")
+                        .IsFixedLength();
+
+                    b.Property<string>("Outcome")
+                        .IsRequired()
+                        .HasMaxLength(16)
+                        .HasColumnType("nvarchar(16)");
+
+                    b.Property<string>("Reason")
+                        .HasMaxLength(1000)
+                        .HasColumnType("nvarchar(1000)");
+
+                    b.Property<string>("ValuesJson")
+                        .HasMaxLength(4000)
+                        .HasColumnType("nvarchar(4000)");
+
+                    b.HasKey("PartitionId", "InventoryDuplicateCheckId", "GroupNumber");
+
+                    b.HasIndex("PartitionId", "InventoryDuplicateCheckId", "Outcome", "GroupNumber");
+
+                    b.ToTable("InventoryDuplicateGroup", "osdu");
+                });
+
+            modelBuilder.Entity("SqlFlow.Delivery.Data.DeliveryInventoryDuplicateMember", b =>
+                {
+                    b.Property<short>("PartitionId")
+                        .HasColumnType("smallint");
+
+                    b.Property<long>("InventoryDuplicateCheckId")
+                        .HasColumnType("bigint");
+
+                    b.Property<long>("InventoryRecordId")
+                        .HasColumnType("bigint");
+
+                    b.Property<int?>("Attributes")
+                        .HasColumnType("int");
+
+                    b.Property<int?>("GroupNumber")
+                        .HasColumnType("int");
+
+                    b.Property<long?>("IndexedVersion")
+                        .HasColumnType("bigint");
+
+                    b.Property<byte[]>("KeyHash")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("binary(32)")
+                        .IsFixedLength();
+
+                    b.Property<long?>("MentionedBy")
+                        .HasColumnType("bigint");
+
+                    b.Property<string>("Reason")
+                        .HasMaxLength(1000)
+                        .HasColumnType("nvarchar(1000)");
+
+                    b.Property<string>("Role")
+                        .HasMaxLength(16)
+                        .HasColumnType("nvarchar(16)");
+
+                    b.Property<string>("StorageState")
+                        .HasMaxLength(16)
+                        .HasColumnType("nvarchar(16)");
+
+                    b.Property<long?>("StoredVersion")
+                        .HasColumnType("bigint");
+
+                    b.Property<string>("ValuesJson")
+                        .HasMaxLength(4000)
+                        .HasColumnType("nvarchar(4000)");
+
+                    b.HasKey("PartitionId", "InventoryDuplicateCheckId", "InventoryRecordId");
+
+                    b.HasIndex("PartitionId", "InventoryDuplicateCheckId", "KeyHash");
+
+                    b.HasIndex("PartitionId", "InventoryDuplicateCheckId", "GroupNumber", "InventoryRecordId");
+
+                    b.ToTable("InventoryDuplicateMember", "osdu");
+                });
+
             modelBuilder.Entity("SqlFlow.Delivery.Data.DeliveryInventoryRecord", b =>
                 {
                     b.Property<short>("PartitionId")
@@ -2386,6 +2609,9 @@ namespace SqlFlow.Delivery.Data.Migrations
                         .HasMaxLength(16)
                         .HasColumnType("nvarchar(16)");
 
+                    b.Property<long?>("DuplicateCheckId")
+                        .HasColumnType("bigint");
+
                     b.Property<string>("Error")
                         .HasMaxLength(4000)
                         .HasColumnType("nvarchar(4000)");
@@ -2444,6 +2670,9 @@ namespace SqlFlow.Delivery.Data.Migrations
                         .HasColumnType("bigint");
 
                     b.Property<long>("InventoryRecordId")
+                        .HasColumnType("bigint");
+
+                    b.Property<long?>("KeptInventoryRecordId")
                         .HasColumnType("bigint");
 
                     b.Property<long?>("MatchedVersion")

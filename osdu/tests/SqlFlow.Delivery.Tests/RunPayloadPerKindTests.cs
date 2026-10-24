@@ -139,7 +139,7 @@ public sealed class RunPayloadPerKindTests
             Refusal(dimension, Payloads[DeliveryRunPayload.ConfirmProperty]));
 
         Assert.Equal(
-            "payload runId does not apply to an inventory flow: only a delivery flow's reverse run names the run it reverses; an inventory flow's payload names only inventories, removal, confirm and selection.",
+            "payload runId does not apply to an inventory flow: only a delivery flow's reverse run names the run it reverses; an inventory flow's payload names only inventories, removal, confirm, selection and duplicateCheck.",
             Refusal(new InventoryFlowKind(Loader), Payloads[DeliveryRunPayload.RunIdProperty]));
 
         Assert.Equal(

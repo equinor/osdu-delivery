@@ -118,7 +118,7 @@ public static class InventoryExport
     }
 
     /// <summary>
-    /// Writes the ids of a selection (osdu/docs/reference/flow/inventory.md, Selecting ids by what OSDU holds) with
+    /// Writes the ids of a selection (osdu/docs/reference/flow/inventory-selections.md, Selecting ids by what OSDU holds) with
     /// <paramref name="finding"/> (every id of it when null) to <paramref name="output"/> as UTF-8: the columns an inventory's
     /// export writes, then the version the search index held when the match read it, and one column for each property the
     /// selection's conditions ask (<paramref name="columns"/>), its values joined by a semicolon and a space. Returns how many

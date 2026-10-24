@@ -119,6 +119,8 @@ delivery_find_records or delivery_flow_records. Ledger bookkeeping only: the rec
             },
         );
 
+        // The trace is about the record, so its explorer link (once it has landed in OSDU) goes on the envelope beside its page.
+        let landed = record.pointer("/record/links/osdu").cloned();
         let mut sections: Vec<(&str, Value)> = vec![("record", record)];
         if let Some(read) = attempts {
             sections.push(("attempts", section(read)));
@@ -137,6 +139,9 @@ delivery_find_records or delivery_flow_records. Ledger bookkeeping only: the rec
             "page".to_string(),
             json!(self.ctx.links().route(&format!("/delivery/records/{flow_id}/{key}"))),
         );
+        if let Some(osdu) = landed {
+            links.insert("osdu".to_string(), osdu);
+        }
         composed(
             sections,
             links,

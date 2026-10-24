@@ -1294,7 +1294,7 @@ public sealed partial class FlowRuntime : IDisposable
     }
 
     /// <summary>
-    /// Gives records OSDU lost a new OSDU id each, in place of the one they claimed (osdu/docs/reference/flow/inventory.md,
+    /// Gives records OSDU lost a new OSDU id each, in place of the one they claimed (osdu/docs/reference/flow/inventory-removals.md,
     /// Repairing missing ids), so the next deliver run writes them under it: only a record the ledger holds as delivered
     /// and no lease holds, whose new id no other record claims; any other is left as it is. <paramref name="reason"/> says
     /// why, in each record's history. Returns the records given one, each with its lost and new id.

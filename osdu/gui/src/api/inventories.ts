@@ -41,7 +41,7 @@ export type InventoryRemovalScope = "record" | "everything" | "inventory";
 export const MISSING_FINDING: InventoryFinding = "missing";
 
 /**
- * A repair of an inventory's missing ids (osdu/docs/reference/flow/inventory.md, Repairing missing ids): the count the
+ * A repair of an inventory's missing ids (osdu/docs/reference/flow/inventory-removals.md, Repairing missing ids): the count the
  * operator was shown, the ids picked, and whether the records are delivered under new OSDU ids (which takes the partition
  * typed back).
  */
@@ -363,7 +363,7 @@ export type InventorySelectionStatus = "queued" | "running" | "completed" | "fai
 export type InventorySelectionDirection = "conditions" | "ids";
 
 /**
- * The ids of an inventory that hold what an operator's conditions ask in OSDU (osdu/docs/reference/flow/inventory.md,
+ * The ids of an inventory that hold what an operator's conditions ask in OSDU (osdu/docs/reference/flow/inventory-selections.md,
  * Selecting ids by what OSDU holds): the conditions as written, where the match stands and whether the inventory was built again
  * since (stale), the query and how it read OSDU, how far it got and what it found, and its ids counted by finding once it completed.
  */
@@ -398,9 +398,12 @@ export interface InventorySelection {
   startedUtc?: string;
   completedUtc?: string;
   error?: string;
+  /** For a selection a duplicate check made of its picks: the check, and the key it compared the records by. It holds no conditions. */
+  duplicateCheckId?: number;
+  duplicateKey?: DuplicateKeyProperty[];
 }
 
-/** The selection a removal took its ids from, as the removal names it. */
+/** The selection a removal took its ids from, as the removal names it: by its conditions, or by the duplicate check that made it. */
 export interface InventorySelectionSummary {
   selectionId: number;
   status: string;
@@ -408,6 +411,131 @@ export interface InventorySelectionSummary {
   query?: string;
   matched: number;
   matchedUtc?: string;
+  duplicateCheckId?: number;
+  duplicateKey?: DuplicateKeyProperty[];
+}
+
+/**
+ * How a property of a duplicate check's key compares two records' values (osdu/docs/reference/flow/inventory-duplicates.md, Finding
+ * duplicate records): exactly; ignoring case; or loose, ignoring case, spacing and empty text, and reading text that is a
+ * number as the number.
+ */
+export type DuplicateComparison = "exact" | "ignoreCase" | "loose";
+
+/** Every comparison, in the order a key's editor offers them. */
+export const DUPLICATE_COMPARISONS: readonly DuplicateComparison[] = ["exact", "ignoreCase", "loose"];
+
+/** The most properties a key compares, as the control plane takes them. */
+export const MAX_DUPLICATE_KEY = 100;
+
+/** One property of a duplicate check's key: its path from the record's root, and how its values compare. */
+export interface DuplicateKeyProperty {
+  path: string;
+  compare: DuplicateComparison | string;
+}
+
+/** Where a check stands: queued as a run of the flow, reading OSDU, completed, failed (it holds no group), or expired. */
+export type DuplicateCheckStatus = "queued" | "running" | "completed" | "failed" | "expired";
+
+/** How a group of copies came out: left for review, its copy to keep picked or chosen, settled, or not read yet. */
+export type DuplicateOutcome = "review" | "picked" | "chosen" | "settled" | "pending";
+
+/** Every outcome, in the order a page lists them: what needs a look first. */
+export const DUPLICATE_OUTCOMES: readonly DuplicateOutcome[] = ["review", "picked", "chosen", "settled", "pending"];
+
+/** A copy's role in its group: kept, picked to remove, left (the inventory may not remove it), for review, or gone from storage. */
+export type DuplicateRole = "keep" | "remove" | "leave" | "review" | "gone";
+
+/** How many of a check's groups came out one way. */
+export interface DuplicateOutcomeCount {
+  outcome: DuplicateOutcome | string;
+  groups: number;
+}
+
+/**
+ * A check of an inventory's ids for duplicate records: its key, where it stands and what it is reading, what it read and
+ * found, its groups by outcome once it completed, the selection last made of its picks and whether a choice since leaves it
+ * behind, its run, who asked and when, and why it failed.
+ */
+export interface InventoryDuplicateCheck {
+  checkId: number;
+  inventoryId: number;
+  partition: string;
+  status: DuplicateCheckStatus | string;
+  stale: boolean;
+  /** While it runs: `keys` (reading every id's key) or `copies` (reading each group's copies). */
+  phase?: "keys" | "copies" | string;
+  key: DuplicateKeyProperty[];
+  notes: string[];
+  /** The ids the inventory served when it started. */
+  candidates: number;
+  /** The records the search returned while it read the keys. */
+  checked: number;
+  keyed: number;
+  unkeyed: number;
+  outside: number;
+  changed: number;
+  groups: number;
+  copies: number;
+  groupsJudged: number;
+  decided: number;
+  review: number;
+  toRemove: number;
+  requests: number;
+  outcomes?: DuplicateOutcomeCount[];
+  selectionId?: number;
+  /** Whether the selection last made of its picks still says what it picks: no choice was written since it was made. */
+  selectionCurrent: boolean;
+  chosenUtc?: string;
+  runId?: string;
+  actor: string;
+  createdUtc: string;
+  startedUtc?: string;
+  completedUtc?: string;
+  error?: string;
+}
+
+/** One copy of a group: the inventory's row of it, what the check read of it, and its role with why. */
+export interface DuplicateCopy {
+  record: InventoryRecord;
+  indexedVersion?: number;
+  /** What it holds at each property of the key, property to values, as it holds them. */
+  values?: Record<string, string[]>;
+  /** What storage answered when its group was read: `held`, `missing` or `unanswered`. */
+  storageState?: string;
+  storedVersion?: number;
+  /** How many values it holds under data: how complete the copy is. */
+  attributes?: number;
+  /** How many records name it. */
+  mentionedBy?: number;
+  role?: DuplicateRole | string;
+  reason?: string;
+}
+
+/** One group of ids sharing a key: its copies, how it came out and why, the copy it keeps and who chose it. */
+export interface DuplicateGroup {
+  groupNumber: number;
+  copies: number;
+  values?: Record<string, string[]>;
+  outcome: DuplicateOutcome | string;
+  reason?: string;
+  keptInventoryRecordId?: number;
+  chosenBy?: string;
+  chosenUtc?: string;
+  /** Its copies, left out for a group too large to list with its page (read them with `copies`). */
+  members?: DuplicateCopy[];
+}
+
+/** A page of groups, with the group the next page starts after; left out on the last page. */
+export interface DuplicateGroupPage {
+  items: DuplicateGroup[];
+  next?: number;
+}
+
+/** A page of one group's copies, with the row the next page starts after; left out on the last page. */
+export interface DuplicateCopyPage {
+  items: DuplicateCopy[];
+  next?: number;
 }
 
 const inventoryPath = (partition: string, inventoryId: number) =>
@@ -451,6 +579,33 @@ export const inventoryApi = {
   /** One selection of the inventory: where its match stands, and its ids counted by finding once it completed. */
   selection: (partition: string, inventoryId: number, selectionId: number) =>
     get<InventorySelection>(`${inventoryPath(partition, inventoryId)}/selections/${selectionId}`),
+  /**
+   * The inventory's ids that are copies of one another by the key: the check made of the same key against the same build when
+   * there is one, else a new check queued as a run of the flow (`refresh` always queues one).
+   */
+  checkDuplicates: (partition: string, inventoryId: number, request: { key: DuplicateKeyProperty[]; refresh?: boolean }) =>
+    post<InventoryDuplicateCheck>(`${inventoryPath(partition, inventoryId)}/duplicates`, request),
+  /** The inventory's duplicate checks, newest first. */
+  duplicateChecks: (partition: string, inventoryId: number, limit?: number) =>
+    get<InventoryDuplicateCheck[]>(`${inventoryPath(partition, inventoryId)}/duplicates`, limit === undefined ? {} : { limit }),
+  /** One duplicate check: where it stands, and its groups counted by outcome once it completed. */
+  duplicateCheck: (partition: string, inventoryId: number, checkId: number) =>
+    get<InventoryDuplicateCheck>(`${inventoryPath(partition, inventoryId)}/duplicates/${checkId}`),
+  /** A page of a check's groups, of one outcome or every one, after the group `after` names, each with its copies. */
+  duplicateGroups: (partition: string, inventoryId: number, checkId: number, query: { outcome?: string; after?: number; limit?: number } = {}) =>
+    get<DuplicateGroupPage>(`${inventoryPath(partition, inventoryId)}/duplicates/${checkId}/groups`, query),
+  /** A page of one group's copies, for a group too large to list with its page. */
+  duplicateCopies: (partition: string, inventoryId: number, checkId: number, groupNumber: number, query: { after?: number; limit?: number } = {}) =>
+    get<DuplicateCopyPage>(`${inventoryPath(partition, inventoryId)}/duplicates/${checkId}/groups/${groupNumber}/copies`, query),
+  /** Keeps a copy of a group, as the caller; null takes a choice back, leaving the group to the check's own pick. */
+  keepDuplicate: (partition: string, inventoryId: number, checkId: number, groupNumber: number, inventoryRecordId: number | null) =>
+    post<DuplicateGroup>(`${inventoryPath(partition, inventoryId)}/duplicates/${checkId}/groups/${groupNumber}/keep`, { inventoryRecordId }),
+  /** The copies a completed check picked to remove, made a selection a removal takes. */
+  selectDuplicates: (partition: string, inventoryId: number, checkId: number) =>
+    post<InventorySelection>(`${inventoryPath(partition, inventoryId)}/duplicates/${checkId}/selection`, {}),
+  /** Every copy of every group of a check as CSV text. */
+  exportDuplicates: (partition: string, inventoryId: number, checkId: number) =>
+    getText(`${inventoryPath(partition, inventoryId)}/duplicates/${checkId}/export`),
   /** Queues the run that removes from OSDU the ids of one finding of the inventory, as the caller. */
   remove: (partition: string, inventoryId: number, request: InventoryRemovalRequest) =>
     post<InventoryRemovalAccepted>(`${inventoryPath(partition, inventoryId)}/removals`, request),

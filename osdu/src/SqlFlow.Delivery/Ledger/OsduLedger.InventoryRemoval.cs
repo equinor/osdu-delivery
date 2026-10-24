@@ -3,7 +3,7 @@ using SqlFlow.Delivery.Data;
 
 namespace SqlFlow.Delivery.Ledger;
 
-// Removing what an inventory found (osdu/docs/reference/flow/inventory.md, What a removal does): the removals an
+// Removing what an inventory found (osdu/docs/reference/flow/inventory-removals.md, What a removal does): the removals an
 // operator asked of an inventory's ids, kept under the inventory flow's ledger with what each did to every id it
 // reached.
 public sealed partial class OsduLedger

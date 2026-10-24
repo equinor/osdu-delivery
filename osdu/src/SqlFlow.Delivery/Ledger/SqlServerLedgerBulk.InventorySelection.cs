@@ -4,7 +4,7 @@ using SqlFlow.Delivery.Data;
 
 namespace SqlFlow.Delivery.Ledger;
 
-// Selecting an inventory's ids by what OSDU holds (osdu/docs/reference/flow/inventory.md, Selecting ids by what OSDU holds):
+// Selecting an inventory's ids by what OSDU holds (osdu/docs/reference/flow/inventory-selections.md, Selecting ids by what OSDU holds):
 // what the search found for one page or chunk of a match, matched with the inventory's own rows by the OSDU id, which both
 // keep in a binary collation so they compare exactly as OSDU compares them.
 internal static partial class SqlServerLedgerBulk

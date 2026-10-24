@@ -18,7 +18,8 @@ import { ProblemView } from "../TemplateSheet";
 import { RaisedCounts, RunStatusPill, StandingGlyph } from "./InventoryBadges";
 import { InventoryLookupBox } from "./InventoryLookup";
 import { InventoryReport } from "./InventoryReport";
-import { MAX_ID_LENGTH, counted, inventoryRoute, standingOf, type InventoryRef, type InventoryView } from "./inventoryFormat";
+import { EVERY_ID, MAX_ID_LENGTH, counted, inventoryRoute, standingOf, type InventoryRef, type InventoryView } from "./inventoryFormat";
+import { keyText } from "./duplicates/duplicateModel";
 
 /** How often the inventories are read again, so a run under way shows its outcome as it lands. */
 const REFRESH_MS = 15000;
@@ -30,6 +31,12 @@ const PARTITION_ID = /^[A-Za-z0-9_.-]{1,64}$/;
 function openIdOf(params: URLSearchParams): string | null {
   const id = params.get("id")?.trim() ?? "";
   return id === "" || id.length > MAX_ID_LENGTH ? null : id;
+}
+
+/** A positive whole number the address names (a selection's, a check's), or null for none. */
+function numberOf(params: URLSearchParams, name: string): number | null {
+  const value = Number.parseInt(params.get(name) ?? "", 10);
+  return Number.isSafeInteger(value) && value > 0 ? value : null;
 }
 
 /** The inventory the address names, or null for every inventory. */
@@ -44,8 +51,9 @@ function referenceOf(params: URLSearchParams): InventoryRef | null {
  * holds, set against every ledger of the partition, each id with its finding. The page is two views of one address: every
  * inventory, with what its last reconcile raised and its newest run, and one inventory's report, whose grid takes the page's
  * whole width and scrolls inside it. A lookup by OSDU id across the partition's inventories is in the heading of both. The
- * inventory, the finding, the tab, the id open in the report's panel and the conditions its ids are selected by (`f`, as the
- * explorer writes them) live in the address, so a link lands on the same view.
+ * inventory, the finding, the tab, the id open in the report's panel, the conditions its ids are selected by (`f`, as the
+ * explorer writes them) or the selection listed by its number (`s`), and on the Duplicates tab the check shown (`dc`), the
+ * key being built (`dk`) and the outcome listed (`do`) live in the address, so a link lands on the same view.
  */
 export default function DeliveryInventoriesPage() {
   const [params, setParams] = useSearchParams();
@@ -60,7 +68,7 @@ export default function DeliveryInventoriesPage() {
   const tab = params.get("tab");
   const conditionsText = params.get("f");
   const conditions = useMemo(() => filtersOf(conditionsText), [conditionsText]);
-  const view: InventoryView = tab === "runs" || tab === "removals" ? tab : "ids";
+  const view: InventoryView = tab === "runs" || tab === "removals" || tab === "duplicates" ? tab : "ids";
 
   const update = (changes: Record<string, string | null>) => setParams((current) => {
     const next = new URLSearchParams(current);
@@ -76,7 +84,7 @@ export default function DeliveryInventoriesPage() {
   }, { replace: true });
 
   const open = (ref: InventoryRef | null) => (ref === null
-    ? update({ partition: null, inventory: null, finding: null, tab: null, id: null, f: null })
+    ? update({ partition: null, inventory: null, finding: null, tab: null, id: null, f: null, s: null, dc: null, dk: null, do: null })
     : navigate(inventoryRoute(ref)));
 
   if (reference !== null) {
@@ -95,8 +103,19 @@ export default function DeliveryInventoriesPage() {
           openId={openIdOf(params)}
           onOpenId={(id) => update({ id })}
           conditions={conditions}
-          // Other conditions select other ids, so the id open in the panel is let go.
-          onConditions={(next) => update({ f: filtersText(next), id: null })}
+          // Other conditions select other ids, so the id open in the panel is let go, and so is a selection listed by its number.
+          onConditions={(next) => update({ f: filtersText(next), s: null, id: null })}
+          selectionId={numberOf(params, "s")}
+          // A selection made of a duplicate check's picks opens on the Ids tab, on a finding a removal takes when it holds one.
+          onSelectionId={(selectionId, finding) => update(selectionId === null
+            ? { s: null, id: null }
+            : { s: String(selectionId), f: null, tab: null, finding: finding ?? EVERY_ID, id: null })}
+          duplicateCheck={numberOf(params, "dc")}
+          onDuplicateCheck={(checkId) => update({ dc: checkId === null ? null : String(checkId), id: null })}
+          duplicateKey={params.get("dk")}
+          onDuplicateKey={(key) => update({ dk: key.length === 0 ? null : keyText(key) })}
+          duplicateOutcome={params.get("do")}
+          onDuplicateOutcome={(outcome) => update({ do: outcome, id: null })}
         />
       </Page>
     );

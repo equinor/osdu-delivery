@@ -11,7 +11,7 @@ using Xunit;
 namespace SqlFlow.Delivery.Tests;
 
 /// <summary>
-/// The rules of a match that need no database (osdu/docs/reference/flow/inventory.md, Selecting ids by what OSDU holds): which
+/// The rules of a match that need no database (osdu/docs/reference/flow/inventory-selections.md, Selecting ids by what OSDU holds): which
 /// way it reads OSDU, how many ids one search names beside the conditions, which properties its rows carry and how much of
 /// what an id holds there it keeps, and how it counts the searches it sends.
 /// </summary>

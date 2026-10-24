@@ -14,6 +14,7 @@ keywords:
 related:
   - delivery-concept-database
   - delivery-flow-inventory
+  - delivery-flow-inventory-builds
   - delivery-table-inventory
   - delivery-table-inventory-scan
   - delivery-table-inventory-record
@@ -29,7 +30,7 @@ One build or reconcile of an [inventory](inventory.md): the platform run and who
 and changed, and its counts by finding as it left them. A run is opened `running` when the inventory's turn comes and
 closed `completed` or `failed` with its counts; a run of the same inventory still `running` when the next one opens is
 closed `failed` (`the run ended without finishing: its process stopped before it did`)
-([How a build moves rows through the scan](../flow/inventory.md#how-a-build-moves-rows-through-the-scan)).
+([How a build moves rows through the scan](../flow/inventory-builds.md#how-a-build-moves-rows-through-the-scan)).
 
 ## Columns
 

@@ -485,6 +485,8 @@
       "cliCommand": "inventory",
       "related": [
         "delivery-flow-inventory",
+        "delivery-flow-inventory-builds",
+        "delivery-flow-inventory-removals",
         "delivery-guide-finding-orphans",
         "delivery-cli-run",
         "delivery-concept-ledger",
@@ -1001,6 +1003,7 @@
         "osdu/src/SqlFlow.Delivery.ControlPlane/DeliveryControlPlaneModule.cs",
         "osdu/src/SqlFlow.Delivery.ControlPlane/Api/DeliveryEndpoints.cs",
         "osdu/src/SqlFlow.Delivery.ControlPlane/Api/DirectOperationRunner.cs",
+        "osdu/src/SqlFlow.Delivery.ControlPlane/Api/DeliveryInventoryEndpoints.Duplicates.cs",
         "osdu/src/SqlFlow.Delivery.ControlPlane/Api/WorkbenchPartition.cs",
         "osdu/src/SqlFlow.Delivery.ControlPlane/Api/DeliveryArtifactEndpoints.cs",
         "osdu/src/SqlFlow.Delivery.ControlPlane/Api/DeliveryAssertionEndpoints.cs",
@@ -1605,6 +1608,7 @@
         "delivery-flow-mapping-assertions",
         "delivery-flow-dimension",
         "delivery-flow-inventory",
+        "delivery-flow-inventory-selections",
         "delivery-concept-partitions"
       ],
       "sourceRefs": [
@@ -3351,35 +3355,17 @@
         "orphan records",
         "missing records",
         "reconcile",
-        "findings",
         "owners",
         "maxmissingchecks",
         "source.read",
-        "removal",
-        "soft delete",
-        "purge",
-        "remove gone ids",
-        "obsolete inventory rows",
-        "repair missing records",
-        "deliver again",
-        "restore soft deleted record",
-        "new osdu id",
-        "unlisted",
-        "drift between osdu and ledger",
-        "kind wildcard",
-        "missing checks in turn",
-        "inventory tables",
-        "InventoryRecord",
-        "InventoryScan staging",
-        "select ids by attribute",
-        "filter inventory by facility name",
-        "match operation",
-        "selection",
-        "remove by selection",
-        "InventorySelection"
+        "kind wildcard"
       ],
       "yamlPath": "(root, flowType: inventory)",
       "related": [
+        "delivery-flow-inventory-builds",
+        "delivery-flow-inventory-selections",
+        "delivery-flow-inventory-removals",
+        "delivery-flow-inventory-duplicates",
         "delivery-concept-search-paging",
         "delivery-guide-finding-orphans",
         "delivery-cli-inventory",
@@ -3397,7 +3383,170 @@
         "osdu/src/SqlFlow.Delivery/Engine/InventoryExecutor.cs",
         "osdu/src/SqlFlow.Delivery/Engine/DeliveryRunPayload.cs",
         "osdu/src/SqlFlow.Delivery/Engine/Inventories/InventoryRunner.cs",
+        "osdu/src/SqlFlow.Delivery/Engine/Inventories/InventoryReaders.cs",
+        "osdu/src/SqlFlow.Delivery/Engine/Inventories/InventoryReport.cs",
+        "osdu/src/SqlFlow.Delivery/Ledger/Inventories.cs",
+        "osdu/src/SqlFlow.Delivery.ControlPlane/Api/DeliveryInventoryEndpoints.cs",
+        "osdu/src/SqlFlow.Delivery.Data/Migrations/20261008024435_InventoryFlows.cs",
+        "osdu/src/SqlFlow.Delivery.Data/Migrations/20261009094531_InventoryCheckedUtc.cs",
+        "osdu/src/SqlFlow.Delivery.Cli/DeliveryInventoryVerbs.cs",
+        "osdu/docs/census/keys.inventory.json",
+        "osdu/specs/core/storage/openapi.yaml"
+      ]
+    },
+    {
+      "id": "delivery-flow-inventory-builds",
+      "corpus": "reference",
+      "path": "flow/inventory-builds.md",
+      "title": "Inventory builds (operations build and reconcile): what a build reads and merges, the finding of each id, and the tables kept",
+      "type": "flow-reference",
+      "summary": "What an inventory build and reconcile do step by step, what each finding of an id means, and the tables an inventory keeps.",
+      "keywords": [
+        "findings",
+        "orphan records",
+        "missing records",
+        "unlisted",
+        "drift between osdu and ledger",
+        "missing checks in turn",
+        "inventory tables",
+        "InventoryRecord",
+        "InventoryScan staging",
+        "reconcile",
+        "build",
+        "merge"
+      ],
+      "related": [
+        "delivery-flow-inventory",
+        "delivery-flow-inventory-removals",
+        "delivery-concept-ledger",
+        "delivery-guide-finding-orphans",
+        "delivery-table-inventory-record"
+      ],
+      "sourceRefs": [
+        "osdu/src/SqlFlow.Delivery/Engine/Inventories/InventoryRunner.cs",
+        "osdu/src/SqlFlow.Delivery/Engine/Inventories/InventoryReaders.cs",
+        "osdu/src/SqlFlow.Delivery/Engine/Inventories/InventoryReport.cs",
+        "osdu/src/SqlFlow.Delivery/Ledger/Inventories.cs",
+        "osdu/src/SqlFlow.Delivery/Ledger/SqlServerLedgerBulk.Inventory.cs",
+        "osdu/src/SqlFlow.Delivery/Ledger/OsduLedger.Inventory.cs",
+        "osdu/src/SqlFlow.Delivery.Data/DeliveryEntities.cs",
+        "osdu/src/SqlFlow.Delivery.Data/Migrations/20261008024435_InventoryFlows.cs",
+        "osdu/src/SqlFlow.Delivery.Data/Migrations/20261009094531_InventoryCheckedUtc.cs"
+      ]
+    },
+    {
+      "id": "delivery-flow-inventory-duplicates",
+      "corpus": "reference",
+      "path": "flow/inventory-duplicates.md",
+      "title": "Finding duplicate records (operation duplicates): the records OSDU holds more than once, the copy kept and the copies removed",
+      "type": "flow-reference",
+      "summary": "An inventory's duplicate check: the key, how a duplicates run reads OSDU, which copy is kept, an operator's choice, and removing the copies picked.",
+      "keywords": [
+        "duplicate records",
+        "duplicate check",
+        "find duplicates",
+        "deduplicate",
+        "copies of a record",
+        "duplicate key",
+        "exact ignoreCase loose",
+        "most complete copy",
+        "attribute count",
+        "keep a copy",
+        "compare two copies",
+        "duplicates operation",
+        "duplicateCheck",
+        "InventoryDuplicateCheck"
+      ],
+      "yamlPath": "(run operation duplicates of a flowType: inventory)",
+      "related": [
+        "delivery-flow-inventory",
+        "delivery-flow-inventory-selections",
+        "delivery-flow-inventory-removals",
+        "delivery-concept-explorer",
+        "delivery-flow-assertion",
+        "delivery-table-inventory-duplicate-check",
+        "delivery-table-inventory-duplicate-group",
+        "delivery-table-inventory-duplicate-member",
+        "delivery-table-inventory-selection"
+      ],
+      "sourceRefs": [
+        "osdu/src/SqlFlow.Delivery/Ledger/InventoryDuplicates.cs",
+        "osdu/src/SqlFlow.Delivery/Ledger/OsduLedger.InventoryDuplicates.cs",
+        "osdu/src/SqlFlow.Delivery/Ledger/SqlServerLedgerBulk.InventoryDuplicates.cs",
+        "osdu/src/SqlFlow.Delivery/Engine/Inventories/InventoryRunner.Duplicates.cs",
         "osdu/src/SqlFlow.Delivery/Engine/Inventories/InventoryRunner.Removal.cs",
+        "osdu/src/SqlFlow.Delivery/Engine/Inventories/InventoryDuplicateKey.cs",
+        "osdu/src/SqlFlow.Delivery/Engine/Inventories/InventoryDuplicatePicker.cs",
+        "osdu/src/SqlFlow.Delivery/Engine/Inventories/InventoryDuplicateExport.cs",
+        "osdu/src/SqlFlow.Delivery/Engine/Protocols/WellboreDdmsBulkLink.cs",
+        "osdu/src/SqlFlow.Delivery.ControlPlane/Api/DeliveryInventoryEndpoints.Duplicates.cs",
+        "osdu/src/SqlFlow.Delivery.Data/Migrations/20261024100322_InventoryDuplicateChecks.cs",
+        "osdu/gui/src/features/delivery/inventories/duplicates/InventoryDuplicates.tsx",
+        "osdu/gui/src/features/delivery/inventories/duplicates/DuplicateGroupsGrid.tsx",
+        "osdu/gui/src/features/delivery/inventories/duplicates/DuplicateKeyEditor.tsx",
+        "osdu/gui/src/features/delivery/inventories/duplicates/DuplicateCompareDialog.tsx"
+      ]
+    },
+    {
+      "id": "delivery-flow-inventory-removals",
+      "corpus": "reference",
+      "path": "flow/inventory-removals.md",
+      "title": "Inventory removals (operation remove): taking what an inventory found out of OSDU, repairing missing ids, and removing gone ids",
+      "type": "flow-reference",
+      "summary": "An inventory's remove run: what it checks and records id by id, delivering missing ids again, and removing gone ids from it.",
+      "keywords": [
+        "removal",
+        "soft delete",
+        "purge",
+        "remove gone ids",
+        "obsolete inventory rows",
+        "repair missing records",
+        "deliver again",
+        "restore soft deleted record",
+        "new osdu id"
+      ],
+      "related": [
+        "delivery-flow-inventory",
+        "delivery-flow-inventory-selections",
+        "delivery-flow-inventory-duplicates",
+        "delivery-concept-removal-and-reversal",
+        "delivery-guide-finding-orphans",
+        "delivery-table-inventory-removal"
+      ],
+      "sourceRefs": [
+        "osdu/src/SqlFlow.Delivery/Engine/Inventories/InventoryRunner.Removal.cs",
+        "osdu/src/SqlFlow.Delivery/Ledger/InventoryRemovals.cs",
+        "osdu/src/SqlFlow.Delivery/Ledger/InventoryRepairs.cs",
+        "osdu/src/SqlFlow.Delivery/Ledger/OsduLedger.InventoryRemoval.cs",
+        "osdu/src/SqlFlow.Delivery/Ledger/SqlServerLedgerBulk.InventoryRemoval.cs",
+        "osdu/src/SqlFlow.Delivery.Data/Migrations/20261008132311_InventoryRemovals.cs",
+        "osdu/src/SqlFlow.Delivery.ControlPlane/Api/DeliveryInventoryEndpoints.cs"
+      ]
+    },
+    {
+      "id": "delivery-flow-inventory-selections",
+      "corpus": "reference",
+      "path": "flow/inventory-selections.md",
+      "title": "Selecting ids by what OSDU holds (operation match): an inventory's ids chosen by conditions on their records, and removed by the selection",
+      "type": "flow-reference",
+      "summary": "An inventory's match: conditions on its records asked of OSDU's search, the selection it fills, and a removal of what it holds.",
+      "keywords": [
+        "select ids by attribute",
+        "filter inventory by facility name",
+        "match operation",
+        "selection",
+        "remove by selection",
+        "InventorySelection",
+        "conditions"
+      ],
+      "related": [
+        "delivery-flow-inventory",
+        "delivery-flow-inventory-removals",
+        "delivery-concept-explorer",
+        "delivery-concept-search-terms",
+        "delivery-table-inventory-selection"
+      ],
+      "sourceRefs": [
         "osdu/src/SqlFlow.Delivery/Engine/Inventories/InventoryRunner.Match.cs",
         "osdu/src/SqlFlow.Delivery/Engine/Inventories/SearchRequestCounter.cs",
         "osdu/src/SqlFlow.Delivery/Ledger/InventorySelections.cs",
@@ -3406,24 +3555,7 @@
         "osdu/src/SqlFlow.Delivery.ControlPlane/Api/DeliveryInventoryEndpoints.Selections.cs",
         "osdu/src/SqlFlow.Delivery.Data/Migrations/20261020222949_InventorySelections.cs",
         "osdu/gui/src/features/delivery/inventories/inventorySelection.ts",
-        "osdu/gui/src/features/delivery/inventories/InventorySelectionParts.tsx",
-        "osdu/src/SqlFlow.Delivery/Engine/Inventories/InventoryReaders.cs",
-        "osdu/src/SqlFlow.Delivery/Engine/Inventories/InventoryReport.cs",
-        "osdu/src/SqlFlow.Delivery/Ledger/Inventories.cs",
-        "osdu/src/SqlFlow.Delivery/Ledger/InventoryRemovals.cs",
-        "osdu/src/SqlFlow.Delivery/Ledger/SqlServerLedgerBulk.Inventory.cs",
-        "osdu/src/SqlFlow.Delivery.ControlPlane/Api/DeliveryInventoryEndpoints.cs",
-        "osdu/src/SqlFlow.Delivery/Ledger/InventoryRepairs.cs",
-        "osdu/src/SqlFlow.Delivery/Ledger/OsduLedger.Inventory.cs",
-        "osdu/src/SqlFlow.Delivery/Ledger/OsduLedger.InventoryRemoval.cs",
-        "osdu/src/SqlFlow.Delivery/Ledger/SqlServerLedgerBulk.InventoryRemoval.cs",
-        "osdu/src/SqlFlow.Delivery.Data/DeliveryEntities.cs",
-        "osdu/src/SqlFlow.Delivery.Data/Migrations/20261008024435_InventoryFlows.cs",
-        "osdu/src/SqlFlow.Delivery.Data/Migrations/20261008132311_InventoryRemovals.cs",
-        "osdu/src/SqlFlow.Delivery.Data/Migrations/20261009094531_InventoryCheckedUtc.cs",
-        "osdu/src/SqlFlow.Delivery.Cli/DeliveryInventoryVerbs.cs",
-        "osdu/docs/census/keys.inventory.json",
-        "osdu/specs/core/storage/openapi.yaml"
+        "osdu/gui/src/features/delivery/inventories/InventorySelectionParts.tsx"
       ]
     },
     {
@@ -4027,6 +4159,7 @@
         "delivery-concept-ledger",
         "delivery-flow-delivery",
         "delivery-flow-inventory",
+        "delivery-flow-inventory-removals",
         "delivery-table-removed-key",
         "delivery-table-removal-run",
         "delivery-table-removal-key",
@@ -4439,6 +4572,8 @@
       ],
       "related": [
         "delivery-flow-inventory",
+        "delivery-flow-inventory-builds",
+        "delivery-flow-inventory-removals",
         "delivery-cli-inventory",
         "delivery-concept-removal-and-reversal",
         "delivery-concept-ledger",
@@ -4690,9 +4825,13 @@
         "streamable http",
         "chat assistant",
         "sqlflow_control_plane_url",
-        "operator action"
+        "operator action",
+        "gui links",
+        "osdu id link",
+        "explorer link"
       ],
       "related": [
+        "delivery-concept-explorer",
         "guide-chat-assistant",
         "guide-slack-assistant",
         "concept-authentication-and-identity",
@@ -5920,6 +6059,7 @@
       "related": [
         "delivery-concept-database",
         "delivery-flow-inventory",
+        "delivery-flow-inventory-builds",
         "delivery-guide-finding-orphans",
         "delivery-table-inventory-run",
         "delivery-table-inventory-record",
@@ -5929,6 +6069,95 @@
         "osdu/src/SqlFlow.Delivery.Data/DeliveryEntities.cs",
         "osdu/src/SqlFlow.Delivery/Ledger/OsduLedger.Inventory.cs",
         "osdu/src/SqlFlow.Delivery/Engine/Inventories/InventoryRunner.cs"
+      ]
+    },
+    {
+      "id": "delivery-table-inventory-duplicate-check",
+      "corpus": "reference",
+      "path": "tables/inventory-duplicate-check.md",
+      "title": "osdu.InventoryDuplicateCheck: a check of an inventory's ids for duplicate records, by an operator's key",
+      "type": "table",
+      "summary": "One row per duplicate check of an inventory: its key, where it stands, what it read and found, and the selection last made of its picks.",
+      "keywords": [
+        "osdu.InventoryDuplicateCheck",
+        "inventory duplicate check table",
+        "duplicate records",
+        "duplicate key",
+        "copies to remove"
+      ],
+      "related": [
+        "delivery-concept-database",
+        "delivery-flow-inventory",
+        "delivery-flow-inventory-duplicates",
+        "delivery-table-inventory-duplicate-group",
+        "delivery-table-inventory-duplicate-member",
+        "delivery-table-inventory-selection"
+      ],
+      "sourceRefs": [
+        "osdu/src/SqlFlow.Delivery.Data/DeliveryEntities.cs",
+        "osdu/src/SqlFlow.Delivery/Ledger/InventoryDuplicates.cs",
+        "osdu/src/SqlFlow.Delivery/Ledger/OsduLedger.InventoryDuplicates.cs",
+        "osdu/src/SqlFlow.Delivery/Ledger/SqlServerLedgerBulk.InventoryDuplicates.cs",
+        "osdu/src/SqlFlow.Delivery/Engine/Inventories/InventoryRunner.Duplicates.cs",
+        "osdu/src/SqlFlow.Delivery.ControlPlane/Api/DeliveryInventoryEndpoints.Duplicates.cs"
+      ]
+    },
+    {
+      "id": "delivery-table-inventory-duplicate-group",
+      "corpus": "reference",
+      "path": "tables/inventory-duplicate-group.md",
+      "title": "osdu.InventoryDuplicateGroup: each group of an inventory's ids a duplicate check found sharing a key",
+      "type": "table",
+      "summary": "One row per group of ids a duplicate check found sharing a key: its copies, how it came out and why, the copy it keeps and who chose it.",
+      "keywords": [
+        "osdu.InventoryDuplicateGroup",
+        "inventory duplicate group table",
+        "copy kept",
+        "group for review",
+        "operator choice"
+      ],
+      "related": [
+        "delivery-concept-database",
+        "delivery-flow-inventory",
+        "delivery-flow-inventory-duplicates",
+        "delivery-table-inventory-duplicate-check",
+        "delivery-table-inventory-duplicate-member"
+      ],
+      "sourceRefs": [
+        "osdu/src/SqlFlow.Delivery.Data/DeliveryEntities.cs",
+        "osdu/src/SqlFlow.Delivery/Ledger/OsduLedger.InventoryDuplicates.cs",
+        "osdu/src/SqlFlow.Delivery/Ledger/SqlServerLedgerBulk.InventoryDuplicates.cs",
+        "osdu/src/SqlFlow.Delivery/Engine/Inventories/InventoryDuplicatePicker.cs"
+      ]
+    },
+    {
+      "id": "delivery-table-inventory-duplicate-member",
+      "corpus": "reference",
+      "path": "tables/inventory-duplicate-member.md",
+      "title": "osdu.InventoryDuplicateMember: each id of an inventory a duplicate check read, with its key, completeness and role",
+      "type": "table",
+      "summary": "One row per id a duplicate check read and kept: its key's hash and values, what storage held of it, how many values it holds, and its role.",
+      "keywords": [
+        "osdu.InventoryDuplicateMember",
+        "inventory duplicate member table",
+        "attribute count",
+        "completeness",
+        "mentioned by"
+      ],
+      "related": [
+        "delivery-concept-database",
+        "delivery-flow-inventory",
+        "delivery-flow-inventory-duplicates",
+        "delivery-table-inventory-duplicate-check",
+        "delivery-table-inventory-duplicate-group",
+        "delivery-table-inventory-record"
+      ],
+      "sourceRefs": [
+        "osdu/src/SqlFlow.Delivery.Data/DeliveryEntities.cs",
+        "osdu/src/SqlFlow.Delivery/Ledger/OsduLedger.InventoryDuplicates.cs",
+        "osdu/src/SqlFlow.Delivery/Ledger/SqlServerLedgerBulk.InventoryDuplicates.cs",
+        "osdu/src/SqlFlow.Delivery/Engine/Inventories/InventoryDuplicateKey.cs",
+        "osdu/src/SqlFlow.Delivery/Engine/Inventories/InventoryDuplicatePicker.cs"
       ]
     },
     {
@@ -5951,6 +6180,7 @@
       "related": [
         "delivery-concept-database",
         "delivery-flow-inventory",
+        "delivery-flow-inventory-builds",
         "delivery-guide-finding-orphans",
         "delivery-table-inventory",
         "delivery-table-artifact",
@@ -5981,6 +6211,7 @@
       "related": [
         "delivery-concept-database",
         "delivery-flow-inventory",
+        "delivery-flow-inventory-removals",
         "delivery-table-inventory-removal-item",
         "delivery-table-inventory-selection",
         "delivery-table-activity",
@@ -6012,6 +6243,7 @@
       "related": [
         "delivery-concept-database",
         "delivery-flow-inventory",
+        "delivery-flow-inventory-removals",
         "delivery-table-inventory-removal",
         "delivery-table-inventory-record"
       ],
@@ -6040,6 +6272,7 @@
       "related": [
         "delivery-concept-database",
         "delivery-flow-inventory",
+        "delivery-flow-inventory-builds",
         "delivery-table-inventory",
         "delivery-table-inventory-scan",
         "delivery-table-inventory-record"
@@ -6068,6 +6301,7 @@
       "related": [
         "delivery-concept-database",
         "delivery-flow-inventory",
+        "delivery-flow-inventory-builds",
         "delivery-table-inventory-run",
         "delivery-table-inventory-record"
       ],
@@ -6096,6 +6330,7 @@
       "related": [
         "delivery-concept-database",
         "delivery-flow-inventory",
+        "delivery-flow-inventory-selections",
         "delivery-table-inventory-selection-item",
         "delivery-table-inventory-removal",
         "delivery-concept-search-terms"
@@ -6104,7 +6339,8 @@
         "osdu/src/SqlFlow.Delivery.Data/DeliveryEntities.cs",
         "osdu/src/SqlFlow.Delivery/Ledger/OsduLedger.InventorySelection.cs",
         "osdu/src/SqlFlow.Delivery/Ledger/SqlServerLedgerBulk.InventorySelection.cs",
-        "osdu/src/SqlFlow.Delivery.Data/Migrations/20261020222949_InventorySelections.cs"
+        "osdu/src/SqlFlow.Delivery.Data/Migrations/20261020222949_InventorySelections.cs",
+        "osdu/src/SqlFlow.Delivery/Ledger/SqlServerLedgerBulk.InventoryDuplicates.cs"
       ]
     },
     {
@@ -6124,13 +6360,16 @@
       "related": [
         "delivery-concept-database",
         "delivery-flow-inventory",
+        "delivery-flow-inventory-selections",
         "delivery-table-inventory-selection",
         "delivery-table-inventory-record"
       ],
       "sourceRefs": [
         "osdu/src/SqlFlow.Delivery.Data/DeliveryEntities.cs",
         "osdu/src/SqlFlow.Delivery/Ledger/OsduLedger.InventorySelection.cs",
-        "osdu/src/SqlFlow.Delivery/Ledger/SqlServerLedgerBulk.InventorySelection.cs"
+        "osdu/src/SqlFlow.Delivery/Ledger/SqlServerLedgerBulk.InventorySelection.cs",
+        "osdu/src/SqlFlow.Delivery/Ledger/SqlServerLedgerBulk.InventoryDuplicates.cs",
+        "osdu/src/SqlFlow.Delivery/Engine/Inventories/InventoryRunner.Removal.cs"
       ]
     },
     {
@@ -6150,6 +6389,7 @@
       "related": [
         "delivery-concept-database",
         "delivery-flow-inventory",
+        "delivery-flow-inventory-builds",
         "delivery-table-inventory-record"
       ],
       "sourceRefs": [
@@ -7183,7 +7423,8 @@
       ],
       "related": [
         "delivery-wiki-0013-inventory-flows",
-        "delivery-wiki-0022-removal-flows"
+        "delivery-wiki-0022-removal-flows",
+        "delivery-wiki-0027-inventory-duplicate-checks"
       ],
       "sourceRefs": []
     },
@@ -7582,6 +7823,38 @@
         "osdu/deploy/bicep/main.bicep",
         "osdu/deploy/k8s/worker-pool.yaml",
         "sqlflow/src/SqlFlow.Catalog/Modules/ModuleDatabaseConnections.cs"
+      ]
+    },
+    {
+      "id": "delivery-wiki-0027-inventory-duplicate-checks",
+      "corpus": "wiki",
+      "path": "decisions/0027-inventory-duplicate-checks.md",
+      "title": "Decision 0027: an inventory finds the records OSDU holds more than once, keeps the most complete copy, and removes the rest through a selection",
+      "type": "decision",
+      "summary": "Why duplicate records are found on an inventory by an operator's key, why the fullest copy is kept, and how removing the others stays safe.",
+      "keywords": [
+        "duplicate records",
+        "duplicate check",
+        "inventory",
+        "most complete copy",
+        "attribute count",
+        "selection"
+      ],
+      "related": [
+        "delivery-wiki-0013-inventory-flows",
+        "delivery-wiki-0014-inventory-removals",
+        "delivery-wiki-0002-client-supplied-ids"
+      ],
+      "sourceRefs": [
+        "osdu/src/SqlFlow.Delivery/Engine/Inventories/InventoryRunner.Duplicates.cs",
+        "osdu/src/SqlFlow.Delivery/Engine/Inventories/InventoryDuplicateKey.cs",
+        "osdu/src/SqlFlow.Delivery/Engine/Inventories/InventoryDuplicatePicker.cs",
+        "osdu/src/SqlFlow.Delivery/Engine/Inventories/InventoryRunner.Removal.cs",
+        "osdu/src/SqlFlow.Delivery/Ledger/SqlServerLedgerBulk.InventoryDuplicates.cs",
+        "osdu/src/SqlFlow.Delivery/Engine/Protocols/WellboreDdmsBulkLink.cs",
+        "osdu/src/SqlFlow.Delivery/Engine/Assertions/Evaluators.cs",
+        "osdu/src/SqlFlow.Delivery.ControlPlane/Api/DeliveryInventoryEndpoints.Duplicates.cs",
+        "osdu/gui/src/features/delivery/inventories/duplicates/InventoryDuplicates.tsx"
       ]
     },
     {

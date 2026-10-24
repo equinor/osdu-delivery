@@ -41,7 +41,13 @@ The delivery_* tools read the ledger and the module's definitions: none returns 
 cached values or dimension values. Data is read only in data mode, for a `!` question, as SQLFlow's rules say: a
 read-only query over the columns an approved AI context opens, never the delivery_* tools ('!which curves does
 wellbore X have, over which depths' is a query, not a record lookup). Asked without `!` for what OSDU holds for a
-record or for its source row, say this server does not read it and give the GUI link the result carries.
+record or for its source row, say this server does not read it and give the GUI link the result carries: links.osdu
+opens the record in the explorer, as OSDU holds it now.
+
+OSDU ids: a row that names an OSDU id carries the explorer opened on it, in the id's partition: links.osdu for the
+record the row is or landed as (a record's targetId, a cached record, an id a document refers to), links.osduParent
+for its parentId, links.osduOccupied for its occupiedTargetId. Whenever an answer names an OSDU id, make the id itself
+the link, with that URL verbatim, rather than bare text or inline code.
 
 Vocabulary:
 - record: one deliverable, addressed by flowId (the LEDGER's flow id, never a pipeline id) plus deliveryKey; both are

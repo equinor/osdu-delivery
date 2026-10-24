@@ -135,6 +135,10 @@ other packages adopt the same contract.
 - [0026: the osdu schema lives in the catalog's database, reached through its one connection](decisions/0026-one-database-connection.md) -
   why the module has no database connection of its own, why a node reads the ledger through `SQLFLOW_CATALOG_DB`, why
   a host ignores the retired `SQLFLOW_OSDU_DB` rather than refusing it, and why the control plane owns the `osdu` schema.
+- [0027: an inventory finds the records OSDU holds more than once](decisions/0027-inventory-duplicate-checks.md) -
+  why duplicates are found on an inventory by an operator's key rather than in the explorer or by an assertion, why the
+  copy holding the most values is kept and a ledger's copy is never picked to remove, why the DDMS is not read, and how a
+  removal of the copies picked never takes the last copy of a record.
 
 ## Coverage
 

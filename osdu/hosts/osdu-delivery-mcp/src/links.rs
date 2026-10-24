@@ -6,6 +6,9 @@
 //! own, an assertion run its report, a mapping the mapping builder, and so on. A claimed row still gets the links to
 //! what it references (its run, its flow) from SQLFlow's rules.
 //!
+//! An OSDU id a row names, whatever the row is, opens in the explorer (`osdu`, `osduParent`, `osduOccupied`), so an
+//! answer can make the id itself the link to the record as OSDU holds it.
+//!
 //! The routes are the delivery GUI module's (`osdu/gui/src/module.tsx`), with the query parameters its pages read.
 
 use serde_json::{Map, Value};
@@ -33,12 +36,72 @@ fn cache_page(links: &GuiLinks, partition: &str) -> String {
     links.route(&format!("/delivery/cache?partition={}", encode(partition)))
 }
 
+/// Whether a value is an OSDU record id as storage's contract spells one (`osdu/specs/core/storage/openapi.yaml`):
+/// `{data-partition-id}:{object-type}:{id}`, the first two parts of letters, digits, `_`, `-` and `.`, the last of
+/// those, `:` and `%`. A lookup table's key, a GUID or an object key is not one.
+fn is_osdu_id(value: &str) -> bool {
+    let part = |part: &str, more: &[u8]| {
+        !part.is_empty()
+            && part
+                .bytes()
+                .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'_' | b'-' | b'.') || more.contains(&byte))
+    };
+    let mut parts = value.splitn(3, ':');
+    match (parts.next(), parts.next(), parts.next()) {
+        (Some(partition), Some(kind), Some(rest)) => part(partition, b"") && part(kind, b"") && part(rest, b":%"),
+        _ => false,
+    }
+}
+
+/// An OSDU id field of a row, when it holds one.
+fn osdu_id<'a>(row: &'a Map<String, Value>, name: &str) -> Option<&'a str> {
+    text(row, name).filter(|value| is_osdu_id(value))
+}
+
+/// The explorer opened on one OSDU record, in the partition the row names, else the one its id starts with (a record's
+/// id begins with its data partition). The explorer makes a linked partition the title bar's, so the record is read in
+/// the partition that holds it whichever one the reader last worked in (osdu/docs/reference/concepts/explorer.md).
+fn explorer_page(links: &GuiLinks, id: &str, partition: Option<&str>) -> String {
+    let partition = partition.unwrap_or_else(|| id.split(':').next().unwrap_or_default());
+    links.route(&format!("/delivery/explorer?id={}&partition={}", encode(id), encode(partition)))
+}
+
+/// The explorer links of the OSDU ids a row names, each under what it is to the row: `osdu` the record the row is or
+/// landed as (a record's `targetId`, a cached record, an id a document refers to), `osduParent` the record it reads as
+/// its parent, `osduOccupied` the record OSDU already holds at the id its key makes. Asked of every row, whichever rule
+/// claims it, since an id is linked the same way wherever it appears.
+fn osdu_links(links: &GuiLinks, row: &Map<String, Value>, put: &mut impl FnMut(&str, String)) {
+    let partition = text(row, "partition");
+    for (field, name) in [("targetId", "osdu"), ("parentId", "osduParent"), ("occupiedTargetId", "osduOccupied")] {
+        if let Some(id) = osdu_id(row, field) {
+            put(name, explorer_page(links, id, partition));
+        }
+    }
+
+    // A cached record, or a change found in one: its partition is the cache's (`scope`). A lookup table, dictionary or
+    // dimension caches rows by a key of its own, which is not an OSDU id, so only an id of the scope's partition is linked.
+    if let (Some(scope), true) = (text(row, "scope"), row.contains_key("typeName")) {
+        if let Some(id) = osdu_id(row, "recordId").or_else(|| osdu_id(row, "itemId")) {
+            if id.split(':').next() == Some(scope) {
+                put("osdu", explorer_page(links, id, Some(scope)));
+            }
+        }
+    }
+
+    // An id the pending document of a record refers to, and the property that holds it.
+    if let (Some(id), true, 2) = (osdu_id(row, "id"), row.contains_key("property"), row.len()) {
+        put("osdu", explorer_page(links, id, None));
+    }
+}
+
 /// The links of one row of a delivery payload, or None when the row is not one of the module's.
 pub fn delivery_links(links: &GuiLinks, row: &Map<String, Value>) -> Option<Map<String, Value>> {
     let mut found = Map::new();
     let mut put = |name: &str, link: String| {
         found.entry(name.to_string()).or_insert_with(|| Value::String(link));
     };
+
+    osdu_links(links, row, &mut put);
 
     // ---- Rows that are something of the module's, each by the field that makes it so ------------------------------
 
@@ -267,6 +330,105 @@ mod tests {
 
         let change = decorated(json!({ "tagId": 31, "scope": "dev", "typeName": "wellbore", "path": "data.FacilityName", "status": "pending" }));
         assert_eq!(change["links"]["page"], json!("https://delivery.example.com/delivery/cache?partition=dev"));
+    }
+
+    fn explorer(id: &str, partition: &str) -> Value {
+        json!(format!("https://delivery.example.com/delivery/explorer?id={}&partition={partition}", encode(id)))
+    }
+
+    #[test]
+    fn an_osdu_id_is_one_as_storage_spells_it() {
+        for id in [
+            "dev:master-data--Wellbore:W-1",
+            "dev:work-product-component--WellLog:6a1b2c3d-0000-4000-8000-0123456789ab",
+            "test:reference-data--UnitOfMeasure:m%2Fs",
+            "dev:dataset--File.Generic:abc:1",
+            "my_partition.1:master-data--Well:x",
+        ] {
+            assert!(is_osdu_id(id), "{id}");
+        }
+        for value in [
+            "",
+            "dev",
+            "dev:master-data--Wellbore",
+            "dev::W-1",
+            ":master-data--Wellbore:W-1",
+            "dev:master-data--Wellbore:",
+            "dev:master-data--Wellbore:W 1",
+            "dev:master-data--Wellbore:Å-1",
+            "dev:master/data:W-1",
+            "dw.arc.wells",
+            "5f0f8c1e-58a5-4d6f-9d1e-0a4b6f1c2d3e",
+            "sch:db|schema",
+        ] {
+            assert!(!is_osdu_id(value), "{value}");
+        }
+    }
+
+    #[test]
+    fn a_records_osdu_ids_open_in_the_explorer_in_its_partition() {
+        let row = decorated(json!({
+            "deliveryKey": KEY, "flowId": FLOW, "status": "held", "partition": "test",
+            "targetId": "test:master-data--Wellbore:W-1", "parentId": "test:master-data--Wellbore:P-1",
+            "occupiedTargetId": "test:master-data--Wellbore:W-1-old"
+        }));
+        assert_eq!(row["links"]["page"], json!(format!("https://delivery.example.com/delivery/records/{FLOW}/{KEY}")));
+        assert_eq!(
+            row["links"]["osdu"],
+            json!("https://delivery.example.com/delivery/explorer?id=test%3Amaster-data--Wellbore%3AW-1&partition=test")
+        );
+        assert_eq!(row["links"]["osduParent"], explorer("test:master-data--Wellbore:P-1", "test"));
+        assert_eq!(row["links"]["osduOccupied"], explorer("test:master-data--Wellbore:W-1-old", "test"));
+
+        // A row that does not say its partition is read in the one its id starts with.
+        let hit = decorated(json!({ "deliveryKey": KEY, "flowId": FLOW, "status": "delivered", "targetId": "dev:master-data--Well:7" }));
+        assert_eq!(hit["links"]["osdu"], explorer("dev:master-data--Well:7", "dev"));
+
+        // A record that has not landed has no OSDU id, so it has no explorer link.
+        let pending = decorated(json!({ "deliveryKey": KEY, "flowId": FLOW, "status": "pending", "targetId": null, "partition": "dev" }));
+        assert!(pending["links"]["osdu"].is_null(), "{pending}");
+    }
+
+    #[test]
+    fn an_osdu_id_is_linked_on_a_row_no_rule_claims() {
+        // An id a delivery minted, or one an inventory found: no page of the module's is addressed by it, the explorer is.
+        let minted = decorated(json!({ "artifactId": 4, "slot": "file", "role": "dataset", "targetId": "dev:dataset--File.Generic:f-1" }));
+        assert_eq!(minted["links"], json!({ "osdu": explorer("dev:dataset--File.Generic:f-1", "dev") }));
+
+        // An id the pending document refers to, under the property that holds it, inside the record that refers to it.
+        let record = decorated(json!({
+            "deliveryKey": KEY, "flowId": FLOW, "status": "waiting", "partition": "dev",
+            "references": [{ "id": "dev:master-data--Wellbore:W-9", "property": "data.WellboreID" }]
+        }));
+        assert_eq!(
+            record["references"][0]["links"],
+            json!({ "osdu": explorer("dev:master-data--Wellbore:W-9", "dev") })
+        );
+
+        // A field of that name that is not an OSDU id is left alone.
+        let plain = decorated(json!({ "id": "W-9", "property": "data.WellboreID" }));
+        assert!(plain.get("links").is_none(), "{plain}");
+    }
+
+    #[test]
+    fn a_cached_record_opens_in_the_explorer_and_a_lookup_key_does_not() {
+        let change = decorated(json!({
+            "tagId": 31, "scope": "dev", "typeName": "wellbore", "itemId": "dev:master-data--Wellbore:W-1",
+            "path": "data.FacilityName", "status": "pending"
+        }));
+        assert_eq!(change["links"]["page"], json!("https://delivery.example.com/delivery/cache?partition=dev"));
+        assert_eq!(change["links"]["osdu"], explorer("dev:master-data--Wellbore:W-1", "dev"));
+
+        let item = decorated(json!({
+            "itemId": 912, "scope": "dev", "version": "v12", "typeName": "unit", "recordId": "dev:reference-data--UnitOfMeasure:m"
+        }));
+        assert_eq!(item["links"]["osdu"], explorer("dev:reference-data--UnitOfMeasure:m", "dev"));
+
+        // A lookup table's key, and an id-shaped key of another partition, are not records of this cache's partition.
+        for key in ["WIRELINE", "prod:x:y"] {
+            let lookup = decorated(json!({ "tagId": 32, "scope": "dev", "typeName": "logSource", "itemId": key, "status": "pending" }));
+            assert!(lookup["links"]["osdu"].is_null(), "{lookup}");
+        }
     }
 
     #[test]

@@ -24,7 +24,9 @@ import { TriggerRunDialog } from "@/features/runs/TriggerRunDialog";
 import { formatDurationSeconds, parseUtc } from "@/lib/time";
 import { cn } from "@/lib/utils";
 import type { ExplorerFilter } from "../../../api/explorer";
-import { REMOVABLE_FINDINGS, inventoryApi, type Inventory, type InventoryDetail, type InventoryRun, type InventorySelection } from "../../../api/inventories";
+import {
+  REMOVABLE_FINDINGS, inventoryApi, type DuplicateKeyProperty, type Inventory, type InventoryDetail, type InventoryRun, type InventorySelection,
+} from "../../../api/inventories";
 import { KindText } from "../KindText";
 import { useActivePartition } from "../activePartition";
 import { RunRef } from "../DeliveryRefs";
@@ -38,7 +40,10 @@ import { InventoryLookupBox } from "./InventoryLookup";
 import { InventoryRecordsGrid } from "./InventoryRecordsGrid";
 import { InventoryRemovals } from "./InventoryRemovals";
 import { InventoryConditionsBar } from "./InventorySelectionParts";
-import { matchedCounts, useConditionSentence, useInventorySelection } from "./inventorySelection";
+import { matchedCounts, useConditionSentence, useInventorySelection, useInventorySelectionById } from "./inventorySelection";
+import { DuplicateSelectionBar } from "./duplicates/DuplicateSelectionBar";
+import { duplicateSelectionSentence } from "./duplicates/duplicateModel";
+import { InventoryDuplicates } from "./duplicates/InventoryDuplicates";
 import {
   EVERY_ID, allCounts, counted, downloadInventory, findingVisual, inventoriesPayload, openingFinding, ownersSourceText, runOutcome, standingOf,
   type FindingPick, type InventoryRef, type InventoryView,
@@ -362,12 +367,16 @@ function InventoryRuns({ inventory }: { inventory: Inventory }) {
  * id opens in a panel under the grid, as OSDU holds it. The finding, the tab and the id open live in the address, so a
  * link lands on the same view.
  *
- * Its ids can be selected by what OSDU holds (osdu/docs/reference/flow/inventory.md, Selecting ids by what OSDU holds): a
+ * Its ids can be selected by what OSDU holds (osdu/docs/reference/flow/inventory-selections.md, Selecting ids by what OSDU holds): a
  * condition on a property of the records or a column of a source system, made in the explorer's editor from the grid's
  * Filter, opens a match the flow runs; while it holds, every tab counts its matching ids before its own and the grid lists
- * them. The conditions live in the address too.
+ * them. The conditions live in the address too. A selection made of a duplicate check's picks (Finding duplicate records)
+ * is listed the same way, by its number in the address, and its Duplicates tab finds and decides the copies.
  */
-export function InventoryReport({ reference, siblings, finding, onFinding, view, onView, onOpen, openId, onOpenId, conditions, onConditions }: {
+export function InventoryReport({
+  reference, siblings, finding, onFinding, view, onView, onOpen, openId, onOpenId, conditions, onConditions, selectionId, onSelectionId,
+  duplicateCheck, onDuplicateCheck, duplicateKey, onDuplicateKey, duplicateOutcome, onDuplicateOutcome,
+}: {
   reference: InventoryRef;
   /** The inventories the switcher lists. */
   siblings: readonly Inventory[];
@@ -385,9 +394,26 @@ export function InventoryReport({ reference, siblings, finding, onFinding, view,
   conditions: ExplorerFilter[];
   /** Sets the conditions; none drops the selection. */
   onConditions: (conditions: ExplorerFilter[]) => void;
+  /** The selection the Ids tab lists by its number (a duplicate check's picks), while no conditions select ids. */
+  selectionId: number | null;
+  /** Lists a selection by its number on the Ids tab, opening on the finding given; null lists every id again. */
+  onSelectionId: (selectionId: number | null, finding?: string | null) => void;
+  /** The duplicate check the Duplicates tab shows; null shows the newest. */
+  duplicateCheck: number | null;
+  onDuplicateCheck: (checkId: number | null) => void;
+  /** The key being built on the Duplicates tab, as the address holds it; null takes the key of the check shown. */
+  duplicateKey: string | null;
+  onDuplicateKey: (key: DuplicateKeyProperty[]) => void;
+  /** The outcome whose groups the Duplicates tab lists. */
+  duplicateOutcome: string | null;
+  onDuplicateOutcome: (outcome: string) => void;
 }) {
   const [launching, setLaunching] = useState(false);
-  const selection = useInventorySelection(reference, conditions);
+  const matchedBy = useInventorySelection(reference, conditions);
+  // A duplicate check's picks are matched again by checking again, on their own tab.
+  const picked = useInventorySelectionById(reference, conditions.length === 0 ? selectionId : null, () => onView("duplicates"));
+  const byNumber = conditions.length === 0 && selectionId !== null;
+  const selection = byNumber ? picked : matchedBy;
   const [active] = useActivePartition();
   const queryClient = useQueryClient();
   const { hasScope } = useAuth();
@@ -404,7 +430,8 @@ export function InventoryReport({ reference, siblings, finding, onFinding, view,
     queryFn: () => inventoryApi.removals(reference.partition, reference.inventoryId, RUNS_SHOWN),
     refetchInterval: (query) => ((query.state.data ?? []).some((r) => r.status === "running") ? REMOVAL_REFRESH_MS : IDLE_REFRESH_MS),
   });
-  const sentence = useConditionSentence(detail.data?.inventory.kind, conditions);
+  const conditionSentence = useConditionSentence(detail.data?.inventory.kind, conditions);
+  const sentence = byNumber ? duplicateSelectionSentence(picked) : conditionSentence;
 
   // A removal that finishes changed the inventory's rows: its counts and its grid are read again, rather than a minute later.
   const running = (removals.data ?? []).filter((r) => r.status === "running").map((r) => r.inventoryRemovalId).join(",");
@@ -552,6 +579,7 @@ export function InventoryReport({ reference, siblings, finding, onFinding, view,
             <div className="border-b border-border">
               <TabsList variant="line" data-testid="inventory-tabs">
                 <TabsTrigger value="ids" data-testid="inventory-tab-ids">Ids</TabsTrigger>
+                <TabsTrigger value="duplicates" data-testid="inventory-tab-duplicates">Duplicates</TabsTrigger>
                 <TabsTrigger value="runs" data-testid="inventory-tab-runs">Runs</TabsTrigger>
                 {(data.removal !== undefined || (removals.data?.length ?? 0) > 0) && (
                   <TabsTrigger value="removals" data-testid="inventory-tab-removals">Removals</TabsTrigger>
@@ -588,13 +616,36 @@ export function InventoryReport({ reference, siblings, finding, onFinding, view,
                     <ExportMenu inventory={inventory} finding={chosen} selection={matched === null ? undefined : selection.selection} />
                   </>
                 )}
-                below={<InventoryConditionsBar inventory={inventory} conditions={conditions} onConditions={onConditions} state={selection} sentence={sentence} />}
-                selection={conditions.length === 0 ? undefined : { state: selection, sentence, onClear: () => onConditions([]) }}
+                below={byNumber
+                  ? <DuplicateSelectionBar state={picked} onCheck={(checkId) => { onDuplicateCheck(checkId); onView("duplicates"); }} onClear={() => onSelectionId(null)} />
+                  : <InventoryConditionsBar inventory={inventory} conditions={conditions} onConditions={onConditions} state={selection} sentence={sentence} />}
+                selection={conditions.length === 0 && !byNumber
+                  ? undefined
+                  : { state: selection, sentence, onClear: () => (byNumber ? onSelectionId(null) : onConditions([])) }}
                 openId={openId}
                 onOpen={canReadOsdu ? onOpenId : undefined}
                 removal={canReadOsdu ? data.removal : undefined}
                 removesGone={canReadOsdu && canRun}
                 repairsMissing={canReadOsdu}
+              />
+            </TabsContent>
+            <TabsContent value="duplicates">
+              <InventoryDuplicates
+                inventory={inventory}
+                detail={data}
+                checkId={duplicateCheck}
+                onCheck={onDuplicateCheck}
+                draftText={duplicateKey}
+                onDraft={onDuplicateKey}
+                outcome={duplicateOutcome}
+                onOutcome={onDuplicateOutcome}
+                openId={openId}
+                onOpenId={canReadOsdu ? onOpenId : undefined}
+                canAct={canReadOsdu}
+                onSelection={(made) => {
+                  const removable = (made.counts ?? []).find((count) => REMOVABLE_FINDINGS.some((f) => f === count.finding) && count.count > 0);
+                  onSelectionId(made.selectionId, removable?.finding ?? null);
+                }}
               />
             </TabsContent>
             <TabsContent value="removals">

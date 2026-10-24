@@ -53,7 +53,7 @@ const OPTIONS: IdOption[] = [
 ];
 
 /**
- * Delivering again the records behind an inventory's missing ids (osdu/docs/reference/flow/inventory.md, Repairing missing
+ * Delivering again the records behind an inventory's missing ids (osdu/docs/reference/flow/inventory-removals.md, Repairing missing
  * ids): each through the flow that delivered it, under its own id (a soft-deleted record brought back first, a purged one
  * written again) or, typed back with the partition, under a new one. What was asked is answered in place: the records
  * marked, the run each flow was given, and the ids left as they were, with why.

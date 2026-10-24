@@ -3,7 +3,7 @@ using System.Globalization;
 namespace SqlFlow.Delivery.Ledger;
 
 /// <summary>
-/// Selecting an inventory's ids by what OSDU holds (osdu/docs/reference/flow/inventory.md, Selecting ids by what OSDU holds):
+/// Selecting an inventory's ids by what OSDU holds (osdu/docs/reference/flow/inventory-selections.md, Selecting ids by what OSDU holds):
 /// an operator's conditions on the records' properties, asked of OSDU's search, matched with the inventory's own ids by the
 /// OSDU id, and kept as a selection a page shows and a removal takes its ids from.
 /// </summary>
@@ -155,6 +155,9 @@ public sealed record InventorySelectionState
     public DateTime? CompletedUtc { get; init; }
 
     public string? Error { get; init; }
+
+    /// <summary>The duplicate check whose picks the selection holds; null for a selection a match of conditions filled.</summary>
+    public long? DuplicateCheckId { get; init; }
 
     /// <summary>What the selection came to, in a line a run's log writes.</summary>
     public string Describe() => string.Create(

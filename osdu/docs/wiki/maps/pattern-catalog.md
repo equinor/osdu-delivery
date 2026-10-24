@@ -57,7 +57,7 @@ related:
   - delivery-wiki-0018-template-folders
   - delivery-wiki-linked-canonical-and-custom-records
   - delivery-wiki-0022-removal-flows
-updated: 2026-10-23
+updated: 2026-10-24
 ---
 
 # Pattern catalog: which delivery problem maps to which OSDU Delivery shape
@@ -189,7 +189,8 @@ The route is `target.protocol` (or, in a source with interfaces, follows from wh
 | OSDU records must land in tables for reporting | A retrieval flow writes JSON Lines files; a SQLFlow file flow loads them, ordered after it by lineage | [retrieval](../../reference/flow/retrieval.md), [retrieving records](../../reference/guides/retrieving-records.md) |
 | Prove what landed: counts, values, references, schema, legal tags, bulk data | An assertion flow, with a report per run (JUnit for CI) | [assertion](../../reference/flow/assertion.md), [data quality tests](../../reference/guides/data-quality-tests.md) |
 | Prove that everything the ledger says it delivered is in OSDU | An assertion with the `delivered` subject | [assertion](../../reference/flow/assertion.md) |
-| Find ids in OSDU no ledger accounts for, and remove them | An inventory flow; `removal:` in the document allows removing the findings an operator picks | [inventory](../../reference/flow/inventory.md), [finding orphans](../../reference/guides/finding-orphans.md) |
+| Find ids in OSDU no ledger accounts for, and remove them | An inventory flow; `removal:` in the document allows removing the findings an operator picks | [inventory](../../reference/flow/inventory.md), [inventory removals](../../reference/flow/inventory-removals.md), [finding orphans](../../reference/guides/finding-orphans.md) |
+| Find the records OSDU holds more than once, and remove the less complete copies | A duplicate check of an inventory, by a key of the properties the copies hold alike; the fullest copy of each group is kept and the others become a selection a removal takes | [finding duplicate records](../../reference/flow/inventory-duplicates.md), [0027](../decisions/0027-inventory-duplicate-checks.md) |
 | Let people find records by the source's own values | Search terms: the source columns the mappings read, searched in the explorer | [search terms](../../reference/concepts/search-terms.md) |
 | Let people pick from the values records hold | A dimension flow, its values and search filters | [dimensions guide](../../reference/guides/dimensions.md) |
 

@@ -49,7 +49,7 @@ public sealed partial class InventoryRunner
     private static readonly TimeSpan RemovalProgressEvery = TimeSpan.FromSeconds(30);
 
     /// <summary>
-    /// Removes from OSDU the ids of one finding of one inventory, as an operator asked (osdu/docs/reference/flow/inventory.md,
+    /// Removes from OSDU the ids of one finding of one inventory, as an operator asked (osdu/docs/reference/flow/inventory-removals.md,
     /// What a removal does): every id of the finding, those the operator picked, or those a selection holds (the ids that held
     /// what the operator's conditions asked in OSDU); only for a flow whose document allows the finding (and a purge, for a
     /// purge), only in the partition the request confirms, and only while the inventory (or the selection, still matched against
@@ -106,7 +106,8 @@ public sealed partial class InventoryRunner
 
         // Who created an id matters only to an orphan's removal from OSDU; a gone id's row is removed whoever created it.
         IReadOnlyList<string> owners = inventoryOnly ? [] : OwnersOf(state.OwnersJson);
-        await HoldsWhatWasShownAsync(ledger, state, request, partition, ct).ConfigureAwait(false);
+        var selection = await HoldsWhatWasShownAsync(ledger, state, request, partition, ct).ConfigureAwait(false);
+        var duplicates = selection?.DuplicateCheckId is not null;
 
         var started = Now;
         var parameters = JsonSerializer.Serialize(
@@ -158,7 +159,7 @@ public sealed partial class InventoryRunner
         {
             tally = inventoryOnly
                 ? await RemoveFromInventoryAsync(ledger, state, request, removalId, ct).ConfigureAwait(false)
-                : await RemoveChunksAsync(ledger, state, request, owners, removalId, runId, actor, ct).ConfigureAwait(false);
+                : await RemoveChunksAsync(ledger, state, request, owners, duplicates, removalId, runId, actor, ct).ConfigureAwait(false);
         }
         catch (OperationCanceledException) when (ct.IsCancellationRequested)
         {
@@ -223,9 +224,10 @@ public sealed partial class InventoryRunner
     /// <summary>
     /// Holds the inventory to what the operator was shown: every id of the finding, as many as they were told; the ids they
     /// picked, every one of them an id the inventory holds; or the ids of the finding a selection holds, as many as they were
-    /// told, the selection's match complete and made against the inventory's last build.
+    /// told, the selection's match (or the duplicate check that made it) complete and made against the inventory's last build.
+    /// Returns the selection the removal takes its ids from, or null for one that names its ids or takes every id of the finding.
     /// </summary>
-    private async Task HoldsWhatWasShownAsync(ILedger ledger, InventoryState state, InventoryRemovalRequest request, string partition, CancellationToken ct)
+    private async Task<InventorySelectionState?> HoldsWhatWasShownAsync(ILedger ledger, InventoryState state, InventoryRemovalRequest request, string partition, CancellationToken ct)
     {
         if (request.Selection is { } selectionId)
         {
@@ -243,8 +245,9 @@ public sealed partial class InventoryRunner
 
             if (selection.BuildRunId != state.LastBuildRunId)
             {
-                throw new DeliveryException(
-                    $"Selection {selectionId} was matched against an earlier build of inventory '{state.Name}', and the inventory was built again since: match its conditions again before removing what it holds. Nothing was removed.");
+                throw new DeliveryException(selection.DuplicateCheckId is { } check
+                    ? $"Selection {selectionId} holds the picks of duplicate check {check}, made against an earlier build of inventory '{state.Name}', and the inventory was built again since: check for duplicates again before removing what it holds. Nothing was removed."
+                    : $"Selection {selectionId} was matched against an earlier build of inventory '{state.Name}', and the inventory was built again since: match its conditions again before removing what it holds. Nothing was removed.");
             }
 
             var selected = (await ledger.InventorySelectionCountsAsync(partition, selectionId, ct).ConfigureAwait(false)).Of(request.Finding);
@@ -255,7 +258,7 @@ public sealed partial class InventoryRunner
                     $"Selection {selectionId} of inventory '{state.Name}' holds {selected} {request.Finding} id(s) now, and the removal was asked for {request.Expected}: what it holds changed since it was shown. Nothing was removed; look at it again and ask again."));
             }
 
-            return;
+            return selection;
         }
 
         if (request.NamesIds)
@@ -269,7 +272,7 @@ public sealed partial class InventoryRunner
                     $"The removal names {unknown.Count} id(s) inventory '{state.Name}' holds no row of ({string.Join(", ", unknown.Take(5))}{(unknown.Count > 5 ? ", ..." : "")}). Nothing was removed."));
             }
 
-            return;
+            return null;
         }
 
         var counts = await ledger.InventoryCountsAsync(_flow.LedgerId, state.InventoryId, ct).ConfigureAwait(false);
@@ -280,6 +283,8 @@ public sealed partial class InventoryRunner
                 CultureInfo.InvariantCulture,
                 $"Inventory '{state.Name}' holds {holds} {request.Finding} id(s) now, and the removal was asked for {request.Expected}: what it holds changed since it was shown. Nothing was removed; look at it again and ask again."));
         }
+
+        return null;
     }
 
     /// <summary>
@@ -312,9 +317,13 @@ public sealed partial class InventoryRunner
         }
     }
 
-    /// <summary>Reads, checks, removes and records the removal's ids a chunk at a time, until none is left.</summary>
+    /// <summary>
+    /// Reads, checks, removes and records the removal's ids a chunk at a time, until none is left. A removal by a selection a
+    /// duplicate check made (<paramref name="duplicates"/>) also holds each copy to the copy its group keeps.
+    /// </summary>
     private async Task<InventoryRemovalTally> RemoveChunksAsync(
-        ILedger ledger, InventoryState state, InventoryRemovalRequest request, IReadOnlyList<string> owners, long removalId, Guid runId, string actor, CancellationToken ct)
+        ILedger ledger, InventoryState state, InventoryRemovalRequest request, IReadOnlyList<string> owners, bool duplicates, long removalId, Guid runId, string actor,
+        CancellationToken ct)
     {
         using var http = new HttpRuntime(_flow.Reliability, _context.Secrets, _context.Time, _transport, _allowLoopback, observer: _context.HttpObserver);
         var client = await ProtocolFactory.ClientAsync(http, _flow.Source.Endpoint, _flow.Source.Auth, _flow.Source.Headers, _context.Secrets, ct).ConfigureAwait(false);
@@ -341,7 +350,7 @@ public sealed partial class InventoryRunner
             }
 
             after = chunk[^1].InventoryRecordId;
-            var (items, refusal) = await RemoveChunkAsync(ledger, storage, headers, chunk, request, scope, owners, removalId, actor, stats, ct).ConfigureAwait(false);
+            var (items, refusal) = await RemoveChunkAsync(ledger, storage, headers, chunk, request, scope, owners, duplicates, removalId, actor, stats, ct).ConfigureAwait(false);
             await ledger.RecordInventoryRemovalAsync(_flow.LedgerId, state.InventoryId, removalId, items, removedDetail, goneDetail, Now, ct).ConfigureAwait(false);
             tally = tally.Add(items);
             if (refusal is not null)
@@ -361,12 +370,13 @@ public sealed partial class InventoryRunner
     /// <summary>
     /// One chunk: what no longer has the finding (in the inventory, or against the ledgers now) is skipped, what storage no
     /// longer holds is gone, what changed since the inventory listed it or (an orphan) was created by no owner is skipped, and
-    /// the rest is removed. Returns every id's outcome, and why the removal has to stop when OSDU refused the whole chunk for
-    /// want of permission.
+    /// the rest is removed. A copy a duplicate check picked (<paramref name="duplicates"/>) is skipped too while storage does
+    /// not hold the copy its group keeps, so a removal never takes the last copy of a record. Returns every id's outcome, and why
+    /// the removal has to stop when OSDU refused the whole chunk for want of permission.
     /// </summary>
     private async Task<(IReadOnlyList<InventoryRemovalItem> Items, string? Refusal)> RemoveChunkAsync(
         ILedger ledger, OsduRecordProtocol storage, StorageHeaders headers, IReadOnlyList<InventoryRemovalCandidate> chunk, InventoryRemovalRequest request,
-        RemovalScope scope, IReadOnlyList<string> owners, long removalId, string actor, InventoryReadStats stats, CancellationToken ct)
+        RemovalScope scope, IReadOnlyList<string> owners, bool duplicates, long removalId, string actor, InventoryReadStats stats, CancellationToken ct)
     {
         var items = new List<InventoryRemovalItem>(chunk.Count);
         var checking = new List<InventoryRemovalCandidate>(chunk.Count);
@@ -396,7 +406,13 @@ public sealed partial class InventoryRunner
             return (items, null);
         }
 
-        var served = await headers.ReadAsync(checking.Select(c => c.TargetId).ToList(), stats, ct).ConfigureAwait(false);
+        // A copy a duplicate check picked goes only while storage holds the copy its group keeps: both are read in one pass.
+        var keepers = duplicates && request.Selection is { } selectionId
+            ? (await ledger.InventorySelectionKeepersAsync(_flow.LedgerId, selectionId, checking.Select(c => c.InventoryRecordId).ToList(), ct).ConfigureAwait(false))
+                .ToDictionary(k => k.InventoryRecordId)
+            : [];
+        var served = await headers.ReadAsync(
+            checking.Select(c => c.TargetId).Concat(keepers.Values.Select(k => k.KeptTargetId)).Distinct(StringComparer.Ordinal).ToList(), stats, ct).ConfigureAwait(false);
         var removing = new List<InventoryRemovalCandidate>(checking.Count);
         foreach (var candidate in checking)
         {
@@ -409,6 +425,16 @@ public sealed partial class InventoryRunner
                 items.Add(Item(candidate, candidate.Recorded, InventoryRemovals.Skipped, string.Create(
                     CultureInfo.InvariantCulture,
                     $"OSDU serves version {now}, and the inventory listed version {listed}: it changed since, so it is left for the next build to look at")));
+            }
+            else if (duplicates && !keepers.ContainsKey(candidate.InventoryRecordId))
+            {
+                items.Add(Item(candidate, candidate.Recorded, InventoryRemovals.Skipped,
+                    "the selection names no copy its group keeps for it, so it is left: a copy goes only beside the copy kept"));
+            }
+            else if (duplicates && !served.ContainsKey(keepers[candidate.InventoryRecordId].KeptTargetId))
+            {
+                items.Add(Item(candidate, candidate.Recorded, InventoryRemovals.Skipped,
+                    $"storage no longer holds {keepers[candidate.InventoryRecordId].KeptTargetId}, the copy its group keeps, so this copy is left: removing it could leave no copy of the record"));
             }
             else if (request.Finding == InventoryFindings.Orphan && (held.CreateUser is null || !owners.Contains(held.CreateUser, StringComparer.OrdinalIgnoreCase)))
             {
