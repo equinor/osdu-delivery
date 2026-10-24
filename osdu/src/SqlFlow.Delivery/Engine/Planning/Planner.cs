@@ -906,7 +906,7 @@ public sealed class Planner
     internal static string ChangedTargetId(string claimed, string rendered)
         => $"the mapping now gives this record the OSDU id {rendered}, and the record claimed {claimed} when it first queued a document; "
             + "a record keeps the OSDU id it claimed, so nothing is sent. To deliver the flow's records under the ids the mapping gives now, "
-            + "remove them from OSDU (the record scope) and either deliver them under a ledger of their own (the interface's ledger:), "
+            + "remove them from OSDU (the record scope) and either deliver them under a ledger of their own (ledger:, or interfaces.<name>.ledger), "
             + "which keeps their history, or delete them from the ledger with the removal, after which the next run delivers the rows as new records; "
             + "or put back what moved the id: the mapping's dataset.idFrom, the entity type of the kind it renders, or the partition the flow mints ids in (dataPartition)";
 

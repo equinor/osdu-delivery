@@ -69,6 +69,7 @@ it; and the next match of the partition retires those older than a week.
 | `CompletedUtc` | `datetime2` | yes | When it closed. |
 | `Error` | `nvarchar(4000)` | yes | Why the match failed, redacted; null for one that did not. |
 | `DuplicateCheckId` | `bigint` | yes | The [duplicate check](inventory-duplicate-check.md) whose picks the selection holds: the copies of each group it picked to remove, made a selection completed against the build the check read, with no conditions (`ConditionsJson` is `[]`, and its `ConditionsKey` names the check, so no lookup of conditions finds it) and no match. Null for a selection a match filled. |
+| `DuplicateKeyJson` | `nvarchar(max)` | yes | The key the duplicate check's groups were formed by when the selection was made of its picks, as the check keeps it: the check may be grouped by another key since, and the selection still says what chose its ids. Null for a selection a match filled, or one made before selections kept it (its check's key is shown then). |
 
 ## Keys and indexes
 

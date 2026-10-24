@@ -12,6 +12,9 @@ keywords:
   - waves
   - parallelinterfaces
   - ledger adoption
+  - renamed flow
+  - rename a flow
+  - keep the ledger
   - waiting record
   - x-osdu-relationship
   - failwhen
@@ -50,6 +53,7 @@ sourceRefs:
   - osdu/src/SqlFlow.Delivery/Ledger/OsduLedger.Waits.cs
   - osdu/src/SqlFlow.Delivery/Catalog/DeliveryInterfaceCatalog.cs
   - osdu/src/SqlFlow.Delivery/Catalog/DeliveryCatalogSync.cs
+  - osdu/src/SqlFlow.Delivery/Ledger/ILedger.cs
   - osdu/src/SqlFlow.Delivery/Catalog/OsduCacheStore.cs
   - osdu/src/SqlFlow.Delivery.Data/DeliveryEntities.cs
   - osdu/src/SqlFlow.Delivery.Data/Migrations/20260916221306_DeliveryInterfaces.cs
@@ -175,7 +179,7 @@ The same message names `source.datasets`, `source.payloads`, `render.mapping`, `
 | `bulk` | The bulk data a DDMS keeps for each record, a payload set of the same shape, written after the record. |
 | `workflow` | The workflow each record starts ([routes](routes.md)). |
 | `route` | Names the route instead of letting what the interface declares decide it ([routes](routes.md)). |
-| `ledger` | The name of an existing flow whose ledger the interface keeps. See [Ledger identity](#ledger-identity). |
+| `ledger` | The name of an existing ledger the interface keeps: a flow's, or `<old name>/<interface>` of a renamed source. See [Ledger identity](#ledger-identity). |
 | `after` | Interfaces of this document it waits for, beside the ones its references imply. See [Order](#order). |
 | `failWhen` | Its stop rules, laid over the source's. See [When an interface stops](#when-an-interface-stops). |
 | `cache` | Its cache steps, replacing the source's whole: an interface delivers a kind of its own ([cache](delivery.md#cache)). |
@@ -226,7 +230,8 @@ and why it took it.
 Every interface keeps a ledger of its own: its records, submissions, watermarks, OSDU id claims and statistics are kept
 under the name `<flow>/<interface>` (`welldb-03-delivery/welllogs`). In a flow that works in partitions, each partition
 keeps its own, `welldb-03-delivery/welllogs@test`, except the partition marked `keepLedger`
-([partitions](../concepts/partitions.md)). A document in the single form keeps the ledger of its own name.
+([partitions](../concepts/partitions.md)). A document in the single form keeps the ledger of its own name, or the one its
+top-level `ledger:` names ([Renaming a flow](#renaming-a-flow)).
 
 `ledger: <name>` keeps the ledger of an existing flow instead. Moving single-form flows into one source that way loses no
 history and sends nothing again that has not changed:
@@ -246,6 +251,39 @@ Remove the flow whose ledger was adopted. While two flows keep one ledger, the r
 `the ledger '<name>' is kept by ... Every one of them delivers the same records under it; remove or rename the flow
 whose ledger an interface adopted, so only one of them keeps it.` Two interfaces of one document never keep the same
 ledger, and a ledger name is at most 200 characters.
+
+### Renaming a flow
+
+A ledger identity is derived from a name, so renaming a flow, or a source, whose interfaces' ledgers carry its name,
+starts a new, empty ledger. The records the old name delivered stay in the old ledger with the OSDU ids they claimed, and
+the renamed flow's next run finds every row new and holds each record whose id the old ledger claimed; nothing is sent:
+`OSDU id <id> is already claimed by flow '<old name>' (<id>), which no repository declares any more, and one OSDU record belongs to one flow. A flow keeps its ledger under its name, so a renamed flow starts an empty one: when this flow is that one renamed, keep its ledger with ledger: <old name> in this flow's document (interfaces.<name>.ledger for an interface of a source), and its records carry on with their history and their OSDU ids. Otherwise deliver this flow to another data partition, or give its mapping a dataset.system or key that yields other OSDU ids.`
+
+To rename a flow and keep its records, name the old ledger: `ledger:` at the top of a document in the single form, and
+`ledger: <old name>/<interface>` on each interface of a renamed source.
+
+```yaml
+flowType: delivery
+name: welldb-wellbore-03-v130-delivery
+ledger: welldb-wellbore-03-delivery
+```
+
+The flow then keeps the old ledger as it was: its records with their history and their claims, its watermarks, its
+submissions and its statistics, so its next run sends only what changed. In a flow that works in partitions, each
+partition keeps the old name's ledger there (`welldb-wellbore-03-delivery@test`), and the partition marked `keepLedger`
+the old ledger itself. The pipeline is the new name, so SQLFlow's run history and schedules start under it.
+
+While the file that declared a flow declares it under another name, the ledger of the old name holds ids its records
+claimed and no pipeline keeps it, the repository sync warns, once for each partition, until the flow keeps that ledger or
+its own ledger claims an id:
+`<file>: flow '<new name>' was declared as '<old name>' before, and a flow keeps its ledger under its name, so it starts an empty ledger in partition '<partition>' while the records '<old name>' delivered stay in '<old ledger>' with the OSDU ids they claimed. Each of its records whose id that ledger claimed is held, and nothing is sent for it. Keep the ledger with ledger: <old name>, and the records carry on with their history and their OSDU ids.`
+
+A renamed flow that has already run without `ledger:` keeps a ledger of its own holding the records it held, none of
+which claimed an id. Delete it before writing `ledger:`, with **Delete ledger** on the flow's Delivery tab or the
+`delete-ledger` operation ([Deleting the ledger](../concepts/removal-and-reversal.md#deleting-the-ledger)): it removes
+nothing from OSDU, since a record that never queued a document wrote nothing there, and deletes the held records. Once
+`ledger:` is written, the Delivery tab shows the old ledger, and deleting it would remove the old name's records from
+OSDU.
 
 ## The interface read model
 

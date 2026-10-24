@@ -82,7 +82,8 @@ A **ledger** is the records of one flow in one OSDU partition, under one ledger 
 carries). A flow in the single form has one identity, derived from its name; each interface of a source keeps its own,
 derived from `<flow>/<interface>` (see [Interfaces](../flow/interfaces.md)). A flow that works in partitions derives one
 identity per partition from that name and the partition, except in the partition marked `keepLedger`. The same source row read by two flows is two
-records, each with its own state and history.
+records, each with its own state and history. Because the identity is derived from the name, a renamed flow starts an
+empty ledger unless it keeps the old one with `ledger: <old name>` ([Renaming a flow](../flow/interfaces.md#renaming-a-flow)).
 
 `osdu.Ledger` is the directory: one row per ledger identity, naming its partition, its kind (`delivery`, `retrieval`,
 `assertion`, `dimension` or `inventory`), its flow and interface. `osdu.LedgerPartition` numbers each partition once, and every ledger table's key

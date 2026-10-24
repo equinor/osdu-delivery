@@ -4,34 +4,38 @@ namespace SqlFlow.Delivery.Ledger;
 
 /// <summary>
 /// Finding the duplicate records of an inventory (osdu/docs/reference/flow/inventory-duplicates.md;
-/// osdu/docs/wiki/decisions/0027-inventory-duplicate-checks.md): an operator's key, the properties two records must hold alike
-/// to be copies of one another, read for every id the inventory serves; the ids that share a key grouped; each group's copies
-/// read whole, and the most complete one kept; and the copies picked to remove made a selection the inventory's removal takes.
+/// osdu/docs/wiki/decisions/0027-inventory-duplicate-checks.md): the properties of an operator's key downloaded for every id
+/// the inventory serves into the check's own table; the ids that hold equal values at the key grouped in SQL, as often as the
+/// key changes, without asking OSDU again; the copies of the groups read whole when an operator picks, and the most complete
+/// one kept; and the copies picked to remove made a selection the inventory's removal takes.
 /// </summary>
 public static class InventoryDuplicates
 {
     /// <summary>Opened, and its check queued as a run of the inventory flow.</summary>
     public const string Queued = InventorySelections.Queued;
 
-    /// <summary>Its check is reading OSDU.</summary>
+    /// <summary>Its run is reading OSDU: downloading the properties, or reading the copies an operator picks from.</summary>
     public const string Running = InventorySelections.Running;
 
-    /// <summary>Its check read OSDU whole: its groups are every set of the inventory's ids that share the key.</summary>
+    /// <summary>
+    /// Its download read OSDU whole: its groups are every set of the inventory's ids that hold equal values at the key. A pick that
+    /// stopped leaves it completed, the reason in its error and the groups it did not read still to pick.
+    /// </summary>
     public const string Completed = InventorySelections.Completed;
 
-    /// <summary>Its check stopped; it holds no group, and the reason says why.</summary>
+    /// <summary>Its download stopped; it holds no group and no table, and the reason says why.</summary>
     public const string Failed = InventorySelections.Failed;
 
     /// <summary>Kept past <see cref="KeptFor"/> because a removal took its picks: its key and counts stay, its groups are gone.</summary>
     public const string Expired = InventorySelections.Expired;
 
-    /// <summary>A running check reading every id's key through the search.</summary>
+    /// <summary>A check downloading the properties of every id the inventory serves through the search.</summary>
     public const string ReadingKeys = "keys";
 
-    /// <summary>A running check reading each group's copies from storage and picking the one to keep.</summary>
+    /// <summary>A check reading the copies of its groups from storage and picking the one each keeps.</summary>
     public const string ReadingCopies = "copies";
 
-    /// <summary>A group whose copies are not read yet.</summary>
+    /// <summary>A group whose copies are not read yet: the check has not picked since its key was set.</summary>
     public const string Pending = "pending";
 
     /// <summary>A group whose copy to keep the check picked: the most complete, and the others picked to remove where the flow may.</summary>
@@ -93,11 +97,17 @@ public static class InventoryDuplicates
     /// </summary>
     public const int MaxCopiesPicked = 100;
 
-    /// <summary>The most keys one write of a check keeps, in one transaction.</summary>
+    /// <summary>The most rows one write of a check's download keeps, in one transaction.</summary>
     public const int WriteChunk = 5000;
 
-    /// <summary>The most groups one round of the copies pass reads, judges and writes.</summary>
+    /// <summary>The most groups one round of a pick reads, judges and writes.</summary>
     public const int GroupsPerRound = 200;
+
+    /// <summary>
+    /// How many copies one search asks which records name, in a pick: a search naming them all finds the copies no other record
+    /// names in one request, and one that finds a record is split until each copy named is counted on its own.
+    /// </summary>
+    public const int ReferencesPerSearch = 40;
 
     /// <summary>How long a check's groups are kept, as a selection's ids are (<see cref="InventorySelections.KeptFor"/>).</summary>
     public static readonly TimeSpan KeptFor = InventorySelections.KeptFor;
@@ -161,20 +171,36 @@ public static class InventoryDuplicateColumns
     }
 }
 
-/// <summary>What a check starts with: its inventory, who asked, and its key as written and hashed.</summary>
-public sealed record InventoryDuplicateCheckStart(int InventoryId, string Actor, string KeyJson, string KeyHash, long? BuildRunId, DateTime CreatedUtc);
+/// <summary>
+/// What a check starts with: its inventory, who asked, its key as written and hashed, and the properties it downloads (the key's,
+/// each with its column of the check's table).
+/// </summary>
+public sealed record InventoryDuplicateCheckStart(
+    int InventoryId, string Actor, string KeyJson, string KeyHash, IReadOnlyList<DuplicateColumn> Attributes, long? BuildRunId, DateTime CreatedUtc);
 
 /// <summary>
-/// One record the search returned while a check read the keys: its OSDU id, the version the index holds, the hash of its key
-/// (null when it holds no value at any of the key's properties) and what it holds there (JSON).
+/// What a record holds at one property a check downloads: its values as the record writes them (a JSON list of text), and the
+/// hash of the values as a key compares them, which two records share exactly when they hold equal values there.
 /// </summary>
-public sealed record InventoryDuplicateKeyHit(string TargetId, long? Version, byte[]? KeyHash, string? ValuesJson);
+public sealed record InventoryDuplicateValue(string ValuesJson, byte[]? Hash);
 
-/// <summary>What one write of the keys kept: the inventory's ids holding a key and holding none, records outside it, and ids at another version.</summary>
-public sealed record InventoryDuplicateKeyWrite(long Keyed, long Unkeyed, long Outside, long Changed);
+/// <summary>
+/// One record the search returned while a check downloaded: its OSDU id, the version the index holds, and what it holds at each
+/// property the check downloads, in their order (null where it holds no value).
+/// </summary>
+public sealed record InventoryDuplicateRow(string TargetId, long? Version, IReadOnlyList<InventoryDuplicateValue?> Values);
 
-/// <summary>What grouping the keys came to: the groups of ids that share a key, the ids in them, and the groups too broad to pick from.</summary>
-public sealed record InventoryDuplicateGrouping(long Groups, long Copies, long TooBroad);
+/// <summary>What one write of a download kept: the inventory's ids it wrote a row of, records outside the inventory, and ids at another version than it listed.</summary>
+public sealed record InventoryDuplicateRowsWrite(long Written, long Outside, long Changed);
+
+/// <summary>A key a check's groups are formed by: as written and hashed, the paths of its properties in order, who set it and when.</summary>
+public sealed record InventoryDuplicateKeying(string KeyJson, string KeyHash, IReadOnlyList<string> Paths, string Actor, DateTime NowUtc);
+
+/// <summary>
+/// What grouping a check's table by a key came to: the groups of ids that hold equal values at it, the ids in them, the groups
+/// too broad to pick from, and the downloaded ids holding a value at the key and holding none.
+/// </summary>
+public sealed record InventoryDuplicateGrouping(long Groups, long Copies, long TooBroad, long Keyed, long Unkeyed);
 
 /// <summary>One copy of a group as the copies pass reads it: its inventory row and OSDU id, and the finding the inventory gives it now.</summary>
 public sealed record InventoryDuplicateCopyRow(long InventoryRecordId, string TargetId, string Finding, long? ListedVersion);
@@ -190,8 +216,11 @@ public sealed record InventoryDuplicateCopyFigures(
 public sealed record InventoryDuplicateJudgement(
     int GroupNumber, string Outcome, string? Reason, long? KeptInventoryRecordId, IReadOnlyList<InventoryDuplicateCopyFigures> Copies);
 
-/// <summary>How a check ended: its status, what it had to say, and why it failed.</summary>
+/// <summary>How a check's download ended: its status, what it had to say, and why it failed.</summary>
 public sealed record InventoryDuplicateCheckEnd(string Status, IReadOnlyList<string> Notes, string? Error);
+
+/// <summary>How a pick ended: what it had to say, and why it stopped, if it did.</summary>
+public sealed record InventoryDuplicatePickEnd(IReadOnlyList<string> Notes, string? Error);
 
 /// <summary>One duplicate check of an inventory as the module's database holds it.</summary>
 public sealed record InventoryDuplicateCheckState
@@ -207,6 +236,20 @@ public sealed record InventoryDuplicateCheckState
     public required string KeyJson { get; init; }
 
     public required string KeyHash { get; init; }
+
+    /// <summary>The properties the check downloaded, each with its column (<see cref="InventoryDuplicateTable.ToJson"/>).</summary>
+    public string? AttributesJson { get; init; }
+
+    /// <summary>The check's table, once its download made it; null after a sweep dropped it.</summary>
+    public string? TableName { get; init; }
+
+    /// <summary>Who set the key the groups are formed by, and when.</summary>
+    public string? KeyedBy { get; init; }
+
+    public DateTime? KeyedUtc { get; init; }
+
+    /// <summary>When a pick last read every group's copies; null while groups wait to be picked.</summary>
+    public DateTime? PickedUtc { get; init; }
 
     /// <summary>queued, running, completed, failed or expired.</summary>
     public required string Status { get; init; }
@@ -270,6 +313,15 @@ public sealed record InventoryDuplicateGroupState(
 public sealed record InventoryDuplicateMemberState(
     InventoryRecordState Record, int GroupNumber, long? IndexedVersion, string? ValuesJson, string? StorageState, long? StoredVersion, int? Attributes,
     long? MentionedBy, string? Role, string? Reason);
+
+/// <summary>How many of a check's groups hold from <paramref name="From"/> to <paramref name="To"/> copies (no end for the last), and the copies they hold.</summary>
+public sealed record InventoryDuplicateSize(int From, int? To, long Groups, long Copies);
+
+/// <summary>
+/// How a check's groups are sized, smallest first (pairs; 3 to 10; 11 to <see cref="InventoryDuplicates.MaxCopiesPicked"/>; more,
+/// which no pick reads), and the groups waiting to be picked with the copies a pick would read of them.
+/// </summary>
+public sealed record InventoryDuplicateSizes(IReadOnlyList<InventoryDuplicateSize> Sizes, long PendingGroups, long PendingCopies);
 
 /// <summary>A group with its copies, as a page lists it.</summary>
 public sealed record InventoryDuplicateGroupPage(InventoryDuplicateGroupState Group, IReadOnlyList<InventoryDuplicateMemberState> Members);

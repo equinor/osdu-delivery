@@ -375,3 +375,17 @@ wanted, with the same operations as before. Read with the code it became
 Amended [0027](decisions/0027-inventory-duplicate-checks.md): the key is picked in a record of the inventory, its
 properties shown with the values the record holds there, and the list of the kind's properties is rejected as the way to
 pick, kept for a property the record shown holds no value at.
+
+## [2026-10-24] ingest | Duplicates downloaded and grouped in SQL, decision 0027 amended
+
+Source: the human's review of a check against a real partition, whose search per copy for the records naming it was
+answered 429, and their direction: extend the inventory's ids with the key's properties, find the duplicates on the SQL
+side with the schema evolution the dimension module uses, combine that analysis with live reads of OSDU, and compare equal
+values alone. Read with the code it became (`osdu/src/SqlFlow.Delivery/Ledger/InventoryDuplicateTable.cs`,
+`osdu/src/SqlFlow.Delivery/Ledger/RunTimeTables.cs`, `osdu/src/SqlFlow.Delivery/Engine/Inventories/InventoryDuplicateReferences.cs`,
+`osdu/src/SqlFlow.Delivery/Engine/Inventories/InventoryRunner.Duplicates.cs`).
+
+Amended [0027](decisions/0027-inventory-duplicate-checks.md): a check downloads the key's properties into a table of its
+own and groups them in SQL, any key of what it downloaded groups again at once, a pick reads the copies of the groups an
+operator settles on with the records naming them counted a batch to a search, and keys compare equal values only; reading
+OSDU per copy and comparisons per property are recorded as rejected.

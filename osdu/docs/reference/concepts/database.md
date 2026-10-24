@@ -108,7 +108,7 @@ What may be pruned and what never is: [Availability and retention](availability-
 | [`osdu.InventorySelectionItem`](../tables/inventory-selection-item.md) | An id a match found holding what its conditions ask, or a copy a duplicate check picked to remove |
 | [`osdu.InventoryDuplicateCheck`](../tables/inventory-duplicate-check.md) | A check of an inventory's ids for duplicate records, by an operator's key |
 | [`osdu.InventoryDuplicateGroup`](../tables/inventory-duplicate-group.md) | A group of ids a duplicate check found sharing a key, and the copy it keeps |
-| [`osdu.InventoryDuplicateMember`](../tables/inventory-duplicate-member.md) | An id a duplicate check read: its key, how complete it is, and its role in its group |
+| [`osdu.InventoryDuplicateMember`](../tables/inventory-duplicate-member.md) | A copy in a duplicate check's groups: what it holds, how complete it is, and its role in its group |
 
 ### Removals
 
@@ -186,7 +186,7 @@ says how they fit and how each dimension's `dim_` table is laid out from them.
 
 ## Objects outside the model
 
-Three kinds of object live in the `osdu` schema with no entity of the model behind them:
+Four kinds of object live in the `osdu` schema with no entity of the model behind them:
 
 - `[osdu].[__EFMigrationsHistory]`: EF Core's record of the module's migrations, written by `sqlflow db migrate`.
 - `[osdu].[dim_<dimension>]`: each dimension's own table, created and widened at run time by its builds through SQLFlow's
@@ -195,6 +195,11 @@ Three kinds of object live in the `osdu` schema with no entity of the model behi
 - `[osdu].[v_dim_<view>]`: each view a dimension flow declares, written from the flow's document alone and recorded in
   [`osdu.DimensionView`](../tables/dimension-view.md), so a build writes and drops only views it made
   ([Dimension views](../flow/dimension-views.md)).
+- `[osdu].[dup_<check>]`: each duplicate check's own table, the properties it downloaded of every id, created and widened
+  at run time by its download through SQLFlow's schema evolution, named by
+  [`osdu.InventoryDuplicateCheck`](../tables/inventory-duplicate-check.md) `TableName`, and dropped when the download
+  fails, a later download of the inventory completes, or the sweep retires the check
+  ([The check's table](../flow/inventory-duplicates.md#the-checks-table)).
 
-No migration creates or alters the `dim_` tables and `v_dim_` views; every other object of the schema ships with the
-migration that makes it.
+No migration creates or alters the `dim_` and `dup_` tables and `v_dim_` views; every other object of the schema ships with
+the migration that makes it.

@@ -357,37 +357,6 @@ public sealed partial class InventoryRunner
             }
         }
 
-        return FitValues(held);
-    }
-
-    /// <summary>
-    /// Values a row keeps of a record, property to values, as JSON within <see cref="DeliveryModel.MaxSelectionValuesLength"/>:
-    /// values are left off the end of the longest list until it fits, so a row always says what it holds first, and a property
-    /// is dropped once its list is down to one value that still does not fit. Null when nothing is held, or nothing fits.
-    /// <paramref name="held"/> is cut in place.
-    /// </summary>
-    internal static string? FitValues(Dictionary<string, List<string>> held)
-    {
-        ArgumentNullException.ThrowIfNull(held);
-        while (held.Count > 0)
-        {
-            var json = JsonSerializer.Serialize(held);
-            if (json.Length <= DeliveryModel.MaxSelectionValuesLength)
-            {
-                return json;
-            }
-
-            var longest = held.OrderByDescending(h => h.Value.Count).ThenByDescending(h => h.Value.Sum(v => v.Length)).First();
-            if (longest.Value.Count > 1)
-            {
-                longest.Value.RemoveAt(longest.Value.Count - 1);
-            }
-            else
-            {
-                held.Remove(longest.Key);
-            }
-        }
-
-        return null;
+        return InventorySelectionValues.Fit(held);
     }
 }

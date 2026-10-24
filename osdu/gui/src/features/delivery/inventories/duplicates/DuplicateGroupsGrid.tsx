@@ -35,8 +35,11 @@ const PAGE = 50;
 /** The copies of a group too broad to pick from that one ask lists. */
 const BROAD_PAGE = 100;
 
-/** The key's properties the grid shows a column of at first; the rest are a click away under View. */
-const KEY_COLUMNS_SHOWN = 4;
+/** The properties outside the key the grid shows a column of at first; the rest are a click away under View. */
+const OTHER_COLUMNS_SHOWN = 4;
+
+/** How often the groups are read again while a pick writes them, so they move from to pick to how they came out. */
+const PICKING_MS = 4000;
 
 /** The workbench's bottom panel content this grid raises: an OSDU id after this prefix. */
 const PANEL = "inventory-duplicate:";
@@ -128,16 +131,19 @@ function CompletenessCell({ copy, most }: { copy: DuplicateCopy; most: number })
 }
 
 /**
- * The groups of a completed duplicate check (osdu/docs/reference/flow/inventory-duplicates.md), the largest
+ * The groups of a downloaded duplicate check (osdu/docs/reference/flow/inventory-duplicates.md), the largest
  * first, in a grid that fits the window and scrolls in place, a page of groups at a time. Each group is a node of the grid's
  * tree: how it came out (its reason on hover), what its copies share at the key, how many there are, the copy it keeps and who
- * chose it; under it its copies, each with its role (why on hover), its finding, what it holds at the key's properties, how
- * complete it is against the fullest copy, how many records name it, its version and who created it. A copy opens in the
- * workbench's bottom panel, where its values' properties can be added to the key being built. Where the reader may act, a
- * copy can be kept (the group judged again with it kept, and recorded as their choice) and a choice taken back; two copies of
- * a group, ticked or the two fullest, are compared side by side. A group too broad to pick from lists its copies on asking.
+ * chose it; under it its copies, each with its role (why on hover), its finding, what it holds at each property the check
+ * downloaded (the key's start left out, every copy of a group holding the same values there; the others show how the copies
+ * differ), how complete it is against the fullest copy, how many records name it, its version and who created it; a group
+ * waiting to be picked shows its copies as the download holds them, their roles to come. A copy opens in the workbench's
+ * bottom panel, where its values' properties can be added to the key being built. Where the reader may act, a copy can be kept
+ * (the group judged again with it kept, and recorded as their choice) and a choice taken back; two copies of a group, ticked
+ * or the two fullest, are compared side by side. A group too broad to pick from lists its copies on asking. While a pick runs
+ * (`live`) the groups are read again as it writes them.
  */
-export function DuplicateGroupsGrid({ inventory, check, outcome, total, leading, canChoose, openId, onOpenId }: {
+export function DuplicateGroupsGrid({ inventory, check, outcome, total, leading, canChoose, live, openId, onOpenId }: {
   inventory: Inventory;
   check: InventoryDuplicateCheck;
   /** The outcome whose groups are listed; null lists every group. */
@@ -146,13 +152,17 @@ export function DuplicateGroupsGrid({ inventory, check, outcome, total, leading,
   total: number | null;
   /** What leads the grid's toolbar: the outcomes to pick from. */
   leading: ReactNode;
-  /** Whether the reader may choose the copy a group keeps: the check completed against the inventory's last build. */
+  /** Whether the reader may choose the copy a group keeps: the check completed against the inventory's last build, no pick under way. */
   canChoose: boolean;
+  /** Whether a pick is writing the groups now. */
+  live: boolean;
   openId: string | null;
   onOpenId?: (id: string | null) => void;
 }) {
   const queryClient = useQueryClient();
   const paths = check.key.map((p) => p.path);
+  // A column for each property the check downloaded, the key's first: a check from before downloads held the key's alone.
+  const shown = [...paths, ...check.attributes.filter((path) => !paths.includes(path))];
   const groupsKey = useMemo(
     () => ["delivery", "inventories", "duplicates", "groups", inventory.partition, inventory.inventoryId, check.checkId, outcome] as const,
     [inventory.partition, inventory.inventoryId, check.checkId, outcome]);
@@ -161,6 +171,7 @@ export function DuplicateGroupsGrid({ inventory, check, outcome, total, leading,
     queryFn: ({ pageParam }) => inventoryApi.duplicateGroups(inventory.partition, inventory.inventoryId, check.checkId, { outcome: outcome ?? undefined, after: pageParam, limit: PAGE }),
     initialPageParam: undefined as number | undefined,
     getNextPageParam: (last) => last.next,
+    refetchInterval: live ? PICKING_MS : false,
   });
   const more = () => {
     if (pages.hasNextPage && !pages.isFetchingNextPage) {
@@ -291,7 +302,7 @@ export function DuplicateGroupsGrid({ inventory, check, outcome, total, leading,
     wasShowing.current = showing;
   }, [showing]);
 
-  const valueChoices = paths.map((path) => ({ id: `value:${path}`, label: fieldLabel(path) }));
+  const valueChoices = shown.map((path) => ({ id: `value:${path}`, label: paths.includes(path) ? `${fieldLabel(path)} (key)` : fieldLabel(path) }));
   const choices: GridColumnChoice[] = [
     ...valueChoices,
     { id: "finding", label: "Finding" },
@@ -299,13 +310,14 @@ export function DuplicateGroupsGrid({ inventory, check, outcome, total, leading,
     { id: "version", label: "Version" },
     { id: "created", label: "Created by" },
   ];
-  // A property compared exactly holds one value in every copy of a group, which its node shows already: its column starts left
-  // out, as the version does; a property compared loosely shows how each copy spells it.
+  // Every copy of a group holds the same values at the key, which its node shows already: the key's columns start left out, as
+  // the version does; the properties outside it show how the copies differ, the first few at once.
   const atFirst = [
-    ...check.key.filter((p, index) => p.compare === "exact" || index >= KEY_COLUMNS_SHOWN).map((p) => `value:${p.path}`),
+    ...paths.map((path) => `value:${path}`),
+    ...shown.filter((path) => !paths.includes(path)).slice(OTHER_COLUMNS_SHOWN).map((path) => `value:${path}`),
     "version",
   ];
-  const [hidden, toggleColumn] = useHiddenColumns(`osdu.inventories.duplicates.columns.${paths.join(",")}`, atFirst);
+  const [hidden, toggleColumn] = useHiddenColumns(`osdu.inventories.duplicates.columns.${shown.join(",")}|${paths.join(",")}`, atFirst);
 
   const all: Column<GridRow>[] = [
     {
@@ -337,6 +349,15 @@ export function DuplicateGroupsGrid({ inventory, check, outcome, total, leading,
         }
 
         const copy = row.copy;
+        // A copy of a group waiting to be picked has no role yet, and nothing read to compare: its node says so once.
+        if (row.group.outcome === "pending") {
+          return (
+            <span className="flex min-w-0 items-center gap-2 pl-6">
+              <RecordName id={copy.record.targetId} kind={copy.record.kind} copy className="min-w-0 text-[12.5px]" testId="duplicate-copy-id" copyTestId="duplicate-copy-copy-id" />
+            </span>
+          );
+        }
+
         const comparable = copy.storageState === "held";
         const isTicked = ticked !== null && ticked.group === row.group.groupNumber && ticked.rows.includes(copy.record.inventoryRecordId);
         return (
@@ -356,7 +377,7 @@ export function DuplicateGroupsGrid({ inventory, check, outcome, total, leading,
         );
       },
     },
-    ...paths.map((path): Column<GridRow> => ({
+    ...shown.map((path): Column<GridRow> => ({
       id: `value:${path}`,
       header: fieldLabel(path),
       render: (row) => (row.copy === undefined ? null : <SelectionValueCell values={row.copy.values?.[path]} testId="duplicate-copy-value" />),
@@ -378,7 +399,7 @@ export function DuplicateGroupsGrid({ inventory, check, outcome, total, leading,
       header: "Values",
       align: "right",
       render: (row) => {
-        if (row.copy === undefined) {
+        if (row.copy === undefined || row.group.outcome === "pending") {
           return null;
         }
 

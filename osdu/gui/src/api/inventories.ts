@@ -415,26 +415,21 @@ export interface InventorySelectionSummary {
   duplicateKey?: DuplicateKeyProperty[];
 }
 
-/**
- * How a property of a duplicate check's key compares two records' values (osdu/docs/reference/flow/inventory-duplicates.md, Finding
- * duplicate records): exactly; ignoring case; or loose, ignoring case, spacing and empty text, and reading text that is a
- * number as the number.
- */
-export type DuplicateComparison = "exact" | "ignoreCase" | "loose";
-
-/** Every comparison, in the order a key's editor offers them. */
-export const DUPLICATE_COMPARISONS: readonly DuplicateComparison[] = ["exact", "ignoreCase", "loose"];
-
 /** The most properties a key compares, as the control plane takes them. */
 export const MAX_DUPLICATE_KEY = 100;
 
-/** One property of a duplicate check's key: its path from the record's root, and how its values compare. */
+/**
+ * One property of a duplicate check's key (osdu/docs/reference/flow/inventory-duplicates.md, The key): its path from the record's
+ * root, whose values the copies of a record hold equal.
+ */
 export interface DuplicateKeyProperty {
   path: string;
-  compare: DuplicateComparison | string;
 }
 
-/** Where a check stands: queued as a run of the flow, reading OSDU, completed, failed (it holds no group), or expired. */
+/**
+ * Where a check stands: queued as a run of the flow, downloading or picking (running), completed (its download read whole; a pick
+ * that stopped leaves it completed with its error), failed (its download stopped; it holds no group), or expired.
+ */
 export type DuplicateCheckStatus = "queued" | "running" | "completed" | "failed" | "expired";
 
 /** How a group of copies came out: left for review, its copy to keep picked or chosen, settled, or not read yet. */
@@ -452,10 +447,20 @@ export interface DuplicateOutcomeCount {
   groups: number;
 }
 
+/** How many of a check's groups hold from `from` to `to` copies (no end for the last size), and the copies they hold. */
+export interface DuplicateSize {
+  from: number;
+  to?: number;
+  groups: number;
+  copies: number;
+}
+
 /**
- * A check of an inventory's ids for duplicate records: its key, where it stands and what it is reading, what it read and
- * found, its groups by outcome once it completed, the selection last made of its picks and whether a choice since leaves it
- * behind, its run, who asked and when, and why it failed.
+ * A check of an inventory's ids for duplicate records: the key its groups are formed by, where it stands and what it does
+ * (downloading or picking), what it read and found, its groups by outcome and by size, the selection last made of its picks and
+ * whether a choice since leaves it behind, its run, who asked and when, and why its download failed or its pick stopped; then
+ * the properties it downloaded (any key of which groups it again without reading OSDU), its table, who set its key, when it was
+ * last picked, and the groups waiting to be picked with the copies a pick reads.
  */
 export interface InventoryDuplicateCheck {
   checkId: number;
@@ -463,13 +468,13 @@ export interface InventoryDuplicateCheck {
   partition: string;
   status: DuplicateCheckStatus | string;
   stale: boolean;
-  /** While it runs: `keys` (reading every id's key) or `copies` (reading each group's copies). */
+  /** While it runs or waits to: `keys` (downloading every id's properties) or `copies` (picking: reading each group's copies). */
   phase?: "keys" | "copies" | string;
   key: DuplicateKeyProperty[];
   notes: string[];
   /** The ids the inventory served when it started. */
   candidates: number;
-  /** The records the search returned while it read the keys. */
+  /** The records the search returned while it downloaded. */
   checked: number;
   keyed: number;
   unkeyed: number;
@@ -493,6 +498,17 @@ export interface InventoryDuplicateCheck {
   startedUtc?: string;
   completedUtc?: string;
   error?: string;
+  /** The properties it downloaded, by path. */
+  attributes: string[];
+  /** Its table in the module's database (`osdu.dup_<check>`), which holds what it downloaded; none before its download. */
+  table?: string;
+  keyedBy?: string;
+  keyedUtc?: string;
+  /** When a pick last read every group's copies; none while groups wait to be picked. */
+  pickedUtc?: string;
+  sizes?: DuplicateSize[];
+  pendingGroups: number;
+  pendingCopies: number;
 }
 
 /** One copy of a group: the inventory's row of it, what the check read of it, and its role with why. */
@@ -580,11 +596,15 @@ export const inventoryApi = {
   selection: (partition: string, inventoryId: number, selectionId: number) =>
     get<InventorySelection>(`${inventoryPath(partition, inventoryId)}/selections/${selectionId}`),
   /**
-   * The inventory's ids that are copies of one another by the key: the check made of the same key against the same build when
-   * there is one, else a new check queued as a run of the flow (`refresh` always queues one).
+   * The inventory's ids that are copies of one another by the key: the current check grouped by it at once when it downloaded
+   * every property of the key (200), else a new check downloading them, queued as a run of the flow (202; `refresh` always
+   * downloads again).
    */
   checkDuplicates: (partition: string, inventoryId: number, request: { key: DuplicateKeyProperty[]; refresh?: boolean }) =>
     post<InventoryDuplicateCheck>(`${inventoryPath(partition, inventoryId)}/duplicates`, request),
+  /** Asks for a pick of a completed check: its groups' copies read from storage, and the copy each group keeps picked. */
+  pickDuplicates: (partition: string, inventoryId: number, checkId: number) =>
+    post<InventoryDuplicateCheck>(`${inventoryPath(partition, inventoryId)}/duplicates/${checkId}/pick`, {}),
   /** The inventory's duplicate checks, newest first. */
   duplicateChecks: (partition: string, inventoryId: number, limit?: number) =>
     get<InventoryDuplicateCheck[]>(`${inventoryPath(partition, inventoryId)}/duplicates`, limit === undefined ? {} : { limit }),

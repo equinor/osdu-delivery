@@ -772,14 +772,13 @@ public sealed class DeliveryInventoryApiTests
             var operate = await TokenAsync(client, ["read", "operate"]);
             var inventoryPath = $"/api/v1/delivery/inventories/{partition}/{wellLogs.InventoryId.ToString(CultureInfo.InvariantCulture)}";
             var duplicates = inventoryPath + "/duplicates";
-            var key = new[] { new { path = "data.WellboreID", compare = "exact" }, new { path = "data.Name", compare = "loose" } };
+            var key = new[] { new { path = "data.WellboreID" }, new { path = "data.Name" } };
 
             await RefusedAsync(client, operate, duplicates, new { key = Array.Empty<object>() }, HttpStatusCode.BadRequest, "Name at least one property");
-            await RefusedAsync(client, operate, duplicates, new { key = new[] { new { path = "id", compare = "exact" } } }, HttpStatusCode.BadRequest, "no two records share it");
-            await RefusedAsync(client, operate, duplicates, new { key = new[] { new { path = "data.Name", compare = "near" } } }, HttpStatusCode.BadRequest, "compares 'near'");
+            await RefusedAsync(client, operate, duplicates, new { key = new[] { new { path = "id" } } }, HttpStatusCode.BadRequest, "no two records share it");
             await RefusedAsync(client, operate, "/api/v1/delivery/inventories/" + partition + "/2147480000/duplicates", new { key }, HttpStatusCode.NotFound, "No inventory 2147480000");
 
-            // A check is a run of the flow, queued as the caller, opened with the key in its one spelling.
+            // A check is a run of the flow, queued as the caller, opened with the key in its one spelling and downloading its properties.
             long checkId;
             Guid checkRun;
             using (var accepted = await PostAsync(client, operate, duplicates, new { key }))
@@ -790,8 +789,8 @@ public sealed class DeliveryInventoryApiTests
                 checkId = answer.GetProperty("checkId").GetInt64();
                 checkRun = answer.GetProperty("runId").GetGuid();
                 Assert.Equal((InventoryDuplicates.Queued, false), (answer.GetProperty("status").GetString(), answer.GetProperty("stale").GetBoolean()));
-                Assert.Equal(["data.WellboreID exact", "data.Name loose"],
-                    answer.GetProperty("key").EnumerateArray().Select(k => $"{k.GetProperty("path").GetString()} {k.GetProperty("compare").GetString()}"));
+                Assert.Equal(["data.WellboreID", "data.Name"], answer.GetProperty("key").EnumerateArray().Select(k => k.GetProperty("path").GetString()!));
+                Assert.Equal(["data.WellboreID", "data.Name"], answer.GetProperty("attributes").EnumerateArray().Select(a => a.GetString()!));
             }
 
             await using (var db = CatalogDatabase.Create(cs))
@@ -804,37 +803,95 @@ public sealed class DeliveryInventoryApiTests
                 Assert.Contains(partition, run.ValuesJson, StringComparison.Ordinal);
             }
 
-            // The same key, however it is spelled, finds the check made of it.
-            using (var again = await PostAsync(client, operate, duplicates, new { key = new[] { new { path = " data.WellboreID ", compare = (string?)null }, new { path = "data.Name", compare = (string?)"LOOSE" } } }))
+            // The same key, however it is spelled, finds the check made of it; another key of its properties waits for its download.
+            using (var again = await PostAsync(client, operate, duplicates, new { key = new[] { new { path = " data.WellboreID " }, new { path = "data.Name" } } }))
             {
                 var body = await again.Content.ReadAsStringAsync();
                 Assert.True(again.StatusCode == HttpStatusCode.OK, body);
                 Assert.Equal(checkId, JsonDocument.Parse(body).RootElement.GetProperty("checkId").GetInt64());
             }
 
+            await RefusedAsync(client, operate, duplicates, new { key = new[] { new { path = "data.Name" } } }, HttpStatusCode.Conflict, "is downloading these properties");
             Assert.Equal(checkId, Assert.Single((await JsonAsync(client, reader, duplicates)).EnumerateArray()).GetProperty("checkId").GetInt64());
-            await RefusedAsync(client, operate, $"{duplicates}/{checkId}/selection", new { }, HttpStatusCode.Conflict, "is queued: only a check that read OSDU whole");
+            await RefusedAsync(client, operate, $"{duplicates}/{checkId}/selection", new { }, HttpStatusCode.Conflict, "is queued: only a check that downloaded every id");
 
-            // The run fills the check: two groups of two, the second a tie between an orphan and another identity's copy.
+            // The run downloads the properties into the check's table and groups it: two groups of two, waiting to be picked.
             Assert.NotNull(await ledger.StartInventoryDuplicateCheckAsync(flow.LedgerId, wellLogs.InventoryId, checkId, checkRun, firstBuild, now));
             await ledger.PlanInventoryDuplicateCheckAsync(flow.LedgerId, checkId, 4, 0);
-            var write = await ledger.AddInventoryDuplicateKeysAsync(flow.LedgerId, wellLogs.InventoryId, checkId,
+            var attributes = InventoryDuplicateTable.AttributesOf(["data.WellboreID", "data.Name"]);
+            await ledger.PrepareInventoryDuplicateTableAsync(flow.LedgerId, checkId, attributes);
+            static InventoryDuplicateValue Value(string value) => new($"[\"{value}\"]", Key(value));
+            var write = await ledger.AddInventoryDuplicateRowsAsync(flow.LedgerId, wellLogs.InventoryId, checkId, attributes,
             [
-                new InventoryDuplicateKeyHit(Id("ours-1"), 1, Key("a"), """{"data.Name":["GR"]}"""),
-                new InventoryDuplicateKeyHit(Id("ours-2"), 2, Key("a"), """{"data.Name":["gr "]}"""),
-                new InventoryDuplicateKeyHit(Id("ours-3"), 1, Key("b"), """{"data.Name":["DT"]}"""),
-                new InventoryDuplicateKeyHit(Id("theirs"), 1, Key("b"), """{"data.Name":["DT"]}"""),
-                new InventoryDuplicateKeyHit(Id("since"), 1, Key("b"), """{"data.Name":["DT"]}"""),
+                new InventoryDuplicateRow(Id("ours-1"), 1, [Value("wb-1"), Value("GR")]),
+                new InventoryDuplicateRow(Id("ours-2"), 2, [Value("wb-1"), Value("GR")]),
+                new InventoryDuplicateRow(Id("ours-3"), 1, [Value("wb-2"), Value("DT")]),
+                new InventoryDuplicateRow(Id("theirs"), 1, [Value("wb-2"), Value("DT")]),
+                new InventoryDuplicateRow(Id("since"), 1, [Value("wb-2"), Value("DT")]),
             ], 5, 1);
-            Assert.Equal(new InventoryDuplicateKeyWrite(4, 0, 1, 1), write);
-            Assert.Equal(new InventoryDuplicateGrouping(2, 4, 0), await ledger.GroupInventoryDuplicatesAsync(flow.LedgerId, checkId));
+            Assert.Equal(new InventoryDuplicateRowsWrite(4, 1, 1), write);
+            var logKey = InventoryDuplicateKey.Of(["data.WellboreID", "data.Name"]).Key!;
+            Assert.Equal(
+                new InventoryDuplicateGrouping(2, 4, 0, 4, 0),
+                await ledger.GroupInventoryDuplicatesAsync(partition, checkId, new InventoryDuplicateKeying(logKey.ToJson(), logKey.Hash(), logKey.Paths, "inventory api tests", now)));
+            await ledger.CompleteInventoryDuplicateCheckAsync(flow.LedgerId, checkId, new InventoryDuplicateCheckEnd(InventoryDuplicates.Completed, ["a note"], null), now);
+
+            var downloaded = await JsonAsync(client, reader, $"{duplicates}/{checkId}");
+            Assert.Equal((InventoryDuplicates.Completed, 2L, 4L, 2L, 4L, $"osdu.dup_{checkId.ToString(CultureInfo.InvariantCulture)}"), (
+                downloaded.GetProperty("status").GetString(), downloaded.GetProperty("groups").GetInt64(), downloaded.GetProperty("copies").GetInt64(),
+                downloaded.GetProperty("pendingGroups").GetInt64(), downloaded.GetProperty("pendingCopies").GetInt64(), downloaded.GetProperty("table").GetString()));
+            Assert.Equal([2L, 0L, 0L, 0L], downloaded.GetProperty("sizes").EnumerateArray().Select(s => s.GetProperty("groups").GetInt64()));
+            await RefusedAsync(client, operate, $"{duplicates}/{checkId}/groups/2/keep", new { inventoryRecordId = (long?)null }, HttpStatusCode.Conflict, "pick the copies of the check's groups first");
+
+            // A key of what the check downloaded groups it again at once, no run queued: by the wellbore alone, then by both again.
+            int runs;
+            await using (var db = CatalogDatabase.Create(cs))
+            {
+                runs = await db.Runs.CountAsync(r => r.PipelineId == pipelineId);
+            }
+
+            using (var regrouped = await PostAsync(client, operate, duplicates, new { key = new[] { new { path = "data.WellboreID" } } }))
+            {
+                var body = await regrouped.Content.ReadAsStringAsync();
+                Assert.True(regrouped.StatusCode == HttpStatusCode.OK, body);
+                var answer = JsonDocument.Parse(body).RootElement;
+                Assert.Equal((checkId, 2L, 4L), (answer.GetProperty("checkId").GetInt64(), answer.GetProperty("groups").GetInt64(), answer.GetProperty("copies").GetInt64()));
+                Assert.Equal(["data.WellboreID"], answer.GetProperty("key").EnumerateArray().Select(k => k.GetProperty("path").GetString()!));
+                Assert.False(string.IsNullOrEmpty(answer.GetProperty("keyedBy").GetString()));
+            }
+
+            using (var back = await PostAsync(client, operate, duplicates, new { key }))
+            {
+                Assert.Equal(HttpStatusCode.OK, back.StatusCode);
+            }
+
+            await using (var db = CatalogDatabase.Create(cs))
+            {
+                Assert.Equal(runs, await db.Runs.CountAsync(r => r.PipelineId == pipelineId));
+            }
+
+            // A pick is a run of the flow too, asked for on its own; it reads the copies and picks the copy each group keeps.
+            Guid pickRun;
+            using (var asked = await PostAsync(client, operate, $"{duplicates}/{checkId}/pick", new { }))
+            {
+                var body = await asked.Content.ReadAsStringAsync();
+                Assert.True(asked.StatusCode == HttpStatusCode.Accepted, body);
+                var answer = JsonDocument.Parse(body).RootElement;
+                Assert.Equal((InventoryDuplicates.Queued, InventoryDuplicates.ReadingCopies), (answer.GetProperty("status").GetString(), answer.GetProperty("phase").GetString()));
+                pickRun = answer.GetProperty("runId").GetGuid();
+                Assert.NotEqual(checkRun, pickRun);
+            }
+
+            await RefusedAsync(client, operate, $"{duplicates}/{checkId}/pick", new { }, HttpStatusCode.Conflict, "is picking the copies of its groups");
+            Assert.NotNull(await ledger.StartInventoryDuplicatePickAsync(flow.LedgerId, checkId, pickRun, now));
             var toJudge = await ledger.InventoryDuplicateGroupsToJudgeAsync(flow.LedgerId, checkId, 0, 10);
             var figures = new Dictionary<string, int>(StringComparer.Ordinal) { [Id("ours-1")] = 9, [Id("ours-2")] = 3, [Id("ours-3")] = 5, [Id("theirs")] = 5 };
             var orphans = new HashSet<string>(StringComparer.Ordinal) { InventoryFindings.Orphan };
             var judged = toJudge.Select(g => InventoryDuplicatePicker.Judge(
                 g.GroupNumber, g.Copies.Select(c => new DuplicateCopy(c.InventoryRecordId, c.TargetId, c.Finding, InventoryDuplicates.Held, 1, figures[c.TargetId], 0)).ToList(), orphans, null)).ToList();
             await ledger.WriteInventoryDuplicateJudgementsAsync(flow.LedgerId, checkId, judged, 3, now);
-            await ledger.CompleteInventoryDuplicateCheckAsync(flow.LedgerId, checkId, new InventoryDuplicateCheckEnd(InventoryDuplicates.Completed, ["a note"], null), now);
+            await ledger.CompleteInventoryDuplicatePickAsync(flow.LedgerId, checkId, new InventoryDuplicatePickEnd(["a note"], null), now);
+            await RefusedAsync(client, operate, $"{duplicates}/{checkId}/pick", new { }, HttpStatusCode.Conflict, "holds no group waiting to be picked");
 
             var check = await JsonAsync(client, reader, $"{duplicates}/{checkId}");
             Assert.Equal((InventoryDuplicates.Completed, 2L, 4L, 1L, 1L, 1L, 4L), (
@@ -852,7 +909,7 @@ public sealed class DeliveryInventoryApiTests
             Assert.Equal((InventoryDuplicates.Keep, 9, InventoryDuplicates.Remove, 3), (
                 picked[Id("ours-1")].GetProperty("role").GetString(), picked[Id("ours-1")].GetProperty("attributes").GetInt32(),
                 picked[Id("ours-2")].GetProperty("role").GetString(), picked[Id("ours-2")].GetProperty("attributes").GetInt32()));
-            Assert.Equal(["gr "], picked[Id("ours-2")].GetProperty("values").GetProperty("data.Name").EnumerateArray().Select(v => v.GetString()!));
+            Assert.Equal(["GR"], picked[Id("ours-2")].GetProperty("values").GetProperty("data.Name").EnumerateArray().Select(v => v.GetString()!));
             Assert.Equal((2L, "orphan"), (picked[Id("ours-2")].GetProperty("indexedVersion").GetInt64(), picked[Id("ours-2")].GetProperty("record").GetProperty("finding").GetString()));
             var review = Assert.Single((await JsonAsync(client, reader, $"{duplicates}/{checkId}/groups?outcome=review")).GetProperty("items").EnumerateArray());
             Assert.Equal(2, review.GetProperty("groupNumber").GetInt32());
@@ -1242,6 +1299,13 @@ public sealed class DeliveryInventoryApiTests
             var removals = osdu.DeliveryInventoryRemovals.Where(r => inventories.Contains(r.InventoryId)).Select(r => r.InventoryRemovalId);
             var selections = osdu.DeliveryInventorySelections.Where(s => inventories.Contains(s.InventoryId)).Select(s => s.InventorySelectionId);
             var checks = osdu.DeliveryInventoryDuplicateChecks.Where(c => inventories.Contains(c.InventoryId)).Select(c => c.InventoryDuplicateCheckId);
+            foreach (var check in await checks.ToListAsync())
+            {
+                // A check's table is made at run time, so the test that made it drops it as a sweep would; its name is a number's.
+                var drop = "DROP TABLE IF EXISTS [osdu].[" + InventoryDuplicateTable.NameOf(check) + "];";
+                await osdu.Database.ExecuteSqlRawAsync(drop);
+            }
+
             await osdu.DeliveryInventoryDuplicateMembers.Where(m => checks.Contains(m.InventoryDuplicateCheckId)).ExecuteDeleteAsync();
             await osdu.DeliveryInventoryDuplicateGroups.Where(g => checks.Contains(g.InventoryDuplicateCheckId)).ExecuteDeleteAsync();
             await osdu.DeliveryInventoryDuplicateChecks.Where(c => inventories.Contains(c.InventoryId)).ExecuteDeleteAsync();

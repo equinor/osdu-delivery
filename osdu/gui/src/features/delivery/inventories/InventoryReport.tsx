@@ -400,6 +400,7 @@ export function InventoryReport({
   onSelectionId: (selectionId: number | null, finding?: string | null) => void;
   /** The duplicate check the Duplicates tab shows; null shows the newest. */
   duplicateCheck: number | null;
+  /** Shows a check on the Duplicates tab, in one change of the address: the tab, the check, its own key (none being built). */
   onDuplicateCheck: (checkId: number | null) => void;
   /** The key being built on the Duplicates tab, as the address holds it; null takes the key of the check shown. */
   duplicateKey: string | null;
@@ -620,7 +621,7 @@ export function InventoryReport({
                   </>
                 )}
                 below={byNumber
-                  ? <DuplicateSelectionBar state={picked} onCheck={(checkId) => { onDuplicateCheck(checkId); onView("duplicates"); }} onClear={() => onSelectionId(null)} />
+                  ? <DuplicateSelectionBar state={picked} onCheck={onDuplicateCheck} onClear={() => onSelectionId(null)} />
                   : <InventoryConditionsBar inventory={inventory} conditions={conditions} onConditions={onConditions} state={selection} sentence={sentence} />}
                 selection={conditions.length === 0 && !byNumber
                   ? undefined

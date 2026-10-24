@@ -31,7 +31,10 @@ public sealed record FlowDefinition
     /// <summary>The interface of its source this definition delivers, or null for a document in the single form.</summary>
     public string? Interface { get; init; }
 
-    /// <summary>The name of an existing ledger the interface adopts (<c>ledger:</c>), or null when it keeps its own.</summary>
+    /// <summary>
+    /// The name of an existing ledger the flow or interface keeps instead of its own (<c>ledger:</c>), as a renamed flow keeps
+    /// the ledger of its old name; null when it keeps its own.
+    /// </summary>
     public string? AdoptedLedger { get; init; }
 
     /// <summary>

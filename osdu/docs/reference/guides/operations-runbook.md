@@ -224,6 +224,22 @@ release the records; the next run renders them again.
 **Do:** the ingestion table has no row for the key yet. Look at the pre and ingestion runs that load the table; once they
 have loaded the row, the run scoped to the record reads it by key.
 
+## Every record is held after a flow was renamed
+
+**You see** every record of a flow whose `name` changed held with
+`OSDU id <id> is already claimed by flow '<old name>' (<id>), which no repository declares any more, ...`, and the
+repository sync warned `<file>: flow '<new name>' was declared as '<old name>' before, ...`.
+
+**Do:** a flow keeps its ledger under its name, so the rename started an empty ledger, and the old name's records stayed
+in the old one with the OSDU ids they claimed. Nothing was sent. Keep the old ledger
+([Renaming a flow](../flow/interfaces.md#renaming-a-flow)):
+
+1. Delete the renamed flow's own ledger, which holds only the records it held and claimed no id: **Delete ledger** on its
+   Delivery tab, with the partition typed back. It removes nothing from OSDU.
+2. Write `ledger: <old name>` at the top of the flow (on each interface of a renamed source, `ledger: <old name>/<interface>`)
+   and sync the repository.
+3. Run the flow. Its records carry on with their history and their OSDU ids, and only what changed is sent.
+
 ## A record is held because another flow owns its OSDU id
 
 **You see** `OSDU id <id> is already claimed by flow '<name>' (<id>), and one OSDU record belongs to one flow. ...`, or
@@ -231,7 +247,8 @@ have loaded the row, the run scoped to the record reads it by key.
 
 **Do:** two flows, or two keys of one flow, give the same OSDU id, or the id belongs to a record another system wrote.
 Deliver the flow to another partition, or give its mapping a `dataset.system` or key that yields other ids. Nothing was
-sent.
+sent. When the flow that claimed the id is this one under its old name, keep its ledger
+([Every record is held after a flow was renamed](#every-record-is-held-after-a-flow-was-renamed)).
 
 For ids another system wrote that are these rows' records (an earlier deployment of the delivery, or another instance
 delivering to the same partition, wrote them from the same business keys), adopt them all at once: **Adopt (N)** on the

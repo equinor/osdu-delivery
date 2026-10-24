@@ -379,7 +379,8 @@ public sealed class InterfaceDocumentsTests
     [InlineData("interfaces:\n  a: { record: { object: A.b.A, key: [id] }, mapping: A@1.0.0, after: [c] }\n  b: { record: { object: A.b.B, key: [id] }, mapping: B@1.0.0, after: [a] }\n  c: { record: { object: A.b.C, key: [id] }, mapping: C@1.0.0, after: [b] }", "the interfaces a -> c -> b -> a wait for each other through after:")]
     [InlineData("interfaces:\n  a: { ledger: shared, record: { object: A.b.A, key: [id] }, mapping: A@1.0.0 }\n  b: { ledger: SHARED, record: { object: A.b.B, key: [id] }, mapping: B@1.0.0 }", "the interfaces a, b would keep the same ledger ('shared')")]
     [InlineData("interfaces:\n  a: { ledger: petrel/b, record: { object: A.b.A, key: [id] }, mapping: A@1.0.0 }\n  b: { record: { object: A.b.B, key: [id] }, mapping: B@1.0.0 }", "the interfaces a, b would keep the same ledger ('petrel/b')")]
-    [InlineData("interfaces:\n  a: { ledger: '  ', record: { object: A.b.A, key: [id] }, mapping: A@1.0.0 }", "interfaces.a.ledger must name the flow whose ledger the interface adopts")]
+    [InlineData("interfaces:\n  a: { ledger: '  ', record: { object: A.b.A, key: [id] }, mapping: A@1.0.0 }", "interfaces.a.ledger must name the flow whose ledger the interface keeps")]
+    [InlineData("ledger: petrel-old\ninterfaces:\n  a: { record: { object: A.b.A, key: [id] }, mapping: A@1.0.0 }", "the document declares interfaces, so these belong to an interface rather than the source: ledger (each interface keeps a ledger of its own, <flow>/<interface>; one that keeps an earlier ledger names it as interfaces.<name>.ledger)")]
     public void An_interface_that_cannot_be_delivered_is_refused_naming_its_key(string interfaces, string expected)
     {
         var yaml = Source(string.Empty).Replace("interfaces:\n", interfaces + "\n", StringComparison.Ordinal);

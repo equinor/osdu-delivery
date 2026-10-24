@@ -16,19 +16,19 @@ import { RichTooltip } from "@/components/RichTooltip";
 import { SearchInput } from "@/components/SearchInput";
 import { cn } from "@/lib/utils";
 import { explorerApi } from "../../../../api/explorer";
-import { MAX_DUPLICATE_KEY, inventoryApi, type DuplicateComparison, type DuplicateKeyProperty, type Inventory, type InventoryRecordPage } from "../../../../api/inventories";
+import { MAX_DUPLICATE_KEY, inventoryApi, type DuplicateKeyProperty, type Inventory, type InventoryRecordPage } from "../../../../api/inventories";
 import { Highlight } from "../../OsduRecordInspector";
-import { describeBranch, documentNode, idParts, isReferenceNode, recordNameOf, type RecordNode } from "../../osduRecordModel";
+import { describeBranch, documentNode, idParts, recordNameOf, type RecordNode } from "../../osduRecordModel";
 import { ProblemView, TaskProgress } from "../../TemplateSheet";
 import { ExplorerAttributeList } from "../../explorer/ExplorerAttributeList";
 import { useExplorerFields } from "../../explorer/explorerFields";
 import { fieldLabel } from "../../explorer/explorerModel";
 import { useWindowFit } from "../../useWindowFit";
-import { ComparisonMenu, KeyTitle } from "./DuplicateKeyParts";
+import { KeyTitle } from "./DuplicateKeyParts";
 import {
   FOLDED_AT_FIRST, ITEMS_PAGE, documentLines, pickedPath, revealOf, sectionsOf, valuesAt, type DocumentLine,
 } from "./duplicateDocument";
-import { comparisonForValue, defaultComparison, withProperty } from "./duplicateModel";
+import { withProperty } from "./duplicateModel";
 
 /** The findings whose ids OSDU does not serve, so they are no record to pick a key in. */
 const UNSERVED = new Set(["missing", "gone"]);
@@ -83,11 +83,6 @@ function ValueText({ value, term }: { value: unknown; term: string }) {
   return <span className="text-muted-foreground">null</span>;
 }
 
-/** Whether a line holds an id naming another record, or is a list of them, which a key compares exactly. */
-function referenceOf(node: RecordNode): boolean {
-  return node.kind === "array" ? node.children.some((child) => isReferenceNode(child)) : isReferenceNode(node);
-}
-
 /**
  * Scrolls a line to the middle of the record's own scrolling frame, and nothing else: the page around the builder stays
  * where it is.
@@ -119,20 +114,19 @@ function valueText(value: unknown): string {
 
 /**
  * One line of the record. A line that holds a value (or a list of values) is a button: a click adds its property to the key,
- * with the comparison its value suggests, and a click on a line the key compares takes it out. The first line of a property
- * the key compares carries how it compares and the way to leave it out; every other line of it (a list's values, the same
- * property in the list's other items) is marked. A line that can be no part of a key says why on hover.
+ * and a click on a line the key holds takes it out. The first line of a property of the key carries the way to leave it out;
+ * every other line of it (a list's values, the same property in the list's other items) is marked. A line that can be no part
+ * of a key says why on hover.
  */
-function Line({ line, term, property, first, disabled, onToggle, onCompare, onFold, onMore }: {
+function Line({ line, term, property, first, disabled, onToggle, onFold, onMore }: {
   line: DocumentLine;
   term: string;
-  /** The property of the key the line compares; undefined for a line the key does not compare. */
+  /** The property of the key the line holds; undefined for a line the key does not hold. */
   property: DuplicateKeyProperty | undefined;
-  /** Whether this is the first line of that property, which carries its controls. */
+  /** Whether this is the first line of that property, which carries the way to leave it out. */
   first: boolean;
   disabled: boolean;
   onToggle: (line: DocumentLine) => void;
-  onCompare: (path: string, compare: DuplicateKeyProperty["compare"]) => void;
   onFold: (path: string) => void;
   onMore: (line: DocumentLine) => void;
 }) {
@@ -235,19 +229,17 @@ function Line({ line, term, property, first, disabled, onToggle, onCompare, onFo
         )}
         {picked && first && (
           <span className="flex h-6 shrink-0 items-center font-sans">
-            <span className="inline-flex h-5 items-stretch overflow-hidden rounded border border-primary/40 bg-card shadow-xs">
-              <ComparisonMenu path={property.path} compare={property.compare} onCompare={(compare) => onCompare(property.path, compare)} disabled={disabled} testId="duplicate-key-line-compare" />
-              <button
-                type="button"
-                onClick={() => onToggle(line)}
-                disabled={disabled}
-                className="flex items-center border-l border-primary/30 px-1 text-muted-foreground outline-none hover:bg-accent hover:text-foreground focus-visible:bg-accent disabled:pointer-events-none"
-                aria-label={`Leave ${fieldLabel(property.path)} out of the key`}
-                data-testid="duplicate-key-line-remove"
-              >
-                <X className="size-3" aria-hidden />
-              </button>
-            </span>
+            <button
+              type="button"
+              onClick={() => onToggle(line)}
+              disabled={disabled}
+              className="inline-flex h-5 items-center gap-0.5 rounded border border-primary/40 bg-card pl-1 pr-0.5 text-[11px] text-muted-foreground shadow-xs outline-none hover:bg-accent hover:text-foreground focus-visible:bg-accent disabled:pointer-events-none"
+              aria-label={`Leave ${fieldLabel(property.path)} out of the key`}
+              data-testid="duplicate-key-line-remove"
+            >
+              key
+              <X className="size-3" aria-hidden />
+            </button>
           </span>
         )}
         {pickable && !picked && (
@@ -304,20 +296,22 @@ function OpenId({ onOpen, label = "Open an id" }: { onOpen: (id: string) => void
 }
 
 /**
- * One property of the key being built: its name, which shows its first line in the record; its path and how it compares;
- * the values the record shown holds there, which are what a copy of it would repeat; and the way to leave it out. A property
- * the record holds no value at says so, and one the explorer does not list for the kind carries a warning.
+ * One property of the key being built: its name, which shows its first line in the record; its path; the values the record
+ * shown holds there, which are what a copy of it would repeat; and the way to leave it out. A property the record holds no
+ * value at says so, one the explorer does not list for the kind carries a warning, and one the check in view did not download
+ * is marked, since a key holding it downloads again.
  */
-function KeyRow({ property, values, held, unlisted, disabled, onReveal, onCompare, onRemove }: {
+function KeyRow({ property, values, held, unlisted, fresh, disabled, onReveal, onRemove }: {
   property: DuplicateKeyProperty;
   /** What the record shown holds at it; null while no record is shown. */
   values: unknown[] | null;
   /** Whether the record has a line of it to show. */
   held: boolean;
   unlisted: string | null;
+  /** The check in view that downloaded other properties and not this one; null when there is none, or it downloaded this one. */
+  fresh: number | null;
   disabled: boolean;
   onReveal: () => void;
-  onCompare: (compare: DuplicateKeyProperty["compare"]) => void;
   onRemove: () => void;
 }) {
   return (
@@ -339,19 +333,21 @@ function KeyRow({ property, values, held, unlisted, disabled, onReveal, onCompar
             <span className="inline-flex shrink-0 text-warning" data-testid="duplicate-key-row-unlisted"><TriangleAlert className="size-3.5" aria-label="The search may not return it" /></span>
           </RichTooltip>
         )}
-        <span className="inline-flex h-6 shrink-0 items-stretch overflow-hidden rounded-md border border-border">
-          <ComparisonMenu path={property.path} compare={property.compare} onCompare={onCompare} disabled={disabled} />
-          <button
-            type="button"
-            onClick={onRemove}
-            disabled={disabled}
-            className="flex items-center border-l border-border px-1 text-muted-foreground outline-none hover:bg-accent hover:text-foreground focus-visible:bg-accent disabled:pointer-events-none"
-            aria-label={`Leave ${fieldLabel(property.path)} out of the key`}
-            data-testid="duplicate-key-remove"
-          >
-            <X className="size-3.5" aria-hidden />
-          </button>
-        </span>
+        {fresh !== null && (
+          <RichTooltip title="To download" body={`Check ${fresh} did not download ${property.path}, so a key holding it downloads the key's properties of every id again, through the search.`}>
+            <span className="shrink-0 rounded border border-dashed border-border px-1 text-[10.5px] leading-4 text-muted-foreground" data-testid="duplicate-key-row-fresh">to download</span>
+          </RichTooltip>
+        )}
+        <button
+          type="button"
+          onClick={onRemove}
+          disabled={disabled}
+          className="flex size-6 shrink-0 items-center justify-center rounded-md text-muted-foreground outline-none hover:bg-accent hover:text-foreground focus-visible:bg-accent disabled:pointer-events-none"
+          aria-label={`Leave ${fieldLabel(property.path)} out of the key`}
+          data-testid="duplicate-key-remove"
+        >
+          <X className="size-3.5" aria-hidden />
+        </button>
       </div>
       <div className="mt-0.5 flex min-w-0 items-center gap-1 pl-5 font-mono text-[11px] text-muted-foreground">
         <span className="min-w-0 truncate" title={property.path}>{property.path}</span>
@@ -396,8 +392,9 @@ function KeyRow({ property, values, held, unlisted, disabled, onReveal, onCompar
  * Where a duplicate key is built (osdu/docs/reference/flow/inventory-duplicates.md, In the GUI): one of the inventory's
  * records as OSDU holds it, read through the partition's connection and shown as its JSON, beside the key. A click on a value
  * adds its property to the key, a click on it again takes it out, and each property is marked where it stands in the record
- * with how it compares and the way to leave it out. The key lists its properties with the values the record holds there, so
- * the key reads as what the copies of this record would repeat; a property's name shows its first line in the record.
+ * with the way to leave it out. The key lists its properties with the values the record holds there, so the key reads as what
+ * the copies of this record would repeat; a property's name shows its first line in the record, and a property the check in
+ * view did not download (`downloaded`) is marked, since a key holding it downloads again.
  *
  * The record's line steps through the inventory's ids or opens any id (`sampleId`, which the page's address keeps), searches
  * the record's names and values, narrows it to what the key compares, and folds it. The sections the copies of a record rarely
@@ -405,11 +402,13 @@ function KeyRow({ property, values, held, unlisted, disabled, onReveal, onCompar
  * properties opens on what tells its copies apart. A property the record holds no value at is added by its name from the
  * kind's list. The key's own actions (finding the duplicates) end it (`actions`).
  */
-export function DuplicateKeyBuilder({ inventory, served, draft, onChange, disabled, sampleId, onSampleId, actions }: {
+export function DuplicateKeyBuilder({ inventory, served, draft, downloaded, onChange, disabled, sampleId, onSampleId, actions }: {
   inventory: Inventory;
   /** How many of the inventory's ids OSDU serves (every finding but missing and gone), for the place of the one shown. */
   served: number;
   draft: readonly DuplicateKeyProperty[];
+  /** The check in view that downloaded properties, with them; null when there is none. */
+  downloaded: { checkId: number; paths: ReadonlySet<string> } | null;
   /**
    * Changes the key: the change is given the key as last changed, which the page may not have drawn yet, so clicks closer
    * together than the address follows build on one another.
@@ -487,10 +486,10 @@ export function DuplicateKeyBuilder({ inventory, served, draft, onChange, disabl
   }, [root, shownId]);
 
   // Adds a property after the others, or says why the key cannot take it; whether it was added.
-  const add = (path: string, compare: DuplicateComparison): boolean => {
+  const add = (path: string): boolean => {
     let added = false;
     onChange((current) => {
-      const next = withProperty(current, path, compare);
+      const next = withProperty(current, path);
       if ("problem" in next) {
         toast.error(`${fieldLabel(path)} cannot join the key: ${next.problem}`);
         return current;
@@ -516,7 +515,7 @@ export function DuplicateKeyBuilder({ inventory, served, draft, onChange, disabl
         return current.filter((property) => property.path !== path);
       }
 
-      const next = withProperty(current, path, comparisonForValue(line.node.value, referenceOf(line.node)));
+      const next = withProperty(current, path);
       if ("problem" in next) {
         toast.error(`${fieldLabel(path)} cannot join the key: ${next.problem}`);
         return current;
@@ -525,9 +524,6 @@ export function DuplicateKeyBuilder({ inventory, served, draft, onChange, disabl
       return next.key;
     });
   };
-
-  const compare = (path: string, next: DuplicateKeyProperty["compare"]) =>
-    onChange((current) => current.map((property) => (property.path === path ? { ...property, compare: next } : property)));
 
   const fold = (path: string) => setFolded((current) => {
     const next = new Set(current);
@@ -725,7 +721,6 @@ export function DuplicateKeyBuilder({ inventory, served, draft, onChange, disabl
               first={first}
               disabled={disabled}
               onToggle={toggle}
-              onCompare={compare}
               onFold={fold}
               onMore={more}
             />
@@ -768,7 +763,7 @@ export function DuplicateKeyBuilder({ inventory, served, draft, onChange, disabl
                 read={fields}
                 kind={inventory.kind}
                 onPick={(field) => {
-                  if (add(field.path, defaultComparison(field.index))) {
+                  if (add(field.path)) {
                     setAdding(false);
                   }
                 }}
@@ -786,7 +781,7 @@ export function DuplicateKeyBuilder({ inventory, served, draft, onChange, disabl
               <MousePointerClick className="size-8 stroke-[1.25] text-muted-foreground/60" aria-hidden />
               <div className="text-[13px] font-medium text-muted-foreground">Click a value in the record</div>
               <p className="text-[12px] leading-relaxed text-muted-foreground/90">
-                Its property joins the key. Two records are copies of one another when they hold alike values at every property
+                Its property joins the key. Two records are copies of one another when they hold equal values at every property
                 of the key, so pick what every copy of a record repeats: its name, the record it belongs to, its source&apos;s own id.
               </p>
             </div>
@@ -804,9 +799,9 @@ export function DuplicateKeyBuilder({ inventory, served, draft, onChange, disabl
                     values={values}
                     held={held}
                     unlisted={unlisted}
+                    fresh={downloaded === null || downloaded.paths.has(property.path) ? null : downloaded.checkId}
                     disabled={disabled}
                     onReveal={() => reveal(property.path)}
-                    onCompare={(next) => compare(property.path, next)}
                     onRemove={() => remove(property.path)}
                   />
                 );

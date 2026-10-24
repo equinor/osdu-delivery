@@ -14,11 +14,13 @@ namespace SqlFlow.Delivery.Tests;
 
 /// <summary>
 /// Finding the duplicate records of an inventory (osdu/docs/reference/flow/inventory-duplicates.md), over the
-/// module's database on SQL Server and a platform that serves search, storage's reads and its removals: a check reads every
-/// record's key through the search, groups the inventory's ids that share it, reads each group's copies from storage and keeps
-/// the most complete; a group the rules cannot decide is left for review, and an operator's choice decides it; the copies picked
-/// to remove are made a selection, and a removal by it takes them, each only while storage holds the copy its group keeps; a
-/// check that stops keeps no group; and checks past their week are retired.
+/// module's database on SQL Server and a platform that serves search, storage's reads and its removals: a check downloads the
+/// properties of its key for every record through the search into its own table, a request per page however many duplicates it
+/// finds, and groups the table in SQL by any key of what it downloaded without asking OSDU again; a pick reads the copies of the
+/// groups from storage, counts the records naming them a batch at a time, and keeps the most complete; a group the rules cannot
+/// decide is left for review, and an operator's choice decides it; the copies picked to remove are made a selection, and a
+/// removal by it takes them, each only while storage holds the copy its group keeps; a download that stops keeps no group and
+/// no table, a pick that stops keeps its download; and checks past their week are retired with their tables.
 /// </summary>
 [Collection(SqlServerSuite.Name)]
 [Trait("Category", "Integration")]
@@ -79,13 +81,13 @@ public sealed class InventoryDuplicateTests : IDisposable
     private void AddEstate()
     {
         Add("full", """{"Name":"GR RUN 1","WellboreID":"wb-1","Curves":[{"Mnemonic":"GR"},{"Mnemonic":"DEPT"}],"DDMSDatasets":["urn://wdms-1/uuid:1"],"ExtensionProperties":{"wdms":{"bulkURI":"urn://wdms-1/uuid:1"}}}""");
-        Add("thin", """{"Name":"gr run 1 ","WellboreID":"wb-1"}""");
-        Add("thin-2", """{"Name":"GR  RUN 1","WellboreID":"wb-1","Curves":[{"Mnemonic":"GR"}]}""");
+        Add("thin", """{"Name":"GR RUN 1","WellboreID":"wb-1"}""");
+        Add("thin-2", """{"Name":"GR RUN 1","WellboreID":"wb-1","Curves":[{"Mnemonic":"GR"}]}""");
         Add("foreign", """{"Name":"GR RUN 1","WellboreID":"wb-1"}""", creator: "someone@else.example");
         Add("other", """{"Name":"DT","WellboreID":"wb-1"}""");
         Add("unkeyed", """{"Description":"no key"}""");
         Add("pair-a", """{"Name":"SP","WellboreID":"wb-2","Curves":[{"Mnemonic":"SP"}]}""");
-        Add("pair-b", """{"Name":"sp","WellboreID":"wb-2","Curves":[{"Mnemonic":"SP"}]}""");
+        Add("pair-b", """{"Name":"SP","WellboreID":"wb-2","Curves":[{"Mnemonic":"SP"}]}""");
     }
 
     private async Task<(InventoryRunner Runner, OsduLedger Ledger, InventoryState Inventory)> BuiltAsync(string yaml, Func<OsduLedger, Task>? claims = null)
@@ -122,16 +124,37 @@ public sealed class InventoryDuplicateTests : IDisposable
             .ExecuteUpdateAsync(s => s.SetProperty(r => r.Status, "delivered").SetProperty(r => r.TargetVersion, 3L).SetProperty(r => r.ClaimedTargetId, Id(key)));
     }
 
-    /// <summary>A check of the inventory as the control plane opens one: the key checked, in its one spelling and hashed.</summary>
-    private async Task<long> CheckAsync(OsduLedger ledger, InventoryState inventory, params (string Path, string? Compare)[] key)
+    private static InventoryDuplicateKey KeyOf(params string[] key)
     {
-        var (parsed, problem) = InventoryDuplicateKey.Of(key.Select(k => ((string?)k.Path, k.Compare)).ToList());
+        var (parsed, problem) = InventoryDuplicateKey.Of(key);
         Assert.Null(problem);
-        return await ledger.CreateInventoryDuplicateCheckAsync(
-            Partition, new InventoryDuplicateCheckStart(inventory.InventoryId, Operator, parsed!.ToJson(), parsed.Hash(), inventory.LastBuildRunId, Now));
+        return parsed!;
     }
 
-    private static readonly (string, string?)[] LogKey = [("data.WellboreID", "exact"), ("data.Name", "loose")];
+    /// <summary>A check of the inventory as the control plane opens one: the key checked, in its one spelling and hashed, downloading its properties.</summary>
+    private async Task<long> CheckAsync(OsduLedger ledger, InventoryState inventory, params string[] key)
+    {
+        var parsed = KeyOf(key);
+        return await ledger.CreateInventoryDuplicateCheckAsync(
+            Partition,
+            new InventoryDuplicateCheckStart(inventory.InventoryId, Operator, parsed.ToJson(), parsed.Hash(), InventoryDuplicateTable.AttributesOf(parsed.Paths), inventory.LastBuildRunId, Now));
+    }
+
+    /// <summary>A key a check's table is grouped by again, as the control plane sets one.</summary>
+    private InventoryDuplicateKeying Keying(string actor, params string[] key)
+    {
+        var parsed = KeyOf(key);
+        return new InventoryDuplicateKeying(parsed.ToJson(), parsed.Hash(), parsed.Paths, actor, Now);
+    }
+
+    /// <summary>A pick as the control plane asks for one, run by the inventory flow.</summary>
+    private static async Task<InventoryDuplicatesOutcome> PickAsync(InventoryRunner runner, OsduLedger ledger, InventoryState inventory, long checkId)
+    {
+        Assert.True(await ledger.RequestInventoryDuplicatePickAsync(Partition, checkId, inventory.LastBuildRunId));
+        return await runner.FindDuplicatesAsync("WellLogs", checkId, Guid.NewGuid(), Operator, CancellationToken.None);
+    }
+
+    private static readonly string[] LogKey = ["data.WellboreID", "data.Name"];
 
     private static async Task<IReadOnlyList<InventoryDuplicateGroupPage>> GroupsAsync(OsduLedger ledger, long checkId, string? outcome = null)
         => await ledger.ListInventoryDuplicateGroupsAsync(Partition, checkId, outcome, null, 500, InventoryDuplicates.MaxCopiesPicked);
@@ -157,8 +180,45 @@ public sealed class InventoryDuplicateTests : IDisposable
     private static async Task<List<InventorySelectionRecord>> SelectedAsync(OsduLedger ledger, long selectionId)
         => [.. await ledger.ListInventorySelectionRecordsAsync(Partition, selectionId, null, null, 1000)];
 
+    /// <summary>The rows of a check's table, and its columns; null when the database holds no such table.</summary>
+    private async Task<(long Rows, IReadOnlyList<string> Columns)?> TableAsync(long checkId)
+    {
+        await using var db = _db.CreateDbContext();
+        var connection = db.Database.GetDbConnection();
+        await connection.OpenAsync();
+        var table = InventoryDuplicateTable.NameOf(checkId);
+        await using (var exists = connection.CreateCommand())
+        {
+            exists.CommandText = $"SELECT CASE WHEN OBJECT_ID(N'osdu.{table}', N'U') IS NULL THEN 0 ELSE 1 END;";
+            if (Convert.ToInt32(await exists.ExecuteScalarAsync(), CultureInfo.InvariantCulture) == 0)
+            {
+                return null;
+            }
+        }
+
+        long rows;
+        await using (var count = connection.CreateCommand())
+        {
+            count.CommandText = $"SELECT COUNT_BIG(*) FROM [osdu].[{table}];";
+            rows = Convert.ToInt64(await count.ExecuteScalarAsync(), CultureInfo.InvariantCulture);
+        }
+
+        var columns = new List<string>();
+        await using (var listed = connection.CreateCommand())
+        {
+            listed.CommandText = $"SELECT c.[name] FROM sys.columns AS c WHERE c.[object_id] = OBJECT_ID(N'osdu.{table}') ORDER BY c.[column_id];";
+            await using var reader = await listed.ExecuteReaderAsync();
+            while (await reader.ReadAsync())
+            {
+                columns.Add(reader.GetString(0));
+            }
+        }
+
+        return (rows, columns);
+    }
+
     [Fact]
-    public async Task A_check_groups_the_ids_sharing_a_key_keeps_the_most_complete_copy_and_a_removal_by_its_selection_takes_the_others()
+    public async Task A_check_downloads_its_key_once_groups_it_in_sql_by_any_key_of_what_it_downloaded_and_reads_copies_only_when_picked()
     {
         AddEstate();
         var (runner, ledger, inventory) = await BuiltAsync(Flow());
@@ -166,25 +226,74 @@ public sealed class InventoryDuplicateTests : IDisposable
         var sent = _search.Calls.Count;
         var reads = _platform.RecordReads;
 
-        var outcome = await runner.FindDuplicatesAsync("WellLogs", checkId, Guid.NewGuid(), Operator, CancellationToken.None);
+        var downloaded = await runner.FindDuplicatesAsync("WellLogs", checkId, Guid.NewGuid(), Operator, CancellationToken.None);
 
-        Assert.Equal((InventoryDuplicates.Completed, (string?)null), (outcome.Status, outcome.Error));
-        Assert.Equal((8L, 7L, 1L, 0L), (outcome.Candidates, outcome.Keyed, outcome.Unkeyed, outcome.Outside));
-        Assert.Equal((2L, 6L, 1L, 1L, 2L), (outcome.Groups, outcome.Copies, outcome.Decided, outcome.Review, outcome.ToRemove));
-        Assert.Equal(1, _platform.RecordReads - reads);
-        Assert.Equal(_search.Calls.Count - sent + 1, outcome.Requests);
-
-        // The key is read with only its properties returned; the copies are read whole from storage, once each.
+        // The download sends searches alone, a page at a time, with only the key's properties returned, and reads no copy.
+        Assert.Equal((InventoryDuplicates.Completed, (string?)null), (downloaded.Status, downloaded.Error));
+        Assert.Equal((8L, 7L, 1L, 0L), (downloaded.Candidates, downloaded.Keyed, downloaded.Unkeyed, downloaded.Outside));
+        Assert.Equal((2L, 6L, 0L, 0L, 0L), (downloaded.Groups, downloaded.Copies, downloaded.Decided, downloaded.Review, downloaded.ToRemove));
+        Assert.Equal(reads, _platform.RecordReads);
+        Assert.Equal(_search.Calls.Count - sent, downloaded.Requests);
         var keyRead = JsonNode.Parse(_search.Calls.Skip(sent).First(c => c.Body!.Contains("returnedFields", StringComparison.Ordinal)).Body!)!;
         Assert.Equal(["id", "version", "data.WellboreID", "data.Name"], keyRead["returnedFields"]!.AsArray().Select(f => f!.GetValue<string>()));
 
+        // The check's table holds a row for each id the search returned, a column for each property's values and one for their hash.
+        var (rows, columns) = (await TableAsync(checkId))!.Value;
+        Assert.Equal(8L, rows);
+        Assert.Equal(
+            ["inventory_record_id", "target_id", "version", "WellboreID", "WellboreID__hash", "Name", "Name__hash"],
+            columns);
         var check = await ledger.GetInventoryDuplicateCheckAsync(Partition, checkId);
         Assert.NotNull(check);
-        Assert.Equal((InventoryDuplicates.Completed, (string?)null, inventory.LastBuildRunId, 2L), (check.Status, check.Phase, check.BuildRunId, check.GroupsJudged));
-        var groups = await GroupsAsync(ledger, checkId);
-        Assert.Equal([1, 2], groups.Select(g => g.Group.GroupNumber));
+        Assert.Equal((InventoryDuplicates.Completed, (string?)null, InventoryDuplicateTable.NameOf(checkId), Operator, (DateTime?)null), (check.Status, check.Phase, check.TableName, check.KeyedBy, check.PickedUtc));
+        Assert.Equal(["data.WellboreID", "data.Name"], InventoryDuplicateTable.Parse(check.AttributesJson).Select(a => a.Path));
 
-        // The four copies of GR RUN 1, the largest group first: the one holding its bulk data and curves kept.
+        // Its groups wait to be picked, each copy with what it holds at the key; the larger first.
+        var groups = await GroupsAsync(ledger, checkId);
+        Assert.Equal([(4, InventoryDuplicates.Pending), (2, InventoryDuplicates.Pending)], groups.Select(g => (g.Group.Copies, g.Group.Outcome)));
+        Assert.Equal(["GR RUN 1"], InventorySelectionValues.Parse(CopyOf(groups[0], "thin").ValuesJson)["data.Name"]);
+        Assert.Equal(["wb-1"], InventorySelectionValues.Parse(CopyOf(groups[0], "thin").ValuesJson)["data.WellboreID"]);
+        Assert.Equal(["GR RUN 1"], InventorySelectionValues.Parse(groups[0].Group.ValuesJson)["data.Name"]);
+        Assert.All(groups.SelectMany(g => g.Members), m => Assert.Equal(((string?)null, (int?)null, (string?)null), (m.StorageState, m.Attributes, m.Role)));
+        var sizes = await ledger.InventoryDuplicateSizesAsync(Partition, checkId);
+        Assert.Equal([(2, (int?)2, 1L, 2L), (3, 10, 1L, 4L), (11, 100, 0L, 0L), (101, null, 0L, 0L)], sizes.Sizes.Select(s => (s.From, s.To, s.Groups, s.Copies)));
+        Assert.Equal((2L, 6L), (sizes.PendingGroups, sizes.PendingCopies));
+
+        // Another key of what it downloaded groups the table again in SQL, OSDU asked nothing; a property it did not download is refused.
+        sent = _search.Calls.Count;
+        _clock.Advance(TimeSpan.FromMinutes(1));
+        var byWellbore = await ledger.GroupInventoryDuplicatesAsync(Partition, checkId, Keying("user:second", "data.WellboreID"));
+        Assert.Equal((2L, 7L, 0L, 7L, 1L), (byWellbore.Groups, byWellbore.Copies, byWellbore.TooBroad, byWellbore.Keyed, byWellbore.Unkeyed));
+        Assert.Equal([5, 2], (await GroupsAsync(ledger, checkId)).Select(g => g.Group.Copies));
+
+        // A copy keeps the other property the check downloaded beside the key's, so a group shows how its copies differ outside it.
+        var thinByWellbore = InventorySelectionValues.Parse(CopyOf((await GroupsAsync(ledger, checkId))[0], "thin").ValuesJson);
+        Assert.Equal(["wb-1"], thinByWellbore["data.WellboreID"]);
+        Assert.Equal(["GR RUN 1"], thinByWellbore["data.Name"]);
+        var rekeyed = await ledger.GetInventoryDuplicateCheckAsync(Partition, checkId);
+        Assert.Equal(("user:second", (DateTime?)Now, KeyOf("data.WellboreID").ToJson()), (rekeyed!.KeyedBy, rekeyed.KeyedUtc, rekeyed.KeyJson));
+        var undownloaded = await Assert.ThrowsAsync<DeliveryException>(() => ledger.GroupInventoryDuplicatesAsync(Partition, checkId, Keying(Operator, "data.Curves.Mnemonic")));
+        Assert.Contains("did not download data.Curves.Mnemonic", undownloaded.Message, StringComparison.Ordinal);
+        await ledger.GroupInventoryDuplicatesAsync(Partition, checkId, Keying(Operator, LogKey));
+        Assert.Equal(sent, _search.Calls.Count);
+        Assert.Equal(reads, _platform.RecordReads);
+
+        // A pick reads the copies whole from storage, once each, and asks which records name them in one search for the batch.
+        sent = _search.Calls.Count;
+        var picked = await PickAsync(runner, ledger, inventory, checkId);
+        Assert.Equal((InventoryDuplicates.Completed, (string?)null), (picked.Status, picked.Error));
+        Assert.Equal((2L, 6L, 1L, 1L, 2L), (picked.Groups, picked.Copies, picked.Decided, picked.Review, picked.ToRemove));
+        Assert.Equal(1, _platform.RecordReads - reads);
+        var references = Assert.Single(_search.Calls.Skip(sent));
+        Assert.Contains(InventoryDuplicateReferences.EveryKind, references.Body!, StringComparison.Ordinal);
+        Assert.All(["full", "thin", "thin-2", "foreign", "pair-a", "pair-b"], key => Assert.Contains(Id(key), references.Body!, StringComparison.Ordinal));
+        Assert.False(await ledger.RequestInventoryDuplicatePickAsync(Partition, checkId, inventory.LastBuildRunId));
+
+        check = await ledger.GetInventoryDuplicateCheckAsync(Partition, checkId);
+        Assert.Equal((InventoryDuplicates.Completed, (string?)null, (DateTime?)Now, 2L), (check!.Status, check.Phase, check.PickedUtc, check.GroupsJudged));
+        groups = await GroupsAsync(ledger, checkId);
+
+        // The four copies of GR RUN 1: the one holding its bulk data and curves kept.
         var log = groups[0];
         Assert.Equal((4, InventoryDuplicates.Picked), (log.Group.Copies, log.Group.Outcome));
         Assert.Equal(CopyOf(log, "full").Record.InventoryRecordId, log.Group.KeptInventoryRecordId);
@@ -193,31 +302,26 @@ public sealed class InventoryDuplicateTests : IDisposable
             [(Id("foreign"), InventoryDuplicates.Leave, 2), (Id("full"), InventoryDuplicates.Keep, 6), (Id("thin"), InventoryDuplicates.Remove, 2), (Id("thin-2"), InventoryDuplicates.Remove, 3)],
             log.Members.Select(m => (m.Record.TargetId, m.Role!, m.Attributes!.Value)).OrderBy(m => m.TargetId, StringComparer.Ordinal));
         Assert.All(log.Members, m => Assert.Equal((InventoryDuplicates.Held, 3L, 3L, 0L), (m.StorageState!, m.StoredVersion!.Value, m.IndexedVersion!.Value, m.MentionedBy!.Value)));
-        Assert.Equal(["gr run 1 "], InventorySelectionValues.Parse(CopyOf(log, "thin").ValuesJson)["data.Name"]);
         Assert.Contains("only its owner can remove it", CopyOf(log, "foreign").Reason, StringComparison.Ordinal);
 
         // The two copies of SP hold as many values: which to keep is the operator's to choose.
         var pair = groups[1];
         Assert.Equal((2, InventoryDuplicates.Review, (long?)null), (pair.Group.Copies, pair.Group.Outcome, pair.Group.KeptInventoryRecordId));
         Assert.StartsWith("2 copies hold the most values (3 each", pair.Group.Reason, StringComparison.Ordinal);
-        Assert.Equal(1L, (await ledger.InventoryDuplicateOutcomesAsync(Partition, checkId))[InventoryDuplicates.Review]);
-        Assert.Equal(pair.Group.GroupNumber, Assert.Single(await GroupsAsync(ledger, checkId, InventoryDuplicates.Review)).Group.GroupNumber);
 
-        // The same key asked again of the same build finds this check; of another build, none.
-        Assert.Equal(checkId, (await ledger.FindInventoryDuplicateCheckAsync(Partition, inventory.InventoryId, check.KeyHash, inventory.LastBuildRunId))?.InventoryDuplicateCheckId);
-        Assert.Null(await ledger.FindInventoryDuplicateCheckAsync(Partition, inventory.InventoryId, check.KeyHash, inventory.LastBuildRunId + 1));
+        // The newest check that answers for the build is this one; for another build, none.
+        Assert.Equal(checkId, (await ledger.CurrentInventoryDuplicateCheckAsync(Partition, inventory.InventoryId, inventory.LastBuildRunId))?.InventoryDuplicateCheckId);
+        Assert.Null(await ledger.CurrentInventoryDuplicateCheckAsync(Partition, inventory.InventoryId, inventory.LastBuildRunId + 1));
 
-        // The copies picked to remove made a selection: the two thin copies, each beside the copy its group keeps.
+        // The copies picked to remove made a selection, which keeps the key they were picked by.
         var selectionId = await SelectAsync(ledger, checkId);
         var selection = await ledger.GetInventorySelectionAsync(Partition, selectionId);
         Assert.NotNull(selection);
         Assert.Equal((InventorySelections.Completed, checkId, inventory.LastBuildRunId, 2L, "[]"), (selection.Status, selection.DuplicateCheckId, selection.BuildRunId, selection.Matched, selection.ConditionsJson));
-        Assert.Equal("""["data.WellboreID","data.Name"]""", selection.ColumnsJson);
+        Assert.Equal(check.KeyJson, selection.DuplicateKeyJson);
         Assert.Equal([Id("thin"), Id("thin-2")], (await SelectedAsync(ledger, selectionId)).Select(s => s.Record.TargetId).Order(StringComparer.Ordinal));
-        Assert.Equal(selectionId, (await ledger.GetInventoryDuplicateCheckAsync(Partition, checkId))!.SelectionId);
         Assert.Null(await ledger.FindInventorySelectionAsync(Partition, inventory.InventoryId, selection.ConditionsKey, inventory.LastBuildRunId));
 
-        // A match never fills a selection a check made.
         var refused = await Assert.ThrowsAsync<DeliveryException>(() => runner.MatchAsync("WellLogs", selectionId, Guid.NewGuid(), Operator, CancellationToken.None));
         Assert.Contains($"holds the copies duplicate check {checkId} picked to remove", refused.Message, StringComparison.Ordinal);
 
@@ -226,6 +330,12 @@ public sealed class InventoryDuplicateTests : IDisposable
             Partition, Guid.NewGuid(), Operator, CancellationToken.None);
         Assert.Equal((2L, 0L, 0L, 0L), (removal.Removed, removal.Gone, removal.Skipped, removal.Failed));
         Assert.Equal([Id("thin"), Id("thin-2")], _platform.SoftDeleted.Order(StringComparer.Ordinal));
+
+        // A key set since forms new groups to pick, and lets go of the selection; the selection still says what chose its ids.
+        await ledger.GroupInventoryDuplicatesAsync(Partition, checkId, Keying(Operator, "data.WellboreID"));
+        var regrouped = await ledger.GetInventoryDuplicateCheckAsync(Partition, checkId);
+        Assert.Equal(((long?)null, (DateTime?)null, 0L, 0L), (regrouped!.SelectionId, regrouped.PickedUtc, regrouped.Decided, regrouped.ToRemove));
+        Assert.Equal(check.KeyJson, (await ledger.GetInventorySelectionAsync(Partition, selectionId))!.DuplicateKeyJson);
     }
 
     [Fact]
@@ -235,6 +345,7 @@ public sealed class InventoryDuplicateTests : IDisposable
         var (runner, ledger, inventory) = await BuiltAsync(Flow());
         var checkId = await CheckAsync(ledger, inventory, LogKey);
         await runner.FindDuplicatesAsync("WellLogs", checkId, Guid.NewGuid(), Operator, CancellationToken.None);
+        await PickAsync(runner, ledger, inventory, checkId);
 
         _clock.Advance(TimeSpan.FromMinutes(5));
         await ChooseAsync(ledger, checkId, 2, keep: "pair-a");
@@ -268,16 +379,28 @@ public sealed class InventoryDuplicateTests : IDisposable
         Assert.Equal(2, skipped.Count);
         Assert.All(skipped, s => Assert.Equal($"storage no longer holds {Id("full")}, the copy its group keeps, so this copy is left: removing it could leave no copy of the record", s.Reason));
 
-        // A build since the check makes its selection stale, so a removal of what it holds is refused.
+        // A judgement made of groups a key set since re-formed is refused, so it never decides a group it was not made for: the
+        // first group holds a fifth copy by the wellbore alone.
+        var members = await ledger.ListInventoryDuplicateMembersAsync(Partition, checkId, 1, null, InventoryDuplicates.MaxCopiesPicked);
+        var judgement = InventoryDuplicatePicker.Judge(
+            1, members.Select(m => new DuplicateCopy(m.Record.InventoryRecordId, m.Record.TargetId, m.Record.Finding, m.StorageState!, m.StoredVersion, m.Attributes, m.MentionedBy)).ToList(),
+            new HashSet<string>(StringComparer.Ordinal) { InventoryFindings.Orphan }, members.Single(m => m.Record.TargetId == Id("full")).Record.InventoryRecordId);
+        await ledger.GroupInventoryDuplicatesAsync(Partition, checkId, Keying(Operator, "data.WellboreID"));
+        var replaced = await Assert.ThrowsAsync<DeliveryException>(() => ledger.WriteInventoryDuplicateChoiceAsync(Partition, checkId, judgement, DuplicateChoice.Choose, Operator, Now));
+        Assert.Contains("does not name every copy of its group", replaced.Message, StringComparison.Ordinal);
+
+        // A build since the check makes its selection stale, so a removal of what it holds is refused, and no pick is taken.
         await runner.BuildAsync([], Guid.NewGuid(), "tests", CancellationToken.None);
         var stale = await Assert.ThrowsAsync<DeliveryException>(() => runner.RemoveAsync(
             "WellLogs", new InventoryRemovalRequest { Finding = InventoryFindings.Orphan, Scope = InventoryRemovals.SoftDelete, Expected = 2, Selection = selectionId },
             Partition, Guid.NewGuid(), Operator, CancellationToken.None));
         Assert.Contains($"holds the picks of duplicate check {checkId}, made against an earlier build", stale.Message, StringComparison.Ordinal);
+        var rebuilt = Assert.Single(await ledger.ListInventoriesAsync(Partition));
+        Assert.False(await ledger.RequestInventoryDuplicatePickAsync(Partition, checkId, rebuilt.LastBuildRunId));
     }
 
     [Fact]
-    public async Task A_group_is_left_for_review_when_the_ledger_s_copy_is_the_less_complete_when_a_copy_to_remove_is_named_and_when_the_key_is_too_broad()
+    public async Task A_pick_asks_which_records_name_its_copies_a_batch_at_a_time_and_leaves_for_review_a_named_copy_a_ledger_s_thinner_copy_and_a_broad_key()
     {
         // The delivered copy holds less than an orphan of it: the delivery leaves out what the orphan holds.
         Add("delivered", """{"Name":"GR","WellboreID":"wb-1"}""");
@@ -289,6 +412,10 @@ public sealed class InventoryDuplicateTests : IDisposable
         Add("trajectory", $$"""{"LogID":"{{Id("named")}}:"}""", kind: "osdu:wks:work-product-component--WellboreTrajectory:1.0.0",
             id: $"{Partition}:work-product-component--WellboreTrajectory:t-1");
 
+        // A copy its fuller sibling names: the sibling is read by the pick, so it is counted from its record.
+        Add("lineage-a", $$"""{"Name":"SP","WellboreID":"wb-3","LineageAssertions":[{"ID":"{{Id("lineage-b")}}:"}]}""");
+        Add("lineage-b", """{"Name":"SP","WellboreID":"wb-3"}""");
+
         // A key every one of more than a hundred records shares is no record written more than once.
         for (var i = 0; i < InventoryDuplicates.MaxCopiesPicked + 1; i++)
         {
@@ -297,10 +424,18 @@ public sealed class InventoryDuplicateTests : IDisposable
 
         var (runner, ledger, inventory) = await BuiltAsync(Flow(), claims: ledger => ClaimAsync(ledger, "delivered"));
         var checkId = await CheckAsync(ledger, inventory, LogKey);
-        var outcome = await runner.FindDuplicatesAsync("WellLogs", checkId, Guid.NewGuid(), Operator, CancellationToken.None);
+        var downloaded = await runner.FindDuplicatesAsync("WellLogs", checkId, Guid.NewGuid(), Operator, CancellationToken.None);
+        Assert.Equal((4L, 1L), (downloaded.Groups, downloaded.Review));
+        Assert.Contains(downloaded.Notes, n => n.StartsWith("1 group(s) hold more than 100 copies", StringComparison.Ordinal));
+        Assert.Equal((3L, 6L), ((await ledger.InventoryDuplicateSizesAsync(Partition, checkId)).PendingGroups, (await ledger.InventoryDuplicateSizesAsync(Partition, checkId)).PendingCopies));
 
-        Assert.Equal((3L, 0L, 3L, 0L), (outcome.Groups, outcome.Decided, outcome.Review, outcome.ToRemove));
-        Assert.Contains(outcome.Notes, n => n.StartsWith("1 group(s) hold more than 100 copies", StringComparison.Ordinal));
+        // The six copies of the three groups a pick reads go in one batch; the batch finds the trajectory, so it is split until
+        // the copy it names is counted on its own: seven searches, not one a copy.
+        var sent = _search.Calls.Count;
+        var picked = await PickAsync(runner, ledger, inventory, checkId);
+        Assert.Equal(7, _search.Calls.Count - sent);
+        Assert.Equal((4L, 0L, 4L, 0L), (picked.Groups, picked.Decided, picked.Review, picked.ToRemove));
+        Assert.Contains(downloaded.Notes[0], picked.Notes);
         var groups = await GroupsAsync(ledger, checkId);
 
         var broad = groups[0];
@@ -321,35 +456,59 @@ public sealed class InventoryDuplicateTests : IDisposable
         Assert.StartsWith($"{Id("named")}, picked to remove, is named by 1 record(s)", named.Group.Reason, StringComparison.Ordinal);
         Assert.Contains($"repoint them to {Id("kept")}", named.Group.Reason, StringComparison.Ordinal);
 
+        var lineage = groups.Single(g => g.Members.Any(m => m.Record.TargetId == Id("lineage-b")));
+        Assert.Equal((InventoryDuplicates.Review, 1L, 0L), (lineage.Group.Outcome, CopyOf(lineage, "lineage-b").MentionedBy!.Value, CopyOf(lineage, "lineage-a").MentionedBy!.Value));
+
         // Nothing is picked to remove, so no selection is made of the check.
         var selectionId = await SelectAsync(ledger, checkId);
         Assert.Empty(await SelectedAsync(ledger, selectionId));
     }
 
     [Fact]
-    public async Task A_check_the_search_fails_keeps_no_group_is_made_afresh_when_run_again_and_says_which_property_no_record_holds()
+    public async Task A_download_that_stops_keeps_no_group_and_no_table_a_pick_that_stops_keeps_the_download_and_both_continue_when_asked_again()
     {
         AddEstate();
         var (runner, ledger, inventory) = await BuiltAsync(Flow());
-        var checkId = await CheckAsync(ledger, inventory, ("data.WellboreID", "exact"), ("data.Name", "loose"), ("data.NotIndexed", "exact"));
+        var checkId = await CheckAsync(ledger, inventory, "data.WellboreID", "data.Name", "data.NotIndexed");
 
         _search.Fail = body => body is not null && body.Contains("data.NotIndexed", StringComparison.Ordinal) ? HttpStatusCode.ServiceUnavailable : null;
         var failed = await Assert.ThrowsAsync<InventoryDuplicatesFailedException>(() => runner.FindDuplicatesAsync("WellLogs", checkId, Guid.NewGuid(), Operator, CancellationToken.None));
         Assert.Equal(InventoryDuplicates.Failed, failed.Outcome.Status);
         var check = await ledger.GetInventoryDuplicateCheckAsync(Partition, checkId);
-        Assert.Equal((InventoryDuplicates.Failed, 0L, (string?)null), (check!.Status, check.Groups, check.Phase));
+        Assert.Equal((InventoryDuplicates.Failed, 0L, (string?)null, (string?)null), (check!.Status, check.Groups, check.Phase, check.TableName));
         Assert.False(string.IsNullOrWhiteSpace(check.Error));
+        Assert.Null(await TableAsync(checkId));
         Assert.Empty(await GroupsAsync(ledger, checkId));
-        await using (var db = _db.CreateDbContext())
-        {
-            Assert.False(await db.DeliveryInventoryDuplicateMembers.AnyAsync(m => m.InventoryDuplicateCheckId == checkId));
-        }
 
         _search.Fail = null;
         var again = await runner.FindDuplicatesAsync("WellLogs", checkId, Guid.NewGuid(), Operator, CancellationToken.None);
         Assert.Equal((InventoryDuplicates.Completed, 2L), (again.Status, again.Groups));
         Assert.Contains(again.Notes, n => n.StartsWith("No record the search returned held a value at data.NotIndexed", StringComparison.Ordinal));
         Assert.Null((await ledger.GetInventoryDuplicateCheckAsync(Partition, checkId))!.Error);
+        Assert.Equal(8L, (await TableAsync(checkId))!.Value.Rows);
+
+        // A pick the search refuses stops: the check stays completed, its download and groups as they were, and says why.
+        _search.Fail = body => body is not null && body.Contains(InventoryDuplicateReferences.EveryKind, StringComparison.Ordinal) ? HttpStatusCode.ServiceUnavailable : null;
+        var stopped = await Assert.ThrowsAsync<InventoryDuplicatesFailedException>(() => PickAsync(runner, ledger, inventory, checkId));
+        Assert.Contains("pick again to read the groups left", stopped.Message, StringComparison.Ordinal);
+        var paused = await ledger.GetInventoryDuplicateCheckAsync(Partition, checkId);
+        Assert.Equal((InventoryDuplicates.Completed, (string?)null, (DateTime?)null, 2L), (paused!.Status, paused.Phase, paused.PickedUtc, paused.Groups));
+        Assert.Contains("pick again to read the groups left", paused.Error, StringComparison.Ordinal);
+        Assert.All(await GroupsAsync(ledger, checkId), g => Assert.Equal(InventoryDuplicates.Pending, g.Group.Outcome));
+        Assert.Equal(8L, (await TableAsync(checkId))!.Value.Rows);
+
+        _search.Fail = null;
+        var resumed = await PickAsync(runner, ledger, inventory, checkId);
+        Assert.Equal((InventoryDuplicates.Completed, 1L, 1L), (resumed.Status, resumed.Decided, resumed.Review));
+        Assert.Null((await ledger.GetInventoryDuplicateCheckAsync(Partition, checkId))!.Error);
+
+        // A pick whose run never came leaves the check completed with why; a download whose run never came fails it.
+        Assert.True(await ledger.GroupInventoryDuplicatesAsync(Partition, checkId, Keying(Operator, LogKey)) is { Groups: 2 });
+        Assert.True(await ledger.RequestInventoryDuplicatePickAsync(Partition, checkId, inventory.LastBuildRunId));
+        await ledger.FailInventoryDuplicateCheckAsync(Partition, checkId, "its run could not be queued: the pool is gone", Now);
+        var unqueued = await ledger.GetInventoryDuplicateCheckAsync(Partition, checkId);
+        Assert.Equal((InventoryDuplicates.Completed, (string?)null), (unqueued!.Status, unqueued.Phase));
+        Assert.NotNull(await TableAsync(checkId));
 
         // A check of an inventory the flow does not declare, or one the partition does not hold, never starts.
         var orphaned = await CheckAsync(ledger, inventory, LogKey);
@@ -361,18 +520,25 @@ public sealed class InventoryDuplicateTests : IDisposable
     }
 
     [Fact]
-    public async Task Checks_past_their_week_are_retired_and_one_whose_picks_a_removal_took_is_kept_expired()
+    public async Task A_newer_download_lets_go_of_earlier_tables_and_checks_past_their_week_are_retired_one_whose_picks_a_removal_took_kept_expired()
     {
         AddEstate();
         var (runner, ledger, inventory) = await BuiltAsync(Flow());
         var removedBy = await CheckAsync(ledger, inventory, LogKey);
         await runner.FindDuplicatesAsync("WellLogs", removedBy, Guid.NewGuid(), Operator, CancellationToken.None);
+        await PickAsync(runner, ledger, inventory, removedBy);
         var selectionId = await SelectAsync(ledger, removedBy);
         await runner.RemoveAsync(
             "WellLogs", new InventoryRemovalRequest { Finding = InventoryFindings.Orphan, Scope = InventoryRemovals.SoftDelete, Expected = 2, Selection = selectionId },
             Partition, Guid.NewGuid(), Operator, CancellationToken.None);
-        var unused = await CheckAsync(ledger, inventory, ("data.Name", "exact"));
+        var unused = await CheckAsync(ledger, inventory, "data.Name");
         await runner.FindDuplicatesAsync("WellLogs", unused, Guid.NewGuid(), Operator, CancellationToken.None);
+
+        // The newer download lets go of the table of the check before it, whose groups stay as they were found.
+        Assert.Null(await TableAsync(removedBy));
+        Assert.Null((await ledger.GetInventoryDuplicateCheckAsync(Partition, removedBy))!.TableName);
+        Assert.NotEmpty(await GroupsAsync(ledger, removedBy));
+        Assert.NotNull(await TableAsync(unused));
 
         Assert.Equal(new InventoryDuplicateSweep(0, 0), await ledger.SweepInventoryDuplicateChecksAsync(Partition, Now - InventoryDuplicates.KeptFor));
 
@@ -382,8 +548,10 @@ public sealed class InventoryDuplicateTests : IDisposable
 
         Assert.Equal(new InventoryDuplicateSweep(1, 1), swept);
         Assert.Null(await ledger.GetInventoryDuplicateCheckAsync(Partition, unused));
+        Assert.Null(await TableAsync(unused));
         var expired = await ledger.GetInventoryDuplicateCheckAsync(Partition, removedBy);
-        Assert.Equal(InventoryDuplicates.Expired, expired?.Status);
+        Assert.Equal((InventoryDuplicates.Expired, (string?)null), (expired?.Status, expired?.TableName));
+        Assert.Null(await TableAsync(removedBy));
         Assert.Empty(await GroupsAsync(ledger, removedBy));
         var again = await Assert.ThrowsAsync<DeliveryException>(() => runner.FindDuplicatesAsync("WellLogs", removedBy, Guid.NewGuid(), Operator, CancellationToken.None));
         Assert.Contains($"holds no duplicate check {removedBy}", again.Message, StringComparison.Ordinal);

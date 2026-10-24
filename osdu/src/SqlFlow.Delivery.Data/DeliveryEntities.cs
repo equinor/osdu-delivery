@@ -1196,6 +1196,12 @@ public sealed class DeliveryInventorySelection
     /// filled.
     /// </summary>
     public long? DuplicateCheckId { get; set; }
+
+    /// <summary>
+    /// The key the duplicate check's groups were formed by when the selection was made of its picks (JSON, as the check keeps it):
+    /// the check's key may change since, and the selection still says what chose its ids. Null for a selection a match filled.
+    /// </summary>
+    public string? DuplicateKeyJson { get; set; }
 }
 
 /// <summary>One id of an inventory a match found holding what its conditions ask: the version the index holds and the values it holds there.</summary>
@@ -1221,11 +1227,12 @@ public sealed class DeliveryInventorySelectionItem
 }
 
 /// <summary>
-/// A check of an inventory's ids for duplicate records (osdu/docs/reference/flow/inventory-duplicates.md): the
-/// key an operator compares the records by, as written, where the check stands and what it found, and the build of the
-/// inventory it read. The ids that share their key with another are the <see cref="DeliveryInventoryDuplicateMember"/> rows of
-/// its <see cref="DeliveryInventoryDuplicateGroup"/> rows. A check runs as a run of the inventory flow; the copies it picks
-/// to remove become a selection a removal takes.
+/// A check of an inventory's ids for duplicate records (osdu/docs/reference/flow/inventory-duplicates.md): the properties it
+/// downloaded of every id into its own table (<see cref="TableName"/>, made at run time, as a dimension's is), the key an operator
+/// groups them by, as written, where the check stands and what it found, and the build of the inventory it read. The ids that
+/// hold equal values at the key are the <see cref="DeliveryInventoryDuplicateMember"/> rows of its
+/// <see cref="DeliveryInventoryDuplicateGroup"/> rows. Its download and its picks run as runs of the inventory flow; the copies it
+/// picks to remove become a selection a removal takes.
 /// </summary>
 public sealed class DeliveryInventoryDuplicateCheck
 {
@@ -1241,16 +1248,37 @@ public sealed class DeliveryInventoryDuplicateCheck
     /// <summary>Who asked for the check.</summary>
     public string Actor { get; set; } = string.Empty;
 
-    /// <summary>The key as the operator wrote it, in one spelling (JSON): each property compared and how.</summary>
+    /// <summary>The key the groups are formed by, as the operator wrote it, in one spelling (JSON): the path of each property whose values the copies hold equal.</summary>
     public string KeyJson { get; set; } = string.Empty;
 
     /// <summary>A SHA-256 of <see cref="KeyJson"/> in hex, by which the same key asked again of the same build finds the check already made.</summary>
     public string KeyHash { get; set; } = string.Empty;
 
+    /// <summary>
+    /// The properties the check downloaded, each with its column of the check's table (JSON list of path and column): a key of
+    /// any of them groups the table again without reading OSDU.
+    /// </summary>
+    public string? AttributesJson { get; set; }
+
+    /// <summary>
+    /// The check's table in the <c>osdu</c> schema (<c>dup_&lt;check&gt;</c>), once its download made it: a row for each id, a column
+    /// for each property's values and one for the hash of them. Null before its download and after a sweep dropped it.
+    /// </summary>
+    public string? TableName { get; set; }
+
+    /// <summary>Who set the key the groups are formed by: the operator who asked for the check, or the one who changed its key since.</summary>
+    public string? KeyedBy { get; set; }
+
+    /// <summary>When the key the groups are formed by was set.</summary>
+    public DateTime? KeyedUtc { get; set; }
+
+    /// <summary>When a pick last read the copies of every group; null while groups wait to be picked (a key set since starts them over).</summary>
+    public DateTime? PickedUtc { get; set; }
+
     /// <summary>queued, running, completed, failed or expired.</summary>
     public string Status { get; set; } = string.Empty;
 
-    /// <summary>What a running check is doing: <c>keys</c> (reading every id's key) or <c>copies</c> (reading the copies of each group); null otherwise.</summary>
+    /// <summary>What a running check is doing: <c>keys</c> (downloading the properties of every id) or <c>copies</c> (reading the copies of each group); null otherwise.</summary>
     public string? Phase { get; set; }
 
     /// <summary>What the reader should know of how the check read OSDU (JSON list).</summary>
@@ -1310,7 +1338,7 @@ public sealed class DeliveryInventoryDuplicateCheck
 
     public DateTime? CompletedUtc { get; set; }
 
-    /// <summary>Why the check failed, redacted; null for one that did not.</summary>
+    /// <summary>Why the check's download failed, or why its last pick stopped, redacted; null for one that did neither.</summary>
     public string? Error { get; set; }
 }
 
@@ -3602,6 +3630,9 @@ public static class DeliveryModel
     /// <summary>The longest line a duplicate check keeps of why a group came out as it did, or why a copy has its role.</summary>
     public const int MaxDuplicateReasonLength = 1000;
 
+    /// <summary>The longest name of a table the module makes at run time (a duplicate check's): SQL Server's own limit.</summary>
+    public const int MaxRunTimeTableNameLength = 128;
+
     /// <summary>
     /// The longest identity token, and the longest display value beside it: 200 characters keep the
     /// (token, flow, key) primary key well under SQL Server's 1700-byte limit for a nonclustered index key, and a
@@ -4118,11 +4149,12 @@ public static class DeliveryModel
             e.Property(c => c.Actor).HasMaxLength(200).IsRequired();
             e.Property(c => c.KeyJson).IsRequired();
             e.Property(c => c.KeyHash).HasMaxLength(SelectionKeyLength).IsUnicode(false).IsRequired();
+            e.Property(c => c.TableName).HasMaxLength(MaxRunTimeTableNameLength);
+            e.Property(c => c.KeyedBy).HasMaxLength(200);
             e.Property(c => c.Status).HasMaxLength(16).IsRequired();
             e.Property(c => c.Phase).HasMaxLength(16);
             e.Property(c => c.Error).HasMaxLength(4000);
-            // The same key asked again of an inventory finds the newest check made of it; the tab lists an inventory's checks, newest first.
-            e.HasIndex(c => new { c.PartitionId, c.InventoryId, c.KeyHash, c.InventoryDuplicateCheckId });
+            // An inventory's checks, newest first: the tab lists them, and a key asked again groups the newest.
             e.HasIndex(c => new { c.PartitionId, c.InventoryId, c.InventoryDuplicateCheckId });
             // The checks a sweep retires, oldest first.
             e.HasIndex(c => new { c.PartitionId, c.CreatedUtc });
@@ -4145,16 +4177,15 @@ public static class DeliveryModel
         modelBuilder.Entity<DeliveryInventoryDuplicateMember>(e =>
         {
             e.ToTable("InventoryDuplicateMember", SchemaName);
-            // A check's ids in the inventory's own order: a page of keys joins them by row, and a selection is made of them.
+            // A check's copies in the inventory's own order: the grouping gives them their values a chunk at a time, and a
+            // grouping again, a failed check and a sweep delete them a batch at a time.
             e.HasKey(m => new { m.PartitionId, m.InventoryDuplicateCheckId, m.InventoryRecordId });
             e.Property(m => m.KeyHash).HasMaxLength(DuplicateKeyHashLength).IsFixedLength().IsRequired();
             e.Property(m => m.ValuesJson).HasMaxLength(MaxSelectionValuesLength);
             e.Property(m => m.StorageState).HasMaxLength(16);
             e.Property(m => m.Role).HasMaxLength(16);
             e.Property(m => m.Reason).HasMaxLength(MaxDuplicateReasonLength);
-            // The ids that share a key: the grouping counts them, and numbers each row with its group.
-            e.HasIndex(m => new { m.PartitionId, m.InventoryDuplicateCheckId, m.KeyHash });
-            // A group's copies in order: the list shows them, and the copies pass reads them so.
+            // A group's copies in order: the list shows them, a pick reads them so, and a selection is made of them.
             e.HasIndex(m => new { m.PartitionId, m.InventoryDuplicateCheckId, m.GroupNumber, m.InventoryRecordId });
         });
 

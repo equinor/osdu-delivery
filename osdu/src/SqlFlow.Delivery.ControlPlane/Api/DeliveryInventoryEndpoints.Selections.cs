@@ -278,11 +278,24 @@ public static partial class DeliveryInventoryEndpoints
     private static DeliveryInventorySelectionSummaryDto Summary(InventorySelectionState s, IReadOnlyList<DeliveryDuplicateKeyPropertyDto>? key)
         => new(s.InventorySelectionId, s.Status, ConditionsOf(s.ConditionsJson), s.Query, s.Matched, Utc(s.CompletedUtc), s.DuplicateCheckId, key);
 
-    /// <summary>The key of the duplicate check that made a selection, while the partition keeps the check; null for a selection a match filled.</summary>
+    /// <summary>
+    /// The key a selection's duplicate check grouped its copies by when the selection was made of its picks: the selection's own,
+    /// since the check's key may change since; the check's for a selection made before selections kept it.
+    /// </summary>
     private static async Task<IReadOnlyList<DeliveryDuplicateKeyPropertyDto>?> DuplicateKeyOfAsync(ILedger ledger, string partition, InventorySelectionState s, CancellationToken ct)
-        => s.DuplicateCheckId is { } checkId && await ledger.GetInventoryDuplicateCheckAsync(partition, checkId, ct).ConfigureAwait(false) is { } check
-            ? KeyOf(check.KeyJson)
-            : null;
+    {
+        if (s.DuplicateCheckId is not { } checkId)
+        {
+            return null;
+        }
+
+        if (s.DuplicateKeyJson is { } kept)
+        {
+            return KeyOf(kept);
+        }
+
+        return await ledger.GetInventoryDuplicateCheckAsync(partition, checkId, ct).ConfigureAwait(false) is { } check ? KeyOf(check.KeyJson) : null;
+    }
 
     /// <summary>Whether the inventory was built again since a completed selection was matched: its ids then say less than a new match would.</summary>
     private static bool Stale(InventoryState inventory, InventorySelectionState selection)

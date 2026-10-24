@@ -378,5 +378,6 @@ public sealed partial class OsduLedger
         CompletedUtc = s.CompletedUtc is { } completed ? DateTime.SpecifyKind(completed, DateTimeKind.Utc) : null,
         Error = s.Error,
         DuplicateCheckId = s.DuplicateCheckId,
+        DuplicateKeyJson = s.DuplicateKeyJson,
     };
 }

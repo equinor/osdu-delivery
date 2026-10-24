@@ -1236,6 +1236,58 @@ public class EndToEndTests : IDisposable
     }
 
     [Fact]
+    public async Task A_renamed_flow_that_keeps_the_ledger_of_its_old_name_carries_on_where_that_name_stopped()
+    {
+        const string OldName = "welldb-welllog-03-header-delivery";
+        const string NewName = "welldb-welllog-03-header-delivery-v140";
+        var tables = await EstateAsync();
+        var (logs, logProtocol, ledger) = await RuntimeAsync(tables);
+        Guid original;
+        using (logs)
+        {
+            Assert.Equal(LogCount, (await RunAsync(logs, logProtocol, ledger)).Work.Delivered);
+            original = logs.Flow.Id;
+        }
+
+        // Renamed alone, the flow keeps a new, empty ledger: every record is held, and the hold names the ledger to keep,
+        // since no repository declares the flow that claimed the ids.
+        var (renamed, renamedProtocol, _) = await RuntimeAsync(tables, flow => flow with { Name = NewName });
+        using (renamed)
+        {
+            Assert.NotEqual(original, renamed.Flow.Id);
+            await RunAsync(renamed, renamedProtocol, ledger);
+            Assert.Empty(renamedProtocol.Deliveries);
+            var held = await ledger.GetRecordAsync(renamed.Flow.Id, SampleEstate.Key(0));
+            Assert.Equal(RecordStatus.Held, held!.Status);
+            Assert.Contains($"already claimed by flow '{OldName}' ({original:D}), which no repository declares any more", held.LastError, StringComparison.Ordinal);
+            Assert.Contains($"keep its ledger with ledger: {OldName} in this flow's document", held.LastError, StringComparison.Ordinal);
+        }
+
+        // With ledger: naming the old name, it is the same ledger: nothing changed in the source, so nothing is sent or held,
+        // and every record keeps its history and the OSDU id it claimed.
+        var (kept, keptProtocol, _) = await RuntimeAsync(tables, flow => flow with { Name = NewName, AdoptedLedger = OldName });
+        using (kept)
+        {
+            Assert.Equal(original, kept.Flow.Id);
+            Assert.Equal(NewName, kept.Flow.Label);
+            await RunAsync(kept, keptProtocol, ledger);
+            Assert.Empty(keptProtocol.Deliveries);
+            var records = await ledger.ListAsync(original, new RecordQuery());
+            Assert.Equal(LogCount, records.Count);
+            Assert.All(records, r => Assert.Equal((RecordStatus.Delivered, r.TargetId), (r.Status, r.ClaimedTargetId)));
+            Assert.All(records, r => Assert.NotNull(r.ClaimedTargetId));
+
+            // A redelivery the renamed flow asks for reaches the record the old name delivered, at the id it claimed.
+            await kept.RedeliverAsync([SampleEstate.Key(0)], RedeliverScope.All);
+            var record = await ledger.GetRecordAsync(original, SampleEstate.Key(0));
+            kept.Selection = SourceSelection.ForKeys([KeyTuple.FromJson(record!.SourceKeyJson!)]);
+            var (again, _) = await RunAsync(kept, keptProtocol, ledger, force: true);
+            Assert.Equal(1, again.Delivered);
+            Assert.Equal(record.ClaimedTargetId, Assert.Single(keptProtocol.Deliveries).TargetId);
+        }
+    }
+
+    [Fact]
     public async Task Each_attempt_names_the_correlation_id_its_requests_carried()
     {
         var tables = await EstateAsync();

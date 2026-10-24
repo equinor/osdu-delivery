@@ -23,6 +23,7 @@ sourceRefs:
   - osdu/src/SqlFlow.Delivery/Ledger/OsduLedger.Directory.cs
   - osdu/src/SqlFlow.Delivery/Ledger/ILedger.cs
   - osdu/src/SqlFlow.Delivery/Engine/LedgerRegistration.cs
+  - osdu/src/SqlFlow.Delivery/Ledger/SqlServerLedgerBulk.cs
 ---
 
 # osdu.Ledger: the ledger directory, one row per ledger identity and the partition it belongs to
@@ -42,7 +43,7 @@ Rows are never deleted by retention.
 | Column | Type | Null | What it holds |
 | --- | --- | --- | --- |
 | `PartitionId` | `smallint` | no | The partition the ledger belongs to ([`osdu.LedgerPartition`](ledger-partition.md)), or `0` for a ledger the upgrade to partition keys could not place, which its next run adopts. |
-| `FlowId` | `uniqueidentifier` | no | The ledger identity. A flow in the single form derives it from its name, an interface of a source from `<flow>/<interface>`, and a flow that works in partitions from that name and the partition (except in the partition marked `keepLedger`). |
+| `FlowId` | `uniqueidentifier` | no | The ledger identity. A flow in the single form derives it from its name, an interface of a source from `<flow>/<interface>`, either from the ledger its `ledger:` names instead, and a flow that works in partitions from that name and the partition (except in the partition marked `keepLedger`). |
 | `Kind` | `nvarchar(16)` | no | The kind of flow whose ledger it is: `delivery`, `retrieval`, `assertion`, `dimension` or `inventory`. |
 | `FlowName` | `nvarchar(200)` | no | The flow, or for a source with interfaces the source, the ledger belongs to. |
 | `Interface` | `nvarchar(64)` | no | The interface of a source, or empty for a flow in the single form. |
@@ -60,5 +61,6 @@ Rows are never deleted by retention.
 
 - **Written** by the ledger directory (`OsduLedger.Directory.cs`) when a delivery, retrieval, assertion, dimension or
   inventory run binds its flow and registers its ledger.
-- **Read** by every ledger operation that resolves a ledger to its partition, by the record search across flows, and by
-  the pipeline and partition endpoints of the control plane.
+- **Read** by every ledger operation that resolves a ledger to its partition, by the record search across flows, by
+  the pipeline and partition endpoints of the control plane, and by the intake's claim check (`SqlServerLedgerBulk.cs`),
+  which names the ledger of the record that claimed an id so a held record can say how a renamed flow keeps it.

@@ -239,6 +239,7 @@ public static partial class DeliveryInventoryEndpoints
         delivery.MapPost("/inventories/{partition}/{inventoryId:int}/duplicates", CheckDuplicatesAsync).WithName("CheckDeliveryInventoryDuplicates");
         delivery.MapPost("/inventories/{partition}/{inventoryId:int}/duplicates/{checkId:long}/groups/{groupNumber:int}/keep", KeepDuplicateAsync)
             .WithName("KeepDeliveryInventoryDuplicate");
+        delivery.MapPost("/inventories/{partition}/{inventoryId:int}/duplicates/{checkId:long}/pick", PickDuplicatesAsync).WithName("PickDeliveryInventoryDuplicates");
         delivery.MapPost("/inventories/{partition}/{inventoryId:int}/duplicates/{checkId:long}/selection", SelectDuplicatesAsync).WithName("SelectDeliveryInventoryDuplicates");
     }
 

@@ -536,8 +536,16 @@ internal static partial class FlowMapper
                 throw new FlowValidationException($"{source}: parallelism.interfacesAtOnce says how many interfaces run at once, and the document declares no interfaces.");
             }
 
-            var flow = WithLedgerPartition(MapFlow(y, source, KeyPaths.Single, partitions), ledgerPartition, source);
+            var flow = WithLedgerPartition(MapFlow(y, source, KeyPaths.Single, partitions), ledgerPartition, source) with
+            {
+                AdoptedLedger = MapLedger(y.Ledger, "ledger", "the flow", source),
+            };
             CheckLedgerName(flow.Name, "name", source);
+            if (flow.AdoptedLedger is { } adopted)
+            {
+                CheckLedgerName(adopted, "ledger", source);
+            }
+
             CheckPartitionLedgers([flow], source);
             return new SourceDefinition { SourcePath = path, Name = name, Description = description, Batch = batch, Interfaces = [flow] };
         }
@@ -845,7 +853,7 @@ internal static partial class FlowMapper
         var interfaces = y.Interfaces!;
         var src = y.Source ?? throw Missing("source", source);
         var target = y.Target ?? throw Missing("target", source);
-        RefuseAtSourceLevel(src, y.Render, target, source);
+        RefuseAtSourceLevel(src, y.Render, target, y.Ledger, source);
         if (y.Render is { } shared)
         {
             // What the source declares for every interface is checked once, whatever the interfaces make of it.
@@ -898,7 +906,7 @@ internal static partial class FlowMapper
             var flow = MapFlow(InterfaceView(y, i, route), source, paths, partitions) with
             {
                 Description = string.IsNullOrWhiteSpace(i.Description) ? null : i.Description.Trim(),
-                AdoptedLedger = MapLedger(i.Ledger, at, source),
+                AdoptedLedger = MapLedger(i.Ledger, $"{at}.ledger", "the interface", source),
                 After = (i.After ?? []).Select(a => a?.Trim() ?? string.Empty).ToList(),
                 RouteReason = route.Reason,
             };
@@ -949,9 +957,14 @@ internal static partial class FlowMapper
     }
 
     /// <summary>What belongs to an interface, written at the source level, is refused rather than applied to every interface.</summary>
-    private static void RefuseAtSourceLevel(FlowSourceYaml src, FlowRenderYaml? render, FlowTargetYaml target, string source)
+    private static void RefuseAtSourceLevel(FlowSourceYaml src, FlowRenderYaml? render, FlowTargetYaml target, string? ledger, string source)
     {
         var misplaced = new List<string>();
+        if (ledger is not null)
+        {
+            misplaced.Add("ledger (each interface keeps a ledger of its own, <flow>/<interface>; one that keeps an earlier ledger names it as interfaces.<name>.ledger)");
+        }
+
         if (src.Record is not null)
         {
             misplaced.Add("source.record (each interface's record table is interfaces.<name>.record)");
@@ -1322,7 +1335,12 @@ internal static partial class FlowMapper
             $"{source}: 'target.protocol' value '{value}' is not one of {string.Join(", ", Enum.GetNames<DeliveryProtocol>().Select(n => char.ToLowerInvariant(n[0]) + n[1..]))}.");
     }
 
-    private static string? MapLedger(string? ledger, string at, string source)
+    /// <summary>
+    /// The ledger <paramref name="key"/> names (<c>ledger</c> of a flow in the single form, <c>interfaces.&lt;name&gt;.ledger</c>
+    /// of an interface): an existing ledger, kept instead of the one the name would give, as a renamed flow keeps the
+    /// ledger of its old name (osdu/docs/reference/flow/interfaces.md, Ledger identity). Null when the key is not written.
+    /// </summary>
+    private static string? MapLedger(string? ledger, string key, string keeper, string source)
     {
         if (ledger is null)
         {
@@ -1332,7 +1350,7 @@ internal static partial class FlowMapper
         var name = ledger.Trim();
         if (name.Length == 0 || name.Any(char.IsControl))
         {
-            throw new FlowValidationException($"{source}: {at}.ledger must name the flow whose ledger the interface adopts.");
+            throw new FlowValidationException($"{source}: {key} must name the flow whose ledger {keeper} keeps.");
         }
 
         return name;

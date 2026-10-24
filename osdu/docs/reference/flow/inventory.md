@@ -218,7 +218,7 @@ flow removes them from the inventory alone (scope `inventory`), since nothing is
 | `plan` | Counts through the search the records each inventory matches (and lists the kinds a storage read expands to), reading no id and keeping nothing. |
 | `remove` | Removes from OSDU the ids of one finding of one inventory, as an operator asked, for a flow that declares `removal`; or removes gone ids from the inventory alone, for any inventory flow. |
 | `match` | Finds which ids of one inventory hold what an operator's conditions ask in OSDU and keeps them as the selection the payload names ([Selecting ids by what OSDU holds](inventory-selections.md)). Reads OSDU's search; changes nothing there. |
-| `duplicates` | Finds which ids of one inventory are copies of one another by the key of the check the payload names, reads each group's copies and picks the most complete to keep ([Finding duplicate records](inventory-duplicates.md)). Reads OSDU's search and storage; changes nothing there. |
+| `duplicates` | For the check the payload names: downloads the properties of its key for every id of one inventory into the check's table and groups the ids holding equal values there, or, when a pick was asked of it, reads each group's copies and picks the most complete to keep ([Finding duplicate records](inventory-duplicates.md)). Reads OSDU's search and storage; changes nothing there. |
 
 The payload takes `inventories` (names; none takes every inventory). A `match` run names exactly one inventory and the
 `selection` it fills, and a `duplicates` run exactly one inventory and the `duplicateCheck` it fills. A `remove` run also
@@ -263,7 +263,7 @@ sqlflow run flows/welldb-06-inventory.yaml --set partition=dev --operation remov
 | [Inventory builds](inventory-builds.md) | What a build and a reconcile do, what each finding means, and the tables an inventory keeps. |
 | [Selecting ids by what OSDU holds](inventory-selections.md) | A `match` of conditions on the records, the selection it fills, and removing what it holds. |
 | [Inventory removals](inventory-removals.md) | A `remove` run: what it checks and records, repairing missing ids, and removing gone ids. |
-| [Finding duplicate records](inventory-duplicates.md) | A `duplicates` run: the key, which copy is kept, an operator's choice, and removing the copies picked. |
+| [Finding duplicate records](inventory-duplicates.md) | A `duplicates` run: the key, the download grouped in SQL, the pick, which copy is kept, an operator's choice, and removing the copies picked. |
 
 ## What a run returns
 

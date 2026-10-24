@@ -3,6 +3,7 @@ using Microsoft.EntityFrameworkCore;
 using SqlFlow.Core.Identity;
 using SqlFlow.Delivery.Data;
 using SqlFlow.Delivery.Engine;
+using SqlFlow.Delivery.Ledger;
 using SqlFlow.Delivery.Model;
 using SqlFlow.Delivery.Protocols;
 
@@ -36,6 +37,7 @@ public static class DeliveryInterfaceCatalog
     /// kept but made inactive.
     /// <paramref name="kinds"/> gives the OSDU kind of each mapping reference the repository holds valid. A ledger identity
     /// kept by an interface of another flow is reported: two flows delivering the same records would take turns with them.
+    /// So is a flow renamed in its file while the ledger of its old name holds the OSDU ids its records claimed.
     /// </summary>
     public static async Task<CatalogSyncCounts> ReconcileAsync(
         OsduDbContext context, Guid repoId, IReadOnlyList<RepositorySource> sources, IReadOnlyDictionary<string, string> kinds,
@@ -150,6 +152,7 @@ public static class DeliveryInterfaceCatalog
 
         await context.SaveChangesAsync(ct).ConfigureAwait(false);
         await ReportSharedLedgersAsync(context, repoId, warnings, ct).ConfigureAwait(false);
+        await ReportRenamedFlowsAsync(context, repoId, warnings, ct).ConfigureAwait(false);
         await ReportPrunedPinsAsync(context, repoId, warnings, ct).ConfigureAwait(false);
         return new CatalogSyncCounts(added, updated, unchanged, removed);
     }
@@ -268,6 +271,64 @@ public static class DeliveryInterfaceCatalog
                 + "remove or rename the flow whose ledger an interface adopted, so only one of them keeps it.");
         }
     }
+
+    /// <summary>
+    /// Warns about every flow of this repository whose file declared it under another name before, while the ledger it kept
+    /// under that name still holds OSDU ids its records claimed and nothing keeps it. A flow keeps its ledger under its name
+    /// (osdu/docs/reference/flow/interfaces.md, Ledger identity), so the renamed flow starts an empty ledger, and every record
+    /// of it whose id the old ledger claimed is held. Quiet once the flow keeps the old ledger with <c>ledger:</c>, and once
+    /// its own ledger has claimed an id, which says the new ledger is meant.
+    /// </summary>
+    private static async Task ReportRenamedFlowsAsync(OsduDbContext context, Guid repoId, ICollection<string> warnings, CancellationToken ct)
+    {
+        var rows = await context.DeliveryInterfaces.AsNoTracking()
+            .Where(i => i.RepoId == repoId)
+            .Select(i => new { i.FlowName, i.Interface, i.Partition, i.RelativePath, i.LedgerFlowId, i.LedgerName, i.Active })
+            .ToListAsync(ct).ConfigureAwait(false);
+        var renames = (
+            from now in rows.Where(r => r.Active)
+            join was in rows.Where(r => !r.Active)
+                on (Path: now.RelativePath, Interface: now.Interface.ToLowerInvariant(), Partition: now.Partition.ToLowerInvariant())
+                equals (Path: was.RelativePath, Interface: was.Interface.ToLowerInvariant(), Partition: was.Partition.ToLowerInvariant())
+            where !string.Equals(now.FlowName, was.FlowName, StringComparison.OrdinalIgnoreCase) && now.LedgerFlowId != was.LedgerFlowId
+            select (Now: now, Was: was)).ToList();
+        if (renames.Count == 0)
+        {
+            return;
+        }
+
+        var left = renames.Select(r => r.Was.LedgerFlowId).Distinct().ToList();
+        var kept = await context.DeliveryInterfaces.AsNoTracking()
+            .Where(i => i.Active && left.Contains(i.LedgerFlowId))
+            .Select(i => i.LedgerFlowId)
+            .Distinct()
+            .ToListAsync(ct).ConfigureAwait(false);
+        foreach (var (now, was) in renames.Where(r => !kept.Contains(r.Was.LedgerFlowId)))
+        {
+            if (!await HoldsClaimsAsync(context, was.LedgerFlowId, ct).ConfigureAwait(false)
+                || await HoldsClaimsAsync(context, now.LedgerFlowId, ct).ConfigureAwait(false))
+            {
+                continue;
+            }
+
+            var ledger = LedgerEntry.OwnName(was.LedgerName, was.Partition);
+            var key = now.Interface.Length == 0 ? $"ledger: {ledger}" : $"interfaces.{now.Interface}.ledger: {ledger}";
+            var partition = now.Partition.Length == 0 ? string.Empty : $" in partition '{now.Partition}'";
+            warnings.Add(
+                $"{now.RelativePath}: {Describe(now.FlowName, now.Interface)} was declared as '{was.FlowName}' before, and a flow keeps its ledger under its name, "
+                + $"so it starts an empty ledger{partition} while the records '{was.FlowName}' delivered stay in '{was.LedgerName}' with the OSDU ids they claimed. "
+                + $"Each of its records whose id that ledger claimed is held, and nothing is sent for it. Keep the ledger with {key}, "
+                + "and the records carry on with their history and their OSDU ids.");
+        }
+    }
+
+    /// <summary>True when a record of the ledger <paramref name="flowId"/> has claimed an OSDU id: one seek of the directory, then of the ledger's records.</summary>
+    private static Task<bool> HoldsClaimsAsync(OsduDbContext context, Guid flowId, CancellationToken ct)
+        => (from l in context.DeliveryLedgers
+            where l.FlowId == flowId
+            join r in context.DeliveryRecords on new { l.PartitionId, l.FlowId } equals new { r.PartitionId, r.FlowId }
+            where r.ClaimedTargetId != null
+            select r.DeliveryKey).AnyAsync(ct);
 
     private static string Describe(string flow, string name) => name.Length == 0 ? $"flow '{flow}'" : $"interface '{name}' of flow '{flow}'";
 

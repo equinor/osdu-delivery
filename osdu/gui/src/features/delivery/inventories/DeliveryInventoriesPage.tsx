@@ -112,7 +112,8 @@ export default function DeliveryInventoriesPage() {
             ? { s: null, id: null }
             : { s: String(selectionId), f: null, tab: null, finding: finding ?? EVERY_ID, id: null })}
           duplicateCheck={numberOf(params, "dc")}
-          onDuplicateCheck={(checkId) => update({ dc: checkId === null ? null : String(checkId), id: null })}
+          // One change of the address: two in a row would each start from the address last drawn, and the first be lost.
+          onDuplicateCheck={(checkId) => update({ tab: "duplicates", dc: checkId === null ? null : String(checkId), dk: null, id: null })}
           duplicateKey={params.get("dk")}
           onDuplicateKey={(key) => update({ dk: key.length === 0 ? null : keyText(key) })}
           duplicateRecord={params.get("dr")}

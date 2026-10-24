@@ -3,16 +3,15 @@ import {
   CircleCheck, CircleDashed, CircleHelp, CircleMinus, CircleSlash, Hand, Pin, Trash2, type LucideIcon,
 } from "lucide-react";
 import {
-  DUPLICATE_COMPARISONS, MAX_DUPLICATE_KEY, inventoryApi, type DuplicateComparison, type DuplicateKeyProperty, type DuplicateOutcome, type DuplicateRole,
-  type Inventory, type InventoryDuplicateCheck,
+  MAX_DUPLICATE_KEY, inventoryApi, type DuplicateKeyProperty, type DuplicateOutcome, type DuplicateRole, type Inventory, type InventoryDuplicateCheck,
 } from "../../../../api/inventories";
 import { fieldLabel } from "../../explorer/explorerModel";
 import type { InventoryRef } from "../inventoryFormat";
 import type { InventorySelectionState } from "../inventorySelection";
 
 // Finding the duplicate records of an inventory (osdu/docs/reference/flow/inventory-duplicates.md): the key an
-// operator builds lives in the page's address while it is built, a check opened with it is followed while its run reads OSDU,
-// and its groups are read a page at a time once it completed.
+// operator builds lives in the page's address while it is built, a check opened with it is followed while its run downloads
+// the key's properties and while a pick reads its groups' copies, and its groups are read a page at a time once it downloaded.
 
 /** How often a check under way is read again: often enough that its progress moves, rarely enough that a long one costs little. */
 const UNDER_WAY_MS = 1500;
@@ -26,40 +25,33 @@ export const EVERY_GROUP = "all";
 /** The checks a tab's history lists. */
 export const CHECKS_LISTED = 20;
 
+/** How many records one search of a download returns, one storage read of a pick reads, and one search of a pick asks about. */
+export const DOWNLOAD_PAGE = 1000;
+export const STORAGE_BATCH = 100;
+export const REFERENCES_PER_SEARCH = 40;
+
+/** The most copies a group holds that a pick reads; a group holding more is too broad to be one record written more than once. */
+export const MAX_COPIES_PICKED = 100;
+
 /** What a key is, as the mark beside its name says it wherever the key is shown. */
 export const KEY_HINT = [
-  "Two records are copies of one another when they hold alike values at every property of the key: a list compares as the values it holds, in any order, and a property one record holds nothing at matches only a record holding nothing there too. A record holding no value at any of them is passed over.",
+  "Two records are copies of one another when they hold equal values at every property of the key: text exactly as written, case and spaces included; a number as a number, however it is written; a list as the values it holds, in any order. A property one record holds nothing at matches only a record holding nothing there too, and a record holding no value at any of them is passed over.",
   "Pick the properties in a record of the inventory: click a value to add its property, and click it again to take it out. A value of a list of values adds the list; a value inside the items of a list adds its property across every item. Pick what every copy of a record repeats (its name, the record it belongs to, its source's own id), not what each copy writes for itself (when it was written, by whom).",
-  "Each property compares exactly, ignoring case, or loose, as its menu says. The check reads the key of every id through OSDU's search, which returns only what its index keeps of a record; a property no record holds a value at is named once the check ends.",
+  `A check downloads the key's properties of every id into a table of its own, through OSDU's search, ${DOWNLOAD_PAGE.toLocaleString("en-US")} ids a request, and groups them there. Any key of the properties it downloaded groups it again at once, without reading OSDU; a key naming another property downloads again. The search returns only what its index keeps of a record; a property no record holds a value at is named once the download ends.`,
 ].join("\n\n");
 
-/** How a comparison is said, and what it does to a value. */
-export const COMPARISON_VISUALS: Record<DuplicateComparison, { label: string; hint: string }> = {
-  exact: {
-    label: "Exact",
-    hint: "The values as the records hold them: text exactly, case and spaces included; a number as a number, however it is written. Text and a number are never alike.",
-  },
-  ignoreCase: {
-    label: "Ignore case",
-    hint: "Text ignoring case, in Unicode's composed form: Wellbore A-1 and WELLBORE A-1 are alike. Spaces still count.",
-  },
-  loose: {
-    label: "Loose",
-    hint: "Text ignoring case, the spaces at either end and how many stand between words; empty text is no value; text that is a number is that number, so \"1520.50\" and 1520.5 are alike.",
-  },
-};
-
-/** A comparison this page knows, or exact for one a newer control plane added. */
-export function comparisonOf(compare: string): DuplicateComparison {
-  return DUPLICATE_COMPARISONS.find((known) => known === compare) ?? "exact";
+/**
+ * How many of a check's groups a pick read: the groups it judged, less those too broad to read, which a grouping judges at
+ * once (osdu/docs/reference/tables/inventory-duplicate-check.md, GroupsJudged).
+ */
+export function groupsRead(check: InventoryDuplicateCheck): number {
+  const broad = (check.sizes ?? []).filter((size) => size.from > MAX_COPIES_PICKED).reduce((sum, size) => sum + size.groups, 0);
+  return Math.max(0, check.groupsJudged - broad);
 }
 
-/**
- * The comparison a property is given when it is added to a key: loose for text, which copies written by different hands most
- * often spell differently, and exact for anything else.
- */
-export function defaultComparison(index: string | undefined): DuplicateComparison {
-  return index === "text" ? "loose" : "exact";
+/** How many requests a number of records takes, so many to a request. */
+export function requestsFor(records: number, perRequest: number): number {
+  return records <= 0 ? 0 : Math.ceil(records / perRequest);
 }
 
 /** How an outcome is drawn and said: its glyph, the glyph's tone, its name, and what it means. */
@@ -88,8 +80,8 @@ export const OUTCOME_VISUALS: Record<DuplicateOutcome, OutcomeVisual> = {
     hint: "Storage holds one copy of the key, or none, since the inventory's build: there is nothing left to choose between.",
   },
   pending: {
-    icon: CircleDashed, label: "Not read", tone: "text-muted-foreground",
-    hint: "The check has not read the group's copies yet.",
+    icon: CircleDashed, label: "To pick", tone: "text-muted-foreground",
+    hint: "The group's copies hold equal values at the key, as the check downloaded them, and storage has not been read for them yet: a pick reads them whole and picks the copy to keep.",
   },
 };
 
@@ -113,16 +105,19 @@ export const ROLE_VISUALS: Record<DuplicateRole, OutcomeVisual> = {
 export function roleVisual(role: string | undefined): OutcomeVisual {
   const known = (Object.keys(ROLE_VISUALS) as DuplicateRole[]).find((r) => r === role);
   return known === undefined
-    ? { icon: CircleDashed, label: role ?? "Not read", tone: "text-muted-foreground", hint: "The check has not read this copy." }
+    ? { icon: CircleDashed, label: role ?? "To pick", tone: "text-muted-foreground", hint: "Its group waits to be picked: a pick reads its copies from storage and gives each its role." }
     : ROLE_VISUALS[known];
 }
 
-/** The key in the page's address: each property's path and comparison, `path:compare`, joined by commas. */
+/** The key in the page's address: its properties' paths, joined by commas. */
 export function keyText(key: readonly DuplicateKeyProperty[]): string | null {
-  return key.length === 0 ? null : key.map((p) => `${p.path}:${comparisonOf(p.compare)}`).join(",");
+  return key.length === 0 ? null : key.map((p) => p.path).join(",");
 }
 
-/** The key the page's address holds; what is not a key's property (a path a query cannot write, a property named twice) is left out. */
+/**
+ * The key the page's address holds; what is not a key's property (a path a query cannot write, a property named twice) is left
+ * out. An address written when a key named how each property compared (`path:compare`) reads its paths.
+ */
 export function keyOf(text: string | null): DuplicateKeyProperty[] {
   if (text === null || text.trim() === "") {
     return [];
@@ -131,25 +126,29 @@ export function keyOf(text: string | null): DuplicateKeyProperty[] {
   const seen = new Set<string>();
   const key: DuplicateKeyProperty[] = [];
   for (const part of text.split(",")) {
-    const [path, compare] = part.split(":");
-    const trimmed = path?.trim() ?? "";
+    const trimmed = part.split(":")[0]?.trim() ?? "";
     if (/^[A-Za-z_][A-Za-z0-9_]*(\.[A-Za-z_][A-Za-z0-9_]*)*$/.test(trimmed) && !seen.has(trimmed) && key.length < MAX_DUPLICATE_KEY) {
       seen.add(trimmed);
-      key.push({ path: trimmed, compare: comparisonOf(compare?.trim() ?? "exact") });
+      key.push({ path: trimmed });
     }
   }
 
   return key;
 }
 
-/** Whether two keys are one: the same properties in the same order, each compared the same way. */
+/** Whether two keys are one: the same properties in the same order. */
 export function sameKey(a: readonly DuplicateKeyProperty[], b: readonly DuplicateKeyProperty[]): boolean {
   return keyText(a) === keyText(b);
 }
 
-/** The key as a sentence a reader reads: each property by its name and how it compares, joined by "and". */
+/** The key as a sentence a reader reads: each property by its name, joined by "and". */
 export function keySentence(key: readonly DuplicateKeyProperty[]): string {
-  return key.map((p) => `${fieldLabel(p.path)} (${COMPARISON_VISUALS[comparisonOf(p.compare)].label.toLowerCase()})`).join(" and ");
+  return key.map((p) => fieldLabel(p.path)).join(" and ");
+}
+
+/** Whether a check downloaded every property of a key, so grouping it by the key reads no OSDU. */
+export function downloadedAll(check: InventoryDuplicateCheck | undefined, key: readonly DuplicateKeyProperty[]): boolean {
+  return check !== undefined && check.table !== undefined && key.length > 0 && key.every((p) => check.attributes.includes(p.path));
 }
 
 /** What a property of a key cannot be, in the words the control plane refuses it with; null when it can be one. */
@@ -167,30 +166,23 @@ export function keyPathProblem(path: string, key: readonly DuplicateKeyProperty[
 }
 
 /** The key with a property added after the others, or why the key cannot take it. */
-export function withProperty(key: readonly DuplicateKeyProperty[], path: string, compare: DuplicateComparison): { key: DuplicateKeyProperty[] } | { problem: string } {
+export function withProperty(key: readonly DuplicateKeyProperty[], path: string): { key: DuplicateKeyProperty[] } | { problem: string } {
   const problem = keyPathProblem(path, key);
-  return problem === null ? { key: [...key, { path, compare }] } : { problem };
+  return problem === null ? { key: [...key, { path }] } : { problem };
 }
 
 /**
- * The comparison a property picked from a record's value starts with: exact for an id naming another record (`reference`),
- * which copies of a record name alike or not at all; loose for other text, which copies written by different hands most often
- * spell differently; exact for a number, true or false. A list of values starts as its first value does.
+ * Where a check stands, as the tab draws it: its download waiting for its run (`queued`) or under way (`keys`); a pick asked
+ * for or under way over the groups it downloaded (`picking`); downloaded, against the inventory's last build or an earlier one
+ * (`stale`); failed, which holds no group; or expired.
  */
-export function comparisonForValue(value: unknown, reference: boolean): DuplicateComparison {
-  const first = Array.isArray(value) ? value[0] : value;
-  return typeof first === "string" && !reference ? "loose" : "exact";
-}
-
-/** Where a check stands, as the tab draws it. */
-export type CheckPhase = "queued" | "keys" | "copies" | "completed" | "stale" | "failed" | "expired";
+export type CheckPhase = "queued" | "keys" | "picking" | "completed" | "stale" | "failed" | "expired";
 
 export function phaseOf(check: InventoryDuplicateCheck): CheckPhase {
   switch (check.status) {
     case "queued":
-      return "queued";
     case "running":
-      return check.phase === "copies" ? "copies" : "keys";
+      return check.phase === "copies" ? "picking" : check.status === "queued" ? "queued" : "keys";
     case "completed":
       return check.stale ? "stale" : "completed";
     case "expired":

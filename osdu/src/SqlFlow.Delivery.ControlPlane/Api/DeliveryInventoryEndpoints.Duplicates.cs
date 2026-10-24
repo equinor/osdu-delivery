@@ -16,32 +16,40 @@ using SqlFlow.Delivery.Model;
 
 namespace SqlFlow.Delivery.ControlPlane.Api;
 
-/// <summary>One property of a duplicate check's key: its path from the record's root, and how its values compare (<c>exact</c>, <c>ignoreCase</c> or <c>loose</c>).</summary>
-public sealed record DeliveryDuplicateKeyPropertyDto(string? Path, string? Compare);
+/// <summary>One property of a duplicate check's key: its path from the record's root, whose values copies of a record hold equal.</summary>
+public sealed record DeliveryDuplicateKeyPropertyDto(string? Path);
 
 /// <summary>
 /// A duplicate check an operator asks of an inventory's ids (osdu/docs/reference/flow/inventory-duplicates.md):
-/// the key the copies of a record hold alike, whether to read OSDU again rather than take the check already made of the same key
-/// against the same build (<c>refresh</c>), and the pool its run is queued on.
+/// the key the copies of a record hold equal, whether to download again rather than group the check that already downloaded the
+/// key's properties against the same build (<c>refresh</c>), and the pool its run is queued on.
 /// </summary>
 public sealed record DeliveryInventoryDuplicatesRequest(IReadOnlyList<DeliveryDuplicateKeyPropertyDto>? Key, bool? Refresh = null, string? Pool = null);
 
 /// <summary>How many of a check's groups came out one way.</summary>
 public sealed record DeliveryDuplicateOutcomeCountDto(string Outcome, long Groups);
 
+/// <summary>How many of a check's groups hold from <c>From</c> to <c>To</c> copies (no end for the last size), and the copies they hold.</summary>
+public sealed record DeliveryDuplicateSizeDto(int From, int? To, long Groups, long Copies);
+
 /// <summary>
-/// One duplicate check of an inventory: its key, where it stands (queued, running and what it reads, completed, failed or
-/// expired) and whether the inventory was built again since (<c>Stale</c>), what it had to say, what it read (the ids the
-/// inventory served, the records the search returned, the ids holding a key and holding none, records outside the inventory,
-/// ids changed since the build), what it found (groups, the ids in them, how many it judged, decided and left for review, the
-/// copies picked to remove, each outcome's groups once it completed), the requests it sent, the selection last made of its
-/// picks and whether a choice since leaves it behind (<c>SelectionCurrent</c>), its run, who asked and when, and why it failed.
+/// One duplicate check of an inventory: the key its groups are formed by, where it stands (queued, running and whether it
+/// downloads (<c>keys</c>) or picks (<c>copies</c>), completed, failed or expired) and whether the inventory was built again since
+/// (<c>Stale</c>), what it had to say, what it read (the ids the inventory served, the records the search returned, the ids
+/// holding a value at the key and holding none, records outside the inventory, ids changed since the build), what it found
+/// (groups, the ids in them, how many it judged, decided and left for review, the copies picked to remove, each outcome's groups
+/// once it completed), the requests it sent, the selection last made of its picks and whether a choice since leaves it behind
+/// (<c>SelectionCurrent</c>), its run, who asked and when, and why its download failed or its pick stopped. Then the properties
+/// it downloaded (<c>Attributes</c>, any key of which groups it again without reading OSDU), its table, who set its key and
+/// when, when it was last picked, how its groups are sized, and the groups waiting to be picked with the copies a pick reads.
 /// </summary>
 public sealed record DeliveryInventoryDuplicateCheckDto(
     long CheckId, int InventoryId, string Partition, string Status, bool Stale, string? Phase, IReadOnlyList<DeliveryDuplicateKeyPropertyDto> Key,
     IReadOnlyList<string> Notes, long Candidates, long Checked, long Keyed, long Unkeyed, long Outside, long Changed, long Groups, long Copies, long GroupsJudged,
     long Decided, long Review, long ToRemove, long Requests, IReadOnlyList<DeliveryDuplicateOutcomeCountDto>? Outcomes, long? SelectionId, bool SelectionCurrent,
-    DateTime? ChosenUtc, Guid? RunId, string Actor, DateTime CreatedUtc, DateTime? StartedUtc, DateTime? CompletedUtc, string? Error);
+    DateTime? ChosenUtc, Guid? RunId, string Actor, DateTime CreatedUtc, DateTime? StartedUtc, DateTime? CompletedUtc, string? Error,
+    IReadOnlyList<string> Attributes, string? Table, string? KeyedBy, DateTime? KeyedUtc, DateTime? PickedUtc, IReadOnlyList<DeliveryDuplicateSizeDto>? Sizes,
+    long PendingGroups, long PendingCopies);
 
 /// <summary>
 /// One copy of a group of duplicates: the inventory's row of it now, the version the index held when the check read its key and
@@ -70,6 +78,9 @@ public sealed record DeliveryDuplicateCopyPageDto(IReadOnlyList<DeliveryDuplicat
 /// <summary>An operator's choice of the copy a group keeps, by its inventory row; null takes a choice back, leaving the group to the check's own pick.</summary>
 public sealed record DeliveryDuplicateKeepRequest(long? InventoryRecordId);
 
+/// <summary>A pick an operator asks of a check: the pool its run is queued on.</summary>
+public sealed record DeliveryInventoryDuplicatePickRequest(string? Pool = null);
+
 public static partial class DeliveryInventoryEndpoints
 {
     /// <summary>The checks an inventory's history lists when the request names no limit, and the most it lists.</summary>
@@ -83,12 +94,14 @@ public static partial class DeliveryInventoryEndpoints
     private const int MaxGroups = 500;
 
     /// <summary>
-    /// Queues a check of an inventory's ids for duplicate records, as the caller (osdu/docs/reference/flow/inventory-duplicates.md, Finding
-    /// duplicate records): the key is checked, a check is opened and filled by a duplicates run of the inventory flow, through
-    /// its own source. The same key asked again of the same build answers with the check made of it already (200), unless
-    /// <c>refresh</c> asks for OSDU to be read again; a new check answers 202. Refused with 400 for a key that is not one, and
-    /// with 409 when the inventory was never built or no flow in the catalog declares it now. A check queued while a run of the
-    /// flow is under way waits for it, as runs of a flow do.
+    /// Finds the duplicates of a key in an inventory, as the caller (osdu/docs/reference/flow/inventory-duplicates.md): the key is
+    /// checked; when the inventory's current check downloaded every property of it against the inventory's last build, the check's
+    /// table is grouped by the key in SQL, without reading OSDU, and the check answers 200 (as it does when it is grouped by the key
+    /// already); otherwise a check is opened, its properties the key's and those the current check downloaded, and a duplicates run
+    /// of the inventory flow downloads them through its own source (202). <c>refresh</c> downloads again whatever the current check
+    /// holds. Refused with 400 for a key that is not one, and with 409 when the inventory was never built, no flow in the catalog
+    /// declares it now, or the current check is downloading or picking with another key. A check queued while a run of the flow is
+    /// under way waits for it, as runs of a flow do.
     /// </summary>
     private static async Task<Results<Ok<DeliveryInventoryDuplicateCheckDto>, Accepted<DeliveryInventoryDuplicateCheckDto>, ProblemHttpResult>> CheckDuplicatesAsync(
         string partition, int inventoryId, DeliveryInventoryDuplicatesRequest? request, CatalogDbContext db, DeliveryDocumentLoader documents, ILedger ledger,
@@ -100,7 +113,7 @@ public static partial class DeliveryInventoryEndpoints
             return problem!;
         }
 
-        var (key, invalid) = InventoryDuplicateKey.Of(request?.Key?.Select(k => (k?.Path, k?.Compare)).ToList());
+        var (key, invalid) = InventoryDuplicateKey.Of(request?.Key?.Select(k => k?.Path).ToList());
         if (key is null)
         {
             return Problem(StatusCodes.Status400BadRequest, "Invalid key", invalid!);
@@ -120,22 +133,123 @@ public static partial class DeliveryInventoryEndpoints
         }
 
         var hash = key.Hash();
-        if (request!.Refresh != true
-            && await ledger.FindInventoryDuplicateCheckAsync(inventory.Partition, inventory.InventoryId, hash, inventory.LastBuildRunId, ct).ConfigureAwait(false) is { } made)
+        var now = clock.GetUtcNow().UtcDateTime;
+        var current = await ledger.CurrentInventoryDuplicateCheckAsync(inventory.Partition, inventory.InventoryId, inventory.LastBuildRunId, ct).ConfigureAwait(false);
+        if (current is not null)
         {
-            var settled = await SettleCheckAsync(db, ledger, inventory.Partition, made, clock, ct).ConfigureAwait(false);
-            if (settled.Status != InventoryDuplicates.Failed)
+            current = await SettleCheckAsync(db, ledger, inventory.Partition, current, clock, ct).ConfigureAwait(false);
+        }
+
+        var downloaded = current is null ? [] : InventoryDuplicateTable.Parse(current.AttributesJson).Select(a => a.Path).ToList();
+        var holdsKey = key.Paths.All(p => downloaded.Contains(p, StringComparer.Ordinal));
+        if (current is not null && request!.Refresh != true && holdsKey)
+        {
+            if (current.KeyHash == hash && current.Status is InventoryDuplicates.Queued or InventoryDuplicates.Running or InventoryDuplicates.Completed)
             {
-                return TypedResults.Ok(await ToDtoAsync(ledger, inventory, settled, ct).ConfigureAwait(false));
+                return TypedResults.Ok(await ToDtoAsync(ledger, inventory, current, ct).ConfigureAwait(false));
+            }
+
+            if (current.Status is InventoryDuplicates.Queued or InventoryDuplicates.Running)
+            {
+                return Problem(StatusCodes.Status409Conflict, current.Phase == InventoryDuplicates.ReadingCopies ? "Picking" : "Downloading",
+                    current.Phase == InventoryDuplicates.ReadingCopies
+                        ? $"Duplicate check {current.InventoryDuplicateCheckId} is picking the copies of its groups: set another key once the pick ends."
+                        : $"Duplicate check {current.InventoryDuplicateCheckId} is downloading these properties: set another key once its download ends.");
+            }
+
+            if (current.Status == InventoryDuplicates.Completed)
+            {
+                try
+                {
+                    await ledger.GroupInventoryDuplicatesAsync(
+                        inventory.Partition,
+                        current.InventoryDuplicateCheckId,
+                        new InventoryDuplicateKeying(key.ToJson(), hash, key.Paths, RequestActor.Label(user), now),
+                        ct).ConfigureAwait(false);
+                }
+                catch (DeliveryException ex)
+                {
+                    return Problem(StatusCodes.Status409Conflict, "Not grouped", ex.Message);
+                }
+
+                var grouped = await ledger.GetInventoryDuplicateCheckAsync(inventory.Partition, current.InventoryDuplicateCheckId, ct).ConfigureAwait(false) ?? current;
+                return TypedResults.Ok(await ToDtoAsync(ledger, inventory, grouped, ct).ConfigureAwait(false));
             }
         }
 
-        var now = clock.GetUtcNow().UtcDateTime;
+        // A new download keeps what the current check downloaded beside the key's properties, so its key can come back to them
+        // without downloading again.
+        var paths = key.Paths
+            .Concat(current?.Status == InventoryDuplicates.Completed ? downloaded : [])
+            .Distinct(StringComparer.Ordinal)
+            .Take(InventoryDuplicates.MaxKeyProperties)
+            .ToList();
         await ledger.SweepInventoryDuplicateChecksAsync(inventory.Partition, now - InventoryDuplicates.KeptFor, ct).ConfigureAwait(false);
         var checkId = await ledger.CreateInventoryDuplicateCheckAsync(
-            inventory.Partition, new InventoryDuplicateCheckStart(inventory.InventoryId, RequestActor.Label(user), key.ToJson(), hash, inventory.LastBuildRunId, now),
+            inventory.Partition,
+            new InventoryDuplicateCheckStart(
+                inventory.InventoryId, RequestActor.Label(user), key.ToJson(), hash, InventoryDuplicateTable.AttributesOf(paths), inventory.LastBuildRunId, now),
             ct).ConfigureAwait(false);
+        await QueueDuplicatesRunAsync(db, ledger, dispatcher, pipeline, flow, inventory, checkId, request?.Pool, clock, user, ct).ConfigureAwait(false);
+        var created = await ledger.GetInventoryDuplicateCheckAsync(inventory.Partition, checkId, ct).ConfigureAwait(false)
+            ?? throw new DeliveryException($"Duplicate check {checkId} of inventory '{inventory.Name}' was opened and is not in partition '{inventory.Partition}'.");
+        return TypedResults.Accepted(
+            $"/api/v1/delivery/inventories/{inventory.Partition}/{inventory.InventoryId}/duplicates/{checkId}",
+            await ToDtoAsync(ledger, inventory, created, ct).ConfigureAwait(false));
+    }
 
+    /// <summary>
+    /// Asks for a pick of a completed check, as the caller (osdu/docs/reference/flow/inventory-duplicates.md, Which copy is kept):
+    /// a duplicates run of the inventory flow reads the copies of the groups waiting to be picked from storage, counts the records
+    /// that name each through the search, and picks the copy each group keeps (202). A pick that stopped is asked again the same
+    /// way, and reads the groups it did not. Refused with 409 for a check that has not completed or is under way, one the inventory
+    /// was built again since, one holding no group to pick, or a flow the catalog no longer declares.
+    /// </summary>
+    private static async Task<Results<Accepted<DeliveryInventoryDuplicateCheckDto>, ProblemHttpResult>> PickDuplicatesAsync(
+        string partition, int inventoryId, long checkId, DeliveryInventoryDuplicatePickRequest? request, CatalogDbContext db, DeliveryDocumentLoader documents,
+        ILedger ledger, IRunDispatcher dispatcher, TimeProvider clock, ClaimsPrincipal user, CancellationToken ct)
+    {
+        var (inventory, check, problem) = await CheckOfAsync(ledger, partition, inventoryId, checkId, ct).ConfigureAwait(false);
+        if (check is null)
+        {
+            return problem!;
+        }
+
+        check = await SettleCheckAsync(db, ledger, inventory!.Partition, check, clock, ct).ConfigureAwait(false);
+        if (DecidedProblem(inventory, check) is { } undecidable)
+        {
+            return undecidable;
+        }
+
+        var (pipeline, flow, declared) = await DeclaringFlowAsync(db, documents, inventory, ct).ConfigureAwait(false);
+        if (pipeline is null || flow is null || declared != true)
+        {
+            return Problem(StatusCodes.Status409Conflict, "Not declared",
+                $"No flow in the catalog declares inventory '{inventory.Name}' of '{inventory.FlowName}' now, so no pick can run through it.");
+        }
+
+        if (!await ledger.RequestInventoryDuplicatePickAsync(inventory.Partition, checkId, inventory.LastBuildRunId, ct).ConfigureAwait(false))
+        {
+            return Problem(StatusCodes.Status409Conflict, "Nothing to pick",
+                $"Duplicate check {checkId} holds no group waiting to be picked: every group's copies were read, or its groups are too broad to pick from.");
+        }
+
+        await QueueDuplicatesRunAsync(db, ledger, dispatcher, pipeline, flow, inventory, checkId, request?.Pool, clock, user, ct).ConfigureAwait(false);
+        var asked = await ledger.GetInventoryDuplicateCheckAsync(inventory.Partition, checkId, ct).ConfigureAwait(false) ?? check;
+        return TypedResults.Accepted(
+            $"/api/v1/delivery/inventories/{inventory.Partition}/{inventory.InventoryId}/duplicates/{checkId}",
+            await ToDtoAsync(ledger, inventory, asked, ct).ConfigureAwait(false));
+    }
+
+    /// <summary>
+    /// Queues the duplicates run of the inventory flow that does what a check asks next: its download, or its pick. A run that
+    /// could not be queued ends what it was for (a download failed, a pick stopped) with why, so the page says so rather than
+    /// wait on it.
+    /// </summary>
+    private static async Task QueueDuplicatesRunAsync(
+        CatalogDbContext db, ILedger ledger, IRunDispatcher dispatcher, CatalogPipeline pipeline, InventoryFlowDefinition flow, InventoryState inventory, long checkId, string? pool,
+        TimeProvider clock, ClaimsPrincipal user, CancellationToken ct)
+    {
         var values = new Dictionary<string, string>(StringComparer.Ordinal);
         if (flow.Partitioned)
         {
@@ -154,24 +268,18 @@ public static partial class DeliveryInventoryEndpoints
             runId = await dispatcher.EnqueueAsync(
                 db,
                 new RunEnqueueRequest(
-                    pipeline.RepoId, pipeline.Name, pipeline.Kind, string.IsNullOrWhiteSpace(request.Pool) ? null : request.Pool.Trim(), null, parameters,
+                    pipeline.RepoId, pipeline.Name, pipeline.Kind, string.IsNullOrWhiteSpace(pool) ? null : pool.Trim(), null, parameters,
                     RequestedBy: RequestActor.Of(user)),
                 ct).ConfigureAwait(false);
         }
         catch (Exception ex) when (ex is not OperationCanceledException || !ct.IsCancellationRequested)
         {
-            // A check whose run never came is closed, so the page says why rather than wait on it.
             await ledger.FailInventoryDuplicateCheckAsync(
                 inventory.Partition, checkId, $"its run could not be queued: {DeliveryEndpoints.Redacted(ex)}", clock.GetUtcNow().UtcDateTime, CancellationToken.None).ConfigureAwait(false);
             throw;
         }
 
         await ledger.SetInventoryDuplicateCheckRunAsync(inventory.Partition, checkId, runId, ct).ConfigureAwait(false);
-        var created = await ledger.GetInventoryDuplicateCheckAsync(inventory.Partition, checkId, ct).ConfigureAwait(false)
-            ?? throw new DeliveryException($"Duplicate check {checkId} of inventory '{inventory.Name}' was opened and is not in partition '{inventory.Partition}'.");
-        return TypedResults.Accepted(
-            $"/api/v1/delivery/inventories/{inventory.Partition}/{inventory.InventoryId}/duplicates/{checkId}",
-            await ToDtoAsync(ledger, inventory, created, ct).ConfigureAwait(false));
     }
 
     /// <summary>An inventory's duplicate checks, the newest first, each as it stands.</summary>
@@ -304,10 +412,16 @@ public static partial class DeliveryInventoryEndpoints
             return Problem(StatusCodes.Status404NotFound, "Not found", $"Duplicate check {checkId} holds no group {groupNumber}.");
         }
 
-        if (group.Outcome == InventoryDuplicates.Pending || group.Copies > InventoryDuplicates.MaxCopiesPicked)
+        if (group.Copies > InventoryDuplicates.MaxCopiesPicked)
         {
             return Problem(StatusCodes.Status409Conflict, "Copies not read",
-                $"Group {groupNumber} holds {group.Copies} copies, and the check read none of them: a group of more than {InventoryDuplicates.MaxCopiesPicked} is too broad to pick from. Add properties to the key and check again.");
+                $"Group {groupNumber} holds {group.Copies} copies, and no pick reads them: a group of more than {InventoryDuplicates.MaxCopiesPicked} is too broad to pick from. Add properties to the key.");
+        }
+
+        if (group.Outcome == InventoryDuplicates.Pending)
+        {
+            return Problem(StatusCodes.Status409Conflict, "Copies not read",
+                $"The copies of group {groupNumber} are not read yet: pick the copies of the check's groups first, which reads how complete each copy is.");
         }
 
         var (_, flow, declared) = await DeclaringFlowAsync(db, documents, inventory, ct).ConfigureAwait(false);
@@ -456,7 +570,9 @@ public static partial class DeliveryInventoryEndpoints
         if (check.Status != InventoryDuplicates.Completed)
         {
             return Problem(StatusCodes.Status409Conflict, "Check not completed",
-                $"Duplicate check {check.InventoryDuplicateCheckId} of inventory '{inventory.Name}' is {check.Status}: only a check that read OSDU whole says which ids are copies of one another.");
+                check.Phase == InventoryDuplicates.ReadingCopies
+                    ? $"Duplicate check {check.InventoryDuplicateCheckId} of inventory '{inventory.Name}' is picking the copies of its groups: act on its picks once the pick ends."
+                    : $"Duplicate check {check.InventoryDuplicateCheckId} of inventory '{inventory.Name}' is {check.Status}: only a check that downloaded every id says which ids are copies of one another.");
         }
 
         return Stale(inventory, check)
@@ -523,22 +639,37 @@ public static partial class DeliveryInventoryEndpoints
         return await ledger.GetInventoryDuplicateCheckAsync(partition, check.InventoryDuplicateCheckId, ct).ConfigureAwait(false) ?? check;
     }
 
-    /// <summary>A check as the API answers with it: its groups counted by outcome once it completed, and whether its last selection still stands.</summary>
+    /// <summary>
+    /// A check as the API answers with it: its groups counted by outcome and by size once it has groups, the groups waiting to be
+    /// picked, and whether its last selection still stands.
+    /// </summary>
     private static async Task<DeliveryInventoryDuplicateCheckDto> ToDtoAsync(ILedger ledger, InventoryState inventory, InventoryDuplicateCheckState c, CancellationToken ct)
     {
         IReadOnlyList<DeliveryDuplicateOutcomeCountDto>? outcomes = null;
+        IReadOnlyList<DeliveryDuplicateSizeDto>? sizes = null;
+        long pendingGroups = 0;
+        long pendingCopies = 0;
         var current = false;
-        if (c.Status == InventoryDuplicates.Completed)
+        if (c.Groups > 0 && c.Status is InventoryDuplicates.Completed or InventoryDuplicates.Queued or InventoryDuplicates.Running && c.TableName is not null)
         {
             var counted = await ledger.InventoryDuplicateOutcomesAsync(inventory.Partition, c.InventoryDuplicateCheckId, ct).ConfigureAwait(false);
             outcomes = InventoryDuplicates.Outcomes.Select(o => new DeliveryDuplicateOutcomeCountDto(o, counted.GetValueOrDefault(o))).ToList();
+            var sized = await ledger.InventoryDuplicateSizesAsync(inventory.Partition, c.InventoryDuplicateCheckId, ct).ConfigureAwait(false);
+            sizes = sized.Sizes.Select(s => new DeliveryDuplicateSizeDto(s.From, s.To, s.Groups, s.Copies)).ToList();
+            (pendingGroups, pendingCopies) = (sized.PendingGroups, sized.PendingCopies);
+        }
+
+        if (c.Status == InventoryDuplicates.Completed)
+        {
             current = await CurrentSelectionAsync(ledger, inventory, c, ct).ConfigureAwait(false) is not null;
         }
 
         return new DeliveryInventoryDuplicateCheckDto(
             c.InventoryDuplicateCheckId, c.InventoryId, inventory.Partition, c.Status, Stale(inventory, c), c.Phase, KeyOf(c.KeyJson), ListOf(c.NotesJson),
             c.Candidates, c.Checked, c.Keyed, c.Unkeyed, c.Outside, c.Changed, c.Groups, c.Copies, c.GroupsJudged, c.Decided, c.Review, c.ToRemove, c.Requests,
-            outcomes, c.SelectionId, current, Utc(c.ChosenUtc), c.RunId, c.Actor, Utc(c.CreatedUtc), Utc(c.StartedUtc), Utc(c.CompletedUtc), c.Error);
+            outcomes, c.SelectionId, current, Utc(c.ChosenUtc), c.RunId, c.Actor, Utc(c.CreatedUtc), Utc(c.StartedUtc), Utc(c.CompletedUtc), c.Error,
+            InventoryDuplicateTable.Parse(c.AttributesJson).Select(a => a.Path).ToList(), c.TableName is null ? null : $"{DeliveryModel.SchemaName}.{c.TableName}",
+            c.KeyedBy, Utc(c.KeyedUtc), Utc(c.PickedUtc), sizes, pendingGroups, pendingCopies);
     }
 
     private static DeliveryDuplicateGroupDto ToDto(InventoryDuplicateGroupState g, IReadOnlyList<InventoryDuplicateMemberState> members, IReadOnlyDictionary<Guid, string> ledgers)
@@ -555,5 +686,5 @@ public static partial class DeliveryInventoryEndpoints
 
     /// <summary>The key a check keeps, as the API answers with it.</summary>
     private static IReadOnlyList<DeliveryDuplicateKeyPropertyDto> KeyOf(string json)
-        => InventoryDuplicateKey.Parse(json).Properties.Select(p => new DeliveryDuplicateKeyPropertyDto(p.Path, InventoryDuplicateKey.NameOf(p.Compare))).ToList();
+        => InventoryDuplicateKey.Parse(json).Paths.Select(p => new DeliveryDuplicateKeyPropertyDto(p)).ToList();
 }

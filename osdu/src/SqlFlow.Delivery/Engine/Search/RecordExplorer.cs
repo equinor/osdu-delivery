@@ -610,6 +610,27 @@ public sealed partial class RecordExplorer
     }
 
     /// <summary>
+    /// The query finding the records that name any of <paramref name="named"/> (ids without their version), other than the
+    /// records whose own id is one of <paramref name="excluded"/>: each id a phrase, which finds it however a record writes it
+    /// (with a version, or the trailing colon of "the latest"), since the analyser drops the colon and the version is a word of
+    /// its own after it. A record's own id is never a mention of itself.
+    /// </summary>
+    public static string MentionsQuery(IReadOnlyList<string> named, IReadOnlyList<string> excluded)
+    {
+        ArgumentNullException.ThrowIfNull(named);
+        ArgumentNullException.ThrowIfNull(excluded);
+        if (named.Count == 0 || excluded.Count == 0)
+        {
+            throw new ArgumentException("A search for the records naming ids names at least one id, and excludes at least one.");
+        }
+
+        static string AnyOf(IReadOnlyList<string> ids)
+            => ids.Count == 1 ? LuceneText.Phrase(ids[0]) : "(" + string.Join(" OR ", ids.Select(LuceneText.Phrase)) + ")";
+
+        return $"{AnyOf(named)} AND NOT id:{AnyOf(excluded)}";
+    }
+
+    /// <summary>
     /// What a reader's search asks (see the remarks on <see cref="RecordExplorer"/>), in the data partition
     /// <paramref name="partition"/> an id written without one is read in. Pure: the same search reads the same way.
     /// </summary>
@@ -621,7 +642,7 @@ public sealed partial class RecordExplorer
             // A record names another by its id, mostly with a version or the trailing colon of "the latest": the phrase finds
             // the id whichever, since the analyser drops the colon and the version is a word of its own after it.
             var named = TargetId.WithoutVersion(mentioned.Trim());
-            return new ExplorerReading("mentions", $"{LuceneText.Phrase(named)} AND NOT id:{LuceneText.Phrase(named)}");
+            return new ExplorerReading("mentions", MentionsQuery([named], [named]));
         }
 
         var text = search.Text?.Trim() ?? string.Empty;

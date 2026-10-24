@@ -159,6 +159,9 @@ public sealed record InventorySelectionState
     /// <summary>The duplicate check whose picks the selection holds; null for a selection a match of conditions filled.</summary>
     public long? DuplicateCheckId { get; init; }
 
+    /// <summary>The key the duplicate check's groups were formed by when the selection was made of its picks; null for one a match filled.</summary>
+    public string? DuplicateKeyJson { get; init; }
+
     /// <summary>What the selection came to, in a line a run's log writes.</summary>
     public string Describe() => string.Create(
         CultureInfo.InvariantCulture,
@@ -193,6 +196,37 @@ public static class InventorySelectionValues
         {
             throw new DeliveryException($"The values a selection kept of an id are not the property-to-values JSON a match writes ({ex.Message}); match the conditions again.", ex);
         }
+    }
+
+    /// <summary>
+    /// Values a row keeps of a record, property to values, as JSON within <see cref="Data.DeliveryModel.MaxSelectionValuesLength"/>:
+    /// values are left off the end of the longest list until it fits, so a row always says what it holds first, and a property
+    /// is dropped once its list is down to one value that still does not fit. Null when nothing is held, or nothing fits.
+    /// <paramref name="held"/> is cut in place.
+    /// </summary>
+    public static string? Fit(Dictionary<string, List<string>> held)
+    {
+        ArgumentNullException.ThrowIfNull(held);
+        while (held.Count > 0)
+        {
+            var json = System.Text.Json.JsonSerializer.Serialize(held);
+            if (json.Length <= Data.DeliveryModel.MaxSelectionValuesLength)
+            {
+                return json;
+            }
+
+            var longest = held.OrderByDescending(h => h.Value.Count).ThenByDescending(h => h.Value.Sum(v => v.Length)).First();
+            if (longest.Value.Count > 1)
+            {
+                longest.Value.RemoveAt(longest.Value.Count - 1);
+            }
+            else
+            {
+                held.Remove(longest.Key);
+            }
+        }
+
+        return null;
     }
 
     private static readonly IReadOnlyDictionary<string, IReadOnlyList<string>> Empty = new Dictionary<string, IReadOnlyList<string>>(StringComparer.Ordinal);

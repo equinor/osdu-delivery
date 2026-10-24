@@ -1,69 +1,158 @@
 using System.Data;
+using System.Globalization;
+using System.Text;
 using Microsoft.Data.SqlClient;
+using Microsoft.EntityFrameworkCore;
+using SqlFlow.Core;
 using SqlFlow.Delivery.Data;
 
 namespace SqlFlow.Delivery.Ledger;
 
-// Finding the duplicate records of an inventory (osdu/docs/reference/flow/inventory-duplicates.md): the keys
-// one page of a check read, matched with the inventory's own rows by the OSDU id, which both keep in a binary collation so
-// they compare exactly as OSDU compares them; the ids that share a key numbered into groups; how each group came out; and the
-// copies picked to remove made a selection, every statement in one transaction.
+// Finding the duplicate records of an inventory (osdu/docs/reference/flow/inventory-duplicates.md): the check's own table,
+// made afresh by its download and written a page at a time, each record the search returned matched with the inventory's own
+// rows by the OSDU id, which both keep in a binary collation so they compare exactly as OSDU compares them; the ids that hold
+// equal values at a key grouped from the table in SQL, as often as the key changes; how each group came out; and the copies
+// picked to remove made a selection, every statement in one transaction.
 internal static partial class SqlServerLedgerBulk
 {
-    private const string DuplicateKeysStageSql = """
-        CREATE TABLE #Keys (
-            [TargetId] nvarchar(500) COLLATE Latin1_General_100_BIN2 NOT NULL,
-            [Version] bigint NULL,
-            [KeyHash] binary(32) NULL,
-            [ValuesJson] nvarchar(4000) NULL);
-        """;
+    /// <summary>The hash a property a record holds no value at stands as in a key: no SHA-256 is all zeros.</summary>
+    private static readonly byte[] AbsentHash = new byte[InventoryDuplicateTable.HashLength];
 
-    // The records the search returned that the inventory serves a row of, each once (the highest version a repeat names), kept
-    // with their key unless the check holds the row already; the rows that hold no key counted, as are the records the
-    // inventory serves no row of and the rows read at another version than it listed; and the check's counts added to.
-    private const string DuplicateKeysSql = """
-        DECLARE @keyed bigint, @unkeyed bigint, @changed bigint, @outside bigint;
+    /// <summary>How many copies one statement fills the values of, after a grouping.</summary>
+    private const int ValuesChunk = 5000;
 
-        WITH [k] AS (
-            SELECT [TargetId], [Version], [KeyHash], [ValuesJson],
-                ROW_NUMBER() OVER (PARTITION BY [TargetId] ORDER BY [Version] DESC) AS [n]
-            FROM #Keys)
-        SELECT r.[InventoryRecordId], k.[Version], k.[KeyHash], k.[ValuesJson], r.[Version] AS [Listed]
-        INTO #Served
-        FROM [k] AS k
-        INNER JOIN [osdu].[InventoryRecord] AS r
-            ON r.[PartitionId] = @partitionId AND r.[InventoryId] = @inventoryId AND r.[TargetId] = k.[TargetId]
-        WHERE k.[n] = 1 AND r.[GoneUtc] IS NULL AND r.[FirstSeenUtc] IS NOT NULL
-            AND NOT EXISTS (
-                SELECT 1 FROM [osdu].[InventoryDuplicateMember] AS m
-                WHERE m.[PartitionId] = @partitionId AND m.[InventoryDuplicateCheckId] = @checkId AND m.[InventoryRecordId] = r.[InventoryRecordId]);
+    /// <summary>
+    /// Makes a check's table afresh, outside any transaction: what an attempt before this one wrote is dropped, and the table is
+    /// made through SQLFlow's schema evolution with a column for each property's values and one for their hash.
+    /// The check's row records the table and the properties it holds.
+    /// </summary>
+    /// <exception cref="DeliveryException">The table cannot be made: the database user may not create it.</exception>
+    public static async Task PrepareInventoryDuplicateTableAsync(
+        OsduDbContext db, short partitionId, long checkId, IReadOnlyList<DuplicateColumn> attributes, CancellationToken ct)
+    {
+        var table = InventoryDuplicateTable.NameOf(checkId);
+        await db.Database.OpenConnectionAsync(ct).ConfigureAwait(false);
+        try
+        {
+            var connection = (SqlConnection)db.Database.GetDbConnection();
+            await ExecuteAsync(connection, null, $"DROP TABLE IF EXISTS {RunTimeTables.Qualified(table)};", ct).ConfigureAwait(false);
+            await RunTimeTables.EvolveAsync(connection, table, InventoryDuplicateTable.Desired(attributes), InventoryDuplicateTable.KeyColumns, ct).ConfigureAwait(false);
+            await using var record = Command(
+                connection,
+                null,
+                """
+                UPDATE [osdu].[InventoryDuplicateCheck] SET [TableName] = @table, [AttributesJson] = @attributes
+                WHERE [PartitionId] = @partitionId AND [InventoryDuplicateCheckId] = @checkId;
+                """,
+                slice: null);
+            AddDuplicateParameters(record, partitionId, checkId);
+            record.Parameters.Add(new SqlParameter("@table", SqlDbType.NVarChar, DeliveryModel.MaxRunTimeTableNameLength) { Value = table });
+            record.Parameters.Add(new SqlParameter("@attributes", SqlDbType.NVarChar, -1) { Value = InventoryDuplicateTable.ToJson(attributes) });
+            await record.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
+        }
+        catch (Exception ex) when (ex is SqlException or SqlFlowException)
+        {
+            throw new DeliveryException(
+                $"The duplicate check's table {DeliveryModel.SchemaName}.{table} could not be made, so nothing was downloaded: {ex.Message.Trim()} The database user the module connects as needs CREATE TABLE in the database and ALTER on the osdu schema.",
+                ex);
+        }
+        finally
+        {
+            await db.Database.CloseConnectionAsync().ConfigureAwait(false);
+        }
+    }
 
-        INSERT INTO [osdu].[InventoryDuplicateMember] ([PartitionId], [InventoryDuplicateCheckId], [InventoryRecordId], [KeyHash], [IndexedVersion], [ValuesJson])
-        SELECT @partitionId, @checkId, s.[InventoryRecordId], s.[KeyHash], s.[Version], s.[ValuesJson]
-        FROM #Served AS s
-        WHERE s.[KeyHash] IS NOT NULL;
-        SET @keyed = @@ROWCOUNT;
+    /// <summary>Drops a check's table, if it has one: its download failed, or a sweep retired the check.</summary>
+    public static async Task DeleteInventoryDuplicateTableAsync(OsduDbContext db, short partitionId, long checkId, CancellationToken ct)
+    {
+        await db.Database.OpenConnectionAsync(ct).ConfigureAwait(false);
+        try
+        {
+            var connection = (SqlConnection)db.Database.GetDbConnection();
+            await ExecuteAsync(connection, null, $"DROP TABLE IF EXISTS {RunTimeTables.Qualified(InventoryDuplicateTable.NameOf(checkId))};", ct).ConfigureAwait(false);
+            await using var record = Command(
+                connection,
+                null,
+                "UPDATE [osdu].[InventoryDuplicateCheck] SET [TableName] = NULL WHERE [PartitionId] = @partitionId AND [InventoryDuplicateCheckId] = @checkId;",
+                slice: null);
+            AddDuplicateParameters(record, partitionId, checkId);
+            await record.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
+        }
+        finally
+        {
+            await db.Database.CloseConnectionAsync().ConfigureAwait(false);
+        }
+    }
 
-        SELECT @unkeyed = COUNT_BIG(*) FROM #Served AS s WHERE s.[KeyHash] IS NULL;
+    /// <summary>The temporary table a page of a download is staged in: the OSDU id, the version, and each property's columns, as the check's table names them.</summary>
+    private static string RowsStageSql(IReadOnlyList<DuplicateColumn> attributes)
+    {
+        var sql = new StringBuilder("""
+            CREATE TABLE #DupRows (
+                [TargetId] nvarchar(500) COLLATE Latin1_General_100_BIN2 NOT NULL,
+                [Version] bigint NULL
+            """);
+        foreach (var attribute in attributes)
+        {
+            sql.Append(",\n    ").Append(RunTimeTables.Quoted(attribute.Column)).Append(" nvarchar(max) NULL");
+            sql.Append(",\n    ").Append(RunTimeTables.Quoted(InventoryDuplicateTable.HashColumn(attribute.Column))).Append(" binary(32) NULL");
+        }
 
-        SELECT @changed = COUNT_BIG(*) FROM #Served AS s
-        WHERE s.[Version] IS NOT NULL AND s.[Listed] IS NOT NULL AND s.[Version] <> s.[Listed];
+        return sql.Append(");").ToString();
+    }
 
-        SELECT @outside = COUNT_BIG(DISTINCT k.[TargetId]) FROM #Keys AS k
-        WHERE NOT EXISTS (
-            SELECT 1 FROM [osdu].[InventoryRecord] AS r
-            WHERE r.[PartitionId] = @partitionId AND r.[InventoryId] = @inventoryId AND r.[TargetId] = k.[TargetId]
-                AND r.[GoneUtc] IS NULL AND r.[FirstSeenUtc] IS NOT NULL);
+    /// <summary>
+    /// The statements that keep a staged page in the check's table: each record the inventory serves a row of, once (the highest
+    /// version a repeat names), unless the table holds the row already; the records the inventory serves no row of counted, as are
+    /// the rows read at another version than it listed; and the check's progress.
+    /// </summary>
+    private static string RowsSql(string table, IReadOnlyList<DuplicateColumn> attributes)
+    {
+        var target = RunTimeTables.Qualified(table);
+        var columns = attributes
+            .SelectMany(a => new[] { a.Column, InventoryDuplicateTable.HashColumn(a.Column) })
+            .Select(RunTimeTables.Quoted)
+            .ToList();
+        var listed = columns.Count == 0 ? string.Empty : ", " + string.Join(", ", columns);
+        var staged = columns.Count == 0 ? string.Empty : ", " + string.Join(", ", columns.Select(c => "s." + c));
+        return $"""
+            DECLARE @written bigint, @changed bigint, @outside bigint;
 
-        UPDATE [osdu].[InventoryDuplicateCheck] SET
-            [Keyed] = [Keyed] + @keyed, [Unkeyed] = [Unkeyed] + @unkeyed, [Changed] = [Changed] + @changed, [Outside] = [Outside] + @outside,
-            [Checked] = [Checked] + @checked, [Requests] = [Requests] + @requests
-        WHERE [PartitionId] = @partitionId AND [InventoryDuplicateCheckId] = @checkId;
+            WITH [k] AS (
+                SELECT *, ROW_NUMBER() OVER (PARTITION BY [TargetId] ORDER BY [Version] DESC) AS [Repeat]
+                FROM #DupRows)
+            SELECT r.[InventoryRecordId] AS [RecordId], r.[Version] AS [Listed], k.*
+            INTO #Served
+            FROM [k] AS k
+            INNER JOIN [osdu].[InventoryRecord] AS r
+                ON r.[PartitionId] = @partitionId AND r.[InventoryId] = @inventoryId AND r.[TargetId] = k.[TargetId]
+            WHERE k.[Repeat] = 1 AND r.[GoneUtc] IS NULL AND r.[FirstSeenUtc] IS NOT NULL
+                AND NOT EXISTS (SELECT 1 FROM {target} AS d WHERE d.[{InventoryDuplicateTable.RecordColumn}] = r.[InventoryRecordId]);
 
-        SELECT @keyed, @unkeyed, @outside, @changed;
-        DROP TABLE #Served;
-        DROP TABLE #Keys;
-        """;
+            INSERT INTO {target} ([{InventoryDuplicateTable.RecordColumn}], [{InventoryDuplicateTable.TargetColumn}], [{InventoryDuplicateTable.VersionColumn}]{listed})
+            SELECT s.[RecordId], s.[TargetId], s.[Version]{staged}
+            FROM #Served AS s;
+            SET @written = @@ROWCOUNT;
+
+            SELECT @changed = COUNT_BIG(*) FROM #Served AS s
+            WHERE s.[Version] IS NOT NULL AND s.[Listed] IS NOT NULL AND s.[Version] <> s.[Listed];
+
+            SELECT @outside = COUNT_BIG(DISTINCT k.[TargetId]) FROM #DupRows AS k
+            WHERE NOT EXISTS (
+                SELECT 1 FROM [osdu].[InventoryRecord] AS r
+                WHERE r.[PartitionId] = @partitionId AND r.[InventoryId] = @inventoryId AND r.[TargetId] = k.[TargetId]
+                    AND r.[GoneUtc] IS NULL AND r.[FirstSeenUtc] IS NOT NULL);
+
+            UPDATE [osdu].[InventoryDuplicateCheck] SET
+                [Changed] = [Changed] + @changed, [Outside] = [Outside] + @outside,
+                [Checked] = [Checked] + @checked, [Requests] = [Requests] + @requests
+            WHERE [PartitionId] = @partitionId AND [InventoryDuplicateCheckId] = @checkId;
+
+            SELECT @written, @outside, @changed;
+            DROP TABLE #Served;
+            DROP TABLE #DupRows;
+            """;
+    }
 
     // A page that returned nothing still moves the check on.
     private const string DuplicateProgressSql = """
@@ -71,68 +160,131 @@ internal static partial class SqlServerLedgerBulk
         WHERE [PartitionId] = @partitionId AND [InventoryDuplicateCheckId] = @checkId;
         """;
 
-    // The ids that share their key with another, numbered into groups (the largest first, then by the first id of each); the ids
-    // whose key no other holds let go a batch at a time, so a check of millions never holds one long lock on the table; a group
-    // too large to be one record written more than once left for review with why, its copies unread; and the check's counts.
-    private const string DuplicateGroupSql = """
-        DECLARE @groups bigint, @copies bigint, @broad bigint, @done int;
+    /// <summary>
+    /// The statements that group a check's table by a key, over whatever it was grouped by before, under an update lock on the
+    /// check so two groupings, or a grouping and a pick, never interleave: each row's key the hash of its key properties' hashes
+    /// in the key's order (a property it holds no value at standing as <see cref="AbsentHash"/>); a row holding no value at any
+    /// of them passed over; the rows whose key another shares numbered into groups, the largest first and then by the first id of
+    /// each; a group too large to be one record written more than once left for review with why, its copies unread; and the
+    /// check's counts, its key and who set it. The groups wait to be picked.
+    /// </summary>
+    private static string GroupSql(string table, IReadOnlyList<string> hashColumns)
+    {
+        var target = RunTimeTables.Qualified(table);
+        var key = string.Join(" + ", hashColumns.Select(c => $"ISNULL(d.{RunTimeTables.Quoted(c)}, @absent)"));
+        var held = string.Join(" OR ", hashColumns.Select(c => $"d.{RunTimeTables.Quoted(c)} IS NOT NULL"));
+        return $"""
+            DECLARE @status nvarchar(16), @phase nvarchar(16), @groups bigint, @copies bigint, @broad bigint, @keyed bigint, @rows bigint, @done int;
 
-        SELECT m.[KeyHash], COUNT_BIG(*) AS [Copies], MIN(m.[InventoryRecordId]) AS [First]
-        INTO #Shared
+            SELECT @status = c.[Status], @phase = c.[Phase]
+            FROM [osdu].[InventoryDuplicateCheck] AS c WITH (UPDLOCK, HOLDLOCK)
+            WHERE c.[PartitionId] = @partitionId AND c.[InventoryDuplicateCheckId] = @checkId;
+            IF @status IS NULL THROW 51000, N'The partition holds no such duplicate check.', 1;
+            IF @status IN (N'failed', N'expired') THROW 51000, N'The check holds no download to group: it failed, or a sweep retired it.', 1;
+            IF @phase = N'copies' AND @status IN (N'queued', N'running') THROW 51000, N'The check is picking the copies of its groups; group it again once the pick ends.', 1;
+
+            SET @done = @batch;
+            WHILE @done = @batch
+            BEGIN
+                DELETE TOP (@batch) FROM [osdu].[InventoryDuplicateMember]
+                WHERE [PartitionId] = @partitionId AND [InventoryDuplicateCheckId] = @checkId;
+                SET @done = @@ROWCOUNT;
+            END
+
+            SET @done = @batch;
+            WHILE @done = @batch
+            BEGIN
+                DELETE TOP (@batch) FROM [osdu].[InventoryDuplicateGroup]
+                WHERE [PartitionId] = @partitionId AND [InventoryDuplicateCheckId] = @checkId;
+                SET @done = @@ROWCOUNT;
+            END
+
+            SELECT d.[{InventoryDuplicateTable.RecordColumn}] AS [Id], d.[{InventoryDuplicateTable.VersionColumn}] AS [Version],
+                CAST(HASHBYTES('SHA2_256', {key}) AS binary(32)) AS [KeyHash]
+            INTO #Keyed
+            FROM {target} AS d
+            WHERE {held};
+            SET @keyed = @@ROWCOUNT;
+            SELECT @rows = COUNT_BIG(*) FROM {target};
+
+            SELECT k.[KeyHash], COUNT_BIG(*) AS [Copies], MIN(k.[Id]) AS [First]
+            INTO #Shared
+            FROM #Keyed AS k
+            GROUP BY k.[KeyHash]
+            HAVING COUNT_BIG(*) > 1;
+
+            SELECT CAST(ROW_NUMBER() OVER (ORDER BY s.[Copies] DESC, s.[First]) AS int) AS [GroupNumber], s.[KeyHash], s.[Copies]
+            INTO #Numbered
+            FROM #Shared AS s;
+            CREATE UNIQUE CLUSTERED INDEX [IX_Numbered] ON #Numbered ([KeyHash]);
+
+            INSERT INTO [osdu].[InventoryDuplicateGroup] ([PartitionId], [InventoryDuplicateCheckId], [GroupNumber], [KeyHash], [Copies], [ValuesJson], [Outcome], [Reason])
+            SELECT @partitionId, @checkId, n.[GroupNumber], n.[KeyHash], CAST(n.[Copies] AS int), NULL,
+                CASE WHEN n.[Copies] > @maxCopies THEN N'review' ELSE N'pending' END,
+                CASE WHEN n.[Copies] > @maxCopies
+                    THEN CONCAT(n.[Copies], N' copies share the key, more than the ', @maxCopies,
+                        N' a group is picked from: a key this broad is not one record written more than once, so add properties to it')
+                    ELSE NULL END
+            FROM #Numbered AS n;
+            SET @groups = @@ROWCOUNT;
+
+            INSERT INTO [osdu].[InventoryDuplicateMember] ([PartitionId], [InventoryDuplicateCheckId], [InventoryRecordId], [KeyHash], [GroupNumber], [IndexedVersion], [ValuesJson], [Role], [Reason])
+            SELECT @partitionId, @checkId, k.[Id], k.[KeyHash], n.[GroupNumber], k.[Version], NULL,
+                CASE WHEN n.[Copies] > @maxCopies THEN N'review' ELSE NULL END,
+                CASE WHEN n.[Copies] > @maxCopies THEN N'its group is too broad to pick from, so its copies are not read' ELSE NULL END
+            FROM #Keyed AS k
+            INNER JOIN #Numbered AS n ON n.[KeyHash] = k.[KeyHash];
+            SET @copies = @@ROWCOUNT;
+
+            SELECT @broad = COUNT_BIG(CASE WHEN n.[Copies] > @maxCopies THEN 1 END) FROM #Numbered AS n;
+
+            UPDATE [osdu].[InventoryDuplicateCheck] SET
+                [KeyJson] = @keyJson, [KeyHash] = @keyHash, [KeyedBy] = @actor, [KeyedUtc] = @now,
+                [Keyed] = @keyed, [Unkeyed] = @rows - @keyed, [Groups] = @groups, [Copies] = @copies,
+                [GroupsJudged] = @broad, [Review] = @broad, [Decided] = 0, [ToRemove] = 0,
+                [SelectionId] = NULL, [ChosenUtc] = NULL, [PickedUtc] = NULL
+            WHERE [PartitionId] = @partitionId AND [InventoryDuplicateCheckId] = @checkId;
+
+            SELECT @groups, @copies, @broad, @keyed, @rows - @keyed;
+            DROP TABLE #Numbered;
+            DROP TABLE #Shared;
+            DROP TABLE #Keyed;
+            """;
+    }
+
+    /// <summary>A chunk of a check's copies with what each holds at the properties named, in the inventory's order, after <c>@after</c>.</summary>
+    private static string CopyValuesSql(string table, IReadOnlyList<DuplicateColumn> attributes)
+    {
+        var columns = attributes.Count == 0 ? string.Empty : ", " + string.Join(", ", attributes.Select(a => "d." + RunTimeTables.Quoted(a.Column)));
+        return $"""
+            SELECT TOP (@chunk) m.[InventoryRecordId]{columns}
+            FROM [osdu].[InventoryDuplicateMember] AS m
+            INNER JOIN {RunTimeTables.Qualified(table)} AS d ON d.[{InventoryDuplicateTable.RecordColumn}] = m.[InventoryRecordId]
+            WHERE m.[PartitionId] = @partitionId AND m.[InventoryDuplicateCheckId] = @checkId AND m.[InventoryRecordId] > @after
+            ORDER BY m.[InventoryRecordId];
+            """;
+    }
+
+    private const string CopyValuesStageSql = """
+        CREATE TABLE #CopyValues ([InventoryRecordId] bigint NOT NULL PRIMARY KEY, [ValuesJson] nvarchar(4000) NULL);
+        """;
+
+    // A chunk of copies given what they hold at the key, and every group the values of its first copy.
+    private const string CopyValuesWriteSql = """
+        UPDATE m SET [ValuesJson] = v.[ValuesJson]
         FROM [osdu].[InventoryDuplicateMember] AS m
-        WHERE m.[PartitionId] = @partitionId AND m.[InventoryDuplicateCheckId] = @checkId
-        GROUP BY m.[KeyHash];
+        INNER JOIN #CopyValues AS v ON v.[InventoryRecordId] = m.[InventoryRecordId]
+        WHERE m.[PartitionId] = @partitionId AND m.[InventoryDuplicateCheckId] = @checkId;
+        DROP TABLE #CopyValues;
+        """;
 
-        SELECT CAST(ROW_NUMBER() OVER (ORDER BY s.[Copies] DESC, s.[First]) AS int) AS [GroupNumber], s.[KeyHash], s.[Copies], s.[First]
-        INTO #Numbered
-        FROM #Shared AS s
-        WHERE s.[Copies] > 1;
-        CREATE UNIQUE CLUSTERED INDEX [IX_Numbered] ON #Numbered ([KeyHash]);
-
-        SET @done = @batch;
-        WHILE @done = @batch
-        BEGIN
-            DELETE TOP (@batch) m
-            FROM [osdu].[InventoryDuplicateMember] AS m
-            WHERE m.[PartitionId] = @partitionId AND m.[InventoryDuplicateCheckId] = @checkId
-                AND NOT EXISTS (SELECT 1 FROM #Numbered AS n WHERE n.[KeyHash] = m.[KeyHash]);
-            SET @done = @@ROWCOUNT;
-        END
-
-        INSERT INTO [osdu].[InventoryDuplicateGroup] ([PartitionId], [InventoryDuplicateCheckId], [GroupNumber], [KeyHash], [Copies], [ValuesJson], [Outcome], [Reason])
-        SELECT @partitionId, @checkId, n.[GroupNumber], n.[KeyHash], CAST(n.[Copies] AS int), f.[ValuesJson],
-            CASE WHEN n.[Copies] > @maxCopies THEN N'review' ELSE N'pending' END,
-            CASE WHEN n.[Copies] > @maxCopies
-                THEN CONCAT(n.[Copies], N' copies share the key, more than the ', @maxCopies,
-                    N' a group is picked from: a key this broad is not one record written more than once, so add properties to it and check again')
-                ELSE NULL END
-        FROM #Numbered AS n
-        INNER JOIN [osdu].[InventoryDuplicateMember] AS f
-            ON f.[PartitionId] = @partitionId AND f.[InventoryDuplicateCheckId] = @checkId AND f.[InventoryRecordId] = n.[First];
-        SET @groups = @@ROWCOUNT;
-
-        SET @done = @batch;
-        WHILE @done = @batch
-        BEGIN
-            UPDATE TOP (@batch) m SET
-                [GroupNumber] = n.[GroupNumber],
-                [Role] = CASE WHEN n.[Copies] > @maxCopies THEN N'review' ELSE NULL END,
-                [Reason] = CASE WHEN n.[Copies] > @maxCopies THEN N'its group is too broad to pick from, so its copies were not read' ELSE NULL END
-            FROM [osdu].[InventoryDuplicateMember] AS m
-            INNER JOIN #Numbered AS n ON n.[KeyHash] = m.[KeyHash]
-            WHERE m.[PartitionId] = @partitionId AND m.[InventoryDuplicateCheckId] = @checkId AND m.[GroupNumber] IS NULL;
-            SET @done = @@ROWCOUNT;
-        END
-
-        SELECT @copies = COALESCE(SUM(n.[Copies]), 0), @broad = COUNT_BIG(CASE WHEN n.[Copies] > @maxCopies THEN 1 END) FROM #Numbered AS n;
-
-        UPDATE [osdu].[InventoryDuplicateCheck] SET
-            [Groups] = @groups, [Copies] = @copies, [GroupsJudged] = @broad, [Review] = @broad, [Decided] = 0, [ToRemove] = 0, [Phase] = N'copies'
-        WHERE [PartitionId] = @partitionId AND [InventoryDuplicateCheckId] = @checkId;
-
-        SELECT @groups, @copies, @broad;
-        DROP TABLE #Numbered;
-        DROP TABLE #Shared;
+    private const string GroupValuesSql = """
+        UPDATE g SET [ValuesJson] = (
+            SELECT TOP (1) m.[ValuesJson] FROM [osdu].[InventoryDuplicateMember] AS m
+            WHERE m.[PartitionId] = g.[PartitionId] AND m.[InventoryDuplicateCheckId] = g.[InventoryDuplicateCheckId] AND m.[GroupNumber] = g.[GroupNumber]
+            ORDER BY m.[InventoryRecordId])
+        FROM [osdu].[InventoryDuplicateGroup] AS g
+        WHERE g.[PartitionId] = @partitionId AND g.[InventoryDuplicateCheckId] = @checkId;
         """;
 
     private const string DuplicateJudgementStageSql = """
@@ -153,9 +305,9 @@ internal static partial class SqlServerLedgerBulk
         """;
 
     // How the groups came out, written over what they held before: the check's counts move by the difference, so the same
-    // statement records the copies pass (every group pending before it) and an operator's choice (a group decided before it).
-    // The groups are read under an update lock first, so two choices of one group write one after the other. A group the check
-    // does not hold, or a copy outside its group, is refused rather than written.
+    // statement records a pick (every group pending before it) and an operator's choice (a group decided before it). The groups
+    // are read under an update lock first, so two choices of one group write one after the other. A group the check does not
+    // hold, or a copy outside its group, is refused rather than written: a key set since formed other groups.
     private const string DuplicateJudgementSql = """
         DECLARE @wasPending bigint, @wasDecided bigint, @wasReview bigint, @wasRemove bigint;
         DECLARE @isDecided bigint, @isReview bigint, @isRemove bigint, @judged bigint, @known bigint;
@@ -169,7 +321,7 @@ internal static partial class SqlServerLedgerBulk
         WHERE g.[PartitionId] = @partitionId AND g.[InventoryDuplicateCheckId] = @checkId;
 
         SELECT @judged = COUNT_BIG(*) FROM #JudgedGroups;
-        IF @known <> @judged THROW 51000, N'The judgement names a group the duplicate check does not hold.', 1;
+        IF @known <> @judged THROW 51000, N'The judgement names a group the duplicate check does not hold: its key was set again since.', 1;
 
         IF EXISTS (
             SELECT 1 FROM #JudgedCopies AS c
@@ -177,7 +329,14 @@ internal static partial class SqlServerLedgerBulk
                 SELECT 1 FROM [osdu].[InventoryDuplicateMember] AS m
                 WHERE m.[PartitionId] = @partitionId AND m.[InventoryDuplicateCheckId] = @checkId
                     AND m.[InventoryRecordId] = c.[InventoryRecordId] AND m.[GroupNumber] = c.[GroupNumber]))
-            THROW 51000, N'The judgement names a copy its group does not hold.', 1;
+            THROW 51000, N'The judgement names a copy its group does not hold: the check''s key was set again since.', 1;
+
+        IF EXISTS (
+            SELECT 1 FROM #JudgedGroups AS j
+            WHERE (SELECT COUNT_BIG(*) FROM [osdu].[InventoryDuplicateMember] AS m
+                   WHERE m.[PartitionId] = @partitionId AND m.[InventoryDuplicateCheckId] = @checkId AND m.[GroupNumber] = j.[GroupNumber])
+                <> (SELECT COUNT_BIG(*) FROM #JudgedCopies AS c WHERE c.[GroupNumber] = j.[GroupNumber]))
+            THROW 51000, N'The judgement does not name every copy of its group: the check''s key was set again since.', 1;
 
         SELECT @wasRemove = COUNT_BIG(*)
         FROM [osdu].[InventoryDuplicateMember] AS m
@@ -219,23 +378,24 @@ internal static partial class SqlServerLedgerBulk
 
     // The copies a completed check picked to remove made a selection, as a completed match would have filled one: each id with
     // the version the index held and the values it holds at the key, beside the copy its group keeps, which a removal checks
-    // storage still holds. Only the groups whose copy to keep is decided give any. The check is read under an update lock, so
-    // a choice written at the same time comes before or after the selection, never half way through it.
+    // storage still holds, and the key the groups were formed by, which the check's may not stay. Only the groups whose copy to
+    // keep is decided give any. The check is read under an update lock, so a choice or a grouping written at the same time comes
+    // before or after the selection, never half way through it.
     private const string DuplicateSelectionSql = """
-        DECLARE @status nvarchar(16), @build bigint, @inventoryId int, @selectionId bigint, @matched bigint, @changed bigint;
+        DECLARE @status nvarchar(16), @build bigint, @inventoryId int, @key nvarchar(max), @selectionId bigint, @matched bigint, @changed bigint;
 
-        SELECT @status = c.[Status], @build = c.[BuildRunId], @inventoryId = c.[InventoryId]
+        SELECT @status = c.[Status], @build = c.[BuildRunId], @inventoryId = c.[InventoryId], @key = c.[KeyJson]
         FROM [osdu].[InventoryDuplicateCheck] AS c WITH (UPDLOCK, HOLDLOCK)
         WHERE c.[PartitionId] = @partitionId AND c.[InventoryDuplicateCheckId] = @checkId;
         IF @status IS NULL THROW 51000, N'The partition holds no such duplicate check.', 1;
-        IF @status <> N'completed' THROW 51000, N'Only a completed duplicate check says which copies to remove.', 1;
+        IF @status <> N'completed' THROW 51000, N'Only a check whose download completed, and which is not picking, says which copies to remove.', 1;
 
         INSERT INTO [osdu].[InventorySelection] ([PartitionId], [InventoryId], [RunId], [Actor], [ConditionsJson], [ConditionsKey], [FiltersJson], [Status],
                 [Query], [Direction], [NotesJson], [ColumnsJson], [BuildRunId], [Candidates], [ToCheck], [Checked], [Matched], [Outside], [Changed],
-                [Requests], [CreatedUtc], [StartedUtc], [CompletedUtc], [Error], [DuplicateCheckId])
+                [Requests], [CreatedUtc], [StartedUtc], [CompletedUtc], [Error], [DuplicateCheckId], [DuplicateKeyJson])
         SELECT @partitionId, @inventoryId, c.[RunId], @actor, N'[]', @conditionsKey, @filtersJson, N'completed',
             NULL, NULL, NULL, @columnsJson, @build, c.[Candidates], 0, 0, 0, 0, 0,
-            0, @now, @now, @now, NULL, @checkId
+            0, @now, @now, @now, NULL, @checkId, @key
         FROM [osdu].[InventoryDuplicateCheck] AS c
         WHERE c.[PartitionId] = @partitionId AND c.[InventoryDuplicateCheckId] = @checkId;
         SET @selectionId = CAST(SCOPE_IDENTITY() AS bigint);
@@ -265,76 +425,211 @@ internal static partial class SqlServerLedgerBulk
         """;
 
     /// <summary>
-    /// Keeps what one page of a check read, in one transaction: each record the search returned that the inventory serves a row
-    /// of, once, with its key, the version the index holds and what it holds at the key; how many such rows hold no key, how many
-    /// records the inventory holds no row of, and how many rows are at another version than it listed; and the check's progress.
+    /// Keeps a downloaded page in the check's table, in one transaction: each record the search returned that the inventory serves
+    /// a row of, once, with the version the index holds and what it holds at each property; how many records the inventory holds
+    /// no row of, and how many rows are at another version than it listed; and the check's progress.
     /// </summary>
-    public static Task<InventoryDuplicateKeyWrite> AddInventoryDuplicateKeysAsync(
-        OsduDbContext db, short partitionId, int inventoryId, long checkId, IReadOnlyList<InventoryDuplicateKeyHit> hits, long checkedCount, long requests,
-        CancellationToken ct)
+    public static Task<InventoryDuplicateRowsWrite> AddInventoryDuplicateRowsAsync(
+        OsduDbContext db, short partitionId, int inventoryId, long checkId, IReadOnlyList<DuplicateColumn> attributes, IReadOnlyList<InventoryDuplicateRow> rows,
+        long checkedCount, long requests, CancellationToken ct)
         => InTransactionAsync(db, async (connection, transaction) =>
         {
-            if (hits.Count == 0)
+            if (rows.Count == 0)
             {
                 await using var progress = Command(connection, transaction, DuplicateProgressSql, slice: null);
                 AddDuplicateParameters(progress, partitionId, checkId);
                 AddProgressParameters(progress, checkedCount, requests);
                 await progress.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
-                return new InventoryDuplicateKeyWrite(0, 0, 0, 0);
+                return new InventoryDuplicateRowsWrite(0, 0, 0);
             }
 
-            await ExecuteAsync(connection, transaction, DuplicateKeysStageSql, ct).ConfigureAwait(false);
+            await ExecuteAsync(connection, transaction, RowsStageSql(attributes), ct).ConfigureAwait(false);
             using (var table = new DataTable())
             {
                 table.Columns.Add("TargetId", typeof(string));
                 table.Columns.Add("Version", typeof(long));
-                table.Columns.Add("KeyHash", typeof(byte[]));
-                table.Columns.Add("ValuesJson", typeof(string));
-                foreach (var hit in hits)
+                foreach (var attribute in attributes)
                 {
-                    table.Rows.Add(hit.TargetId, Value(hit.Version), hit.KeyHash is null ? DBNull.Value : hit.KeyHash, Value(hit.ValuesJson));
+                    table.Columns.Add(attribute.Column, typeof(string));
+                    table.Columns.Add(InventoryDuplicateTable.HashColumn(attribute.Column), typeof(byte[]));
                 }
 
-                await BulkCopyAsync(connection, transaction, "#Keys", table, ct).ConfigureAwait(false);
+                foreach (var row in rows)
+                {
+                    var values = new object[2 + (attributes.Count * 2)];
+                    values[0] = row.TargetId;
+                    values[1] = Value(row.Version);
+                    for (var i = 0; i < attributes.Count; i++)
+                    {
+                        var held = row.Values[i];
+                        values[2 + (i * 2)] = Value(held?.ValuesJson);
+                        values[3 + (i * 2)] = held?.Hash is { } hash ? hash : DBNull.Value;
+                    }
+
+                    table.Rows.Add(values);
+                }
+
+                await BulkCopyAsync(connection, transaction, "#DupRows", table, ct).ConfigureAwait(false);
             }
 
-            await using var command = Command(connection, transaction, DuplicateKeysSql, slice: null);
+            await using var command = Command(connection, transaction, RowsSql(InventoryDuplicateTable.NameOf(checkId), attributes), slice: null);
             AddDuplicateParameters(command, partitionId, checkId);
             command.Parameters.Add(new SqlParameter("@inventoryId", SqlDbType.Int) { Value = inventoryId });
             AddProgressParameters(command, checkedCount, requests);
             await using var reader = await command.ExecuteReaderAsync(ct).ConfigureAwait(false);
             if (!await reader.ReadAsync(ct).ConfigureAwait(false))
             {
-                throw new DeliveryException("A write of the duplicate check's keys answered nothing.");
+                throw new DeliveryException("A write of the duplicate check's download answered nothing.");
             }
 
-            return new InventoryDuplicateKeyWrite(reader.GetInt64(0), reader.GetInt64(1), reader.GetInt64(2), reader.GetInt64(3));
+            return new InventoryDuplicateRowsWrite(reader.GetInt64(0), reader.GetInt64(1), reader.GetInt64(2));
         }, ct);
 
     /// <summary>
-    /// Numbers the ids that share a key into groups, the largest first, and lets go of the ids whose key no other holds; a group
-    /// of more than <paramref name="maxCopies"/> copies is left for review, its copies unread. The check moves on to reading the
-    /// copies.
+    /// Groups a check's table by a key, over whatever it was grouped by before, in one transaction (<see cref="GroupSql"/>), then
+    /// gives each copy what it holds at the key's properties, fitted as a selection's row keeps values, and then at the check's
+    /// other properties (<paramref name="others"/>) as room allows, so a group shows how its copies differ outside the key; a
+    /// chunk at a time; and each group the values of its first copy. Every property of the key is one the check downloaded.
     /// </summary>
-    public static Task<InventoryDuplicateGrouping> GroupInventoryDuplicatesAsync(OsduDbContext db, short partitionId, long checkId, int maxCopies, int batch, CancellationToken ct)
+    public static Task<InventoryDuplicateGrouping> GroupInventoryDuplicatesAsync(
+        OsduDbContext db, short partitionId, long checkId, IReadOnlyList<DuplicateColumn> keyed, IReadOnlyList<DuplicateColumn> others, IReadOnlyList<string> hashColumns,
+        InventoryDuplicateKeying keying, int maxCopies, int batch, CancellationToken ct)
         => InTransactionAsync(db, async (connection, transaction) =>
         {
-            await using var command = Command(connection, transaction, DuplicateGroupSql, slice: null);
-            AddDuplicateParameters(command, partitionId, checkId);
-            command.Parameters.Add(new SqlParameter("@maxCopies", SqlDbType.Int) { Value = maxCopies });
-            command.Parameters.Add(new SqlParameter("@batch", SqlDbType.Int) { Value = batch });
-            await using var reader = await command.ExecuteReaderAsync(ct).ConfigureAwait(false);
-            if (!await reader.ReadAsync(ct).ConfigureAwait(false))
+            var table = InventoryDuplicateTable.NameOf(checkId);
+            InventoryDuplicateGrouping grouping;
+            await using (var command = Command(connection, transaction, GroupSql(table, hashColumns), slice: null))
             {
-                throw new DeliveryException("The grouping of the duplicate check's keys answered nothing.");
+                AddDuplicateParameters(command, partitionId, checkId);
+                command.Parameters.Add(new SqlParameter("@absent", SqlDbType.Binary, InventoryDuplicateTable.HashLength) { Value = AbsentHash });
+                command.Parameters.Add(new SqlParameter("@maxCopies", SqlDbType.Int) { Value = maxCopies });
+                command.Parameters.Add(new SqlParameter("@batch", SqlDbType.Int) { Value = batch });
+                command.Parameters.Add(new SqlParameter("@keyJson", SqlDbType.NVarChar, -1) { Value = keying.KeyJson });
+                command.Parameters.Add(new SqlParameter("@keyHash", SqlDbType.VarChar, DeliveryModel.SelectionKeyLength) { Value = keying.KeyHash });
+                command.Parameters.Add(new SqlParameter("@actor", SqlDbType.NVarChar, 200) { Value = Truncate(keying.Actor, 200)! });
+                command.Parameters.Add(new SqlParameter("@now", SqlDbType.DateTime2) { Value = keying.NowUtc });
+                await using var reader = await command.ExecuteReaderAsync(ct).ConfigureAwait(false);
+                if (!await reader.ReadAsync(ct).ConfigureAwait(false))
+                {
+                    throw new DeliveryException("The grouping of the duplicate check's table answered nothing.");
+                }
+
+                grouping = new InventoryDuplicateGrouping(reader.GetInt64(0), reader.GetInt64(1), reader.GetInt64(2), reader.GetInt64(3), reader.GetInt64(4));
             }
 
-            return new InventoryDuplicateGrouping(reader.GetInt64(0), reader.GetInt64(1), reader.GetInt64(2));
+            var read = keyed.Concat(others).ToList();
+            long after = 0;
+            while (true)
+            {
+                var chunk = new List<(long Id, string? Values)>();
+                await using (var command = Command(connection, transaction, CopyValuesSql(table, read), slice: null))
+                {
+                    AddDuplicateParameters(command, partitionId, checkId);
+                    command.Parameters.Add(new SqlParameter("@chunk", SqlDbType.Int) { Value = ValuesChunk });
+                    command.Parameters.Add(new SqlParameter("@after", SqlDbType.BigInt) { Value = after });
+                    await using var reader = await command.ExecuteReaderAsync(ct).ConfigureAwait(false);
+                    while (await reader.ReadAsync(ct).ConfigureAwait(false))
+                    {
+                        var held = new Dictionary<string, List<string>>(StringComparer.Ordinal);
+                        var rest = new List<(string Path, List<string> Values)>();
+                        for (var i = 0; i < read.Count; i++)
+                        {
+                            if (!reader.IsDBNull(i + 1) && ValuesOf(reader.GetString(i + 1)) is { Count: > 0 } values)
+                            {
+                                if (i < keyed.Count)
+                                {
+                                    held[read[i].Path] = values;
+                                }
+                                else
+                                {
+                                    rest.Add((read[i].Path, values));
+                                }
+                            }
+                        }
+
+                        chunk.Add((reader.GetInt64(0), CopyValues(held, rest)));
+                    }
+                }
+
+                if (chunk.Count == 0)
+                {
+                    break;
+                }
+
+                after = chunk[^1].Id;
+                await ExecuteAsync(connection, transaction, CopyValuesStageSql, ct).ConfigureAwait(false);
+                using (var values = new DataTable())
+                {
+                    values.Columns.Add("InventoryRecordId", typeof(long));
+                    values.Columns.Add("ValuesJson", typeof(string));
+                    foreach (var (id, json) in chunk)
+                    {
+                        values.Rows.Add(id, Value(json));
+                    }
+
+                    await BulkCopyAsync(connection, transaction, "#CopyValues", values, ct).ConfigureAwait(false);
+                }
+
+                await using var write = Command(connection, transaction, CopyValuesWriteSql, slice: null);
+                AddDuplicateParameters(write, partitionId, checkId);
+                await write.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
+                if (chunk.Count < ValuesChunk)
+                {
+                    break;
+                }
+            }
+
+            await using (var groups = Command(connection, transaction, GroupValuesSql, slice: null))
+            {
+                AddDuplicateParameters(groups, partitionId, checkId);
+                await groups.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
+            }
+
+            return grouping;
         }, ct);
+
+    /// <summary>
+    /// What a copy's row keeps of it: its values at the key fitted as a selection's row keeps values (<see cref="InventorySelectionValues.Fit"/>),
+    /// then each other property the check downloaded, whole, in the check's order, while the row still fits; a property that does
+    /// not fit is left out, and the next is tried.
+    /// </summary>
+    private static string? CopyValues(Dictionary<string, List<string>> keyed, IReadOnlyList<(string Path, List<string> Values)> rest)
+    {
+        var json = InventorySelectionValues.Fit(keyed);
+        foreach (var (path, values) in rest)
+        {
+            keyed[path] = values;
+            var wider = System.Text.Json.JsonSerializer.Serialize(keyed);
+            if (wider.Length <= DeliveryModel.MaxSelectionValuesLength)
+            {
+                json = wider;
+            }
+            else
+            {
+                keyed.Remove(path);
+            }
+        }
+
+        return json;
+    }
+
+    /// <summary>The values a property's column of a check's table holds: a JSON list of text, as the download wrote it; none for anything else.</summary>
+    private static List<string>? ValuesOf(string json)
+    {
+        try
+        {
+            return System.Text.Json.JsonSerializer.Deserialize<List<string?>>(json)?.OfType<string>().ToList();
+        }
+        catch (System.Text.Json.JsonException)
+        {
+            // A column a person changed by hand into something else says nothing a copy's row can show.
+            return null;
+        }
+    }
 
     /// <summary>
     /// Writes how the groups came out over what they held before, in one transaction, and moves the check's counts by the
-    /// difference: the copies pass's rounds (<see cref="DuplicateChoice.None"/>), an operator's choice of the copy a group keeps,
+    /// difference: a pick's rounds (<see cref="DuplicateChoice.None"/>), an operator's choice of the copy a group keeps,
     /// recorded with who chose (<paramref name="chosenBy"/>) and when, and an operator's choice taken back, which leaves the group
     /// to the check's own pick again.
     /// </summary>
@@ -386,7 +681,7 @@ internal static partial class SqlServerLedgerBulk
 
     /// <summary>
     /// Makes a selection of the copies a completed check picked to remove, in one transaction: completed against the build the
-    /// check read, each id beside the copy its group keeps. Returns the selection's number.
+    /// check read, each id beside the copy its group keeps, the key its groups were formed by kept with it. Returns the selection's number.
     /// </summary>
     public static Task<long> CreateInventoryDuplicateSelectionAsync(
         OsduDbContext db, short partitionId, long checkId, string actor, string conditionsKey, string filtersJson, string? columnsJson, DateTime now, CancellationToken ct)

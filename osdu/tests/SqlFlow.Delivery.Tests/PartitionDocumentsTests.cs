@@ -504,6 +504,45 @@ public sealed class PartitionDocumentsTests
         Assert.Equal(FlowId.Of("welldb-welllog", "test"), source.ForPartition("test").First.Id);
     }
 
+    [Fact]
+    public void A_renamed_flow_keeps_the_ledger_of_its_old_name_in_every_partition_with_ledger()
+    {
+        // Renamed from welldb-welllog, serving every registered partition with dev keeping its first ledger: the pipeline
+        // is the new name, and each partition's ledger is the one the old name kept there.
+        var renamed = Delivery("[dev]", name: "welldb-welllog-v140")
+            .Replace("partitions: [dev]\n", "keepLedger: dev\nledger: welldb-welllog\n", StringComparison.Ordinal);
+        var source = _loader.ParseSource(renamed, "flows/welllog.yaml");
+
+        var dev = source.ForPartition("dev").First;
+        Assert.Equal(("welldb-welllog-v140", "welldb-welllog"), (dev.Label, dev.AdoptedLedger));
+        Assert.Equal("welldb-welllog", dev.LedgerName);
+        Assert.Equal(FlowId.Of("welldb-welllog"), dev.Id);
+        var test = source.ForPartition("test").First;
+        Assert.Equal("welldb-welllog@test", test.LedgerName);
+        Assert.Equal(FlowId.Of("welldb-welllog", "test"), test.Id);
+
+        // A flow whose partition is its header's keeps the one ledger of its old name.
+        var bound = Delivery("[dev]", headers: "{ data-partition-id: dev }", name: "welldb-welllog-v140")
+            .Replace("partitions: [dev]\n", "ledger: welldb-welllog\n", StringComparison.Ordinal);
+        Assert.Equal(FlowId.Of("welldb-welllog"), _loader.ParseFlow(bound, "flows/welllog.yaml").Id);
+    }
+
+    [Fact]
+    public void A_ledger_that_names_no_flow_or_would_not_fit_the_ledger_is_refused()
+    {
+        foreach (var blank in new[] { "''", "'   '" })
+        {
+            var yaml = Delivery("[dev]").Replace("partitions: [dev]\n", $"partitions: [dev]\nledger: {blank}\n", StringComparison.Ordinal);
+            var refused = Assert.Throws<FlowValidationException>(() => _loader.ParseFlow(yaml, "flows/welllog.yaml"));
+            Assert.Equal("flows/welllog.yaml: ledger must name the flow whose ledger the flow keeps.", refused.Message);
+        }
+
+        var name = new string('w', FlowDefinition.MaxLedgerNameLength + 1);
+        var tooLong = Delivery("[dev]").Replace("partitions: [dev]\n", $"partitions: [dev]\nledger: {name}\n", StringComparison.Ordinal);
+        var ex = Assert.Throws<FlowValidationException>(() => _loader.ParseFlow(tooLong, "flows/welllog.yaml"));
+        Assert.Contains("flows/welllog.yaml: ledger is 201 characters; the ledger records a flow under at most 200.", ex.Message, StringComparison.Ordinal);
+    }
+
     [Theory]
     [InlineData("partitions: [dev, test]\nkeepLedger: dev\n", "{ }", "mark that partition with keepLedger: true")]
     [InlineData("keepLedger: dev\n", "{ data-partition-id: dev }", "so it keeps one ledger")]

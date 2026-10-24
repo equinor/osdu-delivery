@@ -1556,6 +1556,53 @@ public class SqlLedgerTests : IAsyncLifetime, IDisposable
         Assert.Equal("dev:x:c", (await Ledger.GetRecordAsync(_flow, DeliveryKey.Derive("test", ["c"])))!.ClaimedTargetId);
     }
 
+    [Fact]
+    public async Task A_refused_claim_names_the_owner_s_ledger_and_whether_a_repository_still_declares_it()
+    {
+        // The owner keeps the ledger of a partition of its own: welldb-welllog in test, named welldb-welllog@test.
+        var owner = FlowId.Of("welldb-welllog", "test");
+        await Ledger.RegisterAsync(owner, "test", "welldb-welllog", "welldb-welllog@test");
+        var s1 = Guid.NewGuid();
+        await Ledger.RegisterSubmissionAsync(Submission(s1) with { FlowId = owner, FlowName = "welldb-welllog" });
+        await Ledger.UpsertPendingAsync(owner, [Pending("a", s1) with { FlowId = owner }]);
+        var other = FlowId.Of("test-flow-copy");
+
+        // No repository declares a pipeline that keeps it, as after a rename: the refusal names the ledger as a flow writes it
+        // in ledger:, without the partition the binding adds again.
+        var gone = Assert.Single((await Ledger.UpsertPendingAsync(other, [Pending("a", Guid.NewGuid()) with { FlowId = other }])).Conflicts);
+        Assert.Equal((owner, "welldb-welllog", "welldb-welllog", false), (gone.OwnerFlowId, gone.OwnerFlowName, gone.OwnerLedger, gone.OwnerDeclared));
+        Assert.Contains($"already claimed by flow 'welldb-welllog' ({owner:D}), which no repository declares any more", gone.Describe(), StringComparison.Ordinal);
+        Assert.Contains("keep its ledger with ledger: welldb-welllog in this flow's document", gone.Describe(), StringComparison.Ordinal);
+
+        // A pipeline a repository declares keeps it: two flows want one id, and the refusal says only how to part them.
+        await using (var context = _db.CreateDbContext())
+        {
+            context.DeliveryInterfaces.Add(new Data.DeliveryInterface
+            {
+                Id = Guid.NewGuid(),
+                RepoId = Guid.NewGuid(),
+                FlowName = "welldb-welllog",
+                Partition = "test",
+                LedgerFlowId = owner,
+                LedgerName = "welldb-welllog@test",
+                Route = "storage",
+                MappingReference = "Thing@1.0.0",
+                RecordObject = "OsduData.arc.WellLog",
+                RelativePath = "flows/welldb-welllog.yaml",
+                Active = true,
+                FirstSeenUtc = Now,
+                LastSeenUtc = Now,
+            });
+            await context.SaveChangesAsync();
+        }
+
+        var live = Assert.Single((await Ledger.UpsertPendingAsync(other, [Pending("a", Guid.NewGuid()) with { FlowId = other }])).Conflicts);
+        Assert.True(live.OwnerDeclared);
+        Assert.Equal(
+            $"OSDU id dev:x:a is already claimed by flow 'welldb-welllog' ({owner:D}), and one OSDU record belongs to one flow. Deliver this flow to another data partition, or give its mapping a dataset.system or key that yields other OSDU ids.",
+            live.Describe());
+    }
+
     public void Dispose()
     {
         _db.Dispose();

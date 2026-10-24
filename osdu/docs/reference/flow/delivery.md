@@ -209,13 +209,14 @@ schedule:
 | Key | Type | Required | Meaning |
 | --- | --- | --- | --- |
 | `flowType` | string | yes | `delivery`. |
-| `name` | string | yes | The flow's pipeline in the catalog, its schedules and its run history. In the single form the ledger keeps the flow under this name, at most 200 characters ([ledger](../concepts/ledger.md)). |
+| `name` | string | yes | The flow's pipeline in the catalog, its schedules and its run history. In the single form the ledger keeps the flow under this name, at most 200 characters, unless `ledger` names another ([ledger](../concepts/ledger.md)). |
 | `batch` | string | no | The platform batch the flow belongs to, read by SQLFlow ([flow overview](../../../../sqlflow/docs/reference/flow/overview.md)). |
 | `description` | string | no | Free text. |
 | `schedule`, `mode`, `lifecycle` | | no | SQLFlow's envelope keys, read by the platform ([schedule](../../../../sqlflow/docs/reference/flow/schedule.md), [flow overview](../../../../sqlflow/docs/reference/flow/overview.md)). See [Schedules](#schedules) for what a delivery flow adds. |
 | `parameters` | map | no | The flow's own run parameters. See [Parameters](#parameters). |
 | `partitions` | list | no | The OSDU data partitions the flow may deliver to. See [Partitions](#partitions). |
 | `keepLedger` | string | no | For a flow that serves every registered partition: the partition that keeps the ledger the flow kept before. See [Partitions](#partitions). |
+| `ledger` | string | no | In the single form, the name of an existing ledger the flow keeps instead of its own: a renamed flow names its old name, so its records carry on. See [Renaming a flow](interfaces.md#renaming-a-flow). |
 | `source` | map | yes | Where the records come from. See [source](#source). |
 | `render` | map | yes | The pinned mapping and what it renders with. See [render](#render). |
 | `change` | map | no | How a change is decided. See [change](#change). |

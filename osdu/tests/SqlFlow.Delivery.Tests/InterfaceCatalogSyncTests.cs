@@ -3,6 +3,7 @@ using Microsoft.EntityFrameworkCore;
 using SqlFlow.Delivery.Catalog;
 using SqlFlow.Delivery.Documents;
 using SqlFlow.Delivery.Identity;
+using SqlFlow.Delivery.Ledger;
 using Xunit;
 
 namespace SqlFlow.Delivery.Tests;
@@ -11,7 +12,7 @@ namespace SqlFlow.Delivery.Tests;
 /// The read model of sources and interfaces (osdu/docs/reference/flow/interfaces.md, The interface read model): the
 /// repository sync describes every interface of every delivery flow with the ledger identity it keeps, the route it
 /// goes by and the kind its mapping fills; an interface the repository no longer declares stays findable as inactive;
-/// and a ledger kept by two flows is reported.
+/// a ledger kept by two flows is reported, and so is a flow renamed while the ledger of its old name holds its claims.
 /// </summary>
 [Collection(SqlServerSuite.Name)]
 [Trait("Category", "Integration")]
@@ -219,4 +220,59 @@ public sealed class InterfaceCatalogSyncTests : IDisposable
         Assert.DoesNotContain(rows, r => r.FlowName == "broken");
         Assert.DoesNotContain(rows, r => r.Interface == "cores");
     }
+
+    [Fact]
+    public async Task A_flow_renamed_in_its_file_is_reported_while_the_ledger_of_its_old_name_holds_the_ids_its_records_claimed()
+    {
+        const string OldName = "welldb-welllog-03-header-delivery";
+        const string NewName = OldName + "-v140";
+        const string Document = "flows/welldb-welllog-03-header-delivery.yaml";
+        var flow = File.ReadAllText(Samples.Flow).ReplaceLineEndings("\n");
+        Write(Document, flow);
+        Assert.Empty((await SyncAsync()).Warnings);
+
+        // Runs of the flow claimed an OSDU id under its name. Renamed, it would start an empty ledger and hold that record.
+        var ledger = _module.Ledger(new TestClock());
+        var old = FlowId.Of(OldName);
+        await ledger.RegisterAsync(old, "dev", OldName);
+        await ledger.UpsertPendingAsync(old, [Claiming(old, "a")]);
+        var renamed = flow.Replace($"name: {OldName}\n", $"name: {NewName}\n", StringComparison.Ordinal);
+        Write(Document, renamed);
+        var warning = Assert.Single((await SyncAsync()).Warnings);
+        Assert.StartsWith(
+            $"{Document}: flow '{NewName}' was declared as '{OldName}' before, and a flow keeps its ledger under its name, so it starts an empty ledger in partition 'dev' "
+            + $"while the records '{OldName}' delivered stay in '{OldName}' with the OSDU ids they claimed.",
+            warning,
+            StringComparison.Ordinal);
+        Assert.Contains($"Keep the ledger with ledger: {OldName}, and the records carry on", warning, StringComparison.Ordinal);
+
+        // Keeping the old ledger with ledger: quiets it, and the flow's new name describes that ledger.
+        Write(Document, renamed.Replace($"name: {NewName}\n", $"name: {NewName}\nledger: {OldName}\n", StringComparison.Ordinal));
+        Assert.Empty((await SyncAsync()).Warnings);
+        Assert.Equal((NewName, old), (await RowsAsync()).Where(r => r.Active).Select(r => (r.FlowName, r.LedgerFlowId)).Single());
+
+        // Renamed again without it, the warning is back until the new ledger claims an id of its own, which says it is meant.
+        Write(Document, renamed);
+        Assert.Single((await SyncAsync()).Warnings);
+        var fresh = FlowId.Of(NewName);
+        await ledger.RegisterAsync(fresh, "dev", NewName);
+        await ledger.UpsertPendingAsync(fresh, [Claiming(fresh, "b")]);
+        Assert.Empty((await SyncAsync()).Warnings);
+    }
+
+    /// <summary>Work for a record of <paramref name="flow"/> that queues a document, which claims the record's OSDU id.</summary>
+    private static RecordState Claiming(Guid flow, string key) => new()
+    {
+        DeliveryKey = DeliveryKey.Derive("test", [key]),
+        FlowId = flow,
+        SourceKey = key,
+        MappingName = "WellLog",
+        TargetId = "dev:work-product-component--WellLog:" + key,
+        LastSubmissionId = Guid.NewGuid(),
+        PendingDocumentRef = "0:0:10",
+        PendingRenderContext = "{}",
+        PendingSourceFingerprint = "fp",
+        PendingMetadataHash = "mh",
+        PendingMetadata = true,
+    };
 }

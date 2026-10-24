@@ -26,9 +26,10 @@ sourceRefs:
 
 One group of ids a [duplicate check](inventory-duplicate-check.md) found sharing a key
 ([Which copy is kept](../flow/inventory-duplicates.md#which-copy-is-kept)): how many copies, what they share, how it came out and why,
-the copy it keeps, and the operator who chose it. The check's grouping writes every group at once, the largest first; the
-copies pass writes how each came out, a round of groups at a time; an operator's choice rewrites one. Rows are deleted
-with a failed check and when the check retires.
+the copy it keeps, and the operator who chose it. The check's grouping writes every group at once, the largest first,
+from the check's own table, and writes them afresh when the check is grouped again by another key; a pick writes how each
+came out, a round of groups at a time; an operator's choice rewrites one. Rows are deleted with a failed check and when
+the check retires.
 
 ## Columns
 
@@ -39,8 +40,8 @@ with a failed check and when the check retires.
 | `GroupNumber` | `int` | no | The group's number within its check: the group of the most copies first, groups of as many copies in the order of their first id. |
 | `KeyHash` | `binary(32)` | no | The key its copies share, as each copy's row keeps it. |
 | `Copies` | `int` | no | How many copies share the key. |
-| `ValuesJson` | `nvarchar(4000)` | yes | What its first copy holds at each property of the key, property to values, as JSON cut to 4,000 characters. |
-| `Outcome` | `nvarchar(16)` | no | `pending` (its copies not read yet), `picked` (the check picked the copy to keep), `chosen` (an operator did), `review` (an operator has to look at it) or `settled` (storage holds one copy or none). |
+| `ValuesJson` | `nvarchar(4000)` | yes | What its first copy holds, as that copy's row keeps it: the key's properties first, property to values, as JSON within 4,000 characters. |
+| `Outcome` | `nvarchar(16)` | no | `pending` (waiting to be picked), `picked` (the check picked the copy to keep), `chosen` (an operator did), `review` (an operator has to look at it, or too broad to pick from) or `settled` (storage holds one copy or none). |
 | `Reason` | `nvarchar(1000)` | yes | Why it came out so, in a line: the copy kept and what it holds, or what left it for review. |
 | `KeptInventoryRecordId` | `bigint` | yes | The inventory row of the copy it keeps; null while none is decided. |
 | `ChosenBy` | `nvarchar(200)` | yes | The operator who chose the copy kept, for a group an operator decided. |
@@ -50,12 +51,12 @@ with a failed check and when the check retires.
 
 | Index | Columns | Kind | Filter | Includes | What it serves |
 | --- | --- | --- | --- | --- | --- |
-| `PK_InventoryDuplicateGroup` | `PartitionId`, `InventoryDuplicateCheckId`, `GroupNumber` | primary key | none | none | A check's groups in order, the largest first: the list pages through them, and the copies pass reads them so. |
-| `IX_InventoryDuplicateGroup_PartitionId_InventoryDuplicateCheckId_Outcome_GroupNumber` | `PartitionId`, `InventoryDuplicateCheckId`, `Outcome`, `GroupNumber` | index | none | none | The groups of one outcome in order: the list's tabs page through them, the copies pass finds the pending ones, and the tabs count each outcome. |
+| `PK_InventoryDuplicateGroup` | `PartitionId`, `InventoryDuplicateCheckId`, `GroupNumber` | primary key | none | none | A check's groups in order, the largest first: the list pages through them, and a pick reads them so. |
+| `IX_InventoryDuplicateGroup_PartitionId_InventoryDuplicateCheckId_Outcome_GroupNumber` | `PartitionId`, `InventoryDuplicateCheckId`, `Outcome`, `GroupNumber` | index | none | none | The groups of one outcome in order: the list's tabs page through them, a pick finds the pending ones, and the tabs count each outcome. |
 
 ## Written and read by
 
-- **Written** by the check's grouping and copies pass (`SqlServerLedgerBulk.InventoryDuplicates.cs`), and by an
+- **Written** by the check's grouping and its picks (`SqlServerLedgerBulk.InventoryDuplicates.cs`), and by an
   operator's choice of the copy a group keeps, or a choice taken back, through the same statement, under an update lock
   on the group.
 - **Read** by the Duplicates tab and the API, the CSV export of a check, and the making of a selection of its picks,

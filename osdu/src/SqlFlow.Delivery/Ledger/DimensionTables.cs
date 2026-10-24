@@ -307,9 +307,9 @@ public static class DimensionTables
     /// <summary>An identifier in brackets, a closing bracket inside it doubled.</summary>
     internal static string Quoted(string identifier) => "[" + identifier.Replace("]", "]]", StringComparison.Ordinal) + "]";
 
-    private static SqlDataType Type(string name) => new() { BaseType = name };
+    private static SqlDataType Type(string name) => RunTimeTables.Type(name);
 
-    private static SqlDataType Text(int length) => new() { BaseType = "nvarchar", Length = length };
+    private static SqlDataType Text(int length) => RunTimeTables.Text(length);
 
     private static string Plain(string text)
     {

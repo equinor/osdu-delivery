@@ -9,6 +9,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **A renamed delivery flow keeps its records.** Write its old name as `ledger:` at the top of the renamed flow (an
+  interface of a renamed source writes `<old name>/<interface>`), and its records carry on with their history and their
+  OSDU ids; renamed without it, a flow starts an empty ledger, so the repository sync now warns of the rename and each
+  record held for an id the old name claimed says which `ledger:` to write
+  ([Renaming a flow](osdu/docs/reference/flow/interfaces.md#renaming-a-flow)).
+
 - **The assistant links every OSDU id it names to the explorer.** An OSDU id in an answer (a record's, its parent's, a
   cached record's, an id a document refers to) is a link that opens OSDU Delivery's explorer on that record, in its
   partition, from the GUI's chat, Slack or a desktop client
@@ -21,11 +27,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   [a submission's page](osdu/docs/reference/concepts/gui.md#a-submissions-page)).
 
 - **An inventory finds the records OSDU holds more than once.** On an inventory's new **Duplicates** tab, build a key by
-  clicking, in one of its records shown as JSON, the values the copies of one record hold alike (as many as you need,
-  each compared exactly, ignoring case, or loose) and **Find duplicates**: the copies are grouped, the one holding the most values is kept, and the others are
-  picked to remove, with the groups a rule cannot decide left for you to choose. Compare any two copies side by side,
-  keep another copy, then select the copies to remove and remove them from the Ids tab; a copy is removed only while the
-  copy its group keeps is still in OSDU ([finding duplicate records](osdu/docs/reference/flow/inventory-duplicates.md)).
+  clicking, in one of its records shown as JSON, the values the copies of one record hold equal, and **Find duplicates**:
+  those properties of every id are downloaded, a search per 1,000 ids, and grouped at once by any key of them, with the
+  groups' sizes to tell a key too broad. **Pick the copies to keep** then reads each group's copies: the one holding the
+  most values is kept and the others are picked to remove, with the groups a rule cannot decide left for you to choose.
+  Compare any two copies side by side, keep another copy, then select the copies to remove and remove them from the Ids
+  tab; a copy is removed only while the copy its group keeps is still in OSDU
+  ([finding duplicate records](osdu/docs/reference/flow/inventory-duplicates.md)).
 
 - **A delivery's work location may name the deployment's storage.** `source.work` may open with a reference,
   `work: ${env:LANDING_URL}/.work/welllog/{logSource}`, which each run resolves with the values the control plane

@@ -1157,13 +1157,9 @@ internal static class SqlServerDimensionStore
         SqlConnection connection, short partitionId, int dimensionId, DimensionTableSpec declared, bool rename, CancellationToken ct)
     {
         var (table, renamed) = await SettleColumnsAsync(connection, partitionId, dimensionId, declared, rename, ct).ConfigureAwait(false);
-        var target = new RelationalObject { Database = connection.Database, Schema = DeliveryModel.SchemaName, Name = table.Name };
         try
         {
-            var plan = await new SchemaSyncService(new SqlServerCatalogReader())
-                .PlanAsync(connection, target, DimensionTables.Desired(table), DimensionTables.KeyColumns, ct).ConfigureAwait(false);
-            var batch = EvolutionDdlGenerator.Generate(target, plan, allowTableRewrite: false);
-            await SqlServerSchemaProvider.ApplyDdlAsync(connection, batch, new SchemaApplyOptions(), ct).ConfigureAwait(false);
+            var (plan, changed) = await RunTimeTables.EvolveAsync(connection, table.Name, DimensionTables.Desired(table), DimensionTables.KeyColumns, ct).ConfigureAwait(false);
             await using (var indexes = new SqlCommand(DimensionTables.IndexSql(table), connection) { CommandTimeout = CommandTimeoutSeconds })
             {
                 await indexes.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
@@ -1194,7 +1190,7 @@ internal static class SqlServerDimensionStore
                 retired.AddRange(extra.Where(names.Contains));
             }
 
-            return new PreparedTable(table, DimensionTables.ApplySql(table, retired), batch.HasChanges || renamed);
+            return new PreparedTable(table, DimensionTables.ApplySql(table, retired), changed || renamed);
         }
         catch (Exception ex) when (ex is SqlException or SqlFlowException)
         {
@@ -1227,11 +1223,7 @@ internal static class SqlServerDimensionStore
 
             if (!exists)
             {
-                var target = new RelationalObject { Database = connection.Database, Schema = DeliveryModel.SchemaName, Name = table.Name };
-                var plan = await new SchemaSyncService(new SqlServerCatalogReader())
-                    .PlanAsync(connection, target, DimensionTables.Desired(table), DimensionTables.KeyColumns, ct).ConfigureAwait(false);
-                await SqlServerSchemaProvider.ApplyDdlAsync(connection, EvolutionDdlGenerator.Generate(target, plan, allowTableRewrite: false), new SchemaApplyOptions(), ct)
-                    .ConfigureAwait(false);
+                await RunTimeTables.EvolveAsync(connection, table.Name, DimensionTables.Desired(table), DimensionTables.KeyColumns, ct).ConfigureAwait(false);
                 await using var indexes = new SqlCommand(DimensionTables.IndexSql(table), connection) { CommandTimeout = CommandTimeoutSeconds };
                 await indexes.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
                 return;

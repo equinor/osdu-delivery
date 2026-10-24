@@ -421,10 +421,11 @@ picked records, and the removal runs that wrote to its ledger.
   through the removal dialog. An id opens as OSDU holds it in the workbench's bottom panel. **Filter** selects the ids
   by what OSDU holds, as the explorer's conditions: the tabs then count the matching ids of each finding, the grid lists
   them with the values the conditions ask, and every matching id of a removable finding can be removed at once. The
-  **Duplicates** tab finds the records OSDU holds more than once: a key of the properties their copies hold alike, picked
-  by clicking the values of one of its records shown as JSON, **Find duplicates**, the groups by outcome with the copy each keeps and
-  why, **Keep** and **Compare** on their copies, and **Select the copies to remove**, which opens them on the Ids tab for a
-  removal. See [inventory flows](../flow/inventory.md),
+  **Duplicates** tab finds the records OSDU holds more than once: a key of the properties their copies hold equal, picked
+  by clicking the values of one of its records shown as JSON; **Find duplicates**, which downloads them for every id and
+  groups them; a chip for each property downloaded, which groups again at once by a click; the groups by size and outcome;
+  **Pick the copies to keep**, which reads each group's copies; **Keep** and **Compare** on them; and **Select the copies to
+  remove**, which opens them on the Ids tab for a removal. See [inventory flows](../flow/inventory.md),
   [selecting ids by what OSDU holds](../flow/inventory-selections.md) and
   [finding duplicate records](../flow/inventory-duplicates.md).
 - **Dimensions**: a strip of facts (dimensions, values, what needs a look, when last built), then each dimension flow's

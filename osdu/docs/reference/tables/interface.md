@@ -22,6 +22,7 @@ sourceRefs:
   - osdu/src/SqlFlow.Delivery/Catalog/DeliveryInterfaceCatalog.cs
   - osdu/src/SqlFlow.Delivery/Ordering/OrderCatalog.cs
   - osdu/src/SqlFlow.Delivery.ControlPlane/Background/InterfaceCatalogBackfillService.cs
+  - osdu/src/SqlFlow.Delivery/Ledger/SqlServerLedgerBulk.cs
 ---
 
 # osdu.Interface: each interface of a delivery flow as the repository sync found it, and the ledger it keeps
@@ -71,5 +72,7 @@ Rows are kept: an interface the repository no longer declares is marked inactive
 
 - **Written** by the repository sync (`DeliveryInterfaceCatalog.cs`), and by the control plane's backfill of rows a
   sync wrote before a column existed (`InterfaceCatalogBackfillService.cs`).
-- **Read** by the OSDU order (`OrderCatalog.cs`), the cache's retention, the pipeline and partition endpoints, and every
-  page that resolves a ledger identity to its pipeline.
+- **Read** by the OSDU order (`OrderCatalog.cs`), the cache's retention, the pipeline and partition endpoints, every
+  page that resolves a ledger identity to its pipeline, the repository sync's warning about a renamed flow, and the
+  intake's claim check (`SqlServerLedgerBulk.cs`), which asks whether a pipeline still keeps the ledger of the record
+  that claimed an id.

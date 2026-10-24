@@ -1974,6 +1974,9 @@ namespace SqlFlow.Delivery.Data.Migrations
                         .HasMaxLength(200)
                         .HasColumnType("nvarchar(200)");
 
+                    b.Property<string>("AttributesJson")
+                        .HasColumnType("nvarchar(max)");
+
                     b.Property<long?>("BuildRunId")
                         .HasColumnType("bigint");
 
@@ -2027,6 +2030,13 @@ namespace SqlFlow.Delivery.Data.Migrations
                     b.Property<long>("Keyed")
                         .HasColumnType("bigint");
 
+                    b.Property<string>("KeyedBy")
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)");
+
+                    b.Property<DateTime?>("KeyedUtc")
+                        .HasColumnType("datetime2");
+
                     b.Property<string>("NotesJson")
                         .HasColumnType("nvarchar(max)");
 
@@ -2036,6 +2046,9 @@ namespace SqlFlow.Delivery.Data.Migrations
                     b.Property<string>("Phase")
                         .HasMaxLength(16)
                         .HasColumnType("nvarchar(16)");
+
+                    b.Property<DateTime?>("PickedUtc")
+                        .HasColumnType("datetime2");
 
                     b.Property<long>("Requests")
                         .HasColumnType("bigint");
@@ -2057,6 +2070,10 @@ namespace SqlFlow.Delivery.Data.Migrations
                         .HasMaxLength(16)
                         .HasColumnType("nvarchar(16)");
 
+                    b.Property<string>("TableName")
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)");
+
                     b.Property<long>("ToRemove")
                         .HasColumnType("bigint");
 
@@ -2068,8 +2085,6 @@ namespace SqlFlow.Delivery.Data.Migrations
                     b.HasIndex("PartitionId", "CreatedUtc");
 
                     b.HasIndex("PartitionId", "InventoryId", "InventoryDuplicateCheckId");
-
-                    b.HasIndex("PartitionId", "InventoryId", "KeyHash", "InventoryDuplicateCheckId");
 
                     b.ToTable("InventoryDuplicateCheck", "osdu");
                 });
@@ -2173,8 +2188,6 @@ namespace SqlFlow.Delivery.Data.Migrations
                         .HasColumnType("nvarchar(4000)");
 
                     b.HasKey("PartitionId", "InventoryDuplicateCheckId", "InventoryRecordId");
-
-                    b.HasIndex("PartitionId", "InventoryDuplicateCheckId", "KeyHash");
 
                     b.HasIndex("PartitionId", "InventoryDuplicateCheckId", "GroupNumber", "InventoryRecordId");
 
@@ -2611,6 +2624,9 @@ namespace SqlFlow.Delivery.Data.Migrations
 
                     b.Property<long?>("DuplicateCheckId")
                         .HasColumnType("bigint");
+
+                    b.Property<string>("DuplicateKeyJson")
+                        .HasColumnType("nvarchar(max)");
 
                     b.Property<string>("Error")
                         .HasMaxLength(4000)

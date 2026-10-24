@@ -123,17 +123,23 @@ internal static partial class SqlServerLedgerBulk
     // repeats its predicate, and a plan that went looking for the first match any other way would read the whole table
     // for every id nobody has claimed. The unique index is also what settles a race between two flows' intakes; this read
     // names the owner, from the owner's last submission, which its own ledger keeps under the owner's partition: one seek
-    // of the submission table's key.
+    // of the submission table's key. The owner's ledger is named from the directory with its partition, and whether a
+    // repository still declares a pipeline that keeps it from the interface read model, so a hold over a ledger left by a
+    // renamed flow can say how to keep it (one seek each, by their keys and IX_Interface_LedgerFlowId).
     private const string RefuseClaimedSql = $$"""
         DELETE s
         OUTPUT deleted.[DeliveryKey], deleted.[TargetId], t.[FlowId], sub.[FlowName],
-            CASE WHEN t.[FlowId] = deleted.[FlowId] THEN t.[DeliveryKey] END, CASE WHEN t.[FlowId] = deleted.[FlowId] THEN t.[SourceKey] END
+            CASE WHEN t.[FlowId] = deleted.[FlowId] THEN t.[DeliveryKey] END, CASE WHEN t.[FlowId] = deleted.[FlowId] THEN t.[SourceKey] END,
+            l.[LedgerName], lp.[Name], CAST(CASE WHEN d.[Declared] IS NULL THEN 0 ELSE 1 END AS bit)
         FROM #PendingStage AS s
         INNER JOIN [osdu].[Record] AS t WITH (FORCESEEK ({{ClaimIndex}} ([ClaimedTargetId])))
             ON t.[ClaimedTargetId] = s.[TargetId] COLLATE Latin1_General_100_BIN2
             AND t.[ClaimedTargetId] IS NOT NULL
             AND (t.[FlowId] <> s.[FlowId] OR t.[DeliveryKey] <> s.[DeliveryKey])
         LEFT JOIN [osdu].[Submission] AS sub ON sub.[PartitionId] = t.[PartitionId] AND sub.[SubmissionId] = t.[LastSubmissionId]
+        LEFT JOIN [osdu].[Ledger] AS l ON l.[FlowId] = t.[FlowId]
+        LEFT JOIN [osdu].[LedgerPartition] AS lp ON lp.[PartitionId] = l.[PartitionId]
+        OUTER APPLY (SELECT TOP (1) 1 AS [Declared] FROM [osdu].[Interface] AS i WHERE i.[LedgerFlowId] = t.[FlowId] AND i.[Active] = 1) AS d
         WHERE s.[Slice] = @slice AND s.[TargetId] IS NOT NULL;
         """;
 
@@ -811,7 +817,11 @@ internal static partial class SqlServerLedgerBulk
                 reader.GetGuid(2),
                 reader.IsDBNull(3) ? null : reader.GetString(3),
                 reader.IsDBNull(4) ? null : new DeliveryKey(reader.GetGuid(4)),
-                reader.IsDBNull(5) ? null : reader.GetString(5)));
+                reader.IsDBNull(5) ? null : reader.GetString(5))
+            {
+                OwnerLedger = reader.IsDBNull(6) ? null : LedgerEntry.OwnName(reader.GetString(6), reader.IsDBNull(7) ? null : reader.GetString(7)),
+                OwnerDeclared = reader.GetBoolean(8),
+            });
         }
 
         return conflicts;

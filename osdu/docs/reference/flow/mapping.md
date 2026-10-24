@@ -360,7 +360,7 @@ the ledger: under the default `idFrom` they are delivered under new ids, beside 
 `idFrom: key` a new record whose id an earlier record of the ledger claimed is held (`OSDU id <id> is already claimed by
 ...`). Either way OSDU never gains a record the ledger does not name. To move delivered records to new ids, remove them
 from OSDU at the `record` scope, then deliver the rows
-under a ledger of their own (an [interface's](interfaces.md) `ledger:`) or delete them from the ledger with the removal
+under a ledger of their own (`ledger:`, see [Ledger identity](interfaces.md#ledger-identity)) or delete them from the ledger with the removal
 ([removal and reversal](../concepts/removal-and-reversal.md)). Choose the id form before anything is delivered.
 
 ## The record tree

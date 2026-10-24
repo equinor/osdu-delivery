@@ -327,6 +327,10 @@ each flow keeps its own ledger over them.
 - **One OSDU record, one record of the ledger.** A record claims its OSDU id the first time it queues a document
   (`ClaimedTargetId`, unique across the ledger). Work whose id another record has claimed is held and nothing is sent:
   `OSDU id <id> is already claimed by flow '<name>' (<id>), and one OSDU record belongs to one flow. Deliver this flow to another data partition, or give its mapping a dataset.system or key that yields other OSDU ids.`
+  When no repository declares a pipeline that keeps the claiming flow's ledger any more, as after a rename, the hold says
+  so and names that ledger as a renamed flow keeps it with `ledger:`
+  ([Renaming a flow](../flow/interfaces.md#renaming-a-flow)):
+  `OSDU id <id> is already claimed by flow '<name>' (<id>), which no repository declares any more, ... keep its ledger with ledger: <name> in this flow's document ...`.
   Within one flow, two keys that give one id (possible with `dataset.idFrom: key`, or after a mapping's `dataset.system` or
   key changed) are refused the same way, naming the record that holds it.
 - **A record keeps the id it claimed.** A render that gives another id than the one claimed is held, naming both, and

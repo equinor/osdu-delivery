@@ -59,6 +59,9 @@ internal sealed class FlowYaml
 
     // For a flow that leaves its partitions to the registry: the partition that keeps the ledger it kept before (keepLedger: dev).
     public string? KeepLedger { get; set; }
+
+    // For the single form: the earlier flow whose ledger this one keeps instead of its own (ledger: <old name>), as a renamed flow does.
+    public string? Ledger { get; set; }
 }
 
 /// <summary>
