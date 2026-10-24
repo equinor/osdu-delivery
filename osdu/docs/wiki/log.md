@@ -313,3 +313,15 @@ for the worker to support both names, in the C# code alone, as a temporary worka
 
 Amended [0026](decisions/0026-one-database-connection.md): the node's fallback moved from the rejected alternatives
 into the decision, with why it was first rejected and what changed.
+
+## [2026-10-24] ingest | A delivery is spread over nodes, a part per node, decision 0025 amended
+
+Source: the human's dev pool after the slice runs landed, where one delivery's nine runs shared three workers four to
+a worker, and their direction in the conversation that followed: name each setting for what it is, take the rows to
+process and the nodes the user wants, and compute the rest, with a division that loses no record. Read with SQLFlow's
+dispatcher and replica target (`sqlflow/src/SqlFlow.Dispatch/DispatchState.cs`, `sqlflow/src/SqlFlow.Catalog/ScaleTargetStore.cs`)
+and the module's key cut (`osdu/src/SqlFlow.Delivery/Source/KeySlices.cs`).
+
+Amended [0025](decisions/0025-parallelism-and-default-fan-out.md): `parallelism.nodes` and a part per
+`minRowsPerNode` rows, each part on a node of its own through a new SQLFlow extension point, the first run only
+coordinating, the keys renamed for what they are, and why the split cannot lose a row.

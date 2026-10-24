@@ -75,9 +75,9 @@ public sealed class DdmsSourceTests : IDisposable
             reliability:
               retry: { attempts: 1 }
             parallelism:
-              concurrency: 1
-              renderers: 1
-              interfaces: 1
+              recordsAtOnce: 1
+              renderThreads: 1
+              interfacesAtOnce: 1
             interfaces:
               trajectories:
                 record: { object: {{TrajectoryTable}}, key: [source_project, survey_id], primaryKey: RecId }

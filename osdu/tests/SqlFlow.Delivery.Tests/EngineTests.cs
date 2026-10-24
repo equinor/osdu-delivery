@@ -841,7 +841,7 @@ public class DeliverRunScopeTests
         Assert.Contains("every unfinished delivery of the ledger left", Refused(new DeliveryRunPayload { RecordKeys = [Guid.NewGuid()] }), StringComparison.Ordinal);
         Assert.Contains("an undo sends nothing the flow renders", Refused(new DeliveryRunPayload { Redeliver = RedeliverScopes.All }), StringComparison.Ordinal);
         Assert.Contains("an undo renders nothing", Refused(new DeliveryRunPayload { Rerender = true }), StringComparison.Ordinal);
-        Assert.Contains("only a run of a fan-out plans slices", Refused(new DeliveryRunPayload { Slices = [0] }), StringComparison.Ordinal);
+        Assert.Contains("only a part of a split delivery names key slices", Refused(new DeliveryRunPayload { Slices = [0] }), StringComparison.Ordinal);
     }
 
     [Fact]
@@ -853,7 +853,7 @@ public class DeliverRunScopeTests
         slices.Validate(DeliveryOperations.Deliver);
         slices.Validate(DeliveryOperations.Intake);
         Assert.Contains(
-            "only a run of a fan-out plans slices",
+            "only a part of a split delivery names key slices",
             Assert.Throws<SqlFlowException>(() => slices.Validate(DeliveryOperations.Drain)).Message,
             StringComparison.Ordinal);
 

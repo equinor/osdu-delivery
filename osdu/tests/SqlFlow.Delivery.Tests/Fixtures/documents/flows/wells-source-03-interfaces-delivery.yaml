@@ -51,8 +51,7 @@ reliability:
   leaseSeconds: 300
 
 parallelism:
-  concurrency: 8
-  batchSize: 50
+  recordsAtOnce: 8
 
 interfaces:
   # The master data the logs point at, delivered through the storage service: no files, so nothing is streamed.

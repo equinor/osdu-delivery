@@ -49,7 +49,7 @@ public sealed class InterfaceDocumentsTests
         reliability:
           retry: { attempts: 5 }
         parallelism:
-          concurrency: 4
+          recordsAtOnce: 4
         failWhen:
           failedPercent: 30
         {{shared}}
@@ -126,7 +126,7 @@ public sealed class InterfaceDocumentsTests
             Assert.Null(flow.Source.SystemColumns.Deleted);
             Assert.Equal(500, flow.Source.Incremental.PageSize);
             Assert.Equal("dev", flow.Render.Parameters["dataPartition"]);
-            Assert.Equal(4, flow.Parallelism.Concurrency);
+            Assert.Equal(4, flow.Parallelism.RecordsAtOnce);
             Assert.Equal(5, flow.Reliability.Retry.Attempts);
             Assert.Equal(30, flow.FailWhen.FailedPercent);
             Assert.Equal(50, flow.Target.ProtocolOptions.BatchSize);
@@ -172,7 +172,7 @@ public sealed class InterfaceDocumentsTests
                 render: { cacheVersion: pinned-7, parameters: { region: south, source: petrel } }
                 change: { onUnchanged: deliver }
                 reliability: { retry: { baseDelayMs: 100 } }
-                parallelism: { concurrency: 2 }
+                parallelism: { recordsAtOnce: 2 }
                 failWhen: { consecutiveFailures: 10, outageFailures: 0 }
                 protocolOptions: { batchSize: 10, uploadHeaders: { x-extra: yes }, preserveDataKeys: [Datasets] }
                 verify: { reconcile: true }
@@ -192,7 +192,7 @@ public sealed class InterfaceDocumentsTests
         Assert.Equal("dev", wells.Render.Parameters["dataPartition"]);
         Assert.Equal("petrel", wells.Render.Parameters["source"]);
         Assert.Equal(UnchangedAction.Deliver, wells.Change.OnUnchanged);
-        Assert.Equal(2, wells.Parallelism.Concurrency);
+        Assert.Equal(2, wells.Parallelism.RecordsAtOnce);
         Assert.Equal(5, wells.Reliability.Retry.Attempts);
         Assert.Equal(100, wells.Reliability.Retry.BaseDelayMs);
         Assert.Equal(30, wells.FailWhen.FailedPercent);
@@ -366,9 +366,10 @@ public sealed class InterfaceDocumentsTests
     [InlineData("interfaces:\n  wells: { record: { object: A.b.Well, key: [uwi] } }", "'interfaces.wells.mapping' is required")]
     [InlineData("interfaces:\n  wells: { mapping: Well@1.2.0 }", "'interfaces.wells.record' is required")]
     [InlineData("interfaces:\n  wells: { record: { object: A.b.Well }, mapping: Well@1.2.0 }", "interfaces.wells.record.key must name the record table's key columns")]
-    [InlineData("interfaces:\n  wells: { record: { object: A.b.Well, key: [uwi] }, mapping: Well@1.2.0, parallelism: { interfaces: 2 } }", "interfaces.wells.parallelism.interfaces is the source's setting")]
-    [InlineData("interfaces:\n  wells: { record: { object: A.b.Well, key: [uwi] }, mapping: Well@1.2.0, reliability: { parallelInterfaces: 2 } }", "interfaces.wells.reliability.parallelInterfaces is not a setting here any more: how many interfaces run at once is the source's setting, parallelism.interfaces")]
-    [InlineData("interfaces:\n  wells: { record: { object: A.b.Well, key: [uwi] }, mapping: Well@1.2.0, reliability: { fanOut: 2 } }", "interfaces.wells.reliability.fanOut is now interfaces.wells.parallelism.fanOut")]
+    [InlineData("interfaces:\n  wells: { record: { object: A.b.Well, key: [uwi] }, mapping: Well@1.2.0, parallelism: { interfacesAtOnce: 2 } }", "interfaces.wells.parallelism.interfacesAtOnce is the source's setting")]
+    [InlineData("interfaces:\n  wells: { record: { object: A.b.Well, key: [uwi] }, mapping: Well@1.2.0, parallelism: { fanOut: 2 } }", "interfaces.wells.parallelism.fanOut is now interfaces.wells.parallelism.nodes")]
+    [InlineData("interfaces:\n  wells: { record: { object: A.b.Well, key: [uwi] }, mapping: Well@1.2.0, reliability: { parallelInterfaces: 2 } }", "interfaces.wells.reliability.parallelInterfaces is not a setting here any more: how many interfaces run at once is the source's setting, parallelism.interfacesAtOnce")]
+    [InlineData("interfaces:\n  wells: { record: { object: A.b.Well, key: [uwi] }, mapping: Well@1.2.0, reliability: { fanOut: 2 } }", "interfaces.wells.reliability.fanOut is now interfaces.wells.parallelism.nodes")]
     [InlineData("interfaces:\n  wells: { record: { object: A.b.Well, key: [uwi] }, mapping: Well@1.2.0, failWhen: { failedPercent: 0 } }", "failWhen.failedPercent of interface 'wells' must be above 0 and at most 100")]
     [InlineData("interfaces:\n  wells: { record: { object: A.b.Well, key: [uwi] }, mapping: Well@1.2.0, failWhen: { consecutiveFailures: 0 } }", "failWhen.consecutiveFailures of interface 'wells' must be at least 1")]
     [InlineData("interfaces:\n  logs: { record: { object: A.b.Log, key: [id] }, mapping: WellLog@1.4.0, bulk: { root: ../c, locationColumn: f, hashColumn: h } }", "interfaces.logs is delivered through a DDMS")]
@@ -390,13 +391,13 @@ public sealed class InterfaceDocumentsTests
     [Fact]
     public void How_many_interfaces_run_at_once_is_the_source_s_setting_only()
     {
-        var parallel = _loader.ParseSource(Source(Wells).Replace("  concurrency: 4\n", "  concurrency: 4\n  interfaces: 7\n", StringComparison.Ordinal), "petrel.yaml");
+        var parallel = _loader.ParseSource(Source(Wells).Replace("  recordsAtOnce: 4\n", "  recordsAtOnce: 4\n  interfacesAtOnce: 7\n", StringComparison.Ordinal), "petrel.yaml");
         Assert.Equal(7, parallel.ParallelInterfaces);
 
-        var tooMany = Source(Wells).Replace("  concurrency: 4\n", "  concurrency: 4\n  interfaces: 33\n", StringComparison.Ordinal);
-        Assert.Contains("parallelism.interfaces must be between 1 and 32", Assert.Throws<FlowValidationException>(() => _loader.ParseSource(tooMany, "petrel.yaml")).Message, StringComparison.Ordinal);
+        var tooMany = Source(Wells).Replace("  recordsAtOnce: 4\n", "  recordsAtOnce: 4\n  interfacesAtOnce: 33\n", StringComparison.Ordinal);
+        Assert.Contains("parallelism.interfacesAtOnce must be between 1 and 32", Assert.Throws<FlowValidationException>(() => _loader.ParseSource(tooMany, "petrel.yaml")).Message, StringComparison.Ordinal);
 
-        var single = File.ReadAllText(Samples.WellboreFlowFile).ReplaceLineEndings("\n").Replace("  concurrency: 8\n", "  concurrency: 8\n  interfaces: 2\n", StringComparison.Ordinal);
+        var single = File.ReadAllText(Samples.WellboreFlowFile).ReplaceLineEndings("\n").Replace("  recordsAtOnce: 8\n", "  recordsAtOnce: 8\n  interfacesAtOnce: 2\n", StringComparison.Ordinal);
         Assert.Contains("the document declares no interfaces", Assert.Throws<FlowValidationException>(() => _loader.ParseSource(single, "wellbore.yaml")).Message, StringComparison.Ordinal);
 
         var cache = """
@@ -412,7 +413,7 @@ public sealed class InterfaceDocumentsTests
               parallelInterfaces: 2
             """;
         Assert.Contains(
-            "cache.yaml: reliability.parallelInterfaces is not a setting here any more: a delivery flow writes it as parallelism.interfaces, and a cache flow has no use for it. Remove it.",
+            "cache.yaml: reliability.parallelInterfaces is not a setting here any more: a delivery flow writes it as parallelism.interfacesAtOnce, and a cache flow has no use for it. Remove it.",
             Assert.Throws<FlowValidationException>(() => _loader.ParseCache(cache, "cache.yaml")).Message,
             StringComparison.Ordinal);
 

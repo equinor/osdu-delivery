@@ -6,7 +6,7 @@
   "includeEnvelope": true,
   "generatedFrom": "osdu/docs/reference/flow/delivery.md and osdu/src/SqlFlow.Delivery/Documents/YamlModels.cs",
   "naming": "The loader deserializes with YamlDotNet's CamelCaseNamingConvention and refuses any key it does not know.",
-  "keyCount": 509,
+  "keyCount": 521,
   "keys": [
     {
       "path": "batch",
@@ -442,52 +442,87 @@
       "description": "The source's `parallelism` block, with this interface's keys laid over it key by key; `interfaces` is refused here."
     },
     {
-      "path": "interfaces.<name>.parallelism.batchRecords",
+      "path": "interfaces.<name>.parallelism.nodes",
       "type": "integer",
       "required": false,
-      "description": "Rendered documents per work batch: one file the intake writes, one claim a drain takes, one unit of progress a submission shows. 1 to 100000. Set here, it overrides the source's value for this interface.",
-      "default": "the source's value, else 500"
-    },
-    {
-      "path": "interfaces.<name>.parallelism.batchSize",
-      "type": "integer",
-      "required": false,
-      "description": "Records a worker claims from the ledger per round trip when it retries records outside a work batch. Set here, it overrides the source's value for this interface.",
-      "default": "the source's value, else 50"
-    },
-    {
-      "path": "interfaces.<name>.parallelism.concurrency",
-      "type": "integer",
-      "required": false,
-      "description": "How many requests (one record, or one batch of records) a run has in flight at once, and how many reads a verify or reverse run makes at once. At least 1. Set here, it overrides the source's value for this interface.",
+      "description": "The most nodes a delivery is spread over, 1 to 64: a run reading at least twice `minRowsPerNode` rows is split into parts, one per `minRowsPerNode` rows and at most this many, each a run of the same flow delivering its range of the record table's `primaryKey` from a node of its own. 1 keeps every delivery on one node. Set here, it overrides the source's value for this interface.",
       "default": "the source's value, else 8"
     },
     {
-      "path": "interfaces.<name>.parallelism.fanOut",
+      "path": "interfaces.<name>.parallelism.minRowsPerNode",
       "type": "integer",
       "required": false,
-      "description": "The most member runs a submission of `fanOutMinRecords` records or more spreads over across the fleet, 0 to 64; never more than it has work batches for beyond the coordinating run's own. It needs a `source.work` every node reaches (a storage URI, or an absolute path on shared storage): a relative one keeps the delivery on one run. Planning fans out only when the record table names its `primaryKey`, whose ranges the members read; without one, only the sending fans out. 0 runs everything on the node that claimed the run. Set here, it overrides the source's value for this interface.",
-      "default": "the source's value, else 8"
-    },
-    {
-      "path": "interfaces.<name>.parallelism.fanOutMinRecords",
-      "type": "integer",
-      "required": false,
-      "description": "Below this many records a submission never fans out, neither its planning nor its sending; at least 1. Set here, it overrides the source's value for this interface.",
+      "description": "The fewest rows a part takes, so a node is started only for work enough to be worth it: a run reading fewer than twice this many is delivered by one node. At least 1. Set here, it overrides the source's value for this interface.",
       "default": "the source's value, else 1000"
     },
     {
-      "path": "interfaces.<name>.parallelism.interfaces",
+      "path": "interfaces.<name>.parallelism.recordsAtOnce",
+      "type": "integer",
+      "required": false,
+      "description": "How many requests (one record, or one batch of records) each part, or a run alone, has in flight to OSDU at once, and how many reads a verify or reverse run makes at once. At least 1. Set here, it overrides the source's value for this interface.",
+      "default": "the source's value, else 8"
+    },
+    {
+      "path": "interfaces.<name>.parallelism.renderThreads",
+      "type": "integer",
+      "required": false,
+      "description": "The threads that render records on one node, 0 to 256; 0 takes half the node's processors, at least one. Set here, it overrides the source's value for this interface.",
+      "default": "the source's value, else 0"
+    },
+    {
+      "path": "interfaces.<name>.parallelism.recordsPerBatch",
+      "type": "integer",
+      "required": false,
+      "description": "The records one batch file holds: one file a part writes, one claim a worker takes, one unit of progress a submission shows. 1 to 100000. Set here, it overrides the source's value for this interface.",
+      "default": "the source's value, else 500"
+    },
+    {
+      "path": "interfaces.<name>.parallelism.interfacesAtOnce",
       "type": "integer",
       "required": false,
       "description": "Refused here: how many interfaces run at once is the source's own setting. Set it under the top-level `parallelism`."
     },
     {
+      "path": "interfaces.<name>.parallelism.batchRecords",
+      "type": "integer",
+      "required": false,
+      "description": "Renamed: it is written as `interfaces.<name>.parallelism.recordsPerBatch`. A document that still declares it is refused when it loads, naming the key it is now."
+    },
+    {
+      "path": "interfaces.<name>.parallelism.batchSize",
+      "type": "integer",
+      "required": false,
+      "description": "Not a setting any more: a worker claims the records due for a retry `parallelism.recordsAtOnce` at a time, at least 50. A document that still declares it is refused when it loads; remove it."
+    },
+    {
+      "path": "interfaces.<name>.parallelism.concurrency",
+      "type": "integer",
+      "required": false,
+      "description": "Renamed: it is written as `interfaces.<name>.parallelism.recordsAtOnce`. A document that still declares it is refused when it loads, naming the key it is now."
+    },
+    {
+      "path": "interfaces.<name>.parallelism.fanOut",
+      "type": "integer",
+      "required": false,
+      "description": "Renamed: it is written as `interfaces.<name>.parallelism.nodes`. A document that still declares it is refused when it loads, naming the key it is now."
+    },
+    {
+      "path": "interfaces.<name>.parallelism.fanOutMinRecords",
+      "type": "integer",
+      "required": false,
+      "description": "Renamed: it is written as `interfaces.<name>.parallelism.minRowsPerNode`. A document that still declares it is refused when it loads, naming the key it is now."
+    },
+    {
+      "path": "interfaces.<name>.parallelism.interfaces",
+      "type": "integer",
+      "required": false,
+      "description": "Refused here: how many interfaces run at once is the source's own setting, written as `parallelism.interfacesAtOnce` at the top level."
+    },
+    {
       "path": "interfaces.<name>.parallelism.renderers",
       "type": "integer",
       "required": false,
-      "description": "Renderers in the intake pipeline on one node, 0 to 256; 0 takes half the machine's processors, at least one. Set here, it overrides the source's value for this interface.",
-      "default": "the source's value, else 0"
+      "description": "Renamed: it is written as `interfaces.<name>.parallelism.renderThreads`. A document that still declares it is refused when it loads, naming the key it is now."
     },
     {
       "path": "interfaces.<name>.protocolOptions",
@@ -951,31 +986,31 @@
       "path": "interfaces.<name>.reliability.batchRecords",
       "type": "integer",
       "required": false,
-      "description": "Not a setting here any more: it is written as `interfaces.<name>.parallelism.batchRecords`, since what runs at once, and across the fleet, is the flow's parallelism, and reliability keeps what makes a request hold. A document that still declares it here is refused when it loads, naming where it goes."
+      "description": "Not a setting here any more: it is written as `interfaces.<name>.parallelism.recordsPerBatch`, since what runs at once, and across the fleet, is the flow's parallelism, and reliability keeps what makes a request hold. A document that still declares it here is refused when it loads, naming where it goes."
     },
     {
       "path": "interfaces.<name>.reliability.batchSize",
       "type": "integer",
       "required": false,
-      "description": "Not a setting here any more: it is written as `interfaces.<name>.parallelism.batchSize`, since what runs at once, and across the fleet, is the flow's parallelism, and reliability keeps what makes a request hold. A document that still declares it here is refused when it loads, naming where it goes."
+      "description": "Not a setting any more: a worker claims the records due for a retry `parallelism.recordsAtOnce` at a time, at least 50. A document that still declares it here is refused when it loads; remove it."
     },
     {
       "path": "interfaces.<name>.reliability.concurrency",
       "type": "integer",
       "required": false,
-      "description": "Not a setting here any more: it is written as `interfaces.<name>.parallelism.concurrency`, since what runs at once, and across the fleet, is the flow's parallelism, and reliability keeps what makes a request hold. A document that still declares it here is refused when it loads, naming where it goes."
+      "description": "Not a setting here any more: it is written as `interfaces.<name>.parallelism.recordsAtOnce`, since what runs at once, and across the fleet, is the flow's parallelism, and reliability keeps what makes a request hold. A document that still declares it here is refused when it loads, naming where it goes."
     },
     {
       "path": "interfaces.<name>.reliability.fanOut",
       "type": "integer",
       "required": false,
-      "description": "Not a setting here any more: it is written as `interfaces.<name>.parallelism.fanOut`, since what runs at once, and across the fleet, is the flow's parallelism, and reliability keeps what makes a request hold. A document that still declares it here is refused when it loads, naming where it goes."
+      "description": "Not a setting here any more: it is written as `interfaces.<name>.parallelism.nodes`, since what runs at once, and across the fleet, is the flow's parallelism, and reliability keeps what makes a request hold. A document that still declares it here is refused when it loads, naming where it goes."
     },
     {
       "path": "interfaces.<name>.reliability.fanOutMinRecords",
       "type": "integer",
       "required": false,
-      "description": "Not a setting here any more: it is written as `interfaces.<name>.parallelism.fanOutMinRecords`, since what runs at once, and across the fleet, is the flow's parallelism, and reliability keeps what makes a request hold. A document that still declares it here is refused when it loads, naming where it goes."
+      "description": "Not a setting here any more: it is written as `interfaces.<name>.parallelism.minRowsPerNode`, since what runs at once, and across the fleet, is the flow's parallelism, and reliability keeps what makes a request hold. A document that still declares it here is refused when it loads, naming where it goes."
     },
     {
       "path": "interfaces.<name>.reliability.leaseSeconds",
@@ -1002,7 +1037,7 @@
       "path": "interfaces.<name>.reliability.parallelInterfaces",
       "type": "integer",
       "required": false,
-      "description": "Not a setting here any more: how many interfaces run at once is the source's `parallelism.interfaces`. A document that still declares it here is refused when it loads."
+      "description": "Not a setting here any more: how many interfaces run at once is the source's setting, `parallelism.interfacesAtOnce`. A document that still declares it here is refused when it loads."
     },
     {
       "path": "interfaces.<name>.reliability.rateLimitRps",
@@ -1015,7 +1050,7 @@
       "path": "interfaces.<name>.reliability.renderParallelism",
       "type": "integer",
       "required": false,
-      "description": "Not a setting here any more: it is written as `interfaces.<name>.parallelism.renderers`, since what runs at once, and across the fleet, is the flow's parallelism, and reliability keeps what makes a request hold. A document that still declares it here is refused when it loads, naming where it goes."
+      "description": "Not a setting here any more: it is written as `interfaces.<name>.parallelism.renderThreads`, since what runs at once, and across the fleet, is the flow's parallelism, and reliability keeps what makes a request hold. A document that still declares it here is refused when it loads, naming where it goes."
     },
     {
       "path": "interfaces.<name>.reliability.retry",
@@ -1579,57 +1614,92 @@
       "path": "parallelism",
       "type": "object",
       "required": false,
-      "description": "What runs at once: the records a run sends at once, the renderers on one node, the work batches, and how far a large submission fans out across the fleet to member runs. In a source with interfaces it applies to every interface, each able to lay its own keys over it, except `interfaces`, the source's own."
+      "description": "The most nodes a delivery is spread over (`nodes`), and what a run otherwise works out itself from the rows it reads: how many parts it is split into, the records each sends at once, the render threads on one node and the records a batch file holds. In a source with interfaces it applies to every interface, each able to lay its own keys over it, except `interfacesAtOnce`, the source's own."
+    },
+    {
+      "path": "parallelism.nodes",
+      "type": "integer",
+      "required": false,
+      "description": "The most nodes a delivery is spread over, 1 to 64: a run reading at least twice `minRowsPerNode` rows is split into parts, one per `minRowsPerNode` rows and at most this many, each a run of the same flow delivering its range of the record table's `primaryKey` from a node of its own. 1 keeps every delivery on one node.",
+      "default": "8"
+    },
+    {
+      "path": "parallelism.minRowsPerNode",
+      "type": "integer",
+      "required": false,
+      "description": "The fewest rows a part takes, so a node is started only for work enough to be worth it: a run reading fewer than twice this many is delivered by one node. At least 1.",
+      "default": "1000"
+    },
+    {
+      "path": "parallelism.recordsAtOnce",
+      "type": "integer",
+      "required": false,
+      "description": "How many requests (one record, or one batch of records) each part, or a run alone, has in flight to OSDU at once, and how many reads a verify or reverse run makes at once. At least 1.",
+      "default": "8"
+    },
+    {
+      "path": "parallelism.renderThreads",
+      "type": "integer",
+      "required": false,
+      "description": "The threads that render records on one node, 0 to 256; 0 takes half the node's processors, at least one.",
+      "default": "0"
+    },
+    {
+      "path": "parallelism.recordsPerBatch",
+      "type": "integer",
+      "required": false,
+      "description": "The records one batch file holds: one file a part writes, one claim a worker takes, one unit of progress a submission shows. 1 to 100000.",
+      "default": "500"
+    },
+    {
+      "path": "parallelism.interfacesAtOnce",
+      "type": "integer",
+      "required": false,
+      "description": "How many interfaces of one wave deliver at the same time, 1 to 32. It is the source's own setting: refused on an interface and in a document that declares no interfaces.",
+      "default": "4",
+      "appliesWhen": "Documents that declare `interfaces`."
     },
     {
       "path": "parallelism.batchRecords",
       "type": "integer",
       "required": false,
-      "description": "Rendered documents per work batch: one file the intake writes, one claim a drain takes, one unit of progress a submission shows. 1 to 100000.",
-      "default": "500"
+      "description": "Renamed: it is written as `parallelism.recordsPerBatch`. A document that still declares it is refused when it loads, naming the key it is now."
     },
     {
       "path": "parallelism.batchSize",
       "type": "integer",
       "required": false,
-      "description": "Records a worker claims from the ledger per round trip when it retries records outside a work batch.",
-      "default": "50"
+      "description": "Not a setting any more: a worker claims the records due for a retry `parallelism.recordsAtOnce` at a time, at least 50. A document that still declares it is refused when it loads; remove it."
     },
     {
       "path": "parallelism.concurrency",
       "type": "integer",
       "required": false,
-      "description": "How many requests (one record, or one batch of records) a run has in flight at once, and how many reads a verify or reverse run makes at once. At least 1.",
-      "default": "8"
+      "description": "Renamed: it is written as `parallelism.recordsAtOnce`. A document that still declares it is refused when it loads, naming the key it is now."
     },
     {
       "path": "parallelism.fanOut",
       "type": "integer",
       "required": false,
-      "description": "The most slice runs a submission of `fanOutMinRecords` records or more spreads over across the fleet, 0 to 64: runs of the same flow, each delivering a share of its key slices from whichever node takes it; never more than it has slices for beyond the coordinating run's own. It fans out only when the record table names its `primaryKey`, which the slices are cut on. 0 runs everything on the node that claimed the run.",
-      "default": "8"
+      "description": "Renamed: it is written as `parallelism.nodes`. A document that still declares it is refused when it loads, naming the key it is now."
     },
     {
       "path": "parallelism.fanOutMinRecords",
       "type": "integer",
       "required": false,
-      "description": "Below this many records a submission never fans out; at least 1.",
-      "default": "1000"
+      "description": "Renamed: it is written as `parallelism.minRowsPerNode`. A document that still declares it is refused when it loads, naming the key it is now."
     },
     {
       "path": "parallelism.interfaces",
       "type": "integer",
       "required": false,
-      "description": "How many interfaces of one wave run at once, 1 to 32. It is the source's own setting: refused on an interface and in a document that declares no interfaces.",
-      "default": "4",
-      "appliesWhen": "Documents that declare `interfaces`."
+      "description": "Renamed: it is written as `parallelism.interfacesAtOnce`. A document that still declares it is refused when it loads, naming the key it is now."
     },
     {
       "path": "parallelism.renderers",
       "type": "integer",
       "required": false,
-      "description": "Renderers in the intake pipeline on one node, 0 to 256; 0 takes half the machine's processors, at least one.",
-      "default": "0"
+      "description": "Renamed: it is written as `parallelism.renderThreads`. A document that still declares it is refused when it loads, naming the key it is now."
     },
     {
       "path": "parameters",
@@ -1685,31 +1755,31 @@
       "path": "reliability.batchRecords",
       "type": "integer",
       "required": false,
-      "description": "Not a setting here any more: it is written as `parallelism.batchRecords`, since what runs at once, and across the fleet, is the flow's parallelism, and reliability keeps what makes a request hold. A document that still declares it here is refused when it loads, naming where it goes."
+      "description": "Not a setting here any more: it is written as `parallelism.recordsPerBatch`, since what runs at once, and across the fleet, is the flow's parallelism, and reliability keeps what makes a request hold. A document that still declares it here is refused when it loads, naming where it goes."
     },
     {
       "path": "reliability.batchSize",
       "type": "integer",
       "required": false,
-      "description": "Not a setting here any more: it is written as `parallelism.batchSize`, since what runs at once, and across the fleet, is the flow's parallelism, and reliability keeps what makes a request hold. A document that still declares it here is refused when it loads, naming where it goes."
+      "description": "Not a setting any more: a worker claims the records due for a retry `parallelism.recordsAtOnce` at a time, at least 50. A document that still declares it here is refused when it loads; remove it."
     },
     {
       "path": "reliability.concurrency",
       "type": "integer",
       "required": false,
-      "description": "Not a setting here any more: it is written as `parallelism.concurrency`, since what runs at once, and across the fleet, is the flow's parallelism, and reliability keeps what makes a request hold. A document that still declares it here is refused when it loads, naming where it goes."
+      "description": "Not a setting here any more: it is written as `parallelism.recordsAtOnce`, since what runs at once, and across the fleet, is the flow's parallelism, and reliability keeps what makes a request hold. A document that still declares it here is refused when it loads, naming where it goes."
     },
     {
       "path": "reliability.fanOut",
       "type": "integer",
       "required": false,
-      "description": "Not a setting here any more: it is written as `parallelism.fanOut`, since what runs at once, and across the fleet, is the flow's parallelism, and reliability keeps what makes a request hold. A document that still declares it here is refused when it loads, naming where it goes."
+      "description": "Not a setting here any more: it is written as `parallelism.nodes`, since what runs at once, and across the fleet, is the flow's parallelism, and reliability keeps what makes a request hold. A document that still declares it here is refused when it loads, naming where it goes."
     },
     {
       "path": "reliability.fanOutMinRecords",
       "type": "integer",
       "required": false,
-      "description": "Not a setting here any more: it is written as `parallelism.fanOutMinRecords`, since what runs at once, and across the fleet, is the flow's parallelism, and reliability keeps what makes a request hold. A document that still declares it here is refused when it loads, naming where it goes."
+      "description": "Not a setting here any more: it is written as `parallelism.minRowsPerNode`, since what runs at once, and across the fleet, is the flow's parallelism, and reliability keeps what makes a request hold. A document that still declares it here is refused when it loads, naming where it goes."
     },
     {
       "path": "reliability.leaseSeconds",
@@ -1736,7 +1806,7 @@
       "path": "reliability.parallelInterfaces",
       "type": "integer",
       "required": false,
-      "description": "Not a setting here any more: it is written as `parallelism.interfaces`, since what runs at once, and across the fleet, is the flow's parallelism, and reliability keeps what makes a request hold. A document that still declares it here is refused when it loads, naming where it goes."
+      "description": "Not a setting here any more: it is written as `parallelism.interfacesAtOnce`, since what runs at once, and across the fleet, is the flow's parallelism, and reliability keeps what makes a request hold. A document that still declares it here is refused when it loads, naming where it goes."
     },
     {
       "path": "reliability.rateLimitRps",
@@ -1749,7 +1819,7 @@
       "path": "reliability.renderParallelism",
       "type": "integer",
       "required": false,
-      "description": "Not a setting here any more: it is written as `parallelism.renderers`, since what runs at once, and across the fleet, is the flow's parallelism, and reliability keeps what makes a request hold. A document that still declares it here is refused when it loads, naming where it goes."
+      "description": "Not a setting here any more: it is written as `parallelism.renderThreads`, since what runs at once, and across the fleet, is the flow's parallelism, and reliability keeps what makes a request hold. A document that still declares it here is refused when it loads, naming where it goes."
     },
     {
       "path": "reliability.retry",

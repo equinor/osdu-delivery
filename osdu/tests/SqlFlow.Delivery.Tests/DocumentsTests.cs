@@ -46,7 +46,7 @@ public class YamlDocumentLoaderTests
         reliability:
           retry: { attempts: 5, backoff: fixed }
         parallelism:
-          concurrency: 2
+          recordsAtOnce: 2
         """;
 
     /// <summary>
@@ -150,7 +150,7 @@ public class YamlDocumentLoaderTests
     public void Parses_inline_flow_with_defaults()
     {
         var flow = new DeliveryDocumentLoader().ParseFlow(Flow, "inline.yaml");
-        Assert.Equal(2, flow.Parallelism.Concurrency);
+        Assert.Equal(2, flow.Parallelism.RecordsAtOnce);
         Assert.Equal(BackoffKind.Fixed, flow.Reliability.Retry.Backoff);
         Assert.Equal(5, flow.Reliability.Retry.Attempts);
         Assert.Equal(FlowSystemColumns.DefaultUpdated, flow.Source.SystemColumns.Updated);
@@ -166,19 +166,15 @@ public class YamlDocumentLoaderTests
     /// document that still writes a moved setting under reliability is refused and told the key it is written as now.
     /// </summary>
     [Theory]
-    [InlineData("concurrency: 3", "concurrency", "parallelism.concurrency")]
-    [InlineData("fanOut: 3", "fanOut", "parallelism.fanOut")]
-    [InlineData("fanOutMinRecords: 3", "fanOutMinRecords", "parallelism.fanOutMinRecords")]
-    [InlineData("renderParallelism: 3", "renderParallelism", "parallelism.renderers")]
-    [InlineData("batchRecords: 3", "batchRecords", "parallelism.batchRecords")]
-    [InlineData("batchSize: 3", "batchSize", "parallelism.batchSize")]
-    [InlineData("parallelInterfaces: 3", "parallelInterfaces", "parallelism.interfaces")]
+    [InlineData("concurrency: 3", "concurrency", "parallelism.recordsAtOnce")]
+    [InlineData("fanOut: 3", "fanOut", "parallelism.nodes")]
+    [InlineData("fanOutMinRecords: 3", "fanOutMinRecords", "parallelism.minRowsPerNode")]
+    [InlineData("renderParallelism: 3", "renderParallelism", "parallelism.renderThreads")]
+    [InlineData("batchRecords: 3", "batchRecords", "parallelism.recordsPerBatch")]
+    [InlineData("parallelInterfaces: 3", "parallelInterfaces", "parallelism.interfacesAtOnce")]
     public void A_setting_that_moved_to_parallelism_is_refused_under_reliability_naming_its_key_now(string setting, string was, string now)
     {
-        var yaml = Flow.ReplaceLineEndings("\n").Replace(
-            "  retry: { attempts: 5, backoff: fixed }\n", "  retry: { attempts: 5, backoff: fixed }\n  " + setting + "\n", StringComparison.Ordinal);
-
-        var refused = Assert.Throws<FlowValidationException>(() => new DeliveryDocumentLoader().ParseFlow(yaml, "flow.yaml"));
+        var refused = Assert.Throws<FlowValidationException>(() => new DeliveryDocumentLoader().ParseFlow(UnderReliability(setting), "flow.yaml"));
 
         Assert.Equal(
             $"flow.yaml: reliability.{was} is now {now}: what runs at once, and across the fleet, is the flow's parallelism, and reliability keeps what makes a request hold. Move it.",
@@ -186,29 +182,66 @@ public class YamlDocumentLoaderTests
     }
 
     [Fact]
+    public void The_retry_claim_under_reliability_is_refused_as_gone()
+    {
+        var refused = Assert.Throws<FlowValidationException>(() => new DeliveryDocumentLoader().ParseFlow(UnderReliability("batchSize: 3"), "flow.yaml"));
+
+        Assert.Equal(
+            "flow.yaml: reliability.batchSize is not a setting any more: a worker claims the records due for a retry parallelism.recordsAtOnce at a time, at least 50. Remove it.",
+            refused.Message);
+    }
+
+    private static string UnderReliability(string setting)
+        => Flow.ReplaceLineEndings("\n").Replace(
+            "  retry: { attempts: 5, backoff: fixed }\n", "  retry: { attempts: 5, backoff: fixed }\n  " + setting + "\n", StringComparison.Ordinal);
+
+    /// <summary>
+    /// A key the parallelism block knew by another name before each key said what it is is refused, naming the key it is
+    /// now; the retry claim is gone.
+    /// </summary>
+    [Theory]
+    [InlineData("fanOut: 3", "parallelism.fanOut is now parallelism.nodes: the most nodes a delivery is spread over")]
+    [InlineData("fanOutMinRecords: 3", "parallelism.fanOutMinRecords is now parallelism.minRowsPerNode: the fewest rows a part takes. Rename it.")]
+    [InlineData("concurrency: 3", "parallelism.concurrency is now parallelism.recordsAtOnce: the records each part sends to OSDU at the same time. Rename it.")]
+    [InlineData("renderers: 3", "parallelism.renderers is now parallelism.renderThreads: the threads that render records on one node. Rename it.")]
+    [InlineData("batchRecords: 3", "parallelism.batchRecords is now parallelism.recordsPerBatch: the records one batch file holds. Rename it.")]
+    [InlineData("batchSize: 3", "parallelism.batchSize is not a setting any more: a worker claims the records due for a retry recordsAtOnce at a time, at least 50. Remove it.")]
+    [InlineData("interfaces: 3", "parallelism.interfaces is now parallelism.interfacesAtOnce: how many interfaces of a source deliver at the same time. Rename it.")]
+    public void A_parallelism_key_by_its_old_name_is_refused_naming_the_key_it_is_now(string setting, string expected)
+    {
+        var yaml = Flow.ReplaceLineEndings("\n").Replace("  recordsAtOnce: 2", "  recordsAtOnce: 2\n  " + setting, StringComparison.Ordinal);
+
+        var refused = Assert.Throws<FlowValidationException>(() => new DeliveryDocumentLoader().ParseFlow(yaml, "flow.yaml"));
+
+        Assert.StartsWith("flow.yaml: " + expected, refused.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void The_parallelism_block_says_what_runs_at_once()
     {
         var yaml = Flow.ReplaceLineEndings("\n").Replace(
-            "  concurrency: 2", "  concurrency: 2\n  renderers: 3\n  batchRecords: 40\n  batchSize: 20\n  fanOutMinRecords: 5000", StringComparison.Ordinal);
+            "  recordsAtOnce: 2", "  recordsAtOnce: 2\n  nodes: 4\n  minRowsPerNode: 5000\n  renderThreads: 3\n  recordsPerBatch: 40", StringComparison.Ordinal);
 
         var parallelism = new DeliveryDocumentLoader().ParseFlow(yaml, "flow.yaml").Parallelism;
 
-        Assert.Equal(new FlowParallelism { Concurrency = 2, Renderers = 3, BatchRecords = 40, BatchSize = 20, FanOutMinRecords = 5000 }, parallelism);
-        Assert.Equal(3, parallelism.EffectiveRenderers);
+        Assert.Equal(new FlowParallelism { Nodes = 4, MinRowsPerNode = 5000, RecordsAtOnce = 2, RenderThreads = 3, RecordsPerBatch = 40 }, parallelism);
+        Assert.Equal(3, parallelism.EffectiveRenderThreads);
+        Assert.Equal(FlowParallelism.RetryClaimFloor, parallelism.RetryClaim);
+        Assert.Equal(64, (parallelism with { RecordsAtOnce = 64 }).RetryClaim);
     }
 
     [Theory]
-    [InlineData("concurrency: 0", "parallelism.concurrency must be at least 1.")]
-    [InlineData("renderers: -1", "parallelism.renderers must be between 0 and 256.")]
-    [InlineData("renderers: 257", "parallelism.renderers must be between 0 and 256.")]
-    [InlineData("batchRecords: 0", "parallelism.batchRecords must be between 1 and 100000.")]
-    [InlineData("batchRecords: 100001", "parallelism.batchRecords must be between 1 and 100000.")]
-    [InlineData("fanOut: -1", "parallelism.fanOut must be between 0 and 64.")]
-    [InlineData("fanOut: 65", "parallelism.fanOut must be between 0 and 64.")]
-    [InlineData("fanOutMinRecords: 0", "parallelism.fanOutMinRecords must be at least 1.")]
+    [InlineData("recordsAtOnce: 0", "parallelism.recordsAtOnce must be at least 1.")]
+    [InlineData("renderThreads: -1", "parallelism.renderThreads must be between 0 and 256.")]
+    [InlineData("renderThreads: 257", "parallelism.renderThreads must be between 0 and 256.")]
+    [InlineData("recordsPerBatch: 0", "parallelism.recordsPerBatch must be between 1 and 100000.")]
+    [InlineData("recordsPerBatch: 100001", "parallelism.recordsPerBatch must be between 1 and 100000.")]
+    [InlineData("nodes: 0", "parallelism.nodes must be between 1 and 64: the most nodes a delivery is spread over, 1 keeping it on one.")]
+    [InlineData("nodes: 65", "parallelism.nodes must be between 1 and 64: the most nodes a delivery is spread over, 1 keeping it on one.")]
+    [InlineData("minRowsPerNode: 0", "parallelism.minRowsPerNode must be at least 1.")]
     public void A_parallelism_setting_out_of_range_is_refused_naming_its_key(string setting, string expected)
     {
-        var yaml = Flow.ReplaceLineEndings("\n").Replace("  concurrency: 2", "  " + setting, StringComparison.Ordinal);
+        var yaml = Flow.ReplaceLineEndings("\n").Replace("  recordsAtOnce: 2", "  " + setting, StringComparison.Ordinal);
 
         var refused = Assert.Throws<FlowValidationException>(() => new DeliveryDocumentLoader().ParseFlow(yaml, "flow.yaml"));
 
@@ -216,26 +249,26 @@ public class YamlDocumentLoaderTests
     }
 
     /// <summary>
-    /// A flow fans out unless it says otherwise, and needs no identity primary key to: without one its read is planned on the
-    /// coordinating run and its sending still fans out; with one the read is cut on it and planned across the fleet too.
+    /// A delivery is spread over eight nodes at most unless the flow says otherwise, and loads without an identity primary key,
+    /// which is what its rows are split on: without one it is delivered by one node.
     /// </summary>
     [Fact]
-    public void A_flow_fans_out_by_default_and_needs_no_primary_key_to()
+    public void A_flow_is_spread_over_eight_nodes_at_most_by_default_and_loads_without_a_primary_key()
     {
         var loader = new DeliveryDocumentLoader();
         var flow = Flow.ReplaceLineEndings("\n");
         var parsed = loader.ParseFlow(flow, "f");
         Assert.Null(parsed.Source.Record.PrimaryKey);
-        Assert.Equal(FlowParallelism.DefaultFanOut, parsed.Parallelism.FanOut);
-        Assert.Equal(1000, parsed.Parallelism.FanOutMinRecords);
+        Assert.Equal(FlowParallelism.DefaultNodes, parsed.Parallelism.Nodes);
+        Assert.Equal(FlowParallelism.DefaultMinRowsPerNode, parsed.Parallelism.MinRowsPerNode);
 
-        var fanned = flow.Replace("  concurrency: 2", "  concurrency: 2\n  fanOut: 4", StringComparison.Ordinal);
-        Assert.Equal(4, loader.ParseFlow(fanned, "f").Parallelism.FanOut);
-        Assert.Equal(0, loader.ParseFlow(flow.Replace("  concurrency: 2", "  concurrency: 2\n  fanOut: 0", StringComparison.Ordinal), "f").Parallelism.FanOut);
+        var spread = flow.Replace("  recordsAtOnce: 2", "  recordsAtOnce: 2\n  nodes: 4", StringComparison.Ordinal);
+        Assert.Equal(4, loader.ParseFlow(spread, "f").Parallelism.Nodes);
+        Assert.Equal(1, loader.ParseFlow(flow.Replace("  recordsAtOnce: 2", "  recordsAtOnce: 2\n  nodes: 1", StringComparison.Ordinal), "f").Parallelism.Nodes);
 
-        var keyed = fanned.Replace("    key: [source_project, log_id]\n", "    key: [source_project, log_id]\n    primaryKey: RecId\n", StringComparison.Ordinal);
+        var keyed = spread.Replace("    key: [source_project, log_id]\n", "    key: [source_project, log_id]\n    primaryKey: RecId\n", StringComparison.Ordinal);
         var parsedKeyed = loader.ParseFlow(keyed, "f");
-        Assert.Equal(("RecId", 4), (parsedKeyed.Source.Record.PrimaryKey, parsedKeyed.Parallelism.FanOut));
+        Assert.Equal(("RecId", 4), (parsedKeyed.Source.Record.PrimaryKey, parsedKeyed.Parallelism.Nodes));
 
         var bracketed = Assert.Throws<FlowValidationException>(() => loader.ParseFlow(keyed.Replace("primaryKey: RecId", "primaryKey: \"[RecId]\"", StringComparison.Ordinal), "f"));
         Assert.Contains("source.record.primaryKey", bracketed.Message, StringComparison.Ordinal);
@@ -244,9 +277,9 @@ public class YamlDocumentLoaderTests
     [Fact]
     public void Unknown_keys_are_a_parse_error_with_the_path()
     {
-        var ex = Assert.Throws<FlowValidationException>(() => new DeliveryDocumentLoader().ParseFlow(Flow.Replace("concurrency: 2", "concurency: 2", StringComparison.Ordinal), "flow.yaml"));
+        var ex = Assert.Throws<FlowValidationException>(() => new DeliveryDocumentLoader().ParseFlow(Flow.Replace("recordsAtOnce: 2", "recordsAtOnse: 2", StringComparison.Ordinal), "flow.yaml"));
         Assert.StartsWith("flow.yaml:", ex.Message, StringComparison.Ordinal);
-        Assert.Contains("concurency", ex.Message, StringComparison.Ordinal);
+        Assert.Contains("recordsAtOnse", ex.Message, StringComparison.Ordinal);
     }
 
     [Fact]

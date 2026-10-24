@@ -989,7 +989,7 @@ public sealed class ReversalTests : IDisposable
                 Headers = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase) { ["data-partition-id"] = "dev" },
             },
             Reliability = flow.Reliability with { Retry = new FlowRetry { Attempts = 1, BaseDelayMs = 1, MaxDelayMs = 1 } },
-            Parallelism = flow.Parallelism with { Concurrency = 4 },
+            Parallelism = flow.Parallelism with { RecordsAtOnce = 4 },
         };
     }
 

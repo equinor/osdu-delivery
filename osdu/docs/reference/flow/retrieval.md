@@ -402,7 +402,7 @@ as after any flow that lands files. See [Lineage](../concepts/lineage.md).
 | `source.auth.secretRef holds a literal value, and it is the credential the flow authenticates with (the token, the API key, the password or the client secret). A flow document holds references only: ...` | A literal secret. |
 | `parallelism.concurrency must be at least 1.` | Concurrency below 1. |
 | `reliability.concurrency is now parallelism.concurrency: what runs at once, and across the fleet, is the flow's parallelism, and reliability keeps what makes a request hold. Move it.` | A setting written where it was before. |
-| `reliability.fanOut is not a setting here any more: a delivery flow writes it as parallelism.fanOut, and a retrieval flow has no use for it. Remove it.` | A delivery-only setting. |
+| `reliability.fanOut is not a setting here any more: a delivery flow writes it as parallelism.nodes, and a retrieval flow has no use for it. Remove it.` | A delivery-only setting. |
 
 Each message is prefixed with the file path.
 

@@ -456,7 +456,7 @@ public sealed class SubmissionIntake
         var submission = prepared.Submission;
         var workRoot = prepared.WorkRoot;
         var summary = new PlanSummary();
-        var batchRecords = Math.Max(1, flow.Parallelism.BatchRecords);
+        var batchRecords = Math.Max(1, flow.Parallelism.RecordsPerBatch);
 
         // A share planned before (a run resuming its submission, a member executed again, a coordinating run planning the
         // share of a member that was stopped) leaves records queued in batch files that their references point into, and
@@ -487,11 +487,11 @@ public sealed class SubmissionIntake
             range is null
                 ? string.Create(CultureInfo.InvariantCulture, $"{header.Source.EstimatedCandidates} candidate record(s) of {flow.Source.Record.Object}")
                 : string.Create(CultureInfo.InvariantCulture, $"key slice {range.Value.Slice} of {flow.Source.Record.Object}"),
-            flow.Parallelism.EffectiveRenderers, Planner.RenderBatch, batchRecords);
+            flow.Parallelism.EffectiveRenderThreads, Planner.RenderBatch, batchRecords);
 
         try
         {
-            await foreach (var entry in _planner.EntriesAsync(header, range, flow.Parallelism.EffectiveRenderers, summary, ct).ConfigureAwait(false))
+            await foreach (var entry in _planner.EntriesAsync(header, range, flow.Parallelism.EffectiveRenderThreads, summary, ct).ConfigureAwait(false))
             {
                 if (entry.Key is null)
                 {

@@ -116,15 +116,15 @@ public sealed class DeliveryWorker
     public WaitRules Waits { get; init; } = WaitRules.WaitForAll;
 
     /// <summary>
-    /// The work batches this worker claims and waits for, or null for every batch of what it drains: a fan-out's slice run
-    /// works on the batches it planned its own slices into, whose files are on its node, and on no other run's
+    /// The work batches this worker claims and waits for, or null for every batch of what it drains: a part of a split
+    /// delivery works on the batches it planned its own slices into, whose files are on its node, and on no other part's
     /// (osdu/docs/reference/concepts/submissions.md, Many nodes).
     /// </summary>
     public BatchRange? Batches { get; init; }
 
     /// <summary>
     /// Where this worker reads the documents of the batches it claims, or null for the work location the submission
-    /// records: a slice run reads its batches back from the folder it wrote them to on its own node.
+    /// records: a part reads its batches back from the folder it wrote them to on its own node.
     /// </summary>
     public string? WorkRoot { get; init; }
 
@@ -266,7 +266,7 @@ public sealed class DeliveryWorker
             return summary with { Waiting = summary.Waiting + waited };
         }
 
-        var due = await _ledger.ClaimAsync(_flow.Id, submissionId, _workerId, _flow.Parallelism.BatchSize, Lease, now, RunId, Waits, _flow.Reliability.Retry.Attempts, Batches, ct).ConfigureAwait(false);
+        var due = await _ledger.ClaimAsync(_flow.Id, submissionId, _workerId, _flow.Parallelism.RetryClaim, Lease, now, RunId, Waits, _flow.Reliability.Retry.Attempts, Batches, ct).ConfigureAwait(false);
         var waitedDue = await ReportWaitingAsync(due.Waiting, submissionId, ct).ConfigureAwait(false);
         if (due.Lease is not { } lease)
         {
@@ -618,7 +618,7 @@ public sealed class DeliveryWorker
         }
 
         var groups = Group(loaded, Math.Max(1, _protocol.MaxBatch));
-        using var gate = new SemaphoreSlim(Math.Max(1, _flow.Parallelism.Concurrency));
+        using var gate = new SemaphoreSlim(Math.Max(1, _flow.Parallelism.RecordsAtOnce));
         var tasks = groups.Select(async group =>
         {
             void NeverStarted()

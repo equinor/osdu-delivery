@@ -103,7 +103,7 @@ public class InventoryDocumentTests
     [InlineData("owners: [a@x.com, A@X.COM]\n", "owners[1] 'A@X.COM' is listed twice")]
     [InlineData("parallelism: { concurrency: 0 }\n", "parallelism.concurrency must be at least 1")]
     [InlineData("reliability: { concurrency: 2 }\n", "reliability.concurrency is now parallelism.concurrency")]
-    [InlineData("reliability: { fanOut: 2 }\n", "reliability.fanOut is not a setting here any more: a delivery flow writes it as parallelism.fanOut, and an inventory flow has no use for it")]
+    [InlineData("reliability: { fanOut: 2 }\n", "reliability.fanOut is not a setting here any more: a delivery flow writes it as parallelism.nodes, and an inventory flow has no use for it")]
     [InlineData("parallelism: { fanOut: 2 }\n", "Property 'fanOut' not found")]
     public void A_flow_level_rule_broken_is_refused_naming_its_key(string fragment, string expected)
     {

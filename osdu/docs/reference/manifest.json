@@ -7510,7 +7510,7 @@
       "path": "decisions/0025-parallelism-and-default-fan-out.md",
       "title": "Decision 0025: What runs at once is a flow's parallelism, and a delivery fans out by default",
       "type": "decision",
-      "summary": "Why parallelism left reliability, why a large delivery fans out by default into slice runs that each deliver their share, and what was rejected.",
+      "summary": "Why a delivery is spread over nodes by default, a part per node worked out from its rows, why its keys say what they are, and what was rejected.",
       "keywords": [
         "parallelism",
         "fan-out by default",
@@ -7520,7 +7520,10 @@
         "members no node starts",
         "rate limit across a fan-out",
         "batch file written again",
-        "slice runs"
+        "slice runs",
+        "nodes",
+        "parts on nodes of their own",
+        "whole-node runs"
       ],
       "related": [
         "delivery-wiki-0006-work-batches"
@@ -7534,6 +7537,9 @@
         "osdu/src/SqlFlow.Delivery/Ledger/OsduLedger.Leases.cs",
         "sqlflow/src/SqlFlow.Orchestration/IRunFanOut.cs",
         "sqlflow/src/SqlFlow.SqlServer/Export/ExportSegmentPlanner.cs",
+        "sqlflow/src/SqlFlow.Dispatch/DispatchState.cs",
+        "sqlflow/src/SqlFlow.Catalog/ScaleTargetStore.cs",
+        "osdu/src/SqlFlow.Delivery/Source/KeySlices.cs",
         "osdu/src/SqlFlow.Delivery/Engine/DeliveryRunPayload.cs",
         "osdu/src/SqlFlow.Delivery/Engine/DeliveryExecutor.cs",
         "osdu/src/SqlFlow.Delivery/Engine/TargetConnection.cs",

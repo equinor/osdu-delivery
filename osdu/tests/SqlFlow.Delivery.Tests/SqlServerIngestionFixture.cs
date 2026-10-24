@@ -178,11 +178,11 @@ public sealed class SqlServerIngestionFixture : IAsyncDisposable
     /// <summary>
     /// Brings up one fixture: its schemas, its generated estate and the host that runs it.
     /// </summary>
-    /// <param name="fanOut">How many member runs the OSDU flow's document declares beside a coordinating run; 0 declares none.</param>
-    /// <param name="batchRecords">How many records one work batch holds, which is also what decides the slice count.</param>
+    /// <param name="nodes">The most nodes the OSDU flow's document spreads a delivery over, a part per row; 0 declares none.</param>
+    /// <param name="recordsPerBatch">How many records one batch file holds; 0 keeps the document's.</param>
     /// <param name="wellboreChain">Whether the estate also holds the flows that load the wellbore tables, for a source
     /// whose interfaces read them beside the well logs.</param>
-    public static async Task<SqlServerIngestionFixture> StartAsync(int fanOut = 0, int batchRecords = 0, bool wellboreChain = false, CancellationToken ct = default)
+    public static async Task<SqlServerIngestionFixture> StartAsync(int nodes = 0, int recordsPerBatch = 0, bool wellboreChain = false, CancellationToken ct = default)
     {
         // The chain runs against a real server or not at all: there is no in-memory stand-in for what it proves. Its
         // database is the suites' test database, migrated and with the module's schema emptied, allowing the snapshot
@@ -202,7 +202,7 @@ public sealed class SqlServerIngestionFixture : IAsyncDisposable
         try
         {
             await CreateSchemasAsync(connectionString, "pre_" + suffix, "silver_" + suffix, ct).ConfigureAwait(false);
-            GenerateEstate(root, databaseName, suffix, variable, fanOut, batchRecords, wellboreChain);
+            GenerateEstate(root, databaseName, suffix, variable, nodes, recordsPerBatch, wellboreChain);
             provider = Compose(connectionString, protocol);
             await ImportRenderInputsAsync(connectionString, ct).ConfigureAwait(false);
             return new SqlServerIngestionFixture(database, databaseName, suffix, root, provider, protocol);
@@ -545,7 +545,7 @@ public sealed class SqlServerIngestionFixture : IAsyncDisposable
     /// chain documents rewritten for this database (and, when asked for, the four flows that load the wellbore tables), and
     /// the empty drop-off folders the pre flows read.
     /// </summary>
-    internal static void GenerateEstate(string root, string databaseName, string suffix, string variable, int fanOut, int batchRecords, bool wellboreChain = false)
+    internal static void GenerateEstate(string root, string databaseName, string suffix, string variable, int nodes, int recordsPerBatch, bool wellboreChain = false)
     {
         foreach (var part in CopiedParts)
         {
@@ -569,7 +569,7 @@ public sealed class SqlServerIngestionFixture : IAsyncDisposable
             // one normalized text; the rewrites below are line based and would otherwise match nothing.
             var folder = WellboreChainDocuments.Contains(name) ? Path.Combine(Samples.FixtureDocuments, "flows") : Path.Combine(Samples.Source, "flows");
             var shipped = File.ReadAllText(Path.Combine(folder, name + ".yaml")).ReplaceLineEndings("\n");
-            var generated = Generate(shipped, name, databaseName, suffix, variable, fanOut, batchRecords, root);
+            var generated = Generate(shipped, name, databaseName, suffix, variable, nodes, recordsPerBatch, root);
             File.WriteAllText(Path.Combine(root, "flows", Rename(name, suffix) + ".yaml"), generated);
         }
     }
@@ -578,7 +578,7 @@ public sealed class SqlServerIngestionFixture : IAsyncDisposable
     /// One shipped document as this fixture runs it: the same flow, naming this database, these schemas, this connection
     /// reference and, for the OSDU flow, a target no test ever calls.
     /// </summary>
-    private static string Generate(string shipped, string name, string databaseName, string suffix, string variable, int fanOut, int batchRecords, string root)
+    private static string Generate(string shipped, string name, string databaseName, string suffix, string variable, int nodes, int recordsPerBatch, string root)
     {
         var text = Rename(Replace(shipped.ReplaceLineEndings("\n"), "${env:OSDU_DATA_DB}", "${env:" + variable + "}", name), suffix);
         text = QualifyObjectNames(text, name, databaseName, suffix);
@@ -595,25 +595,22 @@ public sealed class SqlServerIngestionFixture : IAsyncDisposable
             // The chain renders against the cache the fixture imports, with no cache flow synced to bring up to date, so
             // the shipped cache step stays out, as the platform it would reach does.
             text = Replace(text, "\ncache:\n  before: [UnitAlias, DepthUnitAlias, CurveDictionary]\n", "\n", name);
-            if (fanOut > 0)
+            // A part per row up to the nodes the suite asks for, so a split never waits on the default minimum.
+            if (nodes > 0)
             {
                 text = Replace(
                     text,
-                    "\n  concurrency: 8\n",
-                    $"\n  concurrency: 8\n  fanOut: {fanOut.ToString(CultureInfo.InvariantCulture)}\n  fanOutMinRecords: 1\n",
+                    "\n  recordsAtOnce: 8\n",
+                    $"\n  recordsAtOnce: 8\n  nodes: {nodes.ToString(CultureInfo.InvariantCulture)}\n  minRowsPerNode: 1\n",
                     name);
-
-                // Every node of a fan-out reads and writes the work location, so it is one they all reach: an absolute path,
-                // as shared storage is on a deployment, where the shipped relative one is a folder in each node's own copy.
-                text = Replace(text, "\n  work: ../.work/{logSource}\n", $"\n  work: '{Path.Combine(root, ".work")}/{{logSource}}'\n", name);
             }
 
-            if (batchRecords > 0)
+            if (recordsPerBatch > 0)
             {
                 text = Replace(
                     text,
-                    "\n  batchSize: 50\n",
-                    $"\n  batchSize: 50\n  batchRecords: {batchRecords.ToString(CultureInfo.InvariantCulture)}\n",
+                    "\n  recordsAtOnce: 8\n",
+                    $"\n  recordsAtOnce: 8\n  recordsPerBatch: {recordsPerBatch.ToString(CultureInfo.InvariantCulture)}\n",
                     name);
             }
         }

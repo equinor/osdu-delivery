@@ -4,6 +4,7 @@ using SqlFlow.Delivery.Engine;
 using SqlFlow.Delivery.Engine.Intake;
 using SqlFlow.Delivery.Engine.Worker;
 using SqlFlow.Delivery.Ledger;
+using SqlFlow.Delivery.Model;
 using Xunit;
 
 namespace SqlFlow.Delivery.Tests;
@@ -15,6 +16,19 @@ namespace SqlFlow.Delivery.Tests;
 public sealed class SliceRunTests
 {
     private static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web);
+
+    [Theory]
+    [InlineData(8, 1000, 0, 1)]
+    [InlineData(8, 1000, 50, 1)]
+    [InlineData(8, 1000, 1999, 1)]
+    [InlineData(8, 1000, 2000, 2)]
+    [InlineData(8, 1000, 4991, 4)]
+    [InlineData(8, 1000, 20000, 8)]
+    [InlineData(10, 1000, 20000, 10)]
+    [InlineData(1, 1000, 1_000_000, 1)]
+    [InlineData(64, 1, 5, 5)]
+    public void A_run_is_split_into_a_part_per_minRowsPerNode_rows_at_most_its_nodes(int nodes, int minRowsPerNode, long rows, int parts)
+        => Assert.Equal(parts, new FlowParallelism { Nodes = nodes, MinRowsPerNode = minRowsPerNode }.PartsFor(rows));
 
     [Fact]
     public void A_share_works_on_the_batches_of_its_slices_and_on_no_other_share_s()
@@ -37,7 +51,7 @@ public sealed class SliceRunTests
     public void A_share_of_slices_that_are_not_neighbours_is_refused_since_its_range_would_take_another_run_s_batches()
     {
         Assert.Contains("are not neighbours", Assert.Throws<DeliveryException>(() => FlowRuntime.BatchesOf([1, 3])).Message, StringComparison.Ordinal);
-        Assert.Contains("at least one key slice", Assert.Throws<DeliveryException>(() => FlowRuntime.BatchesOf([])).Message, StringComparison.Ordinal);
+        Assert.Contains("names at least one key slice", Assert.Throws<DeliveryException>(() => FlowRuntime.BatchesOf([])).Message, StringComparison.Ordinal);
         Assert.Throws<ArgumentOutOfRangeException>(() => new BatchRange(-1, 4));
         Assert.Throws<ArgumentOutOfRangeException>(() => new BatchRange(4, 4));
     }
@@ -88,10 +102,10 @@ public sealed class SliceRunTests
 
         string Refused(DeliveryRunPayload payload) => Assert.Throws<SqlFlowException>(() => payload.Validate(DeliveryOperations.Deliver)).Message;
         Assert.Contains("which submissionId names", Refused(new DeliveryRunPayload { Slices = [0] }), StringComparison.Ordinal);
-        Assert.Contains("a share of neighbouring key slices", Refused(new DeliveryRunPayload { SubmissionId = submission, Slices = [0, 2] }), StringComparison.Ordinal);
-        Assert.Contains("only a slice run of a fan-out shares", Refused(new DeliveryRunPayload { SubmissionId = submission, RateShare = 2 }), StringComparison.Ordinal);
+        Assert.Contains("delivers neighbouring key slices", Refused(new DeliveryRunPayload { SubmissionId = submission, Slices = [0, 2] }), StringComparison.Ordinal);
+        Assert.Contains("only a part of a split delivery shares the delivery's rate limit", Refused(new DeliveryRunPayload { SubmissionId = submission, RateShare = 2 }), StringComparison.Ordinal);
         Assert.Contains("a run works on a submission or is scoped to records, not both", Refused(new DeliveryRunPayload { SubmissionId = submission, Slices = [0], RecordKeys = [Guid.NewGuid()] }), StringComparison.Ordinal);
-        Assert.Contains("its coordinating run marked what is sent again", Refused(new DeliveryRunPayload { SubmissionId = submission, Slices = [0], Redeliver = RedeliverScopes.All }), StringComparison.Ordinal);
+        Assert.Contains("the delivery it is part of marked what is sent again", Refused(new DeliveryRunPayload { SubmissionId = submission, Slices = [0], Redeliver = RedeliverScopes.All }), StringComparison.Ordinal);
         Assert.Contains("asked for records to be rendered again", Refused(new DeliveryRunPayload { SubmissionId = submission, Slices = [0], Rerender = true }), StringComparison.Ordinal);
     }
 }

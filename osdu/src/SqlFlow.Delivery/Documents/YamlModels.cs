@@ -818,24 +818,44 @@ internal sealed class FlowReliabilityYaml
 }
 
 /// <summary>
-/// A delivery flow's <c>parallelism</c> block: what one run works on at once, and how far a large submission fans out across
-/// the fleet. In a source with interfaces an interface lays its own keys over the source's, except <see cref="Interfaces"/>.
+/// A delivery flow's <c>parallelism</c> block: the most nodes a delivery is spread over, and the settings a run otherwise
+/// works out itself. In a source with interfaces an interface lays its own keys over the source's, except
+/// <see cref="InterfacesAtOnce"/>.
 /// </summary>
 internal sealed class FlowParallelismYaml
 {
-    public int? Concurrency { get; set; }
+    public int? Nodes { get; set; }
 
-    public int? FanOut { get; set; }
+    public int? MinRowsPerNode { get; set; }
 
-    public int? FanOutMinRecords { get; set; }
+    public int? RecordsAtOnce { get; set; }
 
-    public int? Renderers { get; set; }
+    public int? RenderThreads { get; set; }
 
-    public int? BatchRecords { get; set; }
-
-    public int? BatchSize { get; set; }
+    public int? RecordsPerBatch { get; set; }
 
     /// <summary>A source's setting only: how many of its interfaces run at once.</summary>
+    public int? InterfacesAtOnce { get; set; }
+
+    /// <summary>Renamed <see cref="RecordsAtOnce"/>; refused here.</summary>
+    public int? Concurrency { get; set; }
+
+    /// <summary>Renamed <see cref="Nodes"/>; refused here.</summary>
+    public int? FanOut { get; set; }
+
+    /// <summary>Renamed <see cref="MinRowsPerNode"/>; refused here.</summary>
+    public int? FanOutMinRecords { get; set; }
+
+    /// <summary>Renamed <see cref="RenderThreads"/>; refused here.</summary>
+    public int? Renderers { get; set; }
+
+    /// <summary>Renamed <see cref="RecordsPerBatch"/>; refused here.</summary>
+    public int? BatchRecords { get; set; }
+
+    /// <summary>Gone: retries are claimed <see cref="RecordsAtOnce"/> at a time; refused here.</summary>
+    public int? BatchSize { get; set; }
+
+    /// <summary>Renamed <see cref="InterfacesAtOnce"/>; refused here.</summary>
     public int? Interfaces { get; set; }
 }
 

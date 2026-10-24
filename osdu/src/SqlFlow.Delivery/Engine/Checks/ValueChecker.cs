@@ -73,7 +73,7 @@ public sealed partial class ValueChecker
         var selection = Select(request.Targets, mapping, resolved.Schema);
         var header = await _runtime.Planner.OpenAsync(flow, resolved, _runtime.Parameters, SourceSelection.Full(), gate: false, stored: null, ct: ct).ConfigureAwait(false);
         var tally = new ValueTally(mapping, resolved.Schema, selection, request, _limits, each);
-        var parallelism = flow.Parallelism.EffectiveRenderers;
+        var parallelism = flow.Parallelism.EffectiveRenderThreads;
         var rounds = Planner.SearchRounds(mapping);
         var batch = new List<SourceRecord>(_limits.Batch);
         var read = 0L;

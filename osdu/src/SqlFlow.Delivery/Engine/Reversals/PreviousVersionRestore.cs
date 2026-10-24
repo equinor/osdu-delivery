@@ -45,7 +45,7 @@ public sealed class PreviousVersionRestore
     }
 
     /// <summary>OSDU reads made at once: the flow's own concurrency, at least one.</summary>
-    private int Concurrency => Math.Max(1, _flow.Parallelism.Concurrency);
+    private int Concurrency => Math.Max(1, _flow.Parallelism.RecordsAtOnce);
 
     /// <summary>
     /// Steps back <paramref name="records"/>, each a record of the flow that claimed its OSDU id, and settles those written

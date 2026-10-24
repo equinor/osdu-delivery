@@ -527,12 +527,13 @@ internal static partial class FlowMapper
         var path = source == "<inline>" ? null : source;
         var partitions = MapPartitions(y.Partitions, source);
         var ledgerPartition = MapKeepLedger(y.KeepLedger, partitions, source);
-        RefuseMoved(y.Reliability, "reliability", "parallelism", DeliveryParallelismKeys, _ => string.Empty, source);
+        RefuseMoved(y.Reliability, "reliability", "parallelism", DeliveryRename, _ => string.Empty, source);
+        RefuseRenamed(y.Parallelism, "parallelism", source);
         if (y.Interfaces is null)
         {
-            if (y.Parallelism?.Interfaces is not null)
+            if (y.Parallelism?.InterfacesAtOnce is not null)
             {
-                throw new FlowValidationException($"{source}: parallelism.interfaces says how many interfaces run at once, and the document declares no interfaces.");
+                throw new FlowValidationException($"{source}: parallelism.interfacesAtOnce says how many interfaces run at once, and the document declares no interfaces.");
             }
 
             var flow = WithLedgerPartition(MapFlow(y, source, KeyPaths.Single, partitions), ledgerPartition, source);
@@ -881,12 +882,16 @@ internal static partial class FlowMapper
             var at = $"interfaces.{interfaceName}";
             var i = declared ?? throw new FlowValidationException($"{source}: {at} declares nothing; an interface needs at least its record and its mapping.");
             RefuseMoved(
-                i.Reliability, $"{at}.reliability", $"{at}.parallelism", InterfaceParallelismKeys,
-                _ => "how many interfaces run at once is the source's setting, parallelism.interfaces. Set it there.", source);
-            if (i.Parallelism?.Interfaces is not null)
+                i.Reliability, $"{at}.reliability", $"{at}.parallelism", was => was == "parallelInterfaces" ? null : DeliveryRename(was),
+                _ => "how many interfaces run at once is the source's setting, parallelism.interfacesAtOnce. Set it there.", source);
+            if (i.Parallelism is { } own && (own.InterfacesAtOnce is not null || own.Interfaces is not null))
             {
-                throw new FlowValidationException($"{source}: {at}.parallelism.interfaces is the source's setting: how many of its interfaces run at once. Set it under parallelism.");
+                var written = own.InterfacesAtOnce is not null ? "interfacesAtOnce" : "interfaces";
+                throw new FlowValidationException(
+                    $"{source}: {at}.parallelism.{written} is the source's setting: how many of its interfaces run at once. Set it under parallelism as interfacesAtOnce.");
             }
+
+            RefuseRenamed(i.Parallelism, $"{at}.parallelism", source);
 
             var paths = KeyPaths.ForInterface(interfaceName);
             var route = ResolveRoute(i, at, source);
@@ -1404,10 +1409,10 @@ internal static partial class FlowMapper
 
     private static int MapParallelInterfaces(FlowParallelismYaml? parallelism, string source)
     {
-        var parallel = parallelism?.Interfaces ?? SourceDefinition.DefaultParallelInterfaces;
+        var parallel = parallelism?.InterfacesAtOnce ?? SourceDefinition.DefaultParallelInterfaces;
         return parallel is < 1 or > SourceDefinition.MaxParallelInterfaces
             ? throw new FlowValidationException(
-                string.Create(CultureInfo.InvariantCulture, $"{source}: parallelism.interfaces must be between 1 and {SourceDefinition.MaxParallelInterfaces}."))
+                string.Create(CultureInfo.InvariantCulture, $"{source}: parallelism.interfacesAtOnce must be between 1 and {SourceDefinition.MaxParallelInterfaces}."))
             : parallel;
     }
 
@@ -1839,30 +1844,32 @@ internal static partial class FlowMapper
             throw new FlowValidationException($"{source}: {paths.Shared("reliability.retry.attempts")} must be at least 1.");
         }
 
-        if (flow.Parallelism.Concurrency < 1)
-        {
-            throw new FlowValidationException($"{source}: {paths.Shared("parallelism.concurrency")} must be at least 1.");
-        }
-
-        if (flow.Parallelism.BatchRecords is < 1 or > FlowParallelism.MaxBatchRecords)
+        if (flow.Parallelism.Nodes is < 1 or > FlowParallelism.MaxNodes)
         {
             throw new FlowValidationException(
-                string.Create(CultureInfo.InvariantCulture, $"{source}: {paths.Shared("parallelism.batchRecords")} must be between 1 and {FlowParallelism.MaxBatchRecords}."));
+                string.Create(CultureInfo.InvariantCulture, $"{source}: {paths.Shared("parallelism.nodes")} must be between 1 and {FlowParallelism.MaxNodes}: the most nodes a delivery is spread over, 1 keeping it on one."));
         }
 
-        if (flow.Parallelism.FanOut is < 0 or > FlowParallelism.MaxFanOut)
+        if (flow.Parallelism.MinRowsPerNode < 1)
         {
-            throw new FlowValidationException($"{source}: {paths.Shared("parallelism.fanOut")} must be between 0 and {FlowParallelism.MaxFanOut}.");
+            throw new FlowValidationException($"{source}: {paths.Shared("parallelism.minRowsPerNode")} must be at least 1.");
         }
 
-        if (flow.Parallelism.FanOutMinRecords < 1)
+        if (flow.Parallelism.RecordsAtOnce < 1)
         {
-            throw new FlowValidationException($"{source}: {paths.Shared("parallelism.fanOutMinRecords")} must be at least 1.");
+            throw new FlowValidationException($"{source}: {paths.Shared("parallelism.recordsAtOnce")} must be at least 1.");
         }
 
-        if (flow.Parallelism.Renderers is < 0 or > FlowParallelism.MaxRenderers)
+        if (flow.Parallelism.RecordsPerBatch is < 1 or > FlowParallelism.MaxRecordsPerBatch)
         {
-            throw new FlowValidationException($"{source}: {paths.Shared("parallelism.renderers")} must be between 0 and {FlowParallelism.MaxRenderers}.");
+            throw new FlowValidationException(
+                string.Create(CultureInfo.InvariantCulture, $"{source}: {paths.Shared("parallelism.recordsPerBatch")} must be between 1 and {FlowParallelism.MaxRecordsPerBatch}."));
+        }
+
+        if (flow.Parallelism.RenderThreads is < 0 or > FlowParallelism.MaxRenderThreads)
+        {
+            throw new FlowValidationException(
+                string.Create(CultureInfo.InvariantCulture, $"{source}: {paths.Shared("parallelism.renderThreads")} must be between 0 and {FlowParallelism.MaxRenderThreads}."));
         }
 
         // Every OSDU service makes data-partition-id a required header (openapi storage v2, file v2, search v2,
@@ -2725,55 +2732,98 @@ internal static partial class FlowMapper
         };
     }
 
-    /// <summary>The parallelism keys a delivery source takes.</summary>
-    private static readonly FrozenSet<string> DeliveryParallelismKeys =
-        new[] { "concurrency", "fanOut", "fanOutMinRecords", "renderers", "batchRecords", "batchSize", "interfaces" }.ToFrozenSet(StringComparer.Ordinal);
-
-    /// <summary>The parallelism keys an interface of a source lays over the source's: all but how many interfaces run at once.</summary>
-    private static readonly FrozenSet<string> InterfaceParallelismKeys = DeliveryParallelismKeys.Where(k => k != "interfaces").ToFrozenSet(StringComparer.Ordinal);
-
-    /// <summary>The parallelism key an assertion, dimension, inventory or retrieval flow takes.</summary>
-    private static readonly FrozenSet<string> RunParallelismKeys = new[] { "concurrency" }.ToFrozenSet(StringComparer.Ordinal);
-
     /// <summary>
-    /// The settings that moved from <c>reliability</c> to <c>parallelism</c>: the name <c>reliability</c> knew each by, the
-    /// key it is written as now, and whether a block sets it.
+    /// Where a setting a delivery flow's <c>reliability</c> block still declares is written now, by the name <c>reliability</c>
+    /// knew it by; null for the one that is gone (<c>batchSize</c>: retries are claimed <c>recordsAtOnce</c> at a time).
     /// </summary>
-    private static readonly (string Was, string Now, Func<FlowReliabilityYaml, bool> Set)[] MovedToParallelism =
+    private static string? DeliveryRename(string was) => was switch
+    {
+        "concurrency" => "recordsAtOnce",
+        "fanOut" => "nodes",
+        "fanOutMinRecords" => "minRowsPerNode",
+        "renderParallelism" => "renderThreads",
+        "batchRecords" => "recordsPerBatch",
+        "parallelInterfaces" => "interfacesAtOnce",
+        _ => null,
+    };
+
+    /// <summary>The settings that moved from <c>reliability</c> to <c>parallelism</c>, by the name <c>reliability</c> knew each by, and whether a block sets it.</summary>
+    private static readonly (string Was, Func<FlowReliabilityYaml, bool> Set)[] MovedToParallelism =
     [
-        ("concurrency", "concurrency", r => r.Concurrency is not null),
-        ("fanOut", "fanOut", r => r.FanOut is not null),
-        ("fanOutMinRecords", "fanOutMinRecords", r => r.FanOutMinRecords is not null),
-        ("renderParallelism", "renderers", r => r.RenderParallelism is not null),
-        ("batchRecords", "batchRecords", r => r.BatchRecords is not null),
-        ("batchSize", "batchSize", r => r.BatchSize is not null),
-        ("parallelInterfaces", "interfaces", r => r.ParallelInterfaces is not null),
+        ("concurrency", r => r.Concurrency is not null),
+        ("fanOut", r => r.FanOut is not null),
+        ("fanOutMinRecords", r => r.FanOutMinRecords is not null),
+        ("renderParallelism", r => r.RenderParallelism is not null),
+        ("batchRecords", r => r.BatchRecords is not null),
+        ("batchSize", r => r.BatchSize is not null),
+        ("parallelInterfaces", r => r.ParallelInterfaces is not null),
     ];
 
     /// <summary>
     /// Refuses a setting a <c>reliability</c> block still declares that moved to <c>parallelism</c>
     /// (osdu/docs/reference/flow/delivery.md, parallelism), naming where it is written now: <paramref name="at"/> is where
-    /// the block sits and <paramref name="parallelismAt"/> its parallelism beside it. A setting the flow's
-    /// <paramref name="takes"/> leaves out is refused with <paramref name="unused"/>, which says why from the key's new name.
+    /// the block sits and <paramref name="parallelismAt"/> its parallelism beside it. <paramref name="writtenAs"/> gives the
+    /// key the flow writes it as now, or null when the flow takes it no more, which <paramref name="unused"/> then explains;
+    /// <c>batchSize</c> is gone from every kind.
     /// </summary>
     private static void RefuseMoved(
-        FlowReliabilityYaml? r, string at, string parallelismAt, FrozenSet<string> takes, Func<string, string> unused, string source)
+        FlowReliabilityYaml? r, string at, string parallelismAt, Func<string, string?> writtenAs, Func<string, string> unused, string source)
     {
         if (r is null)
         {
             return;
         }
 
-        foreach (var (was, now, set) in MovedToParallelism)
+        foreach (var (was, set) in MovedToParallelism)
         {
             if (!set(r))
             {
                 continue;
             }
 
-            throw new FlowValidationException(takes.Contains(now)
+            if (was == "batchSize")
+            {
+                throw new FlowValidationException(
+                    $"{source}: {at}.batchSize is not a setting any more: a worker claims the records due for a retry {parallelismAt}.recordsAtOnce at a time, at least {FlowParallelism.RetryClaimFloor}. Remove it.");
+            }
+
+            throw new FlowValidationException(writtenAs(was) is { } now
                 ? $"{source}: {at}.{was} is now {parallelismAt}.{now}: what runs at once, and across the fleet, is the flow's parallelism, and reliability keeps what makes a request hold. Move it."
-                : $"{source}: {at}.{was} is not a setting here any more: {unused(now)}");
+                : $"{source}: {at}.{was} is not a setting here any more: {unused(was)}");
+        }
+    }
+
+    /// <summary>The keys a delivery flow's <c>parallelism</c> block knew before each said what it is, and what each is now.</summary>
+    private static readonly (string Was, string? Now, string What, Func<FlowParallelismYaml, bool> Set)[] RenamedInParallelism =
+    [
+        ("fanOut", "nodes", "the most nodes a delivery is spread over, each part on a node of its own; it counts every part, where fanOut counted the parts beside the first run", p => p.FanOut is not null),
+        ("fanOutMinRecords", "minRowsPerNode", "the fewest rows a part takes", p => p.FanOutMinRecords is not null),
+        ("concurrency", "recordsAtOnce", "the records each part sends to OSDU at the same time", p => p.Concurrency is not null),
+        ("renderers", "renderThreads", "the threads that render records on one node", p => p.Renderers is not null),
+        ("batchRecords", "recordsPerBatch", "the records one batch file holds", p => p.BatchRecords is not null),
+        ("batchSize", null, $"a worker claims the records due for a retry recordsAtOnce at a time, at least {FlowParallelism.RetryClaimFloor}", p => p.BatchSize is not null),
+        ("interfaces", "interfacesAtOnce", "how many interfaces of a source deliver at the same time", p => p.Interfaces is not null),
+    ];
+
+    /// <summary>
+    /// Refuses a key a delivery flow's <c>parallelism</c> block at <paramref name="at"/> still writes by the name it had
+    /// before each key said what it is (osdu/docs/reference/flow/delivery.md, parallelism), naming the key it is now.
+    /// </summary>
+    private static void RefuseRenamed(FlowParallelismYaml? p, string at, string source)
+    {
+        if (p is null)
+        {
+            return;
+        }
+
+        foreach (var (was, now, what, set) in RenamedInParallelism)
+        {
+            if (set(p))
+            {
+                throw new FlowValidationException(now is null
+                    ? $"{source}: {at}.{was} is not a setting any more: {what}. Remove it."
+                    : $"{source}: {at}.{was} is now {at}.{now}: {what}. Rename it.");
+            }
         }
     }
 
@@ -2785,8 +2835,8 @@ internal static partial class FlowMapper
     internal static FlowReliability MapReliability(FlowReliabilityYaml? r, string kind, bool takesConcurrency, string source)
     {
         RefuseMoved(
-            r, "reliability", "parallelism", takesConcurrency ? RunParallelismKeys : FrozenSet<string>.Empty,
-            now => $"a delivery flow writes it as parallelism.{now}, and {kind} has no use for it. Remove it.", source);
+            r, "reliability", "parallelism", was => takesConcurrency && was == "concurrency" ? "concurrency" : null,
+            was => $"a delivery flow writes it as parallelism.{DeliveryRename(was)}, and {kind} has no use for it. Remove it.", source);
         return MapReliability(r, source, KeyPaths.Single);
     }
 
@@ -2805,12 +2855,11 @@ internal static partial class FlowMapper
         var defaults = new FlowParallelism();
         return p is null ? defaults : new FlowParallelism
         {
-            Concurrency = p.Concurrency ?? defaults.Concurrency,
-            FanOut = p.FanOut ?? defaults.FanOut,
-            FanOutMinRecords = p.FanOutMinRecords ?? defaults.FanOutMinRecords,
-            Renderers = p.Renderers ?? defaults.Renderers,
-            BatchRecords = p.BatchRecords ?? defaults.BatchRecords,
-            BatchSize = p.BatchSize ?? defaults.BatchSize,
+            Nodes = p.Nodes ?? defaults.Nodes,
+            MinRowsPerNode = p.MinRowsPerNode ?? defaults.MinRowsPerNode,
+            RecordsAtOnce = p.RecordsAtOnce ?? defaults.RecordsAtOnce,
+            RenderThreads = p.RenderThreads ?? defaults.RenderThreads,
+            RecordsPerBatch = p.RecordsPerBatch ?? defaults.RecordsPerBatch,
         };
     }
 

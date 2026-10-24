@@ -32,18 +32,22 @@ public sealed record FanOutState(IReadOnlyList<FanOutMemberState> Members)
 
 /// <summary>
 /// How a delivery run spreads its work across the fleet (osdu/docs/reference/concepts/submissions.md, Many nodes): it
-/// asks the platform to enqueue member runs of its own flow (intake slices, then drains), reads their state while it
-/// waits, and takes them with it when it is cancelled. One seam, one implementation: the platform hands the run an
-/// <see cref="IRunFanOut"/> when the host it executes on can enqueue runs (the control plane and a node), and a run
-/// without one does all its work itself.
+/// asks the platform to queue runs of its own flow, one per part of its rows, reads their state while it waits, and takes
+/// them with it when it is cancelled. One seam, one implementation: the platform hands the run an <see cref="IRunFanOut"/>
+/// when the host it executes on can queue runs (the control plane and a node), and a run without one does all its work
+/// itself.
 /// </summary>
 public interface IFanOutDispatcher
 {
     /// <summary>False when this run cannot enqueue members; the run then works alone.</summary>
     bool Available { get; }
 
-    /// <summary>Enqueues one member run per parameter set; a re-executed run gets back the members it already has.</summary>
-    Task<FanOutHandle> EnqueueAsync(IReadOnlyList<RunParameters> members, CancellationToken ct = default);
+    /// <summary>
+    /// Queues one run per parameter set; a re-executed run gets back the runs it already has. With
+    /// <paramref name="wholeNode"/> each takes a node to itself: the platform hands it only to a node executing nothing else,
+    /// and the autoscaler starts a node for each one no idle node takes.
+    /// </summary>
+    Task<FanOutHandle> EnqueueAsync(IReadOnlyList<RunParameters> members, bool wholeNode, CancellationToken ct = default);
 
     Task<FanOutState> StateAsync(FanOutHandle handle, CancellationToken ct = default);
 
@@ -63,10 +67,10 @@ public sealed class RunFanOutDispatcher : IFanOutDispatcher
 
     public bool Available => true;
 
-    public async Task<FanOutHandle> EnqueueAsync(IReadOnlyList<RunParameters> members, CancellationToken ct = default)
+    public async Task<FanOutHandle> EnqueueAsync(IReadOnlyList<RunParameters> members, bool wholeNode, CancellationToken ct = default)
     {
         ArgumentNullException.ThrowIfNull(members);
-        var handle = await _fanOut.EnqueueAsync(members, ct).ConfigureAwait(false);
+        var handle = await _fanOut.EnqueueAsync(members, wholeNode, ct).ConfigureAwait(false);
         return new FanOutHandle(handle.GroupId, handle.RunIds);
     }
 
@@ -91,8 +95,8 @@ public sealed class NoFanOutDispatcher : IFanOutDispatcher
 
     public bool Available => false;
 
-    public Task<FanOutHandle> EnqueueAsync(IReadOnlyList<RunParameters> members, CancellationToken ct = default)
-        => throw new DeliveryException("This run was not given a fan-out, so it cannot enqueue member runs; it does its work itself.");
+    public Task<FanOutHandle> EnqueueAsync(IReadOnlyList<RunParameters> members, bool wholeNode, CancellationToken ct = default)
+        => throw new DeliveryException("This run was not given a fan-out, so it cannot queue runs of its flow; it does its work itself.");
 
     public Task<FanOutState> StateAsync(FanOutHandle handle, CancellationToken ct = default)
         => throw new DeliveryException("This run was not given a fan-out, so it has no member runs to read.");

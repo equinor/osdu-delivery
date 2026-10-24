@@ -368,12 +368,12 @@ public sealed partial class FlowRuntime : IDisposable
     /// <summary>The submission the run works on, when it names one: a re-run, or a fan-out member's.</summary>
     public Guid? SubmissionId { get; set; }
 
-    /// <summary>The key slices a fan-out member plans of its coordinating run's submission; null plans the whole read.</summary>
+    /// <summary>The key slices a part of a split delivery delivers of the delivery's submission; null reads the whole scope.</summary>
     public IReadOnlyList<int>? Slices { get; set; }
 
     /// <summary>
-    /// Has this run send under <paramref name="runs"/>'s share of the flow's <c>reliability.rateLimitRps</c>: a fan-out member
-    /// does for the whole of its run (its payload names the share), a coordinating run while its members run. 1 takes the
+    /// Has this run send under <paramref name="runs"/>'s share of the flow's <c>reliability.rateLimitRps</c>: a part of a split
+    /// delivery does for the whole of its run (its payload names the share). 1 takes the
     /// whole rate back.
     /// </summary>
     public void ShareRateLimit(int runs) => _target.ShareRateLimit(runs);
@@ -574,7 +574,7 @@ public sealed partial class FlowRuntime : IDisposable
 
     /// <summary>
     /// A worker of this run, working on <paramref name="batches"/> alone and reading them from <paramref name="workRoot"/>
-    /// when they are given: a slice run's, on the batches of its share in the folder it wrote them to.
+    /// when they are given: a part's, on the batches of its slices in the folder it wrote them to.
     /// </summary>
     private async Task<DeliveryWorker> WorkerAsync(BatchRange? batches, string? workRoot, CancellationToken ct)
         => new(RequireLedger(), _context.Payloads, _context.Stores, await ProtocolAsync(ct).ConfigureAwait(false), Flow, _context.Time, _context.Listener, _context.Loggers.CreateLogger<DeliveryWorker>())
@@ -708,15 +708,15 @@ public sealed partial class FlowRuntime : IDisposable
 
     /// <summary>
     /// Plan and send, fanned out across the fleet when the flow asks for it: the <c>deliver</c> operation. A run that names
-    /// key slices (<see cref="Slices"/>) is a slice run of a fan-out, and delivers that share of its coordinating run's
+    /// key slices (<see cref="Slices"/>) is a part of a split delivery, and delivers the rows of those slices of the delivery's
     /// submission alone.
     /// </summary>
     public Task<RunResult> RunAsync(bool force, CancellationToken ct = default)
-        => TrackAsync("deliver", new { force, source = Flow.Source.Record.Object, selection = Selection.Describe(), parameters = Parameters, fanOut = Flow.Parallelism.FanOut, slices = Slices is null ? null : KeySlices.Describe(Slices) }, null, async () =>
+        => TrackAsync("deliver", new { force, source = Flow.Source.Record.Object, selection = Selection.Describe(), parameters = Parameters, nodes = Flow.Parallelism.Nodes, slices = Slices is null ? null : KeySlices.Describe(Slices) }, null, async () =>
         {
             if (Slices is { Count: > 0 } share)
             {
-                // A slice run never closes the submission it works on, however it ends: its coordinating run does.
+                // A part never closes the submission it works on, however it ends: the delivery's first run does.
                 try
                 {
                     return Tracked(await DeliverShareAsync(share, force, ct).ConfigureAwait(false));

@@ -2,7 +2,7 @@
 id: delivery-wiki-0025-parallelism-and-default-fan-out
 title: "Decision 0025: What runs at once is a flow's parallelism, and a delivery fans out by default"
 type: decision
-summary: "Why parallelism left reliability, why a large delivery fans out by default into slice runs that each deliver their share, and what was rejected."
+summary: "Why a delivery is spread over nodes by default, a part per node worked out from its rows, why its keys say what they are, and what was rejected."
 keywords:
   - parallelism
   - fan-out by default
@@ -13,6 +13,9 @@ keywords:
   - rate limit across a fan-out
   - batch file written again
   - slice runs
+  - nodes
+  - parts on nodes of their own
+  - whole-node runs
 referenceRefs:
   - delivery-flow-delivery
   - delivery-concept-submissions
@@ -29,6 +32,9 @@ sourceRefs:
   - osdu/src/SqlFlow.Delivery/Ledger/OsduLedger.Leases.cs
   - sqlflow/src/SqlFlow.Orchestration/IRunFanOut.cs
   - sqlflow/src/SqlFlow.SqlServer/Export/ExportSegmentPlanner.cs
+  - sqlflow/src/SqlFlow.Dispatch/DispatchState.cs
+  - sqlflow/src/SqlFlow.Catalog/ScaleTargetStore.cs
+  - osdu/src/SqlFlow.Delivery/Source/KeySlices.cs
   - osdu/src/SqlFlow.Delivery/Engine/DeliveryRunPayload.cs
   - osdu/src/SqlFlow.Delivery/Engine/DeliveryExecutor.cs
   - osdu/src/SqlFlow.Delivery/Engine/TargetConnection.cs
@@ -116,6 +122,31 @@ balancing, and filed under reliability it went unnoticed.
   (`sqlflow/src/SqlFlow.Catalog/RunQueueStore.cs`), so it would have changed SQLFlow's node protocol, dispatcher and
   catalog, where the grace keeps the change in the module.
 - **Slice runs are queued before the coordinating run delivers its own share,** so the nodes deliver beside it.
+- **A flow says how many nodes; a run works out the rest, and each part has a node to itself.** With slice runs a
+  delivery of 5,000 records spread over nine runs, the coordinating run and eight members, but the pool's workers took
+  four runs each, so the nine shared three workers. `fanOut` counted runs, a worker's slots were fixed inside SQLFlow's
+  worker, and how many workers a delivery used followed from both, which the human found hard to understand and harder to
+  steer. In their words: say how many rows there are and how many nodes the user wants, and compute the rest. A flow
+  writes `parallelism.nodes`, the most nodes a delivery is spread over; a run splits into a part per `minRowsPerNode` rows
+  it reads (1,000), at most `nodes`, so an incremental run of a few rows stays on one node and a full delivery is spread.
+  1,000 rows is about four minutes of work at the rate the human's pool sent, longer than the autoscaler takes to start a
+  node, so each node is worth starting. Each part asks SQLFlow for a node to itself (`IRunFanOut.EnqueueAsync(members,
+  wholeNode: true, ct)`, a generic extension point recorded in `docs/sqlflow-changes.md`): the dispatcher hands it only to a
+  node executing nothing else, and the replica target counts it as a node, so the parts and the nodes are one number while
+  every other run still shares a node four at a time. Setting a worker's slots to one for the whole pool was the other way,
+  and was rejected because every ingestion and cache run would then take a node too. When a delivery is split, the first
+  run delivers no range itself and only coordinates, so every range is on a node of its own; it delivers a range only when
+  the part that had it never started or failed.
+- **The keys say what they are.** The human found `concurrency`, `fanOut` and `batchSize` side by side confusing:
+  `batchSize` sounded like the main batch and only governed retries. The delivery's keys are now `nodes`,
+  `minRowsPerNode`, `recordsAtOnce`, `renderThreads`, `recordsPerBatch` and `interfacesAtOnce`, `batchSize` is gone (a
+  worker claims retries `recordsAtOnce` at a time, at least 50), and an old name is refused naming the new one, as the
+  move out of `reliability` was. The other kinds keep `concurrency`, which counts what each of them runs at once.
+- **The split is fail safe.** The ranges are contiguous and exhaustive by construction (the first has no lower bound,
+  the last no upper bound, each starts where the one before ends) and are recorded on the submission before any part
+  starts, so a part executed again, or taken over, reads exactly its range. A range a part did not deliver is delivered
+  by the first run, and a record whose document was on a lost node is held to be planned again, never dropped and never
+  sent from a document that is not its own.
 - **A rate limit holds for the fan-out as a whole.** Each run built its own limiter from `reliability.rateLimitRps`, so a
   fan-out sent the declared rate once per run; on by default, a flow that set a rate to spare a service would have sent
   nine times it. Each run now sends under its share, the rate divided between the coordinating run and its slice runs;

@@ -102,8 +102,7 @@ reliability:
   leaseSeconds: 300
 
 parallelism:
-  concurrency: 8
-  batchSize: 50
+  recordsAtOnce: 8
 
 # Hourly, with logSource COMPOSITE (../schedules.yaml). A verify (drift) run is a schedule of its own in the GUI, or a run
 # with --operation verify.

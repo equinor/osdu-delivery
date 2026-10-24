@@ -281,7 +281,7 @@ public class SqlServerChainTests
     public async Task A_fan_out_over_key_slices_plans_every_record_once_with_disjoint_batches_and_one_watermark()
     {
         const int Records = 2000;
-        await using var estate = await SqlServerIngestionFixture.StartAsync(fanOut: 2, batchRecords: 250);
+        await using var estate = await SqlServerIngestionFixture.StartAsync(nodes: 2, recordsPerBatch: 250);
         var template = SampleWellLogs.Logs()[0];
         await estate.WritePayloadsAsync([template]);
         await estate.WriteRowsAsync("welllog", LogFile, SampleWellLogs.LogColumns, GeneratedLogs(template, Records));
@@ -342,7 +342,7 @@ public class SqlServerChainTests
     {
         const int Records = 400;
         const int Nodes = 3;
-        await using var estate = await SqlServerIngestionFixture.StartAsync(fanOut: Nodes, batchRecords: 40);
+        await using var estate = await SqlServerIngestionFixture.StartAsync(nodes: Nodes, recordsPerBatch: 40);
         var template = SampleWellLogs.Logs()[0];
         await estate.WritePayloadsAsync([template]);
         await estate.WriteRowsAsync("welllog", LogFile, SampleWellLogs.LogColumns, GeneratedLogs(template, Records));
@@ -669,12 +669,11 @@ public class SqlServerChainTests
               protocolOptions:
                 ddmsRoot: /api/os-wellbore-ddms
             parallelism:
-              concurrency: 8
-              batchSize: 50
-              batchRecords: 20
-              fanOut: {{nodes.ToString(CultureInfo.InvariantCulture)}}
-              fanOutMinRecords: 1
-              interfaces: 2
+              recordsAtOnce: 8
+              recordsPerBatch: 20
+              nodes: {{nodes.ToString(CultureInfo.InvariantCulture)}}
+              minRowsPerNode: 1
+              interfacesAtOnce: 2
             interfaces:
               wellbores:
                 record: { object: {{Table("Wellbore")}}, key: [facility_name], primaryKey: RecId }
@@ -729,7 +728,7 @@ public class SqlServerChainTests
         await estate.WritePayloadsAsync(logs);
         await estate.RunIngestionChainAsync();
         var shipped = estate.DeliveryFlow();
-        var flow = shipped with { Parallelism = shipped.Parallelism with { Concurrency = 1 } };
+        var flow = shipped with { Parallelism = shipped.Parallelism with { RecordsAtOnce = 1 } };
         using var runtime = await FlowRuntime.CreateAsync(estate.Engine, flow, SampleEstate.Values);
         runtime.Selection = SourceSelection.Full();
         var intake = await runtime.IntakeAsync(force: false);
@@ -809,7 +808,7 @@ public class SqlServerChainTests
         var root = Samples.NewTempDirectory();
         try
         {
-            SqlServerIngestionFixture.GenerateEstate(root, Database, Suffix, "SQLFLOW_CHAIN_DB_" + Suffix, fanOut: 2, batchRecords: 250);
+            SqlServerIngestionFixture.GenerateEstate(root, Database, Suffix, "SQLFLOW_CHAIN_DB_" + Suffix, nodes: 2, recordsPerBatch: 250);
 
             // The loader the platform reads a repository with, knowing the module's kinds, so the delivery document is
             // parsed by the same code a node would parse it with.
@@ -1069,11 +1068,15 @@ public class SqlServerChainTests
 
         public List<(string Operation, DeliveryRunPayload Payload)> Enqueued { get; } = [];
 
+        /// <summary>Whether every fan-out asked for a node per run.</summary>
+        public bool WholeNode { get; private set; } = true;
+
         public bool Available => true;
 
-        public async Task<FanOutHandle> EnqueueAsync(IReadOnlyList<RunParameters> members, CancellationToken ct = default)
+        public async Task<FanOutHandle> EnqueueAsync(IReadOnlyList<RunParameters> members, bool wholeNode, CancellationToken ct = default)
         {
             ArgumentNullException.ThrowIfNull(members);
+            WholeNode &= wholeNode;
             var groupId = Guid.NewGuid();
             var ids = new List<Guid>();
             foreach (var member in members)
@@ -1147,7 +1150,7 @@ public class SqlServerChainTests
             }
         }
 
-        public Task<RunFanOutHandle> EnqueueAsync(IReadOnlyList<RunParameters> members, CancellationToken ct)
+        public Task<RunFanOutHandle> EnqueueAsync(IReadOnlyList<RunParameters> members, bool wholeNode, CancellationToken ct)
         {
             ArgumentNullException.ThrowIfNull(members);
             var ids = new List<Guid>();
@@ -1276,9 +1279,10 @@ public class SqlServerChainTests
             }
         }
 
-        public Task<FanOutHandle> EnqueueAsync(IReadOnlyList<RunParameters> members, CancellationToken ct = default)
+        public Task<FanOutHandle> EnqueueAsync(IReadOnlyList<RunParameters> members, bool wholeNode, CancellationToken ct = default)
         {
             ArgumentNullException.ThrowIfNull(members);
+            Assert.True(wholeNode, "a split delivery asks for a node per part");
             var engine = Engine ?? throw new InvalidOperationException("The nodes have no engine to run their members on.");
             var ids = new List<Guid>();
             lock (_gate)

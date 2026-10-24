@@ -136,18 +136,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   pipeline that is running, and ends failed when OSDU refuses a record; the removal routes answer `runId` in place of
   `taskId`, and the `delivery-delete` node task is gone
   ([Removing records from OSDU](osdu/docs/reference/concepts/removal-and-reversal.md#removing-records-from-osdu)).
-- **What runs at once is a flow's `parallelism` block; `reliability` keeps what makes a request hold.** `concurrency`,
-  `fanOut`, `fanOutMinRecords`, `batchRecords` and `batchSize` move from `reliability` to `parallelism`,
-  `renderParallelism` becomes `parallelism.renderers` and `parallelInterfaces` `parallelism.interfaces`, and an
-  assertion, dimension, inventory or retrieval flow takes `parallelism.concurrency` alone. A document that still writes
-  one of them under `reliability` is refused, naming where it goes: move them in every flow when you upgrade
-  ([parallelism](osdu/docs/reference/flow/delivery.md#parallelism)).
-- **A large delivery spreads across the fleet by default.** A submission of 1,000 records or more is split into shares
-  of its key slices, and the flow is queued again once per share, up to eight runs, each delivering its share from
-  whichever worker takes it, so an autoscaled pool brings up nodes for it and the flows need no change:
-  `source.work` stays a folder of each worker's own. `parallelism.fanOut: 0` keeps a flow on one run, and a flow without
-  `source.record.primaryKey`, which the slices are cut on, runs on one run as before. `reliability.rateLimitRps` now holds
-  for the whole fan-out, and each run's trace says why it did not fan out ([many nodes](osdu/docs/reference/concepts/submissions.md#many-nodes)).
+- **What runs at once is a flow's `parallelism` block, each key named for what it is; `reliability` keeps what makes a
+  request hold.** A delivery flow writes `nodes`, `minRowsPerNode`, `recordsAtOnce`, `renderThreads`, `recordsPerBatch`
+  and `interfacesAtOnce`. They were `fanOut` (which counted the parts beside the first run), `fanOutMinRecords`,
+  `concurrency`, `renderers` (`reliability.renderParallelism` before), `batchRecords` and `interfaces`
+  (`reliability.parallelInterfaces`), and `batchSize` is gone: retries are claimed `recordsAtOnce` at a time, at least
+  50. An assertion, dimension, inventory or retrieval flow takes `parallelism.concurrency` alone. A document that still
+  writes an old name, or a setting under `reliability`, is refused, naming the key it is now: rename them in every flow
+  when you upgrade ([parallelism](osdu/docs/reference/flow/delivery.md#parallelism)).
+- **A large delivery is spread over the workers by default, each part on a worker of its own.** A run is split into a
+  part per 1,000 rows it reads, up to `parallelism.nodes` (8 by default), so an incremental run of a few changed rows
+  stays on one worker and a full delivery of thousands is spread over several. Each part is a run of the same flow that
+  delivers its range of the primary key from a worker to itself, and the autoscaler starts a worker per part; the first
+  run coordinates and closes the delivery. The flows need no change beyond the renamed keys: `source.work` stays a folder
+  of each worker's own. `parallelism.nodes: 1` keeps a flow on one worker, and a flow without `source.record.primaryKey`,
+  which the rows are split on, runs on one as before. `reliability.rateLimitRps` holds for the whole delivery, and each
+  run's trace says why it was not split ([many nodes](osdu/docs/reference/concepts/submissions.md#many-nodes)).
 
 - **`--set` repeated for one name gives it a list.** `--set logSource=A --set logSource=B` used to keep `B`; it now gives
   `logSource` both values, which only a delivery flow's scope parameter takes, and any other parameter refuses. Give a name
@@ -300,9 +304,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   filter matched, not just those the issue keeps blocked; the removal now carries the whole filter, and refuses one that
   matches more than 25,000 records when it runs as well as when it is asked
   ([Removing records from OSDU](osdu/docs/reference/concepts/removal-and-reversal.md#removing-records-from-osdu)).
-- **A delivery never waits for ever on runs no node starts, and survives one that fails.** A coordinating run whose
-  slice runs stay queued for three minutes on a pool with no place free stops them and delivers their shares itself, as
-  it does the share of a slice run that failed ([many nodes](osdu/docs/reference/concepts/submissions.md#many-nodes)).
+- **A split delivery never waits for ever on parts no worker starts, and survives one that fails.** A first run whose
+  parts stay queued for three minutes on a pool with no place free stops them and delivers their rows itself, as it does
+  the rows of a part that failed ([many nodes](osdu/docs/reference/concepts/submissions.md#many-nodes)).
 - **A work batch file that is gone no longer fails the run.** A drain that cannot find a batch file, or finds a line of it
   that is no work item, sends the rest and leaves those records to be planned again by the flow's next run
   ([work batches](osdu/docs/reference/concepts/submissions.md#work-batches)).

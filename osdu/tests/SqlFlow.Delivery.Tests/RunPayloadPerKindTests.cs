@@ -280,16 +280,16 @@ public sealed class RunPayloadPerKindTests
 
         DeliveryRunPayload.Parse("{" + Submission + ",\"slices\":[2,3],\"rateShare\":3}").Validate(DeliveryOperations.Deliver);
         Assert.Equal(
-            "payload rateShare does not apply to the deliver operation: only a slice run of a fan-out shares its coordinating run's rate limit.",
+            "payload rateShare does not apply to the deliver operation: only a part of a split delivery shares the delivery's rate limit.",
             Refusal("""{"rateShare":2}""", DeliveryOperations.Deliver));
         Assert.Equal(
-            "payload rateShare does not apply to the verify operation: only a run of a fan-out shares its coordinating run's rate limit.",
+            "payload rateShare does not apply to the verify operation: only a part of a split delivery shares the delivery's rate limit.",
             Refusal("""{"rateShare":2}""", DeliveryOperations.Verify));
         Assert.Equal(
-            "payload rateShare does not apply to the drain operation: a member shares the rate of the run whose submission it works on, which submissionId names.",
+            "payload rateShare does not apply to the drain operation: a part shares the rate of the delivery whose submission it works on, which submissionId names.",
             Refusal("""{"rateShare":2}""", DeliveryOperations.Drain));
         Assert.Equal(
-            "payload rateShare is 1; a fan-out's runs number 2 to 65, its coordinating run and at most 64 members.",
+            "payload rateShare is 1; the runs a split delivery shares its rate limit between number 2 to 65.",
             Refusal("{" + Submission + ",\"rateShare\":1}", DeliveryOperations.Drain));
         Assert.StartsWith("payload rateShare is 66;", Refusal("{" + Submission + ",\"rateShare\":66}", DeliveryOperations.Intake), StringComparison.Ordinal);
         Assert.Equal(

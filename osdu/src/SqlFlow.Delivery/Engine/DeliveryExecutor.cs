@@ -352,7 +352,7 @@ public sealed class DeliveryExecutor : IFlowDocumentExecutor
         var selection = SourceSelection.Incremental(null);
         if (payload.RateShare is { } share)
         {
-            // A fan-out member sends under its share of the flow's rate limit, so the fan-out as a whole keeps to the rate.
+            // A part of a split delivery sends under its share of the flow's rate limit, so the delivery as a whole keeps to the rate.
             runtime.ShareRateLimit(share);
         }
         if (ReadsSource(operation))
@@ -369,8 +369,8 @@ public sealed class DeliveryExecutor : IFlowDocumentExecutor
         switch (operation)
         {
             case DeliveryOperations.Deliver when payload.Slices.Count > 0:
-                // A slice run of a fan-out: its coordinating run brought records up to date, answered the run's requests and
-                // closes the submission; this run delivers the share its payload names.
+                // A part of a split delivery: the delivery's first run brought records up to date, answered the run's requests
+                // and closes the submission; this run delivers the rows of the slices its payload names.
                 var sliceRun = await runtime.RunAsync(force, ct).ConfigureAwait(false);
                 var sliceOutcome = DeliverOutcome.OfShare(sliceRun, operation, source, selection.Describe(), payload.Slices);
                 LogOutcome(log, string.Create(
@@ -673,7 +673,7 @@ public sealed class DeliveryExecutor : IFlowDocumentExecutor
         var summary = new PlanSummary();
         var sample = new List<PlanSampleEntry>(PlanSampled);
         long shown = 0;
-        await foreach (var entry in planner.EntriesAsync(header, null, runtime.Flow.Parallelism.EffectiveRenderers, summary, ct).ConfigureAwait(false))
+        await foreach (var entry in planner.EntriesAsync(header, null, runtime.Flow.Parallelism.EffectiveRenderThreads, summary, ct).ConfigureAwait(false))
         {
             if (shown++ < PlanEntriesLogged)
             {
@@ -856,12 +856,12 @@ public sealed record DeliverOutcome(
     public Snapshots.CacheStepOutcome? CacheAfter { get; init; }
 
     /// <summary>
-    /// What a slice run of a fan-out planned of the key slices it delivered, which its coordinating run adds into the
+    /// What a part of a split delivery planned of the key slices it delivered, which the delivery's first run adds into the
     /// submission's totals (osdu/docs/reference/concepts/submissions.md, Many nodes); null for a run that delivers no share.
     /// </summary>
     public IntakeOutcome? Share { get; init; }
 
-    /// <summary>The outcome of a slice run that delivered <paramref name="slices"/>: its own counts, and what it planned of them.</summary>
+    /// <summary>The outcome of a part that delivered <paramref name="slices"/>: its own counts, and what it planned of them.</summary>
     public static DeliverOutcome OfShare(RunResult run, string operation, string source, string selection, IReadOnlyList<int> slices)
     {
         ArgumentNullException.ThrowIfNull(run);
@@ -870,7 +870,7 @@ public sealed record DeliverOutcome(
     }
 
     /// <summary>
-    /// What a slice run reported it planned, read back from its run row (the run's <c>result</c>); null when the row carries
+    /// What a part reported it planned, read back from its run row (the run's <c>result</c>); null when the row carries
     /// no outcome, or one with no share in it.
     /// </summary>
     public static IntakeOutcome? ShareOf(string? json)
@@ -993,7 +993,7 @@ public sealed record PlanOutcome(
 /// <summary>One record a plan would send: its key, how a reader knows it, what it would send and why.</summary>
 public sealed record PlanSampleEntry(Guid Key, string? Label, string SourceKey, string Action, string Reason, bool Metadata, bool Payload);
 
-/// <summary>The <c>result</c> of an intake run (a whole read, or a fan-out member's share of its key slices).</summary>
+/// <summary>The <c>result</c> of an intake run (a whole read, or the key slices of a submission), and what a part of a split delivery planned.</summary>
 public sealed record IntakeOutcome(
     string Operation,
     Guid SubmissionId,

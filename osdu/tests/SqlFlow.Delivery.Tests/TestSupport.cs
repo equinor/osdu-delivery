@@ -918,7 +918,7 @@ public static class Samples
             },
             // One record at a time and one renderer, so a suite's outcome never depends on how the server interleaves claims.
             Reliability = flow.Reliability with { Retry = flow.Reliability.Retry with { Attempts = 3, RecordBaseDelayMinutes = 1 } },
-            Parallelism = flow.Parallelism with { Concurrency = 1, Renderers = 1 },
+            Parallelism = flow.Parallelism with { RecordsAtOnce = 1, RenderThreads = 1 },
 
             // The sample's cache steps read the ingestion database and the platform the memory tables and the placeholder
             // target stand in for; a suite of the cache steps names the steps it runs.

@@ -380,13 +380,13 @@
       "path": "reliability.batchRecords",
       "type": "integer",
       "required": false,
-      "description": "Not a setting here any more: a delivery flow writes it as `parallelism.batchRecords`, and a dimension flow has no use for it. A document that still declares it is refused when it loads; remove it."
+      "description": "Not a setting here any more: a delivery flow writes it as `parallelism.recordsPerBatch`, and a dimension flow has no use for it. A document that still declares it is refused when it loads; remove it."
     },
     {
       "path": "reliability.batchSize",
       "type": "integer",
       "required": false,
-      "description": "Not a setting here any more: a delivery flow writes it as `parallelism.batchSize`, and a dimension flow has no use for it. A document that still declares it is refused when it loads; remove it."
+      "description": "Not a setting any more: a worker claims the records due for a retry `parallelism.recordsAtOnce` at a time, at least 50. A document that still declares it is refused when it loads; remove it."
     },
     {
       "path": "reliability.concurrency",
@@ -398,13 +398,13 @@
       "path": "reliability.fanOut",
       "type": "integer",
       "required": false,
-      "description": "Not a setting here any more: a delivery flow writes it as `parallelism.fanOut`, and a dimension flow has no use for it. A document that still declares it is refused when it loads; remove it."
+      "description": "Not a setting here any more: a delivery flow writes it as `parallelism.nodes`, and a dimension flow has no use for it. A document that still declares it is refused when it loads; remove it."
     },
     {
       "path": "reliability.fanOutMinRecords",
       "type": "integer",
       "required": false,
-      "description": "Not a setting here any more: a delivery flow writes it as `parallelism.fanOutMinRecords`, and a dimension flow has no use for it. A document that still declares it is refused when it loads; remove it."
+      "description": "Not a setting here any more: a delivery flow writes it as `parallelism.minRowsPerNode`, and a dimension flow has no use for it. A document that still declares it is refused when it loads; remove it."
     },
     {
       "path": "reliability.leaseSeconds",
@@ -431,7 +431,7 @@
       "path": "reliability.parallelInterfaces",
       "type": "integer",
       "required": false,
-      "description": "Not a setting here any more: a delivery flow writes it as `parallelism.interfaces`, and a dimension flow has no use for it. A document that still declares it is refused when it loads; remove it."
+      "description": "Not a setting here any more: a delivery flow writes it as `parallelism.interfacesAtOnce`, and a dimension flow has no use for it. A document that still declares it is refused when it loads; remove it."
     },
     {
       "path": "reliability.rateLimitRps",
@@ -444,7 +444,7 @@
       "path": "reliability.renderParallelism",
       "type": "integer",
       "required": false,
-      "description": "Not a setting here any more: a delivery flow writes it as `parallelism.renderers`, and a dimension flow has no use for it. A document that still declares it is refused when it loads; remove it."
+      "description": "Not a setting here any more: a delivery flow writes it as `parallelism.renderThreads`, and a dimension flow has no use for it. A document that still declares it is refused when it loads; remove it."
     },
     {
       "path": "reliability.retry",

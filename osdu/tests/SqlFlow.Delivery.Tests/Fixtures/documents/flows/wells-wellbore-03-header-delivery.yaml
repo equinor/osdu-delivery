@@ -53,8 +53,7 @@ reliability:
   leaseSeconds: 300
 
 parallelism:
-  concurrency: 8
-  batchSize: 50
+  recordsAtOnce: 8
 
 schedule:
   cron: "30 * * * *"

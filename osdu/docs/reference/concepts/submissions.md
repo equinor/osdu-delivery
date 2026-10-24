@@ -225,47 +225,55 @@ own `reliability.leaseSeconds` belongs to a live worker and is left alone with a
 
 ## Many nodes
 
-A delivery fans out by default. A submission of at least `parallelism.fanOutMinRecords` records (1,000 by default) is split
-into shares, and the flow is queued again once per share beyond the coordinating run's own, at most `parallelism.fanOut`
-runs (8 by default; 0 keeps everything on the run that claimed the work). Each is a deliver run of the same flow filtered
-to its share, a **slice run**, queued in the flow's pool like any other run, so an autoscaler that holds the pool at the
-control plane's replica target brings up nodes for them
-([SQLFlow's dispatcher](../../../../sqlflow/docs/reference/concepts/control-plane.md#the-dispatcher)). They appear as a run
-family on the run's page.
+A large delivery is split into parts, each delivered from a node of its own. The flow says the most nodes it may use
+(`parallelism.nodes`, 8 by default); the run works out the rest from the rows it reads:
 
-**Cutting the read.** The coordinating run cuts the candidate keys into contiguous slices on the record table's identity
-primary key (`source.record.primaryKey`), about a work batch each and at most 1,024, records the cut on the submission, and
-deals the slices out as shares of neighbouring slices: one to itself and one to each slice run. A flow without a primary
-key, a read of one work batch, and a run outside the fleet are not cut: the run plans and sends everything itself.
+**parts = rows the run reads ÷ `minRowsPerNode` (1,000 by default), at least 1 and at most `nodes`**
 
-**Each run delivers its share.** A slice run plans its slices into [work batches](#work-batches) on its own node, numbered
-in its slices' namespace, sends those batches, and keeps at them until every record of its share is settled, waiting out
-retries. It claims only the batches and records of its own share, and reads them back from the folder it wrote them to,
-so no run reads another run's batches and which node runs which share does not matter: `source.work` stays a folder next
-to the flow file, in each node's own copy of the repository. The coordinating run queues the slice runs first, delivers
-its own share the same way while they deliver theirs, then waits for them, finalises the submission with the totals of
-every share, and closes it. A slice run never closes the submission, moves the watermark, or brings the cache up to date:
-its coordinating run does that once for the whole delivery.
+So an incremental run that reads a few changed rows is delivered by one node, and a first or full delivery of thousands of
+rows is spread over several. One part is no split at all.
 
-**Slice runs that do not deliver their share.** A slice run waits in the queue until a node with a free place takes it,
-and every place of the pool can be holding work, the coordinating run's own among them. A coordinating run therefore never
-waits for ever: once no slice run is running and none has started or ended for 3 minutes, long enough for an autoscaler to
-bring up a node, it stops the ones still queued and delivers their shares itself. It does the same for a slice run that
-failed, with a line on its trace:
-`Slice run <slot> (run <id>) failed: <error>; this run delivers its slices <slices>.`
-Planning a share again is safe: the records its run sent are unchanged and passed over, and the rows it never reached are
-planned now. A record it had queued and not sent has its document in a batch file on that run's node; the coordinating run
-finds the document missing, and the record is held, to be planned again by the flow's next run
-([Work batches](#work-batches)). A coordinating run that fails or is cancelled stops its slice runs with it.
+**Cutting the rows.** The run cuts the rows it reads into as many contiguous ranges of the record table's identity
+primary key (`source.record.primaryKey`) as it has parts, of about equal count, and records the cut on the submission.
+The first range has no lower bound and the last no upper bound, and each starts where the one before it ends, so every
+row the run reads falls in exactly one range. A flow without a primary key, and a run outside the fleet, are not split.
 
-**The rate limit.** `reliability.rateLimitRps` holds for the fan-out as a whole. Each run sends under its share of the rate,
-the rate divided between the coordinating run and its slice runs; a slice run's payload names the share (`rateShare`,
-[running an OSDU flow](../cli/run.md)), and the coordinating run takes the whole rate back once its slice runs have ended.
-`parallelism.concurrency` is each run's own, so a fan-out of eight slice runs has up to nine times as many records in
+**One part, one node.** The run queues the flow again once per range: a deliver run of the same flow filtered to its
+range (`submissionId` and `slices` in its payload, [running an OSDU flow](../cli/run.md)), which asks for a node to itself.
+SQLFlow's dispatcher hands such a run only to a node executing nothing else and puts nothing beside it, and the
+autoscaler starts a node for each one no idle node takes, up to the pool's most workers
+([SQLFlow's dispatcher](../../../../sqlflow/docs/reference/concepts/control-plane.md#the-dispatcher)). Each part plans
+its range into [work batches](#work-batches) on its own node, sends them, and keeps at them until every record of its range
+is settled, waiting out retries. It claims only its own range's batches and records, and reads them back from the folder
+it wrote them to, so no part reads another's batches: `source.work` stays a folder next to the flow file, in each node's
+own copy of the repository. The parts appear as a run family on the run's page.
+
+**The first run coordinates.** It delivers no range itself: it waits for the parts, finalises the submission with every
+part's totals, sends what the submission still holds (a record a part left in backoff, a record released from a wait),
+and closes it. A part never closes the submission, moves the watermark or brings the cache up to date: the first run does
+that once for the whole delivery.
+
+**Nothing is lost when a part does not finish.**
+
+- A part no node starts waits in the queue until a node is free. Once no part is running and none has started or ended for
+  3 minutes, long enough for an autoscaler to bring up a node, the first run stops the ones still queued and delivers
+  their ranges itself.
+- A part that fails has its range delivered by the first run, with a line on its trace:
+  `Part <slot> (run <id>) failed: <error>; this run delivers its rows (slices <slices>).`
+- Delivering a range again is safe: the records the part sent are unchanged and passed over, and the rows it never
+  reached are planned now. A record it had queued and not sent has its document in a batch file on that part's node; the
+  first run finds the document missing, and the record is held, to be planned again by the flow's next run
+  ([Work batches](#work-batches)). It is never sent from a document that is not its own.
+- A first run that fails or is cancelled stops its parts with it, and a run the platform executes again gets its parts
+  back and delivers the same cut.
+
+**The rate limit.** `reliability.rateLimitRps` holds for the delivery as a whole. Each part sends under its share of the
+rate (`rateShare` in its payload), and the first run takes the whole rate back once its parts have ended.
+`parallelism.recordsAtOnce` is each part's own, so a delivery of eight parts has up to eight times as many records in
 flight.
 
-Why a run did not fan out is on its trace: `The delivery is not fanned out: 400 candidate record(s), fewer than parallelism.fanOutMinRecords (1000).`,
-with the reason (no primary key to cut the read on, one work batch, a run outside the fleet).
+Why a run was not split is on its trace: `The delivery is not split: it reads 400 row(s), fewer than two parts of parallelism.minRowsPerNode (1000), so one node delivers them.`,
+or the other reason (no primary key to split the rows on, `parallelism.nodes` is 1, a run outside the fleet).
 
 Records of one flow written by many nodes never wait on each other for long: no statement writes more than 1,000 records,
 a worker writes only its lease row and the append-only tables while it sends, staging locks only records that exist, and a
@@ -276,7 +284,7 @@ statement the database ends as a deadlock victim is run again, up to five runs i
 A submission whose run stops before it settled (its node was lost, its process ended, it ran out of attempts, a
 command-line run was killed) is not left for a drain by hand: the flow's next deliver run takes it over.
 
-**Every run that works on a submission holds it.** The deliver run that plans it, each slice run of a fan-out, and a
+**Every run that works on a submission holds it.** The deliver run that plans it, each part of a split delivery, and a
 drain that names a submission take a shared, session-owned application lock on the module's database,
 `SqlFlow.Delivery.Submission:<id>` (`sp_getapplock`), on a connection of their own, from before the submission is
 registered or reopened until they are done with it. Any number of runs hold one submission at once, as a fan-out's

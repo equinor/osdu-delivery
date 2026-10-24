@@ -1148,7 +1148,7 @@ public enum WorkBatchStatus
 
 /// <summary>
 /// A range of a submission's work batch numbers, from <see cref="First"/> up to, but not including, <see cref="Beyond"/>:
-/// the batches a fan-out's slice run plans its key slices into, each slice's in a namespace of its own
+/// the batches a part of a split delivery plans its key slices into, each slice's in a namespace of its own
 /// (osdu/docs/reference/concepts/submissions.md, Many nodes). The run claims and waits for the records of these batches
 /// alone, whose files are on its own node.
 /// </summary>
@@ -2002,7 +2002,7 @@ public interface ILedger
     /// flow gives a record, so whoever recovers it after it ran out fails a record that used them up (0 for none).
     /// </summary>
     /// <remarks>
-    /// With <paramref name="batches"/> only records queued in those work batches are claimed: a fan-out's slice run
+    /// With <paramref name="batches"/> only records queued in those work batches are claimed: a part of a split delivery
     /// claims its own (osdu/docs/reference/concepts/submissions.md, Many nodes).
     /// </remarks>
     Task<ClaimedRecords> ClaimAsync(

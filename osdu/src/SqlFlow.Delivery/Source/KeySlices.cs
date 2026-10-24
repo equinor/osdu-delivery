@@ -3,28 +3,15 @@ using System.Globalization;
 namespace SqlFlow.Delivery.Source;
 
 /// <summary>
-/// How a plan's candidate records are cut into key slices for a fan-out: contiguous ranges of the record key, each holding at
-/// least a work batch of records, at most <see cref="MaxSlices"/> of them, dealt to the coordinating run and its members as
-/// contiguous shares. Slices partition the key space itself, so every record a read meets falls in exactly one of them.
+/// How a plan's candidate records are cut into key slices for a split delivery: contiguous ranges of the record key, one per
+/// part (at most <see cref="MaxSlices"/> of them), dealt to the parts as contiguous shares. Slices partition the key space
+/// itself: the first has no lower bound, the last no upper bound, and each starts where the one before it ends, so every
+/// record a read meets falls in exactly one of them.
 /// </summary>
 public static class KeySlices
 {
     /// <summary>The most slices one plan is cut into.</summary>
     public const int MaxSlices = 1024;
-
-    /// <summary>How many slices <paramref name="candidates"/> records are cut into when each holds at least <paramref name="batchRecords"/>.</summary>
-    public static int Count(long candidates, int batchRecords)
-    {
-        ArgumentOutOfRangeException.ThrowIfNegative(candidates);
-        ArgumentOutOfRangeException.ThrowIfLessThan(batchRecords, 1);
-        if (candidates <= batchRecords)
-        {
-            return 1;
-        }
-
-        var slices = candidates / batchRecords;
-        return (int)Math.Clamp(slices, 1, MaxSlices);
-    }
 
     /// <summary>How many ranges of values one slice's candidates are counted in, so a cut lands within a small part of a slice.</summary>
     public const int BucketsPerSlice = 64;
@@ -91,7 +78,7 @@ public static class KeySlices
         return bounds;
     }
 
-    /// <summary>Deals slices <c>0..slices-1</c> into at most <paramref name="workers"/> contiguous, non-empty shares; share 0 is the coordinator's.</summary>
+    /// <summary>Deals slices <c>0..slices-1</c> into at most <paramref name="workers"/> contiguous, non-empty shares, in slice order.</summary>
     public static IReadOnlyList<IReadOnlyList<int>> Shares(int slices, int workers)
     {
         ArgumentOutOfRangeException.ThrowIfLessThan(slices, 1);

@@ -90,7 +90,7 @@ public sealed class DeliveryFlowKind : IFlowDocumentKind, ICompanionDocumentKind
     [
         new(DeliveryOperations.Deliver, "Deliver", "Plan the rows the ingestion tables changed and deliver what renders differently.", WritesTarget: true),
         new(DeliveryOperations.Plan, "Plan", "Plan the rows the ingestion tables changed and report what a delivery would send, changing nothing.", WritesTarget: false),
-        new(DeliveryOperations.Intake, "Intake", "Plan the rows into work batches without delivering them: a fan-out member's share of a plan.", WritesTarget: false),
+        new(DeliveryOperations.Intake, "Intake", "Plan the rows into work batches without delivering them.", WritesTarget: false),
         new(DeliveryOperations.Drain, "Drain", "Deliver the work batches a submission already planned.", WritesTarget: true),
         new(DeliveryOperations.Verify, "Verify", "Compare what OSDU holds with what the ledger recorded, and optionally queue redelivery of drift.", WritesTarget: false),
         new(DeliveryOperations.Replan, "Replan", "Read every row of the scope again and deliver what renders differently now.", WritesTarget: true),

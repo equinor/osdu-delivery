@@ -39,7 +39,7 @@ public class ScaleEngineTests : IDisposable
         var ledger = _db.Ledger(_clock);
         var engine = Samples.Engine(ledger, _clock, sources: tables);
         var local = Samples.LocalFlow(_root);
-        var flow = local with { Parallelism = local.Parallelism with { BatchRecords = 2 } };
+        var flow = local with { Parallelism = local.Parallelism with { RecordsPerBatch = 2 } };
         using var runtime = await FlowRuntime.CreateAsync(engine, flow, SampleEstate.Values);
         await ledger.RegisterAsync(runtime.Flow);
         var protocol = new FakeProtocol();
@@ -145,18 +145,19 @@ public class ScaleEngineTests : IDisposable
     }
 
     /// <summary>
-    /// A deliver run fans out into slice runs: the flow queued again once per share of the key slices, each run delivering
-    /// its share on its own. Every run here has a copy of the repository, and with it a work folder, of its own, as every
-    /// node of a pool has: no run reads another's batches, so every record is planned once and delivered once, by the run
-    /// whose share it is in.
+    /// A delivery reading enough rows is split into parts, a part per <c>minRowsPerNode</c> rows up to <c>parallelism.nodes</c>,
+    /// each a deliver run of the same flow filtered to a range of the primary key and asking for a node to itself. Every part
+    /// here has a copy of the repository, and with it a work folder, of its own, as every node of a pool has: no part reads
+    /// another's batches, the ranges cover the rows once, and every record is planned once and delivered once, by the part
+    /// whose range it is in. The first run delivers none itself.
     /// </summary>
     [Fact]
-    public async Task A_deliver_run_fans_out_into_slice_runs_that_each_deliver_their_share_from_their_own_node()
+    public async Task A_delivery_is_split_into_parts_that_each_deliver_their_rows_from_a_node_of_their_own()
     {
         var tables = await EstateAsync();
         var ledger = _db.Ledger(_clock);
         var protocol = new FakeProtocol();
-        var flow = OnNode(Fanned(Samples.LocalFlow(_root), fanOut: 2), "coordinator");
+        var flow = OnNode(Split(Samples.LocalFlow(_root), nodes: 3), "coordinator");
         var dispatcher = new InlineDispatcher(flow) { OnNode = slot => OnNode(flow, $"node-{slot}") };
         var engine = Samples.Engine(ledger, _clock, sources: tables) with { Protocols = new FakeProtocolFactory(protocol), FanOut = dispatcher };
         dispatcher.Engine = engine;
@@ -168,56 +169,60 @@ public class ScaleEngineTests : IDisposable
         var result = await runtime.RunAsync(force: false);
         var submissionId = result.Submission.SubmissionId;
 
-        // Five candidate records at one record per batch: five slices, dealt as shares to the coordinating run and the two
-        // runs it queued, each the deliver operation of the same flow filtered to its slices.
-        Assert.Equal(2, result.Members);
+        // Five rows at one row a part, at most three nodes: three parts, each the deliver operation of the same flow filtered
+        // to one range and asking for a node of its own.
+        Assert.Equal(3, result.Members);
         Assert.Equal(SubmissionStatus.Completed, result.Submission.Status);
         Assert.Equal((5, 5, 0), (result.Submission.Planned, result.Submission.Delivered, result.Submission.Held));
-        Assert.Equal(5, result.Submission.BatchCount);
-        Assert.Equal(5, result.Submission.Slices);
-        Assert.Equal("RecId", SourceWindowDescription.Parse(result.Submission.SourceWindowJson)!.SlicedOn);
+        Assert.Equal(3, result.Submission.Slices);
         Assert.Equal(5, protocol.Deliveries.Count);
         Assert.Equal(5, protocol.Deliveries.Select(d => d.Key).Distinct().Count());
-
-        Assert.Equal(2, dispatcher.Enqueued.Count);
+        Assert.True(dispatcher.WholeNode);
+        Assert.Equal(3, dispatcher.Enqueued.Count);
         Assert.All(dispatcher.Enqueued, e => Assert.Equal(DeliveryOperations.Deliver, e.Operation));
         Assert.All(dispatcher.Enqueued, e => Assert.Equal(submissionId, e.Payload.SubmissionId));
         Assert.All(dispatcher.Enqueued, e => Assert.Equal(3, e.Payload.RateShare));
-        var dealt = dispatcher.Enqueued.SelectMany(e => e.Payload.Slices).ToList();
-        Assert.Equal(dealt.Count, dealt.Distinct().Count());
-        Assert.DoesNotContain(0, dealt);
+        Assert.Equal([0, 1, 2], dispatcher.Enqueued.SelectMany(e => e.Payload.Slices).Order());
 
-        // Every batch was sent, each from the folder of the run that wrote it: the coordinating run's share in its own, each
-        // slice run's in its node's.
+        // The ranges cover every row once: the first has no lower bound, the last no upper bound, and each starts where the one
+        // before it ends.
+        var cut = SourceWindowDescription.Parse(result.Submission.SourceWindowJson)!;
+        Assert.Equal("RecId", cut.SlicedOn);
+        var ranges = cut.Slices.OrderBy(s => s.Slice).Select(s => cut.Range(s.Slice)!.Value).ToList();
+        Assert.Null(ranges[0].From);
+        Assert.Null(ranges[^1].To);
+        for (var i = 1; i < ranges.Count; i++)
+        {
+            Assert.Equal(ranges[i - 1].To, ranges[i].From);
+        }
+
+        // Every batch was sent from the folder of the part that wrote it, and the first run wrote none.
         var batches = await ledger.ListWorkBatchesAsync(submissionId, 10, 0);
         Assert.Equal(5, batches.Count);
         Assert.All(batches, b => Assert.Equal(WorkBatchStatus.Done, b.Status));
-        Assert.True(File.Exists(WorkBatchFile.PathFor(Path.Combine(_root, "coordinator", "work"), submissionId, 0)));
         foreach (var (slot, slices) in dispatcher.Enqueued.Select((e, i) => (i + 1, e.Payload.Slices)))
         {
-            foreach (var slice in slices)
-            {
-                Assert.True(File.Exists(WorkBatchFile.PathFor(Path.Combine(_root, $"node-{slot}", "work"), submissionId, SubmissionIntake.BatchBase(slice))));
-            }
+            Assert.True(File.Exists(WorkBatchFile.PathFor(Path.Combine(_root, $"node-{slot}", "work"), submissionId, SubmissionIntake.BatchBase(slices[0]))));
         }
 
+        Assert.False(Directory.Exists(WorkBatchFile.DirectoryFor(Path.Combine(_root, "coordinator", "work"), submissionId)));
         var activities = await ledger.ListActivitiesAsync(new ActivityQuery { SubmissionId = submissionId, Max = 20 });
-        Assert.Equal(3, activities.Count(a => a.Kind == "deliver" && a.Outcome == "completed"));
+        Assert.Equal(4, activities.Count(a => a.Kind == "deliver" && a.Outcome == "completed"));
     }
 
     /// <summary>
-    /// A flow fans out by default, and every slice run carries how many runs share the flow's rate limit: the coordinating
-    /// run and the runs it queued.
+    /// The parts come from the rows a run reads: a part per <c>minRowsPerNode</c> rows, at most the flow's nodes, and every part
+    /// sends under its share of the flow's rate limit.
     /// </summary>
     [Fact]
-    public async Task A_flow_fans_out_by_default_and_every_slice_run_shares_the_rate_limit()
+    public async Task A_delivery_is_split_into_a_part_per_minRowsPerNode_rows_and_every_part_shares_the_rate_limit()
     {
         var tables = await EstateAsync();
         var ledger = _db.Ledger(_clock);
         var protocol = new FakeProtocol();
         var local = Samples.LocalFlow(_root);
-        Assert.Equal(FlowParallelism.DefaultFanOut, local.Parallelism.FanOut);
-        var flow = local with { Parallelism = local.Parallelism with { FanOutMinRecords = 1, BatchRecords = 2 } };
+        Assert.Equal(FlowParallelism.DefaultNodes, local.Parallelism.Nodes);
+        var flow = local with { Parallelism = local.Parallelism with { MinRowsPerNode = 2, RecordsPerBatch = 2 } };
         var dispatcher = new InlineDispatcher(flow);
         var engine = Samples.Engine(ledger, _clock, sources: tables) with { Protocols = new FakeProtocolFactory(protocol), FanOut = dispatcher };
         dispatcher.Engine = engine;
@@ -228,29 +233,51 @@ public class ScaleEngineTests : IDisposable
 
         var result = await runtime.RunAsync(force: false);
 
+        // Five rows at two a part: two parts, far fewer than the eight nodes the flow allows, so no node is asked for with
+        // nothing to deliver.
         Assert.Equal(SubmissionStatus.Completed, result.Submission.Status);
         Assert.Equal(5, result.Submission.Delivered);
-
-        // Five candidates at two to a slice: two slices, one of them a slice run's, far fewer than the eight the flow allows,
-        // so no run is queued with nothing to deliver.
-        Assert.Equal(1, result.Members);
-        var queued = Assert.Single(dispatcher.Enqueued);
-        Assert.Equal(DeliveryOperations.Deliver, queued.Operation);
-        Assert.Equal(2, queued.Payload.RateShare);
+        Assert.Equal(2, result.Members);
+        Assert.Equal(2, dispatcher.Enqueued.Count);
+        Assert.All(dispatcher.Enqueued, e => Assert.Equal(2, e.Payload.RateShare));
     }
 
-    /// <summary>
-    /// A coordinating run never waits for ever on slice runs no node starts. When every place in the pool holds work, its
-    /// own slot among them, the slice runs are stopped once the start grace has passed with none started, and their shares
-    /// are delivered here. Every record is planned once and delivered once.
-    /// </summary>
+    /// <summary>A run reading fewer rows than two parts take is delivered by one node, and asks for none.</summary>
     [Fact]
-    public async Task A_run_whose_slice_runs_no_node_starts_delivers_their_shares_itself()
+    public async Task A_delivery_reading_fewer_rows_than_two_parts_take_is_delivered_by_one_node()
     {
         var tables = await EstateAsync();
         var ledger = _db.Ledger(_clock);
         var protocol = new FakeProtocol();
-        var flow = Fanned(Samples.LocalFlow(_root), fanOut: 2);
+        var flow = Samples.LocalFlow(_root);
+        var dispatcher = new InlineDispatcher(flow);
+        var engine = Samples.Engine(ledger, _clock, sources: tables) with { Protocols = new FakeProtocolFactory(protocol), FanOut = dispatcher };
+        dispatcher.Engine = engine;
+        using var runtime = await FlowRuntime.CreateAsync(engine, flow, SampleEstate.Values);
+        await ledger.RegisterAsync(runtime.Flow);
+        runtime.RunId = Guid.NewGuid();
+        runtime.Actor = "test";
+
+        var result = await runtime.RunAsync(force: false);
+
+        // Five rows, and a part takes at least a thousand by default.
+        Assert.Equal(0, result.Members);
+        Assert.Empty(dispatcher.Enqueued);
+        Assert.Equal((SubmissionStatus.Completed, 5), (result.Submission.Status, result.Submission.Delivered));
+    }
+
+    /// <summary>
+    /// The first run never waits for ever on parts no node starts. When every place in the pool holds work, its own among
+    /// them, the parts are stopped once the start grace has passed with none started, and their rows are delivered here.
+    /// Every record is planned once and delivered once.
+    /// </summary>
+    [Fact]
+    public async Task A_run_whose_parts_no_node_starts_delivers_their_rows_itself()
+    {
+        var tables = await EstateAsync();
+        var ledger = _db.Ledger(_clock);
+        var protocol = new FakeProtocol();
+        var flow = Split(Samples.LocalFlow(_root), nodes: 2);
         var dispatcher = new UnstartedDispatcher(_clock, TimeSpan.FromMinutes(1));
         var engine = Samples.Engine(ledger, _clock, sources: tables) with { Protocols = new FakeProtocolFactory(protocol), FanOut = dispatcher };
         using var runtime = await FlowRuntime.CreateAsync(engine, flow, SampleEstate.Values);
@@ -268,10 +295,10 @@ public class ScaleEngineTests : IDisposable
         Assert.Equal(5, protocol.Deliveries.Count);
         Assert.Equal(5, protocol.Deliveries.Select(d => d.Key).Distinct().Count());
 
-        // The slice runs were stopped only once the grace had passed on the run's clock with none started.
+        // The parts were stopped only once the grace had passed on the run's clock with none started.
         var cancelled = Assert.Single(dispatcher.Cancelled);
         Assert.Equal(DeliveryOperations.Deliver, cancelled.Operation);
-        Assert.True(cancelled.After >= TimeSpan.FromMinutes(3), $"the slice runs were stopped after {cancelled.After}");
+        Assert.True(cancelled.After >= TimeSpan.FromMinutes(3), $"the parts were stopped after {cancelled.After}");
 
         var batches = await ledger.ListWorkBatchesAsync(result.Submission.SubmissionId, 10, 0);
         Assert.Equal(5, batches.Count);
@@ -279,16 +306,16 @@ public class ScaleEngineTests : IDisposable
     }
 
     /// <summary>
-    /// A slice run that fails before it delivers anything leaves its share to the coordinating run, which delivers it: the
-    /// fan-out completes with every record delivered, and the failure is the slice run's, not the delivery's.
+    /// A part that fails before it delivers anything leaves its rows to the first run, which delivers them: the delivery
+    /// completes with every record delivered, and the failure is the part's, not the delivery's.
     /// </summary>
     [Fact]
-    public async Task A_slice_run_that_fails_has_its_share_delivered_by_the_coordinating_run()
+    public async Task A_part_that_fails_has_its_rows_delivered_by_the_first_run()
     {
         var tables = await EstateAsync();
         var ledger = _db.Ledger(_clock);
         var protocol = new FakeProtocol();
-        var flow = OnNode(Fanned(Samples.LocalFlow(_root), fanOut: 2), "coordinator");
+        var flow = OnNode(Split(Samples.LocalFlow(_root), nodes: 2), "coordinator");
         var dispatcher = new InlineDispatcher(flow) { OnNode = slot => OnNode(flow, $"node-{slot}"), Failing = new HashSet<int> { 1 } };
         var engine = Samples.Engine(ledger, _clock, sources: tables) with { Protocols = new FakeProtocolFactory(protocol), FanOut = dispatcher };
         dispatcher.Engine = engine;
@@ -304,26 +331,23 @@ public class ScaleEngineTests : IDisposable
         Assert.Equal((5, 5, 0), (result.Submission.Planned, result.Submission.Delivered, result.Submission.Held));
         Assert.Equal(5, protocol.Deliveries.Select(d => d.Key).Distinct().Count());
 
-        // The failed run's share was planned and sent from the coordinating run's own folder.
-        foreach (var slice in dispatcher.Enqueued[0].Payload.Slices)
-        {
-            Assert.True(File.Exists(WorkBatchFile.PathFor(Path.Combine(_root, "coordinator", "work"), result.Submission.SubmissionId, SubmissionIntake.BatchBase(slice))));
-        }
+        // The failed part's rows were planned and sent from the first run's own folder.
+        var taken = dispatcher.Enqueued[0].Payload.Slices[0];
+        Assert.True(File.Exists(WorkBatchFile.PathFor(Path.Combine(_root, "coordinator", "work"), result.Submission.SubmissionId, SubmissionIntake.BatchBase(taken))));
     }
 
     /// <summary>
-    /// A slice run whose node stopped after it planned its share leaves records queued in batch files on that node, which no
-    /// other run reads. The coordinating run delivers the rest of the share, finds those documents missing and gives the
-    /// records back to be planned again by the flow's next run: the delivery completes, nothing is sent from a document that
-    /// is not the record's, and no record is lost.
+    /// A part whose node stopped after it planned its rows leaves records queued in batch files on that node, which no other
+    /// run reads. The first run finds those documents missing and gives the records back to be planned again by the flow's
+    /// next run: the delivery completes, nothing is sent from a document that is not the record's, and no record is lost.
     /// </summary>
     [Fact]
-    public async Task A_slice_run_that_stopped_after_planning_leaves_its_queued_records_to_be_planned_again()
+    public async Task A_part_that_stopped_after_planning_leaves_its_queued_records_to_be_planned_again()
     {
         var tables = await EstateAsync();
         var ledger = _db.Ledger(_clock);
         var protocol = new FakeProtocol();
-        var flow = OnNode(Fanned(Samples.LocalFlow(_root), fanOut: 2), "coordinator");
+        var flow = OnNode(Split(Samples.LocalFlow(_root), nodes: 2), "coordinator");
         var dispatcher = new InlineDispatcher(flow) { OnNode = slot => OnNode(flow, $"node-{slot}"), PlanOnly = new HashSet<int> { 1 } };
         var engine = Samples.Engine(ledger, _clock, sources: tables) with { Protocols = new FakeProtocolFactory(protocol), FanOut = dispatcher };
         dispatcher.Engine = engine;
@@ -334,11 +358,6 @@ public class ScaleEngineTests : IDisposable
 
         var result = await runtime.RunAsync(force: false);
 
-        var stopped = dispatcher.Enqueued[0].Payload.Slices;
-        var delivered = 5 - stopped.Count;
-        Assert.Equal(SubmissionStatus.Completed, result.Submission.Status);
-        Assert.Equal(delivered, protocol.Deliveries.Count);
-        Assert.Equal((delivered, stopped.Count), (result.Submission.Delivered, result.Submission.Held));
         var held = new List<RecordState>();
         for (var index = 0; index < 5; index++)
         {
@@ -349,7 +368,10 @@ public class ScaleEngineTests : IDisposable
             }
         }
 
-        Assert.Equal(stopped.Count, held.Count);
+        Assert.Equal(SubmissionStatus.Completed, result.Submission.Status);
+        Assert.NotEmpty(held);
+        Assert.Equal(5 - held.Count, protocol.Deliveries.Count);
+        Assert.Equal((5 - held.Count, held.Count), (result.Submission.Delivered, result.Submission.Held));
         Assert.All(held, r => Assert.Equal(RecordStatus.Held, r.Status));
         Assert.All(held, r => Assert.Contains("could not be read", r.LastError, StringComparison.Ordinal));
         Assert.All(held, r => Assert.NotNull(r.PlanRequestedUtc));
@@ -369,7 +391,7 @@ public class ScaleEngineTests : IDisposable
         var flow = local with
         {
             Source = local.Source with { Work = "${env:LANDING_URL}/.work/welllog" },
-            Parallelism = local.Parallelism with { FanOut = 2, FanOutMinRecords = 1, BatchRecords = 1 },
+            Parallelism = local.Parallelism with { Nodes = 2, MinRowsPerNode = 1, RecordsPerBatch = 1 },
         };
         var landing = Path.Combine(_root, "landing");
         using var supplied = SuppliedReferences.Supply(new Dictionary<string, string>(StringComparer.Ordinal) { ["LANDING_URL"] = landing });
@@ -416,7 +438,7 @@ public class ScaleEngineTests : IDisposable
         var ledger = _db.Ledger(_clock);
         var engine = Samples.Engine(ledger, _clock, sources: tables);
         var local = Samples.LocalFlow(_root);
-        var flow = local with { Parallelism = local.Parallelism with { BatchRecords = 2 } };
+        var flow = local with { Parallelism = local.Parallelism with { RecordsPerBatch = 2 } };
         using var runtime = await FlowRuntime.CreateAsync(engine, flow, SampleEstate.Values);
         await ledger.RegisterAsync(runtime.Flow);
 
@@ -463,7 +485,7 @@ public class ScaleEngineTests : IDisposable
         var ledger = _db.Ledger(_clock);
         var engine = Samples.Engine(ledger, _clock, sources: tables);
         var local = Samples.LocalFlow(_root);
-        var flow = local with { Parallelism = local.Parallelism with { BatchRecords = 2 } };
+        var flow = local with { Parallelism = local.Parallelism with { RecordsPerBatch = 2 } };
         using var runtime = await FlowRuntime.CreateAsync(engine, flow, SampleEstate.Values);
         await ledger.RegisterAsync(runtime.Flow);
         var protocol = new FakeProtocol();
@@ -523,8 +545,9 @@ public class ScaleEngineTests : IDisposable
 
         public bool Available => true;
 
-        public Task<FanOutHandle> EnqueueAsync(IReadOnlyList<RunParameters> members, CancellationToken ct = default)
+        public Task<FanOutHandle> EnqueueAsync(IReadOnlyList<RunParameters> members, bool wholeNode, CancellationToken ct = default)
         {
+            Assert.True(wholeNode, "a split delivery asks for a node per part");
             var groupId = Guid.NewGuid();
             var states = new List<FanOutMemberState>();
             var operation = DeliveryOperations.Of(members[0]);
@@ -588,10 +611,14 @@ public class ScaleEngineTests : IDisposable
 
         public List<(string Operation, DeliveryRunPayload Payload)> Enqueued { get; } = [];
 
+        /// <summary>Whether every split asked for a node per part.</summary>
+        public bool WholeNode { get; private set; } = true;
+
         public bool Available => true;
 
-        public async Task<FanOutHandle> EnqueueAsync(IReadOnlyList<RunParameters> members, CancellationToken ct = default)
+        public async Task<FanOutHandle> EnqueueAsync(IReadOnlyList<RunParameters> members, bool wholeNode, CancellationToken ct = default)
         {
+            WholeNode &= wholeNode;
             var groupId = Guid.NewGuid();
             var ids = new List<Guid>();
             foreach (var member in members)
@@ -629,9 +656,9 @@ public class ScaleEngineTests : IDisposable
         public Task CancelAsync(FanOutHandle handle, CancellationToken ct = default) => Task.CompletedTask;
     }
 
-    /// <summary><paramref name="flow"/> fanning out over at most <paramref name="fanOut"/> slice runs, one record to a slice.</summary>
-    private static FlowDefinition Fanned(FlowDefinition flow, int fanOut)
-        => flow with { Parallelism = flow.Parallelism with { FanOut = fanOut, FanOutMinRecords = 1, BatchRecords = 1 } };
+    /// <summary><paramref name="flow"/> split over at most <paramref name="nodes"/> nodes, a part per row and a batch per record.</summary>
+    private static FlowDefinition Split(FlowDefinition flow, int nodes)
+        => flow with { Parallelism = flow.Parallelism with { Nodes = nodes, MinRowsPerNode = 1, RecordsPerBatch = 1 } };
 
     /// <summary>
     /// <paramref name="flow"/> as a node named <paramref name="node"/> has it: its document in that node's copy of the

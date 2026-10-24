@@ -522,31 +522,56 @@ What happens to a record that fails, is held or waits is on [record lifecycle](.
 
 ## parallelism
 
-What runs at once, on one node and across the fleet. In a source with interfaces the block applies to every interface,
-and an interface lays its own keys over it, except `interfaces`, which is the source's
+How a delivery is spread over the fleet, and what runs at once on a node. A flow says the most nodes a delivery may use;
+a run works out the rest from the rows it reads. In a source with interfaces the block applies to every interface, and an
+interface lays its own keys over it, except `interfacesAtOnce`, which is the source's
 ([a source with interfaces](interfaces.md)).
+
+```yaml
+parallelism:
+  nodes: 10
+```
 
 | Key | Type | Default | Meaning |
 | --- | --- | --- | --- |
-| `concurrency` | integer | 8 | Records a run sends at once; verify and reverse runs work this many at once too. At least 1. |
-| `fanOut` | integer | 8 | The most slice runs a submission spreads over across the fleet, 0 to 64: runs of the same flow, each delivering a share of its key slices from whichever node takes it; never more than it has slices for beyond the coordinating run's own. It fans out only when `source.record.primaryKey` is named. 0 keeps everything on the run that claimed the work. |
-| `fanOutMinRecords` | integer | 1000 | Below this many records a submission never fans out. At least 1. |
-| `renderers` | integer | 0 | Renderers on one node, 0 to 256; 0 is half the processors, at least one. |
-| `batchRecords` | integer | 500 | Rendered documents per work batch file, 1 to 100000: one claim of a drain, one unit of progress. |
-| `batchSize` | integer | 50 | Records claimed from the ledger in one round trip when records are retried outside a work batch. |
-| `interfaces` | integer | 4 | The interface form only: how many interfaces of one wave run at once, 1 to 32 ([interfaces](interfaces.md#order)). |
+| `nodes` | integer | 8 | The most nodes a delivery is spread over, 1 to 64. A run reading at least twice `minRowsPerNode` rows is split into parts, one per `minRowsPerNode` rows and at most this many; each part delivers its range of the record table's `primaryKey` from a node of its own. 1 keeps every delivery on one node. |
+| `minRowsPerNode` | integer | 1000 | The fewest rows a part takes, so a node is started only for work enough to be worth it. At least 1. |
+| `recordsAtOnce` | integer | 8 | How many records each part, or a run alone, sends to OSDU at the same time; verify and reverse runs work this many at once too. At least 1. |
+| `renderThreads` | integer | 0 | The threads that render records on one node, 0 to 256; 0 is half the node's processors, at least one. |
+| `recordsPerBatch` | integer | 500 | The records one batch file holds, 1 to 100000: one file a part writes, one claim a worker takes, one unit of progress. |
+| `interfacesAtOnce` | integer | 4 | The interface form only: how many interfaces of one wave deliver at the same time, 1 to 32 ([interfaces](interfaces.md#order)). |
 
-A delivery fans out by default: a submission of 1,000 records or more is split into shares of its key slices, each
-delivered by a run of the same flow on whichever node takes it, and an autoscaler brings up nodes for them. How a
-submission is cut and delivered across nodes, and what a coordinating run does with slice runs that do not deliver their
-share, is on [submissions](../concepts/submissions.md#many-nodes).
+`nodes` is the one setting most flows need, and the others have defaults no flow has to change. How many parts a run
+uses comes from the rows it reads, at most `nodes`:
 
-These settings were written under `reliability` before. A document that still writes one there is refused, naming where
-it goes now:
+| The run reads | Parts, with the defaults |
+| --- | --- |
+| 50 changed rows (an incremental run) | 1: delivered by one node |
+| 2,500 rows | 2 |
+| 5,000 rows (a first, full delivery) | 5 |
+| 20,000 rows or more | 8, the most `nodes` allows |
+
+A worker claims the records due for a retry `recordsAtOnce` at a time, and at least 50. How a run is cut into parts, how
+each part is delivered, and what the first run does with a part that does not finish is on
+[submissions](../concepts/submissions.md#many-nodes).
+
+The keys were named by what they did not say before, and the settings were written under `reliability` before that. A
+document that still writes an old name is refused, naming the key it is now:
 
 ```text
-flows/welllog.yaml: reliability.concurrency is now parallelism.concurrency: what runs at once, and across the fleet, is the flow's parallelism, and reliability keeps what makes a request hold. Move it.
+flows/welllog.yaml: parallelism.fanOut is now parallelism.nodes: the most nodes a delivery is spread over, each part on a node of its own; it counts every part, where fanOut counted the parts beside the first run. Rename it.
+flows/welllog.yaml: reliability.concurrency is now parallelism.recordsAtOnce: what runs at once, and across the fleet, is the flow's parallelism, and reliability keeps what makes a request hold. Move it.
 ```
+
+| Was | Is now |
+| --- | --- |
+| `fanOut` | `nodes` (it counts every part; `fanOut: 8` was nine runs) |
+| `fanOutMinRecords` | `minRowsPerNode` |
+| `concurrency` | `recordsAtOnce` |
+| `renderers` (`reliability.renderParallelism`) | `renderThreads` |
+| `batchRecords` | `recordsPerBatch` |
+| `interfaces` (`reliability.parallelInterfaces`) | `interfacesAtOnce` |
+| `batchSize` | removed: retries are claimed `recordsAtOnce` at a time, at least 50 |
 
 ## verify
 
@@ -665,7 +690,8 @@ Every message starts with the file. A sample of what `sqlflow validate` refuses:
 | A literal secret | `target.auth.secretRef holds a literal value, and it is the credential the flow authenticates with (the token, the API key, the password or the client secret). A flow document holds references only: ...` |
 | A literal credential header | `target.headers.Authorization holds a literal value, and the header carries a credential; it holds a reference, after its scheme when it has one (Bearer ${env:NAME}). ...` |
 | A pinned mapping that is not there | `render.mapping: Mapping 'Wellbore@1.0.0' was not found under '../mappings'. Expected one of: Wellbore@1.0.0.yaml, Wellbore@1.0.0.yml, 1.0.0.yaml, 1.0.0.yml.` |
-| A setting that moved to `parallelism` | `reliability.renderParallelism is now parallelism.renderers: what runs at once, and across the fleet, is the flow's parallelism, and reliability keeps what makes a request hold. Move it.` |
+| A setting that moved to `parallelism` | `reliability.renderParallelism is now parallelism.renderThreads: what runs at once, and across the fleet, is the flow's parallelism, and reliability keeps what makes a request hold. Move it.` |
+| A `parallelism` key by its old name | `parallelism.batchRecords is now parallelism.recordsPerBatch: the records one batch file holds. Rename it.` |
 | A header beside `partitions` | `target.headers names 'data-partition-id', and the flow names its partitions: every run sets the header to the partition it targets. Remove the header.` |
 | A pinned cache version whose records are pruned | `render.cacheVersion pins version 20261001T010000Z of the cache of partition 'dev', whose records the cache's retention pruned at <time>, so nothing can render against it. Pin a version the cache still holds ('sqlflow cache list dev' lists them), or remove render.cacheVersion to render against the current version. ...` |
 | A pinned cache version with several partitions | `render.cacheVersion pins version 20261001T010000Z, which is a version of one partition's cache, and the flow names 2 partitions, each rendering against its own partition's cache. ...` |

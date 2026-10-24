@@ -52,8 +52,7 @@ reliability:
   leaseSeconds: 300
 
 parallelism:
-  concurrency: 4
-  batchSize: 50
+  recordsAtOnce: 4
 
 schedule: welldb-master
 

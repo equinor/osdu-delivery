@@ -193,8 +193,8 @@ interface's entries winning. A list (`reliability.skipStatusCodes`, `protocolOpt
 source's list whole. `systemColumns` is merged column by column, and a column the interface opts out of (`fileName: ~`)
 stays opted out for it. What one interface lays over a shared block never reaches another.
 
-`parallelism.interfaces` is the source's own setting: it is refused on an interface, and in a document that declares no
-interfaces.
+`parallelism.interfacesAtOnce` is the source's own setting: it is refused on an interface, and in a document that declares
+no interfaces.
 
 Every message about an interface names its own keys (`interfaces.welllogs.record.key`), and a message about a shared
 setting names the interface it applied to (`failWhen.failedPercent of interface 'wellbores' must be above 0 and at most
@@ -330,8 +330,8 @@ An interface waits for another in two cases:
 A run takes the interfaces in waves. The first wave holds every interface that waits for nothing; each later wave the
 interfaces whose dependencies all ran before it. Within a wave the interfaces are taken by OSDU group (reference data,
 master data, datasets, work product components, work products, then any other group) and then as the document lists
-them, up to `parallelism.interfaces` (default 4, 1 to 32) at once. Each one plans, fans out and drains exactly as
-a run of that interface alone does. A run deleting the ledger takes the waves backwards, so a record goes only after
+them, up to `parallelism.interfacesAtOnce` (default 4, 1 to 32) at once. Each one is planned, split over nodes and sent
+exactly as a run of that interface alone is. A run deleting the ledger takes the waves backwards, so a record goes only after
 everything of the source that refers to it.
 
 ### Cycles
@@ -455,7 +455,7 @@ interface ([running an OSDU flow](../cli/run.md)).
 | `after:` naming an unknown interface | `interfaces.welllogs.after names 'logs', which is not an interface of this document; it declares wellbores, welllogs.` |
 | `after:` naming itself | `interfaces.welllogs.after names the interface itself.` |
 | One ledger kept twice | `the interfaces wellbores, welllogs would keep the same ledger ('welldb-wellbore-03-delivery'); each interface keeps a ledger of its own.` |
-| `interfaces` on an interface's parallelism | `interfaces.welllogs.parallelism.interfaces is the source's setting: how many of its interfaces run at once. Set it under parallelism.` |
+| `interfacesAtOnce` on an interface's parallelism | `interfaces.welllogs.parallelism.interfacesAtOnce is the source's setting: how many of its interfaces run at once. Set it under parallelism as interfacesAtOnce.` |
 | `bulk` with no DDMS location | `interfaces.welllogs is delivered through a DDMS, and the source's endpoint is the platform every interface reaches its services under. Say where the DDMS is under it: ...` |
 
 ## See also

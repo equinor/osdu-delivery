@@ -1020,52 +1020,72 @@ public sealed record FlowReliability
 }
 
 /// <summary>
-/// How much of a delivery flow's work runs at once (osdu/docs/reference/flow/delivery.md, parallelism): within one run, and
-/// across the fleet, where a large submission fans out to member runs the nodes share. The assertion, dimension, inventory
-/// and retrieval kinds take <see cref="RunParallelism"/>, and a cache flow none.
+/// How much of a delivery flow's work runs at once (osdu/docs/reference/flow/delivery.md, parallelism). A flow says the most
+/// <see cref="Nodes"/> a delivery is spread over; a run works out the rest from the rows it reads: how many parts it is split
+/// into (<see cref="PartsFor"/>), each delivered on a node of its own, and what each part sends at once. The assertion,
+/// dimension, inventory and retrieval kinds take <see cref="RunParallelism"/>, and a cache flow none.
 /// </summary>
 public sealed record FlowParallelism
 {
-    /// <summary>The records one run sends at once; a verify or reverse run reads this many at once too. Default 8.</summary>
-    public int Concurrency { get; init; } = 8;
+    /// <summary>
+    /// The most nodes a delivery is spread over: a run reading at least twice <see cref="MinRowsPerNode"/> rows is split into
+    /// parts, one per <see cref="MinRowsPerNode"/> rows and at most this many, each delivered from a node of its own
+    /// (osdu/docs/reference/concepts/submissions.md, Many nodes). <see cref="DefaultNodes"/> unless the flow says otherwise;
+    /// 1 keeps every delivery on one node.
+    /// </summary>
+    public int Nodes { get; init; } = DefaultNodes;
+
+    /// <summary>The most nodes a delivery is spread over unless the flow says otherwise.</summary>
+    public const int DefaultNodes = 8;
+
+    /// <summary>The most nodes a flow may spread a delivery over.</summary>
+    public const int MaxNodes = 64;
 
     /// <summary>
-    /// The most member runs a deliver run spreads a submission of at least <see cref="FanOutMinRecords"/> records over across
-    /// the fleet, planning first (when the record table names its identity primary key), then sending, never more than it
-    /// has work batches for (osdu/docs/reference/concepts/submissions.md, Many nodes). <see cref="DefaultFanOut"/> unless the
-    /// flow says otherwise; 0 keeps everything on the run that claimed the work.
+    /// The fewest rows a part takes, so a node is started only for work enough to be worth starting it: a run reading fewer
+    /// than twice this many is delivered by one node. Default <see cref="DefaultMinRowsPerNode"/>.
     /// </summary>
-    public int FanOut { get; init; } = DefaultFanOut;
+    public int MinRowsPerNode { get; init; } = DefaultMinRowsPerNode;
 
-    /// <summary>How many member runs a large submission spreads over unless the flow says otherwise.</summary>
-    public const int DefaultFanOut = 8;
+    /// <summary>The fewest rows a part takes unless the flow says otherwise.</summary>
+    public const int DefaultMinRowsPerNode = 1000;
 
-    /// <summary>Fan out only when the source holds at least this many candidate records, or a submission this many planned ones. Default 1000.</summary>
-    public int FanOutMinRecords { get; init; } = 1000;
+    /// <summary>The records each part, or a run alone, sends to OSDU at the same time; a verify or reverse run reads this many at once too. Default 8.</summary>
+    public int RecordsAtOnce { get; init; } = 8;
 
-    /// <summary>Render batches rendered at once on one node. 0 means half the processors, at least one.</summary>
-    public int Renderers { get; init; }
+    /// <summary>The threads that render records on one node. 0 means half the node's processors, at least one.</summary>
+    public int RenderThreads { get; init; }
+
+    /// <summary>The most render threads a flow may declare.</summary>
+    public const int MaxRenderThreads = 256;
 
     /// <summary>
-    /// Records per work batch: one file of rendered documents the intake writes, one claim a drain takes, one unit of
-    /// progress the submission page shows (osdu/docs/reference/concepts/submissions.md, Work batches). Default 500.
+    /// Records per batch file: one file of rendered documents a part writes, one claim a worker takes, one unit of progress the
+    /// submission page shows (osdu/docs/reference/concepts/submissions.md, Work batches). Default 500.
     /// </summary>
-    public int BatchRecords { get; init; } = 500;
+    public int RecordsPerBatch { get; init; } = 500;
 
-    /// <summary>Records claimed per ledger round trip when retrying individual records.</summary>
-    public int BatchSize { get; init; } = 50;
+    /// <summary>The most records a batch file may hold.</summary>
+    public const int MaxRecordsPerBatch = 100_000;
 
-    /// <summary>The largest fan-out a flow may declare.</summary>
-    public const int MaxFanOut = 64;
+    /// <summary>The fewest records due for a retry a worker claims in one round trip.</summary>
+    public const int RetryClaimFloor = 50;
 
-    /// <summary>The most renderers a flow may declare.</summary>
-    public const int MaxRenderers = 256;
+    /// <summary>How many records due for a retry a worker claims in one round trip: <see cref="RecordsAtOnce"/>, at least <see cref="RetryClaimFloor"/>.</summary>
+    public int RetryClaim => Math.Max(RetryClaimFloor, RecordsAtOnce);
 
-    /// <summary>The most records a work batch may hold.</summary>
-    public const int MaxBatchRecords = 100_000;
+    /// <summary>The render threads on this node.</summary>
+    public int EffectiveRenderThreads => RenderThreads > 0 ? RenderThreads : Math.Max(1, Environment.ProcessorCount / 2);
 
-    /// <summary>The renderers on this host.</summary>
-    public int EffectiveRenderers => Renderers > 0 ? Renderers : Math.Max(1, Environment.ProcessorCount / 2);
+    /// <summary>
+    /// The parts a run reading <paramref name="rows"/> rows is split into: one per <see cref="MinRowsPerNode"/> rows, at least
+    /// one and at most <see cref="Nodes"/>. One part is no split at all.
+    /// </summary>
+    public int PartsFor(long rows)
+    {
+        ArgumentOutOfRangeException.ThrowIfNegative(rows);
+        return (int)Math.Clamp(rows / Math.Max(1, MinRowsPerNode), 1, Math.Max(1, Nodes));
+    }
 }
 
 /// <summary>

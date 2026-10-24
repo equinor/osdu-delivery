@@ -76,9 +76,9 @@ public sealed class ComposedSourceTests : IDisposable
             reliability:
               retry: { attempts: 1 }
             parallelism:
-              concurrency: 1
-              renderers: 1
-              interfaces: 1
+              recordsAtOnce: 1
+              renderThreads: 1
+              interfacesAtOnce: 1
             interfaces:
               welllogs:
                 record: { object: {{WellLogTable}}, key: [source_project, log_id], primaryKey: RecId, scope: { log_source: logSource } }

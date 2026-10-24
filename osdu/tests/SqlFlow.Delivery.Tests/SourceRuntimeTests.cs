@@ -157,9 +157,9 @@ public sealed class SourceRuntimeTests : IDisposable
             reliability:
               retry: { attempts: 3, recordBaseDelayMinutes: 1 }
             parallelism:
-              concurrency: 1
-              renderers: 1
-              interfaces: 1
+              recordsAtOnce: 1
+              renderThreads: 1
+              interfacesAtOnce: 1
             interfaces:
               wellbores:
                 record: { object: {{WellboreTable}}, key: [facility_name], primaryKey: RecId }
@@ -718,7 +718,7 @@ public sealed class SourceRuntimeTests : IDisposable
     [Fact]
     public async Task A_fan_out_member_is_told_which_interface_it_works_on()
     {
-        var yaml = SourceYaml().Replace("  interfaces: 1\n", "  interfaces: 1\n  fanOut: 1\n  fanOutMinRecords: 1\n  batchRecords: 1\n", StringComparison.Ordinal);
+        var yaml = SourceYaml().Replace("  interfacesAtOnce: 1\n", "  interfacesAtOnce: 1\n  nodes: 2\n  minRowsPerNode: 1\n  recordsPerBatch: 1\n", StringComparison.Ordinal);
         var source = Load(yaml);
         var estate = await EstateAsync();
         var engine = Engine(estate);
@@ -732,8 +732,7 @@ public sealed class SourceRuntimeTests : IDisposable
         Assert.All(members.Enqueued, member => Assert.Equal(DeliveryOperations.Deliver, member.Operation));
         Assert.All(members.Enqueued, member => Assert.NotEmpty(member.Payload.Slices));
 
-        // One slice run beside the coordinating run: each sends under half the flow's rate limit, taken from its payload by
-        // the executor that runs it.
+        // Two parts: each sends under half the flow's rate limit, taken from its payload by the executor that runs it.
         Assert.All(members.Enqueued, member => Assert.Equal(2, member.Payload.RateShare));
         Assert.Equal(5, (await engine.Ledger!.StatsAsync(FlowId.Of("wells/welllogs"), _clock.GetUtcNow().UtcDateTime)).Delivered);
     }
@@ -793,7 +792,7 @@ public sealed class SourceRuntimeTests : IDisposable
 
         public List<(string Operation, DeliveryRunPayload Payload)> Enqueued { get; } = [];
 
-        public async Task<RunFanOutHandle> EnqueueAsync(IReadOnlyList<RunParameters> members, CancellationToken ct)
+        public async Task<RunFanOutHandle> EnqueueAsync(IReadOnlyList<RunParameters> members, bool wholeNode, CancellationToken ct)
         {
             var ids = new List<Guid>();
             foreach (var member in members)
