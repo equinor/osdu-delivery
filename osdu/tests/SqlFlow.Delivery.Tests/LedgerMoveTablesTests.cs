@@ -9,14 +9,15 @@ namespace SqlFlow.Delivery.Tests;
 
 /// <summary>
 /// The tables a ledger move reaches (<see cref="LedgerMoves"/>, osdu/docs/reference/concepts/renaming-a-pipeline.md),
-/// held to the module's model: every table that carries a ledger identity is one a move takes, one whose rows it points at the
-/// new identity, or one it leaves alone on purpose, so a table added later is not left behind under the old identity.
+/// held to the module's model: every table that carries a ledger identity is one a move takes (a delivery ledger's, or one of
+/// another kind's), one whose rows it points at the new identity, or one it leaves alone on purpose, so a table added later
+/// is not left behind under the old identity.
 /// </summary>
 public sealed class LedgerMoveTablesTests
 {
     private const string Placeholder = "Server=127.0.0.1,1;Database=unused;TrustServerCertificate=True;Connect Timeout=1;ConnectRetryCount=0";
 
-    private static readonly string[] IdentityColumns = ["FlowId", "LedgerFlowId", "CursorFlowId"];
+    private static readonly string[] IdentityColumns = ["FlowId", "LedgerFlowId", "CursorFlowId", "LedgerId"];
 
     private static IReadOnlyList<IEntityType> Entities()
     {
@@ -32,9 +33,17 @@ public sealed class LedgerMoveTablesTests
             .Select(e => e.GetTableName()!)
             .Order(StringComparer.Ordinal)
             .ToList();
-        var listed = LedgerMoves.KeyedTables.Concat(LedgerMoves.NamingTables).Concat(LedgerMoves.UntouchedTables).Order(StringComparer.Ordinal).ToList();
+        var delivery = LedgerMoves.KeyedTables.Concat(LedgerMoves.NamingTables).Concat(LedgerMoves.UntouchedTables).ToList();
+        var listed = delivery
+            .Concat(LedgerMoves.OtherKinds.Values.SelectMany(k => k.Tables))
+            .Append(LedgerMoves.ViewTable)
+            .Distinct(StringComparer.Ordinal)
+            .Order(StringComparer.Ordinal)
+            .ToList();
 
-        Assert.Equal(listed.Count, listed.Distinct(StringComparer.Ordinal).Count());
+        // A table is in one of a delivery ledger's lists at most; the activity trail is every kind's, so a kind lists it too.
+        Assert.Equal(delivery.Count, delivery.Distinct(StringComparer.Ordinal).Count());
+        Assert.All(LedgerMoves.OtherKinds.Values, k => Assert.Equal(k.Tables.Count, k.Tables.Distinct(StringComparer.Ordinal).Count()));
         Assert.True(
             listed.SequenceEqual(carrying, StringComparer.Ordinal),
             $"Tables that carry a ledger identity and no list of LedgerMoves names: {string.Join(", ", carrying.Except(listed, StringComparer.Ordinal))}. "
@@ -59,5 +68,29 @@ public sealed class LedgerMoveTablesTests
             Assert.Contains(entities[table].GetProperties(), p => p.Name == "LedgerFlowId");
             Assert.Contains(entities[table].GetProperties(), p => p.Name == "PartitionId");
         }
+    }
+
+    [Fact]
+    public void A_table_of_another_kind_s_ledger_keeps_its_rows_under_the_partition_and_the_identity_a_move_reads_them_by()
+    {
+        var entities = Entities().ToDictionary(e => e.GetTableName()!, StringComparer.Ordinal);
+        foreach (var kind in LedgerMoves.OtherKinds.Values)
+        {
+            foreach (var table in kind.Tables)
+            {
+                Assert.Contains(entities[table].GetProperties(), p => p.Name == "PartitionId");
+                Assert.Contains(entities[table].GetProperties(), p => p.Name == "FlowId");
+            }
+
+            // A kind of named rows holds one of each name per ledger: what a move checks before it begins.
+            if (kind.NamedRows)
+            {
+                Assert.Contains(entities[kind.Tables[0]].GetProperties(), p => p.Name == "Name");
+                Assert.Contains(entities[kind.Tables[0]].GetProperties(), p => p.Name == "FlowName");
+            }
+        }
+
+        Assert.Contains(entities[LedgerMoves.ViewTable].GetProperties(), p => p.Name == "LedgerId");
+        Assert.Contains(entities[LedgerMoves.ViewTable].GetProperties(), p => p.Name == "FlowName");
     }
 }

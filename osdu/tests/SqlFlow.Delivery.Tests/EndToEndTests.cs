@@ -1260,8 +1260,8 @@ public class EndToEndTests : IDisposable
             var held = await ledger.GetRecordAsync(renamed.Flow.Id, SampleEstate.Key(0));
             Assert.Equal(RecordStatus.Held, held!.Status);
             Assert.Contains($"already claimed by flow '{OldName}' ({original:D}), which no repository declares any more", held.LastError, StringComparison.Ordinal);
-            Assert.Contains("the repository sync moves that ledger here", held.LastError, StringComparison.Ordinal);
-            Assert.Contains($"keep the ledger with ledger: {OldName} in this flow's document", held.LastError, StringComparison.Ordinal);
+            Assert.Contains("its ledger is orphaned: have this flow take it over on the Orphaned ledgers page", held.LastError, StringComparison.Ordinal);
+            Assert.Contains($"with ledger: {OldName} in its document", held.LastError, StringComparison.Ordinal);
         }
 
         // With ledger: naming the old name, it is the same ledger: nothing changed in the source, so nothing is sent or held,
@@ -1316,8 +1316,8 @@ public class EndToEndTests : IDisposable
         await using (var context = _db.CreateDbContext())
         {
             var partition = await context.DeliveryLedgers.Where(l => l.FlowId == original).Select(l => l.PartitionId).SingleAsync();
-            Assert.Equal(LedgerMoveAsk.Asked, await LedgerMoves.RequestAsync(
-                context, new LedgerMoveRequest(partition, original, OldName, OldName, renamedId, NewName, string.Empty, NewName, Guid.NewGuid()), Now, CancellationToken.None));
+            Assert.Equal(LedgerMoveAsk.Asked, (await LedgerMoves.RequestAsync(
+                context, new LedgerMoveRequest(partition, original, OldName, OldName, renamedId, NewName, string.Empty, NewName, Guid.NewGuid()), Now, CancellationToken.None)).Ask);
         }
 
         // The renamed pipeline's next run binds its ledger, which finishes the move first: the old records, with their history
@@ -1338,7 +1338,7 @@ public class EndToEndTests : IDisposable
             var move = Assert.Single(await ledger.ListActivitiesAsync(new ActivityQuery { FlowId = renamedId, Kind = LedgerMoves.Kind }));
             Assert.Equal(("completed", LedgerMoves.Actor), (move.Outcome, move.Actor));
             Assert.Equal(
-                $"moved {LogCount} record(s) of '{OldName}' to '{NewName}', which replaced it in its repository, with their history, their OSDU ids and the reading position; "
+                $"moved {LogCount} record(s) of '{OldName}' to '{NewName}', the same document under its newest name, with their history, their OSDU ids and the reading position; "
                 + $"{LogCount} record(s) '{NewName}' had held, which claimed no OSDU id, gave way to them",
                 move.Summary);
             Assert.Empty(await ledger.CompleteLedgerMovesAsync(null));

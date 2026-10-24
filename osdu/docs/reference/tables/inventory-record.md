@@ -82,5 +82,5 @@ Rows leave the table only through a removal of gone ids; a removal from OSDU mar
   gone ids (which deletes rows) (`SqlServerLedgerBulk.Inventory.cs`, `SqlServerLedgerBulk.InventoryRemoval.cs`).
 - **Read** by the counts by finding, the **Ids** grid and its tabs, the CSV export, the lookup by OSDU id (`GET /api/v1/delivery/inventories/lookup`), a removal, a
   selection's match and a repair.
-- **Rewritten** by a ledger move (`OsduLedger.Moves.cs`), which puts the rows of a renamed pipeline's old ledger under
-  its new identity, a slice at a time ([Renaming a pipeline](../concepts/renaming-a-pipeline.md)).
+- **Rewritten** by a ledger move (`OsduLedger.Moves.cs`), which puts the rows of an old ledger under the
+  identity of the flow that replaced it or took it over, a slice at a time ([Renaming a pipeline](../concepts/renaming-a-pipeline.md)).

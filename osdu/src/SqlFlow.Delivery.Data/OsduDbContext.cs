@@ -16,7 +16,7 @@ public sealed class OsduDbContext : DbContext
     public const string MigrationsHistoryTable = "__EFMigrationsHistory";
 
     /// <summary>The module version the current migrations produce; written to <see cref="OsduSchemaVersion.ModuleVersion"/>.</summary>
-    public const string ModuleVersion = "1.62.0";
+    public const string ModuleVersion = "1.63.0";
 
     /// <summary>
     /// The oldest SQLFlow catalog migration this schema works with: the one that records the values the control plane
@@ -165,6 +165,9 @@ public sealed class OsduDbContext : DbContext
     public DbSet<DeliverySearchTermRefinement> DeliverySearchTermRefinements => Set<DeliverySearchTermRefinement>();
 
     public DbSet<DeliveryInterface> DeliveryInterfaces => Set<DeliveryInterface>();
+
+    /// <summary>The flows of the kinds that keep a ledger and deliver nothing, with their document's hash, written by every sync.</summary>
+    public DbSet<DeliveryLedgerFlow> DeliveryLedgerFlows => Set<DeliveryLedgerFlow>();
 
     /// <summary>The files of the template folders of every synced repository, written by every sync.</summary>
     public DbSet<DeliveryRepositoryTemplate> DeliveryRepositoryTemplates => Set<DeliveryRepositoryTemplate>();

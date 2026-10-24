@@ -7,16 +7,16 @@ using SqlFlow.Delivery.Ledger;
 namespace SqlFlow.Delivery.ControlPlane.Background;
 
 /// <summary>
-/// Moves the ledger of each name of a document the repository sync found to the name that owns it
-/// (osdu/docs/reference/concepts/renaming-a-pipeline.md; <see cref="LedgerMoves"/>), within seconds of the sync, so the
-/// renamed pipeline's records, history and OSDU ids are under its new name before anyone looks or a run starts. A move is
-/// made a slice at a time under its own lock; one waiting for work in flight on either ledger, or that another process is
-/// making, is taken up on a later pass, and a run of the renamed pipeline finishes it first if it gets there earlier. A pass
-/// that fails (the module database not migrated yet, a lost connection) is tried again a minute on.
+/// Finishes the ledger moves that could not be made when they were asked (osdu/docs/reference/concepts/renaming-a-pipeline.md;
+/// <see cref="LedgerMoves"/>): the repository sync makes the moves it asks once it committed, and a takeover makes its own at
+/// once, but a move waiting for work in flight on either ledger, one another process was making, and one a sync or a
+/// control plane stopped half way are left running. This pass takes each of them up again every few seconds, oldest first,
+/// a slice at a time under the move's own lock, until it is done; a run of the flow a ledger moves to finishes it first if it
+/// gets there earlier. A pass that fails (the module database not migrated yet, a lost connection) is tried again a minute on.
 /// </summary>
 public sealed partial class LedgerMoveService : BackgroundService
 {
-    /// <summary>How often the pass looks for moves the sync asked for: a move starts within this of the sync.</summary>
+    /// <summary>How often the pass looks for moves left running: a move that waited is taken up within this of the work it waited for ending.</summary>
     private static readonly TimeSpan PassInterval = TimeSpan.FromSeconds(15);
 
     /// <summary>The wait before a pass that failed is tried again.</summary>
@@ -72,7 +72,7 @@ public sealed partial class LedgerMoveService : BackgroundService
         }
     }
 
-    /// <summary>One pass: every move the sync asked for and nobody has made yet, oldest first.</summary>
+    /// <summary>One pass: every move asked and not done, oldest first.</summary>
     public async Task<IReadOnlyList<LedgerMoveResult>> PassAsync(CancellationToken ct)
     {
         await using var scope = _services.CreateAsyncScope();
@@ -82,7 +82,7 @@ public sealed partial class LedgerMoveService : BackgroundService
         {
             switch (result.Outcome)
             {
-                case "completed":
+                case LedgerMoves.Completed:
                     LogMoved(result.Partition, result.From, result.To, result.Records, result.Summary);
                     break;
                 case "failed":

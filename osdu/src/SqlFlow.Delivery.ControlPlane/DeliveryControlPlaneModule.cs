@@ -156,8 +156,8 @@ public sealed class DeliveryControlPlaneModule : IControlPlaneModule
         // goes when its week is up even in a partition where nobody asks for another check.
         services.AddHostedService<InventoryDuplicateSweepService>();
 
-        // The ledger of a renamed pipeline moves to it within seconds of the repository sync that paired the two, so its records,
-        // their history and their OSDU ids are under the new name before anyone looks; a run that comes first finishes the move.
+        // A ledger move that had to wait (for work in flight on either ledger, or for a sync or takeover stopped half way) is
+        // taken up again within seconds; the sync and a takeover make theirs at once, and a run that comes first finishes it.
         services.AddHostedService<LedgerMoveService>();
 
         if (rollout.Enabled)

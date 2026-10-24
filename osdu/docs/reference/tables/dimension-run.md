@@ -101,3 +101,5 @@ through the search cursor) is in [the dimension flow](../flow/dimension.md).
   `OsduLedger.Dimensions.cs`).
 - **Read** by the dimension's builds page, `sqlflow dimensions`, the next incremental load, and the blueprint, which reads
   the last build's kinds.
+- **Rewritten** by a ledger move (`OsduLedger.Moves.cs`), which puts the rows of an old ledger under the identity of the
+  flow that replaced it or took it over, a slice at a time ([Renaming a pipeline](../concepts/renaming-a-pipeline.md)).

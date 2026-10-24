@@ -91,5 +91,5 @@ Not pruned by retention: a record names its submission. Deleting a delivery flow
   the planning passes run, and closed from the ledger's records when the drain ends.
 - **Read** by the drain and every later deliver run of the flow (to resume or take over a submission), by a flow's
   Submissions tab, the run page and the delivery API's submission routes.
-- **Rewritten** by a ledger move (`OsduLedger.Moves.cs`), which puts the rows of a renamed pipeline's old ledger under
-  its new identity, a slice at a time ([Renaming a pipeline](../concepts/renaming-a-pipeline.md)).
+- **Rewritten** by a ledger move (`OsduLedger.Moves.cs`), which puts the rows of an old ledger under the
+  identity of the flow that replaced it or took it over, a slice at a time ([Renaming a pipeline](../concepts/renaming-a-pipeline.md)).

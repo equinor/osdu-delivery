@@ -80,9 +80,11 @@ public static class DeliveryServices
         services.AddSingleton<IFlowDocumentKind, InventoryFlowKind>();
         services.AddSingleton<IFlowDocumentKind, RemovalFlowKind>();
         // The repository sync's delivery half, whose rows ride the catalog's transaction: the osdu schema is in its database.
+        // Once the sync committed, it makes the ledger moves it asked with this host's ledger, when the host has one.
         services.AddSingleton<ICatalogSyncExtension>(sp => new DeliveryCatalogSync(
             sp.GetRequiredService<DeliveryDocumentLoader>(),
-            sp.GetService<ISecretResolver>()));
+            sp.GetService<ISecretResolver>(),
+            () => sp.GetService<DeliveryLedgerSource>()?.Open(sp)));
         // Where a synced repository's files are on this host, which a template read outside a run of its own repository is
         // read from: the catalog this host names says where each repository's last sync put them. The control plane
         // registers its own catalog's before this.

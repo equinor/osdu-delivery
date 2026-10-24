@@ -65,3 +65,6 @@ partition and has no `PartitionId`. Removing a view deletes its record and its c
 
 - **Written** by a build after its dimensions, each view in a transaction of its own (`SqlServerDimensionViewStore.cs`).
 - **Read** by the next build, the dimension flow's views page, and removal of a view.
+- **Rewritten** by a ledger move (`OsduLedger.Moves.cs`), which points the views of an old dimension ledger at the flow
+  that replaced it or took it over, by its ledger and its name, so that flow's builds write them
+  ([Renaming a pipeline](../concepts/renaming-a-pipeline.md)).

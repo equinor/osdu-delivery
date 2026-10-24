@@ -628,6 +628,9 @@ public static class DeliveryEndpoints
 
         // Removal flows: a flow's removals in a partition, their runs, and the deletions a delivery ledger holds.
         DeliveryRemovalEndpoints.MapReads(delivery);
+
+        // The missing documents: flows no repository declares any more whose ledgers hold anything, and who can take them over.
+        DeliveryOrphanedLedgerEndpoints.MapReads(delivery);
         delivery.MapGet("/caches", ListCachesAsync).WithName("ListDeliveryCaches");
         delivery.MapGet("/cache/items", ListCachedItemsAsync).WithName("ListDeliveryCachedItems");
         delivery.MapGet("/cache/versions", ListCacheVersionsAsync).WithName("ListDeliveryCacheVersions");
@@ -683,6 +686,9 @@ public static class DeliveryEndpoints
 
         // Deleting a flow's whole ledger, every interface's, through a run of the pipeline that removes its records from OSDU first.
         DeliveryLedgerEndpoints.MapWrites(delivery);
+
+        // A missing document's ledgers taken over by a declared flow, each moved at once, as the person who asked.
+        DeliveryOrphanedLedgerEndpoints.MapWrites(delivery);
         DeliveryInventoryEndpoints.MapWrites(delivery);
 
         // The approval of what a removal flow's guard held, and an operator's lift of a deletion, which delivers its record again.

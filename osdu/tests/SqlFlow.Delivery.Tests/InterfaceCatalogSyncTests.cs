@@ -12,7 +12,9 @@ namespace SqlFlow.Delivery.Tests;
 /// The read model of sources and interfaces (osdu/docs/reference/flow/interfaces.md, The interface read model): the
 /// repository sync describes every interface of every delivery flow with the ledger identity it keeps, the route it
 /// goes by and the kind its mapping fills; an interface the repository no longer declares stays findable as inactive;
-/// a ledger kept by two flows is reported, and so is a flow renamed while the ledger of its old name holds its claims.
+/// a ledger kept by two flows is reported, and so is a flow renamed while the ledger of its old name holds its claims. A
+/// renamed pipeline's ledger moves to it once the sync committed; one renamed and changed at once leaves a missing document
+/// a person has its new pipeline take over (osdu/docs/reference/concepts/renaming-a-pipeline.md).
 /// </summary>
 [Collection(SqlServerSuite.Name)]
 [Trait("Category", "Integration")]
@@ -284,7 +286,7 @@ public sealed class InterfaceCatalogSyncTests : IDisposable
         var warning = Assert.Single((await SyncAsync(new DateTime(2026, 9, 16, 13, 0, 0, DateTimeKind.Utc))).Warnings);
         Assert.Equal(
             $"flows/copy.yaml, {OldFile}: '{OldName}', 'welldb-welllog-copy' are one document under 2 names, so 'welldb-welllog-copy', the one found last, keeps its ledger, "
-            + "and a run of any other holds every record whose id that ledger claimed. Delete the copy that is a mistake; its ledger then goes back to the one that stays.",
+            + "and the others work on a ledger of their own. Delete the copy that is a mistake; its ledger then goes back to the one that stays.",
             warning);
         var copied = Assert.Single(await ledger.CompleteLedgerMovesAsync(null));
         Assert.Equal(("completed", 1L, FlowId.Of("welldb-welllog-copy")), (copied.Outcome, copied.Records, copied.To));
@@ -345,6 +347,113 @@ public sealed class InterfaceCatalogSyncTests : IDisposable
         Write(Mapping, mapping);
         await SyncAsync(new DateTime(2026, 9, 16, 14, 0, 0, DateTimeKind.Utc));
         Assert.Equal(FlowId.Of(NewName), Assert.Single(await MovesAsync()).FlowId);
+    }
+
+    [Fact]
+    public async Task The_sync_makes_the_moves_it_asked_once_it_committed_and_says_what_each_did()
+    {
+        var ledger = await DeliveredAsync();
+        Delete(OldFile);
+        Write(NewFile, Flow(NewName));
+        Assert.Empty((await SyncAsync(new DateTime(2026, 9, 16, 13, 0, 0, DateTimeKind.Utc))).Warnings);
+
+        // The sync's work once its transaction committed: the move it asked, made with the host's ledger, and reported.
+        var warnings = new List<string>();
+        await new DeliveryCatalogSync(new DeliveryDocumentLoader(), ledger: () => ledger)
+            .CommittedAsync(null!, _repo, _root, new DateTime(2026, 9, 16, 13, 0, 0, DateTimeKind.Utc), warnings, CancellationToken.None);
+        Assert.Equal(
+            $"Partition 'dev': moved 1 record(s) of '{OldName}' to '{NewName}', the same document under its newest name, with their history, their OSDU ids and the reading position.",
+            Assert.Single(warnings));
+        Assert.Equal(LedgerMoves.Completed, Assert.Single(await MovesAsync()).Outcome);
+        Assert.Equal("dev:work-product-component--WellLog:a", Assert.Single(await ledger.ListAsync(FlowId.Of(NewName), new RecordQuery())).ClaimedTargetId);
+
+        // Nothing is left to make, and a host without a ledger makes nothing.
+        warnings.Clear();
+        await new DeliveryCatalogSync(new DeliveryDocumentLoader(), ledger: () => ledger)
+            .CommittedAsync(null!, _repo, _root, DateTime.UtcNow, warnings, CancellationToken.None);
+        await new DeliveryCatalogSync(new DeliveryDocumentLoader()).CommittedAsync(null!, _repo, _root, DateTime.UtcNow, warnings, CancellationToken.None);
+        Assert.Empty(warnings);
+    }
+
+    [Fact]
+    public async Task A_pipeline_renamed_and_edited_is_a_missing_document_its_new_pipeline_takes_over()
+    {
+        var ledger = await DeliveredAsync();
+
+        // Renamed and changed in one commit: another document, so the sync moves nothing and the old ledger is orphaned.
+        Delete(OldFile);
+        Write(NewFile, Flow(NewName).Replace("flowType: delivery\n", "flowType: delivery\ndescription: The well logs, renamed.\n", StringComparison.Ordinal));
+        Assert.Empty((await SyncAsync(new DateTime(2026, 9, 16, 13, 0, 0, DateTimeKind.Utc))).Warnings);
+        Assert.Empty(await MovesAsync());
+
+        // The missing document says where it was declared and what it left, and offers the renamed pipeline first: it pins
+        // the same mapping, reads the same record table and is declared in the same folder.
+        var missing = Assert.Single(await ledger.ListOrphanedDocumentsAsync("dev"));
+        Assert.Equal((LedgerKinds.Delivery, OldName, OldFile, 1L, 1L), (missing.Kind, missing.FlowName, missing.RelativePath, missing.Rows, missing.Claimed));
+        var orphan = Assert.Single(missing.Ledgers);
+        Assert.Equal((FlowId.Of(OldName), "dev", string.Empty), (orphan.Ledger, orphan.Partition, orphan.Interface));
+        var first = missing.Candidates[0];
+        Assert.Equal((NewName, NewFile, true, 1), (first.FlowName, first.RelativePath, first.Suggested, first.Takes));
+        Assert.Equal(["mapping", "record table", "folder"], first.Shares);
+        Assert.Empty(await ledger.ListOrphanedDocumentsAsync("test"));
+
+        // Taken over: the record, its history and the id it claimed are the renamed pipeline's, as the person who asked.
+        var taken = Assert.Single(await ledger.TakeOverLedgersAsync(new LedgerTakeoverRequest(LedgerKinds.Delivery, OldName, NewName, "dev"), "user:alice"));
+        Assert.Equal((LedgerMoves.Completed, 1L, FlowId.Of(NewName)), (taken.Outcome, taken.Records, taken.To));
+        var move = Assert.Single(await MovesAsync());
+        Assert.Equal(("user:alice", LedgerMoves.Completed), (move.Actor, move.Outcome));
+        Assert.Contains($"moved 1 record(s) of '{OldName}' to '{NewName}', to which it was bound by hand", move.Summary, StringComparison.Ordinal);
+        Assert.Equal("dev:work-product-component--WellLog:a", Assert.Single(await ledger.ListAsync(FlowId.Of(NewName), new RecordQuery())).ClaimedTargetId);
+        Assert.Empty(await ledger.ListOrphanedDocumentsAsync(null));
+
+        // It is missing no more, so asking again takes nothing over.
+        var again = await Assert.ThrowsAsync<DeliveryException>(
+            () => ledger.TakeOverLedgersAsync(new LedgerTakeoverRequest(LedgerKinds.Delivery, OldName, NewName, "dev"), "user:alice"));
+        Assert.Contains($"No delivery flow '{OldName}' left orphaned ledgers in partition 'dev'", again.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task A_takeover_names_a_declared_pipeline_and_leaves_an_interface_it_has_no_counterpart_of_orphaned()
+    {
+        // A source of two interfaces, delivered: each keeps a ledger of its own.
+        Write("flows/petrel.yaml", Source);
+        Assert.Empty((await SyncAsync()).Warnings);
+        var ledger = _module.Ledger(new TestClock());
+        var wellbores = FlowId.Of("petrel/wellbores");
+        var logs = FlowId.Of("welldb-welllog-03-header-delivery");
+        foreach (var (id, name, ledgerName) in new[] { (wellbores, "wellbores", "petrel/wellbores"), (logs, "logs", "welldb-welllog-03-header-delivery") })
+        {
+            await ledger.RegisterLedgerAsync(new LedgerEntry { FlowId = id, Partition = "dev", Kind = LedgerKinds.Delivery, FlowName = "petrel", Interface = name, LedgerName = ledgerName });
+            await ledger.UpsertPendingAsync(id, [Claiming(id, name)]);
+        }
+
+        // Replaced by a source of the wellbores alone, under another name and changed.
+        Delete("flows/petrel.yaml");
+        var wellboresOnly = Source[..Source.IndexOf("  logs:", StringComparison.Ordinal)]
+            .Replace("name: petrel\n", "name: petrel-wellbores\ndescription: The wellbores alone.\n", StringComparison.Ordinal);
+        Write("flows/petrel-wellbores.yaml", wellboresOnly);
+        Assert.Empty((await SyncAsync(new DateTime(2026, 9, 16, 13, 0, 0, DateTimeKind.Utc))).Warnings);
+        var missing = Assert.Single(await ledger.ListOrphanedDocumentsAsync("dev"));
+        Assert.Equal(("petrel", 2L, 2), (missing.FlowName, missing.Rows, missing.Ledgers.Count));
+        var candidate = Assert.Single(missing.Candidates);
+        Assert.Equal(("petrel-wellbores", 1, true), (candidate.FlowName, candidate.Takes, candidate.Suggested));
+        Assert.Equal(["wellbores"], candidate.Interfaces);
+        Assert.Equal(["mapping", "record table", "interface", "folder"], candidate.Shares);
+
+        // A flow no repository declares takes nothing over.
+        var undeclared = await Assert.ThrowsAsync<DeliveryException>(
+            () => ledger.TakeOverLedgersAsync(new LedgerTakeoverRequest(LedgerKinds.Delivery, "petrel", "petrel-gone", "dev"), "user:alice"));
+        Assert.Contains("No repository declares a delivery flow 'petrel-gone'", undeclared.Message, StringComparison.Ordinal);
+
+        // The wellbores' ledger goes to the interface of the same name; the logs' stays orphaned, saying why.
+        var moves = (await ledger.TakeOverLedgersAsync(new LedgerTakeoverRequest(LedgerKinds.Delivery, "petrel", "petrel-wellbores", null), "user:alice"))
+            .ToDictionary(m => m.From);
+        Assert.Equal((LedgerMoves.Completed, FlowId.Of("petrel-wellbores/wellbores")), (moves[wellbores].Outcome, moves[wellbores].To));
+        Assert.Equal(LedgerBindings.Skipped, moves[logs].Outcome);
+        Assert.Equal("'petrel-wellbores' declares no interface 'logs' in partition 'dev', so this ledger stays orphaned: give the flow that interface, or take this document over by a flow that has it.", moves[logs].Summary);
+        var left = Assert.Single(await ledger.ListOrphanedDocumentsAsync("dev"));
+        Assert.Equal(logs, Assert.Single(left.Ledgers).Ledger);
+        Assert.Empty(left.Candidates);
     }
 
     /// <summary>Work for a record of <paramref name="flow"/> that queues a document, which claims the record's OSDU id.</summary>

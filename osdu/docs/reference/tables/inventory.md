@@ -68,3 +68,6 @@ in the partition (kind `inventory`), and no table of an inventory has a foreign 
   versions from the document, and by a completed run, which sets its last build, last reconcile and owners
   (`OsduLedger.Inventory.cs`).
 - **Read** by the inventories listing and an inventory's page, `GET /api/v1/delivery/inventories` and `sqlflow inventory`.
+- **Rewritten** by a ledger move (`OsduLedger.Moves.cs`), which gives the inventories of an old ledger the identity and the
+  name of the flow that replaced it or took it over, all at once, and refuses a flow that holds an inventory of one of their
+  names ([Renaming a pipeline](../concepts/renaming-a-pipeline.md)).

@@ -1608,14 +1608,14 @@
       "path": "ledger",
       "type": "string",
       "required": false,
-      "description": "The name of an existing ledger the flow keeps instead of the one its `name` gives, for a rename the repository sync cannot pair with the pipeline it replaced, which it otherwise moves itself: the old name (`ledger: welldb-wellbore-03-delivery`), so its records carry on with their history, their watermark and the OSDU ids they claimed, and nothing is sent again that has not changed. In a flow that works in partitions, each partition keeps `<ledger>@<partition>`, and the partition marked `keepLedger` keeps the ledger itself. At most 200 characters.",
+      "description": "The name of an existing ledger the flow keeps instead of the one its `name` gives, by name, which no takeover on the Orphaned ledgers page needs: the old name (`ledger: welldb-wellbore-03-delivery`), so its records carry on with their history, their watermark and the OSDU ids they claimed, and nothing is sent again that has not changed. In a flow that works in partitions, each partition keeps `<ledger>@<partition>`, and the partition marked `keepLedger` keeps the ledger itself. At most 200 characters.",
       "appliesWhen": "Only on a flow in the single form; an interface of a source names it as `interfaces.<name>.ledger`."
     },
     {
       "path": "name",
       "type": "string",
       "required": true,
-      "description": "The flow's name: its pipeline in the catalog, its schedules and its run history; the flow id is derived from it. In the single form the ledger keeps the flow under this name (at most 200 characters) unless `ledger` names another; an interface's ledger is kept under `<name>/<interface>`. A renamed flow has a new ledger identity, and the repository sync moves the old name's ledger to it; `ledger: <old name>` keeps the old one where the sync cannot pair them."
+      "description": "The flow's name: its pipeline in the catalog, its schedules and its run history; the flow id is derived from it. In the single form the ledger keeps the flow under this name (at most 200 characters) unless `ledger` names another; an interface's ledger is kept under `<name>/<interface>`. A renamed flow has a new ledger identity: the repository sync moves the old name's ledger to it when only the name changed, and otherwise the old ledger is orphaned until the renamed flow takes it over on the Orphaned ledgers page, or keeps it with `ledger: <old name>`."
     },
     {
       "path": "parallelism",

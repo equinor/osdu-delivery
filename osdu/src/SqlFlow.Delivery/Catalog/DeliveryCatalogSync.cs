@@ -1,4 +1,5 @@
 using SqlFlow.Core.Secrets;
+using System.Data.Common;
 using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Storage;
@@ -10,6 +11,7 @@ using SqlFlow.Core.Lineage;
 using SqlFlow.Delivery.Data;
 using SqlFlow.Delivery.Documents;
 using SqlFlow.Delivery.Identity;
+using SqlFlow.Delivery.Ledger;
 using SqlFlow.Delivery.Model;
 using SqlFlow.Delivery.Templates;
 using SqlFlow.Lineage.Collection;
@@ -57,16 +59,20 @@ public sealed class DeliveryCatalogSync : ICatalogSyncExtension
 
     private readonly DeliveryDocumentLoader _documents;
     private readonly ISecretResolver? _secrets;
+    private readonly Func<ILedger?>? _ledger;
 
     /// <summary>
     /// The sync over <paramref name="documents"/>, writing the module's rows on the catalog's connection, inside the sync's
     /// transaction. <paramref name="secrets"/> resolves a cache document's <c>${env:...}</c> partition, as a run resolves it.
+    /// <paramref name="ledger"/> answers the ledger the sync makes the moves it asked with once it committed; without one,
+    /// or when it answers none, the moves are left asked, for the control plane's pass and the runs of the flows.
     /// </summary>
-    public DeliveryCatalogSync(DeliveryDocumentLoader documents, ISecretResolver? secrets = null)
+    public DeliveryCatalogSync(DeliveryDocumentLoader documents, ISecretResolver? secrets = null, Func<ILedger?>? ledger = null)
     {
         ArgumentNullException.ThrowIfNull(documents);
         _documents = documents;
         _secrets = secrets;
+        _ledger = ledger;
     }
 
     /// <summary>
@@ -109,6 +115,46 @@ public sealed class DeliveryCatalogSync : ICatalogSyncExtension
         var result = await ReconcileAsync(osdu, repoId, root, nowUtc, warnings, ct).ConfigureAwait(false);
         await CheckOrderAsync(context, osdu, repoId, root, warnings, ct).ConfigureAwait(false);
         return result;
+    }
+
+    /// <summary>
+    /// Makes the moves of renamed flows' ledgers this sync asked for, now that it has committed (osdu/docs/reference/concepts/
+    /// renaming-a-pipeline.md): a slice at a time, each committing on its own, so a ledger of millions of records never holds
+    /// the sync's transaction. What each move did is reported in the sync's result. A move waiting for work in flight on
+    /// either ledger, or one another process is making, stays asked: the control plane's pass makes it once it can, and a run
+    /// of the flow it goes to finishes it before it reads its ledger. A move that cannot be made at all leaves the old ledger
+    /// orphaned, for a person to bind.
+    /// </summary>
+    public async Task CommittedAsync(CatalogDbContext context, Guid repoId, string root, DateTime nowUtc, ICollection<string> warnings, CancellationToken ct)
+    {
+        ArgumentNullException.ThrowIfNull(warnings);
+        if (_ledger?.Invoke() is not { } ledger)
+        {
+            return;
+        }
+
+        IReadOnlyList<LedgerMoveResult> moves;
+        try
+        {
+            moves = await ledger.CompleteRepositoryMovesAsync(repoId, ct).ConfigureAwait(false);
+        }
+        catch (Exception ex) when (ex is DeliveryException or DbException or InvalidOperationException or TimeoutException)
+        {
+            // The sync has landed and its moves are asked: they are made by the control plane's pass, or the runs, instead.
+            warnings.Add(
+                $"The ledger moves this sync asked for were not made now ({SecretHygiene.RedactedMessage(ex)}); the control plane makes them within a minute, and a run of a flow a ledger moves to finishes its move before it reads its ledger.");
+            return;
+        }
+
+        foreach (var move in moves)
+        {
+            warnings.Add(move.Outcome switch
+            {
+                LedgerMoves.Completed => $"Partition '{move.Partition}': {move.Summary}.",
+                LedgerMoves.Failed => $"Partition '{move.Partition}': {move.Summary} Bind it by hand on the Orphaned ledgers page, to the flow of your choice.",
+                _ => $"Partition '{move.Partition}': a ledger move waits ({move.Summary}); the control plane makes it once it can, and a run of the flow it goes to finishes it first.",
+            });
+        }
     }
 
     /// <summary>
@@ -720,6 +766,7 @@ public sealed class DeliveryCatalogSync : ICatalogSyncExtension
         OsduDbContext context, Guid repoId, string root, DateTime nowUtc, ICollection<string> warnings, CancellationToken ct)
     {
         var sources = new List<RepositorySource>();
+        var flows = new List<RepositoryFlow>();
         var unread = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         var invalid = 0;
         foreach (var file in EnumerateYaml(root))
@@ -734,6 +781,23 @@ public sealed class DeliveryCatalogSync : ICatalogSyncExtension
             {
                 // The mapping pass reports an unreadable file; one warning per file is enough. Its pipeline only looks gone.
                 unread.Add(Relative(root, file));
+                continue;
+            }
+
+            // A flow of another kind that keeps a ledger is described too, so a rename of it keeps its ledger as well. A
+            // document that does not parse is the platform's to report, and its row stays as it was.
+            if (LedgerFlowCatalog.Kinds.FirstOrDefault(k => DeclaresFlowType(yaml, k)) is { } kind)
+            {
+                var flowPath = Relative(root, file);
+                try
+                {
+                    flows.Add(DescribeFlow(_documents, kind, yaml, flowPath));
+                }
+                catch (FlowValidationException)
+                {
+                    unread.Add(flowPath);
+                }
+
                 continue;
             }
 
@@ -756,9 +820,38 @@ public sealed class DeliveryCatalogSync : ICatalogSyncExtension
 
         var kinds = await MappingKindsAsync(context, repoId, ct).ConfigureAwait(false);
         var mappings = await MappingHashesAsync(context, repoId, ct).ConfigureAwait(false);
+        var guard = new LedgerMoveGuard(Asks: true, unread);
         var counts = await DeliveryInterfaceCatalog.ReconcileAsync(
-            context, repoId, sources, kinds, mappings, nowUtc, warnings, new LedgerMoveGuard(Asks: true, unread), ct).ConfigureAwait(false);
+            context, repoId, sources, kinds, mappings, nowUtc, warnings, guard, ct).ConfigureAwait(false);
+
+        // The other kinds' flows are pipelines the platform counts; their rows only say which ledger each keeps.
+        await LedgerFlowCatalog.ReconcileAsync(context, repoId, flows, nowUtc, warnings, guard, ct).ConfigureAwait(false);
         return (new CatalogSyncExtensionResult(counts.Added, counts.Updated, counts.Unchanged, counts.Removed, invalid), sources);
+    }
+
+    /// <summary>A flow of <paramref name="kind"/>, parsed by <paramref name="documents"/>, as its read model describes it (<see cref="LedgerFlowCatalog"/>).</summary>
+    /// <exception cref="FlowValidationException">The document does not parse as a flow of its kind.</exception>
+    public static RepositoryFlow DescribeFlow(DeliveryDocumentLoader documents, string kind, string yaml, string relative)
+    {
+        ArgumentNullException.ThrowIfNull(documents);
+        ArgumentException.ThrowIfNullOrWhiteSpace(kind);
+        switch (kind)
+        {
+            case LedgerKinds.Retrieval:
+                var retrieval = documents.ParseRetrieval(yaml, relative);
+                return new RepositoryFlow(relative, kind, retrieval.Name, false, DeliveryDocumentHash.OfDocument(yaml));
+            case LedgerKinds.Assertion:
+                var assertion = documents.ParseAssertion(yaml, relative);
+                return new RepositoryFlow(relative, kind, assertion.Name, assertion.Partitioned, DeliveryDocumentHash.OfDocument(yaml));
+            case LedgerKinds.Dimension:
+                var dimension = documents.ParseDimension(yaml, relative);
+                return new RepositoryFlow(relative, kind, dimension.Name, dimension.Partitioned, DeliveryDocumentHash.OfDocument(yaml));
+            case LedgerKinds.Inventory:
+                var inventory = documents.ParseInventory(yaml, relative);
+                return new RepositoryFlow(relative, kind, inventory.Name, inventory.Partitioned, DeliveryDocumentHash.OfDocument(yaml));
+            default:
+                throw new ArgumentOutOfRangeException(nameof(kind), kind, "Only retrieval, assertion, dimension and inventory flows are described by the flow documents' read model.");
+        }
     }
 
     /// <summary>The content hash of every mapping document the repository's rows hold, valid or not, by reference.</summary>

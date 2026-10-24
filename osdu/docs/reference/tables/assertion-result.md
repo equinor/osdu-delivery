@@ -72,3 +72,5 @@ Pruned with its run, which goes only once later results of each of its tests sup
 - **Read** by a run's report (JSON, Markdown, HTML or JUnit), an assertion flow's **Assertions** and **History** tabs,
   `sqlflow assertions status` and `report`, and the delivery API's `/assertions`, `/flows/{pipelineId}/assertion-matrix`
   and `/flows/{pipelineId}/assertions/{test}/history`.
+- **Rewritten** by a ledger move (`OsduLedger.Moves.cs`), which puts the rows of an old ledger under the identity of the
+  flow that replaced it or took it over, a slice at a time ([Renaming a pipeline](../concepts/renaming-a-pipeline.md)).

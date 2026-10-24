@@ -69,8 +69,8 @@ public sealed class LedgerMoveTests : IDisposable
     {
         await using var context = _db.CreateDbContext();
         var partition = await context.DeliveryLedgers.Where(l => l.FlowId == Old).Select(l => l.PartitionId).SingleAsync();
-        Assert.Equal(LedgerMoveAsk.Asked, await LedgerMoves.RequestAsync(
-            context, new LedgerMoveRequest(partition, Old, OldName, OldName, New, NewName, string.Empty, NewName, Guid.NewGuid()), Now, CancellationToken.None));
+        Assert.Equal(LedgerMoveAsk.Asked, (await LedgerMoves.RequestAsync(
+            context, new LedgerMoveRequest(partition, Old, OldName, OldName, New, NewName, string.Empty, NewName, Guid.NewGuid()), Now, CancellationToken.None)).Ask);
     }
 
     private async Task<long> RowsAsync(string table, string column, Guid flow)

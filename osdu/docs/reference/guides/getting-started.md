@@ -589,6 +589,8 @@ database (`OSDU_DATA_DB`) in its own environment, and the catalog's database, wh
 
 ## Where to go next
 
+- [The welldb sample](welldb-sample.md): the whole package this guide's wellbore comes from, from reference data to
+  well logs.
 - [Writing a mapping](writing-a-mapping.md): the builder, `sqlflow values`, and what the checks catch.
 - [One source, several kinds](multi-kind-source.md): wellbores and their well logs from one document.
 - [Well logs with curves](bulk-data.md): the header record and its bulk data.

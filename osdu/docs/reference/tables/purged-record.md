@@ -71,5 +71,5 @@ Lines are only ever added, and the one thing that changes on a line is its reque
   (`SqlServerLedgerBulk.Purges.cs`, `OsduLedger.Purges.cs`); `PlanRequestedUtc` is cleared by the run that reads the row.
 - **Read** by every deliver run of the flow (the rows to read again), a record's API route, the record lookup by OSDU id,
   and assertion runs (`SqlServerLedgerBulk.Recency.cs`).
-- **Rewritten** by a ledger move (`OsduLedger.Moves.cs`), which puts the rows of a renamed pipeline's old ledger under
-  its new identity, a slice at a time ([Renaming a pipeline](../concepts/renaming-a-pipeline.md)).
+- **Rewritten** by a ledger move (`OsduLedger.Moves.cs`), which puts the rows of an old ledger under the
+  identity of the flow that replaced it or took it over, a slice at a time ([Renaming a pipeline](../concepts/renaming-a-pipeline.md)).

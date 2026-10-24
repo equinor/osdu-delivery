@@ -69,5 +69,5 @@ Never pruned by retention: a reversal is what a record's custody was put back by
   (`OsduLedger.Reversals.cs`, `SqlServerLedgerBulk.Reversals.cs`).
 - **Read** by the reverse runs that resume it, and by the delivery API's `GET /flows/{pipelineId}/reversals` and
   `GET /reversals/{reversalId}` (`DeliveryReversalEndpoints.cs`), which the GUI shows.
-- **Rewritten** by a ledger move (`OsduLedger.Moves.cs`), which puts the rows of a renamed pipeline's old ledger under
-  its new identity, a slice at a time ([Renaming a pipeline](../concepts/renaming-a-pipeline.md)).
+- **Rewritten** by a ledger move (`OsduLedger.Moves.cs`), which puts the rows of an old ledger under the
+  identity of the flow that replaced it or took it over, a slice at a time ([Renaming a pipeline](../concepts/renaming-a-pipeline.md)).

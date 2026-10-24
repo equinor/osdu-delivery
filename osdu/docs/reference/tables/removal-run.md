@@ -92,5 +92,5 @@ run decides again`), and the keys it staged are deleted.
 - **Read** by the Removals page and a removal flow's Removals tab, `GET /api/v1/delivery/removals/flows/{pipelineId}/runs`,
   `GET /api/v1/delivery/removals/{partition}/runs/{removalRunId}`, `GET /api/v1/delivery/removals/ledgers/{ledgerFlowId}/runs`,
   and `sqlflow removal runs` and `sqlflow removal run`.
-- **Rewritten** by a ledger move (`OsduLedger.Moves.cs`), which puts the rows of a renamed pipeline's old ledger under
-  its new identity, a slice at a time ([Renaming a pipeline](../concepts/renaming-a-pipeline.md)).
+- **Rewritten** by a ledger move (`OsduLedger.Moves.cs`), which puts the rows of an old ledger under the
+  identity of the flow that replaced it or took it over, a slice at a time ([Renaming a pipeline](../concepts/renaming-a-pipeline.md)).

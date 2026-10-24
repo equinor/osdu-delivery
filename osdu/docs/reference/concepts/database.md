@@ -165,6 +165,7 @@ says how they fit and how each dimension's `dim_` table is laid out from them.
 | --- | --- |
 | [`osdu.Mapping`](../tables/mapping.md) | A mapping document a repository sync found |
 | [`osdu.Interface`](../tables/interface.md) | An interface of a delivery flow, per partition it names, and the ledger it keeps |
+| [`osdu.LedgerFlow`](../tables/ledger-flow.md) | A retrieval, assertion, dimension or inventory flow a repository sync found, with its document's hash |
 | [`osdu.SearchTerm`](../tables/search-term.md) | A search term a repository's pipelines give an entity type |
 | [`osdu.SearchTermRefinement`](../tables/search-term-refinement.md) | What a person made of a search term |
 | [`osdu.RepositoryTemplate`](../tables/repository-template.md) | A file of a repository's template folder, with the kind and version it holds, or why it holds none |

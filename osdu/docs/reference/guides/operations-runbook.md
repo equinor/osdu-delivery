@@ -230,13 +230,19 @@ have loaded the row, the run scoped to the record reads it by key.
 `OSDU id <id> is already claimed by flow '<old name>' (<id>), which no repository declares any more, ...`.
 
 **Do:** a flow keeps its ledger under its name, so the renamed flow ran on a new, empty ledger while the old name's records
-stayed in the old one with the OSDU ids they claimed. Nothing was sent. Sync the repository: the sync finds that the flow
-is the old one's document under a new name and moves that ledger to it within seconds (a `ledger-move` entry by
-`service:repository-sync` on the Activity page), the records it held give way to the old ones, and its next run sends only
-what changed ([Renaming a pipeline](../concepts/renaming-a-pipeline.md)).
+stayed in the old one with the OSDU ids they claimed. Nothing was sent, and nothing needs deleting.
 
-When the flow was also changed in the same commit (or the sync warns that the ledgers are in different partitions), keep
-the old ledger with `ledger: <old name>` in the flow.
+- When only the name changed, sync the repository: the sync finds the old one's document under a new name, moves that
+  ledger to it once it committed, and says so in its result (`Partition '<partition>': moved <n> record(s) of '<old>' to
+  '<new>', ...`, and a `ledger-move` entry by `service:repository-sync` in the audit trail).
+- Otherwise (the flow was also changed, its file was deleted and added back in separate syncs, or the rename was synced
+  before documents' hashes were recorded), open **Orphaned ledgers** under the OSDU menu's Ledger section, find the old
+  name, press **Take over** and pick the renamed flow, which is suggested when it pins the same mapping. Each ledger moves
+  at once, as you.
+
+Then run the flow: the records it held give way to the old ones, and it sends only what changed, as updates of the ids
+they claimed ([Renaming a pipeline](../concepts/renaming-a-pipeline.md)). When the sync warns that the two ledgers are in
+different partitions, keep the old ledger with `ledger: <old name>` in the flow instead.
 
 ## A record is held because another flow owns its OSDU id
 

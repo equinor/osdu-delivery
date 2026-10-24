@@ -191,6 +191,7 @@ Each of these lets a host add something of its own without SQLFlow knowing what 
 | SQLFlow commit | The extension point |
 | --- | --- |
 | `03095aef` | A host module reconciles its own documents inside the repository sync transaction (`ICatalogSyncExtension`), so a module's rows commit with the catalog's. |
+| `e3e4d245` | A sync extension does its work once the sync's transaction has committed (`ICatalogSyncExtension.CommittedAsync`), after every extension reconciled, on the sync's context outside any transaction, with what it reports joined to the result's warnings; the default does nothing. Work too long to hold the serializable transaction for, or that commits in steps of its own, had nowhere to go: inside the transaction it holds range locks for as long as it runs. Generic: any module that records work in the sync and carries it out after. The delivery module makes the moves of renamed flows' ledgers there ([Renaming a pipeline](../osdu/docs/reference/concepts/renaming-a-pipeline.md)). |
 | `a5af8cbc` | A caller enqueues a run group and commits its own rows in the same transaction. |
 | `30884b64` | A registered flow kind declares the database objects it reads and writes, so lineage orders it in waves with everything else. |
 | `0d231ac7` | A registered flow kind describes its files and datasets in lineage (node kind `Dataset`, `GET /lineage/datasets`, migration `RequestLineageRecompute`). |

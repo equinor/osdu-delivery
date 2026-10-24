@@ -183,6 +183,15 @@ Each runs in the control plane with the flow's credentials and answers JSON; not
 
 See [removal and reversal](removal-and-reversal.md) for what each scope does.
 
+## Missing documents
+
+| Route | Policy | Parameters | Answers |
+| --- | --- | --- | --- |
+| `GET /ledgers/orphaned` | read | `partition` (else the workbench's, else every partition) | The missing documents: each flow no repository declares any more whose ledgers hold anything, with `kind`, `flowName`, `relativePath` and `leftUtc` (where and when a sync last found it), `rows` and `claimed` (what it left behind), `ledgers` (one per interface and partition) and `candidates` (the declared flows that can take it over, the likeliest first, each with what it `shares`, how many ledgers it `takes`, and whether it is `suggested`). |
+| `POST /ledgers/orphaned/takeover` | operate | body `kind`, `from` (the missing flow), `to` (the declared flow), `partition` (else the workbench's, else every partition) | 200 with each ledger's move (`outcome`: `completed`, `running` for one that waits for work in flight, `failed`, or `skipped` for one the flow keeps no counterpart of, which stays orphaned) and how many ended each way. 400 without `kind`, `from` or `to`; 409 when the document is not missing, or no repository (or more than one) declares the flow. |
+
+A takeover moves each ledger as the caller, as [Renaming a pipeline](renaming-a-pipeline.md#missing-documents-and-taking-them-over) describes.
+
 ## Issues and reversals
 
 | Route | Policy | Parameters | Answers |

@@ -97,5 +97,5 @@ Self-clearing: the table holds in-flight work only. Its primary key grows at its
 
 - **Written** by the worker as it delivers (`DeliveryWorker.cs`, through `OsduLedger.Leases.cs`).
 - **Read and deleted** by the lease's apply on a checkpoint, a close or a recovery (`SqlServerLedgerBulk.cs`).
-- **Rewritten** by a ledger move (`OsduLedger.Moves.cs`), which puts the rows of a renamed pipeline's old ledger under
-  its new identity, a slice at a time ([Renaming a pipeline](../concepts/renaming-a-pipeline.md)).
+- **Rewritten** by a ledger move (`OsduLedger.Moves.cs`), which puts the rows of an old ledger under the
+  identity of the flow that replaced it or took it over, a slice at a time ([Renaming a pipeline](../concepts/renaming-a-pipeline.md)).

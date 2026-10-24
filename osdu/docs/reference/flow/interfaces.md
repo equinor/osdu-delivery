@@ -253,10 +253,11 @@ ledger, and a ledger name is at most 200 characters.
 
 ### Renaming a flow
 
-Renaming a flow, or a source, gives it a new ledger identity. A ledger belongs to its document, and the newest name of
-the document owns it: the repository sync finds the old name by the document's hash and moves its ledger to the new one, so
-its records carry on with their history and their OSDU ids. A document also changed in the same commit keeps its own
-ledger, and `ledger:` names the old one. See [Renaming a pipeline](../concepts/renaming-a-pipeline.md).
+Renaming a flow, or a source, gives it a new ledger identity. When only the name changed, the repository sync finds the
+old name by the document's hash and moves its ledger to the new one, so its records carry on with their history and their
+OSDU ids. A document also changed in the same commit is another document: the old ledger is orphaned, and the renamed flow
+takes it over on the Orphaned ledgers page, each interface's ledger going to its interface of the same name, or keeps it
+with `ledger:`. See [Renaming a pipeline](../concepts/renaming-a-pipeline.md).
 
 ## The interface read model
 

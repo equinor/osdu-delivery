@@ -1,16 +1,24 @@
 using System.Security.Cryptography;
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using SqlFlow.Core;
 using SqlFlow.Delivery.Model;
+using YamlDotNet.RepresentationModel;
 
 namespace SqlFlow.Delivery.Catalog;
 
 /// <summary>
-/// What a delivery pipeline is apart from its name and the file it is written in: SHA-256, in lowercase hex, of its
-/// interfaces as parsed, with the flow's name and path left out, and of the mapping document each interface pins, by the
-/// content hash the repository sync recorded of it (osdu/docs/reference/concepts/renaming-a-pipeline.md). Two pipelines with
-/// one hash are one pipeline under two names, which is how the repository sync tells a renamed pipeline from a new one, and
-/// what renders a delivery is part of what it is. The flow is hashed as parsed, so its comments and layout play no part.
+/// What a flow that keeps a ledger is apart from its name and the file it is written in (osdu/docs/reference/concepts/
+/// renaming-a-pipeline.md): SHA-256, in lowercase hex. Two flows with one hash are one flow under two names, which is how
+/// the repository sync tells a renamed flow from a new one. Comments and layout play no part either way.
+/// <list type="bullet">
+/// <item>A delivery flow is hashed as parsed, with its name and path left out, together with the mapping document each
+/// interface pins, by the content hash the repository sync recorded of it, since what renders a delivery is part of what
+/// it is.</item>
+/// <item>A flow of another kind (retrieval, assertion, dimension, inventory) is hashed as its YAML document reads, its
+/// top-level <c>name</c> left out and every mapping's keys taken in order: what such a flow derives from its name as it is
+/// parsed (a dimension view's SQL names the flow that writes it) would otherwise make two names two documents.</item>
+/// </list>
 /// </summary>
 public static class DeliveryDocumentHash
 {
@@ -33,12 +41,91 @@ public static class DeliveryDocumentHash
     {
         ArgumentNullException.ThrowIfNull(source);
         ArgumentNullException.ThrowIfNull(mappings);
-        var unnamed = new
+        return Hash(new
         {
             source.ParallelInterfaces,
             Interfaces = source.Interfaces.Select(f => f with { Name = string.Empty, SourcePath = null }).ToList(),
             Mappings = source.Interfaces.Select(f => mappings.GetValueOrDefault(f.Render.Mapping)).ToList(),
-        };
-        return Convert.ToHexStringLower(SHA256.HashData(JsonSerializer.SerializeToUtf8Bytes(unnamed, Json)));
+        });
     }
+
+    /// <summary>
+    /// The hash of a flow document of another kind than delivery, as its YAML reads: every mapping written with its keys in
+    /// order and every scalar as it is written, its top-level <c>name</c> left out. Comments, layout and the order keys are
+    /// written in play no part.
+    /// </summary>
+    /// <exception cref="FlowValidationException">The text is no YAML document whose root is a mapping.</exception>
+    public static string OfDocument(string yaml)
+    {
+        ArgumentNullException.ThrowIfNull(yaml);
+        var stream = new YamlStream();
+        try
+        {
+            stream.Load(new StringReader(yaml));
+        }
+        catch (YamlDotNet.Core.YamlException ex)
+        {
+            throw new FlowValidationException($"The flow document is not YAML a hash can be taken of: {ex.Message}");
+        }
+
+        if (stream.Documents.Count == 0 || stream.Documents[0].RootNode is not YamlMappingNode root)
+        {
+            throw new FlowValidationException("The flow document holds no mapping at its root, so no hash can be taken of it.");
+        }
+
+        return Convert.ToHexStringLower(SHA256.HashData(Canonical(root, topLevel: true)));
+    }
+
+    /// <summary><paramref name="node"/> as canonical JSON: a mapping's keys in ordinal order, the top-level name left out.</summary>
+    private static byte[] Canonical(YamlNode node, bool topLevel)
+    {
+        using var buffer = new MemoryStream();
+        using (var writer = new Utf8JsonWriter(buffer))
+        {
+            Write(writer, node, topLevel);
+        }
+
+        return buffer.ToArray();
+    }
+
+    private static void Write(Utf8JsonWriter writer, YamlNode node, bool topLevel)
+    {
+        switch (node)
+        {
+            case YamlMappingNode mapping:
+                writer.WriteStartObject();
+                foreach (var (key, value) in mapping.Children
+                    .Select(c => (Key: KeyOf(c.Key), c.Value))
+                    .Where(c => !(topLevel && c.Key == "name"))
+                    .OrderBy(c => c.Key, StringComparer.Ordinal))
+                {
+                    writer.WritePropertyName(key);
+                    Write(writer, value, topLevel: false);
+                }
+
+                writer.WriteEndObject();
+                break;
+            case YamlSequenceNode sequence:
+                writer.WriteStartArray();
+                foreach (var item in sequence.Children)
+                {
+                    Write(writer, item, topLevel: false);
+                }
+
+                writer.WriteEndArray();
+                break;
+            case YamlScalarNode scalar:
+                writer.WriteStringValue(scalar.Value);
+                break;
+            default:
+                writer.WriteNullValue();
+                break;
+        }
+    }
+
+    /// <summary>A mapping key as text: a scalar's value, any other node as its canonical JSON.</summary>
+    private static string KeyOf(YamlNode key)
+        => key is YamlScalarNode scalar ? scalar.Value ?? string.Empty : System.Text.Encoding.UTF8.GetString(Canonical(key, topLevel: false));
+
+    private static string Hash<T>(T value) => Convert.ToHexStringLower(SHA256.HashData(JsonSerializer.SerializeToUtf8Bytes(value, Json)));
 }

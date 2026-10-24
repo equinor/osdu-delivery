@@ -140,10 +140,11 @@ other packages adopt the same contract.
   and grouped in SQL rather than read per copy, in the explorer or by an assertion; why the copy holding the most values
   is kept and a ledger's copy is never picked to remove, why the DDMS is not read, and how a removal of the copies picked
   never takes the last copy of a record.
-- [0028: a ledger belongs to its document, and the sync moves it to the newest name](decisions/0028-renamed-pipelines-move-their-ledger.md) -
-  why a ledger follows its document's hash to the name a sync found last (a rename, a renamed file, a copy made by
-  mistake), why the ledger's rows move rather than its identity being aliased, why the sync only asks and the move runs in
-  committed slices that whoever reaches the ledger first makes, and why `ledger:` stays for a document also changed.
+- [0028: the sync moves a renamed flow's ledger when only the name changed, and a person takes over every other orphan](decisions/0028-renamed-pipelines-move-their-ledger.md) -
+  why a ledger follows its document's hash to the name a sync found last for every kind that keeps one (a rename, a
+  renamed file, a copy made by mistake), why the sync makes its moves once it committed, why a flow renamed and changed,
+  deleted and added back, or renamed before hashes were recorded is a missing document a person has a declared flow take
+  over, and why neither a guess by shared keys nor dropping the hash was chosen.
 
 ## Coverage
 

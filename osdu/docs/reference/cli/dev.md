@@ -302,6 +302,7 @@ osdu/hosts/SqlFlow.Delivery.Setup.Host/bin/Debug/net9.0/osdu-delivery-setup chec
 
 ## See also
 
+- [Run it locally](../guides/run-locally.md): what to install, the first start and the launcher's commands, in short
 - [Getting started](../guides/getting-started.md): the settings by hand, for a run from the command line alone
 - [Environment variables OSDU Delivery adds](../concepts/environment-variables.md)
 - [Partitions](../concepts/partitions.md)

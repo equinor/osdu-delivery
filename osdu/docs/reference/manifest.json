@@ -1704,6 +1704,7 @@
         "osdu/gui/src/features/delivery/DeliveryOverviewPage.tsx",
         "osdu/gui/src/features/delivery/DeliveryRecordsPage.tsx",
         "osdu/gui/src/features/delivery/DeliveryActivityPage.tsx",
+        "osdu/gui/src/features/delivery/OrphanedLedgersPage.tsx",
         "osdu/gui/src/features/delivery/useLinkedPartition.ts",
         "osdu/gui/src/features/delivery/DeliveryActivitySheet.tsx",
         "osdu/gui/src/features/delivery/DeliveryRecordPage.tsx",
@@ -1755,6 +1756,51 @@
         "sqlflow/src/SqlFlow.ControlPlane/Hosting/ControlPlaneHost.cs",
         "sqlflow/gui/src/auth/AuthContext.tsx",
         "osdu/gui/src/features/delivery/order/OrderPage.tsx"
+      ]
+    },
+    {
+      "id": "delivery-concept-how-it-works",
+      "corpus": "reference",
+      "path": "concepts/how-it-works.md",
+      "title": "How OSDU Delivery works: a mapping connects your source data, the OSDU schema and a cache",
+      "type": "concept",
+      "summary": "Why configuration replaces a custom loader per OSDU type: the drop-off zone, the template, the cache, the mapping that connects them, and what you get.",
+      "keywords": [
+        "how it works",
+        "configured not coded",
+        "configuration instead of code",
+        "custom loader",
+        "drop-off zone",
+        "template cache mapping",
+        "why osdu delivery",
+        "what you get",
+        "features",
+        "load data into osdu"
+      ],
+      "related": [
+        "delivery-concept-overview",
+        "delivery-flow-mapping",
+        "delivery-concept-templates",
+        "delivery-concept-partition-cache",
+        "delivery-concept-change-detection",
+        "delivery-concept-ledger",
+        "delivery-flow-routes",
+        "delivery-guide-writing-a-mapping",
+        "delivery-guide-welldb-sample",
+        "delivery-guide-mcp"
+      ],
+      "sourceRefs": [
+        "osdu/samples/welldb/mappings/WellLog@1.4.0.yaml",
+        "osdu/samples/welldb/flows/welldb-welllog-03-header-delivery.yaml",
+        "osdu/src/SqlFlow.Delivery/Templates/TemplateFolders.cs",
+        "osdu/src/SqlFlow.Delivery/Snapshots/CacheDeclaration.cs",
+        "osdu/src/SqlFlow.Delivery/Documents/MappingMapper.cs",
+        "osdu/src/SqlFlow.Delivery/Validation/Preflight.cs",
+        "osdu/src/SqlFlow.Delivery/Planning/ChangeDetector.cs",
+        "osdu/src/SqlFlow.Delivery/Identity/DeliveryKey.cs",
+        "osdu/src/SqlFlow.Delivery/Protocols/DeliveryProtocol.cs",
+        "osdu/src/SqlFlow.Delivery/Engine/DeliveryExecutor.cs",
+        "osdu/src/SqlFlow.Delivery/Ledger/ILedger.cs"
       ]
     },
     {
@@ -2419,13 +2465,16 @@
       "id": "delivery-concept-renaming-a-pipeline",
       "corpus": "reference",
       "path": "concepts/renaming-a-pipeline.md",
-      "title": "Renaming a pipeline: the repository sync moves its ledger to the new name",
+      "title": "Renaming, copying or deleting a flow: what happens to its ledger",
       "type": "concept",
-      "summary": "A renamed delivery flow keeps its records, history and OSDU ids: a ledger belongs to its document, and the sync moves it to the newest name.",
+      "summary": "A flow keeps its ledger under its name: a pure rename takes it along at the sync; any other change leaves it orphaned until a flow takes it over.",
       "keywords": [
         "rename a pipeline",
         "renamed flow",
         "rename a flow file",
+        "orphaned ledger",
+        "missing document",
+        "take over a ledger",
         "ledger move",
         "ledger-move",
         "keep the ledger",
@@ -2441,20 +2490,30 @@
         "delivery-concept-submissions",
         "delivery-guide-operations-runbook",
         "delivery-concept-control-plane",
-        "delivery-concept-removal-and-reversal"
+        "delivery-concept-removal-and-reversal",
+        "delivery-concept-gui",
+        "delivery-table-ledger-flow"
       ],
       "sourceRefs": [
         "osdu/src/SqlFlow.Delivery/Ledger/LedgerMoves.cs",
+        "osdu/src/SqlFlow.Delivery/Ledger/LedgerBindings.cs",
         "osdu/src/SqlFlow.Delivery/Ledger/OsduLedger.Moves.cs",
+        "osdu/src/SqlFlow.Delivery/Ledger/OsduLedger.Bindings.cs",
         "osdu/src/SqlFlow.Delivery/Ledger/SqlServerLedgerBulk.Moves.cs",
         "osdu/src/SqlFlow.Delivery/Ledger/ILedger.cs",
         "osdu/src/SqlFlow.Delivery/Catalog/DeliveryDocumentHash.cs",
+        "osdu/src/SqlFlow.Delivery/Catalog/LedgerOwnership.cs",
+        "osdu/src/SqlFlow.Delivery/Catalog/LedgerFlowCatalog.cs",
         "osdu/src/SqlFlow.Delivery/Catalog/DeliveryInterfaceCatalog.cs",
-        "osdu/src/SqlFlow.Delivery.ControlPlane/Background/InterfaceCatalogBackfillService.cs",
         "osdu/src/SqlFlow.Delivery/Catalog/DeliveryCatalogSync.cs",
         "osdu/src/SqlFlow.Delivery/Engine/LedgerRegistration.cs",
-        "osdu/src/SqlFlow.Delivery/Documents/DeliveryDocumentLoader.cs",
+        "osdu/src/SqlFlow.Delivery.ControlPlane/Background/InterfaceCatalogBackfillService.cs",
         "osdu/src/SqlFlow.Delivery.ControlPlane/Background/LedgerMoveService.cs",
+        "osdu/src/SqlFlow.Delivery.ControlPlane/Api/DeliveryOrphanedLedgerEndpoints.cs",
+        "osdu/gui/src/features/delivery/OrphanedLedgersPage.tsx",
+        "osdu/gui/src/features/delivery/TakeoverDialog.tsx",
+        "osdu/gui/src/features/delivery/BulkTakeoverDialog.tsx",
+        "osdu/gui/src/features/delivery/OrphanedLedgersNotice.tsx",
         "osdu/gui/src/features/delivery/RecordJourney.tsx"
       ]
     },
@@ -5253,6 +5312,92 @@
       ]
     },
     {
+      "id": "delivery-guide-run-locally",
+      "corpus": "reference",
+      "path": "guides/run-locally.md",
+      "title": "Run it locally: what to install, the first start, and the dev.bat and ./dev.sh commands",
+      "type": "guide",
+      "summary": "Run the control plane, its workers and the GUI on one Windows, macOS or Linux machine: what to install, what the first start asks, and how to sign in.",
+      "keywords": [
+        "run locally",
+        "local machine",
+        "local development",
+        "dev.bat",
+        "dev.sh",
+        "prerequisites",
+        "what to install",
+        "first start",
+        "sign in as admin",
+        "sql server in docker",
+        "apple silicon"
+      ],
+      "related": [
+        "delivery-cli-dev",
+        "delivery-guide-welldb-sample",
+        "delivery-guide-getting-started",
+        "delivery-guide-deployment",
+        "delivery-concept-environment-variables",
+        "concept-environment-variables"
+      ],
+      "sourceRefs": [
+        "dev.bat",
+        "dev.sh",
+        "dev.env.example",
+        "osdu/hosts/SqlFlow.Delivery.Setup.Host/Program.cs",
+        "osdu/src/SqlFlow.Delivery.Setup/DevSetupWizard.cs",
+        "osdu/src/SqlFlow.Delivery.Setup/DevReadiness.cs",
+        "osdu/src/SqlFlow.Delivery.Setup/LocalSqlServers.cs"
+      ]
+    },
+    {
+      "id": "delivery-guide-welldb-sample",
+      "corpus": "reference",
+      "path": "guides/welldb-sample.md",
+      "title": "The welldb sample: a complete package that fills an empty partition, from reference data to well logs",
+      "type": "guide",
+      "summary": "What the welldb sample package delivers, its drop-off zone, templates and cache flows, its schedules, what it reads back from OSDU, and how to try it.",
+      "keywords": [
+        "welldb sample",
+        "sample package",
+        "example estate",
+        "try it",
+        "demo",
+        "sample flows",
+        "sample schedules",
+        "fill an empty partition"
+      ],
+      "related": [
+        "delivery-concept-how-it-works",
+        "delivery-guide-run-locally",
+        "delivery-guide-getting-started",
+        "delivery-concept-lineage",
+        "delivery-guide-reference-data-cache",
+        "delivery-guide-lookup-table-cache",
+        "delivery-guide-bulk-data",
+        "delivery-cli-check",
+        "delivery-cli-preview",
+        "cli-lineage"
+      ],
+      "sourceRefs": [
+        "osdu/samples/welldb/schedules.yaml",
+        "osdu/samples/welldb/reference/welldb-ref-03-delivery.yaml",
+        "osdu/samples/welldb/flows/welldb-well-03-delivery.yaml",
+        "osdu/samples/welldb/flows/welldb-wellbore-03-delivery.yaml",
+        "osdu/samples/welldb/flows/welldb-welllog-03-header-delivery.yaml",
+        "osdu/samples/welldb/flows/welldb-survey-03-delivery.yaml",
+        "osdu/samples/welldb/flows/welldb-well-04-assertion.yaml",
+        "osdu/samples/welldb/flows/welldb-welllog-04-header-assertion.yaml",
+        "osdu/samples/welldb/flows/welldb-welllog-05-dimensions.yaml",
+        "osdu/samples/welldb/flows/welldb-wellbore-04-retrieval.yaml",
+        "osdu/samples/welldb/flows/welldb-wellbore-05-removal.yaml",
+        "osdu/samples/welldb/flows/welldb-osdu-06-inventory.yaml",
+        "osdu/samples/welldb/cache/osdu-reference-00-cache.yaml",
+        "osdu/samples/welldb/cache/welldb-lookups-00-cache.yaml",
+        "osdu/samples/welldb/dictionaries/curve-aliases.yaml",
+        "osdu/tests/SqlFlow.Delivery.Tests/SampleDataGeneratorTests.cs"
+      ]
+    },
+    {
       "id": "delivery-guide-writing-a-mapping",
       "corpus": "reference",
       "path": "guides/writing-a-mapping.md",
@@ -6525,6 +6670,35 @@
         "osdu/src/SqlFlow.Delivery/Ledger/ILedger.cs",
         "osdu/src/SqlFlow.Delivery/Engine/LedgerRegistration.cs",
         "osdu/src/SqlFlow.Delivery/Ledger/SqlServerLedgerBulk.cs"
+      ]
+    },
+    {
+      "id": "delivery-table-ledger-flow",
+      "corpus": "reference",
+      "path": "tables/ledger-flow.md",
+      "title": "osdu.LedgerFlow: each retrieval, assertion, dimension and inventory flow as the repository sync found it",
+      "type": "table",
+      "summary": "One row per retrieval, assertion, dimension or inventory flow of a repository: its kind, file, document hash, and whether it keeps a ledger per partition.",
+      "keywords": [
+        "osdu.LedgerFlow",
+        "ledger flow",
+        "flow read model",
+        "document hash",
+        "renamed flow",
+        "partitioned ledger"
+      ],
+      "related": [
+        "delivery-concept-database",
+        "delivery-concept-renaming-a-pipeline",
+        "delivery-table-interface",
+        "delivery-table-ledger"
+      ],
+      "sourceRefs": [
+        "osdu/src/SqlFlow.Delivery.Data/DeliveryEntities.cs",
+        "osdu/src/SqlFlow.Delivery/Catalog/LedgerFlowCatalog.cs",
+        "osdu/src/SqlFlow.Delivery/Catalog/DeliveryCatalogSync.cs",
+        "osdu/src/SqlFlow.Delivery/Ledger/LedgerBindings.cs",
+        "osdu/src/SqlFlow.Delivery.ControlPlane/Background/InterfaceCatalogBackfillService.cs"
       ]
     },
     {
@@ -7935,13 +8109,16 @@
       "id": "delivery-wiki-0028-renamed-pipelines-move-their-ledger",
       "corpus": "wiki",
       "path": "decisions/0028-renamed-pipelines-move-their-ledger.md",
-      "title": "Decision 0028: a ledger belongs to its document, and the repository sync moves it to the document's newest name",
+      "title": "Decision 0028: the sync moves a renamed flow's ledger when only the name changed, and a person takes over every other orphan",
       "type": "decision",
-      "summary": "Why a ledger follows its document's hash to the newest name, why its rows move rather than its identity being aliased, and why the sync only asks.",
+      "summary": "Why a pure rename's ledger follows its document's hash for every kind, why the sync makes the move once it committed, and why the rest is taken over by hand.",
       "keywords": [
         "rename a pipeline",
         "renamed flow",
         "ledger move",
+        "orphaned ledger",
+        "missing document",
+        "takeover",
         "document hash",
         "copied file",
         "repository sync"
@@ -7953,14 +8130,19 @@
       "sourceRefs": [
         "osdu/src/SqlFlow.Delivery/Catalog/DeliveryDocumentHash.cs",
         "osdu/src/SqlFlow.Delivery/Catalog/DeliveryInterfaceCatalog.cs",
+        "osdu/src/SqlFlow.Delivery/Catalog/LedgerFlowCatalog.cs",
+        "osdu/src/SqlFlow.Delivery/Catalog/LedgerOwnership.cs",
         "osdu/src/SqlFlow.Delivery/Catalog/DeliveryCatalogSync.cs",
         "osdu/src/SqlFlow.Delivery/Ledger/LedgerMoves.cs",
+        "osdu/src/SqlFlow.Delivery/Ledger/LedgerBindings.cs",
         "osdu/src/SqlFlow.Delivery/Ledger/OsduLedger.Moves.cs",
         "osdu/src/SqlFlow.Delivery/Ledger/SqlServerLedgerBulk.Moves.cs",
         "osdu/src/SqlFlow.Delivery/Engine/LedgerRegistration.cs",
         "osdu/src/SqlFlow.Delivery.ControlPlane/Background/LedgerMoveService.cs",
         "osdu/src/SqlFlow.Delivery.ControlPlane/Background/InterfaceCatalogBackfillService.cs",
-        "sqlflow/src/SqlFlow.Catalog/CatalogSync.cs"
+        "osdu/gui/src/features/delivery/OrphanedLedgersPage.tsx",
+        "sqlflow/src/SqlFlow.Catalog/CatalogSync.cs",
+        "sqlflow/src/SqlFlow.Catalog/CatalogSyncExtension.cs"
       ]
     },
     {

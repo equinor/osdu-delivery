@@ -8,7 +8,7 @@ import { adminSession, expect, FIRST_PAGE_MS, seedSession, test } from "./helper
 // here needs the seeded estate: the navigation is the module's, whatever the catalog holds.
 
 const SECTIONS = [
-  { id: "ledger", label: "Ledger", entries: ["nav-delivery", "nav-delivery-records", "nav-delivery-removals", "nav-delivery-activity"] },
+  { id: "ledger", label: "Ledger", entries: ["nav-delivery", "nav-delivery-records", "nav-delivery-removals", "nav-delivery-activity", "nav-delivery-orphaned-ledgers"] },
   {
     id: "in-osdu",
     label: "In OSDU",

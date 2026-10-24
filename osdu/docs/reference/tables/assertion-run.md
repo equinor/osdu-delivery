@@ -72,3 +72,5 @@ test's latest result stays ([Availability and retention](../concepts/availabilit
   `OsduLedger.Assertions.cs`), and pruned by `POST /api/v1/delivery/ledger/prune`.
 - **Read** by the GUI's **Assertions** board and an assertion flow's **Reports** tab, `sqlflow assertions`, and the
   delivery API's `/flows/{pipelineId}/assertion-runs`, `/assertion-runs/{id}` and `/assertion-runs/{id}/report`.
+- **Rewritten** by a ledger move (`OsduLedger.Moves.cs`), which puts the rows of an old ledger under the identity of the
+  flow that replaced it or took it over, a slice at a time ([Renaming a pipeline](../concepts/renaming-a-pipeline.md)).

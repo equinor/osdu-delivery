@@ -19,6 +19,7 @@
     "src/features/delivery/recordPath.ts",
     "src/features/delivery/osduDocument.ts",
     "src/features/delivery/osduRecordModel.ts",
-    "src/features/delivery/inventories/duplicates/duplicateDocument.ts"
+    "src/features/delivery/inventories/duplicates/duplicateDocument.ts",
+    "src/features/delivery/orphanedLedgers.ts"
   ]
 }

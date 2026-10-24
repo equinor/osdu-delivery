@@ -45,8 +45,8 @@ The row is never pruned. Its captured run log is cleared by age once the activit
 | `ActivityId` | `bigint` identity | no | The activity's id, unique on its own: what the audit trail numbers an entry by. |
 | `FlowId` | `uniqueidentifier` | no | The ledger identity of the flow the activity concerned. |
 | `FlowName` | `nvarchar(200)` | no | The flow's name. |
-| `Kind` | `nvarchar(32)` | no | What it was. Runs: `deliver`, `intake`, `drain`, `verify`, `sync`, `undo`, `reverse`, `delete-ledger` and `probe`. Interventions: `release`, `adopt`, `redeliver`, `rerender`, `delete`, `restore-previous`, `purge`, `remove-dimension`, `inventory-remove`, `inventory-repair`, `reassign-id`, `source-remove` (a removal flow's run taking out, in this delivery ledger, what the source no longer holds) and `lift-removal`; and `ledger-move`, the repository sync moving a renamed pipeline's ledger to it ([Renaming a pipeline](../concepts/renaming-a-pipeline.md)), `running` until the move is made. |
-| `Actor` | `nvarchar(200)` | no | Who asked: for a run, who asked for it or `schedule:<name>`; `user:<name>` for an intervention from the GUI or the API, `cli:<user>@<machine>` from a workstation, `service:schedule` for a scheduled probe, `service:repository-sync` for a ledger move ([Authentication and identity](../concepts/authentication-and-identity.md)). |
+| `Kind` | `nvarchar(32)` | no | What it was. Runs: `deliver`, `intake`, `drain`, `verify`, `sync`, `undo`, `reverse`, `delete-ledger` and `probe`. Interventions: `release`, `adopt`, `redeliver`, `rerender`, `delete`, `restore-previous`, `purge`, `remove-dimension`, `inventory-remove`, `inventory-repair`, `reassign-id`, `source-remove` (a removal flow's run taking out, in this delivery ledger, what the source no longer holds) and `lift-removal`; and `ledger-move`, a ledger moved to another flow's identity, by the repository sync for a renamed flow or by a person taking over an orphaned ledger ([Renaming a pipeline](../concepts/renaming-a-pipeline.md)), `running` until the move is made. |
+| `Actor` | `nvarchar(200)` | no | Who asked: for a run, who asked for it or `schedule:<name>`; `user:<name>` for an intervention from the GUI or the API, `cli:<user>@<machine>` from a workstation, `service:schedule` for a scheduled probe, `service:repository-sync` for the move of a renamed flow's ledger ([Authentication and identity](../concepts/authentication-and-identity.md)). |
 | `StartedUtc` | `datetime2` | no | When it started. |
 | `CompletedUtc` | `datetime2` | yes | When it ended; null while it runs. |
 | `Outcome` | `nvarchar(16)` | no | `running`, `completed`, `failed` or `cancelled`. |
@@ -79,5 +79,5 @@ The row is never pruned. Its captured run log is cleared by age once the activit
   transaction of the change it records.
 - **Read** by the GUI's **Audit trail** and a record's Timeline, `GET /activities` (which takes `idle=false` or
   `idle=true`), and `GET /records/{flowId}/{key}/activities` (`DeliveryEndpoints.cs`).
-- **Rewritten** by a ledger move (`OsduLedger.Moves.cs`), which puts the rows of a renamed pipeline's old ledger under
-  its new identity, a slice at a time ([Renaming a pipeline](../concepts/renaming-a-pipeline.md)).
+- **Rewritten** by a ledger move (`OsduLedger.Moves.cs`), which puts the rows of an old ledger under the
+  identity of the flow that replaced it or took it over, a slice at a time ([Renaming a pipeline](../concepts/renaming-a-pipeline.md)).

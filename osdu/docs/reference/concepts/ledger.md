@@ -83,8 +83,8 @@ carries). A flow in the single form has one identity, derived from its name; eac
 derived from `<flow>/<interface>` (see [Interfaces](../flow/interfaces.md)). A flow that works in partitions derives one
 identity per partition from that name and the partition, except in the partition marked `keepLedger`. The same source row read by two flows is two
 records, each with its own state and history. Because the identity is derived from the name, a renamed flow has a new
-one; a ledger belongs to its document, and the repository sync moves it to the document's newest name
-([Renaming a pipeline](renaming-a-pipeline.md)).
+one: the repository sync moves the old ledger to it when only the name changed, and otherwise the old ledger is orphaned
+until a flow takes it over on the Orphaned ledgers page ([Renaming a pipeline](renaming-a-pipeline.md)).
 
 `osdu.Ledger` is the directory: one row per ledger identity, naming its partition, its kind (`delivery`, `retrieval`,
 `assertion`, `dimension` or `inventory`), its flow and interface. `osdu.LedgerPartition` numbers each partition once, and every ledger table's key
@@ -177,8 +177,9 @@ One `osdu.Activity` row per run and per operator intervention, never deleted:
 - interventions: `release`, `adopt` (a record taking over the OSDU record at the id its key makes), `redeliver`, `rerender` (bring up to date), `delete` (a removal from OSDU),
   `restore-previous`, `purge` (deleting removed records from the ledger), `remove-dimension`, `inventory-remove`,
   `inventory-repair`, `reassign-id`, `source-remove` (a removal flow taking out what the source no longer holds, in the
-  delivery flow's ledger), `lift-removal` (an operator delivering such records again) and `ledger-move` (the repository
-  sync moving a renamed pipeline's ledger to it, by `service:repository-sync`).
+  delivery flow's ledger), `lift-removal` (an operator delivering such records again) and `ledger-move` (a ledger moved
+  to another flow's identity: by the repository sync for a renamed flow, as `service:repository-sync`, or by a person
+  taking over an orphaned ledger).
 
 Each row carries the actor (for a run, who asked for it or `schedule:<name>` for a run a schedule fired; `user:<name>` for
 an intervention from the GUI or the API and for a probe asked for, `cli:<user>@<machine>` for one from a workstation,

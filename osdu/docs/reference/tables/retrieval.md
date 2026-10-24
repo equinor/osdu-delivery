@@ -73,3 +73,5 @@ Not pruned by retention.
 - **Written** by the retrieve run as it opens and closes (`RetrievalExecutor.cs`, through `OsduLedger.cs`).
 - **Read** by the next run of the flow (its window), the pipeline's **Retrievals** tab, and
   `GET /api/v1/delivery/flows/{pipelineId}/retrievals?max=<n>`.
+- **Rewritten** by a ledger move (`OsduLedger.Moves.cs`), which puts the rows of an old ledger under the identity of the
+  flow that replaced it or took it over, a slice at a time ([Renaming a pipeline](../concepts/renaming-a-pipeline.md)).

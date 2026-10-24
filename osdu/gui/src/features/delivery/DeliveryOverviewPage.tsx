@@ -15,6 +15,7 @@ import { SubmissionStatusBadge } from "./DeliveryBadges";
 import { Count } from "./DeliveryCounts";
 import { deliversTo, useDeliveryTotals, type DeliveryTotals } from "./deliveryTotals";
 import { FindRecordForm } from "./FindRecordForm";
+import { OrphanedLedgersNotice } from "./OrphanedLedgersNotice";
 
 /**
  * One delivery flow's card, in the workbench's partition. A flow that delivers there is counted there, and its partition
@@ -133,6 +134,7 @@ export default function DeliveryOverviewPage() {
         subtitle={flows.data ? subtitle(pipelines.length - elsewhere.filter(Boolean).length, active, totals) : undefined}
         actions={<FindRecordForm />}
       />
+      <OrphanedLedgersNotice partition={active} />
       {flows.data === undefined ? (
         <Skeleton className="h-40 w-full rounded-lg" />
       ) : pipelines.length === 0 ? (

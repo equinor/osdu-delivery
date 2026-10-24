@@ -963,12 +963,13 @@ public sealed record TargetIdConflict(
         }
 
         // The flow that claimed it is gone from every repository: most often this flow under its old name, since a flow keeps
-        // its ledger under its name and a rename starts an empty one. The repository sync moves such a ledger to the pipeline
-        // that replaced it (LedgerMoves); a hold meets it only before that sync, or where the sync could not pair the two.
+        // its ledger under its name and a rename starts an empty one. The repository sync moves such a ledger to the flow that
+        // replaced it when the two are one document (LedgerMoves); otherwise it is orphaned until someone binds it
+        // (LedgerBindings), or a flow keeps it by name.
         return $"OSDU id {TargetId} is already claimed by {flow}, which no repository declares any more, and one OSDU record belongs to one flow. "
-            + "When this flow replaced it, the repository sync moves that ledger here, with its records' history and OSDU ids, once it finds this flow is "
-            + "the same document under a new name: sync the repository and run this flow again. "
-            + $"Where the document changed beyond its name, keep the ledger with ledger: {ledger} in this flow's document (interfaces.<name>.ledger for an interface of a source). "
+            + "When this flow replaced it, its ledger is orphaned: have this flow take it over on the Orphaned ledgers page, or sync the repository, "
+            + "which moves it here by itself when this flow is the same document under a new name. Then run this flow again, and these records deliver as updates of the ids they claimed. "
+            + $"A flow can also keep that ledger by name, with ledger: {ledger} in its document (interfaces.<name>.ledger for an interface of a source). "
             + $"Otherwise deliver {Elsewhere}";
     }
 }
@@ -1964,17 +1965,42 @@ public interface ILedger
     Task<IReadOnlyList<LedgerEntry>> ListLedgersAsync(string? partition, CancellationToken ct = default);
 
     /// <summary>
-    /// Carries out the moves of renamed pipelines' ledgers the repository sync asked for (<see cref="LedgerMoves"/>,
-    /// osdu/docs/reference/concepts/renaming-a-pipeline.md): every one, for the control plane's pass after a sync, which
-    /// leaves a move another process is making, or one waiting for work in flight, to a later pass; or only those into
-    /// <paramref name="into"/>, for a run of the renamed pipeline about to read its ledger, which waits for a move another
-    /// process is making and is refused while one cannot be made yet.
+    /// Carries out the moves of ledgers asked and not done (<see cref="LedgerMoves"/>,
+    /// osdu/docs/reference/concepts/renaming-a-pipeline.md): every one, for the control plane's pass, which leaves a move
+    /// another process is making, or one waiting for work in flight, to a later pass; or only those into
+    /// <paramref name="into"/>, for a run of the flow about to read its ledger, which waits for a move another process is
+    /// making and is refused while one cannot be made yet.
     /// </summary>
     /// <exception cref="DeliveryException">
     /// <paramref name="into"/> was named and a move into it could not be finished now: work is in flight on either ledger,
     /// or another process kept moving it past the wait. The message says which; nothing of the run should go on.
     /// </exception>
     Task<IReadOnlyList<LedgerMoveResult>> CompleteLedgerMovesAsync(Guid? into, CancellationToken ct = default);
+
+    /// <summary>
+    /// Carries out the moves of renamed flows' ledgers the sync of repository <paramref name="repoId"/> asked for, once it
+    /// committed, as the control plane's pass does: a move another process is making, or one waiting for work in flight, is
+    /// left to a later pass.
+    /// </summary>
+    Task<IReadOnlyList<LedgerMoveResult>> CompleteRepositoryMovesAsync(Guid repoId, CancellationToken ct = default);
+
+    /// <summary>
+    /// The missing documents: the flows no repository declares any more whose ledgers hold anything, each with its orphaned
+    /// ledgers and the declared flows that can take them over (<see cref="LedgerBindings"/>,
+    /// osdu/docs/reference/concepts/renaming-a-pipeline.md): those with a ledger in partition <paramref name="partition"/>,
+    /// or in any partition when it is null.
+    /// </summary>
+    Task<IReadOnlyList<OrphanedDocument>> ListOrphanedDocumentsAsync(string? partition, CancellationToken ct = default);
+
+    /// <summary>
+    /// Hands the orphaned ledgers of the missing document <paramref name="request"/> names to the declared flow it names, as
+    /// <paramref name="actor"/> (<see cref="LedgerBindings"/>): each ledger to the one the flow keeps in its partition, for
+    /// its interface, as a move of its own, asked and carried out at once. Answers what came of each: <c>completed</c>;
+    /// <c>running</c> for a move that waits for work in flight on either ledger, which the control plane's pass finishes;
+    /// <c>failed</c> for one refused; <c>skipped</c> for a ledger the flow keeps no counterpart of, which stays orphaned.
+    /// </summary>
+    /// <exception cref="DeliveryException">The document is not missing, or no repository (or more than one) declares the flow; nothing was asked.</exception>
+    Task<IReadOnlyList<LedgerMoveResult>> TakeOverLedgersAsync(LedgerTakeoverRequest request, string actor, CancellationToken ct = default);
 
     Task<SubmissionState?> GetSubmissionAsync(Guid submissionId, CancellationToken ct = default);
 

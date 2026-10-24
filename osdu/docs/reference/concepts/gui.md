@@ -36,6 +36,7 @@ sourceRefs:
   - osdu/gui/src/features/delivery/DeliveryOverviewPage.tsx
   - osdu/gui/src/features/delivery/DeliveryRecordsPage.tsx
   - osdu/gui/src/features/delivery/DeliveryActivityPage.tsx
+  - osdu/gui/src/features/delivery/OrphanedLedgersPage.tsx
   - osdu/gui/src/features/delivery/useLinkedPartition.ts
   - osdu/gui/src/features/delivery/DeliveryActivitySheet.tsx
   - osdu/gui/src/features/delivery/DeliveryRecordPage.tsx
@@ -163,6 +164,7 @@ record up by any of its keys, and **Open Delivery** opens the page. The newest r
 | | Records | `/delivery/records` |
 | | Removals | `/delivery/removals` |
 | | Audit trail | `/delivery/activity` |
+| | Orphaned ledgers | `/delivery/ledgers/orphaned` |
 | In OSDU | Explorer | `/delivery/explorer` |
 | | Assertions | `/delivery/assertions` |
 | | Inventories | `/delivery/inventories` |
@@ -235,6 +237,28 @@ that changed nothing are left out until **Show idle runs**. An entry opens on it
 `reverse` entry shows its **Reversal**. The flow is in the address (`flow`, the ledger's flow id), so one flow's trail is
 a link; a link that names a partition (`partition`) makes it the title bar's, so the trail is read where that ledger is
 kept.
+
+### Orphaned ledgers
+
+The missing documents in the workbench's partition: the flows no repository declares any more whose ledgers still hold
+their records and history, those that left the most behind first. A strip heads the page with how many there are, the
+records they left, how many of those claimed an OSDU id (held back from any flow delivering them until taken over), and
+how many have a suggested flow. A search narrows them by flow or file, and a kind by kind when more than one is listed.
+
+Each row names the missing flow (its kind, for any kind but delivery) with the file it was last declared in under it,
+**Left** (when a sync last found it), **Left behind** (its records, runs, dimensions or inventories, each ledger and its
+claimed ids on hover) and **Taken over by** (the suggested flow, or how many could). **Take over** opens a dialog in
+three parts: **What it left behind**, each ledger with links to its records and its audit trail; **Taken over by**, the
+declared flows that can take it over, each with what it shares with the missing one (same mapping, record table,
+interface or folder) and how many of its ledgers it takes, the suggested one picked to start with; and **What goes
+where**, each ledger with the ledger it goes to under the flow picked, or that it stays orphaned. The button says what
+moves (**Take over 5,431 records**). Once taken over, the dialog says how each ledger ended, with a link to the trail it
+moved to.
+
+The rows with a suggested flow can be selected and taken over together: **Take over with suggested flows** lists each
+pair and what it holds, then takes them over one after another and says how each ended. While any missing document
+exists, the Delivery page says so and links here. See
+[Renaming a pipeline](renaming-a-pipeline.md#missing-documents-and-taking-them-over).
 
 ### A record's page
 

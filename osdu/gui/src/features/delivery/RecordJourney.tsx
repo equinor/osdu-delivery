@@ -1171,15 +1171,18 @@ function activityEntry(activity: DeliveryActivity, record: DeliveryRecord, resul
     };
   }
 
-  // The record's ledger moved to the pipeline that replaced the one that kept it (a renamed pipeline): the record changed
-  // pipelines, not state, so this opens no chapter, and its summary names both pipelines.
+  // The record's ledger moved to another pipeline: the one that replaced its own (a renamed pipeline the repository sync
+  // paired with it), or the one a person had take over its pipeline's orphaned ledger. The record changed pipelines, not
+  // state, so this opens no chapter, and its summary names both pipelines.
   if (activity.kind === "ledger-move") {
     return {
       ...entryDefaults(),
       id: `activity-${activity.activityId}`,
       at: activity.startedUtc,
       lane: "ledger",
-      title: "Moved with its ledger to the pipeline that replaced its own",
+      title: activity.actor === "service:repository-sync"
+        ? "Moved with its ledger to the pipeline that replaced its own"
+        : "Taken over with its ledger by another pipeline",
       tone: failed ? "destructive" : "muted",
       icon: ArrowRightLeft,
       actor: activity.actor,

@@ -36,8 +36,9 @@ is refused, naming both. So which partition a record, a submission or an audit e
 alone, and the flow id in the delivery API's record routes is this identity, not the pipeline id, which keeps a record's
 history reachable after its flow leaves the repository.
 
-Rows are never deleted by retention. A ledger moved to the pipeline that replaced the one that kept it loses its row
-once its records are under the new identity ([Renaming a pipeline](../concepts/renaming-a-pipeline.md)).
+Rows are never deleted by retention. A ledger moved to the flow that replaced the one that kept it, or that took it over,
+loses its row once its rows are under the new identity ([Renaming a pipeline](../concepts/renaming-a-pipeline.md)). A row
+no declared flow keeps, whose ledger holds anything, is an orphaned ledger, which the Orphaned ledgers page lists.
 
 ## Columns
 
@@ -61,9 +62,10 @@ once its records are under the new identity ([Renaming a pipeline](../concepts/r
 ## Written and read by
 
 - **Written** by the ledger directory (`OsduLedger.Directory.cs`) when a delivery, retrieval, assertion, dimension or
-  inventory run binds its flow and registers its ledger; by the repository sync asking for a ledger move
-  (`LedgerMoves.cs`), which registers the renamed pipeline's ledger in the old one's partition; and by the move
+  inventory run binds its flow and registers its ledger; by a ledger move asked by the repository sync or a takeover
+  (`LedgerMoves.cs`), which registers the ledger of the flow it moves to in the old one's partition; and by the move
   (`OsduLedger.Moves.cs`), which deletes the old ledger's row.
-- **Read** by every ledger operation that resolves a ledger to its partition, by the record search across flows, by
+- **Read** by the Orphaned ledgers page and a takeover (`LedgerBindings.cs`), which find the ledgers no declared flow
+  keeps, by every ledger operation that resolves a ledger to its partition, by the record search across flows, by
   the pipeline and partition endpoints of the control plane, and by the intake's claim check (`SqlServerLedgerBulk.cs`),
   which names the ledger of the record that claimed an id so a held record can say how a renamed flow keeps it.

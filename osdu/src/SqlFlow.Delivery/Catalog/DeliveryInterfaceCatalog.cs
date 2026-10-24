@@ -23,11 +23,11 @@ public sealed record InterfaceLocation(Guid RepoId, string FlowName, string Inte
 
 /// <summary>
 /// Whether a reconciliation of the read model asks for the ledger moves of renamed pipelines (<see cref="LedgerMoves"/>),
-/// and what holds one back: a delivery document the sync could not read, whose pipeline only looks gone. A repository sync
-/// asks; a pass that describes pipelines from their catalog copies does not.
+/// and the documents the sync could not read, whose pipelines only look gone: their rows stay as they were, and no move
+/// takes their ledgers. A repository sync asks; a pass that describes pipelines from their catalog copies does not.
 /// </summary>
 /// <param name="Asks">True for the repository sync.</param>
-/// <param name="UnreadFiles">The delivery documents of the repository, by relative path, that did not read or parse.</param>
+/// <param name="UnreadFiles">The flow documents of the repository, by relative path, that did not read or parse.</param>
 public sealed record LedgerMoveGuard(bool Asks, IReadOnlySet<string> UnreadFiles)
 {
     /// <summary>Asks for no move.</summary>
@@ -47,7 +47,8 @@ public static class DeliveryInterfaceCatalog
     /// <summary>
     /// Makes the repository's rows describe <paramref name="sources"/>: one row per interface (per interface and partition
     /// for a source that names its partitions), added or updated, and the rows of interfaces the sources no longer declare
-    /// kept but made inactive.
+    /// kept but made inactive, except those of a file <paramref name="moves"/> says did not read or parse, which stay as they
+    /// were.
     /// <paramref name="kinds"/> gives the OSDU kind of each mapping reference the repository holds valid, and
     /// <paramref name="mappings"/> the content hash of each mapping document it holds, which the document hash of an interface
     /// takes in (<see cref="DeliveryDocumentHash"/>). A ledger identity
@@ -137,6 +138,12 @@ public static class DeliveryInterfaceCatalog
                     continue;
                 }
 
+                // An interface that comes back after it left is found anew: of the names of one document, the one found last owns it.
+                if (!row.Active && wanted.Active)
+                {
+                    row.FirstSeenUtc = nowUtc;
+                }
+
                 row.FlowName = wanted.FlowName;
                 row.Interface = wanted.Interface;
                 row.Partition = wanted.Partition;
@@ -162,7 +169,7 @@ public static class DeliveryInterfaceCatalog
         var removed = 0;
         foreach (var (id, row) in existing)
         {
-            if (!seen.Contains(id) && row.Active)
+            if (!seen.Contains(id) && row.Active && !moves.UnreadFiles.Contains(row.RelativePath))
             {
                 // The records it delivered still lead to their flow; the row just stops answering first.
                 row.Active = false;
@@ -298,110 +305,29 @@ public static class DeliveryInterfaceCatalog
     }
 
     /// <summary>
-    /// Asks for the moves that keep each document's ledger with the pipeline that owns it
-    /// (osdu/docs/reference/concepts/renaming-a-pipeline.md; <see cref="LedgerMoves"/>). A flow keeps its ledger under its
-    /// name, so renaming it, or copying its file, gives one document a second ledger identity. A ledger belongs to its
-    /// document: the pipelines of this repository with one <see cref="DeliveryDocumentHash"/>, interface and partition are
-    /// one document under several names, and the one a sync found last (the newest, then the file last by path) owns it. The
-    /// ledger of every other pipeline of the document, declared or not, that claimed ids moves to it, unless a pipeline of
-    /// another document keeps that ledger (<c>ledger:</c>) or its own document did not read or parse in this sync. A renamed
-    /// pipeline therefore takes the old name's ledger, a file copied by mistake takes the original's, and deleting the copy
-    /// gives it back. Two declared pipelines of one document are reported, since one of them is most likely a mistake; a
-    /// move whose ledgers are kept in two partitions is reported and not asked. The control plane makes the move right after
-    /// the sync, a slice at a time, and a run of the owner finishes it first if it gets there earlier.
-    /// <para>
-    /// The sync's transaction is serializable, so which ledgers claimed ids is read without keeping range locks
-    /// (<see cref="LedgerMoves.ClaimingAsync"/>): a ledger of thousands of held records is read, not held.
-    /// </para>
+    /// Asks for the moves that keep each delivery document's ledger with the pipeline that owns it, by the rule every kind of
+    /// flow that keeps a ledger follows (<see cref="LedgerOwnership"/>): the interfaces of this repository with one
+    /// <see cref="DeliveryDocumentHash"/>, interface and partition are one document, and the one a sync found last owns its
+    /// ledger. A delivery ledger is moved when it holds a record.
     /// </summary>
     private static async Task RequestLedgerMovesAsync(
         OsduDbContext context, Guid repoId, LedgerMoveGuard guard, DateTime nowUtc, ICollection<string> warnings, CancellationToken ct)
     {
         var rows = await context.DeliveryInterfaces.AsNoTracking()
             .Where(i => i.RepoId == repoId && i.DocumentHash != null)
-            .Select(i => new Described(i.FlowName, i.Interface, i.Partition, i.RelativePath, i.DocumentHash!, i.LedgerFlowId, i.LedgerName, i.Active, i.FirstSeenUtc))
+            .Select(i => new LedgerHolder(
+                i.RepoId, LedgerKinds.Delivery, i.FlowName, i.Interface, i.Partition, i.RelativePath, i.DocumentHash!, i.LedgerFlowId, i.LedgerName, i.Active, i.FirstSeenUtc))
             .ToListAsync(ct).ConfigureAwait(false);
-
-        // A document under one name has nothing to move; one under several, with a name declared, has an owner.
-        var documents = rows.GroupBy(r => r.Key, StringComparer.Ordinal)
-            .Select(g => g.ToList())
-            .Where(g => g.Count > 1 && g.Exists(r => r.Active))
-            .Select(g => (Owner: Owner(g), Rows: g))
-            .ToList();
-        if (documents.Count == 0)
-        {
-            return;
-        }
-
-        foreach (var (owner, group) in documents.Where(d => d.Rows.Count(r => r.Active) > 1))
-        {
-            var declared = group.Where(r => r.Active).ToList();
-            warnings.Add(
-                $"{string.Join(", ", declared.Select(r => r.RelativePath).Distinct(StringComparer.Ordinal).Order(StringComparer.Ordinal))}: {Listed(declared)} are one document under "
-                + $"{declared.Count} names, so '{owner.FlowName}', the one found last, keeps its ledger, and a run of any other holds every record whose id that ledger claimed. "
-                + "Delete the copy that is a mistake; its ledger then goes back to the one that stays.");
-        }
-
-        // The ledgers to move: of the document's other pipelines, placed in a partition with claimed ids, kept by no
-        // pipeline of another document, and of a document this sync read.
-        var moving = documents
-            .SelectMany(d => d.Rows
-                .Where(r => r.LedgerFlowId != d.Owner.LedgerFlowId && !guard.UnreadFiles.Contains(r.RelativePath))
-                .DistinctBy(r => r.LedgerFlowId)
-                .Select(r => (d.Owner, From: r)))
-            .ToList();
-        if (moving.Count == 0)
-        {
-            return;
-        }
-
-        var ids = moving.Select(m => m.From.LedgerFlowId).Distinct().ToList();
-        var claiming = await LedgerMoves.ClaimingAsync(context, ids, ct).ConfigureAwait(false);
-        var keepers = await context.DeliveryInterfaces.AsNoTracking()
-            .Where(i => i.Active && ids.Contains(i.LedgerFlowId))
-            .Select(i => new { i.LedgerFlowId, i.RepoId, i.DocumentHash, i.Interface, i.Partition })
-            .ToListAsync(ct).ConfigureAwait(false);
-        foreach (var (owner, from) in moving)
-        {
-            var keptElsewhere = keepers.Any(k => k.LedgerFlowId == from.LedgerFlowId
-                && (k.RepoId != repoId || k.DocumentHash != owner.DocumentHash
-                    || !string.Equals(k.Interface, owner.Interface, StringComparison.OrdinalIgnoreCase)
-                    || !string.Equals(k.Partition, owner.Partition, StringComparison.OrdinalIgnoreCase)));
-            if (!claiming.TryGetValue(from.LedgerFlowId, out var partition) || keptElsewhere)
-            {
-                continue;
-            }
-
-            var request = new LedgerMoveRequest(
-                partition, from.LedgerFlowId, from.FlowName, from.LedgerName, owner.LedgerFlowId, owner.FlowName, owner.Interface, owner.LedgerName, repoId);
-            if (await LedgerMoves.RequestAsync(context, request, nowUtc, ct).ConfigureAwait(false) == LedgerMoveAsk.OtherPartition)
-            {
-                warnings.Add(
-                    $"{owner.RelativePath}: {Describe(owner.FlowName, owner.Interface)} is the same document as '{from.FlowName}', and its ledger is kept in another partition than the ledger of "
-                    + $"'{from.FlowName}', so the sync moves no ledger: a ledger keeps the records of one partition. Keep the old ledger with ledger: {LedgerEntry.OwnName(from.LedgerName, from.Partition)} in the flow's document, or leave the two apart.");
-            }
-        }
+        await LedgerOwnership.RequestMovesAsync(context, repoId, rows, (ids, token) => KeepersAsync(context, ids, token), guard, nowUtc, warnings, ct).ConfigureAwait(false);
     }
 
-    /// <summary>One row of the read model as a document's owner is told from it.</summary>
-    private sealed record Described(
-        string FlowName, string Interface, string Partition, string RelativePath, string DocumentHash, Guid LedgerFlowId, string LedgerName, bool Active,
-        DateTime FirstSeenUtc)
-    {
-        /// <summary>What the pipelines of one document share: the document, the interface and the partition.</summary>
-        public string Key => string.Join('\u001f', DocumentHash, Interface.ToUpperInvariant(), Partition.ToUpperInvariant());
-    }
-
-    /// <summary>The pipeline that owns a document's ledger: of those the repository declares, the one a sync found last, then the file last by path.</summary>
-    private static Described Owner(IEnumerable<Described> document)
-        => document.Where(r => r.Active)
-            .OrderByDescending(r => r.FirstSeenUtc)
-            .ThenByDescending(r => r.RelativePath, StringComparer.Ordinal)
-            .ThenByDescending(r => r.FlowName, StringComparer.Ordinal)
-            .First();
-
-    private static string Listed(IEnumerable<Described> rows)
-        => string.Join(", ", rows.Select(r => r.FlowName).Distinct(StringComparer.OrdinalIgnoreCase).Order(StringComparer.Ordinal).Select(name => $"'{name}'"));
+    /// <summary>The declared interfaces, of any repository, that keep one of <paramref name="ledgers"/>.</summary>
+    private static async Task<IReadOnlyList<LedgerHolder>> KeepersAsync(OsduDbContext context, IReadOnlyCollection<Guid> ledgers, CancellationToken ct)
+        => await context.DeliveryInterfaces.AsNoTracking()
+            .Where(i => i.Active && ledgers.Contains(i.LedgerFlowId))
+            .Select(i => new LedgerHolder(
+                i.RepoId, LedgerKinds.Delivery, i.FlowName, i.Interface, i.Partition, i.RelativePath, i.DocumentHash ?? string.Empty, i.LedgerFlowId, i.LedgerName, i.Active, i.FirstSeenUtc))
+            .ToListAsync(ct).ConfigureAwait(false);
 
     private static string Describe(string flow, string name) => name.Length == 0 ? $"flow '{flow}'" : $"interface '{name}' of flow '{flow}'";
 

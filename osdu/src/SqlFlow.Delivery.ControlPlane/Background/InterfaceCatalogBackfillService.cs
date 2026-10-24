@@ -20,8 +20,10 @@ namespace SqlFlow.Delivery.ControlPlane.Background;
 /// its flow, and the cache's retention knows which versions are pinned, without waiting for the repository's next sync. The
 /// rows of a repository the catalog holds no delivery pipeline of any more become inactive, as a sync leaves an interface
 /// its repository stops declaring, so nothing waits on a flow no repository declares. A repository the read model
-/// describes completely is its sync's to keep current. A pass that fails (the module database not migrated yet, a lost
-/// connection) is tried again until one completes.
+/// describes completely is its sync's to keep current. The flows of the other kinds that keep a ledger (retrieval,
+/// assertion, dimension, inventory; <see cref="LedgerFlowCatalog"/>) of a repository the read model holds none of are
+/// described the same way, so the ledgers they keep are not taken for orphans before the repository's next sync. A pass
+/// that fails (the module database not migrated yet, a lost connection) is tried again until one completes.
 /// </summary>
 public sealed partial class InterfaceCatalogBackfillService : BackgroundService
 {
@@ -76,9 +78,10 @@ public sealed partial class InterfaceCatalogBackfillService : BackgroundService
     }
 
     /// <summary>
-    /// One pass: every repository with delivery pipelines and no interface rows, with an active row whose cache version is
-    /// not recorded, or with a row whose document hash is not, is described from its catalog copies, the pipelines it no
-    /// longer declares included; the active rows of every repository the catalog holds no delivery pipeline of become inactive.
+    /// One pass: every repository with delivery pipelines and no interface rows, or with an active row whose cache version
+    /// or document hash is not recorded, is described from its catalog copies; the active rows of every repository the
+    /// catalog holds no delivery pipeline of become inactive; and every repository with flows of the other kinds that keep a
+    /// ledger and no row of them has those described from their catalog copies.
     /// </summary>
     public async Task BackfillAsync(CancellationToken ct)
     {
@@ -92,15 +95,15 @@ public sealed partial class InterfaceCatalogBackfillService : BackgroundService
             .ToListAsync(ct).ConfigureAwait(false);
 
         // Per described repository: whether it has active rows, and whether any of them was written before the cache
-        // version an interface renders against was recorded, or any row, of a pipeline it declares or one it no longer does,
-        // before the document's hash was, which a sync pairs a renamed pipeline with the one it replaced by.
+        // version an interface renders against was recorded, or before the document's hash was, which a sync pairs a renamed
+        // pipeline with the one it replaced by. A row of a pipeline that left is not: the catalog keeps no copy of it.
         var described = (await osdu.DeliveryInterfaces.AsNoTracking()
                 .GroupBy(i => i.RepoId)
                 .Select(g => new
                 {
                     RepoId = g.Key,
                     Active = g.Count(i => i.Active),
-                    Unrecorded = g.Count(i => (i.Active && i.CacheVersion == null) || i.DocumentHash == null),
+                    Unrecorded = g.Count(i => i.Active && (i.CacheVersion == null || i.DocumentHash == null)),
                 })
                 .ToListAsync(ct).ConfigureAwait(false))
             .ToDictionary(d => d.RepoId, d => new DescribedRepository(d.RepoId, d.Active > 0, d.Unrecorded > 0));
@@ -159,6 +162,48 @@ public sealed partial class InterfaceCatalogBackfillService : BackgroundService
                 osdu, orphaned, [], new Dictionary<string, string>(), new Dictionary<string, string>(), _clock.GetUtcNow().UtcDateTime, warnings, LedgerMoveGuard.None, ct).ConfigureAwait(false);
             LogRetired(orphaned, counts.Removed);
         }
+
+        await BackfillFlowDocumentsAsync(catalog, osdu, documents, ct).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// Describes, from their catalog copies, the flows of the other kinds that keep a ledger of every repository the read
+    /// model holds none of (<see cref="LedgerFlowCatalog"/>), as its sync would.
+    /// </summary>
+    private async Task BackfillFlowDocumentsAsync(CatalogDbContext catalog, OsduDbContext osdu, DeliveryDocumentLoader documents, CancellationToken ct)
+    {
+        var kinds = LedgerFlowCatalog.Kinds.ToArray();
+        var pipelines = await catalog.Pipelines.AsNoTracking()
+            .Where(p => p.Active && kinds.Contains(p.Kind))
+            .Select(p => new { p.RepoId, p.Kind, p.Name, p.RelativePath, p.Yaml })
+            .ToListAsync(ct).ConfigureAwait(false);
+        var described = (await osdu.DeliveryLedgerFlows.AsNoTracking().Select(d => d.RepoId).Distinct().ToListAsync(ct).ConfigureAwait(false)).ToHashSet();
+        foreach (var repository in pipelines.GroupBy(p => p.RepoId).Where(r => !described.Contains(r.Key)))
+        {
+            ct.ThrowIfCancellationRequested();
+            var flows = new List<RepositoryFlow>();
+            var unreadable = 0;
+            foreach (var pipeline in repository.OrderBy(p => p.Name, StringComparer.Ordinal))
+            {
+                try
+                {
+                    flows.Add(DeliveryCatalogSync.DescribeFlow(documents, pipeline.Kind, pipeline.Yaml, pipeline.RelativePath));
+                }
+                catch (FlowValidationException)
+                {
+                    // A catalog copy that does not parse describes no flow; its pipeline's page says why.
+                    unreadable++;
+                }
+            }
+
+            var warnings = new List<string>();
+            var counts = await LedgerFlowCatalog.ReconcileAsync(osdu, repository.Key, flows, _clock.GetUtcNow().UtcDateTime, warnings, LedgerMoveGuard.None, ct).ConfigureAwait(false);
+            LogFlowsBackfilled(repository.Key, counts.Added + counts.Updated, unreadable);
+            foreach (var warning in warnings)
+            {
+                LogWarning(repository.Key, warning);
+            }
+        }
     }
 
     /// <summary>What the read model holds of one repository: whether any of its rows is active, and whether an active one lacks its cache version.</summary>
@@ -169,6 +214,9 @@ public sealed partial class InterfaceCatalogBackfillService : BackgroundService
 
     [LoggerMessage(Level = LogLevel.Information, Message = "Described {Interfaces} interface(s) of {Flows} delivery flow(s) of repository {RepoId} from their catalog copies, with the cache version each renders against ({Unreadable} did not parse).")]
     private partial void LogBackfilled(Guid repoId, int interfaces, int flows, int unreadable);
+
+    [LoggerMessage(Level = LogLevel.Information, Message = "Described {Flows} retrieval, assertion, dimension and inventory flow(s) of repository {RepoId} from their catalog copies ({Unreadable} did not parse).")]
+    private partial void LogFlowsBackfilled(Guid repoId, int flows, int unreadable);
 
     [LoggerMessage(Level = LogLevel.Warning, Message = "Repository {RepoId}: {Warning}")]
     private partial void LogWarning(Guid repoId, string warning);

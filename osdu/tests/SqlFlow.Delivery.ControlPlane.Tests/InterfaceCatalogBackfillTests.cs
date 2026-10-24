@@ -17,8 +17,10 @@ namespace SqlFlow.ControlPlane.Tests;
 /// <summary>
 /// The control plane's start-up description of delivery interfaces (<see cref="InterfaceCatalogBackfillService"/>): the rows
 /// of a repository described before the cache version each interface renders against was recorded are described again
-/// from the catalog's copies, so the partition cache's retention stops waiting on them without a sync; and the rows of a
-/// repository the catalog holds no delivery flow of any more become inactive, since no repository declares those flows.
+/// from the catalog's copies, so the partition cache's retention stops waiting on them without a sync; the rows of a
+/// repository the catalog holds no delivery flow of any more become inactive, since no repository declares those flows; an
+/// active row written before documents' hashes gets its hash; and the retrieval, assertion, dimension and inventory flows of
+/// a repository with none described are described, so their ledgers are not taken for orphans before its next sync.
 /// </summary>
 [Collection(SqlServerSuite.Name)]
 [Trait("Category", "Integration")]
@@ -97,15 +99,16 @@ public sealed class InterfaceCatalogBackfillTests : IDisposable
     }
 
     [Fact]
-    public async Task Rows_written_before_document_hashes_get_them_from_the_catalog_copies_of_removed_pipelines_too()
+    public async Task An_active_row_written_before_document_hashes_gets_its_hash_and_one_of_a_pipeline_that_left_keeps_none()
     {
         var repoId = Guid.NewGuid();
         const string OldName = "welldb-welllog-03-header-delivery";
         const string NewName = "welldb-welllog-03-v140-header-delivery";
         var yaml = (await File.ReadAllTextAsync(Samples.Flow)).ReplaceLineEndings("\n");
+
+        // The catalog keeps no copy of a pipeline that left the repository: only the renamed one is there.
         await SeedCatalogAsync(repoId, [
-            (OldName, "flows/" + OldName + ".yaml", yaml, false),
-            (NewName, "flows/" + NewName + ".yaml", yaml.Replace($"name: {OldName}\n", $"name: {NewName}\n", StringComparison.Ordinal), true),
+            (NewName, "flows/" + NewName + ".yaml", yaml.Replace($"name: {OldName}\n", $"name: {NewName}\n", StringComparison.Ordinal)),
         ]);
 
         try
@@ -121,19 +124,52 @@ public sealed class InterfaceCatalogBackfillTests : IDisposable
 
             await BackfillAsync();
 
-            // Both rows carry the one document's hash, from the catalog's copies; the old one stays inactive, and the backfill
-            // asks for no move, which is the sync's to ask.
+            // The renamed pipeline's row has its hash, from its copy; the old one's has none to get, so its ledger is a missing
+            // document a person takes over, and the backfill asks for no move.
+            DateTime described;
             await using (var db = _module.CreateDbContext())
             {
                 var rows = await db.DeliveryInterfaces.AsNoTracking().Where(r => r.RepoId == repoId).ToListAsync();
                 var old = Assert.Single(rows, r => r.FlowName == OldName);
                 var renamed = Assert.Single(rows, r => r.FlowName == NewName);
-                Assert.False(old.Active);
+                Assert.Equal((false, (string?)null), (old.Active, old.DocumentHash));
                 Assert.True(renamed.Active);
-                Assert.NotNull(old.DocumentHash);
-                Assert.Equal(old.DocumentHash, renamed.DocumentHash);
+                Assert.Equal(64, renamed.DocumentHash!.Length);
                 Assert.False(await db.DeliveryActivities.AnyAsync(a => a.Kind == Delivery.Ledger.LedgerMoves.Kind));
+                described = renamed.LastSeenUtc;
             }
+
+            // An inactive row without a hash does not have the repository described again at every start.
+            await BackfillAsync();
+            await using (var db = _module.CreateDbContext())
+            {
+                Assert.Equal(described, (await db.DeliveryInterfaces.AsNoTracking().SingleAsync(r => r.RepoId == repoId && r.FlowName == NewName)).LastSeenUtc);
+            }
+        }
+        finally
+        {
+            await using var catalog = _module.CreateCatalogContext();
+            await catalog.Pipelines.Where(p => p.RepoId == repoId).ExecuteDeleteAsync();
+            await catalog.Repos.Where(r => r.Id == repoId).ExecuteDeleteAsync();
+        }
+    }
+
+    [Fact]
+    public async Task The_other_kinds_of_a_repository_with_none_described_are_described_from_their_catalog_copies()
+    {
+        var repoId = Guid.NewGuid();
+        const string Assertion = "welldb-well-04-assertion";
+        await SeedCatalogAsync(repoId, [
+            (Assertion, "flows/" + Assertion + ".yaml", await File.ReadAllTextAsync(Path.Combine(Samples.Source, "flows", Assertion + ".yaml")), true, AssertionFlowDefinition.FlowTypeName),
+        ]);
+
+        try
+        {
+            await BackfillAsync();
+            await using var db = _module.CreateDbContext();
+            var flow = Assert.Single(await db.DeliveryLedgerFlows.AsNoTracking().Where(f => f.RepoId == repoId).ToListAsync());
+            Assert.Equal((Assertion, "assertion", true, true, "flows/" + Assertion + ".yaml"), (flow.FlowName, flow.Kind, flow.Partitioned, flow.Active, flow.RelativePath));
+            Assert.Equal(64, flow.DocumentHash.Length);
         }
         finally
         {
@@ -157,25 +193,25 @@ public sealed class InterfaceCatalogBackfillTests : IDisposable
 
     /// <summary>A repository in the catalog with the delivery flows given, as a sync copies them, every one declared.</summary>
     private Task SeedCatalogAsync(Guid repoId, IReadOnlyList<(string Name, string Path, string Yaml)> flows)
-        => SeedCatalogAsync(repoId, flows.Select(f => (f.Name, f.Path, f.Yaml, true)).ToList());
+        => SeedCatalogAsync(repoId, flows.Select(f => (f.Name, f.Path, f.Yaml, true, FlowDefinition.FlowTypeName)).ToList());
 
-    /// <summary>A repository in the catalog with the delivery flows given, each declared or one the repository no longer declares.</summary>
-    private async Task SeedCatalogAsync(Guid repoId, IReadOnlyList<(string Name, string Path, string Yaml, bool Active)> flows)
+    /// <summary>A repository in the catalog with the flows given, each of its kind, declared or one a selection left out.</summary>
+    private async Task SeedCatalogAsync(Guid repoId, IReadOnlyList<(string Name, string Path, string Yaml, bool Active, string Kind)> flows)
     {
         await using var catalog = _module.CreateCatalogContext();
         catalog.Repos.Add(new CatalogRepo { Id = repoId, Name = "backfill-" + repoId.ToString("N")[..10], FirstSeenUtc = Now, LastSyncUtc = Now });
-        foreach (var (name, path, yaml, active) in flows)
+        foreach (var (name, path, yaml, active, kind) in flows)
         {
             catalog.Pipelines.Add(new CatalogPipeline
             {
                 Id = Guid.NewGuid(),
                 RepoId = repoId,
                 Name = name,
-                Kind = FlowDefinition.FlowTypeName,
+                Kind = kind,
                 RelativePath = path,
                 ContentHash = new string('0', 64),
                 Yaml = yaml,
-                DefinitionJson = string.Create(CultureInfo.InvariantCulture, $$"""{"name":"{{name}}","flowKind":"delivery"}"""),
+                DefinitionJson = string.Create(CultureInfo.InvariantCulture, $$"""{"name":"{{name}}","flowKind":"{{kind}}"}"""),
                 Active = active,
                 Wave = 0,
                 FirstSeenUtc = Now,

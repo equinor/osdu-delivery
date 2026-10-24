@@ -60,5 +60,5 @@ does not grow with activity.
   `RecordIdentity.cs`), and deleted with the record.
 - **Read** by the search box and `GET /api/v1/delivery/records?search=` (`RecordSearchContributor.cs`), which takes at
   most 1,000 candidates from the index and reports a larger match as a floor.
-- **Rewritten** by a ledger move (`OsduLedger.Moves.cs`), which puts the rows of a renamed pipeline's old ledger under
-  its new identity, a slice at a time ([Renaming a pipeline](../concepts/renaming-a-pipeline.md)).
+- **Rewritten** by a ledger move (`OsduLedger.Moves.cs`), which puts the rows of an old ledger under the
+  identity of the flow that replaced it or took it over, a slice at a time ([Renaming a pipeline](../concepts/renaming-a-pipeline.md)).

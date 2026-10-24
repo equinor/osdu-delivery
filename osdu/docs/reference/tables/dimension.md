@@ -92,3 +92,6 @@ partition and drops its table with the last partition writing it.
   id>`) (`SqlServerDimensionStore.cs`), and by removing a dimension.
 - **Read** by the dimension's pages, `sqlflow dimensions`, the delivery API, cache flows capturing the dimension, and the
   next build.
+- **Rewritten** by a ledger move (`OsduLedger.Moves.cs`), which gives the dimensions of an old ledger the identity and the
+  name of the flow that replaced it or took it over, all at once, and refuses a flow that holds a dimension of one of their
+  names ([Renaming a pipeline](../concepts/renaming-a-pipeline.md)).

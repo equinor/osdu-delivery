@@ -406,3 +406,20 @@ sync found last, moving the rows rather than aliasing the identity, the held rec
 kept, the sync asking and the move running in slices that the control plane or the owner's run makes, and the
 alternatives rejected (`ledger:` alone, pairing by what two pipelines read, pairing by path, a claim button, a catalog
 identity, moving in the sync's transaction).
+
+## [2026-10-24] ingest | Orphaned ledgers taken over by hand, every kind follows its document, decision 0028 amended
+
+Source: the human's live test of the rename (the sync moved nothing, since SQLFlow had deleted the old pipeline and no
+hash of it existed), their direction that the re-shuffling belongs to the repository sync and not the pipeline, that every
+kind keeping a ledger follows the same logic, that a file renamed and edited, or deleted and added back, cannot be linked
+automatically, that automatic linking stays where it cannot be wrong with a fallback in the GUI, and that the GUI lists the
+missing documents and lets a person pick the document that takes one over rather than matching records. Read with the
+code it became (`osdu/src/SqlFlow.Delivery/Ledger/LedgerBindings.cs`, `osdu/src/SqlFlow.Delivery/Catalog/LedgerFlowCatalog.cs`,
+`osdu/src/SqlFlow.Delivery/Catalog/DeliveryCatalogSync.cs`, `osdu/gui/src/features/delivery/OrphanedLedgersPage.tsx`) and
+SQLFlow's sync (`sqlflow/src/SqlFlow.Catalog/CatalogSync.cs`), which deletes a pipeline that left and now calls its
+extensions once it committed.
+
+Amended [0028](decisions/0028-renamed-pipelines-move-their-ledger.md): the hash recorded for every kind, the sync making its
+moves once it committed and reporting them, missing documents taken over by hand on the Orphaned ledgers page, and the
+alternatives rejected (pairing a pre-hash rename by shared delivery keys, dropping the hash, matching records, runs that
+move ledgers).

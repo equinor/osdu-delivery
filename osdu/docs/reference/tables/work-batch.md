@@ -74,5 +74,5 @@ Not pruned by retention: an attempt names its batch. Deleting a delivery flow's 
   hands an abandoned batch back, by a deliver run counting the queued batches it fans its drain out over, and by a plan of
   a share planned before, which writes its batches after the highest place the share has already written
   ([submissions](../concepts/submissions.md#work-batches)).
-- **Rewritten** by a ledger move (`OsduLedger.Moves.cs`), which puts the rows of a renamed pipeline's old ledger under
-  its new identity, a slice at a time ([Renaming a pipeline](../concepts/renaming-a-pipeline.md)).
+- **Rewritten** by a ledger move (`OsduLedger.Moves.cs`), which puts the rows of an old ledger under the
+  identity of the flow that replaced it or took it over, a slice at a time ([Renaming a pipeline](../concepts/renaming-a-pipeline.md)).

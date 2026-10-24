@@ -1,6 +1,6 @@
 import {
   ClipboardList, CloudDownload, DatabaseZap, FileCode2, Layers, LayoutTemplate, ListChecks, ListX, Network, PackageCheck, PackageSearch,
-  ScrollText, Shapes, Telescope, TextSearch,
+  ScrollText, Shapes, Telescope, TextSearch, Unlink,
 } from "lucide-react";
 import type { RunSummary } from "@/api/types";
 import type { Column } from "@/components/DataTable";
@@ -36,6 +36,7 @@ const DeliveryRecordPage = lazyRoute("DeliveryRecordPage", () => import("./featu
 const OsduRecordWindowPage = lazyRoute("OsduRecordWindowPage", () => import("./features/delivery/OsduRecordWindowPage"));
 const DeliverySubmissionPage = lazyRoute("DeliverySubmissionPage", () => import("./features/delivery/DeliverySubmissionPage"));
 const DeliveryActivityPage = lazyRoute("DeliveryActivityPage", () => import("./features/delivery/DeliveryActivityPage"));
+const OrphanedLedgersPage = lazyRoute("OrphanedLedgersPage", () => import("./features/delivery/OrphanedLedgersPage"));
 const DeliveryDocumentsPage = lazyRoute("DeliveryDocumentsPage", () => import("./features/delivery/DeliveryDocumentsPage"));
 const TemplatesPage = lazyRoute("TemplatesPage", () => import("./features/delivery/TemplatesPage"));
 const OrderPage = lazyRoute("OrderPage", () => import("./features/delivery/order/OrderPage"));
@@ -374,6 +375,7 @@ export const osduDeliveryModule: GuiModule = {
     { path: "/delivery/records/:flowId/:key/osdu", component: OsduRecordWindowPage, frame: "window" },
     { path: "/delivery/submissions/:submissionId", component: DeliverySubmissionPage },
     { path: "/delivery/activity", component: DeliveryActivityPage },
+    { path: "/delivery/ledgers/orphaned", component: OrphanedLedgersPage },
     { path: "/delivery/documents", component: DeliveryDocumentsPage },
     { path: "/delivery/templates", component: TemplatesPage },
     { path: "/delivery/order", component: OrderPage },
@@ -416,6 +418,7 @@ export const osduDeliveryModule: GuiModule = {
     { group: OSDU_GROUP, section: "ledger", label: "Records", to: "/delivery/records", icon: PackageSearch, testId: "nav-delivery-records" },
     { group: OSDU_GROUP, section: "ledger", label: "Removals", to: "/delivery/removals", icon: ListX, testId: "nav-delivery-removals" },
     { group: OSDU_GROUP, section: "ledger", label: "Audit trail", to: "/delivery/activity", icon: ScrollText, testId: "nav-delivery-activity" },
+    { group: OSDU_GROUP, section: "ledger", label: "Orphaned ledgers", to: "/delivery/ledgers/orphaned", icon: Unlink, testId: "nav-delivery-orphaned-ledgers" },
     { group: OSDU_GROUP, section: "in-osdu", label: "Explorer", to: "/delivery/explorer", icon: Telescope, testId: "nav-delivery-explorer" },
     { group: OSDU_GROUP, section: "in-osdu", label: "Assertions", to: "/delivery/assertions", icon: ListChecks, testId: "nav-delivery-assertions" },
     { group: OSDU_GROUP, section: "in-osdu", label: "Inventories", to: "/delivery/inventories", icon: ClipboardList, testId: "nav-delivery-inventories" },

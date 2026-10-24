@@ -222,7 +222,125 @@ internal static partial class SqlServerLedgerBulk
 
     /// <summary>Moves a slice of <paramref name="table"/>'s rows of the old ledger (a table of <see cref="LedgerMoves.KeyedTables"/>); returns how many.</summary>
     public static Task<int> MoveSliceAsync(OsduDbContext db, string table, short partition, long activity, Guid from, Guid to, int slice, CancellationToken ct)
-        => SliceAsync(db, MoveStatement(table, LedgerMoves.KeyedTables, "FlowId"), partition, activity, from, to, slice, ct);
+        => SliceAsync(db, MoveStatement(table, MovedTables, "FlowId"), partition, activity, from, to, slice, ct);
+
+    /// <summary>Every table a move takes rows of, a delivery ledger's and those of the other kinds.</summary>
+    private static readonly string[] MovedTables = [.. LedgerMoves.KeyedTables.Concat(LedgerMoves.OtherKinds.Values.SelectMany(k => k.Tables)).Distinct(StringComparer.Ordinal)];
+
+    // A view a dimension build wrote names the ledger of the build (LedgerId) and the flow that owns it (FlowName). A move of
+    // a dimension ledger points the views of the old ledger at the new one, a slice at a time, and gives the views the old
+    // name owned to the new name, so the renamed flow's builds write them again rather than taking them for another flow's.
+    private const string MoveViewsSql = """
+        UPDATE TOP (@slice) [osdu].[DimensionView] SET [LedgerId] = @to WHERE [LedgerId] = @from;
+        """;
+
+    private const string RenameViewOwnerSql = """
+        UPDATE [osdu].[DimensionView] SET [FlowName] = @toFlow WHERE [FlowName] = @fromFlow;
+        """;
+
+    /// <summary>
+    /// Begins the move of a ledger of another kind (<paramref name="kind"/>) in one transaction: counts the rows of its first
+    /// table under the old identity; for a kind of named rows (a flow's dimensions, its inventories), finds the names the new
+    /// identity holds too, and when there are none, moves those rows with the flow's new name, so a build of the renamed flow
+    /// that starts meanwhile finds them its own; and marks the move begun with the count. Returns the names both hold, when
+    /// any, and nothing is written then.
+    /// </summary>
+    public static async Task<(IReadOnlyList<string> Colliding, long Moved)> BeginKindMoveAsync(
+        OsduDbContext db, LedgerKindTables kind, short partition, long activity, Guid from, Guid to, string toFlow, CancellationToken ct)
+    {
+        ArgumentNullException.ThrowIfNull(kind);
+        var first = kind.Tables[0];
+        if (!MovedTables.Contains(first, StringComparer.Ordinal))
+        {
+            throw new ArgumentException($"'{first}' is not a table a ledger move reaches.", nameof(kind));
+        }
+
+        await db.Database.OpenConnectionAsync(ct).ConfigureAwait(false);
+        var connection = (SqlConnection)db.Database.GetDbConnection();
+        await using var transaction = (SqlTransaction)await connection.BeginTransactionAsync(ct).ConfigureAwait(false);
+        var hint = kind.NamedRows ? " WITH (UPDLOCK, HOLDLOCK)" : string.Empty;
+        long moved;
+        await using (var count = await KindCommandAsync(db, transaction, $"SELECT COUNT_BIG(*) FROM [osdu].[{first}]{hint} WHERE [PartitionId] = @partition AND [FlowId] = @from;", partition, activity, from, to, ct).ConfigureAwait(false))
+        {
+            moved = Convert.ToInt64(await count.ExecuteScalarAsync(ct).ConfigureAwait(false), CultureInfo.InvariantCulture);
+        }
+
+        if (kind.NamedRows)
+        {
+            var colliding = new List<string>();
+            await using (var names = await KindCommandAsync(
+                db, transaction,
+                $"SELECT n.[Name] FROM [osdu].[{first}] AS n WITH (UPDLOCK, HOLDLOCK) WHERE n.[PartitionId] = @partition AND n.[FlowId] = @to "
+                + $"AND EXISTS (SELECT 1 FROM [osdu].[{first}] AS o WHERE o.[PartitionId] = @partition AND o.[FlowId] = @from AND o.[Name] = n.[Name]) ORDER BY n.[Name];",
+                partition, activity, from, to, ct).ConfigureAwait(false))
+            await using (var reader = await names.ExecuteReaderAsync(ct).ConfigureAwait(false))
+            {
+                while (await reader.ReadAsync(ct).ConfigureAwait(false))
+                {
+                    colliding.Add(reader.GetString(0));
+                }
+            }
+
+            if (colliding.Count > 0)
+            {
+                await transaction.RollbackAsync(ct).ConfigureAwait(false);
+                return (colliding, 0);
+            }
+
+            await using var named = await KindCommandAsync(
+                db, transaction, $"UPDATE [osdu].[{first}] SET [FlowId] = @to, [FlowName] = @toFlow WHERE [PartitionId] = @partition AND [FlowId] = @from;",
+                partition, activity, from, to, ct).ConfigureAwait(false);
+            named.Parameters.Add(new SqlParameter("@toFlow", SqlDbType.NVarChar, DeliveryLedger.MaxFlowNameLength) { Value = toFlow });
+            await named.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
+        }
+
+        await using (var begun = await KindCommandAsync(
+            db, transaction,
+            "UPDATE [osdu].[Activity] SET [ParametersJson] = JSON_MODIFY(JSON_MODIFY([ParametersJson], '$.started', CAST(1 AS bit)), '$.moved', @moved) "
+            + "WHERE [PartitionId] = @partition AND [ActivityId] = @activity;",
+            partition, activity, from, to, ct).ConfigureAwait(false))
+        {
+            begun.Parameters.Add(new SqlParameter("@moved", SqlDbType.BigInt) { Value = moved });
+            await begun.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
+        }
+
+        await transaction.CommitAsync(ct).ConfigureAwait(false);
+        return ([], moved);
+    }
+
+    /// <summary>Points a slice of the views of the old dimension ledger at the new one; returns how many.</summary>
+    public static Task<int> MoveViewsAsync(OsduDbContext db, short partition, long activity, Guid from, Guid to, int slice, CancellationToken ct)
+        => SliceAsync(db, MoveViewsSql, partition, activity, from, to, slice, ct);
+
+    /// <summary>Gives the views the old flow's name owned to the new name.</summary>
+    public static async Task RenameViewOwnerAsync(OsduDbContext db, short partition, long activity, Guid from, Guid to, string fromFlow, string toFlow, CancellationToken ct)
+    {
+        await using var command = await MoveCommandAsync(db, RenameViewOwnerSql, partition, activity, from, to, ct).ConfigureAwait(false);
+        command.Parameters.Add(new SqlParameter("@fromFlow", SqlDbType.NVarChar, DeliveryLedger.MaxFlowNameLength) { Value = fromFlow });
+        command.Parameters.Add(new SqlParameter("@toFlow", SqlDbType.NVarChar, DeliveryLedger.MaxFlowNameLength) { Value = toFlow });
+        await command.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
+    }
+
+    /// <summary>The rows of <paramref name="kind"/>'s first table the old identity still holds.</summary>
+    public static async Task<long> KindRowsLeftAsync(OsduDbContext db, LedgerKindTables kind, short partition, Guid from, CancellationToken ct)
+    {
+        ArgumentNullException.ThrowIfNull(kind);
+        await using var command = await MoveCommandAsync(
+            db, $"SELECT COUNT_BIG(*) FROM [osdu].[{MoveTable(kind.Tables[0])}] WHERE [PartitionId] = @partition AND [FlowId] = @from;", partition, 0, from, Guid.Empty, ct).ConfigureAwait(false);
+        return Convert.ToInt64(await command.ExecuteScalarAsync(ct).ConfigureAwait(false), CultureInfo.InvariantCulture);
+    }
+
+    /// <summary><paramref name="table"/>, when it is a table a move reaches: no other name reaches the SQL.</summary>
+    private static string MoveTable(string table)
+        => MovedTables.Contains(table, StringComparer.Ordinal) ? table : throw new ArgumentException($"'{table}' is not a table a ledger move reaches.", nameof(table));
+
+    private static async Task<SqlCommand> KindCommandAsync(
+        OsduDbContext db, SqlTransaction transaction, string sql, short partition, long activity, Guid from, Guid to, CancellationToken ct)
+    {
+        var command = await MoveCommandAsync(db, sql, partition, activity, from, to, ct).ConfigureAwait(false);
+        command.Transaction = transaction;
+        return command;
+    }
 
     /// <summary>Points a slice of <paramref name="table"/>'s rows naming the old ledger at the new one (a table of <see cref="LedgerMoves.NamingTables"/>); returns how many.</summary>
     public static Task<int> RenameSliceAsync(OsduDbContext db, string table, short partition, long activity, Guid from, Guid to, int slice, CancellationToken ct)

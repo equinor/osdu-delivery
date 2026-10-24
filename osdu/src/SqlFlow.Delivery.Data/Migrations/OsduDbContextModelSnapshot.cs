@@ -2812,6 +2812,57 @@ namespace SqlFlow.Delivery.Data.Migrations
                     b.ToTable("Ledger", "osdu");
                 });
 
+            modelBuilder.Entity("SqlFlow.Delivery.Data.DeliveryLedgerFlow", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<bool>("Active")
+                        .HasColumnType("bit");
+
+                    b.Property<string>("DocumentHash")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
+
+                    b.Property<DateTime>("FirstSeenUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("FlowName")
+                        .IsRequired()
+                        .HasMaxLength(400)
+                        .HasColumnType("nvarchar(400)");
+
+                    b.Property<string>("Kind")
+                        .IsRequired()
+                        .HasMaxLength(16)
+                        .HasColumnType("nvarchar(16)");
+
+                    b.Property<DateTime>("LastSeenUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<bool>("Partitioned")
+                        .HasColumnType("bit");
+
+                    b.Property<string>("RelativePath")
+                        .IsRequired()
+                        .HasMaxLength(1000)
+                        .HasColumnType("nvarchar(1000)");
+
+                    b.Property<Guid>("RepoId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("Kind", "FlowName");
+
+                    b.HasIndex("RepoId", "FlowName")
+                        .IsUnique();
+
+                    b.ToTable("LedgerFlow", "osdu");
+                });
+
             modelBuilder.Entity("SqlFlow.Delivery.Data.DeliveryLedgerPartition", b =>
                 {
                     b.Property<short>("PartitionId")

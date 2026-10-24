@@ -84,5 +84,5 @@ lets an [inventory flow](../flow/inventory.md) say which ids OSDU serves that no
   sweep or a removal's undo (`OsduLedger.Artifacts.cs`, `SqlServerLedgerBulk.Artifacts.cs`).
 - **Read** by a record's **Artifacts** tab, `sqlflow records artifacts`, `GET /records/{flowId}/{key}/artifacts`
   (`DeliveryArtifactEndpoints.cs`), the sweep, and inventory reconciles (`SqlServerLedgerBulk.Inventory.cs`).
-- **Rewritten** by a ledger move (`OsduLedger.Moves.cs`), which puts the rows of a renamed pipeline's old ledger under
-  its new identity, a slice at a time ([Renaming a pipeline](../concepts/renaming-a-pipeline.md)).
+- **Rewritten** by a ledger move (`OsduLedger.Moves.cs`), which puts the rows of an old ledger under the
+  identity of the flow that replaced it or took it over, a slice at a time ([Renaming a pipeline](../concepts/renaming-a-pipeline.md)).

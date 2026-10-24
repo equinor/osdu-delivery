@@ -1726,6 +1726,49 @@ public sealed class DeliveryMapping
 }
 
 /// <summary>
+/// One flow of a repository that keeps a ledger and is no delivery flow (a retrieval, assertion, dimension or inventory
+/// flow), as the repository sync found it (osdu/docs/reference/concepts/renaming-a-pipeline.md): the hash of its document,
+/// by which the sync pairs a renamed flow with the one it replaced, and whether it keeps a ledger in each partition it works
+/// in, which says the ledger identity it keeps in a partition. A flow keeps its ledger under its name, so the ledgers of a
+/// flow are found by its kind and name in the directory (<see cref="DeliveryLedger"/>). The row of a flow the repository no
+/// longer declares is kept, inactive, with the hash it last had, since the catalog keeps no copy of a flow that left.
+/// </summary>
+public sealed class DeliveryLedgerFlow
+{
+    /// <summary>The widest flow kind: <c>retrieval</c>, <c>assertion</c>, <c>dimension</c> or <c>inventory</c>.</summary>
+    public const int MaxKindLength = 16;
+
+    /// <summary>A stable id, derived from the repository and the flow's name.</summary>
+    public Guid Id { get; set; }
+
+    public Guid RepoId { get; set; }
+
+    /// <summary>The flow, its pipeline in the repository.</summary>
+    public string FlowName { get; set; } = string.Empty;
+
+    /// <summary>The flow's kind, which is the kind of ledger it keeps.</summary>
+    public string Kind { get; set; } = string.Empty;
+
+    /// <summary>
+    /// True when the flow keeps a ledger of its own in each partition it works in (<c>name@partition</c>, a flow that names
+    /// its partitions or follows the registry), false when it keeps one ledger, in the partition its header names.
+    /// </summary>
+    public bool Partitioned { get; set; }
+
+    /// <summary>SHA-256, in lowercase hex, of the flow document as parsed with its name and path left out.</summary>
+    public string DocumentHash { get; set; } = string.Empty;
+
+    public string RelativePath { get; set; } = string.Empty;
+
+    /// <summary>False once the repository no longer declares the flow.</summary>
+    public bool Active { get; set; } = true;
+
+    public DateTime FirstSeenUtc { get; set; }
+
+    public DateTime LastSeenUtc { get; set; }
+}
+
+/// <summary>
 /// One interface of a delivery flow document, as the repository sync found it (osdu/docs/reference/flow/interfaces.md, The
 /// interface read model): the pipeline it belongs to, the ledger identity its records, submissions and statistics are kept
 /// under, and what it delivers and how. The API and the GUI find the pipeline of a ledger identity here, and the interfaces
@@ -4631,6 +4674,19 @@ public static class DeliveryModel
             e.HasIndex(i => new { i.RepoId, i.FlowName, i.Interface, i.Partition }).IsUnique();
             // A record's page, a submission's page and the record search find the pipeline behind a ledger identity.
             e.HasIndex(i => i.LedgerFlowId);
+        });
+
+        modelBuilder.Entity<DeliveryLedgerFlow>(e =>
+        {
+            e.ToTable("LedgerFlow", SchemaName);
+            e.HasKey(d => d.Id);
+            e.Property(d => d.FlowName).HasMaxLength(400).IsRequired();
+            e.Property(d => d.Kind).HasMaxLength(DeliveryLedgerFlow.MaxKindLength).IsRequired();
+            e.Property(d => d.DocumentHash).HasMaxLength(64).IsRequired();
+            e.Property(d => d.RelativePath).HasMaxLength(1000).IsRequired();
+            e.HasIndex(d => new { d.RepoId, d.FlowName }).IsUnique();
+            // Whether a declared flow keeps the ledgers of a kind and name: the orphaned ledgers, and the pipeline behind one.
+            e.HasIndex(d => new { d.Kind, d.FlowName });
         });
 
         modelBuilder.Entity<DeliveryRepositoryTemplate>(e =>
