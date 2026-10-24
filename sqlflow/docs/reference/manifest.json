@@ -820,6 +820,8 @@
         "src/SqlFlow.ControlPlane/Api/LineageEndpoints.cs",
         "src/SqlFlow.ControlPlane/Api/CatalogEndpoints.cs",
         "src/SqlFlow.ControlPlane/Api/RunEndpoints.cs",
+        "src/SqlFlow.ControlPlane/Api/RunSetTiming.cs",
+        "src/SqlFlow.ControlPlane/Api/PipelineRunDurations.cs",
         "src/SqlFlow.ControlPlane/Api/SearchEndpoints.cs",
         "src/SqlFlow.ControlPlane/Api/NodeEndpoints.cs",
         "src/SqlFlow.Catalog/RepoSourceStore.cs",
@@ -1566,6 +1568,8 @@
         "src/SqlFlow.Catalog/Migrations/20260915090833_RenameColumnPolicyToAllowList.cs",
         "src/SqlFlow.ControlPlane/Api/ColumnPolicyEndpoints.cs",
         "src/SqlFlow.Catalog/RunQueueStore.cs",
+        "src/SqlFlow.Catalog/RunElapsed.cs",
+        "src/SqlFlow.Catalog/Migrations/20261024092533_RunDurationFromStartAndEnd.cs",
         "src/SqlFlow.Lineage/Collection/FlowSetCollector.cs",
         "src/SqlFlow.Cli/Program.cs"
       ]
@@ -2453,6 +2457,7 @@
         "src/SqlFlow.ControlPlane/Background/SchedulerService.cs",
         "src/SqlFlow.ControlPlane/Background/ScheduleFire.cs",
         "src/SqlFlow.ControlPlane/Api/ScheduleEndpoints.cs",
+        "src/SqlFlow.ControlPlane/Api/RunSetTiming.cs",
         "src/SqlFlow.ControlPlane/Configuration/ControlPlaneOptions.cs"
       ]
     },

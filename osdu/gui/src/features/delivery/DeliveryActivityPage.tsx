@@ -15,6 +15,7 @@ import { Page } from "@/components/Page";
 import { PageHeader } from "@/components/PageHeader";
 import { PagedTable, type Column } from "@/components/PagedTable";
 import { RelativeTime } from "@/components/RelativeTime";
+import { RunDuration } from "@/components/RunDuration";
 import { SearchInput } from "@/components/SearchInput";
 import { TruncatedText } from "@/components/TruncatedText";
 import { useActivePartition } from "./activePartition";
@@ -139,6 +140,18 @@ export default function DeliveryActivityPage() {
 
   const everyColumn: Column<DeliveryActivity>[] = [
     { id: "started", header: "When", render: (row) => <RelativeTime value={row.startedUtc} absolute /> },
+    {
+      id: "duration",
+      header: "Took",
+      render: (row) => (
+        <RunDuration
+          durationSeconds={null}
+          startUtc={row.startedUtc}
+          endUtc={row.completedUtc}
+          live={row.outcome === "running"}
+        />
+      ),
+    },
     // The page never scrolls sideways: the flow keeps to a width that steps down as the table narrows, the result takes
     // what the other columns leave, and both clip with the whole value on hover.
     {

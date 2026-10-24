@@ -222,8 +222,9 @@ lists the removal's runs with what each read, found, took out and left. See [rem
 
 ### Audit trail
 
-Every run and intervention across flows, newest first: when, flow, partition, **Action**, **By** (a schedule, a person,
-the command line), **Result** and **Target** (the record, else the submission, else the run). It narrows by actor, flow,
+Every run and intervention across flows, newest first: when, **Took** (how long it ran, counting up while it runs), flow,
+partition, **Action**, **By** (a schedule, a person, the command line), **Result** and **Target** (the record, else the
+submission, else the run). It narrows by actor, flow,
 action (`deliver`, `intake`, `drain`, `verify`, `probe`, `sync`, `release`, `adopt`, `redeliver`, `rerender`, `delete`,
 `restore-previous`, `purge`, `reverse`, `undo`, `delete-ledger`, `remove-dimension`, `inventory-remove`, `inventory-repair`,
 `reassign-id`, `source-remove`, `lift-removal`) and outcome. Runs
@@ -280,7 +281,9 @@ for a record that was.
 ### A submission's page
 
 `/delivery/submissions/{id}`: what the submission read (the ingestion table, connection, change window or the whole
-scope), its counts, the runs that carried it, and tabs **Attempts**, **Batches**, **Parameters** and **Render context**.
+scope), its counts, when it was received, started and completed and its **Duration** (from its start to its completion,
+counting up while it is planned or running, with the wait after it was received in the hover), the runs that carried
+it, and tabs **Attempts**, **Batches** (each work batch with its own duration), **Parameters** and **Render context**.
 **Records it delivered** and **Records it last planned** open the flow's Records tab narrowed to each set.
 **Reverse this submission** opens the reverse dialog while the submission has anything to reverse; once asked, the
 reversal's card shows its state, its records by outcome and its runs.
@@ -388,7 +391,7 @@ A run page gains, by kind:
 | removal | **Open removals** | Found removed, Removed, Held, Left (a plan: Would find, Would hold) |
 
 The other kinds' pipeline pages gain one tab each, which they open on: a retrieval flow **Retrievals** (every run with
-its window, location, counts and outcome); a cache flow **Cache versions** (the partition it fills and every version of
+how long it took, its window, location, counts and outcome); a cache flow **Cache versions** (the partition it fills and every version of
 its cache, with a **Cache page** link); an assertion flow **Assertions**, **History** (its assertions against recent
 runs, each with its pass rate and how often it flipped) and **Reports**; a dimension flow **Dimensions**; an inventory flow
 **Inventories**; a removal flow **Removals** (each removal with its delivery flow, that ledger's deletions by state and its

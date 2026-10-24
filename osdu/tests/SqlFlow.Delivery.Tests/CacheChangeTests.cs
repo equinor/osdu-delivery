@@ -185,6 +185,32 @@ public sealed class CacheChangeTests : IAsyncLifetime, IDisposable
     }
 
     [Fact]
+    public async Task Runs_that_mint_the_same_set_at_once_each_get_that_set_with_every_value()
+    {
+        // Seen in the parts of a split delivery, which plan at the same moment and render the same cached values: two
+        // inserted the same set, and the one the set's unique hash refused failed its run.
+        for (var round = 0; round < 5; round++)
+        {
+            CacheUsage[] usages = [Reads("Name", $"metre-{round}"), Reads("Code", "m")];
+            var ledgers = Enumerable.Range(0, 8).Select(_ => _db.Ledger(_clock)).ToList();
+            using var start = new SemaphoreSlim(0);
+            var minting = ledgers
+                .Select(ledger => Task.Run(async () =>
+                {
+                    await start.WaitAsync();
+                    return await ledger.EnsureCacheSetAsync(Scope, usages);
+                }))
+                .ToList();
+            start.Release(ledgers.Count);
+            var ids = await Task.WhenAll(minting);
+
+            var id = Assert.Single(ids.Distinct());
+            var entries = await Ledger.ListCacheSetAsync(id);
+            Assert.Equal(new[] { "Code", "Name" }, entries.Select(e => e.Path).Order(StringComparer.Ordinal).ToArray());
+        }
+    }
+
+    [Fact]
     public async Task A_changed_value_raises_one_change_covering_every_record_built_from_it()
     {
         await DeliveredAsync(5, Reads("Name", "metre"));

@@ -19,6 +19,7 @@ import { DetailPair } from "@/components/DetailPair";
 import { IdChip } from "@/components/IdChip";
 import { Page } from "@/components/Page";
 import { RelativeTime } from "@/components/RelativeTime";
+import { RunDuration } from "@/components/RunDuration";
 import { TruncatedText } from "@/components/TruncatedText";
 import { useTabTitle } from "@/layout/workbench/TabsContext";
 import { SubmissionStatusBadge } from "./DeliveryBadges";
@@ -194,6 +195,19 @@ function SubmissionContent({ submissionId }: { submissionId: string }) {
     { id: "started", header: "Started", render: (row) => <RelativeTime value={row.startedUtc} absolute /> },
     { id: "completed", header: "Completed", render: (row) => <RelativeTime value={row.completedUtc} absolute /> },
     {
+      id: "duration",
+      header: "Duration",
+      render: (row) => (
+        <RunDuration
+          durationSeconds={null}
+          startUtc={row.startedUtc}
+          endUtc={row.completedUtc}
+          enqueuedUtc={row.createdUtc}
+          live={row.status === "running"}
+        />
+      ),
+    },
+    {
       id: "run",
       header: "Run",
       render: (row) => (row.runId
@@ -235,6 +249,18 @@ function SubmissionContent({ submissionId }: { submissionId: string }) {
         <DetailPair label="Received"><RelativeTime value={s.receivedUtc} absolute /></DetailPair>
         <DetailPair label="Started"><RelativeTime value={s.startedUtc} absolute /></DetailPair>
         <DetailPair label="Completed"><RelativeTime value={s.completedUtc} absolute /></DetailPair>
+        {/* How long the submission took, from its start to its completion; the hover says how long it waited after it
+          * was received. While it delivers it counts up. */}
+        <DetailPair label="Duration">
+          <RunDuration
+            durationSeconds={null}
+            startUtc={s.startedUtc}
+            endUtc={s.completedUtc}
+            enqueuedUtc={s.receivedUtc}
+            live={s.status === "planned" || s.status === "running"}
+            testId="submission-duration"
+          />
+        </DetailPair>
         <DetailPair label="Flow">
           {detail.pipelineId
             ? <RouterLink to={`/pipelines/${detail.pipelineId}`} className="text-primary hover:underline">{s.flowName}</RouterLink>

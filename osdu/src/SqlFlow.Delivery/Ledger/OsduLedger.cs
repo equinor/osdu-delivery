@@ -2783,62 +2783,76 @@ public sealed partial class OsduLedger : ILedger
             return known;
         }
 
-        var now = Now;
-        await using var db = Open();
-        var existing = await db.DeliveryCacheSets.FirstOrDefaultAsync(c => c.SetHash == hash, ct).ConfigureAwait(false);
-        if (existing is not null)
+        for (var attempt = 1; ; attempt++)
         {
-            existing.LastSeenUtc = now;
-            await db.SaveChangesAsync(ct).ConfigureAwait(false);
-            _cacheSets[hash] = existing.SetId;
-            return existing.SetId;
-        }
-
-        var set = new DeliveryCacheSet
-        {
-            SetHash = hash,
-            EntryCount = entries.Count,
-            FirstSeenUtc = now,
-            LastSeenUtc = now,
-        };
-        db.DeliveryCacheSets.Add(set);
-        await db.SaveChangesAsync(ct).ConfigureAwait(false);
-
-        foreach (var usage in entries)
-        {
-            db.DeliveryCacheSetEntries.Add(new DeliveryCacheSetEntry
+            var now = Now;
+            await using var db = Open();
+            var existing = await db.DeliveryCacheSets.FirstOrDefaultAsync(c => c.SetHash == hash, ct).ConfigureAwait(false);
+            if (existing is not null)
             {
-                SetId = set.SetId,
-                Scope = scope,
-                TypeName = usage.TypeName,
-                ItemId = Truncate(usage.ItemId, 512)!,
-                Path = Truncate(usage.Path, 400)!,
-                Kind = KindText(usage.Kind),
-                ValueHash = usage.ValueHash,
-                ValueText = usage.Display,
-            });
-        }
-
-        try
-        {
-            await db.SaveChangesAsync(ct).ConfigureAwait(false);
-        }
-        catch (DbUpdateException)
-        {
-            // Two workers of one run can mint the same set at the same time; the unique hash decides, and the
-            // loser reads the winner's id rather than failing a staging batch over a race.
-            var winner = await db.DeliveryCacheSets.AsNoTracking().FirstOrDefaultAsync(c => c.SetHash == hash, ct).ConfigureAwait(false);
-            if (winner is null)
-            {
-                throw;
+                existing.LastSeenUtc = now;
+                await db.SaveChangesAsync(ct).ConfigureAwait(false);
+                _cacheSets[hash] = existing.SetId;
+                return existing.SetId;
             }
 
-            _cacheSets[hash] = winner.SetId;
-            return winner.SetId;
+            try
+            {
+                var setId = await MintCacheSetAsync(db, scope, hash, entries, now, ct).ConfigureAwait(false);
+                _cacheSets[hash] = setId;
+                return setId;
+            }
+            catch (DbUpdateException ex) when (attempt < 3 && IsDuplicate(ex))
+            {
+                // Another run minted the same set meanwhile (the parts of a split delivery plan at the same moment and
+                // render the same cached values): the set's unique hash refused this one, and the next attempt reads
+                // the set that run committed.
+            }
         }
+    }
 
-        _cacheSets[hash] = set.SetId;
-        return set.SetId;
+    /// <summary>
+    /// Inserts a set and the values it stands for in one transaction, so no run reads a set without its values: a run
+    /// stopped between the two writes leaves neither, and a set another run is minting is seen only once it is whole.
+    /// </summary>
+    private static async Task<long> MintCacheSetAsync(
+        OsduDbContext db, string scope, string hash, IReadOnlyList<Snapshots.CacheUsage> entries, DateTime now, CancellationToken ct)
+    {
+        var strategy = db.Database.CreateExecutionStrategy();
+        return await strategy.ExecuteAsync(async () =>
+        {
+            // A retry of the strategy starts again from nothing, not from the rows a failed attempt added.
+            db.ChangeTracker.Clear();
+            await using var tx = await db.Database.BeginTransactionAsync(ct).ConfigureAwait(false);
+            var set = new DeliveryCacheSet
+            {
+                SetHash = hash,
+                EntryCount = entries.Count,
+                FirstSeenUtc = now,
+                LastSeenUtc = now,
+            };
+            db.DeliveryCacheSets.Add(set);
+            await db.SaveChangesAsync(ct).ConfigureAwait(false);
+
+            foreach (var usage in entries)
+            {
+                db.DeliveryCacheSetEntries.Add(new DeliveryCacheSetEntry
+                {
+                    SetId = set.SetId,
+                    Scope = scope,
+                    TypeName = usage.TypeName,
+                    ItemId = Truncate(usage.ItemId, 512)!,
+                    Path = Truncate(usage.Path, 400)!,
+                    Kind = KindText(usage.Kind),
+                    ValueHash = usage.ValueHash,
+                    ValueText = usage.Display,
+                });
+            }
+
+            await db.SaveChangesAsync(ct).ConfigureAwait(false);
+            await tx.CommitAsync(ct).ConfigureAwait(false);
+            return set.SetId;
+        }).ConfigureAwait(false);
     }
 
     public async Task<IReadOnlyList<CacheUse>> ListCacheSetAsync(long setId, CancellationToken ct = default)

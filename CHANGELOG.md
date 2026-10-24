@@ -9,6 +9,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **How long things take is shown at every level.** A schedule's last fire, a run group, a pipeline's last and usual
+  run, a submission and its work batches, the audit trail and a retrieval flow's runs say how long they took, and
+  anything still executing counts up
+  ([how long the last fire took](sqlflow/docs/reference/flow/schedule.md#how-long-the-last-fire-took),
+  [a submission's page](osdu/docs/reference/concepts/gui.md#a-submissions-page)).
+
 - **A delivery's work location may name the deployment's storage.** `source.work` may open with a reference,
   `work: ${env:LANDING_URL}/.work/welllog/{logSource}`, which each run resolves with the values the control plane
   supplies ([delivery flow, source](osdu/docs/reference/flow/delivery.md#source)).
@@ -299,11 +305,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Delivery, cache, dimension, assertion, inventory and ingestion runs say how long they took.** Their duration was
+  never recorded, so their runs showed when they ran but not for how long; the catalog migration gives the runs already
+  recorded theirs from their own start and end
+  ([how long a run took](sqlflow/docs/reference/concepts/shadow-catalog.md#how-long-a-run-took)).
 - **Removing every record of a listing narrowed to an issue removes only that issue's records.** **Select all N
   matching**, then **Remove**, on a Records tab opened from the Issues tab took out of OSDU every record the rest of the
   filter matched, not just those the issue keeps blocked; the removal now carries the whole filter, and refuses one that
   matches more than 25,000 records when it runs as well as when it is asked
   ([Removing records from OSDU](osdu/docs/reference/concepts/removal-and-reversal.md#removing-records-from-osdu)).
+- **A run no longer fails when another stages records built from the same cached values at the same moment.** Two
+  runs, or two parts of a split delivery, could both record the same combination of cached values, and the second
+  failed on a duplicate key of `osdu.CacheSet`; it now uses the set the first recorded
+  ([osdu.CacheSet](osdu/docs/reference/tables/cache-set.md#written-and-read-by)).
 - **A split delivery never waits for ever on parts no worker starts, and survives one that fails.** A first run whose
   parts stay queued for three minutes on a pool with no place free stops them and delivers their rows itself, as it does
   the rows of a part that failed ([many nodes](osdu/docs/reference/concepts/submissions.md#many-nodes)).

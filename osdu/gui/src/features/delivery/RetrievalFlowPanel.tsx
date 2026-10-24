@@ -7,6 +7,7 @@ import { CorrelationError } from "@/components/CorrelationError";
 import { DataTable, type Column } from "@/components/DataTable";
 import { KpiCard } from "@/components/KpiCard";
 import { RelativeTime } from "@/components/RelativeTime";
+import { RunDuration } from "@/components/RunDuration";
 import { TruncatedText } from "@/components/TruncatedText";
 import { formatBytes } from "@/lib/time";
 
@@ -27,6 +28,13 @@ function describeWindow(row: DeliveryRetrieval): string {
 const columns: Column<DeliveryRetrieval>[] = [
   { id: "status", header: "Status", render: (row) => <RetrievalStatusBadge status={row.status} /> },
   { id: "started", header: "Started", render: (row) => <RelativeTime value={row.startedUtc} /> },
+  {
+    id: "duration",
+    header: "Took",
+    render: (row) => (
+      <RunDuration durationSeconds={null} startUtc={row.startedUtc} endUtc={row.completedUtc} live={row.status === "running"} />
+    ),
+  },
   { id: "kinds", header: "Kinds", render: (row) => <TruncatedText text={row.kinds} mono maxWidth={260} /> },
   { id: "window", header: "Window", render: (row) => <TruncatedText text={describeWindow(row)} mono maxWidth={300} /> },
   { id: "records", header: "Records", align: "right", render: (row) => <span className="font-mono tabular-nums">{row.records}</span> },

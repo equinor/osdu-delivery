@@ -49,11 +49,13 @@ Never deleted: a record names its set.
 | Index | Columns | Kind | Filter | Includes | What it serves |
 | --- | --- | --- | --- | --- | --- |
 | `PK_CacheSet` | `SetId` | primary key | none | none | A set by its id. |
-| `IX_CacheSet_SetHash` | `SetHash` | unique | none | none | A set by its content, once: what a render looks its set up by. |
+| `IX_CacheSet_SetHash` | `SetHash` | unique | none | none | A set by its content, once: what a render looks its set up by, and what keeps one of two runs minting the same set at once. |
 | `IX_CacheSet_Gated` | `Gated` | index | `[Gated] = 1` | none | The gated sets, which the planner reads every run; the filter keeps it to the handful that are gated. |
 
 ## Written and read by
 
-- **Written** by the ledger when it stages a rendered record (`OsduLedger.cs`), and gated and ungated as cache changes
-  are tagged and decided.
+- **Written** by the ledger when it stages a rendered record (`OsduLedger.cs`), in one transaction with its
+  [`osdu.CacheSetEntry`](cache-set-entry.md) rows, so no run reads a set without its values. Two runs that mint the same
+  set at once (the parts of a split delivery plan at the same moment) both get the one the unique hash kept. It is gated
+  and ungated as cache changes are tagged and decided.
 - **Read** by the planner, a record's `/cache` route, and a cache change's impact.
