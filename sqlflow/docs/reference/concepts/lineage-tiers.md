@@ -84,7 +84,7 @@ File endpoints are identity-normalized: cloud URLs (`://`) verbatim, local paths
 
 From `run.json`:
 
-- Statements come from `result.sqlTrace` entries. An entry whose `step` starts with `source.` is attributed to the flow's source server; everything else to the target server.
+- Statements come from `result.sqlTrace` entries. An entry whose `step` starts with `source.` is attributed to the flow's source server; everything else to the target server. The engine traces every statement it runs on the source connection under a `source.` step: an ingestion flow's read (`source.select`), its source-minimum probe (`source.incremental.min-probe`) and its match-keys read of the source's keys (`source.matchkeys.keys`), so a table only the source holds is never recorded under the target's server.
 - File flows contribute `result.ddlExecuted` (a plain string list) to the target side.
 - Each side's statements are joined with `GO` into ONE script before extraction, so the engine's transient staging tables (created, loaded, read, then dropped within the run) dissolve through the extractor's local-dependency resolution instead of polluting the graph.
 - Observed identities require at least `schema.name` (minimum two parts; the engine's generated SQL is fully qualified).
@@ -110,6 +110,10 @@ Per reachable server, four read-only passes (all with `CommandTimeout = 0`):
 4. **Table scripts**: for every base table (`sys.columns`/`sys.types`/`sys.identity_columns`/`sys.computed_columns` for the columns plus `sys.indexes`/`sys.key_constraints` for the primary key), a `CREATE TABLE` script is reconstructed from the live schema and attached to the object node as a derived-tier `Script` artifact. SQL Server keeps no CREATE TABLE text the way it keeps a module's `sys.sql_modules` body, so without this pass the catalog would hold a generating script for views/procedures but never for tables; the reconstructed script is what lets the estate be recreated elsewhere and reasoned about offline.
 
 Each connection also records `SELECT DB_NAME()` as that server's default catalog: node-identity ground truth used to complete database-less (two-part) identities against the exact catalog the engine executes them in. After all tiers have collected, a default-database resolution pass fills the remaining servers offline from each reference's `Initial Catalog`.
+
+The inventory lists every object of the database, except the platform's own. A host hands the computation the schemas it keeps its own tables in (`LineageOptions.PlatformSchemas`, src/SqlFlow.Lineage/Collection/LineagePlatformSchema.cs): the catalog sync names SQLFlow's catalog schema (every object in it) and the model of each module database the host registered (the tables and views its EF model maps, so data a module publishes in its schema stays listed). A database holds such a schema when the inventory finds the schema's migrations history table in it. Those objects are set aside rather than listed: the graph makes no node of one on its own and parses no module body of theirs, but an object a flow does read keeps the kind, columns and body the inventory read for it. The progress line reports how many were left out. A server whose inventory completed is recorded in the report's `InventoriedServers`, with every reference proven an alias of it, so a consumer persisting the report knows an object of that server the report lacks is no longer in its database.
+
+A node key folds case, so it decides which database, schema and object a node is, never how they are spelled: a node takes its database and schema from the live inventory, else the connection's own spelling of its default database, else the spelling the fact carried, and the folded key part only when nothing spells it.
 
 ## Module expansion: view chains and procedure bodies in flow lineage
 

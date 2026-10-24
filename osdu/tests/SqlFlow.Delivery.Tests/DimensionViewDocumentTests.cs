@@ -103,6 +103,15 @@ public class DimensionViewDocumentTests
         => Head + "views:\n  - name: Test\n    from: LogCurve\n    join:\n" + joins + "\n    columns:\n" + columns;
 
     [Fact]
+    public void The_pipeline_names_the_connection_the_flow_writes_its_tables_and_views_on_as_its_target()
+    {
+        var document = new DimensionFlowDocument { Flow = Parse(Head + Curve) };
+
+        Assert.Equal("${env:SQLFLOW_CATALOG_DB}", document.TargetConnectionReference);
+        Assert.Equal("${env:SQLFLOW_CATALOG_DB}", Assert.Single(SqlFlow.Lineage.Collection.FlowDocumentHeaders.Project(document)).TargetServerRef);
+    }
+
+    [Fact]
     public void A_view_is_laid_out_from_its_document_alone()
     {
         var flow = Parse(Head + Curve);

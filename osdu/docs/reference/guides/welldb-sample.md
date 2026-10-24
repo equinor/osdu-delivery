@@ -13,7 +13,7 @@ keywords:
   - sample schedules
   - fill an empty partition
 related:
-  - delivery-concept-how-it-works
+  - delivery-concept-overview
   - delivery-guide-run-locally
   - delivery-guide-getting-started
   - delivery-concept-lineage
@@ -48,7 +48,7 @@ The sample in [osdu/samples/welldb](../../../samples/welldb) delivers a small we
 OSDU partition. It holds everything the delivery needs: the source files and the flows that load them, the OSDU schemas
 its mappings fill, the lookup tables and reference data its mappings read, and the schedules that run it all. Every
 reference a record makes names a record the package delivers, and the suites check that it does. It shows each of
-[the three places and the mapping](../concepts/how-it-works.md) at work, and every flow kind OSDU Delivery has.
+[the three places and the mapping](../../../../README.md) at work, and every flow kind OSDU Delivery has.
 
 ## What it delivers
 
@@ -131,6 +131,6 @@ record without sending it; `plan` shows what a run would send; [`run`](../cli/ru
 
 ## See also
 
-- [How OSDU Delivery works](../concepts/how-it-works.md)
+- [How OSDU Delivery works](../../../../README.md#how-it-works)
 - [Your first delivery, end to end](getting-started.md)
 - [Which delivery problem maps to which shape](../../wiki/maps/pattern-catalog.md)

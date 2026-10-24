@@ -29,6 +29,11 @@ public sealed record DimensionFlowDocument : RegisteredFlowDocument
 
     public override string? TargetReference => DimensionsTarget;
 
+    /// <summary>The connection a flow naming <c>target.connection</c> writes its dimension tables and views on, so its
+    /// pipeline names that server as its target (the connections page counts it, and a run's statements are attributed
+    /// there); none for a flow that names no target.</summary>
+    public override string? TargetConnectionReference => Flow.Target?.Connection;
+
     public override IEnumerable<KeyValuePair<string, string>> CredentialReferences => Flow.CredentialReferences();
 
     /// <summary>A flow cleaning through a dictionary reads the dictionary's file, so its node needs the repository's tree at the run's commit.</summary>

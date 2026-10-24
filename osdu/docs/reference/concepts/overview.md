@@ -168,7 +168,6 @@ deliveries that read it; the other four read what OSDU holds and run after the d
 
 ## See also
 
-- [How OSDU Delivery works: a mapping connects your source data, the OSDU schema and a cache](how-it-works.md)
 - [Architecture: the module on SQLFlow](architecture.md)
 - [The OSDU documents](../flow/overview.md)
 - [Your first delivery, end to end](../guides/getting-started.md)

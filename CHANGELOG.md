@@ -168,6 +168,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Two ingestion trace steps run on the source and are named so.** An ingestion flow's source-minimum probe is traced as
+  `source.incremental.min-probe` (was `incremental.min-probe`) and its match-keys read of the source's keys as
+  `source.matchkeys.keys` (was `matchkeys.source-keys`), so lineage records their tables on the source; a query of the run
+  statements by step name needs the new names
+  ([observed tier](sqlflow/docs/reference/concepts/lineage-tiers.md#observed-the-latest-runjson-of-each-flow)).
 - **A removal is a run of the flow, listed under Runs.** **Remove** on the Records tab and on a record's page queues a
   `remove` run of the pipeline, which shows under **Runs** with its trace and outcome, waits for a delivery of the
   pipeline that is running, and ends failed when OSDU refuses a record; the removal routes answer `runId` in place of
@@ -336,6 +341,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **The catalog's Databases branch shows each database once.** A database spelled two ways, or reached through two
+  connection references, was two nodes; it is now one, in the spelling most of its objects carry, and each folder lists
+  exactly the objects it counts. Objects whose database a sync could not work out are grouped under the connection
+  reference they were reached through, saying how to give them one, where they used to be one "(unresolved)" node that
+  listed every database's objects; `databaseUnknown` and `schemaUnknown` ask the lineage and semantic-layer object lists
+  for them ([lineage read API](sqlflow/docs/reference/concepts/control-plane.md#lineage-read-api)).
+- **The catalog no longer lists the platform's own tables as data.** A flow reading or writing the catalog's database
+  (a dimension flow's views, say) made a connected sync list every table of the catalog and of the delivery ledger; they
+  are left out, unless a flow reads one
+  ([the derived tier](sqlflow/docs/reference/concepts/lineage-tiers.md#derived-connected-catalog-inventory-and-module-harvest)).
+- **The catalog forgets objects nothing knows any more.** A dropped view, a renamed table, or the objects of a connection
+  reference no flow names any more stayed listed for good; a sync now removes them once nothing references them, while
+  what a flow, a report model or a person's curation refers to stays
+  ([lineage projection](sqlflow/docs/reference/concepts/shadow-catalog.md#lineage-projection-global-objects-repo-scoped-edges-waves)).
+- **The catalog's Flows branch lists only the flows still in their repositories.** A flow removed from its repository
+  kept its row in the tree; its run history is still on its pipeline's page.
+- **A dimension flow's pipeline names the connection it writes its tables and views on.** It showed `file` as its target,
+  so the connections page did not count it among the connection's users
+  ([lineage, the GUI and the cache](osdu/docs/reference/flow/dimension.md#lineage-the-gui-and-the-cache)).
 - **Delivery, cache, dimension, assertion, inventory and ingestion runs say how long they took.** Their duration was
   never recorded, so their runs showed when they ran but not for how long; the catalog migration gives the runs already
   recorded theirs from their own start and end

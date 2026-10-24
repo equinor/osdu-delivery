@@ -714,6 +714,15 @@ public class DimensionDocumentTests
     }
 
     [Fact]
+    public void A_flow_naming_no_target_connection_writes_on_no_server()
+    {
+        var document = new DimensionFlowDocument { Flow = Parse(Head + Curves) };
+
+        Assert.Null(document.TargetConnectionReference);
+        Assert.Equal(SqlFlow.Lineage.Collection.ServerIdentity.FileSystem, Assert.Single(SqlFlow.Lineage.Collection.FlowDocumentHeaders.Project(document)).TargetServerRef);
+    }
+
+    [Fact]
     public void Its_secrets_are_references_the_hygiene_check_inspects()
     {
         var references = new DimensionFlowDocument { Flow = Parse(Head + Curves) }.CredentialReferences.ToList();

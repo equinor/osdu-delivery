@@ -1759,51 +1759,6 @@
       ]
     },
     {
-      "id": "delivery-concept-how-it-works",
-      "corpus": "reference",
-      "path": "concepts/how-it-works.md",
-      "title": "How OSDU Delivery works: a mapping connects your source data, the OSDU schema and a cache",
-      "type": "concept",
-      "summary": "Why configuration replaces a custom loader per OSDU type: the drop-off zone, the template, the cache, the mapping that connects them, and what you get.",
-      "keywords": [
-        "how it works",
-        "configured not coded",
-        "configuration instead of code",
-        "custom loader",
-        "drop-off zone",
-        "template cache mapping",
-        "why osdu delivery",
-        "what you get",
-        "features",
-        "load data into osdu"
-      ],
-      "related": [
-        "delivery-concept-overview",
-        "delivery-flow-mapping",
-        "delivery-concept-templates",
-        "delivery-concept-partition-cache",
-        "delivery-concept-change-detection",
-        "delivery-concept-ledger",
-        "delivery-flow-routes",
-        "delivery-guide-writing-a-mapping",
-        "delivery-guide-welldb-sample",
-        "delivery-guide-mcp"
-      ],
-      "sourceRefs": [
-        "osdu/samples/welldb/mappings/WellLog@1.4.0.yaml",
-        "osdu/samples/welldb/flows/welldb-welllog-03-header-delivery.yaml",
-        "osdu/src/SqlFlow.Delivery/Templates/TemplateFolders.cs",
-        "osdu/src/SqlFlow.Delivery/Snapshots/CacheDeclaration.cs",
-        "osdu/src/SqlFlow.Delivery/Documents/MappingMapper.cs",
-        "osdu/src/SqlFlow.Delivery/Validation/Preflight.cs",
-        "osdu/src/SqlFlow.Delivery/Planning/ChangeDetector.cs",
-        "osdu/src/SqlFlow.Delivery/Identity/DeliveryKey.cs",
-        "osdu/src/SqlFlow.Delivery/Protocols/DeliveryProtocol.cs",
-        "osdu/src/SqlFlow.Delivery/Engine/DeliveryExecutor.cs",
-        "osdu/src/SqlFlow.Delivery/Ledger/ILedger.cs"
-      ]
-    },
-    {
       "id": "delivery-concept-ledger",
       "corpus": "reference",
       "path": "concepts/ledger.md",
@@ -5367,7 +5322,7 @@
         "fill an empty partition"
       ],
       "related": [
-        "delivery-concept-how-it-works",
+        "delivery-concept-overview",
         "delivery-guide-run-locally",
         "delivery-guide-getting-started",
         "delivery-concept-lineage",

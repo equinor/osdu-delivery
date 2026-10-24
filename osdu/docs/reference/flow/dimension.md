@@ -651,7 +651,8 @@ A view the flow no longer declares is dropped by its next build. One whose flow 
 - **Lineage.** A dimension flow reads each dimension's kind on its platform and partition, the dictionary files its
   `map` steps name, and writes each dimension. It is ordered after the delivery flows writing the kinds it reads, and a
   cache flow holding one of its dimensions is ordered after it ([lineage](../concepts/lineage.md)). With
-  `target.connection` it also writes its tables and views on that connection ([Views](#views)).
+  `target.connection` it also writes its tables and views on that connection ([Views](#views)), and its pipeline names
+  that connection as its target, as an ingestion flow's names the server it loads.
 - **The GUI.** A dimension flow's pipeline has a **Dimensions** tab. **OSDU**, **In OSDU**, **Dimensions** lists every
   dimension with the search builder; a dimension's page has the tabs Table, Values, Keys, Changes, Builds and
   Definition (the YAML beside a diagram of how each column is read: [The blueprint](../concepts/dimension-blueprint.md)).
