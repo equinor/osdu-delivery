@@ -15,6 +15,7 @@ import { PageHeader } from "@/components/PageHeader";
 import { PagedTable } from "@/components/PagedTable";
 import { SearchInput } from "@/components/SearchInput";
 import { useActivePartition } from "./activePartition";
+import { useLinkedPartition } from "./useLinkedPartition";
 import { RecordStatusBadge } from "./DeliveryBadges";
 import { ledgerFlowOptions } from "./ledgerFlowOptions";
 import { CompactTime, OsduTarget, RecordIdentity } from "./RecordCells";
@@ -144,10 +145,12 @@ const RECENT_POLL_MS = 10_000;
  * Where an operator starts from what they hold, not from a flow: a well name, an OSDU id, a delivery key or the file a
  * record came from finds the record across every flow, and its row opens the record's page with its whole history.
  * With nothing typed it opens on the records the ledger last took in or sent, so the page answers "what has come in?"
- * before it is asked anything. The term and the state travel in the URL, so a lookup is a link that can be sent on.
+ * before it is asked anything. The term and the state travel in the URL, so a lookup is a link that can be sent on; a link
+ * that names a partition opens it in that one.
  */
 export default function DeliveryRecordsPage() {
   const navigate = useNavigate();
+  useLinkedPartition();
   const [searchParams, setSearchParams] = useSearchParams();
   const term = searchParams.get("q")?.trim() ?? "";
   const status = isRecordStatus(searchParams.get("status")) ? searchParams.get("status")! : ALL;

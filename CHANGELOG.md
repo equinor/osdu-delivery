@@ -15,10 +15,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   record held for an id the old name claimed says which `ledger:` to write
   ([Renaming a flow](osdu/docs/reference/flow/interfaces.md#renaming-a-flow)).
 
-- **The assistant links every OSDU id it names to the explorer.** An OSDU id in an answer (a record's, its parent's, a
-  cached record's, an id a document refers to) is a link that opens OSDU Delivery's explorer on that record, in its
-  partition, from the GUI's chat, Slack or a desktop client
+- **The assistant links everything it names that the GUI can open.** In the GUI's chat, Slack or a desktop client, a
+  record's label opens its page with its whole history, an OSDU id opens the explorer on that record in its partition,
+  an OSDU kind the explorer on its records, and a flow, submission, test, template, cache version or change, dimension
+  build, schedule or source file the page that shows it, on the interface and partition the answer is about
   ([links into the GUI](osdu/docs/reference/guides/mcp.md#links-into-the-gui)).
+
+- **The Records page and the audit trail open in the partition a link names.** A link with `?partition=` makes it the
+  title bar's, as the explorer already did, so a lookup or a flow's trail linked from another partition lands on what it
+  names ([Records](osdu/docs/reference/concepts/gui.md#records), [audit trail](osdu/docs/reference/concepts/gui.md#audit-trail)).
 
 - **How long things take is shown at every level.** A schedule's last fire, a run group, a pipeline's last and usual
   run, a submission and its work batches, the audit trail and a retrieval flow's runs say how long they took, and

@@ -19,6 +19,7 @@ import { RunDuration } from "@/components/RunDuration";
 import { SearchInput } from "@/components/SearchInput";
 import { TruncatedText } from "@/components/TruncatedText";
 import { useActivePartition } from "./activePartition";
+import { useLinkedPartition } from "./useLinkedPartition";
 import { Actor } from "./ActivityActor";
 import { endingOf, TONE_TEXT } from "./activityEnding";
 import { DeliveryActivitySheet } from "./DeliveryActivitySheet";
@@ -86,10 +87,11 @@ function Target({ row }: { row: DeliveryActivity }) {
  *
  * The flow follows the actor search, and every other filter works within it. It is kept in the address (`?flow=`, a
  * ledger identity) rather than with the other filters, so a link can open one flow's trail and the trail opened from the
- * menu is every flow's again. The choices are the flows with activity in the partition: delivery flows, each interface of
- * a source, and dimensions.
+ * menu is every flow's again; a link that names the ledger's partition (`?partition=`) opens it in that one. The choices are
+ * the flows with activity in the partition: delivery flows, each interface of a source, and dimensions.
  */
 export default function DeliveryActivityPage() {
+  useLinkedPartition();
   const [active] = useActivePartition();
   const [searchParams, setSearchParams] = useSearchParams();
   const flow = searchParams.get("flow") ?? "";

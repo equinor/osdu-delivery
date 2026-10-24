@@ -12,7 +12,8 @@ import { Page } from "@/components/Page";
 import { RichTooltip } from "@/components/RichTooltip";
 import type { DeliveryOsduRead } from "../../../api/delivery";
 import { explorerApi, type ExplorerFieldInfo, type ExplorerFilter, type ExplorerSearchRequest, type ExplorerSort, type ExplorerTypes } from "../../../api/explorer";
-import { isPartitionId, useActivePartition } from "../activePartition";
+import { useActivePartition } from "../activePartition";
+import { useLinkedPartition } from "../useLinkedPartition";
 import { useWindowFit } from "../useWindowFit";
 import { failureText } from "../answers";
 import { ElementQueryButton } from "./ExplorerElementQuery";
@@ -75,24 +76,8 @@ export default function ExplorerPage() {
   const { hasScope } = useAuth();
   const canOperate = hasScope("operate");
 
-  // A link that names a partition makes it the title bar's, so the title bar says what is in view; the link has then done
-  // its work, and the title bar decides from there on.
-  const linked = params.get("partition");
-  useEffect(() => {
-    if (linked === null) {
-      return;
-    }
-
-    if (isPartitionId(linked) && linked !== active) {
-      setActive(linked);
-    }
-
-    setParams((current) => {
-      const next = new URLSearchParams(current);
-      next.delete("partition");
-      return next;
-    }, { replace: true });
-  }, [linked, active, setActive, setParams]);
+  // A link that names a partition makes it the title bar's, so the title bar says what is in view.
+  useLinkedPartition();
 
   const text = params.get("q") ?? "";
   const lucene = params.get("lq") === "1";

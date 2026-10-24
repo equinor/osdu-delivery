@@ -11,12 +11,14 @@
 //! made in the GUI, where the confirmation shows what it would take away.
 
 use serde::Deserialize;
-use serde_json::{json, Value};
+use serde_json::{json, Map, Value};
 use sqlflow_mcp::rmcp::handler::server::wrapper::Parameters;
 use sqlflow_mcp::rmcp::{self, schemars, tool, tool_router};
+use sqlflow_mcp::{done, json_str};
 
 use super::{DeliveryTools, PIPELINE_HINT, RECORD_HINT};
-use crate::support::{guid, optional_guid, refuse, text, Query};
+use crate::links::{flow_page, record_page};
+use crate::support::{guid, optional_guid, put_links, refuse, text, Query};
 
 /// The most records one call names by key, as a run's payload carries at most.
 const MAX_KEYS: usize = 1000;
@@ -159,9 +161,8 @@ delivered. To verify a whole flow, use trigger_run with operation=\"verify\"."
             Ok(reference) => reference,
             Err(refused) => return refused,
         };
-        self.ctx
-            .post(&format!("/api/v1/delivery/records/{flow_id}/{key}/verify"), json!({}))
-            .await
+        let links = self.on_record(&flow_id, &key);
+        self.act(&format!("/api/v1/delivery/records/{flow_id}/{key}/verify"), json!({}), links).await
     }
 
     #[tool(
@@ -180,9 +181,8 @@ run id: poll get_run, then read its entry in delivery_activities. Use it when th
                     Ok(reference) => reference,
                     Err(refused) => return refused,
                 };
-                self.ctx
-                    .post(&format!("/api/v1/delivery/records/{flow_id}/{key}/sync"), json!({}))
-                    .await
+                let links = self.on_record(&flow_id, &key);
+                self.act(&format!("/api/v1/delivery/records/{flow_id}/{key}/sync"), json!({}), links).await
             }
             (false, Some(pipeline)) => {
                 let pipeline = match guid("pipelineId", pipeline, PIPELINE_HINT) {
@@ -208,11 +208,13 @@ run id: poll get_run, then read its entry in delivery_activities. Use it when th
                     }
                     Selection::Everything => {}
                 }
+                let (interface, partition) = (text(i.interface), text(i.partition));
+                let links = self.on_flow(&pipeline, interface.as_deref(), partition.as_deref());
                 let path = Query::new()
-                    .text("interface", i.interface)
-                    .text("partition", i.partition)
+                    .text("interface", interface)
+                    .text("partition", partition)
                     .onto(&format!("/api/v1/delivery/flows/{pipeline}/sync"));
-                self.ctx.post(&path, body).await
+                self.act(&path, body, links).await
             }
             _ => refuse(
                 "Give either one record (flowId and deliveryKey) or a flow (pipelineId, with keys, a filter, or \
@@ -237,9 +239,8 @@ attempts again."
                     Ok(reference) => reference,
                     Err(refused) => return refused,
                 };
-                self.ctx
-                    .post(&format!("/api/v1/delivery/records/{flow_id}/{key}/release"), json!({}))
-                    .await
+                let links = self.on_record(&flow_id, &key);
+                self.act(&format!("/api/v1/delivery/records/{flow_id}/{key}/release"), json!({}), links).await
             }
             (false, Some(pipeline)) => {
                 let pipeline = match guid("pipelineId", pipeline, PIPELINE_HINT) {
@@ -261,11 +262,13 @@ attempts again."
                         )
                     }
                 };
+                let (interface, partition) = (text(i.interface), text(i.partition));
+                let links = self.on_flow(&pipeline, interface.as_deref(), partition.as_deref());
                 let path = Query::new()
-                    .text("interface", i.interface)
-                    .text("partition", i.partition)
+                    .text("interface", interface)
+                    .text("partition", partition)
                     .onto(&format!("/api/v1/delivery/flows/{pipeline}/release"));
-                self.ctx.post(&path, body).await
+                self.act(&path, body, links).await
             }
             _ => refuse("Give either one record (flowId and deliveryKey) or a flow (pipelineId, with keys or allHeld)."),
         }
@@ -285,9 +288,8 @@ for the new attempt."
             Err(refused) => return refused,
         };
         let body = json!({ "scope": text(i.scope), "run": i.run.unwrap_or(true), "pool": text(i.pool) });
-        self.ctx
-            .post(&format!("/api/v1/delivery/records/{flow_id}/{key}/redeliver"), body)
-            .await
+        let links = self.on_record(&flow_id, &key);
+        self.act(&format!("/api/v1/delivery/records/{flow_id}/{key}/redeliver"), body, links).await
     }
 
     #[tool(
@@ -308,9 +310,11 @@ your name."
         if i.tag_ids.iter().any(|id| *id <= 0) {
             return refuse("A tagId is the positive number a listed change carries.");
         }
-        self.ctx
-            .post("/api/v1/delivery/cache/tags/decide", json!({ "tagIds": i.tag_ids, "approve": i.approve }))
-            .await
+        // The changes decided are read on the cache's Deliveries tab, in the partition the title bar names: a decision
+        // may span partitions, and the tags it names do not say which.
+        let mut links = Map::new();
+        links.insert("changes".to_string(), json!(self.ctx.links().route("/delivery/cache?tab=deliveries")));
+        self.act("/api/v1/delivery/cache/tags/decide", json!({ "tagIds": i.tag_ids, "approve": i.approve }), links).await
     }
 }
 
@@ -373,6 +377,32 @@ impl DeliveryTools {
             return Err(refuse(format!("A record needs both flowId and deliveryKey. {RECORD_HINT}")));
         };
         Ok((guid("flowId", flow_id, RECORD_HINT)?, guid("deliveryKey", key, RECORD_HINT)?))
+    }
+
+    /// An action's answer, with what it acted on linked beside what the rules linked on it (the run it queued).
+    async fn act(&self, path: &str, body: Value, links: Map<String, Value>) -> String {
+        done(self.ctx.send(path, body).await.map(|mut answer| {
+            put_links(&mut answer, links);
+            json_str(&answer)
+        }))
+    }
+
+    /// The record an action acted on: its page.
+    fn on_record(&self, flow_id: &str, key: &str) -> Map<String, Value> {
+        let mut links = Map::new();
+        links.insert("record".to_string(), json!(record_page(self.ctx.links(), flow_id, key)));
+        links
+    }
+
+    /// The flow an action acted on, in the interface and partition it named: its page and its records.
+    fn on_flow(&self, pipeline: &str, interface: Option<&str>, partition: Option<&str>) -> Map<String, Value> {
+        let mut links = Map::new();
+        links.insert("flow".to_string(), json!(flow_page(self.ctx.links(), pipeline, interface, partition, &[])));
+        links.insert(
+            "records".to_string(),
+            json!(flow_page(self.ctx.links(), pipeline, interface, partition, &[("tab", "records")])),
+        );
+        links
     }
 }
 

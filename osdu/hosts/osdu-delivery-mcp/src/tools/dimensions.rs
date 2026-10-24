@@ -2,12 +2,14 @@
 //! its builds went. The values and keys themselves are what OSDU records hold, which is data, so they are not read here.
 
 use serde::Deserialize;
-use serde_json::{json, Map};
+use serde_json::{json, Map, Value};
 use sqlflow_mcp::rmcp::handler::server::wrapper::Parameters;
 use sqlflow_mcp::rmcp::{self, schemars, tool, tool_router};
+use sqlflow_mcp::{encode, GuiLinks};
 
 use super::{DeliveryTools, PIPELINE_HINT};
-use crate::support::{composed, optional_guid, refuse, section, Query};
+use crate::links::flow_page;
+use crate::support::{composed, optional_guid, put_links, refuse, relinked, section, text, Query};
 
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
 pub struct DimensionsInput {
@@ -65,10 +67,14 @@ trigger_run."
             Ok(pipeline) => pipeline,
             Err(refused) => return refused,
         };
-        let query = Query::new().text("partition", i.partition);
-        let links = json!({ "page": self.ctx.links().route("/delivery/dimensions") });
-        match pipeline {
+        let partition = text(i.partition);
+        let query = Query::new().text("partition", partition.clone());
+        let board = match pipeline {
             Some(pipeline) => {
+                let links = json!({
+                    "page": flow_page(self.ctx.links(), &pipeline, None, partition.as_deref(), &[("tab", "dimensions")]),
+                    "flow": self.ctx.links().pipeline(&pipeline),
+                });
                 self.ctx
                     .get_about(
                         &format!("/api/v1/delivery/flows/{pipeline}/dimensions"),
@@ -79,10 +85,42 @@ trigger_run."
                     .await
             }
             None => {
+                let links = json!({ "page": self.ctx.links().route("/delivery/dimensions") });
                 self.ctx
                     .get_about("/api/v1/delivery/dimensions", query.pairs(), ("listing", "dimensions"), links)
                     .await
             }
+        };
+        relinked(board, |board| link_unbuilt(board, self.ctx.links()))
+    }
+}
+
+/// Gives each dimension no build has registered yet its page, which names it by its flow and its name until a build
+/// gives it an id (`dimensionRef` in the GUI). A dimension's row names no flow; the flow around it does.
+fn link_unbuilt(value: &mut Value, links: &GuiLinks) {
+    match value {
+        Value::Array(items) => items.iter_mut().for_each(|item| link_unbuilt(item, links)),
+        Value::Object(map) => {
+            let pipeline = map.get("pipelineId").and_then(Value::as_str).map(str::to_string);
+            for (name, nested) in map.iter_mut() {
+                match (name.as_str(), pipeline.as_deref(), nested) {
+                    ("dimensions", Some(pipeline), Value::Array(dimensions)) => {
+                        for dimension in dimensions.iter_mut().filter(|d| d.get("dimensionId").is_some_and(Value::is_null)) {
+                            if let Some(declared) = dimension.get("name").and_then(Value::as_str).map(str::to_string) {
+                                let reference = format!("{pipeline}/{declared}");
+                                let mut page = Map::new();
+                                page.insert(
+                                    "page".to_string(),
+                                    json!(links.route(&format!("/delivery/dimensions?d={}", encode(&reference)))),
+                                );
+                                put_links(dimension, page);
+                            }
+                        }
+                    }
+                    (_, _, nested) => link_unbuilt(nested, links),
+                }
+            }
         }
+        _ => {}
     }
 }

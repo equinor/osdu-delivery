@@ -11,7 +11,8 @@ use sqlflow_mcp::rmcp::{self, schemars, tool, tool_router};
 use sqlflow_mcp::{encode, json_str};
 
 use super::DeliveryTools;
-use crate::support::{composed, optional_guid, refuse, section, text, Query};
+use crate::links::{explorer_kind, template_page};
+use crate::support::{composed, optional_guid, put_links, refuse, section, text, Query};
 
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
 pub struct MappingsInput {
@@ -184,13 +185,19 @@ nothing is rendered."
         let sometimes = targets(&|v| state_is(v, "Sometimes") && v["direct"] == json!(true));
         let required_and_empty = targets(&|v| v["required"] == json!(true) && state_is(v, "Empty"));
 
+        // The template checked against, on the Templates page by the version the mapping pins, and the records of its kind
+        // OSDU holds, in the explorer.
+        let mut template = json!({ "kind": coverage["kind"], "version": coverage["version"] });
+        if let (Some(kind), Some(version)) = (coverage["kind"].as_str(), coverage["version"].as_str()) {
+            let mut links = Map::new();
+            links.insert("template".to_string(), json!(template_page(self.ctx.links(), kind, version)));
+            links.insert("osduKind".to_string(), json!(explorer_kind(self.ctx.links(), kind, None)));
+            put_links(&mut template, links);
+        }
         let mut answer = Map::new();
         answer.insert("loads".to_string(), json!(loads));
         answer.insert("valid".to_string(), json!(loads && !has_error));
-        answer.insert(
-            "template".to_string(),
-            json!({ "kind": coverage["kind"], "version": coverage["version"] }),
-        );
+        answer.insert("template".to_string(), template);
         answer.insert("issues".to_string(), Value::Array(issues));
         answer.insert("requiredAndEmpty".to_string(), Value::Array(required_and_empty));
         answer.insert("filledOnEveryRow".to_string(), Value::Array(always));
@@ -339,14 +346,13 @@ the template cannot be filled. Narrow with search or requiredOnly. A kind no rep
                 map.insert("variablesShown".to_string(), json!(shown));
             }
         }
-        if let Some(map) = detail.as_object_mut() {
-            map.insert(
-                "links".to_string(),
-                json!({ "page": self.ctx.links().route(&format!(
-                    "/delivery/templates?repoId={}&path={}", encode(&repo), encode(&path)
-                )) }),
-            );
-        }
+        // The file's own page, beside what the rules linked on it (the records of its kind in the explorer).
+        let mut page = Map::new();
+        page.insert(
+            "page".to_string(),
+            json!(self.ctx.links().route(&format!("/delivery/templates?repoId={}&path={}", encode(&repo), encode(&path)))),
+        );
+        put_links(&mut detail, page);
         json_str(&detail)
     }
 

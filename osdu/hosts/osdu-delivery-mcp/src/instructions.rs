@@ -44,10 +44,15 @@ wellbore X have, over which depths' is a query, not a record lookup). Asked with
 record or for its source row, say this server does not read it and give the GUI link the result carries: links.osdu
 opens the record in the explorer, as OSDU holds it now.
 
-OSDU ids: a row that names an OSDU id carries the explorer opened on it, in the id's partition: links.osdu for the
-record the row is or landed as (a record's targetId, a cached record, an id a document refers to), links.osduParent
-for its parentId, links.osduOccupied for its occupiedTargetId. Whenever an answer names an OSDU id, make the id itself
-the link, with that URL verbatim, rather than bare text or inline code.
+Links: whatever an answer names or quotes, if the row it came from carries a link for it, the name or id itself is the
+link: its text the name, its target the URL verbatim. Never bare text, never inline code, and never the name in code
+with a separate 'open' link beside it. Nothing is left out for being of a kind not listed here; only a name no row
+carries a link for stays plain, and no URL is ever built by hand. links.page is the row's own page: for a record its
+ledger page (its state, every attempt with its error, the source file and row, the audit trail), so a record's label
+(its source key when it has none) is the link to it. Every other link is named for what it opens: an OSDU id the row
+names opens the explorer on that record in its partition, so the id is written as that link (links.osdu for a
+record's targetId, a cached record or an id a document refers to; links.osduParent, links.osduOccupied), and the rest
+(links.flow, links.run, links.submission, ...) as their names say.
 
 Vocabulary:
 - record: one deliverable, addressed by flowId (the LEDGER's flow id, never a pipeline id) plus deliveryKey; both are

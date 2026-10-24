@@ -2,8 +2,8 @@ import { useEffect, useMemo, useRef, useState, type FormEvent, type ReactNode } 
 import { flushSync } from "react-dom";
 import { useInfiniteQuery, useQuery, type InfiniteData } from "@tanstack/react-query";
 import {
-  ChevronDown, ChevronLeft, ChevronRight, ChevronsDownUp, ChevronsUpDown, FileSearch, KeyRound, ListFilter, Loader2, LocateFixed, MousePointerClick, Plus,
-  SearchX, TriangleAlert, X,
+  ChevronDown, ChevronLeft, ChevronRight, ChevronsDownUp, ChevronsUpDown, Eraser, FileSearch, KeyRound, ListFilter, Loader2, LocateFixed, MousePointerClick,
+  Plus, SearchX, TriangleAlert, X,
 } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -743,12 +743,24 @@ export function DuplicateKeyBuilder({ inventory, served, draft, downloaded, onCh
             {draft.length}
           </span>
         )}
+        <Button
+          variant="ghost"
+          size="sm"
+          className="ml-auto h-7 gap-1 px-2 text-[12.5px] text-muted-foreground hover:text-foreground"
+          disabled={disabled || draft.length === 0}
+          onClick={() => onChange(() => [])}
+          title={draft.length === 0 ? "The key holds no property" : "Take every property out of the key, and start it again"}
+          data-testid="duplicate-key-clear"
+        >
+          <Eraser className="size-3.5" />
+          Clear
+        </Button>
         <Popover open={adding} onOpenChange={setAdding}>
           <PopoverTrigger asChild>
             <Button
               variant="ghost"
               size="sm"
-              className="ml-auto h-7 gap-1 px-2 text-[12.5px] text-muted-foreground hover:text-foreground"
+              className="h-7 gap-1 px-2 text-[12.5px] text-muted-foreground hover:text-foreground"
               disabled={disabled || draft.length >= MAX_DUPLICATE_KEY}
               title="Add a property the record shown holds no value at, from the kind's properties"
               data-testid="duplicate-key-by-name"

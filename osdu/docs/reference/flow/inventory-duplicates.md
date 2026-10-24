@@ -46,6 +46,7 @@ sourceRefs:
   - osdu/src/SqlFlow.Delivery/Engine/Inventories/InventoryDuplicateExport.cs
   - osdu/src/SqlFlow.Delivery/Engine/Protocols/WellboreDdmsBulkLink.cs
   - osdu/src/SqlFlow.Delivery.ControlPlane/Api/DeliveryInventoryEndpoints.Duplicates.cs
+  - osdu/src/SqlFlow.Delivery.ControlPlane/Background/InventoryDuplicateSweepService.cs
   - osdu/src/SqlFlow.Delivery.Data/Migrations/20261024100322_InventoryDuplicateChecks.cs
   - osdu/src/SqlFlow.Delivery.Data/Migrations/20261024131842_InventoryDuplicateDownloads.cs
   - osdu/gui/src/features/delivery/inventories/duplicates/InventoryDuplicates.tsx
@@ -135,7 +136,9 @@ it. The check's row names each property's column (`AttributesJson`) and its tabl
 The table is data the module makes at run time, as a dimension's table is: the check's run creates it, and widens it, through
 SQLFlow's schema evolution; no migration creates or alters it, and no entity maps it. It is dropped when its download fails,
 when a later download of the same inventory completes (its properties carried into the newer check, the older check's groups
-kept as they were found), and when the sweep retires the check. The database user the module connects as needs
+kept as they were found), and when the sweep retires the check ([What a check says](#what-a-check-says)). It belongs to
+the check, not to a page: closing the page leaves it, so the check can be grouped again later. The database user the
+module connects as needs
 `CREATE TABLE` in the database and `ALTER` on the `osdu` schema; without them the check fails saying so, before it reads
 OSDU.
 
@@ -218,8 +221,10 @@ kept copy storage no longer holds (`skipped`, with why), so a removal never take
 | `failed` | Its download stopped, holding no group and no table; `error` says why. |
 | `expired` | Older than a week and kept for the removal that took a selection made of its picks: its key and counts stay, its groups and table were retired. |
 
-A completed check made against an earlier build of the inventory is `stale`. A check is kept a week; the next check of the
-partition retires those older, as a selection is retired.
+A completed check made against an earlier build of the inventory is `stale`. A check is kept a week. The sweep retires
+those older, deleting each with its groups and its table, or keeping it `expired` when a removal took its picks; it runs
+when a check is asked for in the partition, and every hour in the control plane for every partition, where it also closes
+a check under way whose run ended without finishing it, as reading the check does.
 
 ## In the GUI
 
@@ -230,7 +235,7 @@ values adds the list, and a value inside the items of a list adds its property a
 `Mnemonic` adds `data.Curves.Mnemonic`). The key lists its properties beside the record with the values the record shown
 holds there; a property the check in view did not download is marked **to download**, and one of `data` the explorer does
 not list for the kind is marked, since the search may return no value of it. **By name** adds a property the record shown
-holds no value at. The record's line steps through the ids OSDU serves or opens any id, searches it, and folds it.
+holds no value at, and **Clear** takes every property out; a key emptied stays empty until a property is picked again. The record's line steps through the ids OSDU serves or opens any id, searches it, and folds it.
 
 The key's action says what it reads before it is asked: **Group by this key** when the check in view downloaded every
 property of it (no OSDU read), **Find duplicates** with the searches its download takes, **Download again** for the key the

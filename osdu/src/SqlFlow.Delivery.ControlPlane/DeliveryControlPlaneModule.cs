@@ -152,6 +152,10 @@ public sealed class DeliveryControlPlaneModule : IControlPlaneModule
         // are blocked.
         services.AddHostedService<RecordProblemBackfillService>();
 
+        // The duplicate checks of every partition are settled and retired on a clock, so a check's table in the module's database
+        // goes when its week is up even in a partition where nobody asks for another check.
+        services.AddHostedService<InventoryDuplicateSweepService>();
+
         if (rollout.Enabled)
         {
             services.AddHostedService<CacheUpdateRolloutService>();

@@ -6,7 +6,8 @@ use sqlflow_mcp::rmcp::handler::server::wrapper::Parameters;
 use sqlflow_mcp::rmcp::{self, schemars, tool, tool_router};
 
 use super::{DeliveryTools, PIPELINE_HINT};
-use crate::support::{clip_field, composed, guid, optional_guid, refuse, section, Query, LOG_LIMIT, LOG_PREVIEW};
+use crate::links::flow_page;
+use crate::support::{clip_field, composed, guid, optional_guid, refuse, section, text, Query, LOG_LIMIT, LOG_PREVIEW};
 
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
 pub struct FlowInput {
@@ -146,8 +147,12 @@ list_pipelines(kind=\"delivery\"). Follow with delivery_flow_records(status=\"fa
             self.ctx.read(&target_path, scoped.pairs()),
         );
 
+        let (interface, partition) = (text(i.interface), text(i.partition));
         let mut links = Map::new();
-        links.insert("page".to_string(), json!(self.ctx.links().pipeline(&pipeline)));
+        links.insert(
+            "page".to_string(),
+            json!(flow_page(self.ctx.links(), &pipeline, interface.as_deref(), partition.as_deref(), &[])),
+        );
         composed(
             vec![("stats", stats), ("interfaces", section(interfaces)), ("target", section(target))],
             links,
@@ -180,18 +185,29 @@ delivery_find_records; for one record's full history use delivery_record."
             (Ok(submission), Ok(delivered_by), Ok(run)) => (submission, delivered_by, run),
             (Err(refused), _, _) | (_, Err(refused), _) | (_, _, Err(refused)) => return refused,
         };
+        // The flow's Records tab narrowed as far as it can be: to the interface and partition, and to the submission or
+        // run asked about. Its search and state are chosen on the tab itself.
+        let (interface, partition) = (text(i.interface), text(i.partition));
+        let mut narrowed = vec![("tab", "records")];
+        for (name, value) in [("submission", &submission), ("delivered", &delivered_by), ("run", &run)] {
+            if let Some(value) = value {
+                narrowed.push((name, value.as_str()));
+            }
+        }
+        let links = json!({
+            "page": flow_page(self.ctx.links(), &pipeline, interface.as_deref(), partition.as_deref(), &narrowed),
+        });
         let query = Query::new()
             .text("search", i.search)
             .text("mode", i.mode)
             .text("status", i.status)
-            .text("submissionId", submission)
-            .text("deliveredBy", delivered_by)
-            .text("runId", run)
+            .text("submissionId", submission.clone())
+            .text("deliveredBy", delivered_by.clone())
+            .text("runId", run.clone())
             .value("drifted", i.drifted.filter(|d| *d))
-            .text("interface", i.interface)
-            .text("partition", i.partition)
+            .text("interface", interface)
+            .text("partition", partition)
             .page(i.page, i.page_size);
-        let links = json!({ "page": self.ctx.links().pipeline(&pipeline) });
         self.ctx
             .get_about(
                 &format!("/api/v1/delivery/flows/{pipeline}/records"),
@@ -228,11 +244,16 @@ delivery_flow_records(submissionId or deliveredBy)."
                      list_pipelines(kind=\"delivery\").",
                 );
             };
+            let (interface, partition) = (text(i.interface), text(i.partition));
+            let links = json!({
+                "page": flow_page(
+                    self.ctx.links(), &pipeline, interface.as_deref(), partition.as_deref(), &[("tab", "submissions")]
+                ),
+            });
             let query = Query::new()
                 .value("max", Some(i.max.unwrap_or(25).clamp(1, 1000)))
-                .text("interface", i.interface)
-                .text("partition", i.partition);
-            let links = json!({ "page": self.ctx.links().pipeline(&pipeline) });
+                .text("interface", interface)
+                .text("partition", partition);
             return self
                 .ctx
                 .get_about(

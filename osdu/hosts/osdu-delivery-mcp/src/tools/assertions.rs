@@ -2,13 +2,14 @@
 //! outcomes and counts. The records a test quotes as examples are counted here, never returned.
 
 use serde::Deserialize;
-use serde_json::json;
-use sqlflow_mcp::json_str;
+use serde_json::{json, Map, Value};
 use sqlflow_mcp::rmcp::handler::server::wrapper::Parameters;
 use sqlflow_mcp::rmcp::{self, schemars, tool, tool_router};
+use sqlflow_mcp::{json_str, GuiLinks};
 
 use super::{DeliveryTools, PIPELINE_HINT};
-use crate::support::{count_instead, optional_guid, refuse, text, Query};
+use crate::links::flow_page;
+use crate::support::{count_instead, optional_guid, put_links, refuse, relinked, text, Query};
 
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
 pub struct AssertionsInput {
@@ -50,11 +51,12 @@ Tests run by running the assertion flow with trigger_run."
             Ok(pipeline) => pipeline,
             Err(refused) => return refused,
         };
-        let query = Query::new().text("partition", i.partition);
-        match pipeline {
+        let partition = text(i.partition);
+        let query = Query::new().text("partition", partition.clone());
+        let board = match pipeline {
             Some(pipeline) => {
                 let links = json!({
-                    "page": self.ctx.links().route(&format!("/delivery/assertions?flow={pipeline}")),
+                    "page": flow_page(self.ctx.links(), &pipeline, None, partition.as_deref(), &[("tab", "tests")]),
                     "flow": self.ctx.links().pipeline(&pipeline),
                 });
                 self.ctx
@@ -72,7 +74,8 @@ Tests run by running the assertion flow with trigger_run."
                     .get_about("/api/v1/delivery/assertions", query.pairs(), ("listing", "assertions"), links)
                     .await
             }
-        }
+        };
+        relinked(board, |board| link_board_tests(board, self.ctx.links()))
     }
 
     #[tool(
@@ -91,10 +94,10 @@ test start failing'. The records a test quotes as examples are counted (exampleC
             return match self.ctx.read(&format!("/api/v1/delivery/assertion-runs/{run}"), &[]).await {
                 Ok(mut report) => {
                     count_instead(&mut report, "examples", "exampleCount");
-                    if let Some(map) = report.as_object_mut() {
-                        let page = self.ctx.links().route(&format!("/delivery/assertions/runs/{run}"));
-                        map.insert("links".to_string(), json!({ "page": page }));
-                    }
+                    link_report_results(&mut report, self.ctx.links());
+                    let mut links = Map::new();
+                    links.insert("page".to_string(), json!(self.ctx.links().route(&format!("/delivery/assertions/runs/{run}"))));
+                    put_links(&mut report, links);
                     json_str(&report)
                 }
                 Err(error) => refuse(format!("{error:#}")),
@@ -111,39 +114,99 @@ test start failing'. The records a test quotes as examples are counted (exampleC
             }
             Err(refused) => return refused,
         };
-        let links = json!({
-            "page": self.ctx.links().route(&format!("/delivery/assertions?flow={pipeline}")),
-            "flow": self.ctx.links().pipeline(&pipeline),
-        });
+        let partition = text(i.partition);
+        // The flow's Reports tab lists its runs, and its History tab lays its tests against them.
+        let links = |tab: &str| {
+            json!({
+                "page": flow_page(self.ctx.links(), &pipeline, None, partition.as_deref(), &[("tab", tab)]),
+                "flow": self.ctx.links().pipeline(&pipeline),
+            })
+        };
         let view = text(i.view).map(|v| v.to_ascii_lowercase()).unwrap_or_else(|| "runs".to_string());
         match view.as_str() {
             "runs" => {
                 let query = Query::new()
-                    .text("partition", i.partition)
+                    .text("partition", partition.clone())
                     .value("max", Some(i.max.unwrap_or(20).clamp(1, 500)));
                 self.ctx
                     .get_about(
                         &format!("/api/v1/delivery/flows/{pipeline}/assertion-runs"),
                         query.pairs(),
                         ("pipelineId", &pipeline),
-                        links,
+                        links("reports"),
                     )
                     .await
             }
             "matrix" => {
                 let query = Query::new()
-                    .text("partition", i.partition)
+                    .text("partition", partition.clone())
                     .value("runs", Some(i.max.unwrap_or(20).clamp(1, 200)));
-                self.ctx
+                let matrix = self
+                    .ctx
                     .get_about(
                         &format!("/api/v1/delivery/flows/{pipeline}/assertion-matrix"),
                         query.pairs(),
                         ("pipelineId", &pipeline),
-                        links,
+                        links("history"),
                     )
-                    .await
+                    .await;
+                relinked(matrix, |matrix| {
+                    for row in matrix.get_mut("tests").and_then(Value::as_array_mut).into_iter().flatten() {
+                        if let Some(test) = row.get("test").and_then(Value::as_str).map(str::to_string) {
+                            link_test(row, self.ctx.links(), &pipeline, partition.as_deref(), &test, None);
+                        }
+                    }
+                })
             }
             other => refuse(format!("view '{other}' is not one of runs, matrix.")),
         }
+    }
+}
+
+/// Gives a test (or one assertion of it, `check` its index) its sheet on its flow's Tests tab. A test's row names no
+/// flow; the board, report or matrix around it does.
+fn link_test(row: &mut Value, links: &GuiLinks, pipeline: &str, partition: Option<&str>, test: &str, check: Option<i64>) {
+    let index = check.map(|index| index.to_string());
+    let mut narrowed = vec![("tab", "tests"), ("test", test)];
+    if let Some(index) = index.as_deref() {
+        narrowed.push(("check", index));
+    }
+    let mut page = Map::new();
+    page.insert("page".to_string(), json!(flow_page(links, pipeline, None, partition, &narrowed)));
+    put_links(row, page);
+}
+
+/// Links every test of a board, each under the flow that holds it, in the board's partition.
+fn link_board_tests(board: &mut Value, links: &GuiLinks) {
+    let partition = board.get("partition").and_then(Value::as_str).map(str::to_string);
+    for flow in board.get_mut("flows").and_then(Value::as_array_mut).into_iter().flatten() {
+        let Some(pipeline) = flow.get("pipelineId").and_then(Value::as_str).map(str::to_string) else {
+            continue;
+        };
+        for test in flow.get_mut("tests").and_then(Value::as_array_mut).into_iter().flatten() {
+            if let Some(name) = test.get("name").and_then(Value::as_str).map(str::to_string) {
+                link_test(test, links, &pipeline, partition.as_deref(), &name, None);
+            }
+        }
+    }
+}
+
+/// Links every result of a run's report to its test, and every assertion of it to the assertion on the test's sheet,
+/// under the flow and in the partition the run tested.
+fn link_report_results(report: &mut Value, links: &GuiLinks) {
+    let Some(pipeline) = report.get("pipelineId").and_then(Value::as_str).map(str::to_string) else {
+        return;
+    };
+    let partition = report.pointer("/run/partition").and_then(Value::as_str).map(str::to_string);
+    for result in report.get_mut("results").and_then(Value::as_array_mut).into_iter().flatten() {
+        let Some(test) = result.get("test").and_then(Value::as_str).map(str::to_string) else {
+            continue;
+        };
+        for outcome in result.get_mut("assertions").and_then(Value::as_array_mut).into_iter().flatten() {
+            if let Some(index) = outcome.get("index").and_then(Value::as_i64) {
+                link_test(outcome, links, &pipeline, partition.as_deref(), &test, Some(index));
+            }
+        }
+        link_test(result, links, &pipeline, partition.as_deref(), &test, None);
     }
 }

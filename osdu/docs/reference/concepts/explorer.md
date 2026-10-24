@@ -63,6 +63,7 @@ sourceRefs:
   - osdu/src/SqlFlow.Delivery/Engine/Protocols/OsduRecordProtocol.cs
   - osdu/gui/src/module.tsx
   - osdu/gui/src/features/delivery/explorer/ExplorerPage.tsx
+  - osdu/gui/src/features/delivery/useLinkedPartition.ts
   - osdu/gui/src/features/delivery/explorer/ExplorerWelcome.tsx
   - osdu/gui/src/features/delivery/explorer/ExplorerResults.tsx
   - osdu/gui/src/features/delivery/explorer/ExplorerTypeRail.tsx

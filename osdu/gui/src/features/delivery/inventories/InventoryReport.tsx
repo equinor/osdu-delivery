@@ -404,7 +404,8 @@ export function InventoryReport({
   onDuplicateCheck: (checkId: number | null) => void;
   /** The key being built on the Duplicates tab, as the address holds it; null takes the key of the check shown. */
   duplicateKey: string | null;
-  onDuplicateKey: (key: DuplicateKeyProperty[]) => void;
+  /** Keeps the key being built in the address, an empty one included; null lets it go, back to the check's own key. */
+  onDuplicateKey: (key: DuplicateKeyProperty[] | null) => void;
   /** The record the Duplicates tab builds the key in; null shows the first id of the inventory OSDU serves. */
   duplicateRecord: string | null;
   onDuplicateRecord: (id: string | null) => void;

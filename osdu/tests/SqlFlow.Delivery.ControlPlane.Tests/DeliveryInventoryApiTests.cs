@@ -4,11 +4,14 @@ using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Hosting;
 using SqlFlow.Catalog;
 using SqlFlow.ControlPlane.Api;
 using SqlFlow.Core.Identity;
 using SqlFlow.Delivery.ControlPlane;
 using SqlFlow.Delivery.ControlPlane.Api;
+using SqlFlow.Delivery.ControlPlane.Background;
 using SqlFlow.Delivery.Data;
 using SqlFlow.Delivery.Documents;
 using SqlFlow.Delivery.Engine.Inventories;
@@ -1350,6 +1353,93 @@ public sealed class DeliveryInventoryApiTests
         FirstSeenUtc = now,
         LastSeenUtc = now,
     };
+
+    [Fact]
+    public async Task The_duplicate_check_sweep_closes_checks_whose_runs_ended_and_retires_those_past_their_week_with_their_tables()
+    {
+        var cs = OsduTestServer.Require();
+        await CatalogDatabase.MigrateAsync(cs);
+        await SampleEstate.MigrateModuleAsync(cs);
+
+        var suffix = Guid.NewGuid().ToString("N")[..10];
+        var partition = "sw" + suffix;
+        var flowName = "api-sweep-" + suffix;
+        var flow = new DeliveryDocumentLoader().ParseInventory($$"""
+            flowType: inventory
+            name: {{flowName}}
+            partitions: [{{partition}}]
+            owners: [{{Estate}}]
+            source:
+              endpoint: http://localhost
+            inventories:
+              - name: WellLogs
+                kind: "{{WellLog}}"
+            """, "flows/" + flowName + ".yaml").ForRun(partition, RegisteredPartitions.None);
+        var deliveryFlow = FlowId.Of("api-sweep-delivery-" + suffix);
+        var now = DateTime.UtcNow;
+        var ledger = new OsduLedger(() => SampleEstate.Context(cs));
+        try
+        {
+            await ledger.RegisterLedgerAsync(new LedgerEntry
+            {
+                FlowId = flow.LedgerId, Partition = partition, Kind = LedgerKinds.Inventory, FlowName = flow.Name, LedgerName = flow.LedgerName,
+            });
+            var wellLogs = await ledger.RegisterInventoryAsync(flow.LedgerId, flow.Name, "WellLogs", WellLog, null, "search", "latest");
+            var files = await ledger.RegisterInventoryAsync(flow.LedgerId, flow.Name, "LogFiles", LogFile, null, "search", "latest");
+            var key = InventoryDuplicateKey.Of(["data.Name"]).Key!;
+            var attributes = InventoryDuplicateTable.AttributesOf(key.Paths);
+
+            // A check of each kind, each with its table: one past its week (of another inventory, since a download completed since
+            // lets go of an inventory's earlier tables), one whose run the catalog no longer holds, one recent.
+            async Task<long> CheckAsync(int inventoryId, DateTime created, bool complete)
+            {
+                var checkId = await ledger.CreateInventoryDuplicateCheckAsync(
+                    partition, new InventoryDuplicateCheckStart(inventoryId, "inventory api tests", key.ToJson(), key.Hash(), attributes, null, created));
+                Assert.NotNull(await ledger.StartInventoryDuplicateCheckAsync(flow.LedgerId, inventoryId, checkId, Guid.NewGuid(), null, created));
+                await ledger.PrepareInventoryDuplicateTableAsync(flow.LedgerId, checkId, attributes);
+                if (complete)
+                {
+                    await ledger.CompleteInventoryDuplicateCheckAsync(flow.LedgerId, checkId, new InventoryDuplicateCheckEnd(InventoryDuplicates.Completed, [], null), created);
+                }
+
+                return checkId;
+            }
+
+            var old = await CheckAsync(files.InventoryId, now - InventoryDuplicates.KeptFor - TimeSpan.FromHours(2), complete: true);
+            var stuck = await CheckAsync(wellLogs.InventoryId, now, complete: false);
+            var recent = await CheckAsync(wellLogs.InventoryId, now, complete: true);
+            Assert.True(await TableExistsAsync(cs, old) && await TableExistsAsync(cs, stuck) && await TableExistsAsync(cs, recent));
+
+            await using var factory = Factory(cs);
+            using var client = factory.CreateClient();
+            var sweep = factory.Services.GetServices<IHostedService>().OfType<InventoryDuplicateSweepService>().Single();
+            var pass = await sweep.SweepAsync(CancellationToken.None);
+
+            Assert.True(pass is { Settled: >= 1, Deleted: >= 1 }, $"the pass closed {pass.Settled} and deleted {pass.Deleted}");
+            Assert.Null(await ledger.GetInventoryDuplicateCheckAsync(partition, old));
+            Assert.False(await TableExistsAsync(cs, old));
+            var closed = await ledger.GetInventoryDuplicateCheckAsync(partition, stuck);
+            Assert.Equal((InventoryDuplicates.Failed, (string?)null), (closed?.Status, closed?.TableName));
+            Assert.Contains("is no longer in the catalog", closed!.Error, StringComparison.Ordinal);
+            Assert.False(await TableExistsAsync(cs, stuck));
+            Assert.Equal(InventoryDuplicates.Completed, (await ledger.GetInventoryDuplicateCheckAsync(partition, recent))?.Status);
+            Assert.True(await TableExistsAsync(cs, recent));
+        }
+        finally
+        {
+            await CleanUpAsync(cs, Guid.NewGuid(), partition, flow.LedgerId, deliveryFlow);
+        }
+    }
+
+    /// <summary>Whether the module's database holds a duplicate check's table.</summary>
+    private static async Task<bool> TableExistsAsync(string cs, long checkId)
+    {
+        await using var osdu = SampleEstate.Context(cs);
+        await osdu.Database.OpenConnectionAsync();
+        await using var command = osdu.Database.GetDbConnection().CreateCommand();
+        command.CommandText = "SELECT OBJECT_ID(N'osdu." + InventoryDuplicateTable.NameOf(checkId) + "', N'U');";
+        return await command.ExecuteScalarAsync() is not (null or DBNull);
+    }
 
     private static ControlPlaneAppFactory Factory(string cs) => new ControlPlaneAppFactory()
         .WithCatalog(cs)

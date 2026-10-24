@@ -297,9 +297,10 @@ export function InventoryDuplicates({
   checkId: number | null;
   /** Shows a check, its own key in view (none being built). */
   onCheck: (checkId: number | null) => void;
-  /** The key being built, as the address holds it; null takes the key of the check in view. */
+  /** The key being built, as the address holds it (empty text for a key emptied while built); null takes the key of the check in view. */
   draftText: string | null;
-  onDraft: (key: DuplicateKeyProperty[]) => void;
+  /** Keeps the key being built, an empty one included; null lets it go, back to the key of the check in view. */
+  onDraft: (key: DuplicateKeyProperty[] | null) => void;
   /** The record the key is built in, as the address holds it; null shows the first id of the inventory OSDU serves. */
   sampleId: string | null;
   onSampleId: (id: string | null) => void;
@@ -478,7 +479,7 @@ export function InventoryDuplicates({
         className="h-7 w-full justify-center gap-1 text-[12.5px] text-muted-foreground hover:text-foreground"
         onClick={() => {
           setEditing(false);
-          onDraft([]);
+          onDraft(null);
         }}
         title={`Leave the key as check ${check.checkId} has it, and go back to what it found`}
         data-testid="duplicate-key-back"

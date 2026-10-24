@@ -164,6 +164,29 @@ pub(crate) fn drop_fields(value: &mut Value, fields: &[&str]) {
     }
 }
 
+/// Sets links an answer's tool knows on the answer's own `links`, beside those its rows' rules gave it: a link of the
+/// same name is the tool's, every other one stays. A value that is not an object has nowhere to hold them.
+pub(crate) fn put_links(value: &mut Value, links: Map<String, Value>) {
+    if let Value::Object(map) = value {
+        let held = map.entry("links").or_insert_with(|| Value::Object(Map::new()));
+        if let Value::Object(held) = held {
+            held.extend(links);
+        }
+    }
+}
+
+/// An answer a tool has rendered, with links only the tool knows added to it. A refusal (`Error: ...`) is not JSON
+/// and is returned as it was.
+pub(crate) fn relinked(answer: String, link: impl FnOnce(&mut Value)) -> String {
+    match serde_json::from_str::<Value>(&answer) {
+        Ok(mut value) => {
+            link(&mut value);
+            json_str(&value)
+        }
+        Err(_) => answer,
+    }
+}
+
 /// Replaces every list held under `field` with how many entries it had, under `counted`. Used where a row lists the
 /// records behind a finding: how many there were is metadata, and which records and what they held is not.
 pub(crate) fn count_instead(value: &mut Value, field: &str, counted: &str) {

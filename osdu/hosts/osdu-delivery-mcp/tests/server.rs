@@ -734,6 +734,13 @@ async fn a_record_is_found_by_what_the_caller_holds_and_linked_to_its_page() {
         hits["items"][0]["links"]["osdu"],
         json!("https://delivery.example.com/delivery/explorer?id=dev%3Amaster-data--Wellbore%3AW-1&partition=dev")
     );
+    // The lookup itself opens on the Records page, asked the same.
+    assert_eq!(
+        hits["links"]["page"],
+        json!(format!(
+            "https://delivery.example.com/delivery/records?q=dev%3Amaster-data--Wellbore%3AW&status=delivered&flow={FLOW}&partition=dev"
+        ))
+    );
 }
 
 #[tokio::test(flavor = "multi_thread")]
@@ -840,7 +847,11 @@ async fn an_unknown_record_and_a_wrong_id_are_answered_in_words() {
 async fn a_flow_is_read_at_a_glance_and_a_part_that_fails_says_so_in_its_place() {
     let base = format!("/api/v1/delivery/flows/{PIPELINE}");
     let estate = Estate::start(vec![
-        (route(format!("GET {base}/stats")), 200, json!({ "pipelineId": PIPELINE, "flowName": "wells", "total": 10, "failed": 2 })),
+        (
+            route(format!("GET {base}/stats")),
+            200,
+            json!({ "pipelineId": PIPELINE, "flowName": "wells", "total": 10, "delivered": 8, "failed": 2, "submissions": 3 }),
+        ),
         (route(format!("GET {base}/interfaces")), 200, json!([{ "interface": "wellbores", "mapping": "wellbore@1.0.0" }])),
         (
             route(format!("GET {base}/target")),
@@ -856,7 +867,12 @@ async fn a_flow_is_read_at_a_glance_and_a_part_that_fails_says_so_in_its_place()
     assert_eq!(flow["stats"]["failed"], json!(2));
     assert_eq!(flow["interfaces"][0]["mapping"], json!("wellbore@1.0.0"));
     assert!(flow["target"]["error"].as_str().is_some_and(|e| e.contains("Name one of the source's interfaces")), "{flow}");
-    assert_eq!(flow["links"]["page"], json!(format!("https://delivery.example.com/pipelines/{PIPELINE}")));
+    // The flow's page in the partition asked about, and its figures open its records and submissions there.
+    assert_eq!(flow["links"]["page"], json!(format!("https://delivery.example.com/pipelines/{PIPELINE}?partition=dev")));
+    assert_eq!(
+        flow["stats"]["links"]["records"],
+        json!(format!("https://delivery.example.com/pipelines/{PIPELINE}?tab=records"))
+    );
     let calls = estate.calls();
     assert!(calls.contains(&format!("GET {base}/stats?partition=dev")), "{calls:?}");
     assert!(calls.contains(&format!("GET {base}/interfaces?partition=dev")), "{calls:?}");
@@ -891,6 +907,11 @@ async fn a_flows_records_are_listed_by_the_filter_given() {
     );
     assert_eq!(page["items"][0]["lastError"], json!("attempts used up"));
     assert_eq!(page["items"][0]["links"]["page"], json!(format!("https://delivery.example.com/delivery/records/{FLOW}/{KEY}")));
+    // The listing is the flow's Records tab narrowed the same way, as far as the tab's address goes.
+    assert_eq!(
+        page["links"]["page"],
+        json!(format!("https://delivery.example.com/pipelines/{PIPELINE}?tab=records&delivered={SUBMISSION}&interface=wellbores"))
+    );
 
     let refused = session.call("delivery_flow_records", json!({ "pipelineId": PIPELINE, "runId": "last night" })).await;
     assert!(refused.starts_with("Error: runId 'last night' is not a GUID."), "{refused}");
@@ -952,7 +973,11 @@ async fn the_audit_trail_is_filtered_and_one_activity_is_read_whole() {
         "partition=prod&kind=delete&actor=user%3Aalice&idle=false&since=2026-10-01T00%3A00%3A00Z&pageSize=25"
     );
     assert!(trail["items"][0]["log"].as_str().is_some_and(|log| log.contains("[truncated: 900 characters in all]")));
-    assert_eq!(trail["items"][0]["links"]["page"], json!("https://delivery.example.com/delivery/activity"));
+    // The trail narrowed to the activity's ledger.
+    assert_eq!(
+        trail["items"][0]["links"]["page"],
+        json!(format!("https://delivery.example.com/delivery/activity?flow={FLOW}"))
+    );
 
     let one = session.json("delivery_activities", json!({ "activityId": 4 })).await;
     assert_eq!(one["log"].as_str().map(str::len), Some(900), "one activity carries its log whole");
@@ -987,6 +1012,15 @@ async fn a_mapping_is_checked_against_its_template_without_reading_a_row() {
 
     assert_eq!(check["loads"], json!(true));
     assert_eq!(check["valid"], json!(true), "a warning does not make a mapping invalid");
+    // The template checked against opens by the version the mapping pins, and its kind's records in the explorer.
+    assert_eq!(
+        check["template"]["links"]["template"],
+        json!("https://delivery.example.com/delivery/templates?kind=osdu%3Awks%3Amaster-data--Wellbore%3A1.5.1&version=1.5.1")
+    );
+    assert_eq!(
+        check["template"]["links"]["osduKind"],
+        json!("https://delivery.example.com/delivery/explorer?kind=osdu%3Awks%3Amaster-data--Wellbore%3A1.5.1")
+    );
     assert_eq!(check["requiredAndEmpty"], json!(["osdu.data.WellID"]));
     assert_eq!(check["filledOnEveryRow"], json!(["osdu.data.FacilityName"]));
     assert_eq!(check["filledOnSomeRows"], json!(["osdu.data.NameAliases"]));
@@ -1270,7 +1304,22 @@ async fn an_assertion_report_counts_its_examples_and_returns_none_of_them() {
                 }]
             }),
         ),
-        (route(format!("GET /api/v1/delivery/flows/{PIPELINE}/assertion-matrix")), 200, json!({ "runs": [], "tests": [] })),
+        (
+            route(format!("GET /api/v1/delivery/flows/{PIPELINE}/assertion-matrix")),
+            200,
+            json!({ "runs": [], "tests": [{ "test": "wellbore-names", "kind": "osdu:wks:master-data--Wellbore:1.5.1", "cells": [] }] }),
+        ),
+        (
+            route(format!("GET /api/v1/delivery/flows/{PIPELINE}/assertions")),
+            200,
+            json!({
+                "partition": "dev", "totals": { "tests": 1 },
+                "flows": [{
+                    "pipelineId": PIPELINE, "repoId": "repo-1", "name": "welldb-assertions", "partition": "dev", "failRunOn": "error",
+                    "tests": [{ "name": "wellbore-names", "kind": "osdu:wks:master-data--Wellbore:1.5.1", "severity": "error" }]
+                }]
+            }),
+        ),
     ])
     .await;
     let mut session = Session::open(&estate).await;
@@ -1285,12 +1334,28 @@ async fn an_assertion_report_counts_its_examples_and_returns_none_of_them() {
         assert!(!text.contains(data), "the report carries {data}");
     }
     assert_eq!(report["links"]["page"], json!("https://delivery.example.com/delivery/assertions/runs/42"));
+    // The report keeps the flow it ran, and each result opens its test's sheet, each assertion its place on it.
+    let tests = format!("https://delivery.example.com/pipelines/{PIPELINE}?tab=tests");
+    assert_eq!(report["links"]["flow"], json!(format!("https://delivery.example.com/pipelines/{PIPELINE}")));
+    assert_eq!(report["results"][0]["links"]["page"], json!(format!("{tests}&test=wellbore-names")));
+    assert_eq!(report["results"][0]["assertions"][0]["links"]["page"], json!(format!("{tests}&test=wellbore-names&check=0")));
 
-    session.json("delivery_assertion_runs", json!({ "pipelineId": PIPELINE, "view": "matrix", "partition": "dev" })).await;
+    let matrix = session.json("delivery_assertion_runs", json!({ "pipelineId": PIPELINE, "view": "matrix", "partition": "dev" })).await;
     assert_eq!(
         estate.only("GET", &format!("/api/v1/delivery/flows/{PIPELINE}/assertion-matrix")).query,
         "partition=dev&runs=20"
     );
+    assert_eq!(
+        matrix["links"]["page"],
+        json!(format!("https://delivery.example.com/pipelines/{PIPELINE}?tab=history&partition=dev"))
+    );
+    assert_eq!(matrix["tests"][0]["links"]["page"], json!(format!("{tests}&test=wellbore-names&partition=dev")));
+
+    // A flow's board opens its Tests tab, and each test its sheet there.
+    let board = session.json("delivery_assertions", json!({ "pipelineId": PIPELINE, "partition": "dev" })).await;
+    assert_eq!(board["links"]["page"], json!(format!("{tests}&partition=dev")));
+    assert_eq!(board["flows"][0]["links"]["page"], json!(format!("{tests}&partition=dev")));
+    assert_eq!(board["flows"][0]["tests"][0]["links"]["page"], json!(format!("{tests}&test=wellbore-names&partition=dev")));
     let refused = session.call("delivery_assertion_runs", json!({ "pipelineId": PIPELINE, "view": "table" })).await;
     assert_eq!(refused, "Error: view 'table' is not one of runs, matrix.");
 }
@@ -1298,7 +1363,17 @@ async fn an_assertion_report_counts_its_examples_and_returns_none_of_them() {
 #[tokio::test(flavor = "multi_thread")]
 async fn a_dimension_is_read_as_its_definition_and_its_builds_never_its_values() {
     let estate = Estate::start(vec![
-        ("GET /api/v1/delivery/dimensions", 200, json!({ "partition": "dev", "totals": { "dimensions": 1 }, "flows": [{ "name": "dims", "dimensions": [{ "dimensionId": 3, "name": "Operator", "values": 40, "keys": 55 }] }] })),
+        (
+            "GET /api/v1/delivery/dimensions",
+            200,
+            json!({ "partition": "dev", "totals": { "dimensions": 2 }, "flows": [{
+                "pipelineId": PIPELINE, "name": "dims", "partition": "dev", "buildsPartition": true,
+                "dimensions": [
+                    { "dimensionId": 3, "name": "Operator", "values": 40, "keys": 55 },
+                    { "dimensionId": null, "name": "Field", "values": 0, "keys": 0 }
+                ]
+            }] }),
+        ),
         ("GET /api/v1/delivery/dimensions/3", 200, json!({ "flowName": "dims", "pipelineId": PIPELINE, "dimension": { "dimensionId": 3, "name": "Operator", "values": 40 } })),
         ("GET /api/v1/delivery/dimensions/3/builds", 200, json!([{ "buildId": 8, "dimensionId": 3, "status": "failed", "error": "search timed out" }])),
     ])
@@ -1311,9 +1386,20 @@ async fn a_dimension_is_read_as_its_definition_and_its_builds_never_its_values()
         board["flows"][0]["dimensions"][0]["links"]["page"],
         json!("https://delivery.example.com/delivery/dimensions?d=3")
     );
+    // One no build has registered yet is named by its flow and its name, as the dimensions page names it; its flow opens
+    // on its Dimensions tab.
+    assert_eq!(
+        board["flows"][0]["dimensions"][1]["links"]["page"],
+        json!(format!("https://delivery.example.com/delivery/dimensions?d={PIPELINE}%2FField"))
+    );
+    assert_eq!(
+        board["flows"][0]["links"]["page"],
+        json!(format!("https://delivery.example.com/pipelines/{PIPELINE}?tab=dimensions&partition=dev"))
+    );
 
     let one = session.json("delivery_dimensions", json!({ "dimensionId": 3, "maxBuilds": 5 })).await;
     assert_eq!(one["builds"][0]["error"], json!("search timed out"));
+    assert_eq!(one["builds"][0]["links"]["page"], json!("https://delivery.example.com/delivery/dimensions?d=3&view=builds"));
     assert_eq!(estate.only("GET", "/api/v1/delivery/dimensions/3/builds").query, "max=5");
 
     let calls = estate.calls();
@@ -1338,13 +1424,21 @@ async fn records_are_released_one_by_key_or_all_held_and_never_by_omission() {
 
     let one = session.json("delivery_release_records", json!({ "flowId": FLOW, "deliveryKey": KEY })).await;
     assert_eq!(one["released"], json!(1));
+    assert_eq!(one["links"]["record"], json!(format!("https://delivery.example.com/delivery/records/{FLOW}/{KEY}")));
 
     // Leaving the keys out does not mean every held record: that has to be said.
     let unsaid = session.call("delivery_release_records", json!({ "pipelineId": PIPELINE })).await;
     assert!(unsaid.starts_with("Error: Name the delivery keys to release, or say allHeld: true"), "{unsaid}");
     assert_eq!(estate.calls().len(), 1);
 
-    session.json("delivery_release_records", json!({ "pipelineId": PIPELINE, "keys": [KEY], "interface": "well logs", "partition": "dev" })).await;
+    let released = session
+        .json("delivery_release_records", json!({ "pipelineId": PIPELINE, "keys": [KEY], "interface": "well logs", "partition": "dev" }))
+        .await;
+    // The flow released in, on the interface and partition named, and its records there.
+    assert_eq!(
+        released["links"]["records"],
+        json!(format!("https://delivery.example.com/pipelines/{PIPELINE}?tab=records&interface=well%20logs&partition=dev"))
+    );
     let by_key = estate.seen().into_iter().last().expect("a request");
     assert_eq!((by_key.path.as_str(), by_key.query.as_str()), (flow.as_str(), "interface=well%20logs&partition=dev"));
     assert_eq!(by_key.body, json!({ "keys": [KEY] }));

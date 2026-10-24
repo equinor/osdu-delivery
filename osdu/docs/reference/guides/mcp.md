@@ -47,12 +47,16 @@ sourceRefs:
   - osdu/hosts/osdu-delivery-mcp/src/tools/assertions.rs
   - osdu/hosts/osdu-delivery-mcp/src/tools/dimensions.rs
   - osdu/hosts/osdu-delivery-mcp/src/tools/operate.rs
+  - osdu/hosts/osdu-delivery-mcp/src/support.rs
   - osdu/hosts/osdu-delivery-mcp/tests/server.rs
+  - osdu/gui/src/features/delivery/useLinkedPartition.ts
   - osdu/src/SqlFlow.Delivery.ControlPlane/Configuration/DeliveryAssistantAccess.cs
   - osdu/deploy/docker/mcp.Dockerfile
   - osdu/deploy/k8s/mcp.yaml
   - osdu/deploy/compose/docker-compose.yml
   - sqlflow/tools/sqlflow-mcp/src/host.rs
+  - sqlflow/tools/sqlflow-mcp/src/links.rs
+  - sqlflow/src/SqlFlow.Assistant/AssistantInstructions.cs
   - sqlflow/tools/sqlflow-mcp/src/control_plane.rs
   - sqlflow/tools/sqlflow-mcp/src/config.rs
   - sqlflow/tools/sqlflow-mcp/src/http_server.rs
@@ -163,25 +167,38 @@ An OSDU flow is run with SQLFlow's `trigger_run`, which carries the kind's `oper
 
 ### Links into the GUI
 
-Results carry links into the GUI, in a `links` object on each row: a record's page, a submission's, an assertion run's
-report, a partition's cache page, a mapping in the builder. Set `SQLFLOW_GUI_URL` to make them absolute, which the
-Slack assistant and a desktop client need; unset, they are root-relative, which is right for the GUI's own chat.
+Results carry links into the GUI, in a `links` object on each row and on an answer's envelope: `page` is the row's own
+page, and every other link is named for what it opens. Set `SQLFLOW_GUI_URL` to make them absolute, which the Slack
+assistant and a desktop client need; unset, they are root-relative, which is right for the GUI's own chat. The
+instructions ask the assistant to make every name it gives the link its row carried for it, whatever it names (a
+record by its label, an OSDU id, a flow, a run, a test), and to leave plain only a name no row carried a link for.
 
-Every OSDU id a row names also opens in the GUI's [explorer](../concepts/explorer.md), on that record, in its partition:
-`/delivery/explorer?id=<id>&partition=<partition>`. The partition is the one the row names, else the one the id starts
-with (an OSDU record id is `{data-partition-id}:{object-type}:{id}`), and the explorer makes it the title bar's, so the
-record is read where it is whichever partition the reader last worked in. The instructions ask the assistant to make
-each OSDU id it names the link itself.
+A link opens the page on the part of it the row is about. A flow opens on the interface and partition the row names,
+as the GUI's own flow links do (a flow's page takes a partition the flow serves as the title bar's). The explorer, the
+Records page and the audit trail make a partition a link names the title bar's, so a link to something in another
+partition than the one last worked in still lands on it. Opening the explorer reads OSDU through the partition's
+connection, as the explorer always does; the server itself still reads nothing from OSDU.
 
-| Link | The OSDU id it opens |
-| --- | --- |
-| `osdu` | The record the row is or landed as: a record's `targetId` (on a hit, a record, a flow's records, and the records a record waits for, is waited for by, reads as its parent or is read by), the cached record a cache change is to (`itemId`, when it is an OSDU id of the cache's partition: a lookup table's key is not), and an id a record's pending document refers to (`references`). |
-| `osduParent` | The record a record of a linked template reads as its parent (`parentId`). |
-| `osduOccupied` | The record OSDU already holds at the id a held record's key makes, which no ledger claimed (`occupiedTargetId`). |
+| Link | Opens | On |
+| --- | --- | --- |
+| `page` | A record's page (its state, attempts, source and audit trail); a submission's; an assertion run's report; a dimension (a build: its builds); a mapping in the builder; a template file; the partitions page; a cache on its records, a version on its history, a change on its deliveries, a cached type on its records; a cache flow's cache; a schedule's runs; the audit trail narrowed to an activity's ledger; a dimension or assertion flow's Dimensions or Tests tab; a test on its sheet, an assertion of it on its place there. | Every row of the module's that has a page. A dimension no build registered yet opens by its flow and name. |
+| `osdu` | The explorer on one OSDU record, in its partition: the row's, else the one the id starts with (`{data-partition-id}:{object-type}:{id}`). | A record's `targetId` (hits, records, a flow's records, the records a record waits for, is waited for by, reads as its parent or is read by); the cached record a cache change is to (`itemId`, when it is an OSDU id of the cache's partition: a lookup table's key is not); an id a pending document refers to (`references`). `delivery_record` puts it on its answer's envelope too, once the record has landed. |
+| `osduParent`, `osduOccupied` | The explorer on a record's parent (`parentId`), and on the record OSDU already holds at the id a held record's key makes, which no ledger claimed (`occupiedTargetId`). | Records. |
+| `osduKind` | The explorer on the records of one OSDU kind, in the row's partition. | Mappings, templates, interfaces, dimensions, tests, schemas, a retrieval that reads one kind, the template a mapping check checked against. |
+| `template` | The Templates page on the repository's template file: the file the row names (`repoId`, `templatePath`), else the file holding the template version it names. | Mappings, a schema comparison's sides, a bundled schema file, a mapping check's template. |
+| `flow` | The flow's page on the interface and partition the row names. | Every row naming a pipeline with an interface or a partition; an action on a flow. |
+| `records`, `delivered`, `submissions`, `issue` | The flow's Records tab (a submission's: the records it planned, and those it delivered), its Submissions tab, and its Issues tab on one issue. | A flow's figures, a flow rendering a mapping, a submission, an action on a flow; `issue` on a record's trace. |
+| `activity` | The audit trail narrowed to one ledger, in its partition. | A flow's figures (one ledger's), an interface, a flow rendering a mapping. |
+| `sourceFile` | The Records page on the records the row's ingestion file brought, in its partition. | Records and hits. |
+| `record`, `lastSubmission`, `submission`, `changes` | A record's page, a submission's page, a cache's Deliveries tab. | Audit trail entries, actions on a record, records, attempts, a cache decision. |
+| `cache`, `explorer` | A partition's cache, and the explorer on the partition. | Registry partitions. |
+| `url`, `fromUrl`, `toUrl` | A schema's page where its release publishes it, outside the GUI. | Schemas and releases, a comparison's sides and files. |
 
-`delivery_record` puts the record's `osdu` link on its answer's own `links` too, beside its page, once the record has
-landed. A record that has not landed has no OSDU id and no explorer link. Opening the explorer reads OSDU through the
-partition's connection, as the explorer always does; the server itself still reads nothing from OSDU.
+SQLFlow's own links (`run`, `repo`, `lineage`, `schedule` and the rest) are added beside these; where a module's link and
+a built-in one have the same name (`flow`), the module's wins, since it knows the part of the flow the row is about. The
+envelope of a listing opens the GUI page that shows the same listing: `delivery_find_records` the Records page asked
+the same, `delivery_flow_records` the flow's Records tab narrowed to the submission or run asked about, and the
+assertion runs, matrix, board and dimension board their flow's Reports, History, Tests and Dimensions tabs.
 
 ## Documentation and flow language
 

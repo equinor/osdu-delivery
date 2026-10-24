@@ -25,6 +25,7 @@ sourceRefs:
   - osdu/src/SqlFlow.Delivery/Ledger/SqlServerLedgerBulk.InventoryDuplicates.cs
   - osdu/src/SqlFlow.Delivery/Engine/Inventories/InventoryRunner.Duplicates.cs
   - osdu/src/SqlFlow.Delivery.ControlPlane/Api/DeliveryInventoryEndpoints.Duplicates.cs
+  - osdu/src/SqlFlow.Delivery.ControlPlane/Background/InventoryDuplicateSweepService.cs
 ---
 
 # osdu.InventoryDuplicateCheck: a check of an inventory's ids for duplicate records, by an operator's key
@@ -95,6 +96,7 @@ selection made of it.
   (`DeliveryInventoryEndpoints.Duplicates.cs`); by the `duplicates` run as it downloads, groups and picks
   (`InventoryRunner.Duplicates.cs`, through `OsduLedger.InventoryDuplicates.cs` and `SqlServerLedgerBulk.InventoryDuplicates.cs`),
   which also clears `TableName` of the inventory's earlier checks when a download completes; by an operator's choice of the
-  copy a group keeps, which moves its counts; by the making of a selection of its picks (`SelectionId`); and by the sweep.
+  copy a group keeps, which moves its counts; by the making of a selection of its picks (`SelectionId`); and by the sweep,
+  when a check is asked for and every hour in the control plane (`InventoryDuplicateSweepService.cs`).
 - **Read** by the Duplicates tab, the API, and the removals of the inventory, which name the check that made the selection
   they took their ids from.

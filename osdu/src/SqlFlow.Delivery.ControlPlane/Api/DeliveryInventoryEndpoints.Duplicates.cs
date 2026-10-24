@@ -597,10 +597,12 @@ public static partial class DeliveryInventoryEndpoints
     }
 
     /// <summary>
-    /// A check as it stands: one under way is closed as failed when its run ended without finishing it, when the catalog no longer
-    /// holds its run, or when its run was never queued. A check that ends between the reads keeps how it ended.
+    /// A check as it stands: one under way is closed when its run ended without finishing it, when the catalog no longer holds its
+    /// run, or when its run was never queued (a download as failed, its table dropped; a pick as stopped, its download kept). A
+    /// check that ends between the reads keeps how it ended. The API settles a check it reads; the duplicate check sweep settles
+    /// the checks nobody reads.
     /// </summary>
-    private static async Task<InventoryDuplicateCheckState> SettleCheckAsync(
+    internal static async Task<InventoryDuplicateCheckState> SettleCheckAsync(
         CatalogDbContext db, ILedger ledger, string partition, InventoryDuplicateCheckState check, TimeProvider clock, CancellationToken ct)
     {
         if (!InventoryDuplicates.IsUnderWay(check.Status))

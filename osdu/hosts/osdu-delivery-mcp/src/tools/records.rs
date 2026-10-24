@@ -5,8 +5,11 @@ use serde_json::{json, Map, Value};
 use sqlflow_mcp::rmcp::handler::server::wrapper::Parameters;
 use sqlflow_mcp::rmcp::{self, schemars, tool, tool_router};
 
+use sqlflow_mcp::encode;
+
 use super::{DeliveryTools, RECORD_HINT};
-use crate::support::{clip_field, composed, guid, optional_guid, refuse, section, Query, LOG_PREVIEW};
+use crate::links::flow_page;
+use crate::support::{clip_field, composed, guid, optional_guid, refuse, section, text, Query, LOG_PREVIEW};
 
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
 pub struct FindRecordsInput {
@@ -59,13 +62,21 @@ totalCapped=true means more match than were counted: narrow with status, flowId 
             Ok(flow_id) => flow_id,
             Err(refused) => return refused,
         };
+        let (search, status, partition) = (text(i.search), text(i.status), text(i.partition));
+        // The Records page asked the same: the lookup, the state, the flow and the partition, as its address takes them.
+        let asked: Vec<String> = [("q", &search), ("status", &status), ("flow", &flow_id), ("partition", &partition)]
+            .into_iter()
+            .filter_map(|(name, value)| value.as_deref().map(|value| format!("{name}={}", encode(value))))
+            .collect();
+        let page = if asked.is_empty() { "/delivery/records".to_string() } else { format!("/delivery/records?{}", asked.join("&")) };
+        let links = json!({ "page": self.ctx.links().route(&page) });
         let query = Query::new()
-            .text("search", i.search)
-            .text("status", i.status)
+            .text("search", search)
+            .text("status", status)
             .text("flowId", flow_id)
-            .text("partition", i.partition)
+            .text("partition", partition)
             .page(i.page, i.page_size);
-        self.ctx.get("/api/v1/delivery/records", query.pairs()).await
+        self.ctx.get_about("/api/v1/delivery/records", query.pairs(), ("listing", "records"), links).await
     }
 
     #[tool(
@@ -119,8 +130,20 @@ delivery_find_records or delivery_flow_records. Ledger bookkeeping only: the rec
             },
         );
 
-        // The trace is about the record, so its explorer link (once it has landed in OSDU) goes on the envelope beside its page.
+        // The trace is about the record, so its explorer link (once it has landed in OSDU) goes on the envelope beside its page,
+        // and the issue it is grouped under, when it has one, opens on its flow's Issues tab in the record's ledger.
         let landed = record.pointer("/record/links/osdu").cloned();
+        let named = |pointer: &str| record.pointer(pointer).and_then(Value::as_str).filter(|value| !value.is_empty());
+        let issue = match (named("/pipelineId"), named("/record/issue")) {
+            (Some(pipeline), Some(issue)) => Some(flow_page(
+                self.ctx.links(),
+                pipeline,
+                named("/interface"),
+                named("/partition"),
+                &[("tab", "issues"), ("issue", issue)],
+            )),
+            _ => None,
+        };
         let mut sections: Vec<(&str, Value)> = vec![("record", record)];
         if let Some(read) = attempts {
             sections.push(("attempts", section(read)));
@@ -141,6 +164,9 @@ delivery_find_records or delivery_flow_records. Ledger bookkeeping only: the rec
         );
         if let Some(osdu) = landed {
             links.insert("osdu".to_string(), osdu);
+        }
+        if let Some(issue) = issue {
+            links.insert("issue".to_string(), json!(issue));
         }
         composed(
             sections,

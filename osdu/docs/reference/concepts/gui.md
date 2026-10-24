@@ -36,6 +36,7 @@ sourceRefs:
   - osdu/gui/src/features/delivery/DeliveryOverviewPage.tsx
   - osdu/gui/src/features/delivery/DeliveryRecordsPage.tsx
   - osdu/gui/src/features/delivery/DeliveryActivityPage.tsx
+  - osdu/gui/src/features/delivery/useLinkedPartition.ts
   - osdu/gui/src/features/delivery/DeliveryActivitySheet.tsx
   - osdu/gui/src/features/delivery/DeliveryRecordPage.tsx
   - osdu/gui/src/features/delivery/RecordJourney.tsx
@@ -205,8 +206,9 @@ source key or one of its key columns, a word of the label, the OSDU id, the deli
 or the ingestion file. Each hit says which value matched. A status picker (`pending`, `waiting`, `delivering`,
 `delivered`, `held`, `failed`, `deleted`, `reverted`) and a flow picker narrow both. A row shows the status, the record
 (label, source key, ingestion file and row), the flow, when it last changed and was last delivered, and its OSDU type,
-a link to the record's OSDU tab; a row opens the record's page. The term, status and flow are in the address, so a
-lookup is a link.
+a link to the record's OSDU tab; a row opens the record's page. The term (`q`), status (`status`) and flow (`flow`, the
+ledger's flow id) are in the address, so a lookup is a link; a link that names a partition (`partition`) makes it the
+title bar's, so the lookup is read in the partition it is about.
 
 ### Removals
 
@@ -230,7 +232,9 @@ action (`deliver`, `intake`, `drain`, `verify`, `probe`, `sync`, `release`, `ado
 `reassign-id`, `source-remove`, `lift-removal`) and outcome. Runs
 that changed nothing are left out until **Show idle runs**. An entry opens on its ids, **Parameters**, its captured
 **Log** (downloadable), and for a `deliver`, `replan`, `drain` or `intake` run that has ended, **Reverse this run**; a
-`reverse` entry shows its **Reversal**.
+`reverse` entry shows its **Reversal**. The flow is in the address (`flow`, the ledger's flow id), so one flow's trail is
+a link; a link that names a partition (`partition`) makes it the title bar's, so the trail is read where that ledger is
+kept.
 
 ### A record's page
 

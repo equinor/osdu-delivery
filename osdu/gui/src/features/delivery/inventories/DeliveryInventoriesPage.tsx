@@ -115,7 +115,8 @@ export default function DeliveryInventoriesPage() {
           // One change of the address: two in a row would each start from the address last drawn, and the first be lost.
           onDuplicateCheck={(checkId) => update({ tab: "duplicates", dc: checkId === null ? null : String(checkId), dk: null, id: null })}
           duplicateKey={params.get("dk")}
-          onDuplicateKey={(key) => update({ dk: key.length === 0 ? null : keyText(key) })}
+          // A key emptied while it is built stays in the address as an empty one; only leaving the builder lets it go.
+          onDuplicateKey={(key) => update({ dk: key === null ? null : keyText(key) ?? "" })}
           duplicateRecord={params.get("dr")}
           onDuplicateRecord={(id) => update({ dr: id })}
           duplicateOutcome={params.get("do")}
