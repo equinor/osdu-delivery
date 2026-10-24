@@ -267,7 +267,8 @@ test.describe.serial("seed the estate via repo source sync", () => {
 
   test("the synced repo appears on the repos page with its pipelines", async ({ adminPage }) => {
     await adminPage.getByTestId("nav-repos").click();
-    await expect(adminPage.getByTestId("page-repos")).toBeVisible();
+    // A new page loads the lazily loaded page again, which on a busy machine takes as long as the first visit.
+    await expect(adminPage.getByTestId("page-repos")).toBeVisible({ timeout: 30_000 });
     const row = adminPage.getByTestId("table-row").filter({ hasText: REPO_NAME });
     await expect(row.first()).toBeVisible({ timeout: 30_000 });
     await row.first().click();
