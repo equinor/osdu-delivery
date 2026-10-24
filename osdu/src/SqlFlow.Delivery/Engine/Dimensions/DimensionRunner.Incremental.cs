@@ -226,7 +226,7 @@ public sealed partial class DimensionRunner
 
         var (keyColumns, dateColumns) = await SettleRecordColumnsAsync(search, templates, dimension, query, resolved, incremental, ct).ConfigureAwait(false);
         var templatesJson = resolved.Kinds.Count == 0 ? null : JsonSerializer.Serialize(resolved.Kinds, StepJson);
-        var concurrency = Math.Max(1, _flow.Parallelism.Concurrency);
+        var concurrency = Math.Max(1, _flow.Parallelism.RecordsAtOnce);
         var shown = string.Create(CultureInfo.InvariantCulture, $"[{OsduSearch.LuceneTime(load.From)}, {OsduSearch.LuceneTime(load.To)})");
         if (load.From is { } start && start >= load.To)
         {

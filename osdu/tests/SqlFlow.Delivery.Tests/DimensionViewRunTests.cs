@@ -52,7 +52,7 @@ public sealed class DimensionViewRunTests : IDisposable
         target:
           connection: ${env:{{TargetVariable}}}
         reliability: { retry: { attempts: 1, baseDelayMs: 1, maxDelayMs: 1 } }
-        parallelism: { concurrency: 2 }
+        parallelism: { recordsAtOnce: 2 }
         dimensions:
           - name: TestCurve
             kind: "osdu:wks:work-product-component--WellLog:*"

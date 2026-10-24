@@ -21,6 +21,8 @@ referenceRefs:
   - delivery-concept-submissions
   - delivery-cli-run
   - delivery-guide-deployment
+  - delivery-flow-assertion
+  - delivery-flow-dimension
   - delivery-table-work-batch
   - concept-control-plane
 sourceRefs:
@@ -46,9 +48,10 @@ sourceRefs:
   - osdu/deploy/terraform/modules/worker/main.tf
   - sqlflow/src/SqlFlow.Core/Engine/SourceLocations.cs
   - osdu/tests/SqlFlow.Delivery.Tests/ScaleEngineTests.cs
+  - osdu/src/SqlFlow.Delivery/Documents/AssertionDocumentMapper.cs
 related:
   - delivery-wiki-0006-work-batches
-updated: 2026-10-23
+updated: 2026-10-24
 ---
 # 0025: What runs at once is a flow's parallelism, and a delivery fans out by default
 
@@ -75,13 +78,14 @@ balancing, and filed under reliability it went unnoticed.
   `parallelInterfaces` became `parallelism.interfaces`. `reliability` keeps what makes a request hold: retries,
   `skipStatusCodes`, timeouts, the rate limit, TLS, the URL allowlist, the response and request ceilings, and
   `leaseSeconds`, which is about recovering the records of a worker that stopped. Renaming the whole block was rejected:
-  retries and TLS are not parallelism either. `concurrency` keeps its name inside the block, because on the other kinds it
-  counts tests, dimensions, version lists or kinds, not records.
+  retries and TLS are not parallelism either. `concurrency` kept its name inside the block, because on the other kinds it
+  counts tests, dimensions, version lists or kinds, not records (since reversed: every kind writes `recordsAtOnce`,
+  below).
 - **The old keys are refused, naming the new.** A document that still writes one under `reliability` is refused with
   where it goes now, rather than accepted under both names, which a document could set to disagree. The refusal is the
   loader's own, not YamlDotNet's unknown property, so it can name the new key; `render.cache` was retired the same way.
 - **Each kind takes what it uses.** An assertion, dimension, inventory or retrieval flow takes `parallelism.concurrency`
-  alone, and a cache flow no parallelism block. They used to accept every delivery setting under `reliability` and
+  alone (written `recordsAtOnce` since, below), and a cache flow no parallelism block. They used to accept every delivery setting under `reliability` and
   ignore it.
 - **A delivery fans out by default, up to eight members.** The human chose the default over keeping fan-out opt-in: the
   pool and its autoscaler exist to spread work, and a delivery that never asks for it never scales. Eight was proposed
@@ -141,7 +145,16 @@ balancing, and filed under reliability it went unnoticed.
   `batchSize` sounded like the main batch and only governed retries. The delivery's keys are now `nodes`,
   `minRowsPerNode`, `recordsAtOnce`, `renderThreads`, `recordsPerBatch` and `interfacesAtOnce`, `batchSize` is gone (a
   worker claims retries `recordsAtOnce` at a time, at least 50), and an old name is refused naming the new one, as the
-  move out of `reliability` was. The other kinds keep `concurrency`, which counts what each of them runs at once.
+  move out of `reliability` was. The other kinds kept `concurrency`, which counts what each of them runs at once, until the next amendment.
+- **Every kind writes `recordsAtOnce`.** Once the delivery's keys were renamed, the estate's assertion and dimension
+  flows were written with `parallelism.recordsAtOnce` as well, following the delivery's table, and were refused: the
+  other kinds had kept `concurrency`. The human chose to change the code, not the documents: every kind takes
+  `parallelism.recordsAtOnce`, so a flow's settings read alike whatever its kind and an author need not know which kind
+  spells the setting how. Keeping `concurrency` on the other kinds, which this record first decided because there the
+  setting counts tests, dimensions, version lists or kinds rather than records, was rejected for that reason, and so was
+  a name for each kind (`testsAtOnce`, `dimensionsAtOnce`), which would have changed the estate's documents again. What
+  the key counts on each kind is on that kind's reference page. `parallelism.concurrency` is refused on those kinds,
+  naming `recordsAtOnce`, as the delivery's old names are.
 - **The split is fail safe.** The ranges are contiguous and exhaustive by construction (the first has no lower bound,
   the last no upper bound, each starts where the one before ends) and are recorded on the submission before any part
   starts, so a part executed again, or taken over, reads exactly its range. A range a part did not deliver is delivered
@@ -162,8 +175,8 @@ balancing, and filed under reliability it went unnoticed.
 
 - An estate's documents that write a moved key are refused until they are moved, each refusal naming its key; the
   documents move in one change with the upgrade, since the old version does not know `parallelism`.
-- A large delivery whose `source.work` is on storage queues up to eight members, and an autoscaled pool brings up nodes
-  for them; a flow wanting one run sets `parallelism.fanOut: 0`. A flow with a relative `source.work` is unchanged: one run. Each run keeps its own `parallelism.concurrency`, so the records in flight against OSDU
+- A large delivery whose `source.work` is on storage is split into up to eight parts, each on a node of its own, and an
+  autoscaled pool brings up a node for each; a flow wanting one node sets `parallelism.nodes: 1`. A flow with a relative `source.work` is unchanged: one run. Each part keeps its own `parallelism.recordsAtOnce`, so the records in flight against OSDU
   multiply by the runs; the rate limit is what bounds them as a whole.
 - Every run's trace says why it did not fan out, which is the first thing to read when a pool does not scale.
 - On a pool with no place free, a fanned-out intake takes up to three minutes longer than one run planning alone; a

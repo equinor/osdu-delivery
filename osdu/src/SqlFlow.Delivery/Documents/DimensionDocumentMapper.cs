@@ -111,8 +111,8 @@ internal static class DimensionMapper
             Dimensions = dimensions,
             Target = target,
             Views = DimensionViewMapper.MapViews(y.Views, target, name, dimensions, source),
-            Reliability = FlowMapper.MapReliability(y.Reliability, "a dimension flow", takesConcurrency: true, source),
-            Parallelism = FlowMapper.MapRunParallelism(y.Parallelism, source),
+            Reliability = FlowMapper.MapReliability(y.Reliability, "a dimension flow", takesRecordsAtOnce: true, source),
+            Parallelism = FlowMapper.MapRunParallelism(y.Parallelism, "the dimensions built at once, and the searches each asks at once", source),
             Incremental = MapIncremental(y.Incremental, source),
         };
 

@@ -212,7 +212,7 @@ public sealed class RetrievalRunner
         var kinds = new RetrievedKind?[_flow.Source.Kinds.Count];
         try
         {
-            var options = new ParallelOptions { MaxDegreeOfParallelism = Math.Clamp(_flow.Parallelism.Concurrency, 1, 64), CancellationToken = ct };
+            var options = new ParallelOptions { MaxDegreeOfParallelism = Math.Clamp(_flow.Parallelism.RecordsAtOnce, 1, 64), CancellationToken = ct };
             await Parallel.ForEachAsync(Enumerable.Range(0, kinds.Length), options, async (i, token) =>
             {
                 kinds[i] = await RetrieveKindAsync(_flow.Source.Kinds[i], query, location, token).ConfigureAwait(false);

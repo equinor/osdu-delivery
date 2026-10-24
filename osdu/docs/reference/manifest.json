@@ -2580,7 +2580,7 @@
         "fan-out",
         "many nodes",
         "autoscaling",
-        "parallelism.fanOut",
+        "parallelism.nodes",
         "rate limit across a fan-out",
         "watermark",
         "submission status",
@@ -7550,7 +7550,8 @@
         "sqlflow/src/SqlFlow.Catalog/RunQueueStore.cs",
         "osdu/deploy/terraform/modules/worker/main.tf",
         "sqlflow/src/SqlFlow.Core/Engine/SourceLocations.cs",
-        "osdu/tests/SqlFlow.Delivery.Tests/ScaleEngineTests.cs"
+        "osdu/tests/SqlFlow.Delivery.Tests/ScaleEngineTests.cs",
+        "osdu/src/SqlFlow.Delivery/Documents/AssertionDocumentMapper.cs"
       ]
     },
     {

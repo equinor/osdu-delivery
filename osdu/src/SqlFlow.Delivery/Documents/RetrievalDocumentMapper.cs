@@ -93,8 +93,8 @@ internal static class RetrievalMapper
                 RollRecords = target.RollRecords ?? 100_000,
                 Manifest = string.IsNullOrWhiteSpace(target.Manifest) ? "manifest.json" : target.Manifest!.Trim(),
             },
-            Reliability = FlowMapper.MapReliability(y.Reliability, "a retrieval flow", takesConcurrency: true, source),
-            Parallelism = FlowMapper.MapRunParallelism(y.Parallelism, source),
+            Reliability = FlowMapper.MapReliability(y.Reliability, "a retrieval flow", takesRecordsAtOnce: true, source),
+            Parallelism = FlowMapper.MapRunParallelism(y.Parallelism, "the kinds retrieved at once", source),
         };
 
         Validate(flow, source);

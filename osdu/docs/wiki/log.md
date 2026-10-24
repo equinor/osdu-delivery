@@ -325,3 +325,15 @@ and the module's key cut (`osdu/src/SqlFlow.Delivery/Source/KeySlices.cs`).
 Amended [0025](decisions/0025-parallelism-and-default-fan-out.md): `parallelism.nodes` and a part per
 `minRowsPerNode` rows, each part on a node of its own through a new SQLFlow extension point, the first run only
 coordinating, the keys renamed for what they are, and why the split cannot lose a row.
+
+## [2026-10-24] ingest | Every flow kind writes recordsAtOnce, decision 0025 amended
+
+Source: the human's estate after the delivery's keys were renamed. Its assertion and dimension flows were written with
+`parallelism.recordsAtOnce`, following the delivery's table, and `sqlflow validate` refused all 23 of them while their
+delivery flows loaded; the human directed that the code be fixed, not the documents. Read with the loader of every kind
+(`osdu/src/SqlFlow.Delivery/Documents/DeliveryDocumentLoader.cs`, `osdu/src/SqlFlow.Delivery/Documents/YamlModels.cs`).
+
+Amended [0025](decisions/0025-parallelism-and-default-fan-out.md): every kind takes `parallelism.recordsAtOnce`, the
+reasons the earlier choice of `concurrency` on the other kinds and a name per kind were rejected, and the consequences
+restated in the delivery's keys. [0006](decisions/0006-work-batches.md) names the keys its decision rests on by their
+names now.

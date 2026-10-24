@@ -795,25 +795,25 @@ internal sealed class FlowReliabilityYaml
 
     public int? LeaseSeconds { get; set; }
 
-    /// <summary>Moved to <c>parallelism.concurrency</c>; refused here.</summary>
+    /// <summary>Moved to <c>parallelism.recordsAtOnce</c>; refused here.</summary>
     public int? Concurrency { get; set; }
 
-    /// <summary>Moved to <c>parallelism.batchSize</c>; refused here.</summary>
+    /// <summary>Gone: retries are claimed <c>parallelism.recordsAtOnce</c> at a time; refused here.</summary>
     public int? BatchSize { get; set; }
 
-    /// <summary>Moved to <c>parallelism.batchRecords</c>; refused here.</summary>
+    /// <summary>Moved to <c>parallelism.recordsPerBatch</c>; refused here.</summary>
     public int? BatchRecords { get; set; }
 
-    /// <summary>Moved to <c>parallelism.fanOut</c>; refused here.</summary>
+    /// <summary>Moved to <c>parallelism.nodes</c>; refused here.</summary>
     public int? FanOut { get; set; }
 
-    /// <summary>Moved to <c>parallelism.fanOutMinRecords</c>; refused here.</summary>
+    /// <summary>Moved to <c>parallelism.minRowsPerNode</c>; refused here.</summary>
     public int? FanOutMinRecords { get; set; }
 
-    /// <summary>Moved to <c>parallelism.renderers</c>; refused here.</summary>
+    /// <summary>Moved to <c>parallelism.renderThreads</c>; refused here.</summary>
     public int? RenderParallelism { get; set; }
 
-    /// <summary>Moved to <c>parallelism.interfaces</c>; refused here.</summary>
+    /// <summary>Moved to <c>parallelism.interfacesAtOnce</c>; refused here.</summary>
     public int? ParallelInterfaces { get; set; }
 }
 
@@ -859,9 +859,15 @@ internal sealed class FlowParallelismYaml
     public int? Interfaces { get; set; }
 }
 
-/// <summary>The <c>parallelism</c> block of an assertion, dimension, inventory or retrieval flow: what one run works on at once.</summary>
+/// <summary>
+/// The <c>parallelism</c> block of an assertion, dimension, inventory or retrieval flow: what one run works on at once,
+/// written <see cref="RecordsAtOnce"/> as on a delivery flow.
+/// </summary>
 internal sealed class RunParallelismYaml
 {
+    public int? RecordsAtOnce { get; set; }
+
+    /// <summary>Renamed <see cref="RecordsAtOnce"/>; refused here.</summary>
     public int? Concurrency { get; set; }
 }
 

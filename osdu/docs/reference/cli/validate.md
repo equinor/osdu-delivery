@@ -120,7 +120,7 @@ In the folder mode each document is one line, and `--json` reports each document
 
 - **Parameters.** Every `{name}` token in a value that takes substitution names a declared parameter
   (`<file>: source.work uses '{region}', which is not declared under parameters.`).
-- **Ranges and forms** of the settings: `parallelism.concurrency must be at least 1.`, a service path starts with `/`,
+- **Ranges and forms** of the settings: `parallelism.recordsAtOnce must be at least 1.`, a service path starts with `/`,
   a kind is `authority:source:entityType:version`, and so on.
 - **Credentials.** SQLFlow's credential-hygiene check warns about a flow's credential references that embed a secret
   keyword (`password=`, `secret=` and the like) without failing. The module's loaders go further and refuse a literal

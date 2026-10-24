@@ -62,7 +62,7 @@ public sealed record DimensionFlowDefinition
 
     public FlowReliability Reliability { get; init; } = new();
 
-    /// <summary>How many dimensions build at once, and how many requests each asks of the search at once (<c>parallelism.concurrency</c>).</summary>
+    /// <summary>How many dimensions build at once, and how many requests each asks of the search at once (<c>parallelism.recordsAtOnce</c>).</summary>
     public RunParallelism Parallelism { get; init; } = new();
 
     /// <summary>

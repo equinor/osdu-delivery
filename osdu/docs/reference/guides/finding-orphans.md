@@ -71,7 +71,7 @@ source:
 owners: [welldb-delivery@example.com]
 maxMissingChecks: 100000
 removal: { findings: [orphan, stale], purge: false }
-parallelism: { concurrency: 4 }
+parallelism: { recordsAtOnce: 4 }
 
 inventories:
   - name: Wellbores

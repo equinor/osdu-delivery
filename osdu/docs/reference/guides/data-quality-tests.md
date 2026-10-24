@@ -117,7 +117,7 @@ reliability:
   retry: { attempts: 4, backoff: exponential, baseDelayMs: 500, maxDelayMs: 30000 }
 
 parallelism:
-  concurrency: 4
+  recordsAtOnce: 4
 
 tests:
   - name: logs-delivered

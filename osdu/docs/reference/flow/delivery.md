@@ -190,8 +190,8 @@ reliability:
   retry: { attempts: 4, backoff: exponential, baseDelayMs: 500, maxDelayMs: 30000 }
 
 parallelism:
-  concurrency: 8
-  fanOut: 4
+  recordsAtOnce: 8
+  nodes: 4
 
 failWhen:
   failedPercent: 20
@@ -551,7 +551,7 @@ uses comes from the rows it reads, at most `nodes`:
 | 5,000 rows (a first, full delivery) | 5 |
 | 20,000 rows or more | 8, the most `nodes` allows |
 
-A worker claims the records due for a retry `recordsAtOnce` at a time, and at least 50. How a run is cut into parts, how
+A worker claims the records due for a retry `recordsAtOnce` at a time, and at least 50. An assertion, dimension, inventory or retrieval flow writes what one of its runs works on at once with the same key, `recordsAtOnce`: its tests, dimensions, version lists or kinds ([assertion](assertion.md), [dimension](dimension.md), [inventory](inventory.md), [retrieval](retrieval.md)). How a run is cut into parts, how
 each part is delivered, and what the first run does with a part that does not finish is on
 [submissions](../concepts/submissions.md#many-nodes).
 

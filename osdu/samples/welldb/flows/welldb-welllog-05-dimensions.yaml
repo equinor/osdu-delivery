@@ -31,7 +31,7 @@ source:
         scope: ${env:OSDU_SCOPE}
 
 parallelism:
-  concurrency: 4
+  recordsAtOnce: 4
 
 # The module's database, where the dimensions' tables and the view are, named as the pipelines reading the view name it.
 # The sample's local setup keeps the module in the catalog's database; a deployment with a module database of its own

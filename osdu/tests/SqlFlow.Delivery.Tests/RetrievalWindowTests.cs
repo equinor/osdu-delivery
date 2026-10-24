@@ -41,7 +41,7 @@ public sealed class RetrievalWindowTests : IDisposable
         target:
           location: "{{location}}"
         reliability: { retry: { attempts: 1, baseDelayMs: 1, maxDelayMs: 1 } }
-        parallelism: { concurrency: 1 }
+        parallelism: { recordsAtOnce: 1 }
         """;
 
     private sealed record Retrieval(RetrievalRunner Runner, FakeHttpHandler Handler, HttpRuntime Runtime, OsduLedger Ledger) : IDisposable

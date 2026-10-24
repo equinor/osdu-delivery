@@ -169,7 +169,7 @@ source:
       url: ${env:OSDU_TOKEN_URL}
       body: { scope: "${env:OSDU_SCOPE}" }
 
-parallelism: { concurrency: 4 }
+parallelism: { recordsAtOnce: 4 }
 
 dimensions:
   - name: Wellbore
@@ -234,7 +234,7 @@ type ...`).
 | `target` | map | none | `connection`: the module's database, as the pipelines reading the flow's tables and views name it. Required with `views`. See [Views](#views). |
 | `views` | list | none | Views over the flow's dimension tables, at most 50. See [Views](#views). |
 | `reliability` | map | delivery defaults | The HTTP settings a delivery flow takes ([delivery flow](delivery.md)): timeout, retry, rate limit, TLS, URL allowlist and response size. |
-| `parallelism` | map | defaults | `concurrency` (default 8, at least 1): how many dimensions build at once, and how many requests each asks of the search at once (value ranges, label and attribute searches, cursors). A dimension flow takes no other parallelism key. It was `reliability.concurrency` before: a document that still writes that is refused, naming `parallelism.concurrency`, and a delivery flow's setting written under `reliability` (`fanOut`, `batchRecords`) is refused as one to remove. |
+| `parallelism` | map | defaults | `recordsAtOnce` (default 8, at least 1): how many dimensions build at once, and how many requests each asks of the search at once (value ranges, label and attribute searches, cursors). It is written as on a [delivery flow](delivery.md#parallelism), so a flow's settings read alike whatever its kind. A dimension flow takes no other parallelism key. It was `parallelism.concurrency`, and `reliability.concurrency` before that: a document that still writes either is refused, naming `parallelism.recordsAtOnce`, and a delivery flow's setting written under `reliability` (`fanOut`, `batchRecords`) is refused as one to remove. |
 | `incremental` | map | none | How a build loads the dimensions after their first full load. Left out, every build loads every dimension in full. See [Full and incremental loads](#full-and-incremental-loads). |
 | `schedule`, `mode`, `lifecycle` | | none | SQLFlow's envelope keys ([schedule](../../../../sqlflow/docs/reference/flow/schedule.md), [flow overview](../../../../sqlflow/docs/reference/flow/overview.md)). A schedule's `values` may name the partition (`partition: dev`) and the flow's parameters. |
 
@@ -591,7 +591,7 @@ For each dimension, in the run's partition:
 2. **Every distinct key.** The search aggregates the field over the whole query. A range answered with fewer groups
    than `aggregationSize` is complete; one answered with that many is split at a key it returned and each half is asked
    again, until every range answers whole. A range that cannot be split is read record by record through the search
-   cursor. Ranges are asked `concurrency` at a time. A text value over 256 characters is not in the `keyword` field and
+   cursor. Ranges are asked `recordsAtOnce` at a time. A text value over 256 characters is not in the `keyword` field and
    is counted, never a key; a key over 1,024 characters is counted and left out.
 3. **Labels, attributes and collected values**, read side by side when the dimension has both.
 4. **Values and filters.** Each key is cleaned into its value. A key's filter is written the way the index holds the
@@ -604,7 +604,7 @@ For each dimension, in the run's partition:
    limit: it grows with the dimension (one of well log curves stages a row for every field of every curve), so it takes
    as long as its rows do, and cancelling the run stops it with nothing written.
 
-Dimensions build `concurrency` at a time. A dimension that fails keeps what the build before it wrote, and the run ends
+Dimensions build `recordsAtOnce` at a time. A dimension that fails keeps what the build before it wrote, and the run ends
 failed with every other dimension built. A second build of the same dimension waits for the first's lock and fails after
 two minutes: `Another build of dimension <id> held its write lock for more than 120 seconds (sp_getapplock answered ...),
 so this build wrote nothing. Build it again when the other has finished.`

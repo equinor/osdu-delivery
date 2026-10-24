@@ -1095,10 +1095,11 @@ public sealed record FlowParallelism
 public sealed record RunParallelism
 {
     /// <summary>
-    /// What one run works on at once: an assertion run's tests (and each test's requests in flight), a dimension build's
-    /// dimensions (and each one's searches), an inventory build's version lists, a retrieval's kinds. Default 8.
+    /// What one run works on at once, written <c>recordsAtOnce</c> as on a delivery flow, so every kind spells it alike: an
+    /// assertion run's tests (and each test's requests in flight), a dimension build's dimensions (and each one's
+    /// searches), an inventory build's version lists, a retrieval's kinds. Default 8.
     /// </summary>
-    public int Concurrency { get; init; } = 8;
+    public int RecordsAtOnce { get; init; } = 8;
 }
 
 public enum BackoffKind

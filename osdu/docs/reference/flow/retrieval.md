@@ -156,7 +156,7 @@ reliability:
   timeoutSeconds: 100
 
 parallelism:
-  concurrency: 2
+  recordsAtOnce: 2
 
 schedule:
   cron: "0 3 * * *"
@@ -178,7 +178,7 @@ Unknown keys are refused: the document is read strictly, so a misspelled key fai
 | `source` | map | yes | none | The OSDU side: platform, credentials, partition, kinds, query, paging and watermark. |
 | `target` | map | yes | none | The lake side: where a run's files and manifest go and how the files are cut. |
 | `reliability` | map | no | defaults | The HTTP settings, written as on a [delivery flow](delivery.md): `timeoutSeconds`, `retry`, `rateLimitRps`, `verifyTls`, `urlAllowlist`, `maxResponseBytes`. |
-| `parallelism` | map | no | defaults | `concurrency`: how many kinds are retrieved at once (default 8, at least 1, at most 64 run at once). A retrieval flow takes no other parallelism key. It was `reliability.concurrency` before: a document that still writes that is refused, naming `parallelism.concurrency`, and a delivery flow's setting written under `reliability` (`fanOut`, `batchRecords`) is refused as one to remove. |
+| `parallelism` | map | no | defaults | `recordsAtOnce`: how many kinds are retrieved at once (default 8, at least 1, at most 64 run at once). It is written as on a [delivery flow](delivery.md#parallelism), so a flow's settings read alike whatever its kind. A retrieval flow takes no other parallelism key. It was `parallelism.concurrency`, and `reliability.concurrency` before that: a document that still writes either is refused, naming `parallelism.recordsAtOnce`, and a delivery flow's setting written under `reliability` (`fanOut`, `batchRecords`) is refused as one to remove. |
 | `schedule`, `mode`, `lifecycle` | | no | none | SQLFlow's envelope keys, as on every flow: see [schedule](../../../../sqlflow/docs/reference/flow/schedule.md) and [the flow overview](../../../../sqlflow/docs/reference/flow/overview.md). |
 
 There is no `partitions` key: a retrieval reads the one partition its `source.headers` name.
@@ -226,7 +226,7 @@ Every path must start with `/`. A kind is `authority:source:entityType:version` 
 ## Kinds, the query and the cursor
 
 Each kind is read through its own search cursor (`POST /api/search/v2/query_with_cursor`), and up to
-`parallelism.concurrency` kinds are read at once. The first page asks for the exact total (`trackTotalCount`), every
+`parallelism.recordsAtOnce` kinds are read at once. The first page asks for the exact total (`trackTotalCount`), every
 later page is asked for once with the cursor the service last named, and the cursor is closed
 (`DELETE /query_with_cursor/{cursor}`) when the read stops for any reason.
 
@@ -400,8 +400,9 @@ as after any flow that lands files. See [Lineage](../concepts/lineage.md).
 | `target.location '<location>' holds a ${...} reference, and a location is not resolved from one: write the path or storage URI itself, and vary it per run or environment with a {parameter} token declared under parameters.` | A `${...}` reference in the location. |
 | `source.probePath is not a key of a retrieval flow: the target probe covers delivery flows only, and a retrieval run never calls it. A retrieval that cannot reach the search service fails on its first page and says why; remove the key.` | A delivery flow's probe path. |
 | `source.auth.secretRef holds a literal value, and it is the credential the flow authenticates with (the token, the API key, the password or the client secret). A flow document holds references only: ...` | A literal secret. |
-| `parallelism.concurrency must be at least 1.` | Concurrency below 1. |
-| `reliability.concurrency is now parallelism.concurrency: what runs at once, and across the fleet, is the flow's parallelism, and reliability keeps what makes a request hold. Move it.` | A setting written where it was before. |
+| `parallelism.recordsAtOnce must be at least 1.` | `recordsAtOnce` below 1. |
+| `parallelism.concurrency is now parallelism.recordsAtOnce, as on a delivery flow: the kinds retrieved at once. Rename it.` | The name the setting had before. |
+| `reliability.concurrency is now parallelism.recordsAtOnce: what runs at once, and across the fleet, is the flow's parallelism, and reliability keeps what makes a request hold. Move it.` | A setting written where it was before. |
 | `reliability.fanOut is not a setting here any more: a delivery flow writes it as parallelism.nodes, and a retrieval flow has no use for it. Remove it.` | A delivery-only setting. |
 
 Each message is prefixed with the file path.

@@ -43,7 +43,7 @@ public sealed class RetrievalTests : IDisposable
           rollRecords: 2
           compression: gzip
         reliability: { retry: { attempts: 2, baseDelayMs: 1, maxDelayMs: 1 } }
-        parallelism: { concurrency: 1 }
+        parallelism: { recordsAtOnce: 1 }
         """;
 
     private readonly OsduTestDatabase _db = new();
@@ -96,7 +96,7 @@ public sealed class RetrievalTests : IDisposable
         Assert.Equal("modifyTime", flow.Source.Incremental!.Field);
         Assert.Equal(new DateTime(2026, 1, 1, 0, 0, 0, DateTimeKind.Utc), flow.Source.Incremental.Since);
         Assert.Equal(5, flow.Source.Incremental.LagMinutes);
-        Assert.Equal(1, flow.Parallelism.Concurrency);
+        Assert.Equal(1, flow.Parallelism.RecordsAtOnce);
         Assert.Empty(flow.CredentialReferences());
 
         var kind = new RetrievalFlowKind(loader);
@@ -119,6 +119,10 @@ public sealed class RetrievalTests : IDisposable
         Assert.Contains("since", Assert.Throws<FlowValidationException>(() => loader.ParseRetrieval(Yaml.Replace("2026-01-01T00:00:00Z", "yesterday", StringComparison.Ordinal), "f")).Message, StringComparison.Ordinal);
         Assert.Contains("flowType: delivery", Assert.Throws<FlowValidationException>(() => loader.ParseFlow(Yaml, "f")).Message, StringComparison.Ordinal);
         Assert.Contains("rollRecordz", Assert.Throws<FlowValidationException>(() => loader.ParseRetrieval(Yaml.Replace("rollRecords: 2", "rollRecordz: 2", StringComparison.Ordinal), "f")).Message, StringComparison.Ordinal);
+        Assert.Contains(
+            "f: parallelism.concurrency is now parallelism.recordsAtOnce, as on a delivery flow: the kinds retrieved at once. Rename it.",
+            Assert.Throws<FlowValidationException>(() => loader.ParseRetrieval(Yaml.Replace("parallelism: { recordsAtOnce: 1 }", "parallelism: { concurrency: 1 }", StringComparison.Ordinal), "f")).Message,
+            StringComparison.Ordinal);
 
         // A retrieval payload carries only force, which restarts an incremental flow at its declared start: there is no
         // submission, record or slice for it to name.

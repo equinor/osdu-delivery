@@ -72,7 +72,7 @@ public sealed record AssertionFlowDefinition
 
     public FlowReliability Reliability { get; init; } = new();
 
-    /// <summary>How many tests run at once, and how many requests one test has in flight (<c>parallelism.concurrency</c>).</summary>
+    /// <summary>How many tests run at once, and how many requests one test has in flight (<c>parallelism.recordsAtOnce</c>).</summary>
     public RunParallelism Parallelism { get; init; } = new();
 
     /// <summary>

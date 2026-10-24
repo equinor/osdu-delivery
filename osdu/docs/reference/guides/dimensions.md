@@ -101,7 +101,7 @@ source:
       url: ${env:OSDU_TOKEN_URL}
       body: { scope: "${env:OSDU_SCOPE}" }
 
-parallelism: { concurrency: 4 }
+parallelism: { recordsAtOnce: 4 }
 
 dimensions:
   - name: Wellbore

@@ -6,7 +6,7 @@
   "includeEnvelope": true,
   "generatedFrom": "osdu/docs/reference/flow/dimension.md and osdu/src/SqlFlow.Delivery/Documents/YamlModels.cs",
   "naming": "The loader deserializes with YamlDotNet's CamelCaseNamingConvention and refuses any key it does not know.",
-  "keyCount": 124,
+  "keyCount": 125,
   "keys": [
     {
       "path": "batch",
@@ -392,7 +392,7 @@
       "path": "reliability.concurrency",
       "type": "integer",
       "required": false,
-      "description": "Not a setting here any more: it is written as `parallelism.concurrency`, since what runs at once, and across the fleet, is the flow's parallelism, and reliability keeps what makes a request hold. A document that still declares it here is refused when it loads, naming where it goes."
+      "description": "Not a setting here any more: it is written as `parallelism.recordsAtOnce`, since what runs at once, and across the fleet, is the flow's parallelism, and reliability keeps what makes a request hold. A document that still declares it here is refused when it loads, naming where it goes."
     },
     {
       "path": "reliability.fanOut",
@@ -547,14 +547,20 @@
       "path": "parallelism",
       "type": "object",
       "required": false,
-      "description": "What one run works on at once: `concurrency`, how much a build asks of the search at once. A dimension flow fans nothing out across the fleet."
+      "description": "What one run works on at once: `recordsAtOnce`, how much a build asks of the search at once. A dimension flow fans nothing out across the fleet."
+    },
+    {
+      "path": "parallelism.recordsAtOnce",
+      "type": "integer",
+      "required": false,
+      "description": "How much a build asks of the search at once: the dimensions built at once, the ranges of a field's values, the searches that read labels and attributes, and the cursors of a pass over the records a collected attribute is read from. At least 1; 1 asks one thing at a time.",
+      "default": "8"
     },
     {
       "path": "parallelism.concurrency",
       "type": "integer",
       "required": false,
-      "description": "How much a build asks of the search at once: the dimensions built at once, the ranges of a field's values, the searches that read labels and attributes, and the cursors of a pass over the records a collected attribute is read from. At least 1; 1 asks one thing at a time.",
-      "default": "8"
+      "description": "Renamed: it is written as `parallelism.recordsAtOnce`, as on a delivery flow. A document that still declares it is refused when it loads, naming the key it is now."
     },
     {
       "path": "source",

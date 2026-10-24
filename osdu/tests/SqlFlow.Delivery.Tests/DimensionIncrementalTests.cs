@@ -32,7 +32,7 @@ public sealed class DimensionIncrementalTests : IDisposable
           endpoint: http://localhost
           aggregationSize: 50
         reliability: { retry: { attempts: 1, baseDelayMs: 1, maxDelayMs: 1 } }
-        parallelism: { concurrency: 2 }
+        parallelism: { recordsAtOnce: 2 }
 
         """;
 

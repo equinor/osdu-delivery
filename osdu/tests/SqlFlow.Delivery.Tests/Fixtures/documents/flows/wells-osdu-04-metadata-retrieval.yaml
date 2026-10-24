@@ -37,7 +37,7 @@ reliability:
   timeoutSeconds: 100
 
 parallelism:
-  concurrency: 4
+  recordsAtOnce: 4
 
 # Nightly, at the same hour the cache of this partition is refreshed, though the two runs are independent.
 schedule:

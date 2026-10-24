@@ -141,8 +141,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   and `interfacesAtOnce`. They were `fanOut` (which counted the parts beside the first run), `fanOutMinRecords`,
   `concurrency`, `renderers` (`reliability.renderParallelism` before), `batchRecords` and `interfaces`
   (`reliability.parallelInterfaces`), and `batchSize` is gone: retries are claimed `recordsAtOnce` at a time, at least
-  50. An assertion, dimension, inventory or retrieval flow takes `parallelism.concurrency` alone. A document that still
-  writes an old name, or a setting under `reliability`, is refused, naming the key it is now: rename them in every flow
+  50. An assertion, dimension, inventory or retrieval flow writes what one of its runs works on at once with the same
+  `parallelism.recordsAtOnce` (it was `parallelism.concurrency`). A document that still writes an old name, or a setting under `reliability`, is refused, naming the key it is now: rename them in every flow
   when you upgrade ([parallelism](osdu/docs/reference/flow/delivery.md#parallelism)).
 - **A large delivery is spread over the workers by default, each part on a worker of its own.** A run is split into a
   part per 1,000 rows it reads, up to `parallelism.nodes` (8 by default), so an incremental run of a few changed rows

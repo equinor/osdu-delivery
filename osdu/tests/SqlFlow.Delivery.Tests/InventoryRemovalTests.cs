@@ -61,7 +61,7 @@ public sealed class InventoryRemovalTests : IDisposable
           - name: WellLogs
             kind: "{{Kind}}"
         reliability: { retry: { attempts: 1, baseDelayMs: 1, maxDelayMs: 1 } }
-        parallelism: { concurrency: 2 }
+        parallelism: { recordsAtOnce: 2 }
         """;
 
     private JsonObject Add(string key, long version = 3, string creator = Estate)

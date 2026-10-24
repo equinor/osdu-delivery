@@ -126,7 +126,7 @@ source:
 owners: [welldb-delivery@example.com]
 maxMissingChecks: 100000
 removal: { findings: [orphan, stale], purge: false }
-parallelism: { concurrency: 4 }
+parallelism: { recordsAtOnce: 4 }
 
 inventories:
   - name: Wellbores
@@ -162,7 +162,7 @@ Unknown keys are refused when the document is read.
 | `inventories` | list | required | The inventories, at least 1 and at most 100, names unique ignoring case. |
 | `removal` | map | none | What an operator may remove from OSDU of what the inventories found. Left out, the flow only reads OSDU. Gone ids are removed from the inventory whatever it declares. See [Removal](#removal). |
 | `reliability` | map | delivery defaults | The HTTP settings a [delivery flow](delivery.md) takes: timeout, retry, rate limit, TLS, URL allowlist and response size. |
-| `parallelism` | map | defaults | `concurrency` (default 8, at least 1): how many version lists a build reads at once for `versions: all`. Inventories are read one after another. An inventory flow takes no other parallelism key. It was `reliability.concurrency` before: a document that still writes that is refused, naming `parallelism.concurrency`, and a delivery flow's setting written under `reliability` (`fanOut`, `batchRecords`) is refused as one to remove. |
+| `parallelism` | map | defaults | `recordsAtOnce` (default 8, at least 1): how many version lists a build reads at once for `versions: all`. Inventories are read one after another. It is written as on a [delivery flow](delivery.md#parallelism), so a flow's settings read alike whatever its kind. An inventory flow takes no other parallelism key. It was `parallelism.concurrency`, and `reliability.concurrency` before that: a document that still writes either is refused, naming `parallelism.recordsAtOnce`, and a delivery flow's setting written under `reliability` (`fanOut`, `batchRecords`) is refused as one to remove. |
 | `schedule`, `mode`, `lifecycle` | | none | SQLFlow's envelope keys ([schedule](../../../../sqlflow/docs/reference/flow/schedule.md), [flow overview](../../../../sqlflow/docs/reference/flow/overview.md)). A schedule's `values` may name the partition (`partition: dev`) and the flow's parameters. |
 
 ### source
@@ -320,7 +320,7 @@ the [orphans guide](../guides/finding-orphans.md#4-act-on-each-finding).
    ones rewritten, ids served again brought back, and ids the read did not list marked gone, never deleted. A second
    build of the same inventory waits for the lock and, after ten minutes, fails with `Another build of the inventory held
    it for ten minutes; this build merged nothing.`
-3. **Versions**, for `versions: all`: the version list of every record that is new or moved, `concurrency` at a time.
+3. **Versions**, for `versions: all`: the version list of every record that is new or moved, `recordsAtOnce` at a time.
 4. **Reconcile**: the owners, the finding of every id served, then up to `maxMissingChecks` ids a ledger expects that the
    read did not list, read by id from storage (`missing` when storage does not hold it, `unlisted` when it does). The ids
    are asked for least recently asked first (never asked first, by the row's `CheckedUtc`), so builds that each reach the bound take turns through

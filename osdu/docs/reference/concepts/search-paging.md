@@ -157,7 +157,7 @@ Keep `cursor` when its reads succeed. Choose `createTime` when:
 - searches are large (hundreds of thousands of records and more), where restarting from the first page is costly and a
   failure is more likely somewhere along the read;
 - a flow takes long between pages, such as a retrieval with `fetchRecords` over a slow lake, and a cursor would expire;
-- many reads run at once (a retrieval's kinds under `parallelism.concurrency`, several flows on one partition) and the
+- many reads run at once (a retrieval's kinds under `parallelism.recordsAtOnce`, several flows on one partition) and the
   service refuses new cursors.
 
 An assertion test that declares its own `sort` is read through the cursor whatever `source.paging` says, since only the

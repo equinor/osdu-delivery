@@ -42,6 +42,26 @@ public class DimensionDocumentTests
 
     private static FlowValidationException Refused(string yaml) => Assert.Throws<FlowValidationException>(() => Parse(yaml));
 
+    /// <summary>
+    /// The dimensions built at once are written <c>parallelism.recordsAtOnce</c>, as on a delivery flow; the name the block
+    /// had before is refused naming the one it is now.
+    /// </summary>
+    [Fact]
+    public void The_dimensions_at_once_are_written_recordsAtOnce_as_on_a_delivery_flow()
+    {
+        Assert.Equal(4, Parse(Head + "parallelism: { recordsAtOnce: 4 }\n" + Curves).Parallelism.RecordsAtOnce);
+        Assert.Equal(8, Parse(Head + Curves).Parallelism.RecordsAtOnce);
+
+        Assert.Contains(
+            "flows/dims.yaml: parallelism.concurrency is now parallelism.recordsAtOnce, as on a delivery flow: the dimensions built at once, and the searches each asks at once. Rename it.",
+            Refused(Head + "parallelism: { concurrency: 4 }\n" + Curves).Message,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "flows/dims.yaml: reliability.concurrency is now parallelism.recordsAtOnce",
+            Refused(Head + "reliability: { concurrency: 4 }\n" + Curves).Message,
+            StringComparison.Ordinal);
+    }
+
     [Fact]
     public void A_document_declares_its_dimensions_with_their_paths_and_clean_steps()
     {

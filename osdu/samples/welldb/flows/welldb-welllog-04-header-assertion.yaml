@@ -51,7 +51,7 @@ reliability:
   timeoutSeconds: 100
 
 parallelism:
-  concurrency: 4
+  recordsAtOnce: 4
 
 # Hourly, with the delivery flow (../schedules.yaml): lineage runs this flow after it.
 schedule: welldb-welllog

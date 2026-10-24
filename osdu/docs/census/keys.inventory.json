@@ -6,7 +6,7 @@
   "includeEnvelope": true,
   "generatedFrom": "osdu/docs/reference/flow/inventory.md and osdu/src/SqlFlow.Delivery/Documents/YamlModels.cs",
   "naming": "The loader deserializes with YamlDotNet's CamelCaseNamingConvention and refuses any key it does not know.",
-  "keyCount": 82,
+  "keyCount": 83,
   "keys": [
     {
       "path": "batch",
@@ -105,14 +105,20 @@
       "path": "parallelism",
       "type": "object",
       "required": false,
-      "description": "What one run works on at once: `concurrency`, how many version lists a build reads at once. An inventory flow fans nothing out across the fleet."
+      "description": "What one run works on at once: `recordsAtOnce`, how many version lists a build reads at once. An inventory flow fans nothing out across the fleet."
+    },
+    {
+      "path": "parallelism.recordsAtOnce",
+      "type": "integer",
+      "required": false,
+      "description": "How many version lists of an inventory keeping every version a build reads at once. At least 1.",
+      "default": "8"
     },
     {
       "path": "parallelism.concurrency",
       "type": "integer",
       "required": false,
-      "description": "How many version lists of an inventory keeping every version a build reads at once. At least 1.",
-      "default": "8"
+      "description": "Renamed: it is written as `parallelism.recordsAtOnce`, as on a delivery flow. A document that still declares it is refused when it loads, naming the key it is now."
     },
     {
       "path": "parameters",
@@ -179,7 +185,7 @@
       "path": "reliability.concurrency",
       "type": "integer",
       "required": false,
-      "description": "Not a setting here any more: it is written as `parallelism.concurrency`, since what runs at once, and across the fleet, is the flow's parallelism, and reliability keeps what makes a request hold. A document that still declares it here is refused when it loads, naming where it goes."
+      "description": "Not a setting here any more: it is written as `parallelism.recordsAtOnce`, since what runs at once, and across the fleet, is the flow's parallelism, and reliability keeps what makes a request hold. A document that still declares it here is refused when it loads, naming where it goes."
     },
     {
       "path": "reliability.fanOut",

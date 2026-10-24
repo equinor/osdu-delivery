@@ -88,7 +88,7 @@ public sealed record InventoryFlowDefinition
 
     public FlowReliability Reliability { get; init; } = new();
 
-    /// <summary>How many version lists a build reads at once (<c>parallelism.concurrency</c>).</summary>
+    /// <summary>How many version lists a build reads at once (<c>parallelism.recordsAtOnce</c>).</summary>
     public RunParallelism Parallelism { get; init; } = new();
 
     /// <summary>

@@ -30,7 +30,7 @@ public sealed class AssertionRunTests : IDisposable
           endpoint: http://localhost
         defaults: { examples: 10 }
         reliability: { retry: { attempts: 1, baseDelayMs: 1, maxDelayMs: 1 } }
-        parallelism: { concurrency: 3 }
+        parallelism: { recordsAtOnce: 3 }
         tests:
           - name: wellbores
             tags: [smoke]
@@ -187,7 +187,7 @@ public sealed class AssertionRunTests : IDisposable
           endpoint: http://localhost
         defaults: { indexSettleSeconds: 120 }
         reliability: { retry: { attempts: 1, baseDelayMs: 1, maxDelayMs: 1 } }
-        parallelism: { concurrency: 2 }
+        parallelism: { recordsAtOnce: 2 }
         tests:
           - name: wellbores
             kind: {{Wellbore}}

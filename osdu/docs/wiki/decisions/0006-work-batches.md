@@ -34,13 +34,14 @@ memory at the mercy of the source's size.
 ## Decision
 
 - The intake streams the source through a bounded rendering pipeline and writes the rendered documents to JSON Lines
-  work batch files under the flow's work location (`source.work`), `parallelism.batchRecords` documents per file.
+  work batch files under the flow's work location (`source.work`), `parallelism.recordsPerBatch` documents per file.
 - The record row carries the batch number and the document's byte range (`WorkBatch`, `PendingDocumentRef`);
   `osdu.WorkBatch` carries one row per file with its status, lease and counts.
 - A drain leases a whole batch, reads the documents by range, and hands the protocol up to `batchSize`
   records per request. Completion is bulk (a table-valued merge on SQL Server).
-- A submission of at least `parallelism.fanOutMinRecords` records is split by key slice over runs of the same flow
-  across the fleet, as one run family, each planning and sending its own share's batches; since
+- A delivery reading at least twice `parallelism.minRowsPerNode` rows is split by key range over runs of the same
+  flow across the fleet, at most `parallelism.nodes` of them, as one run family, each planning and sending its own
+  range's batches; since
   [0025](0025-parallelism-and-default-fan-out.md) it does so by default, and the settings that say how much runs at once
   are the flow's `parallelism`.
 

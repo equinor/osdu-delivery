@@ -33,7 +33,7 @@ public sealed class AssertionDocumentTests
           examples: 5
         failRunOn: warning
         reliability: { retry: { attempts: 1, baseDelayMs: 1, maxDelayMs: 1 } }
-        parallelism: { concurrency: 2 }
+        parallelism: { recordsAtOnce: 2 }
         tests:
           - name: wellbores
             description: Every wellbore the well database delivered is there, whole.
@@ -128,6 +128,30 @@ public sealed class AssertionDocumentTests
         => string.Join("\n", text.Split('\n').Where(l => l.Trim().Length > 0).Select(l => new string(' ', spaces) + l.TrimEnd('\r')));
 
     private static string Refusal(string yaml) => Assert.Throws<FlowValidationException>(() => Parse(yaml)).Message;
+
+    /// <summary>
+    /// The tests evaluated at once are written <c>parallelism.recordsAtOnce</c>, as on a delivery flow; the name the block
+    /// had before is refused naming the one it is now, and so is the setting still written under <c>reliability</c>.
+    /// </summary>
+    [Fact]
+    public void The_tests_at_once_are_written_recordsAtOnce_as_on_a_delivery_flow()
+    {
+        Assert.Equal(2, Parse(Full).Parallelism.RecordsAtOnce);
+        Assert.Equal(8, Parse(Full.Replace("parallelism: { recordsAtOnce: 2 }", string.Empty, StringComparison.Ordinal)).Parallelism.RecordsAtOnce);
+
+        Assert.Contains(
+            "flow.yaml: parallelism.concurrency is now parallelism.recordsAtOnce, as on a delivery flow: the tests evaluated at once, and the requests one test has in flight. Rename it.",
+            Refusal(Full.Replace("parallelism: { recordsAtOnce: 2 }", "parallelism: { concurrency: 2 }", StringComparison.Ordinal)),
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "flow.yaml: reliability.concurrency is now parallelism.recordsAtOnce",
+            Refusal(Full.Replace("reliability: { retry:", "reliability: { concurrency: 2, retry:", StringComparison.Ordinal)),
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "flow.yaml: parallelism.recordsAtOnce must be at least 1.",
+            Refusal(Full.Replace("parallelism: { recordsAtOnce: 2 }", "parallelism: { recordsAtOnce: 0 }", StringComparison.Ordinal)),
+            StringComparison.Ordinal);
+    }
 
     [Fact]
     public void A_full_document_maps_every_subject_with_its_operands()

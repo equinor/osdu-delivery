@@ -96,8 +96,8 @@ internal static class InventoryMapper
             MaxMissingChecks = maxMissingChecks,
             Inventories = MapInventories(y.Inventories, parameters, read, source),
             Removal = MapRemoval(y.Removal, source),
-            Reliability = FlowMapper.MapReliability(y.Reliability, "an inventory flow", takesConcurrency: true, source),
-            Parallelism = FlowMapper.MapRunParallelism(y.Parallelism, source),
+            Reliability = FlowMapper.MapReliability(y.Reliability, "an inventory flow", takesRecordsAtOnce: true, source),
+            Parallelism = FlowMapper.MapRunParallelism(y.Parallelism, "the version lists a build reads at once", source),
         };
 
         return flow;

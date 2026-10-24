@@ -2829,23 +2829,34 @@ internal static partial class FlowMapper
 
     /// <summary>
     /// The reliability block of a flow of another kind, which runs no interfaces and fans nothing out. <paramref name="kind"/>
-    /// names the kind in a message ("an assertion flow"); <paramref name="takesConcurrency"/> says whether the kind reads
-    /// <c>parallelism.concurrency</c>, which a cache flow does not.
+    /// names the kind in a message ("an assertion flow"); <paramref name="takesRecordsAtOnce"/> says whether the kind reads
+    /// <c>parallelism.recordsAtOnce</c>, which a cache flow does not.
     /// </summary>
-    internal static FlowReliability MapReliability(FlowReliabilityYaml? r, string kind, bool takesConcurrency, string source)
+    internal static FlowReliability MapReliability(FlowReliabilityYaml? r, string kind, bool takesRecordsAtOnce, string source)
     {
         RefuseMoved(
-            r, "reliability", "parallelism", was => takesConcurrency && was == "concurrency" ? "concurrency" : null,
+            r, "reliability", "parallelism", was => takesRecordsAtOnce && was == "concurrency" ? "recordsAtOnce" : null,
             was => $"a delivery flow writes it as parallelism.{DeliveryRename(was)}, and {kind} has no use for it. Remove it.", source);
         return MapReliability(r, source, KeyPaths.Single);
     }
 
-    /// <summary>The parallelism block of an assertion, dimension, inventory or retrieval flow: what one run works on at once.</summary>
-    internal static RunParallelism MapRunParallelism(RunParallelismYaml? p, string source)
+    /// <summary>
+    /// The parallelism block of an assertion, dimension, inventory or retrieval flow: what one run works on at once, written
+    /// <c>recordsAtOnce</c> as on a delivery flow (osdu/docs/reference/flow/delivery.md, parallelism), so a flow's settings
+    /// read alike whatever its kind. <paramref name="what"/> says what the kind runs at once, for the message refusing the
+    /// old name.
+    /// </summary>
+    internal static RunParallelism MapRunParallelism(RunParallelismYaml? p, string what, string source)
     {
-        var parallelism = new RunParallelism { Concurrency = p?.Concurrency ?? new RunParallelism().Concurrency };
-        return parallelism.Concurrency < 1
-            ? throw new FlowValidationException($"{source}: parallelism.concurrency must be at least 1.")
+        if (p?.Concurrency is not null)
+        {
+            throw new FlowValidationException(
+                $"{source}: parallelism.concurrency is now parallelism.recordsAtOnce, as on a delivery flow: {what}. Rename it.");
+        }
+
+        var parallelism = new RunParallelism { RecordsAtOnce = p?.RecordsAtOnce ?? new RunParallelism().RecordsAtOnce };
+        return parallelism.RecordsAtOnce < 1
+            ? throw new FlowValidationException($"{source}: parallelism.recordsAtOnce must be at least 1.")
             : parallelism;
     }
 

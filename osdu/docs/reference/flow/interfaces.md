@@ -103,8 +103,8 @@ target:
         scope: ${env:OSDU_SCOPE}
 
 parallelism:
-  concurrency: 8
-  interfaces: 2
+  recordsAtOnce: 8
+  interfacesAtOnce: 2
 
 failWhen:
   failedPercent: 20
