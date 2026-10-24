@@ -150,7 +150,7 @@ function texts(value: unknown): string[] {
 }
 
 /** Text with every occurrence of the search term marked, so a match shows where it is rather than only that it is. */
-function Highlight({ text: value, term }: { text: string; term: string }) {
+export function Highlight({ text: value, term }: { text: string; term: string }) {
   if (term === "") {
     return <>{value}</>;
   }

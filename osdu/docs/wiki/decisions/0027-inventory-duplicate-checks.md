@@ -20,6 +20,8 @@ sourceRefs:
   - osdu/src/SqlFlow.Delivery/Engine/Assertions/Evaluators.cs
   - osdu/src/SqlFlow.Delivery.ControlPlane/Api/DeliveryInventoryEndpoints.Duplicates.cs
   - osdu/gui/src/features/delivery/inventories/duplicates/InventoryDuplicates.tsx
+  - osdu/gui/src/features/delivery/inventories/duplicates/DuplicateKeyBuilder.tsx
+  - osdu/gui/src/features/delivery/inventories/duplicates/duplicateDocument.ts
 referenceRefs:
   - delivery-flow-inventory
   - delivery-flow-inventory-duplicates
@@ -69,6 +71,12 @@ built with care, and for as many properties in the key as are needed.
 - **What the rules cannot decide, an operator does.** A tie, the cases above, and a copy storage did not answer for leave
   the group for review, and nothing of it is removed until an operator chooses the copy to keep. A choice is recorded on
   the group with who made it and when, and can be taken back.
+- **The key is picked in a record.** One of the inventory's records is shown as its JSON beside the key, and a click
+  on a value adds its property: the property a reader sees holding what the copies of that record would repeat. A value
+  inside the items of a list adds its property across every item, as the check reads it. Each property of the key shows
+  what the record holds there, and stepping to the next record opens it on the key's first line, so the key is tried
+  against records before a check reads them all. A property no record shown holds is added by name from the kind's
+  properties.
 - **Removal goes through the selection the inventory already has.** The copies picked to remove are made a selection
   (with the copy each group keeps beside each id), and the inventory's existing removal by selection takes it: one finding
   at a time, the count the operator was shown, the partition typed back, against the build the check read, each id checked
@@ -77,11 +85,15 @@ built with care, and for as many properties in the key as are needed.
 
 ## Rejected
 
-- **A live check in the explorer.** The explorer's property list is what the human liked, and the check's key editor
-  reuses it; but the explorer answers within a request and keeps nothing, pages only the first 10,000 records of a query,
+- **A live check in the explorer.** The explorer's way of picking properties is what the human liked first; but the
+  explorer answers within a request and keeps nothing, pages only the first 10,000 records of a query,
   and its Group by is OSDU's `aggregateBy`, one field whose groups the service caps. Finding every copy of a kind needs
   every record read, a run that keeps what it found, and each id's finding, which the inventory has and the explorer, which
   shows only what OSDU holds, does not.
+- **Picking the key from a list of the kind's properties.** The first key editor did so, a property at a time, from the
+  list the explorer's Filter shows. The human turned it down: an OSDU record holds hundreds of properties, and a list of
+  names shows none of their values, so a reader cannot see which properties copies of a record would share. The list
+  stays behind **By name**, for a property the record shown holds no value at.
 - **The assertion flow's `unique`.** It holds a test's records to no two sharing the values of some paths, in memory, and
   names a few examples: a pass or a fail of one kind in one version, not a list to act on.
 - **Reading each copy's bulk data from the DDMS.** The human pointed out that the attribute count already tells a copy with

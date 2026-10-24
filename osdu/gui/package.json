@@ -12,7 +12,8 @@
     "typecheck": "tsc -b --pretty",
     "e2e": "playwright test --tsconfig tsconfig.node.json",
     "e2e:headed": "playwright test --tsconfig tsconfig.node.json --headed",
-    "lint": "eslint . --max-warnings 0"
+    "lint": "eslint . --max-warnings 0",
+    "test:unit": "node --test \"unit/**/*.test.ts\""
   },
   "dependencies": {
     "@assistant-ui/react": "^0.15.29",

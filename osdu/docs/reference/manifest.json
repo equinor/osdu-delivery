@@ -7854,7 +7854,9 @@
         "osdu/src/SqlFlow.Delivery/Engine/Protocols/WellboreDdmsBulkLink.cs",
         "osdu/src/SqlFlow.Delivery/Engine/Assertions/Evaluators.cs",
         "osdu/src/SqlFlow.Delivery.ControlPlane/Api/DeliveryInventoryEndpoints.Duplicates.cs",
-        "osdu/gui/src/features/delivery/inventories/duplicates/InventoryDuplicates.tsx"
+        "osdu/gui/src/features/delivery/inventories/duplicates/InventoryDuplicates.tsx",
+        "osdu/gui/src/features/delivery/inventories/duplicates/DuplicateKeyBuilder.tsx",
+        "osdu/gui/src/features/delivery/inventories/duplicates/duplicateDocument.ts"
       ]
     },
     {

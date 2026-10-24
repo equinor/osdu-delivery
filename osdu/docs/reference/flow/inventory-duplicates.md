@@ -163,14 +163,30 @@ partition retires those older, as a selection is retired.
 
 ## In the GUI
 
-The inventory's **Duplicates** tab. Its first line builds the key: a chip for each property, its comparison picked from a
-menu that says what each does, its cross to leave it out; **Property** lists the kind's properties, as the explorer's
-Filter does, a text property added compared `loose` and anything else `exact`; and a copy open in the bottom panel offers
-each of its values' properties to the key (**key**). **Find duplicates** asks for the check, **Check again** reads OSDU
-again for the key of the check in view, and the history lists the inventory's checks. The second line says where the check
-stands: how far it got and its run, or what it found (the whole of it behind the mark), its notes, **Download** (every copy
-of every group as CSV) and **Select the copies to remove**, which makes the selection and opens it on the Ids tab, where a
-removal takes it. The outcomes are tabs over the groups, those for review first.
+The inventory's **Duplicates** tab. While the inventory has no check, and after **Edit the key**, it builds the key in a
+record: one of the inventory's records as OSDU holds it, read through the partition's connection and shown as its JSON,
+beside the key. A click on a value adds its property to the key and a second click takes it out; a value of a list of
+values adds the list, and a value inside the items of a list adds its property across every item (a click on one curve's
+`Mnemonic` adds `data.Curves.Mnemonic`). An id naming another record, a number, and true or false start compared `exact`,
+other text `loose`. The first line of each property of the key carries its comparison, picked from a menu that says what
+each does, and the way to leave it out; its other lines are marked. The key lists its properties beside the record, each
+with its path, its comparison, and the values the record shown holds there (a list's count, compared in any order); a
+property's name shows its first line in the record. A property of `data` the explorer does not list for the kind is
+marked, since the search may return no value of it. **By name** adds a property the record shown holds no value at, from
+the kind's properties.
+
+The record's line steps through the ids of the inventory OSDU serves (every finding but missing and gone), or opens any
+id; searches the record's names and values, folded or not; shows only the lines the key compares (**Only the key**); and
+folds or unfolds every section. The sections the copies of a record rarely tell apart by (`acl`, `legal`, `tags`, `meta`,
+`ancestry`) start folded, a list shows its first three items and more on asking, and each record opens on the key's first
+line, so stepping through records shows what each holds at the key. **Find duplicates** asks for the check, and
+**Back to check** leaves the key as the check in view has it.
+
+With a check in view, the first line reads its key, with **Edit the key**, **Check again** (a new check of the same key,
+reading OSDU again) and the history of the inventory's checks. The second line says where the check stands: how far it got
+and its run, or what it found (the whole of it behind the mark), its notes, **Download** (every copy of every group as CSV)
+and **Select the copies to remove**, which makes the selection and opens it on the Ids tab, where a removal takes it. The
+outcomes are tabs over the groups, those for review first.
 
 Each group is a node of the grid: how it came out (why on hover), what its copies share, how many there are, the copy it
 keeps and who chose it. Under it, each copy: its role (why on hover), its id, its values at the key's properties compared
@@ -179,8 +195,8 @@ how many values it holds against the fullest copy, how many records name it, and
 copy of a group for review and on a decided group's copies on hover; **Use the check's pick** takes a choice back;
 **Compare** puts the two copies ticked, or the copy kept and the fullest beside it, side by side as OSDU holds them now,
 their ids and the fields OSDU stamps left out. A group too broad to pick from lists its copies on asking. The check in view
-(`dc`), the key being built (`dk`) and the outcome (`do`) live in the page's address, and a selection made of a check's
-picks is listed by its number (`s`).
+(`dc`), the key being built (`dk`), the record it is built in (`dr`) and the outcome (`do`) live in the page's address,
+and a selection made of a check's picks is listed by its number (`s`).
 
 ## What a run returns
 

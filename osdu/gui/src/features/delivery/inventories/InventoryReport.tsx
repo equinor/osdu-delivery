@@ -375,7 +375,7 @@ function InventoryRuns({ inventory }: { inventory: Inventory }) {
  */
 export function InventoryReport({
   reference, siblings, finding, onFinding, view, onView, onOpen, openId, onOpenId, conditions, onConditions, selectionId, onSelectionId,
-  duplicateCheck, onDuplicateCheck, duplicateKey, onDuplicateKey, duplicateOutcome, onDuplicateOutcome,
+  duplicateCheck, onDuplicateCheck, duplicateKey, onDuplicateKey, duplicateRecord, onDuplicateRecord, duplicateOutcome, onDuplicateOutcome,
 }: {
   reference: InventoryRef;
   /** The inventories the switcher lists. */
@@ -404,6 +404,9 @@ export function InventoryReport({
   /** The key being built on the Duplicates tab, as the address holds it; null takes the key of the check shown. */
   duplicateKey: string | null;
   onDuplicateKey: (key: DuplicateKeyProperty[]) => void;
+  /** The record the Duplicates tab builds the key in; null shows the first id of the inventory OSDU serves. */
+  duplicateRecord: string | null;
+  onDuplicateRecord: (id: string | null) => void;
   /** The outcome whose groups the Duplicates tab lists. */
   duplicateOutcome: string | null;
   onDuplicateOutcome: (outcome: string) => void;
@@ -637,6 +640,8 @@ export function InventoryReport({
                 onCheck={onDuplicateCheck}
                 draftText={duplicateKey}
                 onDraft={onDuplicateKey}
+                sampleId={duplicateRecord}
+                onSampleId={onDuplicateRecord}
                 outcome={duplicateOutcome}
                 onOutcome={onDuplicateOutcome}
                 openId={openId}

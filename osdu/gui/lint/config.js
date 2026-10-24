@@ -21,8 +21,8 @@ export default defineConfig([
     },
   },
   {
-    // The e2e suite and the tool configs, this one included, run in Node.
-    files: ["e2e/**/*.ts", "vite.config.ts", "playwright.config.ts", "eslint.config.js", "lint/**/*.js"],
+    // The e2e suite, the unit tests and the tool configs, this one included, run in Node.
+    files: ["e2e/**/*.ts", "unit/**/*.ts", "vite.config.ts", "playwright.config.ts", "eslint.config.js", "lint/**/*.js"],
     extends: [js.configs.recommended, tseslint.configs.recommended],
     languageOptions: {
       ecmaVersion: 2022,

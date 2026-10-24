@@ -1,6 +1,7 @@
 import type { DimensionDraft, DimensionDraftAttribute, DimensionDraftCleanStep, DimensionKeyCandidate } from "../../../../api/explorer";
 import type { InspectorTrailRecord } from "../../OsduRecordInspector";
 import { isRecordReference, withoutVersion } from "../../osduDocument";
+import { locationOf, namesOf, type Location } from "../../recordPath";
 
 // What the explorer's dimension builder holds while a person builds a dimension from the records OSDU holds
 // (osdu/docs/reference/concepts/explorer.md, Building a dimension): the draft, kept in the explorer's address; what a
@@ -118,9 +119,6 @@ export function draftParam(draft: DimensionDraft): string {
   return JSON.stringify(kept);
 }
 
-/** Where a value is in a record: property names and array places, from the record's root. */
-export type Location = (string | number)[];
-
 /** How a filter compares a property of an object with its text: equal, containing it, or ending with it. */
 export type FilterCompare = "=" | "*=" | "$=";
 
@@ -129,24 +127,6 @@ export interface SegmentFilter {
   property: string;
   compare: FilterCompare;
   value: string;
-}
-
-/**
- * The location an inspector's path names: `data.GeoContexts[1].GeoPoliticalEntityID` is data, GeoContexts, item 1 of it,
- * then GeoPoliticalEntityID.
- */
-export function locationOf(path: string): Location {
-  const location: Location = [];
-  for (const match of path.matchAll(/\[(\d+)\]|([^.[\]]+)/g)) {
-    location.push(match[1] !== undefined ? Number(match[1]) : match[2]);
-  }
-
-  return location;
-}
-
-/** The property names of a location, its array places left out, as a path names them. */
-export function namesOf(location: Location): string[] {
-  return location.filter((part): part is string => typeof part === "string");
 }
 
 /**

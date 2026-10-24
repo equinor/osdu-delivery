@@ -53,7 +53,8 @@ function referenceOf(params: URLSearchParams): InventoryRef | null {
  * whole width and scrolls inside it. A lookup by OSDU id across the partition's inventories is in the heading of both. The
  * inventory, the finding, the tab, the id open in the report's panel, the conditions its ids are selected by (`f`, as the
  * explorer writes them) or the selection listed by its number (`s`), and on the Duplicates tab the check shown (`dc`), the
- * key being built (`dk`) and the outcome listed (`do`) live in the address, so a link lands on the same view.
+ * key being built (`dk`), the record it is built in (`dr`) and the outcome listed (`do`) live in the address, so a link lands
+ * on the same view.
  */
 export default function DeliveryInventoriesPage() {
   const [params, setParams] = useSearchParams();
@@ -84,7 +85,7 @@ export default function DeliveryInventoriesPage() {
   }, { replace: true });
 
   const open = (ref: InventoryRef | null) => (ref === null
-    ? update({ partition: null, inventory: null, finding: null, tab: null, id: null, f: null, s: null, dc: null, dk: null, do: null })
+    ? update({ partition: null, inventory: null, finding: null, tab: null, id: null, f: null, s: null, dc: null, dk: null, dr: null, do: null })
     : navigate(inventoryRoute(ref)));
 
   if (reference !== null) {
@@ -114,6 +115,8 @@ export default function DeliveryInventoriesPage() {
           onDuplicateCheck={(checkId) => update({ dc: checkId === null ? null : String(checkId), id: null })}
           duplicateKey={params.get("dk")}
           onDuplicateKey={(key) => update({ dk: key.length === 0 ? null : keyText(key) })}
+          duplicateRecord={params.get("dr")}
+          onDuplicateRecord={(id) => update({ dr: id })}
           duplicateOutcome={params.get("do")}
           onDuplicateOutcome={(outcome) => update({ do: outcome, id: null })}
         />

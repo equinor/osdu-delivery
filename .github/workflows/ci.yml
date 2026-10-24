@@ -200,6 +200,10 @@ jobs:
         working-directory: osdu/gui
         run: npm run lint
 
+      - name: OSDU GUI unit tests
+        working-directory: osdu/gui
+        run: npm run test:unit
+
       - name: Install SQLFlow GUI dependencies
         working-directory: sqlflow/gui
         run: npm ci

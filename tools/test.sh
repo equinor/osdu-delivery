@@ -145,9 +145,9 @@ gui_install() {
     (cd "$1" && npm ci --no-audit --no-fund)
   fi
 }
-step "OSDU GUI: build and lint"
+step "OSDU GUI: build, lint and unit tests"
 gui_install osdu/gui
-(cd osdu/gui && npm run build && npm run lint)
+(cd osdu/gui && npm run build && npm run lint && npm run test:unit)
 
 # SQLFlow's GUI on its own, as CI builds it, when this branch changes it.
 base="$(git merge-base HEAD origin/main 2> /dev/null || true)"

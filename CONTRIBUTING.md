@@ -93,8 +93,9 @@ real data: the suites migrate and seed the database they are given.
 - Modern C#: nullable reference types, file-scoped namespaces, `record` for data, primary constructors,
   `async`/`CancellationToken` for I/O.
 - Style is enforced by `.editorconfig` and analyzers. `dotnet build OsduDelivery.sln -c Release` must be
-  warning-clean, and in `osdu/gui` both `npm run lint` (ESLint, no warnings allowed) and `npm run build` (the type
-  check and the bundle) must pass. Fix a lint finding at its source; a component file exports only components, so
+  warning-clean, and in `osdu/gui` `npm run lint` (ESLint, no warnings allowed), `npm run build` (the type check and
+  the bundle) and `npm run test:unit` (the unit tests under `osdu/gui/unit`, of the modules `tsconfig.unit.json` lists)
+  must pass. Fix a lint finding at its source; a component file exports only components, so
   a hook, a context, a constant or a variants helper lives in a `.ts` module beside it.
 - No TODOs, stubs or placeholders: every change you hand in is finished.
 - Add or update tests for behavior changes. A change to an extension point in `sqlflow/` needs tests there too,

@@ -1,0 +1,24 @@
+{
+  "compilerOptions": {
+    "composite": true,
+    "target": "ES2022",
+    "lib": ["ES2023", "DOM"],
+    "skipLibCheck": true,
+    "outDir": ".tsbuild/unit",
+    "emitDeclarationOnly": true,
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "allowImportingTsExtensions": true,
+    "strict": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    "types": ["node"]
+  },
+  "include": [
+    "unit/**/*.ts",
+    "src/features/delivery/recordPath.ts",
+    "src/features/delivery/osduDocument.ts",
+    "src/features/delivery/osduRecordModel.ts",
+    "src/features/delivery/inventories/duplicates/duplicateDocument.ts"
+  ]
+}

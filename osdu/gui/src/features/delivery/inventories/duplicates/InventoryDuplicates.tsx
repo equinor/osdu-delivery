@@ -1,6 +1,6 @@
-import { useCallback, useMemo, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { Copy as CopiesIcon, CircleX, Download, History, Info, ListChecks, Loader2, RefreshCw, Search, TriangleAlert } from "lucide-react";
+import { ArrowLeft, CircleX, Download, History, Info, ListChecks, Loader2, PencilLine, RefreshCw, Search, TriangleAlert } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
@@ -14,12 +14,12 @@ import { cn } from "@/lib/utils";
 import {
   DUPLICATE_OUTCOMES, inventoryApi, type DuplicateKeyProperty, type Inventory, type InventoryDetail, type InventoryDuplicateCheck, type InventorySelection,
 } from "../../../../api/inventories";
-import type { InspectorField } from "../../OsduRecordInspector";
 import { RunRef } from "../../DeliveryRefs";
 import { ProblemView } from "../../TemplateSheet";
 import { counted, type InventoryRef } from "../inventoryFormat";
 import { DuplicateGroupsGrid } from "./DuplicateGroupsGrid";
-import { DuplicateKeyEditor, DuplicateKeyFieldAction } from "./DuplicateKeyEditor";
+import { DuplicateKeyBuilder } from "./DuplicateKeyBuilder";
+import { DuplicateKeySummary } from "./DuplicateKeyParts";
 import {
   EVERY_GROUP, downloadDuplicates, isUnderWay, keyOf, keySentence, outcomeVisual, phaseOf, sameKey, useDuplicateCheck, useDuplicateChecks,
 } from "./duplicateModel";
@@ -167,16 +167,19 @@ function HistoryMenu({ checks, current, onOpen }: { checks: readonly InventoryDu
 }
 
 /**
- * The duplicate records of an inventory (osdu/docs/reference/flow/inventory-duplicates.md), on the report's
- * Duplicates tab. Its first line builds the key: the properties two records must hold alike to be copies of one another,
- * each with how it compares, picked from the kind's properties or from the values of a record open in the bottom panel; and
- * Find duplicates, which opens a check of the key, run by the inventory flow through its own source. Its second line says
- * where the check in view stands (reading the keys, reading the copies, how far it got and its run; or what it found, behind
- * the mark beside it) and what can be done of it: select the copies picked to remove, which takes the operator to them on the
- * Ids tab, where a removal takes them; download every group as CSV; check again. Under them the outcomes, each with its count,
- * over the groups of the outcome picked. The check in view, the key being built and the outcome live in the page's address.
+ * The duplicate records of an inventory (osdu/docs/reference/flow/inventory-duplicates.md), on the report's Duplicates tab.
+ * It is in one of two places at a time. Building the key: one of the inventory's records as JSON beside the key, where a click
+ * on a value adds its property (DuplicateKeyBuilder), and Find duplicates, which opens a check of the key, run by the
+ * inventory flow through its own source. The tab opens there while the inventory has no check, and goes back there to change
+ * the key of the check in view. Reading a check: its key on one line, where its run stands (reading the keys, reading the
+ * copies, how far it got) or what it found (behind the mark beside it), and what can be done of it: select the copies picked
+ * to remove, which takes the operator to them on the Ids tab, where a removal takes them; download every group as CSV; check
+ * again. Under them the outcomes, each with its count, over the groups of the outcome picked. The check in view, the key
+ * being built, the record it is built in and the outcome live in the page's address.
  */
-export function InventoryDuplicates({ inventory, detail, checkId, onCheck, draftText, onDraft, outcome, onOutcome, openId, onOpenId, canAct, onSelection }: {
+export function InventoryDuplicates({
+  inventory, detail, checkId, onCheck, draftText, onDraft, sampleId, onSampleId, outcome, onOutcome, openId, onOpenId, canAct, onSelection,
+}: {
   inventory: Inventory;
   detail: InventoryDetail;
   /** The check the address names; null opens on the newest. */
@@ -185,6 +188,9 @@ export function InventoryDuplicates({ inventory, detail, checkId, onCheck, draft
   /** The key being built, as the address holds it; null takes the key of the check in view. */
   draftText: string | null;
   onDraft: (key: DuplicateKeyProperty[]) => void;
+  /** The record the key is built in, as the address holds it; null shows the first id of the inventory OSDU serves. */
+  sampleId: string | null;
+  onSampleId: (id: string | null) => void;
   /** The outcome whose groups are listed (`all` for every group); null opens on those for review, when there are any. */
   outcome: string | null;
   onOutcome: (outcome: string) => void;
@@ -202,12 +208,29 @@ export function InventoryDuplicates({ inventory, detail, checkId, onCheck, draft
   const read = useDuplicateCheck(reference, shownId);
   const check = read.data;
   const draft = useMemo(() => (draftText !== null ? keyOf(draftText) : check?.key ?? []), [draftText, check?.key]);
+  // The key as last changed. The address the page draws the key from follows a change a render later, so each change builds
+  // on this one rather than on the key last drawn, and clicks closer together than that add up.
+  const asked = useRef<readonly DuplicateKeyProperty[]>(draft);
+  useEffect(() => {
+    asked.current = draft;
+  }, [draft]);
+  const changeDraft = useCallback((change: (current: readonly DuplicateKeyProperty[]) => readonly DuplicateKeyProperty[]) => {
+    const next = change(asked.current);
+    if (next !== asked.current) {
+      asked.current = next;
+      onDraft([...next]);
+    }
+  }, [onDraft]);
+  // Whether the reader went back to the key of the check in view to change it; a key in the address that is not the check's
+  // is being changed too, so a link to a key being built opens on it.
+  const [editing, setEditing] = useState(false);
 
   const open = useMutation({
     mutationFn: (refresh: boolean) => inventoryApi.checkDuplicates(inventory.partition, inventory.inventoryId, { key: draft, refresh }),
     onSuccess: (made) => {
       queryClient.setQueryData(["delivery", "inventories", "duplicates", "check", inventory.partition, inventory.inventoryId, made.checkId], made);
       void queryClient.invalidateQueries({ queryKey: ["delivery", "inventories", "duplicates", "checks", inventory.partition, inventory.inventoryId] });
+      setEditing(false);
       onCheck(made.checkId);
     },
     onError: (error) => toast.error(`The check could not be asked for: ${said(error)}`),
@@ -233,10 +256,6 @@ export function InventoryDuplicates({ inventory, detail, checkId, onCheck, draft
     }
   };
 
-  const fieldActions = useCallback(
-    (field: InspectorField) => <DuplicateKeyFieldAction field={field} draft={draft} onDraft={onDraft} />,
-    [draft, onDraft]);
-
   const phase = check === undefined ? null : phaseOf(check);
   const matches = check !== undefined && sameKey(check.key, draft);
   const runningSame = matches && isUnderWay(check);
@@ -246,42 +265,120 @@ export function InventoryDuplicates({ inventory, detail, checkId, onCheck, draft
   const removalOff = detail.removal === undefined
     ? `${inventory.flowName} declares no removal, so the copies a check picks can be selected and looked at here, and not removed.`
     : null;
+  const served = detail.counts.filter((count) => count.finding !== "missing" && count.finding !== "gone").reduce((sum, count) => sum + count.count, 0);
+  const building = shownId === null
+    ? !checks.isPending && !checks.isError
+    : check !== undefined && (editing || (draftText !== null && !matches));
 
-  const find = (
-    <>
+  const history = (
+    <HistoryMenu
+      checks={checks.data ?? []}
+      current={shownId}
+      onOpen={(id) => {
+        setEditing(false);
+        onCheck(id);
+        onDraft([]);
+      }}
+    />
+  );
+  const findTitle = !canAct
+    ? "Asking for a check reads OSDU with the flow's own credentials, which needs the operate scope"
+    : draft.length === 0
+      ? "Pick at least one property of the key first"
+      : again ? "Read OSDU again for this key: a new check of the inventory as its last build left it" : "Find the ids that hold alike values at every property of the key";
+  const findButton = (className?: string) => (
+    <Button
+      size="sm"
+      className={cn("h-7", className)}
+      variant={again && !building ? "outline" : "default"}
+      disabled={!canAct || draft.length === 0 || runningSame || open.isPending}
+      onClick={() => open.mutate(again)}
+      title={findTitle}
+      data-testid="duplicate-find"
+    >
+      {open.isPending ? <Loader2 className="animate-spin" /> : again ? <RefreshCw /> : <Search />}
+      {again ? "Check again" : "Find duplicates"}
+    </Button>
+  );
+
+  if (shownId === null && !building) {
+    return (
+      <div className="overflow-hidden rounded-lg border border-border bg-card" data-testid="inventory-duplicates">
+        {checks.isError
+          ? <div className="p-3"><ProblemView error={checks.error} testId="duplicate-checks-error" /></div>
+          : <div className="flex h-40 items-center justify-center text-[12.5px] text-muted-foreground"><Loader2 className="mr-2 size-4 animate-spin" />Reading the inventory&apos;s checks</div>}
+      </div>
+    );
+  }
+
+  if (building) {
+    const leaving = check === undefined ? null : (
       <Button
+        variant="ghost"
         size="sm"
-        className="h-7"
-        variant={again ? "outline" : "default"}
-        disabled={!canAct || draft.length === 0 || runningSame || open.isPending}
-        onClick={() => open.mutate(again)}
-        title={!canAct
-          ? "Asking for a check reads OSDU with the flow's own credentials, which needs the operate scope"
-          : again ? "Read OSDU again for this key: a new check of the inventory as its last build left it" : "Find the ids that hold alike values at every property of the key"}
-        data-testid="duplicate-find"
+        className="h-7 w-full justify-center gap-1 text-[12.5px] text-muted-foreground hover:text-foreground"
+        onClick={() => {
+          setEditing(false);
+          onDraft([]);
+        }}
+        title={`Leave the key as check ${check.checkId} has it, and go back to what it found`}
+        data-testid="duplicate-key-back"
       >
-        {open.isPending ? <Loader2 className="animate-spin" /> : again ? <RefreshCw /> : <Search />}
-        {again ? "Check again" : "Find duplicates"}
+        <ArrowLeft className="size-3.5" />
+        {`Back to check ${check.checkId}`}
       </Button>
-      <HistoryMenu checks={checks.data ?? []} current={shownId} onOpen={(id) => { onCheck(id); onDraft([]); }} />
-    </>
+    );
+    return (
+      <div className="flex min-w-0 flex-col" data-testid="inventory-duplicates" data-check={check?.checkId} data-building="true">
+        <div className="overflow-hidden rounded-lg border border-border bg-card">
+          <DuplicateKeyBuilder
+            inventory={inventory}
+            served={served}
+            draft={draft}
+            onChange={changeDraft}
+            disabled={!canAct}
+            sampleId={sampleId}
+            onSampleId={onSampleId}
+            actions={(
+              <>
+                <div className="flex items-center gap-1">
+                  {findButton("h-8 flex-1")}
+                  {history}
+                </div>
+                {matches && !again && check !== undefined && !runningSame && (
+                  <p className="px-1 text-[11.5px] text-muted-foreground">{`Check ${check.checkId} compares this key.`}</p>
+                )}
+                {runningSame && check !== undefined && (
+                  <p className="px-1 text-[11.5px] text-muted-foreground" data-testid="duplicate-key-running">{`Check ${check.checkId} is reading this key now.`}</p>
+                )}
+                {leaving}
+              </>
+            )}
+          />
+        </div>
+      </div>
+    );
+  }
+
+  const edit = (
+    <Button
+      variant="ghost"
+      size="sm"
+      className="h-7 gap-1 px-2 text-[12.5px] text-muted-foreground hover:text-foreground"
+      onClick={() => setEditing(true)}
+      disabled={check === undefined}
+      title="Change the key in a record of the inventory, and find the duplicates of the new key"
+      data-testid="duplicate-key-edit"
+    >
+      <PencilLine className="size-3.5" />
+      Edit the key
+    </Button>
   );
 
   let status: ReactNode = null;
   let body: ReactNode;
   if (read.isError) {
     body = <div className="p-3"><ProblemView error={read.error} testId="duplicate-check-error" /></div>;
-  } else if (shownId === null) {
-    body = checks.isPending
-      ? <div className="flex h-40 items-center justify-center text-[12.5px] text-muted-foreground"><Loader2 className="mr-2 size-4 animate-spin" />Reading the inventory's checks</div>
-      : (
-        <EmptyState
-          icon={<CopiesIcon />}
-          title={`Find the duplicate records of ${inventory.name}`}
-          description="Build a key of the properties the copies of one record hold alike. Find duplicates reads it for every id of the inventory, groups the ids that share it, and keeps the most complete copy of each group; the others are picked to remove, for you to look at, change and select."
-          data-testid="duplicate-empty"
-        />
-      );
   } else if (check === undefined) {
     body = <div className="flex h-40 items-center justify-center text-[12.5px] text-muted-foreground"><Loader2 className="mr-2 size-4 animate-spin" />Reading the check</div>;
   } else if (phase === "queued" || phase === "keys" || phase === "copies") {
@@ -422,7 +519,6 @@ export function InventoryDuplicates({ inventory, detail, checkId, onCheck, draft
         canChoose={canAct && !stale}
         openId={openId}
         onOpenId={onOpenId}
-        fieldActions={fieldActions}
       />
     );
   }
@@ -431,7 +527,16 @@ export function InventoryDuplicates({ inventory, detail, checkId, onCheck, draft
   return (
     <div className="flex min-w-0 flex-col gap-2" data-testid="inventory-duplicates" data-check={check?.checkId}>
       <div className="overflow-hidden rounded-lg border border-border bg-card">
-        <DuplicateKeyEditor inventory={inventory} draft={draft} onDraft={onDraft} disabled={!canAct} trailing={find} />
+        <DuplicateKeySummary
+          keyOfCheck={check?.key ?? []}
+          trailing={(
+            <>
+              {edit}
+              {findButton()}
+              {history}
+            </>
+          )}
+        />
         {status !== null && <div className="flex min-w-0 items-center gap-2 border-t border-border px-3 py-1.5">{status}</div>}
         {!grid && <div className="border-t border-border">{body}</div>}
       </div>

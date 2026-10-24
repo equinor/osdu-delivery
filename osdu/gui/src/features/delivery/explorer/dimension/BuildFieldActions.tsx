@@ -5,7 +5,8 @@ import {
 import { RichTooltip } from "@/components/RichTooltip";
 import { cn } from "@/lib/utils";
 import type { InspectorField } from "../../OsduRecordInspector";
-import { kindMatches, locationOf, marksOf, namesOf, planOf, typeName, type BuildAction, type BuildPick, type ValueMark } from "./dimensionDraft";
+import { kindMatches, marksOf, planOf, typeName, type BuildAction, type BuildPick, type ValueMark } from "./dimensionDraft";
+import { locationOf, namesOf } from "../../recordPath";
 import type { DimensionBuild } from "./useDimensionBuild";
 
 /** What each pick reads as, in the menu. */

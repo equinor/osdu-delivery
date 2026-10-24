@@ -1,4 +1,4 @@
-import { isRecordReference, withoutVersion } from "./osduDocument";
+import { isRecordReference, withoutVersion } from "./osduDocument.ts";
 
 /** The fields OSDU's envelope carries on every record: shown under System fields and Access & legal, kept out of its content. */
 export const ENVELOPE_KEYS = new Set(["id", "kind", "version", "acl", "legal", "createUser", "createTime", "modifyUser", "modifyTime"]);

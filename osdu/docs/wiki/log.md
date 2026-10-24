@@ -363,3 +363,15 @@ what a build does, the tables), [selecting ids](../reference/flow/inventory-sele
 [0013](decisions/0013-inventory-flows.md), [0014](decisions/0014-inventory-removals.md),
 [0015](decisions/0015-lost-records.md) and [0027](decisions/0027-inventory-duplicate-checks.md) name the page that holds
 their topic in `referenceRefs`, and the [pattern catalog](maps/pattern-catalog.md) gained the duplicate check's row.
+
+## [2026-10-24] ingest | The duplicate key picked in a record, decision 0027 amended
+
+Source: the human's review of the Duplicates tab: picking the key a property at a time from a list does not fit OSDU
+records of hundreds of properties, and the key should be built on the JSON document itself, by clicking the properties
+wanted, with the same operations as before. Read with the code it became
+(`osdu/gui/src/features/delivery/inventories/duplicates/DuplicateKeyBuilder.tsx`,
+`osdu/gui/src/features/delivery/inventories/duplicates/duplicateDocument.ts`).
+
+Amended [0027](decisions/0027-inventory-duplicate-checks.md): the key is picked in a record of the inventory, its
+properties shown with the values the record holds there, and the list of the kind's properties is rejected as the way to
+pick, kept for a property the record shown holds no value at.

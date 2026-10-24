@@ -15,7 +15,6 @@ import { cn } from "@/lib/utils";
 import {
   inventoryApi, type DuplicateCopy, type DuplicateGroup, type DuplicateGroupPage, type Inventory, type InventoryDuplicateCheck,
 } from "../../../../api/inventories";
-import type { InspectorField } from "../../OsduRecordInspector";
 import { RecordName } from "../../RecordName";
 import { ProblemView } from "../../TemplateSheet";
 import { DimensionGrid, GridFooter, GridViewMenu } from "../../dimensions/DimensionGrid";
@@ -138,7 +137,7 @@ function CompletenessCell({ copy, most }: { copy: DuplicateCopy; most: number })
  * copy can be kept (the group judged again with it kept, and recorded as their choice) and a choice taken back; two copies of
  * a group, ticked or the two fullest, are compared side by side. A group too broad to pick from lists its copies on asking.
  */
-export function DuplicateGroupsGrid({ inventory, check, outcome, total, leading, canChoose, openId, onOpenId, fieldActions }: {
+export function DuplicateGroupsGrid({ inventory, check, outcome, total, leading, canChoose, openId, onOpenId }: {
   inventory: Inventory;
   check: InventoryDuplicateCheck;
   /** The outcome whose groups are listed; null lists every group. */
@@ -151,8 +150,6 @@ export function DuplicateGroupsGrid({ inventory, check, outcome, total, leading,
   canChoose: boolean;
   openId: string | null;
   onOpenId?: (id: string | null) => void;
-  /** What shows beside each value of the copy open in the panel: the way to add its property to the key. */
-  fieldActions?: (field: InspectorField) => ReactNode;
 }) {
   const queryClient = useQueryClient();
   const paths = check.key.map((p) => p.path);
@@ -282,10 +279,9 @@ export function DuplicateGroupsGrid({ inventory, check, outcome, total, leading,
         canForward={at >= 0 && at < copies.length - 1}
         onStep={(by) => latest.current.step(by)}
         onOpenId={(id) => latest.current.open(id)}
-        fieldActions={fieldActions}
       />
     ));
-  }, [wanted, opened, at, copies, inventory.partition, show, close, fieldActions]);
+  }, [wanted, opened, at, copies, inventory.partition, show, close]);
   const wasShowing = useRef(false);
   useEffect(() => {
     if (wasShowing.current && !showing && latest.current.openId !== null) {

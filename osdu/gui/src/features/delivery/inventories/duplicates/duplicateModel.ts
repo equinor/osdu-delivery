@@ -26,6 +26,13 @@ export const EVERY_GROUP = "all";
 /** The checks a tab's history lists. */
 export const CHECKS_LISTED = 20;
 
+/** What a key is, as the mark beside its name says it wherever the key is shown. */
+export const KEY_HINT = [
+  "Two records are copies of one another when they hold alike values at every property of the key: a list compares as the values it holds, in any order, and a property one record holds nothing at matches only a record holding nothing there too. A record holding no value at any of them is passed over.",
+  "Pick the properties in a record of the inventory: click a value to add its property, and click it again to take it out. A value of a list of values adds the list; a value inside the items of a list adds its property across every item. Pick what every copy of a record repeats (its name, the record it belongs to, its source's own id), not what each copy writes for itself (when it was written, by whom).",
+  "Each property compares exactly, ignoring case, or loose, as its menu says. The check reads the key of every id through OSDU's search, which returns only what its index keeps of a record; a property no record holds a value at is named once the check ends.",
+].join("\n\n");
+
 /** How a comparison is said, and what it does to a value. */
 export const COMPARISON_VISUALS: Record<DuplicateComparison, { label: string; hint: string }> = {
   exact: {
@@ -157,6 +164,22 @@ export function keyPathProblem(path: string, key: readonly DuplicateKeyProperty[
   }
 
   return key.length >= MAX_DUPLICATE_KEY ? `A key compares at most ${MAX_DUPLICATE_KEY} properties.` : null;
+}
+
+/** The key with a property added after the others, or why the key cannot take it. */
+export function withProperty(key: readonly DuplicateKeyProperty[], path: string, compare: DuplicateComparison): { key: DuplicateKeyProperty[] } | { problem: string } {
+  const problem = keyPathProblem(path, key);
+  return problem === null ? { key: [...key, { path, compare }] } : { problem };
+}
+
+/**
+ * The comparison a property picked from a record's value starts with: exact for an id naming another record (`reference`),
+ * which copies of a record name alike or not at all; loose for other text, which copies written by different hands most often
+ * spell differently; exact for a number, true or false. A list of values starts as its first value does.
+ */
+export function comparisonForValue(value: unknown, reference: boolean): DuplicateComparison {
+  const first = Array.isArray(value) ? value[0] : value;
+  return typeof first === "string" && !reference ? "loose" : "exact";
 }
 
 /** Where a check stands, as the tab draws it. */

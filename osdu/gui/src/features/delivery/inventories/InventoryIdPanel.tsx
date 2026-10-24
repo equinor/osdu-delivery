@@ -6,7 +6,6 @@ import { EmptyState } from "@/components/EmptyState";
 import { IconAction } from "@/components/IconAction";
 import { explorerApi } from "../../../api/explorer";
 import type { InventoryRecord } from "../../../api/inventories";
-import type { InspectorField } from "../OsduRecordInspector";
 import { ExplorerProblem } from "../explorer/ExplorerProblem";
 import { ExplorerRecord } from "../explorer/ExplorerRecord";
 import { ALL_KINDS, scopeKind } from "../explorer/explorerModel";
@@ -28,7 +27,7 @@ function explorerHref(partition: string, changes: Record<string, string>): strin
  * the id, or a place or search the record leads to, with everything it offers. The panel's own bar names it and closes
  * it. What the record view reads is OSDU's alone: nothing of the ledgers is in the record.
  */
-export function InventoryIdPanel({ partition, id, record, place, canBack, canForward, onStep, onOpenId, fieldActions }: {
+export function InventoryIdPanel({ partition, id, record, place, canBack, canForward, onStep, onOpenId }: {
   partition: string;
   /** The OSDU id in the panel. */
   id: string;
@@ -41,8 +40,6 @@ export function InventoryIdPanel({ partition, id, record, place, canBack, canFor
   onStep: (by: -1 | 1) => void;
   /** Opens another id in the panel: one the record view offers in place of an id OSDU holds nothing under. */
   onOpenId: (id: string) => void;
-  /** What shows beside each value of the record: the way to add its property to a duplicate check's key, while one is built. */
-  fieldActions?: (field: InspectorField) => ReactNode;
 }) {
   const navigate = useNavigate();
   const connection = useQuery({
@@ -77,7 +74,6 @@ export function InventoryIdPanel({ partition, id, record, place, canBack, canFor
         onOpenId={onOpenId}
         onBrowseQuery={(query) => navigate(explorerHref(partition, { q: query, lq: "1" }))}
         onSwitchPartition={(other) => navigate(explorerHref(other, { id }))}
-        fieldActions={fieldActions}
       />
     );
   }
