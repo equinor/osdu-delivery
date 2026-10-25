@@ -31,7 +31,7 @@ osdu/docs/census/        the key census of every document the extension adds (th
 ```
 
 Every id starts with `delivery-`, and every wiki page's with `delivery-wiki-`, so no page can collide with one of
-SQLFlow's. The wiki's format and its upkeep are the OSDU wiki section of [CLAUDE.md](../../../CLAUDE.md).
+SQLFlow's. The wiki's format and its upkeep are [How this wiki is kept](../wiki/index.md#how-this-wiki-is-kept).
 
 ## Page format
 

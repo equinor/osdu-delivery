@@ -199,7 +199,9 @@ dimensions:
 ```
 
 `Country` follows each geopolitical entity the wellbore names and keeps the one whose type is a country; `Operator`
-follows the wellbore's current operator to the organisation's name.
+follows the wellbore's current operator to the organisation's name. Where a wellbore names several (two fields), an
+attribute keeps the first record's value; `many: max` keeps the greatest and `many: join` all of them, and `decode: url`
+decodes a value held percent-encoded ([choosing among several values](../flow/dimension-attributes.md)).
 `LoggingService` is collected from the logs themselves, so each wellbore holds every logging service its logs name,
 with how many logs name each. The clean steps trim, collapse runs of spaces, upper-case and strip a numeric suffix
 (`GR_2` is `GR`) before `map: curve-aliases` reads the [dictionary](../flow/dictionary.md)
@@ -284,7 +286,7 @@ the dimension flow. How a mapping reads a lookup table is in [mapping lookups](.
 Schedule the flow after the delivery flows that write the well logs ([schedules](../../../../sqlflow/docs/reference/flow/schedule.md));
 lineage orders it after them. To have each build read only what changed since the last one, give the flow an
 `incremental` block naming a record's unique key, and how often a full load should still settle what deleted records
-held ([full and incremental loads](../flow/dimension.md#full-and-incremental-loads)):
+held ([full and incremental loads](../flow/dimension-incremental.md)):
 
 ```yaml
 incremental:

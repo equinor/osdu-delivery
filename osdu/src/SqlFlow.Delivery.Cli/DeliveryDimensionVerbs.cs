@@ -442,6 +442,10 @@ internal static class DeliveryDimensionVerbs
                                 ["name"] = a.Name,
                                 ["steps"] = new JsonArray(a.Steps.Select(s => (JsonNode)JsonValue.Create(s)!).ToArray()),
                                 ["keep"] = DimensionKeeping.Named(a.Keep),
+                                ["many"] = DimensionKeeping.Named(a.Many),
+                                ["decode"] = DimensionKeeping.Named(a.Decode),
+                                ["maxReferences"] = a.MaxReferences,
+                                ["trim"] = a.Trim,
                             })).ToArray()),
                         ["aggregateBy"] = dimension?.Field?.AggregateBy,
                         ["table"] = dimension?.TableName is { } table ? DimensionTables.Shown(table) : null,
@@ -493,7 +497,7 @@ internal static class DeliveryDimensionVerbs
     }
 
     /// <summary>
-    /// A page of the dimension's table (osdu/docs/reference/flow/dimension.md, The dimension's table): a row per key and
+    /// A page of the dimension's table (osdu/docs/reference/flow/dimension-table.md, The dimension's table): a row per key and
     /// value it collects, with a column per attribute; the rows containing --search, holding the attribute values --attr
     /// names, ordered by --order (a column by its name, or the words value and key for those two columns whatever the
     /// dimension names them). The key and its value are written under the names their columns have in the table. A

@@ -1033,6 +1033,9 @@ namespace SqlFlow.Delivery.Data.Migrations
                     b.Property<short>("PartitionId")
                         .HasColumnType("smallint");
 
+                    b.Property<int>("DimensionId")
+                        .HasColumnType("int");
+
                     b.Property<int>("AttributeId")
                         .ValueGeneratedOnAdd()
                         .HasColumnType("int");
@@ -1041,9 +1044,6 @@ namespace SqlFlow.Delivery.Data.Migrations
 
                     b.Property<bool>("Collected")
                         .HasColumnType("bit");
-
-                    b.Property<int>("DimensionId")
-                        .HasColumnType("int");
 
                     b.Property<string>("Name")
                         .IsRequired()
@@ -1054,7 +1054,7 @@ namespace SqlFlow.Delivery.Data.Migrations
                     b.Property<short?>("Ordinal")
                         .HasColumnType("smallint");
 
-                    b.HasKey("PartitionId", "AttributeId");
+                    b.HasKey("PartitionId", "DimensionId", "AttributeId");
 
                     b.HasIndex("AttributeId")
                         .IsUnique();
@@ -1070,6 +1070,9 @@ namespace SqlFlow.Delivery.Data.Migrations
                     b.Property<short>("PartitionId")
                         .HasColumnType("smallint");
 
+                    b.Property<int>("DimensionId")
+                        .HasColumnType("int");
+
                     b.Property<long>("AttributeValueId")
                         .ValueGeneratedOnAdd()
                         .HasColumnType("bigint");
@@ -1077,9 +1080,6 @@ namespace SqlFlow.Delivery.Data.Migrations
                     SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<long>("AttributeValueId"));
 
                     b.Property<int>("AttributeId")
-                        .HasColumnType("int");
-
-                    b.Property<int>("DimensionId")
                         .HasColumnType("int");
 
                     b.Property<long?>("Records")
@@ -1098,7 +1098,7 @@ namespace SqlFlow.Delivery.Data.Migrations
                     b.Property<long>("ValueId")
                         .HasColumnType("bigint");
 
-                    b.HasKey("PartitionId", "AttributeValueId");
+                    b.HasKey("PartitionId", "DimensionId", "AttributeValueId");
 
                     b.HasIndex("AttributeValueId")
                         .IsUnique();
@@ -1116,6 +1116,9 @@ namespace SqlFlow.Delivery.Data.Migrations
                     b.Property<short>("PartitionId")
                         .HasColumnType("smallint");
 
+                    b.Property<int>("DimensionId")
+                        .HasColumnType("int");
+
                     b.Property<long>("ChangeId")
                         .ValueGeneratedOnAdd()
                         .HasColumnType("bigint");
@@ -1130,9 +1133,6 @@ namespace SqlFlow.Delivery.Data.Migrations
                     b.Property<DateTime>("ChangedUtc")
                         .HasColumnType("datetime2");
 
-                    b.Property<int>("DimensionId")
-                        .HasColumnType("int");
-
                     b.Property<long>("DimensionRunId")
                         .HasColumnType("bigint");
 
@@ -1145,7 +1145,7 @@ namespace SqlFlow.Delivery.Data.Migrations
                     b.Property<long>("ValueId")
                         .HasColumnType("bigint");
 
-                    b.HasKey("PartitionId", "ChangeId");
+                    b.HasKey("PartitionId", "DimensionId", "ChangeId");
 
                     b.HasIndex("ChangeId")
                         .IsUnique();
@@ -1162,6 +1162,9 @@ namespace SqlFlow.Delivery.Data.Migrations
                     b.Property<short>("PartitionId")
                         .HasColumnType("smallint");
 
+                    b.Property<int>("DimensionId")
+                        .HasColumnType("int");
+
                     b.Property<long>("TextId")
                         .ValueGeneratedOnAdd()
                         .HasColumnType("bigint");
@@ -1169,9 +1172,6 @@ namespace SqlFlow.Delivery.Data.Migrations
                     SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<long>("TextId"));
 
                     b.Property<int>("AttributeId")
-                        .HasColumnType("int");
-
-                    b.Property<int>("DimensionId")
                         .HasColumnType("int");
 
                     b.Property<long>("Records")
@@ -1195,7 +1195,7 @@ namespace SqlFlow.Delivery.Data.Migrations
                         .HasColumnType("nvarchar(256)")
                         .UseCollation("Latin1_General_100_BIN2");
 
-                    b.HasKey("PartitionId", "TextId");
+                    b.HasKey("PartitionId", "DimensionId", "TextId");
 
                     b.HasIndex("TextId")
                         .IsUnique();
@@ -1213,6 +1213,9 @@ namespace SqlFlow.Delivery.Data.Migrations
                     b.Property<short>("PartitionId")
                         .HasColumnType("smallint");
 
+                    b.Property<int>("DimensionId")
+                        .HasColumnType("int");
+
                     b.Property<long>("ElementValueId")
                         .ValueGeneratedOnAdd()
                         .HasColumnType("bigint");
@@ -1220,9 +1223,6 @@ namespace SqlFlow.Delivery.Data.Migrations
                     SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<long>("ElementValueId"));
 
                     b.Property<int>("AttributeId")
-                        .HasColumnType("int");
-
-                    b.Property<int>("DimensionId")
                         .HasColumnType("int");
 
                     b.Property<int>("Seq")
@@ -1236,7 +1236,7 @@ namespace SqlFlow.Delivery.Data.Migrations
                     b.Property<long>("ValueId")
                         .HasColumnType("bigint");
 
-                    b.HasKey("PartitionId", "ElementValueId");
+                    b.HasKey("PartitionId", "DimensionId", "ElementValueId");
 
                     b.HasIndex("ElementValueId")
                         .IsUnique();
@@ -1252,14 +1252,14 @@ namespace SqlFlow.Delivery.Data.Migrations
                     b.Property<short>("PartitionId")
                         .HasColumnType("smallint");
 
+                    b.Property<int>("DimensionId")
+                        .HasColumnType("int");
+
                     b.Property<long>("KeyRecordId")
                         .ValueGeneratedOnAdd()
                         .HasColumnType("bigint");
 
                     SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<long>("KeyRecordId"));
-
-                    b.Property<int>("DimensionId")
-                        .HasColumnType("int");
 
                     b.Property<string>("EntityType")
                         .IsRequired()
@@ -1276,7 +1276,7 @@ namespace SqlFlow.Delivery.Data.Migrations
                     b.Property<long>("ValueId")
                         .HasColumnType("bigint");
 
-                    b.HasKey("PartitionId", "KeyRecordId");
+                    b.HasKey("PartitionId", "DimensionId", "KeyRecordId");
 
                     b.HasIndex("KeyRecordId")
                         .IsUnique();
@@ -1296,14 +1296,14 @@ namespace SqlFlow.Delivery.Data.Migrations
                     b.Property<short>("PartitionId")
                         .HasColumnType("smallint");
 
+                    b.Property<int>("DimensionId")
+                        .HasColumnType("int");
+
                     b.Property<long>("MemberId")
                         .ValueGeneratedOnAdd()
                         .HasColumnType("bigint");
 
                     SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<long>("MemberId"));
-
-                    b.Property<int>("DimensionId")
-                        .HasColumnType("int");
 
                     b.Property<string>("Filter")
                         .HasColumnType("nvarchar(max)");
@@ -1341,7 +1341,7 @@ namespace SqlFlow.Delivery.Data.Migrations
                         .HasColumnType("nvarchar(256)")
                         .UseCollation("Latin1_General_100_BIN2");
 
-                    b.HasKey("PartitionId", "MemberId");
+                    b.HasKey("PartitionId", "DimensionId", "MemberId");
 
                     b.HasIndex("MemberId")
                         .IsUnique();
@@ -1362,14 +1362,14 @@ namespace SqlFlow.Delivery.Data.Migrations
                     b.Property<short>("PartitionId")
                         .HasColumnType("smallint");
 
+                    b.Property<int>("DimensionId")
+                        .HasColumnType("int");
+
                     b.Property<long>("DimensionRecordId")
                         .ValueGeneratedOnAdd()
                         .HasColumnType("bigint");
 
                     SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<long>("DimensionRecordId"));
-
-                    b.Property<int>("DimensionId")
-                        .HasColumnType("int");
 
                     b.Property<byte[]>("RecordHash")
                         .IsRequired()
@@ -1380,7 +1380,7 @@ namespace SqlFlow.Delivery.Data.Migrations
                     b.Property<long>("ValueId")
                         .HasColumnType("bigint");
 
-                    b.HasKey("PartitionId", "DimensionRecordId");
+                    b.HasKey("PartitionId", "DimensionId", "DimensionRecordId");
 
                     b.HasIndex("DimensionRecordId")
                         .IsUnique();
@@ -1397,6 +1397,9 @@ namespace SqlFlow.Delivery.Data.Migrations
                 {
                     b.Property<short>("PartitionId")
                         .HasColumnType("smallint");
+
+                    b.Property<int>("DimensionId")
+                        .HasColumnType("int");
 
                     b.Property<long>("DimensionRunId")
                         .ValueGeneratedOnAdd()
@@ -1429,9 +1432,6 @@ namespace SqlFlow.Delivery.Data.Migrations
                         .IsRequired()
                         .HasMaxLength(16)
                         .HasColumnType("nvarchar(16)");
-
-                    b.Property<int>("DimensionId")
-                        .HasColumnType("int");
 
                     b.Property<string>("Error")
                         .HasMaxLength(4000)
@@ -1551,7 +1551,7 @@ namespace SqlFlow.Delivery.Data.Migrations
                     b.Property<long?>("WithValue")
                         .HasColumnType("bigint");
 
-                    b.HasKey("PartitionId", "DimensionRunId");
+                    b.HasKey("PartitionId", "DimensionId", "DimensionRunId");
 
                     b.HasIndex("DimensionRunId")
                         .IsUnique();
@@ -1568,6 +1568,9 @@ namespace SqlFlow.Delivery.Data.Migrations
                     b.Property<short>("PartitionId")
                         .HasColumnType("smallint");
 
+                    b.Property<int>("DimensionId")
+                        .HasColumnType("int");
+
                     b.Property<long>("ValueId")
                         .ValueGeneratedOnAdd()
                         .HasColumnType("bigint");
@@ -1576,9 +1579,6 @@ namespace SqlFlow.Delivery.Data.Migrations
 
                     b.Property<long>("Count")
                         .HasColumnType("bigint");
-
-                    b.Property<int>("DimensionId")
-                        .HasColumnType("int");
 
                     b.Property<string>("Filter")
                         .HasMaxLength(4000)
@@ -1633,7 +1633,7 @@ namespace SqlFlow.Delivery.Data.Migrations
                     b.Property<DateTime?>("RemovedUtc")
                         .HasColumnType("datetime2");
 
-                    b.HasKey("PartitionId", "ValueId");
+                    b.HasKey("PartitionId", "DimensionId", "ValueId");
 
                     b.HasIndex("ValueId")
                         .IsUnique();
@@ -1642,8 +1642,6 @@ namespace SqlFlow.Delivery.Data.Migrations
 
                     b.HasIndex("PartitionId", "DimensionId", "OriginalHash")
                         .IsUnique();
-
-                    b.HasIndex("PartitionId", "DimensionId", "ValueId");
 
                     b.HasIndex("PartitionId", "DimensionId", "Count", "ValueId")
                         .IsDescending(false, false, true, false);

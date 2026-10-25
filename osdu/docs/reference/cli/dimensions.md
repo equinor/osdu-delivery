@@ -115,7 +115,7 @@ welldb-welllog-05-dimensions@dev: 4 dimension(s)
 ```
 
 With `--json`: `flow`, `ledger`, and `dimensions`, each with `dimension`, `dimensionId`, `kind`, `path`, `label`,
-`attributes` (each `name` with `steps` or `collect`), `aggregateBy`, `table`, `keyColumn`, `valueColumn`, `values`,
+`attributes` (each `name` with `steps` or `collect`, and `keep`; one read through `steps` also `many` and `decode`), `aggregateBy`, `table`, `keyColumn`, `valueColumn`, `values`,
 `keys`, `lastBuiltUtc` and `latestBuild`.
 
 ## table

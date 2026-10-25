@@ -44,7 +44,7 @@ table, numbered in its `element` column ([The tables a dimension keeps](../conce
 
 | Index | Columns | Kind | Filter | Includes | What it serves |
 | --- | --- | --- | --- | --- | --- |
-| `PK_DimensionElement` | `PartitionId`, `ElementValueId` | primary key | none | none | A partition's element fields together, in the order they were written. |
+| `PK_DimensionElement` | `PartitionId`, `DimensionId`, `ElementValueId` | primary key | none | none | A dimension's element fields together, in the order they were written: every statement over one dimension seeks its own rows and locks no other's, so a build of another dimension writes beside it. |
 | `IX_DimensionElement_ElementValueId` | `ElementValueId` | unique | none | none | A row named by its number. |
 | `IX_DimensionElement_PartitionId_DimensionId_ValueId_Seq_AttributeId` | `PartitionId`, `DimensionId`, `ValueId`, `Seq`, `AttributeId` | unique | none | none | A key's objects in their order, each field once: what a build matches its rows by and its table is laid out from. |
 

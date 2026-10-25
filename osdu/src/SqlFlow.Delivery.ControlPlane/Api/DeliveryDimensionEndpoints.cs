@@ -95,8 +95,12 @@ public sealed record DeliveryDimensionTableDto(
 /// the path of the dimension's own records whose values it collects (<c>collect</c>, with no steps). <c>keep</c> is
 /// <c>value</c> where each value is shown as a value, <c>key</c> where it is kept exactly as the record holds it, and
 /// <c>id</c> where a reference is kept as the id of the record it names: the last two are what dimension tables join on.
+/// <c>many</c> is how the values its last step reaches are kept (<c>first</c>, <c>join</c>, <c>all</c> or <c>max</c>),
+/// <c>decode</c> what each is decoded from (<c>none</c> or <c>url</c>), <c>maxReferences</c> how many records a step follows
+/// for one key, and <c>trim</c> whether a value loses the white space at its ends.
 /// </summary>
-public sealed record DeliveryDimensionAttributeSpecDto(string Name, IReadOnlyList<string> Steps, string? Collect, string Keep);
+public sealed record DeliveryDimensionAttributeSpecDto(
+    string Name, IReadOnlyList<string> Steps, string? Collect, string Keep, string Many, string Decode, int MaxReferences, bool Trim);
 
 /// <summary>
 /// A value of an attribute of a key: the value, where it was read (the id of the record it was read from, or the text the
@@ -390,7 +394,7 @@ public static partial class DeliveryDimensionEndpoints
     }
 
     /// <summary>
-    /// A page of the dimension's table (osdu/docs/reference/flow/dimension.md, The dimension's table): the rows holding
+    /// A page of the dimension's table (osdu/docs/reference/flow/dimension-table.md, The dimension's table): the rows holding
     /// <c>search</c> in the key, the value or an attribute, and every attribute value asked for (<c>attr=Name:value</c>),
     /// ordered by <c>order</c> (a column of the table by its name, or <c>value</c> and <c>key</c> for those two columns
     /// whatever the dimension names them) ascending or, with <c>dir=desc</c>, descending, from row <c>offset</c>. A
@@ -1014,7 +1018,8 @@ public static partial class DeliveryDimensionEndpoints
             spec?.Path ?? state!.Path,
             spec?.Label ?? DimensionRunner.LabelOf(state?.LabelJson),
             spec?.Unlabelled,
-            (spec?.Attributes ?? DimensionRunner.AttributesOf(state?.AttributesJson)).Select(a => new DeliveryDimensionAttributeSpecDto(a.Name, a.Steps, a.Collect, DimensionKeeping.Named(a.Keep))).ToList(),
+            (spec?.Attributes ?? DimensionRunner.AttributesOf(state?.AttributesJson)).Select(a => new DeliveryDimensionAttributeSpecDto(
+                a.Name, a.Steps, a.Collect, DimensionKeeping.Named(a.Keep), DimensionKeeping.Named(a.Many), DimensionKeeping.Named(a.Decode), a.MaxReferences, a.Trim)).ToList(),
             steps.Select(s => s.Describe()).ToList(),
             spec?.CountRecords ?? false,
             spec?.MaxValues ?? DimensionSpec.DefaultMaxValues,

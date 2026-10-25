@@ -154,6 +154,42 @@ public class DimensionViewDocumentTests
     }
 
     [Fact]
+    public void A_view_groups_its_rows_by_a_key_and_a_later_view_joins_it_on_that_key()
+    {
+        var flow = Parse(Head + """
+            views:
+              - name: CurveCounts
+                from: LogCurve
+                where: element IS NOT NULL
+                groupBy: WellLogID
+                columns:
+                  WellLogID: WellLogID
+                  Curves: COUNT(*)
+                  Mnemonics: STRING_AGG(Mnemonic, ', ') WITHIN GROUP (ORDER BY element)
+              - name: Logs
+                from: WellLog
+                join:
+                  - { on: WellLogID, view: CurveCounts, as: Counts }
+                columns:
+                  Log: LogName
+                  Curves: Counts.Curves
+            """);
+
+        var counts = flow.Views[0];
+        Assert.Equal(["WellLogID"], counts.GroupBy);
+        Assert.True(counts.Definition.Grouped);
+        Assert.Contains("GROUP BY [b].[partition], [b].[WellLogID]", counts.Definition.FromSql, StringComparison.Ordinal);
+        var logs = flow.Views[1];
+        Assert.True(Assert.Single(logs.Joins).View);
+        Assert.Equal(["v_dim_CurveCounts"], logs.Definition.JoinedViews);
+        Assert.Contains("LEFT JOIN [osdu].[v_dim_CurveCounts] AS [j1]", logs.Definition.FromSql, StringComparison.Ordinal);
+        Assert.Contains(
+            "names Mnemonic outside an aggregate",
+            Refused(Head + "views:\n  - name: Bad\n    from: LogCurve\n    groupBy: WellLogID\n    columns:\n      Curve: Mnemonic\n"),
+            StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void A_view_that_lists_no_columns_holds_every_column_with_each_join_s_under_its_alias()
     {
         var flow = Parse(View(string.Empty, "      - { on: WellLogID, to: WellLog }\n      - { on: CurveUnitID, to: Unit, as: U }").Replace("    columns:\n", string.Empty, StringComparison.Ordinal));

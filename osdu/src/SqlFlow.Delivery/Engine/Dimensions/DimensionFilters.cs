@@ -6,7 +6,7 @@ using SqlFlow.Delivery.Search;
 namespace SqlFlow.Delivery.Engine.Dimensions;
 
 /// <summary>
-/// The search filters a dimension's values and keys stand for (osdu/docs/reference/flow/dimension.md, What a build
+/// The search filters a dimension's values and keys stand for (osdu/docs/reference/flow/dimension-build.md, What a build
 /// does): the query that finds every record holding any of the keys given, asked the way the index holds the field, in
 /// as few queries as keep each well inside the service's clause limit. A build writes each key's and each value's
 /// filter with it, and the API and the CLI build the filter of any set of values with it, so a filter is the same text

@@ -6,7 +6,7 @@ using Microsoft.EntityFrameworkCore.Migrations;
 namespace SqlFlow.Delivery.Data.Migrations
 {
     /// <summary>
-    /// A dimension's incremental loads (osdu/docs/reference/flow/dimension.md, Full and incremental loads): a build says how
+    /// A dimension's incremental loads (osdu/docs/reference/flow/dimension-incremental.md, Full and incremental loads): a build says how
     /// it read (<c>Mode</c>, <c>full</c> for every build before this one), the window an incremental load read and up to
     /// when a completed build read (<c>WindowFrom</c>, <c>WindowTo</c>), what an incremental load found changed and read
     /// again (<c>ChangedRecords</c>, <c>TouchedKeys</c>), and the unique key a load kept records by (<c>RecordKey</c>). The

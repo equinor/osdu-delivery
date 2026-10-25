@@ -10,8 +10,9 @@
 ## Checklist
 
 - [ ] Tests added or updated for the behaviour changed (a `sqlflow/` extension point gets its own, in `sqlflow/`)
-- [ ] `bash tools/test.sh --full` passes: every suite, the SQL Server suites against a real database (none skipped), the
-      MCP server and the GUI end-to-end suite. CI runs only the unit tier unless the `full-tests` label is added
+- [ ] The unit tier passes (`bash tools/test.sh`, which the pre-push hook runs). The full tier
+      (`bash tools/test.sh --full`) runs on `main` once this lands; name here any suite this change needs that has not
+      run yet, or add the `full-tests` label to run it on this pull request
 - [ ] `dotnet build OsduDelivery.sln -c Release -t:Rebuild` has zero warnings and zero errors
 - [ ] `osdu/gui`: `npm run build` and `npm run lint` pass
 - [ ] A change to the catalog or the OSDU model ships with its migration, designer file and refreshed model snapshot

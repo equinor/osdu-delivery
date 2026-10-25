@@ -2,10 +2,17 @@
 id: delivery-flow-dimension-views
 title: "Dimension views (views): dimensions of one flow joined into one table, typed, written and checked on every build"
 type: flow-reference
-summary: "A dimension flow's views: the target and views keys, joins and typed columns, the osdu.v_dim_ view a build writes and checks, and what templates say of joins."
+summary: "A dimension flow's views: joins, typed columns, grouping and aggregates, joins to views, the osdu.v_dim_ view a build writes and checks, and template checks."
 keywords:
   - views
   - join dimension tables
+  - groupBy
+  - grouped view
+  - aggregates
+  - STRING_AGG
+  - STRING_ESCAPE
+  - JSON array per key
+  - join a view
   - typed columns
   - "osdu.v_dim_"
   - target.connection
@@ -73,9 +80,10 @@ views:
 | `views[].name` | required | A letter, then letters, digits and underscores, at most 64; unique among the views of a database, ignoring case. |
 | `views[].description` | none | What the view holds, shown with it. |
 | `views[].from` | required | The dimension of the flow whose rows the view's rows are. |
-| `views[].join[]` | none | `{ on, to, as }`: the column joined on (bare for a column of `from`, `alias.column` for one of an earlier join), the dimension of the flow joined, and the alias its columns are read by (the dimension's name unless given). At most 32. |
+| `views[].join[]` | none | `{ on, to, as }`: the column joined on (bare for a column of `from`, `alias.column` for one of an earlier join), the dimension of the flow joined, and the alias its columns are read by (the dimension's name unless given); or `{ on, view, as }`, a grouped view declared before this one ([Joins to views](#joins-to-views)). At most 32. |
 | `views[].columns.<name>` | every column | An expression, or `{ expression, dataType, description }`. At most 256, beside `partition` and `id`. |
-| `views[].where` | every row | The condition a row of `from` is kept by: a T-SQL condition over the same columns, operators and functions as a column's expression, such as `element IS NOT NULL`. A value alone is refused. |
+| `views[].where` | every row | The condition a row of `from` is kept by: a T-SQL condition over the same columns, operators and functions as a column's expression, such as `element IS NOT NULL`. A value alone is refused. In a grouped view it keeps the rows before they are grouped. |
+| `views[].groupBy` | none | The columns the view groups its rows by: one (`groupBy: WellLogID`) or a list, at most 16, each named as an expression names a column. See [Grouped views](#grouped-views). |
 
 **What a view holds.** Every view begins with `partition` and `id`, the number of the `from` row each of its rows stands
 for, which stays the same for as long as the dimension holds the row: a pipeline merges on it. Then its `columns`, in
@@ -87,7 +95,7 @@ the rows the view holds, its `where` applied.
 **Joins**, refused where the document is read, naming the view and the join:
 
 - A join is on a key: a dimension's key column, or an attribute or an element's field kept as `key` or `id`
-  ([keeping a key](dimension.md#labels-and-attributes)). A key's column or a `keep: key` column joins a dimension keyed by the same
+  ([keeping a key](dimension-attributes.md)). A key's column or a `keep: key` column joins a dimension keyed by the same
   path; a `keep: id` column joins a dimension keyed by `id`; two dimensions keyed by `id` read kinds of one entity type.
 - A dimension with `elements` or a collected attribute holds several rows a key, and is refused as a join: it would
   repeat the view's rows. Make it the view's `from`.
@@ -100,8 +108,9 @@ module from what it read. It uses numbers, `'text'`, `N'text'`, `NULL`, `+ - * /
 `IS NULL`, `LIKE`, `IN` a list, `BETWEEN`, `CASE`, and the functions `COALESCE`, `NULLIF`, `ISNULL`, `IIF`, `TRY_CAST`,
 `TRY_CONVERT`, `CAST`, `CONVERT` (no style), `LEFT`, `RIGHT`, `SUBSTRING`, `LEN`, `UPPER`, `LOWER`, `TRIM`, `LTRIM`,
 `RTRIM`, `REPLACE`, `CHARINDEX`, `CONCAT`, `CONCAT_WS`, `ABS`, `ROUND`, `FLOOR`, `CEILING`, `POWER`, `SQRT`, `EXP`, `LOG`,
-`LOG10`, `SIGN`, `DATEADD`, `DATEDIFF`, `DATEPART`, `YEAR`, `MONTH`, `DAY` and `EOMONTH`. A subquery, a variable, a
-window, `COLLATE`, a value of the clock (`GETDATE()`) and any other function are refused. Every column of a dimension's
+`LOG10`, `SIGN`, `DATEADD`, `DATEDIFF`, `DATEPART`, `YEAR`, `MONTH`, `DAY`, `EOMONTH` and `STRING_ESCAPE(<text>, 'json')`,
+and in a grouped view the aggregates ([Grouped views](#grouped-views)). A subquery, a variable, a window, `COLLATE`, a value
+of the clock (`GETDATE()`) and any other function are refused. Every column of a dimension's
 table is text but `id`, `key_id`, `records` and `element`; where SQL Server would convert implicitly (`BaseDepth -
 TopDepth`, text compared with a number, `CONCAT` of a number) the expression is refused, saying to convert first. A
 division by zero, a root or a logarithm outside its domain and a negative length are null. Quote an expression that
@@ -136,7 +145,8 @@ its column list (never `*`), making a table it reads that no build has made yet 
 view whose name another flow's view holds, or an object no build made, is refused, naming it, and nothing is written
 over. A build that renames a key's or a value's column drops the views reading that table in the same transaction, and
 the run writes them again at its end. A dimension a view reads is not removed until the flow's next build has written
-the view without it.
+the view without it. Views are written in the order the flow declares them, so a view is written after the views it
+joins, and again whenever one of them is.
 
 **Lineage.** With `target.connection`, the flow declares that it writes each `osdu.dim_<dimension>` table and each
 `osdu.v_dim_<view>` view on that connection, so a pipeline reading them through the same reference is ordered after it.
@@ -164,6 +174,64 @@ load:
 matchKeys:
   action: delete                          # a curve the view no longer holds leaves the table
 ```
+
+## Grouped views
+
+A view that groups its rows is a row per partition and group of the rows of its `from` dimension (and its joins), rather
+than a row per row. Its columns are the columns it groups by, read bare or inside an expression, and aggregates of the
+rest; its `id` is the least number of the rows of its group, which no other group holds, so a pipeline merges on
+`partition` and `id` as on any view; its `where` keeps the rows before they are grouped; and a `dataType` converts a
+column after its group is aggregated. A grouped view lists its columns.
+
+```yaml
+views:
+  - name: LogAssurances                     # osdu.v_dim_LogAssurances: a row per log holding any assurance
+    from: Assurance                         # a row per technical assurance of each log (elements)
+    where: element IS NOT NULL
+    groupBy: WellLogID
+    join:
+      - { on: TypeID, to: AssuranceType, as: Type }
+    columns:
+      WellLogID: WellLogID
+      Count: COUNT(*)
+      Greatest: MAX(Type.Name)
+      Assurances:                           # a JSON array of each type's code, in the order the log holds them
+        expression: >-
+          CONCAT('[', STRING_AGG(CONCAT('{"code":"', STRING_ESCAPE(Type.Code, 'json'), '"}'), ',')
+          WITHIN GROUP (ORDER BY element), ']')
+        dataType: nvarchar(max)
+```
+
+| Aggregate | Takes | Gives |
+| --- | --- | --- |
+| `COUNT(*)`, `COUNT(<value>)`, `COUNT(DISTINCT <value>)`, `COUNT_BIG(...)` | Any value | A count, as `COUNT_BIG`, so it never overflows. |
+| `MAX(<value>)`, `MIN(<value>)`, with or without `DISTINCT` | A number, a date, a time or text, not a GUID | The greatest or least. Text is compared by Unicode code point, the order of its UTF-8 bytes, as the dimension engine's `many: max` and Spark's `max` compare it, whatever the database's collation (SQL Server's binary order puts a character past U+FFFF before one from U+E000 to U+FFFF). |
+| `SUM(<number>)`, `AVG(<number>)`, with or without `DISTINCT` | A number | As SQL Server sums and averages: an `int` sums as an `int`, so convert first where a sum may pass it. |
+| `STRING_AGG(<text>, '<separator>')`, optionally `WITHIN GROUP (ORDER BY ...)` | Text, and a separator in quotes | Every value but nulls joined, aggregated as `nvarchar(max)`, so it grows past 8,000 bytes; ordered as written, text by code point, or in no order. |
+
+An aggregate is refused where one row is read (a view without `groupBy`, and a `where`), inside another aggregate, over a
+window, over `NULL` alone, and over a kind of value it does not take; `DISTINCT` is refused for `STRING_AGG` and for
+`COUNT(*)`; a column read outside an aggregate must be one the view groups by. SQL Server reads a group in one order, so
+every `STRING_AGG ... WITHIN GROUP` of a view orders it the same way (or not at all). `STRING_ESCAPE(<text>, 'json')`
+escapes a text for a JSON string, so a view writes JSON whatever its texts hold; leave out a field of no value with
+`IIF(<column> IS NULL, '', ...)`, as a serializer that writes no null does.
+
+**The check of a grouped view** counts its groups as its rows, each column's values and unconverted values over the
+groups, and each join's rows that found theirs or none over the rows it groups, before they are grouped, which is what
+the join meets. The examples of a join's values that found nothing come from those rows too.
+
+## Joins to views
+
+A view joins a view of its flow declared before it (`join: [{ on: WellLogID, view: LogAssurances, as: TA }]`) when that
+view groups by one column holding a key and lists that column bare, not converted, so the join meets at most one of its
+rows. The join compares the partition and that column exactly, under a binary collation (a view holds no `key_hash`); the
+column joined on holds a key that meets it as a join to a dimension does. The joined view's columns are read by the
+alias with their kinds of value (`TA.Count + 1` is a number), and a view that joins a view lists its columns.
+
+A view is known by its statement and by the views it joins, so it is written again whenever one of them is, and SQL
+Server reads their columns anew. A view joining a view the same build could not write is not written either: it keeps
+its last definition, and the run says which view it waits on. The templates check no join to a view (its verdict is
+`unchecked`); the view's own joins are checked on its page.
 
 ## What the templates say of a view's joins
 

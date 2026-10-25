@@ -237,13 +237,19 @@ export function ViewJoins({ view, verdicts, onOpenDimension }: {
   return (
     <div className="@container/joins flex flex-col gap-2" data-testid="dimension-view-joins-tab">
       <p className="flex flex-wrap items-baseline gap-x-1.5 text-[12.5px] text-muted-foreground">
-        <span>A row for each row of</span>
+        <span>{view.groupBy?.length ? "A row for each group of the rows of" : "A row for each row of"}</span>
         <DimensionName name={view.from} onOpen={onOpenDimension} />
         <span className="font-mono text-[11.5px]">{tableObject(view.tables[0] ?? `dim_${view.from}`)}</span>
         {view.where ? (
           <>
             <span>where</span>
             <span className="font-mono text-[11.5px]" data-testid="dimension-view-where">{view.where}</span>
+          </>
+        ) : null}
+        {view.groupBy?.length ? (
+          <>
+            <span>grouped by</span>
+            <span className="font-mono text-[11.5px]" data-testid="dimension-view-group-by">{view.groupBy.join(", ")}</span>
           </>
         ) : null}
       </p>

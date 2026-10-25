@@ -1023,7 +1023,8 @@ public sealed partial class OsduLedger
         var name = table.Name;
         var rows = await ReadAsync(
             db => db.DeliveryDimensions.AsNoTracking()
-                .Where(d => d.DimensionId == dimensionId || d.TableName == name)
+                .Where(d => d.DimensionId == dimensionId)
+                .Concat(db.DeliveryDimensions.AsNoTracking().Where(d => d.TableName == name))
                 .Select(d => new { d.PartitionId, d.DimensionId, d.FlowName, d.Name, d.TableName })
                 .ToListAsync(ct),
             ct).ConfigureAwait(false);

@@ -46,7 +46,7 @@ attribute is a column of the dimension's table ([The tables a dimension keeps](.
 
 | Index | Columns | Kind | Filter | Includes | What it serves |
 | --- | --- | --- | --- | --- | --- |
-| `PK_DimensionAttribute` | `PartitionId`, `AttributeValueId` | primary key | none | none | A partition's attribute values together, in the order they were written. |
+| `PK_DimensionAttribute` | `PartitionId`, `DimensionId`, `AttributeValueId` | primary key | none | none | A dimension's attribute values together, in the order they were written: every statement over one dimension seeks its own rows and locks no other's, so a build of another dimension writes beside it. |
 | `IX_DimensionAttribute_AttributeValueId` | `AttributeValueId` | unique | none | none | A row named by its number. |
 | `IX_DimensionAttribute_PartitionId_DimensionId_ValueId_AttributeId_Value` | `PartitionId`, `DimensionId`, `ValueId`, `AttributeId`, `Value` | unique | none | none | A key's attributes, read with it a page at a time: one row per value, so a collected attribute holds several, and a key holds a value of an attribute once. |
 | `IX_DimensionAttribute_PartitionId_DimensionId_AttributeId_Value` | `PartitionId`, `DimensionId`, `AttributeId`, `Value` | index | none | none | The keys an attribute value holds (`Country` is `Norway`), and an attribute's values: one seek either way. |

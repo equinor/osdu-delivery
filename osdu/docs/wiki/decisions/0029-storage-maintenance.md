@@ -22,6 +22,7 @@ sourceRefs:
   - sqlflow/src/SqlFlow.Catalog/RunTraceStore.cs
   - sqlflow/gui/src/features/maintenance/MaintenancePage.tsx
   - sqlflow/gui/src/features/maintenance/StorageAreaSheet.tsx
+  - sqlflow/gui/src/features/maintenance/CleanupSheet.tsx
   - osdu/src/SqlFlow.Delivery.ControlPlane/Maintenance/OsduStorageContributor.cs
   - osdu/src/SqlFlow.Delivery/Ledger/OsduLedger.cs
   - osdu/src/SqlFlow.Delivery/Ledger/OsduLedger.Assertions.cs
@@ -66,14 +67,28 @@ owner pointed out that statistics stay useful for longer than any 90-day window.
   or holds statistics), *safe to remove* (nothing anyone needs is lost) and *optional* (removable, at a cost the area
   states). The verdict is about the data, not its size; the largest areas (dimensions, the cache) are kept content, and
   the page says how they do shrink.
-- **Nothing is removed by default.** An area that may be cleaned up keeps everything until an admin sets a limit; the
-  sheet suggests no number, offering a month, a quarter, a year and two at a click, each previewed before anything goes.
+- **Nothing is removed by default.** An area that may be cleaned up keeps everything until an admin sets a limit or
+  cleans it up; nothing ever sets one for them.
 - **The ledger's retention pass becomes three optional areas** with the same predicates 0005 set: superseded attempts
   (each record's latest kept), finished activities' logs (every row kept), and superseded assertion runs (each test's
   latest result kept). Each counts with the same query it deletes with, so a preview is exactly what a cleanup takes.
 - **The run trace takes the same keep rule for both its tables**: a pipeline's latest run and every failed run keep
   their statements and events. Statements are safe to remove; events are optional, since Insights' step timings read them.
 - **Writes are an admin's**, and every cleanup is logged with who asked, at which cut-off, and how many rows went.
+  Anyone signed in sees what a cleanup would remove.
+
+## Amended: the safe purge is a panel of its own
+
+The first page put an area's cleanup at the foot of the area's own sheet, behind a click on its row. The owner, signed in
+without the admin role, found no way to purge at all, and a Preview that answered "nothing from before that date is left
+to remove" read as a button that did nothing. Cleaning up is now **Clean up**, in the page's header and on every row and
+sheet of an area a cleanup can take: one panel listing every such area, what is safe ticked and what is optional not,
+each optional one with its cost on its face, one age for all, and each area's count shown as soon as the age is chosen,
+with nothing to press. It starts at 30 days because only what is safe starts ticked, and removing that loses nothing at
+any age; an optional area is never ticked unless a person ticks it. The cleanup stays an admin's, as the owner decided:
+without the role the panel shows the counts and says who can run it, rather than hiding the action. The same check found
+that the log's actor was empty for a signed-in account, since the endpoints read the identity's name where the platform's
+`RequestActor` reads the token's subject; it now records who asked.
 
 ## Rejected
 

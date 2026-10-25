@@ -90,7 +90,7 @@ through the search cursor) is in [the dimension flow](../flow/dimension.md).
 
 | Index | Columns | Kind | Filter | Includes | What it serves |
 | --- | --- | --- | --- | --- | --- |
-| `PK_DimensionRun` | `PartitionId`, `DimensionRunId` | primary key | none | none | A partition's builds together. |
+| `PK_DimensionRun` | `PartitionId`, `DimensionId`, `DimensionRunId` | primary key | none | none | A dimension's builds together, in the order they were written: every statement over one dimension seeks its own rows and locks no other's, so a build of another dimension writes beside it. |
 | `IX_DimensionRun_DimensionRunId` | `DimensionRunId` | unique | none | none | A build named by its id. |
 | `IX_DimensionRun_PartitionId_DimensionId_StartedUtc` | `PartitionId`, `DimensionId`, `StartedUtc` | index | none | none | A dimension's builds, newest first. |
 | `IX_DimensionRun_RunId` | `RunId` | index | none | none | The platform run's builds. |

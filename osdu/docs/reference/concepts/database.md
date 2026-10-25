@@ -53,6 +53,12 @@ fails it, and so does one a page names that the model does not.
   every clustered index, and every index that serves a listing leads with it.
 - **Cache tables** name their partition by its data-partition-id in `Scope`, and are clustered on it where a refresh
   reads them, so refreshes of different partitions never wait on each other.
+- **Dimension tables** (a dimension's members, keys, attribute names and values, elements, records, collected texts,
+  builds and changes) are keyed on `PartitionId`, `DimensionId` and the row's number, so one dimension's rows are one
+  range of each table and no index reads a partition's rows of every dimension. Every statement of a build's write, and
+  of a removal, names its partition and dimension on each table it reads and seeks them whatever the table holds, so a
+  build reads and locks its own dimension's rows, never another's, and the builds of a flow's dimensions write beside
+  each other rather than waiting on, or deadlocking with, one another.
 - **Read models** of the repositories (mappings, interfaces, cache declarations, search terms) and the templates and
   lineage are keyed by stable ids derived from what they describe, and carry no partition number.
 - **OSDU ids** are kept in a binary collation (`Latin1_General_100_BIN2`) wherever a table keys or matches on one, since
@@ -193,7 +199,7 @@ Four kinds of object live in the `osdu` schema with no entity of the model behin
 - `[osdu].[__EFMigrationsHistory]`: EF Core's record of the module's migrations, written by `sqlflow db migrate`.
 - `[osdu].[dim_<dimension>]`: each dimension's own table, created and widened at run time by its builds through SQLFlow's
   schema evolution, and named by [`osdu.Dimension`](../tables/dimension.md) `TableName`
-  ([The dimension's table](../flow/dimension.md#the-dimensions-table)).
+  ([The dimension's table](../flow/dimension-table.md)).
 - `[osdu].[v_dim_<view>]`: each view a dimension flow declares, written from the flow's document alone and recorded in
   [`osdu.DimensionView`](../tables/dimension-view.md), so a build writes and drops only views it made
   ([Dimension views](../flow/dimension-views.md)).

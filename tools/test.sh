@@ -10,6 +10,10 @@
 #                                       before opening a pull request; CI runs it on a release tag, and on a pull request
 #                                       labelled full-tests.
 #   bash tools/test.sh --install-hook   makes git run the unit tier before every push (git config core.hooksPath).
+#   bash tools/test.sh --suite NAME     one on-demand suite alone, against SQL Server as the full tier runs it: the tests
+#                                       that carry [Trait("Suite", "NAME")], which both tiers leave out. The suites are
+#                                       named in on_demand_suites below: DimensionEdgeCases, every edge of the dimension
+#                                       engine's attributes, elements, lookups, incremental loads and views.
 #
 # The unit tier points the suites at a server that does not exist, so a test that needs SQL Server without carrying
 # [Trait("Category", "Integration")] fails here, as it would in CI, rather than passing on this machine's database.
@@ -26,25 +30,44 @@ set -euo pipefail
 root="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$root"
 
-if [ "$#" -gt 1 ]; then
-  echo "tools/test.sh: takes one argument at most, and was given $#." >&2
+# The suites a test opts into with [Trait("Suite", "<name>")]: run on demand alone, left out of both tiers.
+on_demand_suites="DimensionEdgeCases"
+
+if [ "$#" -gt 1 ] && [ "${1:-}" != --suite ]; then
+  echo "tools/test.sh: takes one argument at most, or --suite and a suite's name, and was given $#." >&2
   exit 2
 fi
 
 mode=unit
+suite=""
 case "${1:-}" in
   "") ;;
   --full) mode=full ;;
   --install-hook) mode=install-hook ;;
+  --suite)
+    mode=suite
+    suite="${2:-}"
+    if [ "$#" -ne 2 ] || ! printf '%s\n' $on_demand_suites | grep -qx -- "$suite"; then
+      echo "tools/test.sh: --suite takes the name of one on-demand suite: $(printf '%s ' $on_demand_suites)(for example --suite DimensionEdgeCases)." >&2
+      exit 2
+    fi
+    ;;
   -h | --help)
-    sed -n '2,23p' "$0" | sed 's/^# \{0,1\}//'
+    sed -n '2,27p' "$0" | sed 's/^# \{0,1\}//'
     exit 0
     ;;
   *)
-    echo "tools/test.sh: '$1' is none of --full and --install-hook (no argument runs the unit tier)." >&2
+    echo "tools/test.sh: '$1' is none of --full, --suite and --install-hook (no argument runs the unit tier)." >&2
     exit 2
     ;;
 esac
+
+# Both tiers leave out every on-demand suite.
+leave_out=""
+for name in $on_demand_suites; do
+  leave_out="$leave_out&Suite!=$name"
+done
+leave_out="${leave_out#&}"
 
 if [ "$mode" = install-hook ]; then
   current="$(git config --get core.hooksPath || true)"
@@ -73,7 +96,9 @@ esac
 # --- The tools each tier needs, named before anything runs ---
 missing=""
 command -v dotnet > /dev/null 2>&1 || missing="$missing .NET SDK (dotnet),"
-command -v npm > /dev/null 2>&1 || missing="$missing Node.js (npm),"
+if [ "$mode" != suite ]; then
+  command -v npm > /dev/null 2>&1 || missing="$missing Node.js (npm),"
+fi
 if [ "$mode" = full ]; then
   command -v cargo > /dev/null 2>&1 || missing="$missing Rust (cargo, https://rustup.rs),"
 fi
@@ -96,7 +121,7 @@ else
     if [ "$on_windows" = true ]; then
       test_db="Server=localhost;Database=OsduDeliveryTests;Integrated Security=True;TrustServerCertificate=True"
     else
-      echo "tools/test.sh: the full tier runs the SQL Server suites, and SQLFLOW_TEST_DB is not set (in the environment or" >&2
+      echo "tools/test.sh: the $mode tier runs the SQL Server suites, and SQLFLOW_TEST_DB is not set (in the environment or" >&2
       echo "in .sqlflow/env). Point it at a disposable database, for example the SQL Server ./dev.sh starts in Docker:" >&2
       echo "  SQLFLOW_TEST_DB='Server=localhost,1433;Database=OsduDeliveryTests;User ID=sa;Password=...;TrustServerCertificate=True'" >&2
       exit 1
@@ -129,12 +154,20 @@ step "Build (Release, warnings as errors)"
 dotnet build OsduDelivery.sln -c Release -nologo -v q -warnaserror -warnnotaserror:NU1903
 
 if [ "$mode" = unit ]; then
-  step "Unit tests (everything but Category=Integration)"
-  dotnet test OsduDelivery.sln -c Release --no-build -nologo --filter "Category!=Integration"
+  step "Unit tests (everything but Category=Integration and the on-demand suites)"
+  dotnet test OsduDelivery.sln -c Release --no-build -nologo --filter "Category!=Integration&$leave_out"
+elif [ "$mode" = suite ]; then
+  # One project at a time: the SQL Server suites share the test database.
+  step "The $suite suite, against $(printf '%s' "$test_db" | sed -e 's/;[Pp]assword=[^;]*/;Password=***/')"
+  dotnet test OsduDelivery.sln -c Release --no-build -nologo -m:1 --filter "Suite=$suite"
+  elapsed=$(( $(date +%s) - started ))
+  echo
+  echo "The $suite suite passed in $(( elapsed / 60 ))m $(( elapsed % 60 ))s."
+  exit 0
 else
   # One project at a time: the SQL Server suites share the test database.
-  step "Every .NET test, against $(printf '%s' "$test_db" | sed -e 's/;[Pp]assword=[^;]*/;Password=***/')"
-  dotnet test OsduDelivery.sln -c Release --no-build -nologo -m:1
+  step "Every .NET test but the on-demand suites, against $(printf '%s' "$test_db" | sed -e 's/;[Pp]assword=[^;]*/;Password=***/')"
+  dotnet test OsduDelivery.sln -c Release --no-build -nologo -m:1 --filter "$leave_out"
 fi
 
 # --- The GUI ---

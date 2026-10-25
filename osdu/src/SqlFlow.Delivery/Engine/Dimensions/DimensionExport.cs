@@ -39,7 +39,7 @@ public enum DimensionExportFormat
 /// </summary>
 /// <remarks>
 /// <para>
-/// The table is the dimension's own table written out (osdu/docs/reference/flow/dimension.md, The dimension's table):
+/// The table is the dimension's own table written out (osdu/docs/reference/flow/dimension-table.md, The dimension's table):
 /// its rows and columns, a row per key and value it collects (one row for a key of a dimension collecting nothing, or a
 /// key collecting no value), with the row's number, the partition, the key's number, the key, its value, one column per
 /// attribute named as the dimension declares it, the records of the row (those holding the collected value, or every

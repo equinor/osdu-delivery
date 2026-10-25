@@ -5,7 +5,7 @@
 namespace SqlFlow.Delivery.Data.Migrations
 {
     /// <summary>
-    /// The texts a collected attribute's values stand for, in their own table (osdu/docs/reference/flow/dimension.md, The
+    /// The texts a collected attribute's values stand for, in their own table (osdu/docs/reference/concepts/dimension-tables.md, The
     /// tables a dimension keeps): <c>DimensionCollectedText</c>, one row per attribute and text, indexed by value so a
     /// search finds the texts of the values it picks in one seek, however many values an attribute collects. A build
     /// before it kept them in the dimension's <c>CollectedJson</c>, which is cleared here, so a search picking a collected

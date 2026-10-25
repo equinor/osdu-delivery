@@ -28,7 +28,7 @@ A key one record of a [dimension](dimension.md) held when a load last read the r
 (the flow's `incremental.keyColumns`): what an incremental load reads again when the record changes, besides the keys it
 holds now. Only a flow with an `incremental` block keeps them: a full load of such a flow rewrites them all, and an
 incremental load rewrites those of the records it read
-([Full and incremental loads](../flow/dimension.md#full-and-incremental-loads)).
+([Full and incremental loads](../flow/dimension-incremental.md)).
 
 ## Columns
 
@@ -44,7 +44,7 @@ incremental load rewrites those of the records it read
 
 | Index | Columns | Kind | Filter | Includes | What it serves |
 | --- | --- | --- | --- | --- | --- |
-| `PK_DimensionRecord` | `PartitionId`, `DimensionRecordId` | primary key | none | none | A partition's rows together, in the order they were written. |
+| `PK_DimensionRecord` | `PartitionId`, `DimensionId`, `DimensionRecordId` | primary key | none | none | A dimension's records' keys together, in the order they were written: every statement over one dimension seeks its own rows and locks no other's, so a build of another dimension writes beside it. |
 | `IX_DimensionRecord_DimensionRecordId` | `DimensionRecordId` | unique | none | none | A row named by its number. |
 | `IX_DimensionRecord_PartitionId_DimensionId_RecordHash_ValueId` | `PartitionId`, `DimensionId`, `RecordHash`, `ValueId` | unique | none | none | A record's keys, once each: what a load rewrites them by and an incremental load reads them by. |
 | `IX_DimensionRecord_PartitionId_DimensionId_ValueId` | `PartitionId`, `DimensionId`, `ValueId` | index | none | none | The records of a key: what goes with a key a load removes. |

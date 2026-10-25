@@ -2,7 +2,7 @@ namespace SqlFlow.Delivery.Model;
 
 /// <summary>
 /// How the two columns of a dimension's table that hold its key and its value are named
-/// (osdu/docs/reference/flow/dimension.md, The dimension's table): after what the dimension reads, so a table of
+/// (osdu/docs/reference/flow/dimension-table.md, The dimension's table): after what the dimension reads, so a table of
 /// wellbores says <c>WellboreID</c> and <c>FacilityName</c>, as its attribute columns say <c>Country</c> and
 /// <c>Field</c>. The key's column takes the property the dimension's path ends with; the value's takes the property its
 /// label ends with, or the dimension's own name when it reads no label, the value then being the key itself, cleaned.

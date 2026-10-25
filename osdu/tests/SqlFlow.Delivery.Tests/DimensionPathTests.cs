@@ -6,13 +6,29 @@ using Xunit;
 namespace SqlFlow.Delivery.Tests;
 
 /// <summary>
-/// The paths a label or an attribute is read through (osdu/docs/reference/flow/dimension.md, The fields a label search
+/// The paths a label or an attribute is read through (osdu/docs/reference/flow/dimension-attributes.md, The fields a label search
 /// returns): segments with an optional filter on the objects they hold, the fields a search returns to read them, and
 /// the text they read from a record; and a key naming an OSDU record shown as the code its id ends with, its escapes
 /// decoded, ready for a drop-down.
 /// </summary>
 public class DimensionPathTests
 {
+    [Fact]
+    public void A_filter_through_a_reference_compares_what_the_record_it_names_holds()
+    {
+        var path = DimensionPath.Parse("data.GeoContexts[GeoTypeID->data.Code=Country].GeoPoliticalEntityID").Path!;
+        var record = System.Text.Json.Nodes.JsonNode.Parse("""
+            { "data": { "GeoContexts": [
+                { "GeoTypeID": "dev:reference-data--GeoPoliticalEntityType:CTRY:", "GeoPoliticalEntityID": "NO" },
+                { "GeoTypeID": "dev:reference-data--GeoPoliticalEntityType:REG:", "GeoPoliticalEntityID": "NORDLAND" } ] } }
+            """)!;
+        var country = System.Text.Json.Nodes.JsonNode.Parse("""{ "data": { "Code": "Country" } }""")!.AsObject();
+
+        Assert.True(path.HasLookups);
+        Assert.Equal(["NO"], path.Read(record, id => id == "dev:reference-data--GeoPoliticalEntityType:CTRY" ? country : null));
+        Assert.Empty(path.Read(record));
+    }
+
     private static readonly JsonObject Wellbore = JsonNode.Parse("""
         {
           "id": "dev:master-data--Wellbore:1",

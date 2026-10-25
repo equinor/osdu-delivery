@@ -28,7 +28,7 @@ sourceRefs:
 A record one key's label and attributes were read through: the record the key names and every record a step reached or
 looked for, found or not. A build rewrites them for every key it reads; an incremental load finds the keys to read again
 because a record changed by looking the record up here, and asks the search what changed in the entity types the table
-names ([Full and incremental loads](../flow/dimension.md#full-and-incremental-loads)).
+names ([Full and incremental loads](../flow/dimension-incremental.md)).
 
 ## Columns
 
@@ -45,7 +45,7 @@ names ([Full and incremental loads](../flow/dimension.md#full-and-incremental-lo
 
 | Index | Columns | Kind | Filter | Includes | What it serves |
 | --- | --- | --- | --- | --- | --- |
-| `PK_DimensionKeyRecord` | `PartitionId`, `KeyRecordId` | primary key | none | none | A partition's rows together, in the order they were written. |
+| `PK_DimensionKeyRecord` | `PartitionId`, `DimensionId`, `KeyRecordId` | primary key | none | none | A dimension's keys' records together, in the order they were written: every statement over one dimension seeks its own rows and locks no other's, so a build of another dimension writes beside it. |
 | `IX_DimensionKeyRecord_KeyRecordId` | `KeyRecordId` | unique | none | none | A row named by its number. |
 | `IX_DimensionKeyRecord_PartitionId_DimensionId_ValueId_RecordHash` | `PartitionId`, `DimensionId`, `ValueId`, `RecordHash` | unique | none | none | A key's records, once each: what a write rewrites them by. |
 | `IX_DimensionKeyRecord_PartitionId_DimensionId_RecordHash` | `PartitionId`, `DimensionId`, `RecordHash` | index | none | none | The keys read through a record that changed: one seek a record. |

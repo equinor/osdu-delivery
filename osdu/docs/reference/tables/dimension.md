@@ -39,7 +39,7 @@ originals, builds and changes are rows of the other dimension tables, which name
 
 The dimension's own table, `[osdu].[dim_<dimension>]`, is named here (`TableName`) but is no table of the model: builds
 create and widen it through SQLFlow's schema evolution, and no migration touches it
-([The dimension's table](../flow/dimension.md#the-dimensions-table)). Removing a dimension deletes its rows in the
+([The dimension's table](../flow/dimension-table.md)). Removing a dimension deletes its rows in the
 partition and drops its table with the last partition writing it.
 
 ## Columns

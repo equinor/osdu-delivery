@@ -14,7 +14,8 @@ referenceRefs:
   - delivery-guide-dimensions
 related:
   - delivery-wiki-0018-template-folders
-updated: 2026-10-21
+  - delivery-wiki-0030-dimension-rows-one-range
+updated: 2026-10-25
 ---
 # 0011: Dimension flows read every distinct value by ranges, and keep each key beside the value a person picks
 

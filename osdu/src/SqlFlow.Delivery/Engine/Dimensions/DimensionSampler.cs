@@ -151,7 +151,7 @@ public sealed class DimensionSampler
         ArgumentNullException.ThrowIfNull(cleaner);
         var notes = new List<string>();
         var labeler = new DimensionLabeler(_search, _log, concurrency: 4);
-        var labels = await labeler.ReadAsync([key], dimension.Label, dimension.Attributes, ct).ConfigureAwait(false);
+        var labels = await labeler.ReadAsync([key], dimension.Label, dimension.Attributes, dimension.LookupKinds, ct).ConfigureAwait(false);
         notes.AddRange(labels.Notes);
         var labelled = labels.Labels.GetValueOrDefault(key);
 

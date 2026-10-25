@@ -56,6 +56,13 @@ public static class DimensionViewTemplates
         var verdicts = new List<DimensionViewJoinVerdict>(view.Joins.Count);
         foreach (var join in view.Joins)
         {
+            if (join.View)
+            {
+                verdicts.Add(new DimensionViewJoinVerdict(join.As, join.On, join.To, [], null, Unchecked,
+                    $"The join reads view {join.To}, grouped by the key it is joined on; the templates describe records, not views, so its own joins are checked on its page."));
+                continue;
+            }
+
             var to = flow.Dimension(join.To);
             var parts = join.On.Split('.');
             var (alias, column) = parts.Length == 1 ? (ViewScope.FromAlias, parts[0]) : (parts[0], parts[1]);

@@ -36,7 +36,7 @@ public sealed record DimensionTableSpec(string Name, string KeyColumn, string Va
 public sealed record DimensionTableRef(string Name, string KeyColumn, string ValueColumn);
 
 /// <summary>
-/// The table of a dimension (osdu/docs/reference/flow/dimension.md, The dimension's table): the dimension as one table
+/// The table of a dimension (osdu/docs/reference/flow/dimension-table.md, The dimension's table): the dimension as one table
 /// any SQL client reads and joins on, in the module's schema, named after the dimension. A row per key and value it
 /// collects (one row for a key of a dimension collecting nothing, or collecting no value), with the row's number, the
 /// partition, the key's number, the key exactly as the index holds it, its value, the records of the row, the search

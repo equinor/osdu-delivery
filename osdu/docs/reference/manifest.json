@@ -3232,6 +3232,11 @@
         "label",
         "attributes",
         "collect",
+        "many: max",
+        "decode: url",
+        "lookupKinds",
+        "nulls: keep",
+        "fullLoadWhenRecordsLeave",
         "clean steps",
         "unlabelled",
         "aggregationsize",
@@ -3269,6 +3274,13 @@
       "yamlPath": "(root, flowType: dimension)",
       "related": [
         "delivery-flow-dimension-views",
+        "delivery-flow-dimension-attributes",
+        "delivery-flow-dimension-elements",
+        "delivery-flow-dimension-clean",
+        "delivery-flow-dimension-table",
+        "delivery-flow-dimension-incremental",
+        "delivery-flow-dimension-build",
+        "delivery-flow-dimension-errors",
         "delivery-concept-dimension-blueprint",
         "delivery-concept-dimension-tables",
         "delivery-concept-search-paging",
@@ -3335,15 +3347,238 @@
       ]
     },
     {
+      "id": "delivery-flow-dimension-attributes",
+      "corpus": "reference",
+      "path": "flow/dimension-attributes.md",
+      "title": "Dimension labels and attributes: steps, keeping a key, several values, filters through a reference, lookups",
+      "type": "flow-reference",
+      "summary": "How a label and an attribute read the records a key names: steps, keep, many, decode, trim, filters through a reference, lookupKinds, collected values.",
+      "keywords": [
+        "labels and attributes",
+        "keep: key",
+        "keep: id",
+        "collected attributes",
+        "returnedFields",
+        "label search fields",
+        "many: max",
+        "many: join",
+        "many: all",
+        "decode: url",
+        "maxReferences",
+        "trim: false",
+        "keep: reference",
+        "lookupKinds",
+        "filter through a reference",
+        "[Property->path=text]",
+        "code point order",
+        "greatest value of a wellbore's fields"
+      ],
+      "related": [
+        "delivery-flow-dimension",
+        "delivery-flow-dimension-views",
+        "delivery-concept-dimension-tables",
+        "delivery-guide-dimensions"
+      ],
+      "sourceRefs": [
+        "osdu/src/SqlFlow.Delivery/Documents/DimensionDocumentMapper.cs",
+        "osdu/src/SqlFlow.Delivery/Model/DimensionFlowDefinition.cs",
+        "osdu/src/SqlFlow.Delivery/Model/DimensionPath.cs",
+        "osdu/src/SqlFlow.Delivery/Engine/Dimensions/DimensionLabeler.cs",
+        "osdu/src/SqlFlow.Delivery/Engine/Dimensions/DimensionKeeping.cs",
+        "osdu/src/SqlFlow.Delivery/Engine/Dimensions/DimensionElementReader.cs",
+        "osdu/src/SqlFlow.Delivery/Engine/Dimensions/DimensionRunner.Incremental.cs",
+        "osdu/docs/census/keys.dimension.json"
+      ]
+    },
+    {
+      "id": "delivery-flow-dimension-build",
+      "corpus": "reference",
+      "path": "flow/dimension-build.md",
+      "title": "Dimension builds: the operations a run takes, what a build does, and what a run returns",
+      "type": "flow-reference",
+      "summary": "A dimension flow's runs: build and plan, the payload, what a build does step by step, and the result each run returns.",
+      "keywords": [
+        "build",
+        "plan",
+        "run payload",
+        "what a build does",
+        "aggregationsize",
+        "maxvalues",
+        "run.json"
+      ],
+      "related": [
+        "delivery-flow-dimension",
+        "delivery-flow-dimension-incremental",
+        "delivery-flow-dimension-errors",
+        "delivery-cli-dimensions"
+      ],
+      "sourceRefs": [
+        "osdu/src/SqlFlow.Delivery/Engine/DimensionExecutor.cs",
+        "osdu/src/SqlFlow.Delivery/Engine/DeliveryRunPayload.cs",
+        "osdu/src/SqlFlow.Delivery/Engine/Dimensions/DimensionRunner.cs",
+        "osdu/src/SqlFlow.Delivery/Engine/Dimensions/DistinctValues.cs",
+        "osdu/src/SqlFlow.Delivery/Engine/Dimensions/DimensionFilters.cs"
+      ]
+    },
+    {
+      "id": "delivery-flow-dimension-clean",
+      "corpus": "reference",
+      "path": "flow/dimension-clean.md",
+      "title": "Dimension clean steps: each value trimmed, folded, replaced or mapped through a dictionary",
+      "type": "flow-reference",
+      "summary": "A dimension's clean steps: trim, collapse spaces, case, Unicode forms, separator fold, replace and map through a dictionary, and keys left out.",
+      "keywords": [
+        "clean steps",
+        "trim",
+        "collapseSpaces",
+        "upper",
+        "foldSeparators",
+        "replace",
+        "map dictionary"
+      ],
+      "yamlPath": "dimensions[].clean",
+      "related": [
+        "delivery-flow-dimension",
+        "delivery-flow-dictionary"
+      ],
+      "sourceRefs": [
+        "osdu/src/SqlFlow.Delivery/Engine/Dimensions/DimensionCleaner.cs",
+        "osdu/src/SqlFlow.Delivery/Documents/DimensionDocumentMapper.cs"
+      ]
+    },
+    {
+      "id": "delivery-flow-dimension-elements",
+      "corpus": "reference",
+      "path": "flow/dimension-elements.md",
+      "title": "Dimension elements: the objects of a nested array, a row each with their fields",
+      "type": "flow-reference",
+      "summary": "A dimension's elements: a row per object of a nested array, its fields read inside it and up its path, numbered, nulls kept or not.",
+      "keywords": [
+        "elements",
+        "nested array rows",
+        "element column",
+        "fields",
+        "up",
+        "nulls: keep",
+        "many: join"
+      ],
+      "yamlPath": "dimensions[].elements",
+      "related": [
+        "delivery-flow-dimension",
+        "delivery-flow-dimension-attributes",
+        "delivery-flow-dimension-views",
+        "delivery-flow-dimension-table"
+      ],
+      "sourceRefs": [
+        "osdu/src/SqlFlow.Delivery/Engine/Dimensions/DimensionElementReader.cs",
+        "osdu/src/SqlFlow.Delivery/Documents/DimensionDocumentMapper.cs",
+        "osdu/src/SqlFlow.Delivery/Model/DimensionFlowDefinition.cs",
+        "osdu/src/SqlFlow.Delivery.Data/Migrations/20261009160253_DimensionElements.cs"
+      ]
+    },
+    {
+      "id": "delivery-flow-dimension-errors",
+      "corpus": "reference",
+      "path": "flow/dimension-errors.md",
+      "title": "Dimension flow errors: what is refused when the document is read, and when a dimension builds",
+      "type": "flow-reference",
+      "summary": "The errors of a dimension flow: each refusal when its document is read and each failure of a build, with its cause and what to do.",
+      "keywords": [
+        "dimension errors",
+        "refused",
+        "invalid YAML",
+        "maxValues exceeded",
+        "template not found",
+        "view refused"
+      ],
+      "related": [
+        "delivery-flow-dimension",
+        "delivery-flow-dimension-attributes",
+        "delivery-flow-dimension-views",
+        "delivery-flow-dimension-build"
+      ],
+      "sourceRefs": [
+        "osdu/src/SqlFlow.Delivery/Documents/DimensionDocumentMapper.cs",
+        "osdu/src/SqlFlow.Delivery/Documents/DimensionViewMapper.cs",
+        "osdu/src/SqlFlow.Delivery/Engine/Dimensions/DimensionRunner.cs"
+      ]
+    },
+    {
+      "id": "delivery-flow-dimension-incremental",
+      "corpus": "reference",
+      "path": "flow/dimension-incremental.md",
+      "title": "Dimension incremental loads: full and incremental builds, their windows, and records that leave",
+      "type": "flow-reference",
+      "summary": "A dimension flow's incremental block: when a build loads in full, how a window reads what changed, and records that leave the index.",
+      "keywords": [
+        "incremental load",
+        "full load",
+        "keycolumns",
+        "datecolumns",
+        "modifytime",
+        "fullloadafterhours",
+        "fullLoadWhenRecordsLeave",
+        "backfill window"
+      ],
+      "yamlPath": "incremental",
+      "related": [
+        "delivery-flow-dimension",
+        "delivery-flow-dimension-build",
+        "delivery-concept-search-paging"
+      ],
+      "sourceRefs": [
+        "osdu/src/SqlFlow.Delivery/Engine/Dimensions/DimensionRunner.Incremental.cs",
+        "osdu/src/SqlFlow.Delivery/Engine/Search/RecordChanges.cs",
+        "osdu/src/SqlFlow.Delivery/Documents/DimensionDocumentMapper.cs",
+        "osdu/src/SqlFlow.Delivery.Data/Migrations/20261010190424_DimensionIncrementalLoads.cs"
+      ]
+    },
+    {
+      "id": "delivery-flow-dimension-table",
+      "corpus": "reference",
+      "path": "flow/dimension-table.md",
+      "title": "The dimension's table: osdu.dim_<dimension>, its columns and names, and how it follows the document",
+      "type": "flow-reference",
+      "summary": "A dimension's table, osdu.dim_<dimension>: its columns, how the key's and value's columns are named, schema evolution, and its indexes.",
+      "keywords": [
+        "osdu.dim_",
+        "dimension table",
+        "column names",
+        "key_hash",
+        "schema evolution",
+        "IX_key",
+        "IX_value"
+      ],
+      "related": [
+        "delivery-flow-dimension",
+        "delivery-concept-dimension-tables",
+        "delivery-flow-dimension-views",
+        "concept-schema-evolution"
+      ],
+      "sourceRefs": [
+        "osdu/src/SqlFlow.Delivery/Ledger/DimensionTables.cs",
+        "osdu/src/SqlFlow.Delivery/Model/DimensionColumnNames.cs",
+        "osdu/src/SqlFlow.Delivery/Ledger/SqlServerDimensionStore.cs",
+        "osdu/src/SqlFlow.Delivery.Data/Migrations/20261001163440_DimensionTables.cs"
+      ]
+    },
+    {
       "id": "delivery-flow-dimension-views",
       "corpus": "reference",
       "path": "flow/dimension-views.md",
       "title": "Dimension views (views): dimensions of one flow joined into one table, typed, written and checked on every build",
       "type": "flow-reference",
-      "summary": "A dimension flow's views: the target and views keys, joins and typed columns, the osdu.v_dim_ view a build writes and checks, and what templates say of joins.",
+      "summary": "A dimension flow's views: joins, typed columns, grouping and aggregates, joins to views, the osdu.v_dim_ view a build writes and checks, and template checks.",
       "keywords": [
         "views",
         "join dimension tables",
+        "groupBy",
+        "grouped view",
+        "aggregates",
+        "STRING_AGG",
+        "STRING_ESCAPE",
+        "JSON array per key",
+        "join a view",
         "typed columns",
         "osdu.v_dim_",
         "target.connection",
@@ -7606,7 +7841,8 @@
         "keys"
       ],
       "related": [
-        "delivery-wiki-0018-template-folders"
+        "delivery-wiki-0018-template-folders",
+        "delivery-wiki-0030-dimension-rows-one-range"
       ],
       "sourceRefs": []
     },
@@ -8177,12 +8413,40 @@
         "sqlflow/src/SqlFlow.Catalog/RunTraceStore.cs",
         "sqlflow/gui/src/features/maintenance/MaintenancePage.tsx",
         "sqlflow/gui/src/features/maintenance/StorageAreaSheet.tsx",
+        "sqlflow/gui/src/features/maintenance/CleanupSheet.tsx",
         "osdu/src/SqlFlow.Delivery.ControlPlane/Maintenance/OsduStorageContributor.cs",
         "osdu/src/SqlFlow.Delivery/Ledger/OsduLedger.cs",
         "osdu/src/SqlFlow.Delivery/Ledger/OsduLedger.Assertions.cs",
         "osdu/src/SqlFlow.Delivery/Ledger/SqlServerLedgerBulk.Reversals.cs",
         "osdu/src/SqlFlow.Delivery/Engine/Assertions/TestResult.cs",
         "osdu/tests/SqlFlow.Delivery.ControlPlane.Tests/OsduStorageAreasTests.cs"
+      ]
+    },
+    {
+      "id": "delivery-wiki-0030-dimension-rows-one-range",
+      "corpus": "wiki",
+      "path": "decisions/0030-dimension-rows-one-range.md",
+      "title": "Decision 0030: a dimension's rows are one range of every table, and a build's statements seek them",
+      "type": "decision",
+      "summary": "Why dimension tables are keyed on partition, dimension and row, why a write's statements force seeks, and why retrying or serialising writes was rejected.",
+      "keywords": [
+        "deadlock",
+        "dimension tables",
+        "clustered key",
+        "FORCESEEK",
+        "concurrent builds",
+        "recordsAtOnce",
+        "plan cache"
+      ],
+      "related": [
+        "delivery-wiki-0011-dimension-flows"
+      ],
+      "sourceRefs": [
+        "osdu/src/SqlFlow.Delivery.Data/DeliveryEntities.cs",
+        "osdu/src/SqlFlow.Delivery.Data/Migrations/20261025112204_DimensionTablesKeyedByDimension.cs",
+        "osdu/src/SqlFlow.Delivery/Ledger/SqlServerDimensionStore.cs",
+        "osdu/src/SqlFlow.Delivery/Ledger/OsduLedger.Dimensions.cs",
+        "osdu/tests/SqlFlow.Delivery.Tests/DimensionConcurrentWriteTests.cs"
       ]
     },
     {

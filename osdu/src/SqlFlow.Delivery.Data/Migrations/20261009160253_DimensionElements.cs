@@ -5,7 +5,7 @@
 namespace SqlFlow.Delivery.Data.Migrations
 {
     /// <summary>
-    /// A dimension's elements (osdu/docs/reference/flow/dimension.md, Elements): the objects of a nested array each key's
+    /// A dimension's elements (osdu/docs/reference/flow/dimension-elements.md, Elements): the objects of a nested array each key's
     /// records hold, a row each in the dimension's table. The dimension keeps what it declares of them (<c>ElementsJson</c>),
     /// and <c>DimensionElement</c> keeps each field of each object, by the key, the object's place and the field.
     /// </summary>

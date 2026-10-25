@@ -13,7 +13,7 @@ using SqlFlow.Yaml;
 namespace SqlFlow.Delivery.Engine;
 
 /// <summary>
-/// Runs one dimension flow document as one platform run (osdu/docs/reference/flow/dimension.md, Operations). The run's
+/// Runs one dimension flow document as one platform run (osdu/docs/reference/flow/dimension-build.md, Operations). The run's
 /// parameters select the operation: build (the default) or plan; the payload names the dimensions, none naming every
 /// one; the partition run value names the partition, settled as every run of the module settles it. SQLFlow's
 /// <c>fullLoad</c> makes a build load in full whatever the flow declares, and a backfill window names the window a flow

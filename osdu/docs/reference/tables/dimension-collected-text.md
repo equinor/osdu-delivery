@@ -45,7 +45,7 @@ shown as it ([The tables a dimension keeps](../concepts/dimension-tables.md)).
 
 | Index | Columns | Kind | Filter | Includes | What it serves |
 | --- | --- | --- | --- | --- | --- |
-| `PK_DimensionCollectedText` | `PartitionId`, `TextId` | primary key | none | none | A partition's collected texts together, in the order they were written. |
+| `PK_DimensionCollectedText` | `PartitionId`, `DimensionId`, `TextId` | primary key | none | none | A dimension's collected texts together, in the order they were written: every statement over one dimension seeks its own rows and locks no other's, so a build of another dimension writes beside it. |
 | `IX_DimensionCollectedText_TextId` | `TextId` | unique | none | none | A text named by its number. |
 | `IX_DimensionCollectedText_PartitionId_DimensionId_AttributeId_TextHash` | `PartitionId`, `DimensionId`, `AttributeId`, `TextHash` | unique | none | none | A text of a collected attribute, once, by its hash, since a text may be longer than a key holds. |
 | `IX_DimensionCollectedText_PartitionId_DimensionId_AttributeId_Value` | `PartitionId`, `DimensionId`, `AttributeId`, `Value` | index | none | none | The texts of the values a search picks: one seek. |

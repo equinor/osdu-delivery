@@ -9,7 +9,7 @@ using SqlFlow.Delivery.Search;
 namespace SqlFlow.Delivery.Engine.Dimensions;
 
 /// <summary>
-/// A dimension's incremental load (osdu/docs/reference/flow/dimension.md, Full and incremental loads). The flow's
+/// A dimension's incremental load (osdu/docs/reference/flow/dimension-incremental.md, Full and incremental loads). The flow's
 /// <c>incremental</c> block names a record's unique key (<c>keyColumns</c>) and when a record last changed
 /// (<c>dateColumns</c>, by default OSDU's own <c>modifyTime</c> and, for a record never modified, its
 /// <c>createTime</c>); a nested object changes only with its record. A full load keeps, by each record's unique key,
@@ -228,6 +228,19 @@ public sealed partial class DimensionRunner
         var templatesJson = resolved.Kinds.Count == 0 ? null : JsonSerializer.Serialize(resolved.Kinds, StepJson);
         var concurrency = Math.Max(1, _flow.Parallelism.RecordsAtOnce);
         var shown = string.Create(CultureInfo.InvariantCulture, $"[{OsduSearch.LuceneTime(load.From)}, {OsduSearch.LuceneTime(load.To)})");
+
+        // Records the last full load read that left the index cannot be seen by any window; a flow that asks loads in full
+        // when there are any, before a window of no change would end the build with nothing written.
+        (int Searches, long Left)? recordsLeft = null;
+        if (incremental.FullLoadWhenRecordsLeave)
+        {
+            recordsLeft = await RecordsLeftAsync(search, dimension, query, load, ct).ConfigureAwait(false);
+            if (recordsLeft.Value.Left > 0)
+            {
+                return IncrementalOutcome.InFull(string.Create(CultureInfo.InvariantCulture,
+                    $"at least {recordsLeft.Value.Left} record(s) its last full load read are gone from the index or no longer match its query, and incremental.fullLoadWhenRecordsLeave asks for a full load then"));
+            }
+        }
         if (load.From is { } start && start >= load.To)
         {
             var empty = load.Stamp(
@@ -266,7 +279,7 @@ public sealed partial class DimensionRunner
             var referenceWindow = RecordChanges.Within(RecordChanges.ModifyTime, load.From, load.To);
             foreach (var type in await ledger.DimensionKeyRecordTypesAsync(existing.DimensionId, ct).ConfigureAwait(false))
             {
-                var changedOfType = new OsduSearchQuery { Kind = $"*:*:{type}:*", Query = referenceWindow, ReturnedFields = ["id"] };
+                var changedOfType = new OsduSearchQuery { Kind = dimension.LookupKind(type), Query = referenceWindow, ReturnedFields = ["id"] };
                 var total = await search.CountAsync(changedOfType, ct).ConfigureAwait(false);
                 lookups++;
                 if (total == 0)
@@ -316,7 +329,13 @@ public sealed partial class DimensionRunner
                 $"{records.Unidentified} changed record(s) hold no single value at incremental.keyColumns ({incremental.RecordKey}), so the keys they held before are not read again; the next full load reads them."));
         }
 
-        lookups += await NoteLeftAsync(search, dimension, query, load, loadNotes, ct).ConfigureAwait(false);
+        var (leftSearches, left) = recordsLeft ?? await RecordsLeftAsync(search, dimension, query, load, ct).ConfigureAwait(false);
+        lookups += leftSearches;
+        if (left > 0 && load.LastFull is { CompletedUtc: { } fullAt })
+        {
+            loadNotes.Add(string.Create(CultureInfo.InvariantCulture,
+                $"At least {left} record(s) the last full load read ({OsduSearch.LuceneTime(fullAt)}) are gone from the index or no longer match the query; the keys only they held, and the counts they made, stay until the next full load."));
+        }
         if (touched.Count == 0)
         {
             var nothing = load.Stamp(new DimensionReadCounts
@@ -468,29 +487,22 @@ public sealed partial class DimensionRunner
     }
 
     /// <summary>
-    /// Says, when it can tell, how many records the last full load read are no longer in the index or no longer match the
-    /// dimension's query, which no incremental load can see: those it read, less those the query matches now that were
-    /// created before it completed. A record created while it read, and one the indexer took up late, make the count lower,
-    /// never higher, so it is a least. Returns the searches it asked.
+    /// How many records the last full load read are no longer in the index or no longer match the dimension's query, when it
+    /// can tell, which no incremental load can see: those it read, less those the query matches now that were created before
+    /// it completed. A record created while it read, and one the indexer took up late, make the count lower, never higher, so
+    /// it is a least; none when the last full load kept no count. Returns the searches it asked, and the count.
     /// </summary>
-    private static async Task<int> NoteLeftAsync(OsduSearch search, DimensionSpec dimension, string? query, LoadPlan load, List<string> notes, CancellationToken ct)
+    private static async Task<(int Searches, long Left)> RecordsLeftAsync(OsduSearch search, DimensionSpec dimension, string? query, LoadPlan load, CancellationToken ct)
     {
         if (load.LastFull is not { Read.Records: { } fullRecords, CompletedUtc: { } fullAt })
         {
-            return 0;
+            return (0, 0);
         }
 
         var now = await search.CountAsync(new OsduSearchQuery { Kind = dimension.Kind, Query = query, ReturnedFields = ["id"] }, ct).ConfigureAwait(false);
         var since = OsduSearch.Within(query, $"{RecordChanges.CreateTime}:[{OsduSearch.LuceneTime(fullAt)} TO *]");
         var created = await search.CountAsync(new OsduSearchQuery { Kind = dimension.Kind, Query = since, ReturnedFields = ["id"] }, ct).ConfigureAwait(false);
-        var left = fullRecords - (now - created);
-        if (left > 0)
-        {
-            notes.Add(string.Create(CultureInfo.InvariantCulture,
-                $"At least {left} record(s) the last full load read ({OsduSearch.LuceneTime(fullAt)}) are gone from the index or no longer match the query; the keys only they held, and the counts they made, stay until the next full load."));
-        }
-
-        return 2;
+        return (2, Math.Max(0, fullRecords - (now - created)));
     }
 
     /// <summary>The first few keys of a list, quoted, for a note.</summary>

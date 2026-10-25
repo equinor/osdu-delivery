@@ -59,12 +59,11 @@ number should it come back.
 
 | Index | Columns | Kind | Filter | Includes | What it serves |
 | --- | --- | --- | --- | --- | --- |
-| `PK_DimensionValue` | `PartitionId`, `ValueId` | primary key | none | none | A partition's originals together. |
+| `PK_DimensionValue` | `PartitionId`, `DimensionId`, `ValueId` | primary key | none | none | A dimension's keys together, in the order they were written: every statement over one dimension seeks its own rows and locks no other's, so a build of another dimension writes beside it. |
 | `IX_DimensionValue_ValueId` | `ValueId` | unique | none | none | An original named by its id. |
 | `IX_DimensionValue_PartitionId_DimensionId_OriginalHash` | `PartitionId`, `DimensionId`, `OriginalHash` | unique | none | none | An original is one value of one dimension, once, compared by its hash so no length or collation blurs two. |
 | `IX_DimensionValue_PartitionId_DimensionId_MemberId` | `PartitionId`, `DimensionId`, `MemberId` | index | none | none | A member's originals. |
 | `IX_DimensionValue_PartitionId_DimensionId_Count_ValueId` | `PartitionId`, `DimensionId`, `Count` DESC, `ValueId` | index | none | none | The originals most records hold first, a page at a time. |
-| `IX_DimensionValue_PartitionId_DimensionId_ValueId` | `PartitionId`, `DimensionId`, `ValueId` | index | none | none | A dimension's keys in the order they arrived, a page at a time, as one range of this dimension alone. |
 
 ## Written and read by
 

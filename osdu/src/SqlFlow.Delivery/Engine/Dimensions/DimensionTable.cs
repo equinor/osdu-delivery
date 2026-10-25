@@ -5,7 +5,7 @@ using SqlFlow.Delivery.Model;
 namespace SqlFlow.Delivery.Engine.Dimensions;
 
 /// <summary>
-/// A dimension's table (osdu/docs/reference/flow/dimension.md, The dimension's table): the one unified form of a
+/// A dimension's table (osdu/docs/reference/flow/dimension-table.md, The dimension's table): the one unified form of a
 /// dimension, a row per key and value it collects with a column per attribute, that the page, the export, the CLI and
 /// any SQL client all read. A build makes the table and keeps it; a dimension built before dimensions had a table, or
 /// whose table was dropped by hand, has it made here from what the ledger holds of it, the first time its table is

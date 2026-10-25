@@ -6,7 +6,7 @@ namespace SqlFlow.Delivery.Data.Migrations
 {
     /// <summary>
     /// A dimension's table names its key's and its value's columns after what the dimension reads
-    /// (osdu/docs/reference/flow/dimension.md, The dimension's table): <c>WellboreID</c> and <c>FacilityName</c>, not
+    /// (osdu/docs/reference/flow/dimension-table.md, The dimension's table): <c>WellboreID</c> and <c>FacilityName</c>, not
     /// <c>key</c> and <c>value</c>.
     /// <list type="bullet">
     /// <item><c>Dimension.KeyColumn</c> and <c>Dimension.ValueColumn</c> record what the two columns of the dimension's own

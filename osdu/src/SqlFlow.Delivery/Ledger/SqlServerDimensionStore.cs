@@ -26,7 +26,9 @@ namespace SqlFlow.Delivery.Ledger;
 /// the keys it read again and the values they were and are under, every other key and value stays as it is, and nothing
 /// is marked removed but a value left with no key. A reader sees the dimension as one build left it, never half of the
 /// next. An application lock per dimension keeps two builds of one dimension from writing at once; a build of another
-/// dimension writes beside it.
+/// dimension writes beside it, since the tables keep each dimension's rows together (osdu/docs/reference/concepts/database.md,
+/// How the tables are keyed) and every statement names its dimension, joins included, so a write reads and locks its own
+/// rows alone.
 /// </summary>
 internal static class SqlServerDimensionStore
 {
@@ -153,7 +155,7 @@ internal static class SqlServerDimensionStore
     // the write makes them by another, no row the table holds can be matched, and they are written again.
     private const string NamesSql = """
         DECLARE @collectedWas nvarchar(64) = (
-            SELECT TOP (1) n.[Name] FROM [osdu].[DimensionAttributeName] AS n
+            SELECT TOP (1) n.[Name] FROM [osdu].[DimensionAttributeName] AS n WITH (FORCESEEK)
             WHERE n.[PartitionId] = @p AND n.[DimensionId] = @d AND n.[Ordinal] IS NOT NULL AND n.[Collected] = 1
             ORDER BY n.[Ordinal]);
 
@@ -161,13 +163,13 @@ internal static class SqlServerDimensionStore
         SELECT @p, @d, s.[Name], NULL, s.[Collected]
         FROM #DimName AS s
         WHERE NOT EXISTS (
-            SELECT 1 FROM [osdu].[DimensionAttributeName] AS n WHERE n.[PartitionId] = @p AND n.[DimensionId] = @d AND n.[Name] = s.[Name])
+            SELECT 1 FROM [osdu].[DimensionAttributeName] AS n WITH (FORCESEEK) WHERE n.[PartitionId] = @p AND n.[DimensionId] = @d AND n.[Name] = s.[Name])
         ORDER BY ISNULL(s.[Ordinal], 32767), s.[Name];
 
         IF @tableName IS NOT NULL
         BEGIN
             UPDATE n SET n.[Ordinal] = s.[Ordinal], n.[Collected] = ISNULL(s.[Collected], n.[Collected])
-            FROM [osdu].[DimensionAttributeName] AS n
+            FROM [osdu].[DimensionAttributeName] AS n WITH (FORCESEEK)
             LEFT JOIN #DimName AS s ON s.[Name] = n.[Name]
             WHERE n.[PartitionId] = @p AND n.[DimensionId] = @d
               AND (ISNULL(n.[Ordinal], 0) <> ISNULL(s.[Ordinal], 0) OR n.[Collected] <> ISNULL(s.[Collected], n.[Collected]));
@@ -180,7 +182,7 @@ internal static class SqlServerDimensionStore
     private static string Slots(Func<int, string, string> each, string between)
         => string.Join(between, Enumerable.Range(1, DimensionTables.Slots).Select(i => each(i, DimensionTables.Slot(i))));
 
-    // The dimension laid out as its table holds it (osdu/docs/reference/flow/dimension.md, The dimension's table): a
+    // The dimension laid out as its table holds it (osdu/docs/reference/flow/dimension-table.md, The dimension's table): a
     // row per key the dimension holds now and value it collects, each attribute in the column of its place, read from
     // what the write has just kept and joined by the attributes' numbers. An attribute read from the record a key names
     // is one value of the key, so every such attribute of a key is read in one pass and laid out by its place; the
@@ -188,7 +190,7 @@ internal static class SqlServerDimensionStore
     private static readonly string RowsSql = $"""
         DECLARE @collectedId int, @collectedOrdinal smallint, @collectedNow nvarchar(64);
         SELECT TOP (1) @collectedId = n.[AttributeId], @collectedOrdinal = n.[Ordinal], @collectedNow = n.[Name]
-        FROM [osdu].[DimensionAttributeName] AS n
+        FROM [osdu].[DimensionAttributeName] AS n WITH (FORCESEEK)
         WHERE n.[PartitionId] = @p AND n.[DimensionId] = @d AND n.[Ordinal] IS NOT NULL AND n.[Collected] = 1
         ORDER BY n.[Ordinal];
 
@@ -209,23 +211,23 @@ internal static class SqlServerDimensionStore
         SELECT k.[ValueId], COALESCE(c.[Value], CONVERT(nvarchar(256), el.[Seq]), N''), el.[Seq], k.[Original], m.[Value],
             {Slots((i, slot) => $"CASE WHEN @collectedOrdinal = {i} THEN c.[Value] ELSE COALESCE(x.[{slot}], el.[{slot}]) END", ",\n    ")},
             COALESCE(c.[Records], CASE WHEN el.[Seq] IS NULL THEN k.[Count] ELSE 1 END), k.[Filter]
-        FROM [osdu].[DimensionValue] AS k
-        INNER JOIN [osdu].[DimensionMember] AS m ON m.[PartitionId] = k.[PartitionId] AND m.[MemberId] = k.[MemberId]
+        FROM [osdu].[DimensionValue] AS k WITH (FORCESEEK)
+        INNER JOIN [osdu].[DimensionMember] AS m WITH (FORCESEEK) ON m.[PartitionId] = @p AND m.[DimensionId] = @d AND m.[MemberId] = k.[MemberId]
         LEFT JOIN (
             SELECT a.[ValueId],
                 {Slots((i, slot) => $"MAX(CASE WHEN n.[Ordinal] = {i} THEN a.[Value] END) AS [{slot}]", ",\n        ")}
-            FROM [osdu].[DimensionAttribute] AS a
-            INNER JOIN [osdu].[DimensionAttributeName] AS n ON n.[PartitionId] = a.[PartitionId] AND n.[AttributeId] = a.[AttributeId]
+            FROM [osdu].[DimensionAttribute] AS a WITH (FORCESEEK)
+            INNER JOIN [osdu].[DimensionAttributeName] AS n WITH (FORCESEEK) ON n.[PartitionId] = @p AND n.[DimensionId] = @d AND n.[AttributeId] = a.[AttributeId]
             WHERE a.[PartitionId] = @p AND a.[DimensionId] = @d AND n.[Ordinal] IS NOT NULL AND n.[Collected] = 0
             GROUP BY a.[ValueId]) AS x ON x.[ValueId] = k.[ValueId]
         LEFT JOIN (
             SELECT e.[ValueId], e.[Seq],
                 {Slots((i, slot) => $"MAX(CASE WHEN n.[Ordinal] = {i} THEN e.[Value] END) AS [{slot}]", ",\n        ")}
-            FROM [osdu].[DimensionElement] AS e
-            INNER JOIN [osdu].[DimensionAttributeName] AS n ON n.[PartitionId] = e.[PartitionId] AND n.[AttributeId] = e.[AttributeId]
+            FROM [osdu].[DimensionElement] AS e WITH (FORCESEEK)
+            INNER JOIN [osdu].[DimensionAttributeName] AS n WITH (FORCESEEK) ON n.[PartitionId] = @p AND n.[DimensionId] = @d AND n.[AttributeId] = e.[AttributeId]
             WHERE e.[PartitionId] = @p AND e.[DimensionId] = @d AND n.[Ordinal] IS NOT NULL AND @elements = 1
             GROUP BY e.[ValueId], e.[Seq]) AS el ON el.[ValueId] = k.[ValueId]
-        LEFT JOIN [osdu].[DimensionAttribute] AS c
+        LEFT JOIN [osdu].[DimensionAttribute] AS c WITH (FORCESEEK)
             ON c.[PartitionId] = @p AND c.[DimensionId] = @d AND c.[AttributeId] = @collectedId AND c.[ValueId] = k.[ValueId]
         WHERE k.[PartitionId] = @p AND k.[DimensionId] = @d AND k.[RemovedRunId] IS NULL;
         """;
@@ -253,11 +255,12 @@ internal static class SqlServerDimensionStore
             EXEC sys.sp_executesql @applySql, N'@partition nvarchar(256), @rewrite bit', @partition = @partitionName, @rewrite = @rewrite;
             DROP TABLE #DimRow;
 
-            DECLARE @tableWas sysname = (SELECT [TableName] FROM [osdu].[Dimension] WHERE [PartitionId] = @p AND [DimensionId] = @d);
-            UPDATE [osdu].[Dimension] SET [TableName] = @tableName
-            WHERE [PartitionId] = @p AND [DimensionId] = @d AND ([TableName] IS NULL OR [TableName] <> @tableName);
+            DECLARE @tableWas sysname = (SELECT d.[TableName] FROM [osdu].[Dimension] AS d WITH (FORCESEEK) WHERE d.[PartitionId] = @p AND d.[DimensionId] = @d);
+            UPDATE d SET d.[TableName] = @tableName
+            FROM [osdu].[Dimension] AS d WITH (FORCESEEK)
+            WHERE d.[PartitionId] = @p AND d.[DimensionId] = @d AND (d.[TableName] IS NULL OR d.[TableName] <> @tableName);
 
-            IF @tableWas IS NOT NULL AND @tableWas <> @tableName AND NOT EXISTS (SELECT 1 FROM [osdu].[Dimension] WHERE [TableName] = @tableWas)
+            IF @tableWas IS NOT NULL AND @tableWas <> @tableName AND NOT EXISTS (SELECT 1 FROM [osdu].[Dimension] AS d WITH (FORCESEEK) WHERE d.[TableName] = @tableWas)
             BEGIN
                 DECLARE @tableDrop nvarchar(400) = N'DROP TABLE IF EXISTS [osdu].' + QUOTENAME(@tableWas) + N';';
                 EXEC sys.sp_executesql @tableDrop;
@@ -275,18 +278,18 @@ internal static class SqlServerDimensionStore
     private static readonly string MergeSql = """
         SET NOCOUNT ON;
         DECLARE @firstBuild bit = CASE WHEN EXISTS (
-            SELECT 1 FROM [osdu].[Dimension] WHERE [PartitionId] = @p AND [DimensionId] = @d AND [LastRunId] IS NOT NULL) THEN 0 ELSE 1 END;
+            SELECT 1 FROM [osdu].[Dimension] AS d WITH (FORCESEEK) WHERE d.[PartitionId] = @p AND d.[DimensionId] = @d AND d.[LastRunId] IS NOT NULL) THEN 0 ELSE 1 END;
         DECLARE @membersAdded bigint, @membersRemoved bigint = 0, @membersRestored bigint;
 
         SELECT @membersRestored = COUNT_BIG(*)
-        FROM [osdu].[DimensionMember] AS m INNER JOIN #DimMember AS s ON m.[Value] = s.[Value]
+        FROM [osdu].[DimensionMember] AS m WITH (FORCESEEK) INNER JOIN #DimMember AS s ON m.[Value] = s.[Value]
         WHERE m.[PartitionId] = @p AND m.[DimensionId] = @d AND m.[RemovedRunId] IS NOT NULL;
 
         -- A member is rewritten only when something of it changed, so a build that found the same thing writes nothing.
         UPDATE m SET m.[Records] = s.[Records], m.[RecordsExact] = s.[RecordsExact], m.[Originals] = s.[Originals],
             m.[Unfilterable] = s.[Unfilterable], m.[Filter] = s.[Filter], m.[FilterParts] = s.[FilterParts],
             m.[RemovedRunId] = NULL, m.[RemovedUtc] = NULL
-        FROM [osdu].[DimensionMember] AS m INNER JOIN #DimMember AS s ON m.[Value] = s.[Value]
+        FROM [osdu].[DimensionMember] AS m WITH (FORCESEEK) INNER JOIN #DimMember AS s ON m.[Value] = s.[Value]
         WHERE m.[PartitionId] = @p AND m.[DimensionId] = @d
           AND (m.[RemovedRunId] IS NOT NULL OR m.[Records] <> s.[Records] OR m.[RecordsExact] <> s.[RecordsExact]
                OR m.[Originals] <> s.[Originals] OR m.[Unfilterable] <> s.[Unfilterable] OR m.[FilterParts] <> s.[FilterParts]
@@ -297,27 +300,27 @@ internal static class SqlServerDimensionStore
             [Filter], [FilterParts], [FirstSeenRunId], [FirstSeenUtc])
         SELECT @p, @d, s.[Value], s.[Records], s.[RecordsExact], s.[Originals], s.[Unfilterable], s.[Filter], s.[FilterParts], @run, @now
         FROM #DimMember AS s
-        WHERE NOT EXISTS (SELECT 1 FROM [osdu].[DimensionMember] AS m WHERE m.[PartitionId] = @p AND m.[DimensionId] = @d AND m.[Value] = s.[Value]);
+        WHERE NOT EXISTS (SELECT 1 FROM [osdu].[DimensionMember] AS m WITH (FORCESEEK) WHERE m.[PartitionId] = @p AND m.[DimensionId] = @d AND m.[Value] = s.[Value]);
         SET @membersAdded = @@ROWCOUNT;
 
         IF @partial = 0
         BEGIN
             UPDATE m SET m.[RemovedRunId] = @run, m.[RemovedUtc] = @now
-            FROM [osdu].[DimensionMember] AS m
+            FROM [osdu].[DimensionMember] AS m WITH (FORCESEEK)
             WHERE m.[PartitionId] = @p AND m.[DimensionId] = @d AND m.[RemovedRunId] IS NULL
               AND NOT EXISTS (SELECT 1 FROM #DimMember AS s WHERE s.[Value] = m.[Value]);
             SET @membersRemoved = @@ROWCOUNT;
         END;
 
         UPDATE s SET s.[MemberId] = m.[MemberId]
-        FROM #DimValue AS s INNER JOIN [osdu].[DimensionMember] AS m
+        FROM #DimValue AS s INNER JOIN [osdu].[DimensionMember] AS m WITH (FORCESEEK)
             ON m.[PartitionId] = @p AND m.[DimensionId] = @d AND m.[Value] = s.[CleanValue];
 
         -- An original found again after a build that did not find it is restored; one under another member (or under none
         -- where it had one, or one where it had none) moved.
         INSERT INTO #DimChange ([ValueId], [Change], [FromMemberId], [ToMemberId])
         SELECT v.[ValueId], CASE WHEN v.[RemovedRunId] IS NOT NULL THEN N'restored' ELSE N'moved' END, v.[MemberId], s.[MemberId]
-        FROM [osdu].[DimensionValue] AS v INNER JOIN #DimValue AS s ON v.[OriginalHash] = s.[OriginalHash]
+        FROM [osdu].[DimensionValue] AS v WITH (FORCESEEK) INNER JOIN #DimValue AS s ON v.[OriginalHash] = s.[OriginalHash]
         WHERE v.[PartitionId] = @p AND v.[DimensionId] = @d
           AND (v.[RemovedRunId] IS NOT NULL OR ISNULL(v.[MemberId], -1) <> ISNULL(s.[MemberId], -1));
 
@@ -326,7 +329,7 @@ internal static class SqlServerDimensionStore
             v.[MemberId] = s.[MemberId], v.[LeftOut] = s.[LeftOut], v.[Note] = s.[Note], v.[Count] = s.[Count], v.[Filterable] = s.[Filterable],
             v.[Label] = s.[Label], v.[LabelFrom] = s.[LabelFrom], v.[Filter] = s.[Filter],
             v.[RemovedRunId] = NULL, v.[RemovedUtc] = NULL
-        FROM [osdu].[DimensionValue] AS v INNER JOIN #DimValue AS s ON v.[OriginalHash] = s.[OriginalHash]
+        FROM [osdu].[DimensionValue] AS v WITH (FORCESEEK) INNER JOIN #DimValue AS s ON v.[OriginalHash] = s.[OriginalHash]
         WHERE v.[PartitionId] = @p AND v.[DimensionId] = @d
           AND (v.[RemovedRunId] IS NOT NULL OR ISNULL(v.[MemberId], -1) <> ISNULL(s.[MemberId], -1) OR v.[Count] <> s.[Count]
                OR v.[Filterable] <> s.[Filterable] OR ISNULL(v.[LeftOut], N'') <> ISNULL(s.[LeftOut], N'')
@@ -343,7 +346,7 @@ internal static class SqlServerDimensionStore
         SELECT @p, @d, s.[Original], s.[OriginalHash], s.[MemberId], s.[LeftOut], s.[Note], s.[Count], s.[Filterable], s.[Label], s.[LabelFrom],
             s.[Filter], @run, @now, @run
         FROM #DimValue AS s
-        WHERE NOT EXISTS (SELECT 1 FROM [osdu].[DimensionValue] AS v WHERE v.[PartitionId] = @p AND v.[DimensionId] = @d AND v.[OriginalHash] = s.[OriginalHash])
+        WHERE NOT EXISTS (SELECT 1 FROM [osdu].[DimensionValue] AS v WITH (FORCESEEK) WHERE v.[PartitionId] = @p AND v.[DimensionId] = @d AND v.[OriginalHash] = s.[OriginalHash])
         -- The new originals take their ids in the order the build listed them, so arrival order within a build is the build's.
         ORDER BY s.[Seq];
 
@@ -351,7 +354,7 @@ internal static class SqlServerDimensionStore
         BEGIN
             UPDATE v SET v.[RemovedRunId] = @run, v.[RemovedUtc] = @now
             OUTPUT inserted.[ValueId], N'removed', deleted.[MemberId], NULL INTO #DimChange ([ValueId], [Change], [FromMemberId], [ToMemberId])
-            FROM [osdu].[DimensionValue] AS v
+            FROM [osdu].[DimensionValue] AS v WITH (FORCESEEK)
             WHERE v.[PartitionId] = @p AND v.[DimensionId] = @d AND v.[RemovedRunId] IS NULL
               AND NOT EXISTS (SELECT 1 FROM #DimValue AS s WHERE s.[OriginalHash] = v.[OriginalHash]);
         END
@@ -361,19 +364,19 @@ internal static class SqlServerDimensionStore
             -- it no longer finds.
             UPDATE v SET v.[RemovedRunId] = @run, v.[RemovedUtc] = @now
             OUTPUT inserted.[ValueId], N'removed', deleted.[MemberId], NULL INTO #DimChange ([ValueId], [Change], [FromMemberId], [ToMemberId])
-            FROM [osdu].[DimensionValue] AS v
+            FROM [osdu].[DimensionValue] AS v WITH (FORCESEEK)
             INNER JOIN #DimGone AS g ON g.[OriginalHash] = v.[OriginalHash]
             WHERE v.[PartitionId] = @p AND v.[DimensionId] = @d AND v.[RemovedRunId] IS NULL;
 
             -- A value every original it held left (each read again and now under another, or under none, or removed) holds
             -- nothing; one an original still holds stays, though the write did not hold it.
             UPDATE m SET m.[RemovedRunId] = @run, m.[RemovedUtc] = @now
-            FROM [osdu].[DimensionMember] AS m
+            FROM [osdu].[DimensionMember] AS m WITH (FORCESEEK)
             WHERE m.[PartitionId] = @p AND m.[DimensionId] = @d AND m.[RemovedRunId] IS NULL
               AND m.[MemberId] IN (SELECT c.[FromMemberId] FROM #DimChange AS c WHERE c.[FromMemberId] IS NOT NULL)
               AND NOT EXISTS (SELECT 1 FROM #DimMember AS s WHERE s.[Value] = m.[Value])
               AND NOT EXISTS (
-                  SELECT 1 FROM [osdu].[DimensionValue] AS v
+                  SELECT 1 FROM [osdu].[DimensionValue] AS v WITH (FORCESEEK)
                   WHERE v.[PartitionId] = @p AND v.[DimensionId] = @d AND v.[MemberId] = m.[MemberId] AND v.[RemovedRunId] IS NULL);
             SET @membersRemoved = @@ROWCOUNT;
         END;
@@ -391,7 +394,7 @@ internal static class SqlServerDimensionStore
         -- The numbers are looked up once, beside the few names, and every row below is joined to them: a row of the
         -- build is never rewritten to carry one.
         UPDATE s SET s.[AttributeId] = n.[AttributeId]
-        FROM #DimName AS s INNER JOIN [osdu].[DimensionAttributeName] AS n ON n.[PartitionId] = @p AND n.[DimensionId] = @d AND n.[Name] = s.[Name];
+        FROM #DimName AS s INNER JOIN [osdu].[DimensionAttributeName] AS n WITH (FORCESEEK) ON n.[PartitionId] = @p AND n.[DimensionId] = @d AND n.[Name] = s.[Name];
 
         -- Each attribute value the build read, under the numbers it is kept by: its key's and its attribute's. The rows
         -- kept are then matched to them on those numbers and the value, which name one row on either side. Matched
@@ -402,14 +405,14 @@ internal static class SqlServerDimensionStore
         SELECT v.[ValueId], dn.[AttributeId], t.[Value], t.[ValueFrom], t.[Records]
         FROM #DimAttr AS t
         INNER JOIN #DimName AS dn ON dn.[Name] = t.[Name]
-        INNER JOIN [osdu].[DimensionValue] AS v ON v.[PartitionId] = @p AND v.[DimensionId] = @d AND v.[OriginalHash] = t.[OriginalHash];
+        INNER JOIN [osdu].[DimensionValue] AS v WITH (FORCESEEK) ON v.[PartitionId] = @p AND v.[DimensionId] = @d AND v.[OriginalHash] = t.[OriginalHash];
 
         -- The attribute values of every original the build found are what it read: one no longer read is dropped, one read
         -- again rewritten only when where it was read or how many records hold it changed, and a new one added. An original
         -- the build did not find keeps what its last build read.
         DELETE a
-        FROM [osdu].[DimensionAttribute] AS a
-        INNER JOIN [osdu].[DimensionValue] AS v ON v.[PartitionId] = a.[PartitionId] AND v.[ValueId] = a.[ValueId]
+        FROM [osdu].[DimensionAttribute] AS a WITH (FORCESEEK)
+        INNER JOIN [osdu].[DimensionValue] AS v WITH (FORCESEEK) ON v.[PartitionId] = @p AND v.[DimensionId] = @d AND v.[ValueId] = a.[ValueId]
         INNER JOIN #DimValue AS s ON s.[OriginalHash] = v.[OriginalHash]
         WHERE a.[PartitionId] = @p AND a.[DimensionId] = @d
           AND NOT EXISTS (
@@ -419,7 +422,7 @@ internal static class SqlServerDimensionStore
 
         -- Where a value was read is compared exactly, byte for byte, as an id is.
         UPDATE a SET a.[ValueFrom] = t.[ValueFrom], a.[Records] = t.[Records]
-        FROM [osdu].[DimensionAttribute] AS a
+        FROM [osdu].[DimensionAttribute] AS a WITH (FORCESEEK)
         INNER JOIN #DimAttrKeyed AS t ON t.[ValueId] = a.[ValueId] AND t.[AttributeId] = a.[AttributeId] AND t.[Value] = a.[Value]
         WHERE a.[PartitionId] = @p AND a.[DimensionId] = @d
           AND (ISNULL(a.[ValueFrom], N'') COLLATE Latin1_General_100_BIN2 <> ISNULL(t.[ValueFrom], N'') COLLATE Latin1_General_100_BIN2
@@ -432,7 +435,7 @@ internal static class SqlServerDimensionStore
         SELECT @p, @d, t.[ValueId], t.[AttributeId], t.[Value], t.[ValueFrom], t.[Records]
         FROM #DimAttrKeyed AS t
         WHERE NOT EXISTS (
-            SELECT 1 FROM [osdu].[DimensionAttribute] AS a
+            SELECT 1 FROM [osdu].[DimensionAttribute] AS a WITH (FORCESEEK)
             WHERE a.[PartitionId] = @p AND a.[DimensionId] = @d AND a.[ValueId] = t.[ValueId] AND a.[AttributeId] = t.[AttributeId] AND a.[Value] = t.[Value])
         ORDER BY t.[ValueId], t.[AttributeId], t.[Value];
         SET @attributesChanged += @@ROWCOUNT;
@@ -446,15 +449,15 @@ internal static class SqlServerDimensionStore
             SELECT v.[ValueId], t.[Seq], dn.[AttributeId], t.[Value]
             FROM #DimElem AS t
             INNER JOIN #DimName AS dn ON dn.[Name] = t.[Name]
-            INNER JOIN [osdu].[DimensionValue] AS v ON v.[PartitionId] = @p AND v.[DimensionId] = @d AND v.[OriginalHash] = t.[OriginalHash];
+            INNER JOIN [osdu].[DimensionValue] AS v WITH (FORCESEEK) ON v.[PartitionId] = @p AND v.[DimensionId] = @d AND v.[OriginalHash] = t.[OriginalHash];
 
             IF @elements = 0
-                DELETE FROM [osdu].[DimensionElement] WHERE [PartitionId] = @p AND [DimensionId] = @d;
+                DELETE e FROM [osdu].[DimensionElement] AS e WITH (FORCESEEK) WHERE e.[PartitionId] = @p AND e.[DimensionId] = @d;
             ELSE
             BEGIN
                 DELETE e
-                FROM [osdu].[DimensionElement] AS e
-                INNER JOIN [osdu].[DimensionValue] AS v ON v.[PartitionId] = e.[PartitionId] AND v.[ValueId] = e.[ValueId]
+                FROM [osdu].[DimensionElement] AS e WITH (FORCESEEK)
+                INNER JOIN [osdu].[DimensionValue] AS v WITH (FORCESEEK) ON v.[PartitionId] = @p AND v.[DimensionId] = @d AND v.[ValueId] = e.[ValueId]
                 INNER JOIN #DimValue AS s ON s.[OriginalHash] = v.[OriginalHash]
                 WHERE e.[PartitionId] = @p AND e.[DimensionId] = @d
                   AND NOT EXISTS (
@@ -462,7 +465,7 @@ internal static class SqlServerDimensionStore
                       WHERE t.[ValueId] = e.[ValueId] AND t.[Seq] = e.[Seq] AND t.[AttributeId] = e.[AttributeId]);
 
                 UPDATE e SET e.[Value] = t.[Value]
-                FROM [osdu].[DimensionElement] AS e
+                FROM [osdu].[DimensionElement] AS e WITH (FORCESEEK)
                 INNER JOIN #DimElemKeyed AS t ON t.[ValueId] = e.[ValueId] AND t.[Seq] = e.[Seq] AND t.[AttributeId] = e.[AttributeId]
                 WHERE e.[PartitionId] = @p AND e.[DimensionId] = @d
                   AND (ISNULL(e.[Value], N'') COLLATE Latin1_General_100_BIN2 <> ISNULL(t.[Value], N'') COLLATE Latin1_General_100_BIN2
@@ -473,7 +476,7 @@ internal static class SqlServerDimensionStore
                 SELECT @p, @d, t.[ValueId], t.[Seq], t.[AttributeId], t.[Value]
                 FROM #DimElemKeyed AS t
                 WHERE NOT EXISTS (
-                    SELECT 1 FROM [osdu].[DimensionElement] AS e
+                    SELECT 1 FROM [osdu].[DimensionElement] AS e WITH (FORCESEEK)
                     WHERE e.[PartitionId] = @p AND e.[DimensionId] = @d AND e.[ValueId] = t.[ValueId] AND e.[Seq] = t.[Seq] AND e.[AttributeId] = t.[AttributeId])
                 ORDER BY t.[ValueId], t.[Seq], t.[AttributeId];
             END;
@@ -485,25 +488,25 @@ internal static class SqlServerDimensionStore
         INSERT INTO #DimReadKeyed ([ValueId], [RecordHash], [EntityType])
         SELECT v.[ValueId], r.[RecordHash], r.[EntityType]
         FROM #DimRead AS r
-        INNER JOIN [osdu].[DimensionValue] AS v ON v.[PartitionId] = @p AND v.[DimensionId] = @d AND v.[OriginalHash] = r.[OriginalHash];
+        INNER JOIN [osdu].[DimensionValue] AS v WITH (FORCESEEK) ON v.[PartitionId] = @p AND v.[DimensionId] = @d AND v.[OriginalHash] = r.[OriginalHash];
 
         DELETE k
-        FROM [osdu].[DimensionKeyRecord] AS k
-        INNER JOIN [osdu].[DimensionValue] AS v ON v.[PartitionId] = k.[PartitionId] AND v.[ValueId] = k.[ValueId]
+        FROM [osdu].[DimensionKeyRecord] AS k WITH (FORCESEEK)
+        INNER JOIN [osdu].[DimensionValue] AS v WITH (FORCESEEK) ON v.[PartitionId] = @p AND v.[DimensionId] = @d AND v.[ValueId] = k.[ValueId]
         INNER JOIN #DimValue AS s ON s.[OriginalHash] = v.[OriginalHash]
         WHERE k.[PartitionId] = @p AND k.[DimensionId] = @d
           AND NOT EXISTS (SELECT 1 FROM #DimReadKeyed AS t WHERE t.[ValueId] = k.[ValueId] AND t.[RecordHash] = k.[RecordHash]);
 
         DELETE k
-        FROM [osdu].[DimensionKeyRecord] AS k
-        INNER JOIN [osdu].[DimensionValue] AS v ON v.[PartitionId] = k.[PartitionId] AND v.[ValueId] = k.[ValueId]
+        FROM [osdu].[DimensionKeyRecord] AS k WITH (FORCESEEK)
+        INNER JOIN [osdu].[DimensionValue] AS v WITH (FORCESEEK) ON v.[PartitionId] = @p AND v.[DimensionId] = @d AND v.[ValueId] = k.[ValueId]
         WHERE k.[PartitionId] = @p AND k.[DimensionId] = @d AND v.[RemovedRunId] = @run;
 
         INSERT INTO [osdu].[DimensionKeyRecord] ([PartitionId], [DimensionId], [ValueId], [RecordHash], [EntityType])
         SELECT @p, @d, t.[ValueId], t.[RecordHash], t.[EntityType]
         FROM #DimReadKeyed AS t
         WHERE NOT EXISTS (
-            SELECT 1 FROM [osdu].[DimensionKeyRecord] AS k
+            SELECT 1 FROM [osdu].[DimensionKeyRecord] AS k WITH (FORCESEEK)
             WHERE k.[PartitionId] = @p AND k.[DimensionId] = @d AND k.[ValueId] = t.[ValueId] AND k.[RecordHash] = t.[RecordHash])
         ORDER BY t.[ValueId], t.[RecordHash];
 
@@ -513,12 +516,12 @@ internal static class SqlServerDimensionStore
         INSERT INTO #DimRecKeyed ([RecordHash], [ValueId])
         SELECT h.[RecordHash], v.[ValueId]
         FROM #DimRecHeld AS h
-        INNER JOIN [osdu].[DimensionValue] AS v ON v.[PartitionId] = @p AND v.[DimensionId] = @d AND v.[OriginalHash] = h.[OriginalHash];
+        INNER JOIN [osdu].[DimensionValue] AS v WITH (FORCESEEK) ON v.[PartitionId] = @p AND v.[DimensionId] = @d AND v.[OriginalHash] = h.[OriginalHash];
 
         IF @records = 1
         BEGIN
             DELETE r
-            FROM [osdu].[DimensionRecord] AS r
+            FROM [osdu].[DimensionRecord] AS r WITH (FORCESEEK)
             WHERE r.[PartitionId] = @p AND r.[DimensionId] = @d
               AND (@partial = 0 OR EXISTS (SELECT 1 FROM #DimRecRead AS s WHERE s.[RecordHash] = r.[RecordHash]))
               AND NOT EXISTS (SELECT 1 FROM #DimRecKeyed AS k WHERE k.[RecordHash] = r.[RecordHash] AND k.[ValueId] = r.[ValueId]);
@@ -527,16 +530,16 @@ internal static class SqlServerDimensionStore
             SELECT @p, @d, k.[RecordHash], k.[ValueId]
             FROM #DimRecKeyed AS k
             WHERE NOT EXISTS (
-                SELECT 1 FROM [osdu].[DimensionRecord] AS r
+                SELECT 1 FROM [osdu].[DimensionRecord] AS r WITH (FORCESEEK)
                 WHERE r.[PartitionId] = @p AND r.[DimensionId] = @d AND r.[RecordHash] = k.[RecordHash] AND r.[ValueId] = k.[ValueId])
             ORDER BY k.[RecordHash], k.[ValueId];
         END
         ELSE IF @partial = 0
-            DELETE FROM [osdu].[DimensionRecord] WHERE [PartitionId] = @p AND [DimensionId] = @d;
+            DELETE r FROM [osdu].[DimensionRecord] AS r WITH (FORCESEEK) WHERE r.[PartitionId] = @p AND r.[DimensionId] = @d;
 
         DELETE r
-        FROM [osdu].[DimensionRecord] AS r
-        INNER JOIN [osdu].[DimensionValue] AS v ON v.[PartitionId] = r.[PartitionId] AND v.[ValueId] = r.[ValueId]
+        FROM [osdu].[DimensionRecord] AS r WITH (FORCESEEK)
+        INNER JOIN [osdu].[DimensionValue] AS v WITH (FORCESEEK) ON v.[PartitionId] = @p AND v.[DimensionId] = @d AND v.[ValueId] = r.[ValueId]
         WHERE r.[PartitionId] = @p AND r.[DimensionId] = @d AND v.[RemovedRunId] = @run;
 
         -- The texts a full load collected replace those the dimension had, unless it could not settle the field (and so read
@@ -545,12 +548,12 @@ internal static class SqlServerDimensionStore
         IF @fieldIndex IS NOT NULL
         BEGIN
             IF @partial = 0
-                DELETE FROM [osdu].[DimensionCollectedText] WHERE [PartitionId] = @p AND [DimensionId] = @d;
+                DELETE c FROM [osdu].[DimensionCollectedText] AS c WITH (FORCESEEK) WHERE c.[PartitionId] = @p AND c.[DimensionId] = @d;
             INSERT INTO [osdu].[DimensionCollectedText] ([PartitionId], [DimensionId], [AttributeId], [TextHash], [Text], [Value], [Records])
             SELECT @p, @d, dn.[AttributeId], t.[TextHash], t.[Text], t.[Value], t.[Records]
             FROM #DimText AS t INNER JOIN #DimName AS dn ON dn.[Name] = t.[Name]
             WHERE NOT EXISTS (
-                SELECT 1 FROM [osdu].[DimensionCollectedText] AS c
+                SELECT 1 FROM [osdu].[DimensionCollectedText] AS c WITH (FORCESEEK)
                 WHERE c.[PartitionId] = @p AND c.[DimensionId] = @d AND c.[AttributeId] = dn.[AttributeId] AND c.[TextHash] = t.[TextHash])
             ORDER BY dn.[AttributeId], t.[Value], t.[Text];
         END;
@@ -561,17 +564,17 @@ internal static class SqlServerDimensionStore
         FROM #DimChange AS c
         WHERE c.[Change] <> N'added' OR @firstBuild = 0;
 
-        DECLARE @members bigint = (SELECT COUNT_BIG(*) FROM [osdu].[DimensionMember] WHERE [PartitionId] = @p AND [DimensionId] = @d AND [RemovedRunId] IS NULL);
-        DECLARE @originals bigint = (SELECT COUNT_BIG(*) FROM [osdu].[DimensionValue] WHERE [PartitionId] = @p AND [DimensionId] = @d AND [RemovedRunId] IS NULL);
+        DECLARE @members bigint = (SELECT COUNT_BIG(*) FROM [osdu].[DimensionMember] WITH (FORCESEEK) WHERE [PartitionId] = @p AND [DimensionId] = @d AND [RemovedRunId] IS NULL);
+        DECLARE @originals bigint = (SELECT COUNT_BIG(*) FROM [osdu].[DimensionValue] WITH (FORCESEEK) WHERE [PartitionId] = @p AND [DimensionId] = @d AND [RemovedRunId] IS NULL);
         DECLARE @leftOut bigint = (
-            SELECT COUNT_BIG(*) FROM [osdu].[DimensionValue]
+            SELECT COUNT_BIG(*) FROM [osdu].[DimensionValue] WITH (FORCESEEK)
             WHERE [PartitionId] = @p AND [DimensionId] = @d AND [RemovedRunId] IS NULL AND [MemberId] IS NULL);
         DECLARE @unfilterable bigint = (
-            SELECT COUNT_BIG(*) FROM [osdu].[DimensionValue]
+            SELECT COUNT_BIG(*) FROM [osdu].[DimensionValue] WITH (FORCESEEK)
             WHERE [PartitionId] = @p AND [DimensionId] = @d AND [RemovedRunId] IS NULL AND [MemberId] IS NOT NULL AND [Filterable] = 0);
 
         -- A build that could not settle the field (no record for its templates to be read by) leaves the one the dimension had.
-        UPDATE [osdu].[Dimension] SET
+        UPDATE d SET
             [FieldIndex] = CASE WHEN @fieldIndex IS NULL THEN [FieldIndex] ELSE @fieldIndex END,
             [NestedPath] = CASE WHEN @fieldIndex IS NULL THEN [NestedPath] ELSE @nestedPath END,
             [AggregateBy] = CASE WHEN @fieldIndex IS NULL THEN [AggregateBy] ELSE @aggregateBy END,
@@ -580,7 +583,8 @@ internal static class SqlServerDimensionStore
             [Members] = @members, [Originals] = @originals, [LastRunId] = @run, [LastBuiltUtc] = @now,
             [LastFullRunId] = CASE WHEN @partial = 0 THEN @run ELSE [LastFullRunId] END,
             [LastFullBuiltUtc] = CASE WHEN @partial = 0 THEN @now ELSE [LastFullBuiltUtc] END
-        WHERE [PartitionId] = @p AND [DimensionId] = @d;
+        FROM [osdu].[Dimension] AS d WITH (FORCESEEK)
+        WHERE d.[PartitionId] = @p AND d.[DimensionId] = @d;
 
         """ + "\n\n" + TableSql + "\n\n" + """
         SELECT
@@ -607,7 +611,7 @@ internal static class SqlServerDimensionStore
 
         BEGIN TRY
             DECLARE @n bigint, @texts bigint = 0, @attributes bigint = 0, @changes bigint = 0, @keys bigint = 0, @values bigint = 0, @builds bigint = 0;
-            DECLARE @table sysname = (SELECT [TableName] FROM [osdu].[Dimension] WHERE [PartitionId] = @p AND [DimensionId] = @d);
+            DECLARE @table sysname = (SELECT d.[TableName] FROM [osdu].[Dimension] AS d WITH (FORCESEEK) WHERE d.[PartitionId] = @p AND d.[DimensionId] = @d);
             DECLARE @dropped sysname = NULL;
 
             -- The dimension's rows in its own table, which every partition the flow builds it in writes to.
@@ -618,21 +622,21 @@ internal static class SqlServerDimensionStore
                 EXEC sys.sp_executesql @rows, N'@batch int, @partition nvarchar(256)', @batch = @batch, @partition = @partitionName;
             END;
 
-            WHILE 1 = 1 BEGIN DELETE TOP (@batch) FROM [osdu].[DimensionCollectedText] WHERE [PartitionId] = @p AND [DimensionId] = @d; SET @n = @@ROWCOUNT; SET @texts += @n; IF @n < @batch BREAK; END;
-            WHILE 1 = 1 BEGIN DELETE TOP (@batch) FROM [osdu].[DimensionAttribute] WHERE [PartitionId] = @p AND [DimensionId] = @d; SET @n = @@ROWCOUNT; SET @attributes += @n; IF @n < @batch BREAK; END;
-            WHILE 1 = 1 BEGIN DELETE TOP (@batch) FROM [osdu].[DimensionElement] WHERE [PartitionId] = @p AND [DimensionId] = @d; SET @n = @@ROWCOUNT; SET @attributes += @n; IF @n < @batch BREAK; END;
-            WHILE 1 = 1 BEGIN DELETE TOP (@batch) FROM [osdu].[DimensionKeyRecord] WHERE [PartitionId] = @p AND [DimensionId] = @d; SET @n = @@ROWCOUNT; SET @attributes += @n; IF @n < @batch BREAK; END;
-            WHILE 1 = 1 BEGIN DELETE TOP (@batch) FROM [osdu].[DimensionRecord] WHERE [PartitionId] = @p AND [DimensionId] = @d; SET @n = @@ROWCOUNT; SET @attributes += @n; IF @n < @batch BREAK; END;
-            WHILE 1 = 1 BEGIN DELETE TOP (@batch) FROM [osdu].[DimensionChange] WHERE [PartitionId] = @p AND [DimensionId] = @d; SET @n = @@ROWCOUNT; SET @changes += @n; IF @n < @batch BREAK; END;
-            WHILE 1 = 1 BEGIN DELETE TOP (@batch) FROM [osdu].[DimensionValue] WHERE [PartitionId] = @p AND [DimensionId] = @d; SET @n = @@ROWCOUNT; SET @keys += @n; IF @n < @batch BREAK; END;
-            WHILE 1 = 1 BEGIN DELETE TOP (@batch) FROM [osdu].[DimensionMember] WHERE [PartitionId] = @p AND [DimensionId] = @d; SET @n = @@ROWCOUNT; SET @values += @n; IF @n < @batch BREAK; END;
-            WHILE 1 = 1 BEGIN DELETE TOP (@batch) FROM [osdu].[DimensionRun] WHERE [PartitionId] = @p AND [DimensionId] = @d; SET @n = @@ROWCOUNT; SET @builds += @n; IF @n < @batch BREAK; END;
-            DELETE FROM [osdu].[DimensionAttributeName] WHERE [PartitionId] = @p AND [DimensionId] = @d;
-            DELETE FROM [osdu].[Dimension] WHERE [PartitionId] = @p AND [DimensionId] = @d;
+            WHILE 1 = 1 BEGIN DELETE TOP (@batch) c FROM [osdu].[DimensionCollectedText] AS c WITH (FORCESEEK) WHERE c.[PartitionId] = @p AND c.[DimensionId] = @d; SET @n = @@ROWCOUNT; SET @texts += @n; IF @n < @batch BREAK; END;
+            WHILE 1 = 1 BEGIN DELETE TOP (@batch) a FROM [osdu].[DimensionAttribute] AS a WITH (FORCESEEK) WHERE a.[PartitionId] = @p AND a.[DimensionId] = @d; SET @n = @@ROWCOUNT; SET @attributes += @n; IF @n < @batch BREAK; END;
+            WHILE 1 = 1 BEGIN DELETE TOP (@batch) e FROM [osdu].[DimensionElement] AS e WITH (FORCESEEK) WHERE e.[PartitionId] = @p AND e.[DimensionId] = @d; SET @n = @@ROWCOUNT; SET @attributes += @n; IF @n < @batch BREAK; END;
+            WHILE 1 = 1 BEGIN DELETE TOP (@batch) k FROM [osdu].[DimensionKeyRecord] AS k WITH (FORCESEEK) WHERE k.[PartitionId] = @p AND k.[DimensionId] = @d; SET @n = @@ROWCOUNT; SET @attributes += @n; IF @n < @batch BREAK; END;
+            WHILE 1 = 1 BEGIN DELETE TOP (@batch) r FROM [osdu].[DimensionRecord] AS r WITH (FORCESEEK) WHERE r.[PartitionId] = @p AND r.[DimensionId] = @d; SET @n = @@ROWCOUNT; SET @attributes += @n; IF @n < @batch BREAK; END;
+            WHILE 1 = 1 BEGIN DELETE TOP (@batch) c FROM [osdu].[DimensionChange] AS c WITH (FORCESEEK) WHERE c.[PartitionId] = @p AND c.[DimensionId] = @d; SET @n = @@ROWCOUNT; SET @changes += @n; IF @n < @batch BREAK; END;
+            WHILE 1 = 1 BEGIN DELETE TOP (@batch) v FROM [osdu].[DimensionValue] AS v WITH (FORCESEEK) WHERE v.[PartitionId] = @p AND v.[DimensionId] = @d; SET @n = @@ROWCOUNT; SET @keys += @n; IF @n < @batch BREAK; END;
+            WHILE 1 = 1 BEGIN DELETE TOP (@batch) m FROM [osdu].[DimensionMember] AS m WITH (FORCESEEK) WHERE m.[PartitionId] = @p AND m.[DimensionId] = @d; SET @n = @@ROWCOUNT; SET @values += @n; IF @n < @batch BREAK; END;
+            WHILE 1 = 1 BEGIN DELETE TOP (@batch) r FROM [osdu].[DimensionRun] AS r WITH (FORCESEEK) WHERE r.[PartitionId] = @p AND r.[DimensionId] = @d; SET @n = @@ROWCOUNT; SET @builds += @n; IF @n < @batch BREAK; END;
+            DELETE n FROM [osdu].[DimensionAttributeName] AS n WITH (FORCESEEK) WHERE n.[PartitionId] = @p AND n.[DimensionId] = @d;
+            DELETE d FROM [osdu].[Dimension] AS d WITH (FORCESEEK) WHERE d.[PartitionId] = @p AND d.[DimensionId] = @d;
             SET @n = @@ROWCOUNT;
 
             -- The table holds every partition the flow builds the dimension in: it goes with the last of them.
-            IF @table IS NOT NULL AND NOT EXISTS (SELECT 1 FROM [osdu].[Dimension] WHERE [TableName] = @table)
+            IF @table IS NOT NULL AND NOT EXISTS (SELECT 1 FROM [osdu].[Dimension] AS d WITH (FORCESEEK) WHERE d.[TableName] = @table)
             BEGIN
                 DECLARE @drop nvarchar(400) = N'DROP TABLE IF EXISTS [osdu].' + QUOTENAME(@table) + N';';
                 EXEC sys.sp_executesql @drop;
@@ -676,7 +680,7 @@ internal static class SqlServerDimensionStore
             """
             SELECT CASE WHEN OBJECT_ID(@table, N'U') IS NULL THEN 0 ELSE 1 END;
             SELECT n.[Name]
-            FROM [osdu].[DimensionAttributeName] AS n
+            FROM [osdu].[DimensionAttributeName] AS n WITH (FORCESEEK)
             WHERE n.[PartitionId] = @p AND n.[DimensionId] = @d AND n.[Ordinal] IS NOT NULL AND COL_LENGTH(@table, n.[Name]) IS NOT NULL
             ORDER BY n.[Ordinal];
             """,
@@ -981,21 +985,31 @@ internal static class SqlServerDimensionStore
     // that name the table first, then this dimension's own, which a build that never wrote may hold alone), and the
     // columns the table has.
     private const string ColumnsSql = """
-        SELECT TOP (1) d.[KeyColumn], d.[ValueColumn]
-        FROM [osdu].[Dimension] AS d
-        WHERE (d.[TableName] = @name OR (d.[PartitionId] = @p AND d.[DimensionId] = @d))
-          AND d.[KeyColumn] IS NOT NULL AND d.[ValueColumn] IS NOT NULL
-        ORDER BY CASE WHEN d.[TableName] = @name THEN 0 ELSE 1 END;
+        SELECT TOP (1) x.[KeyColumn], x.[ValueColumn]
+        FROM (
+            SELECT d.[KeyColumn], d.[ValueColumn], 0 AS [Rank]
+            FROM [osdu].[Dimension] AS d WITH (FORCESEEK)
+            WHERE d.[TableName] = @name AND d.[KeyColumn] IS NOT NULL AND d.[ValueColumn] IS NOT NULL
+            UNION ALL
+            SELECT d.[KeyColumn], d.[ValueColumn], 1
+            FROM [osdu].[Dimension] AS d WITH (FORCESEEK)
+            WHERE d.[PartitionId] = @p AND d.[DimensionId] = @d AND d.[KeyColumn] IS NOT NULL AND d.[ValueColumn] IS NOT NULL) AS x
+        ORDER BY x.[Rank];
 
         SELECT c.[name] FROM sys.columns AS c WHERE c.[object_id] = OBJECT_ID(@table, N'U');
         """;
 
     // The names recorded on every dimension writing the table (one a partition) and on this one, compared exactly, so
-    // a name that changed only in case is recorded too.
+    // a name that changed only in case is recorded too: each by a seek of its own, so no other dimension's row is read.
     private const string RecordColumnsSql = """
-        UPDATE [osdu].[Dimension] SET [KeyColumn] = @key, [ValueColumn] = @value
-        WHERE ([TableName] = @name OR ([PartitionId] = @p AND [DimensionId] = @d))
-          AND (ISNULL([KeyColumn], N'') COLLATE Latin1_General_100_BIN2 <> @key OR ISNULL([ValueColumn], N'') COLLATE Latin1_General_100_BIN2 <> @value);
+        UPDATE d SET d.[KeyColumn] = @key, d.[ValueColumn] = @value
+        FROM [osdu].[Dimension] AS d WITH (FORCESEEK)
+        WHERE d.[TableName] = @name
+          AND (ISNULL(d.[KeyColumn], N'') COLLATE Latin1_General_100_BIN2 <> @key OR ISNULL(d.[ValueColumn], N'') COLLATE Latin1_General_100_BIN2 <> @value);
+        UPDATE d SET d.[KeyColumn] = @key, d.[ValueColumn] = @value
+        FROM [osdu].[Dimension] AS d WITH (FORCESEEK)
+        WHERE d.[PartitionId] = @p AND d.[DimensionId] = @d
+          AND (ISNULL(d.[KeyColumn], N'') COLLATE Latin1_General_100_BIN2 <> @key OR ISNULL(d.[ValueColumn], N'') COLLATE Latin1_General_100_BIN2 <> @value);
         """;
 
     /// <summary>The names a column passes through when two renames would cross (the key's and the value's swapped, or a name changed only in case).</summary>
@@ -1003,7 +1017,7 @@ internal static class SqlServerDimensionStore
 
     /// <summary>
     /// Settles what the table's key and value columns are named, before its schema is brought to the declaration
-    /// (osdu/docs/reference/flow/dimension.md, The dimension's table). A build (<paramref name="rename"/>) names them
+    /// (osdu/docs/reference/flow/dimension-table.md, The dimension's table). A build (<paramref name="rename"/>) names them
     /// as its dimension declares: where the table holds them under other names (the dimension's path or label changed,
     /// its document names them otherwise, or the table was made before dimensions named their columns and holds
     /// <c>key</c> and <c>value</c>), each is renamed where it is, so the rows, their numbers and the indexes stay. A
@@ -1148,7 +1162,7 @@ internal static class SqlServerDimensionStore
     /// for every attribute it declares, before the write's transaction begins: the two columns are settled first
     /// (<see cref="SettleColumnsAsync"/>), then SQLFlow's schema evolution reads the table as it is, creates it when it is
     /// missing and adds the column of an attribute it does not have, and never drops or narrows one
-    /// (osdu/docs/reference/flow/dimension.md, The dimension's table). Then the two indexes it is read through, and the
+    /// (osdu/docs/reference/flow/dimension-table.md, The dimension's table). Then the two indexes it is read through, and the
     /// statements that write its rows. <paramref name="rename"/> is true for a build, which names the two columns as
     /// its dimension declares, and false for a reader, which keeps the names the table has.
     /// </summary>
@@ -1172,7 +1186,7 @@ internal static class SqlServerDimensionStore
             if (extra.Count > 0)
             {
                 await using var known = new SqlCommand(
-                    "SELECT n.[Name] FROM [osdu].[DimensionAttributeName] AS n WHERE n.[PartitionId] = @p AND n.[DimensionId] = @d;", connection)
+                    "SELECT n.[Name] FROM [osdu].[DimensionAttributeName] AS n WITH (FORCESEEK) WHERE n.[PartitionId] = @p AND n.[DimensionId] = @d;", connection)
                 {
                     CommandTimeout = CommandTimeoutSeconds,
                 };
@@ -1390,8 +1404,8 @@ internal static class SqlServerDimensionStore
             return [];
         }
 
-        var sql = "SELECT DISTINCT v.[Original] FROM [osdu].[DimensionKeyRecord] AS k "
-            + "INNER JOIN [osdu].[DimensionValue] AS v ON v.[PartitionId] = k.[PartitionId] AND v.[ValueId] = k.[ValueId] "
+        var sql = "SELECT DISTINCT v.[Original] FROM [osdu].[DimensionKeyRecord] AS k WITH (FORCESEEK) "
+            + "INNER JOIN [osdu].[DimensionValue] AS v WITH (FORCESEEK) ON v.[PartitionId] = @p AND v.[DimensionId] = @d AND v.[ValueId] = k.[ValueId] "
             + "WHERE k.[PartitionId] = @p AND k.[DimensionId] = @d AND v.[RemovedRunId] IS NULL AND k.[RecordHash] IN ("
             + string.Join(", ", hashes.Select((_, i) => "@h" + i.ToString(CultureInfo.InvariantCulture))) + ");";
         var keys = new List<string>();
@@ -1415,8 +1429,8 @@ internal static class SqlServerDimensionStore
 
         var sql = "SELECT v.[ValueId], v.[Original], v.[MemberId], m.[Value], v.[LeftOut], v.[Note], v.[Label], v.[LabelFrom], v.[Filter], v.[Count], "
             + "v.[Filterable], v.[FirstSeenRunId], v.[FirstSeenUtc], v.[MemberSinceRunId], v.[RemovedRunId], v.[RemovedUtc] "
-            + "FROM [osdu].[DimensionValue] AS v "
-            + "LEFT JOIN [osdu].[DimensionMember] AS m ON m.[PartitionId] = v.[PartitionId] AND m.[MemberId] = v.[MemberId] "
+            + "FROM [osdu].[DimensionValue] AS v WITH (FORCESEEK) "
+            + "LEFT JOIN [osdu].[DimensionMember] AS m WITH (FORCESEEK) ON m.[PartitionId] = @p AND m.[DimensionId] = @d AND m.[MemberId] = v.[MemberId] "
             + "WHERE v.[PartitionId] = @p AND v.[DimensionId] = @d AND v.[OriginalHash] IN ("
             + string.Join(", ", hashes.Select((_, i) => "@h" + i.ToString(CultureInfo.InvariantCulture))) + ");";
         var found = new List<DimensionValueState>(originals.Count);
@@ -1456,8 +1470,8 @@ internal static class SqlServerDimensionStore
             return [];
         }
 
-        var sql = "SELECT DISTINCT v.[Original] FROM [osdu].[DimensionRecord] AS r "
-            + "INNER JOIN [osdu].[DimensionValue] AS v ON v.[PartitionId] = r.[PartitionId] AND v.[ValueId] = r.[ValueId] "
+        var sql = "SELECT DISTINCT v.[Original] FROM [osdu].[DimensionRecord] AS r WITH (FORCESEEK) "
+            + "INNER JOIN [osdu].[DimensionValue] AS v WITH (FORCESEEK) ON v.[PartitionId] = @p AND v.[DimensionId] = @d AND v.[ValueId] = r.[ValueId] "
             + "WHERE r.[PartitionId] = @p AND r.[DimensionId] = @d AND v.[RemovedRunId] IS NULL AND r.[RecordHash] IN ("
             + string.Join(", ", recordHashes.Select((_, i) => "@h" + i.ToString(CultureInfo.InvariantCulture))) + ");";
         var keys = new List<string>();
@@ -1579,8 +1593,10 @@ internal static class SqlServerDimensionStore
                     reader.GetInt64(11));
             }
 
+            // By its whole key, as every statement of the write reads: a seek of its own row, whatever the table holds.
             var run = await db.DeliveryDimensionRuns
-                .FirstOrDefaultAsync(r => r.PartitionId == partitionId && r.DimensionRunId == write.DimensionRunId, ct).ConfigureAwait(false)
+                .FirstOrDefaultAsync(r => r.PartitionId == partitionId && r.DimensionId == write.DimensionId && r.DimensionRunId == write.DimensionRunId, ct)
+                .ConfigureAwait(false)
                 ?? throw new DeliveryException(string.Create(CultureInfo.InvariantCulture, $"Dimension build {write.DimensionRunId} is not in the ledger, so it cannot be closed."));
             await close(written, run).ConfigureAwait(false);
             await db.SaveChangesAsync(ct).ConfigureAwait(false);

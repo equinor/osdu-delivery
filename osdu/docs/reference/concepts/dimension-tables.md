@@ -36,7 +36,7 @@ sourceRefs:
 
 A dimension flow's build keeps what it read in tables of the module's `osdu` schema, owned by the module's model and
 created by its migrations, and from them makes the two kinds of object no migration creates: each dimension's own table,
-`[osdu].[dim_<dimension>]` ([The dimension's table](../flow/dimension.md#the-dimensions-table)), and each view, `[osdu].[v_dim_<view>]`
+`[osdu].[dim_<dimension>]` ([The dimension's table](../flow/dimension-table.md)), and each view, `[osdu].[v_dim_<view>]`
 ([Views](../flow/dimension.md#views)). The model's tables are the ledger of the dimension; the `dim_` tables and `v_dim_` views are what a
 report, a pipeline or a person reads.
 
@@ -68,7 +68,9 @@ What every column holds, and what each index serves, is on each table's page.
 everything: in one transaction, under an application lock per dimension (`osdu-dimension:<partition number>:<dimension
 id>`), its keys and values are staged and merged by set-based statements that add, rewrite, mark removed and bring back,
 give each attribute its number, rewrite the attributes, elements and records read through of the keys it found, log every
-change, and bring the dimension's own table to the same rows, then close the build with its counts. Nothing is deleted:
+change, and bring the dimension's own table to the same rows, then close the build with its counts. The tables keep each
+dimension's rows together ([How the tables are keyed](database.md#how-the-tables-are-keyed)), so every statement of the
+write reads and locks its own dimension's rows alone, and a build of another dimension writes beside it. Nothing is deleted:
 a value or key no build finds is marked removed and keeps its number should it come back. A failed build writes nothing
 but its build row. The views and their checks are written after the dimensions, each view in a transaction of its own.
 [Removing a dimension](../flow/dimension.md#removing-a-dimension) deletes every row of it in its partition, in batches under the same lock,

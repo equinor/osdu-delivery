@@ -1711,6 +1711,9 @@ internal sealed class DimensionIncrementalYaml
 
     /// <summary>Every build loads in full.</summary>
     public bool? FullLoad { get; set; }
+
+    /// <summary>A build loads in full when a record the last full load read has left the index or no longer matches the query.</summary>
+    public bool? FullLoadWhenRecordsLeave { get; set; }
 }
 
 internal sealed class DimensionTargetYaml
@@ -1735,6 +1738,9 @@ internal sealed class DimensionViewYaml
 
     /// <summary>The condition a row of the view is kept by, over the same columns its expressions read.</summary>
     public string? Where { get; set; }
+
+    // The columns the view groups its rows by: one, or a list; read by the mapper.
+    public object? GroupBy { get; set; }
 }
 
 internal sealed class DimensionViewJoinYaml
@@ -1744,6 +1750,9 @@ internal sealed class DimensionViewJoinYaml
 
     /// <summary>The dimension joined to.</summary>
     public string? To { get; set; }
+
+    /// <summary>The view of the flow joined to, declared before this one and grouping by the key joined on; in place of to.</summary>
+    public string? View { get; set; }
 
     /// <summary>The alias its columns are read by; the dimension's name when left out.</summary>
     public string? As { get; set; }
@@ -1804,12 +1813,18 @@ internal sealed class DimensionYaml
 
     /// <summary>The partitions of the flow this dimension is built in; every partition of the flow when left out.</summary>
     public List<string>? Partitions { get; set; }
+
+    /// <summary>The kind the records of an entity type are looked up in by labels and attributes, one per entity type.</summary>
+    public List<string>? LookupKinds { get; set; }
 }
 
 internal sealed class DimensionElementsYaml
 {
     /// <summary>The nested array whose objects are rows, as a path from the record's root (data.Curves).</summary>
     public string? Path { get; set; }
+
+    /// <summary>What a null in the array is: skip (no element, the default) or keep (an element of every field null).</summary>
+    public string? Nulls { get; set; }
 
     // Each field by its column: a path inside the object, or { path, keep }; read by the mapper.
     public Dictionary<string, object?>? Fields { get; set; }

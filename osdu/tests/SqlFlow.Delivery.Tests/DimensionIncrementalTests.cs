@@ -9,7 +9,7 @@ using Xunit;
 namespace SqlFlow.Delivery.Tests;
 
 /// <summary>
-/// A dimension flow's incremental loads (osdu/docs/reference/flow/dimension.md, Full and incremental loads) end to end,
+/// A dimension flow's incremental loads (osdu/docs/reference/flow/dimension-incremental.md, Full and incremental loads) end to end,
 /// on a stand-in search whose records carry OSDU's own <c>createTime</c> and <c>modifyTime</c> and a ledger on SQL
 /// Server: the first build loads in full and keeps the keys each record holds by its unique key; a later one reads the
 /// records that changed in its window, reads again the keys they hold now and held before and the keys read through a

@@ -24,7 +24,7 @@ internal sealed record CollectedAttribute(
     IReadOnlyList<string> Notes);
 
 /// <summary>
-/// Collects an attribute from a dimension's own records (osdu/docs/reference/flow/dimension.md, Labels and attributes):
+/// Collects an attribute from a dimension's own records (osdu/docs/reference/flow/dimension-attributes.md, Labels and attributes):
 /// every value the records holding each key hold at the attribute's path, with how many hold it, and, when the
 /// dimension names a value for what is not read, how many hold none of them. The attribute's distinct values are read
 /// first, as any field's are, so however many there are the read pages; a value is shown as a label is (a reference by

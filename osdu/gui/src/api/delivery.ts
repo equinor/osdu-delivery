@@ -3677,6 +3677,8 @@ export interface DeliveryDimensionView {
   from: string;
   /** The condition a row of `from` is kept by; null when the view keeps every row. */
   where?: string | null;
+  /** The columns a grouped view groups its rows by; empty for a view of a row per row of `from`. */
+  groupBy?: string[] | null;
   joins: DeliveryDimensionViewJoin[];
   /** The view's columns in order, its `partition` and `id` first. */
   columns: DeliveryDimensionViewColumn[];

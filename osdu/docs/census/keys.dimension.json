@@ -6,7 +6,7 @@
   "includeEnvelope": true,
   "generatedFrom": "osdu/docs/reference/flow/dimension.md and osdu/src/SqlFlow.Delivery/Documents/YamlModels.cs",
   "naming": "The loader deserializes with YamlDotNet's CamelCaseNamingConvention and refuses any key it does not know.",
-  "keyCount": 125,
+  "keyCount": 137,
   "keys": [
     {
       "path": "batch",
@@ -42,22 +42,52 @@
       "path": "dimensions[].attributes.<name>",
       "type": "list",
       "required": false,
-      "description": "One attribute. A path of the record the key names, or a list of paths, each but the last reading the references the next records are found by, at most 3; every reference is followed, and the first record reached that holds a value at the last path gives the attribute's value. A path's segment holding objects can filter them: `[Property=text]` keeps those whose property equals the text, `[Property*=text]` those whose property contains it ignoring case, `[Property$=text]` those whose property ends with it ignoring case (`data[GeoPoliticalEntityTypeID*=GeoPoliticalEntityType:Country:].GeoPoliticalEntityName`). Or settings naming one of `path` and `collect`, with `keep`: `{ path: data.WellboreID, keep: key }` reads it as the bare form does and keeps each value exactly as the record holds it, so the column joins to the dimension keyed by it; `{ collect: <path> }` collects it from the dimension's own records.",
+      "description": "One attribute. A path of the record the key names, or a list of paths, each but the last reading the references the next records are found by, at most 3; every reference is followed, and the first record reached that holds a value at the last path gives the attribute's value. A path's segment holding objects can filter them: `[Property=text]` keeps those whose property equals the text, `[Property*=text]` those whose property contains it ignoring case, `[Property$=text]` those whose property ends with it ignoring case (`data[GeoPoliticalEntityTypeID*=GeoPoliticalEntityType:Country:].GeoPoliticalEntityName`), and `[Property->path=text]`, with any of the three, compares what the record each reference the property holds names holds at the path, the records looked up first (`data.GeoContexts[GeoTypeID->data.Code=Country].GeoPoliticalEntityID`: the contexts whose type's record holds `Country` as its code). Or settings naming one of `path` and `collect`, with `keep`, and for `path` `many` and `decode`: `{ path: data.WellboreID, keep: key }` reads it as the bare form does and keeps each value exactly as the record holds it, so the column joins to the dimension keyed by it; `{ collect: <path> }` collects it from the dimension's own records.",
       "freeForm": true
     },
     {
       "path": "dimensions[].attributes.<name>.path",
       "type": "list",
       "required": false,
-      "description": "The path, or list of paths, the attribute is read through, exactly as the bare form gives them: `WellboreID: { path: data.WellboreID, keep: key }`. Write it to give the attribute a `keep` beside its paths; an attribute that keeps nothing needs no settings. One of `path` and `collect`, never both."
+      "description": "The path, or list of paths, the attribute is read through, exactly as the bare form gives them: `WellboreID: { path: data.WellboreID, keep: key }`. Write it to give the attribute a `keep`, a `many` or a `decode` beside its paths; an attribute that keeps nothing needs no settings. One of `path` and `collect`, never both."
     },
     {
       "path": "dimensions[].attributes.<name>.keep",
       "type": "string",
       "required": false,
-      "allowed": ["value", "key", "id"],
+      "allowed": ["value", "key", "id", "reference"],
       "default": "value",
-      "description": "How each value is kept. `value` (the default) shows it as a value: a record reference becomes the code its id ends with, its escapes decoded (`dev:master-data--Wellbore:WB-0001:` is `WB-0001`). `key` keeps the text exactly as the record holds it, the text the key column of a dimension keyed by the same path holds (`dim_WellLog.WellboreID = dim_Wellbore.WellboreID`). `id` keeps a reference as the id of the record it names (its version, or the trailing colon of the latest, taken off), the text the key column of a dimension keyed by `id` holds. `key` and `id` are what join dimension tables. A value longer than the 256 characters a dimension keeps is cut under `value` and left out under `key` and `id`, since a key cut joins to nothing."
+      "description": "How each value is kept. `value` (the default) shows it as a value: a record reference becomes the code its id ends with, its escapes decoded (`dev:master-data--Wellbore:WB-0001:` is `WB-0001`). `key` keeps the text exactly as the record holds it, the text the key column of a dimension keyed by the same path holds (`dim_WellLog.WellboreID = dim_Wellbore.WellboreID`). `id` keeps a reference as the id of the record it names (its version, or the trailing colon of the latest, taken off), the text the key column of a dimension keyed by `id` holds. `reference` keeps a reference with only the trailing colon of the latest taken off, a version it names kept, so a reference to a version joins nothing, as a pipeline that strips a trailing colon alone has it; it joins a dimension keyed by `id` as `id` does. `key`, `id` and `reference` are what join dimension tables. A value longer than the 256 characters a dimension keeps is cut under `value` and left out under `key`, `id` and `reference`, since a key cut joins to nothing."
+    },
+    {
+      "path": "dimensions[].attributes.<name>.many",
+      "type": "string",
+      "required": false,
+      "allowed": ["first", "join", "all", "max"],
+      "default": "first",
+      "description": "How the values the attribute's last step reaches are kept, over every record it reaches: `first` (the default), the value of the first record reached that holds one; `join`, every value that is not empty, each once, in the order reached, joined by `; `; `all`, every one as often as it is held, joined the same way; `max`, the greatest of them, compared by Unicode code point, which is the order of their UTF-8 bytes (`Field: { path: [data.GeoContexts.FieldID, data.FieldName], many: max }` keeps the greatest field name of a wellbore's fields, as SQL's `MAX` over them would). A joined value longer than the 256 characters an attribute keeps is cut under `keep: value` and left out under `key` and `id`. Not with `collect`, which keeps every value on a row of its own."
+    },
+    {
+      "path": "dimensions[].attributes.<name>.decode",
+      "type": "string",
+      "required": false,
+      "allowed": ["none", "url"],
+      "default": "none",
+      "description": "What each value read is decoded from before it is kept: `none` (the default), the value as the record holds it; `url`, its percent-escapes decoded and their bytes read as UTF-8 (`g%2Fcm3` is `g/cm3`), a `+` kept as a `+`, and a value holding a `%` that two hexadecimal digits do not follow kept as it is. Only with `keep: value`: a key or an id decoded would no longer be the text the dimension it joins is keyed by. Not with `collect`."
+    },
+    {
+      "path": "dimensions[].attributes.<name>.maxReferences",
+      "type": "integer",
+      "required": false,
+      "default": "20",
+      "description": "How many records each step but the last follows for one key, from 1 to 1000: a key whose records name more follows the first that many, in the order they are reached, and the build's notes count the keys bounded so. Raise it where a wellbore names more fields, contexts or entities than that, so `many: max` and `many: join` read them all. Not with `collect`."
+    },
+    {
+      "path": "dimensions[].attributes.<name>.trim",
+      "type": "boolean",
+      "required": false,
+      "default": "true",
+      "description": "Whether each value loses the white space at its ends: `true` (the default), or `false` to keep it exactly as the record holds it, a value of white space alone a value too, as a pipeline that keeps text as it reads it has it. Only with `keep: value`: a key, an id and a reference are always trimmed, as the text a search compares. An empty text is no value either way. Not with `collect`."
     },
     {
       "path": "dimensions[].elements",
@@ -72,23 +102,31 @@
       "description": "The array, as a path from the record's root, written as a label's path is: every array on the way is stepped into (`data.Curves.Columns` makes a row of every object of every curve's `Columns`), and any segment can filter the objects it holds (`data.GeoContexts[GeoTypeID$=:Field:]`). What the path ends at is the element: an object, whose fields are read inside it, or a plain value, which the field `@` reads."
     },
     {
+      "path": "dimensions[].elements.nulls",
+      "type": "string",
+      "required": false,
+      "allowed": ["skip", "keep"],
+      "default": "skip",
+      "description": "What a null in the array is: `skip` (the default), no element, or `keep`, an element whose every field is null (a field read up the path, `up`, still reads the object holding the array), as Spark's explode keeps one. A key whose records hold only nulls is a row of each null under `keep`."
+    },
+    {
       "path": "dimensions[].elements.fields",
       "type": "map",
       "required": true,
-      "description": "The columns read from each element, each under its name, named as an attribute is and unlike every attribute and the `element` column. Each is a path inside the element (`CurveUnit`, `Quantity.Code`, `Values[Type=Top].Depth`), `@` for the element itself, or settings `{ path, keep, up, many }`."
+      "description": "The columns read from each element, each under its name, named as an attribute is and unlike every attribute and the `element` column. Each is a path inside the element (`CurveUnit`, `Quantity.Code`, `Values[Type=Top].Depth`), `@` for the element itself, or settings `{ path, keep, up, many, decode, trim }`."
     },
     {
       "path": "dimensions[].elements.fields.<name>",
       "type": "string",
       "required": false,
-      "description": "One field: a path inside the element, written as a label's path is, `@` for the element itself, or settings `{ path, keep, up, many }` (`CurveUnitID: { path: CurveUnit, keep: id }`).",
+      "description": "One field: a path inside the element, written as a label's path is, `@` for the element itself, or settings `{ path, keep, up, many, decode, trim }` (`CurveUnitID: { path: CurveUnit, keep: id }`).",
       "freeForm": true
     },
     {
       "path": "dimensions[].elements.fields.<name>.keep",
       "type": "string",
       "required": false,
-      "allowed": ["value", "key", "id"],
+      "allowed": ["value", "key", "id", "reference"],
       "default": "value",
       "description": "How the field's value is kept, as an attribute's `keep` says: `id` makes the column join to the dimension keyed by the id of the record it names. A field keeps at most 4,000 characters: a longer value is cut under `value` and left out under `key` and `id`."
     },
@@ -103,9 +141,24 @@
       "path": "dimensions[].elements.fields.<name>.many",
       "type": "string",
       "required": false,
-      "allowed": ["first", "join"],
+      "allowed": ["first", "join", "all", "max"],
       "default": "first",
-      "description": "How a field whose path reaches several values in one element is kept: `first`, the first that is not empty; `join`, every one that is not empty, each once, in order, joined by `; `."
+      "description": "How a field whose path reaches several values in one element is kept: `first`, the first that is not empty; `join`, every one that is not empty, each once, in order, joined by `; `; `all`, every one as often as it is held, joined the same way; `max`, the greatest of them, compared by Unicode code point."
+    },
+    {
+      "path": "dimensions[].elements.fields.<name>.decode",
+      "type": "string",
+      "required": false,
+      "allowed": ["none", "url"],
+      "default": "none",
+      "description": "What each value the field reads is decoded from before it is kept, as an attribute's `decode` says: `url` decodes its percent-escapes (`g%2Fcm3` is `g/cm3`). Only with `keep: value`."
+    },
+    {
+      "path": "dimensions[].elements.fields.<name>.trim",
+      "type": "boolean",
+      "required": false,
+      "default": "true",
+      "description": "Whether each value the field reads loses the white space at its ends, as an attribute's `trim` says: `false` keeps it as the record holds it. Only with `keep: value`."
     },
     {
       "path": "dimensions[].attributes.<name>.collect",
@@ -231,6 +284,18 @@
       "description": "The partitions of the flow the dimension is built in, when not all of them; left out, it is built in every partition the flow builds in."
     },
     {
+      "path": "dimensions[].lookupKinds",
+      "type": "list",
+      "required": false,
+      "description": "The kind the records of an entity type are looked up in when a label or an attribute reads through a reference to one, one kind per entity type, its entity type written out (`lookupKinds: [osdu:wks:master-data--Basin:1.2.0, osdu:wks:master-data--Field:1.0.0]`). An entity type none names is looked up in every kind of it, `*:*:<entityType>:*`, so a record of another version or authority is read too; name the kind to read the records of one alone, as a pipeline that downloads one kind does. An incremental load finds the records that changed in the same kinds."
+    },
+    {
+      "path": "dimensions[].lookupKinds[]",
+      "type": "string",
+      "required": false,
+      "description": "One kind: authority:source:entityType:version, the entity type written out, any other segment a wildcard if need be."
+    },
+    {
       "path": "dimensions[].partitions[]",
       "type": "string",
       "required": false,
@@ -320,6 +385,14 @@
       "description": "Every build loads every dimension in full, as without the block, keeping its settings for when this is taken out. A single run asks for one with SQLFlow's `fullLoad` instead.",
       "default": "false",
       "appliesWhen": "incremental is declared."
+    },
+    {
+      "path": "incremental.fullLoadWhenRecordsLeave",
+      "type": "boolean",
+      "required": false,
+      "default": "false",
+      "appliesWhen": "incremental is declared.",
+      "description": "A build loads a dimension in full when at least one record its last full load read is gone from the index (a soft delete) or no longer matches its query, which no incremental load can see; left false, such a record's keys and counts stay until the next full load, and the build's notes say how many at least have left. It costs two counts a build."
     },
     {
       "path": "name",
@@ -790,8 +863,14 @@
     {
       "path": "views[].join[].to",
       "type": "string",
-      "required": true,
-      "description": "The dimension of this flow joined to. A dimension can be joined twice under two aliases."
+      "required": false,
+      "description": "The dimension of this flow joined to. A dimension can be joined twice under two aliases. One of `to` and `view`."
+    },
+    {
+      "path": "views[].join[].view",
+      "type": "string",
+      "required": false,
+      "description": "In place of `to`: a view of this flow declared before this one that groups its rows by one column holding a key and lists it bare, so it meets at most one row of a key. The join compares the partition and that column exactly; the build writes the views in the order the flow declares them, and a view whose joined view could not be written is not written either. A view that joins a view lists its columns."
     },
     {
       "path": "views[].join[].as",
@@ -836,6 +915,12 @@
       "type": "string",
       "required": false,
       "description": "The condition a row of the view is kept by, a T-SQL condition over the same columns and with the same operators and functions as a column's expression, at most 4,000 characters: `element IS NOT NULL` keeps the rows of a dimension with `elements` that hold an element, leaving out the one row a key whose records hold none has; `Log.Source = 'SMDA'` keeps the rows whose joined log says so. A value alone (`element`) is refused: compare it. Left out, the view holds a row for every row of `from`. The check counts the rows the condition keeps."
+    },
+    {
+      "path": "views[].groupBy",
+      "type": "list",
+      "required": false,
+      "description": "The columns the view groups its rows by: one column or a list of them, at most 16, each named as an expression names one (bare for the from dimension's, `alias.column` for a join's). A grouped view is a row per partition and group: its columns are the columns it groups by and aggregates of the rest (`COUNT`, `COUNT_BIG`, `MAX`, `MIN`, `SUM`, `AVG`, `STRING_AGG ... WITHIN GROUP (ORDER BY ...)`), its `id` the least number of the rows of its group, and its `where` keeps the rows before they are grouped. A grouped view lists its columns. A later view of the flow joins it (`join: { on: <key>, view: <name> }`) when it groups by one column holding a key and lists that column bare."
     }
   ]
 }

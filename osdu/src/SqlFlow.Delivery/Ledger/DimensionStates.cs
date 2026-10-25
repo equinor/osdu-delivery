@@ -17,7 +17,7 @@ public static class DimensionRunStatus
 }
 
 /// <summary>
-/// How a dimension build reads its dimension (osdu/docs/reference/flow/dimension.md, Full and incremental loads).
+/// How a dimension build reads its dimension (osdu/docs/reference/flow/dimension-incremental.md, Full and incremental loads).
 /// </summary>
 public static class DimensionRunModes
 {

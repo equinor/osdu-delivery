@@ -3,11 +3,11 @@
 The catalog of every page in this wiki. Read this first when answering a question against the
 wiki, then drill into the pages it points at.
 
-This wiki is written and maintained by an LLM agent, not by hand. Its conventions, and the
-ingest / query / lint workflows that keep it current, live in the "OSDU Wiki" section of
-[CLAUDE.md](../../../CLAUDE.md), which follows SQLFlow's internals wiki
-([sqlflow/docs/wiki/](../../../sqlflow/docs/wiki/index.md)). See [log.md](log.md) for the chronological
-record of what has been ingested and when.
+This wiki is written and maintained by an LLM agent, not by hand: the agent writes every page, and the
+human curates, directs, and asks the questions. Its conventions, and the ingest / query / lint workflows
+that keep it current, are [How this wiki is kept](#how-this-wiki-is-kept) below, which follows SQLFlow's
+internals wiki ([sqlflow/docs/wiki/](../../../sqlflow/docs/wiki/index.md)). See [log.md](log.md) for the
+chronological record of what has been ingested and when.
 
 **In a hurry?** [Pattern catalog](maps/pattern-catalog.md) maps a delivery problem onto the
 OSDU Delivery shape that solves it and the page that documents it.
@@ -39,6 +39,55 @@ own. Filter by the `type` values below to narrow a search to one kind of page.
 | `decisions/` | `decision` | Why is it this way, and what was rejected? |
 | `incidents/` | `incident` | What broke, and what generalizes from it? |
 | `maps/` | `map` | Where does knowledge live, and which parts are stale? |
+
+## How this wiki is kept
+
+It follows SQLFlow's internals wiki exactly: three layers, three operations, one index, one log. Where a
+convention here differs from SQLFlow's, this section says so and why. When a convention stops fitting,
+change it here with the human rather than quietly diverging.
+
+**The raw sources are never edited to fit the wiki.** The code under `osdu/` and `sqlflow/`, the git
+history, the sample estate and the production estate's metadata repository are read, not rewritten.
+
+**A page lives in exactly one directory, and its `type` matches it** (the table above). A decision's
+filename starts with the next free four-digit number (`0030-<slug>.md`), and code and pages cite it by that
+number.
+
+**Page format.** YAML frontmatter, then the body. Required: `id` (`delivery-wiki-` plus the filename stem),
+`title`, `type`, `summary` (one sentence, at most 160 characters), `keywords` (at least three) and `updated`
+(ISO date). Optional: `sourceRefs` (repository-relative code paths the page's claims rest on), `rawRefs`
+(historical documents consulted), `referenceRefs` (reference page ids, this corpus's `delivery-*` or
+SQLFlow's) and `related` (wiki page ids, this wiki's or SQLFlow's). The `delivery-wiki-` prefix and the wider
+`referenceRefs` and `related` are the two differences from SQLFlow's format, because one MCP index holds both
+corpora. Cite by file path and `sourceRefs`, never by line number. Keep `sourceRefs` honest: lint fails a page
+whose source has gone.
+
+**The production estate is described, never named.** A page names no company, estate, partition, flow or
+file of it, and holds no value from its data (curve values above all); it says what a folder delivers by the
+OSDU kind and quotes counts and shapes. Examples use the generic estate (`welldb`, the `dev` and `test`
+partitions). The MCP host's docs tests fail a page that names the estate.
+
+**Write only what you have verified.** Every claim traces to code, a raw source or a reference page you
+read. No placeholder pages and no invented rationale: an absent page is honest, a speculative one is not.
+
+**The three operations.**
+
+- **Ingest** one source at a time: read it, discuss the takeaways with the human, write or update the pages
+  it touches, update this index, and append to [log.md](log.md). Never batch-ingest unsupervised, and never
+  let subagents author pages.
+- **Query**: read this index first, drill into the pages it names, and answer with links to them. File an
+  answer worth keeping back as a page.
+- **Lint**: from the repository root, run
+  `python sqlflow/docs/wiki/lint_wiki.py --wiki osdu/docs/wiki --root . --manifest osdu/docs/reference/manifest.json --id-prefix delivery-wiki- --known sqlflow/docs/reference/manifest.json`,
+  which must exit 0 (CI's Conventions job runs it). Then check what a script cannot: contradictions between
+  pages, claims newer code has superseded, concepts lacking a page, and missing cross-references.
+
+**This index and the log stay current.** A page missing from this index fails lint. [log.md](log.md) is
+append-only, one entry per operation, headed `## [YYYY-MM-DD] <ingest|query|lint> | <title>`.
+
+**A page is not finished until the manifest is rebuilt.** After any page or frontmatter change, run the
+manifest build ([osdu/docs/reference/README.md](../reference/README.md#maintenance)) and the MCP host's tests
+(`cargo test --manifest-path osdu/hosts/osdu-delivery-mcp/Cargo.toml`).
 
 ## Pages
 
@@ -151,6 +200,10 @@ other packages adopt the same contract.
   optional, why nothing is removed until an admin sets a limit (statistics read further back than 90 days), why the
   ledger's prune became three optional areas, and why purge-all, a page of the module's own and cleared assertion detail
   were rejected.
+- [0030: a dimension's rows are one range of every table, and a build's statements seek them](decisions/0030-dimension-rows-one-range.md) -
+  why the tables holding a dimension's rows are keyed on partition, dimension and row, why every statement of a write
+  names its dimension and forces its seek (plans made on empty tables scanned), and why retrying or serialising the
+  writes, a covering index per statement and row locks were rejected.
 
 ## Coverage
 

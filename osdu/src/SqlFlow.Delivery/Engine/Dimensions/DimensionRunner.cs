@@ -87,7 +87,7 @@ public sealed record DimensionLoadRequest(bool FullLoad = false, DateTime? From 
 }
 
 /// <summary>
-/// One view as a build run left it (osdu/docs/reference/flow/dimension.md, What a run returns): written, unchanged or
+/// One view as a build run left it (osdu/docs/reference/flow/dimension-build.md, What a run returns): written, unchanged or
 /// failed, why it failed, and what its check found in the run's partition: the rows, whether it could be read, and what
 /// it has to say.
 /// </summary>
@@ -188,7 +188,7 @@ public sealed record DimensionPlanOutcome(string Operation, string Flow, string 
 }
 
 /// <summary>
-/// Builds a dimension flow's dimensions in one partition (osdu/docs/reference/flow/dimension.md, What a build does):
+/// Builds a dimension flow's dimensions in one partition (osdu/docs/reference/flow/dimension-build.md, What a build does):
 /// for each dimension, settles how the index stores its field (from the template the flow reads of every kind its
 /// pattern matches, or the indexer's mapping of the record's own properties), reads every distinct value through the search's
 /// aggregation paged by value ranges, cleans the values into members, gives each member its search filter and, where
@@ -708,7 +708,7 @@ public sealed partial class DimensionRunner
         var forLabels = together ? concurrency / 2 : concurrency;
         var forCollected = together ? concurrency - forLabels : concurrency;
         Task<KeyLabels> Labelling() => reads
-            ? new DimensionLabeler(search, _log, forLabels).ReadAsync(keys, dimension.Label, throughKeys, ct)
+            ? new DimensionLabeler(search, _log, forLabels).ReadAsync(keys, dimension.Label, throughKeys, dimension.LookupKinds, ct)
             : Task.FromResult(KeyLabels.None);
         Task<CollectedRead> Collecting() => ReadCollectedAsync(search, templates, dimension, query, field, resolved, scopes, forCollected, ct);
         KeyLabels labels;
@@ -1285,7 +1285,9 @@ public sealed partial class DimensionRunner
         => attributes.Count == 0
             ? null
             : JsonSerializer.Serialize(
-                attributes.Select(a => new AttributeText(a.Name, a.IsCollected ? null : a.Steps.ToList(), a.Collect, KeepText(a.Keep))).ToList(), StepJson);
+                attributes.Select(a => new AttributeText(
+                    a.Name, a.IsCollected ? null : a.Steps.ToList(), a.Collect, KeepText(a.Keep), ManyText(a.Many), DecodeText(a.Decode),
+                    a.MaxReferences == DimensionAttributeSpec.DefaultMaxReferences ? null : a.MaxReferences, a.Trim ? null : false)).ToList(), StepJson);
 
     /// <summary>
     /// The attributes a build kept of its dimension (<see cref="DimensionState.AttributesJson"/>), in the order declared; none
@@ -1303,7 +1305,10 @@ public sealed partial class DimensionRunner
             return (JsonSerializer.Deserialize<List<AttributeText>>(attributesJson, StepJson) ?? [])
                 .Where(a => DimensionAttributeSpec.IsName(a.Name) && (a.Steps is { Count: > 0 } || !string.IsNullOrWhiteSpace(a.Collect)))
                 .Select(a => string.IsNullOrWhiteSpace(a.Collect)
-                    ? new DimensionAttributeSpec(a.Name, a.Steps!, null, KeepOf(a.Keep))
+                    ? new DimensionAttributeSpec(
+                        a.Name, a.Steps!, null, KeepOf(a.Keep), ManyOf(a.Many), DecodeOf(a.Decode),
+                        a.MaxReferences is >= 1 and <= DimensionAttributeSpec.MaxReferencesCeiling ? a.MaxReferences.Value : DimensionAttributeSpec.DefaultMaxReferences,
+                        a.Trim ?? true)
                     : new DimensionAttributeSpec(a.Name, [], a.Collect, KeepOf(a.Keep)))
                 .ToList();
         }
@@ -1313,8 +1318,13 @@ public sealed partial class DimensionRunner
         }
     }
 
-    /// <summary>An attribute as its dimension's row keeps it: the steps it is read through, or the path it collects, and how its values are kept.</summary>
-    private sealed record AttributeText(string Name, List<string>? Steps, string? Collect = null, string? Keep = null);
+    /// <summary>
+    /// An attribute as its dimension's row keeps it: the steps it is read through, or the path it collects, how its values are
+    /// kept, how several of them are, and what they are decoded from.
+    /// </summary>
+    private sealed record AttributeText(
+        string Name, List<string>? Steps, string? Collect = null, string? Keep = null, string? Many = null, string? Decode = null,
+        int? MaxReferences = null, bool? Trim = null);
 
     /// <summary>The elements a build keeps of its dimension, as JSON (<see cref="DimensionState.ElementsJson"/>); null for none.</summary>
     internal static string? ElementsText(DimensionElementsSpec? elements)
@@ -1322,7 +1332,8 @@ public sealed partial class DimensionRunner
             ? null
             : JsonSerializer.Serialize(
                 new ElementsJson(elements.Path, elements.Fields.Select(f => new ElementFieldText(
-                    f.Name, f.Path, KeepText(f.Keep), f.Up == 0 ? null : f.Up, f.Many == DimensionElementMany.First ? null : "join")).ToList()),
+                    f.Name, f.Path, KeepText(f.Keep), f.Up == 0 ? null : f.Up, ManyText(f.Many), DecodeText(f.Decode), f.Trim ? null : false)).ToList(),
+                    elements.KeepNulls ? true : null),
                 StepJson);
 
     /// <summary>
@@ -1342,9 +1353,9 @@ public sealed partial class DimensionRunner
             var fields = (read?.Fields ?? [])
                 .Where(f => DimensionAttributeSpec.IsName(f.Name) && !string.IsNullOrWhiteSpace(f.Path))
                 .Select(f => new DimensionElementField(
-                    f.Name, f.Path, KeepOf(f.Keep), Math.Max(0, f.Up ?? 0), f.Many == "join" ? DimensionElementMany.Join : DimensionElementMany.First))
+                    f.Name, f.Path, KeepOf(f.Keep), Math.Max(0, f.Up ?? 0), ManyOf(f.Many), DecodeOf(f.Decode), f.Trim ?? true))
                 .ToList();
-            return read is null || string.IsNullOrWhiteSpace(read.Path) || fields.Count == 0 ? null : new DimensionElementsSpec(read.Path, fields);
+            return read is null || string.IsNullOrWhiteSpace(read.Path) || fields.Count == 0 ? null : new DimensionElementsSpec(read.Path, fields, read.KeepNulls ?? false);
         }
         catch (JsonException)
         {
@@ -1353,14 +1364,24 @@ public sealed partial class DimensionRunner
     }
 
     /// <summary>The elements as their dimension's row keeps them: the array, and each field with its path inside the object and how it is kept.</summary>
-    private sealed record ElementsJson(string Path, List<ElementFieldText>? Fields);
+    private sealed record ElementsJson(string Path, List<ElementFieldText>? Fields, bool? KeepNulls = null);
 
-    private sealed record ElementFieldText(string Name, string Path, string? Keep = null, int? Up = null, string? Many = null);
+    private sealed record ElementFieldText(string Name, string Path, string? Keep = null, int? Up = null, string? Many = null, string? Decode = null, bool? Trim = null);
 
     /// <summary>How a keep is written in the JSON a build keeps: nothing for a value, so a declaration that keeps none reads as it always did.</summary>
     private static string? KeepText(DimensionValueKeep keep) => keep == DimensionValueKeep.Value ? null : DimensionKeeping.Named(keep);
 
     private static DimensionValueKeep KeepOf(string? keep) => DimensionKeeping.Parse(keep) ?? DimensionValueKeep.Value;
+
+    /// <summary>How a many is written in the JSON a build keeps: nothing for the first, so a declaration that names none reads as it always did.</summary>
+    private static string? ManyText(DimensionValueMany many) => many == DimensionValueMany.First ? null : DimensionKeeping.Named(many);
+
+    private static DimensionValueMany ManyOf(string? many) => DimensionKeeping.ParseMany(many) ?? DimensionValueMany.First;
+
+    /// <summary>How a decode is written in the JSON a build keeps: nothing for none.</summary>
+    private static string? DecodeText(DimensionValueDecode decode) => decode == DimensionValueDecode.None ? null : DimensionKeeping.Named(decode);
+
+    private static DimensionValueDecode DecodeOf(string? decode) => DimensionKeeping.ParseDecode(decode) ?? DimensionValueDecode.None;
 
     /// <summary>
     /// What the last build read of a dimension's collected attributes (<see cref="DimensionState.CollectedJson"/>); none when it holds

@@ -16,7 +16,7 @@ git clone <this repository>
 cd osdu-delivery
 bash tools/test.sh --install-hook   # once, where dev.bat or ./dev.sh has not: the unit tier before every push
 bash tools/test.sh                  # the unit tier: a few minutes, no database
-bash tools/test.sh --full           # every test, against SQL Server: before opening a pull request
+bash tools/test.sh --full           # every test, against SQL Server: on main, once a pull request lands
 ```
 
 `dev.bat` (Windows) and `./dev.sh` (macOS, Linux) run the whole thing locally: on the first start they ask for the
@@ -38,9 +38,17 @@ any terminal that has it):
   push that carries commits (`git push --no-verify` skips it once). `dev.bat` and `./dev.sh` install the hook on a
   clone's first start, unless a hooks path is set already.
 - **The full tier** (`bash tools/test.sh --full`) is every test: the SQL Server suites, the control plane hosts, the
-  MCP server's crates and the GUI end-to-end suite. Run it before opening a pull request and say so in the template.
+  MCP server's crates and the GUI end-to-end suite. It takes hours, so a pull request lands once the unit tier and the
+  checks pass, the full tier runs on `main` straight after, and its failures are fixed in a follow-up pull request;
+  the pull request says which suites have not run.
   CI runs it as **Full test suite** on a release tag, whose release waits for it, on a pull request labelled
   `full-tests`, and when the CI workflow is run by hand (Actions, CI, Run workflow).
+
+- **An on-demand suite** (`bash tools/test.sh --suite <name>`) runs one suite alone, against SQL Server as the full tier
+  runs the suites: the tests that carry `[Trait("Suite", "<name>")]`, which both tiers and CI leave out, for edge cases
+  too many to run on every change. `DimensionEdgeCases` holds every edge of the dimension engine: its attributes,
+  elements, lookups, incremental loads, grouped views and joins to views. Run it after a change to the engine. A new
+  suite is named in `on_demand_suites` in `tools/test.sh` and left out in CI's two test steps.
 
 A test that needs SQL Server, a host or another process carries `[Trait("Category", "Integration")]`, which puts it in
 the full tier. The OSDU module's SQL Server tests are the classes in `[Collection(SqlServerSuite.Name)]`, and a guard
@@ -117,8 +125,8 @@ A move Dependabot does not make is a deliberate step someone takes and stands be
 
 1. Change the single `PackageVersion` line for the package you mean to move, and nothing else. A bump inside
    `sqlflow/` follows the vendoring rule: its own commit, prefixed `sqlflow:`.
-2. Run `dotnet restore OsduDelivery.sln`, then `bash tools/test.sh --full`, which builds warning-clean and runs
-   every test. A bump across a major version usually asks for source changes; make them in the
+2. Run `dotnet restore OsduDelivery.sln`, then `bash tools/test.sh`, which builds warning-clean and runs the unit
+   tier; the full tier runs on `main` once it lands ([Tests](#tests)). A bump across a major version usually asks for source changes; make them in the
    same change, so the history says what the new version needed.
 3. Commit the bump on its own, naming what moved and what it cost, and open a pull request for it.
 
@@ -150,8 +158,8 @@ GitHub marks the pull request merged. If `main` moved in the meantime, start the
 1. Branch from an up-to-date `main` (`git switch -c <topic> origin/main`) and commit as the principles above say: a
    `sqlflow:` commit touches only `sqlflow/`, and each subject says what the repository now does.
 2. Before pushing, run the quick checks CI runs: `bash tools/check-vendored-sqlflow.sh` and
-   `bash tools/check-conventions.sh origin/main HEAD`. Run the full tier (`bash tools/test.sh --full`) before opening
-   the pull request; the pre-push hook runs the unit tier on every push.
+   `bash tools/check-conventions.sh origin/main HEAD`. The pre-push hook runs the unit tier on every push; the full
+   tier (`bash tools/test.sh --full`) runs on `main` once the pull request lands ([Tests](#tests)).
 3. Push the branch and open a pull request into `main`. The template's checklist is the repository's rules; say why
    an item does not apply rather than leaving it unticked without a word.
 4. CI must pass on a branch up to date with `main`. The required checks are CI's jobs: **Conventions** (the

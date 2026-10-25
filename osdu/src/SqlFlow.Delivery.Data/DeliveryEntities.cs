@@ -4422,7 +4422,10 @@ public static class DeliveryModel
         modelBuilder.Entity<DeliveryDimensionRun>(e =>
         {
             e.ToTable("DimensionRun", SchemaName);
-            e.HasKey(r => new { r.PartitionId, r.DimensionRunId });
+            // A dimension's builds together, in the order they were written: every statement over one dimension seeks
+            // its own rows and locks no other's, so a build of another dimension writes beside it rather than waiting
+            // on, or deadlocking with, them.
+            e.HasKey(r => new { r.PartitionId, r.DimensionId, r.DimensionRunId });
             e.Property(r => r.DimensionRunId).ValueGeneratedOnAdd();
             e.Property(r => r.Actor).HasMaxLength(200).IsRequired();
             e.Property(r => r.Status).HasMaxLength(16).IsRequired();
@@ -4441,7 +4444,10 @@ public static class DeliveryModel
         modelBuilder.Entity<DeliveryDimensionMember>(e =>
         {
             e.ToTable("DimensionMember", SchemaName);
-            e.HasKey(m => new { m.PartitionId, m.MemberId });
+            // A dimension's members together, in the order they were written: every statement over one dimension seeks
+            // its own rows and locks no other's, so a build of another dimension writes beside it rather than waiting
+            // on, or deadlocking with, them.
+            e.HasKey(m => new { m.PartitionId, m.DimensionId, m.MemberId });
             e.Property(m => m.MemberId).ValueGeneratedOnAdd();
             // A clean value is compared exactly, as a filter an application stored compares it.
             ExactText(e.Property(m => m.Value)).HasMaxLength(256).IsRequired();
@@ -4457,7 +4463,10 @@ public static class DeliveryModel
         modelBuilder.Entity<DeliveryDimensionValue>(e =>
         {
             e.ToTable("DimensionValue", SchemaName);
-            e.HasKey(v => new { v.PartitionId, v.ValueId });
+            // A dimension's keys together, in the order they were written: every statement over one dimension seeks its
+            // own rows and locks no other's, so a build of another dimension writes beside it rather than waiting on,
+            // or deadlocking with, them.
+            e.HasKey(v => new { v.PartitionId, v.DimensionId, v.ValueId });
             e.Property(v => v.ValueId).ValueGeneratedOnAdd();
             ExactText(e.Property(v => v.Original)).HasMaxLength(DeliveryDimensionValue.MaxOriginalLength).IsRequired();
             e.Property(v => v.OriginalHash).HasMaxLength(32).IsFixedLength().IsRequired();
@@ -4473,14 +4482,15 @@ public static class DeliveryModel
             e.HasIndex(v => new { v.PartitionId, v.DimensionId, v.MemberId });
             // The originals most records hold first, a page at a time.
             e.HasIndex(v => new { v.PartitionId, v.DimensionId, v.Count, v.ValueId }).IsDescending(false, false, true, false);
-            // A dimension's keys in the order they arrived, a page at a time, as one range of this dimension alone.
-            e.HasIndex(v => new { v.PartitionId, v.DimensionId, v.ValueId });
         });
 
         modelBuilder.Entity<DeliveryDimensionAttributeValue>(e =>
         {
             e.ToTable("DimensionAttribute", SchemaName);
-            e.HasKey(a => new { a.PartitionId, a.AttributeValueId });
+            // A dimension's attribute values together, in the order they were written: every statement over one
+            // dimension seeks its own rows and locks no other's, so a build of another dimension writes beside it
+            // rather than waiting on, or deadlocking with, them.
+            e.HasKey(a => new { a.PartitionId, a.DimensionId, a.AttributeValueId });
             e.Property(a => a.AttributeValueId).ValueGeneratedOnAdd();
             ExactText(e.Property(a => a.Value)).HasMaxLength(DeliveryDimensionAttributeValue.MaxValueLength).IsRequired();
             e.Property(a => a.ValueFrom).HasMaxLength(DeliveryDimensionValue.MaxOriginalLength);
@@ -4495,7 +4505,10 @@ public static class DeliveryModel
         modelBuilder.Entity<DeliveryDimensionElement>(e =>
         {
             e.ToTable("DimensionElement", SchemaName);
-            e.HasKey(x => new { x.PartitionId, x.ElementValueId });
+            // A dimension's element fields together, in the order they were written: every statement over one dimension
+            // seeks its own rows and locks no other's, so a build of another dimension writes beside it rather than
+            // waiting on, or deadlocking with, them.
+            e.HasKey(x => new { x.PartitionId, x.DimensionId, x.ElementValueId });
             e.Property(x => x.ElementValueId).ValueGeneratedOnAdd();
             OptionalOsduId(e.Property(x => x.Value)).HasMaxLength(DeliveryDimensionElement.MaxValueLength);
             e.HasIndex(x => x.ElementValueId).IsUnique();
@@ -4540,7 +4553,10 @@ public static class DeliveryModel
         modelBuilder.Entity<DeliveryDimensionAttributeName>(e =>
         {
             e.ToTable("DimensionAttributeName", SchemaName);
-            e.HasKey(n => new { n.PartitionId, n.AttributeId });
+            // A dimension's attributes together, in the order they were written: every statement over one dimension
+            // seeks its own rows and locks no other's, so a build of another dimension writes beside it rather than
+            // waiting on, or deadlocking with, them.
+            e.HasKey(n => new { n.PartitionId, n.DimensionId, n.AttributeId });
             e.Property(n => n.AttributeId).ValueGeneratedOnAdd();
             ExactText(e.Property(n => n.Name)).HasMaxLength(DeliveryDimensionAttributeValue.MaxNameLength).IsRequired();
             e.HasIndex(n => n.AttributeId).IsUnique();
@@ -4551,7 +4567,10 @@ public static class DeliveryModel
         modelBuilder.Entity<DeliveryDimensionCollectedText>(e =>
         {
             e.ToTable("DimensionCollectedText", SchemaName);
-            e.HasKey(t => new { t.PartitionId, t.TextId });
+            // A dimension's collected texts together, in the order they were written: every statement over one
+            // dimension seeks its own rows and locks no other's, so a build of another dimension writes beside it
+            // rather than waiting on, or deadlocking with, them.
+            e.HasKey(t => new { t.PartitionId, t.DimensionId, t.TextId });
             e.Property(t => t.TextId).ValueGeneratedOnAdd();
             e.Property(t => t.TextHash).HasMaxLength(32).IsFixedLength().IsRequired();
             ExactText(e.Property(t => t.Text)).HasMaxLength(DeliveryDimensionValue.MaxOriginalLength).IsRequired();
@@ -4566,7 +4585,10 @@ public static class DeliveryModel
         modelBuilder.Entity<DeliveryDimensionKeyRecord>(e =>
         {
             e.ToTable("DimensionKeyRecord", SchemaName);
-            e.HasKey(x => new { x.PartitionId, x.KeyRecordId });
+            // A dimension's keys' records together, in the order they were written: every statement over one dimension
+            // seeks its own rows and locks no other's, so a build of another dimension writes beside it rather than
+            // waiting on, or deadlocking with, them.
+            e.HasKey(x => new { x.PartitionId, x.DimensionId, x.KeyRecordId });
             e.Property(x => x.KeyRecordId).ValueGeneratedOnAdd();
             e.Property(x => x.RecordHash).HasMaxLength(32).IsFixedLength().IsRequired();
             ExactText(e.Property(x => x.EntityType)).HasMaxLength(DeliveryDimensionKeyRecord.MaxEntityTypeLength).IsRequired();
@@ -4582,7 +4604,10 @@ public static class DeliveryModel
         modelBuilder.Entity<DeliveryDimensionRecord>(e =>
         {
             e.ToTable("DimensionRecord", SchemaName);
-            e.HasKey(x => new { x.PartitionId, x.DimensionRecordId });
+            // A dimension's records' keys together, in the order they were written: every statement over one dimension
+            // seeks its own rows and locks no other's, so a build of another dimension writes beside it rather than
+            // waiting on, or deadlocking with, them.
+            e.HasKey(x => new { x.PartitionId, x.DimensionId, x.DimensionRecordId });
             e.Property(x => x.DimensionRecordId).ValueGeneratedOnAdd();
             e.Property(x => x.RecordHash).HasMaxLength(32).IsFixedLength().IsRequired();
             e.HasIndex(x => x.DimensionRecordId).IsUnique();
@@ -4595,7 +4620,10 @@ public static class DeliveryModel
         modelBuilder.Entity<DeliveryDimensionChange>(e =>
         {
             e.ToTable("DimensionChange", SchemaName);
-            e.HasKey(c => new { c.PartitionId, c.ChangeId });
+            // A dimension's changes together, in the order they were written: every statement over one dimension seeks
+            // its own rows and locks no other's, so a build of another dimension writes beside it rather than waiting
+            // on, or deadlocking with, them.
+            e.HasKey(c => new { c.PartitionId, c.DimensionId, c.ChangeId });
             e.Property(c => c.ChangeId).ValueGeneratedOnAdd();
             e.Property(c => c.Change).HasMaxLength(16).IsRequired();
             e.HasIndex(c => c.ChangeId).IsUnique();

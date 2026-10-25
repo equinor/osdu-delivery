@@ -135,7 +135,7 @@ an array of objects (`nested` or `flattened`), and the entity types it refers to
 
 **What is wrong is said, not refused.** A build reads a label's records as they are, so the blueprint refuses nothing and
 marks what would read nothing or the wrong thing (`problem` on a read, `missing` on a set of records). A build still
-fails where [What a build does](../flow/dimension.md#what-a-build-does) says, such as a `data` path of a kind no template folder on the flow's path holds.
+fails where [What a build does](../flow/dimension-build.md#what-a-build-does) says, such as a `data` path of a kind no template folder on the flow's path holds.
 
 | Said | When |
 | --- | --- |

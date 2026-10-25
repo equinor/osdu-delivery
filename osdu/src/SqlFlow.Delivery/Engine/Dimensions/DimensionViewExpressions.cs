@@ -46,7 +46,14 @@ public sealed record ViewColumnSource(string Alias, string SqlAlias, string Colu
 }
 
 /// <summary>An expression compiled: the SQL the view computes it by, the kind of value it gives, and the column it is, when it is one alone.</summary>
-public sealed record CompiledViewExpression(string Sql, ViewValue Value, ViewColumnSource? Column);
+/// <param name="Sql">The SQL the view computes the expression by.</param>
+/// <param name="Value">The kind of value the expression gives.</param>
+/// <param name="Column">The column the expression is, when it is one alone; null otherwise.</param>
+/// <param name="Orders">
+/// The orders the expression's ordered aggregates read the rows of a group in (<c>STRING_AGG ... WITHIN GROUP</c>), each
+/// once: SQL Server reads a group in one order, so a grouped view's ordered aggregates all name the same one.
+/// </param>
+public sealed record CompiledViewExpression(string Sql, ViewValue Value, ViewColumnSource? Column, IReadOnlyList<string>? Orders = null);
 
 /// <summary>An expression or a data type a view cannot use, with the reason as a sentence the document's error ends with.</summary>
 public sealed class ViewExpressionException : Exception
@@ -116,7 +123,9 @@ public sealed class ViewScope
 /// written into the view by the module from what the parser read, never from the text as written. Only the listed
 /// operators and functions are used, every column is one of the tables the view reads, every conversion is the module's
 /// (<see cref="DimensionConversions"/>), an implicit conversion is refused, and what could fail a read is written so it
-/// cannot: a division by zero, a root or a logarithm outside its domain and a negative length are null.
+/// cannot: a division by zero, a root or a logarithm outside its domain and a negative length are null. A view that groups
+/// its rows reads the columns it groups by and aggregates of the rest (<see cref="Aggregates"/>); every other view reads
+/// one row at a time and aggregates nothing.
 /// </summary>
 public static class DimensionViewExpressions
 {
@@ -135,8 +144,22 @@ public static class DimensionViewExpressions
         "COALESCE", "NULLIF", "ISNULL", "IIF", "TRY_CAST", "TRY_CONVERT", "CAST", "CONVERT",
         "LEFT", "RIGHT", "SUBSTRING", "LEN", "UPPER", "LOWER", "TRIM", "LTRIM", "RTRIM", "REPLACE", "CHARINDEX", "CONCAT", "CONCAT_WS",
         "ABS", "ROUND", "FLOOR", "CEILING", "POWER", "SQRT", "EXP", "LOG", "LOG10", "SIGN",
-        "DATEADD", "DATEDIFF", "DATEPART", "YEAR", "MONTH", "DAY", "EOMONTH",
+        "DATEADD", "DATEDIFF", "DATEPART", "YEAR", "MONTH", "DAY", "EOMONTH", "STRING_ESCAPE",
     ];
+
+    /// <summary>The aggregates a grouped view's expression may call, as the reference lists them.</summary>
+    public static IReadOnlyList<string> Aggregates { get; } = ["COUNT", "COUNT_BIG", "MAX", "MIN", "SUM", "AVG", "STRING_AGG"];
+
+    /// <summary>
+    /// The collation text is ordered by where an aggregate orders it: its UTF-8 bytes, which is the order of its code
+    /// points, as the dimension engine's <c>many: max</c> and Spark's <c>max</c> order text. SQL Server's binary
+    /// collations order <c>nvarchar</c> by UTF-16 code unit, which puts a character past U+FFFF before one from U+E000
+    /// to U+FFFF; the text is ordered as <c>varchar</c> of this collation, and read back as <c>nvarchar</c> unchanged.
+    /// </summary>
+    public const string CodePointCollation = "Latin1_General_100_BIN2_UTF8";
+
+    /// <summary><paramref name="sql"/>, a text, as what orders it by code point: its UTF-8 bytes.</summary>
+    public static string ByCodePoint(string sql) => $"CAST(({sql}) COLLATE {CodePointCollation} AS varchar(max))";
 
     /// <summary>The parts of a date or a time <c>DATEADD</c>, <c>DATEDIFF</c> and <c>DATEPART</c> take, with their abbreviations.</summary>
     private static readonly HashSet<string> DateParts = new(
@@ -151,10 +174,11 @@ public static class DimensionViewExpressions
     private static readonly Regex NumberText = new(@"^[0-9]*\.?[0-9]*([eE][+-]?[0-9]+)?$", RegexOptions.CultureInvariant, TimeSpan.FromSeconds(1));
 
     /// <summary>
-    /// Compiles <paramref name="text"/> over the tables <paramref name="scope"/> reads.
+    /// Compiles <paramref name="text"/> over the tables <paramref name="scope"/> reads: for a view that groups its rows by
+    /// <paramref name="groupedBy"/>, an expression of those columns and of aggregates of any; else of one row.
     /// </summary>
     /// <exception cref="ViewExpressionException">The text is not an expression a view may use; the message says why.</exception>
-    public static CompiledViewExpression Compile(string text, ViewScope scope)
+    public static CompiledViewExpression Compile(string text, ViewScope scope, IReadOnlyList<ViewColumnSource>? groupedBy = null)
     {
         ArgumentNullException.ThrowIfNull(text);
         ArgumentNullException.ThrowIfNull(scope);
@@ -192,11 +216,19 @@ public static class DimensionViewExpressions
                 : string.Create(CultureInfo.InvariantCulture, $"does not parse as a T-SQL expression: {first.Message} (column {first.Column})"));
         }
 
-        var compiled = new Compiler(scope).Scalar(parsed, 0);
+        var compiler = new Compiler(scope, groupedBy);
+        var compiled = compiler.Scalar(parsed, 0);
+        var orders = compiler.Orders.Distinct(StringComparer.Ordinal).ToList();
+        if (orders.Count > 1)
+        {
+            throw new ViewExpressionException(
+                $"orders the rows of a group {orders.Count} ways ({string.Join("; ", orders)}), and SQL Server reads a group in one order: order every STRING_AGG of a grouped view alike, or in none");
+        }
+
         return compiled.Sql.Length > MaxSqlLength
             ? throw new ViewExpressionException(string.Create(CultureInfo.InvariantCulture,
                 $"would be written as {compiled.Sql.Length} characters of SQL with its guards and conversions, and a column is at most {MaxSqlLength}; split it over several columns"))
-            : compiled;
+            : compiled with { Orders = orders };
     }
 
     /// <summary>
@@ -278,8 +310,14 @@ public static class DimensionViewExpressions
         _ => "null",
     };
 
-    private sealed class Compiler(ViewScope scope)
+    private sealed class Compiler(ViewScope scope, IReadOnlyList<ViewColumnSource>? groupedBy = null)
     {
+        /// <summary>How many aggregates the expression being compiled is inside: a column of a grouped view outside every one must be a column it groups by.</summary>
+        private int _inAggregate;
+
+        /// <summary>The order each ordered aggregate of the expression reads its group in, as the SQL writes it, ascending written as no direction.</summary>
+        public List<string> Orders { get; } = [];
+
         public CompiledViewExpression Scalar(ScalarExpression node, int depth)
         {
             if (depth > MaxDepth)
@@ -360,6 +398,12 @@ public static class DimensionViewExpressions
             }
 
             var source = parts.Count == 1 ? scope.Resolve(ViewScope.FromAlias, parts[0].Value) : scope.Resolve(parts[0].Value, parts[1].Value);
+            if (groupedBy is not null && _inAggregate == 0 && !groupedBy.Any(g => string.Equals(g.Sql, source.Sql, StringComparison.Ordinal)))
+            {
+                throw new ViewExpressionException(
+                    $"names {source.Named} outside an aggregate, and the view groups its rows by {string.Join(", ", groupedBy.Select(g => g.Named))}: a grouped view's column reads a column it groups by, or an aggregate of the rows of its group, such as MAX({source.Named}), COUNT({source.Named}) or STRING_AGG({source.Named}, ', ')");
+            }
+
             return new CompiledViewExpression(source.Sql, source.Value, source);
         }
 
@@ -479,6 +523,11 @@ public static class DimensionViewExpressions
             if (call.CallTarget is not null)
             {
                 throw new ViewExpressionException($"calls {name} on an object or a schema, which a view's expression may not; it calls the listed functions alone");
+            }
+
+            if (Aggregates.Contains(name, StringComparer.Ordinal))
+            {
+                return Aggregate(call, name, depth);
             }
 
             if (call.OverClause is not null || call.WithinGroupClause is not null)
@@ -658,9 +707,154 @@ public static class DimensionViewExpressions
                     return new CompiledViewExpression($"EOMONTH({string.Join(", ", args.Select(a => a.Sql))})", ViewValue.Date, null);
                 }
 
+                case "STRING_ESCAPE":
+                {
+                    if (parameters.Count != 2)
+                    {
+                        throw Count(name, 2, 2, parameters.Count);
+                    }
+
+                    var value = Scalar(parameters[0], depth);
+                    Require(value, ViewValue.Text, name);
+                    return parameters[1] is StringLiteral { Value: var type } && string.Equals(type, "json", StringComparison.OrdinalIgnoreCase)
+                        ? new CompiledViewExpression($"STRING_ESCAPE({value.Sql}, 'json')", ViewValue.Text, null)
+                        : throw new ViewExpressionException("gives STRING_ESCAPE a type other than 'json', the one SQL Server escapes text for; write STRING_ESCAPE(<text>, 'json')");
+                }
+
                 default:
                     throw new ViewExpressionException(
-                        $"calls {(name.Length == 0 ? "a function" : name)}, which is not one a view's expression may call; it may call {string.Join(", ", Functions)}");
+                        $"calls {(name.Length == 0 ? "a function" : name)}, which is not one a view's expression may call; it may call {string.Join(", ", Functions)}, and in a view that groups its rows {string.Join(", ", Aggregates)}");
+            }
+        }
+
+        /// <summary>
+        /// An aggregate of the rows of a group (<see cref="Aggregates"/>), for a view that groups its rows: <c>COUNT</c> as
+        /// <c>COUNT_BIG</c>, so a count never overflows; <c>MAX</c> and <c>MIN</c> of text by code point
+        /// (<see cref="CodePointCollation"/>), whatever the database's collation; <c>STRING_AGG</c> over text that may grow
+        /// past 8,000 bytes, in the order <c>WITHIN GROUP</c> gives (text ordered by code point), or none.
+        /// </summary>
+        private CompiledViewExpression Aggregate(FunctionCall call, string name, int depth)
+        {
+            if (groupedBy is null)
+            {
+                throw new ViewExpressionException(
+                    $"calls {name}, an aggregate of the rows of a group, where one row is read (a view without groupBy, or its where, which keeps or leaves each row before it is grouped); give the view groupBy to aggregate its rows");
+            }
+
+            if (_inAggregate > 0)
+            {
+                throw new ViewExpressionException($"calls {name} inside another aggregate, which SQL Server does not take; aggregate the rows of a group once");
+            }
+
+            if (call.OverClause is not null)
+            {
+                throw new ViewExpressionException($"calls {name} over a window, which a view's expression may not; a grouped view aggregates the rows of its group");
+            }
+
+            if (call.WithinGroupClause is not null && name != "STRING_AGG")
+            {
+                throw new ViewExpressionException($"orders {name} WITHIN GROUP, which only STRING_AGG takes");
+            }
+
+            if (call.TrimOptions is not null || call.JsonParameters is { Count: > 0 })
+            {
+                throw new ViewExpressionException($"calls {name} with options a view's expression does not take; give it its arguments alone");
+            }
+
+            var distinct = call.UniqueRowFilter == UniqueRowFilter.Distinct;
+            if (distinct && name == "STRING_AGG")
+            {
+                throw new ViewExpressionException("calls STRING_AGG with DISTINCT, which SQL Server does not take; aggregate the distinct values in a view of their own, grouped by them");
+            }
+
+            IList<ScalarExpression> parameters = call.Parameters ?? [];
+            var expected = name == "STRING_AGG" ? 2 : 1;
+            if (parameters.Count != expected)
+            {
+                throw Count(name, expected, expected, parameters.Count);
+            }
+
+            var all = distinct ? "DISTINCT " : string.Empty;
+            _inAggregate++;
+            try
+            {
+                if (name is "COUNT" or "COUNT_BIG" && parameters[0] is ColumnReferenceExpression { ColumnType: ColumnType.Wildcard })
+                {
+                    return distinct
+                        ? throw new ViewExpressionException($"counts DISTINCT *, which SQL Server does not take; count the distinct values of a column: {name}(DISTINCT <column>)")
+                        : new CompiledViewExpression("COUNT_BIG(*)", ViewValue.Number, null);
+                }
+
+                var value = Scalar(parameters[0], depth);
+                if (value.Value == ViewValue.Null)
+                {
+                    throw new ViewExpressionException($"gives {name} NULL alone, which SQL Server aggregates as no type at all and refuses; aggregate a column, or convert the value first");
+                }
+
+                switch (name)
+                {
+                    case "COUNT" or "COUNT_BIG":
+                        return new CompiledViewExpression($"COUNT_BIG({all}{value.Sql})", ViewValue.Number, null);
+                    case "MAX" or "MIN":
+                        if (value.Value == ViewValue.UniqueId)
+                        {
+                            throw new ViewExpressionException($"gives {name} a GUID, which SQL Server does not order; convert it to text first, such as TRY_CAST(... AS nvarchar(36))");
+                        }
+
+                        // Text is the greatest or least by code point, read back in the database's collation, so a
+                        // view comparing it with another column meets no collation conflict.
+                        return new CompiledViewExpression(
+                            value.Value == ViewValue.Text
+                                ? $"CAST({name}({all}{ByCodePoint(value.Sql)}) AS nvarchar(max)) COLLATE DATABASE_DEFAULT"
+                                : $"{name}({all}{value.Sql})",
+                            value.Value,
+                            null);
+                    case "SUM" or "AVG":
+                        Require(value, ViewValue.Number, name);
+                        return new CompiledViewExpression($"{name}({all}{value.Sql})", ViewValue.Number, null);
+                    default:
+                    {
+                        Require(value, ViewValue.Text, name);
+                        if (parameters[1] is not StringLiteral separator)
+                        {
+                            throw new ViewExpressionException("gives STRING_AGG a separator that is not a text in quotes, such as STRING_AGG(Mnemonic, ', ')");
+                        }
+
+                        var sql = $"STRING_AGG(CAST({value.Sql} AS nvarchar(max)), N'{separator.Value.Replace("'", "''", StringComparison.Ordinal)}')";
+                        if (call.WithinGroupClause?.OrderByClause?.OrderByElements is { Count: > 0 } order)
+                        {
+                            var items = new List<string>(order.Count);
+                            var compared = new List<string>(order.Count);
+                            foreach (var element in order)
+                            {
+                                var by = Scalar(element.Expression, depth);
+                                if (by.Value == ViewValue.Null)
+                                {
+                                    throw new ViewExpressionException("orders STRING_AGG by NULL alone, which orders nothing; order it by a column");
+                                }
+
+                                var direction = element.SortOrder switch
+                                {
+                                    SortOrder.Descending => " DESC",
+                                    SortOrder.Ascending => " ASC",
+                                    _ => string.Empty,
+                                };
+                                var item = by.Value == ViewValue.Text ? ByCodePoint(by.Sql) : by.Sql;
+                                items.Add(item + direction);
+                                compared.Add(item + (element.SortOrder == SortOrder.Descending ? " DESC" : string.Empty));
+                            }
+
+                            sql += $" WITHIN GROUP (ORDER BY {string.Join(", ", items)})";
+                            Orders.Add(string.Join(", ", compared));
+                        }
+
+                        return new CompiledViewExpression(sql, ViewValue.Text, null);
+                    }
+                }
+            }
+            finally
+            {
+                _inAggregate--;
             }
         }
 

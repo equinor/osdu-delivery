@@ -13,7 +13,7 @@ internal sealed record RunTimeTableChange(EvolutionPlan Plan, bool Changed);
 
 /// <summary>
 /// The tables of the <c>osdu</c> schema the module makes while it runs rather than through a migration: a dimension's table
-/// (osdu/docs/reference/flow/dimension.md, The dimension's table) and a duplicate check's
+/// (osdu/docs/reference/flow/dimension-table.md, The dimension's table) and a duplicate check's
 /// (osdu/docs/reference/flow/inventory-duplicates.md, The check's table). Each is brought to the columns it is to have through
 /// SQLFlow's schema evolution, which makes a table that is missing and adds a column it lacks, and never drops or narrows one.
 /// </summary>

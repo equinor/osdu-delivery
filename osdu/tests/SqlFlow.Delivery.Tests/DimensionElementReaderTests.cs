@@ -81,10 +81,31 @@ public class DimensionElementReaderTests
             """)!, "data.Curves"));
 
         Assert.Equal("GR", Read(element, new DimensionElementField("A", "Aliases[Kind=Short].Text")));
-        Assert.Equal("GR; GRC", Read(element, new DimensionElementField("A", "Aliases[Kind=Short].Text", Many: DimensionElementMany.Join)));
-        Assert.Equal("GR; Gamma ray; GRC", Read(element, new DimensionElementField("A", "Aliases.Text", Many: DimensionElementMany.Join)));
+        Assert.Equal("GR; GRC", Read(element, new DimensionElementField("A", "Aliases[Kind=Short].Text", Many: DimensionValueMany.Join)));
+        Assert.Equal("GR; Gamma ray; GRC", Read(element, new DimensionElementField("A", "Aliases.Text", Many: DimensionValueMany.Join)));
         Assert.Null(Read(element, new DimensionElementField("A", "Aliases[Kind=None].Text")));
         Assert.Null(Read(element, new DimensionElementField("A", "Missing.Path")));
+
+        // max keeps the greatest by code point: lower case after upper, as a binary collation orders them.
+        Assert.Equal("Gamma ray", Read(element, new DimensionElementField("A", "Aliases.Text", Many: DimensionValueMany.Max)));
+        Assert.Equal("GRC", Read(element, new DimensionElementField("A", "Aliases[Kind=Short].Text", Many: DimensionValueMany.Max)));
+        Assert.Null(Read(element, new DimensionElementField("A", "Aliases[Kind=None].Text", Many: DimensionValueMany.Max)));
+    }
+
+    [Fact]
+    public void A_field_decodes_its_percent_escapes_before_it_is_kept()
+    {
+        var element = Assert.Single(Elements(JsonNode.Parse("""
+            { "data": { "Curves": [ { "Unit": "g%2Fcm3", "Units": [ "m%2Fs", "ft%2Fs" ], "Plus": "a+b%20c" } ] } }
+            """)!, "data.Curves"));
+
+        Assert.Equal("g/cm3", Read(element, new DimensionElementField("U", "Unit", Decode: DimensionValueDecode.Url)));
+        Assert.Equal("g%2Fcm3", Read(element, new DimensionElementField("U", "Unit")));
+        Assert.Equal("a+b c", Read(element, new DimensionElementField("P", "Plus", Decode: DimensionValueDecode.Url)));
+
+        // Decoded first, then chosen among: the greatest of the decoded values.
+        Assert.Equal("m/s", Read(element, new DimensionElementField("U", "Units", Decode: DimensionValueDecode.Url, Many: DimensionValueMany.Max)));
+        Assert.Equal("m/s; ft/s", Read(element, new DimensionElementField("U", "Units", Decode: DimensionValueDecode.Url, Many: DimensionValueMany.Join)));
     }
 
     [Fact]

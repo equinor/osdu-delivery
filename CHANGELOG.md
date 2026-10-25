@@ -16,15 +16,37 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Settings > Maintenance shows what the whole database holds, the `osdu` schema included: every table in areas a person
   recognises, each marked keep, safe to remove or optional, with its size, how its data leaves and what removing it
-  costs. Superseded delivery attempts, finished activities' logs and superseded assertion runs are optional: an admin
-  previews a cleanup, runs it, or sets a limit the hourly automatic cleanup applies, and nothing is removed until then
-  ([What the osdu schema stores](osdu/docs/reference/concepts/storage-and-retention.md)).
+  costs. **Clean up** is the safe purge: what is safe to remove starts ticked, superseded delivery attempts, finished
+  activities' logs and superseded assertion runs are optional and never ticked for you, each area shows what would go at
+  the age chosen, and an admin cleans up or keeps the age as a limit the hourly automatic cleanup applies; nothing is
+  removed until then ([What the osdu schema stores](osdu/docs/reference/concepts/storage-and-retention.md)).
 
 - **A renamed flow keeps its history.** Rename a delivery, retrieval, assertion, dimension or inventory flow, or its file,
   changing nothing else, and the repository sync moves the old name's ledger to the new one and says so in its result: a
   delivery flow's records carry on with their history and OSDU ids, and only what changed is sent. A file copied by mistake
   takes the ledger until the copy is deleted, and the sync says so
   ([Renaming a pipeline](osdu/docs/reference/concepts/renaming-a-pipeline.md)).
+
+- **A dimension's attribute reads what a pipeline aggregating the same records reads.** `many: max` keeps the greatest of
+  the values an attribute reads over every record it reaches (a wellbore's greatest field name, as a `MAX` over its fields
+  would), `many: join` and `many: all` every one, `decode: url` decodes percent-escapes (`g%2Fcm3` is `g/cm3`),
+  `trim: false` keeps white space, `keep: reference` keeps a reference's version, and `maxReferences` follows up to 1,000
+  records a step; a path's filter can compare a value of the record a reference names
+  (`[GeoTypeID->data.Code=Country]`), a dimension's `lookupKinds` pins the kind each entity type is looked up in, an
+  element's field takes `many`, `decode` and `trim`, and the elements take `nulls: keep`. A dimension reads up to 64
+  attributes and fields, where it read 20
+  ([Dimension labels and attributes](osdu/docs/reference/flow/dimension-attributes.md)).
+
+- **A dimension view groups its rows and joins a grouped view.** `groupBy` makes a view a row per key of its rows, its
+  columns aggregates (`COUNT`, `MAX`, `MIN`, `SUM`, `AVG`, `STRING_AGG ... WITHIN GROUP`), text ordered by code point;
+  `STRING_ESCAPE(..., 'json')` writes a JSON array per key; and a later view joins it on the key it groups by
+  (`join: [{ on: WellLogID, view: <view> }]`), meeting one row of each
+  ([Grouped views](osdu/docs/reference/flow/dimension-views.md#grouped-views)).
+
+- **An incremental dimension load can load in full when records leave the index.** `fullLoadWhenRecordsLeave: true`
+  loads a dimension in full when a record its last full load read was soft deleted or no longer matches its query, so its
+  keys go with the next build rather than the next full load
+  ([Incremental loads](osdu/docs/reference/flow/dimension-incremental.md)).
 
 - **Orphaned ledgers are taken over from the GUI.** The Orphaned ledgers page lists the flows no repository declares any
   more whose ledgers still hold records or history, and hands a missing flow's ledgers to the declared flow you pick,
@@ -178,6 +200,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   ([The OSDU menu](osdu/docs/reference/concepts/gui.md#the-osdu-menu)).
 
 ### Changed
+- The dimension flow's reference is a page per topic: `flow/dimension.md` holds the flow and its keys and links the pages
+  that hold the rest (labels and attributes, elements, clean steps, the dimension's table, incremental loads, builds and
+  errors), so a link to a section of the old page opens that section's own page
+  ([Dimension flow](osdu/docs/reference/flow/dimension.md#the-pages-of-a-dimension-flow)).
 - The Home page opens on the headline counts, without a heading, with the assistant's question box below them and then the delivery
   section, so what the estate is doing now is the first thing read.
 
@@ -367,6 +393,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **A flow's dimensions build beside each other without deadlocking.** A dimension building while others did could fail
+  as a deadlock victim, most often in a new estate's first build; each dimension's rows are now kept together and a build
+  reads only its own, and the upgrade rebuilds the dimension tables once, taking time and log space in proportion to their
+  size ([How the tables are keyed](osdu/docs/reference/concepts/database.md#how-the-tables-are-keyed)).
 - **The catalog's Databases branch shows each database once.** A database spelled two ways, or reached through two
   connection references, was two nodes; it is now one, in the spelling most of its objects carry, and each folder lists
   exactly the objects it counts. Objects whose database a sync could not work out are grouped under the connection

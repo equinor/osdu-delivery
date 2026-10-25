@@ -97,7 +97,7 @@ its template names `osdu.data.Name`, and `tags.SourceProject` is one of the reco
 what OSDU holds, so no path names a source column.
 
 A path reads another record as a list of paths, read step by step as a dimension's
-[label and attributes](dimension.md#labels-and-attributes) are: each entry but the last reads the reference the next
+[label and attributes](dimension-attributes.md) are: each entry but the last reads the reference the next
 record is found by, and the last reads the value in it. One kind of entry steps the other way: `group--Entity[reference]`
 is the records of that type whose reference names the record reached so far, and the entry after it reads them.
 
@@ -190,4 +190,4 @@ a property cannot hold leave the test `errored`, each said once:
 - [Assertion flow](assertion.md): the tests known values are part of, and how a test is disabled and its proof values dated.
 - [Testing what OSDU holds](../guides/data-quality-tests.md#values-a-sheet-states-about-records-it-does-not-name): a sheet's rows as known values.
 - [Mapping lookups](mapping-lookups.md#how-each-line-is-asked): how a value is compared exactly in a search.
-- [Dimension flow](dimension.md#labels-and-attributes): the list of paths a label reads through references.
+- [Dimension flow](dimension-attributes.md): the list of paths a label reads through references.

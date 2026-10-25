@@ -43,7 +43,7 @@ the dimension declares no more keeps its number, with no place ([The tables a di
 
 | Index | Columns | Kind | Filter | Includes | What it serves |
 | --- | --- | --- | --- | --- | --- |
-| `PK_DimensionAttributeName` | `PartitionId`, `AttributeId` | primary key | none | none | A partition's attributes together. |
+| `PK_DimensionAttributeName` | `PartitionId`, `DimensionId`, `AttributeId` | primary key | none | none | A dimension's attributes together, in the order they were written: every statement over one dimension seeks its own rows and locks no other's, so a build of another dimension writes beside it. |
 | `IX_DimensionAttributeName_AttributeId` | `AttributeId` | unique | none | none | An attribute named by its number. |
 | `IX_DimensionAttributeName_PartitionId_DimensionId_Name` | `PartitionId`, `DimensionId`, `Name` | unique | none | none | A dimension's attribute by its name, once: what a build finds the number by. |
 

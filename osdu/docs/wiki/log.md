@@ -436,3 +436,32 @@ and a cleanup log, with the alternatives rejected (a page of the module's own, a
 assertion detail, a limit for every growing history, contributors storing their own limits). Amended
 [0005](decisions/0005-ledger-retention.md): the route it proposed is gone and its cadence with it. The reference holds the
 areas themselves ([What the osdu schema stores](../reference/concepts/storage-and-retention.md)).
+
+## [2026-10-25] ingest | The safe purge as a panel of its own, decision 0029 amended
+
+Read the Maintenance page as the owner used it without the admin role: no way to purge in sight, and a Preview whose
+empty answer read as no answer. Ran the landed page against a control plane on the test catalog as an operator and as an
+admin, which reproduced both and showed the cleanup log recording no actor. Amended [0029](decisions/0029-storage-maintenance.md):
+Clean up is a panel of its own in the page's header, on each row and in each area's sheet; safe areas start ticked and
+optional ones never are; counts show as soon as an age is chosen; cleaning up stays an admin's, said rather than hidden;
+the log records the requester through `RequestActor`.
+
+## [2026-10-25] lint | The wiki's conventions move from CLAUDE.md into the index
+
+The human found CLAUDE.md too large to help and asked that what the wiki covers live in the wiki. The "OSDU Wiki"
+section of `CLAUDE.md`, which was this wiki's schema, is now [How this wiki is kept](index.md#how-this-wiki-is-kept):
+the same layers, page format, estate rule, operations, lint command and upkeep of the index, the log and the manifest,
+with no convention changed. `CLAUDE.md` keeps the working rules and links the index; the reference corpus's README
+points here too. No decision record was written for the vendored SQLFlow or the module's own schema: their rules are
+documented ([docs/sqlflow-changes.md](../../../docs/sqlflow-changes.md), [the osdu schema](../reference/concepts/architecture.md#the-osdu-schema)),
+but no source records why they were chosen, and a record would have to invent it.
+
+## [2026-10-25] ingest | Dimension tables keyed by dimension, decision 0030
+
+Read SQL Server's deadlock reports and cached plans for a flow of sixteen dimensions building four at once on a database
+whose dimension tables were still small, where three builds of four failed a dimension as a deadlock victim: two writes of
+different dimensions waited on each other's key locks, since every statement read the partition's whole clustered index,
+which interleaved every dimension's rows. Filed [0030](decisions/0030-dimension-rows-one-range.md): the dimension tables
+are keyed on partition, dimension and row, and every statement of the store names its dimension and forces its seek, which
+a test checks against the plans SQL Server made. The owner's direction: a deadlock that recurs is a missing index or faulty
+logic, not something to retry.

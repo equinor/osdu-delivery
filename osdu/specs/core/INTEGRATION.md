@@ -982,7 +982,7 @@ A text property aggregates only through its `keyword` sub-field, which the index
 `423a9aee9099528361b738f3961d6a03aa13bd8b`). The query reaches Elasticsearch as `query_string`, so a range such as
 `data.Name.keyword:["a" TO "m"}` narrows the records an aggregation reads; dimension flows read every distinct value of a
 field this way, splitting a range the bucket limit cuts off
-([flow/dimension.md](../../docs/reference/flow/dimension.md), What a build does).
+([flow/dimension-build.md](../../docs/reference/flow/dimension-build.md), What a build does).
 
 Index lag and status:
 

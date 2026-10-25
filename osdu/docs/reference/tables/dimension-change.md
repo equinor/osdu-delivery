@@ -47,7 +47,7 @@ not by a row here ([The tables a dimension keeps](../concepts/dimension-tables.m
 
 | Index | Columns | Kind | Filter | Includes | What it serves |
 | --- | --- | --- | --- | --- | --- |
-| `PK_DimensionChange` | `PartitionId`, `ChangeId` | primary key | none | none | A partition's changes together. |
+| `PK_DimensionChange` | `PartitionId`, `DimensionId`, `ChangeId` | primary key | none | none | A dimension's changes together, in the order they were written: every statement over one dimension seeks its own rows and locks no other's, so a build of another dimension writes beside it. |
 | `IX_DimensionChange_ChangeId` | `ChangeId` | unique | none | none | A change named by its id. |
 | `IX_DimensionChange_PartitionId_DimensionId_ValueId_ChangeId` | `PartitionId`, `DimensionId`, `ValueId`, `ChangeId` | index | none | none | An original's history. |
 | `IX_DimensionChange_PartitionId_DimensionRunId` | `PartitionId`, `DimensionRunId` | index | none | none | A build's changes. |

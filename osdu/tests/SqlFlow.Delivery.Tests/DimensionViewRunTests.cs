@@ -131,6 +131,42 @@ public sealed class DimensionViewRunTests : IDisposable
     }
 
     [Fact]
+    public async Task A_grouped_view_is_a_row_per_key_and_a_view_joining_it_meets_one_row_of_each()
+    {
+        Logs();
+        var (runner, _, _) = await RunnerAsync(Flow("""
+            views:
+              - name: TestCurveCounts
+                from: TestCurve
+                where: element IS NOT NULL
+                groupBy: WellLogID
+                columns:
+                  WellLogID: WellLogID
+                  Curves: COUNT(*)
+                  Mnemonics: STRING_AGG(Mnemonic, ',') WITHIN GROUP (ORDER BY element)
+                  Greatest: MAX(Mnemonic)
+              - name: TestLogCounts
+                from: TestLog
+                join:
+                  - { on: WellLogID, view: TestCurveCounts, as: Counts }
+                columns:
+                  Log: LogName
+                  Curves: Counts.Curves
+                  Mnemonics: Counts.Mnemonics
+                  Greatest: Counts.Greatest
+            """));
+
+        var outcome = await runner.BuildAsync([], Guid.NewGuid(), "tests", CancellationToken.None);
+
+        Assert.Equal(
+            [("TestCurveCounts", DimensionViewWriteStatus.Written, DimensionViewCheckStatus.Passed, (long?)2L), ("TestLogCounts", DimensionViewWriteStatus.Written, DimensionViewCheckStatus.Passed, (long?)3L)],
+            outcome.Views.Select(v => (v.View, v.Status, v.Check, v.Rows)));
+        Assert.Equal(
+            ["LOG-1|2|MD,GR|MD", "LOG-2|1|MD|MD", "LOG-3|(null)|(null)|(null)"],
+            await SqlAsync("SELECT [Log], [Curves], [Mnemonics], [Greatest] FROM [osdu].[v_dim_TestLogCounts] ORDER BY [Log];"));
+    }
+
+    [Fact]
     public async Task A_view_joins_its_dimensions_exactly_converts_without_failing_and_is_checked()
     {
         Logs();

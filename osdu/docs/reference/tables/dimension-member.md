@@ -52,7 +52,7 @@ marked removed and kept, so its id stays its own if it comes back. A build write
 
 | Index | Columns | Kind | Filter | Includes | What it serves |
 | --- | --- | --- | --- | --- | --- |
-| `PK_DimensionMember` | `PartitionId`, `MemberId` | primary key | none | none | A partition's members together. |
+| `PK_DimensionMember` | `PartitionId`, `DimensionId`, `MemberId` | primary key | none | none | A dimension's members together, in the order they were written: every statement over one dimension seeks its own rows and locks no other's, so a build of another dimension writes beside it. |
 | `IX_DimensionMember_MemberId` | `MemberId` | unique | none | none | A member named by its id: its originals and changes name it so. |
 | `IX_DimensionMember_PartitionId_DimensionId_Value` | `PartitionId`, `DimensionId`, `Value` | unique | none | none | A member is a clean value of one dimension, once: what a build matches its members by. |
 | `IX_DimensionMember_PartitionId_DimensionId_RemovedRunId` | `PartitionId`, `DimensionId`, `RemovedRunId` | index | none | none | The members a dimension holds now, and those it held, each read as one range. |

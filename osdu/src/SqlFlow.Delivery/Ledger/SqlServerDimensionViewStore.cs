@@ -64,10 +64,29 @@ internal static class SqlServerDimensionViewStore
         {
             var connection = (SqlConnection)db.Database.GetDbConnection();
             var outcomes = new List<DimensionViewOutcome>(write.Views.Count);
+            var failed = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
             foreach (var item in write.Views)
             {
                 ct.ThrowIfCancellationRequested();
-                outcomes.Add(await WriteOneAsync(connection, write, item, partitionId, ct).ConfigureAwait(false));
+
+                // A view that joins a view this build could not write would read one that is not as its document says, or
+                // none at all: it keeps its last definition, and says which view it waits on.
+                if (item.View.Definition.JoinedViews.FirstOrDefault(failed.Contains) is { } waits)
+                {
+                    failed.Add(item.View.ViewName);
+                    outcomes.Add(new DimensionViewOutcome(item.View.Name, item.View.ViewName, DimensionViewWriteStatus.Failed,
+                        $"View {item.View.Name} joins {DimensionTables.Shown(waits)}, which this build could not write, so it was not written either and keeps its last definition; it is written once the view it joins is.",
+                        null));
+                    continue;
+                }
+
+                var outcome = await WriteOneAsync(connection, write, item, partitionId, ct).ConfigureAwait(false);
+                if (outcome.Status == DimensionViewWriteStatus.Failed)
+                {
+                    failed.Add(item.View.ViewName);
+                }
+
+                outcomes.Add(outcome);
             }
 
             var dropped = await RemoveUndeclaredAsync(connection, write.Flow, write.Views.Select(v => v.View.Name).ToList(), ct).ConfigureAwait(false);
@@ -201,8 +220,8 @@ internal static class SqlServerDimensionViewStore
             }
 
             var declaration = JsonSerializer.Serialize(
-                new ViewDeclaration(view.From, view.Joins.Select(j => new DimensionViewJoinState(j.As, j.To, j.On, DimensionTables.NameOf(j.To))).ToList(),
-                    view.Columns.Count == 0 ? null : view.Columns, view.Where),
+                new ViewDeclaration(view.From, view.Joins.Select(j => new DimensionViewJoinState(j.As, j.To, j.On, j.View ? DimensionViewSpec.Prefix + j.To : DimensionTables.NameOf(j.To))).ToList(),
+                    view.Columns.Count == 0 ? null : view.Columns, view.Where, view.GroupBy.Count == 0 ? null : view.GroupBy),
                 Json);
             var columns = JsonSerializer.Serialize(
                 definition.Columns.Select(c => new DimensionViewColumnState(c.Name, c.Type, c.Expression, c.DataType, c.Description)).ToList(), Json);
@@ -253,7 +272,8 @@ internal static class SqlServerDimensionViewStore
     }
 
     /// <summary>What a view's record keeps of its declaration.</summary>
-    private sealed record ViewDeclaration(string From, IReadOnlyList<DimensionViewJoinState> Joins, IReadOnlyList<DimensionViewColumnSpec>? Columns, string? Where = null);
+    private sealed record ViewDeclaration(
+        string From, IReadOnlyList<DimensionViewJoinState> Joins, IReadOnlyList<DimensionViewColumnSpec>? Columns, string? Where = null, IReadOnlyList<string>? GroupBy = null);
 
     /// <summary>
     /// Reads the view's rows of the partition (osdu/docs/reference/flow/dimension-views.md) and keeps what it found:
@@ -703,7 +723,8 @@ internal static class SqlServerDimensionViewStore
 
         return new DimensionViewState(
             row.ViewId, row.Name, row.ViewName, row.FlowName, row.LedgerId, row.Description, declaration?.From ?? string.Empty, declaration?.Joins ?? [], columns,
-            TablesOf(row.TablesJson), row.Sql, row.SqlHash is not null, row.Note, row.WrittenRunId, row.WrittenBy, row.WrittenUtc, row.CreatedUtc, declaration?.Where);
+            TablesOf(row.TablesJson), row.Sql, row.SqlHash is not null, row.Note, row.WrittenRunId, row.WrittenBy, row.WrittenUtc, row.CreatedUtc, declaration?.Where,
+            declaration?.GroupBy);
     }
 
     private static DimensionViewCheckState ToState(DeliveryDimensionViewCheck row, string partition)

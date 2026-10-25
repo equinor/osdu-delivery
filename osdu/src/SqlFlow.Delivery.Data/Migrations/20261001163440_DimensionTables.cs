@@ -5,7 +5,7 @@
 namespace SqlFlow.Delivery.Data.Migrations
 {
     /// <summary>
-    /// Dimensions as tables, joined by numbers (osdu/docs/reference/flow/dimension.md, The dimension's table).
+    /// Dimensions as tables, joined by numbers (osdu/docs/reference/flow/dimension-table.md, The dimension's table).
     /// <list type="bullet">
     /// <item><c>Dimension.TableName</c> names the dimension's own table (<c>dim_&lt;dimension&gt;</c>), which
     /// builds make and widen; it is no table of the model, so this migration creates none, and going back down drops the

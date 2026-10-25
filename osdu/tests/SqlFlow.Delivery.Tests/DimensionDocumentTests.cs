@@ -311,6 +311,94 @@ public class DimensionDocumentTests
     }
 
     [Fact]
+    public void An_attribute_says_how_the_values_it_reaches_are_kept_and_what_they_are_decoded_from()
+    {
+        var flow = Parse(Head + """
+            dimensions:
+              - name: WellboreContext
+                kind: "osdu:wks:master-data--Wellbore:*"
+                path: id
+                columns: { key: WellboreID, value: WellboreCode }
+                attributes:
+                  FieldName: { path: [data.GeoContexts.FieldID, data.FieldName], many: max }
+                  Sources: { path: data.Sources, many: JOIN }
+                  Code: { path: data.Code, decode: url }
+                  First: { path: data.A, many: first, decode: none }
+                elements:
+                  path: data.Curves
+                  fields:
+                    Unit: { path: CurveUnit, decode: url, many: max }
+            """);
+
+        var dimension = flow.Dimensions[0];
+        Assert.Equal(
+            [("FieldName", DimensionValueMany.Max, DimensionValueDecode.None), ("Sources", DimensionValueMany.Join, DimensionValueDecode.None),
+             ("Code", DimensionValueMany.First, DimensionValueDecode.Url), ("First", DimensionValueMany.First, DimensionValueDecode.None)],
+            dimension.Attributes.Select(a => (a.Name, a.Many, a.Decode)));
+        Assert.Equal(["data.GeoContexts.FieldID", "data.FieldName"], dimension.Attribute("FieldName")!.Steps);
+        Assert.Equal((DimensionValueMany.Max, DimensionValueDecode.Url), (dimension.Elements!.Fields[0].Many, dimension.Elements.Fields[0].Decode));
+
+        // Either is another declaration, so a build knows the dimension changed; the defaults written out are none, so a
+        // dimension declared before they existed keeps the hash it was built with.
+        string Hash(string attributes) => Parse(Head + Curves + "\n    " + attributes).Dimensions[0].DefinitionHash;
+        var bare = Hash("attributes: { Source: data.Source }");
+        Assert.NotEqual(bare, Hash("attributes: { Source: { path: data.Source, many: max } }"));
+        Assert.NotEqual(bare, Hash("attributes: { Source: { path: data.Source, decode: url } }"));
+        Assert.Equal(bare, Hash("attributes: { Source: { path: data.Source, many: first, decode: none } }"));
+        var field = Hash("elements: { path: data.Curves, fields: { Unit: { path: CurveUnit, many: join } } }");
+        Assert.NotEqual(field, Hash("elements: { path: data.Curves, fields: { Unit: { path: CurveUnit, many: join, decode: url } } }"));
+        Assert.Equal(field, Hash("elements: { path: data.Curves, fields: { Unit: { path: CurveUnit, many: join, decode: none } } }"));
+        Assert.NotEqual(field, Hash("elements: { path: data.Curves, fields: { Unit: { path: CurveUnit, many: max } } }"));
+    }
+
+    [Fact]
+    public void A_dimension_takes_the_settings_it_reads_references_lookups_white_space_and_nulls_by()
+    {
+        var flow = Parse(Head + """
+            incremental: { keyColumns: [id], fullLoadWhenRecordsLeave: true }
+            dimensions:
+              - name: WellboreContext
+                kind: "osdu:wks:master-data--Wellbore:*"
+                path: id
+                columns: { key: WellboreID, value: WellboreCode }
+                lookupKinds: [osdu:wks:master-data--Field:1.0.0]
+                attributes:
+                  Country: { path: ['data.GeoContexts[GeoTypeID->data.Code=Country].GeoPoliticalEntityID', data.GeoPoliticalEntityName], many: max, maxReferences: 100 }
+                  Names: { path: data.Names, many: all, trim: false }
+                  WellRef: { path: data.WellID, keep: reference }
+                elements:
+                  path: data.GeoContexts
+                  nulls: keep
+                  fields:
+                    FieldID: { path: FieldID, keep: id }
+            """);
+
+        var dimension = flow.Dimensions[0];
+        Assert.True(flow.Incremental!.FullLoadWhenRecordsLeave);
+        Assert.Equal("osdu:wks:master-data--Field:1.0.0", dimension.LookupKind("master-data--Field"));
+        Assert.Equal((DimensionValueMany.Max, 100), (dimension.Attribute("Country")!.Many, dimension.Attribute("Country")!.MaxReferences));
+        Assert.Equal((DimensionValueMany.All, false), (dimension.Attribute("Names")!.Many, dimension.Attribute("Names")!.Trim));
+        Assert.Equal(DimensionValueKeep.Reference, dimension.Attribute("WellRef")!.Keep);
+        Assert.True(dimension.Elements!.KeepNulls);
+    }
+
+    [Theory]
+    [InlineData("attributes: { Source: { path: data.Source, many: every } }", "many is 'every'; it is first")]
+    [InlineData("attributes: { Source: { path: data.Source, decode: base64 } }", "decode is 'base64'; it is none")]
+    [InlineData("attributes: { Source: { path: data.Source, keep: id, decode: url } }", "keeps each value as id, the text the dimension it joins is keyed by")]
+    [InlineData("attributes: { Source: { path: data.Source, keep: key, decode: url } }", "keeps each value as key")]
+    [InlineData("attributes: { Source: { collect: data.Source, many: max } }", "collects its values, and many reads the value")]
+    [InlineData("attributes: { Source: { collect: data.Source, decode: url } }", "collects its values, and decode reads the value")]
+    [InlineData("elements: { path: data.Curves, fields: { Unit: { path: CurveUnit, keep: id, decode: url } } }", "keeps each value as id")]
+    [InlineData("elements: { path: data.Curves, fields: { Unit: { path: CurveUnit, decode: utf8 } } }", "decode is 'utf8'")]
+    public void A_many_or_a_decode_that_breaks_a_rule_is_refused_naming_the_rule(string declared, string reason)
+    {
+        var refused = Refused(Head + Curves + "\n    " + declared);
+        Assert.Contains("dimensions[0] 'CurveMnemonic'", refused.Message, StringComparison.Ordinal);
+        Assert.Contains(reason, refused.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void A_dimension_reads_the_objects_of_a_nested_array_as_rows_with_their_fields_together()
     {
         var flow = Parse(Head + """
@@ -361,7 +449,7 @@ public class DimensionDocumentTests
     [InlineData("elements: { path: data.Curves, fields: { Unit: { path: CurveUnit, up: 3 } } }", "up is 3, and elements.path passes 2 object(s)")]
     [InlineData("elements: { path: data.Curves, fields: { Unit: { path: CurveUnit, up: -1 } } }", "up is '-1'")]
     [InlineData("elements: { path: data.Curves, fields: { Unit: { path: '@', up: 1 } } }", "reads @, the element itself")]
-    [InlineData("elements: { path: data.Curves, fields: { Unit: { path: CurveUnit, many: all } } }", "many is 'all'")]
+    [InlineData("elements: { path: data.Curves, fields: { Unit: { path: CurveUnit, many: every } } }", "many is 'every'")]
     [InlineData("elements: { path: data.Curves, fields: { Unit: { keep: id } } }", "it names no path")]
     [InlineData("elements: { path: data.Curves, fields: { Unit: { path: CurveUnit, keep: ref } } }", "keep is 'ref'")]
     [InlineData("elements: { path: data.Curves, fields: { Unit: [CurveUnit] } }", "is the path inside each element")]
@@ -377,10 +465,10 @@ public class DimensionDocumentTests
     [Fact]
     public void Attributes_and_element_fields_together_hold_no_more_columns_than_a_table_lays_out()
     {
-        var attributes = string.Join(", ", Enumerable.Range(0, 15).Select(i => $"A{i}: data.A{i}"));
-        var fields = string.Join(", ", Enumerable.Range(0, 6).Select(i => $"F{i}: F{i}"));
+        var attributes = string.Join(", ", Enumerable.Range(0, 40).Select(i => $"A{i}: data.A{i}"));
+        var fields = string.Join(", ", Enumerable.Range(0, 25).Select(i => $"F{i}: F{i}"));
         var refused = Refused(Head + Curves + "\n    attributes: { " + attributes + " }\n    elements: { path: data.Curves, fields: { " + fields + " } }");
-        Assert.Contains("attributes and elements.fields name 21 columns", refused.Message, StringComparison.Ordinal);
+        Assert.Contains("attributes and elements.fields name 65 columns; a dimension's table holds 64", refused.Message, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -403,8 +491,8 @@ public class DimensionDocumentTests
 
         var elements = flow.Dimensions[0].Elements!;
         Assert.Equal(
-            [("Column", "@", 0, DimensionElementMany.First), ("Mnemonic", "Mnemonic", 1, DimensionElementMany.First),
-             ("LogName", "data.Name", 3, DimensionElementMany.First), ("Aliases", "Aliases[Kind=Short].Text", 1, DimensionElementMany.Join)],
+            [("Column", "@", 0, DimensionValueMany.First), ("Mnemonic", "Mnemonic", 1, DimensionValueMany.First),
+             ("LogName", "data.Name", 3, DimensionValueMany.First), ("Aliases", "Aliases[Kind=Short].Text", 1, DimensionValueMany.Join)],
             elements.Fields.Select(f => (f.Name, f.Path, f.Up, f.Many)));
 
         // The filters' properties come back with what each field reads; the arrays themselves are never asked for whole
@@ -418,7 +506,11 @@ public class DimensionDocumentTests
     public void More_attributes_than_a_dimension_reads_are_refused()
     {
         var many = string.Join(", ", Enumerable.Range(0, DimensionSpec.MaxAttributes + 1).Select(i => $"A{i}: data.A{i}"));
-        Assert.Contains("at most 20", Refused(Head + Curves + "\n    attributes: { " + many + " }").Message, StringComparison.Ordinal);
+        Assert.Contains("at most 64", Refused(Head + Curves + "\n    attributes: { " + many + " }").Message, StringComparison.Ordinal);
+
+        // As many as a dimension reads are read: 64 attributes, each a column of its table.
+        var most = string.Join(", ", Enumerable.Range(0, DimensionSpec.MaxAttributes).Select(i => $"A{i}: data.A{i}"));
+        Assert.Equal(DimensionSpec.MaxAttributes, Parse(Head + Curves + "\n    attributes: { " + most + " }").Dimensions[0].Attributes.Count);
     }
 
     [Fact]
