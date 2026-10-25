@@ -1,11 +1,13 @@
 using System.Net;
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
+using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
 using SqlFlow.Catalog;
 using SqlFlow.ControlPlane.Api;
+using SqlFlow.ControlPlane.Maintenance;
 using SqlFlow.Delivery.ControlPlane;
-using SqlFlow.Delivery.ControlPlane.Api;
+using SqlFlow.Delivery.ControlPlane.Maintenance;
 using SqlFlow.Delivery.Data;
 using SqlFlow.Delivery.Identity;
 using SqlFlow.Delivery.Tests;
@@ -14,11 +16,12 @@ using Xunit;
 namespace SqlFlow.ControlPlane.Tests;
 
 /// <summary>
-/// The ledger's retention pass (<c>POST /api/v1/delivery/ledger/prune</c>), which is the one way an operator ages the
-/// <c>osdu</c> schema's history out. Traceability is the product, so what it may take is exactly bounded: delivery tries
-/// older than the cut-off go only where a later try of the same record explains the record's outcome, and an activity's
-/// captured run log is cleared without the audit row it belongs to ever being deleted. These tests hold the endpoint to
-/// that bound, because a retention pass that took one row too many would quietly cost a delivered record its history.
+/// The <c>osdu</c> schema's optional cleanups on the Maintenance page, through SQLFlow's maintenance API: the delivery
+/// attempts a later attempt of the same record superseded, and the captured logs of finished activities. Traceability is the
+/// product, so what they may take is exactly bounded: a try older than the cut-off goes only where a later try of the same
+/// record explains the record's outcome, and an activity's log is cleared without the audit row it belongs to ever being
+/// deleted. These tests hold the cleanups to that bound, because one that took a row too many would quietly cost a
+/// delivered record its history.
 /// </summary>
 [Collection(SqlServerSuite.Name)]
 [Trait("Category", "Integration")]
@@ -26,25 +29,10 @@ public sealed class DeliveryRetentionApiTests
 {
     private const string FlowName = "wells-retention";
 
-    [Fact]
-    public async Task Pruning_needs_the_admin_scope_and_a_cut_off_of_at_least_a_day()
-    {
-        await using var factory = Factory(catalog: null);
-        using var client = factory.CreateClient();
-
-        // Operating the estate is not administering it: the retention pass deletes history, so it sits behind admin.
-        var operate = await TokenAsync(client, ["read", "operate"]);
-        using var refused = await PruneAsync(client, operate, 90);
-        Assert.Equal(HttpStatusCode.Forbidden, refused.StatusCode);
-
-        // And an anonymous caller never reaches it at all.
-        using var anonymous = await client.PostAsJsonAsync(
-            new Uri("/api/v1/delivery/ledger/prune", UriKind.Relative), new DeliveryPruneRequest(90));
-        Assert.Equal(HttpStatusCode.Unauthorized, anonymous.StatusCode);
-    }
+    private static readonly JsonSerializerOptions Web = new(JsonSerializerDefaults.Web);
 
     [Fact]
-    public async Task A_cut_off_below_a_day_is_refused_before_anything_is_deleted()
+    public async Task The_page_reports_the_osdu_schema_and_a_cleanup_needs_the_admin_scope_and_a_day()
     {
         var cs = OsduTestServer.Require();
         await CatalogDatabase.MigrateAsync(cs);
@@ -52,23 +40,51 @@ public sealed class DeliveryRetentionApiTests
 
         await using var factory = Factory(cs);
         using var client = factory.CreateClient();
+        var operate = await TokenAsync(client, ["read", "operate"]);
         var admin = await TokenAsync(client, ["admin"]);
 
+        // Every table of the osdu schema is described: none of it is listed as a table nobody describes.
+        using (var response = await SendAsync(client, operate, HttpMethod.Get, "/api/v1/maintenance/storage"))
+        {
+            Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+            var report = await response.Content.ReadFromJsonAsync<StorageReportDto>(Web);
+            Assert.NotNull(report);
+            Assert.DoesNotContain(report.Undescribed, t => string.Equals(t.Schema, DeliveryModel.SchemaName, StringComparison.OrdinalIgnoreCase));
+            var attempts = report.Areas.Single(a => a.Id == OsduStorageContributor.AttemptsArea);
+            Assert.Equal("optional", attempts.Verdict);
+            Assert.Equal("OSDU Delivery", attempts.Owner);
+            Assert.Equal("attempts", attempts.Retention!.Unit);
+            Assert.Equal("keep", report.Areas.Single(a => a.Id == "osdu.records").Verdict);
+            var logs = report.Areas.Single(a => a.Id == OsduStorageContributor.ActivityLogsArea);
+            Assert.Equal("Log", logs.Column!.Column);
+        }
+
+        // Operating the estate is not administering it: a cleanup deletes history, so it sits behind admin.
+        using (var refused = await SendAsync(client, operate, HttpMethod.Post, $"/api/v1/maintenance/areas/{OsduStorageContributor.AttemptsArea}/cleanup", new StorageDaysDto(90)))
+        {
+            Assert.Equal(HttpStatusCode.Forbidden, refused.StatusCode);
+        }
+
+        // A cut-off below a day is refused before anything is deleted, and an area to keep takes no cleanup at all.
         foreach (var days in new[] { 0, -1 })
         {
-            using var response = await PruneAsync(client, admin, days);
+            using var response = await SendAsync(client, admin, HttpMethod.Post, $"/api/v1/maintenance/areas/{OsduStorageContributor.AttemptsArea}/cleanup", new StorageDaysDto(days));
             Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
-            Assert.Contains("olderThanDays must be at least 1", await response.Content.ReadAsStringAsync(), StringComparison.Ordinal);
+        }
+
+        using (var response = await SendAsync(client, admin, HttpMethod.Post, "/api/v1/maintenance/areas/osdu.records/cleanup", new StorageDaysDto(30)))
+        {
+            Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
         }
     }
 
     /// <summary>
-    /// One pass over a seeded history: what it takes, what it keeps, and what it reports. The record's last try and every
-    /// try inside the window survive; every audit row survives with its actor, parameters and outcome, and only the logs
-    /// of the settled activities outside the window are gone.
+    /// One cleanup of each area over a seeded history: what it takes, what it keeps, and what it reports. The record's last
+    /// try and every try inside the window survive; every audit row survives with its actor, parameters and outcome, and only
+    /// the logs of the settled activities outside the window are gone.
     /// </summary>
     [Fact]
-    public async Task The_retention_pass_ages_out_old_tries_and_run_logs_and_keeps_what_a_record_is_reconstructible_from()
+    public async Task The_cleanups_age_out_old_tries_and_run_logs_and_keep_what_a_record_is_reconstructible_from()
     {
         var cs = OsduTestServer.Require();
         await CatalogDatabase.MigrateAsync(cs);
@@ -94,7 +110,7 @@ public sealed class DeliveryRetentionApiTests
                     Attempt(flowId, key, old, AttemptOutcomes.Retry),
                     Attempt(flowId, key, recent, AttemptOutcomes.Delivered),
                     // A record whose only try is older than the cut-off: its last outcome has to stay explainable, so
-                    // the pass leaves it, however old it is.
+                    // the cleanup leaves it, however old it is.
                     Attempt(flowId, lonely, ancient, AttemptOutcomes.Delivered));
                 osdu.DeliveryActivities.AddRange(
                     Activity(flowId, "deliver", old, completed: true, log),
@@ -110,10 +126,18 @@ public sealed class DeliveryRetentionApiTests
             using var client = factory.CreateClient();
             var admin = await TokenAsync(client, ["admin"]);
 
-            using var response = await PruneAsync(client, admin, 30);
-            Assert.Equal(HttpStatusCode.OK, response.StatusCode);
-            var result = await response.Content.ReadFromJsonAsync<DeliveryPruneResult>();
-            Assert.NotNull(result);
+            // The preview counts at least this flow's two superseded tries and two settled logs; the database is shared, so
+            // other suites' rows may count too.
+            Assert.True(await PreviewAsync(client, admin, OsduStorageContributor.AttemptsArea, 30) >= 2);
+            Assert.True(await PreviewAsync(client, admin, OsduStorageContributor.ActivityLogsArea, 30) >= 2);
+
+            var attemptsCleanup = await CleanUpAsync(client, admin, OsduStorageContributor.AttemptsArea, 30);
+            var logsCleanup = await CleanUpAsync(client, admin, OsduStorageContributor.ActivityLogsArea, 30);
+            Assert.Null(attemptsCleanup.Error);
+            Assert.Null(logsCleanup.Error);
+            Assert.True(attemptsCleanup.Removed >= 2, $"the attempts cleanup removed {attemptsCleanup.Removed}");
+            Assert.True(logsCleanup.Removed >= 2, $"the logs cleanup cleared {logsCleanup.Removed}");
+            Assert.Equal("manual", attemptsCleanup.Trigger);
 
             await using (var osdu = SampleEstate.Context(cs))
             {
@@ -127,7 +151,7 @@ public sealed class DeliveryRetentionApiTests
                 var kept = Assert.Single(attempts, a => a.DeliveryKey == lonely);
                 Assert.Equal(ancient, kept.StartedUtc);
 
-                // Every audit row is still there: the pass deletes none of them.
+                // Every audit row is still there: the cleanup deletes none of them.
                 var activities = await osdu.DeliveryActivities.AsNoTracking()
                     .Where(a => a.FlowId == flowId)
                     .ToListAsync();
@@ -151,14 +175,9 @@ public sealed class DeliveryRetentionApiTests
                 Assert.All(keptLogs, a => Assert.Equal(log, a.Log));
             }
 
-            // The counts the operator sees are what actually moved: two tries deleted, two logs cleared. The prune runs
-            // against a shared database, so other suites' rows may be aged out by the same pass; these are the floor.
-            Assert.True(result.AttemptsPruned >= 2, $"attemptsPruned was {result.AttemptsPruned}");
-            Assert.True(result.ActivityLogsCleared >= 2, $"activityLogsCleared was {result.ActivityLogsCleared}");
-
-            // And it is idempotent: a second pass at the same cut-off finds nothing of this flow left to take.
-            using var again = await PruneAsync(client, admin, 30);
-            Assert.Equal(HttpStatusCode.OK, again.StatusCode);
+            // And it is idempotent: a second cleanup at the same cut-off finds nothing of this flow left to take.
+            await CleanUpAsync(client, admin, OsduStorageContributor.AttemptsArea, 30);
+            await CleanUpAsync(client, admin, OsduStorageContributor.ActivityLogsArea, 30);
             await using (var osdu = SampleEstate.Context(cs))
             {
                 Assert.Equal(2, await osdu.DeliveryAttempts.CountAsync(a => a.FlowId == flowId));
@@ -171,6 +190,10 @@ public sealed class DeliveryRetentionApiTests
             await using var osdu = SampleEstate.Context(cs);
             await osdu.DeliveryAttempts.Where(a => a.FlowId == flowId).ExecuteDeleteAsync();
             await osdu.DeliveryActivities.Where(a => a.FlowId == flowId).ExecuteDeleteAsync();
+            await using var catalog = CatalogDatabase.Create(cs);
+            await catalog.MaintenanceCleanups
+                .Where(c => c.AreaId == OsduStorageContributor.AttemptsArea || c.AreaId == OsduStorageContributor.ActivityLogsArea)
+                .ExecuteDeleteAsync();
         }
     }
 
@@ -209,19 +232,14 @@ public sealed class DeliveryRetentionApiTests
         Log = log,
     };
 
-    private static ControlPlaneAppFactory Factory(string? catalog)
-    {
-        var factory = new ControlPlaneAppFactory();
-        if (catalog is not null)
-        {
-            factory = factory.WithCatalog(catalog);
-        }
-
-        return factory
+    private static ControlPlaneAppFactory Factory(string catalog)
+        => new ControlPlaneAppFactory()
+            .WithCatalog(catalog)
             .WithModules(new DeliveryControlPlaneModule())
             .WithSetting("ControlPlane:Worker:Enabled", "false")
+            // The automatic cleanup is off, so the only cleanups are the ones a test asks for.
+            .WithSetting("ControlPlane:Maintenance:Enabled", "false")
             .WithSetting("Osdu:SchemaRepository:WarmOnStart", "false");
-    }
 
     private static async Task<string> TokenAsync(HttpClient client, IReadOnlyList<string> scopes)
     {
@@ -234,13 +252,50 @@ public sealed class DeliveryRetentionApiTests
         return token.AccessToken;
     }
 
-    private static async Task<HttpResponseMessage> PruneAsync(HttpClient client, string token, int olderThanDays)
+    private static async Task<HttpResponseMessage> SendAsync(HttpClient client, string token, HttpMethod method, string path, object? body = null)
     {
-        using var request = new HttpRequestMessage(HttpMethod.Post, new Uri("/api/v1/delivery/ledger/prune", UriKind.Relative))
+        using var request = new HttpRequestMessage(method, new Uri(path, UriKind.Relative));
+        if (body is not null)
         {
-            Content = JsonContent.Create(new DeliveryPruneRequest(olderThanDays)),
-        };
+            request.Content = JsonContent.Create(body);
+        }
+
         request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
         return await client.SendAsync(request);
+    }
+
+    private static async Task<long> PreviewAsync(HttpClient client, string token, string areaId, int days)
+    {
+        using var response = await SendAsync(client, token, HttpMethod.Post, $"/api/v1/maintenance/areas/{areaId}/preview", new StorageDaysDto(days));
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        var preview = await response.Content.ReadFromJsonAsync<CleanupPreviewDto>(Web);
+        Assert.NotNull(preview);
+        return preview.Count;
+    }
+
+    /// <summary>Asks for a cleanup and follows its entry in the area's history until it closes.</summary>
+    private static async Task<CleanupDto> CleanUpAsync(HttpClient client, string token, string areaId, int days)
+    {
+        CleanupDto started;
+        using (var response = await SendAsync(client, token, HttpMethod.Post, $"/api/v1/maintenance/areas/{areaId}/cleanup", new StorageDaysDto(days)))
+        {
+            Assert.Equal(HttpStatusCode.Accepted, response.StatusCode);
+            started = (await response.Content.ReadFromJsonAsync<CleanupDto>(Web))!;
+        }
+
+        var deadline = DateTime.UtcNow.AddMinutes(2);
+        while (true)
+        {
+            using var response = await SendAsync(client, token, HttpMethod.Get, $"/api/v1/maintenance/areas/{areaId}/cleanups");
+            var history = await response.Content.ReadFromJsonAsync<List<CleanupDto>>(Web);
+            var entry = history!.Single(h => h.Id == started.Id);
+            if (entry.CompletedUtc is not null)
+            {
+                return entry;
+            }
+
+            Assert.True(DateTime.UtcNow < deadline, $"The cleanup of {areaId} did not finish in two minutes.");
+            await Task.Delay(TimeSpan.FromMilliseconds(200));
+        }
     }
 }

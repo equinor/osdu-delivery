@@ -1474,7 +1474,10 @@ public class SqlLedgerTests : IAsyncLifetime, IDisposable
 
         // Two at a time, four old attempts go in three statements; each record keeps its latest, however old it is.
         var bounded = new OsduLedger(_db.CreateDbContext, _clock) { PruneBatch = 2 };
+        // The Maintenance page's count is the prune's own test: it says exactly what the prune then takes.
+        Assert.Equal(4, await bounded.CountPrunableAttemptsAsync(Now));
         Assert.Equal(4, await bounded.PruneAttemptsAsync(Now));
+        Assert.Equal(0, await bounded.CountPrunableAttemptsAsync(Now));
         foreach (var name in new[] { "a", "b" })
         {
             var kept = Assert.Single(await Ledger.ListAttemptsAsync(_flow, DeliveryKey.Derive("test", [name]), 10));

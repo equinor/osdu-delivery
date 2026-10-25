@@ -32,6 +32,7 @@ related:
   - delivery-cli-run
   - delivery-concept-run-trace-and-metrics
   - delivery-concept-availability-and-retention
+  - delivery-concept-storage-and-retention
 sourceRefs:
   - osdu/src/SqlFlow.Delivery.Cli/DeliveryCliModule.cs
   - osdu/src/SqlFlow.Delivery.Cli/DeliveryRecordVerbs.cs
@@ -392,5 +393,6 @@ the try carried, and a refused request's error quotes the id the service answere
 - [Record lifecycle](../concepts/record-lifecycle.md): states, retries, issues and releases.
 - [Removal and reversal](../concepts/removal-and-reversal.md): every action that changes what OSDU holds after delivery.
 - [Submissions](../concepts/submissions.md): plans, batches and leases.
-- [Availability and retention](../concepts/availability-and-retention.md): outages, recovery, pruning and backup.
+- [Availability and retention](../concepts/availability-and-retention.md): outages, recovery and backup.
+- [What the osdu schema stores](../concepts/storage-and-retention.md): what takes the space, what is kept, and the three cleanups an admin may set on the Maintenance page.
 - [`sqlflow records`](../cli/records.md) and [running an OSDU flow](../cli/run.md).

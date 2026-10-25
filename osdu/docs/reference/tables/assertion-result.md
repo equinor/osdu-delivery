@@ -31,7 +31,8 @@ result keeps the whole of what each assertion found, up to 1,000,000 characters;
 marked as cut back. Each result carries its test's definition hash, so a result that answers an earlier definition of the
 test shows as changed ([The report](../flow/assertion.md#the-report)).
 
-Pruned with its run, which goes only once later results of each of its tests superseded it.
+Removed with its run, by the Maintenance page's cleanup of the assertion runs, which takes a run only once later results
+of each of its tests superseded it ([What the osdu schema stores](../concepts/storage-and-retention.md)).
 
 ## Columns
 

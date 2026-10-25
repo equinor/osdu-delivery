@@ -8,6 +8,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- Settings > Maintenance shows what the whole database holds, the `osdu` schema included: every table in areas a person
+  recognises, each marked keep, safe to remove or optional, with its size, how its data leaves and what removing it
+  costs. Superseded delivery attempts, finished activities' logs and superseded assertion runs are optional: an admin
+  previews a cleanup, runs it, or sets a limit the hourly automatic cleanup applies, and nothing is removed until then
+  ([What the osdu schema stores](osdu/docs/reference/concepts/storage-and-retention.md)).
 
 - **A renamed flow keeps its history.** Rename a delivery, retrieval, assertion, dimension or inventory flow, or its file,
   changing nothing else, and the repository sync moves the old name's ledger to the new one and says so in its result: a
@@ -167,6 +172,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   ([The OSDU menu](osdu/docs/reference/concepts/gui.md#the-osdu-menu)).
 
 ### Changed
+- The automatic cleanup is configured as `ControlPlane:Maintenance:Enabled` and `ControlPlane:Maintenance:PollSeconds`;
+  a control plane given `ControlPlane:RunTrace:*` refuses to start and names the new section, so move or remove those
+  settings. Run events now take a limit like SQL statements, each pipeline's latest run and every failed run keeping
+  theirs ([Maintenance](sqlflow/docs/reference/concepts/maintenance.md)).
 
 - **Two ingestion trace steps run on the source and are named so.** An ingestion flow's source-minimum probe is traced as
   `source.incremental.min-probe` (was `incremental.min-probe`) and its match-keys read of the source's keys as
@@ -324,6 +333,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   curve `MD` among its curves ([Assertions](osdu/docs/reference/flow/assertion.md#assertions)).
 
 ### Removed
+- `POST /api/v1/delivery/ledger/prune` is gone: set a limit for, or clean up, the areas `osdu.attempts`,
+  `osdu.activity-logs` and `osdu.assertion-runs` on the Maintenance page or through `/api/v1/maintenance/areas/{areaId}`,
+  and retire any scheduled job that called the old route
+  ([What the osdu schema stores](osdu/docs/reference/concepts/storage-and-retention.md)).
+- The Maintenance page's Purge all buttons and the routes `GET /api/v1/maintenance/trace-storage`,
+  `PUT /api/v1/maintenance/statement-retention`, `POST /api/v1/maintenance/statements/purge` and
+  `POST /api/v1/maintenance/events/purge`; `/api/v1/maintenance/storage` and the storage-area routes replace them, and a
+  limit set for the SQL statements carries over ([Maintenance](sqlflow/docs/reference/concepts/maintenance.md)).
 
 - **The module's second database connection, `SQLFLOW_OSDU_DB`.** The `osdu` schema lives in the catalog's database and
   every tier reaches it through `SQLFLOW_CATALOG_DB`, worker nodes included: give each node `SQLFLOW_CATALOG_DB` in place
@@ -435,6 +452,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   ([Deployment](sqlflow/docs/reference/guides/deployment.md)).
 
 ### Security
+- Setting a limit and cleaning up on the Maintenance page need the admin scope; until now any signed-in user could change
+  the SQL statements' retention and delete every statement and run event
+  ([Maintenance](sqlflow/docs/reference/concepts/maintenance.md)).
 
 - **A GitHub token quoted in an error is redacted before it is logged or shown,** in every format GitHub issues, and a
   resolved git credential never prints its secret.

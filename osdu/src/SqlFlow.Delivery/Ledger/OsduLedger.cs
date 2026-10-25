@@ -3521,12 +3521,9 @@ public sealed partial class OsduLedger : ILedger
         {
             ct.ThrowIfCancellationRequested();
             await using var db = Open();
-            // An attempt goes only when a later attempt of the same flow's record exists, so a record's last outcome is
-            // always explainable. The old attempts are read in start order from the start index, and the later one is a
-            // seek of the record's own timeline.
-            var deleted = await db.DeliveryAttempts
-                .Where(a => a.StartedUtc < olderThanUtc
-                    && db.DeliveryAttempts.Any(b => b.PartitionId == a.PartitionId && b.FlowId == a.FlowId && b.DeliveryKey == a.DeliveryKey && b.AttemptId > a.AttemptId))
+            // The old attempts are read in start order from the start index, and the later one is a seek of the record's own
+            // timeline.
+            var deleted = await PrunableAttempts(db, olderThanUtc)
                 .OrderBy(a => a.StartedUtc)
                 .Take(PruneBatch)
                 .ExecuteDeleteAsync(ct)
@@ -3538,6 +3535,68 @@ public sealed partial class OsduLedger : ILedger
             }
         }
     }
+
+    public async Task<long> CountPrunableAttemptsAsync(DateTime olderThanUtc, CancellationToken ct = default)
+    {
+        await using var db = Open();
+        return await PrunableAttempts(db, olderThanUtc).LongCountAsync(ct).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// The attempts a prune at <paramref name="olderThanUtc"/> takes, defined once for the prune and its count: an attempt goes
+    /// only when a later attempt of the same flow's record exists, so a record's last outcome is always explainable.
+    /// </summary>
+    private static IQueryable<DeliveryAttempt> PrunableAttempts(OsduDbContext db, DateTime olderThanUtc)
+        => db.DeliveryAttempts.Where(a => a.StartedUtc < olderThanUtc
+            && db.DeliveryAttempts.Any(b => b.PartitionId == a.PartitionId && b.FlowId == a.FlowId && b.DeliveryKey == a.DeliveryKey && b.AttemptId > a.AttemptId));
+
+    /// <summary>
+    /// The most activities one statement clears the log of. Each batch is its own short statement, so clearing years of logs
+    /// never holds a long lock on the table every run appends an activity to, and never takes enough row locks for SQL Server
+    /// to lock the whole table instead.
+    /// </summary>
+    internal int ActivityLogBatch { get; init; } = 1_000;
+
+    public async Task<int> ClearActivityLogsAsync(DateTime olderThanUtc, CancellationToken ct = default)
+    {
+        ArgumentOutOfRangeException.ThrowIfLessThan(ActivityLogBatch, 1);
+        var cleared = 0;
+        while (true)
+        {
+            ct.ThrowIfCancellationRequested();
+            await using var db = Open();
+            var batch = await ClearableActivityLogs(db, olderThanUtc)
+                .OrderBy(a => a.StartedUtc)
+                .Select(a => a.ActivityId)
+                .Take(ActivityLogBatch)
+                .ToListAsync(ct)
+                .ConfigureAwait(false);
+            if (batch.Count == 0)
+            {
+                return cleared;
+            }
+
+            cleared += await db.DeliveryActivities
+                .Where(a => batch.Contains(a.ActivityId))
+                .ExecuteUpdateAsync(s => s.SetProperty(a => a.Log, (string?)null), ct)
+                .ConfigureAwait(false);
+            if (batch.Count < ActivityLogBatch)
+            {
+                return cleared;
+            }
+        }
+    }
+
+    public async Task<long> CountActivityLogsAsync(DateTime olderThanUtc, CancellationToken ct = default)
+    {
+        await using var db = Open();
+        return await ClearableActivityLogs(db, olderThanUtc).LongCountAsync(ct).ConfigureAwait(false);
+    }
+
+    /// <summary>The activities whose log a clear at <paramref name="olderThanUtc"/> takes: finished, started before the cut-off,
+    /// and still holding a log.</summary>
+    private static IQueryable<DeliveryActivity> ClearableActivityLogs(OsduDbContext db, DateTime olderThanUtc)
+        => db.DeliveryActivities.Where(a => a.StartedUtc < olderThanUtc && a.CompletedUtc != null && a.Log != null);
 
     // ---- Retrievals ----------------------------------------------------------------------------------------------
 

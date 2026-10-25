@@ -45,7 +45,7 @@ rendered document itself is never stored in the database: `PendingDocumentRef` p
 
 Never pruned: a record leaves only when an operator deletes it from the ledger after removing it from OSDU, or deletes
 the whole ledger, and one line of it stays in [`osdu.PurgedRecord`](purged-record.md)
-([Availability and retention](../concepts/availability-and-retention.md#retention)). A flow's counts are counted from
+([What the osdu schema stores](../concepts/storage-and-retention.md)). A flow's counts are counted from
 this table through its status indexes on every call; nothing keeps a running total beside it.
 
 ## Columns

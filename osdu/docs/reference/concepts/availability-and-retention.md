@@ -2,22 +2,21 @@
 id: delivery-concept-availability-and-retention
 title: "Availability, recovery, retention and backup of the delivery ledger, and the size ceilings to set"
 type: concept
-summary: "What keeps delivering when the control plane or a node stops, how deliveries recover, what may be pruned, what a backup must hold, and the size limits."
+summary: "What keeps delivering when the control plane or a node stops, how deliveries recover, what a backup must hold, and the size limits to set."
 keywords:
   - availability
   - recovery
   - outage
   - retention
-  - prune attempts
-  - ledger prune
+  - maintenance
   - backup
   - restore
   - size ceiling
   - maxRequestBodyBytes
   - lease recovery
   - schema version
-  - olderThanDays
 related:
+  - delivery-concept-storage-and-retention
   - delivery-concept-ledger
   - delivery-concept-submissions
   - delivery-concept-control-plane
@@ -59,8 +58,8 @@ sourceRefs:
 # Availability, recovery, retention and backup of the delivery ledger, and the size ceilings to set
 
 This page is for the people who run an OSDU Delivery estate: what keeps working when the control plane or a node stops,
-how deliveries recover without anyone editing the ledger, what may be aged out of the `osdu` schema and how, what a backup
-must hold to keep every delivered record reconstructible, and which size limits to set on purpose. The control plane, the
+how deliveries recover without anyone editing the ledger, where what may be aged out of the `osdu` schema is decided,
+what a backup must hold to keep every delivered record reconstructible, and which size limits to set on purpose. The control plane, the
 run queue and the node fleet are SQLFlow's; see SQLFlow's [control plane](../../../../sqlflow/docs/reference/concepts/control-plane.md)
 and [`sqlflow worker`](../../../../sqlflow/docs/reference/cli/worker.md) for dispatch, leases on runs, requeues and drains.
 This page says what OSDU Delivery adds.
@@ -124,41 +123,20 @@ is what keeps a delivered record reconstructible.
 
 ## Retention
 
-The `osdu` schema is a live status store, and what may be aged out of it is bounded by one rule: every delivered record
-must stay reconstructible from the ledger alone. That rules out deleting a record, its submission, the cache version it was
-rendered against, or any audit row.
+What may be removed from the `osdu` schema, and what never is, is set out area by area in
+[What the osdu schema stores](storage-and-retention.md), and done from **Settings > Maintenance**, the page SQLFlow
+keeps for the whole catalog database ([Maintenance](../../../../sqlflow/docs/reference/concepts/maintenance.md)). The
+rule is the product's: every delivered record stays reconstructible from the ledger alone. So the records, their
+submissions, their render context and every audit row are kept; work in progress and working sets clean themselves; and
+three areas may be removed at a cost each states: the delivery attempts a later attempt of the same record follows
+(each record's latest is kept), the free-text logs of finished activities (the activity rows stay), and the assertion
+runs whose every result a later run superseded (each test's latest result stays). Nothing is removed until an admin sets
+how long an area's data stays; the automatic cleanup then applies that limit every hour, on every replica, in bounded
+statements that never hold a long lock on the tables the drains write to.
 
-| Table | May be pruned |
-| --- | --- |
-| `osdu.Record` | Never: it is the state and the anchor of every trail. A record leaves only when an operator deletes it from the ledger after removing it from OSDU, or deletes the whole ledger, and one line of it stays in `osdu.PurgedRecord`. |
-| `osdu.Attempt` | Yes, by age, and only where a later attempt of the same record exists, so every record's last outcome stays explainable. |
-| `osdu.Activity` | The row never. Its captured run log (up to 200,000 characters per run) yes, by age, once the activity has finished. |
-| `osdu.AssertionRun`, `osdu.AssertionResult` | Yes, by age, a run whole, and only once later results of the same tests superseded every one of its results. |
-| `osdu.ActivityRecord`, `osdu.PurgedRecord`, `osdu.Artifact` | Never: they are records' histories. |
-| `osdu.Submission`, `osdu.WorkBatch`, `osdu.SourceWatermark`, `osdu.Reversal`, `osdu.ReversalItem`, `osdu.Retrieval` | Not by retention: a record names its submission, an attempt its batch, a watermark is state, and a reversal is what a record's custody was put back by. Deleting a delivery flow's ledger deletes its submissions, batches, watermarks and reversals with it. |
-| `osdu.Lease`, `osdu.RecordEvent` | Self-clearing: applying a lease deletes its events, and closing or recovering it deletes the lease. |
-| `osdu.CacheVersion`, `osdu.CacheItem`, `osdu.CacheSet`, `osdu.CacheSetEntry`, `osdu.UpdateTag` | Never: a record's render context names the cache version it was rendered against. |
-| `osdu.RecordIdentity` | Not pruned and does not grow with activity: rewritten as a set when a record is staged, deleted with the record. |
-
-One admin call prunes everything that may go at one cut-off:
-
-```bash
-curl -sS -X POST "$CONTROL_PLANE/api/v1/delivery/ledger/prune" \
-  -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
-  -d '{"olderThanDays": 90}'
-```
-
-It answers `{"attemptsPruned": n, "activityLogsCleared": n, "assertionRunsPruned": n}`. The route needs the `admin` scope,
-and `olderThanDays` below 1 is refused with `olderThanDays must be at least 1.` Attempts go 4,000 to a statement, oldest
-first, and activity logs 1,000 to a statement, each statement its own short transaction, so a prune of years of history never
-holds a long lock on the table every drain appends to. It is safe to interrupt and repeat: a second pass at the same cut-off
-finds nothing left.
-
-There is no CLI verb or GUI page for the prune, and a schedule fires a flow rather than an API call, so a regular pass is a
-job of the estate's own scheduler holding an admin token, with a generous client timeout for the first pass. A 90-day
-window, weekly, is the cut-off the retention decision proposes; start there and widen it only for a reason. A pass that
-suddenly prunes far more than the last says a flow is retrying hard. If volume ever demands more, partition the large
-tables by time in the module's model rather than delete from them.
+A limit is easy to set and hard to take back, so choose it in years rather than months: the delivery statistics, a
+test's trend and a record's history read further back than any incident. If volume ever demands more than a limit
+gives, partition the large tables by time in the module's model rather than delete more from them.
 
 ## Backup and restore
 
@@ -205,7 +183,7 @@ never stored cut short where it would mislead:
 | OSDU id | 500 characters | A render that gives a longer id holds the record, naming the limit. |
 | Last error, attempt error | 2,000 characters | Stored to that length, redacted. |
 | Identity index | 24 values per record, each at most 200 characters; values under 3 characters are not stored | A record with more identifying values keeps the first. |
-| Activity run log | 200,000 characters per run | Stored to that length; cleared by retention. |
+| Activity run log | 200,000 characters per run | Stored to that length; cleared once a limit is set for the activity logs on the Maintenance page. |
 
 A mapping that declares many `dataset.identity` columns pays more of the identity index; one that declares none still
 gets its key, label, OSDU id and file.

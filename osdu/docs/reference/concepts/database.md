@@ -58,7 +58,8 @@ fails it, and so does one a page names that the model does not.
 - **OSDU ids** are kept in a binary collation (`Latin1_General_100_BIN2`) wherever a table keys or matches on one, since
   OSDU ids that differ only in case are different records; so is the text a dimension compares exactly.
 
-What may be pruned and what never is: [Availability and retention](availability-and-retention.md#retention).
+What each table holds as the Maintenance page shows it, what may be removed and what never is:
+[What the osdu schema stores](storage-and-retention.md).
 
 ## The tables
 

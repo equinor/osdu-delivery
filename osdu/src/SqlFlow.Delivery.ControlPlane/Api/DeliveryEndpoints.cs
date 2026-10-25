@@ -531,10 +531,6 @@ public sealed record DeliveryPurgedRecordDto(
 public sealed record DeliveryRemovalPreview(
     string Scope, int Records, int InOsdu, int NeverDelivered, bool Capped, DeliveryTargetDto Target, int Removed = 0);
 
-/// <summary>How far back the ledger's retention pass keeps its history: everything older than this many days that may be
-/// aged out is, and nothing a delivered record has to stay reconstructible from ever is.</summary>
-public sealed record DeliveryPruneRequest(int OlderThanDays);
-
 /// <summary>
 /// How a record is addressed in the API and the GUI: the ledger's flow id and the delivery key, together. A delivery key
 /// alone names one record per flow that reads the row, and the flow id (not the pipeline) is what outlives a flow's
@@ -545,11 +541,6 @@ public static class DeliveryRecordRoutes
     /// <summary>The record's path segment: <c>{flowId}/{deliveryKey}</c>.</summary>
     public static string Path(Guid flowId, Guid deliveryKey) => $"{flowId:D}/{deliveryKey:D}";
 }
-
-/// <summary>What the retention pass aged out: delivery tries deleted (the latest of every record always kept), activities
-/// whose captured run log was cleared (the audit row itself is never deleted), and assertion runs removed whole because a
-/// later result superseded every one of theirs (a run holding the latest result of a test is always kept).</summary>
-public sealed record DeliveryPruneResult(int AttemptsPruned, int ActivityLogsCleared, int AssertionRunsPruned);
 
 /// <summary>
 /// The delivery ledger's API: what each flow delivered (records, their history, their submissions), the audit trail
@@ -695,7 +686,6 @@ public static class DeliveryEndpoints
         DeliveryRemovalEndpoints.MapWrites(delivery);
         delivery.MapPost("/records/{flowId:guid}/{key:guid}/lift-removal", LiftRemovalAsync).WithName("LiftDeliveryRecordRemoval");
         delivery.MapPost("/flows/{pipelineId:guid}/lift-removal", LiftFlowRemovalsAsync).WithName("LiftDeliveryFlowRemovals");
-        delivery.MapPost("/ledger/prune", PruneAsync).WithName("PruneDeliveryLedger").RequireAuthorization(ControlPlanePolicies.Admin);
 
         // Purging a partition cache's history: its preview, and the purge itself, an admin's.
         DeliveryCachePruneEndpoints.MapWrites(delivery);
@@ -3245,72 +3235,6 @@ public static class DeliveryEndpoints
         }
 
         return await TargetProbes.RunAsync(db, ledger, config, direct, engine, clock, loggers, flow, RequestActor.Label(user), ct).ConfigureAwait(false);
-    }
-
-    /// <summary>
-    /// The ledger's retention pass: everything the <c>osdu</c> schema grows without bound and a delivered record does not
-    /// have to stay reconstructible from, aged out at one cut-off. Attempts go through the ledger (the latest try of every
-    /// record is always kept, so a record's last outcome stays explainable), the captured run log of settled activities
-    /// is cleared, which is the schema's only column with no ceiling at all, and the assertion results a later result of the
-    /// same test superseded go, with the runs left holding none (every test's latest result stays). No row of the audit
-    /// trail is deleted: who did what, when, with which parameters and to what outcome is what the traceability rule keeps.
-    /// </summary>
-    private static async Task<Results<Ok<DeliveryPruneResult>, ProblemHttpResult>> PruneAsync(
-        DeliveryPruneRequest request, ILedger ledger, OsduDbContext osdu, TimeProvider clock, CancellationToken ct)
-    {
-        if (request is null || request.OlderThanDays < 1)
-        {
-            return TypedResults.Problem(detail: "olderThanDays must be at least 1.", statusCode: StatusCodes.Status400BadRequest, title: "Invalid request");
-        }
-
-        var olderThanUtc = clock.GetUtcNow().UtcDateTime.AddDays(-request.OlderThanDays);
-        var pruned = await ledger.PruneAttemptsAsync(olderThanUtc, ct).ConfigureAwait(false);
-        var cleared = await ClearActivityLogsAsync(osdu, olderThanUtc, ct).ConfigureAwait(false);
-        var reports = await ledger.PruneAssertionRunsAsync(olderThanUtc, ct).ConfigureAwait(false);
-        return TypedResults.Ok(new DeliveryPruneResult(pruned, cleared, reports));
-    }
-
-    /// <summary>
-    /// The most activities one statement clears the log of. Each batch is its own short statement, so clearing years of
-    /// logs never holds a long lock on the table every run appends an activity to, and never takes enough row locks for
-    /// SQL Server to lock the whole table instead.
-    /// </summary>
-    private const int ActivityLogBatch = 1_000;
-
-    /// <summary>
-    /// Clears the captured log of every activity that started before <paramref name="olderThanUtc"/> and has finished,
-    /// and answers how many it cleared. The row stays: its flow, kind, actor, parameters, times, outcome and summary are
-    /// the audit trail, and a record's own history is its attempts. Only the free-text log goes, which is the one thing in
-    /// the schema with no ceiling per row beyond 200,000 characters and no lifecycle of its own. An activity still running
-    /// is left alone, whatever its age, because its log is not written until it completes.
-    /// </summary>
-    private static async Task<int> ClearActivityLogsAsync(OsduDbContext osdu, DateTime olderThanUtc, CancellationToken ct)
-    {
-        var cleared = 0;
-        while (true)
-        {
-            ct.ThrowIfCancellationRequested();
-            var batch = await osdu.DeliveryActivities.AsNoTracking()
-                .Where(a => a.StartedUtc < olderThanUtc && a.CompletedUtc != null && a.Log != null)
-                .OrderBy(a => a.StartedUtc)
-                .Select(a => a.ActivityId)
-                .Take(ActivityLogBatch)
-                .ToListAsync(ct)
-                .ConfigureAwait(false);
-            if (batch.Count == 0)
-            {
-                return cleared;
-            }
-
-            cleared += await osdu.DeliveryActivities
-                .Where(a => batch.Contains(a.ActivityId))
-                .ExecuteUpdateAsync(s => s.SetProperty(a => a.Log, (string?)null), ct)
-                .ConfigureAwait(false);
-            if (batch.Count < ActivityLogBatch)
-            {
-                return cleared;
-            }
-        }
     }
 
     // ---- Plumbing ------------------------------------------------------------------------------------------------

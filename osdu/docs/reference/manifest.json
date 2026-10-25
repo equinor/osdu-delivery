@@ -1223,23 +1223,22 @@
       "path": "concepts/availability-and-retention.md",
       "title": "Availability, recovery, retention and backup of the delivery ledger, and the size ceilings to set",
       "type": "concept",
-      "summary": "What keeps delivering when the control plane or a node stops, how deliveries recover, what may be pruned, what a backup must hold, and the size limits.",
+      "summary": "What keeps delivering when the control plane or a node stops, how deliveries recover, what a backup must hold, and the size limits to set.",
       "keywords": [
         "availability",
         "recovery",
         "outage",
         "retention",
-        "prune attempts",
-        "ledger prune",
+        "maintenance",
         "backup",
         "restore",
         "size ceiling",
         "maxRequestBodyBytes",
         "lease recovery",
-        "schema version",
-        "olderThanDays"
+        "schema version"
       ],
       "related": [
+        "delivery-concept-storage-and-retention",
         "delivery-concept-ledger",
         "delivery-concept-submissions",
         "delivery-concept-control-plane",
@@ -2625,6 +2624,51 @@
         "osdu/gui/src/features/delivery/explorer/explorerTerms.ts",
         "osdu/gui/src/features/delivery/explorer/ExplorerFilterEditor.tsx",
         "osdu/gui/src/features/delivery/explorer/explorerHeld.ts"
+      ]
+    },
+    {
+      "id": "delivery-concept-storage-and-retention",
+      "corpus": "reference",
+      "path": "concepts/storage-and-retention.md",
+      "title": "What the osdu schema stores, what is kept, and what may be removed",
+      "type": "concept",
+      "summary": "The osdu schema's storage areas on the Maintenance page: what each holds, which are kept, which clean themselves, and the three cleanups an admin may set.",
+      "keywords": [
+        "maintenance",
+        "storage",
+        "retention",
+        "cleanup",
+        "delivery attempts",
+        "activity logs",
+        "assertion runs",
+        "safe to remove",
+        "optional",
+        "osdu.attempts",
+        "osdu.activity-logs",
+        "osdu.assertion-runs",
+        "database size"
+      ],
+      "related": [
+        "delivery-concept-availability-and-retention",
+        "delivery-concept-database",
+        "delivery-concept-ledger",
+        "delivery-concept-partition-cache",
+        "delivery-concept-dimension-tables",
+        "concept-maintenance"
+      ],
+      "sourceRefs": [
+        "osdu/src/SqlFlow.Delivery.ControlPlane/Maintenance/OsduStorageContributor.cs",
+        "osdu/src/SqlFlow.Delivery.ControlPlane/DeliveryControlPlaneModule.cs",
+        "osdu/src/SqlFlow.Delivery/Ledger/ILedger.cs",
+        "osdu/src/SqlFlow.Delivery/Ledger/OsduLedger.cs",
+        "osdu/src/SqlFlow.Delivery/Ledger/OsduLedger.Assertions.cs",
+        "osdu/src/SqlFlow.Delivery/Ledger/SqlServerLedgerBulk.Reversals.cs",
+        "osdu/src/SqlFlow.Delivery/Snapshots/CacheRetention.cs",
+        "osdu/src/SqlFlow.Delivery/Ledger/InventorySelections.cs",
+        "osdu/src/SqlFlow.Delivery/Ledger/DimensionTables.cs",
+        "osdu/src/SqlFlow.Delivery/Ledger/InventoryDuplicateTable.cs",
+        "osdu/tests/SqlFlow.Delivery.ControlPlane.Tests/OsduStorageAreasTests.cs",
+        "sqlflow/src/SqlFlow.ControlPlane/Maintenance/StorageArea.cs"
       ]
     },
     {
@@ -5070,7 +5114,8 @@
         "delivery-cli-records",
         "delivery-cli-run",
         "delivery-concept-run-trace-and-metrics",
-        "delivery-concept-availability-and-retention"
+        "delivery-concept-availability-and-retention",
+        "delivery-concept-storage-and-retention"
       ],
       "sourceRefs": [
         "osdu/src/SqlFlow.Delivery.Cli/DeliveryCliModule.cs",
@@ -7440,7 +7485,7 @@
       "path": "decisions/0005-ledger-retention.md",
       "title": "Decision 0005: attempts are pruned by age, keeping the latest per record",
       "type": "decision",
-      "summary": "Why the ledger's attempt history is pruned by age while every record keeps its latest attempt.",
+      "summary": "Why the ledger's attempt history may be pruned by age while every record keeps its latest attempt.",
       "keywords": [
         "retention",
         "attempts",
@@ -7448,7 +7493,9 @@
         "ledger size",
         "history"
       ],
-      "related": [],
+      "related": [
+        "delivery-wiki-0029-storage-maintenance"
+      ],
       "sourceRefs": []
     },
     {
@@ -8098,6 +8145,44 @@
         "osdu/gui/src/features/delivery/OrphanedLedgersPage.tsx",
         "sqlflow/src/SqlFlow.Catalog/CatalogSync.cs",
         "sqlflow/src/SqlFlow.Catalog/CatalogSyncExtension.cs"
+      ]
+    },
+    {
+      "id": "delivery-wiki-0029-storage-maintenance",
+      "corpus": "wiki",
+      "path": "decisions/0029-storage-maintenance.md",
+      "title": "Decision 0029: one Maintenance page accounts for the whole database, each part kept, safe to remove or optional",
+      "type": "decision",
+      "summary": "Why the osdu schema is described on SQLFlow's Maintenance page, why each area has one of three verdicts, and why nothing is removed until an admin sets a limit.",
+      "keywords": [
+        "maintenance",
+        "storage areas",
+        "retention",
+        "safe to remove",
+        "optional",
+        "keep",
+        "attempt prune",
+        "statistics"
+      ],
+      "related": [
+        "delivery-wiki-0005-ledger-retention"
+      ],
+      "sourceRefs": [
+        "sqlflow/src/SqlFlow.ControlPlane/Maintenance/StorageArea.cs",
+        "sqlflow/src/SqlFlow.ControlPlane/Maintenance/CatalogStorageContributor.cs",
+        "sqlflow/src/SqlFlow.ControlPlane/Maintenance/MaintenanceRunner.cs",
+        "sqlflow/src/SqlFlow.ControlPlane/Maintenance/StorageReport.cs",
+        "sqlflow/src/SqlFlow.ControlPlane/Api/MaintenanceEndpoints.cs",
+        "sqlflow/src/SqlFlow.Catalog/MaintenanceStore.cs",
+        "sqlflow/src/SqlFlow.Catalog/RunTraceStore.cs",
+        "sqlflow/gui/src/features/maintenance/MaintenancePage.tsx",
+        "sqlflow/gui/src/features/maintenance/StorageAreaSheet.tsx",
+        "osdu/src/SqlFlow.Delivery.ControlPlane/Maintenance/OsduStorageContributor.cs",
+        "osdu/src/SqlFlow.Delivery/Ledger/OsduLedger.cs",
+        "osdu/src/SqlFlow.Delivery/Ledger/OsduLedger.Assertions.cs",
+        "osdu/src/SqlFlow.Delivery/Ledger/SqlServerLedgerBulk.Reversals.cs",
+        "osdu/src/SqlFlow.Delivery/Engine/Assertions/TestResult.cs",
+        "osdu/tests/SqlFlow.Delivery.ControlPlane.Tests/OsduStorageAreasTests.cs"
       ]
     },
     {

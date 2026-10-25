@@ -67,7 +67,7 @@ remove records from OSDU, delete a flow's ledger, approve cache changes, probe a
 
 | Policy | Delivery routes behind it |
 | --- | --- |
-| `admin` (the `admin` scope) | Setting and removing central configuration properties (`PUT`, `DELETE /config/{name}`); registering, describing, defaulting and removing partitions; the ledger's retention pass (`POST /ledger/prune`); removing a dimension (`DELETE /dimensions/{id}`). |
+| `admin` (the `admin` scope) | Setting and removing central configuration properties (`PUT`, `DELETE /config/{name}`); registering, describing, defaulting and removing partitions; removing a dimension (`DELETE /dimensions/{id}`). |
 | `author` (any signed-in user) | Refining, resetting, deleting and restoring search terms. |
 | `operate` (any signed-in user) | Every intervention, every removal, every in-process read of OSDU or the source, the explorer, value checks, reversals, ledger deletion, the data definitions sync. |
 | `read` (any signed-in user) | Every listing and detail of the ledger, mappings, templates, caches, partitions, configuration, assertions, dimensions and inventories. |

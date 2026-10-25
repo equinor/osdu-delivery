@@ -34,8 +34,8 @@ One row per run and per operator intervention, never deleted: who did what, when
 for one record names it on its row; one that reaches many records names each in
 [`osdu.ActivityRecord`](activity-record.md), so a record's history holds every request that reached it.
 
-The row is never pruned. Its captured run log is cleared by age once the activity has finished
-([Availability and retention](../concepts/availability-and-retention.md#retention)).
+The row is never removed. Its captured run log is cleared once the activity has finished and an admin has set a limit
+for the activity logs on the Maintenance page ([What the osdu schema stores](../concepts/storage-and-retention.md)).
 
 ## Columns
 

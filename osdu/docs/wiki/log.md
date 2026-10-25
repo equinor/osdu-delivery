@@ -423,3 +423,16 @@ Amended [0028](decisions/0028-renamed-pipelines-move-their-ledger.md): the hash 
 moves once it committed and reporting them, missing documents taken over by hand on the Orphaned ledgers page, and the
 alternatives rejected (pairing a pre-hash rename by shared delivery keys, dropping the hash, matching records, runs that
 move ledgers).
+
+## [2026-10-25] ingest | Storage maintenance on one page, decision 0029, decision 0005 amended
+
+Read the maintenance code of both sides (SQLFlow's `StorageArea`, `CatalogStorageContributor`, `MaintenanceRunner`,
+`StorageReport`, `MaintenanceEndpoints`, `MaintenanceStore`, `RunTraceStore`; the module's `OsduStorageContributor` and
+the ledger's count and prune methods), the reversal SQL that reads an attempt's result, the assertion report's reading of
+a result's detail, and a measure of a development estate's tables. Wrote [0029](decisions/0029-storage-maintenance.md):
+one page for the whole database through one contract, three verdicts, nothing removed until an admin sets a limit, the
+ledger's prune split into three optional areas, the run trace's keep rule for statements and events, admin-only writes
+and a cleanup log, with the alternatives rejected (a page of the module's own, a 90-day default, purge-all, clearing
+assertion detail, a limit for every growing history, contributors storing their own limits). Amended
+[0005](decisions/0005-ledger-retention.md): the route it proposed is gone and its cadence with it. The reference holds the
+areas themselves ([What the osdu schema stores](../reference/concepts/storage-and-retention.md)).

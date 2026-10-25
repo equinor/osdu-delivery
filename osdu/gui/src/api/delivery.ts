@@ -989,15 +989,6 @@ export interface DeliveryRedeliverResult {
   runId: string | null;
 }
 
-export interface DeliveryPruneResult {
-  /** Delivery tries deleted; the latest try of every record is always kept. */
-  attemptsPruned: number;
-  /** Activities whose captured run log was cleared. The audit row itself is never deleted. */
-  activityLogsCleared: number;
-  /** Assertion runs whose every result a later one superseded; the latest result of every test is always kept. */
-  assertionRunsPruned: number;
-}
-
 export interface DeliveryRecordListQuery extends PageQuery {
   /** Which interface of the source the records are of. Required when the source delivers more than one. */
   interface?: string;
@@ -4163,7 +4154,6 @@ export const deliveryApi = {
   /** A page of a reversal's records, every one or those of one outcome (`pending` for those not settled yet). */
   reversalRecords: (reversalId: number, query: { outcome?: string; after?: string; limit?: number } = {}) =>
     get<DeliveryReversalItemPage>(`/api/v1/delivery/reversals/${reversalId}/records`, query),
-  prune: (olderThanDays: number) => post<DeliveryPruneResult>("/api/v1/delivery/ledger/prune", { olderThanDays }),
   /** The missing documents with a ledger in `partition`, else the workbench's, else in any partition, each with who can take it over. */
   orphanedDocuments: (partition?: string | null) =>
     get<OrphanedDocument[]>("/api/v1/delivery/ledgers/orphaned", partition ? { partition } : {}),

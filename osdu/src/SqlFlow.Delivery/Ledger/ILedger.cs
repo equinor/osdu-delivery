@@ -3145,6 +3145,19 @@ public interface ILedger
     /// <summary>Removes attempts older than the cut-off, keeping the latest attempt of every flow's record.</summary>
     Task<int> PruneAttemptsAsync(DateTime olderThanUtc, CancellationToken ct = default);
 
+    /// <summary>How many attempts <see cref="PruneAttemptsAsync"/> would remove at the cut-off; changes nothing.</summary>
+    Task<long> CountPrunableAttemptsAsync(DateTime olderThanUtc, CancellationToken ct = default);
+
+    /// <summary>
+    /// Clears the captured log of every activity that started before the cut-off and has finished, and answers how many it
+    /// cleared. The activity stays: who did what, when, with which inputs, its outcome and summary. An activity still running
+    /// keeps its log, whatever its age, since it is written when the activity completes.
+    /// </summary>
+    Task<int> ClearActivityLogsAsync(DateTime olderThanUtc, CancellationToken ct = default);
+
+    /// <summary>How many logs <see cref="ClearActivityLogsAsync"/> would clear at the cut-off; changes nothing.</summary>
+    Task<long> CountActivityLogsAsync(DateTime olderThanUtc, CancellationToken ct = default);
+
     /// <summary>Opens the row of a retrieval run and returns it with its id.</summary>
     Task<RetrievalState> StartRetrievalAsync(RetrievalState retrieval, CancellationToken ct = default);
 
@@ -3194,6 +3207,9 @@ public interface ILedger
     /// test's latest result stays however old, so a board always shows where each test stands. Returns the runs removed.
     /// </summary>
     Task<int> PruneAssertionRunsAsync(DateTime olderThanUtc, CancellationToken ct = default);
+
+    /// <summary>How many runs <see cref="PruneAssertionRunsAsync"/> would remove at the cut-off; changes nothing.</summary>
+    Task<long> CountPrunableAssertionRunsAsync(DateTime olderThanUtc, CancellationToken ct = default);
 
     /// <summary>
     /// Registers a dimension a build is about to read (its declaration as the build reads it, in the ledger the build

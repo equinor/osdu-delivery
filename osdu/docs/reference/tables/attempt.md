@@ -37,8 +37,9 @@ nothing was sent: a hold at render time, a stale or identical row, a removal, a 
 found. A record's history is its attempts, newest first ([The delivery ledger](../concepts/ledger.md)). An attempt keeps
 the ingestion row its document was built from, because the record's own origin columns move on with later versions.
 
-Pruned by age, and only where a later attempt of the same record exists, so every record's last outcome stays
-explainable ([Availability and retention](../concepts/availability-and-retention.md#retention)). Its primary key and its
+Kept until an admin sets a limit for the delivery attempts on the Maintenance page; a cleanup then removes attempts
+older than the limit, and only where a later attempt of the same record exists, so every record's last outcome stays
+explainable ([What the osdu schema stores](../concepts/storage-and-retention.md)). Its primary key and its
 `StartedUtc` index grow at their end and are set to `OPTIMIZE_FOR_SEQUENTIAL_KEY` by migration `LedgerPartitions` where
 the server has it (SQL Server 2019 and later, Azure SQL), since every drain appends at their end.
 
@@ -85,6 +86,7 @@ the server has it (SQL Server 2019 and later, Azure SQL), since every drain appe
   removals, restores, reversals and undos, always in the transaction that changes the record it explains
   (`OsduLedger.cs`, `SqlServerLedgerBulk.cs`).
 - **Read** by a record's Timeline, `sqlflow records show --attempts`, the delivery API's `/attempts` route, a
-  submission's counts when it closes, a run's record listing, and the prune (`POST /api/v1/delivery/ledger/prune`).
+  submission's counts when it closes, a run's record listing, a reversal (what OSDU held before), and the Maintenance page's count and cleanup of the
+  delivery attempts (`OsduLedger.CountPrunableAttemptsAsync`, `PruneAttemptsAsync`).
 - **Rewritten** by a ledger move (`OsduLedger.Moves.cs`), which puts the rows of an old ledger under the
   identity of the flow that replaced it or took it over, a slice at a time ([Renaming a pipeline](../concepts/renaming-a-pipeline.md)).

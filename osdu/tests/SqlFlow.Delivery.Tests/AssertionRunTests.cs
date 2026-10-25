@@ -463,6 +463,7 @@ public sealed class AssertionRunTests : IDisposable
         // Pruning takes a run whole once a later result superseded every one of its results: the first run still holds the
         // latest result of wellbores, so it stays, and its report stays whole, the superseded result of names included.
         _clock.Advance(TimeSpan.FromDays(10));
+        Assert.Equal(0, await ledger.CountPrunableAssertionRunsAsync(_clock.GetUtcNow().UtcDateTime));
         var pruned = await ledger.PruneAssertionRunsAsync(_clock.GetUtcNow().UtcDateTime);
         Assert.Equal(0, pruned);
         var afterFirst = (await ledger.ListAssertionResultsAsync(first.AssertionRunId)).Select(r => r.TestName).ToList();
@@ -470,7 +471,10 @@ public sealed class AssertionRunTests : IDisposable
         Assert.Contains("wellbores", afterFirst);
         var third = await runner.TestAsync([], [], Guid.NewGuid(), "tests", CancellationToken.None);
         _clock.Advance(TimeSpan.FromDays(10));
+        // The Maintenance page's count is the prune's own test: it says exactly what the prune then takes.
+        Assert.Equal(2, await ledger.CountPrunableAssertionRunsAsync(_clock.GetUtcNow().UtcDateTime));
         Assert.Equal(2, await ledger.PruneAssertionRunsAsync(_clock.GetUtcNow().UtcDateTime));
+        Assert.Equal(0, await ledger.CountPrunableAssertionRunsAsync(_clock.GetUtcNow().UtcDateTime));
         Assert.Equal([third.AssertionRunId], (await ledger.ListAssertionRunsAsync(flow.LedgerId, 10)).Select(r => r.AssertionRunId));
     }
 

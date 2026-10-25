@@ -73,7 +73,8 @@ other packages adopt the same contract.
   an update keeps the properties a DDMS or External Data Services writes into a record, and leaves them out of
   the hash.
 - [0005: attempts are pruned by age, keeping the latest per record](decisions/0005-ledger-retention.md) - why
-  the ledger's attempt history is pruned by age while every record keeps its latest attempt.
+  the ledger's attempt history may be pruned by age while every record keeps its latest attempt; amended by 0029, which
+  makes the prune an optional area of the Maintenance page, off until an admin sets a limit.
 - [0006: rendered documents live in work batch files, not in the ledger](decisions/0006-work-batches.md) - why
   rendered documents are written to work batch files the ledger points at, and how large submissions fan out.
 - [0007: manifest datasets take ids derived from their record's id](decisions/0007-manifest-dataset-ids.md) -
@@ -145,6 +146,11 @@ other packages adopt the same contract.
   renamed file, a copy made by mistake), why the sync makes its moves once it committed, why a flow renamed and changed,
   deleted and added back, or renamed before hashes were recorded is a missing document a person has a declared flow take
   over, and why neither a guess by shared keys nor dropping the hash was chosen.
+- [0029: one Maintenance page accounts for the whole database](decisions/0029-storage-maintenance.md) - why the `osdu`
+  schema is described on SQLFlow's Maintenance page through one contract, why every area is kept, safe to remove or
+  optional, why nothing is removed until an admin sets a limit (statistics read further back than 90 days), why the
+  ledger's prune became three optional areas, and why purge-all, a page of the module's own and cleared assertion detail
+  were rejected.
 
 ## Coverage
 

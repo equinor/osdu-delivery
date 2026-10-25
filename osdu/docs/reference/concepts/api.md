@@ -409,7 +409,7 @@ again is an intervention (`POST /flows/{pipelineId}/lift-removal`, [Intervention
 
 | Route | Policy | Parameters | Answers |
 | --- | --- | --- | --- |
-| `POST /ledger/prune` | admin | body `olderThanDays` (at least 1) | The retention pass at one cut-off: attempts aged out (the latest of every record kept), captured run logs of settled activities cleared, superseded assertion runs removed. No audit row is deleted. |
+| `GET /api/v1/maintenance/storage` and the routes under `/api/v1/maintenance/areas/{areaId}` | read, operate, admin | SQLFlow's [Maintenance](../../../../sqlflow/docs/reference/concepts/maintenance.md) routes | The `osdu` schema's storage areas beside SQLFlow's; the three that take a limit are `osdu.attempts`, `osdu.activity-logs` and `osdu.assertion-runs` ([What the osdu schema stores](storage-and-retention.md)). The module's own retention pass, `POST /ledger/prune`, is gone. |
 
 ## Running an OSDU flow, and search
 

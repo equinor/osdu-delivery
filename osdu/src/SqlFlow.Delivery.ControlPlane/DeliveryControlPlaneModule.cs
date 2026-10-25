@@ -93,6 +93,11 @@ public sealed class DeliveryControlPlaneModule : IControlPlaneModule
         // The delivery records category of the control plane's search: resolved per request, beside the built-in ones.
         services.Services.AddScoped<ISearchContributor, RecordSearchContributor>();
 
+        // The osdu schema's storage areas on the Maintenance page, beside SQLFlow's own: what each holds, what may be removed
+        // and why, and the three optional cleanups (superseded attempts, finished activities' logs, superseded assertion runs)
+        // the automatic cleanup applies once an admin sets how long they stay.
+        services.AddStorageContributor<Maintenance.OsduStorageContributor>();
+
         // The OSDU data definitions (the Open Group's public repository of OSDU schemas) the Templates page browses and
         // downloads template files from, kept as a local copy: each release downloaded once as one archive and read from disk
         // after that, the release list read again when it is older than RefreshMinutes or when someone syncs.

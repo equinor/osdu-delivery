@@ -212,6 +212,20 @@ public sealed partial class OsduLedger
         return rows.Select(ToState).ToList();
     }
 
+    public async Task<long> CountPrunableAssertionRunsAsync(DateTime olderThanUtc, CancellationToken ct = default)
+    {
+        await using var db = Open();
+        // The prune's own test, as one query: a finished run started before the cut-off none of whose results is the latest
+        // of its test.
+        return await db.DeliveryAssertionRuns
+            .Where(r => r.StartedUtc < olderThanUtc && r.Status != AssertionRunStatus.Running
+                && !db.DeliveryAssertionResults.Any(x => x.PartitionId == r.PartitionId && x.AssertionRunId == r.AssertionRunId
+                    && !db.DeliveryAssertionResults.Any(b => b.PartitionId == x.PartitionId && b.FlowId == x.FlowId && b.TestName == x.TestName
+                        && b.AssertionRunId > x.AssertionRunId && (b.Outcome != TestOutcomes.Skipped || x.Outcome == TestOutcomes.Skipped))))
+            .LongCountAsync(ct)
+            .ConfigureAwait(false);
+    }
+
     public async Task<int> PruneAssertionRunsAsync(DateTime olderThanUtc, CancellationToken ct = default)
     {
         var removed = 0;

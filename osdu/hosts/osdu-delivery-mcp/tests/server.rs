@@ -1549,7 +1549,7 @@ async fn no_tool_of_the_server_reads_or_removes_what_osdu_holds() {
     let data_routes = [
         "/read\"", "/source\"", "/preview", "/scope-values", "/check-values", "/osdu/read", "/osdu/validate", "/cache/items", "/cache/diff",
         "/cache/gaps", "/values", "/keys\"", "/table\"", "/export", "/dimensions/search", "/filter\"", "records/remove", "/delete\"",
-        "/ledger/prune", "/explorer/",
+        "/maintenance/", "/explorer/",
     ];
     for entry in std::fs::read_dir(&sources).expect("the tools folder") {
         let path = entry.expect("an entry").path();

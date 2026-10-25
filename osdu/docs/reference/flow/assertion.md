@@ -712,9 +712,10 @@ Where to read it:
   in the partition `?partition=` names, else the `X-Osdu-Partition` header's, else the one a run would test.
 
 A report renders as JSON, Markdown, self-contained HTML or JUnit XML (a suite per kind, a case per test: failed is a
-failure, errored an error, skipped skipped, warned passes with its warnings in its output). The retention pass
-(`POST /api/v1/delivery/ledger/prune`) removes a finished run older than its cut-off only whole, once a later result of
-each of its tests superseded it, so every test's latest result stays.
+failure, errored an error, skipped skipped, warned passes with its warnings in its output). Runs stay until an admin sets a
+limit for the assertion runs on the Maintenance page; a cleanup then removes a finished run older than its cut-off only
+whole, once a later result of each of its tests superseded it, so every test's latest result stays
+([What the osdu schema stores](../concepts/storage-and-retention.md)).
 
 ## Lineage
 

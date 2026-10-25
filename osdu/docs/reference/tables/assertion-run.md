@@ -31,8 +31,9 @@ out, and who asked. Each test's result is a row of [`osdu.AssertionResult`](asse
 test finishes, so a long run shows its progress and a stopped one keeps what it found. An assertion flow keeps its ledger
 in the partition (kind `assertion`).
 
-Pruned by age, a run whole, and only once later results of the same tests superseded every one of its results, so every
-test's latest result stays ([Availability and retention](../concepts/availability-and-retention.md#retention)).
+Kept until an admin sets a limit for the assertion runs on the Maintenance page; a cleanup then removes a run whole, and
+only once later results of the same tests superseded every one of its results, so every test's latest result stays
+([What the osdu schema stores](../concepts/storage-and-retention.md)).
 
 ## Columns
 
@@ -69,7 +70,8 @@ test's latest result stays ([Availability and retention](../concepts/availabilit
 ## Written and read by
 
 - **Written** by the assertion runner as a run opens and as its results close it (`AssertionRunner.cs`, through
-  `OsduLedger.Assertions.cs`), and pruned by `POST /api/v1/delivery/ledger/prune`.
+  `OsduLedger.Assertions.cs`), and counted and removed by the Maintenance page's cleanup of the assertion runs
+  (`CountPrunableAssertionRunsAsync`, `PruneAssertionRunsAsync`).
 - **Read** by the GUI's **Assertions** board and an assertion flow's **Reports** tab, `sqlflow assertions`, and the
   delivery API's `/flows/{pipelineId}/assertion-runs`, `/assertion-runs/{id}` and `/assertion-runs/{id}/report`.
 - **Rewritten** by a ledger move (`OsduLedger.Moves.cs`), which puts the rows of an old ledger under the identity of the
