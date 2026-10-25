@@ -98,7 +98,7 @@ The intake reads one **selection** of the ingestion tables, recorded on the subm
 | --- | --- | --- |
 | `incremental` | An ordinary run of a scope that has a watermark | The rows changed after the scope's watermark, less `source.incremental.overlapSeconds`. |
 | `full` | The scope has no watermark yet, a `replan`, or the mapping, template or parameters changed since the watermark was written | Every row of the scope. |
-| `keys` | A run scoped to records (`recordKeys`, at most 1,000), or the records the ledger asked to be planned again | Those records' rows, by their stored key tuples. |
+| `keys` | A run scoped to records (`recordKeys`, at most 1,000), a run of the first records of its scope (`maxRecords`, at most 1,000), or the records the ledger asked to be planned again | Those records' rows, by their stored key tuples; for `maxRecords`, by the keys of the scope's first rows in the order a read of it pages in, read from the ingestion tables, so a first run takes them too. |
 
 The **scope** is the flow's parameter set: one watermark per distinct set (`osdu.SourceWatermark`). A whole-scope plan
 (`incremental` or `full`) moves the watermark to the upper bound it read when its planning finishes, with every fan-out

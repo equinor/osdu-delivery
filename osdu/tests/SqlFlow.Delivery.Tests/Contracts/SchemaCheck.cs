@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using System.Globalization;
 using System.Text.Json;
 using System.Text.Json.Nodes;
@@ -12,7 +13,8 @@ namespace SqlFlow.Delivery.Tests;
 /// <c>readOnly</c> property is never required. <c>oneOf</c> passes when any alternative does: OSDU contracts list
 /// alternatives that overlap (a string or a pattern-restricted string), and a request that matches two of them is
 /// still one the service accepts. A contract defect the check cannot evaluate (a reference to nothing, a pattern .NET
-/// cannot compile) is noted, not reported as the request's fault.
+/// cannot compile) is noted, not reported as the request's fault. A contract is loaded once for the test process, so its
+/// check serves every test class running at once: what it keeps between checks (the patterns it compiled) is safe to share.
 /// </summary>
 internal sealed class SchemaCheck
 {
@@ -22,17 +24,19 @@ internal sealed class SchemaCheck
 
     private readonly JsonObject _document;
     private readonly bool _nullableKeyword;
-    private readonly ICollection<string> _notes;
-    private readonly Dictionary<string, Regex?> _patterns = new(StringComparer.Ordinal);
+    private readonly Action<string> _note;
+
+    // Each pattern is compiled once, however many checks ask for it at once, so one that does not compile is noted once.
+    private readonly ConcurrentDictionary<string, Lazy<Regex?>> _patterns = new(StringComparer.Ordinal);
 
     /// <param name="document">The whole contract, which <c>$ref</c> pointers resolve against.</param>
     /// <param name="nullableKeyword">True for OpenAPI 3.0 and Swagger 2.0 documents, where <c>nullable</c> admits null.</param>
-    /// <param name="notes">Where contract defects are noted.</param>
-    public SchemaCheck(JsonObject document, bool nullableKeyword, ICollection<string> notes)
+    /// <param name="note">Notes a contract defect; called by every check running at once, so it keeps its notes safely.</param>
+    public SchemaCheck(JsonObject document, bool nullableKeyword, Action<string> note)
     {
         _document = document;
         _nullableKeyword = nullableKeyword;
-        _notes = notes;
+        _note = note;
     }
 
     /// <summary>Resolves a local JSON pointer (<c>#/components/schemas/X</c>) in the contract; null when it names nothing.</summary>
@@ -40,7 +44,7 @@ internal sealed class SchemaCheck
     {
         if (!reference.StartsWith("#/", StringComparison.Ordinal))
         {
-            _notes.Add($"the reference '{reference}' is not local to the contract and is not checked");
+            _note($"the reference '{reference}' is not local to the contract and is not checked");
             return null;
         }
 
@@ -56,7 +60,7 @@ internal sealed class SchemaCheck
             };
             if (current is null)
             {
-                _notes.Add($"the reference '{reference}' names nothing in the contract");
+                _note($"the reference '{reference}' names nothing in the contract");
                 return null;
             }
         }
@@ -87,7 +91,7 @@ internal sealed class SchemaCheck
     {
         if (depth > MaxDepth)
         {
-            _notes.Add($"the schema at {path} nests deeper than {MaxDepth} levels and is not checked further");
+            _note($"the schema at {path} nests deeper than {MaxDepth} levels and is not checked further");
             return;
         }
 
@@ -103,7 +107,7 @@ internal sealed class SchemaCheck
 
                 return;
             case not JsonObject:
-                _notes.Add($"the schema at {path} is not an object");
+                _note($"the schema at {path} is not an object");
                 return;
         }
 
@@ -346,7 +350,7 @@ internal sealed class SchemaCheck
             }
             catch (RegexMatchTimeoutException)
             {
-                _notes.Add($"the pattern {pattern} at {path} took too long to evaluate and is not checked");
+                _note($"the pattern {pattern} at {path} took too long to evaluate and is not checked");
             }
         }
     }
@@ -391,25 +395,19 @@ internal sealed class SchemaCheck
     }
 
     private Regex? Pattern(string pattern)
-    {
-        if (_patterns.TryGetValue(pattern, out var known))
-        {
-            return known;
-        }
+        => _patterns.GetOrAdd(pattern, p => new Lazy<Regex?>(() => Compile(p), LazyThreadSafetyMode.ExecutionAndPublication)).Value;
 
-        Regex? compiled;
+    private Regex? Compile(string pattern)
+    {
         try
         {
-            compiled = new Regex(pattern, RegexOptions.CultureInvariant, PatternTimeout);
+            return new Regex(pattern, RegexOptions.CultureInvariant, PatternTimeout);
         }
         catch (ArgumentException ex)
         {
-            _notes.Add($"the pattern {pattern} does not compile ({ex.Message}) and is not checked");
-            compiled = null;
+            _note($"the pattern {pattern} does not compile ({ex.Message}) and is not checked");
+            return null;
         }
-
-        _patterns[pattern] = compiled;
-        return compiled;
     }
 
     private static IEnumerable<JsonNode?> Array(JsonObject? s, string keyword)

@@ -17,7 +17,10 @@ public enum SourceSelectionKind
     /// <summary>Every record in scope, whenever it last changed.</summary>
     Full,
 
-    /// <summary>Named records only, whenever they last changed: a redelivery, a release, a cache rollout or <c>--set recordKeys</c>.</summary>
+    /// <summary>
+    /// Named records only, whenever they last changed: a redelivery, a release, a cache rollout, a payload's <c>recordKeys</c>, or
+    /// the first records of the scope a payload's <c>maxRecords</c> reads.
+    /// </summary>
     Keys,
 }
 
@@ -39,6 +42,12 @@ public sealed record SourceSelection
     /// <summary>The records a <see cref="SourceSelectionKind.Keys"/> read is limited to.</summary>
     public IReadOnlyList<KeyTuple> Keys { get; init; } = [];
 
+    /// <summary>
+    /// For the first records of the scope (<see cref="FirstOfScope"/>), how many the run asked for, which the scope may hold
+    /// fewer of; null for every other selection.
+    /// </summary>
+    public int? FirstOf { get; init; }
+
     /// <summary>True when the selection covers the whole scope, which is what may move the flow's watermark.</summary>
     public bool CoversScope => Kind is SourceSelectionKind.Incremental or SourceSelectionKind.Full;
 
@@ -53,11 +62,31 @@ public sealed record SourceSelection
         return new SourceSelection { Kind = SourceSelectionKind.Keys, Keys = [.. keys] };
     }
 
+    /// <summary>
+    /// The first records of the scope, read by key: <paramref name="keys"/> are the first the scope holds, in the order a read
+    /// of it pages in, at most <paramref name="asked"/> of them. A read of named records, so it covers no scope and moves no
+    /// watermark.
+    /// </summary>
+    public static SourceSelection FirstOfScope(IReadOnlyList<KeyTuple> keys, int asked)
+    {
+        ArgumentNullException.ThrowIfNull(keys);
+        ArgumentOutOfRangeException.ThrowIfLessThan(asked, 1);
+        if (keys.Count > asked)
+        {
+            throw new ArgumentException($"The first {asked} record(s) of a scope are at most {asked} keys, not {keys.Count}.", nameof(keys));
+        }
+
+        return new SourceSelection { Kind = SourceSelectionKind.Keys, Keys = [.. keys], FirstOf = asked };
+    }
+
     /// <summary>One line for a log or a run outcome: what this read covers.</summary>
     public string Describe() => Kind switch
     {
         SourceSelectionKind.Incremental => LowerUtc is { } lower ? $"incremental since {lower:yyyy-MM-ddTHH:mm:ssZ}" : "incremental (no watermark yet)",
         SourceSelectionKind.Full => "full",
+        _ when FirstOf is { } asked => Keys.Count < asked
+            ? $"the first {asked} record(s) of the scope (maxRecords), of which it holds {Keys.Count}"
+            : $"the first {asked} record(s) of the scope (maxRecords)",
         _ => $"{Keys.Count} record key(s)",
     };
 }

@@ -317,6 +317,12 @@ public sealed record DeliveryRunPayload
 
     public const string RecordKeysProperty = "recordKeys";
 
+    /// <summary>
+    /// How many records a deliver, plan or intake run reads, the first of its scope (osdu/docs/reference/cli/run.md, A
+    /// delivery flow's payload): a smoke test of a flow on a few records before its whole scope goes.
+    /// </summary>
+    public const string MaxRecordsProperty = "maxRecords";
+
     public const string RedeliverProperty = "redeliver";
 
     public const string RerenderProperty = "rerender";
@@ -400,7 +406,7 @@ public sealed record DeliveryRunPayload
     public const int MaxRateShare = FlowParallelism.MaxNodes + 1;
 
     private static readonly string[] Properties =
-        [ForceProperty, SubmissionIdProperty, RunIdProperty, RecordKeysProperty, RedeliverProperty, RerenderProperty, SlicesProperty, RateShareProperty, InterfaceProperty, InterfacesProperty, ReferencesProperty,
+        [ForceProperty, SubmissionIdProperty, RunIdProperty, RecordKeysProperty, MaxRecordsProperty, RedeliverProperty, RerenderProperty, SlicesProperty, RateShareProperty, InterfaceProperty, InterfacesProperty, ReferencesProperty,
             PartitionReferencesProperty, ConfirmProperty, ScopeProperty, FilterProperty, PurgeLedgerProperty, TestsProperty, TagsProperty, DimensionsProperty, InventoriesProperty, RemovalProperty,
             SelectionProperty, DuplicateCheckProperty, TypesProperty, EntriesProperty, ApproveProperty];
 
@@ -414,6 +420,7 @@ public sealed record DeliveryRunPayload
         [SubmissionIdProperty] = "only a delivery flow's runs name a submission",
         [RunIdProperty] = "only a delivery flow's reverse run names the run it reverses",
         [RecordKeysProperty] = "only a delivery flow's runs are scoped to records",
+        [MaxRecordsProperty] = "only a delivery flow's runs read the first records of their scope",
         [RedeliverProperty] = "only a delivery flow's deliver runs send records again",
         [RerenderProperty] = "only a delivery flow's runs bring records up to date",
         [SlicesProperty] = "only a delivery flow's intake members plan slices",
@@ -438,7 +445,7 @@ public sealed record DeliveryRunPayload
 
     /// <summary>The properties a delivery flow's runs take, besides the central configuration; which operation takes which is <see cref="Validate"/>'s.</summary>
     private static readonly string[] DeliveryProperties =
-        [ForceProperty, SubmissionIdProperty, RunIdProperty, RecordKeysProperty, RedeliverProperty, RerenderProperty, SlicesProperty, RateShareProperty, InterfaceProperty, InterfacesProperty, ConfirmProperty,
+        [ForceProperty, SubmissionIdProperty, RunIdProperty, RecordKeysProperty, MaxRecordsProperty, RedeliverProperty, RerenderProperty, SlicesProperty, RateShareProperty, InterfaceProperty, InterfacesProperty, ConfirmProperty,
             ScopeProperty, FilterProperty, PurgeLedgerProperty];
 
     private static readonly string[] RemovalProperties = ["finding", "scope", "expected", "ids", "selection"];
@@ -465,6 +472,14 @@ public sealed record DeliveryRunPayload
 
     /// <summary>The delivery keys the run is scoped to.</summary>
     public IReadOnlyList<Guid> RecordKeys { get; init; } = [];
+
+    /// <summary>
+    /// How many records the run reads: the first of its scope, in the order a read of the scope pages in (the identity primary
+    /// key, or the record key without one), each planned as a run of every row would plan it. The run reads them by key, as a
+    /// run scoped to records does, so it leaves the scope's watermark where it is and a later run of the scope still reads
+    /// every row it would have. Null reads the scope as the run would without it.
+    /// </summary>
+    public int? MaxRecords { get; init; }
 
     /// <summary>
     /// What a deliver run sends again whatever the hashes say: all, the record, or its payload or a part of it. It applies to
@@ -623,6 +638,7 @@ public sealed record DeliveryRunPayload
         Add(SubmissionId is not null, SubmissionIdProperty);
         Add(RunId is not null, RunIdProperty);
         Add(RecordKeys.Count > 0, RecordKeysProperty);
+        Add(MaxRecords is not null, MaxRecordsProperty);
         Add(Redeliver is not null, RedeliverProperty);
         Add(Rerender, RerenderProperty);
         Add(Slices.Count > 0, SlicesProperty);
@@ -753,6 +769,7 @@ public sealed record DeliveryRunPayload
             SubmissionId = root[SubmissionIdProperty] is null ? null : Id(root[SubmissionIdProperty], SubmissionIdProperty),
             RunId = root[RunIdProperty] is null ? null : Id(root[RunIdProperty], RunIdProperty),
             RecordKeys = Keys(root[RecordKeysProperty]),
+            MaxRecords = root[MaxRecordsProperty] is null ? null : RecordCount(root[MaxRecordsProperty]),
             Redeliver = root[RedeliverProperty] is null ? null : Text(root[RedeliverProperty], RedeliverProperty),
             Rerender = Boolean(root, RerenderProperty),
             Slices = SliceList(root[SlicesProperty]),
@@ -888,6 +905,35 @@ public sealed record DeliveryRunPayload
             throw new SqlFlowException("payload names both a submissionId and recordKeys; a run works on a submission or is scoped to records, not both.");
         }
 
+        if (MaxRecords is { } max)
+        {
+            // A run of the first records of its scope is a run of the scope, which only these three read and plan.
+            if (operation is not (DeliveryOperations.Deliver or DeliveryOperations.Plan or DeliveryOperations.Intake))
+            {
+                throw new SqlFlowException(
+                    $"payload {MaxRecordsProperty} does not apply to the {operation} operation: only a deliver, plan or intake run reads the first records of its scope.");
+            }
+
+            if (max is < 1 or > MaxRecordKeys)
+            {
+                throw new SqlFlowException(string.Create(
+                    System.Globalization.CultureInfo.InvariantCulture,
+                    $"payload {MaxRecordsProperty} is {max}; a run reads the first 1 to {MaxRecordKeys:N0} records of its scope."));
+            }
+
+            if (RecordKeys.Count > 0)
+            {
+                throw new SqlFlowException(
+                    $"payload names both {RecordKeysProperty} and {MaxRecordsProperty}; a run reads the records it names or the first records of its scope, not both.");
+            }
+
+            if (SubmissionId is not null || Slices.Count > 0)
+            {
+                throw new SqlFlowException(
+                    $"payload names both {MaxRecordsProperty} and {(SubmissionId is not null ? SubmissionIdProperty : SlicesProperty)}; a run on a submission reads the rows that submission recorded, so only a run of the scope reads its first records.");
+            }
+        }
+
         RefuseOtherThan(FlowDefinition.FlowTypeName, DeliveryProperties);
 
         switch (operation)
@@ -902,6 +948,11 @@ public sealed record DeliveryRunPayload
                 Refuse(Rerender && SubmissionId is not null, RerenderProperty, operation, "a run on a submission delivers what that submission planned");
                 Refuse(Rerender && Redeliver is not null, RerenderProperty, operation,
                     "rerender sends what renders differently and redeliver sends whatever the hashes say; name one");
+                // Without recordKeys, both ask it of every record the flow has delivered, far beyond the first records the run reads.
+                Refuse(MaxRecords is not null && Redeliver is not null, RedeliverProperty, operation,
+                    "a run of the first records of its scope sends what they render; send records again by naming them in recordKeys");
+                Refuse(MaxRecords is not null && Rerender, RerenderProperty, operation,
+                    "a run of the first records of its scope renders them under the rules of now already; bring records up to date by naming them in recordKeys");
                 break;
             case DeliveryOperations.Plan:
                 Refuse(Slices.Count > 0, SlicesProperty, operation, "only a part of a split delivery names key slices");
@@ -1036,6 +1087,11 @@ public sealed record DeliveryRunPayload
         if (RecordKeys.Count > 0)
         {
             root[RecordKeysProperty] = new JsonArray(RecordKeys.Select(k => (JsonNode?)JsonValue.Create(k.ToString("D"))).ToArray());
+        }
+
+        if (MaxRecords is { } max)
+        {
+            root[MaxRecordsProperty] = max;
         }
 
         if (Redeliver is { } redeliver)
@@ -1222,6 +1278,12 @@ public sealed record DeliveryRunPayload
         => node is JsonValue value && value.TryGetValue<int>(out var share)
             ? share
             : throw new SqlFlowException($"payload {RateShareProperty} must be a whole number: how many runs of the fan-out share the rate limit.");
+
+    /// <summary>How many records a run reads, as the payload writes it: a whole number; <see cref="Validate"/> checks its range.</summary>
+    private static int RecordCount(JsonNode? node)
+        => node is JsonValue value && value.TryGetValue<int>(out var count)
+            ? count
+            : throw new SqlFlowException($"payload {MaxRecordsProperty} must be a whole number: how many of the first records of its scope the run reads.");
 
     /// <summary>A number a payload names something by, such as a selection: a whole number, at least 1.</summary>
     private static long Number(JsonNode? node, string property)

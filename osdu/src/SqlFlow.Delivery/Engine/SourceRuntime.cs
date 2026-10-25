@@ -520,7 +520,7 @@ public sealed class SourceRuntime
         await EmitAsync(flow, "interface.started", $"{operation} by the {route} route").ConfigureAwait(false);
 
         // What the run asked of the source applies to the interface as a run of it alone takes it.
-        var own = new DeliveryRunPayload { Force = payload.Force, Interface = flow.Interface, Confirm = payload.Confirm };
+        var own = new DeliveryRunPayload { Force = payload.Force, MaxRecords = payload.MaxRecords, Interface = flow.Interface, Confirm = payload.Confirm };
         try
         {
             var result = await DeliveryExecutor.GuardedAsync(

@@ -11,6 +11,7 @@ import { useAuth } from "@/auth/AuthContext";
 import type { TriggerBodyContribution, TriggerFieldsProps } from "@/modules/registry";
 import { deliveryApi, type DeliveryFlowScope, type DeliveryParameter } from "../../api/delivery";
 import { useActivePartition } from "./activePartition";
+import { firstRecordsField, firstRecordsOf, MAX_FIRST_RECORDS } from "./firstRecords";
 import { lines, parseValues, singleValue, valuesToLines } from "./runValues";
 import { ScopeParameterFields } from "./ScopeParameterFields";
 import { missingParameters, scopeValuesToSend, type ScopeFieldValues } from "./scopeValues";
@@ -157,7 +158,7 @@ function listed(names: readonly string[]): string {
 }
 
 /** The payload keys these fields own; anything else the run being repeated carried goes with it unchanged. */
-const OWNED_KEYS = new Set(["force", "submissionId", "recordKeys", "redeliver", "rerender", "interface", "interfaces", "types"]);
+const OWNED_KEYS = new Set(["force", "submissionId", "recordKeys", "maxRecords", "redeliver", "rerender", "interface", "interfaces", "types"]);
 
 const FORCE_HINTS: Record<string, string> = {
   delivery: "Look at every record even when no source row changed, re-plan a completed submission, verify records verified recently. A record that renders and hashes as it was delivered is still not sent: Send again does that.",
@@ -221,6 +222,8 @@ export function DeliveryTriggerFields({ flowKind, pipelineId, operation, initial
       ? initialPayload.recordKeys.filter((key): key is string => typeof key === "string").join("\n")
       : ""
   ));
+  // How many of the first records of its scope the run reads; empty reads the scope as it stands.
+  const [maxRecordsText, setMaxRecordsText] = useState(() => String(firstRecordsOf(initialPayload) ?? ""));
   const [redeliver, setRedeliver] = useState<SendAgain>(
     () => (initialPayload?.rerender === true ? "uptodate" : isRedeliverScope(initialPayload?.redeliver) ? initialPayload.redeliver : "changed"),
   );
@@ -257,6 +260,9 @@ export function DeliveryTriggerFields({ flowKind, pipelineId, operation, initial
   const takesForce = flowKind !== "cache" && !(deliveryKind && (effectiveOperation === "drain" || effectiveOperation === "sync"));
   const takesTypes = flowKind === "cache";
   const recordKeys = useMemo(() => lines(recordKeysText), [recordKeysText]);
+  // A run of the first records of its scope is a run of the scope, which only these three read and plan.
+  const takesMaxRecords = deliveryKind && (effectiveOperation === "deliver" || effectiveOperation === "plan" || effectiveOperation === "intake");
+  const firstRecords = useMemo(() => firstRecordsField(maxRecordsText), [maxRecordsText]);
   const takesRedeliver = deliveryKind && effectiveOperation === "deliver";
   // Records named by key are always sent again or brought up to date, so naming them makes "only what changed" everything.
   const sendAgain: SendAgain = recordKeys.length > 0 && redeliver === "changed" ? "all" : redeliver;
@@ -310,6 +316,14 @@ export function DeliveryTriggerFields({ flowKind, pipelineId, operation, initial
           ? "A run on a submission delivers what that submission planned; clear the submission, or set Send again to nothing."
           : takesRecordScope && recordKeys.some((key) => !UUID.test(key))
           ? "Every record key must be a UUID (one per line)."
+          : takesMaxRecords && firstRecords.error !== null
+            ? firstRecords.error
+            : takesMaxRecords && firstRecords.count !== null && takesRecordScope && recordKeys.length > 0
+              ? "A run reads the records it names or the first records of its scope, not both; clear the record keys or Records at most."
+              : takesMaxRecords && firstRecords.count !== null && takesSubmission && trimmedSubmission !== ""
+                ? "A run on a submission reads the rows that submission recorded; clear the submission or Records at most."
+                : takesMaxRecords && firstRecords.count !== null && takesRedeliver && sendAgain !== "changed"
+                  ? "A run of the first records of its scope sends what changed of them; set Send again to nothing, or name the records to send again."
           : takesInterfaces && interfaceNames.some((name) => !INTERFACE_NAME.test(name))
             ? "An interface's name is a letter, then letters, digits, '_' and '-' (one per line)."
             : takesInterfaces && new Set(interfaceNames).size !== interfaceNames.length
@@ -329,6 +343,10 @@ export function DeliveryTriggerFields({ flowKind, pipelineId, operation, initial
 
     if (takesRecordScope && recordKeys.length > 0) {
       payload.recordKeys = recordKeys;
+    }
+
+    if (takesMaxRecords && firstRecords.count !== null) {
+      payload.maxRecords = firstRecords.count;
     }
 
     if (takesRedeliver && sendAgain === "uptodate") {
@@ -358,6 +376,7 @@ export function DeliveryTriggerFields({ flowKind, pipelineId, operation, initial
   }, [
     carried, carriesLedgerWork, force, interfaceNames, movedFrom, partition, partitionError, recordKeys, sendAgain, submissionId, takesForce,
     takesInterfaces, takesRecordScope, takesRedeliver, takesSubmission, takesValues, valuesText, declared, fieldValues, takesTypes, typeNames, pickedTypes,
+    takesMaxRecords, firstRecords,
   ]);
 
   const toggleType = (name: string) => setPickedTypes((was) => {
@@ -471,6 +490,23 @@ export function DeliveryTriggerFields({ flowKind, pipelineId, operation, initial
           />
           <p className="text-xs text-muted-foreground">
             Values for the parameters the flow declares, one name=value per line; a name on several lines takes each value.
+          </p>
+        </div>
+      )}
+      {takesMaxRecords && (
+        <div className="flex flex-col gap-1.5">
+          <Label htmlFor={`${idPrefix}-max-records`}>Records at most</Label>
+          <Input
+            id={`${idPrefix}-max-records`}
+            className="h-8 w-32 font-mono"
+            inputMode="numeric"
+            placeholder="every record"
+            value={maxRecordsText}
+            onChange={(event) => setMaxRecordsText(event.target.value)}
+            data-testid="trigger-max-records"
+          />
+          <p className="text-xs text-muted-foreground">
+            {`Read only the first records of the scope, up to ${MAX_FIRST_RECORDS.toLocaleString()}, in the order the flow pages its rows in: a smoke test of the flow on a few records before its whole scope goes. The scope's watermark stays where it is, so the next run of the scope still reads every row; empty reads the scope as it stands.`}
           </p>
         </div>
       )}

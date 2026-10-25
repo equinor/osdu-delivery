@@ -359,7 +359,9 @@ public sealed class DeliveryExecutor : IFlowDocumentExecutor
         {
             runtime.SubmissionId = payload.SubmissionId;
             runtime.Slices = payload.Slices.Count > 0 ? payload.Slices : null;
-            selection = await SelectionAsync(context, flow, runtime.Parameters, runtime.Mapping.Context, operation, submission, keys, payload.Rerender, log, ct).ConfigureAwait(false);
+            selection = payload.MaxRecords is { } first
+                ? await FirstOfScopeAsync(runtime.Source, first, log, ct).ConfigureAwait(false)
+                : await SelectionAsync(context, flow, runtime.Parameters, runtime.Mapping.Context, operation, submission, keys, payload.Rerender, log, ct).ConfigureAwait(false);
             runtime.Selection = selection;
         }
 
@@ -548,6 +550,34 @@ public sealed class DeliveryExecutor : IFlowDocumentExecutor
         }
 
         return read.Selection;
+    }
+
+    /// <summary>
+    /// The first <paramref name="max"/> records of the run's scope (a payload's <c>maxRecords</c>), in the order a read of the
+    /// scope pages in, as a read of those records by key: it plans each as a run of every row would, and leaves the scope's
+    /// watermark and the records asked to be planned again for a run of the whole scope. The keys come from the ingestion
+    /// tables themselves, so the records need not be in the ledger yet, as a first run's are not.
+    /// </summary>
+    internal static async Task<SourceSelection> FirstOfScopeAsync(IIngestionSource source, int max, ILogger log, CancellationToken ct)
+    {
+        ArgumentNullException.ThrowIfNull(source);
+        ArgumentOutOfRangeException.ThrowIfLessThan(max, 1);
+        ArgumentNullException.ThrowIfNull(log);
+        var keys = new List<KeyTuple>(max);
+        await foreach (var key in source.ReadKeysAsync(max, ct).ConfigureAwait(false))
+        {
+            keys.Add(key.Key);
+            if (keys.Count == max)
+            {
+                break;
+            }
+        }
+
+        var selection = SourceSelection.FirstOfScope(keys, max);
+        log.LogInformation(
+            "maxRecords {Max}: this run reads {Selection}, by key, and leaves the scope's watermark where it is, so a run of the whole scope still reads every row.",
+            max, selection.Describe());
+        return selection;
     }
 
     /// <summary>

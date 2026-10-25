@@ -20,6 +20,9 @@ internal sealed partial class ApiContract
 {
     private readonly JsonObject _document;
     private readonly List<(ContractOperation Operation, Regex Pattern, int Literals)> _operations = [];
+    // The contract is loaded once for the test process and checked by every test class running at once, each of which may note
+    // a defect of it: the notes are kept under a lock and read as a copy.
+    private readonly object _notesGate = new();
     private readonly List<string> _notes = [];
     private readonly SchemaCheck _schemas;
 
@@ -30,7 +33,7 @@ internal sealed partial class ApiContract
         _document = document;
         IsSwagger2 = document["swagger"] is not null;
         var openApi = document["openapi"]?.GetValue<string>() ?? string.Empty;
-        _schemas = new SchemaCheck(document, nullableKeyword: IsSwagger2 || openApi.StartsWith("3.0", StringComparison.Ordinal), _notes);
+        _schemas = new SchemaCheck(document, nullableKeyword: IsSwagger2 || openApi.StartsWith("3.0", StringComparison.Ordinal), Note);
         BasePaths = ReadBasePaths(document);
         foreach (var (template, item) in document["paths"] as JsonObject ?? [])
         {
@@ -68,7 +71,24 @@ internal sealed partial class ApiContract
     public IEnumerable<ContractOperation> Operations => _operations.Select(o => o.Operation).Distinct();
 
     /// <summary>What the contract itself could not answer while checking (a broken reference, an uncompilable pattern).</summary>
-    public IReadOnlyList<string> Notes => _notes;
+    public IReadOnlyList<string> Notes
+    {
+        get
+        {
+            lock (_notesGate)
+            {
+                return [.. _notes];
+            }
+        }
+    }
+
+    private void Note(string note)
+    {
+        lock (_notesGate)
+        {
+            _notes.Add(note);
+        }
+    }
 
     public static ApiContract Load(string name, string file)
     {
@@ -84,9 +104,38 @@ internal sealed partial class ApiContract
             throw new InvalidOperationException($"The contract {file} does not parse: {ex.Message}", ex);
         }
 
-        return node is JsonObject document
-            ? new ApiContract(name, file, document)
-            : throw new InvalidOperationException($"The contract {file} is not an object.");
+        if (node is not JsonObject document)
+        {
+            throw new InvalidOperationException($"The contract {file} is not an object.");
+        }
+
+        Fill(document);
+        return new ApiContract(name, file, document);
+    }
+
+    /// <summary>
+    /// Reads every object and array of a parsed document once. A parsed node fills its children on its first read, and the
+    /// contract is read by every test class running at once, so it is filled whole here, before anything shares it.
+    /// </summary>
+    private static void Fill(JsonNode? node)
+    {
+        switch (node)
+        {
+            case JsonObject o:
+                foreach (var (_, child) in o)
+                {
+                    Fill(child);
+                }
+
+                break;
+            case JsonArray a:
+                foreach (var child in a)
+                {
+                    Fill(child);
+                }
+
+                break;
+        }
     }
 
     /// <summary>

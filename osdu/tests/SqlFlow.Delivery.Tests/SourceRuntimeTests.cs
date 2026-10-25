@@ -448,6 +448,28 @@ public sealed class SourceRuntimeTests : IDisposable
     }
 
     [Fact]
+    public async Task A_run_of_the_first_records_of_a_source_takes_the_first_of_each_interface_s_own_scope()
+    {
+        var source = Load(SourceYaml());
+        var engine = Engine(await EstateAsync());
+
+        var result = await RunAsync(engine, source, payload: new DeliveryRunPayload { MaxRecords = 1 });
+
+        Assert.True(result.Success, result.Error);
+        var outcome = Outcome(result);
+        Assert.Equal(["wellbores", "welllogs"], outcome.Interfaces.Select(i => i.Interface));
+        Assert.All(outcome.Interfaces, i => Assert.Equal("the first 1 record(s) of the scope (maxRecords)", Assert.IsType<DeliverOutcome>(i.Result).Selection));
+        Assert.Single(_protocols["wellbores"].Deliveries);
+        Assert.Single(_protocols["welllogs"].Deliveries);
+
+        // A run of the source afterwards delivers what each interface's first run left.
+        var whole = await RunAsync(engine, source);
+        Assert.True(whole.Success, whole.Error);
+        Assert.Equal(2, _protocols["wellbores"].Deliveries.Count);
+        Assert.Equal(5, _protocols["welllogs"].Deliveries.Count);
+    }
+
+    [Fact]
     public async Task A_source_runs_its_interfaces_in_the_order_their_mappings_refer_to_each_other()
     {
         // Nothing declares an order: the well log mapping fills osdu.data.WellboreID, which the template says refers to

@@ -404,8 +404,10 @@ partition the flow serves (`?partition=`) makes it the title bar's, so a link la
 
 The trigger dialog of these kinds adds the **Partition** a run writes to (the title bar's), **Flow parameters**, and per
 operation: **Force** and **Send again** (Nothing, What renders differently, or a part) for a deliver run, **Redeliver
-these records** (delivery keys), a submission to work on or drain, and the **Interfaces** of a source a run takes. See
-[running an OSDU flow](../cli/run.md) for the operations.
+these records** (delivery keys), **Records at most** for a deliver, plan or intake run (the first 1 to 1,000 records of
+the scope, `maxRecords`: a smoke test before the whole scope goes; the run's page shows it as a chip), a submission to
+work on or drain, and the **Interfaces** of a source a run takes. See [running an OSDU flow](../cli/run.md) for the
+operations.
 
 A run page gains, by kind:
 

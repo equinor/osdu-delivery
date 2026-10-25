@@ -100,7 +100,7 @@ watermark: the upper bound of the last whole-scope read that completed.
 | --- | --- |
 | The whole scope | The scope has no watermark yet (its first run), the rules moved since the watermark was written (the mapping, its content, the template or the parameter values: everything in the context but the cache version), a `replan` run, or a `plan` run with `rerender` |
 | The window `(watermark - overlapSeconds, now]` | Every other run. `now` is the source database's clock when the read opens, fixed for the whole read |
-| The records named | A run scoped to `recordKeys`, read by the key tuple the ledger stored |
+| The records named | A run scoped to `recordKeys`, read by the key tuple the ledger stored, or a run of the first records of its scope (`maxRecords`), read by the keys of the scope's first rows. Neither moves the watermark |
 | A submission's own window | A run that names a submission: a fan-out member, a re-run, a drain |
 
 In a window the candidates are:

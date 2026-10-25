@@ -29,6 +29,7 @@ public sealed class RunPayloadPerKindTests
         [DeliveryRunPayload.SubmissionIdProperty] = """{"submissionId":"0d1e6f3c-9a4b-4c1e-8e7a-2b3c4d5e6f70"}""",
         [DeliveryRunPayload.RunIdProperty] = """{"runId":"0d1e6f3c-9a4b-4c1e-8e7a-2b3c4d5e6f71"}""",
         [DeliveryRunPayload.RecordKeysProperty] = """{"recordKeys":["0d1e6f3c-9a4b-4c1e-8e7a-2b3c4d5e6f72"]}""",
+        [DeliveryRunPayload.MaxRecordsProperty] = """{"maxRecords":100}""",
         [DeliveryRunPayload.RedeliverProperty] = """{"redeliver":"all"}""",
         [DeliveryRunPayload.RerenderProperty] = """{"rerender":true}""",
         [DeliveryRunPayload.SlicesProperty] = """{"slices":[0]}""",
@@ -55,7 +56,7 @@ public sealed class RunPayloadPerKindTests
         [FlowDefinition.FlowTypeName] =
         [
             DeliveryRunPayload.ForceProperty, DeliveryRunPayload.SubmissionIdProperty, DeliveryRunPayload.RunIdProperty, DeliveryRunPayload.RecordKeysProperty,
-            DeliveryRunPayload.RedeliverProperty, DeliveryRunPayload.RerenderProperty, DeliveryRunPayload.SlicesProperty, DeliveryRunPayload.RateShareProperty,
+            DeliveryRunPayload.MaxRecordsProperty, DeliveryRunPayload.RedeliverProperty, DeliveryRunPayload.RerenderProperty, DeliveryRunPayload.SlicesProperty, DeliveryRunPayload.RateShareProperty,
             DeliveryRunPayload.InterfaceProperty, DeliveryRunPayload.InterfacesProperty, DeliveryRunPayload.ConfirmProperty,
             DeliveryRunPayload.ScopeProperty, DeliveryRunPayload.FilterProperty, DeliveryRunPayload.PurgeLedgerProperty,
         ],
@@ -150,7 +151,7 @@ public sealed class RunPayloadPerKindTests
             "payload inventories does not apply to a removal flow: only an inventory flow's runs select inventories; a removal flow's payload names only entries, approve and confirm.",
             Refusal(new RemovalFlowKind(Loader), Payloads[DeliveryRunPayload.InventoriesProperty]));
         Assert.Equal(
-            "payload entries does not apply to a delivery flow: only a removal flow's runs select removals; a delivery flow's payload names only force, submissionId, runId, recordKeys, redeliver, rerender, slices, rateShare, interface, interfaces, confirm, scope, filter and purgeLedger.",
+            "payload entries does not apply to a delivery flow: only a removal flow's runs select removals; a delivery flow's payload names only force, submissionId, runId, recordKeys, maxRecords, redeliver, rerender, slices, rateShare, interface, interfaces, confirm, scope, filter and purgeLedger.",
             Refusal(new DeliveryFlowKind(Loader), Payloads[DeliveryRunPayload.EntriesProperty]));
     }
 
@@ -256,6 +257,64 @@ public sealed class RunPayloadPerKindTests
         Assert.Contains(
             "payload filter must be a JSON object",
             Assert.Throws<SqlFlowException>(() => DeliveryRunPayload.Parse("""{"filter":"failed"}""")).Message,
+            StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// What a run of the first records of its scope takes (osdu/docs/reference/cli/run.md, A delivery flow's payload): a deliver,
+    /// plan or intake run reads 1 to 1,000 of them, as a run of the scope, so never beside the records it names, a submission or
+    /// slices; a deliver run does not send records again or bring them up to date beside it, which would reach every delivered
+    /// record, while a plan may render every one of its first records.
+    /// </summary>
+    [Fact]
+    public void A_run_of_the_first_records_of_its_scope_reads_one_to_a_thousand_of_them_and_nothing_a_run_of_named_records_does()
+    {
+        static string Refusal(string payload, string operation)
+            => Assert.Throws<SqlFlowException>(() => DeliveryRunPayload.Parse(payload).Validate(operation)).Message;
+
+        var first = DeliveryRunPayload.Parse("""{"maxRecords":100,"force":true,"interfaces":["logs"]}""");
+        first.Validate(DeliveryOperations.Deliver);
+        Assert.Equal(100, first.MaxRecords);
+        Assert.Equal("""{"force":true,"maxRecords":100,"interfaces":["logs"]}""", first.ToJson());
+        DeliveryRunPayload.Parse("""{"maxRecords":1}""").Validate(DeliveryOperations.Intake);
+        DeliveryRunPayload.Parse("""{"maxRecords":1000,"rerender":true}""").Validate(DeliveryOperations.Plan);
+        Assert.Null(DeliveryRunPayload.Parse("""{"force":true}""").MaxRecords);
+
+        Assert.Equal(
+            "payload maxRecords is 0; a run reads the first 1 to 1,000 records of its scope.",
+            Refusal("""{"maxRecords":0}""", DeliveryOperations.Deliver));
+        Assert.StartsWith("payload maxRecords is 1001;", Refusal("""{"maxRecords":1001}""", DeliveryOperations.Plan), StringComparison.Ordinal);
+        Assert.Equal(
+            "payload maxRecords must be a whole number: how many of the first records of its scope the run reads.",
+            Assert.Throws<SqlFlowException>(() => DeliveryRunPayload.Parse("""{"maxRecords":"100"}""")).Message);
+        Assert.Throws<SqlFlowException>(() => DeliveryRunPayload.Parse("""{"maxRecords":2.5}"""));
+
+        foreach (var operation in new[]
+        {
+            DeliveryOperations.Drain, DeliveryOperations.Verify, DeliveryOperations.Sync, DeliveryOperations.Replan, DeliveryOperations.Undo,
+        })
+        {
+            Assert.Equal(
+                $"payload maxRecords does not apply to the {operation} operation: only a deliver, plan or intake run reads the first records of its scope.",
+                Refusal("""{"maxRecords":10}""", operation));
+        }
+
+        Assert.Equal(
+            "payload names both recordKeys and maxRecords; a run reads the records it names or the first records of its scope, not both.",
+            Refusal("""{"maxRecords":10,"recordKeys":["0d1e6f3c-9a4b-4c1e-8e7a-2b3c4d5e6f72"]}""", DeliveryOperations.Deliver));
+        Assert.Equal(
+            "payload names both maxRecords and submissionId; a run on a submission reads the rows that submission recorded, so only a run of the scope reads its first records.",
+            Refusal("""{"maxRecords":10,"submissionId":"0d1e6f3c-9a4b-4c1e-8e7a-2b3c4d5e6f70"}""", DeliveryOperations.Intake));
+        Assert.StartsWith(
+            "payload names both maxRecords and slices;",
+            Refusal("""{"maxRecords":10,"slices":[0]}""", DeliveryOperations.Plan),
+            StringComparison.Ordinal);
+        Assert.Equal(
+            "payload redeliver does not apply to the deliver operation: a run of the first records of its scope sends what they render; send records again by naming them in recordKeys.",
+            Refusal("""{"maxRecords":10,"redeliver":"all"}""", DeliveryOperations.Deliver));
+        Assert.StartsWith(
+            "payload rerender does not apply to the deliver operation: a run of the first records of its scope renders them",
+            Refusal("""{"maxRecords":10,"rerender":true}""", DeliveryOperations.Deliver),
             StringComparison.Ordinal);
     }
 

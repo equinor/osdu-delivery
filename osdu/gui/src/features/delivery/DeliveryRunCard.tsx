@@ -7,6 +7,7 @@ import type { RunDetail } from "@/api/types";
 import { runValueAssignment } from "@/lib/runValues";
 import { CodeView } from "@/components/CodeView";
 import { deliveryApi, type ReversalSource } from "../../api/delivery";
+import { firstRecordsText } from "./firstRecords";
 import { prettyJson } from "./prettyJson";
 import { ReversalCard } from "./ReversalCard";
 import { runCacheSteps, runRequest, runResult, runScope } from "./runOutcome";
@@ -123,6 +124,9 @@ export default function DeliveryRunCard({ run }: { run: RunDetail }) {
                 <Badge variant="secondary">
                   {request.recordKeys.length} {run.operation === "remove" ? "" : "scoped "}{request.recordKeys.length === 1 ? "record" : "records"}
                 </Badge>
+              )}
+              {request.maxRecords !== null && (
+                <Badge variant="secondary" data-testid="run-max-records">{firstRecordsText(request.maxRecords)}</Badge>
               )}
               {request.removalScope !== null && (
                 <Badge variant="secondary" data-testid="run-removal-scope">

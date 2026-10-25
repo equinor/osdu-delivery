@@ -1,4 +1,5 @@
 import type { RunDetail } from "@/api/types";
+import { firstRecordsOf } from "./firstRecords";
 
 // What a delivery, retrieval or cache run was asked to do and what it reported, read from the run page's generic fields:
 // the kind-owned payload the trigger sent, and the bounded result JSON the run wrote when it finished. The field names
@@ -146,6 +147,8 @@ export interface RunRequest {
   force: boolean;
   submissionId: string | null;
   recordKeys: string[];
+  /** How many of the first records of its scope the run read (maxRecords); null when it read the scope as it stood. */
+  maxRecords: number | null;
   redeliver: string | null;
   /** Whether the run brings records up to date: renders them again and sends only what renders differently. */
   rerender: boolean;
@@ -178,6 +181,7 @@ export function runRequest(run: RunDetail): RunRequest {
     recordKeys: Array.isArray(payload.recordKeys)
       ? payload.recordKeys.filter((key): key is string => typeof key === "string")
       : [],
+    maxRecords: firstRecordsOf(payload),
     redeliver: typeof payload.redeliver === "string" ? payload.redeliver : null,
     rerender: payload.rerender === true,
     slices: Array.isArray(payload.slices)
