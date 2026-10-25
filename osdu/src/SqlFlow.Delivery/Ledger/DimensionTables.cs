@@ -161,19 +161,38 @@ public static class DimensionTables
     }
 
     /// <summary>
-    /// The indexes a table is read through, made when it has none of the name: a key's rows, which a build matches the
-    /// rows it writes by and a join on the key's number seeks; the rows of a partition in value order, which a page
-    /// reads and a count counts; and a key's row by its hash, which a view's join seeks. An index follows a column that is
-    /// renamed, so each is named after what its column is for, not after the column.
+    /// The order a table keeps its rows in and the indexes it is read through, each made when the table has none of the
+    /// name: a partition's rows together and a key's rows together within it (<c>IX_key</c>, the clustered index), which a
+    /// build matches the rows it writes by and seeks by its partition, so builds of the dimension in two partitions at
+    /// once read and lock their own partition's rows alone, and a join on the key's number seeks; the rows of a partition
+    /// in value order, which a page reads and a count counts; and a key's row by its hash, which a view's join seeks. A
+    /// table made before its rows were kept by partition (its key on <c>id</c> clustered, <c>IX_key</c> a secondary index)
+    /// is laid out once: its secondary indexes go first and come back last, so each is built once, and its key on
+    /// <c>id</c> stays, nonclustered. An index follows a column that is renamed, so each is named after what its column is
+    /// for, not after the column. The statement runs under the table's lock, so two builds never lay a table out at once.
     /// </summary>
     internal static string IndexSql(DimensionTableSpec spec)
     {
         ArgumentNullException.ThrowIfNull(spec);
         var table = Qualified(spec.Name);
         var literal = table.Replace("'", "''", StringComparison.Ordinal);
+        var key = ("PK_" + spec.Name).Replace("'", "''", StringComparison.Ordinal);
         return $"""
-            IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE [object_id] = OBJECT_ID(N'{literal}', N'U') AND [name] = N'IX_key')
-                CREATE INDEX [IX_key] ON {table} ([partition], [key_id]);
+            IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE [object_id] = OBJECT_ID(N'{literal}', N'U') AND [name] = N'IX_key' AND [type] = 1)
+            BEGIN
+                DROP INDEX IF EXISTS [IX_value] ON {table};
+                DROP INDEX IF EXISTS [IX_key_hash] ON {table};
+                DROP INDEX IF EXISTS [IX_key] ON {table};
+                DECLARE @key sysname = (SELECT [name] FROM sys.key_constraints WHERE [parent_object_id] = OBJECT_ID(N'{literal}', N'U') AND [type] = 'PK');
+                IF @key IS NOT NULL
+                BEGIN
+                    DECLARE @dropKey nvarchar(1000) = N'ALTER TABLE {literal} DROP CONSTRAINT ' + QUOTENAME(@key) + N';';
+                    EXEC sys.sp_executesql @dropKey;
+                END;
+                CREATE UNIQUE CLUSTERED INDEX [IX_key] ON {table} ([partition], [key_id], [id]);
+                DECLARE @addKey nvarchar(1000) = N'ALTER TABLE {literal} ADD CONSTRAINT ' + QUOTENAME(ISNULL(@key, N'{key}')) + N' PRIMARY KEY NONCLUSTERED ([id]);';
+                EXEC sys.sp_executesql @addKey;
+            END;
             IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE [object_id] = OBJECT_ID(N'{literal}', N'U') AND [name] = N'IX_value')
                 CREATE INDEX [IX_value] ON {table} ([partition], {Quoted(spec.ValueColumn)}, [id]);
             {KeyHashIndexSql(spec.Name)}
@@ -194,10 +213,13 @@ public static class DimensionTables
     /// <summary>
     /// The statement that gives every row of <paramref name="table"/> without a key hash its hash, in every partition or in
     /// <c>@partition</c>'s alone: rows a build wrote before tables kept one. <paramref name="keyColumn"/> is the key's column
-    /// as the table names it now.
+    /// as the table names it now. One partition's rows are reached by a seek of the partition, so no other partition's rows
+    /// are read; every index of the table leads with it.
     /// </summary>
     internal static string FillKeyHashSql(string table, string keyColumn, bool onePartition)
-        => $"UPDATE {Qualified(table)} SET [{KeyHashColumn}] = {KeyHash(Quoted(keyColumn))} WHERE [{KeyHashColumn}] IS NULL{(onePartition ? " AND [partition] = @partition" : string.Empty)};";
+        => onePartition
+            ? $"UPDATE t SET t.[{KeyHashColumn}] = {KeyHash("t." + Quoted(keyColumn))} FROM {Qualified(table)} AS t WITH (FORCESEEK) WHERE t.[partition] = @partition AND t.[{KeyHashColumn}] IS NULL;"
+            : $"UPDATE {Qualified(table)} SET [{KeyHashColumn}] = {KeyHash(Quoted(keyColumn))} WHERE [{KeyHashColumn}] IS NULL;";
 
     /// <summary>The hash of a key's text, as a view's join computes the hash of the value it joins on.</summary>
     internal static string KeyHash(string keySql) => $"CAST(HASHBYTES('SHA2_256', {keySql}) AS binary(32))";
@@ -228,8 +250,8 @@ public static class DimensionTables
                 ? "s.[ValueId] = t.[key_id]"
                 : $"s.[ValueId] = t.[key_id] AND s.[Part] = ISNULL(t.{collected}, N'') COLLATE {Exact}";
         var sql = new StringBuilder();
-        sql.Append(CultureInfo.InvariantCulture, $"IF @rewrite = 1\n    DELETE FROM {target} WHERE [partition] = @partition;\n\n");
-        sql.Append(CultureInfo.InvariantCulture, $"DELETE t\nFROM {target} AS t\nWHERE t.[partition] = @partition\n  AND NOT EXISTS (SELECT 1 FROM #DimRow AS s WHERE {same});\n\n");
+        sql.Append(CultureInfo.InvariantCulture, $"IF @rewrite = 1\n    DELETE t FROM {target} AS t WITH (FORCESEEK) WHERE t.[partition] = @partition;\n\n");
+        sql.Append(CultureInfo.InvariantCulture, $"DELETE t\nFROM {target} AS t WITH (FORCESEEK)\nWHERE t.[partition] = @partition\n  AND NOT EXISTS (SELECT 1 FROM #DimRow AS s WHERE {same});\n\n");
 
         sql.Append(CultureInfo.InvariantCulture,
             $"UPDATE t SET t.{key} = s.[Key], t.[{KeyHashColumn}] = {KeyHash("s.[Key]")}, t.{value} = s.[Value], t.[records] = s.[Records], t.[filter] = s.[Filter]");
@@ -243,7 +265,7 @@ public static class DimensionTables
             sql.Append(CultureInfo.InvariantCulture, $", t.{Quoted(column)} = NULL");
         }
 
-        sql.Append(CultureInfo.InvariantCulture, $"\nFROM {target} AS t\nINNER JOIN #DimRow AS s ON {same}\nWHERE t.[partition] = @partition\n  AND (EXISTS (\n");
+        sql.Append(CultureInfo.InvariantCulture, $"\nFROM {target} AS t WITH (FORCESEEK)\nINNER JOIN #DimRow AS s ON {same}\nWHERE t.[partition] = @partition\n  AND (EXISTS (\n");
         sql.Append("        SELECT s.[Key], s.[Value], s.[Records], s.[Filter]");
         foreach (var attribute in attributes)
         {
@@ -288,7 +310,7 @@ public static class DimensionTables
         }
 
         sql.Append(CultureInfo.InvariantCulture,
-            $"\nFROM #DimRow AS s\nWHERE NOT EXISTS (SELECT 1 FROM {target} AS t WHERE t.[partition] = @partition AND {same})\nORDER BY s.[Value], s.[Key], {(table.HasElements ? "s.[Element]" : "s.[Part]")};");
+            $"\nFROM #DimRow AS s\nWHERE NOT EXISTS (SELECT 1 FROM {target} AS t WITH (FORCESEEK) WHERE t.[partition] = @partition AND {same})\nORDER BY s.[Value], s.[Key], {(table.HasElements ? "s.[Element]" : "s.[Part]")};");
         sql.Append("\n\n").Append(FillKeyHashSql(table.Name, table.KeyColumn, onePartition: true));
         return sql.ToString();
     }

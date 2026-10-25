@@ -465,3 +465,11 @@ which interleaved every dimension's rows. Filed [0030](decisions/0030-dimension-
 are keyed on partition, dimension and row, and every statement of the store names its dimension and forces its seek, which
 a test checks against the plans SQL Server made. The owner's direction: a deadlock that recurs is a missing index or faulty
 logic, not something to retry.
+
+## [2026-10-25] ingest | A dimension's own table kept by partition, decision 0030 amended
+
+Read how SQLFlow's schema evolution makes a dimension's own table (clustered on its id, and never an index after) and the
+statements a build writes a partition's rows of it with, which the plans of two partitions' builds at once showed reading
+each other's rows. Amended [0030](decisions/0030-dimension-rows-one-range.md): the build keeps a partition's rows together
+(`IX_key` clustered on partition, key and id), lays out once a table made before, under the table's lock, and every
+statement writing a partition's rows seeks it; the test of plans covers two partitions at once.

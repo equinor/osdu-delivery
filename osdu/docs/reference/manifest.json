@@ -3539,7 +3539,7 @@
       "path": "flow/dimension-table.md",
       "title": "The dimension's table: osdu.dim_<dimension>, its columns and names, and how it follows the document",
       "type": "flow-reference",
-      "summary": "A dimension's table, osdu.dim_<dimension>: its columns, how the key's and value's columns are named, schema evolution, and its indexes.",
+      "summary": "A dimension's table, osdu.dim_<dimension>: its columns, how the key's and value's columns are named, schema evolution, and how its rows are kept.",
       "keywords": [
         "osdu.dim_",
         "dimension table",
@@ -3547,7 +3547,9 @@
         "key_hash",
         "schema evolution",
         "IX_key",
-        "IX_value"
+        "IX_value",
+        "IX_key_hash",
+        "clustered by partition"
       ],
       "related": [
         "delivery-flow-dimension",
@@ -8446,6 +8448,7 @@
         "osdu/src/SqlFlow.Delivery.Data/Migrations/20261025112204_DimensionTablesKeyedByDimension.cs",
         "osdu/src/SqlFlow.Delivery/Ledger/SqlServerDimensionStore.cs",
         "osdu/src/SqlFlow.Delivery/Ledger/OsduLedger.Dimensions.cs",
+        "osdu/src/SqlFlow.Delivery/Ledger/DimensionTables.cs",
         "osdu/tests/SqlFlow.Delivery.Tests/DimensionConcurrentWriteTests.cs"
       ]
     },

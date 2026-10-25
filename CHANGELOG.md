@@ -393,10 +393,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
-- **A flow's dimensions build beside each other without deadlocking.** A dimension building while others did could fail
-  as a deadlock victim, most often in a new estate's first build; each dimension's rows are now kept together and a build
-  reads only its own, and the upgrade rebuilds the dimension tables once, taking time and log space in proportion to their
-  size ([How the tables are keyed](osdu/docs/reference/concepts/database.md#how-the-tables-are-keyed)).
+- **A flow's dimensions build beside each other without deadlocking, and so does a dimension in two partitions.** A
+  dimension building while others did could fail as a deadlock victim, most often in a new estate's first build; each
+  dimension's rows are now kept together and a build reads only its own, and a dimension's own table keeps each
+  partition's rows together. The upgrade rebuilds the dimension tables once, and each dimension's own table on its next
+  build, taking time and log space in proportion to their size
+  ([How the tables are keyed](osdu/docs/reference/concepts/database.md#how-the-tables-are-keyed),
+  [the dimension's table](osdu/docs/reference/flow/dimension-table.md)).
 - **The catalog's Databases branch shows each database once.** A database spelled two ways, or reached through two
   connection references, was two nodes; it is now one, in the spelling most of its objects carry, and each folder lists
   exactly the objects it counts. Objects whose database a sync could not work out are grouped under the connection

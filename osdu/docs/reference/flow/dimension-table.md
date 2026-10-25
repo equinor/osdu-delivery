@@ -2,7 +2,7 @@
 id: delivery-flow-dimension-table
 title: "The dimension's table: osdu.dim_<dimension>, its columns and names, and how it follows the document"
 type: flow-reference
-summary: "A dimension's table, osdu.dim_<dimension>: its columns, how the key's and value's columns are named, schema evolution, and its indexes."
+summary: "A dimension's table, osdu.dim_<dimension>: its columns, how the key's and value's columns are named, schema evolution, and how its rows are kept."
 keywords:
   - "osdu.dim_"
   - dimension table
@@ -11,6 +11,8 @@ keywords:
   - schema evolution
   - IX_key
   - IX_value
+  - IX_key_hash
+  - clustered by partition
 related:
   - delivery-flow-dimension
   - delivery-concept-dimension-tables
@@ -66,5 +68,11 @@ name given under `columns` stays through a change of path or label. A build writ
 transaction that writes the rest of the dimension. When the collected attribute is added, taken out or replaced, the
 partition's rows are written again under new numbers.
 
-The table is read through two indexes the build makes: `IX_key` (`partition`, `key_id`) and `IX_value` (`partition`, the
-value's column, `id`).
+The table keeps a partition's rows together, and a key's rows together within it: `IX_key` (`partition`, `key_id`, `id`)
+is its clustered index, and `id` its key, a nonclustered one. Every statement of a build's write seeks the partition it
+writes, so builds of the dimension in two partitions at once read and lock their own partition's rows alone. The table is
+read through two more indexes the build makes: `IX_value` (`partition`, the value's column, `id`), which a page reads in
+value order, and `IX_key_hash` (`partition`, `key_hash`), which a view's join seeks. A table a build made before its rows
+were kept by partition (clustered on `id`) is laid out once, on its next build, keeping every row and its `id`: its
+secondary indexes are built again on the new order, which takes time and log space in proportion to its rows, and a build
+of the dimension in another partition waits for it.

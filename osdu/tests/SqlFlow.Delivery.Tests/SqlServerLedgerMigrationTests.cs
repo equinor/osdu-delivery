@@ -857,9 +857,11 @@ public sealed class SqlServerLedgerMigrationTests
             WHERE n.[Name] = N'Source';
             """;
         Assert.Equal(2L, await database.ScalarAsync(Texts));
-        Assert.Equal(["PartitionId", "AttributeValueId"], await database.PrimaryKeyAsync("DimensionAttribute"));
-        Assert.Equal(["PartitionId", "TextId"], await database.PrimaryKeyAsync("DimensionCollectedText"));
-        Assert.Equal(["PartitionId", "AttributeId"], await database.PrimaryKeyAsync("DimensionAttributeName"));
+
+        // The number follows the partition and the dimension, so a dimension's rows are one range of each table.
+        Assert.Equal(["PartitionId", "DimensionId", "AttributeValueId"], await database.PrimaryKeyAsync("DimensionAttribute"));
+        Assert.Equal(["PartitionId", "DimensionId", "TextId"], await database.PrimaryKeyAsync("DimensionCollectedText"));
+        Assert.Equal(["PartitionId", "DimensionId", "AttributeId"], await database.PrimaryKeyAsync("DimensionAttributeName"));
         const string Identities = "SELECT COUNT_BIG(*) FROM sys.identity_columns WHERE [object_id] IN (OBJECT_ID(N'[osdu].[DimensionAttribute]'), OBJECT_ID(N'[osdu].[DimensionCollectedText]'), OBJECT_ID(N'[osdu].[DimensionAttributeName]')) AND [name] IN (N'AttributeValueId', N'TextId', N'AttributeId');";
         Assert.Equal(3L, await database.ScalarAsync(Identities));
         Assert.Equal(1L, await database.ScalarAsync("SELECT COUNT_BIG(*) FROM [osdu].[Dimension] WHERE [TableName] IS NULL;"));

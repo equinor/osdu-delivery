@@ -16,7 +16,9 @@ namespace SqlFlow.Delivery.Tests;
 /// locks its own rows alone. A dozen dimensions building at once, writing new keys, then changed, removed and new ones
 /// beside the removal of a dimension the flow no longer declares, then restored ones, all complete; and no statement any
 /// of them ran reached a dimension table's rows but through one dimension or the rows it names, which is what keeps one
-/// build from waiting on, and deadlocking with, another's rows.
+/// build from waiting on, and deadlocking with, another's rows. A dimension's own table holds every partition it is built
+/// in, and keeps each partition's rows together (osdu/docs/reference/flow/dimension-table.md): the flow built in two
+/// partitions at once writes each partition's rows of it by seeks of that partition alone.
 /// </summary>
 [Collection(SqlServerSuite.Name)]
 [Trait("Category", "Integration")]
@@ -33,7 +35,7 @@ public sealed class DimensionConcurrentWriteTests : IDisposable
     private const string Head = """
         flowType: dimension
         name: welldb-dimensions
-        partitions: [dev]
+        partitions: [dev, test]
         source:
           endpoint: http://localhost
           aggregationSize: 50
@@ -168,6 +170,29 @@ public sealed class DimensionConcurrentWriteTests : IDisposable
         Assert.True(past.Count == 0, "Statements reading a dimension table past the dimension they write:\n" + string.Join("\n", past));
     }
 
+    [SkippableFact]
+    public async Task The_flow_built_in_two_partitions_at_once_writes_each_partitions_rows_of_a_table_by_seeks_of_that_partition()
+    {
+        await ClearPlansAsync();
+        Records();
+        var flows = new[] { Flow(retired: false, "dev"), Flow(retired: false, "test") };
+        var first = await Task.WhenAll(flows.Select(f => RunnerAsync(_db.Ledger(_clock), f).BuildAsync([], Guid.NewGuid(), "tests", CancellationToken.None)));
+
+        // A wellbore renamed and a log gone: both partitions build again, at once, and rewrite and remove their own rows.
+        var renamed = _platform.Records.First(r => r["kind"]!.GetValue<string>() == Wellbore)["data"]!.AsObject();
+        renamed["FacilityName"] = renamed["FacilityName"]!.GetValue<string>() + " ST2";
+        _platform.Records.Remove(_platform.Records.First(r => r["kind"]!.GetValue<string>() == WellLog));
+        var second = await Task.WhenAll(flows.Select(f => RunnerAsync(_db.Ledger(_clock), f).BuildAsync([], Guid.NewGuid(), "tests", CancellationToken.None)));
+
+        Assert.All(first.Concat(second), outcome => Assert.Equal((12, 0), (outcome.Built, outcome.Failed)));
+        string Rows(string partition) => string.Create(CultureInfo.InvariantCulture, $"{partition}|{Logs - 1}");
+        Assert.Equal([Rows("dev"), Rows("test")], await SqlAsync("SELECT [partition], COUNT_BIG(*) FROM [osdu].[dim_Log] GROUP BY [partition] ORDER BY [partition];"));
+
+        var (statements, past) = await ReadsPastTheirDimensionAsync(_db.ConnectionString);
+        Assert.True(statements > 20, $"the builds' statements are in the plan cache ({statements} found)");
+        Assert.True(past.Count == 0, "Statements reading a dimension table past the dimension they write:\n" + string.Join("\n", past));
+    }
+
     /// <summary>
     /// Builds the flow three times, each with its dimensions building at once: thirteen dimensions over wellbores and their
     /// logs; then twelve, the thirteenth removed while they build, over wellbores renamed, logs gone and logs new; then the
@@ -212,8 +237,8 @@ public sealed class DimensionConcurrentWriteTests : IDisposable
     private DimensionRunner RunnerAsync(OsduLedger ledger, DimensionFlowDefinition flow)
         => new(Samples.Engine(ledger, _clock), flow, new Dictionary<string, string>(), Samples.Logger<DimensionRunner>(), _platform, allowLoopback: true);
 
-    private static DimensionFlowDefinition Flow(bool retired)
-        => new DeliveryDocumentLoader().ParseDimension(Head + (retired ? Retired : string.Empty), "flows/welldb-dimensions.yaml").ForPartition("dev");
+    private static DimensionFlowDefinition Flow(bool retired, string partition = "dev")
+        => new DeliveryDocumentLoader().ParseDimension(Head + (retired ? Retired : string.Empty), "flows/welldb-dimensions.yaml").ForPartition(partition);
 
     /// <summary>Wellbores in three countries run by three operators, and three logs a wellbore, each holding four curves.</summary>
     private void Records()
@@ -269,6 +294,21 @@ public sealed class DimensionConcurrentWriteTests : IDisposable
         });
     }
 
+    private async Task<List<string>> SqlAsync(string sql)
+    {
+        await using var connection = new SqlConnection(_db.ConnectionString);
+        await connection.OpenAsync();
+        await using var command = new SqlCommand(sql, connection);
+        var rows = new List<string>();
+        await using var reader = await command.ExecuteReaderAsync();
+        while (await reader.ReadAsync())
+        {
+            rows.Add(string.Join('|', Enumerable.Range(0, reader.FieldCount).Select(i => Convert.ToString(reader.GetValue(i), CultureInfo.InvariantCulture))));
+        }
+
+        return rows;
+    }
+
     /// <summary>Empties the plans SQL Server keeps for the test database, so the plans read after the builds are theirs.</summary>
     private async Task ClearPlansAsync()
     {
@@ -283,9 +323,11 @@ public sealed class DimensionConcurrentWriteTests : IDisposable
     /// plans for in this database and that read a dimension table, and those of them that read it past one dimension: a
     /// scan of an index, or a seek on the partition alone, either of which reads every dimension's rows of the partition,
     /// and so waits on the rows another build is writing while it holds its own. A seek naming the dimension, or a row by
-    /// its number, reads only the rows it names. A statement of one of the store's batches that names no seek is checked
-    /// with the rest of its batch; a statement on its own reads the rows of one dimension at a time (the pages, the
-    /// lookups), so it can wait on a write but never hold what the write waits for.
+    /// its number, reads only the rows it names. A dimension's own table (<c>dim_</c>) holds one dimension in every
+    /// partition, so a statement over it reads past its partition when it scans, or seeks neither its partition nor a row
+    /// by its id. A statement of one of the store's batches that names no seek is checked with the rest of its batch; a
+    /// statement on its own reads the rows of one dimension at a time (the pages, the lookups), so it can wait on a write
+    /// but never hold what the write waits for.
     /// </summary>
     private static async Task<(int Statements, List<string> Past)> ReadsPastTheirDimensionAsync(string connectionString)
     {
@@ -301,8 +343,8 @@ public sealed class DimensionConcurrentWriteTests : IDisposable
             CROSS APPLY sys.dm_exec_sql_text(qs.[sql_handle]) AS st
             CROSS APPLY sys.dm_exec_text_query_plan(qs.[plan_handle], qs.[statement_start_offset], qs.[statement_end_offset]) AS qp
             CROSS APPLY (SELECT CONVERT(int, pa.[value]) AS [dbid] FROM sys.dm_exec_plan_attributes(qs.[plan_handle]) AS pa WHERE pa.[attribute] = N'dbid') AS a
-            WHERE a.[dbid] = DB_ID() AND st.[text] LIKE N'%[[]osdu].[[]Dimension%' AND st.[text] LIKE N'%WITH (FORCESEEK)%'
-              AND qp.[query_plan] IS NOT NULL;
+            WHERE a.[dbid] = DB_ID() AND (st.[text] LIKE N'%[[]osdu].[[]Dimension%' OR st.[text] LIKE N'%[[]osdu].[[]dim[_]%')
+              AND st.[text] LIKE N'%WITH (FORCESEEK)%' AND qp.[query_plan] IS NOT NULL;
             """,
             connection);
         var statements = 0;
@@ -316,7 +358,8 @@ public sealed class DimensionConcurrentWriteTests : IDisposable
                 var plan = XDocument.Parse(reader.GetString(1));
                 var reads = plan.Descendants(Showplan + "IndexScan")
                     .Select(scan => (Scan: scan, Object: scan.Element(Showplan + "Object")))
-                    .Where(s => s.Object?.Attribute("Schema")?.Value == "[osdu]" && DimensionTables.Contains(s.Object.Attribute("Table")?.Value ?? string.Empty))
+                    .Where(s => s.Object?.Attribute("Schema")?.Value == "[osdu]" && (DimensionTables.Contains(s.Object.Attribute("Table")?.Value ?? string.Empty)
+                        || (s.Object.Attribute("Table")?.Value ?? string.Empty).StartsWith("[dim_", StringComparison.Ordinal)))
                     .ToList();
                 if (reads.Count == 0)
                 {
@@ -334,12 +377,17 @@ public sealed class DimensionConcurrentWriteTests : IDisposable
                         continue;
                     }
 
+                    var own = table.Attribute("Table")!.Value.StartsWith("[dim_", StringComparison.Ordinal);
                     foreach (var seek in seeks)
                     {
                         var named = seek.Elements(Showplan + "Prefix").Descendants(Showplan + "ColumnReference")
-                            .Select(c => c.Attribute("Column")?.Value)
+                            .Select(c => (c.Attribute("Column")?.Value ?? string.Empty).Trim('[', ']'))
                             .ToList();
-                        if (named.All(c => string.Equals(c, "[PartitionId]", StringComparison.Ordinal) || string.Equals(c, "PartitionId", StringComparison.Ordinal)))
+                        if (own && !named.Any(c => c is "partition" or "id"))
+                        {
+                            past.Add($"{where} is sought by neither its partition nor a row's id by: {Shown(statement)}");
+                        }
+                        else if (!own && named.All(c => c == "PartitionId"))
                         {
                             past.Add($"{where} is sought by its partition alone by: {Shown(statement)}");
                         }

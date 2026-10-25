@@ -599,6 +599,22 @@ public sealed class DimensionRunTests : IDisposable
     private async Task<IReadOnlyList<string>> ColumnsAsync(string table)
         => await SqlAsync($"SELECT c.[name] FROM sys.columns AS c WHERE c.[object_id] = OBJECT_ID(N'[osdu].[{table}]', N'U') ORDER BY c.[column_id];");
 
+    /// <summary>
+    /// The indexes of a table in the module's schema, the clustered one first and the rest by name, each as its name, its
+    /// kind, whether it is the key, its columns and whether it holds the identity.
+    /// </summary>
+    private async Task<IReadOnlyList<string>> IndexesAsync(string table)
+        => await SqlAsync($"""
+            SELECT i.[name], i.[type_desc], CAST(i.[is_primary_key] AS int),
+                STRING_AGG(c.[name], ', ') WITHIN GROUP (ORDER BY ic.[key_ordinal]), MAX(CAST(c.[is_identity] AS int))
+            FROM sys.indexes AS i
+            JOIN sys.index_columns AS ic ON ic.[object_id] = i.[object_id] AND ic.[index_id] = i.[index_id]
+            JOIN sys.columns AS c ON c.[object_id] = ic.[object_id] AND c.[column_id] = ic.[column_id]
+            WHERE i.[object_id] = OBJECT_ID(N'[osdu].[{table}]')
+            GROUP BY i.[name], i.[type_desc], i.[type], i.[is_primary_key]
+            ORDER BY CASE WHEN i.[type] = 1 THEN 0 ELSE 1 END, i.[name];
+            """);
+
     /// <summary>The hash a table keeps of a key, as a view's join computes it: SHA-256 of the key's UTF-16 bytes, as SQL Server's HASHBYTES gives it.</summary>
     private static string KeyHash(string key) => "0x" + Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.Unicode.GetBytes(key)));
 
@@ -799,24 +815,18 @@ public sealed class DimensionRunTests : IDisposable
         var (runner, ledger, flow) = await RunnerAsync(Head + Declared);
 
         // The first build makes the table: the dimension as one table, named after the dimension, keyed by an identity,
-        // with a column for each attribute it declares. Any SQL client reads it and joins on its numbers.
+        // its rows kept by partition and key, with a column for each attribute it declares. Any SQL client reads it and
+        // joins on its numbers.
         await runner.BuildAsync([], Guid.NewGuid(), "tests", CancellationToken.None);
         var wellbores = (await ledger.FindDimensionAsync(flow.LedgerId, "Wellbore"))!;
         Assert.Equal(Table, wellbores.TableName);
         Assert.Equal(["id", "partition", "key_id", "WellboreID", "FacilityName", "records", "filter", "key_hash", "Country"], await ColumnsAsync(Table));
         Assert.Equal(
             [
-                "PK_" + Table + "|CLUSTERED|1|id|1", "IX_key|NONCLUSTERED|0|partition, key_id|0", "IX_value|NONCLUSTERED|0|partition, FacilityName, id|1",
-                "IX_key_hash|NONCLUSTERED|0|partition, key_hash|0",
+                "IX_key|CLUSTERED|0|partition, key_id, id|1", "IX_key_hash|NONCLUSTERED|0|partition, key_hash|0",
+                "IX_value|NONCLUSTERED|0|partition, FacilityName, id|1", "PK_" + Table + "|NONCLUSTERED|1|id|1",
             ],
-            await SqlAsync($"""
-                SELECT i.[name], i.[type_desc], CAST(i.[is_primary_key] AS int),
-                    STRING_AGG(c.[name], ', ') WITHIN GROUP (ORDER BY ic.[key_ordinal]), MAX(CAST(c.[is_identity] AS int))
-                FROM sys.indexes AS i
-                JOIN sys.index_columns AS ic ON ic.[object_id] = i.[object_id] AND ic.[index_id] = i.[index_id]
-                JOIN sys.columns AS c ON c.[object_id] = ic.[object_id] AND c.[column_id] = ic.[column_id]
-                WHERE i.[object_id] = OBJECT_ID(N'[osdu].[{Table}]') GROUP BY i.[name], i.[type_desc], i.[is_primary_key], i.[index_id] ORDER BY i.[index_id];
-                """));
+            await IndexesAsync(Table));
         var keys = (await ledger.ListDimensionValuesAsync(wellbores.DimensionId, new DimensionValueQuery(null, null, false, false, null, 10)))
             .ToDictionary(k => k.Original[^2..^1], StringComparer.Ordinal);
         Assert.Equal(
@@ -938,6 +948,67 @@ public sealed class DimensionRunTests : IDisposable
         Assert.Contains("dropped the table osdu." + Table, removed.Describe(), StringComparison.Ordinal);
         Assert.Empty(await ColumnsAsync(Table));
         Assert.Empty(await SqlAsync("SELECT [Name] FROM [osdu].[DimensionAttributeName];"));
+    }
+
+    [Fact]
+    public async Task A_table_made_before_its_rows_were_kept_by_partition_is_laid_out_again_keeping_every_row_and_its_number()
+    {
+        foreach (var (wellbore, name) in new[] { ("A", "MX A"), ("B", "MX B") })
+        {
+            _platform.Add($"dev:master-data--Wellbore:{wellbore}", Wellbore, new JsonObject { ["FacilityName"] = name });
+        }
+
+        foreach (var (log, wellbore) in new[] { ("1", "A"), ("2", "B") })
+        {
+            _platform.Add($"dev:work-product-component--WellLog:{log}", WellLog, new JsonObject { ["WellboreID"] = $"dev:master-data--Wellbore:{wellbore}:" });
+        }
+
+        const string Table = "dim_Wellbore";
+        var (runner, _, _) = await RunnerAsync(Head + """
+            dimensions:
+              - name: Wellbore
+                kind: "osdu:wks:work-product-component--WellLog:*"
+                path: data.WellboreID
+                label: data.FacilityName
+
+            """);
+        await runner.BuildAsync([], Guid.NewGuid(), "tests", CancellationToken.None);
+        var rows = await SqlAsync($"SELECT [id], [key_id], [FacilityName] FROM [osdu].[{Table}] ORDER BY [id];");
+        Assert.Equal(2, rows.Count);
+
+        // The table as a build made it before its rows were kept by partition: clustered on its id, a key's rows found
+        // through an index of their own.
+        await SqlAsync($"""
+            DROP INDEX [IX_key_hash] ON [osdu].[{Table}];
+            DROP INDEX [IX_value] ON [osdu].[{Table}];
+            ALTER TABLE [osdu].[{Table}] DROP CONSTRAINT [PK_{Table}];
+            DROP INDEX [IX_key] ON [osdu].[{Table}];
+            ALTER TABLE [osdu].[{Table}] ADD CONSTRAINT [PK_{Table}] PRIMARY KEY CLUSTERED ([id]);
+            CREATE INDEX [IX_key] ON [osdu].[{Table}] ([partition], [key_id]);
+            CREATE INDEX [IX_value] ON [osdu].[{Table}] ([partition], [FacilityName], [id]);
+            CREATE INDEX [IX_key_hash] ON [osdu].[{Table}] ([partition], [key_hash]);
+            """);
+        Assert.Equal(
+            [
+                "PK_" + Table + "|CLUSTERED|1|id|1", "IX_key|NONCLUSTERED|0|partition, key_id|0", "IX_key_hash|NONCLUSTERED|0|partition, key_hash|0",
+                "IX_value|NONCLUSTERED|0|partition, FacilityName, id|1",
+            ],
+            await IndexesAsync(Table));
+
+        // The next build lays it out by partition, once, and writes what it found into the same rows under the same numbers.
+        _platform.Records.Single(r => r["id"]!.GetValue<string>() == "dev:master-data--Wellbore:B")["data"]!["FacilityName"] = "MX B2";
+        await runner.BuildAsync([], Guid.NewGuid(), "tests", CancellationToken.None);
+        Assert.Equal(
+            [
+                "IX_key|CLUSTERED|0|partition, key_id, id|1", "IX_key_hash|NONCLUSTERED|0|partition, key_hash|0",
+                "IX_value|NONCLUSTERED|0|partition, FacilityName, id|1", "PK_" + Table + "|NONCLUSTERED|1|id|1",
+            ],
+            await IndexesAsync(Table));
+        Assert.Equal([rows[0], rows[1].Replace("|MX B", "|MX B2", StringComparison.Ordinal)], await SqlAsync($"SELECT [id], [key_id], [FacilityName] FROM [osdu].[{Table}] ORDER BY [id];"));
+
+        // And a build that finds it laid out leaves it as it is.
+        await runner.BuildAsync([], Guid.NewGuid(), "tests", CancellationToken.None);
+        Assert.Equal("IX_key|CLUSTERED|0|partition, key_id, id|1", (await IndexesAsync(Table))[0]);
     }
 
     [Fact]

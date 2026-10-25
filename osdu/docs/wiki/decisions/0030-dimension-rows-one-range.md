@@ -16,9 +16,11 @@ sourceRefs:
   - osdu/src/SqlFlow.Delivery.Data/Migrations/20261025112204_DimensionTablesKeyedByDimension.cs
   - osdu/src/SqlFlow.Delivery/Ledger/SqlServerDimensionStore.cs
   - osdu/src/SqlFlow.Delivery/Ledger/OsduLedger.Dimensions.cs
+  - osdu/src/SqlFlow.Delivery/Ledger/DimensionTables.cs
   - osdu/tests/SqlFlow.Delivery.Tests/DimensionConcurrentWriteTests.cs
 referenceRefs:
   - delivery-concept-database
+  - delivery-flow-dimension-table
   - delivery-concept-dimension-tables
   - delivery-flow-dimension-build
 related:
@@ -79,9 +81,21 @@ cached for the write showed nearly every statement reading the whole partition.
 - **Row locks for every statement.** A row lock where SQL Server takes a page lock would cost millions of locks on the
   first build of the largest dimensions.
 
+## Amended: a dimension's own table keeps each partition's rows together
+
+A dimension's own table (`osdu.dim_<dimension>`) holds every partition the dimension is built in, and SQLFlow's schema
+evolution makes it clustered on its `id`, so builds of one dimension in two partitions at once, which runs of different
+partitions are, read each other's rows of it as the dimensions' writes read each other's rows of the model's tables. The
+build now keeps a partition's rows together and a key's within it (`IX_key`, `partition`, `key_id`, `id`, clustered; `id`
+its key, nonclustered) and every statement writing a partition's rows seeks that partition. SQLFlow's evolution only
+creates a table and adds or widens its columns, so the module lays the table out after it, under the table's lock, and
+lays out once, on its next build, a table made before; `DimensionConcurrentWriteTests` builds the flow in two partitions
+at once and checks the plans of those statements too. A removal's batches stay unhinted, since a removal can meet a table
+no build has laid out since: it reads its own partition through the indexes every table has, and is run again if it
+fails.
+
 ## What remains
 
 A page holding the last rows of one dimension's range and the first of the next can carry a page lock, and a large
 write's locks can escalate to its table, so two writes can still wait on each other there; the write's deadlock retry
-covers that. A dimension's own table (`osdu.dim_<dimension>`) holds every partition the dimension is built in and is
-clustered on its row's id, so builds of one dimension in two partitions at once read each other's rows; it is unchanged.
+covers that.

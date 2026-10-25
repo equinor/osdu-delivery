@@ -247,7 +247,7 @@ internal static class SqlServerDimensionStore
             IF @elements = 0 AND COL_LENGTH(N'[osdu].' + QUOTENAME(@tableName), N'element') IS NOT NULL
             BEGIN
                 DECLARE @elementCheck nvarchar(max) = N'SELECT @found = CASE WHEN EXISTS (SELECT 1 FROM [osdu].' + QUOTENAME(@tableName)
-                    + N' WHERE [partition] = @partition AND [element] IS NOT NULL) THEN 1 ELSE 0 END;';
+                    + N' AS t WITH (FORCESEEK) WHERE t.[partition] = @partition AND t.[element] IS NOT NULL) THEN 1 ELSE 0 END;';
                 EXEC sys.sp_executesql @elementCheck, N'@partition nvarchar(256), @found bit OUTPUT', @partition = @partitionName, @found = @elementRows OUTPUT;
             END;
 
@@ -1037,17 +1037,7 @@ internal static class SqlServerDimensionStore
             try
             {
                 // One table is written by a dimension in each partition it is built in, so its columns are settled by one at a time.
-                await using (var held = Command(connection, transaction, LockSql))
-                {
-                    held.Parameters.Add(new SqlParameter("@resource", SqlDbType.NVarChar, 255) { Value = "osdu-dimension-table:" + declared.Name });
-                    held.Parameters.Add(new SqlParameter("@timeout", SqlDbType.Int) { Value = LockTimeoutMs });
-                    var granted = Convert.ToInt32(await held.ExecuteScalarAsync(ct).ConfigureAwait(false), CultureInfo.InvariantCulture);
-                    if (granted < 0)
-                    {
-                        throw new DeliveryException(string.Create(CultureInfo.InvariantCulture,
-                            $"Another build held the dimension's table {shown} for more than {LockTimeoutMs / 1000} seconds while it settled its columns (sp_getapplock answered {granted}), so nothing was written. Build it again when the other has finished."));
-                    }
-                }
+                await TableLockAsync(connection, transaction, declared.Name, LockTimeoutMs, "settled its columns", ct).ConfigureAwait(false);
 
                 (string Key, string Value)? recorded = null;
                 var columns = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
@@ -1162,9 +1152,10 @@ internal static class SqlServerDimensionStore
     /// for every attribute it declares, before the write's transaction begins: the two columns are settled first
     /// (<see cref="SettleColumnsAsync"/>), then SQLFlow's schema evolution reads the table as it is, creates it when it is
     /// missing and adds the column of an attribute it does not have, and never drops or narrows one
-    /// (osdu/docs/reference/flow/dimension-table.md, The dimension's table). Then the two indexes it is read through, and the
-    /// statements that write its rows. <paramref name="rename"/> is true for a build, which names the two columns as
-    /// its dimension declares, and false for a reader, which keeps the names the table has.
+    /// (osdu/docs/reference/flow/dimension-table.md, The dimension's table). Then the order it keeps its rows in and the
+    /// indexes it is read through (<see cref="MakeIndexesAsync"/>), and the statements that write its rows.
+    /// <paramref name="rename"/> is true for a build, which names the two columns as its dimension declares, and false for
+    /// a reader, which keeps the names the table has.
     /// </summary>
     /// <exception cref="DeliveryException">The table cannot be made or widened: the database user may not, or the table was changed by hand into something a build cannot write.</exception>
     private static async Task<PreparedTable> PrepareTableAsync(
@@ -1174,10 +1165,7 @@ internal static class SqlServerDimensionStore
         try
         {
             var (plan, changed) = await RunTimeTables.EvolveAsync(connection, table.Name, DimensionTables.Desired(table), DimensionTables.KeyColumns, ct).ConfigureAwait(false);
-            await using (var indexes = new SqlCommand(DimensionTables.IndexSql(table), connection) { CommandTimeout = CommandTimeoutSeconds })
-            {
-                await indexes.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
-            }
+            await MakeIndexesAsync(connection, table, ct).ConfigureAwait(false);
 
             // A column the table has and the declaration does not is one of an attribute the dimension declared before
             // (it is emptied), or one somebody added to the table, which is theirs and is left alone.
@@ -1215,6 +1203,49 @@ internal static class SqlServerDimensionStore
     }
 
     /// <summary>
+    /// Lays the dimension's table out by partition and makes the indexes it is read through
+    /// (<see cref="DimensionTables.IndexSql"/>), under the table's lock, so builds of the dimension in two partitions do it
+    /// one at a time and the second finds it done. Laying out a table made before its rows were kept by partition rebuilds
+    /// it once, which takes as long as its rows take: the statement is bounded by its run, as a write is, and a build of
+    /// another partition waits for it rather than failing.
+    /// </summary>
+    private static async Task MakeIndexesAsync(SqlConnection connection, DimensionTableSpec table, CancellationToken ct)
+    {
+        var transaction = (SqlTransaction)await connection.BeginTransactionAsync(IsolationLevel.ReadCommitted, ct).ConfigureAwait(false);
+        await using (transaction.ConfigureAwait(false))
+        {
+            await TableLockAsync(connection, transaction, table.Name, -1, "laid it out", ct).ConfigureAwait(false);
+            await using (var indexes = Command(connection, transaction, DimensionTables.IndexSql(table)))
+            {
+                await indexes.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
+            }
+
+            await transaction.CommitAsync(ct).ConfigureAwait(false);
+        }
+    }
+
+    /// <summary>
+    /// Takes the lock a dimension's table is changed under for the rest of <paramref name="transaction"/>: one table is
+    /// written by the dimension in each partition it is built in, so its columns are settled, and it is laid out, by one
+    /// build at a time. <paramref name="timeoutMs"/> bounds the wait (<c>-1</c> waits as long as the other build takes,
+    /// which its run bounds); <paramref name="doing"/> says what the other build was doing, for the message.
+    /// </summary>
+    /// <exception cref="DeliveryException">The lock was not taken.</exception>
+    private static async Task TableLockAsync(SqlConnection connection, SqlTransaction transaction, string name, int timeoutMs, string doing, CancellationToken ct)
+    {
+        await using var held = Command(connection, transaction, LockSql);
+        held.Parameters.Add(new SqlParameter("@resource", SqlDbType.NVarChar, 255) { Value = "osdu-dimension-table:" + name });
+        held.Parameters.Add(new SqlParameter("@timeout", SqlDbType.Int) { Value = timeoutMs });
+        var granted = Convert.ToInt32(await held.ExecuteScalarAsync(ct).ConfigureAwait(false), CultureInfo.InvariantCulture);
+        if (granted < 0)
+        {
+            var waited = timeoutMs < 0 ? string.Empty : string.Create(CultureInfo.InvariantCulture, $" for more than {timeoutMs / 1000} seconds");
+            throw new DeliveryException(string.Create(CultureInfo.InvariantCulture,
+                $"Another build held the dimension's table {DimensionTables.Shown(name)}{waited} while it {doing} (sp_getapplock answered {granted}), so nothing was written. Build it again when the other has finished."));
+        }
+    }
+
+    /// <summary>
     /// Makes a table a view reads ready for the view (osdu/docs/reference/flow/dimension-views.md): one no build has made
     /// yet is made, empty, as a build makes it, so the view's join finds nothing until its dimension is built; one a build
     /// made is given the key's hash column and its index when it was made before tables kept one. Its other columns are
@@ -1238,8 +1269,7 @@ internal static class SqlServerDimensionStore
             if (!exists)
             {
                 await RunTimeTables.EvolveAsync(connection, table.Name, DimensionTables.Desired(table), DimensionTables.KeyColumns, ct).ConfigureAwait(false);
-                await using var indexes = new SqlCommand(DimensionTables.IndexSql(table), connection) { CommandTimeout = CommandTimeoutSeconds };
-                await indexes.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
+                await MakeIndexesAsync(connection, table, ct).ConfigureAwait(false);
                 return;
             }
 
