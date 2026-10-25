@@ -914,11 +914,11 @@ public sealed record DeliveryRunPayload
                     $"payload {MaxRecordsProperty} does not apply to the {operation} operation: only a deliver, plan or intake run reads the first records of its scope.");
             }
 
-            if (max is < 1 or > MaxRecordKeys)
+            if (max is < 1 or > FlowSourceTable.MaxRecordsCeiling)
             {
                 throw new SqlFlowException(string.Create(
                     System.Globalization.CultureInfo.InvariantCulture,
-                    $"payload {MaxRecordsProperty} is {max}; a run reads the first 1 to {MaxRecordKeys:N0} records of its scope."));
+                    $"payload {MaxRecordsProperty} is {max}; a run reads the first 1 to {FlowSourceTable.MaxRecordsCeiling:N0} records of its scope."));
             }
 
             if (RecordKeys.Count > 0)

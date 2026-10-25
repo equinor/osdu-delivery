@@ -284,6 +284,14 @@ internal static class DeliveryVerbs
         ArgumentNullException.ThrowIfNull(runtime);
         var flow = runtime.Flow;
         var read = await ScopeReads.DecideAsync(engine.Ledger, flow, runtime.Parameters, runtime.Mapping.Context, ct).ConfigureAwait(false);
+
+        // A flow limited to the first records of its scope (source.record.maxRecords) reads them on every run, as a run reads them.
+        if (ScopeReads.FirstRecords(flow, DeliveryRunPayload.None, null) is { } first)
+        {
+            var firstOfScope = await ScopeReads.FirstOfScopeAsync(runtime.Source, first.Count, first.Setting, engine.Loggers.CreateLogger("check"), ct).ConfigureAwait(false);
+            read = read with { Selection = firstOfScope, Reason = ScopeReadReason.FirstRecords };
+        }
+
         var opened = await runtime.Planner.OpenAsync(flow, runtime.Mapping, runtime.Parameters, read.Selection, gate: false, ct: ct).ConfigureAwait(false);
         var header = opened.Source;
         var selection = read.Selection;

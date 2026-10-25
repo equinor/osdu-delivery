@@ -66,6 +66,27 @@ public sealed class InterfaceDocumentsTests
         """;
 
     [Fact]
+    public void Each_interface_limits_its_own_runs_to_the_first_records_of_its_scope_and_a_limit_out_of_range_names_the_interface()
+    {
+        static string Logs(string max) => $$"""
+              logs:
+                record: { object: Petrel.ing.WellLog, key: [uwi, log_id], primaryKey: RecId, maxRecords: {{max}} }
+                mapping: WellLog@1.4.0
+                after: [wells]
+            """;
+
+        var source = _loader.ParseSource(Source(Wells + Logs("50")), "petrel.yaml");
+
+        Assert.Null(source.Interface("wells").Source.Record.MaxRecords);
+        Assert.Equal(50, source.Interface("logs").Source.Record.MaxRecords);
+
+        var refused = Assert.Throws<FlowValidationException>(() => _loader.ParseSource(Source(Wells + Logs("2000")), "petrel.yaml"));
+        Assert.Equal(
+            "petrel.yaml: interfaces.logs.record.maxRecords is 2000; a run reads the first 1 to 1,000 records of its scope, or leave it out to read the scope whole.",
+            refused.Message);
+    }
+
+    [Fact]
     public void A_source_lists_its_interfaces_in_document_order_each_with_a_ledger_of_its_own()
     {
         var source = _loader.ParseSource(Source(Wells + """

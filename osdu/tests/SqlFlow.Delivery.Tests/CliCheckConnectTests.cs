@@ -34,12 +34,14 @@ public sealed class CliCheckConnectTests : IDisposable
         }
     }
 
-    private async Task<(EngineContext Engine, FlowRuntime Runtime, MemoryIngestionTables Tables)> EstateAsync(Action<MemoryIngestionTables>? change = null)
+    private async Task<(EngineContext Engine, FlowRuntime Runtime, MemoryIngestionTables Tables)> EstateAsync(Action<MemoryIngestionTables>? change = null, int? maxRecords = null)
     {
         var tables = await SampleEstate.BuildAsync(_root, _clock.GetUtcNow().UtcDateTime.AddMinutes(-5), time: _clock);
         change?.Invoke(tables);
         var engine = Samples.Engine(ledger: null, _clock, sources: tables);
-        var runtime = await FlowRuntime.CreateAsync(engine, Samples.LocalFlow(_root), SampleEstate.Values);
+        var flow = Samples.LocalFlow(_root);
+        flow = flow with { Source = flow.Source with { Record = flow.Source.Record with { MaxRecords = maxRecords } } };
+        var runtime = await FlowRuntime.CreateAsync(engine, flow, SampleEstate.Values);
         return (engine, runtime, tables);
     }
 
@@ -75,6 +77,22 @@ public sealed class CliCheckConnectTests : IDisposable
             Assert.Contains(read["columns"]!["record"]!.AsArray(), c => c!.GetValue<string>() == "log_run");
             Assert.NotNull(read["issues"]);
             Assert.Equal(SourceSelectionKind.Full, Assert.Single(tables.Selections).Kind);
+        }
+    }
+
+    [Fact]
+    public async Task A_flow_its_document_limits_is_reported_as_reading_its_first_records_by_key_as_the_run_reads_them()
+    {
+        var (engine, runtime, tables) = await EstateAsync(maxRecords: 3);
+        using (runtime)
+        {
+            var read = await DeliveryVerbs.ReadAsync(engine, runtime, CancellationToken.None);
+
+            Assert.Equal("the first 3 record(s) of the scope (source.record.maxRecords)", read["selection"]!.GetValue<string>());
+            Assert.StartsWith("source.record.maxRecords limits every run of scope ", read["why"]!.GetValue<string>(), StringComparison.Ordinal);
+            Assert.Equal(3, read["candidates"]!.GetValue<long>());
+            var selection = Assert.Single(tables.Selections);
+            Assert.Equal((SourceSelectionKind.Keys, 3), (selection.Kind, selection.Keys.Count));
         }
     }
 

@@ -1530,6 +1530,7 @@ internal static partial class FlowMapper
                 Key = (record.Key ?? []).Select(k => k?.Trim() ?? string.Empty).ToList(),
                 PrimaryKey = Optional(record.PrimaryKey),
                 Scope = Trimmed(record.Scope),
+                MaxRecords = record.MaxRecords,
             },
             Datasets = datasets,
             Payloads = payloads,
@@ -1603,6 +1604,13 @@ internal static partial class FlowMapper
         if (src.Record.PrimaryKey is { } primaryKey)
         {
             CheckColumn(primaryKey, $"{paths.Record}.primaryKey", source);
+        }
+
+        if (src.Record.MaxRecords is < 1 or > FlowSourceTable.MaxRecordsCeiling)
+        {
+            throw new FlowValidationException(string.Create(
+                CultureInfo.InvariantCulture,
+                $"{source}: {paths.Record}.maxRecords is {src.Record.MaxRecords}; a run reads the first 1 to {FlowSourceTable.MaxRecordsCeiling:N0} records of its scope, or leave it out to read the scope whole."));
         }
 
         foreach (var (column, parameter) in src.Record.Scope)

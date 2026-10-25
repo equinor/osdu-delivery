@@ -11,7 +11,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Smoke test a delivery on its first records.** A deliver, plan or intake run's payload takes `maxRecords` (1 to
   1,000), and the trigger dialog **Records at most**: the run reads only the first records of its scope, records not yet
   in the ledger included, and leaves the scope's watermark where it is, so the next run of the scope still reads every row
-  ([Running an OSDU flow](osdu/docs/reference/cli/run.md#a-delivery-flows-payload)).
+  ([Running an OSDU flow](osdu/docs/reference/cli/run.md#a-delivery-flows-payload)). A flow's `source.record.maxRecords`
+  sets the same limit in its document, for every run of its scope until it is removed
+  ([The first records of the scope](osdu/docs/reference/flow/delivery.md#the-first-records-of-the-scope)).
 
 - **Explain any page or piece of code.** Explain at the end of the tab strip has the assistant tell someone new what the
   page is for and what they do there, and Explain on a code window (or "Explain this" in its right-click menu) explains

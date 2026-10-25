@@ -6,7 +6,7 @@
   "includeEnvelope": true,
   "generatedFrom": "osdu/docs/reference/flow/delivery.md and osdu/src/SqlFlow.Delivery/Documents/YamlModels.cs",
   "naming": "The loader deserializes with YamlDotNet's CamelCaseNamingConvention and refuses any key it does not know.",
-  "keyCount": 522,
+  "keyCount": 524,
   "keys": [
     {
       "path": "batch",
@@ -938,7 +938,7 @@
       "path": "interfaces.<name>.record",
       "type": "object",
       "required": true,
-      "description": "The interface's record table, as `source.record` declares it: `object`, `key`, `primaryKey` and `scope`."
+      "description": "The interface's record table, as `source.record` declares it: `object`, `key`, `primaryKey`, `scope` and `maxRecords`."
     },
     {
       "path": "interfaces.<name>.record.key",
@@ -951,6 +951,12 @@
       "type": "string",
       "required": false,
       "description": "A key column of the record table: 1 to 128 characters, without brackets, control characters or surrounding space."
+    },
+    {
+      "path": "interfaces.<name>.record.maxRecords",
+      "type": "integer",
+      "required": false,
+      "description": "The most records a run of the interface's scope reads, 1 to 1000: every deliver, plan, intake and replan run reads only the first records of its scope, in the order a read pages in (`primaryKey`, or the record key without one), by key, and the scope keeps no watermark while it is set. A hard limit for a smoke test before the whole scope goes: a run's payload `maxRecords` may ask for fewer, never more. Leave it out to read the scope whole."
     },
     {
       "path": "interfaces.<name>.record.object",
@@ -2124,7 +2130,7 @@
       "path": "source.record",
       "type": "object",
       "required": false,
-      "description": "The record table, one row per record: its three-part name (`object`), its key columns (`key`), optionally its identity primary key (`primaryKey`) and a `scope` bound to parameters.",
+      "description": "The record table, one row per record: its three-part name (`object`), its key columns (`key`), optionally its identity primary key (`primaryKey`), a `scope` bound to parameters and the most records a run reads (`maxRecords`).",
       "appliesWhen": "Required in the single form. Refused at the source level when the document declares interfaces: each interface declares its own `record`."
     },
     {
@@ -2138,6 +2144,12 @@
       "type": "string",
       "required": false,
       "description": "A key column of the record table: 1 to 128 characters, without brackets, control characters or surrounding space."
+    },
+    {
+      "path": "source.record.maxRecords",
+      "type": "integer",
+      "required": false,
+      "description": "The most records a run of the scope reads, 1 to 1000: every deliver, plan, intake and replan run reads only the first records of its scope, in the order a read pages in (`primaryKey`, or the record key without one), by key, and the scope keeps no watermark while it is set. A hard limit for a smoke test before the whole scope goes: a run's payload `maxRecords` may ask for fewer, never more. Leave it out to read the scope whole."
     },
     {
       "path": "source.record.object",

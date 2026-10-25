@@ -10,6 +10,9 @@ keywords:
   - silver table
   - source.record
   - primarykey
+  - maxrecords
+  - smoke test a flow
+  - first records of the scope
   - render.mapping
   - render.parameters
   - target.endpoint
@@ -242,6 +245,7 @@ where each record's files are.
 | `record.key` | list | required | The key columns, in order: the ing flow's `load.keyColumns`. They must name the same columns, in the same order, as the mapping's `dataset.key`. |
 | `record.primaryKey` | string | none | The table's identity primary key (the ing flow's `target.identityColumn`, such as `RecId`). A fan-out cuts the read on it; without it the read is planned on one run and only the sending fans out. See [The identity primary key](#the-identity-primary-key). |
 | `record.scope` | map | none | Column to parameter: each entry becomes a typed `[column] = @parameter` predicate, so a run reads only the rows of its parameter values. A parameter the run gives several values reads the rows holding any of them, `[column] IN (@p0, @p1, ...)` ([Several values of a scope parameter](#several-values-of-a-scope-parameter)). A value is bound, never substituted into SQL. |
+| `record.maxRecords` | integer | none | The most records a run of the scope reads, 1 to 1000: the first of the scope, by key, on every run. A hard limit for a smoke test before the whole scope goes; leave it out to read the scope whole. See [The first records of the scope](#the-first-records-of-the-scope). |
 | `datasets.<name>.object` | string | required | A child table's three-part name. The mapping reads it under `<name>` (a `$forEach` over it, or `$dataset.<column>`). |
 | `datasets.<name>.join` | map | required | Child column to record key column. Every record key column must be joined. |
 | `datasets.<name>.orderBy` | list | none | The order of a record's child rows. |
@@ -337,6 +341,39 @@ ALTER TABLE [OsduData].[silver].[WellLog] ADD [RecId] bigint IDENTITY(1, 1) NOT 
 
 Run it while nothing loads the table. SQLFlow adds `target.identityColumn` only when it creates a table; set on an
 existing one, it adds a plain nullable column, which a run refuses as not an identity column.
+
+### The first records of the scope
+
+`record.maxRecords` limits every run of the scope to its first records, for trying a flow, or a new mapping or template,
+on a few records before every row goes:
+
+```yaml
+source:
+  record:
+    object: OsduData.arc.WellLog
+    key: [source_project, log_id]
+    primaryKey: RecId
+    scope:
+      log_source: logSource
+    maxRecords: 100
+```
+
+- **Which records.** Every `deliver`, `plan`, `intake` and `replan` run reads the first `maxRecords` rows of its scope in
+  the order a read pages in (the identity primary key, or the record key without one), the same ones run after run while
+  the table's first rows stay. Their keys are read from the table, so the flow's first run takes them too, and each is
+  planned as a run of every row would plan it: only what renders differently from what OSDU holds is sent.
+- **Read by key.** The run reads them as a run scoped to records does ([submissions](../concepts/submissions.md#what-a-run-reads)),
+  so the scope keeps no watermark while the key is set, and the records the ledger asks to plan again outside them (a
+  release, a redelivery) wait for a run of the whole scope. A run naming records (`recordKeys`) or a submission reads
+  what it names.
+- **A hard limit.** A run's payload `maxRecords` ([sqlflow run](../cli/run.md#a-delivery-flows-payload)) may ask for fewer,
+  never more: a run reads the fewer of the two, and the log says which limit it read by.
+- **Taking it out.** Remove the key to deliver the whole scope: the next run reads the scope as a run without it does,
+  every row for a flow limited from its first run, or the rows changed since the watermark the scope kept from before
+  the key was set. The records already delivered render as they were and are not sent again.
+
+In a source with interfaces each interface's `record` takes its own (`interfaces.<name>.record.maxRecords`).
+`sqlflow check --connect` reports the first records as what the next run reads, and why.
 
 ### What a run checks against the tables
 
@@ -684,6 +721,7 @@ Every message starts with the file. A sample of what `sqlflow validate` refuses:
 | A two-part table name | `source.record.object 'silver.WellLog' must be a three-part name [database].[schema].[table]: it has 2 part(s).` |
 | A child join missing a key column | `source.datasets.curves.join does not cover key column 'log_source' of the record table; every key column must be joined, or a child row could belong to several records.` |
 | A scope on an undeclared parameter | `source.record.scope binds column 'log_source' to parameter 'source', which is not declared under parameters.` |
+| A limit out of range | `source.record.maxRecords is 5000; a run reads the first 1 to 1,000 records of its scope, or leave it out to read the scope whole.` |
 | An undeclared token | `source.work uses '{source}', which is not declared under parameters.` |
 | A reference in a payload root | `source.payloads.las.root '${env:LAS_ROOT}' holds a ${...} reference, and a location is not resolved from one: write the path or storage URI itself, and vary it per run or environment with a {parameter} token declared under parameters.` |
 | A reference inside the work location | `source.work 'work/${env:WORK_ROOT}' names a reference other than at its start. A work location that names one is the reference's value with a path after it, such as ${env:LANDING_URL}/.work/welllog/{logSource}.` |

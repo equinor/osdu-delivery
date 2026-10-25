@@ -38,12 +38,15 @@ public sealed class FirstRecordsRunTests : IDisposable
         return tables;
     }
 
-    private async Task<(FlowRuntime Runtime, FakeProtocol Protocol, OsduLedger Ledger)> RuntimeAsync(MemoryIngestionTables tables)
+    /// <summary>The sample flow over <paramref name="tables"/>, its document limiting it to <paramref name="maxRecords"/> when given.</summary>
+    private async Task<(FlowRuntime Runtime, FakeProtocol Protocol, OsduLedger Ledger)> RuntimeAsync(MemoryIngestionTables tables, int? maxRecords = null)
     {
         var ledger = _db.Ledger(_clock);
         var protocol = new FakeProtocol();
         var engine = Samples.Engine(ledger, _clock, sources: tables) with { Protocols = new FakeProtocolFactory(protocol) };
-        var runtime = await FlowRuntime.CreateAsync(engine, Samples.LocalFlow(_root), SampleEstate.Values);
+        var flow = Samples.LocalFlow(_root);
+        flow = flow with { Source = flow.Source with { Record = flow.Source.Record with { MaxRecords = maxRecords } } };
+        var runtime = await FlowRuntime.CreateAsync(engine, flow, SampleEstate.Values);
         await ledger.RegisterAsync(runtime.Flow);
         runtime.Actor = "gui:tahir";
         return (runtime, protocol, ledger);
@@ -87,6 +90,41 @@ public sealed class FirstRecordsRunTests : IDisposable
             Assert.DoesNotContain(protocol.Deliveries, d => d.Key == SampleEstate.Key(LogCount - 1) || d.Key == SampleEstate.Key(LogCount - 2));
             Assert.Equal(LogCount, (await ledger.ListRecordsAsync(runtime.Flow.Id, null, LogCount + 10)).Count);
             Assert.NotNull(await ledger.GetWatermarkAsync(runtime.Flow.Id, scope));
+        }
+    }
+
+    [Fact]
+    public async Task A_flow_its_document_limits_reads_its_first_records_on_every_run_and_a_payload_asks_for_fewer_never_more()
+    {
+        var tables = await ReversedAsync();
+        var (runtime, protocol, ledger) = await RuntimeAsync(tables, maxRecords: 2);
+        using (runtime)
+        {
+            var scope = Planner.ScopeKey(runtime.Parameters);
+            var first = Assert.IsType<DeliverOutcome>(await RunAsync(runtime, DeliveryOperations.Deliver, DeliveryRunPayload.None));
+
+            Assert.Equal(2, first.Delivered);
+            Assert.Equal("the first 2 record(s) of the scope (source.record.maxRecords)", first.Selection);
+            var sent = protocol.Deliveries.Select(d => d.Key).ToList();
+            Assert.Contains(SampleEstate.Key(LogCount - 1), sent);
+            Assert.Contains(SampleEstate.Key(LogCount - 2), sent);
+            Assert.Null(await ledger.GetWatermarkAsync(runtime.Flow.Id, scope));
+
+            // The next run reads the same two, unchanged, and sends nothing; a replan is held to them too.
+            var again = Assert.IsType<DeliverOutcome>(await RunAsync(runtime, DeliveryOperations.Deliver, DeliveryRunPayload.None));
+            Assert.Equal((0, "the first 2 record(s) of the scope (source.record.maxRecords)"), (again.Delivered, again.Selection));
+            var replan = Assert.IsType<DeliverOutcome>(await RunAsync(runtime, DeliveryOperations.Replan, DeliveryRunPayload.None));
+            Assert.Equal("the first 2 record(s) of the scope (source.record.maxRecords)", replan.Selection);
+            Assert.Equal(2, protocol.Deliveries.Count);
+
+            // A payload asks for fewer than the document allows, and is held to the document's limit when it asks for more.
+            var fewer = Assert.IsType<PlanOutcome>(await RunAsync(runtime, DeliveryOperations.Plan, new DeliveryRunPayload { MaxRecords = 1 }));
+            Assert.Equal((1, "the first 1 record(s) of the scope (maxRecords)"), (fewer.Records, fewer.Selection));
+            var more = Assert.IsType<PlanOutcome>(await RunAsync(runtime, DeliveryOperations.Plan, new DeliveryRunPayload { MaxRecords = 500 }));
+            Assert.Equal((2, "the first 2 record(s) of the scope (source.record.maxRecords)"), (more.Records, more.Selection));
+
+            Assert.Equal(2, (await ledger.ListRecordsAsync(runtime.Flow.Id, null, LogCount + 10)).Count);
+            Assert.Null(await ledger.GetWatermarkAsync(runtime.Flow.Id, scope));
         }
     }
 

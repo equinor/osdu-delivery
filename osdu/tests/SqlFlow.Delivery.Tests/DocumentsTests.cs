@@ -274,6 +274,33 @@ public class YamlDocumentLoaderTests
         Assert.Contains("source.record.primaryKey", bracketed.Message, StringComparison.Ordinal);
     }
 
+    /// <summary>
+    /// A flow limited to the first records of its scope (osdu/docs/reference/flow/delivery.md, The first records of the
+    /// scope): <c>source.record.maxRecords</c> takes 1 to 1,000, and a flow without it reads its scope whole.
+    /// </summary>
+    [Fact]
+    public void A_flow_document_limits_its_runs_to_the_first_records_of_its_scope_and_reads_it_whole_without_a_limit()
+    {
+        var loader = new DeliveryDocumentLoader();
+        var flow = Flow.ReplaceLineEndings("\n");
+        Assert.Null(loader.ParseFlow(flow, "f").Source.Record.MaxRecords);
+
+        Assert.Equal(100, loader.ParseFlow(Limited(flow, "100"), "f").Source.Record.MaxRecords);
+        Assert.Equal(1, loader.ParseFlow(Limited(flow, "1"), "f").Source.Record.MaxRecords);
+        Assert.Equal(FlowSourceTable.MaxRecordsCeiling, loader.ParseFlow(Limited(flow, "1000"), "f").Source.Record.MaxRecords);
+
+        foreach (var max in new[] { "0", "1001", "-5" })
+        {
+            var refused = Assert.Throws<FlowValidationException>(() => loader.ParseFlow(Limited(flow, max), "flow.yaml"));
+            Assert.Equal(
+                $"flow.yaml: source.record.maxRecords is {max}; a run reads the first 1 to 1,000 records of its scope, or leave it out to read the scope whole.",
+                refused.Message);
+        }
+
+        static string Limited(string yaml, string max)
+            => yaml.Replace("    scope: { log_source: logSource }\n", $"    scope: {{ log_source: logSource }}\n    maxRecords: {max}\n", StringComparison.Ordinal);
+    }
+
     [Fact]
     public void Unknown_keys_are_a_parse_error_with_the_path()
     {

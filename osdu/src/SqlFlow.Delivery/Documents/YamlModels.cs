@@ -320,6 +320,8 @@ internal sealed class FlowSourceTableYaml
     public string? PrimaryKey { get; set; }
 
     public Dictionary<string, string>? Scope { get; set; }
+
+    public int? MaxRecords { get; set; }
 }
 
 internal sealed class FlowSourceDatasetYaml

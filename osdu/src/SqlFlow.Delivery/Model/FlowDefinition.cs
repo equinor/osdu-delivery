@@ -305,6 +305,12 @@ public sealed record FlowSource
 /// <summary>The record table of a flow's source.</summary>
 public sealed record FlowSourceTable
 {
+    /// <summary>
+    /// The most records <see cref="MaxRecords"/> takes, and a payload's <c>maxRecords</c>: as many as a run scoped to records
+    /// names, since a run of the first records of its scope reads them by key.
+    /// </summary>
+    public const int MaxRecordsCeiling = 1000;
+
     /// <summary>The table's three-part name, <c>[database].[schema].[table]</c>.</summary>
     [System.Diagnostics.CodeAnalysis.SuppressMessage(
         "Naming", "CA1720:Identifier contains type name",
@@ -324,6 +330,14 @@ public sealed record FlowSourceTable
 
     /// <summary>The scope predicate: a column of the record table bound to a flow parameter (<c>[column] = @parameter</c>).</summary>
     public IReadOnlyDictionary<string, string> Scope { get; init; } = new Dictionary<string, string>(StringComparer.Ordinal);
+
+    /// <summary>
+    /// The most records a run of the scope reads (<c>maxRecords</c>), 1 to <see cref="MaxRecordsCeiling"/>: every deliver,
+    /// plan, intake and replan run reads only the first records of its scope, in the order a read pages in, by key, so the
+    /// scope keeps no watermark while it is set. A hard limit for a smoke test of the flow; a run's payload may ask for fewer,
+    /// never more. Null reads the scope whole.
+    /// </summary>
+    public int? MaxRecords { get; init; }
 }
 
 /// <summary>A child dataset of a flow's source: a table of rows each belonging to one record.</summary>

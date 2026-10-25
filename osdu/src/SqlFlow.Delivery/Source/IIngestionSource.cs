@@ -48,6 +48,12 @@ public sealed record SourceSelection
     /// </summary>
     public int? FirstOf { get; init; }
 
+    /// <summary>
+    /// For the first records of the scope, the setting that asked for them: a payload's <c>maxRecords</c>, or the flow's
+    /// <c>source.record.maxRecords</c> as its document names it.
+    /// </summary>
+    public string? FirstOfSetting { get; init; }
+
     /// <summary>True when the selection covers the whole scope, which is what may move the flow's watermark.</summary>
     public bool CoversScope => Kind is SourceSelectionKind.Incremental or SourceSelectionKind.Full;
 
@@ -64,19 +70,20 @@ public sealed record SourceSelection
 
     /// <summary>
     /// The first records of the scope, read by key: <paramref name="keys"/> are the first the scope holds, in the order a read
-    /// of it pages in, at most <paramref name="asked"/> of them. A read of named records, so it covers no scope and moves no
-    /// watermark.
+    /// of it pages in, at most <paramref name="asked"/> of them, as <paramref name="setting"/> asked. A read of named records,
+    /// so it covers no scope and moves no watermark.
     /// </summary>
-    public static SourceSelection FirstOfScope(IReadOnlyList<KeyTuple> keys, int asked)
+    public static SourceSelection FirstOfScope(IReadOnlyList<KeyTuple> keys, int asked, string setting)
     {
         ArgumentNullException.ThrowIfNull(keys);
         ArgumentOutOfRangeException.ThrowIfLessThan(asked, 1);
+        ArgumentException.ThrowIfNullOrWhiteSpace(setting);
         if (keys.Count > asked)
         {
             throw new ArgumentException($"The first {asked} record(s) of a scope are at most {asked} keys, not {keys.Count}.", nameof(keys));
         }
 
-        return new SourceSelection { Kind = SourceSelectionKind.Keys, Keys = [.. keys], FirstOf = asked };
+        return new SourceSelection { Kind = SourceSelectionKind.Keys, Keys = [.. keys], FirstOf = asked, FirstOfSetting = setting };
     }
 
     /// <summary>One line for a log or a run outcome: what this read covers.</summary>
@@ -85,8 +92,8 @@ public sealed record SourceSelection
         SourceSelectionKind.Incremental => LowerUtc is { } lower ? $"incremental since {lower:yyyy-MM-ddTHH:mm:ssZ}" : "incremental (no watermark yet)",
         SourceSelectionKind.Full => "full",
         _ when FirstOf is { } asked => Keys.Count < asked
-            ? $"the first {asked} record(s) of the scope (maxRecords), of which it holds {Keys.Count}"
-            : $"the first {asked} record(s) of the scope (maxRecords)",
+            ? $"the first {asked} record(s) of the scope ({FirstOfSetting}), of which it holds {Keys.Count}"
+            : $"the first {asked} record(s) of the scope ({FirstOfSetting})",
         _ => $"{Keys.Count} record key(s)",
     };
 }
