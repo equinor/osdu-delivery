@@ -402,11 +402,15 @@ partition the flow serves (`?partition=`) makes it the title bar's, so a link la
 
 ## Runs and the trigger dialog
 
-The trigger dialog of these kinds adds the **Partition** a run writes to (the title bar's), **Flow parameters**, and per
-operation: **Force** and **Send again** (Nothing, What renders differently, or a part) for a deliver run, **Redeliver
-these records** (delivery keys), **Records at most** for a deliver, plan or intake run (the first 1 to 1,000 records of
-the scope, `maxRecords`: a smoke test before the whole scope goes; the run's page shows it as a chip), a submission to
-work on or drain, and the **Interfaces** of a source a run takes. See [running an OSDU flow](../cli/run.md) for the
+The trigger dialog of these kinds shows the flow's **Flow parameters** and **Run settings** as its document declares
+them ([parameters](../flow/parameters.md#in-the-gui-and-on-a-schedule)): each parameter with its description and
+default, a list to pick from for its choices or the values its column holds, and for a deliver, plan, intake or replan
+run **Records at most** (the first 1 to 1,000 records of the scope, or 0 for the whole, `maxRecords`: a smoke test before
+the whole scope goes; the document's `source.record.maxRecords` is its default, and the run's page shows it as a chip).
+The control plane checks the run as the fields are filled in. The kind adds the **Partition** a run writes to (the title
+bar's), and per operation: **Force** and **Send again** (Nothing, What renders differently, or a part) for a deliver run,
+**Redeliver these records** (delivery keys), a submission to work on or drain, and the **Interfaces** of a source a run
+takes. See [running an OSDU flow](../cli/run.md) for the
 operations.
 
 A run page gains, by kind:

@@ -52,19 +52,62 @@ internal static partial class DirectOperationRunner
         CatalogDbContext db, DeliveryConfigStore config, DirectOperations operations, DeliveryEndpoints.FlowContext flow, string operation,
         IReadOnlyDictionary<string, string> arguments, string actor, ILoggerFactory loggers, CancellationToken ct)
     {
-        ArgumentNullException.ThrowIfNull(config);
         ArgumentNullException.ThrowIfNull(operations);
-        ArgumentNullException.ThrowIfNull(flow);
         ArgumentNullException.ThrowIfNull(loggers);
+        var (configured, problem) = await PrepareAsync(db, config, flow, operation, arguments, actor, ct).ConfigureAwait(false);
+        return configured is null ? problem! : await ExecuteAsync(operations, configured, flow.Flow.Label, actor, loggers, ct).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// The same operation, for a caller that reads its answer itself (a run form's lookup of a parameter's values): the JSON it
+    /// answers with, logged as <see cref="RunAsync(CatalogDbContext, DeliveryConfigStore, DirectOperations, DeliveryEndpoints.FlowContext, string, IReadOnlyDictionary{string, string}, string, ILoggerFactory, CancellationToken)"/>
+    /// logs it. Its failure is thrown as it was raised, after the redacted reason is logged; a flow that cannot be given the
+    /// operation (its repository not materialized) is a <see cref="SqlFlowException"/> saying why.
+    /// </summary>
+    public static async Task<string> AnswerAsync(
+        CatalogDbContext db, DeliveryConfigStore config, DirectOperations operations, DeliveryEndpoints.FlowContext flow, string operation,
+        IReadOnlyDictionary<string, string> arguments, string actor, ILoggerFactory loggers, CancellationToken ct)
+    {
+        ArgumentNullException.ThrowIfNull(operations);
+        ArgumentNullException.ThrowIfNull(loggers);
+        var (configured, problem) = await PrepareAsync(db, config, flow, operation, arguments, actor, ct).ConfigureAwait(false);
+        if (configured is null)
+        {
+            throw new SqlFlowException(problem!.ProblemDetails.Detail ?? $"Flow '{flow.Flow.Label}' cannot run {operation} here.");
+        }
+
+        var log = loggers.CreateLogger(LogCategory);
+        try
+        {
+            var answer = await operations.Get(operation).ExecuteAsync(configured, ct).ConfigureAwait(false);
+            LogRan(log, operation, flow.Flow.Label, actor);
+            return answer;
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException && Classify(ex) is { } failure)
+        {
+            LogFailed(log, operation, flow.Flow.Label, actor, failure.Status, DeliveryEndpoints.Redacted(ex));
+            throw;
+        }
+    }
+
+    /// <summary>
+    /// The payload a node would be given for <paramref name="operation"/> on <paramref name="flow"/>, with the central
+    /// configuration of the flow's partition laid on it, or the problem that keeps the flow from being given it.
+    /// </summary>
+    private static async Task<(ComputeTaskPayload? Payload, ProblemHttpResult? Problem)> PrepareAsync(
+        CatalogDbContext db, DeliveryConfigStore config, DeliveryEndpoints.FlowContext flow, string operation, IReadOnlyDictionary<string, string> arguments,
+        string actor, CancellationToken ct)
+    {
+        ArgumentNullException.ThrowIfNull(config);
+        ArgumentNullException.ThrowIfNull(flow);
         var (payload, problem) = await DeliveryEndpoints.OperationPayloadAsync(db, flow, operation, arguments, actor, ct).ConfigureAwait(false);
         if (payload is null)
         {
-            return problem!;
+            return (null, problem);
         }
 
         var configuration = await config.ConfigurationAsync(flow.Pipeline.RepoId, ct).ConfigureAwait(false);
-        var configured = ConfiguredRunDispatcher.WithReferences(payload, configuration.For(flow.Flow.Partition));
-        return await ExecuteAsync(operations, configured, flow.Flow.Label, actor, loggers, ct).ConfigureAwait(false);
+        return (ConfiguredRunDispatcher.WithReferences(payload, configuration.For(flow.Flow.Partition)), null);
     }
 
     /// <summary>

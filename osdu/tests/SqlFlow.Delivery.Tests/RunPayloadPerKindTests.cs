@@ -262,9 +262,10 @@ public sealed class RunPayloadPerKindTests
 
     /// <summary>
     /// What a run of the first records of its scope takes (osdu/docs/reference/cli/run.md, A delivery flow's payload): a deliver,
-    /// plan or intake run reads 1 to 1,000 of them, as a run of the scope, so never beside the records it names, a submission or
-    /// slices; a deliver run does not send records again or bring them up to date beside it, which would reach every delivered
-    /// record, while a plan may render every one of its first records.
+    /// plan, intake or replan run reads 1 to 1,000 of them, as a run of the scope, so never beside the records it names, a
+    /// submission or slices; a deliver run does not send records again or bring them up to date beside it, which would reach
+    /// every delivered record, while a plan may render every one of its first records. 0 reads the scope whole, whatever the
+    /// flow's own source.record.maxRecords says, and so stands beside all of them.
     /// </summary>
     [Fact]
     public void A_run_of_the_first_records_of_its_scope_reads_one_to_a_thousand_of_them_and_nothing_a_run_of_named_records_does()
@@ -278,11 +279,21 @@ public sealed class RunPayloadPerKindTests
         Assert.Equal("""{"force":true,"maxRecords":100,"interfaces":["logs"]}""", first.ToJson());
         DeliveryRunPayload.Parse("""{"maxRecords":1}""").Validate(DeliveryOperations.Intake);
         DeliveryRunPayload.Parse("""{"maxRecords":1000,"rerender":true}""").Validate(DeliveryOperations.Plan);
+        DeliveryRunPayload.Parse("""{"maxRecords":5}""").Validate(DeliveryOperations.Replan);
         Assert.Null(DeliveryRunPayload.Parse("""{"force":true}""").MaxRecords);
 
+        // 0 reads the whole scope: it asks nothing of what else the run names.
+        var whole = DeliveryRunPayload.Parse("""{"maxRecords":0}""");
+        whole.Validate(DeliveryOperations.Deliver);
+        Assert.Equal(0, whole.MaxRecords);
+        Assert.Equal("""{"maxRecords":0}""", whole.ToJson());
+        DeliveryRunPayload.Parse("""{"maxRecords":0,"recordKeys":["0d1e6f3c-9a4b-4c1e-8e7a-2b3c4d5e6f72"]}""").Validate(DeliveryOperations.Deliver);
+        DeliveryRunPayload.Parse("""{"maxRecords":0,"submissionId":"0d1e6f3c-9a4b-4c1e-8e7a-2b3c4d5e6f70"}""").Validate(DeliveryOperations.Intake);
+        DeliveryRunPayload.Parse("""{"maxRecords":0,"redeliver":"all"}""").Validate(DeliveryOperations.Deliver);
+
         Assert.Equal(
-            "payload maxRecords is 0; a run reads the first 1 to 1,000 records of its scope.",
-            Refusal("""{"maxRecords":0}""", DeliveryOperations.Deliver));
+            "payload maxRecords is -1; a run reads the first 1 to 1,000 records of its scope, or 0 reads the scope whole.",
+            Refusal("""{"maxRecords":-1}""", DeliveryOperations.Deliver));
         Assert.StartsWith("payload maxRecords is 1001;", Refusal("""{"maxRecords":1001}""", DeliveryOperations.Plan), StringComparison.Ordinal);
         Assert.Equal(
             "payload maxRecords must be a whole number: how many of the first records of its scope the run reads.",
@@ -291,11 +302,11 @@ public sealed class RunPayloadPerKindTests
 
         foreach (var operation in new[]
         {
-            DeliveryOperations.Drain, DeliveryOperations.Verify, DeliveryOperations.Sync, DeliveryOperations.Replan, DeliveryOperations.Undo,
+            DeliveryOperations.Drain, DeliveryOperations.Verify, DeliveryOperations.Sync, DeliveryOperations.Undo,
         })
         {
             Assert.Equal(
-                $"payload maxRecords does not apply to the {operation} operation: only a deliver, plan or intake run reads the first records of its scope.",
+                $"payload maxRecords does not apply to the {operation} operation: only a deliver, plan, intake or replan run reads the first records of its scope.",
                 Refusal("""{"maxRecords":10}""", operation));
         }
 

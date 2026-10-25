@@ -6,7 +6,7 @@
   "includeEnvelope": true,
   "generatedFrom": "osdu/docs/reference/flow/delivery.md and osdu/src/SqlFlow.Delivery/Documents/YamlModels.cs",
   "naming": "The loader deserializes with YamlDotNet's CamelCaseNamingConvention and refuses any key it does not know.",
-  "keyCount": 524,
+  "keyCount": 529,
   "keys": [
     {
       "path": "batch",
@@ -1727,16 +1727,46 @@
       "description": "One parameter, named by the key and referenced as `{name}`. A value supplied for a name not declared here is refused."
     },
     {
+      "path": "parameters.<name>.choices",
+      "type": "list",
+      "required": false,
+      "description": "The values the parameter may take, in the order a run form lists them: a run given any other value is refused (`parameter 'name' is given 'x', which is not one of its choices: a, b.`), and the run form offers them as a list to pick from. At least one and at most 500, each listed once and written as a run gives it; a `default` is one of them. Leave it out for a parameter that takes any value."
+    },
+    {
+      "path": "parameters.<name>.choices[]",
+      "type": "string",
+      "required": false,
+      "description": "One value the parameter may take."
+    },
+    {
       "path": "parameters.<name>.default",
       "type": "string",
       "required": false,
-      "description": "The value used when a run supplies none."
+      "description": "The value used when a run supplies none; one of the parameter's `choices` when it lists them."
     },
     {
       "path": "parameters.<name>.description",
       "type": "string",
       "required": false,
       "description": "Text describing the parameter."
+    },
+    {
+      "path": "parameters.<name>.lookup",
+      "type": "object",
+      "required": false,
+      "description": "Where the run form looks the values the parameter may take up: the distinct values a column of the record table holds, with how many rows hold each, most used first. The values are offered, not enforced, since the table may hold another by the time a run reads it. A parameter `source.record.scope` binds is looked up in the column it binds without one, so it names none; a parameter lists `choices` or names a lookup, not both."
+    },
+    {
+      "path": "parameters.<name>.lookup.column",
+      "type": "string",
+      "required": true,
+      "description": "The column of the record table whose values the parameter offers; it has to be one the table holds."
+    },
+    {
+      "path": "parameters.<name>.lookup.interface",
+      "type": "string",
+      "required": false,
+      "description": "In a source with interfaces, the interface whose record table holds the column; the first interface when left out."
     },
     {
       "path": "parameters.<name>.required",

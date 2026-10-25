@@ -174,7 +174,7 @@ Unknown keys are refused: the document is read strictly, so a misspelled key fai
 | `name` | string | yes | none | The flow's name: its pipeline identity. The flow id, and so its ledger, derive from it. |
 | `batch` | string | no | none | The SQLFlow batch the pipeline is filed under. |
 | `description` | string | no | none | Free text. |
-| `parameters` | map | no | none | Named parameters, each with `required`, `default` and `description`. `{name}` tokens use them in `source.query` and `target.location`. A run supplies values with `--set name=value` or a schedule's `values`; a value for an undeclared name is refused. |
+| `parameters` | map | no | none | Named parameters, each with `required`, `default` and `description`. `{name}` tokens use them in `source.query` and `target.location`. A run supplies values with `--set name=value` or a schedule's `values`; a value for an undeclared name is refused. A parameter may list its `choices` ([parameters](parameters.md)). |
 | `source` | map | yes | none | The OSDU side: platform, credentials, partition, kinds, query, paging and watermark. |
 | `target` | map | yes | none | The lake side: where a run's files and manifest go and how the files are cut. |
 | `reliability` | map | no | defaults | The HTTP settings, written as on a [delivery flow](delivery.md): `timeoutSeconds`, `retry`, `rateLimitRps`, `verifyTls`, `urlAllowlist`, `maxResponseBytes`. |

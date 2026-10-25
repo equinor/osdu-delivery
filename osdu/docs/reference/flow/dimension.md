@@ -239,7 +239,7 @@ type ...`).
 | `name` | text | required | The flow's name: its pipeline identity, and the name its dimensions are kept under. A flow that builds in partitions keeps them per partition, as `name@partition`. |
 | `description` | text | none | What the dimensions are for. |
 | `batch` | text | none | The grouping label the pipeline is filed under (`welldb`). |
-| `parameters` | map | none | Parameters a dimension's `query` uses as `{name}` tokens, each with `default`, `required` and `description`. `partition` cannot be declared: `{partition}` is always the partition the run builds in. |
+| `parameters` | map | none | Parameters a dimension's `query` uses as `{name}` tokens, each with `default`, `required` and `description`. `partition` cannot be declared: `{partition}` is always the partition the run builds in. A parameter may list its `choices` ([parameters](parameters.md)). |
 | `partitions` | list | none | The partitions the flow builds in, each a literal `data-partition-id`. See [Partitions](#partitions). |
 | `source` | map | required | The OSDU platform the dimensions are read from. See [source](#source). |
 | `dimensions` | list | required | The dimensions, at least 1 and at most 100, names unique ignoring case. |

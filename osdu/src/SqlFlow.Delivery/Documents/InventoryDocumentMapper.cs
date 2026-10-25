@@ -48,10 +48,7 @@ internal static class InventoryMapper
         }
 
         var followsRegistry = partitions.Count == 0 && !headers.ContainsKey(FlowMapper.PartitionHeader);
-        var parameters = (y.Parameters ?? []).ToDictionary(
-            kv => kv.Key,
-            kv => new FlowParameter { Required = kv.Value.Required, Default = kv.Value.Default, Description = kv.Value.Description },
-            StringComparer.Ordinal);
+        var parameters = FlowParameterDeclarations.Map(y.Parameters, source);
         if (parameters.ContainsKey(PartitionNames.RunValue))
         {
             throw new FlowValidationException(

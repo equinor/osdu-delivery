@@ -30,7 +30,7 @@ internal sealed class FlowYaml
 
     public object? Lifecycle { get; set; }
 
-    public Dictionary<string, FlowParameterYaml>? Parameters { get; set; }
+    public Dictionary<string, DeliveryParameterYaml>? Parameters { get; set; }
 
     public FlowSourceYaml? Source { get; set; }
 
@@ -283,13 +283,28 @@ internal sealed class FailWhenYaml
     public int? OutageFailures { get; set; }
 }
 
-internal sealed class FlowParameterYaml
+internal class FlowParameterYaml
 {
     public bool Required { get; set; }
 
     public string? Default { get; set; }
 
     public string? Description { get; set; }
+
+    public List<string>? Choices { get; set; }
+}
+
+/// <summary>A delivery flow's parameter, whose values may be looked up in a column of its record table.</summary>
+internal sealed class DeliveryParameterYaml : FlowParameterYaml
+{
+    public FlowParameterLookupYaml? Lookup { get; set; }
+}
+
+internal sealed class FlowParameterLookupYaml
+{
+    public string? Column { get; set; }
+
+    public string? Interface { get; set; }
 }
 
 internal sealed class FlowSourceYaml

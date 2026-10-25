@@ -89,15 +89,10 @@ public sealed class MappingRenderer
         _references = references;
         _context = context;
 
-        if (requireParameters)
+        if (requireParameters
+            && FlowParameters.ExplainMapping(mapping, context.Parameters).FirstOrDefault(v => v.Origin == Core.Runs.RunValueOrigin.Missing) is { } missing)
         {
-            foreach (var (name, parameter) in mapping.Parameters)
-            {
-                if (parameter.Required && !context.Parameters.ContainsKey(name) && parameter.Default is null)
-                {
-                    throw new FlowValidationException($"{Where(mapping)}: parameter '{name}' is required but the flow supplies no value under render.parameters.");
-                }
-            }
+            throw new FlowValidationException($"{Where(mapping)}: parameter '{missing.Name}' is required but the flow supplies no value under render.parameters.");
         }
 
         _requiredData = schema.RequiredAt("data");

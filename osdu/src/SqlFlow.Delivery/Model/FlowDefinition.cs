@@ -249,6 +249,7 @@ public sealed record FlowDefinition
     private static bool IsReference(string value) => value.Contains("${", StringComparison.Ordinal);
 }
 
+/// <summary>One parameter a flow's document declares under <c>parameters</c> (osdu/docs/reference/flow/parameters.md).</summary>
 public sealed record FlowParameter
 {
     public bool Required { get; init; }
@@ -256,7 +257,26 @@ public sealed record FlowParameter
     public string? Default { get; init; }
 
     public string? Description { get; init; }
+
+    /// <summary>
+    /// The values the parameter may take, as the document lists them under <c>choices</c>, in its order: a run giving any
+    /// other is refused. Null when the document lists none, so the flow's stored definition is what it was before choices.
+    /// </summary>
+    public IReadOnlyList<string>? Choices { get; init; }
+
+    /// <summary>
+    /// Where a delivery flow's run form looks the values the parameter may take up (<c>lookup</c>): a column of an interface's
+    /// record table. Null when the document names none; a parameter <c>source.record.scope</c> binds is looked up in the
+    /// column it binds without one.
+    /// </summary>
+    public FlowParameterLookup? Lookup { get; init; }
 }
+
+/// <summary>
+/// The column of a delivery flow's record table a parameter's values are looked up in, and the interface whose record table
+/// it is (null for the first, or the only one).
+/// </summary>
+public sealed record FlowParameterLookup(string Column, string? Interface);
 
 /// <summary>
 /// Where the flow's records come from (osdu/docs/reference/flow/delivery.md, source): the keyed ingestion tables

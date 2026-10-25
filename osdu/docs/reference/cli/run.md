@@ -202,7 +202,7 @@ no engine path could honour is refused before anything is queued.
 | `submissionId` | UUID | The submission the run works on: a re-run, a fan-out member's share, or the submission a `reverse` run reverses. |
 | `runId` | UUID | The run a `reverse` run reverses. Only `reverse` takes it. |
 | `recordKeys` | array of UUIDs | The delivery keys the run is scoped to: at most 1,000, each once, or the 25,000 one removal takes on a `remove` run. A `deliver` run sends the named records again (everything of them, unless `redeliver` names a part); a `remove` run removes them. |
-| `maxRecords` | whole number | How many records a `deliver`, `plan` or `intake` run reads: the first 1 to 1,000 of its scope, in the order a read of the scope pages in (the identity primary key, or the record key without one), each planned as a run of every row would plan it. A smoke test of a flow, or of a new mapping or template, on a few records before the whole scope goes. The records need not be in the ledger yet. The run reads them by key, as a run scoped to records does ([submissions](../concepts/submissions.md#what-a-run-reads)): it leaves the scope's watermark where it is, and the records the ledger asked to plan again for a run of the whole scope, so the next run of the scope still reads every row. A source's interfaces each read the first of their own scope. A flow's `source.record.maxRecords` limits every run of its scope the same way ([the first records of the scope](../flow/delivery.md#the-first-records-of-the-scope)): beside it, a payload may ask for fewer, never more. |
+| `maxRecords` | whole number | How many records a `deliver`, `plan`, `intake` or `replan` run reads: the first 1 to 1,000 of its scope, or 0 for the scope whole, in the order a read of the scope pages in (the identity primary key, or the record key without one), each planned as a run of every row would plan it. A smoke test of a flow, or of a new mapping or template, on a few records before the whole scope goes. The records need not be in the ledger yet. The run reads them by key, as a run scoped to records does ([submissions](../concepts/submissions.md#what-a-run-reads)): it leaves the scope's watermark where it is, and the records the ledger asked to plan again for a run of the whole scope, so the next run of the scope still reads every row. A source's interfaces each read the first of their own scope. A flow's `source.record.maxRecords` is the default every run of its scope takes ([the first records of the scope](../flow/delivery.md#the-first-records-of-the-scope)): a payload's stands in for it on that run, asking for more, for fewer, or with 0 for the scope whole. |
 | `redeliver` | text | What a `deliver` run sends again, changed or not: `all`, `record` (the document; its datasets and bulk data keep what OSDU holds), `files`, `bulk`, `workflow`, or the older names `metadata` (the record) and `payload` (the files or the bulk data). Without `recordKeys`, every record the flow has delivered in the partition. A part the route does not send is refused, naming the parts it does. |
 | `rerender` | `true`/`false` | Bring records up to date: render the named records, or every delivered record, again under today's rules and let each record's hashes decide, so only what renders differently is sent. A `plan` with `rerender` renders every record it reads and says what that would send. |
 | `interface` | text | The one interface of a source the run works on. A run on records or slices, a `remove` run, and a `reverse` of a run, of a source with several interfaces has to name it; a run on a submission finds its interface from the submission. |
@@ -219,19 +219,19 @@ Which fields each operation takes:
 
 | Operation | Takes | Refuses |
 | --- | --- | --- |
-| `deliver` | `force`, `submissionId`, `recordKeys`, `maxRecords`, `redeliver`, `rerender`, `slices` and `rateShare` (with `submissionId`), `interface`, `interfaces` | `slices` with `redeliver` or `rerender`; `rateShare` without `slices`; `redeliver` or `rerender` with `submissionId` or `maxRecords`; `rerender` with `redeliver` |
+| `deliver` | `force`, `submissionId`, `recordKeys`, `maxRecords`, `redeliver`, `rerender`, `slices` and `rateShare` (with `submissionId`), `interface`, `interfaces` | `slices` with `redeliver` or `rerender`; `rateShare` without `slices`; `redeliver` or `rerender` with `submissionId` or a `maxRecords` above 0; `rerender` with `redeliver` |
 | `plan` | `force`, `submissionId`, `recordKeys`, `maxRecords`, `rerender`, `interface`, `interfaces` | `redeliver`, `slices`, `rateShare`; `rerender` with `submissionId` |
 | `intake` | `force`, `submissionId`, `recordKeys`, `maxRecords`, `slices` and `rateShare` (with `submissionId`), `interface`, `interfaces` | `redeliver`, `rerender` |
 | `drain` | `submissionId`, `rateShare` (with `submissionId`), `interface`, `interfaces` | `force`, `recordKeys`, `maxRecords`, `redeliver`, `rerender`, `slices` |
 | `verify` | `force`, `recordKeys`, `interface`, `interfaces` | `submissionId`, `maxRecords`, `redeliver`, `rerender`, `slices`, `rateShare` |
-| `replan` | `force`, `interface`, `interfaces` | `submissionId`, `recordKeys`, `maxRecords`, `redeliver`, `rerender`, `slices`, `rateShare` |
+| `replan` | `force`, `maxRecords`, `interface`, `interfaces` | `submissionId`, `recordKeys`, `redeliver`, `rerender`, `slices`, `rateShare` |
 | `sync` | `recordKeys`, `interface`, `interfaces` | `force`, `submissionId`, `maxRecords`, `redeliver`, `rerender`, `slices`, `rateShare` |
 | `reverse` | `submissionId` or `runId` (exactly one), `interface` | `force`, `recordKeys`, `maxRecords`, `redeliver`, `rerender`, `slices`, `rateShare`, `interfaces` |
 | `undo` | `force`, `interface`, `interfaces` | `submissionId`, `recordKeys`, `maxRecords`, `redeliver`, `rerender`, `slices`, `rateShare` |
 | `remove` | `scope` (required), `recordKeys` or `filter` (exactly one), `purgeLedger` (with `scope` `record` or `everything`), `interface` | `force`, `submissionId`, `maxRecords`, `redeliver`, `rerender`, `slices`, `rateShare`, `interfaces` |
 | `delete-ledger` | `confirm` (required), `interface`, `interfaces` | `force`, `submissionId`, `recordKeys`, `maxRecords`, `redeliver`, `rerender`, `slices`, `rateShare` |
 
-Across every operation: `submissionId` and `recordKeys` never together; `maxRecords` never with `recordKeys`,
+Across every operation: `submissionId` and `recordKeys` never together; a `maxRecords` above 0 never with `recordKeys`,
 `submissionId` or `slices`; `interface` and `interfaces` never together;
 `interfaces` never with `submissionId`, `recordKeys` or `slices`; `runId` only on `reverse`; `confirm` only on
 `delete-ledger`; `scope`, `filter` and `purgeLedger` only on `remove`; and `tests`, `tags`, `dimensions`, `inventories`, `removal`, `entries` and `approve`, which belong to the other kinds, never.
@@ -321,6 +321,12 @@ and the next run without `maxRecords` reads every row as before:
 ```bash
 sqlflow run flows/welldb-welllog-03-header-delivery.yaml --operation plan --set partition=dev --set logSource=COMPOSITE --payload '{"maxRecords":100}'
 sqlflow run flows/welldb-welllog-03-header-delivery.yaml --set partition=dev --set logSource=COMPOSITE --payload '{"maxRecords":100}'
+```
+
+A flow whose document limits its runs (`source.record.maxRecords`) reads the whole scope on a run that asks for it:
+
+```bash
+sqlflow run flows/welldb-welllog-03-header-delivery.yaml --set partition=dev --set logSource=COMPOSITE --payload '{"maxRecords":0}'
 ```
 
 Run only the well log interface of a source:

@@ -2,13 +2,12 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useRef, use
 import { useMutation, useQueries, useQuery } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { isApiError } from "@/api/client";
-import type { ComputeTask, RunValue } from "@/api/types";
+import type { ComputeTask, DeclaredRunParameter, RunValue } from "@/api/types";
 import { useAuth } from "@/auth/AuthContext";
 import {
   deliveryApi,
   type DeliveryFlowScope,
   type DeliveryMappingFlow,
-  type DeliveryParameter,
   type DeliveryValueCheck,
   type DeliveryValueCheckFinding,
   type DeliveryValueCheckRows,
@@ -32,7 +31,8 @@ import {
   within,
   type OutcomeKey,
 } from "./valueCheck";
-import { missingParameters, scopeValuesToSend, type ScopeFieldValues } from "./scopeValues";
+import { parametersFor, parameterValuesToSend, type ParameterFieldValues } from "@/features/runs/runInputs";
+import { usePipelineParameters, useRunExplanation } from "@/features/runs/useRunInputs";
 
 /** Which variables the tree narrows to after a check: any that fails (an assertion included), or those failing one way. */
 export type FailingFilter = "any" | "held" | "invalid" | "empty" | "asserted";
@@ -112,6 +112,9 @@ function emptyStore(key: string | null): Store {
 
 /** How long the toast line list is kept: long enough that no completion is lost between two renders. */
 const MAX_COMPLETIONS = 20;
+
+/** A value check gives the plan it is explained as no payload. */
+const NO_PAYLOAD: Readonly<Record<string, unknown>> = {};
 
 /** Takes in a task a node finished: its variables merged, or one finding's next examples appended, with a line for the toast. */
 function taken(store: Store, task: PendingTask, settled: ComputeTask | undefined, error: unknown): Store {
@@ -199,11 +202,13 @@ export interface ValueCheckSession {
   /** The flow whose rows a check reads, and choosing another. */
   flow: DeliveryMappingFlow | null;
   chooseFlow: (key: string) => void;
-  /** The scope's parameters, the values given, and giving one. */
-  parameters: DeliveryParameter[];
+  /** The flow's parameters a plan resolves (as its document declares them), the values given, and giving one. */
+  parameters: DeclaredRunParameter[];
   keyColumns: string[];
-  values: ScopeFieldValues;
-  setValue: (name: string, value: RunValue) => void;
+  values: ParameterFieldValues;
+  setValue: (name: string, value: RunValue | undefined) => void;
+  /** What refuses each parameter's value, as the control plane explains the values given. */
+  parameterProblems: Readonly<Record<string, string>>;
   /** The rows a check reads; 0 for the whole scope. */
   maxRows: number;
   setMaxRows: (rows: number) => void;
@@ -279,7 +284,7 @@ export function useValueCheckSession(mappingId: string, reference: string): Valu
   const flow = flows.find((candidate) => flowKey(candidate) === picked) ?? flows[0] ?? null;
   const currentKey = flow === null ? null : flowKey(flow);
 
-  // The scope's parameters are the flow's, as its own pages list them.
+  // The record key's columns are the interface's, as the flow's own pages list them.
   const interfaces = useQuery({
     queryKey: ["delivery", "interfaces", flow?.pipelineId ?? null, flow?.partition ?? null],
     queryFn: () => deliveryApi.interfaces(flow!.pipelineId, flow!.partition),
@@ -288,10 +293,21 @@ export function useValueCheckSession(mappingId: string, reference: string): Valu
   });
   const described = (interfaces.data ?? []).find((row) => (row.interface ?? null) === (flow?.interface ?? null)
     && (row.partition ?? null) === (flow?.partition ?? null));
-  const parameters = useMemo(() => described?.parameters ?? [], [described]);
   const keyColumns = described?.keyColumns ?? [];
 
-  const [values, setValues] = useState<ScopeFieldValues>({});
+  // The parameters are the flow's document's, as a run form gives them: a check reads and renders rows as a plan does, so
+  // its values are the ones a plan resolves, checked by the control plane as it would check the plan.
+  const inputs = usePipelineParameters(flow?.pipelineId ?? null);
+  const parameters = useMemo(() => parametersFor(inputs.data?.inputs, "plan"), [inputs.data]);
+  const [values, setValues] = useState<ParameterFieldValues>({});
+  const sent = useMemo(() => parameterValuesToSend(parameters, values), [parameters, values]);
+  const partition = flow?.partition ?? null;
+  const explainedValues = useMemo<Record<string, RunValue>>(
+    () => (partition !== null ? { ...sent, partition } : sent),
+    [sent, partition],
+  );
+  const { parameterProblems, inputProblems, refused, explained } = useRunExplanation(
+    flow?.pipelineId ?? null, "plan", explainedValues, NO_PAYLOAD, flow !== null && parameters.length > 0);
   const [maxRows, setMaxRows] = useState(DEFAULT_ROW_BUDGET);
   const [filter, setFilter] = useState<FailingFilter | null>(null);
   const [focus, setFocus] = useState<{ path: string; nonce: number } | null>(null);
@@ -359,7 +375,6 @@ export function useValueCheckSession(mappingId: string, reference: string): Valu
   });
 
   const { mutate } = queue;
-  const missing = missingParameters(parameters, scopeValuesToSend(parameters, values));
   let blocked: string | null = null;
   if (!canOperate) {
     blocked = "A check runs on a node, which takes a signed-in session.";
@@ -369,10 +384,10 @@ export function useValueCheckSession(mappingId: string, reference: string): Valu
     blocked = otherPartitions.length > 0
       ? `The flows rendering with this mapping deliver to partition ${otherPartitions.join(", ")}; pick it in the title bar to check their rows.`
       : "No flow renders with this mapping yet, so there are no rows to check.";
-  } else if (interfaces.isPending) {
+  } else if (interfaces.isPending || inputs.isPending) {
     blocked = "Reading what the flow's scope needs.";
-  } else if (missing.length > 0) {
-    blocked = `The scope needs ${missing.map((p) => p.name).join(", ")}: the flow declares ${missing.length === 1 ? "it" : "them"} required, with no default.`;
+  } else if (refused) {
+    blocked = Object.values(parameterProblems)[0] ?? inputProblems[0] ?? explained.data?.problems[0] ?? null;
   }
 
   const check = useCallback((targets: string[] | null) => {
@@ -385,12 +400,12 @@ export function useValueCheckSession(mappingId: string, reference: string): Valu
       flow,
       targets,
       page: null,
-      values: scopeValuesToSend(parameters, values),
+      values: sent,
       maxRows,
       samples: targets === null ? SAMPLES_ALL : SAMPLES_ONE,
       skipSamples: 0,
     });
-  }, [blocked, flow, currentKey, mutate, parameters, values, maxRows]);
+  }, [blocked, flow, currentKey, mutate, sent, maxRows]);
 
   const more = useCallback((target: string, finding: DeliveryValueCheckFinding) => {
     const current = store.variables.get(target);
@@ -446,6 +461,7 @@ export function useValueCheckSession(mappingId: string, reference: string): Valu
     keyColumns,
     values,
     setValue: (name, value) => setValues((current) => ({ ...current, [name]: value })),
+    parameterProblems,
     maxRows,
     setMaxRows,
     canOperate,

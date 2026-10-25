@@ -64,10 +64,7 @@ internal static class RetrievalMapper
             Name = name,
             Description = string.IsNullOrWhiteSpace(y.Description) ? null : y.Description!.Trim(),
             Batch = string.IsNullOrWhiteSpace(y.Batch) ? null : y.Batch!.Trim(),
-            Parameters = (y.Parameters ?? []).ToDictionary(
-                kv => kv.Key,
-                kv => new FlowParameter { Required = kv.Value.Required, Default = kv.Value.Default, Description = kv.Value.Description },
-                StringComparer.Ordinal),
+            Parameters = FlowParameterDeclarations.Map(y.Parameters, source),
             Source = new RetrievalSource
             {
                 Endpoint = FlowMapper.Require(src.Endpoint, "source.endpoint", source),

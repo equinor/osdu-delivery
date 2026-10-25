@@ -47,8 +47,12 @@ any terminal that has it):
 - **An on-demand suite** (`bash tools/test.sh --suite <name>`) runs one suite alone, against SQL Server as the full tier
   runs the suites: the tests that carry `[Trait("Suite", "<name>")]`, which both tiers and CI leave out, for edge cases
   too many to run on every change. `DimensionEdgeCases` holds every edge of the dimension engine: its attributes,
-  elements, lookups, incremental loads, grouped views and joins to views. Run it after a change to the engine. A new
-  suite is named in `on_demand_suites` in `tools/test.sh` and left out in CI's two test steps.
+  elements, lookups, incremental loads, grouped views and joins to views. Run it after a change to the engine.
+  `RunParameters` holds every rule of a flow's `parameters` and run settings for each of the seven kinds: choices and
+  lookups, a run's resolution checked against what a run form and a schedule's preview explain, the first records of a
+  delivery's scope over every operation and payload, and a schedule's fire against its preview. Run it after a change to
+  how a run takes its values. A new suite is named in `on_demand_suites` in `tools/test.sh` and left out in CI's two test
+  steps.
 
 A test that needs SQL Server, a host or another process carries `[Trait("Category", "Integration")]`, which puts it in
 the full tier. The OSDU module's SQL Server tests are the classes in `[Collection(SqlServerSuite.Name)]`, and a guard

@@ -276,6 +276,15 @@ public interface IIngestionSource
     Task<IReadOnlyList<ScopeParameterValues>> ScopeValuesAsync(int max, CancellationToken ct = default);
 
     /// <summary>
+    /// The values a parameter of the flow may take, looked up in <paramref name="column"/> of the record table: the column
+    /// <c>source.record.scope</c> binds it to, or the one its <c>lookup</c> names (osdu/docs/reference/flow/parameters.md,
+    /// Lookups). The distinct values the column holds in rows not marked deleted, with how many rows hold each, the most rows
+    /// first, at most <paramref name="max"/>, those whose text contains <paramref name="search"/> (ignoring case) when it is
+    /// given. The column has to be one the table holds; nothing but its values is read, and no parameter value is needed.
+    /// </summary>
+    Task<ScopeParameterValues> ColumnValuesAsync(string parameter, string column, string? search, int max, CancellationToken ct = default);
+
+    /// <summary>
     /// The record table's key columns, in the record key's order, with the SQL Server type each holds: what a removal converts
     /// the keys its source holds to, so a key read there derives the delivery key a row of the table does
     /// (osdu/docs/reference/flow/removal.md, How a key is read). Reads the table's shape and no row.

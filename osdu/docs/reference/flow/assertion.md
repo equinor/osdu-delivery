@@ -220,7 +220,7 @@ The document is read strictly: an unknown key fails validation naming it.
 | `name` | string | yes | none | The flow's name: its pipeline identity, and the name its reports are kept under (`name@partition` for a flow that tests partitions). |
 | `batch`, `description` | string | no | none | The SQLFlow batch, and free text. |
 | `partitions` | list | no | none | The partitions the flow tests, 1 to 64, each once (see [Which partition a run tests](#which-partition-a-run-tests)). |
-| `parameters` | map | no | none | Named parameters (`required`, `default`, `description`), used as `{name}` tokens in queries, ids and the text a test compares with. `partition` is reserved: `{partition}` is always the partition the run tests. |
+| `parameters` | map | no | none | Named parameters (`required`, `default`, `description`), used as `{name}` tokens in queries, ids and the text a test compares with. `partition` is reserved: `{partition}` is always the partition the run tests. A parameter may list its `choices` ([parameters](parameters.md)). |
 | `source` | map | yes | none | The platform and where its services are. |
 | `defaults` | map | no | see below | What a test takes when it says nothing itself. |
 | `failRunOn` | string | no | `error` | Which outcomes fail the platform run: `error`, `warning` or `never` (see [Outcomes](#outcomes)). |

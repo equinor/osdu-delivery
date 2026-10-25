@@ -120,7 +120,7 @@ Unknown keys are refused when the document is read.
 | `name` | text | required | The flow's name: its pipeline identity, and the name its inventories are kept under (`name@partition` for a flow that works in partitions). |
 | `description` | text | none | What the inventories are for. |
 | `batch` | text | none | The grouping label the pipeline is filed under. |
-| `parameters` | map | none | Parameters an inventory's `query` uses as `{name}` tokens. `partition` cannot be declared: `{partition}` is always the partition the run reads. |
+| `parameters` | map | none | Parameters an inventory's `query` uses as `{name}` tokens. `partition` cannot be declared: `{partition}` is always the partition the run reads. A parameter may list its `choices` ([parameters](parameters.md)). |
 | `partitions` | list | none | The partitions the flow keeps inventories of, each a literal `data-partition-id`. Partitions are settled as a [dimension flow's](dimension.md#partitions) are: listed, hard-coded by `source.headers.data-partition-id`, or every registered partition. A run reads one partition; `*` is refused. |
 | `source` | map | required | The OSDU platform, and how it is read. See [source](#source). |
 | `owners` | list | inferred | The identities this estate's records are written as (OSDU's `createUser`: a user's e-mail, an application's client id), at most 50, each at most 256 characters with no whitespace, unique ignoring case. See [Owners](#owners). |

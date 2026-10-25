@@ -63,6 +63,16 @@ public sealed class RetrievalFlowKind : IFlowDocumentKind
         return new RetrievalFlowDocument { Flow = _loader.ParseRetrieval(yaml, source) };
     }
 
+    /// <summary>
+    /// What a retrieval flow's run may be given: its parameters. It retrieves from the partition its headers name, so a
+    /// run names none (<see cref="KindRunInputs"/>).
+    /// </summary>
+    public FlowRunInputs DescribeRun(string yaml, string source)
+    {
+        ArgumentNullException.ThrowIfNull(yaml);
+        return FlowParameters.RunInputs(_loader.ParseRetrieval(yaml, source).Parameters);
+    }
+
     public void ValidateParameters(RunParameters parameters)
     {
         ArgumentNullException.ThrowIfNull(parameters);

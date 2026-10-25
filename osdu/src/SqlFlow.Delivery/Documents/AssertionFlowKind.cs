@@ -67,6 +67,18 @@ public sealed class AssertionFlowKind : IFlowDocumentKind
         return new AssertionFlowDocument { Flow = _loader.ParseAssertion(yaml, source) };
     }
 
+    /// <summary>
+    /// What an assertion flow's run may be given: its parameters, and the partition it tests when it works in partitions (<see cref="KindRunInputs"/>).
+    /// </summary>
+    public FlowRunInputs DescribeRun(string yaml, string source)
+    {
+        ArgumentNullException.ThrowIfNull(yaml);
+        return DescribeAssertion(_loader.ParseAssertion(yaml, source));
+    }
+
+    private static FlowRunInputs DescribeAssertion(AssertionFlowDefinition flow)
+        => KindRunInputs.Of(flow.Parameters, flow.Partitioned, "tests");
+
     public void ValidateParameters(RunParameters parameters)
     {
         ArgumentNullException.ThrowIfNull(parameters);

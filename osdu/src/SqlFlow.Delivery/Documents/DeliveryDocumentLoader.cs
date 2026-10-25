@@ -547,19 +547,69 @@ internal static partial class FlowMapper
             }
 
             CheckPartitionLedgers([flow], source);
-            return new SourceDefinition { SourcePath = path, Name = name, Description = description, Batch = batch, Interfaces = [flow] };
+            return CheckParameterLookups(
+                new SourceDefinition { SourcePath = path, Name = name, Description = description, Batch = batch, Interfaces = [flow] }, source);
         }
 
-        return new SourceDefinition
+        return CheckParameterLookups(
+            new SourceDefinition
+            {
+                SourcePath = path,
+                Name = name,
+                Description = description,
+                Batch = batch,
+                DeclaresInterfaces = true,
+                Interfaces = MapInterfaces(y, name, source, partitions).Select(f => WithLedgerPartition(f, ledgerPartition, source)).ToList(),
+                ParallelInterfaces = MapParallelInterfaces(y.Parallelism, source),
+            },
+            source);
+    }
+
+    /// <summary>
+    /// A parameter's <c>lookup</c> names a column of a record table the source reads: of the interface it names, which the
+    /// source declares, or of the first. A parameter <c>source.record.scope</c> binds is looked up in the column it binds, so
+    /// it names none (osdu/docs/reference/flow/parameters.md, Lookups).
+    /// </summary>
+    private static SourceDefinition CheckParameterLookups(SourceDefinition parsed, string source)
+    {
+        foreach (var (name, parameter) in parsed.Parameters)
         {
-            SourcePath = path,
-            Name = name,
-            Description = description,
-            Batch = batch,
-            DeclaresInterfaces = true,
-            Interfaces = MapInterfaces(y, name, source, partitions).Select(f => WithLedgerPartition(f, ledgerPartition, source)).ToList(),
-            ParallelInterfaces = MapParallelInterfaces(y.Parallelism, source),
-        };
+            if (parameter.Lookup is not { } lookup)
+            {
+                continue;
+            }
+
+            var at = $"parameters.{name}.lookup";
+            CheckColumn(lookup.Column, at + ".column", source);
+            if (lookup.Interface is { } named)
+            {
+                if (!parsed.DeclaresInterfaces)
+                {
+                    throw new FlowValidationException(
+                        $"{source}: {at}.interface names interface '{named}', and the flow declares no interfaces: its one record table is where the column is read, so leave interface out.");
+                }
+
+                if (!parsed.Interfaces.Any(i => string.Equals(i.Interface, named, StringComparison.Ordinal)))
+                {
+                    throw new FlowValidationException(
+                        $"{source}: {at}.interface names interface '{named}', which the flow does not declare; it declares {string.Join(", ", parsed.Interfaces.Select(i => i.Interface))}.");
+                }
+            }
+
+            foreach (var flow in parsed.Interfaces)
+            {
+                foreach (var (column, bound) in flow.Source.Record.Scope)
+                {
+                    if (string.Equals(bound, name, StringComparison.Ordinal))
+                    {
+                        throw new FlowValidationException(
+                            $"{source}: {at}: {KeyPaths.Of(flow).Record}.scope binds parameter '{name}' to column '{column}', whose values a run form offers for it; leave lookup out.");
+                    }
+                }
+            }
+        }
+
+        return parsed;
     }
 
     /// <summary>
@@ -726,10 +776,7 @@ internal static partial class FlowMapper
 
             // Neither a list nor a header: the flow serves every partition registered with the catalog.
             FollowsRegistry = partitions.Count == 0 && !(target.Headers ?? []).Keys.Any(k => k.Equals(PartitionHeader, StringComparison.OrdinalIgnoreCase)),
-            Parameters = (y.Parameters ?? []).ToDictionary(
-                kv => kv.Key,
-                kv => new FlowParameter { Required = kv.Value?.Required ?? false, Default = kv.Value?.Default, Description = kv.Value?.Description },
-                StringComparer.Ordinal),
+            Parameters = FlowParameterDeclarations.Map(y.Parameters, source),
             Source = mappedSource,
             Render = new FlowRender
             {

@@ -50,10 +50,7 @@ internal static class CacheMapper
                 $"{source}: makeCurrent is not a setting any more: every version a refresh writes becomes the current version of its partition's cache. Remove it.");
         }
 
-        var parameters = (y.Parameters ?? []).ToDictionary(
-            kv => kv.Key,
-            kv => new FlowParameter { Required = kv.Value.Required, Default = kv.Value.Default, Description = kv.Value.Description },
-            StringComparer.Ordinal);
+        var parameters = FlowParameterDeclarations.Map(y.Parameters, source);
         if ((partitions.Count > 0 || followsRegistry) && parameters.ContainsKey(PartitionNames.RunValue))
         {
             throw new FlowValidationException(

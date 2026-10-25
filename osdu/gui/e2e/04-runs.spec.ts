@@ -25,9 +25,13 @@ test.describe.serial("runs", () => {
     // The flow declares logSource as required: it fills the scope predicate the plan reads the ingestion table with.
     await adminPage.getByTestId("trigger-operation").click();
     await adminPage.getByRole("option", { name: /^Plan/ }).click();
-    // A delivery flow's parameters are fields; the one its scope reads offers the log sources the record table holds.
+    // A flow's parameters are the dialog's fields, read from its document; the one its scope reads offers the log sources
+    // the record table holds, and the control plane says it is required until it is given.
+    await expect(adminPage.getByTestId("trigger-parameter-logSource-problem")).toContainText("parameter 'logSource' is required");
+    await expect(adminPage.getByTestId("trigger-submit")).toBeDisabled();
     await adminPage.getByTestId("trigger-parameter-logSource").fill(LOG_SOURCE);
-    await adminPage.getByTestId("trigger-parameters").getByText("Flow parameters").click();
+    await adminPage.getByTestId("trigger-flow-parameters").getByText("Flow parameters").click();
+    await expect(adminPage.getByTestId("trigger-parameter-logSource-problem")).toHaveCount(0);
     await adminPage.getByTestId("trigger-submit").click();
 
     // 202 accepted: the dialog navigates to the run detail, which polls to a terminal state.

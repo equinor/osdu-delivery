@@ -159,7 +159,9 @@ any flow ([connections and secrets](../../../../sqlflow/docs/reference/concepts/
 ### Parameters and partitions
 
 Every flow kind may declare `parameters`: named run values a run supplies with `--set name=value` (or a schedule with
-`values`), used as `{name}` tokens where the kind allows them. The OSDU partition a run acts in is not a parameter but a
+`values`), used as `{name}` tokens where the kind allows them. A parameter may list its `choices`, and a delivery flow's
+may look its values up in a column of its record table; the run form offers them, and one rule decides what a run takes
+([parameters](parameters.md)). The OSDU partition a run acts in is not a parameter but a
 run value of its own, `partition`. Every kind except retrieval may list its partitions under `partitions`; a flow that
 names none and has no `data-partition-id` header serves every partition registered with the catalog
 ([partitions](../concepts/partitions.md)).

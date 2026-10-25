@@ -77,6 +77,18 @@ public sealed class DimensionFlowKind : IFlowDocumentKind
         return new DimensionFlowDocument { Flow = _loader.ParseDimension(yaml, source) };
     }
 
+    /// <summary>
+    /// What a dimension flow's run may be given: its parameters, and the partition it builds in when it works in partitions (<see cref="KindRunInputs"/>).
+    /// </summary>
+    public FlowRunInputs DescribeRun(string yaml, string source)
+    {
+        ArgumentNullException.ThrowIfNull(yaml);
+        return DescribeDimension(_loader.ParseDimension(yaml, source));
+    }
+
+    private static FlowRunInputs DescribeDimension(DimensionFlowDefinition flow)
+        => KindRunInputs.Of(flow.Parameters, flow.Partitioned, "builds in");
+
     public void ValidateParameters(RunParameters parameters)
     {
         ArgumentNullException.ThrowIfNull(parameters);

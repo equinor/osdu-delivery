@@ -299,31 +299,61 @@ public sealed class SqlServerIngestionSource : IIngestionSource
 
         // What a scope can be given is listed before any value is: the check of a scope's rows is a run's, not this read's.
         var layout = await BuildLayoutAsync(connection, ct, guardScope: false).ConfigureAwait(false);
-        var record = _tables[SourceDatasets.Record];
-        var where = KeyPaths.Where(_flow);
         var listed = new List<ScopeParameterValues>(layout.Scope.Count);
         foreach (var (column, parameter, _) in layout.Scope)
         {
-            var declared = Column(record, layout.Record, column, $"{where}: {_keys.Name("source.record.scope")} binds parameter '{parameter}' to column '{column}'");
-            await using var command = Command(connection, IngestionSql.ScopeValues(layout, declared.Name));
-            // One value past the ones listed says the column holds more.
-            command.Parameters.Add(new SqlParameter(IngestionSql.TopParameter, SqlDbType.Int) { Value = max + 1 });
-            var values = new List<ScopeValue>(Math.Min(max + 1, 1000));
-            await using (var reader = await ExecuteReaderAsync(command, $"list the values of {declared.Name}", ct).ConfigureAwait(false))
-            {
-                while (await reader.ReadAsync(ct).ConfigureAwait(false))
-                {
-                    if (SourceRow.Stringify(SourceValues.Normalize(reader.GetValue(0))) is { } text)
-                    {
-                        values.Add(new ScopeValue(text, reader.GetInt64(1)));
-                    }
-                }
-            }
-
-            listed.Add(new ScopeParameterValues(parameter, declared.Name, values.Take(max).ToList(), values.Count > max));
+            listed.Add(await ColumnValuesAsync(connection, layout, parameter, column, search: null, max, ct).ConfigureAwait(false));
         }
 
         return listed;
+    }
+
+    public async Task<ScopeParameterValues> ColumnValuesAsync(string parameter, string column, string? search, int max, CancellationToken ct = default)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(parameter);
+        ArgumentException.ThrowIfNullOrWhiteSpace(column);
+        ArgumentOutOfRangeException.ThrowIfLessThan(max, 1);
+        await using var connection = await IngestionConnection.OpenAsync(_flow.Source.Connection, _flow.Name, _secrets, ct).ConfigureAwait(false);
+        var layout = await BuildLayoutAsync(connection, ct, guardScope: false).ConfigureAwait(false);
+        return await ColumnValuesAsync(connection, layout, parameter, column, string.IsNullOrWhiteSpace(search) ? null : search.Trim(), max, ct).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// The values <paramref name="column"/> of the record table holds for <paramref name="parameter"/>, as
+    /// <see cref="ColumnValuesAsync(string, string, string?, int, CancellationToken)"/> lists them. The column is checked
+    /// against the columns the table holds before it is named in the statement.
+    /// </summary>
+    private async Task<ScopeParameterValues> ColumnValuesAsync(
+        SqlConnection connection, IngestionLayout layout, string parameter, string column, string? search, int max, CancellationToken ct)
+    {
+        var record = _tables[SourceDatasets.Record];
+        var where = KeyPaths.Where(_flow);
+        var bound = layout.Scope.Any(s => string.Equals(s.Column, column, StringComparison.Ordinal) && string.Equals(s.Parameter, parameter, StringComparison.Ordinal));
+        var declaredBy = bound
+            ? $"{where}: {_keys.Name("source.record.scope")} binds parameter '{parameter}' to column '{column}'"
+            : $"{where}: parameters.{parameter}.lookup names column '{column}'";
+        var declared = Column(record, layout.Record, column, declaredBy);
+        await using var command = Command(connection, IngestionSql.ScopeValues(layout, declared.Name, search is not null));
+        // One value past the ones listed says the column holds more.
+        command.Parameters.Add(new SqlParameter(IngestionSql.TopParameter, SqlDbType.Int) { Value = max + 1 });
+        if (search is not null)
+        {
+            command.Parameters.Add(new SqlParameter(IngestionSql.SearchParameter, SqlDbType.NVarChar, 4000) { Value = IngestionSql.ContainsPattern(search) });
+        }
+
+        var values = new List<ScopeValue>(Math.Min(max + 1, 1000));
+        await using (var reader = await ExecuteReaderAsync(command, $"list the values of {declared.Name}", ct).ConfigureAwait(false))
+        {
+            while (await reader.ReadAsync(ct).ConfigureAwait(false))
+            {
+                if (SourceRow.Stringify(SourceValues.Normalize(reader.GetValue(0))) is { } text)
+                {
+                    values.Add(new ScopeValue(text, reader.GetInt64(1)));
+                }
+            }
+        }
+
+        return new ScopeParameterValues(parameter, declared.Name, values.Take(max).ToList(), values.Count > max);
     }
 
     private async Task<DateTime> NowAsync(SqlConnection connection, CancellationToken ct)

@@ -13,7 +13,9 @@
 #   bash tools/test.sh --suite NAME     one on-demand suite alone, against SQL Server as the full tier runs it: the tests
 #                                       that carry [Trait("Suite", "NAME")], which both tiers leave out. The suites are
 #                                       named in on_demand_suites below: DimensionEdgeCases, every edge of the dimension
-#                                       engine's attributes, elements, lookups, incremental loads and views.
+#                                       engine's attributes, elements, lookups, incremental loads and views; and
+#                                       RunParameters, every rule of a flow's parameters and run settings for each kind, a
+#                                       run's resolution checked against what a run form and a schedule's preview say.
 #
 # The unit tier points the suites at a server that does not exist, so a test that needs SQL Server without carrying
 # [Trait("Category", "Integration")] fails here, as it would in CI, rather than passing on this machine's database.
@@ -31,7 +33,7 @@ root="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$root"
 
 # The suites a test opts into with [Trait("Suite", "<name>")]: run on demand alone, left out of both tiers.
-on_demand_suites="DimensionEdgeCases"
+on_demand_suites="DimensionEdgeCases RunParameters"
 
 if [ "$#" -gt 1 ] && [ "${1:-}" != --suite ]; then
   echo "tools/test.sh: takes one argument at most, or --suite and a suite's name, and was given $#." >&2

@@ -1192,31 +1192,6 @@ export interface DeliveryParameter {
   scopeColumn?: string | null;
 }
 
-/** One value a scope parameter can take, and how many rows of the record table not marked deleted hold it. */
-export interface DeliveryScopeValue {
-  value: string;
-  rows: number;
-}
-
-/** The values a parameter of a flow's scope can take, read from the column the scope binds it to. */
-export interface DeliveryScopeParameterValues {
-  parameter: string;
-  column: string;
-  /** The values, the most rows first. */
-  values: DeliveryScopeValue[];
-  /** True when the column holds more distinct values than were listed. */
-  more: boolean;
-}
-
-/** What the `delivery-scope-values` task answers: the values each parameter of an interface's scope can take. */
-export interface DeliveryScopeValues {
-  flow: string;
-  interface?: string | null;
-  recordObject: string;
-  parameters: DeliveryScopeParameterValues[];
-  readUtc: string;
-}
-
 /** How a record preview read the key it was given. */
 export type DeliveryPreviewKeyForm = "first" | "delivery key" | "osdu id" | "source key" | "key parts";
 
@@ -4098,13 +4073,6 @@ export const deliveryApi = {
     post<DeliveryRecordPreview>(flowPath(pipelineId, "/preview", scope), request),
   /** Previews this record, rendered from its current source row as a delivery would render it now. Answered at once. */
   previewRecord: (record: DeliveryRecordRef) => post<DeliveryRecordPreview>(`${recordApiPath(record)}/preview`),
-  /**
-   * Reads the values each parameter of an interface's scope can take: the distinct values of the column the scope binds it
-   * to in the flow's record table, with how many rows hold each. What a page offers for a scope's value rather than having
-   * it typed. Answered at once.
-   */
-  scopeValues: (pipelineId: string, scope?: DeliveryFlowScope) =>
-    post<DeliveryScopeValues>(flowPath(pipelineId, "/scope-values", scope)),
   /** The interfaces of the delivery flows that render with a mapping, in every partition: what its values are checked against. */
   mappingFlows: (mappingId: string) => get<DeliveryMappingFlow[]>(`/api/v1/delivery/mappings/${mappingId}/flows`),
   /**

@@ -7,14 +7,10 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
 import type { RunValue } from "@/api/types";
-import { useAuth } from "@/auth/AuthContext";
 import type { TriggerBodyContribution, TriggerFieldsProps } from "@/modules/registry";
-import { deliveryApi, type DeliveryFlowScope, type DeliveryParameter } from "../../api/delivery";
+import { deliveryApi } from "../../api/delivery";
 import { useActivePartition } from "./activePartition";
-import { firstRecordsField, firstRecordsOf, MAX_FIRST_RECORDS } from "./firstRecords";
-import { lines, parseValues, singleValue, valuesToLines } from "./runValues";
-import { ScopeParameterFields } from "./ScopeParameterFields";
-import { missingParameters, scopeValuesToSend, type ScopeFieldValues } from "./scopeValues";
+import { lines, singleValue } from "./runValues";
 import { PLANNED_PER_PASS } from "./ReleaseDialog";
 import { counted } from "./assertions/assertionFormat";
 
@@ -134,30 +130,15 @@ function typesIn(listed: readonly { scope: string; types: string[] }[], scope: s
   return [...new Set(names)].sort((a, b) => a.localeCompare(b));
 }
 
-/**
- * The parameters a delivery flow declares, as the interface of it in `partition` that reads its scope by a column
- * describes them (the one whose values the fields offer), with that interface's scope; undefined while the flow's
- * interfaces are unknown, or from a control plane that does not say which column a parameter scopes by.
- */
-function declaredParameters(
-  interfaces: readonly { interface: string | null; partition?: string | null; parameters?: DeliveryParameter[] | null }[] | undefined,
-  partition: string | null,
-): { parameters: DeliveryParameter[]; scope: DeliveryFlowScope } | undefined {
-  const rows = (interfaces ?? []).filter((row) => (row.partition ?? null) === partition);
-  const described = rows.find((row) => (row.parameters ?? []).some((parameter) => parameter.scopeColumn)) ?? rows[0];
-  if (described?.parameters === null || described?.parameters === undefined || !described.parameters.every((p) => "scopeColumn" in p)) {
-    return undefined;
-  }
-
-  return { parameters: described.parameters, scope: { interfaceName: described.interface, partition: described.partition ?? null } };
-}
-
 /** The partitions of a list as a sentence names them: "dev", "dev and test", "dev, test and prod". */
 function listed(names: readonly string[]): string {
   return names.length <= 1 ? names.join("") : `${names.slice(0, -1).join(", ")} and ${names[names.length - 1]}`;
 }
 
-/** The payload keys these fields own; anything else the run being repeated carried goes with it unchanged. */
+/**
+ * The payload keys these fields own; anything else the run being repeated carried goes with it unchanged. maxRecords is a
+ * run setting the dialog's Run settings own, opened with what the run being repeated gave it, so it is not carried here.
+ */
 const OWNED_KEYS = new Set(["force", "submissionId", "recordKeys", "maxRecords", "redeliver", "rerender", "interface", "interfaces", "types"]);
 
 const FORCE_HINTS: Record<string, string> = {
@@ -176,27 +157,12 @@ function isRedeliverScope(value: unknown): value is RedeliverScope {
 }
 
 /**
- * The values of a flow's parameter fields as a run takes them: each given value trimmed, an empty one left out so the
- * parameter's default applies, several values of a parameter the scope reads as their list, and a required parameter
- * without a default and without a value the error.
- */
-function fieldsToValues(parameters: DeliveryParameter[], fields: ScopeFieldValues): { values: Record<string, RunValue>; error: string | null } {
-  const values = scopeValuesToSend(parameters, fields);
-  const missing = missingParameters(parameters, values);
-  return {
-    values,
-    error: missing.length === 0
-      ? null
-      : `The flow's scope needs ${missing.map((p) => p.name).join(", ")}: the flow declares ${missing.length === 1 ? "it" : "them"} required, with no default.`,
-  };
-}
-
-/**
- * The trigger dialog's fields for delivery, retrieval and cache flows: force, the flow's parameter values, and for a
- * delivery flow the submission to work on, the records to scope the run to, and the part of them to send again. Which
- * fields apply follows the operation picked; reading every row of the scope again is the flow kind's own `replan`
- * operation rather than a field here. A run being repeated opens with what it was given, and keeps any other part of
- * its payload (the key slices a fan-out member took) as it was.
+ * The trigger dialog's fields for delivery, retrieval and cache flows: the partition, force, and for a delivery flow the
+ * submission to work on, the records to scope the run to, the part of them to send again and the interfaces; for a cache
+ * flow its types. The flow's parameters and its run settings (a delivery's Records at most) are the dialog's own Flow
+ * parameters and Run settings, read from the flow's document. Which fields apply follows the operation picked; reading
+ * every row of the scope again is the flow kind's own `replan` operation rather than a field here. A run being repeated
+ * opens with what it was given, and keeps any other part of its payload (the key slices a fan-out member took) as it was.
  */
 export function DeliveryTriggerFields({ flowKind, pipelineId, operation, initialValues, initialPayload, onChange }: TriggerFieldsProps) {
   const idPrefix = useId();
@@ -207,13 +173,6 @@ export function DeliveryTriggerFields({ flowKind, pipelineId, operation, initial
   // fields say so.
   const [active] = useActivePartition();
   const [ranIn] = useState<string | null>(() => singleValue(initialValues, PARTITION));
-  const [valuesText, setValuesText] = useState(() => valuesToLines(initialValues, PARTITION));
-  // A delivery flow's parameters are fields, each offering what the flow's scope reads it against; a run being repeated
-  // opens with the values it was given.
-  const [fieldValues, setFieldValues] = useState<ScopeFieldValues>(
-    () => Object.fromEntries(Object.entries(initialValues).filter(([name]) => name !== PARTITION)),
-  );
-  const { hasScope } = useAuth();
   const [submissionId, setSubmissionId] = useState(
     () => (typeof initialPayload?.submissionId === "string" ? initialPayload.submissionId : ""),
   );
@@ -222,8 +181,6 @@ export function DeliveryTriggerFields({ flowKind, pipelineId, operation, initial
       ? initialPayload.recordKeys.filter((key): key is string => typeof key === "string").join("\n")
       : ""
   ));
-  // How many of the first records of its scope the run reads; empty reads the scope as it stands.
-  const [maxRecordsText, setMaxRecordsText] = useState(() => String(firstRecordsOf(initialPayload) ?? ""));
   const [redeliver, setRedeliver] = useState<SendAgain>(
     () => (initialPayload?.rerender === true ? "uptodate" : isRedeliverScope(initialPayload?.redeliver) ? initialPayload.redeliver : "changed"),
   );
@@ -247,11 +204,6 @@ export function DeliveryTriggerFields({ flowKind, pipelineId, operation, initial
 
   const effectiveOperation = operation ?? DEFAULT_OPERATION[flowKind] ?? null;
   const deliveryKind = flowKind === "delivery";
-  // Every operation that reads the ingestion tables is given the flow's parameter values: they fill the record
-  // scope's predicate and the work location, so a run without them reads nothing.
-  const takesValues = !deliveryKind
-    || effectiveOperation === "deliver" || effectiveOperation === "plan"
-    || effectiveOperation === "intake" || effectiveOperation === "replan";
   const takesSubmission = deliveryKind
     && (effectiveOperation === "deliver" || effectiveOperation === "intake" || effectiveOperation === "drain");
   const takesRecordScope = deliveryKind && (effectiveOperation === "deliver" || effectiveOperation === "verify" || effectiveOperation === "sync");
@@ -260,9 +212,6 @@ export function DeliveryTriggerFields({ flowKind, pipelineId, operation, initial
   const takesForce = flowKind !== "cache" && !(deliveryKind && (effectiveOperation === "drain" || effectiveOperation === "sync"));
   const takesTypes = flowKind === "cache";
   const recordKeys = useMemo(() => lines(recordKeysText), [recordKeysText]);
-  // A run of the first records of its scope is a run of the scope, which only these three read and plan.
-  const takesMaxRecords = deliveryKind && (effectiveOperation === "deliver" || effectiveOperation === "plan" || effectiveOperation === "intake");
-  const firstRecords = useMemo(() => firstRecordsField(maxRecordsText), [maxRecordsText]);
   const takesRedeliver = deliveryKind && effectiveOperation === "deliver";
   // Records named by key are always sent again or brought up to date, so naming them makes "only what changed" everything.
   const sendAgain: SendAgain = recordKeys.length > 0 && redeliver === "changed" ? "all" : redeliver;
@@ -273,12 +222,11 @@ export function DeliveryTriggerFields({ flowKind, pipelineId, operation, initial
   }, [recordKeys.length, repeatedPart]);
   const takesInterfaces = deliveryKind && effectiveOperation !== null;
   const interfaceNames = useMemo(() => lines(interfacesText), [interfacesText]);
-  const { partitions, headerPartition, loading: partitionsLoading, interfaces, cacheTypes } = useFlowPartitions(flowKind, pipelineId);
+  const { partitions, headerPartition, loading: partitionsLoading, cacheTypes } = useFlowPartitions(flowKind, pipelineId);
   const takesPartition = partitions.length > 0;
   // A flow that works in partitions runs in the title bar's partition when it serves it, and not at all otherwise; a flow
   // whose partition is its header's takes none, and runs only while the title bar is on the partition its header names.
   const partition = takesPartition && active !== null && partitions.includes(active) ? active : null;
-  const declared = useMemo(() => (deliveryKind ? declaredParameters(interfaces, partition) : undefined), [deliveryKind, interfaces, partition]);
   const typeNames = useMemo(() => typesIn(cacheTypes, partition ?? headerPartition), [cacheTypes, partition, headerPartition]);
   const verb = deliveryKind ? "deliver to" : "build a cache for";
   const partitionError = partitionsLoading
@@ -295,35 +243,20 @@ export function DeliveryTriggerFields({ flowKind, pipelineId, operation, initial
   const carriesLedgerWork = (takesSubmission && submissionId.trim() !== "") || (takesRecordScope && recordKeys.length > 0);
 
   const body = useMemo<TriggerBodyContribution>(() => {
-    const parsed = !takesValues
-      ? { values: {}, error: null }
-      : declared !== undefined
-        ? fieldsToValues(declared.parameters, fieldValues)
-        : parseValues(valuesText);
     const trimmedSubmission = submissionId.trim();
     // Client-side mirror of the kind's own validation, so obvious mistakes are caught before the round trip; the control
-    // plane validates authoritatively and its problem details still render if anything slips through.
-    const error = parsed.error
-      ?? (PARTITION in parsed.values
-        ? "The partition is not a flow parameter: a run acts in the partition picked in the title bar."
-        : partitionError
-          ?? (movedFrom !== null && carriesLedgerWork
-            ? `The submission and records this run names are ${movedFrom}'s, where the run being repeated ran. Pick ${movedFrom} in the title bar to run it again there, or clear them.`
-            : null))
+    // plane validates authoritatively and its problem details still render if anything slips through. The flow's
+    // parameters and its run settings are the dialog's, which the control plane explains as they are filled in.
+    const error = partitionError
+      ?? (movedFrom !== null && carriesLedgerWork
+        ? `The submission and records this run names are ${movedFrom}'s, where the run being repeated ran. Pick ${movedFrom} in the title bar to run it again there, or clear them.`
+        : null)
       ?? (takesSubmission && trimmedSubmission !== "" && !UUID.test(trimmedSubmission)
         ? "The submission id must be a UUID."
         : takesRedeliver && sendAgain !== "changed" && takesSubmission && trimmedSubmission !== ""
           ? "A run on a submission delivers what that submission planned; clear the submission, or set Send again to nothing."
           : takesRecordScope && recordKeys.some((key) => !UUID.test(key))
           ? "Every record key must be a UUID (one per line)."
-          : takesMaxRecords && firstRecords.error !== null
-            ? firstRecords.error
-            : takesMaxRecords && firstRecords.count !== null && takesRecordScope && recordKeys.length > 0
-              ? "A run reads the records it names or the first records of its scope, not both; clear the record keys or Records at most."
-              : takesMaxRecords && firstRecords.count !== null && takesSubmission && trimmedSubmission !== ""
-                ? "A run on a submission reads the rows that submission recorded; clear the submission or Records at most."
-                : takesMaxRecords && firstRecords.count !== null && takesRedeliver && sendAgain !== "changed"
-                  ? "A run of the first records of its scope sends what changed of them; set Send again to nothing, or name the records to send again."
           : takesInterfaces && interfaceNames.some((name) => !INTERFACE_NAME.test(name))
             ? "An interface's name is a letter, then letters, digits, '_' and '-' (one per line)."
             : takesInterfaces && new Set(interfaceNames).size !== interfaceNames.length
@@ -345,10 +278,6 @@ export function DeliveryTriggerFields({ flowKind, pipelineId, operation, initial
       payload.recordKeys = recordKeys;
     }
 
-    if (takesMaxRecords && firstRecords.count !== null) {
-      payload.maxRecords = firstRecords.count;
-    }
-
     if (takesRedeliver && sendAgain === "uptodate") {
       payload.rerender = true;
     } else if (takesRedeliver && sendAgain !== "changed") {
@@ -363,7 +292,7 @@ export function DeliveryTriggerFields({ flowKind, pipelineId, operation, initial
       payload.types = [...pickedTypes].sort((a, b) => a.localeCompare(b));
     }
 
-    const values: Record<string, RunValue> = { ...parsed.values };
+    const values: Record<string, RunValue> = {};
     if (partition !== null) {
       values[PARTITION] = partition;
     }
@@ -375,8 +304,7 @@ export function DeliveryTriggerFields({ flowKind, pipelineId, operation, initial
     };
   }, [
     carried, carriesLedgerWork, force, interfaceNames, movedFrom, partition, partitionError, recordKeys, sendAgain, submissionId, takesForce,
-    takesInterfaces, takesRecordScope, takesRedeliver, takesSubmission, takesValues, valuesText, declared, fieldValues, takesTypes, typeNames, pickedTypes,
-    takesMaxRecords, firstRecords,
+    takesInterfaces, takesRecordScope, takesRedeliver, takesSubmission, takesTypes, typeNames, pickedTypes,
   ]);
 
   const toggleType = (name: string) => setPickedTypes((was) => {
@@ -448,65 +376,6 @@ export function DeliveryTriggerFields({ flowKind, pipelineId, operation, initial
                 : sendAgain === "changed"
                   ? "Only records whose rendering or payload changed are sent."
                   : `Every record this flow has delivered${partition !== null ? ` in ${partition}` : ""} is sent again, changed or not: a new version of each in OSDU. The run plans them all, ${PLANNED_PER_PASS.toLocaleString()} to a pass.`}
-          </p>
-        </div>
-      )}
-      {takesValues && declared !== undefined && (
-        <div className="flex flex-col gap-1.5" data-testid="trigger-parameters">
-          <span className="text-[13px] font-medium">Flow parameters</span>
-          {declared.parameters.length === 0
-            ? <p className="text-xs text-muted-foreground">The flow declares no parameters.</p>
-            : (
-              <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-                <ScopeParameterFields
-                  pipelineId={pipelineId}
-                  scope={declared.scope}
-                  parameters={declared.parameters}
-                  values={fieldValues}
-                  onChange={(name, value) => setFieldValues((was) => ({ ...was, [name]: value }))}
-                  canRead={hasScope("operate")}
-                  prefix="trigger"
-                />
-              </div>
-            )}
-          {declared.parameters.length > 0 && (
-            <p className="text-xs text-muted-foreground">
-              The values fill the flow&apos;s record scope; a parameter the scope reads offers the values its column holds, and
-              takes several to read the rows of each in one run.
-            </p>
-          )}
-        </div>
-      )}
-      {takesValues && declared === undefined && (
-        <div className="flex flex-col gap-1.5">
-          <Label htmlFor={`${idPrefix}-values`}>Flow parameters</Label>
-          <Textarea
-            id={`${idPrefix}-values`}
-            className="min-h-16 font-mono text-[12px]"
-            placeholder={"country=US\nregion=north"}
-            value={valuesText}
-            onChange={(event) => setValuesText(event.target.value)}
-            data-testid="trigger-values"
-          />
-          <p className="text-xs text-muted-foreground">
-            Values for the parameters the flow declares, one name=value per line; a name on several lines takes each value.
-          </p>
-        </div>
-      )}
-      {takesMaxRecords && (
-        <div className="flex flex-col gap-1.5">
-          <Label htmlFor={`${idPrefix}-max-records`}>Records at most</Label>
-          <Input
-            id={`${idPrefix}-max-records`}
-            className="h-8 w-32 font-mono"
-            inputMode="numeric"
-            placeholder="every record"
-            value={maxRecordsText}
-            onChange={(event) => setMaxRecordsText(event.target.value)}
-            data-testid="trigger-max-records"
-          />
-          <p className="text-xs text-muted-foreground">
-            {`Read only the first records of the scope, up to ${MAX_FIRST_RECORDS.toLocaleString()}, in the order the flow pages its rows in: a smoke test of the flow on a few records before its whole scope goes. The scope's watermark stays where it is, so the next run of the scope still reads every row; empty reads the scope as it stands.`}
           </p>
         </div>
       )}

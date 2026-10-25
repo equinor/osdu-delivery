@@ -1,16 +1,12 @@
 import { useEffect, useId, useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Checkbox } from "@/components/ui/checkbox";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Textarea } from "@/components/ui/textarea";
 import { SearchInput } from "@/components/SearchInput";
 import type { TriggerBodyContribution, TriggerFieldsProps } from "@/modules/registry";
-import { deliveryApi, type DeliveryAssertionFlow, type DeliveryParameter } from "../../../api/delivery";
+import { deliveryApi, type DeliveryAssertionFlow } from "../../../api/delivery";
 import { useActivePartition } from "../activePartition";
 import type { RunValue } from "@/api/types";
-import { parseValues, valuesToFields, valuesToLines } from "../runValues";
 import { TagChip } from "./AssertionBadges";
 import { counted, disabledWhy, kindEntity, selectionPayload } from "./assertionFormat";
 
@@ -28,25 +24,6 @@ const FILTER_FROM = 8;
 
 function stringsOf(value: unknown): string[] {
   return Array.isArray(value) ? value.filter((item): item is string => typeof item === "string" && item.trim() !== "") : [];
-}
-
-/** A flow's parameters as a run takes them: each given value trimmed, an empty one left out so its default applies. */
-function parameterValues(parameters: readonly DeliveryParameter[], fields: Record<string, string>): { values: Record<string, string>; error: string | null } {
-  const values: Record<string, string> = {};
-  for (const parameter of parameters) {
-    const value = (fields[parameter.name] ?? "").trim();
-    if (value !== "") {
-      values[parameter.name] = value;
-    }
-  }
-
-  const missing = parameters.filter((p) => p.required && (p.default === null || p.default === undefined) && values[p.name] === undefined);
-  return {
-    values,
-    error: missing.length === 0
-      ? null
-      : `The assertions need ${missing.map((p) => p.name).join(", ")}: the flow declares ${missing.length === 1 ? "it" : "them"} required, with no default.`,
-  };
 }
 
 /** The partition a run of the flow tests, and why it cannot run while the title bar is where it is. */
@@ -81,11 +58,12 @@ function partitionOf(flow: DeliveryAssertionFlow | undefined, active: string | n
 }
 
 /**
- * The trigger dialog's fields for an assertion flow: the partition it tests (the title bar's), the values of its
- * parameters, and which of its tests to run, by name and by tag. Nothing picked runs every test. A run being repeated
- * opens with the tests, tags and values it was given, and keeps any other part of its payload as it was.
+ * The trigger dialog's fields for an assertion flow: the partition it tests (the title bar's), and which of its tests to
+ * run, by name and by tag; its parameters are the dialog's Flow parameters, read from the flow's document. Nothing picked
+ * runs every test. A run being repeated opens with the tests and tags it was given, and keeps any other part of its
+ * payload as it was.
  */
-export function AssertionTriggerFields({ pipelineId, initialValues, initialPayload, onChange }: TriggerFieldsProps) {
+export function AssertionTriggerFields({ pipelineId, initialPayload, onChange }: TriggerFieldsProps) {
   const idPrefix = useId();
   const [active] = useActivePartition();
   const board = useQuery({
@@ -95,12 +73,6 @@ export function AssertionTriggerFields({ pipelineId, initialValues, initialPaylo
     staleTime: 15000,
   });
   const flow = board.data?.flows[0];
-  const [fields, setFields] = useState<Record<string, string>>(
-    () => valuesToFields(initialValues, PARTITION),
-  );
-  const [valuesText, setValuesText] = useState(
-    () => valuesToLines(initialValues, PARTITION),
-  );
   const [tests, setTests] = useState<ReadonlySet<string>>(() => new Set(stringsOf(initialPayload?.tests)));
   const [tags, setTags] = useState<ReadonlySet<string>>(() => new Set(stringsOf(initialPayload?.tags)));
   const [filter, setFilter] = useState("");
@@ -124,17 +96,14 @@ export function AssertionTriggerFields({ pipelineId, initialValues, initialPaylo
   }, [allTests, filter]);
 
   const body = useMemo<TriggerBodyContribution>(() => {
-    const parsed = flow === undefined ? parseValues(valuesText) : parameterValues(flow.parameters, fields);
     const known = new Set(allTests.map((test) => test.name.toLowerCase()));
     const missing = flow === undefined ? [] : [...tests].filter((name) => !known.has(name.toLowerCase()));
     const unusedTags = flow === undefined ? [] : [...tags].filter((tag) => !allTags.includes(tag));
-    const error = parsed.error
-      ?? (PARTITION in parsed.values ? "The partition is not a flow parameter: a run checks the partition picked in the title bar." : null)
-      ?? partitionError
+    const error = partitionError
       ?? ([...tests].some((name) => !TEST_NAME.test(name)) ? "An assertion's name is a letter or digit, then letters, digits, '.', '_' and '-'." : null)
       ?? (missing.length > 0 ? `The flow has no assertion named ${missing.join(", ")}; clear ${missing.length === 1 ? "it" : "them"} to run.` : null)
       ?? (unusedTags.length > 0 ? `No assertion of the flow carries the tag ${unusedTags.join(", ")}; clear ${unusedTags.length === 1 ? "it" : "them"} to run.` : null);
-    const values: Record<string, RunValue> = { ...parsed.values };
+    const values: Record<string, RunValue> = {};
     if (partition !== null) {
       values[PARTITION] = partition;
     }
@@ -145,7 +114,7 @@ export function AssertionTriggerFields({ pipelineId, initialValues, initialPaylo
       payload: Object.keys(payload).length > 0 ? payload : undefined,
       error,
     };
-  }, [allTags, allTests, carried, fields, flow, partition, partitionError, tags, tests, valuesText]);
+  }, [allTags, allTests, carried, flow, partition, partitionError, tags, tests]);
 
   useEffect(() => {
     onChange(body);
@@ -174,44 +143,6 @@ export function AssertionTriggerFields({ pipelineId, initialValues, initialPaylo
         </p>
       </div>
 
-      {flow !== undefined && flow.parameters.length > 0 && (
-        <div className="flex flex-col gap-1.5" data-testid="trigger-parameters">
-          <span className="text-[13px] font-medium">Flow parameters</span>
-          <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-            {flow.parameters.map((parameter) => (
-              <div key={parameter.name} className="flex flex-col gap-1">
-                <Label htmlFor={`${idPrefix}-${parameter.name}`} className="font-mono text-[12px]">
-                  {parameter.name}{parameter.required && (parameter.default ?? null) === null ? " *" : ""}
-                </Label>
-                <Input
-                  id={`${idPrefix}-${parameter.name}`}
-                  className="h-8 font-mono text-[12px]"
-                  placeholder={parameter.default ?? ""}
-                  value={fields[parameter.name] ?? ""}
-                  onChange={(event) => setFields((was) => ({ ...was, [parameter.name]: event.target.value }))}
-                  title={parameter.description ?? undefined}
-                  data-testid={`trigger-parameter-${parameter.name}`}
-                />
-              </div>
-            ))}
-          </div>
-          <p className="text-xs text-muted-foreground">The values fill the assertions' {"{name}"} tokens; an empty field takes the default shown.</p>
-        </div>
-      )}
-      {flow === undefined && !board.isPending && (
-        <div className="flex flex-col gap-1.5">
-          <Label htmlFor={`${idPrefix}-values`}>Flow parameters</Label>
-          <Textarea
-            id={`${idPrefix}-values`}
-            className="min-h-16 font-mono text-[12px]"
-            placeholder="country=US"
-            value={valuesText}
-            onChange={(event) => setValuesText(event.target.value)}
-            data-testid="trigger-values"
-          />
-          <p className="text-xs text-muted-foreground">Values for the parameters the flow declares, one name=value per line.</p>
-        </div>
-      )}
 
       <div className="flex flex-col gap-2" data-testid="trigger-tests">
         <div className="flex flex-wrap items-baseline justify-between gap-2">

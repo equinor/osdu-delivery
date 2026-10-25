@@ -2834,23 +2834,33 @@ public static class DeliveryEndpoints
     }
 
     /// <summary>
-    /// Why the parameter values cannot read the flow's scope, or null when they can: a name the flow does not declare, or a
-    /// required parameter without a default that is given no value.
+    /// Why the parameter values cannot read the flow's scope, or null when they can, by the rule a run's values follow
+    /// (<see cref="FlowParameters.RunInputs"/>): a name the flow does not declare, a required parameter without a default
+    /// that is given no value (an empty one is none), or a value the parameter cannot take.
     /// </summary>
     internal static string? ParameterProblem(FlowDefinition flow, IReadOnlyDictionary<string, string> values)
     {
-        var undeclared = values.Keys.Where(name => !flow.Parameters.ContainsKey(name)).ToList();
+        ArgumentNullException.ThrowIfNull(flow);
+        ArgumentNullException.ThrowIfNull(values);
+        var given = values
+            .Where(v => !(flow.Parameters.ContainsKey(v.Key) && string.IsNullOrWhiteSpace(v.Value)))
+            .ToDictionary(v => v.Key, v => v.Value, StringComparer.Ordinal);
+        var explained = RunValueResolution.Explain(FlowParameters.RunInputs(flow.Parameters, flow.Source.Record.Scope.Values), given);
+
+        var undeclared = explained.Where(v => v.Origin == RunValueOrigin.NotDeclared).Select(v => v.Name).ToList();
         if (undeclared.Count > 0)
         {
             var declared = flow.Parameters.Count == 0 ? "it declares none" : $"it declares {string.Join(", ", flow.Parameters.Keys)}";
             return $"The flow declares no parameter {string.Join(", ", undeclared.Select(n => $"'{n}'"))}; {declared}.";
         }
 
-        var missing = flow.Parameters
-            .Where(p => p.Value.Required && p.Value.Default is null && (!values.TryGetValue(p.Key, out var given) || string.IsNullOrWhiteSpace(given)))
-            .Select(p => p.Key)
-            .ToList();
-        return missing.Count == 0 ? null : $"The flow's scope needs a value for {string.Join(", ", missing)}, which it declares required and gives no default.";
+        var missing = explained.Where(v => v.Origin == RunValueOrigin.Missing).Select(v => v.Name).ToList();
+        if (missing.Count > 0)
+        {
+            return $"The flow's scope needs a value for {string.Join(", ", missing)}, which it declares required and gives no default.";
+        }
+
+        return explained.FirstOrDefault(v => v.Problem is not null)?.Problem is { } refused ? $"The flow's {refused}" : null;
     }
 
     /// <summary>

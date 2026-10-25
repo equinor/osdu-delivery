@@ -94,7 +94,7 @@ public sealed class FirstRecordsRunTests : IDisposable
     }
 
     [Fact]
-    public async Task A_flow_its_document_limits_reads_its_first_records_on_every_run_and_a_payload_asks_for_fewer_never_more()
+    public async Task A_flow_its_document_limits_reads_its_first_records_on_every_run_and_a_payload_reads_fewer_more_or_the_whole_scope()
     {
         var tables = await ReversedAsync();
         var (runtime, protocol, ledger) = await RuntimeAsync(tables, maxRecords: 2);
@@ -117,11 +117,15 @@ public sealed class FirstRecordsRunTests : IDisposable
             Assert.Equal("the first 2 record(s) of the scope (source.record.maxRecords)", replan.Selection);
             Assert.Equal(2, protocol.Deliveries.Count);
 
-            // A payload asks for fewer than the document allows, and is held to the document's limit when it asks for more.
+            // The document's value is a default: a run's payload stands in for it, asking for fewer, for more, or with 0 for
+            // the whole scope.
             var fewer = Assert.IsType<PlanOutcome>(await RunAsync(runtime, DeliveryOperations.Plan, new DeliveryRunPayload { MaxRecords = 1 }));
             Assert.Equal((1, "the first 1 record(s) of the scope (maxRecords)"), (fewer.Records, fewer.Selection));
-            var more = Assert.IsType<PlanOutcome>(await RunAsync(runtime, DeliveryOperations.Plan, new DeliveryRunPayload { MaxRecords = 500 }));
-            Assert.Equal((2, "the first 2 record(s) of the scope (source.record.maxRecords)"), (more.Records, more.Selection));
+            var more = Assert.IsType<PlanOutcome>(await RunAsync(runtime, DeliveryOperations.Plan, new DeliveryRunPayload { MaxRecords = 3 }));
+            Assert.Equal((3, "the first 3 record(s) of the scope (maxRecords)"), (more.Records, more.Selection));
+            var whole = Assert.IsType<PlanOutcome>(await RunAsync(runtime, DeliveryOperations.Plan, new DeliveryRunPayload { MaxRecords = 0 }));
+            Assert.Equal(LogCount, whole.Records);
+            Assert.DoesNotContain("first", whole.Selection, StringComparison.Ordinal);
 
             Assert.Equal(2, (await ledger.ListRecordsAsync(runtime.Flow.Id, null, LogCount + 10)).Count);
             Assert.Null(await ledger.GetWatermarkAsync(runtime.Flow.Id, scope));

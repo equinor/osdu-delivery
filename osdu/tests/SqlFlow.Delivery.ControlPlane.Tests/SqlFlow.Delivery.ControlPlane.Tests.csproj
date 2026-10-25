@@ -48,6 +48,7 @@
     <Compile Include="..\SqlFlow.Delivery.Tests\OrderEstate.cs" Link="Fixtures\OrderEstate.cs" />
     <Compile Include="..\SqlFlow.Delivery.Tests\TemplateFolderFixtures.cs" Link="Fixtures\TemplateFolderFixtures.cs" />
     <Compile Include="..\SqlFlow.Delivery.Tests\LinkedTemplates.cs" Link="Fixtures\LinkedTemplates.cs" />
+    <Compile Include="..\SqlFlow.Delivery.Tests\RunParameters\RunParameterSuite.cs" Link="Fixtures\RunParameterSuite.cs" />
   </ItemGroup>
 
   <ItemGroup>

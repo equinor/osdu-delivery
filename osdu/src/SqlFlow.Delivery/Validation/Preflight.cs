@@ -107,19 +107,15 @@ public static partial class Preflight
             CheckColumns(mapping, sourceColumns, issues, where);
         }
 
-        foreach (var (name, parameter) in mapping.Parameters)
+        foreach (var value in FlowParameters.ExplainMapping(mapping, context.Parameters))
         {
-            if (parameter.Required && parameter.Default is null && !context.Parameters.ContainsKey(name))
+            if (value.Origin == Core.Runs.RunValueOrigin.Missing)
             {
-                issues.Add(ValidationIssue.Error($"{where}: mapping parameter '{name}' is required and the flow supplies no value."));
+                issues.Add(ValidationIssue.Error($"{where}: mapping parameter '{value.Name}' is required and the flow supplies no value."));
             }
-        }
-
-        foreach (var name in context.Parameters.Keys)
-        {
-            if (!mapping.Parameters.ContainsKey(name))
+            else if (value.Origin == Core.Runs.RunValueOrigin.NotDeclared)
             {
-                issues.Add(ValidationIssue.Error($"{where}: the flow supplies parameter '{name}', which the mapping does not declare. Undeclared values would be overrides, and overrides are not allowed (osdu/docs/reference/flow/mapping.md, parameters)."));
+                issues.Add(ValidationIssue.Error($"{where}: the flow supplies parameter '{value.Name}', which the mapping does not declare. Undeclared values would be overrides, and overrides are not allowed (osdu/docs/reference/flow/mapping.md, parameters)."));
             }
         }
 

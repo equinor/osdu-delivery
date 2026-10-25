@@ -82,6 +82,18 @@ public sealed class CacheFlowKind : IFlowDocumentKind
         return new CacheFlowDocument { Flow = _loader.ParseCache(yaml, source) };
     }
 
+    /// <summary>
+    /// What a cache flow's run may be given: its parameters, and the partition it fills when it works in partitions (<see cref="KindRunInputs"/>).
+    /// </summary>
+    public FlowRunInputs DescribeRun(string yaml, string source)
+    {
+        ArgumentNullException.ThrowIfNull(yaml);
+        return DescribeCache(_loader.ParseCache(yaml, source));
+    }
+
+    private static FlowRunInputs DescribeCache(CacheDefinition flow)
+        => KindRunInputs.Of(flow.Parameters, flow.Partitioned, "fills", "Name * to fill every partition the flow serves, one after another.");
+
     public void ValidateParameters(RunParameters parameters)
     {
         ArgumentNullException.ThrowIfNull(parameters);

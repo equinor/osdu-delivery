@@ -174,9 +174,12 @@ public sealed class DeliveryExecutor : IFlowDocumentExecutor
         };
     }
 
-    /// <summary>True for the operations that read the ingestion tables and render.</summary>
+    /// <summary>
+    /// True for the operations that read the ingestion tables and render (<see cref="KindRunInputs.ReadingOperations"/>,
+    /// which a run form reads the same way).
+    /// </summary>
     internal static bool ReadsSource(string operation)
-        => operation is DeliveryOperations.Deliver or DeliveryOperations.Plan or DeliveryOperations.Intake or DeliveryOperations.Replan;
+        => KindRunInputs.ReadingOperations.Contains(operation, StringComparer.Ordinal);
 
     /// <summary>True for the operations that reach the flow's OSDU target, whose service and credentials a preflight checks.</summary>
     internal static bool ReachesTarget(string operation)

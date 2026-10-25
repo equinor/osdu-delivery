@@ -98,6 +98,10 @@ public sealed class DeliveryControlPlaneModule : IControlPlaneModule
         // the automatic cleanup applies once an admin sets how long they stay.
         services.AddStorageContributor<Maintenance.OsduStorageContributor>();
 
+        // A run form's list of a delivery flow's parameter values: the values the column it is looked up in holds, read in this
+        // process through the flow's own connection, as its Preview tab reads a scope's values.
+        services.AddRunParameterLookup<Api.DeliveryRunParameterLookup>();
+
         // The OSDU data definitions (the Open Group's public repository of OSDU schemas) the Templates page browses and
         // downloads template files from, kept as a local copy: each release downloaded once as one archive and read from disk
         // after that, the release list read again when it is older than RefreshMinutes or when someone syncs.

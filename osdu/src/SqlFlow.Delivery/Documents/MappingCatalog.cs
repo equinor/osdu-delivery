@@ -107,11 +107,15 @@ public static class FlowParameters
     /// <summary>The separator a location puts between the values of a parameter a run gives several (<see cref="WorkLocation"/>).</summary>
     public const char LocationListSeparator = '+';
 
+    /// <summary>Which parameters of a delivery flow take several values, in the words a refusal names them by.</summary>
+    public const string ScopeSeveralValuesRule = "a parameter source.record.scope binds";
+
     /// <summary>
     /// Returns the effective parameter values: supplied values, then defaults; throws when a required parameter is
-    /// missing or an undeclared one is supplied. A parameter <c>source.record.scope</c> binds may be given several values
-    /// (a <see cref="RunValueList"/>), which select the rows holding any of them; they resolve to their set, in ordinal
-    /// order and each once, so the same values named in another order are the same scope.
+    /// missing, an undeclared one is supplied, or a value is not one of a parameter's choices. A parameter
+    /// <c>source.record.scope</c> binds may be given several values (a <see cref="RunValueList"/>), which select the rows
+    /// holding any of them; they resolve to their set, in ordinal order and each once, so the same values named in another
+    /// order are the same scope.
     /// </summary>
     public static IReadOnlyDictionary<string, string> Resolve(FlowDefinition flow, IReadOnlyDictionary<string, string>? supplied)
     {
@@ -122,60 +126,73 @@ public static class FlowParameters
     /// <summary>
     /// The same resolution over any declared parameter set (a retrieval flow's, say); <paramref name="where"/> names the
     /// document in errors. Only the parameters <paramref name="takingSeveral"/> names may be given several values; a list
-    /// given to any other is refused, since a query or a location it fills takes one.
+    /// given to any other is refused, since a query or a location it fills takes one. The rule is SQLFlow's one rule for a
+    /// run's values (<see cref="RunValueResolution"/>), which a run form and a schedule's preview explain them with.
     /// </summary>
     public static IReadOnlyDictionary<string, string> Resolve(
         IReadOnlyDictionary<string, FlowParameter> parameters, string where, IReadOnlyDictionary<string, string>? supplied, IEnumerable<string>? takingSeveral = null)
     {
         ArgumentNullException.ThrowIfNull(parameters);
+        var values = RunValueResolution.Resolve(RunInputs(parameters, takingSeveral), supplied, where);
+        return values.ToDictionary(v => v.Key, v => RunValueList.IsList(v.Value) ? SetOf(v.Value) : v.Value, StringComparer.Ordinal);
+    }
+
+    /// <summary>
+    /// What a run of a flow declaring <paramref name="parameters"/> may be given for them, as SQLFlow describes it to a run
+    /// form (<see cref="FlowRunInputs"/>): each parameter in the document's order, those <paramref name="takingSeveral"/>
+    /// names taking several values, and <paramref name="lookup"/> saying where a parameter's values are looked up, when they
+    /// are. The kind adds its own run values and settings.
+    /// </summary>
+    public static FlowRunInputs RunInputs(
+        IReadOnlyDictionary<string, FlowParameter> parameters, IEnumerable<string>? takingSeveral = null, Func<string, FlowParameter, string?>? lookup = null)
+    {
+        ArgumentNullException.ThrowIfNull(parameters);
         var several = takingSeveral?.ToHashSet(StringComparer.Ordinal) ?? [];
-        var values = new Dictionary<string, string>(StringComparer.Ordinal);
-        foreach (var (name, parameter) in parameters)
+        return new FlowRunInputs
         {
-            if (supplied is not null && supplied.TryGetValue(name, out var v))
+            Parameters = parameters.Select(p => new DeclaredRunParameter
             {
-                values[name] = RunValueList.IsList(v) ? SetOf(name, v, several, where) : v;
-            }
-            else if (parameter.Default is not null)
-            {
-                values[name] = parameter.Default;
-            }
-            else if (parameter.Required)
-            {
-                throw new FlowValidationException($"{where}: parameter '{name}' is required. Supply it with --set {name}=value or the run's values.");
-            }
-        }
+                Name = p.Key,
+                Required = p.Value.Required,
+                Default = p.Value.Default,
+                Description = p.Value.Description,
+                TakesSeveral = several.Contains(p.Key),
+                Choices = p.Value.Choices ?? [],
+                Lookup = lookup?.Invoke(p.Key, p.Value),
+            }).ToList(),
+            SeveralValuesRule = several.Count > 0 ? ScopeSeveralValuesRule : null,
+        };
+    }
 
-        if (supplied is not null)
+    /// <summary>
+    /// What a mapping's parameters take from the values its flow gives under <c>render.parameters</c>, by the same rule a
+    /// run's values follow: the value given, else the mapping's default, else none, a required one without either and a
+    /// value the mapping does not declare each naming its problem. A mapping parameter takes any text, a list's included.
+    /// </summary>
+    public static IReadOnlyList<ResolvedRunValue> ExplainMapping(MappingDefinition mapping, IReadOnlyDictionary<string, string> supplied)
+    {
+        ArgumentNullException.ThrowIfNull(mapping);
+        ArgumentNullException.ThrowIfNull(supplied);
+        var inputs = new FlowRunInputs
         {
-            foreach (var name in supplied.Keys)
+            Parameters = mapping.Parameters.Select(p => new DeclaredRunParameter
             {
-                if (!parameters.ContainsKey(name))
-                {
-                    throw new FlowValidationException($"{where}: parameter '{name}' is not declared under parameters.");
-                }
-            }
-        }
-
-        return values;
+                Name = p.Key,
+                Required = p.Value.Required,
+                Default = p.Value.Default,
+                Description = p.Value.Description,
+                TakesSeveral = true,
+            }).ToList(),
+        };
+        return RunValueResolution.Explain(inputs, supplied);
     }
 
     /// <summary>
     /// The values a scope parameter is given as a set: each once, in ordinal order, so the scope a run reads (and the
     /// watermark it keeps) is the same whatever order the values were named in.
     /// </summary>
-    private static string SetOf(string name, string list, HashSet<string> several, string where)
-    {
-        var items = RunValueList.Items(list);
-        if (!several.Contains(name))
-        {
-            throw new FlowValidationException(several.Count == 0
-                ? $"{where}: parameter '{name}' is given {items.Count} values, and takes one."
-                : $"{where}: parameter '{name}' is given {items.Count} values, and takes one: only a parameter source.record.scope binds ({string.Join(", ", several.Order(StringComparer.Ordinal))}) takes several.");
-        }
-
-        return RunValueList.Of(items.Distinct(StringComparer.Ordinal).Order(StringComparer.Ordinal));
-    }
+    private static string SetOf(string list)
+        => RunValueList.Of(RunValueList.Items(list).Distinct(StringComparer.Ordinal).Order(StringComparer.Ordinal));
 
     /// <summary>
     /// Substitutes <c>{name}</c> tokens in a string from the resolved values. A token whose parameter the run gives several

@@ -4480,6 +4480,53 @@
       ]
     },
     {
+      "id": "delivery-flow-parameters",
+      "corpus": "reference",
+      "path": "flow/parameters.md",
+      "title": "Parameters (parameters): what a run of an OSDU flow may be given, its choices and lookups",
+      "type": "flow-reference",
+      "summary": "Every OSDU flow kind's parameters, their choices and a delivery flow's lookups, the one rule a run takes its values by, and how the run form shows them.",
+      "keywords": [
+        "parameters",
+        "choices",
+        "lookup",
+        "lookup.column",
+        "run values",
+        "--set",
+        "required parameter",
+        "default value",
+        "several values",
+        "run form",
+        "flow parameters",
+        "run settings",
+        "records at most",
+        "schedule values",
+        "partition run value"
+      ],
+      "yamlPath": "parameters",
+      "related": [
+        "delivery-flow-overview",
+        "delivery-flow-delivery",
+        "delivery-cli-run",
+        "delivery-concept-gui",
+        "delivery-concept-partitions",
+        "concept-run-inputs"
+      ],
+      "sourceRefs": [
+        "osdu/src/SqlFlow.Delivery/Documents/FlowParameterDeclarations.cs",
+        "osdu/src/SqlFlow.Delivery/Documents/KindRunInputs.cs",
+        "osdu/src/SqlFlow.Delivery/Documents/MappingCatalog.cs",
+        "osdu/src/SqlFlow.Delivery/Documents/DeliveryDocumentLoader.cs",
+        "osdu/src/SqlFlow.Delivery/Documents/YamlModels.cs",
+        "osdu/src/SqlFlow.Delivery/Model/FlowDefinition.cs",
+        "osdu/src/SqlFlow.Delivery/Engine/Operations/ScopeValuesOperation.cs",
+        "osdu/src/SqlFlow.Delivery/Source/SqlServerIngestionSource.cs",
+        "osdu/src/SqlFlow.Delivery.ControlPlane/Api/DeliveryRunParameterLookup.cs",
+        "sqlflow/src/SqlFlow.Core/Runs/FlowRunInputs.cs",
+        "sqlflow/src/SqlFlow.ControlPlane/Api/RunInputEndpoints.cs"
+      ]
+    },
+    {
       "id": "delivery-flow-removal",
       "corpus": "reference",
       "path": "flow/removal.md",

@@ -319,6 +319,19 @@ public sealed class SqlServerIngestionSourceTests
         };
         var refused = await Assert.ThrowsAsync<FlowValidationException>(() => estate.Engine.Sources.Open(missing, NoValues, NullLoggerFactory.Instance).ScopeValuesAsync(10));
         Assert.Contains("binds parameter 'logSource' to column 'source_name', which the table", refused.Message, StringComparison.Ordinal);
+
+        // One parameter's values, as a run form looks them up: those whose text holds what is typed, ignoring case, the
+        // typed text's wildcards taken as written; a column a lookup names that the table does not hold is refused.
+        var source = estate.Engine.Sources.Open(flow, NoValues, NullLoggerFactory.Instance);
+        Assert.Equal([new ScopeValue("COMPOSITE", 3)], (await source.ColumnValuesAsync("logSource", "log_source", "omp", 10)).Values);
+        Assert.Equal([new ScopeValue("COMPOSITE", 3), new ScopeValue("CPI", 2)], (await source.ColumnValuesAsync("logSource", "log_source", "c", 10)).Values);
+        Assert.Empty((await source.ColumnValuesAsync("logSource", "log_source", "%", 10)).Values);
+        Assert.Empty((await source.ColumnValuesAsync("logSource", "log_source", "C_I", 10)).Values);
+        Assert.Equal([new ScopeValue("9", 2)], (await source.ColumnValuesAsync("region", "region_id", "9", 10)).Values);
+        var all = await source.ColumnValuesAsync("logSource", "log_source", null, 1);
+        Assert.Equal(("log_source", true), (all.Column, all.More));
+        var unknown = await Assert.ThrowsAsync<FlowValidationException>(() => source.ColumnValuesAsync("country", "country_code", null, 10));
+        Assert.Contains("parameters.country.lookup names column 'country_code', which the table", unknown.Message, StringComparison.Ordinal);
     }
 
     /// <summary>The sample flow, reading one of this test's tables by its item key and its identity primary key.</summary>

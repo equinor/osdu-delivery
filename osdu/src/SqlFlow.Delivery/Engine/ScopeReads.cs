@@ -102,9 +102,9 @@ public static class ScopeReads
 
     /// <summary>
     /// How many of the first records of its scope a run reads, and the setting that says so: the payload's
-    /// <c>maxRecords</c>, or the flow's <c>source.record.maxRecords</c> on every run of the scope, the fewer when both say,
-    /// so the flow's is a limit a run never goes past. Null for a run of the whole scope, and for a run of named records or
-    /// of a submission, which reads what it names.
+    /// <c>maxRecords</c> when the run gives one, which stands in for the flow's on this run (more, fewer, or 0 for the whole
+    /// scope), else the flow's <c>source.record.maxRecords</c>, a default every run of the scope takes. Null for a run of the
+    /// whole scope, and for a run of named records or of a submission, which reads what it names.
     /// </summary>
     public static (int Count, string Setting)? FirstRecords(FlowDefinition flow, DeliveryRunPayload payload, SubmissionState? submission)
     {
@@ -115,12 +115,11 @@ public static class ScopeReads
             return null;
         }
 
-        var setting = KeyPaths.Of(flow).Name("source.record.maxRecords");
         return (payload.MaxRecords, flow.Source.Record.MaxRecords) switch
         {
-            ({ } asked, { } limit) when limit < asked => (limit, setting),
+            (0, _) => null,
             ({ } asked, _) => (asked, DeliveryRunPayload.MaxRecordsProperty),
-            (null, { } limit) => (limit, setting),
+            (null, { } limit) => (limit, KeyPaths.Of(flow).Name("source.record.maxRecords")),
             _ => null,
         };
     }

@@ -55,7 +55,7 @@ test.describe.serial("record preview and OSDU read", () => {
     // The flow's scope needs its log source, which it declares required with no default: without it there is no preview.
     const run = adminPage.getByTestId("preview-run");
     await expect(adminPage.getByTestId("preview-parameter-logSource")).toBeVisible({ timeout: 30_000 });
-    await expect(adminPage.getByTestId("preview-missing")).toContainText("logSource");
+    await expect(adminPage.getByTestId("preview-parameter-logSource-problem")).toContainText("parameter 'logSource' is required");
     await expect(run).toBeDisabled();
     await adminPage.getByTestId("preview-parameter-logSource").fill(LOG_SOURCE);
     await adminPage.getByTestId("preview-parameter-logSource").press("Escape");

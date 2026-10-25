@@ -147,7 +147,7 @@ export interface RunRequest {
   force: boolean;
   submissionId: string | null;
   recordKeys: string[];
-  /** How many of the first records of its scope the run read (maxRecords); null when it read the scope as it stood. */
+  /** How many of the first records of its scope the run asked for (maxRecords), 0 for the whole scope; null when it asked nothing. */
   maxRecords: number | null;
   redeliver: string | null;
   /** Whether the run brings records up to date: renders them again and sends only what renders differently. */

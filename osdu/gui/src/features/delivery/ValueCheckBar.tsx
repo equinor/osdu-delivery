@@ -7,9 +7,9 @@ import { GlyphRef } from "@/components/GlyphRef";
 import { RelativeTime } from "@/components/RelativeTime";
 import { RichTooltip } from "@/components/RichTooltip";
 import { ProblemView } from "./TemplateSheet";
-import { ScopeParameterFields } from "./ScopeParameterFields";
+import { RunParameterFields } from "@/features/runs/RunParameterFields";
 import { splitPath } from "./templateFormat";
-import { flowScope, type FailingFilter, type ValueCheckSession } from "./useValueCheck";
+import { type FailingFilter, type ValueCheckSession } from "./useValueCheck";
 import { ROW_BUDGETS, assertionRows, assertionRowsLine, flowKey, flowLabel, formatCount, outcomeVisual, percent } from "./valueCheck";
 
 const HOW_IT_WORKS = [
@@ -79,15 +79,15 @@ export function ValueCheckBar({ session }: { session: ValueCheckSession }) {
                 ))}
               </SelectContent>
             </Select>
-            <ScopeParameterFields
+            <RunParameterFields
               pipelineId={session.flow?.pipelineId ?? null}
-              scope={session.flow === null ? {} : flowScope(session.flow)}
               parameters={session.parameters}
               values={session.values}
               onChange={session.setValue}
-              canRead={session.canOperate}
+              lookupValues={session.flow?.partition ? { partition: session.flow.partition } : undefined}
               prefix="value-check"
               layout="inline"
+              problems={session.parameterProblems}
               className="w-64"
             />
             <Select value={String(session.maxRows)} onValueChange={(value) => session.setMaxRows(Number(value))}>

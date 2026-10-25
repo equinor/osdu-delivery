@@ -74,6 +74,15 @@ public sealed class RemovalFlowKind : IFlowDocumentKind
         return new RemovalFlowDocument { Flow = _loader.ParseRemoval(yaml, source) };
     }
 
+    /// <summary>
+    /// What a removal flow's run may be given: its parameters, and the partition it removes in (<see cref="KindRunInputs"/>).
+    /// </summary>
+    public FlowRunInputs DescribeRun(string yaml, string source)
+    {
+        ArgumentNullException.ThrowIfNull(yaml);
+        return KindRunInputs.Of(_loader.ParseRemoval(yaml, source).Parameters, partitioned: true, "removes in");
+    }
+
     public void ValidateParameters(RunParameters parameters)
     {
         ArgumentNullException.ThrowIfNull(parameters);

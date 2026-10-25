@@ -168,7 +168,7 @@ Each runs in the control plane with the flow's credentials and answers JSON; not
 | `POST /records/{flowId}/{key}/source` | operate | | The record's rows as the ingestion tables hold them now: the record row with its system columns, child datasets, origin file and row. |
 | `POST /records/{flowId}/{key}/preview` | operate | | The record rendered now from its current row, in the scope it was last planned under. |
 | `POST /flows/{pipelineId}/preview` | operate | body `key`, `values`; `interface`, `partition` | One record rendered as a delivery would render it: the scope's first, or the one `key` names. A key that names no row is an answer (`found` false). |
-| `POST /flows/{pipelineId}/scope-values` | operate | `interface`, `partition` | The values each scope parameter can take, read from the record table. |
+| `POST /flows/{pipelineId}/scope-values` | operate | `interface`, `partition` | The values each scope parameter can take, read from the record table. A run form looks one parameter's values up, narrowed to what is typed, through SQLFlow's `POST /pipelines/{id}/parameters/{name}/values`, which the module answers with the same read ([parameters](../flow/parameters.md#lookups)). |
 
 ## Removing records and deleting the ledger
 

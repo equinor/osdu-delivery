@@ -1,15 +1,11 @@
 import { useEffect, useId, useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Checkbox } from "@/components/ui/checkbox";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Textarea } from "@/components/ui/textarea";
 import type { TriggerBodyContribution, TriggerFieldsProps } from "@/modules/registry";
-import { removalApi, type RemovalFlow, type RemovalParameter } from "../../../api/removals";
+import { removalApi, type RemovalFlow } from "../../../api/removals";
 import { useActivePartition } from "../activePartition";
 import type { RunValue } from "@/api/types";
-import { parseValues, valuesToFields, valuesToLines } from "../runValues";
 import { ledgerName } from "./removalFormat";
 
 /** The run value naming the partition a run removes in (osdu/docs/reference/concepts/partitions.md, The partition a run targets). */
@@ -28,25 +24,6 @@ function stringsOf(value: unknown): string[] {
   return Array.isArray(value) ? value.filter((item): item is string => typeof item === "string" && item.trim() !== "") : [];
 }
 
-/** A flow's parameters as a run takes them: each given value trimmed, an empty one left out so its default applies. */
-function parameterValues(parameters: readonly RemovalParameter[], fields: Record<string, string>): { values: Record<string, string>; error: string | null } {
-  const values: Record<string, string> = {};
-  for (const parameter of parameters) {
-    const value = (fields[parameter.name] ?? "").trim();
-    if (value !== "") {
-      values[parameter.name] = value;
-    }
-  }
-
-  const missing = parameters.filter((p) => p.required && p.default === undefined && values[p.name] === undefined);
-  return {
-    values,
-    error: missing.length === 0
-      ? null
-      : `The run needs ${missing.map((p) => p.name).join(", ")}: the flow declares ${missing.length === 1 ? "it" : "them"} required, with no default.`,
-  };
-}
-
 /** The partition a run of the flow removes in, and why it cannot run while the title bar is where it is. */
 function partitionOf(flow: RemovalFlow | undefined, active: string | null): { partition: string | null; error: string | null } {
   if (flow === undefined) {
@@ -63,11 +40,12 @@ function partitionOf(flow: RemovalFlow | undefined, active: string | null): { pa
 }
 
 /**
- * The trigger dialog's fields for a removal flow: the partition it removes in (the title bar's), the values of its parameters,
- * and which of its removals to run; nothing picked runs every one. A run being repeated opens with the removals and values it
- * was given, never with an approval, which is given on the flow's Removals tab for the count shown there.
+ * The trigger dialog's fields for a removal flow: the partition it removes in (the title bar's), and which of its removals
+ * to run; nothing picked runs every one. Its parameters are the dialog's Flow parameters, read from the flow's document. A
+ * run being repeated opens with the removals it was given, never with an approval, which is given on the flow's Removals
+ * tab for the count shown there.
  */
-export function RemovalTriggerFields({ pipelineId, operation, initialValues, initialPayload, onChange }: TriggerFieldsProps) {
+export function RemovalTriggerFields({ pipelineId, operation, initialPayload, onChange }: TriggerFieldsProps) {
   const idPrefix = useId();
   const [active] = useActivePartition();
   const board = useQuery({
@@ -77,12 +55,6 @@ export function RemovalTriggerFields({ pipelineId, operation, initialValues, ini
     staleTime: 15000,
   });
   const flow = board.data;
-  const [fields, setFields] = useState<Record<string, string>>(
-    () => valuesToFields(initialValues, PARTITION),
-  );
-  const [valuesText, setValuesText] = useState(
-    () => valuesToLines(initialValues, PARTITION),
-  );
   const [picked, setPicked] = useState<ReadonlySet<string>>(() => new Set(stringsOf(initialPayload?.[OWNED_KEY])));
   const [carried] = useState<Record<string, unknown>>(
     () => Object.fromEntries(Object.entries(initialPayload ?? {}).filter(([key]) => !NEVER_CARRIED.has(key))),
@@ -91,14 +63,11 @@ export function RemovalTriggerFields({ pipelineId, operation, initialValues, ini
   const removals = useMemo(() => flow?.removals ?? [], [flow]);
   const { partition, error: partitionError } = partitionOf(flow, active);
   const body = useMemo<TriggerBodyContribution>(() => {
-    const parsed = flow === undefined ? parseValues(valuesText) : parameterValues(flow.parameters, fields);
     const known = new Set(removals.map((removal) => removal.name.toLowerCase()));
     const missing = flow === undefined ? [] : [...picked].filter((name) => !known.has(name.toLowerCase()));
-    const error = parsed.error
-      ?? (PARTITION in parsed.values ? "The partition is not a flow parameter: a run removes in the partition picked in the title bar." : null)
-      ?? partitionError
+    const error = partitionError
       ?? (missing.length > 0 ? `The flow declares no removal named ${missing.join(", ")}; clear ${missing.length === 1 ? "it" : "them"} to run.` : null);
-    const values: Record<string, RunValue> = { ...parsed.values };
+    const values: Record<string, RunValue> = {};
     if (partition !== null) {
       values[PARTITION] = partition;
     }
@@ -113,7 +82,7 @@ export function RemovalTriggerFields({ pipelineId, operation, initialValues, ini
       payload: Object.keys(payload).length > 0 ? payload : undefined,
       error,
     };
-  }, [carried, fields, flow, partition, partitionError, picked, removals, valuesText]);
+  }, [carried, flow, partition, partitionError, picked, removals]);
 
   useEffect(() => {
     onChange(body);
@@ -140,44 +109,6 @@ export function RemovalTriggerFields({ pipelineId, operation, initialValues, ini
         </p>
       </div>
 
-      {flow !== undefined && flow.parameters.length > 0 && (
-        <div className="flex flex-col gap-1.5" data-testid="trigger-parameters">
-          <span className="text-[13px] font-medium">Flow parameters</span>
-          <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-            {flow.parameters.map((parameter) => (
-              <div key={parameter.name} className="flex flex-col gap-1">
-                <Label htmlFor={`${idPrefix}-${parameter.name}`} className="font-mono text-[12px]">
-                  {parameter.name}{parameter.required && parameter.default === undefined ? " *" : ""}
-                </Label>
-                <Input
-                  id={`${idPrefix}-${parameter.name}`}
-                  className="h-8 font-mono text-[12px]"
-                  placeholder={parameter.default ?? ""}
-                  value={fields[parameter.name] ?? ""}
-                  onChange={(event) => setFields((was) => ({ ...was, [parameter.name]: event.target.value }))}
-                  title={parameter.description}
-                  data-testid={`trigger-parameter-${parameter.name}`}
-                />
-              </div>
-            ))}
-          </div>
-          <p className="text-xs text-muted-foreground">The values fill the removals&apos; {"{name}"} tokens; an empty field takes the default shown.</p>
-        </div>
-      )}
-      {flow === undefined && !board.isPending && (
-        <div className="flex flex-col gap-1.5">
-          <Label htmlFor={`${idPrefix}-values`}>Flow parameters</Label>
-          <Textarea
-            id={`${idPrefix}-values`}
-            className="min-h-16 font-mono text-[12px]"
-            placeholder="source=WELLDB"
-            value={valuesText}
-            onChange={(event) => setValuesText(event.target.value)}
-            data-testid="trigger-values"
-          />
-          <p className="text-xs text-muted-foreground">Values for the parameters the flow declares, one name=value per line.</p>
-        </div>
-      )}
 
       <div className="flex flex-col gap-2" data-testid="trigger-removals">
         <div className="flex flex-wrap items-baseline justify-between gap-2">

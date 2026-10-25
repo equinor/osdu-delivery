@@ -166,7 +166,7 @@ key never passes silently.
 | `description` | string | no | none | Free text. |
 | `batch` | string | no | none | SQLFlow's batch label for the pipeline and its runs. |
 | `partitions` | list | no | none | The partitions whose caches the flow fills, each a data-partition-id written literally, at most 64, each once. See [Which partitions a flow fills](#which-partitions-a-flow-fills). |
-| `parameters` | map | no | none | Named values a type's `query` uses as `{name}` tokens: each with `required`, `default` and `description`. |
+| `parameters` | map | no | none | Named values a type's `query` uses as `{name}` tokens: each with `required`, `default` and `description`. A parameter may list its `choices` ([parameters](parameters.md)). |
 | `source` | map | yes | none | Where the types come from: `endpoint`, `auth` and `headers` for OSDU types, `connection` for table types. Required even when empty (`source: {}` for a flow of dictionaries or dimensions only); missing, it fails with `'source' is required.` |
 | `types` | list | yes | none | The types the flow caches, at least one, each from one origin. |
 | `onChange` | `auto` or `approve` | no | `auto` | What a changed cached value does to the records already built from it; a type may override it. See [onChange](#onchange). |

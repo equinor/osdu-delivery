@@ -134,6 +134,16 @@ public sealed class DeliveryFlowKind : IFlowDocumentKind, ICompanionDocumentKind
         return new DeliveryFlowDocument { Source = _loader.ParseSource(yaml, source), Templates = _templates, Order = _order };
     }
 
+    /// <summary>
+    /// What a delivery flow's run may be given: its parameters, those its scopes bind taking several values and looked up in the
+    /// column they bind, the partition when it works in partitions, and the first records of its scope (<see cref="KindRunInputs"/>).
+    /// </summary>
+    public FlowRunInputs DescribeRun(string yaml, string source)
+    {
+        ArgumentNullException.ThrowIfNull(yaml);
+        return KindRunInputs.Delivery(_loader.ParseSource(yaml, source));
+    }
+
     public void ValidateParameters(RunParameters parameters)
     {
         ArgumentNullException.ThrowIfNull(parameters);

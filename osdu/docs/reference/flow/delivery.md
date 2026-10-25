@@ -245,7 +245,7 @@ where each record's files are.
 | `record.key` | list | required | The key columns, in order: the ing flow's `load.keyColumns`. They must name the same columns, in the same order, as the mapping's `dataset.key`. |
 | `record.primaryKey` | string | none | The table's identity primary key (the ing flow's `target.identityColumn`, such as `RecId`). A fan-out cuts the read on it; without it the read is planned on one run and only the sending fans out. See [The identity primary key](#the-identity-primary-key). |
 | `record.scope` | map | none | Column to parameter: each entry becomes a typed `[column] = @parameter` predicate, so a run reads only the rows of its parameter values. A parameter the run gives several values reads the rows holding any of them, `[column] IN (@p0, @p1, ...)` ([Several values of a scope parameter](#several-values-of-a-scope-parameter)). A value is bound, never substituted into SQL. |
-| `record.maxRecords` | integer | none | The most records a run of the scope reads, 1 to 1000: the first of the scope, by key, on every run. A hard limit for a smoke test before the whole scope goes; leave it out to read the scope whole. See [The first records of the scope](#the-first-records-of-the-scope). |
+| `record.maxRecords` | integer | none | The first records of the scope a run reads, 1 to 1000, by key, on every run that gives no `maxRecords` of its own: a smoke test before the whole scope goes; leave it out to read the scope whole. A run's own stands in for it. See [The first records of the scope](#the-first-records-of-the-scope). |
 | `datasets.<name>.object` | string | required | A child table's three-part name. The mapping reads it under `<name>` (a `$forEach` over it, or `$dataset.<column>`). |
 | `datasets.<name>.join` | map | required | Child column to record key column. Every record key column must be joined. |
 | `datasets.<name>.orderBy` | list | none | The order of a record's child rows. |
@@ -366,8 +366,10 @@ source:
   so the scope keeps no watermark while the key is set, and the records the ledger asks to plan again outside them (a
   release, a redelivery) wait for a run of the whole scope. A run naming records (`recordKeys`) or a submission reads
   what it names.
-- **A hard limit.** A run's payload `maxRecords` ([sqlflow run](../cli/run.md#a-delivery-flows-payload)) may ask for fewer,
-  never more: a run reads the fewer of the two, and the log says which limit it read by.
+- **A default.** A run's payload `maxRecords` ([sqlflow run](../cli/run.md#a-delivery-flows-payload)) stands in for it on
+  that run: more records, fewer, or 0 to read the scope whole. The log says which setting the run read by, and the run
+  dialog's **Run settings** show the document's value as **Records at most** and give a run its own
+  ([parameters](parameters.md#run-settings)).
 - **Taking it out.** Remove the key to deliver the whole scope: the next run reads the scope as a run without it does,
   every row for a flow limited from its first run, or the rows changed since the watermark the scope kept from before
   the key was set. The records already delivered render as they were and are not sent again.
@@ -486,13 +488,18 @@ parameter](#several-values-of-a-scope-parameter)); every other parameter takes o
 | `parameters.<name>.required` | boolean | `false` | A run without a value fails with `parameter '<name>' is required. Supply it with --set <name>=value or the run's values.` |
 | `parameters.<name>.default` | string | none | The value a run without one takes. |
 | `parameters.<name>.description` | string | none | Free text. |
+| `parameters.<name>.choices` | list | none | The values the parameter may take; a run given another is refused, and the run form lists them. |
+| `parameters.<name>.lookup.column` | string | none | The record table's column whose values the run form offers for the parameter; a scope parameter is looked up in the column it binds without one. |
+| `parameters.<name>.lookup.interface` | string | the first | The interface whose record table holds that column. |
 
 `{name}` tokens are substituted in `source.work` and every payload `root`; a value carrying `/`, `\` or `..` is refused
 there, since these locations bound what a run reads and writes. `source.record.scope` binds a parameter to a column
 instead. A token or a scope naming an undeclared parameter is refused when the document loads, and a run supplying an
 undeclared one is refused when it starts. Each distinct set of values is a scope of its own, with its own watermark.
 
-Mapping parameters are different: they go under `render.parameters` ([render](#render)).
+How a run takes its values, which operations resolve them (`deliver`, `plan`, `intake` and `replan`), the choices and
+lookups, and how the run form and a schedule show them are on [parameters](parameters.md). Mapping parameters are
+different: they go under `render.parameters` ([render](#render)).
 
 ### Several values of a scope parameter
 

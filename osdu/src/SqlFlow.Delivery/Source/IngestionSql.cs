@@ -114,6 +114,31 @@ public static class IngestionSql
     /// <summary>The parameter holding how many values a listing of a scope column's values returns.</summary>
     public const string TopParameter = "@top";
 
+    /// <summary>The parameter holding the pattern a listing of a column's values is narrowed to (<see cref="ContainsPattern"/>).</summary>
+    public const string SearchParameter = "@search";
+
+    /// <summary>
+    /// The <c>LIKE</c> pattern matching a value that contains <paramref name="text"/>, its wildcards taken as written and in
+    /// upper case, which the listing compares the column's text in upper case with, so a search ignores case whatever the
+    /// column's collation.
+    /// </summary>
+    public static string ContainsPattern(string text)
+    {
+        ArgumentException.ThrowIfNullOrEmpty(text);
+        var escaped = new System.Text.StringBuilder(text.Length + 8);
+        foreach (var c in text.ToUpperInvariant())
+        {
+            if (c is '\\' or '%' or '_' or '[')
+            {
+                escaped.Append('\\');
+            }
+
+            escaped.Append(c);
+        }
+
+        return "%" + escaped + "%";
+    }
+
     /// <summary>Which bounds a candidate query carries beyond its selection.</summary>
     /// <param name="After">A keyset bound: only values above the page's last one, in the order the read pages in.</param>
     /// <param name="From">A slice's exclusive lower bound.</param>
@@ -229,16 +254,17 @@ public static class IngestionSql
     /// most <c>@top</c> of them: over the record table's rows not marked deleted, and never a null, which no parameter
     /// value selects.
     /// </summary>
-    public static string ScopeValues(IngestionLayout layout, string column)
+    public static string ScopeValues(IngestionLayout layout, string column, bool search = false)
     {
         ArgumentNullException.ThrowIfNull(layout);
         ArgumentException.ThrowIfNullOrWhiteSpace(column);
         var value = "r." + SourceObjectName.Quote(column);
         var live = layout.Deleted is { } deleted ? $" AND r.{SourceObjectName.Quote(deleted)} IS NULL" : string.Empty;
+        var matching = search ? $" AND UPPER(CAST({value} AS nvarchar(4000))) LIKE {SearchParameter} ESCAPE N'\\'" : string.Empty;
         return $"""
             SELECT TOP ({TopParameter}) {value} AS scope_value, COUNT_BIG(*) AS scope_rows
             FROM {layout.Record.Quoted} r
-            WHERE {value} IS NOT NULL{live}
+            WHERE {value} IS NOT NULL{live}{matching}
             GROUP BY {value}
             ORDER BY COUNT_BIG(*) DESC, {value};
             """;

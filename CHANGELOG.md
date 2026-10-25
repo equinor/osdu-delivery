@@ -8,11 +8,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
-- **Smoke test a delivery on its first records.** A deliver, plan or intake run's payload takes `maxRecords` (1 to
-  1,000), and the trigger dialog **Records at most**: the run reads only the first records of its scope, records not yet
-  in the ledger included, and leaves the scope's watermark where it is, so the next run of the scope still reads every row
-  ([Running an OSDU flow](osdu/docs/reference/cli/run.md#a-delivery-flows-payload)). A flow's `source.record.maxRecords`
-  sets the same limit in its document, for every run of its scope until it is removed
+- **Run a flow with the parameters its document declares.** The trigger dialog of every OSDU flow kind lists the flow's
+  parameters with their descriptions and defaults, a list to pick from for a parameter's new `choices` (a run given
+  another value is refused) or, for a delivery flow, the values the column it is looked up in holds, with how many rows
+  hold each (a scope parameter's column, or `lookup.column`); a field left empty takes the document's value, and the
+  dialog says what would refuse the run as it is filled in. The Preview tab and a mapping's data check take the same
+  fields, and the Schedules page shows what every flow a schedule runs is given and what would refuse its run
+  ([Parameters](osdu/docs/reference/flow/parameters.md)).
+
+- **Smoke test a delivery on its first records.** A deliver, plan, intake or replan run's payload takes `maxRecords` (1
+  to 1,000, or 0 for the whole scope), the trigger dialog's **Records at most**: the run reads only the first records of
+  its scope, records not yet in the ledger included, and leaves the scope's watermark where it is, so the next run of the
+  scope still reads every row ([Running an OSDU flow](osdu/docs/reference/cli/run.md#a-delivery-flows-payload)). A flow's
+  `source.record.maxRecords` sets the default in its document, which every run of its scope takes unless it gives its own
   ([The first records of the scope](osdu/docs/reference/flow/delivery.md#the-first-records-of-the-scope)).
 
 - **Explain any page or piece of code.** Explain at the end of the tab strip has the assistant tell someone new what the
@@ -207,6 +215,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   ([The OSDU menu](osdu/docs/reference/concepts/gui.md#the-osdu-menu)).
 
 ### Changed
+- A delivery flow's `source.record.maxRecords` is the default its runs take rather than a ceiling: a run's payload
+  `maxRecords` may now ask for more records than the document says, fewer, or 0 to read the whole scope, and a `replan`
+  run takes it too; until now a payload could only ask for fewer
+  ([The first records of the scope](osdu/docs/reference/flow/delivery.md#the-first-records-of-the-scope)).
+- A flow's parameters, and a delivery flow's **Records at most**, moved from each kind's own trigger fields to the
+  dialog's **Flow parameters** and **Run settings**, read from the flow's document; a delivery's `verify`, `drain`,
+  `sync`, `reverse`, `undo`, `remove` and `delete-ledger` runs, which take no parameter values, ask for none
+  ([Parameters](osdu/docs/reference/flow/parameters.md#in-the-gui-and-on-a-schedule)).
 - The dimension flow's reference is a page per topic: `flow/dimension.md` holds the flow and its keys and links the pages
   that hold the rest (labels and attributes, elements, clean steps, the dimension's table, incremental loads, builds and
   errors), so a link to a section of the old page opens that section's own page

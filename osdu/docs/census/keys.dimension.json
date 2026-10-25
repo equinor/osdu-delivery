@@ -6,7 +6,7 @@
   "includeEnvelope": true,
   "generatedFrom": "osdu/docs/reference/flow/dimension.md and osdu/src/SqlFlow.Delivery/Documents/YamlModels.cs",
   "naming": "The loader deserializes with YamlDotNet's CamelCaseNamingConvention and refuses any key it does not know.",
-  "keyCount": 137,
+  "keyCount": 139,
   "keys": [
     {
       "path": "batch",
@@ -413,10 +413,22 @@
       "description": "One parameter; `<name>` is the name its `{name}` tokens use. A run supplying a value for a name the flow does not declare is refused."
     },
     {
+      "path": "parameters.<name>.choices",
+      "type": "list",
+      "required": false,
+      "description": "The values the parameter may take, in the order a run form lists them: a run given any other value is refused (`parameter 'name' is given 'x', which is not one of its choices: a, b.`), and the run form offers them as a list to pick from. At least one and at most 500, each listed once and written as a run gives it; a `default` is one of them. Leave it out for a parameter that takes any value."
+    },
+    {
+      "path": "parameters.<name>.choices[]",
+      "type": "string",
+      "required": false,
+      "description": "One value the parameter may take."
+    },
+    {
       "path": "parameters.<name>.default",
       "type": "string",
       "required": false,
-      "description": "The value used when a run supplies none."
+      "description": "The value used when a run supplies none; one of the parameter's `choices` when it lists them."
     },
     {
       "path": "parameters.<name>.description",

@@ -183,6 +183,22 @@ public sealed class MemoryIngestionTables : IIngestionSourceFactory
             return Task.FromResult<IReadOnlyList<ScopeParameterValues>>(listed);
         }
 
+        public Task<ScopeParameterValues> ColumnValuesAsync(string parameter, string column, string? search, int max, CancellationToken ct = default)
+        {
+            ArgumentOutOfRangeException.ThrowIfLessThan(max, 1);
+            var values = _tables.Records
+                .Where(r => r.DeletedUtc is null)
+                .Select(r => SourceRow.Stringify(r.Row.TryGetValue(column, out var value) ? value : null))
+                .OfType<string>()
+                .Where(v => string.IsNullOrWhiteSpace(search) || v.Contains(search.Trim(), StringComparison.OrdinalIgnoreCase))
+                .GroupBy(v => v, StringComparer.Ordinal)
+                .Select(g => new ScopeValue(g.Key, g.LongCount()))
+                .OrderByDescending(v => v.Rows)
+                .ThenBy(v => v.Value, StringComparer.Ordinal)
+                .ToList();
+            return Task.FromResult(new ScopeParameterValues(parameter, column, values.Take(max).ToList(), values.Count > max));
+        }
+
         public Task<IReadOnlyList<SourceKeyColumn>> KeyColumnsAsync(CancellationToken ct = default)
             => Task.FromResult<IReadOnlyList<SourceKeyColumn>>(_flow.Source.Record.Key
                 .Select(k => new SourceKeyColumn(k, _tables.KeyTypes.TryGetValue(k, out var type) ? type : "nvarchar(400)"))

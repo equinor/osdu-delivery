@@ -71,6 +71,18 @@ public sealed class InventoryFlowKind : IFlowDocumentKind
         return new InventoryFlowDocument { Flow = _loader.ParseInventory(yaml, source) };
     }
 
+    /// <summary>
+    /// What an inventory flow's run may be given: its parameters, and the partition it reads when it works in partitions (<see cref="KindRunInputs"/>).
+    /// </summary>
+    public FlowRunInputs DescribeRun(string yaml, string source)
+    {
+        ArgumentNullException.ThrowIfNull(yaml);
+        return DescribeInventory(_loader.ParseInventory(yaml, source));
+    }
+
+    private static FlowRunInputs DescribeInventory(InventoryFlowDefinition flow)
+        => KindRunInputs.Of(flow.Parameters, flow.Partitioned, "reads");
+
     public void ValidateParameters(RunParameters parameters)
     {
         ArgumentNullException.ThrowIfNull(parameters);

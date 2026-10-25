@@ -7,25 +7,30 @@ import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
+import type { RunValue } from "@/api/types";
 import { useAuth } from "@/auth/AuthContext";
+import { RunParameterFields } from "@/features/runs/RunParameterFields";
+import { parametersFor, parameterValuesToSend, type ParameterFieldValues } from "@/features/runs/runInputs";
+import { usePipelineParameters, useRunExplanation } from "@/features/runs/useRunInputs";
 import { deliveryApi, type DeliveryRecordPreview } from "../../api/delivery";
 import { InterfacePicker } from "./InterfacePicker";
 import { OutsidePartition } from "./PartitionNotice";
 import { useInterfaceChoice } from "./useInterfaceChoice";
 import { RecordPreviewView } from "./RecordPreviewView";
-import { ScopeParameterFields } from "./ScopeParameterFields";
-import { missingParameters, scopeValuesToSend, type ScopeFieldValues } from "./scopeValues";
 import { ProblemView, TaskProgress } from "./TemplateSheet";
 
 /** The longest key the control plane takes; a longer text is a paste of something else. */
 const MAX_KEY = 4000;
+
+/** A preview is explained as a plan with no payload: it reads and renders one row as a plan would. */
+const NO_PAYLOAD: Readonly<Record<string, unknown>> = {};
 
 /**
  * The scope's values a link names (`previewValues`, a JSON object of strings, and of arrays of strings for a parameter
  * given several), as a value check's record links carry them; none when the link names none or names them in any other
  * form.
  */
-function linkedValues(text: string | null): ScopeFieldValues {
+function linkedValues(text: string | null): ParameterFieldValues {
   if (text === null) {
     return {};
   }
@@ -44,8 +49,9 @@ function linkedValues(text: string | null): ScopeFieldValues {
 /**
  * The Preview tab of a delivery flow: one record rendered exactly as a delivery would render it, and sent
  * nowhere. The record is the scope's first, or the one a key names; the flow's parameters fill the scope, their defaults
- * where none is given. What comes back is the record's document as its route sends it, what the next run would do with
- * it, the requests the route would make, the files it would upload and what it refers to.
+ * where none is given, in the fields a run form gives them (as the flow's document declares them), and the control plane
+ * says what a plan given those values would refuse. What comes back is the record's document as its route sends it, what
+ * the next run would do with it, the requests the route would make, the files it would upload and what it refers to.
  */
 export function DeliveryPreviewPanel({ pipelineId, flowName }: { pipelineId: string; flowName: string }) {
   const { hasScope } = useAuth();
@@ -53,13 +59,14 @@ export function DeliveryPreviewPanel({ pipelineId, flowName }: { pipelineId: str
   const {
     interfaces, names, many, interfaceName, current, partitions, headerPartition, outside, unplaced, active, scope, selectInterface,
   } = useInterfaceChoice(pipelineId);
-  const parameters = useMemo(() => current?.parameters ?? [], [current]);
+  const inputs = usePipelineParameters(pipelineId);
+  const parameters = useMemo(() => parametersFor(inputs.data?.inputs, "plan"), [inputs.data]);
   const keyColumns = current?.keyColumns ?? [];
   // A link to one record (a value check's) names its key and the scope's values, and the record is previewed on arrival.
   const [searchParams, setSearchParams] = useSearchParams();
   const linkedKey = searchParams.get("previewKey");
   const [key, setKey] = useState(linkedKey ?? "");
-  const [values, setValues] = useState<ScopeFieldValues>(() => linkedValues(searchParams.get("previewValues")));
+  const [values, setValues] = useState<ParameterFieldValues>(() => linkedValues(searchParams.get("previewValues")));
   // What the last preview answered: kept while the next one runs, so the page does not jump, and replaced when the next
   // one lands. A preview that fails says why in its place.
   const [result, setResult] = useState<DeliveryRecordPreview | null>(null);
@@ -78,20 +85,25 @@ export function DeliveryPreviewPanel({ pipelineId, flowName }: { pipelineId: str
     setResult(null);
   }
 
+  // A parameter left empty takes its declared default on the node.
+  const sent = useMemo(() => parameterValuesToSend(parameters, values), [parameters, values]);
   const preview = useMutation({
-    mutationFn: () => deliveryApi.preview(
-      pipelineId,
-      // A parameter left empty takes its declared default on the node.
-      { key: key.trim() === "" ? null : key.trim(), values: scopeValuesToSend(parameters, values) },
-      scope),
+    mutationFn: () => deliveryApi.preview(pipelineId, { key: key.trim() === "" ? null : key.trim(), values: sent }, scope),
     onSuccess: setResult,
     onError: () => setResult(null),
   });
 
-  const missing = missingParameters(parameters, scopeValuesToSend(parameters, values));
+  // What a plan given these values would refuse, as the control plane checks it: a required value missing, a value outside
+  // a parameter's choices.
+  const explainedValues = useMemo<Record<string, RunValue>>(
+    () => (scope.partition ? { ...sent, partition: scope.partition } : sent),
+    [sent, scope.partition],
+  );
+  const { parameterProblems, inputProblems, refused } = useRunExplanation(
+    pipelineId, "plan", explainedValues, NO_PAYLOAD, current !== undefined && parameters.length > 0);
   const tooLong = key.trim().length > MAX_KEY;
   const running = preview.isPending;
-  const blocked = !canOperate || current === undefined || missing.length > 0 || tooLong || running;
+  const blocked = !canOperate || current === undefined || refused || tooLong || running;
   const submit = () => {
     if (!blocked) {
       preview.mutate();
@@ -177,21 +189,23 @@ export function DeliveryPreviewPanel({ pipelineId, flowName }: { pipelineId: str
               {tooLong && <p className="text-[12px] text-destructive">{`The key is ${key.trim().length.toLocaleString()} characters; a record key is at most ${MAX_KEY.toLocaleString()}.`}</p>}
               {parameters.length > 0 && (
                 <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-3" data-testid="preview-parameters">
-                  <ScopeParameterFields
+                  <RunParameterFields
                     pipelineId={pipelineId}
-                    scope={scope}
                     parameters={parameters}
                     values={values}
                     onChange={(name, value) => setValues((was) => ({ ...was, [name]: value }))}
-                    canRead={canOperate && current !== undefined}
+                    lookupValues={scope.partition ? { partition: scope.partition } : undefined}
                     prefix="preview"
+                    problems={parameterProblems}
                   />
                 </div>
               )}
-              {missing.length > 0 && (
-                <p className="text-[12px] text-muted-foreground" data-testid="preview-missing">
-                  {`The scope needs ${missing.map((p) => p.name).join(", ")}: the flow declares ${missing.length === 1 ? "it" : "them"} required, with no default.`}
-                </p>
+              {inputProblems.length > 0 && (
+                <ul className="flex flex-col gap-0.5" data-testid="preview-problems">
+                  {inputProblems.map((problem) => (
+                    <li key={problem} className="text-[12px] text-destructive">{problem}</li>
+                  ))}
+                </ul>
               )}
             </form>
           )}
