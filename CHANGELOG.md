@@ -8,6 +8,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Explain any page or piece of code.** Explain at the end of the tab strip has the assistant tell someone new what the
+  page is for and what they do there, and Explain on a code window (or "Explain this" in its right-click menu) explains
+  the selected lines or the whole document; the conversation slides in from the left, can be widened, maximized and
+  followed up, and is kept on the Assistant page
+  ([Explain](sqlflow/docs/reference/guides/chat-assistant.md#explain)).
+
 - Settings > Maintenance shows what the whole database holds, the `osdu` schema included: every table in areas a person
   recognises, each marked keep, safe to remove or optional, with its size, how its data leaves and what removing it
   costs. Superseded delivery attempts, finished activities' logs and superseded assertion runs are optional: an admin
@@ -172,6 +178,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   ([The OSDU menu](osdu/docs/reference/concepts/gui.md#the-osdu-menu)).
 
 ### Changed
+- The Home page opens on the headline counts, without a heading, with the assistant's question box below them and then the delivery
+  section, so what the estate is doing now is the first thing read.
+
 - The automatic cleanup is configured as `ControlPlane:Maintenance:Enabled` and `ControlPlane:Maintenance:PollSeconds`;
   a control plane given `ControlPlane:RunTrace:*` refuses to start and names the new section, so move or remove those
   settings. Run events now take a limit like SQL statements, each pipeline's latest run and every failed run keeping
