@@ -278,8 +278,23 @@ test.describe.serial("seed the estate via repo source sync", () => {
     const projects = adminPage.getByTestId("repo-project");
     await expect(projects).toHaveCount(1, { timeout: 30_000 });
     await expect(projects.first()).toContainText(SOURCE);
-    // The project accordions start collapsed; a search opens the matching one and surfaces the flow row.
+    // A project opens onto its folders, every one of them shut, so a repository of thousands of files never unfolds
+    // when it is browsed: the flow sits under flows, which opens on a click.
+    await projects.first().getByText(SOURCE, { exact: true }).click();
+    const flowsFolder = projects.first().getByTestId("repo-folder").filter({ hasText: "flows" });
+    await expect(flowsFolder).toHaveAttribute("aria-expanded", "false");
+    const deliveryRow = adminPage.getByTestId("repo-pipeline").filter({ hasText: DELIVERY_FLOW });
+    await expect(deliveryRow).toHaveCount(0);
+    await flowsFolder.click();
+    await expect(flowsFolder).toHaveAttribute("aria-expanded", "true");
+    await expect(deliveryRow.first()).toBeVisible();
+    // A search opens the folders on the way to the rows it matched, and surfaces the flow row.
     await adminPage.getByTestId("repo-pipeline-search").fill(DELIVERY_FLOW);
-    await expect(adminPage.getByTestId("repo-pipeline").filter({ hasText: DELIVERY_FLOW }).first()).toBeVisible();
+    await expect(deliveryRow.first()).toBeVisible();
+    // A project a search matches by its name is kept whole, so its folders stay shut rather than unfolding every file
+    // it holds.
+    await adminPage.getByTestId("repo-pipeline-search").fill(SOURCE);
+    const dataFolder = projects.first().getByTestId("repo-folder").filter({ hasText: "data" });
+    await expect(dataFolder.first()).toHaveAttribute("aria-expanded", "false");
   });
 });

@@ -204,6 +204,10 @@ other packages adopt the same contract.
   why the tables holding a dimension's rows are keyed on partition, dimension and row, why every statement of a write
   names its dimension and forces its seek (plans made on empty tables scanned), and why retrying or serialising the
   writes, a covering index per statement and row locks were rejected.
+- [0031: a run shows and may change what its document declares, by one rule, and maxRecords is a default](decisions/0031-run-parameters-from-the-document.md) -
+  why every kind describes its run inputs to SQLFlow's run form and one rule resolves them for the run, the form and a
+  schedule's preview, why a lookup reads a column of a record table and never a query, why only a delivery's reading
+  operations resolve its parameters, and why `maxRecords` became a default rather than a ceiling.
 
 ## Coverage
 

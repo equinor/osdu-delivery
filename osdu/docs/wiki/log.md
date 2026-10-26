@@ -473,3 +473,15 @@ statements a build writes a partition's rows of it with, which the plans of two 
 each other's rows. Amended [0030](decisions/0030-dimension-rows-one-range.md): the build keeps a partition's rows together
 (`IX_key` clustered on partition, key and id), lays out once a table made before, under the table's lock, and every
 statement writing a partition's rows seeks it; the test of plans covers two partitions at once.
+
+## [2026-10-26] ingest | Run parameters from the document, decision 0031
+
+Read the change that gives every flow kind's run form the parameters its document declares (the SQLFlow run inputs and
+the OSDU kinds' descriptions of them) and the human's choices behind it: every declared parameter shown with the
+document's value and changeable for one run, a schedule fixed but shown, choices and lookups to pick from, several values
+where a parameter takes several, one rule in place of the parallel ones, and nothing that worked before changed. Filed
+[0031](decisions/0031-run-parameters-from-the-document.md): a kind describes its run inputs and `RunValueResolution`
+resolves them for the run, the form and a schedule's preview; a lookup reads a column of a delivery's record table,
+never a query; only a delivery's reading operations resolve its parameters; and `maxRecords` is a default, which the
+human chose over a ceiling. Amended [0024](decisions/0024-scope-value-lists.md): the several-values field is SQLFlow's run
+value picker, which replaced the module's own.

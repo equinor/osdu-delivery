@@ -8262,7 +8262,8 @@
         "RunValueList"
       ],
       "related": [
-        "delivery-wiki-0022-removal-flows"
+        "delivery-wiki-0022-removal-flows",
+        "delivery-wiki-0031-run-parameters-from-the-document"
       ],
       "sourceRefs": [
         "sqlflow/src/SqlFlow.Core/Runs/RunValueList.cs",
@@ -8275,7 +8276,7 @@
         "osdu/src/SqlFlow.Delivery/Engine/Intake/SubmissionIntake.cs",
         "osdu/src/SqlFlow.Delivery/Engine/DeliveryRunPayload.cs",
         "osdu/src/SqlFlow.Delivery/Ledger/SqlServerLedgerBulk.Removal.cs",
-        "osdu/gui/src/features/delivery/ScopeParameterFields.tsx",
+        "sqlflow/gui/src/features/runs/RunValuePicker.tsx",
         "osdu/tests/SqlFlow.Delivery.Tests/ScopeValueListRunTests.cs"
       ]
     },
@@ -8503,6 +8504,39 @@
         "osdu/src/SqlFlow.Delivery/Ledger/OsduLedger.Dimensions.cs",
         "osdu/src/SqlFlow.Delivery/Ledger/DimensionTables.cs",
         "osdu/tests/SqlFlow.Delivery.Tests/DimensionConcurrentWriteTests.cs"
+      ]
+    },
+    {
+      "id": "delivery-wiki-0031-run-parameters-from-the-document",
+      "corpus": "wiki",
+      "path": "decisions/0031-run-parameters-from-the-document.md",
+      "title": "Decision 0031: a run shows and may change what its document declares, by one rule, and maxRecords is a default",
+      "type": "decision",
+      "summary": "Why every kind's run form lists the parameters its document declares, why one rule resolves them, why a lookup reads a column, and why maxRecords is a default.",
+      "keywords": [
+        "run parameters",
+        "run inputs",
+        "choices",
+        "lookup",
+        "maxRecords",
+        "run settings",
+        "schedule values",
+        "RunValueResolution"
+      ],
+      "related": [
+        "delivery-wiki-0024-scope-value-lists"
+      ],
+      "sourceRefs": [
+        "sqlflow/src/SqlFlow.Core/Runs/FlowRunInputs.cs",
+        "sqlflow/src/SqlFlow.ControlPlane/Api/RunInputEndpoints.cs",
+        "sqlflow/gui/src/features/runs/RunValuePicker.tsx",
+        "osdu/src/SqlFlow.Delivery/Documents/FlowParameterDeclarations.cs",
+        "osdu/src/SqlFlow.Delivery/Documents/KindRunInputs.cs",
+        "osdu/src/SqlFlow.Delivery/Documents/MappingCatalog.cs",
+        "osdu/src/SqlFlow.Delivery/Engine/DeliveryExecutor.cs",
+        "osdu/src/SqlFlow.Delivery/Engine/ScopeReads.cs",
+        "osdu/src/SqlFlow.Delivery.ControlPlane/Api/DeliveryRunParameterLookup.cs",
+        "osdu/tests/SqlFlow.Delivery.Tests/RunInputsTests.cs"
       ]
     },
     {

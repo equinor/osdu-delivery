@@ -22,6 +22,7 @@ referenceRefs:
   - flow-schedule
 related:
   - delivery-wiki-0022-removal-flows
+  - delivery-wiki-0031-run-parameters-from-the-document
 sourceRefs:
   - sqlflow/src/SqlFlow.Core/Runs/RunValueList.cs
   - sqlflow/src/SqlFlow.Core/Runs/RunValuesJsonConverter.cs
@@ -33,9 +34,9 @@ sourceRefs:
   - osdu/src/SqlFlow.Delivery/Engine/Intake/SubmissionIntake.cs
   - osdu/src/SqlFlow.Delivery/Engine/DeliveryRunPayload.cs
   - osdu/src/SqlFlow.Delivery/Ledger/SqlServerLedgerBulk.Removal.cs
-  - osdu/gui/src/features/delivery/ScopeParameterFields.tsx
+  - sqlflow/gui/src/features/runs/RunValuePicker.tsx
   - osdu/tests/SqlFlow.Delivery.Tests/ScopeValueListRunTests.cs
-updated: 2026-10-23
+updated: 2026-10-26
 ---
 # 0024: A scope parameter takes several values in one run, the set is its scope, and SQLFlow carries the list
 
@@ -104,4 +105,6 @@ parameter selection taking several values is not peculiar to OSDU, and the OSDU 
   plane and its nodes are deployed together, and going back to a version before this after lists were used fails those
   rows when they are read.
 - The field the GUI gives a scope parameter takes several values: chips in a form, one token with how many more in the
-  value check's line, and the value being typed counting as one, so typing one value and running behaves as it did.
+  value check's line, and the value being typed counting as one, so typing one value and running behaves as it did. It is
+  SQLFlow's run value picker, the one the run form gives every parameter of every kind
+  ([0031](0031-run-parameters-from-the-document.md)).

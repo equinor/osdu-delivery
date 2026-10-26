@@ -416,6 +416,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **A repository's folders stay shut until they are opened.** Opening a project on a repo's page or the Pipelines page
+  unfolded every folder holding a flow, with every file beside it, so an estate keeping thousands of files beside its
+  flows (a data drop, a folder per well) listed them all. A project now opens onto its top-level folders, each opening
+  one level at a time; a search opens only the folders on the way to what it matched, and a project it matches by name
+  opens with its folders shut
+  ([What a repository holds, and its page](sqlflow/docs/reference/concepts/control-plane.md#what-a-repository-holds-and-its-page)).
 - **A flow's dimensions build beside each other without deadlocking, and so does a dimension in two partitions.** A
   dimension building while others did could fail as a deadlock victim, most often in a new estate's first build; each
   dimension's rows are now kept together and a build reads only its own, and a dimension's own table keeps each
