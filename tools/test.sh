@@ -2,9 +2,9 @@
 # Runs the tests, in one of two tiers (CONTRIBUTING.md, Tests):
 #
 #   bash tools/test.sh                  the unit tier: the build with warnings as errors, every .NET test that needs no
-#                                       SQL Server, host or other process, and the GUI's build, lint and unit tests. It
-#                                       is what CI's Build and test runs on a pull request, and what the pre-push hook
-#                                       runs. It takes minutes, and needs no database.
+#                                       SQL Server, host or other process, the GUI's build, lint and unit tests, and the
+#                                       GitHub action's tests. It is what CI's Build and test runs on a pull request, and
+#                                       what the pre-push hook runs. It needs no database.
 #   bash tools/test.sh --full           everything: the whole .NET suite against SQL Server (and a test GitHub App when
 #                                       one is configured), the MCP server's crates and the GUI end-to-end suite. Run it
 #                                       before opening a pull request; CI runs it on a release tag, and on a pull request
@@ -13,9 +13,13 @@
 #   bash tools/test.sh --suite NAME     one on-demand suite alone, against SQL Server as the full tier runs it: the tests
 #                                       that carry [Trait("Suite", "NAME")], which both tiers leave out. The suites are
 #                                       named in on_demand_suites below: DimensionEdgeCases, every edge of the dimension
-#                                       engine's attributes, elements, lookups, incremental loads and views; and
+#                                       engine's attributes, elements, lookups, incremental loads and views;
 #                                       RunParameters, every rule of a flow's parameters and run settings for each kind, a
-#                                       run's resolution checked against what a run form and a schedule's preview say.
+#                                       run's resolution checked against what a run form and a schedule's preview say; and
+#                                       ExternalTriggers, every way a trigger request syncs, fires, follows its runs and
+#                                       ends, through the API as a GitHub job calls it, and a real GitHub Actions token
+#                                       checked against GitHub's keys when SQLFLOW_TEST_GITHUB_OIDC_REPOSITORY names a
+#                                       repository to mint one in (sqlflow/docs/reference/concepts/external-triggers.md).
 #
 # The unit tier points the suites at a server that does not exist, so a test that needs SQL Server without carrying
 # [Trait("Category", "Integration")] fails here, as it would in CI, rather than passing on this machine's database.
@@ -33,7 +37,7 @@ root="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$root"
 
 # The suites a test opts into with [Trait("Suite", "<name>")]: run on demand alone, left out of both tiers.
-on_demand_suites="DimensionEdgeCases RunParameters"
+on_demand_suites="DimensionEdgeCases RunParameters ExternalTriggers"
 
 if [ "$#" -gt 1 ] && [ "${1:-}" != --suite ]; then
   echo "tools/test.sh: takes one argument at most, or --suite and a suite's name, and was given $#." >&2
@@ -147,6 +151,24 @@ if [ "$mode" = full ] && [ -f .sqlflow/env ]; then
   done
 fi
 
+# The ExternalTriggers suite's GitHub OIDC probe: the repository holding the probe workflow, from the environment, else
+# from .sqlflow/env, and a token that may run it, else the GitHub CLI's own (gh auth token). Without the repository its
+# live tests are skipped.
+if [ "$mode" = suite ] && [ "$suite" = ExternalTriggers ]; then
+  for name in SQLFLOW_TEST_GITHUB_OIDC_REPOSITORY SQLFLOW_TEST_GITHUB_OIDC_TOKEN; do
+    if [ -z "${!name:-}" ] && [ -f .sqlflow/env ]; then
+      value="$(grep -m 1 "^$name=" .sqlflow/env | cut -d= -f2- | sed -e "s/^[\"']//" -e "s/[\"']\$//" || true)"
+      if [ -n "$value" ]; then
+        export "$name=$value"
+      fi
+    fi
+  done
+  if [ -n "${SQLFLOW_TEST_GITHUB_OIDC_REPOSITORY:-}" ] && [ -z "${SQLFLOW_TEST_GITHUB_OIDC_TOKEN:-}" ] && command -v gh > /dev/null 2>&1; then
+    SQLFLOW_TEST_GITHUB_OIDC_TOKEN="$(gh auth token 2> /dev/null || true)"
+    export SQLFLOW_TEST_GITHUB_OIDC_TOKEN
+  fi
+fi
+
 # The hosts the suites start never apply this checkout's .sqlflow/env: its credentials and its OSDU partition are not
 # the suites' to use.
 export SQLFLOW_LOCAL_ENV_FILE=false
@@ -193,6 +215,9 @@ if [ "$mode" = full ] || [ -z "$base" ] || [ -n "$(git diff --name-only "$base" 
 else
   step "SQLFlow GUI: unchanged on this branch, not built"
 fi
+
+step "GitHub action: unit tests"
+node --test "sqlflow/integrations/github/test/*.test.mjs"
 
 if [ "$mode" = full ]; then
   # --- The MCP server ---

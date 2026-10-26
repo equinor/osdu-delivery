@@ -273,7 +273,9 @@ OK  delivery 'welldb-wellbore-03-delivery' completed in <seconds>s
 
 or `FAILED  <error>` in place of the `OK` line. The run log says what the run did, step by step. With `--json`, stdout
 carries the run's result object (camelCase, enum values as names, `operation` first), which is also the `result` of its
-`run.json` and what the run page and the run list show:
+`run.json` and what the run page and the run list show. A delivery's records (planned, then delivered, unchanged,
+retrying, held, failed and waiting, added up over a source's interfaces) are also what a trigger request's trace and the
+summary a GitHub job writes say the run did ([External triggers](../../../../sqlflow/docs/reference/concepts/external-triggers.md#what-a-run-did)):
 
 | Run | Result carries |
 | --- | --- |

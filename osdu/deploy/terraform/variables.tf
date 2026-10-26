@@ -348,6 +348,40 @@ variable "github_app" {
   }
 }
 
+variable "external_triggers" {
+  description = "The external triggers the control plane trusts, by name (ControlPlane:Bootstrap:ExternalTriggers, sqlflow/docs/reference/concepts/external-triggers.md): each syncs one of repositories (repository, by its key) and may fire the schedules it names (schedules, or every schedule with all_schedules), for a GitHub Actions workflow after a merge (github: repository as owner/name, workflow, ref, environment, repository_id), which proves who it is with the token GitHub mints for its job so nothing secret is stored, or for a system holding a key (key_secret_name: the vault secret a person puts the key in, sqlft_ and at least 32 random letters, digits, - or _). The control plane writes them at start and disables one this configuration no longer names; a workflow asks GitHub's token for the control plane's address (the control_plane_base_url output) as its audience. Triggers an administrator creates on the External triggers page stay beside them."
+  type = map(object({
+    repository    = string
+    description   = optional(string)
+    schedules     = optional(list(string), [])
+    all_schedules = optional(bool, false)
+    github = optional(object({
+      repository    = string
+      repository_id = optional(string)
+      ref           = optional(string)
+      workflow      = optional(string)
+      environment   = optional(string)
+    }))
+    key_secret_name = optional(string)
+  }))
+  default = {}
+
+  validation {
+    condition     = alltrue([for name in keys(var.external_triggers) : can(regex("^[A-Za-z0-9][A-Za-z0-9_.-]{0,99}$", name))])
+    error_message = "An external trigger is named with letters, digits, underscore, hyphen and dot, starting with a letter or digit, at most 100 characters."
+  }
+
+  validation {
+    condition     = alltrue([for t in values(var.external_triggers) : (t.github == null) != (t.key_secret_name == null)])
+    error_message = "An external trigger names exactly one of github (the workflow it trusts) and key_secret_name (the vault secret holding its key)."
+  }
+
+  validation {
+    condition     = alltrue([for t in values(var.external_triggers) : t.key_secret_name == null ? true : can(regex("^[0-9A-Za-z-]{1,127}$", t.key_secret_name))])
+    error_message = "An external trigger's key_secret_name is a Key Vault secret name: letters, digits and hyphens, at most 127 characters."
+  }
+}
+
 variable "landing_storage" {
   description = "The storage account the estate's flows read their source files from: created here (account_name, derived from the resource group when left out) or adopted (existing_account_id), with a container. The worker's identity may read and write it and the control plane's read it, and every run is given its location as reference_name (LANDING_URL: abfss://<container>@<account>.dfs.core.windows.net), which a flow names in its source location ($${env:LANDING_URL}/<folder>). Null gives the estate none."
   type = object({

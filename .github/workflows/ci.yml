@@ -185,7 +185,7 @@ jobs:
 
       # The on-demand suites (tools/test.sh, on_demand_suites) are run by hand, never by CI.
       - name: Unit tests
-        run: dotnet test OsduDelivery.sln --no-build -c Release --filter "Category!=Integration&Suite!=DimensionEdgeCases&Suite!=RunParameters"
+        run: dotnet test OsduDelivery.sln --no-build -c Release --filter "Category!=Integration&Suite!=DimensionEdgeCases&Suite!=RunParameters&Suite!=ExternalTriggers"
 
       - name: Install OSDU GUI dependencies
         working-directory: osdu/gui
@@ -220,6 +220,10 @@ jobs:
       - name: Unit test SQLFlow GUI
         working-directory: sqlflow/gui
         run: npm run test:unit
+
+      # SQLFlow's GitHub action is plain JavaScript with no dependencies, so its suite runs on the sources as they are.
+      - name: Unit test the GitHub action
+        run: node --test "sqlflow/integrations/github/test/*.test.mjs"
 
   # Everything the unit tier leaves out, and the unit tier again with it (bash tools/test.sh --full runs the same): the
   # whole .NET suite against SQL Server, the MCP server's crates and the GUI end-to-end suite. It runs on a v* tag, whose
@@ -309,7 +313,7 @@ jobs:
           SQLFLOW_TEST_GITHUB_APP_ID: ${{ vars.SQLFLOW_TEST_GITHUB_APP_ID }}
           SQLFLOW_TEST_GITHUB_APP_PRIVATE_KEY: ${{ secrets.SQLFLOW_TEST_GITHUB_APP_PRIVATE_KEY }}
           SQLFLOW_TEST_GITHUB_REPOSITORY: ${{ vars.SQLFLOW_TEST_GITHUB_REPOSITORY }}
-        run: dotnet test OsduDelivery.sln --no-build -c Release -m:1 --verbosity normal --filter "Suite!=DimensionEdgeCases&Suite!=RunParameters"
+        run: dotnet test OsduDelivery.sln --no-build -c Release -m:1 --verbosity normal --filter "Suite!=DimensionEdgeCases&Suite!=RunParameters&Suite!=ExternalTriggers"
 
       # The MCP server is Rust: SQLFlow's server as a library, and the product's host that composes it with the
       # delivery module. Their suites call control planes of their own, so they need nothing this job started. Zero

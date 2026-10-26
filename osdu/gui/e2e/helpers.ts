@@ -73,7 +73,7 @@ export async function seedSession(page: Page, session: SessionSeed): Promise<voi
  * most pages through its entries. Each is seeded only while the browser holds no choice, so a test that closes the side
  * bar or folds a section finds it so after a reload.
  */
-async function seedSideBarOpen(page: Page): Promise<void> {
+export async function seedSideBarOpen(page: Page): Promise<void> {
   await page.addInitScript(({ sideBar, sections }) => {
     if (window.localStorage.getItem(sideBar) === null) {
       window.localStorage.setItem(sideBar, "open");

@@ -8,6 +8,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **A repository's files open as code.** On a repo's page, a click on a flow, a mapping, a template or any other file
+  shows its code in a window that slides in from the left over the page, syntax-coloured, resized by dragging its edge
+  and maximized to read it alone, where a click used to open only a flow's page and other files did nothing. A flow's
+  file offers Open pipeline. Files holding credentials (an environment file, a private key) and, in a repo synced from a
+  local folder, files git ignores are not shown
+  ([What a repository holds, and its page](sqlflow/docs/reference/concepts/control-plane.md#what-a-repository-holds-and-its-page)).
+
+- **Sync and fire from GitHub after a merge.** An external trigger (Admin > **External triggers**) lets a GitHub
+  workflow sync a repository at the commit it merged and then fire the schedules it picks, proving who it is with the
+  token GitHub mints for the job, so no secret is stored; SQLFlow's action (`sqlflow/integrations/github`) follows the
+  request and puts the sync's lines, each fire and every run in the job's log, the summary on the job's page and the
+  traces in an artifact, and the page writes the workflow for the schedules a merge fires
+  ([Syncing and firing schedules from GitHub](sqlflow/docs/reference/guides/github-actions.md)). A system that cannot
+  present GitHub's token uses a key trigger, and a deployment may declare its triggers in its configuration
+  ([External triggers](sqlflow/docs/reference/concepts/external-triggers.md)).
+
 - **Run a flow with the parameters its document declares.** The trigger dialog of every OSDU flow kind lists the flow's
   parameters with their descriptions and defaults, a list to pick from for a parameter's new `choices` (a run given
   another value is refused) or, for a delivery flow, the values the column it is looked up in holds, with how many rows

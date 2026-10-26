@@ -293,6 +293,14 @@ own identity. How the Kubernetes layout maps onto Container Apps:
 - **GitHub App**: `githubApp` (`appId`, `privateKeySecretName`, and `apiUrl` for GitHub Enterprise) reads every
   GitHub repository that names no token with a token the App mints for that repository alone. The control plane and
   each worker resolve it with their own identity, so the apps need no setting of their own for it.
+- **External triggers**: `externalTriggers` names the callers that sync one of `repositories` and fire the schedules
+  they name ([External triggers](../../sqlflow/docs/reference/concepts/external-triggers.md)): a GitHub workflow after a
+  merge (`gitHub`: `repository`, `workflow`, `ref`, `environment`, `repositoryId`), which proves who it is with the
+  token GitHub mints for its job, so nothing secret is stored, or a system holding a key (`keySecretName`, the vault
+  secret a person puts it in, listed by the `externalTriggerKeySecrets` output). A workflow asks GitHub's token for the
+  control plane's own address (the `controlPlaneBaseUrl` output) as its audience. The control plane writes them at
+  start and disables one the configuration no longer names; triggers made on the External triggers page stay beside
+  them.
 - **The chat assistant**: with `mcpImage` and `aiFoundryName` plus `aiFoundryModelName` (a model that serves the
   Responses API), the MCP server and the Foundry account are deployed and the control plane's assistant turns on by
   itself. The control plane calls the model keylessly with its own identity (granted Cognitive Services OpenAI User
@@ -335,8 +343,8 @@ them forward (and back) from there, so a later apply never takes an app back to 
 optional `acl_owner`, `acl_viewer`, `legal_tag` and `properties`, and one `default = true` when there are several),
 as `terraform.tfvars.example` shows. Each client secret is put in the vault by hand as `osdu-<id>-client-secret` (or
 the secret `client_secret_name` names); the control plane's settings carry the `${keyvault:...}` reference, as with
-the Bicep. `landing_storage`, `repositories` and `properties` are the Bicep's `landingStorage`, `repositories` and
-`properties`.
+the Bicep. `landing_storage`, `repositories`, `external_triggers` and `properties` are the Bicep's `landingStorage`,
+`repositories`, `externalTriggers` and `properties`.
 
 Each environment (dev, test, prod) is two committed files in `terraform/environments/`, and is planned and applied
 with its script, which runs `terraform init` against its state, `plan` with its variables and the commit's

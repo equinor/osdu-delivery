@@ -296,5 +296,25 @@ test.describe.serial("seed the estate via repo source sync", () => {
     await adminPage.getByTestId("repo-pipeline-search").fill(SOURCE);
     const dataFolder = projects.first().getByTestId("repo-folder").filter({ hasText: "data" });
     await expect(dataFolder.first()).toHaveAttribute("aria-expanded", "false");
+
+    // Any file opens in the code window that slides in from the left, coloured as what it is: a template as JSON.
+    const template = "osdu_wks_master-data--Well_1.2.0.json";
+    await projects.first().getByTestId("repo-folder").filter({ hasText: "templates" }).click();
+    await projects.first().getByTestId("repo-file").filter({ hasText: template }).click();
+    const codeWindow = adminPage.getByTestId("code-window");
+    await expect(codeWindow.getByTestId("code-window-header")).toContainText(template);
+    await expect(codeWindow.getByTestId("code-window-facts")).toContainText("JSON");
+    await expect(codeWindow.getByTestId("code-window-code")).toBeVisible();
+    await expect(codeWindow.getByTestId("code-window-open-pipeline")).toHaveCount(0);
+    await codeWindow.getByTestId("code-window-close").click();
+    await expect(codeWindow).toHaveCount(0);
+
+    // A flow's file opens there too, as the repository holds it, and the window opens the flow's page.
+    await deliveryRow.first().click();
+    await expect(codeWindow.getByTestId("code-window-header")).toContainText(`${DELIVERY_FLOW}.yaml`);
+    await expect(codeWindow.getByTestId("code-window-code")).toContainText(DELIVERY_FLOW);
+    await codeWindow.getByTestId("code-window-open-pipeline").click();
+    await expect(adminPage.getByTestId("page-pipeline-detail")).toBeVisible();
+    await expect(codeWindow).toHaveCount(0);
   });
 });

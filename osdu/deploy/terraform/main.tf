@@ -417,6 +417,16 @@ locals {
   )
 }
 
+# Each external trigger syncs one of the repositories the configuration names, which a variable's own check cannot see.
+resource "terraform_data" "external_triggers" {
+  lifecycle {
+    precondition {
+      condition     = alltrue([for t in values(var.external_triggers) : contains(keys(var.repositories), t.repository)])
+      error_message = "An external trigger syncs one of repositories, named by its key. Not so: ${join(", ", [for name, t in var.external_triggers : name if !contains(keys(var.repositories), t.repository)])}."
+    }
+  }
+}
+
 # An app whose image variable is empty takes this repository's image at image_tag, which needs both.
 resource "terraform_data" "images" {
   lifecycle {
@@ -644,10 +654,34 @@ locals {
     { for i, path in r.excluded_flow_paths : "ControlPlane__Bootstrap__Repositories__${name}__ExcludedFlowPaths__${i}" => path },
   )]...)
 
+  # The external triggers the control plane trusts, written at its start, and the audience a GitHub job asks its token
+  # for: the control plane's own address, so a token minted for another deployment is refused here.
+  external_trigger_settings = merge(
+    { "ControlPlane__ExternalTriggers__GitHub__Audience" = local.control_plane_url },
+    [for name, t in var.external_triggers : merge(
+      {
+        "ControlPlane__Bootstrap__ExternalTriggers__${name}__RepoSource"   = t.repository
+        "ControlPlane__Bootstrap__ExternalTriggers__${name}__AllSchedules" = tostring(t.all_schedules)
+      },
+      t.description == null ? tomap({}) : tomap({ "ControlPlane__Bootstrap__ExternalTriggers__${name}__Description" = t.description }),
+      { for i, schedule in t.schedules : "ControlPlane__Bootstrap__ExternalTriggers__${name}__Schedules__${i}" => schedule },
+      t.github == null ? tomap({ "ControlPlane__Bootstrap__ExternalTriggers__${name}__KeyReference" = "$${keyvault:${local.key_vault_name}/${t.key_secret_name}}" }) : merge(
+        {
+          "ControlPlane__Bootstrap__ExternalTriggers__${name}__GitHub__Repository" = t.github.repository
+          "ControlPlane__Bootstrap__ExternalTriggers__${name}__GitHub__Ref"        = coalesce(t.github.ref, "refs/heads/${try(var.repositories[t.repository].branch, "main")}")
+        },
+        t.github.repository_id == null ? tomap({}) : tomap({ "ControlPlane__Bootstrap__ExternalTriggers__${name}__GitHub__RepositoryId" = t.github.repository_id }),
+        t.github.workflow == null ? tomap({}) : tomap({ "ControlPlane__Bootstrap__ExternalTriggers__${name}__GitHub__Workflow" = t.github.workflow }),
+        t.github.environment == null ? tomap({}) : tomap({ "ControlPlane__Bootstrap__ExternalTriggers__${name}__GitHub__Environment" = t.github.environment }),
+      ),
+    )]...
+  )
+
   control_plane_settings = merge(
     local.partition_settings,
     local.property_settings,
     local.repository_settings,
+    local.external_trigger_settings,
     # The node credential the workers present, which the control plane makes the admin's one node-scope token at start.
     { "ControlPlane__Bootstrap__NodeTokenReference" = local.vault_reference[local.node_token_secret_name] },
   )

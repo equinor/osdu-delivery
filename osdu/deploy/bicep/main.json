@@ -6,7 +6,7 @@
     "_generator": {
       "name": "bicep",
       "version": "0.44.1.10279",
-      "templateHash": "13409535901875583049"
+      "templateHash": "5139863171710567463"
     }
   },
   "definitions": {
@@ -262,6 +262,102 @@
       "additionalProperties": false,
       "metadata": {
         "description": "The GitHub App the estate's GitHub repositories are read with, in place of a token per repository (sqlflow/docs/reference/guides/github-app.md)."
+      }
+    },
+    "externalTriggerGitHub": {
+      "type": "object",
+      "properties": {
+        "repository": {
+          "type": "string",
+          "metadata": {
+            "description": "The GitHub repository whose workflows it trusts, owner/name."
+          }
+        },
+        "repositoryId": {
+          "type": "string",
+          "nullable": true,
+          "metadata": {
+            "description": "The repository's numeric id (the token's repository_id), to pin it: a repository deleted and recreated under the same name is then not trusted."
+          }
+        },
+        "ref": {
+          "type": "string",
+          "nullable": true,
+          "metadata": {
+            "description": "The ref a workflow must run on; * matches any run of characters. Default refs/heads/<the synced repository's branch>."
+          }
+        },
+        "workflow": {
+          "type": "string",
+          "nullable": true,
+          "metadata": {
+            "description": "The workflow file a job must run, such as .github/workflows/sqlflow.yml. Left out, every workflow of the repository is trusted."
+          }
+        },
+        "environment": {
+          "type": "string",
+          "nullable": true,
+          "metadata": {
+            "description": "The deployment environment a job must run in, whose reviewers and branch rules then apply first."
+          }
+        }
+      },
+      "additionalProperties": false,
+      "metadata": {
+        "description": "The GitHub Actions workflow an external trigger trusts: a job proves it is one with the token GitHub mints for it."
+      }
+    },
+    "externalTrigger": {
+      "type": "object",
+      "properties": {
+        "repository": {
+          "type": "string",
+          "metadata": {
+            "description": "The repository it syncs: a key of repositories."
+          }
+        },
+        "description": {
+          "type": "string",
+          "nullable": true,
+          "metadata": {
+            "description": "What it is for."
+          }
+        },
+        "schedules": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "nullable": true,
+          "metadata": {
+            "description": "The schedules it may fire, by name; a name the repository does not have yet is allowed (a merge may add it). Left out, and allSchedules off, it only syncs."
+          }
+        },
+        "allSchedules": {
+          "type": "bool",
+          "nullable": true,
+          "metadata": {
+            "description": "Whether it may fire every schedule of the repository, present and future, instead of the ones named. Default false."
+          }
+        },
+        "gitHub": {
+          "$ref": "#/definitions/externalTriggerGitHub",
+          "nullable": true,
+          "metadata": {
+            "description": "The GitHub workflow it trusts. Set this or keySecretName."
+          }
+        },
+        "keySecretName": {
+          "type": "string",
+          "nullable": true,
+          "metadata": {
+            "description": "For a system that cannot present GitHub's token, the vault secret a person puts its key in: sqlft_ followed by at least 32 random letters, digits, - or _. Set this or gitHub."
+          }
+        }
+      },
+      "additionalProperties": false,
+      "metadata": {
+        "description": "A caller outside the estate that syncs one of its repositories and fires a selection of its schedules (sqlflow/docs/reference/concepts/external-triggers.md)."
       }
     },
     "landingStorageOptions": {
@@ -747,6 +843,17 @@
         "description": "The GitHub App the estate's GitHub repositories are read with, in place of a token per repository (sqlflow/docs/reference/guides/github-app.md): { appId (its client ID), privateKeySecretName (the vault secret a person puts its .pem in), apiUrl (GitHub Enterprise only) }. A repository on the App's GitHub that names no credentialSecretName and leaves useGitHubApp on is read with a short-lived token the App mints for that repository alone, by the control plane and by each worker with its own identity; no token is stored anywhere. Left out, each repository is read with its own token, or with none."
       }
     },
+    "externalTriggers": {
+      "type": "object",
+      "properties": {},
+      "additionalProperties": {
+        "$ref": "#/definitions/externalTrigger"
+      },
+      "defaultValue": {},
+      "metadata": {
+        "description": "The external triggers the control plane trusts, by name (ControlPlane:Bootstrap:ExternalTriggers, sqlflow/docs/reference/concepts/external-triggers.md): each syncs one of repositories and may fire the schedules it names, for a GitHub Actions workflow after a merge ({ repository, schedules, gitHub: { repository: owner/name, workflow, ref, environment, repositoryId } }), which proves who it is with the token GitHub mints for its job so nothing secret is stored, or for a system holding a key ({ repository, schedules, keySecretName: the vault secret a person puts the key in }). The control plane writes them at start and disables one this configuration no longer names; a workflow asks GitHub's token for the audience the controlPlaneBaseUrl output names. Triggers an administrator creates on the External triggers page stay beside them."
+      }
+    },
     "landingStorage": {
       "$ref": "#/definitions/landingStorageOptions",
       "nullable": true,
@@ -959,6 +1066,10 @@
     "githubAppKeyValid": "[or(equals(parameters('githubApp'), null()), and(and(greaterOrEquals(length(coalesce(tryGet(parameters('githubApp'), 'privateKeySecretName'), '')), 1), lessOrEquals(length(coalesce(tryGet(parameters('githubApp'), 'privateKeySecretName'), '')), 127)), empty(filter(range(0, length(coalesce(tryGet(parameters('githubApp'), 'privateKeySecretName'), ''))), lambda('i', not(contains('ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-', substring(coalesce(tryGet(parameters('githubApp'), 'privateKeySecretName'), ''), lambdaVariables('i'), 1))))))))]",
     "githubAppApiValid": "[or(empty(coalesce(tryGet(parameters('githubApp'), 'apiUrl'), '')), and(and(and(and(equals(take(coalesce(tryGet(parameters('githubApp'), 'apiUrl'), ''), 8), 'https://'), greater(length(coalesce(tryGet(parameters('githubApp'), 'apiUrl'), '')), 8)), not(contains(coalesce(tryGet(parameters('githubApp'), 'apiUrl'), ''), '?'))), not(contains(coalesce(tryGet(parameters('githubApp'), 'apiUrl'), ''), '#'))), not(contains(coalesce(tryGet(parameters('githubApp'), 'apiUrl'), ''), '@'))))]",
     "githubAppChecked": "[if(not(variables('githubAppIdValid')), fail('githubApp.appId is the App''s client ID (like Iv23liAbCdEf) or its numeric App ID.'), if(not(variables('githubAppKeyValid')), fail('githubApp.privateKeySecretName is a Key Vault secret name: letters, digits and hyphens, at most 127 characters.'), if(not(variables('githubAppApiValid')), fail('githubApp.apiUrl is the https:// API root of GitHub Enterprise Server (https://<host>/api/v3) or GHE.com (https://api.<name>.ghe.com), with no user, query or fragment.'), parameters('githubApp'))))]",
+    "externalTriggersMisnamed": "[filter(objectKeys(parameters('externalTriggers')), lambda('name', not(__bicep.isRepositoryName(lambdaVariables('name')))))]",
+    "externalTriggersOfNoRepository": "[map(filter(items(parameters('externalTriggers')), lambda('t', not(contains(parameters('repositories'), lambdaVariables('t').value.repository)))), lambda('t', lambdaVariables('t').key))]",
+    "externalTriggersNotOneOrTheOther": "[map(filter(items(parameters('externalTriggers')), lambda('t', equals(equals(tryGet(lambdaVariables('t').value, 'gitHub'), null()), empty(coalesce(tryGet(lambdaVariables('t').value, 'keySecretName'), ''))))), lambda('t', lambdaVariables('t').key))]",
+    "externalTriggersChecked": "[if(not(empty(variables('externalTriggersMisnamed'))), fail(format('An external trigger is named with letters, digits, underscore, hyphen and dot, starting with a letter or digit, at most 100 characters. Not so: {0}.', join(variables('externalTriggersMisnamed'), ', '))), if(not(empty(variables('externalTriggersOfNoRepository'))), fail(format('An external trigger syncs one of repositories, named by its key. Not so: {0}.', join(variables('externalTriggersOfNoRepository'), ', '))), if(not(empty(variables('externalTriggersNotOneOrTheOther'))), fail(format('An external trigger names exactly one of gitHub (the workflow it trusts) and keySecretName (the vault secret holding its key). Not so: {0}.', join(variables('externalTriggersNotOneOrTheOther'), ', '))), parameters('externalTriggers'))))]",
     "landingStorageChecked": "[if(equals(parameters('landingStorage'), null()), null(), if(not(__bicep.isContainerName(coalesce(tryGet(parameters('landingStorage'), 'container'), 'landing'))), fail('landingStorage.container is a container name: 3 to 63 lowercase letters, digits and hyphens.'), if(not(__bicep.isEnvironmentName(coalesce(tryGet(parameters('landingStorage'), 'referenceName'), 'LANDING_URL'))), fail('landingStorage.referenceName is named as a flow spells it in ${env:NAME}: a letter or underscore, then letters, digits and underscores, at most 64 characters.'), if(and(not(empty(coalesce(tryGet(parameters('landingStorage'), 'existingAccountId'), ''))), if(equals(length(split(coalesce(tryGet(parameters('landingStorage'), 'existingAccountId'), ''), '/')), 9), not(__bicep.isStorageAccountPath(split(coalesce(tryGet(parameters('landingStorage'), 'existingAccountId'), ''), '/'))), true())), fail('landingStorage.existingAccountId is a storage account''s resource id: /subscriptions/<id>/resourceGroups/<group>/providers/Microsoft.Storage/storageAccounts/<name>.'), parameters('landingStorage')))))]",
     "sqlAdminLoginChecked": "[if(and(equals(parameters('sqlAuthentication'), 'password'), empty(parameters('sqlAdminPassword'))), fail('sqlAdminPassword is required with sqlAuthentication password; set it, or use the default Entra authentication, where each app signs in as its own managed identity.'), parameters('sqlAdminLogin'))]",
     "catalogConnectionSecretName": "osdu-delivery-catalog-db",
@@ -1024,7 +1135,6 @@
     "githubAppReference": "[if(equals(variables('githubAppChecked'), null()), '', format('${{githubapp:app={0};key=keyvault:{1}/{2}{3}}}', coalesce(tryGet(variables('githubAppChecked'), 'appId'), ''), parameters('keyVaultName'), coalesce(tryGet(variables('githubAppChecked'), 'privateKeySecretName'), ''), if(empty(variables('githubAppApiUrl')), '', format(';api={0}', variables('githubAppApiRoot')))))]",
     "repositoryCredentials": "[toObject(items(variables('repositoriesChecked')), lambda('r', lambdaVariables('r').key), lambda('r', if(not(empty(coalesce(tryGet(lambdaVariables('r').value, 'credentialSecretName'), ''))), __bicep.vaultReference(parameters('keyVaultName'), coalesce(tryGet(lambdaVariables('r').value, 'credentialSecretName'), '')), if(and(and(not(empty(variables('githubAppReference'))), coalesce(tryGet(lambdaVariables('r').value, 'useGitHubApp'), true())), or(equals(__bicep.remoteHost(lambdaVariables('r').value.remoteUrl), variables('githubAppWebHost')), equals(__bicep.remoteHost(lambdaVariables('r').value.remoteUrl), format('www.{0}', variables('githubAppWebHost'))))), variables('githubAppReference'), ''))))]",
     "repositorySettings": "[reduce(map(items(variables('repositoriesChecked')), lambda('r', union(createObject(format('ControlPlane__Bootstrap__Repositories__{0}__RemoteUrl', lambdaVariables('r').key), lambdaVariables('r').value.remoteUrl, format('ControlPlane__Bootstrap__Repositories__{0}__Branch', lambdaVariables('r').key), coalesce(tryGet(lambdaVariables('r').value, 'branch'), 'main'), format('ControlPlane__Bootstrap__Repositories__{0}__SyncIntervalSeconds', lambdaVariables('r').key), string(coalesce(tryGet(lambdaVariables('r').value, 'syncIntervalSeconds'), 300))), if(empty(variables('repositoryCredentials')[lambdaVariables('r').key]), createObject(), createObject(format('ControlPlane__Bootstrap__Repositories__{0}__CredentialReference', lambdaVariables('r').key), variables('repositoryCredentials')[lambdaVariables('r').key])), if(empty(coalesce(tryGet(lambdaVariables('r').value, 'credentialUsername'), '')), createObject(), createObject(format('ControlPlane__Bootstrap__Repositories__{0}__CredentialUsername', lambdaVariables('r').key), coalesce(tryGet(lambdaVariables('r').value, 'credentialUsername'), ''))), toObject(range(0, length(coalesce(tryGet(lambdaVariables('r').value, 'excludedFlowPaths'), createArray()))), lambda('i', format('ControlPlane__Bootstrap__Repositories__{0}__ExcludedFlowPaths__{1}', lambdaVariables('r').key, lambdaVariables('i'))), lambda('i', coalesce(tryGet(lambdaVariables('r').value, 'excludedFlowPaths'), createArray())[lambdaVariables('i')]))))), createObject(), lambda('settings', 'repository', union(lambdaVariables('settings'), lambdaVariables('repository'))))]",
-    "controlPlaneSettings": "[union(variables('osduPartitionSettings'), variables('propertySettings'), variables('repositorySettings'), createObject('ControlPlane__Bootstrap__NodeTokenReference', __bicep.vaultReference(parameters('keyVaultName'), variables('nodeTokenSecretName'))))]",
     "effectiveAzureAdAllowedTenantIds": "[if(parameters('provisionEntraApp'), concat(createArray(subscription().tenantId), parameters('azureAdAdditionalAllowedTenantIds')), parameters('azureAdAllowedTenantIds'))]"
   },
   "resources": {
@@ -1694,7 +1804,7 @@
             "value": "[parameters('privateNetworks')]"
           },
           "settings": {
-            "value": "[variables('controlPlaneSettings')]"
+            "value": "[union(variables('osduPartitionSettings'), variables('propertySettings'), variables('repositorySettings'), reduce(map(items(variables('externalTriggersChecked')), lambda('t', union(createObject(format('ControlPlane__Bootstrap__ExternalTriggers__{0}__RepoSource', lambdaVariables('t').key), lambdaVariables('t').value.repository, format('ControlPlane__Bootstrap__ExternalTriggers__{0}__AllSchedules', lambdaVariables('t').key), string(coalesce(tryGet(lambdaVariables('t').value, 'allSchedules'), false()))), if(empty(coalesce(tryGet(lambdaVariables('t').value, 'description'), '')), createObject(), createObject(format('ControlPlane__Bootstrap__ExternalTriggers__{0}__Description', lambdaVariables('t').key), coalesce(tryGet(lambdaVariables('t').value, 'description'), ''))), toObject(range(0, length(coalesce(tryGet(lambdaVariables('t').value, 'schedules'), createArray()))), lambda('i', format('ControlPlane__Bootstrap__ExternalTriggers__{0}__Schedules__{1}', lambdaVariables('t').key, lambdaVariables('i'))), lambda('i', coalesce(tryGet(lambdaVariables('t').value, 'schedules'), createArray())[lambdaVariables('i')])), if(equals(tryGet(lambdaVariables('t').value, 'gitHub'), null()), createObject(format('ControlPlane__Bootstrap__ExternalTriggers__{0}__KeyReference', lambdaVariables('t').key), __bicep.vaultReference(parameters('keyVaultName'), coalesce(tryGet(lambdaVariables('t').value, 'keySecretName'), ''))), union(createObject(format('ControlPlane__Bootstrap__ExternalTriggers__{0}__GitHub__Repository', lambdaVariables('t').key), coalesce(tryGet(tryGet(lambdaVariables('t').value, 'gitHub'), 'repository'), ''), format('ControlPlane__Bootstrap__ExternalTriggers__{0}__GitHub__Ref', lambdaVariables('t').key), coalesce(tryGet(tryGet(lambdaVariables('t').value, 'gitHub'), 'ref'), format('refs/heads/{0}', coalesce(tryGet(parameters('repositories')[lambdaVariables('t').value.repository], 'branch'), 'main')))), if(empty(coalesce(tryGet(tryGet(lambdaVariables('t').value, 'gitHub'), 'repositoryId'), '')), createObject(), createObject(format('ControlPlane__Bootstrap__ExternalTriggers__{0}__GitHub__RepositoryId', lambdaVariables('t').key), coalesce(tryGet(tryGet(lambdaVariables('t').value, 'gitHub'), 'repositoryId'), ''))), if(empty(coalesce(tryGet(tryGet(lambdaVariables('t').value, 'gitHub'), 'workflow'), '')), createObject(), createObject(format('ControlPlane__Bootstrap__ExternalTriggers__{0}__GitHub__Workflow', lambdaVariables('t').key), coalesce(tryGet(tryGet(lambdaVariables('t').value, 'gitHub'), 'workflow'), ''))), if(empty(coalesce(tryGet(tryGet(lambdaVariables('t').value, 'gitHub'), 'environment'), '')), createObject(), createObject(format('ControlPlane__Bootstrap__ExternalTriggers__{0}__GitHub__Environment', lambdaVariables('t').key), coalesce(tryGet(tryGet(lambdaVariables('t').value, 'gitHub'), 'environment'), '')))))))), createObject('ControlPlane__ExternalTriggers__GitHub__Audience', format('https://{0}.{1}', parameters('controlPlaneName'), reference('managedEnvironment').defaultDomain)), lambda('settings', 'trigger', union(lambdaVariables('settings'), lambdaVariables('trigger')))), createObject('ControlPlane__Bootstrap__NodeTokenReference', __bicep.vaultReference(parameters('keyVaultName'), variables('nodeTokenSecretName'))))]"
           },
           "tags": {
             "value": "[parameters('tags')]"
@@ -3563,6 +3673,17 @@
         "description": "The vault secret the estate's GitHub App's private key is read from, put there by hand: az keyvault secret set --vault-name <keyVaultName> --name <this> --file <the App's .pem>. Empty when the estate names no App."
       },
       "value": "[coalesce(tryGet(variables('githubAppChecked'), 'privateKeySecretName'), '')]"
+    },
+    "externalTriggerKeySecrets": {
+      "type": "object",
+      "properties": {},
+      "additionalProperties": {
+        "type": "string"
+      },
+      "metadata": {
+        "description": "The vault secret each key trigger of externalTriggers reads its key from, by trigger, put there by hand: az keyvault secret set --vault-name <keyVaultName> --name <secret> --value sqlft_<at least 32 random letters, digits, - or _>. A GitHub trigger needs none."
+      },
+      "value": "[toObject(filter(items(variables('externalTriggersChecked')), lambda('t', equals(tryGet(lambdaVariables('t').value, 'gitHub'), null()))), lambda('t', lambdaVariables('t').key), lambda('t', coalesce(tryGet(lambdaVariables('t').value, 'keySecretName'), '')))]"
     },
     "keyVaultUri": {
       "type": "string",

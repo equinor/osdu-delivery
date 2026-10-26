@@ -178,6 +178,47 @@ type gitHubAppOptions = {
 }
 
 @sealed()
+@description('The GitHub Actions workflow an external trigger trusts: a job proves it is one with the token GitHub mints for it.')
+type externalTriggerGitHub = {
+  @description('The GitHub repository whose workflows it trusts, owner/name.')
+  repository: string
+
+  @description('The repository\'s numeric id (the token\'s repository_id), to pin it: a repository deleted and recreated under the same name is then not trusted.')
+  repositoryId: string?
+
+  @description('The ref a workflow must run on; * matches any run of characters. Default refs/heads/<the synced repository\'s branch>.')
+  ref: string?
+
+  @description('The workflow file a job must run, such as .github/workflows/sqlflow.yml. Left out, every workflow of the repository is trusted.')
+  workflow: string?
+
+  @description('The deployment environment a job must run in, whose reviewers and branch rules then apply first.')
+  environment: string?
+}
+
+@sealed()
+@description('A caller outside the estate that syncs one of its repositories and fires a selection of its schedules (sqlflow/docs/reference/concepts/external-triggers.md).')
+type externalTrigger = {
+  @description('The repository it syncs: a key of repositories.')
+  repository: string
+
+  @description('What it is for.')
+  description: string?
+
+  @description('The schedules it may fire, by name; a name the repository does not have yet is allowed (a merge may add it). Left out, and allSchedules off, it only syncs.')
+  schedules: string[]?
+
+  @description('Whether it may fire every schedule of the repository, present and future, instead of the ones named. Default false.')
+  allSchedules: bool?
+
+  @description('The GitHub workflow it trusts. Set this or keySecretName.')
+  gitHub: externalTriggerGitHub?
+
+  @description('For a system that cannot present GitHub\'s token, the vault secret a person puts its key in: sqlft_ followed by at least 32 random letters, digits, - or _. Set this or gitHub.')
+  keySecretName: string?
+}
+
+@sealed()
 @description('The storage account the flows read their source files from: created here or adopted.')
 type landingStorageOptions = {
   @description('The account created here. Left out: osdulanding<13 characters derived from the resource group>.')
@@ -360,6 +401,9 @@ param repositories { *: repository } = {}
 @description('The GitHub App the estate\'s GitHub repositories are read with, in place of a token per repository (sqlflow/docs/reference/guides/github-app.md): { appId (its client ID), privateKeySecretName (the vault secret a person puts its .pem in), apiUrl (GitHub Enterprise only) }. A repository on the App\'s GitHub that names no credentialSecretName and leaves useGitHubApp on is read with a short-lived token the App mints for that repository alone, by the control plane and by each worker with its own identity; no token is stored anywhere. Left out, each repository is read with its own token, or with none.')
 param githubApp gitHubAppOptions?
 
+@description('The external triggers the control plane trusts, by name (ControlPlane:Bootstrap:ExternalTriggers, sqlflow/docs/reference/concepts/external-triggers.md): each syncs one of repositories and may fire the schedules it names, for a GitHub Actions workflow after a merge ({ repository, schedules, gitHub: { repository: owner/name, workflow, ref, environment, repositoryId } }), which proves who it is with the token GitHub mints for its job so nothing secret is stored, or for a system holding a key ({ repository, schedules, keySecretName: the vault secret a person puts the key in }). The control plane writes them at start and disables one this configuration no longer names; a workflow asks GitHub\'s token for the audience the controlPlaneBaseUrl output names. Triggers an administrator creates on the External triggers page stay beside them.')
+param externalTriggers { *: externalTrigger } = {}
+
 @description('The storage account the estate\'s flows read their source files from: created here ({ accountName }, derived from the resource group when left out) or adopted ({ existingAccountId }), with a container (landing). The worker\'s identity may read and write it and the control plane\'s read it, and every run is given its location as referenceName (LANDING_URL: abfss://<container>@<account>.dfs.<storage suffix>), which a flow names in its source location (\${env:LANDING_URL}/<folder>). Left out, the estate has none.')
 param landingStorage landingStorageOptions?
 
@@ -519,6 +563,17 @@ var githubAppChecked = !githubAppIdValid
       : !githubAppApiValid
           ? fail('githubApp.apiUrl is the https:// API root of GitHub Enterprise Server (https://<host>/api/v3) or GHE.com (https://api.<name>.ghe.com), with no user, query or fragment.')
           : githubApp
+
+var externalTriggersMisnamed = filter(objectKeys(externalTriggers), name => !isRepositoryName(name))
+var externalTriggersOfNoRepository = map(filter(items(externalTriggers), t => !contains(repositories, t.value.repository)), t => t.key)
+var externalTriggersNotOneOrTheOther = map(filter(items(externalTriggers), t => (t.value.?gitHub == null) == empty(t.value.?keySecretName ?? '')), t => t.key)
+var externalTriggersChecked = !empty(externalTriggersMisnamed)
+  ? fail('An external trigger is named with letters, digits, underscore, hyphen and dot, starting with a letter or digit, at most 100 characters. Not so: ${join(externalTriggersMisnamed, ', ')}.')
+  : !empty(externalTriggersOfNoRepository)
+      ? fail('An external trigger syncs one of repositories, named by its key. Not so: ${join(externalTriggersOfNoRepository, ', ')}.')
+      : !empty(externalTriggersNotOneOrTheOther)
+          ? fail('An external trigger names exactly one of gitHub (the workflow it trusts) and keySecretName (the vault secret holding its key). Not so: ${join(externalTriggersNotOneOrTheOther, ', ')}.')
+          : externalTriggers
 
 var landingStorageChecked = landingStorage == null
   ? null
@@ -1143,10 +1198,37 @@ var repositorySettings = reduce(map(items(repositoriesChecked), r => union(
   )
 )), {}, (settings, repository) => union(settings, repository))
 
+// The external triggers the control plane trusts, written at its start, and the audience a GitHub job asks its token for:
+// the control plane's own address, so a token minted for another deployment is refused here.
+var externalTriggerSettings = reduce(map(items(externalTriggersChecked), t => union(
+  {
+    'ControlPlane__Bootstrap__ExternalTriggers__${t.key}__RepoSource': t.value.repository
+    'ControlPlane__Bootstrap__ExternalTriggers__${t.key}__AllSchedules': string(t.value.?allSchedules ?? false)
+  },
+  empty(t.value.?description ?? '') ? {} : { 'ControlPlane__Bootstrap__ExternalTriggers__${t.key}__Description': t.value.?description ?? '' },
+  toObject(
+    range(0, length(t.value.?schedules ?? [])),
+    i => 'ControlPlane__Bootstrap__ExternalTriggers__${t.key}__Schedules__${i}',
+    i => (t.value.?schedules ?? [])[i]
+  ),
+  t.value.?gitHub == null
+    ? { 'ControlPlane__Bootstrap__ExternalTriggers__${t.key}__KeyReference': vaultReference(keyVaultName, t.value.?keySecretName ?? '') }
+    : union(
+        {
+          'ControlPlane__Bootstrap__ExternalTriggers__${t.key}__GitHub__Repository': t.value.?gitHub.?repository ?? ''
+          'ControlPlane__Bootstrap__ExternalTriggers__${t.key}__GitHub__Ref': t.value.?gitHub.?ref ?? 'refs/heads/${repositories[t.value.repository].?branch ?? 'main'}'
+        },
+        empty(t.value.?gitHub.?repositoryId ?? '') ? {} : { 'ControlPlane__Bootstrap__ExternalTriggers__${t.key}__GitHub__RepositoryId': t.value.?gitHub.?repositoryId ?? '' },
+        empty(t.value.?gitHub.?workflow ?? '') ? {} : { 'ControlPlane__Bootstrap__ExternalTriggers__${t.key}__GitHub__Workflow': t.value.?gitHub.?workflow ?? '' },
+        empty(t.value.?gitHub.?environment ?? '') ? {} : { 'ControlPlane__Bootstrap__ExternalTriggers__${t.key}__GitHub__Environment': t.value.?gitHub.?environment ?? '' }
+      )
+)), { ControlPlane__ExternalTriggers__GitHub__Audience: controlPlaneUrl }, (settings, trigger) => union(settings, trigger))
+
 var controlPlaneSettings = union(
   osduPartitionSettings,
   propertySettings,
   repositorySettings,
+  externalTriggerSettings,
   // The node credential the workers present, which the control plane makes the admin's one node-scope token at start.
   {
     ControlPlane__Bootstrap__NodeTokenReference: vaultReference(keyVaultName, nodeTokenSecretName)
@@ -1380,6 +1462,9 @@ output keyVaultName string = keyVault.name
 
 @description('The vault secret the estate\'s GitHub App\'s private key is read from, put there by hand: az keyvault secret set --vault-name <keyVaultName> --name <this> --file <the App\'s .pem>. Empty when the estate names no App.')
 output githubAppPrivateKeySecret string = githubAppChecked.?privateKeySecretName ?? ''
+
+@description('The vault secret each key trigger of externalTriggers reads its key from, by trigger, put there by hand: az keyvault secret set --vault-name <keyVaultName> --name <secret> --value sqlft_<at least 32 random letters, digits, - or _>. A GitHub trigger needs none.')
+output externalTriggerKeySecrets { *: string } = toObject(filter(items(externalTriggersChecked), t => t.value.?gitHub == null), t => t.key, t => t.value.?keySecretName ?? '')
 
 @description('The vault\'s URI.')
 output keyVaultUri string = keyVault.properties.vaultUri

@@ -878,6 +878,121 @@ run "a_github_app_reads_the_estates_github_repositories_that_name_no_token" {
   }
 }
 
+run "external_triggers_are_trusted_as_the_configuration_names_them" {
+  command = apply
+
+  variables {
+    repositories = {
+      recall = {
+        remote_url = "https://github.com/example/recall-metadata.git"
+        branch     = "release"
+      }
+      samples = {
+        remote_url = "https://github.com/example/public-samples.git"
+      }
+    }
+    external_triggers = {
+      deliver = {
+        repository = "recall"
+        schedules  = ["nightly", "hourly"]
+        github = {
+          repository  = "example/recall-metadata"
+          workflow    = ".github/workflows/sqlflow.yml"
+          environment = "production"
+        }
+      }
+      pinned = {
+        repository = "samples"
+        github = {
+          repository    = "example/public-samples"
+          repository_id = "123456"
+          ref           = "refs/tags/v*"
+        }
+      }
+      scheduler = {
+        repository      = "samples"
+        description     = "The on-premises scheduler"
+        all_schedules   = true
+        key_secret_name = "scheduler-trigger-key"
+      }
+    }
+  }
+
+  assert {
+    condition = (
+      local.control_plane_settings["ControlPlane__Bootstrap__ExternalTriggers__deliver__RepoSource"] == "recall" &&
+      local.control_plane_settings["ControlPlane__Bootstrap__ExternalTriggers__deliver__AllSchedules"] == "false" &&
+      local.control_plane_settings["ControlPlane__Bootstrap__ExternalTriggers__deliver__Schedules__0"] == "nightly" &&
+      local.control_plane_settings["ControlPlane__Bootstrap__ExternalTriggers__deliver__Schedules__1"] == "hourly" &&
+      local.control_plane_settings["ControlPlane__Bootstrap__ExternalTriggers__deliver__GitHub__Repository"] == "example/recall-metadata" &&
+      local.control_plane_settings["ControlPlane__Bootstrap__ExternalTriggers__deliver__GitHub__Ref"] == "refs/heads/release" &&
+      local.control_plane_settings["ControlPlane__Bootstrap__ExternalTriggers__deliver__GitHub__Workflow"] == ".github/workflows/sqlflow.yml" &&
+      local.control_plane_settings["ControlPlane__Bootstrap__ExternalTriggers__deliver__GitHub__Environment"] == "production" &&
+      !contains(keys(local.control_plane_settings), "ControlPlane__Bootstrap__ExternalTriggers__deliver__KeyReference")
+    )
+    error_message = "A GitHub trigger trusts the workflow it names on the branch its repository syncs, and holds no secret."
+  }
+
+  assert {
+    condition = (
+      local.control_plane_settings["ControlPlane__Bootstrap__ExternalTriggers__pinned__GitHub__RepositoryId"] == "123456" &&
+      local.control_plane_settings["ControlPlane__Bootstrap__ExternalTriggers__pinned__GitHub__Ref"] == "refs/tags/v*" &&
+      !contains(keys(local.control_plane_settings), "ControlPlane__Bootstrap__ExternalTriggers__pinned__GitHub__Workflow") &&
+      length([for name in keys(local.control_plane_settings) : name if startswith(name, "ControlPlane__Bootstrap__ExternalTriggers__pinned__Schedules__")]) == 0
+    )
+    error_message = "A trigger takes the ref and the repository id it names, and one naming no schedule only syncs."
+  }
+
+  assert {
+    condition = (
+      local.control_plane_settings["ControlPlane__Bootstrap__ExternalTriggers__scheduler__KeyReference"] == "$${keyvault:${azurerm_key_vault.this.name}/scheduler-trigger-key}" &&
+      local.control_plane_settings["ControlPlane__Bootstrap__ExternalTriggers__scheduler__AllSchedules"] == "true" &&
+      local.control_plane_settings["ControlPlane__Bootstrap__ExternalTriggers__scheduler__Description"] == "The on-premises scheduler" &&
+      output.external_trigger_key_secrets == { scheduler = "scheduler-trigger-key" }
+    )
+    error_message = "A key trigger reads its key from the vault, never from here, and the deployment names the secret to put it in."
+  }
+
+  assert {
+    condition     = local.control_plane_settings["ControlPlane__ExternalTriggers__GitHub__Audience"] == local.control_plane_url
+    error_message = "A GitHub job asks its token for this control plane's own address, so a token minted for another deployment is refused."
+  }
+}
+
+run "an_external_trigger_of_a_repository_not_configured_is_refused" {
+  command = plan
+
+  variables {
+    external_triggers = {
+      deliver = {
+        repository = "recall"
+        github     = { repository = "example/recall-metadata" }
+      }
+    }
+  }
+
+  expect_failures = [terraform_data.external_triggers]
+}
+
+run "an_external_trigger_names_one_proof" {
+  command = plan
+
+  variables {
+    repositories = {
+      recall = { remote_url = "https://github.com/example/recall-metadata.git" }
+    }
+    external_triggers = {
+      both = {
+        repository      = "recall"
+        github          = { repository = "example/recall-metadata" }
+        key_secret_name = "recall-trigger-key"
+      }
+    }
+  }
+
+  expect_failures = [var.external_triggers]
+}
+
 run "a_github_enterprise_app_reads_its_own_hosts_repositories" {
   command = apply
 

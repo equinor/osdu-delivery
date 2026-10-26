@@ -102,6 +102,10 @@ public sealed class DeliveryControlPlaneModule : IControlPlaneModule
         // process through the flow's own connection, as its Preview tab reads a scope's values.
         services.AddRunParameterLookup<Api.DeliveryRunParameterLookup>();
 
+        // What a delivery run did, in a few words read from its result, for a trigger request's trace and the summary a
+        // GitHub job writes: the records it delivered, held or failed rather than the rows it loaded.
+        services.AddRunOutcomeDescriber<Background.DeliveryRunOutcomeDescriber>();
+
         // The OSDU data definitions (the Open Group's public repository of OSDU schemas) the Templates page browses and
         // downloads template files from, kept as a local copy: each release downloaded once as one archive and read from disk
         // after that, the release list read again when it is older than RefreshMinutes or when someone syncs.

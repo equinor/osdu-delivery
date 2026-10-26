@@ -860,6 +860,22 @@ function Invoke-Infrastructure {
             Write-Host '        The repositories it reads sync once it is there (sqlflow/docs/reference/guides/github-app.md).'
         }
     }
+    if ($outputs.PSObject.Properties['external_trigger_key_secrets'] -and $outputs.external_trigger_key_secrets.value) {
+        # A key trigger's key is put in the vault by hand; until it is there, the control plane's external-triggers
+        # start-up step fails naming it. Only each secret's existence is asked, never its value.
+        $vault = $outputs.key_vault_name.value
+        foreach ($trigger in $outputs.external_trigger_key_secrets.value.PSObject.Properties) {
+            $found = Invoke-Az @('keyvault', 'secret', 'show', '--vault-name', $vault, '--name', $trigger.Value, '--query', 'id', '-o', 'tsv')
+            if ($found.ExitCode -eq 0) {
+                Write-Host ("   {0,-24} {1}/{2}" -f "trigger $($trigger.Name)", $vault, $trigger.Value)
+            }
+            else {
+                Write-Host "   Trigger '$($trigger.Name)' has no key in $vault/$($trigger.Value) yet. Put one there and give it to the system that calls:" -ForegroundColor Yellow
+                Write-Host "        az keyvault secret set --vault-name $vault --name $($trigger.Value) --value sqlft_<at least 32 random letters, digits, - or _>"
+                Write-Host '        (sqlflow/docs/reference/concepts/external-triggers.md#configured-triggers)'
+            }
+        }
+    }
     if ($outputs.PSObject.Properties['sql_setup_script'] -and $outputs.sql_setup_script.value) {
         Write-Host '   SQL: on a server this deployment does not administer, an Entra administrator of it runs the setup script, database by' -ForegroundColor Yellow
         Write-Host '        database (every statement can run again): terraform -chdir=osdu/deploy/terraform output -raw sql_setup_script'

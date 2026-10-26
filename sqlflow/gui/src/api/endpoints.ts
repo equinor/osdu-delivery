@@ -26,13 +26,14 @@ import type {
   SemanticReportCapabilities, SemanticReportSpec, SemanticReportSpecDetail, SemanticReportSubscriber,
   PrepareQueryRequest, PreparedQuery,
   FlowParameters,
-  PipelineColumn, PipelineDetail, PipelineFile, PipelineFileStats, PipelineRunDurations, PipelineSummary, RegisterRepoSourceRequest, Repo, RepoAccess, RepoDeletionResult, RepoSource, RepoSourceRegistered, RepoSyncResult, RepoTree, Role,
+  PipelineColumn, PipelineDetail, PipelineFile, PipelineFileStats, PipelineRunDurations, PipelineSummary, RegisterRepoSourceRequest, Repo, RepoAccess, RepoDeletionResult, RepoSource, RepoSourceRegistered, RepoFile, RepoSyncResult, RepoTree, Role,
   RunAssertion, RunDetail, RunFile, RunGroup, RunHealthCheckMetric, RunScope, RunScopePreview, RunStatement, RunTraceEntry,
   RunSummary, RunSurrogateKey, SchemaChange, SchemaChangeDatabase, SchemaObjectCompare,
   RunTriggerAccepted, RunTriggerRequest, Schedule, ScheduleCreated, ScheduleDefinition, SchedulePlan, ScheduleRunAccepted, SessionResponse, TokenResponse,
   SearchHit, SourceDiscoverRequest, SourceDiscoverResult, StorageCleanup, StorageCleanupPreview, StorageDays, StorageReport,
   StorageRetention, Subscriber, SubscriberDossier, SubscriberHit,
   UpdateNotificationSubscriptionRequest, UpdateUserProfileRequest, User, Wave, WorkerPool, WorkerPoolScaleRequest,
+  ExternalTrigger, ExternalTriggerSetup, ExternalTriggerWriteRequest, ExternalTriggerWritten, TriggerRequest, TriggerRequestQuery,
 } from "./types";
 
 export interface PageQuery {
@@ -132,6 +133,9 @@ export const repoApi = {
   // Everything the repository holds on its synced branch, not only the flows the catalog imported: the folder outline
   // the repo view lists its projects from. 400s for a repo with no git source and no reachable root path.
   tree: (id: string) => get<RepoTree>(`/api/v1/repos/${id}/tree`),
+  // One file's text as the repository holds it, for the code window: refused (403) for a credential store or a file git
+  // ignores, and a binary file comes back without its text.
+  file: (id: string, path: string) => get<RepoFile>(`/api/v1/repos/${id}/file`, { path }),
   // Re-sync a CLI/local-path repo from its recorded root path (connected: reads the live database for the derived
   // lineage tier). Refused server-side for a git-source-managed repo, which syncs via its source instead.
   syncLocal: (id: string) => post<RepoSyncResult>(`/api/v1/repos/${id}/sync`),
@@ -710,6 +714,28 @@ export const questionExampleApi = {
 };
 
 // ---- Personal access tokens (self-service: the caller's own tokens) ----------------------------------------------
+
+// ---- External triggers (admin) and their requests ----------------------------------------------------------------
+
+export const externalTriggerApi = {
+  list: () => get<ExternalTrigger[]>("/api/v1/external-triggers"),
+  setup: () => get<ExternalTriggerSetup>("/api/v1/external-triggers/setup"),
+  create: (request: ExternalTriggerWriteRequest) => post<ExternalTriggerWritten>("/api/v1/external-triggers", request),
+  update: (id: string, request: ExternalTriggerWriteRequest) => put<ExternalTriggerWritten>(`/api/v1/external-triggers/${id}`, request),
+  enable: (id: string) => post<ExternalTrigger>(`/api/v1/external-triggers/${id}/enable`),
+  disable: (id: string) => post<ExternalTrigger>(`/api/v1/external-triggers/${id}/disable`),
+  // A key trigger's new key, shown once; the old key stops working at once.
+  rotateKey: (id: string, expiresInDays: number | null) =>
+    post<ExternalTriggerWritten>(`/api/v1/external-triggers/${id}/key`, { expiresInDays }),
+  remove: (id: string) => del<void>(`/api/v1/external-triggers/${id}`),
+};
+
+export const triggerRequestApi = {
+  list: (query: TriggerRequestQuery = {}) => get<PagedResult<TriggerRequest>>("/api/v1/trigger-requests", query as QueryParams),
+  // The request as Markdown: what a GitHub job writes to its summary.
+  summary: (id: string) => getText(`/api/v1/trigger-requests/${id}/summary`),
+  cancel: (id: string) => post<TriggerRequest>(`/api/v1/trigger-requests/${id}/cancel`),
+};
 
 export const tokenApi = {
   list: () => get<AccessToken[]>("/api/v1/me/tokens"),

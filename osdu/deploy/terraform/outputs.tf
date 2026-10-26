@@ -93,6 +93,11 @@ output "github_app_private_key_secret" {
   value       = var.github_app == null ? null : var.github_app.private_key_secret_name
 }
 
+output "external_trigger_key_secrets" {
+  description = "The vault secret each key trigger of external_triggers reads its key from, by trigger, put there by hand: az keyvault secret set --vault-name <key_vault_name> --name <secret> --value sqlft_<at least 32 random letters, digits, - or _>. A GitHub trigger needs none."
+  value       = { for name, t in var.external_triggers : name => t.key_secret_name if t.github == null }
+}
+
 output "key_vault_uri" {
   description = "The vault's URI."
   value       = azurerm_key_vault.this.vault_uri
