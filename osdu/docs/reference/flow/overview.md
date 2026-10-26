@@ -202,10 +202,12 @@ OK  delivery 'welldb-wellbore-03-delivery' completed in 4.2186943s
 
 ### Which kinds need the repository
 
-A node runs a flow from a snapshot of its one file unless the flow needs files beside it. A delivery flow always needs
-the repository tree, because its mappings live there. A cache flow needs it only when it holds a dictionary, and a
-dimension flow only when a cleaning step maps through a dictionary. A removal flow always needs it, because it opens the
-delivery flows it names and reads their mappings. Retrieval, assertion and inventory flows need nothing but their own
+A node runs a flow from a snapshot of its one file unless the flow needs files beside it, and otherwise from a checkout
+of its repository at the run's commit. A delivery flow always needs the repository tree, because its mappings live
+there. Dimension and assertion flows always need it, because they read the templates of the kinds they read from the
+[template folders](../concepts/templates.md#what-a-document-reads) on their path (and a dimension's cleaning step reads
+its dictionary's file). A cache flow needs it only when it holds a dictionary. A removal flow always needs it, because
+it opens the delivery flows it names and reads their mappings. Retrieval and inventory flows need nothing but their own
 document.
 
 ## The shape of each kind

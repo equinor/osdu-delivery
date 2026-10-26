@@ -8,9 +8,10 @@ namespace SqlFlow.Delivery.Documents;
 
 /// <summary>
 /// A dimension flow as the platform sees it: the OSDU endpoint is the source reference, the dimensions its builds keep in the
-/// module database the target, and the source's secret references are what the hygiene check inspects. It needs the
-/// repository tree only when a dimension cleans its values through a dictionary, whose file a build reads. Its lineage is
-/// the kinds its dimensions read and the dimensions it writes (<see cref="DimensionLineage"/>).
+/// module database the target, and the source's secret references are what the hygiene check inspects. It always needs the
+/// repository tree: a build reads how the index stores each field from the template folders on the flow's path, and a
+/// cleaning step's dictionary from its file. Its lineage is the kinds its dimensions read and the dimensions it writes
+/// (<see cref="DimensionLineage"/>).
 /// </summary>
 public sealed record DimensionFlowDocument : RegisteredFlowDocument
 {
@@ -36,8 +37,12 @@ public sealed record DimensionFlowDocument : RegisteredFlowDocument
 
     public override IEnumerable<KeyValuePair<string, string>> CredentialReferences => Flow.CredentialReferences();
 
-    /// <summary>A flow cleaning through a dictionary reads the dictionary's file, so its node needs the repository's tree at the run's commit.</summary>
-    public override bool RequiresRepoTree => Flow.ReadsDictionaries;
+    /// <summary>
+    /// A build and a plan read the template of every kind a dimension's records are of from the template folders on the flow's
+    /// path (osdu/docs/reference/concepts/templates.md, What a document reads), and a cleaning step's dictionary from its file,
+    /// so the node needs the repository's tree at the run's commit: a snapshot of the flow's one file holds neither.
+    /// </summary>
+    public override bool RequiresRepoTree => true;
 
     public override RegisteredFlowLineage DescribeLineage(RegisteredLineageContext context)
     {

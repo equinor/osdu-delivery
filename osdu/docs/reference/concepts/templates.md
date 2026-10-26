@@ -195,7 +195,9 @@ A document (a mapping, an assertion flow, a dimension flow) reads the template f
 `templates` beside it and the one in every folder above it, nearest first, up to the top of its repository. The top is
 the folder the sync reads, or, for a working copy, the nearest folder holding `.git` (a clone's folder, or a worktree's
 file); with neither, the walk stops sixteen folders up, as the walk to a flow's `mappings` folder does. A folder beside the
-repository, or in a sibling project's folder, is never read.
+repository, or in a sibling project's folder, is never read. A run reads the folders as they are at its commit: a node
+runs a delivery, dimension or assertion flow from a checkout of its repository, never from a snapshot of the flow's one
+file ([which kinds need the repository](../flow/overview.md#which-kinds-need-the-repository)).
 
 ```text
 templates/                                        osdu_wks_master-data--Wellbore_1.3.0.json

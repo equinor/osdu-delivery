@@ -94,7 +94,6 @@ public class DimensionDocumentTests
         Assert.Equal(["dev", "test"], flow.Partitions);
         Assert.Equal(DimensionSource.DefaultAggregationSize, flow.Source.AggregationSize);
         Assert.Equal(DimensionSource.DefaultQueryPath, flow.Source.QueryPath);
-        Assert.True(flow.ReadsDictionaries);
 
         var curves = flow.Dimensions[0];
         Assert.Equal("data.Curves.Mnemonic", curves.Path);
@@ -798,10 +797,14 @@ public class DimensionDocumentTests
         Assert.Empty(lineage.Warnings);
     }
 
+    /// <summary>
+    /// A build reads how the index stores a field from the template folders on the flow's path, and a cleaning step's
+    /// dictionary from its file, so a node never runs the flow from a snapshot of its one file, which holds neither.
+    /// </summary>
     [Fact]
-    public void The_flow_needs_the_repositorys_tree_only_when_it_cleans_through_a_dictionary()
+    public void The_flow_always_needs_the_repositorys_tree()
     {
-        Assert.False(new DimensionFlowDocument { Flow = Parse(Head + Curves) }.RequiresRepoTree);
+        Assert.True(new DimensionFlowDocument { Flow = Parse(Head + Curves) }.RequiresRepoTree);
         Assert.True(new DimensionFlowDocument { Flow = Parse(Head + Curves + "\n    clean: [{ map: Aliases }]") }.RequiresRepoTree);
     }
 

@@ -81,9 +81,6 @@ public sealed record DimensionFlowDefinition
     /// <summary>The views over the flow's dimension tables, in the order the document declares them; names are unique ignoring case.</summary>
     public IReadOnlyList<DimensionViewSpec> Views { get; init; } = [];
 
-    /// <summary>True when a dimension cleans its values through a dictionary document, which the run reads at its commit.</summary>
-    public bool ReadsDictionaries => Dimensions.Any(d => d.Clean.Any(s => s.Kind == CleanStepKind.Map));
-
     /// <summary>
     /// The ledger identity the flow's dimensions are kept under: derived from the name and the bound partition for a flow that
     /// works in partitions, so each partition keeps dimensions of its own, and from the name alone for a flow whose partition

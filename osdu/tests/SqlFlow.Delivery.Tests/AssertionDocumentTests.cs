@@ -441,7 +441,8 @@ public sealed class AssertionDocumentTests
         var document = Assert.IsType<AssertionFlowDocument>(kind.Parse(Full, "flow.yaml"));
         Assert.Equal("report", document.TargetReference);
         Assert.Equal("http://localhost", document.SourceReference);
-        Assert.False(document.RequiresRepoTree);
+        // Its tests' fields are checked against the templates in the folders on its path, which a snapshot of its one file lacks.
+        Assert.True(document.RequiresRepoTree);
     }
 
     [Fact]

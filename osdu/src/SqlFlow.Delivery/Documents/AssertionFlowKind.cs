@@ -8,8 +8,9 @@ namespace SqlFlow.Delivery.Documents;
 
 /// <summary>
 /// An assertion flow as the platform sees it: the OSDU endpoint is the source reference, the report its runs keep in the
-/// module database the target, and the source's secret references are what the hygiene check inspects. It needs no
-/// repository tree: its tests read OSDU and the module database alone. Its lineage is the OSDU types its tests read
+/// module database the target, and the source's secret references are what the hygiene check inspects. It needs the
+/// repository tree: its tests read OSDU and the module database, and the template their fields are checked against comes
+/// from the template folders on the flow's path. Its lineage is the OSDU types its tests read
 /// (<see cref="AssertionLineage"/>), so it runs after the flows that write them.
 /// </summary>
 public sealed record AssertionFlowDocument : RegisteredFlowDocument
@@ -31,7 +32,12 @@ public sealed record AssertionFlowDocument : RegisteredFlowDocument
 
     public override IEnumerable<KeyValuePair<string, string>> CredentialReferences => Flow.CredentialReferences();
 
-    public override bool RequiresRepoTree => false;
+    /// <summary>
+    /// A test that reads a field is checked against the template its kind has in the template folders on the flow's path
+    /// (osdu/docs/reference/concepts/templates.md, What a document reads), so the node needs the repository's tree at the
+    /// run's commit: a snapshot of the flow's one file holds no template.
+    /// </summary>
+    public override bool RequiresRepoTree => true;
 
     public override RegisteredFlowLineage DescribeLineage(RegisteredLineageContext context)
     {
