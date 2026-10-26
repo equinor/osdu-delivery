@@ -314,4 +314,40 @@ public sealed class DimensionIncrementalTests : IDisposable
         var dimension = (await ledger.FindDimensionAsync(flow.LedgerId, "Wellbore"))!;
         Assert.Equal("id", (await ledger.ListDimensionRunsAsync(dimension.DimensionId, 1))[0].Read.RecordKey);
     }
+
+    [Theory]
+    [InlineData(1, 250_000, "Loaded in full, since 2 record(s) changed in the window, more than the 1 an incremental load reads, which a full load reads a range at a time.")]
+    [InlineData(250_000, 2, "Loaded in full, since 3 of its key(s) are to be read again, more than the 2 an incremental load reads again, which a full load reads a range at a time.")]
+    public async Task More_changed_records_or_keys_than_an_incremental_load_holds_load_in_full_and_write_what_the_incremental_load_would_have(
+        int maxRecords, int maxKeys, string why)
+    {
+        Estate();
+        var ledger = _db.Ledger(_clock);
+        var flow = new DeliveryDocumentLoader().ParseDimension(Head + Incremental + Wellbores, "flows/dims.yaml").ForPartition("dev");
+        var runner = new DimensionRunner(Samples.Engine(ledger, _clock), flow, new Dictionary<string, string>(), Samples.Logger<DimensionRunner>(), _platform, allowLoopback: true)
+        {
+            MaxIncrementalRecords = maxRecords,
+            MaxIncrementalKeys = maxKeys,
+        };
+        await runner.BuildAsync([], Guid.NewGuid(), "tests", CancellationToken.None);
+
+        // Two records change (log 3 moves from wellbore B to C, log 4 of A is created), and three keys are to be read again.
+        Change("dev:work-product-component--WellLog:3", At(12, 30), data => data["WellboreID"] = Key("C"));
+        Log("4", "A", At(12, 30));
+        _clock.Advance(TimeSpan.FromHours(1));
+        var second = Assert.Single((await runner.BuildAsync([], Guid.NewGuid(), "tests", CancellationToken.None)).Dimensions);
+
+        Assert.Equal(DimensionRunModes.Full, second.Load);
+        Assert.Contains(why, second.Notes);
+        var dimension = (await ledger.FindDimensionAsync(flow.LedgerId, "Wellbore"))!;
+        var keys = await KeysAsync(ledger, dimension.DimensionId);
+        Assert.Equal((3L, "A-1", (long?)null), (keys[Key("A")].Count, keys[Key("A")].MemberValue, keys[Key("A")].RemovedRunId));
+        Assert.Equal((1L, "C-1", "Mexico"), (keys[Key("C")].Count, keys[Key("C")].MemberValue, Assert.Single(keys[Key("C")].Attributes).Value));
+        Assert.NotNull(keys[Key("B")].RemovedRunId);
+
+        // A full load keeps what each record holds, so the next build with nothing changed loads incrementally again.
+        _clock.Advance(TimeSpan.FromHours(1));
+        var third = Assert.Single((await runner.BuildAsync([], Guid.NewGuid(), "tests", CancellationToken.None)).Dimensions);
+        Assert.Equal(DimensionRunModes.Incremental, third.Load);
+    }
 }

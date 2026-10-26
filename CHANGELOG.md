@@ -237,6 +237,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   ([The OSDU menu](osdu/docs/reference/concepts/gui.md#the-osdu-menu)).
 
 ### Changed
+- An incremental load of a dimension that finds more than 250,000 records changed, or more than 250,000 keys to read
+  again, loads in full, which reads a range at a time
+  ([Full and incremental loads](osdu/docs/reference/flow/dimension-incremental.md)). The module's database gains seven
+  tables a running dimension build stages what it reads in, empty while no build runs
+  ([What the osdu schema stores](osdu/docs/reference/concepts/storage-and-retention.md#what-cleans-itself)).
 - A delivery flow's `source.record.maxRecords` is the default its runs take rather than a ceiling: a run's payload
   `maxRecords` may now ask for more records than the document says, fewer, or 0 to read the whole scope, and a `replan`
   run takes it too; until now a payload could only ask for fewer
@@ -438,6 +443,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **A dimension build no longer runs out of memory.** A build held everything it read until it wrote, so a large
+  dimension (a wellbore dimension with nine attributes read through references) failed with an `OutOfMemoryException`
+  however much memory its worker had. A build now stages what it reads in the module's database as it reads it, and reads
+  labels and attributes a bounded batch of keys at a time, so what it holds no longer grows with its dimension; what it
+  writes is unchanged ([What a build holds](osdu/docs/reference/flow/dimension-build.md#what-a-build-holds)).
+- **A key no query can carry no longer fails its dimension.** A key, or a reference a label or an attribute reads,
+  holding a control character failed the whole dimension; it now has no label (or no such attribute), and the build's
+  notes say why ([Reading through steps](osdu/docs/reference/flow/dimension-attributes.md#reading-through-steps)).
 - **A repository's folders stay shut until they are opened.** Opening a project on a repo's page or the Pipelines page
   unfolded every folder holding a flow, with every file beside it, so an estate keeping thousands of files beside its
   flows (a data drop, a folder per well) listed them all. A project now opens onto its top-level folders, each opening

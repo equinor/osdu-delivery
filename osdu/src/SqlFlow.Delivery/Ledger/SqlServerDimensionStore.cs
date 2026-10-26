@@ -18,8 +18,9 @@ using SqlFlow.SqlServer.Schema;
 namespace SqlFlow.Delivery.Ledger;
 
 /// <summary>
-/// Writes a completed dimension build in one transaction (osdu/docs/reference/concepts/dimension-tables.md): the
-/// build's originals and members are copied into temporary tables, and set-based statements add what is new, change
+/// Writes a completed dimension build in one transaction (osdu/docs/reference/concepts/dimension-tables.md): what the
+/// build staged as it read (<see cref="DimensionStage"/>) is copied into temporary tables where the database holds it,
+/// and set-based statements add what is new, change
 /// what changed, mark removed what the build no longer found and bring back what it found again, log every change to an
 /// original, rewrite the attributes and the records read through of the originals it found, bring the dimension's own
 /// table to what the build found, and close the build with its counts. An incremental load's write is partial: it holds
@@ -627,6 +628,16 @@ internal static class SqlServerDimensionStore
             WHILE 1 = 1 BEGIN DELETE TOP (@batch) e FROM [osdu].[DimensionElement] AS e WITH (FORCESEEK) WHERE e.[PartitionId] = @p AND e.[DimensionId] = @d; SET @n = @@ROWCOUNT; SET @attributes += @n; IF @n < @batch BREAK; END;
             WHILE 1 = 1 BEGIN DELETE TOP (@batch) k FROM [osdu].[DimensionKeyRecord] AS k WITH (FORCESEEK) WHERE k.[PartitionId] = @p AND k.[DimensionId] = @d; SET @n = @@ROWCOUNT; SET @attributes += @n; IF @n < @batch BREAK; END;
             WHILE 1 = 1 BEGIN DELETE TOP (@batch) r FROM [osdu].[DimensionRecord] AS r WITH (FORCESEEK) WHERE r.[PartitionId] = @p AND r.[DimensionId] = @d; SET @n = @@ROWCOUNT; SET @attributes += @n; IF @n < @batch BREAK; END;
+
+            -- What a build of the dimension staged and left: a build its process stopped before it ended.
+            WHILE 1 = 1 BEGIN DELETE TOP (@batch) s FROM [osdu].[DimensionStageValue] AS s WHERE s.[PartitionId] = @p AND s.[DimensionId] = @d; IF @@ROWCOUNT < @batch BREAK; END;
+            WHILE 1 = 1 BEGIN DELETE TOP (@batch) s FROM [osdu].[DimensionStageMember] AS s WHERE s.[PartitionId] = @p AND s.[DimensionId] = @d; IF @@ROWCOUNT < @batch BREAK; END;
+            WHILE 1 = 1 BEGIN DELETE TOP (@batch) s FROM [osdu].[DimensionStageKey] AS s WHERE s.[PartitionId] = @p AND s.[DimensionId] = @d; IF @@ROWCOUNT < @batch BREAK; END;
+            WHILE 1 = 1 BEGIN DELETE TOP (@batch) s FROM [osdu].[DimensionStageAttribute] AS s WHERE s.[PartitionId] = @p AND s.[DimensionId] = @d; IF @@ROWCOUNT < @batch BREAK; END;
+            WHILE 1 = 1 BEGIN DELETE TOP (@batch) s FROM [osdu].[DimensionStageText] AS s WHERE s.[PartitionId] = @p AND s.[DimensionId] = @d; IF @@ROWCOUNT < @batch BREAK; END;
+            WHILE 1 = 1 BEGIN DELETE TOP (@batch) s FROM [osdu].[DimensionStageElement] AS s WHERE s.[PartitionId] = @p AND s.[DimensionId] = @d; IF @@ROWCOUNT < @batch BREAK; END;
+            WHILE 1 = 1 BEGIN DELETE TOP (@batch) s FROM [osdu].[DimensionStageRecord] AS s WHERE s.[PartitionId] = @p AND s.[DimensionId] = @d; IF @@ROWCOUNT < @batch BREAK; END;
+
             WHILE 1 = 1 BEGIN DELETE TOP (@batch) c FROM [osdu].[DimensionChange] AS c WITH (FORCESEEK) WHERE c.[PartitionId] = @p AND c.[DimensionId] = @d; SET @n = @@ROWCOUNT; SET @changes += @n; IF @n < @batch BREAK; END;
             WHILE 1 = 1 BEGIN DELETE TOP (@batch) v FROM [osdu].[DimensionValue] AS v WITH (FORCESEEK) WHERE v.[PartitionId] = @p AND v.[DimensionId] = @d; SET @n = @@ROWCOUNT; SET @keys += @n; IF @n < @batch BREAK; END;
             WHILE 1 = 1 BEGIN DELETE TOP (@batch) m FROM [osdu].[DimensionMember] AS m WITH (FORCESEEK) WHERE m.[PartitionId] = @p AND m.[DimensionId] = @d; SET @n = @@ROWCOUNT; SET @values += @n; IF @n < @batch BREAK; END;
@@ -1537,25 +1548,27 @@ internal static class SqlServerDimensionStore
     }
 
     /// <summary>
-    /// Merges <paramref name="write"/> into its dimension and closes its build as completed with <paramref name="close"/>'s
-    /// counts, in one transaction. A deadlock rolls it all back and it is written again.
+    /// Merges what <paramref name="stage"/>'s build staged into its dimension, as <paramref name="write"/> says, and closes the
+    /// build as completed with <paramref name="close"/>'s counts, in one transaction. A deadlock rolls it all back and it is
+    /// written again from the same staging.
     /// </summary>
     public static async Task<Written> WriteAsync(
-        OsduDbContext db, short partitionId, string partition, DimensionWrite write, Func<Written, DeliveryDimensionRun, Task> close, CancellationToken ct)
+        OsduDbContext db, string partition, DimensionStage stage, DimensionStagedWrite write, Func<Written, DeliveryDimensionRun, Task> close, CancellationToken ct)
     {
         ArgumentNullException.ThrowIfNull(db);
+        ArgumentNullException.ThrowIfNull(stage);
         ArgumentNullException.ThrowIfNull(write);
         ArgumentNullException.ThrowIfNull(close);
         for (var attempt = 1; ; attempt++)
         {
             try
             {
-                return await WriteOnceAsync(db, partitionId, partition, write, close, ct).ConfigureAwait(false);
+                return await WriteOnceAsync(db, partition, stage, write, close, ct).ConfigureAwait(false);
             }
             catch (Exception ex) when (StoppedBy(ex, ct))
             {
                 throw new OperationCanceledException(
-                    string.Create(CultureInfo.InvariantCulture, $"The write of dimension {write.DimensionId} was cancelled with its run, and wrote nothing."), ex, ct);
+                    string.Create(CultureInfo.InvariantCulture, $"The write of dimension {stage.DimensionId} was cancelled with its run, and wrote nothing."), ex, ct);
             }
             catch (Exception ex) when (attempt < DeadlockAttempts && SqlServerLedgerBulk.IsDeadlock(ex))
             {
@@ -1566,7 +1579,7 @@ internal static class SqlServerDimensionStore
     }
 
     private static async Task<Written> WriteOnceAsync(
-        OsduDbContext db, short partitionId, string partition, DimensionWrite write, Func<Written, DeliveryDimensionRun, Task> close, CancellationToken ct)
+        OsduDbContext db, string partition, DimensionStage stage, DimensionStagedWrite write, Func<Written, DeliveryDimensionRun, Task> close, CancellationToken ct)
     {
         await db.Database.OpenConnectionAsync(ct).ConfigureAwait(false);
         try
@@ -1575,28 +1588,30 @@ internal static class SqlServerDimensionStore
 
             // The table's schema is settled before the transaction: a table made, a column added or a column renamed
             // stays when the write does not, and the next write finds it there.
-            var prepared = write.Table is null ? null : await PrepareTableAsync(connection, partitionId, write.DimensionId, write.Table, rename: true, ct).ConfigureAwait(false);
+            var prepared = write.Table is null ? null : await PrepareTableAsync(connection, stage.PartitionId, stage.DimensionId, write.Table, rename: true, ct).ConfigureAwait(false);
             await using var tx = await db.Database.BeginTransactionAsync(IsolationLevel.ReadCommitted, ct).ConfigureAwait(false);
             var transaction = (SqlTransaction)tx.GetDbTransaction();
-            await LockAsync(connection, transaction, partitionId, write.DimensionId, ct).ConfigureAwait(false);
+            await LockAsync(connection, transaction, stage.PartitionId, stage.DimensionId, ct).ConfigureAwait(false);
+            await CheckStagedAsync(connection, transaction, stage, ct).ConfigureAwait(false);
             await ExecuteAsync(connection, transaction, StageSql, ct).ConfigureAwait(false);
-            await CopyAsync(connection, transaction, "#DimValue", ValueColumns, ValueTypes, ValuesOf(write), ValueOrder, ct).ConfigureAwait(false);
-            await CopyAsync(connection, transaction, "#DimMember", MemberColumns, MemberTypes, write.Members.Select(MemberRow), null, ct).ConfigureAwait(false);
-            await CopyAsync(connection, transaction, "#DimAttr", AttributeColumns, AttributeTypes, AttributesOf(write), null, ct).ConfigureAwait(false);
-            await CopyAsync(connection, transaction, "#DimText", TextColumns, TextTypes, TextsOf(write), null, ct).ConfigureAwait(false);
-            await CopyAsync(connection, transaction, "#DimElem", ElementColumns, ElementTypes, ElementsOf(write), ElementOrder, ct).ConfigureAwait(false);
-            await CopyAsync(connection, transaction, "#DimRead", ReadColumns, ReadTypes, ReadsOf(write), ReadOrder, ct).ConfigureAwait(false);
-            await CopyAsync(connection, transaction, "#DimGone", GoneColumns, GoneTypes, GoneOf(write), GoneColumns, ct).ConfigureAwait(false);
-            await CopyAsync(connection, transaction, "#DimRecRead", RecordReadColumns, RecordReadTypes, RecordsReadOf(write), RecordReadColumns, ct).ConfigureAwait(false);
-            await CopyAsync(connection, transaction, "#DimRecHeld", RecordHeldColumns, RecordHeldTypes, RecordsHeldOf(write), RecordHeldColumns, ct).ConfigureAwait(false);
             await CopyAsync(connection, transaction, "#DimName", NameColumns, NameTypes, (write.Table?.Columns ?? []).Select(NameRow), null, ct).ConfigureAwait(false);
+
+            // The staging, copied into the write's own tables where the database holds it: no row of the build passes
+            // through the process writing it.
+            await using (var copy = SqlServerDimensionStage.Command(connection, transaction, SqlServerDimensionStage.CopySql, stage))
+            {
+                var first = write.Table?.Columns.FirstOrDefault(c => c.Element)?.Name;
+                copy.Parameters.Add(new SqlParameter("@elements", SqlDbType.Bit) { Value = write.Table is { HasElements: true } && first is not null });
+                copy.Parameters.Add(new SqlParameter("@firstElement", SqlDbType.NVarChar, DeliveryDimensionAttributeValue.MaxNameLength) { Value = (object?)first ?? DBNull.Value });
+                await copy.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
+            }
 
             Written written;
             await using (var command = Command(connection, transaction, MergeSql))
             {
-                command.Parameters.Add(new SqlParameter("@p", SqlDbType.SmallInt) { Value = partitionId });
-                command.Parameters.Add(new SqlParameter("@d", SqlDbType.Int) { Value = write.DimensionId });
-                command.Parameters.Add(new SqlParameter("@run", SqlDbType.BigInt) { Value = write.DimensionRunId });
+                command.Parameters.Add(new SqlParameter("@p", SqlDbType.SmallInt) { Value = stage.PartitionId });
+                command.Parameters.Add(new SqlParameter("@d", SqlDbType.Int) { Value = stage.DimensionId });
+                command.Parameters.Add(new SqlParameter("@run", SqlDbType.BigInt) { Value = stage.DimensionRunId });
                 command.Parameters.Add(new SqlParameter("@now", SqlDbType.DateTime2) { Value = write.CompletedUtc });
                 command.Parameters.Add(new SqlParameter("@fieldIndex", SqlDbType.NVarChar, 16) { Value = (object?)write.Field?.Index ?? DBNull.Value });
                 command.Parameters.Add(new SqlParameter("@nestedPath", SqlDbType.NVarChar, DeliveryDimension.MaxPathLength) { Value = (object?)write.Field?.NestedPath ?? DBNull.Value });
@@ -1604,12 +1619,12 @@ internal static class SqlServerDimensionStore
                 command.Parameters.Add(new SqlParameter("@repeats", SqlDbType.Bit) { Value = write.Field?.Repeats ?? false });
                 command.Parameters.Add(new SqlParameter("@collected", SqlDbType.NVarChar, -1) { Value = (object?)write.CollectedJson ?? DBNull.Value });
                 command.Parameters.Add(new SqlParameter("@partial", SqlDbType.Bit) { Value = write.Partial });
-                command.Parameters.Add(new SqlParameter("@records", SqlDbType.Bit) { Value = write.Records is not null });
+                command.Parameters.Add(new SqlParameter("@records", SqlDbType.Bit) { Value = write.KeepsRecords });
                 AddTable(command, write.Table, prepared, partition);
                 await using var reader = await command.ExecuteReaderAsync(ct).ConfigureAwait(false);
                 if (!await reader.ReadAsync(ct).ConfigureAwait(false))
                 {
-                    throw new DeliveryException($"Writing dimension {write.DimensionId} returned no counts.");
+                    throw new DeliveryException($"Writing dimension {stage.DimensionId} returned no counts.");
                 }
 
                 written = new Written(
@@ -1625,9 +1640,9 @@ internal static class SqlServerDimensionStore
 
             // By its whole key, as every statement of the write reads: a seek of its own row, whatever the table holds.
             var run = await db.DeliveryDimensionRuns
-                .FirstOrDefaultAsync(r => r.PartitionId == partitionId && r.DimensionId == write.DimensionId && r.DimensionRunId == write.DimensionRunId, ct)
+                .FirstOrDefaultAsync(r => r.PartitionId == stage.PartitionId && r.DimensionId == stage.DimensionId && r.DimensionRunId == stage.DimensionRunId, ct)
                 .ConfigureAwait(false)
-                ?? throw new DeliveryException(string.Create(CultureInfo.InvariantCulture, $"Dimension build {write.DimensionRunId} is not in the ledger, so it cannot be closed."));
+                ?? throw new DeliveryException(string.Create(CultureInfo.InvariantCulture, $"Dimension build {stage.DimensionRunId} is not in the ledger, so it cannot be closed."));
             await close(written, run).ConfigureAwait(false);
             await db.SaveChangesAsync(ct).ConfigureAwait(false);
             await tx.CommitAsync(ct).ConfigureAwait(false);
@@ -1636,6 +1651,25 @@ internal static class SqlServerDimensionStore
         finally
         {
             await db.Database.CloseConnectionAsync().ConfigureAwait(false);
+        }
+    }
+
+    /// <summary>
+    /// Refuses a write whose staging no longer holds every key and value its build staged: a later build of the dimension took
+    /// the build for one its process left, which it does only once a build has run for <see cref="DimensionStage.AbandonedAfter"/>,
+    /// and began deleting its staging. Read under the dimension's write lock, which such a deletion takes too, so nothing of
+    /// the staging is deleted while the write copies it.
+    /// </summary>
+    private static async Task CheckStagedAsync(SqlConnection connection, SqlTransaction transaction, DimensionStage stage, CancellationToken ct)
+    {
+        await using var command = SqlServerDimensionStage.Command(connection, transaction, SqlServerDimensionStage.CountSql, stage);
+        await using var reader = await command.ExecuteReaderAsync(ct).ConfigureAwait(false);
+        await reader.ReadAsync(ct).ConfigureAwait(false);
+        var (values, members) = (reader.GetInt64(0), reader.GetInt64(1));
+        if (values != stage.Values || members != stage.Members)
+        {
+            throw new DeliveryException(string.Create(CultureInfo.InvariantCulture,
+                $"The staging of dimension build {stage.DimensionRunId} holds {values} of the {stage.Values} key(s) and {members} of the {stage.Members} value(s) it staged: another build of the dimension deleted it, taking this build, running for more than {DimensionStage.AbandonedAfter.TotalHours:0} hours, for one its process left. Nothing was written; build the dimension again."));
         }
     }
 
@@ -1657,288 +1691,6 @@ internal static class SqlServerDimensionStore
             throw new DeliveryException(
                 string.Create(CultureInfo.InvariantCulture,
                     $"Another build of dimension {dimensionId} held its write lock for more than {LockTimeoutMs / 1000} seconds (sp_getapplock answered {granted}), so this build wrote nothing. Build it again when the other has finished."));
-        }
-    }
-
-    private static readonly string[] ValueColumns =
-        ["Seq", "Original", "OriginalHash", "CleanValue", "LeftOut", "Note", "Label", "LabelFrom", "Filter", "Count", "Filterable"];
-
-    private static readonly Type[] ValueTypes =
-        [typeof(int), typeof(string), typeof(byte[]), typeof(string), typeof(string), typeof(string), typeof(string), typeof(string), typeof(string), typeof(long), typeof(bool)];
-
-    /// <summary>The key of the originals' staging table, which <see cref="ValuesOf"/> lists them in.</summary>
-    private static readonly string[] ValueOrder = ["OriginalHash"];
-
-    /// <summary>
-    /// The build's originals as staging rows, in the order of their hashes, which is the order the staging table keeps
-    /// them in: rows copied in a table's own order are appended, not placed one by one. Each carries its place in the
-    /// build's own order, which is the order new originals take their ids in.
-    /// </summary>
-    private static List<object?[]> ValuesOf(DimensionWrite write)
-    {
-        var rows = new List<object?[]>(write.Originals.Count);
-        for (var seq = 0; seq < write.Originals.Count; seq++)
-        {
-            var value = write.Originals[seq];
-            rows.Add(
-            [
-                seq, value.Original, HashOf(value.Original), value.CleanValue, value.LeftOut, OsduLedger.Truncate(value.Note, 400),
-                OsduLedger.Truncate(value.Label, DeliveryDimensionValue.MaxLabelLength), OsduLedger.Truncate(value.LabelFrom, DeliveryDimensionValue.MaxOriginalLength),
-                value.Filter is { Length: > DeliveryDimensionValue.MaxFilterLength } ? null : value.Filter, value.Count, value.Filterable,
-            ]);
-        }
-
-        rows.Sort((left, right) => ByBytes((byte[])left[2]!, (byte[])right[2]!));
-        return rows;
-    }
-
-    /// <summary>Two hashes in the order SQL Server keeps binary values: byte by byte.</summary>
-    private static int ByBytes(byte[] left, byte[] right) => left.AsSpan().SequenceCompareTo(right);
-
-    private static readonly string[] AttributeColumns = ["OriginalHash", "Name", "Value", "ValueFrom", "Records"];
-
-    private static readonly Type[] AttributeTypes = [typeof(byte[]), typeof(string), typeof(string), typeof(string), typeof(long)];
-
-    /// <summary>
-    /// Every attribute value of every original of <paramref name="write"/>, a row each, as the staging table takes them and
-    /// as they are copied, never held a second time: the value cut to what a row keeps, a value named twice for one
-    /// original under one attribute kept once (its first), an empty one left out.
-    /// </summary>
-    private static IEnumerable<object?[]> AttributesOf(DimensionWrite write)
-    {
-        foreach (var original in write.Originals)
-        {
-            if (original.Attributes is not { Count: > 0 } attributes)
-            {
-                continue;
-            }
-
-            var hash = HashOf(original.Original);
-            var seen = new HashSet<(string, string)>();
-            foreach (var attribute in attributes)
-            {
-                if (string.IsNullOrEmpty(attribute.Value) || attribute.Name.Length > DeliveryDimensionAttributeValue.MaxNameLength)
-                {
-                    continue;
-                }
-
-                var value = OsduLedger.Truncate(attribute.Value, DeliveryDimensionAttributeValue.MaxValueLength)!;
-                if (seen.Add((attribute.Name, value)))
-                {
-                    yield return [hash, attribute.Name, value, OsduLedger.Truncate(attribute.From, DeliveryDimensionValue.MaxOriginalLength), attribute.Records];
-                }
-            }
-        }
-    }
-
-    private static readonly string[] TextColumns = ["Name", "TextHash", "Text", "Value", "Records"];
-
-    private static readonly Type[] TextTypes = [typeof(string), typeof(byte[]), typeof(string), typeof(string), typeof(long)];
-
-    /// <summary>
-    /// Every text the build collected, a row each, as the staging table takes them: a text longer than a row keeps, or named
-    /// twice under one attribute, kept once (its first).
-    /// </summary>
-    private static List<object?[]> TextsOf(DimensionWrite write)
-    {
-        var rows = new List<object?[]>(write.CollectedTexts.Count);
-        var seen = new HashSet<(string, string)>();
-        foreach (var text in write.CollectedTexts)
-        {
-            if (text.Text.Length > DeliveryDimensionValue.MaxOriginalLength || text.Name.Length > DeliveryDimensionAttributeValue.MaxNameLength
-                || string.IsNullOrEmpty(text.Value) || !seen.Add((text.Name, text.Text)))
-            {
-                continue;
-            }
-
-            rows.Add([text.Name, HashOf(text.Text), text.Text, OsduLedger.Truncate(text.Value, DeliveryDimensionAttributeValue.MaxValueLength), text.Records]);
-        }
-
-        return rows;
-    }
-
-    private static readonly string[] ElementColumns = ["OriginalHash", "Seq", "Name", "Value"];
-
-    private static readonly Type[] ElementTypes = [typeof(byte[]), typeof(int), typeof(string), typeof(string)];
-
-    /// <summary>The key of the elements' staging table, which <see cref="ElementsOf"/> lists them in.</summary>
-    private static readonly string[] ElementOrder = ["OriginalHash", "Seq", "Name"];
-
-    /// <summary>
-    /// Every field of every element of every original of <paramref name="write"/>, a row each, as the staging table takes
-    /// them: an element holding none of its fields one row of its first field with no value, so it is still a row of the
-    /// table. Only a write whose table has element columns stages any. A dimension of well log curves stages tens of
-    /// millions, so they are listed as they are copied, never held a second time, and in the order the staging table
-    /// keeps them (the key's hash, the element's place, the field's name, which is ASCII and so compares ordinally as the
-    /// table compares it), so the server appends them as they come.
-    /// </summary>
-    private static IEnumerable<object?[]> ElementsOf(DimensionWrite write)
-    {
-        if (write.Table is not { HasElements: true } table || write.Elements.Count == 0)
-        {
-            yield break;
-        }
-
-        var keys = new List<(byte[] Hash, IReadOnlyList<DimensionElementState> Elements)>();
-        foreach (var original in write.Originals)
-        {
-            if (write.Elements.TryGetValue(original.Original, out var held) && held.Count > 0)
-            {
-                keys.Add((HashOf(original.Original), held));
-            }
-        }
-
-        keys.Sort((left, right) => ByBytes(left.Hash, right.Hash));
-        var first = table.Columns.First(c => c.Element).Name;
-        var seen = new HashSet<string>(StringComparer.Ordinal);
-        var fields = new List<KeyValuePair<string, string>>();
-        foreach (var (hash, elements) in keys)
-        {
-            foreach (var element in elements.OrderBy(e => e.Seq))
-            {
-                // A field named twice in one element keeps its first value; the names left are then put in order.
-                seen.Clear();
-                fields.Clear();
-                foreach (var (name, value) in element.Values)
-                {
-                    if (name.Length <= DeliveryDimensionAttributeValue.MaxNameLength && !string.IsNullOrEmpty(value) && seen.Add(name))
-                    {
-                        fields.Add(new KeyValuePair<string, string>(name, value));
-                    }
-                }
-
-                if (fields.Count == 0)
-                {
-                    yield return [hash, element.Seq, first, null];
-                    continue;
-                }
-
-                fields.Sort((left, right) => string.CompareOrdinal(left.Key, right.Key));
-                foreach (var (name, value) in fields)
-                {
-                    yield return [hash, element.Seq, name, OsduLedger.Truncate(value, DeliveryDimensionElement.MaxValueLength)];
-                }
-            }
-        }
-    }
-
-    private static readonly string[] GoneColumns = ["OriginalHash"];
-
-    private static readonly Type[] GoneTypes = [typeof(byte[])];
-
-    /// <summary>The keys an incremental load removes, by their hashes, each once, in the staging table's order.</summary>
-    private static IEnumerable<object?[]> GoneOf(DimensionWrite write)
-        => Distinct(write.Removed.Where(o => o.Length <= DeliveryDimensionValue.MaxOriginalLength).Select(HashOf)).Select(hash => new object?[] { hash });
-
-    private static readonly string[] RecordReadColumns = ["RecordHash"];
-
-    private static readonly Type[] RecordReadTypes = [typeof(byte[])];
-
-    /// <summary>The records a load read, by their unique keys' hashes, each once, in the staging table's order.</summary>
-    private static IEnumerable<object?[]> RecordsReadOf(DimensionWrite write)
-        => write.Records is { } records ? Distinct(records.Read).Select(hash => new object?[] { hash }) : [];
-
-    private static readonly string[] RecordHeldColumns = ["RecordHash", "OriginalHash"];
-
-    private static readonly Type[] RecordHeldTypes = [typeof(byte[]), typeof(byte[])];
-
-    /// <summary>
-    /// Each key each record held, a row each, once, in the staging table's order: by the record's hash, then the key's. A key
-    /// longer than a dimension keeps is no key of it.
-    /// </summary>
-    private static IEnumerable<object?[]> RecordsHeldOf(DimensionWrite write)
-    {
-        if (write.Records is not { Held.Count: > 0 } records)
-        {
-            return [];
-        }
-
-        var hashes = new Dictionary<string, byte[]>(StringComparer.Ordinal);
-        var rows = new List<(byte[] Record, byte[] Original)>(records.Held.Count);
-        foreach (var (record, original) in records.Held)
-        {
-            if (original.Length > DeliveryDimensionValue.MaxOriginalLength)
-            {
-                continue;
-            }
-
-            if (!hashes.TryGetValue(original, out var hash))
-            {
-                hash = HashOf(original);
-                hashes[original] = hash;
-            }
-
-            rows.Add((record, hash));
-        }
-
-        rows.Sort((left, right) => ByBytes(left.Record, right.Record) is var byRecord and not 0 ? byRecord : ByBytes(left.Original, right.Original));
-        return rows
-            .Where((row, i) => i == 0 || ByBytes(rows[i - 1].Record, row.Record) != 0 || ByBytes(rows[i - 1].Original, row.Original) != 0)
-            .Select(row => new object?[] { row.Record, row.Original });
-    }
-
-    /// <summary>Hashes in the order SQL Server keeps binary values, each once.</summary>
-    private static IEnumerable<byte[]> Distinct(IEnumerable<byte[]> hashes)
-    {
-        var sorted = hashes.ToList();
-        sorted.Sort(ByBytes);
-        for (var i = 0; i < sorted.Count; i++)
-        {
-            if (i == 0 || ByBytes(sorted[i - 1], sorted[i]) != 0)
-            {
-                yield return sorted[i];
-            }
-        }
-    }
-
-    private static readonly string[] ReadColumns = ["OriginalHash", "RecordHash", "EntityType"];
-
-    private static readonly Type[] ReadTypes = [typeof(byte[]), typeof(byte[]), typeof(string)];
-
-    /// <summary>The key of the records' staging table, which <see cref="ReadsOf"/> lists them in.</summary>
-    private static readonly string[] ReadOrder = ["OriginalHash", "RecordHash"];
-
-    /// <summary>
-    /// The records each original of <paramref name="write"/> was read through, a row each, in the order the staging table
-    /// keeps them: by the key's hash, then the record's. A record is named by its id without its version, hashed as an
-    /// original is, with the entity type the id names; an id naming none is no record.
-    /// </summary>
-    private static IEnumerable<object?[]> ReadsOf(DimensionWrite write)
-    {
-        if (write.KeyRecords.Count == 0)
-        {
-            yield break;
-        }
-
-        var keys = new List<(byte[] Hash, IReadOnlyList<string> Records)>();
-        foreach (var original in write.Originals)
-        {
-            if (write.KeyRecords.TryGetValue(original.Original, out var records) && records.Count > 0)
-            {
-                keys.Add((HashOf(original.Original), records));
-            }
-        }
-
-        keys.Sort((left, right) => ByBytes(left.Hash, right.Hash));
-        var rows = new List<(byte[] Hash, string Type)>();
-        var seen = new HashSet<string>(StringComparer.Ordinal);
-        foreach (var (hash, records) in keys)
-        {
-            rows.Clear();
-            seen.Clear();
-            foreach (var record in records)
-            {
-                if (KeyRecordType(record) is { } type && seen.Add(record))
-                {
-                    rows.Add((HashOf(record), type));
-                }
-            }
-
-            rows.Sort((left, right) => ByBytes(left.Hash, right.Hash));
-            foreach (var (recordHash, type) in rows)
-            {
-                yield return [hash, recordHash, type];
-            }
         }
     }
 
@@ -1966,13 +1718,6 @@ internal static class SqlServerDimensionStore
 
     /// <summary>A declared attribute with its place among them, from 1.</summary>
     private static object?[] NameRow(DimensionTableColumn column, int index) => [column.Name, (short)(index + 1), column.Collected];
-
-    private static readonly string[] MemberColumns = ["Value", "Records", "RecordsExact", "Originals", "Unfilterable", "Filter", "FilterParts"];
-
-    private static readonly Type[] MemberTypes = [typeof(string), typeof(long), typeof(bool), typeof(int), typeof(int), typeof(string), typeof(int)];
-
-    private static object?[] MemberRow(DimensionMemberWrite member)
-        => [member.Value, member.Records, member.RecordsExact, member.Originals, member.Unfilterable, member.Filter, member.FilterParts];
 
     /// <summary>
     /// Copies <paramref name="rows"/> into a temporary table as they are listed, never holding a second copy of them; nothing

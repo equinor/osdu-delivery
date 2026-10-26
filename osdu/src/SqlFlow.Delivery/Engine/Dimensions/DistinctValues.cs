@@ -101,11 +101,38 @@ public sealed record DistinctReadOptions(int AggregationSize, long MaxValues, bo
     public const int MaxAggregationSize = 10_000;
 }
 
-/// <summary>What reading a dimension's values found, with how it read them and how complete that is.</summary>
-public sealed class DistinctRead
+/// <summary>
+/// Where a read takes the values it finds (<see cref="DistinctValues.ReadAsync(IDistinctValueSource, DistinctReadOptions, Microsoft.Extensions.Logging.ILogger, IDistinctSink, CancellationToken)"/>):
+/// a range's values together, each value in its canonical text with how many units hold it. Two ranges never hold one value,
+/// so each value is taken once, however many ranges a read answers.
+/// </summary>
+public interface IDistinctSink
 {
-    /// <summary>Every distinct value in its canonical text, with how many units hold it.</summary>
-    public required IReadOnlyDictionary<string, long> Values { get; init; }
+    /// <summary>Takes the values one range of the read holds, in the order the read found them.</summary>
+    ValueTask AddAsync(IReadOnlyList<KeyValuePair<string, long>> values, CancellationToken ct);
+
+    /// <summary>Forgets every value taken: the read starts over, every value read again by scanning.</summary>
+    ValueTask ResetAsync(CancellationToken ct);
+}
+
+/// <summary>A range of a field's values a read covered whole, with how many units hold a value inside it.</summary>
+public sealed record DistinctRange(DistinctSlice Slice, long Units);
+
+/// <summary>What reading a dimension's values counted, with how it read them and how complete that is.</summary>
+public class DistinctCounts
+{
+    /// <summary>The distinct values read.</summary>
+    public long Keys { get; init; }
+
+    /// <summary>The units counted under a value, a unit holding several values counted under each.</summary>
+    public long Units { get; init; }
+
+    /// <summary>
+    /// The ranges the values were read in, each covered whole, in the order the index keeps the field, between them every
+    /// value; one whole range when every value was read by scanning. Passes over the records holding the values are cut
+    /// along them.
+    /// </summary>
+    public IReadOnlyList<DistinctRange> Ranges { get; init; } = [];
 
     /// <summary>Units whose value is null (text only: the index keeps a null text as the text null).</summary>
     public long Nulls { get; init; }
@@ -153,6 +180,40 @@ public sealed class DistinctRead
     public int Requests => Aggregations + ScanPages;
 }
 
+/// <summary>What reading a dimension's values found, held in memory: every value with how many units hold it, and the counts.</summary>
+public sealed class DistinctRead : DistinctCounts
+{
+    /// <summary>Every distinct value in its canonical text, with how many units hold it.</summary>
+    public required IReadOnlyDictionary<string, long> Values { get; init; }
+
+    /// <summary>The counts of a read whose values <paramref name="values"/> holds.</summary>
+    public static DistinctRead Of(DistinctCounts counts, IReadOnlyDictionary<string, long> values)
+    {
+        ArgumentNullException.ThrowIfNull(counts);
+        ArgumentNullException.ThrowIfNull(values);
+        return new DistinctRead
+        {
+            Values = values,
+            Keys = counts.Keys,
+            Units = counts.Units,
+            Ranges = counts.Ranges,
+            Nulls = counts.Nulls,
+            Unreadable = counts.Unreadable,
+            Records = counts.Records,
+            WithValue = counts.WithValue,
+            TooLong = counts.TooLong,
+            Aggregations = counts.Aggregations,
+            Slices = counts.Slices,
+            Splits = counts.Splits,
+            ScannedSlices = counts.ScannedSlices,
+            ScanPages = counts.ScanPages,
+            ScannedUnits = counts.ScannedUnits,
+            ScannedWhole = counts.ScannedWhole,
+            Notes = counts.Notes,
+        };
+    }
+}
+
 /// <summary>A dimension that holds more distinct values than it may keep.</summary>
 public sealed class DimensionTooLargeException : DeliveryException
 {
@@ -192,20 +253,33 @@ public static class DistinctValues
     /// <summary>The most cursor pages a slice whose groups are mostly other slices' is scanned in rather than split.</summary>
     private const int PollutedScanPages = 10;
 
-    /// <summary>Reads every distinct value of <paramref name="source"/>'s field.</summary>
+    /// <summary>Reads every distinct value of <paramref name="source"/>'s field, and holds them in memory.</summary>
     /// <exception cref="DimensionTooLargeException">The field holds more distinct values than the options allow.</exception>
     public static async Task<DistinctRead> ReadAsync(IDistinctValueSource source, DistinctReadOptions options, ILogger log, CancellationToken ct)
+    {
+        var held = new HeldValues();
+        var counts = await ReadAsync(source, options, log, held, ct).ConfigureAwait(false);
+        return DistinctRead.Of(counts, held.Values);
+    }
+
+    /// <summary>
+    /// Reads every distinct value of <paramref name="source"/>'s field into <paramref name="sink"/>, a range's values at a
+    /// time as each range is read whole: what a read holds is the range it is reading, however many values the field holds.
+    /// </summary>
+    /// <exception cref="DimensionTooLargeException">The field holds more distinct values than the options allow.</exception>
+    public static async Task<DistinctCounts> ReadAsync(IDistinctValueSource source, DistinctReadOptions options, ILogger log, IDistinctSink sink, CancellationToken ct)
     {
         ArgumentNullException.ThrowIfNull(source);
         ArgumentNullException.ThrowIfNull(options);
         ArgumentNullException.ThrowIfNull(log);
+        ArgumentNullException.ThrowIfNull(sink);
         ArgumentOutOfRangeException.ThrowIfLessThan(options.AggregationSize, DistinctReadOptions.MinAggregationSize);
         ArgumentOutOfRangeException.ThrowIfGreaterThan(options.AggregationSize, DistinctReadOptions.MaxAggregationSize);
         ArgumentOutOfRangeException.ThrowIfLessThan(options.MaxValues, 1);
 
         var field = source.Field;
         var order = DimensionValueText.Order(field.Index);
-        var tally = new Tally(field, options.MaxValues);
+        var tally = new Tally(field, options.MaxValues, sink);
         var notes = new List<string>();
         // The ranges still to read, the widest first: the halves of a split wait behind the ranges asked before them, so the
         // read fans out to as many ranges as it may ask at once as soon as there are that many.
@@ -261,7 +335,7 @@ public static class DistinctValues
                     pending.Clear();
                     await Task.WhenAll(asked).ConfigureAwait(false);
                     asked.Clear();
-                    tally = new Tally(field, options.MaxValues);
+                    await tally.ResetAsync(ct).ConfigureAwait(false);
                     await ScanAsync(source, DistinctSlice.Whole, order, tally, ct).ConfigureAwait(false);
                     scannedWhole = true;
                     break;
@@ -270,11 +344,7 @@ public static class DistinctValues
                 var inside = buckets.Where(b => slice.Contains(Canonical(field, b.Key!), order)).ToList();
                 if (buckets.Count < options.AggregationSize)
                 {
-                    foreach (var bucket in inside)
-                    {
-                        tally.AddKey(bucket.Key!, bucket.Count);
-                    }
-
+                    await tally.AddGroupsAsync(slice, inside, ct).ConfigureAwait(false);
                     slices++;
                     continue;
                 }
@@ -335,9 +405,11 @@ public static class DistinctValues
             }
         }
 
-        var read = new DistinctRead
+        var read = new DistinctCounts
         {
-            Values = tally.Values,
+            Keys = tally.Count,
+            Units = tally.Total,
+            Ranges = [.. tally.Ranges],
             Nulls = tally.Nulls,
             Unreadable = tally.Unreadable,
             Records = records,
@@ -354,7 +426,7 @@ public static class DistinctValues
         };
         log.LogInformation(
             "values of {Path}: {Values} distinct value(s) from {Aggregations} aggregation(s) over {Slices} range(s), {Splits} split(s), {Scanned} range(s) scanned in {Pages} page(s)",
-            field.Path, read.Values.Count, aggregations, slices, splits, scannedWhole ? "every" : scannedSlices.ToString(CultureInfo.InvariantCulture), read.ScanPages);
+            field.Path, read.Keys, aggregations, slices, splits, scannedWhole ? "every" : scannedSlices.ToString(CultureInfo.InvariantCulture), read.ScanPages);
         return read;
     }
 
@@ -408,10 +480,16 @@ public static class DistinctValues
         return null;
     }
 
+    /// <summary>
+    /// Reads the slice's values from its records through the search cursor, each value counted once a unit, and takes them
+    /// when the slice is read whole. A slice scanned is small (a few pages, or one value), but every value of a field read by
+    /// scanning is one slice, held until it is read; the most values a dimension keeps bound it.
+    /// </summary>
     private static async Task ScanAsync(IDistinctValueSource source, DistinctSlice slice, IComparer<string> order, Tally tally, CancellationToken ct)
     {
         var field = source.Field;
         var nullInside = slice.Contains(OsduQuery.KeywordNullValue, order);
+        var values = new Dictionary<string, long>(StringComparer.Ordinal);
         await foreach (var page in source.ScanAsync(slice, ct).WithCancellation(ct).ConfigureAwait(false))
         {
             tally.ScanPages++;
@@ -446,7 +524,15 @@ public static class DistinctValues
 
                 foreach (var text in held)
                 {
-                    tally.Add(text, 1);
+                    if (values.TryGetValue(text, out var count))
+                    {
+                        values[text] = count + 1;
+                    }
+                    else
+                    {
+                        tally.Room(values.Count + 1);
+                        values[text] = 1;
+                    }
                 }
 
                 if (isNull)
@@ -462,6 +548,8 @@ public static class DistinctValues
                 }
             }
         }
+
+        await tally.TakeAsync(slice, values, ct).ConfigureAwait(false);
     }
 
     private static async Task<long?> CheckAsync(IDistinctValueSource source, DistinctCheck check, List<string> notes, CancellationToken ct)
@@ -488,14 +576,20 @@ public static class DistinctValues
     /// <summary>A key in the text the read keeps it under; a key that is no value of the field's type stays as it is.</summary>
     private static string Canonical(OsduField field, string key) => DimensionValueText.FromKey(field.Index, key).Text;
 
-    /// <summary>What a read has counted so far, held within the most values it may keep.</summary>
-    private sealed class Tally(OsduField field, long maxValues)
+    /// <summary>
+    /// What a read has counted so far, within the most values it may keep: how many values it took, the units under them,
+    /// and the ranges it took them in. A range's values go to the sink together once it is read whole; no value is held
+    /// after.
+    /// </summary>
+    private sealed class Tally(OsduField field, long maxValues, IDistinctSink sink)
     {
-        private readonly Dictionary<string, long> _values = new(StringComparer.Ordinal);
+        private readonly List<DistinctRange> _ranges = [];
 
-        public IReadOnlyDictionary<string, long> Values => _values;
+        /// <summary>The values taken.</summary>
+        public long Count { get; private set; }
 
-        public int Count => _values.Count;
+        /// <summary>The units counted under a value, a unit holding several values counted under each.</summary>
+        public long Total { get; private set; }
 
         public long Nulls { get; set; }
 
@@ -505,43 +599,87 @@ public static class DistinctValues
 
         public long ScannedUnits { get; set; }
 
-        /// <summary>The units counted under a value, a unit holding several values counted under each.</summary>
-        public long Total => _values.Values.Sum();
+        public IReadOnlyList<DistinctRange> Ranges => _ranges;
 
-        /// <summary>Counts an aggregation's group: a value, the text a null is kept as, or a key that is no value of the type.</summary>
-        public void AddKey(string key, long count)
+        /// <summary>
+        /// Takes the groups of a slice an aggregation answered whole: each a value (several keys of one value counted together),
+        /// the text a null is kept as, or a key that is no value of the type.
+        /// </summary>
+        public ValueTask AddGroupsAsync(DistinctSlice slice, IEnumerable<OsduSearchBucket> groups, CancellationToken ct)
         {
-            var (reading, text) = DimensionValueText.FromKey(field.Index, key);
-            switch (reading)
+            var values = new Dictionary<string, long>(StringComparer.Ordinal);
+            foreach (var group in groups)
             {
-                case ValueReading.Value:
-                    Add(text, count);
-                    break;
-                case ValueReading.Null:
-                    Nulls += count;
-                    break;
-                default:
-                    Unreadable += count;
-                    break;
+                var (reading, text) = DimensionValueText.FromKey(field.Index, group.Key!);
+                switch (reading)
+                {
+                    case ValueReading.Value:
+                        values[text] = values.GetValueOrDefault(text) + group.Count;
+                        break;
+                    case ValueReading.Null:
+                        Nulls += group.Count;
+                        break;
+                    default:
+                        Unreadable += group.Count;
+                        break;
+                }
             }
+
+            return TakeAsync(slice, values, ct);
         }
 
-        public void Add(string text, long count)
+        /// <summary>Takes the values of a slice read whole, in the order they were found.</summary>
+        public ValueTask TakeAsync(DistinctSlice slice, Dictionary<string, long> values, CancellationToken ct)
         {
-            if (_values.TryGetValue(text, out var held))
-            {
-                _values[text] = held + count;
-                return;
-            }
+            Room(values.Count);
+            var units = values.Values.Sum();
+            Count += values.Count;
+            Total += units;
+            _ranges.Add(new DistinctRange(slice, units));
+            return values.Count == 0 ? ValueTask.CompletedTask : sink.AddAsync([.. values], ct);
+        }
 
-            if (_values.Count >= maxValues)
+        /// <summary>Refuses a read past the most values the dimension keeps, which <paramref name="more"/> values not taken yet would take it.</summary>
+        public void Room(long more)
+        {
+            if (Count + more > maxValues)
             {
                 throw new DimensionTooLargeException(
                     string.Create(CultureInfo.InvariantCulture,
                         $"{field.Path} holds more than {maxValues} distinct values, the most this dimension keeps (maxValues). Narrow the dimension's query, or raise maxValues if the partition really holds that many."));
             }
+        }
 
-            _values[text] = count;
+        /// <summary>Forgets everything counted and taken: the read starts over.</summary>
+        public async ValueTask ResetAsync(CancellationToken ct)
+        {
+            (Count, Total, Nulls, Unreadable, ScanPages, ScannedUnits) = (0, 0, 0, 0, 0, 0);
+            _ranges.Clear();
+            await sink.ResetAsync(ct).ConfigureAwait(false);
+        }
+    }
+
+    /// <summary>The values of a read held in memory, in the order they were taken.</summary>
+    private sealed class HeldValues : IDistinctSink
+    {
+        private readonly Dictionary<string, long> _values = new(StringComparer.Ordinal);
+
+        public IReadOnlyDictionary<string, long> Values => _values;
+
+        public ValueTask AddAsync(IReadOnlyList<KeyValuePair<string, long>> values, CancellationToken ct)
+        {
+            foreach (var (value, count) in values)
+            {
+                _values[value] = _values.GetValueOrDefault(value) + count;
+            }
+
+            return ValueTask.CompletedTask;
+        }
+
+        public ValueTask ResetAsync(CancellationToken ct)
+        {
+            _values.Clear();
+            return ValueTask.CompletedTask;
         }
     }
 }

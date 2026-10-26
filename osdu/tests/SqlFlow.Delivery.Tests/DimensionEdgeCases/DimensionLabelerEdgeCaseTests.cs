@@ -44,7 +44,7 @@ public sealed class DimensionLabelerEdgeCaseTests : IDisposable
         var client = new OsduHttpClient(
             runtime, FakeDimensionPlatform.Endpoint, new TargetAuth { Type = TargetAuthType.None },
             new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase) { ["data-partition-id"] = "dev" });
-        return new DimensionLabeler(new OsduSearch(client, "/api/search/v2/query", "/api/search/v2/query_with_cursor", NullLogger.Instance), NullLogger.Instance, concurrency: 2);
+        return new DimensionLabeler(new OsduSearch(client, "/api/search/v2/query", "/api/search/v2/query_with_cursor", NullLogger.Instance), concurrency: 2);
     }
 
     private static JsonObject Context(string entity, string type) => new() { ["GeoPoliticalEntityID"] = entity + ":", ["GeoTypeID"] = type + ":" };

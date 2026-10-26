@@ -9,66 +9,77 @@ using SqlFlow.Delivery.Search;
 
 namespace SqlFlow.Delivery.Engine.Dimensions;
 
-/// <summary>What a build read of its dimension's elements: each key's objects in their order, the pages and ranges it read, and its notes.</summary>
-internal sealed record ElementRead(
-    IReadOnlyDictionary<string, IReadOnlyList<DimensionElementState>> Keys, long Elements, int Pages, int Ranges, IReadOnlyList<string> Notes);
+/// <summary>What a build read of its dimension's elements, the objects staged: how many, the values cut and left out, and the pages and ranges it read.</summary>
+internal sealed record ElementRead(long Elements, int Cut, int TooLong, int Pages, int Ranges)
+{
+    /// <summary>
+    /// What the read has to say, a line each, once the build knows how many of its <paramref name="keys"/> keys the objects
+    /// staged belong to (<paramref name="holding"/>).
+    /// </summary>
+    public IReadOnlyList<string> Notes(string path, long holding, long keys)
+    {
+        var notes = new List<string>
+        {
+            string.Create(CultureInfo.InvariantCulture,
+                $"{Elements} object(s) at {path} read for {holding} of {keys} key(s); a key whose records hold none is one row with no element."),
+        };
+        if (Cut > 0)
+        {
+            notes.Add(string.Create(CultureInfo.InvariantCulture,
+                $"{Cut} element value(s) were longer than the {DimensionSpec.MaxElementValueLength} characters a dimension keeps of a field and were cut."));
+        }
 
-/// <summary>
-/// Keys a read covers and the query that finds their records: every key and the dimension's query for a full load; for an
-/// incremental load, the keys it reads again, a query's worth at a time, each group with the filter finding its records.
-/// The keys of two scopes are never the same.
-/// </summary>
-internal sealed record DimensionScope(string? Query, DistinctRead Keys);
+        if (TooLong > 0)
+        {
+            notes.Add(string.Create(CultureInfo.InvariantCulture,
+                $"{TooLong} element value(s) kept as a key or an id were longer than the {DimensionSpec.MaxElementValueLength} characters a dimension keeps of a field, and are left out rather than cut, since a key cut joins to nothing."));
+        }
+
+        return notes;
+    }
+}
 
 /// <summary>
 /// Reads the objects of a dimension's nested array (<see cref="DimensionElementsSpec"/>): one pass over the dimension's
 /// records through the search cursor, each record's key, id and objects read together, every field of an object kept as the
-/// field keeps it. The pass is cut into ranges of the dimension's keys read side by side, as a collected attribute's pass is
-/// (<see cref="DimensionCollector.Ranges"/>); a record holding keys of two ranges is read in both and kept under the keys of
-/// each range alone. A key's objects are numbered from 1 in the order of their records' ids and then of the objects in
-/// each record, so the same records give the same numbers build after build.
+/// field keeps it, and a page's objects staged together (<see cref="DimensionStage"/>). The pass is cut into ranges of the
+/// dimension's keys read side by side, as a collected attribute's pass is (<see cref="DimensionScope.Ranges"/>); a record
+/// holding keys of two ranges is read in both and kept under the keys of each range alone. The build's write numbers a key's
+/// objects from 1 in the order of their records' ids and then of the objects in each record, so the same records give the
+/// same numbers build after build.
 /// </summary>
 internal sealed class DimensionElementReader(OsduSearch search, ILogger log, int concurrency)
 {
-    /// <summary>Reads the elements of the keys <paramref name="keys"/> found, held at <paramref name="keyField"/>.</summary>
-    /// <exception cref="DeliveryException">The records hold more objects than a build reads.</exception>
-    public Task<ElementRead> ReadAsync(DimensionSpec dimension, string? query, OsduField keyField, DistinctRead keys, CancellationToken ct)
-        => ReadAsync(dimension, [new DimensionScope(query, keys)], keyField, ct);
-
     /// <summary>
-    /// Reads the elements of the keys of every scope, held at <paramref name="keyField"/>: each scope's records found by its
-    /// own query and cut into ranges of its own keys, every range of every scope read side by side.
+    /// Reads the elements of the keys of every scope, held at <paramref name="keyField"/>, into <paramref name="stage"/>: each
+    /// scope's records found by its own query and cut into its ranges, every range of every scope read side by side.
     /// </summary>
     /// <exception cref="DeliveryException">The records hold more objects than a build reads.</exception>
-    public async Task<ElementRead> ReadAsync(DimensionSpec dimension, IReadOnlyList<DimensionScope> scopes, OsduField keyField, CancellationToken ct)
+    public async Task<ElementRead> ReadAsync(DimensionSpec dimension, IReadOnlyList<DimensionScope> scopes, OsduField keyField, DimensionStage stage, CancellationToken ct)
     {
         ArgumentNullException.ThrowIfNull(dimension);
         ArgumentNullException.ThrowIfNull(scopes);
         ArgumentNullException.ThrowIfNull(keyField);
+        ArgumentNullException.ThrowIfNull(stage);
         var elements = dimension.Elements ?? throw new ArgumentException($"Dimension {dimension.Name} reads no elements.", nameof(dimension));
         var order = DimensionValueText.Order(keyField.Index);
-        var work = scopes
-            .SelectMany(scope => DimensionCollector.Ranges(keyField, scope.Keys.Values, order, Math.Max(1, concurrency)).Select(range => (Scope: scope, Range: range)))
-            .ToList();
+        var work = scopes.SelectMany(scope => scope.Ranges.Select(range => (Scope: scope, Range: range))).ToList();
         var returned = new List<string> { "id", keyField.Path };
         returned.AddRange(elements.ReturnedFields());
         returned = returned.Distinct(StringComparer.Ordinal).ToList();
         var path = elements.Parsed;
         var fieldReaders = elements.Fields.Select(FieldReader.Of).ToList();
 
-        var found = new Dictionary<string, List<(string Record, int Ordinal, List<KeyValuePair<string, string>> Values)>>(StringComparer.Ordinal);
         long total = 0;
         var cut = 0;
         var tooLong = 0;
         var pages = 0;
-        var gate = new Lock();
         await Parallel.ForEachAsync(
             work,
             new ParallelOptions { MaxDegreeOfParallelism = Math.Max(1, concurrency), CancellationToken = ct },
             async (item, token) =>
             {
                 var (scope, range) = item;
-                var keys = scope.Keys;
                 var own = string.IsNullOrWhiteSpace(scope.Query) || scope.Query.Trim() == "*" ? null : scope.Query.Trim();
                 var request = new OsduSearchQuery
                 {
@@ -79,7 +90,7 @@ internal sealed class DimensionElementReader(OsduSearch search, ILogger log, int
 
                 await foreach (var page in search.PagesAsync(request, OsduSearch.MaxPage, token).ConfigureAwait(false))
                 {
-                    var read = new List<(string Key, string Record, int Ordinal, List<KeyValuePair<string, string>> Values)>();
+                    var read = new List<StagedElement>();
                     var pageCut = 0;
                     var pageTooLong = 0;
                     foreach (var hit in page.Hits)
@@ -89,7 +100,7 @@ internal sealed class DimensionElementReader(OsduSearch search, ILogger log, int
                             continue;
                         }
 
-                        var held = DimensionCollector.TextsOf(hit, keyField).Where(key => keys.Values.ContainsKey(key) && range.Contains(key, order)).ToList();
+                        var held = DimensionCollector.TextsOf(hit, keyField).Where(key => scope.Holds(key) && range.Contains(key, order)).ToList();
                         if (held.Count == 0)
                         {
                             continue;
@@ -112,62 +123,30 @@ internal sealed class DimensionElementReader(OsduSearch search, ILogger log, int
                                 }
                             }
 
-                            read.AddRange(held.Select(key => (key, record, ordinal, values)));
+                            read.AddRange(held.Select(key => new StagedElement(key, record, ordinal, values)));
                         }
                     }
 
-                    // A page is kept in one go, under the lock the ranges share.
-                    lock (gate)
+                    // The read stops past the most objects a build reads, before it stages them.
+                    if (Interlocked.Add(ref total, read.Count) > DimensionElementsSpec.MaxElements)
                     {
-                        pages++;
-                        cut += pageCut;
-                        tooLong += pageTooLong;
-                        foreach (var (key, record, ordinal, values) in read)
-                        {
-                            (found.TryGetValue(key, out var list) ? list : found[key] = []).Add((record, ordinal, values));
-                        }
-
-                        total += read.Count;
-                        if (total > DimensionElementsSpec.MaxElements)
-                        {
-                            throw new DeliveryException(string.Create(CultureInfo.InvariantCulture,
-                                $"Dimension {dimension.Name} reads more than {DimensionElementsSpec.MaxElements:N0} objects at {elements.Path}, the most a build reads. Narrow its query, or split it over dimensions with narrower queries."));
-                        }
+                        throw new DeliveryException(string.Create(CultureInfo.InvariantCulture,
+                            $"Dimension {dimension.Name} reads more than {DimensionElementsSpec.MaxElements:N0} objects at {elements.Path}, the most a build reads. Narrow its query, or split it over dimensions with narrower queries."));
                     }
+
+                    Interlocked.Increment(ref pages);
+                    Interlocked.Add(ref cut, pageCut);
+                    Interlocked.Add(ref tooLong, pageTooLong);
+                    await stage.AddElementsAsync(read, token).ConfigureAwait(false);
                 }
             }).ConfigureAwait(false);
 
-        var byKey = new Dictionary<string, IReadOnlyList<DimensionElementState>>(found.Count, StringComparer.Ordinal);
-        foreach (var (key, list) in found)
-        {
-            byKey[key] = list
-                .OrderBy(e => e.Record, StringComparer.Ordinal).ThenBy(e => e.Ordinal)
-                .Select((e, i) => new DimensionElementState(i + 1, e.Values))
-                .ToList();
-        }
-
-        var notes = new List<string>
-        {
-            string.Create(CultureInfo.InvariantCulture,
-                $"{total} object(s) at {elements.Path} read for {byKey.Count} of {scopes.Sum(s => s.Keys.Values.Count)} key(s); a key whose records hold none is one row with no element."),
-        };
-        if (cut > 0)
-        {
-            notes.Add(string.Create(CultureInfo.InvariantCulture,
-                $"{cut} element value(s) were longer than the {DimensionSpec.MaxElementValueLength} characters a dimension keeps of a field and were cut."));
-        }
-
-        if (tooLong > 0)
-        {
-            notes.Add(string.Create(CultureInfo.InvariantCulture,
-                $"{tooLong} element value(s) kept as a key or an id were longer than the {DimensionSpec.MaxElementValueLength} characters a dimension keeps of a field, and are left out rather than cut, since a key cut joins to nothing."));
-        }
-
         log.LogInformation(
-            "dimension {Dimension}: {Elements} object(s) at {Path} for {Keys} key(s), read in one pass of {Pages} page(s) over {Ranges} range(s) of keys",
-            dimension.Name, total, elements.Path, byKey.Count, pages, work.Count);
-        return new ElementRead(byKey, total, pages, work.Count, notes);
+            "dimension {Dimension}: {Elements} object(s) at {Path}, read in one pass of {Pages} page(s) over {Ranges} range(s) of keys",
+            dimension.Name, total, elements.Path, pages, work.Count);
+        return new ElementRead(total, cut, tooLong, pages, work.Count);
     }
+
 
     /// <summary>
     /// Every element the path reaches, in the order the record holds them, with the objects passed on the way to it (the

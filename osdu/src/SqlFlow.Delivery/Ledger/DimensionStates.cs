@@ -309,12 +309,6 @@ public sealed record DimensionOriginalWrite(
 public sealed record DimensionAttributeState(string Name, string Value, string? From, long? Records = null);
 
 /// <summary>
-/// One object of a nested array a key's records hold, as a build read it: its place among the key's objects, from 1, and
-/// each field that holds a value, by the field's name, as the field keeps it.
-/// </summary>
-public sealed record DimensionElementState(int Seq, IReadOnlyList<KeyValuePair<string, string>> Values);
-
-/// <summary>
 /// What a build read of one collected attribute: its name and path, how the index stores the path, and the value records
 /// holding none of its values were given (null when the dimension gives them none). The texts its values stand for are kept
 /// apart (<see cref="DimensionCollectedText"/>), however many there are.
@@ -454,7 +448,52 @@ public sealed class DimensionTableRenamedException : DeliveryException
 /// <summary>One member as a build made it: its clean value, its count, and its filter.</summary>
 public sealed record DimensionMemberWrite(string Value, long Records, bool RecordsExact, int Originals, int Unfilterable, string? Filter, int FilterParts);
 
-/// <summary>Everything one completed build writes of its dimension, in one transaction.</summary>
+/// <summary>
+/// How a completed build's write merges what it staged (<see cref="DimensionStage"/>): whether it is partial, the field it
+/// settled, what it read of its collected attributes, the dimension's table, whether it keeps the keys records hold, its counts,
+/// and when it completed.
+/// </summary>
+public sealed record DimensionStagedWrite
+{
+    /// <summary>
+    /// True for an incremental load: the keys staged as cleaned are the keys it read again, and the values laid out those they
+    /// were and are under, each from all its keys; every other key and value stays as it is. A value left with no key is
+    /// removed; no key is but one staged as gone. A text collected that the dimension does not hold yet is added, and the
+    /// others stay. False for a full load, which holds every key and value: what it does not hold is removed.
+    /// </summary>
+    public bool Partial { get; init; }
+
+    /// <summary>
+    /// How the index stores the field, as the build settled it; null when it could not (no record of the kind for its templates
+    /// to be read by), which leaves the field the dimension had.
+    /// </summary>
+    public required DimensionFieldState? Field { get; init; }
+
+    /// <summary>What the build read of each collected attribute, as JSON (<see cref="DimensionCollectedState"/>); null when the dimension holds none.</summary>
+    public string? CollectedJson { get; init; }
+
+    /// <summary>
+    /// The dimension's table, from the declaration the build read with: made when it is missing, given the column of an
+    /// attribute it does not have, and brought to the rows the build found, in the write's transaction. Null writes no table.
+    /// </summary>
+    public DimensionTableSpec? Table { get; init; }
+
+    /// <summary>
+    /// Whether the write keeps the keys records held, by each record's unique key: a full load's replace every row the
+    /// dimension kept, an incremental load's those of the records it read. False for a full load of a flow that loads in full,
+    /// which leaves the dimension none.
+    /// </summary>
+    public bool KeepsRecords { get; init; }
+
+    public required DimensionReadCounts Read { get; init; }
+
+    public required DateTime CompletedUtc { get; init; }
+}
+
+/// <summary>
+/// Everything one completed build writes of its dimension, held in memory: what a build whose rows are few hands the ledger
+/// whole. The ledger stages the rows and merges them as any build's staging is merged.
+/// </summary>
 public sealed record DimensionWrite
 {
     public required long DimensionRunId { get; init; }
@@ -504,13 +543,6 @@ public sealed record DimensionWrite
     public IReadOnlyList<DimensionCollectedText> CollectedTexts { get; init; } = [];
 
     /// <summary>
-    /// The objects each key's records hold in the dimension's nested array, by key, in their order; empty when the dimension
-    /// reads none. Written only with a <see cref="Table"/> that has element columns.
-    /// </summary>
-    public IReadOnlyDictionary<string, IReadOnlyList<DimensionElementState>> Elements { get; init; } =
-        new Dictionary<string, IReadOnlyList<DimensionElementState>>(StringComparer.Ordinal);
-
-    /// <summary>
     /// The dimension's table, from the declaration the build read with: made when it is missing, given the column of an
     /// attribute it does not have, and brought to the rows the build found, in the write's transaction. Null writes no table.
     /// </summary>
@@ -523,6 +555,18 @@ public sealed record DimensionWrite
     public required DimensionReadCounts Read { get; init; }
 
     public required DateTime CompletedUtc { get; init; }
+
+    /// <summary>How the write merges its rows once staged.</summary>
+    public DimensionStagedWrite Staged() => new()
+    {
+        Partial = Partial,
+        Field = Field,
+        CollectedJson = CollectedJson,
+        Table = Table,
+        KeepsRecords = Records is not null,
+        Read = Read,
+        CompletedUtc = CompletedUtc,
+    };
 }
 
 /// <summary>

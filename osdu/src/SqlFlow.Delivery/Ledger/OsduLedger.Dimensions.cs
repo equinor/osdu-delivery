@@ -85,6 +85,38 @@ public sealed partial class OsduLedger
         }
     }
 
+    public async Task<DimensionStage> StageDimensionAsync(Guid flowId, int dimensionId, long dimensionRunId, CancellationToken ct = default)
+    {
+        var partition = await WritePartitionAsync(flowId, ct).ConfigureAwait(false);
+        var stage = new DimensionStage(Open, partition, dimensionId, dimensionRunId, flowId);
+        try
+        {
+            // What an earlier build of the dimension left (its process stopped before it ended) is deleted, unless the build is
+            // still running: one that has run for longer than any build takes is taken for one its process left. A build that
+            // is writing the dimension holds its write lock, which a deletion waits for no moment: what it left stays for a
+            // later build.
+            foreach (var (build, status, started) in await SqlServerDimensionStage.LeftAsync(Open, stage, ct).ConfigureAwait(false))
+            {
+                if (status == DimensionRunStatus.Running && started is { } at && Now - at < DimensionStage.AbandonedAfter)
+                {
+                    continue;
+                }
+
+                if (!await SqlServerDimensionStage.DeleteLeftAsync(Open, stage, build, ct).ConfigureAwait(false))
+                {
+                    break;
+                }
+            }
+        }
+        catch
+        {
+            await stage.DisposeAsync().ConfigureAwait(false);
+            throw;
+        }
+
+        return stage;
+    }
+
     public async Task<DimensionRunState> WriteDimensionAsync(DimensionWrite write, CancellationToken ct = default)
     {
         ArgumentNullException.ThrowIfNull(write);
@@ -97,17 +129,43 @@ public sealed partial class OsduLedger
             }
         }
 
-        var partition = await WritePartitionAsync(write.FlowId, ct).ConfigureAwait(false);
+        await using var stage = await StageDimensionAsync(write.FlowId, write.DimensionId, write.DimensionRunId, ct).ConfigureAwait(false);
+        try
+        {
+            await stage.AddValuesAsync(write.Originals.Select((o, seq) => ((long)seq, o)).ToList(), ct).ConfigureAwait(false);
+            await stage.AddAttributesAsync(write.Originals.SelectMany(o => (o.Attributes ?? []).Select(a => (o.Original, a))).ToList(), ct).ConfigureAwait(false);
+            await stage.AddMembersAsync(write.Members, ct).ConfigureAwait(false);
+            await stage.AddTextsAsync(write.CollectedTexts, ct).ConfigureAwait(false);
+            await stage.AddReadThroughAsync(write.KeyRecords.ToList(), ct).ConfigureAwait(false);
+            await stage.AddGoneAsync(write.Removed, ct).ConfigureAwait(false);
+            if (write.Records is { } records)
+            {
+                await stage.AddRecordsAsync(records.Read, records.Held, ct).ConfigureAwait(false);
+            }
+
+            return await WriteDimensionAsync(stage, write.Staged(), ct).ConfigureAwait(false);
+        }
+        finally
+        {
+            await stage.DiscardAsync(CancellationToken.None).ConfigureAwait(false);
+        }
+    }
+
+    public async Task<DimensionRunState> WriteDimensionAsync(DimensionStage stage, DimensionStagedWrite write, CancellationToken ct = default)
+    {
+        ArgumentNullException.ThrowIfNull(stage);
+        ArgumentNullException.ThrowIfNull(write);
         if (write.Table is { } table)
         {
-            await GuardTableNameAsync(write.DimensionId, table, ct).ConfigureAwait(false);
+            await GuardTableNameAsync(stage.DimensionId, table, ct).ConfigureAwait(false);
         }
 
-        var partitionName = await PartitionNameAsync(partition, ct).ConfigureAwait(false) ?? string.Empty;
+        await stage.FlushAsync(ct).ConfigureAwait(false);
+        var partitionName = await PartitionNameAsync(stage.PartitionId, ct).ConfigureAwait(false) ?? string.Empty;
 
         await using var db = Open();
         DeliveryDimensionRun? closed = null;
-        await SqlServerDimensionStore.WriteAsync(db, partition, partitionName, write, (written, run) =>
+        await SqlServerDimensionStore.WriteAsync(db, partitionName, stage, write, (written, run) =>
         {
             run.Status = DimensionRunStatus.Completed;
             run.AggregateBy = write.Field?.AggregateBy;

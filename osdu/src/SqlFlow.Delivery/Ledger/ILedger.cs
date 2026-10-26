@@ -3219,10 +3219,26 @@ public interface ILedger
         DimensionDeclaration declaration, Guid? runId, string actor, DateTime startedUtc, string mode = DimensionRunModes.Full, CancellationToken ct = default);
 
     /// <summary>
-    /// Writes a completed build's originals and members into its dimension and closes the build, in one transaction: what is
-    /// new is added, what changed is changed, what the build no longer found is marked removed, and every change to an
+    /// Opens the staging of build <paramref name="dimensionRunId"/> of dimension <paramref name="dimensionId"/>, of the flow
+    /// whose ledger identity is <paramref name="flowId"/>: what the build reads is staged there as it reads it, and its write
+    /// merges it (<see cref="WriteDimensionAsync(DimensionStage, DimensionStagedWrite, CancellationToken)"/>). What an earlier
+    /// build of the dimension left (its process stopped before it ended) is deleted first, unless that build is still running
+    /// and has run for less than <see cref="DimensionStage.AbandonedAfter"/>, or is writing the dimension now.
+    /// </summary>
+    Task<DimensionStage> StageDimensionAsync(Guid flowId, int dimensionId, long dimensionRunId, CancellationToken ct = default);
+
+    /// <summary>
+    /// Writes a completed build into its dimension and closes the build, in one transaction, from what the build staged: what
+    /// is new is added, what changed is changed, what the build no longer found is marked removed, and every change to an
     /// original is logged. Returns the closed build with what it changed. A failure writes nothing and leaves the build open
-    /// for <see cref="CloseDimensionRunAsync"/>.
+    /// for <see cref="CloseDimensionRunAsync"/>; so does a staging that no longer holds what the build staged.
+    /// </summary>
+    Task<DimensionRunState> WriteDimensionAsync(DimensionStage stage, DimensionStagedWrite write, CancellationToken ct = default);
+
+    /// <summary>
+    /// Writes a completed build whose rows <paramref name="write"/> holds in memory, as
+    /// <see cref="WriteDimensionAsync(DimensionStage, DimensionStagedWrite, CancellationToken)"/> writes a staged one: the rows
+    /// are staged, merged, and the staging deleted.
     /// </summary>
     Task<DimensionRunState> WriteDimensionAsync(DimensionWrite write, CancellationToken ct = default);
 

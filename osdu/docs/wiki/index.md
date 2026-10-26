@@ -208,6 +208,10 @@ other packages adopt the same contract.
   why every kind describes its run inputs to SQLFlow's run form and one rule resolves them for the run, the form and a
   schedule's preview, why a lookup reads a column of a record table and never a query, why only a delivery's reading
   operations resolve its parameters, and why `maxRecords` became a default rather than a ceiling.
+- [0032: a dimension build stages what it reads in the database and holds one batch in memory](decisions/0032-dimension-builds-stage-in-the-database.md) -
+  why a build stages its keys, values, attributes, texts, elements and records in tables of the `osdu` schema as it
+  reads them, reads labels a bounded batch at a time, and copies the staging into its merge inside the database; why a
+  parity suite held the rebuild to the old engine; and why more memory, temporary tables and files were rejected.
 
 ## Coverage
 

@@ -32,6 +32,15 @@ public sealed partial class DimensionRunner
     private const int MaxChangedReferences = 100_000;
 
     /// <summary>
+    /// The most records an incremental load reads as changed: it holds them while it finds what to read, so past it a full
+    /// load, which reads a range at a time and holds no more however large the dimension, reads it instead.
+    /// </summary>
+    internal int MaxIncrementalRecords { get; init; } = 250_000;
+
+    /// <summary>The most keys an incremental load reads again, which it holds as it does its changed records (<see cref="MaxIncrementalRecords"/>).</summary>
+    internal int MaxIncrementalKeys { get; init; } = 250_000;
+
+    /// <summary>
     /// How a build loads one dimension: <see cref="Mode"/>, the window an incremental load reads (<c>[From, To)</c>), why a
     /// flow loading incrementally reads it in full, and <see cref="FullTo"/>, up to when a full load counts as having read
     /// (its start less the lag), which the next incremental load reads on from.
@@ -260,6 +269,12 @@ public sealed partial class DimensionRunner
                 $"{changedCount} of the {fullRecords} record(s) its last full load read changed in the window, more than one in {FullLoadShare}, so reading every key costs less"));
         }
 
+        if (changedCount > MaxIncrementalRecords)
+        {
+            return IncrementalOutcome.InFull(string.Create(CultureInfo.InvariantCulture,
+                $"{changedCount} record(s) changed in the window, more than the {MaxIncrementalRecords} an incremental load reads, which a full load reads a range at a time"));
+        }
+
         // Each record that changed, by its unique key, with the keys it holds now; and the keys those records held when a
         // load last read them.
         var records = changedCount == 0
@@ -322,6 +337,12 @@ public sealed partial class DimensionRunner
                 $"{touched.Count} of its {existing.Originals} key(s) changed, more than one in {FullLoadShare}, so reading every key costs less"));
         }
 
+        if (touched.Count > MaxIncrementalKeys)
+        {
+            return IncrementalOutcome.InFull(string.Create(CultureInfo.InvariantCulture,
+                $"{touched.Count} of its key(s) are to be read again, more than the {MaxIncrementalKeys} an incremental load reads again, which a full load reads a range at a time"));
+        }
+
         var loadNotes = new List<string> { found };
         if (records.Unidentified > 0)
         {
@@ -350,128 +371,99 @@ public sealed partial class DimensionRunner
         }
 
         // Every key to read again, counted over the dimension's whole query: a query's worth of keys at a time, each group's
-        // records found by its filter, and only the group's own keys kept from what their records hold.
-        var known = (await ledger.DimensionOriginalsAsync(existing.DimensionId, touched, ct).ConfigureAwait(false)).ToDictionary(k => k.Original, StringComparer.Ordinal);
+        // records found by its filter, and only the group's own keys kept from what their records hold. Each group's keys are
+        // staged as they are counted, in the order the count found them, and are a scope of their own.
         var filterable = touched.Where(k => DimensionFilters.Filterable(field, k)).Order(StringComparer.Ordinal).ToList();
         var unfilterable = touched.Where(k => !DimensionFilters.Filterable(field, k)).Order(StringComparer.Ordinal).ToList();
-        var counts = new Dictionary<string, long>(StringComparer.Ordinal);
-        var scopes = new List<DimensionScope>();
-        var (aggregations, slices, splits, scannedSlices, scanPages, scannedUnits) = (0, 0, 0, 0, records.Pages, 0L);
-        foreach (var group in filterable.Chunk(DimensionFilters.MaxOriginalsPerQuery))
+        var known = (await ledger.DimensionOriginalsAsync(existing.DimensionId, unfilterable, ct).ConfigureAwait(false)).ToDictionary(k => k.Original, StringComparer.Ordinal);
+        await using var stage = await ledger.StageDimensionAsync(_flow.LedgerId, run.DimensionId, run.DimensionRunId, ct).ConfigureAwait(false);
+        try
         {
-            var scopeQuery = OsduSearch.Within(query, DimensionFilters.Of(field, group)[0]);
-            var recount = await DistinctValues.ReadAsync(
-                new SearchDistinctSource(search, dimension.Kind, scopeQuery, field),
-                new DistinctReadOptions(_flow.Source.AggregationSize, dimension.MaxValues, resolved.Repeats, Checks: false, Concurrency: concurrency),
-                _log, ct).ConfigureAwait(false);
-            var wanted = group.ToHashSet(StringComparer.Ordinal);
-            var counted = recount.Values.Where(v => wanted.Contains(v.Key)).ToDictionary(v => v.Key, v => v.Value, StringComparer.Ordinal);
-            (aggregations, slices, splits) = (aggregations + recount.Aggregations, slices + recount.Slices, splits + recount.Splits);
-            (scannedSlices, scanPages, scannedUnits) = (scannedSlices + recount.ScannedSlices, scanPages + recount.ScanPages, scannedUnits + recount.ScannedUnits);
-            foreach (var (key, count) in counted)
+            var counted = new HashSet<string>(StringComparer.Ordinal);
+            var scopes = new List<DimensionScope>();
+            var (aggregations, slices, splits, scannedSlices, scanPages, scannedUnits) = (0, 0, 0, 0, records.Pages, 0L);
+            foreach (var group in filterable.Chunk(DimensionFilters.MaxOriginalsPerQuery))
             {
-                counts[key] = count;
+                var scopeQuery = OsduSearch.Within(query, DimensionFilters.Of(field, group)[0]);
+                var wanted = new WantedKeys(group.ToHashSet(StringComparer.Ordinal));
+                var recount = await DistinctValues.ReadAsync(
+                    new SearchDistinctSource(search, dimension.Kind, scopeQuery, field),
+                    new DistinctReadOptions(_flow.Source.AggregationSize, dimension.MaxValues, resolved.Repeats, Checks: false, Concurrency: concurrency),
+                    _log, wanted, ct).ConfigureAwait(false);
+                (aggregations, slices, splits) = (aggregations + recount.Aggregations, slices + recount.Slices, splits + recount.Splits);
+                (scannedSlices, scanPages, scannedUnits) = (scannedSlices + recount.ScannedSlices, scanPages + recount.ScanPages, scannedUnits + recount.ScannedUnits);
+                if (wanted.Found.Count > 0)
+                {
+                    await stage.AddKeysAsync(wanted.Found, ct).ConfigureAwait(false);
+                    counted.UnionWith(wanted.Found.Keys);
+                    scopes.Add(DimensionScope.Of(scopeQuery, wanted.Found, field, concurrency));
+                }
             }
 
-            if (counted.Count > 0)
+            // A key read again and held by no record now is removed, as a full load removes a key it no longer finds.
+            var gone = filterable.Where(k => !counted.Contains(k)).ToList();
+            await stage.AddGoneAsync(gone, ct).ConfigureAwait(false);
+
+            // A key no query can carry cannot be counted alone: one the dimension holds stays as it is, and a new one is kept
+            // with the changed records holding it, its collected values and elements left to the next full load.
+            var kept = unfilterable.Where(k => known.TryGetValue(k, out var state) && state.RemovedRunId is null).ToList();
+            var holders = records.Held.GroupBy(h => h.Original, StringComparer.Ordinal).ToDictionary(g => g.Key, g => (long)g.Count(), StringComparer.Ordinal);
+            var added = unfilterable.Except(kept, StringComparer.Ordinal).Select(k => new KeyValuePair<string, long>(k, holders.GetValueOrDefault(k))).ToList();
+            await stage.AddKeysAsync(added, ct).ConfigureAwait(false);
+            if (gone.Count > 0)
             {
-                scopes.Add(new DimensionScope(scopeQuery, new DistinctRead { Values = counted }));
+                loadNotes.Add(string.Create(CultureInfo.InvariantCulture,
+                    $"{gone.Count} key(s) read again are held by no record now and are removed: {Examples(gone)}."));
             }
-        }
 
-        // A key read again and held by no record now is removed, as a full load removes a key it no longer finds.
-        var gone = filterable.Where(k => !counts.ContainsKey(k)).ToList();
-
-        // A key no query can carry cannot be counted alone: one the dimension holds stays as it is, and a new one is kept
-        // with the changed records holding it, its collected values and elements left to the next full load.
-        var kept = unfilterable.Where(k => known.TryGetValue(k, out var state) && state.RemovedRunId is null).ToList();
-        var holders = records.Held.GroupBy(h => h.Original, StringComparer.Ordinal).ToDictionary(g => g.Key, g => (long)g.Count(), StringComparer.Ordinal);
-        foreach (var key in unfilterable.Except(kept, StringComparer.Ordinal))
-        {
-            counts[key] = holders.GetValueOrDefault(key);
-        }
-
-        if (gone.Count > 0)
-        {
-            loadNotes.Add(string.Create(CultureInfo.InvariantCulture,
-                $"{gone.Count} key(s) read again are held by no record now and are removed: {Examples(gone)}."));
-        }
-
-        if (kept.Count > 0)
-        {
-            loadNotes.Add(string.Create(CultureInfo.InvariantCulture,
-                $"{kept.Count} key(s) to read again cannot be carried in a query, so they stay as they were until a full load reads them: {Examples(kept)}."));
-        }
-
-        var countQueries = lookups;
-        var merged = new DistinctRead
-        {
-            Values = counts,
-            Records = records.Read,
-            Aggregations = aggregations,
-            Slices = slices,
-            Splits = splits,
-            ScannedSlices = scannedSlices,
-            ScanPages = scanPages,
-            ScannedUnits = scannedUnits,
-            Notes = loadNotes,
-        };
-        var staged = counts.Keys.ToList();
-        progress.Read = load.Stamp(Counts(merged, templatesJson, countQueries, merged.Notes, KeyLabels.None), records.Read, touched.Count) with { RecordKey = incremental.RecordKey };
-        var (labels, collected, elements) = await ReadKeysAsync(
-            search, templates, dimension, staged, scopes, query, field, resolved, progress,
-            soFar => load.Stamp(Counts(merged, templatesJson, countQueries, merged.Notes, soFar), records.Read, touched.Count) with { RecordKey = incremental.RecordKey },
-            ct).ConfigureAwait(false);
-
-        // The values the keys read again were and are under, each laid out from all its keys: those read again, and the
-        // others as the dimension holds them; a key removed is under none.
-        var cleaner = Cleaner(dimension);
-        var attributes = KeyAttributes(dimension, staged, labels, collected.Attributes);
-        var (originals, groups, notes) = KeysOf(dimension, field, cleaner, counts, labels, attributes, merged.Notes, ct);
-        var leaving = originals.Select(o => o.Original).Concat(gone).ToHashSet(StringComparer.Ordinal);
-        var was = leaving
-            .Select(k => known.GetValueOrDefault(k))
-            .Where(state => state is { RemovedRunId: null, MemberValue: not null })
-            .Select(state => state!.MemberValue!);
-        var affected = groups.Keys.Concat(was).Distinct(StringComparer.Ordinal).ToList();
-        var members = await ledger.GetDimensionMembersAsync(existing.DimensionId, [], affected, ct).ConfigureAwait(false);
-        var others = await ledger.MemberOriginalsAsync(existing.DimensionId, members.Where(m => m.RemovedRunId is null).Select(m => m.MemberId).ToList(), ct).ConfigureAwait(false);
-        var byValue = affected.ToDictionary(v => v, _ => new List<GroupedKey>(), StringComparer.Ordinal);
-        foreach (var other in others)
-        {
-            if (!leaving.Contains(other.Original) && other.MemberValue is { } value && byValue.TryGetValue(value, out var group))
+            if (kept.Count > 0)
             {
-                group.Add(new GroupedKey(other.Original, other.Count, other.Filterable));
+                loadNotes.Add(string.Create(CultureInfo.InvariantCulture,
+                    $"{kept.Count} key(s) to read again cannot be carried in a query, so they stay as they were until a full load reads them: {Examples(kept)}."));
             }
-        }
 
-        foreach (var (value, group) in groups)
-        {
-            byValue[value].AddRange(group);
-        }
-
-        var (memberWrites, memberNotes, memberCounts) = await MembersAsync(
-            search, dimension, query, field, resolved.Repeats, byValue.Where(g => g.Value.Count > 0).ToDictionary(g => g.Key, g => g.Value, StringComparer.Ordinal), ct).ConfigureAwait(false);
-        notes.AddRange(memberNotes);
-        notes.AddRange(collected.Notes);
-        notes.AddRange(elements?.Notes ?? []);
-        var read = Counts(merged, templatesJson, countQueries + memberCounts, notes, labels, collected);
-        progress.Read = load.Stamp(read with { ScanPages = read.ScanPages + (elements?.Pages ?? 0) }, records.Read, touched.Count) with { RecordKey = incremental.RecordKey };
-        var result = await ledger.WriteDimensionAsync(
-            Write(run, dimension, fieldState, originals, memberWrites, progress.Read,
-                collected.States.Count == 0 ? null : JsonSerializer.Serialize(collected.States, StepJson), collected.Texts, elements?.Keys) with
+            var countQueries = lookups;
+            var merged = new DistinctCounts
             {
-                Partial = true,
-                KeyRecords = labels.Records,
-                Records = new DimensionRecordsWrite(records.Records, records.Held),
-                Removed = gone,
-            },
-            ct).ConfigureAwait(false);
-        _log.LogInformation(
-            "dimension {Dimension}: loaded incrementally, {Read} key(s) read again and {Gone} removed; {Values} value(s) from {Keys} key(s); {Added} arrived, {Moved} moved, {Restored} came back",
-            dimension.Name, originals.Count, result.Changes.OriginalsRemoved, result.Members, result.Originals, result.Changes.OriginalsAdded, result.Changes.OriginalsMoved,
-            result.Changes.OriginalsRestored);
-        return new IncrementalOutcome(Summary(dimension, result, progress.Read, field.AggregateBy), null);
+                Keys = counted.Count + added.Count,
+                Records = records.Read,
+                Aggregations = aggregations,
+                Slices = slices,
+                Splits = splits,
+                ScannedSlices = scannedSlices,
+                ScanPages = scanPages,
+                ScannedUnits = scannedUnits,
+                Notes = loadNotes,
+            };
+            progress.Read = load.Stamp(Counts(merged, templatesJson, countQueries, merged.Notes, LabelCounts.None), records.Read, touched.Count) with { RecordKey = incremental.RecordKey };
+            var read = await ReadKeysAsync(
+                search, templates, dimension, stage, scopes, query, field, resolved, 0, progress,
+                soFar => load.Stamp(Counts(merged, templatesJson, countQueries, merged.Notes, soFar), records.Read, touched.Count) with { RecordKey = incremental.RecordKey },
+                ct).ConfigureAwait(false);
+
+            // The values the keys read again were and are under, each laid out from all its keys: those read again, and the
+            // others as the dimension holds them; a key removed is under none.
+            var notes = new List<string>(loadNotes);
+            notes.AddRange(read.Notes);
+            var (memberNotes, memberCounts) = await MembersAsync(search, dimension, query, field, resolved.Repeats, stage, partial: true, ct).ConfigureAwait(false);
+            notes.AddRange(memberNotes);
+            notes.AddRange(read.Collected.Notes);
+            notes.AddRange(read.ElementNotes);
+            await stage.AddRecordsAsync(records.Records, records.Held, ct).ConfigureAwait(false);
+            var counts = Counts(merged, templatesJson, countQueries + memberCounts, notes, read.Labels, read.Collected);
+            progress.Read = load.Stamp(counts with { ScanPages = counts.ScanPages + read.ElementPages }, records.Read, touched.Count) with { RecordKey = incremental.RecordKey };
+            var result = await ledger.WriteDimensionAsync(
+                stage, Staged(dimension, fieldState, progress.Read, read.Collected, partial: true, keepsRecords: true), ct).ConfigureAwait(false);
+            _log.LogInformation(
+                "dimension {Dimension}: loaded incrementally, {Read} key(s) read again and {Gone} removed; {Values} value(s) from {Keys} key(s); {Added} arrived, {Moved} moved, {Restored} came back",
+                dimension.Name, stage.Values, result.Changes.OriginalsRemoved, result.Members, result.Originals, result.Changes.OriginalsAdded, result.Changes.OriginalsMoved,
+                result.Changes.OriginalsRestored);
+            return new IncrementalOutcome(Summary(dimension, result, progress.Read, field.AggregateBy), null);
+        }
+        finally
+        {
+            await DiscardAsync(stage, dimension).ConfigureAwait(false);
+        }
     }
 
     /// <summary>Closes an incremental load that found nothing to write as completed, the dimension as it was.</summary>
@@ -508,4 +500,35 @@ public sealed partial class DimensionRunner
     /// <summary>The first few keys of a list, quoted, for a note.</summary>
     private static string Examples(IReadOnlyList<string> keys)
         => string.Join(", ", keys.Take(5).Select(k => $"'{Shown(k)}'")) + (keys.Count > 5 ? ", ..." : string.Empty);
+
+    /// <summary>
+    /// The keys of a group a recount reads again, among every key the group's records hold: each kept with how many records
+    /// hold it, in the order the recount found it, and every other let go.
+    /// </summary>
+    private sealed class WantedKeys(HashSet<string> wanted) : IDistinctSink
+    {
+        private readonly Dictionary<string, long> _found = new(StringComparer.Ordinal);
+
+        /// <summary>The group's keys some record holds, with how many hold each.</summary>
+        public IReadOnlyDictionary<string, long> Found => _found;
+
+        public ValueTask AddAsync(IReadOnlyList<KeyValuePair<string, long>> values, CancellationToken ct)
+        {
+            foreach (var (key, count) in values)
+            {
+                if (wanted.Contains(key))
+                {
+                    _found[key] = _found.GetValueOrDefault(key) + count;
+                }
+            }
+
+            return ValueTask.CompletedTask;
+        }
+
+        public ValueTask ResetAsync(CancellationToken ct)
+        {
+            _found.Clear();
+            return ValueTask.CompletedTask;
+        }
+    }
 }

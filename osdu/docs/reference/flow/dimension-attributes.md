@@ -72,7 +72,10 @@ attributes:
   is a country. `[Property->path=text]` compares a value of the record the property's reference names instead
   ([A filter through a reference](dimension-attributes.md#a-filter-through-a-reference)).
 - A key that names no record, a record the search does not hold, and one holding nothing at the last path, have no label
-  (or no such attribute); the build's notes count them and say why.
+  (or no such attribute); the build's notes count them and say why. So does a key, or a reference a step reads, that no
+  query can carry (a control character in it, for example): it is not asked for, and the note says
+  `the reference it holds is no text a query can carry`, or, for a record holding no other reference at the step,
+  `the record they name holds only references no query can carry`.
 - A label or an attribute value that is itself a record reference is kept as the code its id ends with, decoded.
 
 An attribute's name is a letter, then letters, digits and underscores, at most 64, unique ignoring case, none of
@@ -178,6 +181,13 @@ second step, `data[GeoPoliticalEntityTypeID*=GeoPoliticalEntityType:Country:].Ge
 Nothing else of a record comes back, however much it holds. A collected attribute and elements are not read by id: they
 are read from the dimension's own records, as [Collected attributes](dimension-attributes.md) and [Elements](dimension-elements.md)
 say.
+
+A build reads its keys' labels and attributes a batch of keys at a time, every step of a batch before the next batch
+([What a build holds](dimension-build.md#what-a-build-holds)). Of each record that comes back it keeps only what the
+step's paths read, never the record. What a later step reads of a record (a wellbore's field, a field's country), and
+that the search holds no record of an id, is kept from batch to batch for up to 50,000 records, so a record many keys
+reach is asked for once; a key's own record is read once and not kept. A key reads the same in any batch, and the notes
+count over every batch, as one read of every key would.
 
 ## Errors when the document is read
 

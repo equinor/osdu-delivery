@@ -54,7 +54,11 @@ its query changed since its last full load; when its last full load is older tha
 for one (SQLFlow's `fullLoad`, `--full`) or the block says `fullLoad: true`; when the block says
 `fullLoadWhenRecordsLeave: true` and a record the last full load read has left the index; and when an incremental load finds more than
 a quarter of the dimension's records or keys changed, or more than 100,000 records of one type its labels are read
-through, so reading every key costs less. A full load of such a flow also reads every record once more, its unique key
+through, so reading every key costs less; and when it finds more than 250,000 records changed, or more than 250,000 keys
+to read again, which it would hold while it finds what to read, where a full load reads a range at a time and holds no
+more however large the dimension ([What a build holds](dimension-build.md#what-a-build-holds)). The build's notes say
+which: `Loaded in full, since 300000 record(s) changed in the window, more than the 250000 an incremental load reads,
+which a full load reads a range at a time.` A full load of such a flow also reads every record once more, its unique key
 and the keys it holds, and keeps them (`osdu.DimensionRecord`); a flow without the block keeps none.
 
 Otherwise it loads **incrementally**, over the window from the lag before where the dimension's completed builds have

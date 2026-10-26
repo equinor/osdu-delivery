@@ -143,6 +143,27 @@ public sealed class OsduDbContext : DbContext
     /// <summary>The keys each record of a dimension held when a load last read it, by the record's unique key.</summary>
     public DbSet<DeliveryDimensionRecord> DeliveryDimensionRecords => Set<DeliveryDimensionRecord>();
 
+    /// <summary>The keys running dimension builds read, staged until each build writes.</summary>
+    public DbSet<DeliveryDimensionStageKey> DeliveryDimensionStageKeys => Set<DeliveryDimensionStageKey>();
+
+    /// <summary>The keys running dimension builds cleaned, staged until each build writes.</summary>
+    public DbSet<DeliveryDimensionStageValue> DeliveryDimensionStageValues => Set<DeliveryDimensionStageValue>();
+
+    /// <summary>The values running dimension builds laid out, staged until each build writes.</summary>
+    public DbSet<DeliveryDimensionStageMember> DeliveryDimensionStageMembers => Set<DeliveryDimensionStageMember>();
+
+    /// <summary>The attribute values running dimension builds read and collected, staged until each build writes.</summary>
+    public DbSet<DeliveryDimensionStageAttributeValue> DeliveryDimensionStageAttributes => Set<DeliveryDimensionStageAttributeValue>();
+
+    /// <summary>The texts running dimension builds collected, staged until each build writes.</summary>
+    public DbSet<DeliveryDimensionStageText> DeliveryDimensionStageTexts => Set<DeliveryDimensionStageText>();
+
+    /// <summary>The objects of nested arrays running dimension builds read, staged until each build writes.</summary>
+    public DbSet<DeliveryDimensionStageElement> DeliveryDimensionStageElements => Set<DeliveryDimensionStageElement>();
+
+    /// <summary>The records running dimension builds met, staged until each build writes.</summary>
+    public DbSet<DeliveryDimensionStageRecord> DeliveryDimensionStageRecords => Set<DeliveryDimensionStageRecord>();
+
     /// <summary>The views dimension flows declare over their tables, as their builds last wrote them.</summary>
     public DbSet<DeliveryDimensionView> DeliveryDimensionViews => Set<DeliveryDimensionView>();
 

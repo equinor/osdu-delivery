@@ -11,17 +11,22 @@ keywords:
   - aggregationsize
   - maxvalues
   - run.json
+  - dimension build memory
+  - out of memory
+  - staging
 related:
   - delivery-flow-dimension
   - delivery-flow-dimension-incremental
   - delivery-flow-dimension-errors
   - delivery-cli-dimensions
+  - delivery-table-dimension-stage-key
 sourceRefs:
   - osdu/src/SqlFlow.Delivery/Engine/DimensionExecutor.cs
   - osdu/src/SqlFlow.Delivery/Engine/DeliveryRunPayload.cs
   - osdu/src/SqlFlow.Delivery/Engine/Dimensions/DimensionRunner.cs
   - osdu/src/SqlFlow.Delivery/Engine/Dimensions/DistinctValues.cs
   - osdu/src/SqlFlow.Delivery/Engine/Dimensions/DimensionFilters.cs
+  - osdu/src/SqlFlow.Delivery/Ledger/DimensionStage.cs
 ---
 
 # Dimension builds: the operations a run takes, what a build does, and what a run returns
@@ -61,18 +66,20 @@ For each dimension, in the run's partition:
 2. **Every distinct key.** The search aggregates the field over the whole query. A range answered with fewer groups
    than `aggregationSize` is complete; one answered with that many is split at a key it returned and each half is asked
    again, until every range answers whole. A range that cannot be split is read record by record through the search
-   cursor. Ranges are asked `recordsAtOnce` at a time. A text value over 256 characters is not in the `keyword` field and
-   is counted, never a key; a key over 1,024 characters is counted and left out.
+   cursor. Ranges are asked `recordsAtOnce` at a time, and each range's keys are staged as it completes. A text value
+   over 256 characters is not in the `keyword` field and is counted, never a key; a key over 1,024 characters is counted
+   and left out.
 3. **Labels, attributes and collected values**, read side by side when the dimension has both.
 4. **Values and filters.** Each key is cleaned into its value. A key's filter is written the way the index holds the
    field; a value's filter holds at most 500 keys a query, and a value with more has its filter in parts. A key no query
    can carry (a control character, `nested(`, or inside a nested array a value the service rewrites) stays under its
    value, marked unfilterable.
-5. **The write**, in one transaction under a lock per dimension: new keys and values are added, changed ones rewritten,
-   what the build no longer found marked removed (keeping its id should a later build find it again), every key that
-   arrived, left, moved or came back logged, and the dimension's table brought to the same rows. The write has no time
-   limit: it grows with the dimension (one of well log curves stages a row for every field of every curve), so it takes
-   as long as its rows do, and cancelling the run stops it with nothing written.
+5. **The write**, in one transaction under a lock per dimension: the build's staging is copied where the database holds
+   it, then new keys and values are added, changed ones rewritten, what the build no longer found marked removed (keeping
+   its id should a later build find it again), every key that arrived, left, moved or came back logged, and the
+   dimension's table brought to the same rows. The write has no time limit: it grows with the dimension (one of well log
+   curves stages a row for every field of every curve), so it takes as long as its rows do, and cancelling the run stops
+   it with nothing written.
 
 Dimensions build `recordsAtOnce` at a time. A dimension that fails keeps what the build before it wrote, and the run ends
 failed with every other dimension built. A second build of the same dimension waits for the first's lock and fails after
@@ -81,6 +88,37 @@ so this build wrote nothing. Build it again when the other has finished.`
 
 A build reads the index as it stands: a record written seconds before may not be in it yet. When the counts read do not
 add up to the records holding a value, the build keeps what it read and says so in its notes.
+
+## What a build holds
+
+A build stages what it reads in the module's database as it reads it, and holds in memory only the batch it is working
+on, so the memory a build takes does not grow with its dimension: one of 60,000 wellbores with nine attributes holds
+about as much as one of 20,000.
+
+- **Keys** are staged as each range completes ([`osdu.DimensionStageKey`](../tables/dimension-stage-key.md)) and read back
+  in the order they were read, a batch at a time, to be labelled and cleaned. A batch is 4,000 keys, fewer when a label
+  or an attribute reads through several steps: a batch follows at most 100,000 references through them, counted by each
+  one's `maxReferences` ([Reading through steps](dimension-attributes.md#reading-through-steps)). Each batch is staged
+  as cleaned, with its attributes and the records they were read through
+  ([`osdu.DimensionStageValue`](../tables/dimension-stage-value.md),
+  [`osdu.DimensionStageAttribute`](../tables/dimension-stage-attribute.md),
+  [`osdu.DimensionStageRecord`](../tables/dimension-stage-record.md)), while the next batch's labels are read.
+- **Collected values, a nested array's objects and the records an incremental load reads** are staged a page at a time
+  as the search answers ([`osdu.DimensionStageText`](../tables/dimension-stage-text.md),
+  [`osdu.DimensionStageElement`](../tables/dimension-stage-element.md)).
+- **Values** are laid out from the staged keys in one ordered read, and staged
+  ([`osdu.DimensionStageMember`](../tables/dimension-stage-member.md)); those whose records a search counts exactly are
+  counted 1,000 at a time.
+- **The write** checks that the staging holds every key and value the build staged, then copies it into the dimension
+  where the database holds it: no row passes through the worker on the way.
+
+A build deletes its staging when it ends, written or not. What a build whose worker stopped left (a crash, a restart, a
+machine taken away) is deleted by the next build of the same dimension, once the stopped build is closed or has run for
+48 hours; while another build is writing the dimension, what was left waits for a later build. A build that has run for
+48 hours and found its staging deleted under it writes nothing and fails:
+`The staging of dimension build <id> holds <n> of the <n> key(s) and <n> of the <n> value(s) it staged: another build of
+the dimension deleted it, taking this build, running for more than 48 hours, for one its process left. Nothing was
+written; build the dimension again.`
 
 ## What a run returns
 

@@ -25,7 +25,8 @@ referenceRefs:
   - delivery-flow-dimension-build
 related:
   - delivery-wiki-0011-dimension-flows
-updated: 2026-10-25
+  - delivery-wiki-0032-dimension-builds-stage-in-the-database
+updated: 2026-10-26
 ---
 # 0030: A dimension's rows are one range of every table, and a build's statements seek them
 

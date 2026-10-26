@@ -1,6 +1,5 @@
 using System.Globalization;
 using System.Text.Json.Nodes;
-using Microsoft.Extensions.Logging;
 using SqlFlow.Delivery.Engine.Search;
 using SqlFlow.Delivery.Identity;
 using SqlFlow.Delivery.Ledger;
@@ -34,6 +33,237 @@ public sealed record KeyLabels(
     public static KeyLabels None { get; } = new(
         new Dictionary<string, KeyLabel>(StringComparer.Ordinal), new Dictionary<string, IReadOnlyList<DimensionAttributeState>>(StringComparer.Ordinal),
         0, 0, 0, [], new Dictionary<string, IReadOnlyList<string>>(StringComparer.Ordinal));
+
+    /// <summary>
+    /// What the read counted that its notes say, kept so the reads of a build's keys a batch at a time add up to the notes one
+    /// read of them all would have (<see cref="LabelTally.Add"/>); null for a read of nothing.
+    /// </summary>
+    public LabelTally? Tally { get; init; }
+}
+
+/// <summary>
+/// What reads of keys' labels and attributes found that their notes count: for the label and each attribute, the keys that
+/// have none of it, by why, each reason with how many keys, where it was first met and the first keys met with it; the keys
+/// naming more records at a step than it follows; and the values cut, or left out for their length. A read keeps its keys in
+/// the order it was given them, and meets a key's reason at the step the key stops at, so the order of its notes is the
+/// order of those steps and then of its keys. Reads added up in the order their keys came (<see cref="Add"/>) say what one
+/// read of all of their keys would have said, a later read's keys after an earlier one's at the same step.
+/// </summary>
+public sealed class LabelTally
+{
+    /// <summary>The keys a note names as examples.</summary>
+    private const int Examples = 3;
+
+    private readonly List<ChainTally> _chains;
+
+    /// <summary>The reads added up so far, which a later read's places are counted after.</summary>
+    private int _reads;
+
+    private LabelTally(List<ChainTally> chains)
+    {
+        _chains = chains;
+        _reads = 1;
+    }
+
+    /// <summary>Label and attribute values longer than a dimension keeps, which were cut.</summary>
+    public long Cut { get; private set; }
+
+    /// <summary>Values that keep a key, longer than a dimension keeps, which were left out rather than cut.</summary>
+    public long Uncut { get; private set; }
+
+    /// <summary>An empty tally of one read of the chains given, in the order they are read.</summary>
+    internal static LabelTally For(IEnumerable<(string Name, bool IsLabel, int MaxReferences)> chains)
+        => new(chains.Select(c => new ChainTally(c.Name, c.IsLabel, c.MaxReferences)).ToList());
+
+    /// <summary>A key of chain <paramref name="chain"/> that has no value for <paramref name="reason"/>, met at step <paramref name="step"/> as the read's key <paramref name="index"/>.</summary>
+    internal void Lacks(int chain, string reason, int step, int index, string key) => _chains[chain].Lacks(reason, new Place(step, 0, index), key);
+
+    /// <summary>A key of chain <paramref name="chain"/> that names more records at a step than the chain follows.</summary>
+    internal void Bounded(int chain) => _chains[chain].Bounded++;
+
+    internal void CutOne() => Cut++;
+
+    internal void UncutOne() => Uncut++;
+
+    /// <summary>
+    /// Adds <paramref name="later"/>, the tally of the read of the keys that came after this one's, so this one says what one
+    /// read of both sets of keys would have said. The two read the same label and attributes.
+    /// </summary>
+    /// <exception cref="ArgumentException">The two read other labels or attributes.</exception>
+    public void Add(LabelTally later)
+    {
+        ArgumentNullException.ThrowIfNull(later);
+        if (ReferenceEquals(later, this))
+        {
+            throw new ArgumentException("A tally is added to another, not to itself.", nameof(later));
+        }
+
+        if (later._chains.Count != _chains.Count || later._chains.Zip(_chains).Any(p => !string.Equals(p.First.Name, p.Second.Name, StringComparison.Ordinal)))
+        {
+            throw new ArgumentException("The two reads read other labels or attributes, so their notes cannot be added up.", nameof(later));
+        }
+
+        for (var i = 0; i < _chains.Count; i++)
+        {
+            _chains[i].Add(later._chains[i], _reads);
+        }
+
+        Cut += later.Cut;
+        Uncut += later.Uncut;
+        _reads += later._reads;
+    }
+
+    /// <summary>
+    /// What the reads have to say, a line each: why keys have no label, the commonest reason first; then, for each attribute,
+    /// its two commonest reasons; then the keys bounded at a step; then the values cut and left out for their length.
+    /// </summary>
+    public IReadOnlyList<string> Notes()
+    {
+        var notes = new List<string>();
+        foreach (var chain in _chains.Where(c => c.IsLabel))
+        {
+            foreach (var why in chain.Ordered())
+            {
+                notes.Add(string.Create(CultureInfo.InvariantCulture, $"{why.Count} key(s) have no label, since {why.Reason}: {Named(why)}."));
+            }
+        }
+
+        foreach (var chain in _chains.Where(c => !c.IsLabel))
+        {
+            foreach (var why in chain.Ordered().Take(2))
+            {
+                notes.Add(string.Create(CultureInfo.InvariantCulture, $"{why.Count} key(s) have no {chain.Name}, since {why.Reason}: {Named(why)}."));
+            }
+        }
+
+        foreach (var chain in _chains.Where(c => c.Bounded > 0))
+        {
+            notes.Add(string.Create(CultureInfo.InvariantCulture,
+                $"{chain.Bounded} key(s) name more than {chain.MaxReferences} record(s) at a step of {(chain.IsLabel ? "the label" : chain.Name)}, and only the first {chain.MaxReferences} were followed{(chain.IsLabel ? string.Empty : $"; raise maxReferences (at most {DimensionAttributeSpec.MaxReferencesCeiling}) to follow more")}."));
+        }
+
+        if (Cut > 0)
+        {
+            notes.Add(string.Create(CultureInfo.InvariantCulture,
+                $"{Cut} label(s) or attribute value(s) were longer than a dimension keeps ({DimensionLabeler.MaxLabelLength} characters for a label, {DimensionSpec.MaxAttributeValueLength} for an attribute) and were cut."));
+        }
+
+        if (Uncut > 0)
+        {
+            notes.Add(string.Create(CultureInfo.InvariantCulture,
+                $"{Uncut} attribute value(s) that keep the key were longer than the {DimensionSpec.MaxAttributeValueLength} characters a dimension keeps, and are left out rather than cut, since a key cut joins to nothing."));
+        }
+
+        return notes;
+    }
+
+    /// <summary>The first few keys of a reason, quoted, for a note.</summary>
+    private static string Named(ReasonTally why)
+        => string.Join(", ", why.Examples.Take(Examples).Select(e => $"'{Shown(e.Key)}'")) + (why.Count > Examples ? ", ..." : string.Empty);
+
+    private static string Shown(string value) => value.Length > 60 ? value[..60] + "..." : value;
+
+    /// <summary>Where a key was met: the step it stopped at, the read it was in, and its place among that read's keys.</summary>
+    private readonly record struct Place(int Step, int Read, int Index) : IComparable<Place>
+    {
+        public int CompareTo(Place other)
+            => Step != other.Step ? Step.CompareTo(other.Step) : Read != other.Read ? Read.CompareTo(other.Read) : Index.CompareTo(other.Index);
+
+        /// <summary>The place as counted after <paramref name="reads"/> earlier reads.</summary>
+        public Place After(int reads) => this with { Read = Read + reads };
+    }
+
+    /// <summary>One reason keys have no value: how many, where it was first met, and the first keys met with it.</summary>
+    private sealed class ReasonTally(string reason, Place first)
+    {
+        public string Reason { get; } = reason;
+
+        public long Count { get; set; }
+
+        public Place First { get; set; } = first;
+
+        /// <summary>The first keys met with the reason, in the order they were met: as many as a note names, and one more.</summary>
+        public List<(Place At, string Key)> Examples { get; } = [];
+
+        public void Met(Place at, string key)
+        {
+            Count++;
+            if (at.CompareTo(First) < 0)
+            {
+                First = at;
+            }
+
+            Keep(at, key);
+        }
+
+        /// <summary>Keeps <paramref name="key"/> among the examples when it was met before one of them, or there is room.</summary>
+        public void Keep(Place at, string key)
+        {
+            if (Examples.Count > LabelTally.Examples && at.CompareTo(Examples[^1].At) >= 0)
+            {
+                return;
+            }
+
+            var before = Examples.FindIndex(e => at.CompareTo(e.At) < 0);
+            Examples.Insert(before < 0 ? Examples.Count : before, (at, key));
+            if (Examples.Count > LabelTally.Examples + 1)
+            {
+                Examples.RemoveAt(Examples.Count - 1);
+            }
+        }
+    }
+
+    /// <summary>What one label or attribute counted.</summary>
+    private sealed class ChainTally(string name, bool isLabel, int maxReferences)
+    {
+        private readonly Dictionary<string, ReasonTally> _reasons = new(StringComparer.Ordinal);
+
+        public string Name { get; } = name;
+
+        public bool IsLabel { get; } = isLabel;
+
+        public int MaxReferences { get; } = maxReferences;
+
+        public long Bounded { get; set; }
+
+        public void Lacks(string reason, Place at, string key)
+        {
+            if (!_reasons.TryGetValue(reason, out var tally))
+            {
+                tally = new ReasonTally(reason, at);
+                _reasons[reason] = tally;
+            }
+
+            tally.Met(at, key);
+        }
+
+        public void Add(ChainTally later, int reads)
+        {
+            Bounded += later.Bounded;
+            foreach (var (reason, theirs) in later._reasons)
+            {
+                var first = theirs.First.After(reads);
+                if (!_reasons.TryGetValue(reason, out var mine))
+                {
+                    mine = new ReasonTally(reason, first);
+                    _reasons[reason] = mine;
+                }
+                else if (first.CompareTo(mine.First) < 0)
+                {
+                    mine.First = first;
+                }
+
+                mine.Count += theirs.Count;
+                foreach (var (at, key) in theirs.Examples)
+                {
+                    mine.Keep(at.After(reads), key);
+                }
+            }
+        }
+
+        /// <summary>The reasons, the commonest first, and of as common ones the one met first.</summary>
+        public IEnumerable<ReasonTally> Ordered() => _reasons.Values.OrderByDescending(r => r.Count).ThenBy(r => r.First);
+    }
 }
 
 /// <summary>
@@ -46,9 +276,26 @@ public sealed record KeyLabels(
 /// says <c>many: join</c> or <c>many: max</c> is every value of every record reached, joined, or the greatest of them.
 /// Records are found by id through the search service, <see cref="IdsPerQuery"/> ids a search, in the kind of their entity
 /// type; every step reads all it needs of one entity type in the same searches, so a dimension's label and attributes that
-/// start at the same records read them once. A key that names no record, a record the search does not hold, and one whose
-/// path holds nothing, have no label (or no such attribute), and the result says how many and why.
+/// start at the same records read them once. A key that names no record, or one by a reference no query can carry, a record
+/// the search does not hold, and one whose path holds nothing, have no label (or no such attribute), and the result says how
+/// many and why.
 /// </summary>
+/// <remarks>
+/// <para>
+/// What a read holds is bounded however many keys it is given. The keys are read in passes of at most
+/// <see cref="MaxKeysPerPass"/>, fewer when a label or an attribute reads through several steps (<see cref="PassSize"/>),
+/// each pass reading every step of its keys before the next begins, so what a key reads never depends on another pass. A
+/// record is read as its search answers: each path the step reads of it is read there (with the records its filters look
+/// up), and the record itself is let go, so a pass holds what its paths read of its records, never the records. A build
+/// reads a dimension's keys a batch at a time and adds the batches up (<see cref="LabelTally"/>); a key reads the same in
+/// any batch.
+/// </para>
+/// <para>
+/// A record a later step reaches (a wellbore's field, a field's country) is usually reached by many keys, so what each path
+/// read of it, or that the search does not hold it, is kept between passes and batches, up to <see cref="CacheCapacity"/>
+/// records, and so are the records a filter looked up. A key's own record is read once and never kept.
+/// </para>
+/// </remarks>
 public sealed class DimensionLabeler
 {
     /// <summary>The ids one search finds: each is a clause, and the service allows 1024 in a query.</summary>
@@ -57,33 +304,56 @@ public sealed class DimensionLabeler
     /// <summary>The longest label kept; a longer one is cut.</summary>
     public const int MaxLabelLength = 1024;
 
-    /// <summary>The keys a note names as examples.</summary>
-    private const int Examples = 3;
+    /// <summary>The most keys one pass reads: a batch of a build's keys is read in one pass.</summary>
+    public const int MaxKeysPerPass = 4_000;
+
+    /// <summary>
+    /// The most records a pass's later steps may reach between its keys, each key following at most as many as each label and
+    /// attribute of several steps follows (its <c>maxReferences</c>): what bounds a pass's keys below <see cref="MaxKeysPerPass"/>.
+    /// </summary>
+    public const int MaxReachedPerPass = 100_000;
+
+    /// <summary>The most records reached past a key's own, and records looked up, whose reading is kept between passes.</summary>
+    public const int CacheCapacity = 50_000;
 
     /// <summary>The name the label's chain goes by among the attributes', which no attribute can take.</summary>
     private const string LabelChain = "label";
 
+    /// <summary>Why a key has no label or attribute when the reference it holds cannot be asked for.</summary>
+    private const string Uncarried = "the reference it holds is no text a query can carry";
+
     private static readonly OsduField Id = OsduField.Keyword("id");
 
     private readonly OsduSearch _search;
-    private readonly ILogger _log;
     private readonly int _concurrency;
+    private readonly BoundedCache<(string Path, string Id), Projection?> _reached = new(CacheCapacity);
+    private readonly BoundedCache<(string Fields, string Id), JsonObject?> _lookedUp = new(CacheCapacity);
 
     /// <param name="search">The search the records are read from.</param>
-    /// <param name="log">The run's log.</param>
-    /// <param name="concurrency">The most searches asked at once: the records of a step are read a thousand ids a search, each on its own.</param>
-    public DimensionLabeler(OsduSearch search, ILogger log, int concurrency = 1)
+    /// <param name="concurrency">The most searches asked at once: the records of a step are read five hundred ids a search, each on its own.</param>
+    public DimensionLabeler(OsduSearch search, int concurrency = 1)
     {
         ArgumentNullException.ThrowIfNull(search);
-        ArgumentNullException.ThrowIfNull(log);
         _search = search;
-        _log = log;
         _concurrency = Math.Max(1, concurrency);
     }
 
     /// <summary>The label of each of <paramref name="keys"/>, read through <paramref name="steps"/>.</summary>
     public Task<KeyLabels> LabelAsync(IReadOnlyCollection<string> keys, IReadOnlyList<string> steps, CancellationToken ct)
         => ReadAsync(keys, steps, [], null, ct);
+
+    /// <summary>
+    /// How many keys one pass reads for <paramref name="label"/> and <paramref name="attributes"/>: <see cref="MaxKeysPerPass"/>,
+    /// fewer when the records their later steps may reach between that many keys are more than <see cref="MaxReachedPerPass"/>.
+    /// </summary>
+    public static int PassSize(IReadOnlyList<string> label, IReadOnlyList<DimensionAttributeSpec> attributes)
+    {
+        ArgumentNullException.ThrowIfNull(label);
+        ArgumentNullException.ThrowIfNull(attributes);
+        var reached = (label.Count > 1 ? (long)DimensionAttributeSpec.DefaultMaxReferences : 0)
+            + attributes.Where(a => a.Steps.Count > 1).Sum(a => (long)a.MaxReferences);
+        return reached == 0 ? MaxKeysPerPass : (int)Math.Clamp(MaxReachedPerPass / reached, 1, MaxKeysPerPass);
+    }
 
     /// <summary>
     /// The label of each of <paramref name="keys"/>, read through <paramref name="label"/> (none when it is empty), and each
@@ -111,32 +381,107 @@ public sealed class DimensionLabeler
             return KeyLabels.None;
         }
 
-        // Where each key has got to in each chain: the records the next step reads (every one a step before reached, in the
-        // order it reached them), or why it stopped.
-        var start = new Dictionary<string, (IReadOnlyList<string> References, string? Problem)>(keys.Count, StringComparer.Ordinal);
-        foreach (var key in keys)
+        var labels = new Dictionary<string, KeyLabel>(chains[0].IsLabel ? keys.Count : 0, StringComparer.Ordinal);
+        var values = new Dictionary<string, IReadOnlyList<DimensionAttributeState>>(keys.Count, StringComparer.Ordinal);
+        var records = new Dictionary<string, IReadOnlyList<string>>(keys.Count, StringComparer.Ordinal);
+        LabelTally? tally = null;
+        long labelled = 0;
+        long unlabelled = 0;
+        var queries = 0;
+        foreach (var pass in keys.Distinct(StringComparer.Ordinal).Chunk(PassSize(label, attributes)))
         {
-            start[key] = TargetId.IsRecordReference(key.Trim()) ? ([TargetId.WithoutVersion(key.Trim())], null) : ([], "it names no OSDU record");
+            var read = await ReadPassAsync(pass, chains, kinds, ct).ConfigureAwait(false);
+            foreach (var (key, found) in read.Labels)
+            {
+                labels[key] = found;
+            }
+
+            foreach (var (key, found) in read.Attributes)
+            {
+                values[key] = found;
+            }
+
+            foreach (var (key, through) in read.Records)
+            {
+                records[key] = through;
+            }
+
+            labelled += read.Labelled;
+            unlabelled += read.Unlabelled;
+            queries += read.Queries;
+            if (tally is null)
+            {
+                tally = read.Tally;
+            }
+            else
+            {
+                tally.Add(read.Tally);
+            }
         }
 
-        var reached = chains.ToDictionary(c => c, _ => new Dictionary<string, (IReadOnlyList<string> References, string? Problem)>(start, StringComparer.Ordinal));
-        var found = chains.ToDictionary(c => c, _ => new Dictionary<string, KeyLabel>(keys.Count, StringComparer.Ordinal));
+        return new KeyLabels(labels, values, labelled, unlabelled, queries, tally!.Notes(), records) { Tally = tally };
+    }
+
+    /// <summary>What one pass read of its keys, as <see cref="KeyLabels"/> holds it of all of them.</summary>
+    private sealed record PassRead(
+        Dictionary<string, KeyLabel> Labels, Dictionary<string, IReadOnlyList<DimensionAttributeState>> Attributes, long Labelled, long Unlabelled, int Queries,
+        Dictionary<string, IReadOnlyList<string>> Records, LabelTally Tally);
+
+    /// <summary>
+    /// Reads every step of every chain for <paramref name="keys"/>, in order: each step reads the records the keys have reached,
+    /// then each key goes on to the references they hold, or stops with its value or why it has none.
+    /// </summary>
+    private async Task<PassRead> ReadPassAsync(IReadOnlyList<string> keys, List<Chain> chains, IReadOnlyDictionary<string, string> kinds, CancellationToken ct)
+    {
+        var place = new Dictionary<string, int>(keys.Count, StringComparer.Ordinal);
+        foreach (var key in keys)
+        {
+            place.TryAdd(key, place.Count);
+        }
+
+        // Where each key has got to in each chain: the records the next step reads (every one a step before reached, in the
+        // order it reached them), or why it stopped. A reference no query can carry cannot be asked for, so the key stops.
+        var start = new Dictionary<string, (IReadOnlyList<string> References, string? Problem)>(keys.Count, StringComparer.Ordinal);
+        foreach (var key in place.Keys)
+        {
+            var trimmed = key.Trim();
+            start[key] = !TargetId.IsRecordReference(trimmed) ? ([], "it names no OSDU record")
+                : Carried(TargetId.WithoutVersion(trimmed)) ? ([TargetId.WithoutVersion(trimmed)], null)
+                : ([], Uncarried);
+        }
+
+        var reached = chains.Select(_ => new Dictionary<string, (IReadOnlyList<string> References, string? Problem)>(start, StringComparer.Ordinal)).ToList();
+        var found = chains.Select(_ => new Dictionary<string, KeyLabel>(keys.Count, StringComparer.Ordinal)).ToList();
         var readThrough = new Dictionary<string, List<string>>(keys.Count, StringComparer.Ordinal);
-        var cut = 0;
-        var uncut = 0;
+        var tally = LabelTally.For(chains.Select(c => (c.Name, c.IsLabel, c.MaxReferences)));
         var queries = 0;
-        var bounded = chains.ToDictionary(c => c, _ => 0);
+
+        void Stop(int chain, string key, KeyLabel label, int step)
+        {
+            found[chain][key] = label;
+            if (label.Label is null)
+            {
+                tally.Lacks(chain, Reason(label.Problem!), step, place[key], key);
+            }
+        }
+
         for (var step = 0; step < chains.Max(c => c.Steps.Count); step++)
         {
             var at = step;
-            var active = chains.Where(c => c.Steps.Count > at).ToList();
+            var active = Enumerable.Range(0, chains.Count).Where(c => chains[c].Steps.Count > at).ToList();
 
-            // What this step reads, by the entity type of the records it reads from: their ids, and every field a path of
-            // this step needs returned there (a filter's property with its path).
-            var wanted = new Dictionary<string, (HashSet<string> Ids, HashSet<string> Paths)>(StringComparer.Ordinal);
-            foreach (var chain in active)
+            // What this step reads: each path, with the records it is read in. A path two chains read is read once.
+            var needed = new Dictionary<string, (DimensionPath Path, HashSet<string> Ids)>(StringComparer.Ordinal);
+            foreach (var c in active)
             {
-                foreach (var (key, (references, _)) in reached[chain])
+                var path = chains[c].Paths[at];
+                if (!needed.TryGetValue(path.Text, out var need))
+                {
+                    need = (path, new HashSet<string>(StringComparer.Ordinal));
+                    needed[path.Text] = need;
+                }
+
+                foreach (var (key, (references, _)) in reached[c])
                 {
                     var through = readThrough.TryGetValue(key, out var listed) ? listed : readThrough[key] = [];
                     foreach (var id in references)
@@ -146,263 +491,372 @@ public sealed class DimensionLabeler
                             through.Add(id);
                         }
 
-                        var type = EntityTypeOf(id);
-                        if (!wanted.TryGetValue(type, out var need))
-                        {
-                            need = (new HashSet<string>(StringComparer.Ordinal), new HashSet<string>(StringComparer.Ordinal));
-                            wanted[type] = need;
-                        }
-
                         need.Ids.Add(id);
-                        need.Paths.UnionWith(chain.Paths[at].ReturnedFields);
                     }
                 }
             }
 
-            var (records, asked) = await ReadAsync(wanted, kinds, ct).ConfigureAwait(false);
+            var (read, asked) = await ProjectAsync(needed, at, kinds, ct).ConfigureAwait(false);
             queries += asked;
 
-            // A filter through a reference compares what the record each reference names holds: those records are looked up
-            // after the records the step reads, with only what the filters read of them, and a key is read through them too.
-            var lookupWanted = new Dictionary<string, (HashSet<string> Ids, HashSet<string> Paths)>(StringComparer.Ordinal);
-            foreach (var chain in active.Where(c => c.Paths[at].HasLookups))
+            // A filter through a reference compares what the record each reference names holds: a key is read through those
+            // records too.
+            foreach (var c in active.Where(c => chains[c].Paths[at].HasLookups))
             {
-                foreach (var (key, (references, _)) in reached[chain])
+                var path = chains[c].Paths[at];
+                foreach (var (key, (references, _)) in reached[c])
                 {
                     var through = readThrough[key];
-                    foreach (var id in references.Where(records.ContainsKey))
+                    foreach (var id in references)
                     {
-                        foreach (var (referencesAt, readThere) in chain.Paths[at].Lookups)
+                        if (read.TryGetValue((path.Text, id), out var projected))
                         {
-                            foreach (var named in referencesAt.Read(records[id]).Select(v => v.Trim()).Where(TargetId.IsRecordReference).Select(TargetId.WithoutVersion))
+                            foreach (var named in projected.LookedUp)
                             {
                                 if (!through.Contains(named, StringComparer.Ordinal))
                                 {
                                     through.Add(named);
                                 }
-
-                                var type = EntityTypeOf(named);
-                                if (!lookupWanted.TryGetValue(type, out var need))
-                                {
-                                    need = (new HashSet<string>(StringComparer.Ordinal), new HashSet<string>(StringComparer.Ordinal));
-                                    lookupWanted[type] = need;
-                                }
-
-                                need.Ids.Add(named);
-                                need.Paths.UnionWith(readThere.ReturnedFields);
                             }
                         }
                     }
                 }
             }
 
-            var looked = new Dictionary<string, JsonObject>(StringComparer.Ordinal);
-            if (lookupWanted.Count > 0)
+            foreach (var c in active)
             {
-                (looked, var lookedUp) = await ReadAsync(lookupWanted, kinds, ct).ConfigureAwait(false);
-                queries += lookedUp;
-            }
-
-            JsonObject? Lookup(string id) => looked.TryGetValue(id, out var record) ? record : null;
-            foreach (var chain in active)
-            {
+                var chain = chains[c];
                 var last = at == chain.Steps.Count - 1;
                 var path = chain.Paths[at];
-                var where = reached[chain];
+                var where = reached[c];
                 foreach (var key in where.Keys.ToList())
                 {
                     var (references, problem) = where[key];
                     if (references.Count == 0)
                     {
-                        found[chain][key] = new KeyLabel(null, null, problem);
+                        Stop(c, key, new KeyLabel(null, null, problem), at);
                         where.Remove(key);
                         continue;
                     }
 
-                    var held = references.Where(records.ContainsKey).ToList();
+                    var held = references.Where(id => read.ContainsKey((path.Text, id))).ToList();
                     if (held.Count == 0)
                     {
-                        found[chain][key] = new KeyLabel(null, null, $"the search holds no record {references[0]}");
+                        Stop(c, key, new KeyLabel(null, null, $"the search holds no record {references[0]}"), at);
                         where.Remove(key);
                         continue;
                     }
 
                     if (last)
                     {
-                        var longest = chain.IsLabel ? MaxLabelLength : DimensionSpec.MaxAttributeValueLength;
-                        string? text = null;
-                        string? from = null;
-                        var over = false;
-                        if (chain.Many == DimensionValueMany.First)
-                        {
-                            // The first record reached that holds a value at the path gives it, kept as the chain keeps it.
-                            foreach (var id in held)
-                            {
-                                var read = path.Read(records[id], Lookup).FirstOrDefault(v => DimensionKeeping.IsValue(v, chain.Keep, chain.Trim));
-                                if (read is null)
-                                {
-                                    continue;
-                                }
-
-                                var (kept, wasCut, tooLong) = DimensionKeeping.Keep(DimensionKeeping.Decoded(read, chain.Decode), chain.Keep, longest, chain.Trim);
-                                over |= tooLong;
-                                if (kept is not null)
-                                {
-                                    (text, from) = (kept, id);
-                                    cut += wasCut ? 1 : 0;
-                                    break;
-                                }
-                            }
-                        }
-                        else
-                        {
-                            // Every value of every record reached, in the order they were reached: joined, or the greatest.
-                            var values = held.SelectMany(id => path.Read(records[id], Lookup).Select(v => (Id: id, Text: v))).ToList();
-                            var (kept, place, wasCut, tooLong) = DimensionKeeping.KeepMany(
-                                values.Select(v => v.Text).ToList(), chain.Keep, chain.Many, chain.Decode, longest, chain.Trim);
-                            over = tooLong;
-                            if (kept is not null)
-                            {
-                                (text, from) = (kept, values[place].Id);
-                                cut += wasCut ? 1 : 0;
-                            }
-                        }
-
-                        if (text is null && over)
-                        {
-                            uncut++;
-                        }
-
-                        found[chain][key] = text is null
-                            ? new KeyLabel(null, held[0], over
-                                ? $"record {held[0]} holds more than the {longest} characters a key kept whole allows at {path.Text}"
-                                : $"record {held[0]} holds nothing at {path.Text}")
-                            : new KeyLabel(text, from, null);
+                        Stop(c, key, Value(chain, path, held, read, tally), at);
                         where.Remove(key);
                         continue;
                     }
 
                     // Every reference the records reached hold at the path, in order, each once: the next step reads them all,
-                    // up to as many as the chain follows, and a key naming more is counted for a note.
-                    var next = held
-                        .SelectMany(id => path.Read(records[id], Lookup))
-                        .Select(v => v.Trim())
-                        .Where(TargetId.IsRecordReference)
-                        .Select(TargetId.WithoutVersion)
-                        .Distinct(StringComparer.Ordinal)
-                        .ToList();
+                    // up to as many as the chain follows, and a key naming more is counted for a note. A reference no query
+                    // can carry cannot be read, so it is passed over.
+                    var named = References(held.SelectMany(id => read[(path.Text, id)].Values)).Distinct(StringComparer.Ordinal).ToList();
+                    var next = named.Where(Carried).ToList();
                     if (next.Count > chain.MaxReferences)
                     {
-                        bounded[chain]++;
+                        tally.Bounded(c);
                         next = next.Take(chain.MaxReferences).ToList();
                     }
 
-                    where[key] = next.Count == 0 ? ([], $"record {held[0]} holds no record reference at {path.Text}") : (next, null);
+                    where[key] = next.Count > 0 ? (next, null)
+                        : named.Count > 0 ? ([], $"record {held[0]} holds only references no query can carry at {path.Text}")
+                        : ([], $"record {held[0]} holds no record reference at {path.Text}");
                 }
             }
         }
 
-        var notes = new List<string>();
-        var labels = chains.FirstOrDefault(c => c.IsLabel) is { } labelChain ? found[labelChain] : new Dictionary<string, KeyLabel>(StringComparer.Ordinal);
-        var unlabelled = labels.Where(l => l.Value.Label is null).ToList();
-        foreach (var why in unlabelled.GroupBy(l => Reason(l.Value.Problem!)).OrderByDescending(g => g.Count()))
+        var labels = chains[0].IsLabel ? found[0] : new Dictionary<string, KeyLabel>(StringComparer.Ordinal);
+        var unlabelled = labels.Values.LongCount(l => l.Label is null);
+        var attributes = new Dictionary<string, IReadOnlyList<DimensionAttributeState>>(keys.Count, StringComparer.Ordinal);
+        for (var c = 0; c < chains.Count; c++)
         {
-            notes.Add(string.Create(CultureInfo.InvariantCulture,
-                $"{why.Count()} key(s) have no label, since {why.Key}: {Named(why.Select(l => l.Key))}."));
-        }
+            if (chains[c].IsLabel)
+            {
+                continue;
+            }
 
-        var attributeValues = new Dictionary<string, IReadOnlyList<DimensionAttributeState>>(keys.Count, StringComparer.Ordinal);
-        foreach (var chain in chains.Where(c => !c.IsLabel))
-        {
-            var read = found[chain];
-            foreach (var (key, value) in read)
+            foreach (var (key, value) in found[c])
             {
                 if (value.Label is not null)
                 {
-                    var held = attributeValues.TryGetValue(key, out var list) ? (List<DimensionAttributeState>)list : [];
-                    held.Add(new DimensionAttributeState(chain.Name, value.Label, value.From));
-                    attributeValues[key] = held;
+                    var listed = attributes.TryGetValue(key, out var list) ? (List<DimensionAttributeState>)list : [];
+                    listed.Add(new DimensionAttributeState(chains[c].Name, value.Label, value.From));
+                    attributes[key] = listed;
                 }
             }
-
-            // Why keys lack an attribute, the commonest reason first; a key that names no record is said once, by the label or here.
-            foreach (var why in read.Where(r => r.Value.Label is null).GroupBy(r => Reason(r.Value.Problem!)).OrderByDescending(g => g.Count()).Take(2))
-            {
-                notes.Add(string.Create(CultureInfo.InvariantCulture,
-                    $"{why.Count()} key(s) have no {chain.Name}, since {why.Key}: {Named(why.Select(r => r.Key))}."));
-            }
         }
 
-        foreach (var (chain, keysBounded) in bounded.Where(b => b.Value > 0))
-        {
-            notes.Add(string.Create(CultureInfo.InvariantCulture,
-                $"{keysBounded} key(s) name more than {chain.MaxReferences} record(s) at a step of {(chain.IsLabel ? "the label" : chain.Name)}, and only the first {chain.MaxReferences} were followed{(chain.IsLabel ? string.Empty : $"; raise maxReferences (at most {DimensionAttributeSpec.MaxReferencesCeiling}) to follow more")}."));
-        }
-
-        if (cut > 0)
-        {
-            notes.Add(string.Create(CultureInfo.InvariantCulture,
-                $"{cut} label(s) or attribute value(s) were longer than a dimension keeps ({MaxLabelLength} characters for a label, {DimensionSpec.MaxAttributeValueLength} for an attribute) and were cut."));
-        }
-
-        if (uncut > 0)
-        {
-            notes.Add(string.Create(CultureInfo.InvariantCulture,
-                $"{uncut} attribute value(s) that keep the key were longer than the {DimensionSpec.MaxAttributeValueLength} characters a dimension keeps, and are left out rather than cut, since a key cut joins to nothing."));
-        }
-
-        _log.LogInformation(
-            "labels and attributes: {Labelled} of {Keys} key(s) labelled, {Attributes} attribute(s) read through {Chains} chain(s) in {Queries} search(es)",
-            labels.Count - unlabelled.Count, keys.Count, attributeValues.Values.Sum(a => a.Count), chains.Count, queries);
-        var keyRecords = readThrough.ToDictionary(a => a.Key, a => (IReadOnlyList<string>)a.Value, StringComparer.Ordinal);
-        return new KeyLabels(labels, attributeValues, labels.Count - unlabelled.Count, unlabelled.Count, queries, notes, keyRecords);
+        var records = readThrough.ToDictionary(a => a.Key, a => (IReadOnlyList<string>)a.Value, StringComparer.Ordinal);
+        return new PassRead(labels, attributes, labels.Count - unlabelled, unlabelled, queries, records, tally);
     }
 
     /// <summary>
-    /// The records of <paramref name="wanted"/> the search finds, by id, each holding the paths asked of its entity type:
-    /// the ids of one entity type searched in that type's kind, a chunk at a time.
+    /// The value a chain's last step gives a key from the records it reached (<paramref name="held"/>, in the order reached):
+    /// the first that holds one, or every one joined, or the greatest, kept as the chain keeps it; or why it has none.
     /// </summary>
-    private async Task<(Dictionary<string, JsonObject> Records, int Queries)> ReadAsync(
-        Dictionary<string, (HashSet<string> Ids, HashSet<string> Paths)> wanted, IReadOnlyDictionary<string, string> kinds, CancellationToken ct)
+    private static KeyLabel Value(Chain chain, DimensionPath path, List<string> held, Dictionary<(string Path, string Id), Projection> read, LabelTally tally)
     {
+        var longest = chain.IsLabel ? MaxLabelLength : DimensionSpec.MaxAttributeValueLength;
+        string? text = null;
+        string? from = null;
+        var over = false;
+        if (chain.Many == DimensionValueMany.First)
+        {
+            // The first record reached that holds a value at the path gives it, kept as the chain keeps it.
+            foreach (var id in held)
+            {
+                var value = read[(path.Text, id)].Values.FirstOrDefault(v => DimensionKeeping.IsValue(v, chain.Keep, chain.Trim));
+                if (value is null)
+                {
+                    continue;
+                }
+
+                var (kept, wasCut, tooLong) = DimensionKeeping.Keep(DimensionKeeping.Decoded(value, chain.Decode), chain.Keep, longest, chain.Trim);
+                over |= tooLong;
+                if (kept is not null)
+                {
+                    (text, from) = (kept, id);
+                    if (wasCut)
+                    {
+                        tally.CutOne();
+                    }
+
+                    break;
+                }
+            }
+        }
+        else
+        {
+            // Every value of every record reached, in the order they were reached: joined, or the greatest.
+            var values = held.SelectMany(id => read[(path.Text, id)].Values.Select(v => (Id: id, Text: v))).ToList();
+            var (kept, chosen, wasCut, tooLong) = DimensionKeeping.KeepMany(
+                values.Select(v => v.Text).ToList(), chain.Keep, chain.Many, chain.Decode, longest, chain.Trim);
+            over = tooLong;
+            if (kept is not null)
+            {
+                (text, from) = (kept, values[chosen].Id);
+                if (wasCut)
+                {
+                    tally.CutOne();
+                }
+            }
+        }
+
+        if (text is null && over)
+        {
+            tally.UncutOne();
+        }
+
+        return text is not null
+            ? new KeyLabel(text, from, null)
+            : new KeyLabel(null, held[0], over
+                ? $"record {held[0]} holds more than the {longest} characters a key kept whole allows at {path.Text}"
+                : $"record {held[0]} holds nothing at {path.Text}");
+    }
+
+    /// <summary>What a path read of one record: the values it reaches there, and the records its filters look up through it.</summary>
+    private sealed record Projection(List<string> Values, List<string> LookedUp);
+
+    /// <summary>
+    /// What each path of <paramref name="needed"/> reads of each record it is read in, by the path's text and the record's id;
+    /// a record the search does not hold has none. The records are asked for by entity type, <see cref="IdsPerQuery"/> ids a
+    /// search, several searches at once; each answer is read as it comes (the records its filters look up asked for then) and
+    /// let go. A step past the first reads what it can from what earlier passes read, and keeps what it reads for later ones.
+    /// Returns the readings and the searches asked.
+    /// </summary>
+    private async Task<(Dictionary<(string Path, string Id), Projection> Read, int Queries)> ProjectAsync(
+        Dictionary<string, (DimensionPath Path, HashSet<string> Ids)> needed, int step, IReadOnlyDictionary<string, string> kinds, CancellationToken ct)
+    {
+        var read = new Dictionary<(string Path, string Id), Projection>();
+        var paths = new Dictionary<string, List<DimensionPath>>(StringComparer.Ordinal);
+        var wanted = new Dictionary<string, (HashSet<string> Ids, HashSet<string> Fields)>(StringComparer.Ordinal);
+        foreach (var (text, (path, ids)) in needed)
+        {
+            foreach (var id in ids)
+            {
+                if (step > 0 && _reached.TryGet((text, id), out var known))
+                {
+                    if (known is not null)
+                    {
+                        read[(text, id)] = known;
+                    }
+
+                    continue;
+                }
+
+                (paths.TryGetValue(id, out var of) ? of : paths[id] = []).Add(path);
+                var type = EntityTypeOf(id);
+                if (!wanted.TryGetValue(type, out var need))
+                {
+                    need = (new HashSet<string>(StringComparer.Ordinal), new HashSet<string>(StringComparer.Ordinal));
+                    wanted[type] = need;
+                }
+
+                need.Ids.Add(id);
+                need.Fields.UnionWith(path.ReturnedFields);
+            }
+        }
+
         var asks = new List<(string Kind, List<string> Fields, string[] Ids)>();
         foreach (var (type, need) in wanted)
         {
-            var fields = new List<string>(need.Paths.Count + 1) { "id" };
-            fields.AddRange(need.Paths.Order(StringComparer.Ordinal));
+            var fields = new List<string>(need.Fields.Count + 1) { "id" };
+            fields.AddRange(need.Fields.Order(StringComparer.Ordinal));
             var kind = kinds.TryGetValue(type, out var pinned) ? pinned : $"*:*:{type}:*";
             asks.AddRange(need.Ids.Order(StringComparer.Ordinal).Chunk(IdsPerQuery).Select(chunk => (kind, fields, chunk)));
         }
 
-        // Each search asks for records of its own, so they are asked several at a time and gathered as they answer.
-        var records = new Dictionary<string, JsonObject>(StringComparer.Ordinal);
+        var queries = asks.Count;
         var gate = new Lock();
         await Parallel.ForEachAsync(
             asks,
             new ParallelOptions { MaxDegreeOfParallelism = _concurrency, CancellationToken = ct },
             async (ask, token) =>
             {
-                var query = new OsduSearchQuery
+                var (_, hits) = await _search.FirstAsync(
+                    new OsduSearchQuery { Kind = ask.Kind, Query = OsduQuery.AnyOf(Id, ask.Ids).Text, ReturnedFields = ask.Fields }, OsduSearch.MaxPage, token)
+                    .ConfigureAwait(false);
+                var records = new Dictionary<string, JsonObject>(hits.Count, StringComparer.Ordinal);
+                foreach (var hit in hits)
                 {
-                    Kind = ask.Kind,
-                    Query = OsduQuery.AnyOf(Id, ask.Ids).Text,
-                    ReturnedFields = ask.Fields,
-                };
-                var (_, hits) = await _search.FirstAsync(query, OsduSearch.MaxPage, token).ConfigureAwait(false);
+                    if (hit["id"] is JsonValue idValue && idValue.TryGetValue<string>(out var id) && !string.IsNullOrEmpty(id) && paths.ContainsKey(id))
+                    {
+                        records[id] = hit;
+                    }
+                }
+
+                var (looked, lookups) = await LookUpAsync(records, paths, kinds, token).ConfigureAwait(false);
+                JsonObject? Lookup(string id) => looked.TryGetValue(id, out var record) ? record : null;
+                var projected = new List<(string Path, string Id, Projection? Read)>(ask.Ids.Length);
+                foreach (var id in ask.Ids)
+                {
+                    foreach (var path in paths[id])
+                    {
+                        projected.Add((path.Text, id, records.TryGetValue(id, out var record)
+                            ? new Projection(path.Read(record, Lookup), path.HasLookups ? Referenced(record, path) : [])
+                            : null));
+                    }
+                }
+
                 lock (gate)
                 {
-                    foreach (var hit in hits)
+                    queries += lookups;
+                    foreach (var (text, id, projection) in projected)
                     {
-                        if (hit["id"] is JsonValue idValue && idValue.TryGetValue<string>(out var id) && !string.IsNullOrEmpty(id))
+                        if (projection is not null)
                         {
-                            records[id] = hit;
+                            read[(text, id)] = projection;
+                        }
+
+                        if (step > 0)
+                        {
+                            _reached.Set((text, id), projection);
                         }
                     }
                 }
             }).ConfigureAwait(false);
 
-        return (records, asks.Count);
+        return (read, queries);
     }
+
+    /// <summary>
+    /// The records the filters through a reference of the paths read look up from <paramref name="records"/>, by id, each
+    /// holding only what the filters read of it; one an earlier answer looked up is not asked for again. Returns them, and
+    /// the searches asked.
+    /// </summary>
+    private async Task<(Dictionary<string, JsonObject> Looked, int Queries)> LookUpAsync(
+        Dictionary<string, JsonObject> records, Dictionary<string, List<DimensionPath>> paths, IReadOnlyDictionary<string, string> kinds, CancellationToken ct)
+    {
+        var wanted = new Dictionary<string, (HashSet<string> Ids, HashSet<string> Fields)>(StringComparer.Ordinal);
+        foreach (var (id, record) in records)
+        {
+            foreach (var path in paths[id].Where(p => p.HasLookups))
+            {
+                foreach (var (referencesAt, readThere) in path.Lookups)
+                {
+                    foreach (var named in References(referencesAt.Read(record)).Where(Carried))
+                    {
+                        var type = EntityTypeOf(named);
+                        if (!wanted.TryGetValue(type, out var need))
+                        {
+                            need = (new HashSet<string>(StringComparer.Ordinal), new HashSet<string>(StringComparer.Ordinal));
+                            wanted[type] = need;
+                        }
+
+                        need.Ids.Add(named);
+                        need.Fields.UnionWith(readThere.ReturnedFields);
+                    }
+                }
+            }
+        }
+
+        var looked = new Dictionary<string, JsonObject>(StringComparer.Ordinal);
+        var queries = 0;
+        foreach (var (type, need) in wanted)
+        {
+            var fields = new List<string>(need.Fields.Count + 1) { "id" };
+            fields.AddRange(need.Fields.Order(StringComparer.Ordinal));
+            var signature = string.Join(',', fields);
+            var missing = new List<string>();
+            foreach (var id in need.Ids.Order(StringComparer.Ordinal))
+            {
+                if (_lookedUp.TryGet((signature, id), out var known))
+                {
+                    if (known is not null)
+                    {
+                        looked[id] = known;
+                    }
+                }
+                else
+                {
+                    missing.Add(id);
+                }
+            }
+
+            var kind = kinds.TryGetValue(type, out var pinned) ? pinned : $"*:*:{type}:*";
+            foreach (var chunk in missing.Chunk(IdsPerQuery))
+            {
+                queries++;
+                var (_, hits) = await _search.FirstAsync(
+                    new OsduSearchQuery { Kind = kind, Query = OsduQuery.AnyOf(Id, chunk).Text, ReturnedFields = fields }, OsduSearch.MaxPage, ct).ConfigureAwait(false);
+                var answered = new HashSet<string>(StringComparer.Ordinal);
+                foreach (var hit in hits)
+                {
+                    if (hit["id"] is JsonValue idValue && idValue.TryGetValue<string>(out var id) && !string.IsNullOrEmpty(id))
+                    {
+                        looked[id] = hit;
+                        answered.Add(id);
+                        _lookedUp.Set((signature, id), hit);
+                    }
+                }
+
+                foreach (var id in chunk.Where(i => !answered.Contains(i)))
+                {
+                    _lookedUp.Set((signature, id), null);
+                }
+            }
+        }
+
+        return (looked, queries);
+    }
+
+    /// <summary>The records the filters through a reference of <paramref name="path"/> look up from <paramref name="record"/>, in order.</summary>
+    private static List<string> Referenced(JsonObject record, DimensionPath path)
+        => path.Lookups.SelectMany(l => References(l.References.Read(record))).ToList();
+
+    /// <summary>The record references among <paramref name="texts"/>, each without its version, in order.</summary>
+    private static IEnumerable<string> References(IEnumerable<string> texts)
+        => texts.Select(v => v.Trim()).Where(TargetId.IsRecordReference).Select(TargetId.WithoutVersion);
+
+    /// <summary>Whether a search can be asked for the record <paramref name="id"/> names: a query can carry the id.</summary>
+    private static bool Carried(string id) => OsduQuery.EqualProblem(Id, id) is null;
 
     /// <summary>
     /// <paramref name="text"/> as a value shows it: for the id of an OSDU record (<c>dev:reference-data--UnitOfMeasure:us%2Fft:</c>),
@@ -444,17 +898,10 @@ public sealed class DimensionLabeler
         => problem.StartsWith("the search holds no record", StringComparison.Ordinal) ? "the search holds no record they name"
             : problem.StartsWith("record ", StringComparison.Ordinal) && problem.Contains(" holds nothing at ", StringComparison.Ordinal)
                 ? "the record they name holds nothing at the path it is read from"
+            : problem.StartsWith("record ", StringComparison.Ordinal) && problem.Contains(" no query can carry ", StringComparison.Ordinal)
+                ? "the record they name holds only references no query can carry"
             : problem.StartsWith("record ", StringComparison.Ordinal) ? "the record they name holds no reference where one is read"
             : problem;
-
-    /// <summary>The first few keys of a group, quoted, for a note.</summary>
-    private static string Named(IEnumerable<string> keys)
-    {
-        var list = keys.Take(Examples + 1).ToList();
-        return string.Join(", ", list.Take(Examples).Select(k => $"'{Shown(k)}'")) + (list.Count > Examples ? ", ..." : string.Empty);
-    }
-
-    private static string Shown(string value) => value.Length > 60 ? value[..60] + "..." : value;
 
     /// <summary>
     /// One label or attribute: its name, the paths it is read through, whether it is the label, and how its value is kept,

@@ -485,3 +485,12 @@ resolves them for the run, the form and a schedule's preview; a lookup reads a c
 never a query; only a delivery's reading operations resolve its parameters; and `maxRecords` is a default, which the
 human chose over a ceiling. Amended [0024](decisions/0024-scope-value-lists.md): the several-values field is SQLFlow's run
 value picker, which replaced the module's own.
+
+## [2026-10-26] ingest | Dimension builds stage in the database, decision 0032
+
+Read the run of a wellbore dimension with nine attributes that failed with an `OutOfMemoryException` at 1 GB and again at
+3 GB, and measured the build on the suites' stand-in search: about 6.8 KB held a key, growing with the dimension. With
+the human, chose to rebuild the build to stage what it reads in the database, keeping every feature. Filed
+[0032](decisions/0032-dimension-builds-stage-in-the-database.md): seven staging tables, labels read a bounded batch at a
+time, the write copying the staging into its unchanged merge, a parity suite written on the old engine first, the
+staging's cleanup, and the incremental load's caps; with the time and memory measured before and after.

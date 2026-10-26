@@ -142,7 +142,54 @@ internal sealed class FakeDimensionPlatform : HttpMessageHandler
     {
         var kind = body["kind"]!.GetValue<string>();
         var query = body["query"]?.GetValue<string>();
-        return Records.Where(r => KindMatches(kind, r["kind"]!.GetValue<string>()) && Holds(r, query)).ToList();
+        // The query is taken apart once for the request, not once for each record it is held against: a label search names
+        // five hundred ids, and the records it is held against are every record of the platform.
+        var parse = new QueryParse();
+        return Records.Where(r => KindMatches(kind, r["kind"]!.GetValue<string>()) && Holds(r, query, parse)).ToList();
+    }
+
+    /// <summary>
+    /// The parts of one request's query, each taken apart the first time a record is held against it. A part is found again
+    /// by the text it was taken from, as the same string: every record is held against the very strings the first one was,
+    /// so a query of five hundred ids is never read again to be found.
+    /// </summary>
+    private sealed class QueryParse
+    {
+        private readonly Dictionary<string, string> _stripped = new(ReferenceEqualityComparer.Instance);
+        private readonly Dictionary<string, List<string>> _ors = new(ReferenceEqualityComparer.Instance);
+        private readonly Dictionary<string, List<string>> _ands = new(ReferenceEqualityComparer.Instance);
+        private readonly Dictionary<string, LeafClause> _leaves = new(ReferenceEqualityComparer.Instance);
+        private readonly Dictionary<string, string> _negated = new(ReferenceEqualityComparer.Instance);
+        private readonly Dictionary<string, (string Parent, string Inner)> _nested = new(ReferenceEqualityComparer.Instance);
+
+        /// <summary>What a <c>NOT</c> clause negates.</summary>
+        public string Negated(string clause)
+            => _negated.TryGetValue(clause, out var negated) ? negated : _negated[clause] = Strip(clause[4..]);
+
+        /// <summary>The array a <c>nested(</c> clause steps into, and the clause each of its objects is held against.</summary>
+        public (string Parent, string Inner) Nested(string clause)
+        {
+            if (_nested.TryGetValue(clause, out var nested))
+            {
+                return nested;
+            }
+
+            var comma = clause.IndexOf(',', StringComparison.Ordinal);
+            return _nested[clause] = (clause[7..comma], Strip(clause[(comma + 1)..^1].Trim()));
+        }
+
+        public string Strip(string clause)
+            => _stripped.TryGetValue(clause, out var stripped) ? stripped : _stripped[clause] = FakeDimensionPlatform.Strip(clause);
+
+        public List<string> Split(string text, string separator)
+        {
+            var parts = separator == " OR " ? _ors : separator == " AND " ? _ands : throw new ArgumentOutOfRangeException(nameof(separator), separator, null);
+            return parts.TryGetValue(text, out var split) ? split : parts[text] = FakeDimensionPlatform.Split(text, separator);
+        }
+
+        /// <summary>A clause comparing one field, taken apart.</summary>
+        public LeafClause Leaf(string clause)
+            => _leaves.TryGetValue(clause, out var leaf) ? leaf : _leaves[clause] = LeafClause.Of(clause);
     }
 
     /// <summary>The ids of the records <paramref name="query"/> matches in <paramref name="kind"/>, as the service would find them.</summary>
@@ -363,42 +410,40 @@ internal sealed class FakeDimensionPlatform : HttpMessageHandler
     }
 
     /// <summary>Whether a record holds for a query of the forms a dimension writes.</summary>
-    private static bool Holds(JsonNode record, string? query)
+    private static bool Holds(JsonNode record, string? query, QueryParse parse)
     {
         if (string.IsNullOrWhiteSpace(query) || query.Trim() == "*")
         {
             return true;
         }
 
-        return Split(Strip(query), " AND ").All(clause => Clause(record, Strip(clause)));
+        return parse.Split(parse.Strip(query), " AND ").All(clause => Clause(record, parse.Strip(clause), parse));
     }
 
-    private static bool Clause(JsonNode record, string clause)
+    private static bool Clause(JsonNode record, string clause, QueryParse parse)
     {
         // OR binds looser than AND, as the service parses a group: a OR (b AND NOT c).
-        var alternatives = Split(clause, " OR ");
+        var alternatives = parse.Split(clause, " OR ");
         if (alternatives.Count > 1)
         {
-            return alternatives.Any(a => Clause(record, Strip(a)));
+            return alternatives.Any(a => Clause(record, parse.Strip(a), parse));
         }
 
-        var all = Split(clause, " AND ");
+        var all = parse.Split(clause, " AND ");
         if (all.Count > 1)
         {
-            return all.All(a => Clause(record, Strip(a)));
+            return all.All(a => Clause(record, parse.Strip(a), parse));
         }
 
         if (clause.StartsWith("NOT ", StringComparison.Ordinal))
         {
-            return !Clause(record, Strip(clause[4..]));
+            return !Clause(record, parse.Negated(clause), parse);
         }
 
         if (clause.StartsWith("nested(", StringComparison.Ordinal))
         {
-            var comma = clause.IndexOf(',', StringComparison.Ordinal);
-            var parent = clause[7..comma];
-            var inner = Strip(clause[(comma + 1)..^1].Trim());
-            return Values(record, parent).Where(v => v.Node is JsonObject).Any(v => Clause(v.Node!, inner));
+            var (parent, inner) = parse.Nested(clause);
+            return Values(record, parent).Where(v => v.Node is JsonObject).Any(v => Clause(v.Node!, inner, parse));
         }
 
         if (clause.StartsWith("_exists_:", StringComparison.Ordinal))
@@ -417,31 +462,48 @@ internal sealed class FakeDimensionPlatform : HttpMessageHandler
             return record is JsonObject whole && whole.Where(p => p.Key != "id").Any(p => Phrased(p.Value, phrase));
         }
 
-        var colon = clause.IndexOf(':', StringComparison.Ordinal);
-        var name = clause[..colon];
-        var operand = clause[(colon + 1)..];
-        var keys = Keys(record, name.EndsWith(Keyword, StringComparison.Ordinal) ? name : name).ToList();
-        if (operand.StartsWith('['))
+        var leaf = parse.Leaf(clause);
+        var keys = Keys(record, leaf.Name).ToList();
+        if (leaf.IsRange)
         {
-            var close = operand[^1];
-            var body = operand[1..^1];
-            var to = body.IndexOf(" TO ", StringComparison.Ordinal);
-            var from = Bound(body[..to]);
-            var upto = Bound(body[(to + 4)..]);
+            var (from, upto) = (leaf.From, leaf.Upto);
             var order = keys.Any(k => DimensionValueText.CanonicalNumber(k) is null) || (from is not null && DimensionValueText.CanonicalNumber(from) is null)
                 ? DimensionValueText.Order(OsduFieldIndex.Keyword)
                 : DimensionValueText.Order(OsduFieldIndex.Number);
-            return keys.Any(k => (from is null || order.Compare(k, from) >= 0) && (upto is null || (close == '}' ? order.Compare(k, upto) < 0 : order.Compare(k, upto) <= 0)));
+            return keys.Any(k => (from is null || order.Compare(k, from) >= 0) && (upto is null || (leaf.UptoOpen ? order.Compare(k, upto) < 0 : order.Compare(k, upto) <= 0)));
         }
 
-        if (operand.StartsWith('('))
+        if (leaf.Values is { } values)
         {
-            var values = Split(operand[1..^1], " OR ").Select(Unquote).ToHashSet(StringComparer.Ordinal);
             return keys.Any(values.Contains);
         }
 
-        var wanted = Unquote(operand);
+        var wanted = leaf.Wanted!;
         return keys.Any(k => k == wanted || DimensionValueText.CanonicalNumber(k) is { } n && n == DimensionValueText.CanonicalNumber(wanted));
+    }
+
+    /// <summary>
+    /// A clause comparing one field, taken apart: the field, and a range (<c>[from TO to}</c>), a list of phrases
+    /// (<c>("a" OR "b")</c>), or one value.
+    /// </summary>
+    private sealed record LeafClause(string Name, bool IsRange, string? From, string? Upto, bool UptoOpen, HashSet<string>? Values, string? Wanted)
+    {
+        public static LeafClause Of(string clause)
+        {
+            var colon = clause.IndexOf(':', StringComparison.Ordinal);
+            var name = clause[..colon];
+            var operand = clause[(colon + 1)..];
+            if (operand.StartsWith('['))
+            {
+                var body = operand[1..^1];
+                var to = body.IndexOf(" TO ", StringComparison.Ordinal);
+                return new LeafClause(name, true, Bound(body[..to]), Bound(body[(to + 4)..]), operand[^1] == '}', null, null);
+            }
+
+            return operand.StartsWith('(')
+                ? new LeafClause(name, false, null, null, false, Split(operand[1..^1], " OR ").Select(Unquote).ToHashSet(StringComparer.Ordinal), null)
+                : new LeafClause(name, false, null, null, false, null, Unquote(operand));
+        }
     }
 
     /// <summary>Whether any text inside <paramref name="node"/> holds <paramref name="phrase"/>, ignoring case.</summary>

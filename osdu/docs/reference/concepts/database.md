@@ -58,7 +58,9 @@ fails it, and so does one a page names that the model does not.
   range of each table and no index reads a partition's rows of every dimension. Every statement of a build's write, and
   of a removal, names its partition and dimension on each table it reads and seeks them whatever the table holds, so a
   build reads and locks its own dimension's rows, never another's, and the builds of a flow's dimensions write beside
-  each other rather than waiting on, or deadlocking with, one another.
+  each other rather than waiting on, or deadlocking with, one another. A running build's staging is keyed on
+  `PartitionId`, `DimensionId`, the build and the row's place in the order it was staged, so a build reads and deletes
+  only its own.
 - **Read models** of the repositories (mappings, interfaces, cache declarations, search terms) and the templates and
   lineage are keyed by stable ids derived from what they describe, and carry no partition number.
 - **OSDU ids** are kept in a binary collation (`Latin1_General_100_BIN2`) wherever a table keys or matches on one, since
@@ -153,6 +155,13 @@ says how they fit and how each dimension's `dim_` table is laid out from them.
 | [`osdu.DimensionChange`](../tables/dimension-change.md) | A change a build made to a key |
 | [`osdu.DimensionView`](../tables/dimension-view.md) | A view a dimension flow declares, as its builds last wrote it |
 | [`osdu.DimensionViewCheck`](../tables/dimension-view-check.md) | What a build's check of a view found in a partition |
+| [`osdu.DimensionStageKey`](../tables/dimension-stage-key.md) | A key a running build read, staged until the build ends |
+| [`osdu.DimensionStageValue`](../tables/dimension-stage-value.md) | A key of a running build as it cleaned it, staged until the build ends |
+| [`osdu.DimensionStageMember`](../tables/dimension-stage-member.md) | A value a running build laid out from its keys, staged until the build ends |
+| [`osdu.DimensionStageAttribute`](../tables/dimension-stage-attribute.md) | An attribute value a running build read for a key, staged until the build ends |
+| [`osdu.DimensionStageText`](../tables/dimension-stage-text.md) | A text a running build collected, staged until the build ends |
+| [`osdu.DimensionStageElement`](../tables/dimension-stage-element.md) | A field of an object of a nested array a running build read, staged until the build ends |
+| [`osdu.DimensionStageRecord`](../tables/dimension-stage-record.md) | A record a running build read through or read, or a key such a record holds, staged until the build ends |
 
 ### The partition cache
 
