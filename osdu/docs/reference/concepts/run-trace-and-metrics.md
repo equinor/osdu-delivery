@@ -49,7 +49,7 @@ sourceRefs:
 
 # What an OSDU run's trace says, its metrics, and watching the targets
 
-Every run of an OSDU flow kind (delivery, retrieval, cache, assertion, dimension, inventory) leaves the same artifacts as
+Every run of an OSDU flow kind (delivery, retrieval, cache, assertion, dimension, inventory, removal) leaves the same artifacts as
 SQLFlow's own kinds: a `run.json` with the result and the event timeline, a `run.log`, and a `trace.sql`, which is empty
 because these kinds generate no SQL of their own. On a node its lines stream to the control plane as the live trace the
 GUI's trace panel and `sqlflow trigger --follow` show. Those artifacts, the log levels and the trace endpoints

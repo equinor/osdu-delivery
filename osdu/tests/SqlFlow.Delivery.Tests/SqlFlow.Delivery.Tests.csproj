@@ -15,6 +15,10 @@
          AWSSDK.S3 version SQLFlow pins), so the route's signing is proven against AWS's implementation and not against
          itself. Tests only. -->
     <PackageReference Include="AWSSDK.S3" />
+    <!-- A record export is read back with ClosedXML and checked against the Open XML schemas with the Open XML SDK's validator
+         (ClosedXML's own dependency), at the version SQLFlow pins, so the workbook is proven against readers other than its
+         writer. Tests only. -->
+    <PackageReference Include="ClosedXML" />
   </ItemGroup>
 
   <ItemGroup>

@@ -9,6 +9,7 @@ keywords:
   - osdu menu
   - delivery page
   - records page
+  - export records to excel
   - audit trail
   - record page
   - flow page tabs
@@ -210,7 +211,10 @@ or the ingestion file. Each hit says which value matched. A status picker (`pend
 (label, source key, ingestion file and row), the flow, when it last changed and was last delivered, and its OSDU type,
 a link to the record's OSDU tab; a row opens the record's page. The term (`q`), status (`status`) and flow (`flow`, the
 ledger's flow id) are in the address, so a lookup is a link; a link that names a partition (`partition`) makes it the
-title bar's, so the lookup is read in the partition it is about.
+title bar's, so the lookup is read in the partition it is about. **Export**, in the header, downloads every record the
+lookup reaches (at most 1,000) as an Excel workbook, each with its flow, interface and partition and the values the term
+matched; when more match, its About sheet says so, and a flow's Records tab exports up to 25,000 records of the flow
+([records export](../cli/records.md#records-export)).
 
 ### Removals
 
@@ -358,7 +362,10 @@ partitions is read in the title bar's partition.
   read again within seconds of a run ending.
 - **Records**: the ledger's records, searched by delivery key, label, source key or OSDU id, with a status picker,
   **Drifted only** and **Match anywhere**; links from elsewhere narrow it to one run (`?run=`), what a submission last
-  planned (`?submission=`) or delivered (`?delivered=`), or one issue (`?issue=`). Rows tick; the selection bar offers
+  planned (`?submission=`) or delivered (`?delivered=`), or one issue (`?issue=`). **Export** downloads every record the
+  filter matches, not the page in view, as an Excel workbook to work through where the records come from
+  ([records export](../cli/records.md#records-export)); it says on hover why it cannot when nothing matches or more than
+  25,000 records do. Rows tick; the selection bar offers
   **Select all N matching**, **Redeliver**, **Adopt** (when the selection holds a record held for an id OSDU holds; the
   others selected are left), **Sync timelines** and **Remove**.
 - **Issues**: the blocked records grouped by the issue that keeps them blocked, each a **Set error** or **Row errors**,

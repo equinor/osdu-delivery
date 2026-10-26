@@ -72,7 +72,7 @@ give them `--db <conn-ref>` or set the catalog variable, `--partition` for a flo
 | Place | What it shows |
 | --- | --- |
 | A delivery flow's **Delivery** tab | Counts by status, the last submission, **Probe target**, **Sync timelines**, **Redeliver**, **Delete ledger**, **Unfinished deliveries to undo**. |
-| The flow's **Records** tab | The records, filtered by status, search, **Drifted only**, issue, submission or run; the selection bar's **Release**, **Redeliver**, **Remove**. |
+| The flow's **Records** tab | The records, filtered by status, search, **Drifted only**, issue, submission or run; the selection bar's **Release**, **Redeliver**, **Remove**; **Export**, the filtered records as an Excel workbook. |
 | The flow's **Issues** tab | Blocked records grouped by the problem that keeps them blocked. |
 | The flow's **Submissions** tab, a submission's page | Each plan, its counts, its batches, its attempts. |
 | A record's page | **Timeline** (every attempt and activity), **Source**, **Render** (renders it now, sends nothing), **OSDU**, **Artifacts**. |
@@ -107,7 +107,10 @@ sqlflow records list   flows/welldb-wellbore-03-delivery.yaml --partition dev --
   `sqlflow records release <flow.yaml> --issue <id>`, and let the next deliver run send them (the GUI can queue it with the
   release).
 - **Row errors**: fix the rows in the source system and let the pre and ingestion flows load them. A corrected row is
-  planned again on its own, because its source version moved; no release is needed.
+  planned again on its own, because its source version moved; no release is needed. The list to hand to the source's
+  owners is **Export** on the Records tab narrowed to the issue (**Records** on the issue), or
+  `sqlflow records export <flow.yaml> --issue <id> --out <file.xlsx>`: a workbook with each record's key, file and row,
+  and the problem to fix ([records export](../cli/records.md#records-export)).
 - **Held for a deleted row** (`the ingestion table marked the record row deleted ...`): the row is gone in the source. Restore
   it there, or take the record out of OSDU with a removal if it should go.
 

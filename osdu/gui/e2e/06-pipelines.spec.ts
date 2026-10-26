@@ -1,6 +1,6 @@
 import { DELIVERY_FLOW } from "./global-setup";
 import { stageWellLogRecords } from "./delivery-cli";
-import { expect, test } from "./helpers";
+import { expect, expectRecordsWorkbook, test } from "./helpers";
 
 // The pipeline catalog for a delivery flow: the module's Delivery tab and the platform's own read-only tabs beside
 // it. A delivery flow opens on its Delivery tab, where the stats strip and the flow-level actions live. What kind of
@@ -89,5 +89,33 @@ test.describe.serial("pipelines", () => {
 
     await adminPage.getByTestId("redeliver-cancel").click();
     await expect(dialog).toHaveCount(0);
+  });
+
+  test("the Records tab downloads every record its filter matches as an Excel workbook, and says why when there is none", async ({ adminPage }) => {
+    test.setTimeout(600_000);
+    expect(stageWellLogRecords()).toContain("record(s)");
+
+    await adminPage.getByTestId("nav-pipelines").click();
+    await adminPage.getByTestId("filter-name").fill(DELIVERY_FLOW);
+    await adminPage.getByTestId("repo-pipeline").filter({ hasText: DELIVERY_FLOW }).first().click();
+    await expect(adminPage.getByTestId("page-pipeline-detail")).toBeVisible();
+    await adminPage.getByTestId("pipeline-tabs").getByRole("tab", { name: /records/i }).click();
+    const table = adminPage.getByTestId("delivery-records-table");
+    await expect(table.getByTestId("table-row").first()).toBeVisible({ timeout: 30_000 });
+
+    // Every record the filter matches, not the page in view, named after the flow.
+    const exportButton = adminPage.getByTestId("delivery-records-export");
+    await expect(exportButton).toBeEnabled();
+    const [workbook] = await Promise.all([adminPage.waitForEvent("download"), exportButton.click()]);
+    expect(workbook.suggestedFilename().startsWith(`${DELIVERY_FLOW}-`)).toBe(true);
+    expect(workbook.suggestedFilename()).toMatch(/-records\.xlsx$/);
+    expectRecordsWorkbook(await workbook.path());
+
+    // A status no record is in leaves nothing to export, and the button says so on hover rather than offering an empty file.
+    await adminPage.getByTestId("delivery-records-status").click();
+    await adminPage.getByRole("option", { name: "deleted" }).click();
+    await expect(table.getByText(/No records match/)).toBeVisible({ timeout: 30_000 });
+    await expect(exportButton).toBeDisabled();
+    await expect(adminPage.getByTestId("delivery-records-export-hint")).toHaveAttribute("title", /nothing to export/);
   });
 });

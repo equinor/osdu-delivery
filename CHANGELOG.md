@@ -8,6 +8,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Export records to Excel.** A delivery flow's Records tab has **Export**, which downloads every record its filter
+  matches (up to 25,000) as an Excel workbook to work through where the records come from: a row for each record with its
+  status, issue and problem, the file and row it came from, its key's parts and where it landed in OSDU, and an About sheet
+  saying what was exported. The Records page exports what its lookup reaches the same way, each record with its flow, and
+  `sqlflow records export` writes the same file ([records export](osdu/docs/reference/cli/records.md#records-export)).
+
 - **A repository's files open as code.** On a repo's page, a click on a flow, a mapping, a template or any other file
   shows its code in a window that slides in from the left over the page, syntax-coloured, resized by dragging its edge
   and maximized to read it alone, where a click used to open only a flow's page and other files did nothing. A flow's

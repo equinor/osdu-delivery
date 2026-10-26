@@ -569,9 +569,11 @@ sqlflow trigger --repo <repo> --flow welldb-wellbore-03-delivery --operation pla
 On the control plane, the OSDU values this guide put in `.sqlflow/env` belong to the partition: its configuration names
 `dev` and gives them as `Osdu:Partitions:dev:Properties:<NAME>` (the client secret as a `${keyvault:...}` reference), so
 every run bound to `dev` carries them ([configured partitions](../concepts/partitions.md#configured-partitions)). The
-control plane's start-up is not done (`/health/startup`) until at least one partition is registered. A node that runs a delivery needs the data
-database (`OSDU_DATA_DB`) in its own environment, and the catalog's database, which holds the `osdu` schema, through
-`SQLFLOW_CATALOG_DB` ([the node](../cli/worker.md)).
+control plane's start-up is not done (`/health/startup`) until at least one partition is registered. A node's runs take
+the data database (`OSDU_DATA_DB`) from `Osdu:Properties:OSDU_DATA_DB` or from the node's own environment, and the
+control plane needs `OSDU_DATA_DB` in its own environment for a record's Render and Source tabs and a flow's Preview tab
+([a flow's source connection](../concepts/environment-variables.md#a-flows-source-connection)). A node reads the
+catalog's database, which holds the `osdu` schema, through `SQLFLOW_CATALOG_DB` ([the node](../cli/worker.md)).
 
 ## What goes wrong
 

@@ -152,7 +152,7 @@ flow that cannot have it declares `source.incremental.isolation: readCommitted`;
 
 | Tier | OSDU Delivery adds |
 | --- | --- |
-| Control plane | The partitions it delivers to, with their values (`Osdu__Partitions__<data-partition-id>__...`, below); the values every run of every kind resolves with, set for no partition (`Osdu__Properties__<NAME>`: `OSDU_DATA_DB`, `SQLFLOW_CATALOG_DB` for the flows that read the dimension views, a storage account's location), which also serve a person's reads run here (a flow's probe, read-back, preview and source read, and the explorer's reads of a partition); `SQLFLOW_DELIVERY_PRIVATE_NETWORKS`; the other `Osdu:*` settings it needs. It never delivers. |
+| Control plane | The partitions it delivers to, with their values (`Osdu__Partitions__<data-partition-id>__...`, below); the values every run of every kind resolves with, set for no partition (`Osdu__Properties__<NAME>`: `OSDU_DATA_DB`, `SQLFLOW_CATALOG_DB` for the flows that read the dimension views, a storage account's location), which also serve a person's reads run here (a flow's probe and read-back, and the explorer's reads of a partition); `OSDU_DATA_DB` (each reference a flow's `source.connection` names) as a variable of its own as well, holding the connection string, since its reads of a flow's ingestion tables (a record's Render and Source tabs, a flow's Preview tab, a run form's scope values) take it from its environment alone ([a flow's source connection](../concepts/environment-variables.md#a-flows-source-connection)); `SQLFLOW_DELIVERY_PRIVATE_NETWORKS`; the other `Osdu:*` settings it needs. It never delivers. |
 | Node | `SQLFLOW_CATALOG_DB`, the connection of the catalog's database, which holds the `osdu` schema, with a login on that schema alone; `SQLFLOW_DELIVERY_PRIVATE_NETWORKS` when a target resolves to a private address. Every run carries the values its flows resolve, so a node needs no flow's variable, though one set in its own environment still answers a reference no value of the run's covers. SQLFlow itself opens no catalog connection on a node; the module opens the `osdu` schema through this one. |
 | GUI | Nothing beyond SQLFlow's `SQLFLOW_API_BASE_URL`. |
 | MCP server | Optional; holds no credential ([the MCP server](mcp.md#running-it-as-a-service)). |
@@ -164,7 +164,10 @@ module database that is missing, behind or ahead of its build. Every variable is
 The Bicep and Terraform deployments give the control plane the data databases (`sqlConnections`, `sql_connections`,
 `OSDU_DATA_DB` by default), the metadata database as `SQLFLOW_CATALOG_DB`, the landing storage as `LANDING_URL` and any
 further value (`properties`) as `Osdu__Properties__<NAME>`, each a setting or a `${keyvault:...}` reference, so a node
-there holds its node credential and `SQLFLOW_CATALOG_DB` alone. The compose and Kubernetes layouts still give a node
+there holds its node credential and `SQLFLOW_CATALOG_DB` alone. They give the control plane no variable named
+`OSDU_DATA_DB`: until it is given one (an app secret that refers to the Key Vault secret), a record's Render and Source
+tabs and a flow's Preview tab fail with `Environment variable 'OSDU_DATA_DB' is not set.` while the deliveries run
+([a flow's source connection](../concepts/environment-variables.md#a-flows-source-connection)). The compose and Kubernetes layouts still give a node
 `OSDU_DATA_DB` in its own environment. Values the central configuration holds, the
 partitions' among them, need no variable on any tier: no template gives a node `OSDU_URL`, `OSDU_TOKEN_URL`,
 `OSDU_SCOPE`, `OSDU_CLIENT_ID`, the ACLs or the legal tag any more, since every run carries its partition's values, and

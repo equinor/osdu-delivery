@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import { expect, test as base, type APIRequestContext, type Page } from "@playwright/test";
 import { E2E } from "../playwright.config";
 
@@ -103,5 +104,18 @@ export const test = base.extend<{ adminPage: Page }>({
     await use(page);
   },
 });
+
+/**
+ * Checks that `file` is the Excel workbook a records export writes: a zip archive (its first local file header's signature)
+ * holding the workbook, the Records sheet and the About sheet. A zip names its parts uncompressed, so they are read from the
+ * bytes without unpacking it; the cells themselves are checked by the control plane's own suites.
+ */
+export function expectRecordsWorkbook(file: string): void {
+  const bytes = readFileSync(file);
+  expect(bytes.subarray(0, 4).equals(Buffer.from([0x50, 0x4b, 0x03, 0x04]))).toBe(true);
+  for (const part of ["[Content_Types].xml", "xl/workbook.xml", "xl/worksheets/sheet1.xml", "xl/worksheets/sheet2.xml", "xl/styles.xml"]) {
+    expect(bytes.includes(part), `the workbook holds ${part}`).toBe(true);
+  }
+}
 
 export { expect } from "@playwright/test";

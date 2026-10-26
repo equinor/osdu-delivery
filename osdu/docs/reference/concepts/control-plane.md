@@ -79,9 +79,9 @@ themselves are listed in [the delivery API](api.md).
 | The `osdu` module database | The ledger, mappings, templates, caches, partitions and the central configuration, in schema `osdu` with its own migrations and version. Bootstrap migrates it after SQLFlow's catalog, and readiness stays red until it verifies against this build. |
 | The configured partitions | The OSDU partitions the deployment's configuration names (`Osdu:Partitions`), registered with the values their runs resolve once the module database verifies, and changed only in the configuration ([configured partitions](partitions.md#configured-partitions)). |
 | The `osdu-partitions` check | Reported at `/health/startup`, beside the start-up pass, not by readiness: unhealthy until the configured partitions are written, and then while the registry holds no partition, since OSDU Delivery works in partitions and does nothing without one, while the API keeps serving so a person can read why and register one. The control plane logs why. A partition registered by hand completes it without a restart. |
-| The OSDU flow kinds | The delivery, retrieval, cache, assertion, dimension and inventory kinds, their executors and their compute operations, so the repository sync projects them as pipelines and the dispatcher hands their runs to nodes. |
+| The OSDU flow kinds | The delivery, retrieval, cache, assertion, dimension, inventory and removal kinds, their executors and their compute operations, so the repository sync projects them as pipelines and the dispatcher hands their runs to nodes. |
 | The delivery routes | Every route under `/api/v1/delivery`, mapped into SQLFlow's `read`, `operate` and `author` groups, which all admit any signed-in user, with the admin routes on the `admin` policy, the only one that checks a scope ([authentication and identity](authentication-and-identity.md)). |
-| The central configuration | The values set for no partition attached to every run of every kind and every compute task as it is queued; each partition's own values attached to every delivery, retrieval, cache, assertion, dimension and inventory run besides (below). |
+| The central configuration | The values set for no partition attached to every run of every kind and every compute task as it is queued; each partition's own values attached to every delivery, retrieval, cache, assertion, dimension, inventory and removal run besides (below). |
 | A `records` search category | The delivery records category of SQLFlow's `GET /api/v1/search/all`, answered from the ledger's indexed lookup. |
 | The assistant's tools | The product's MCP server decides them: its instructions are the chat's rules, and a run's session lists the tools of the conversation's mode, SQLFlow's metadata tools and the `delivery_*` tools in estate mode, the semantic layer and the query tools in data mode ([the MCP server](../guides/mcp.md)). The module sets no list of its own; `ControlPlane:Assistant:Mcp:AllowedTools` narrows the tools when a deployment wants fewer. |
 | The assistant's routes | A chat run calls the control plane with a token delegated for that run, and a call the MCP server marks as the assistant's is held the same way whatever its credential; SQLFlow refuses both on every route not opened to an assistant run. The module opens exactly the delivery routes its readers read, and the four mapping-builder previews (`DeliveryAssistantAccess`); every other delivery route, an operator action's included, stays closed to it ([authentication and identity](authentication-and-identity.md)). |
@@ -133,11 +133,13 @@ repository resolves to, a pre-ingestion or ingestion flow's connections as much 
 environment of its own for what the estate's flows read: it resolves a supplied `${keyvault:...}` value with its own
 identity.
 
-The module also wraps SQLFlow's run dispatcher. Every run of a delivery, retrieval, cache, assertion, dimension or
-inventory flow (an inventory's remove run included) reaches the queue through it, whether an endpoint, a schedule fire, a
-fan-out group or `sqlflow trigger` put it there, and is queued carrying, besides, each partition's own values. A run bound
-to a partition resolves `${env:NAME}` from the repository's value for that partition, then the control plane's value for
-it, then the repository's value, then the control plane's, and only then from the node's own environment. A compute task
+The module also wraps SQLFlow's run dispatcher. Every run of a delivery, retrieval, cache, assertion, dimension,
+inventory or removal flow (an inventory's remove run included) reaches the queue through it, whether an endpoint, a
+schedule fire, a fan-out group or `sqlflow trigger` put it there, and is queued carrying, besides, each partition's own
+values. A run bound to a partition resolves `${env:NAME}` from the repository's value for that partition, then the
+control plane's value for it, then the repository's value, then the control plane's, and only then from the node's own
+environment; a flow's source connection skips the partition's values, and the control plane's own reads of it take its
+environment alone ([a flow's source connection](environment-variables.md#a-flows-source-connection)). A compute task
 of the module carries the values of the one partition it names over the values set for none. The run's trace names where
 each reference took its value (the configuration the control plane supplied, or the node's environment), never the value.
 

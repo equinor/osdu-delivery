@@ -59,6 +59,7 @@ internal static class DeliveryRecordVerbs
         return verb switch
         {
             "list" => await ListAsync(context, ledger, flowId, label, ct).ConfigureAwait(false),
+            "export" => await ExportAsync(context, ledger, engine, flow, label, ct).ConfigureAwait(false),
             "show" => await ShowAsync(context, ledger, flowId, label, ct).ConfigureAwait(false),
             "issues" => await IssuesAsync(context, ledger, flowId, label, ct).ConfigureAwait(false),
             "release" => await ReleaseAsync(context, ledger, engine, flow, label, ct).ConfigureAwait(false),
@@ -69,23 +70,14 @@ internal static class DeliveryRecordVerbs
             "undos" => await DeliveryArtifactVerbs.UndosAsync(context, ledger, flowId, label, ct).ConfigureAwait(false),
             "removed" => await DeliveryRemovalVerbs.RemovedAsync(context, ledger, flowId, label, ct).ConfigureAwait(false),
             "lift-removal" => await DeliveryRemovalVerbs.LiftAsync(context, engine, flow, label, ct).ConfigureAwait(false),
-            _ => context.UsageError("say what to do with the records: list, show, issues, release, adopt, reverse, reversals, artifacts, undos, removed or lift-removal."),
+            _ => context.UsageError("say what to do with the records: list, export, show, issues, release, adopt, reverse, reversals, artifacts, undos, removed or lift-removal."),
         };
     }
 
     /// <summary>The interface's records, newest first, with what each is waiting on or was refused for.</summary>
     private static async Task<int> ListAsync(CliVerbContext context, ILedger ledger, Guid flowId, string label, CancellationToken ct)
     {
-        var status = context.Arguments.GetOption("--status");
-        var query = new RecordQuery
-        {
-            Search = context.Arguments.GetOption("--search"),
-            Mode = context.Arguments.HasFlag("--contains") ? SearchMode.Contains : SearchMode.Prefix,
-            Status = Status(status),
-            Problem = Issue(context.Arguments.GetOption("--issue")),
-            Max = Count(context.Arguments.GetOption("--max"), DefaultMax, "--max"),
-        };
-
+        var query = Filter(context) with { Max = Count(context.Arguments.GetOption("--max"), DefaultMax, "--max") };
         var records = await ledger.ListAsync(flowId, query, ct).ConfigureAwait(false);
         if (context.Json)
         {
@@ -121,6 +113,63 @@ internal static class DeliveryRecordVerbs
             }
         }
 
+        return 0;
+    }
+
+    /// <summary>
+    /// The interface's records the filter matches, as the Excel workbook the GUI's Export gives (<see cref="RecordExport"/>),
+    /// to --out. It is written beside its name and moved into place, so a failure never leaves half a workbook under it.
+    /// </summary>
+    private static async Task<int> ExportAsync(CliVerbContext context, ILedger ledger, EngineContext engine, FlowDefinition flow, string label, CancellationToken ct)
+    {
+        if (context.Arguments.GetOption("--out") is not { } outPath || string.IsNullOrWhiteSpace(outPath))
+        {
+            return context.UsageError("name the workbook to write with --out <file.xlsx>.");
+        }
+
+        if (!string.Equals(Path.GetExtension(outPath), ".xlsx", StringComparison.OrdinalIgnoreCase))
+        {
+            return context.UsageError($"--out '{outPath}' names no workbook: the export is an Excel workbook, so name a file ending in .xlsx.");
+        }
+
+        var query = Filter(context);
+        var full = Path.GetFullPath(outPath);
+        if (Path.GetDirectoryName(full) is { Length: > 0 } directory)
+        {
+            Directory.CreateDirectory(directory);
+        }
+
+        var partial = full + ".partial";
+        int rows;
+        try
+        {
+            var file = new FileStream(partial, FileMode.Create, FileAccess.Write, FileShare.None, 64 * 1024);
+            await using (file.ConfigureAwait(false))
+            {
+                rows = await RecordExport.WriteAsync(ledger, flow, query, engine.Time.GetUtcNow().UtcDateTime, file, ct).ConfigureAwait(false);
+            }
+
+            File.Move(partial, full, overwrite: true);
+        }
+        catch
+        {
+            File.Delete(partial);
+            throw;
+        }
+
+        if (context.Json)
+        {
+            context.Out.WriteLine(CanonicalJson.Pretty(new JsonObject
+            {
+                ["flow"] = label,
+                ["flowId"] = flow.Id.ToString(),
+                ["file"] = full,
+                ["records"] = rows,
+            }));
+            return 0;
+        }
+
+        context.Out.WriteLine(string.Create(CultureInfo.InvariantCulture, $"{label}: wrote {rows} record(s) to {full}"));
         return 0;
     }
 
@@ -649,6 +698,15 @@ internal static class DeliveryRecordVerbs
         var single = text.ReplaceLineEndings(" ").Trim();
         return single.Length <= 240 ? single : single[..237] + "...";
     }
+
+    /// <summary>The listing filter <c>records list</c> and <c>records export</c> read: --search, --contains, --status and --issue.</summary>
+    private static RecordQuery Filter(CliVerbContext context) => new()
+    {
+        Search = context.Arguments.GetOption("--search"),
+        Mode = context.Arguments.HasFlag("--contains") ? SearchMode.Contains : SearchMode.Prefix,
+        Status = Status(context.Arguments.GetOption("--status")),
+        Problem = Issue(context.Arguments.GetOption("--issue")),
+    };
 
     private static RecordStatus? Status(string? value)
     {

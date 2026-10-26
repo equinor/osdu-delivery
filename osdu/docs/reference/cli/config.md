@@ -113,13 +113,16 @@ the configuration does not set.
 - **Runs the control plane queues.** A run triggered from the GUI or with `sqlflow trigger`, a schedule fire, and every
   member of a run group is queued carrying the values set for no partition, whatever its kind: a pre-ingestion or
   ingestion flow reads its connections from them as a delivery flow reads its platform. A run of a flow kind of the
-  module (delivery, cache, retrieval, assertion, dimension and inventory, a delivery flow's and an inventory's remove run
-  included) carries every partition's own values besides, and the node resolves with the values of the partition the run
-  binds to over the ones set for none.
+  module (delivery, cache, retrieval, assertion, dimension, inventory and removal, a delivery flow's and an inventory's
+  remove run included) carries every partition's own values besides, and the node resolves with the values of the
+  partition the run binds to over the ones set for none, except a flow's source connection, which takes the ones set for
+  none ([a flow's source connection](../concepts/environment-variables.md#a-flows-source-connection)).
 - **Compute tasks.** Every compute task carries the values set for no partition. The module's node task, a value check
   (`delivery-check-values`), carries the effective values of the one partition it acts in.
 - **What the control plane runs while a person waits**: a probe of the target, a record read back from OSDU, a preview,
-  a scope's values. These resolve with the same values.
+  a scope's values. These resolve with the same values, except the connection of the flow's ingestion tables that a
+  preview, a source read and a scope's values open, which the control plane takes from its own environment alone
+  ([a flow's source connection](../concepts/environment-variables.md#a-flows-source-connection)).
 - **Not a workstation.** `sqlflow run`, `check`, `preview` and `values` on a workstation do not read the central
   configuration: they resolve every reference from the workstation's environment and its `.sqlflow/env` file.
 

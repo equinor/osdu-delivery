@@ -3,7 +3,7 @@
 // redeliver, verify, read back, delete). Same conventions as endpoints.ts: one function per endpoint, pages compose them
 // with TanStack Query.
 
-import { del, get, getText, post, put, type QueryParams } from "@/api/client";
+import { del, get, getBlob, getText, post, put, type QueryParams } from "@/api/client";
 import type { ComputeTaskAccepted, PagedResult, RunStatus, RunValue } from "@/api/types";
 import type { PageQuery } from "@/api/endpoints";
 import type { AssertionAction, AssertionFindings, AssertionStage } from "./validation";
@@ -3772,6 +3772,15 @@ export const deliveryApi = {
     get<DeliveryInterface[]>(`/api/v1/delivery/flows/${pipelineId}/interfaces`, partition ? { partition } : {}),
   records: (pipelineId: string, query: DeliveryRecordListQuery = {}) =>
     get<PagedResult<DeliveryRecord>>(`/api/v1/delivery/flows/${pipelineId}/records`, query as QueryParams),
+  /**
+   * Every record the listing's filter matches (paging aside) as an Excel workbook: at most the listing's count limit, a
+   * broader filter refused as too broad.
+   */
+  exportRecords: (pipelineId: string, query: Omit<DeliveryRecordListQuery, keyof PageQuery>) =>
+    getBlob(`/api/v1/delivery/flows/${pipelineId}/records/export`, query as QueryParams),
+  /** Every record the lookup reaches (paging aside) as an Excel workbook, each with the flow that delivers it. */
+  exportLookup: (query: Omit<DeliveryRecordLookupQuery, keyof PageQuery>) =>
+    getBlob("/api/v1/delivery/records/export", query as QueryParams),
   /**
    * A record by what an operator holds, across every flow: a delivery key lands on the record of every flow reading
    * that row; anything else is a prefix over the OSDU id, the source key, the label and the ingestion file name. With

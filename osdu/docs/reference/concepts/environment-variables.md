@@ -121,11 +121,12 @@ Everything else is a name the flow documents choose; no code reads it. Every ref
 on every node of that pool and on the control plane: either the control plane's configuration sets it for every run
 (`Osdu:Properties:<NAME>`, [configured partitions](partitions.md#configured-partitions)) and the run carries it to its
 node, which is how the Bicep and Terraform deployments give them, or each tier has it in its own environment, as the
-compose and Kubernetes layouts do. The examples in this documentation use these names:
+compose and Kubernetes layouts do. A source connection is resolved on the control plane from its own environment either
+way ([a flow's source connection](#a-flows-source-connection)). The examples in this documentation use these names:
 
 | Reference | Points at |
 | --- | --- |
-| `${env:OSDU_DATA_DB}` | The data database (`OsduData`): the pre flows land the source files there, the ingestion flows load the keyed tables, and the delivery flow's `source.connection` reads them, each in a schema of its own. The shipped deployment assets give it under this name to every run (Bicep, Terraform) or to the control plane and the nodes (compose, Kubernetes). |
+| `${env:OSDU_DATA_DB}` | The data database (`OsduData`): the pre flows land the source files there, the ingestion flows load the keyed tables, and the delivery flow's `source.connection` reads them, each in a schema of its own. The shipped deployment assets give it under this name to every run (Bicep, Terraform) or to the control plane and the nodes (compose, Kubernetes). The Bicep and Terraform deployments give the control plane no variable of this name, which its reads of a flow's ingestion tables need ([a flow's source connection](#a-flows-source-connection)). |
 | `${env:SQLFLOW_CATALOG_DB}` | The metadata database (`OsduDelivery`), for a flow that reads the `osdu` schema's dimension views (`OsduDelivery.osdu.v_dim_<view>`). The control plane has it as SQLFlow's catalog, a node as the connection the module reads the ledger through, and the Bicep and Terraform deployments give it to the runs as well. |
 | `${env:LANDING_URL}` | The landing storage the Bicep and Terraform deployments create or adopt (`abfss://<container>@<account>.dfs.core.windows.net`), for a flow whose source location names it (`${env:LANDING_URL}/<folder>`), and for a delivery flow's work location when it names one (`${env:LANDING_URL}/.work/<flow>`). |
 | `${env:OSDU_URL}` | The OSDU endpoint (`target.endpoint`). |
@@ -190,7 +191,7 @@ target:
 ## Where a reference resolves from
 
 A reference does not have to be a variable on every node. The control plane keeps a central configuration in the `osdu`
-schema and attaches it to every delivery, retrieval, cache, assertion, dimension and inventory run it queues
+schema and attaches it to every delivery, retrieval, cache, assertion, dimension, inventory and removal run it queues
 ([the control plane](control-plane.md#the-central-configuration-on-every-run)).
 A run bound to a partition resolves `${env:NAME}` in this order:
 
@@ -210,18 +211,39 @@ payload. A partition's values come from the control plane's configuration, `Osdu
 ([configured partitions](partitions.md#configured-partitions)), which refuses a secret's value under a name that says
 it is one; other properties are set with [sqlflow config](../cli/config.md) (`config set`, `config effective`).
 
+### A flow's source connection
+
+Two kinds of `${env:NAME}` reference do not follow that order: the connection of the ingestion tables a delivery flow
+reads (`source.connection`, `${env:OSDU_DATA_DB}` in these examples) and a removal flow's key sources (a reference in a
+`location` or a `connection`). They are resolved by the process's own resolver rather than the run's:
+
+- In a run on a node they take the values set for no partition (steps 3 and 4: `Osdu:Properties`, the repository's
+  value over the control plane's), then the node's environment. A value set for one partition (steps 1 and 2) does not
+  reach them. A value check, which runs on a node as a task, takes its partition's values as every reference does.
+- On the control plane, which reads a flow's ingestion tables for a record's Render and Source tabs, a flow's Preview
+  tab and the scope values a run form offers, they take the control plane's own environment alone: neither
+  `Osdu:Properties` nor a partition's values reach these reads.
+
+So `Osdu__Properties__OSDU_DATA_DB`, the environment spelling of `Osdu:Properties:OSDU_DATA_DB`, gives the runs their data
+database, and the control plane needs a variable named `OSDU_DATA_DB` of its own for those pages. Without it they answer
+`Flow '<name>': the source connection reference could not be resolved on this node: Environment variable 'OSDU_DATA_DB' is not set.`
+while the deliveries run. A value read from the environment is used as written and is not resolved again, so that
+variable holds the connection string itself, never a `${keyvault:...}` reference: on Azure Container Apps, an app secret
+that refers to the Key Vault secret, given to the variable as its `secretRef`.
+
 ## What each tier is given
 
 | Tier | Beyond SQLFlow's own variables |
 | --- | --- |
-| Control plane | The partitions it delivers to, as `Osdu__Partitions__<data-partition-id>__Default`, `__Description` and `__Properties__<NAME>`; every `${env:...}` reference the flows use that no partition's values give (`OSDU_DATA_DB` among them), as `Osdu__Properties__<NAME>` for every run or as its own variables; `SQLFLOW_DELIVERY_PRIVATE_NETWORKS` (and the two switches, where the nodes have them). The other `Osdu:*` settings ([the control plane](control-plane.md#configuration)). |
-| Node | `SQLFLOW_CATALOG_DB` (required), which the ledger is read and written through and the flows that read the dimension views name; the `${env:...}` references its pool's flows use that neither a partition's values nor `Osdu:Properties` give (in the compose and Kubernetes layouts `OSDU_DATA_DB`); `SQLFLOW_DELIVERY_PRIVATE_NETWORKS` and the switches it needs; `OSDU_TELEMETRY_*` when its metrics are exported. |
+| Control plane | The partitions it delivers to, as `Osdu__Partitions__<data-partition-id>__Default`, `__Description` and `__Properties__<NAME>`; every `${env:...}` reference the flows use that no partition's values give (`OSDU_DATA_DB` among them), as `Osdu__Properties__<NAME>` for every run or as its own variables; the references the flows' source connections name (`OSDU_DATA_DB`) as its own variables whatever the configuration gives, since its reads of a flow's ingestion tables take them from its environment alone ([a flow's source connection](#a-flows-source-connection)); `SQLFLOW_DELIVERY_PRIVATE_NETWORKS` (and the two switches, where the nodes have them). The other `Osdu:*` settings ([the control plane](control-plane.md#configuration)). |
+| Node | `SQLFLOW_CATALOG_DB` (required), which the ledger is read and written through and the flows that read the dimension views name; the `${env:...}` references its pool's flows use that neither a partition's values nor `Osdu:Properties` give (in the compose and Kubernetes layouts `OSDU_DATA_DB`), a source connection set only for a partition included ([a flow's source connection](#a-flows-source-connection)); `SQLFLOW_DELIVERY_PRIVATE_NETWORKS` and the switches it needs; `OSDU_TELEMETRY_*` when its metrics are exported. |
 | CLI | The catalog connection (`--db`, else `SQLFLOW_CATALOG_DB`), which the `osdu` schema is read through; the references of the flows it runs locally; the network switches. |
 | MCP server | Its own variables ([the MCP server](../guides/mcp.md#running-it-as-a-service)); no secret. |
 
 Where the tiers have the flow references as their own variables, keep the control plane's list the same as the nodes':
 a reference missing there makes a probe or a preview fail while the deliveries still work. Set as `Osdu:Properties`,
-one list serves both.
+one list serves the runs on both tiers, but not the control plane's reads of a flow's ingestion tables, which need the
+source connections as its own variables ([a flow's source connection](#a-flows-source-connection)).
 
 ## See also
 

@@ -94,6 +94,11 @@ public sealed class DeliveryCliModule : ICliModule
                 "                                   An interface's records from the ledger: the key, the status, the OSDU id",
                 "                                   and the last error of each (needs --db). A flow that names its partitions",
                 "                                   keeps a ledger per partition: --partition names the one to read",
+                "sqlflow records export <flow.yaml> --out <file.xlsx> [--interface <name>] [--partition <id>] [--search <term>]",
+                "                       [--contains] [--status <status>] [--issue <id>]",
+                "                                   The records the filter matches as an Excel workbook, the file the",
+                "                                   Records tab's Export gives: a row each with its status, issue, problem,",
+                "                                   source file and row, key and OSDU id; at most 25000 (needs --db)",
                 "sqlflow records show <flow.yaml> --key <delivery key | source key> [--interface <name>] [--partition <id>]",
                 "                     [--attempts <n>]",
                 "                                   One record with every try it took: what each sent, what the target",
@@ -147,9 +152,9 @@ public sealed class DeliveryCliModule : ICliModule
             ],
             DeliveryRecordVerbs.RecordsAsync)
         {
-            Subcommands = ["list", "show", "issues", "release", "adopt", "reverse", "reversals", "artifacts", "undos", "removed", "lift-removal"],
+            Subcommands = ["list", "export", "show", "issues", "release", "adopt", "reverse", "reversals", "artifacts", "undos", "removed", "lift-removal"],
             Flags = ["--contains", "--preview"],
-            ValueOptions = ["--interface", "--partition", "--search", "--status", "--max", "--key", "--attempts", "--issue", "--confirm", "--run", "--submission", "--outcome", "--state", "--after"],
+            ValueOptions = ["--interface", "--partition", "--search", "--status", "--max", "--key", "--attempts", "--issue", "--confirm", "--run", "--submission", "--outcome", "--state", "--after", "--out"],
         },
         new CliVerb(
             "config",

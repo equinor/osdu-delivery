@@ -70,8 +70,10 @@ when the estate has it.
   `SQLFLOW_CATALOG_DB`, with a login on the `osdu` schema alone: a node without it refuses to start and takes no work.
   The flows that build and read the dimension tables and views name the same variable. The values a run's flows
   resolve beside it (`OSDU_DATA_DB`, the landing storage) reach the run one of two ways: on Azure the control plane's configuration sets them for every run
-  (`Osdu:Properties:<NAME>`, below) and the run carries them to its node, so a node holds nothing else; in the compose
-  and Kubernetes layouts they are the node's own environment variables. See
+  (`Osdu:Properties:<NAME>`, below) and the run carries them to its node, so a node holds nothing else, while the
+  control plane's own reads of a flow's ingestion tables (a record's Render and Source tabs, a flow's Preview tab) take
+  `OSDU_DATA_DB` from its environment alone and need it there as an app secret too; in the compose and Kubernetes
+  layouts they are the node's own environment variables. See
   [../docs/reference/concepts/environment-variables.md](../docs/reference/concepts/environment-variables.md).
 - **The delivery chain** is three flows in lineage order: a SQLFlow pre-ingestion flow lands the source files, a
   SQLFlow ingestion flow loads the keyed ingestion tables, and the OSDU flow reads those tables and delivers. The

@@ -76,7 +76,7 @@ ERROR  this host is the OSDU Delivery worker and takes the node's options only (
 ```
 
 `sqlflow worker` run from the OSDU Delivery CLI is the same node. Either way the module registers on the node's
-services, so a run of a delivery, retrieval, cache, assertion, dimension or inventory flow executes exactly as it does
+services, so a run of a delivery, retrieval, cache, assertion, dimension, inventory or removal flow executes exactly as it does
 with `sqlflow run`, a removal of records from OSDU included, which is a `remove` run of the delivery flow. One compute
 task of the module also drains on nodes: a value check of a mapping across a scope (`delivery-check-values`). What a
 person asks and waits on (a probe of a target, a record read back, a preview, a scope's values, the explorer) is not a
@@ -124,7 +124,7 @@ partition's values from the control plane's configuration
 
 | What | Typical reference | Used for |
 | --- | --- | --- |
-| The data database | `${env:OSDU_DATA_DB}` | Reading the keyed ingestion tables the OSDU flow delivers from, and a cache flow's lookup tables. |
+| The data database | `${env:OSDU_DATA_DB}` | Reading the keyed ingestion tables the OSDU flow delivers from, and a cache flow's lookup tables. As the OSDU flow's `source.connection` it takes the values set for no partition, never a partition's own ([a flow's source connection](../concepts/environment-variables.md#a-flows-source-connection)). |
 | The metadata database | `${env:SQLFLOW_CATALOG_DB}` | A flow that reads the `osdu` schema's dimension views. It is the node's own variable too, which the module reads the ledger through ([the module database](#the-module-database-sqlflow_catalog_db)). |
 | The OSDU endpoint and its credentials | `${env:OSDU_URL}`, `${env:OSDU_TOKEN_URL}`, `${env:OSDU_CLIENT_ID}`, `${env:OSDU_CLIENT_SECRET}`, `${env:OSDU_SCOPE}` | The flow's `target` (or a cache, retrieval or assertion flow's `source`) and its token request. |
 | The destination parameters | `${env:OSDU_DATA_PARTITION}`, `${env:OSDU_ACL_OWNER}`, `${env:OSDU_ACL_VIEWER}`, `${env:OSDU_LEGAL_TAG}` | The mapping parameters the OSDU flow kind supplies when a flow does not set them. A flow bound to a partition takes `dataPartition` from its partition, or from its `data-partition-id` header, instead. |

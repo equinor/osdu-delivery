@@ -6,6 +6,7 @@ using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Http.HttpResults;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Routing;
+using Microsoft.AspNetCore.WebUtilities;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Storage;
 using Microsoft.Extensions.Logging;
@@ -580,7 +581,9 @@ public static class DeliveryEndpoints
         delivery.MapGet("/flows/{pipelineId:guid}/stats", GetStatsAsync).WithName("GetDeliveryFlowStats");
         delivery.MapGet("/flows/{pipelineId:guid}/interfaces", ListInterfacesAsync).WithName("ListDeliveryInterfaces");
         delivery.MapGet("/flows/{pipelineId:guid}/records", ListRecordsAsync).WithName("ListDeliveryRecords");
+        delivery.MapGet("/flows/{pipelineId:guid}/records/export", ExportRecordsAsync).WithName("ExportDeliveryRecords");
         delivery.MapGet("/records", LookupRecordsAsync).WithName("LookupDeliveryRecords");
+        delivery.MapGet("/records/export", ExportRecordLookupAsync).WithName("ExportDeliveryRecordLookup");
         delivery.MapGet("/records/flows", ListRecordFlowsAsync).WithName("ListDeliveryRecordFlows");
         delivery.MapGet("/flows/{pipelineId:guid}/target", GetTargetAsync).WithName("GetDeliveryTarget");
         delivery.MapGet("/flows/{pipelineId:guid}/submissions", ListSubmissionsAsync).WithName("ListDeliverySubmissions");
@@ -1055,6 +1058,102 @@ public static class DeliveryEndpoints
         var hits = await DeliveryRecordHits.DescribeAsync(db, osdu, items, ct, term).ConfigureAwait(false);
         return TypedResults.Ok(new PagedResult<DeliveryRecordHitDto>(hits, p, size, total.Count, TotalCapped: !total.Exact));
     }
+
+    /// <summary>
+    /// The records a listing filter of one interface matches, as an Excel workbook (<see cref="RecordExport"/>): at most the
+    /// listing's count limit, a broader filter refused as a listing too broad. The file is written whole before the answer
+    /// starts, so a refusal or a failure is answered as a problem, never as half a file.
+    /// </summary>
+    private static async Task<Results<PushStreamHttpResult, ProblemHttpResult>> ExportRecordsAsync(
+        Guid pipelineId, string? search, string? mode, string? status, Guid? submissionId, Guid? runId, bool? drifted, Guid? deliveredBy, string? issue,
+        [FromQuery(Name = "interface")] string? interfaceName, [FromQuery] string? partition, CatalogDbContext db, DeliveryDocumentLoader documents,
+        IPartitionRegistry partitions, ILedger ledger, TimeProvider clock, HttpResponse response, CancellationToken ct)
+    {
+        var (flow, unresolved) = await ResolveKeptAsync(db, documents, partitions, ledger, pipelineId, interfaceName, partition, ct).ConfigureAwait(false);
+        if (flow is null)
+        {
+            return unresolved!;
+        }
+
+        var (query, invalid) = BuildQuery(new DeliveryRecordFilterDto(status, search, mode, submissionId, runId, drifted == true, deliveredBy, issue));
+        if (query is null)
+        {
+            return invalid!;
+        }
+
+        var file = WorkbookBuffer(response);
+        try
+        {
+            await RecordExport.WriteAsync(ledger, flow.Flow, query, clock.GetUtcNow().UtcDateTime, file, ct).ConfigureAwait(false);
+        }
+        catch (RecordQueryTooBroadException ex)
+        {
+            return TooBroad(ex.Message);
+        }
+
+        return Workbook(file, RecordExport.FileName(flow.Flow, query), ct);
+    }
+
+    /// <summary>
+    /// The records the Records page's lookup reaches, as an Excel workbook (<see cref="RecordExport.WriteLookup"/>): the same
+    /// lookup as <see cref="LookupRecordsAsync"/>, every record it reaches rather than a page of them, each with the flow that
+    /// delivers it. The About sheet says when more records match than a lookup reaches.
+    /// </summary>
+    private static async Task<Results<PushStreamHttpResult, ProblemHttpResult>> ExportRecordLookupAsync(
+        string? search, string? status, Guid? flowId, [FromQuery] string? partition, CatalogDbContext db, OsduDbContext osdu, ILedger ledger,
+        TimeProvider clock, HttpRequest request, HttpResponse response, CancellationToken ct)
+    {
+        partition = WorkbenchPartition.Named(partition, request);
+        var term = search?.Trim() is { Length: > 0 } typed ? typed : null;
+        var (query, invalid) = BuildQuery(new DeliveryRecordFilterDto(status, null, null, null, null));
+        if (query is null)
+        {
+            return invalid!;
+        }
+
+        const int reach = RecordListing.LookupCandidateLimit;
+        var found = term is null
+            ? await ledger.ListRecentAsync(reach, query.Status, flowId, partition, ct).ConfigureAwait(false)
+            : await ledger.LookupAsync(term, reach, query.Status, flowId, partition, ct).ConfigureAwait(false);
+
+        // Fewer records than the lookup reaches means it reached them all; otherwise one more than it reaches is counted.
+        var more = false;
+        if (found.Count >= reach)
+        {
+            var total = term is null
+                ? await ledger.CountRecentAsync(reach + 1, query.Status, flowId, partition, ct).ConfigureAwait(false)
+                : await ledger.CountLookupAsync(term, reach + 1, query.Status, flowId, partition, ct).ConfigureAwait(false);
+            more = !total.Exact;
+        }
+
+        // A hit names the flow, interface and partition of its record, in the order the records were given.
+        var described = await DeliveryRecordHits.DescribeAsync(db, osdu, found, ct, term).ConfigureAwait(false);
+        var hits = found
+            .Select((record, i) => new RecordExportHit(
+                record, described[i].FlowName, described[i].Interface, described[i].Partition, described[i].Matched?.Select(m => m.Value).ToList() ?? []))
+            .ToList();
+        var narrowed = flowId is { } id ? (await ledger.GetLedgerAsync(id, ct).ConfigureAwait(false))?.LedgerName ?? id.ToString("D") : null;
+        var lookup = new RecordLookupExport(term, query.Status, narrowed, partition, more);
+
+        var file = WorkbookBuffer(response);
+        RecordExport.WriteLookup(lookup, hits, clock.GetUtcNow().UtcDateTime, file);
+        return Workbook(file, RecordExport.FileName(lookup), ct);
+    }
+
+    /// <summary>
+    /// Where a workbook is written before the answer starts: in memory, and past a threshold in a temporary file, released
+    /// with the response.
+    /// </summary>
+    private static FileBufferingWriteStream WorkbookBuffer(HttpResponse response)
+    {
+        var file = new FileBufferingWriteStream();
+        response.RegisterForDisposeAsync(file);
+        return file;
+    }
+
+    /// <summary>A workbook written to <paramref name="file"/>, sent as a download named <paramref name="fileName"/>.</summary>
+    private static PushStreamHttpResult Workbook(FileBufferingWriteStream file, string fileName, CancellationToken ct)
+        => TypedResults.Stream(body => file.DrainBufferAsync(body, ct), RecordExport.MediaType, fileName);
 
     /// <summary>
     /// The flows the Records page can be narrowed to: every ledger identity the synced repositories name that holds at

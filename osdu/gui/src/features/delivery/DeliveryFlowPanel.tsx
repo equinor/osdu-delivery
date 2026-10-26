@@ -26,7 +26,9 @@ import { RelativeTime } from "@/components/RelativeTime";
 import { RichTooltip } from "@/components/RichTooltip";
 import { SearchInput } from "@/components/SearchInput";
 import { TruncatedText } from "@/components/TruncatedText";
+import { downloadFileName } from "@/lib/download";
 import { BlockedBadge, RecordStatusBadge, SubmissionStatusBadge, VerifyOutcomeBadge } from "./DeliveryBadges";
+import { ExportRecordsButton } from "./ExportRecordsButton";
 import { FlowStatusBar } from "./FlowStatusBar";
 import { InterfacePicker } from "./InterfacePicker";
 import { KindText } from "./KindText";
@@ -459,6 +461,18 @@ export function DeliveryFlowPanel({ pipelineId, flowName, section }: { pipelineI
                 kept blocked by issue {shortId(issueFilter)}: clear
               </Button>
             )}
+            {/* Every record the filter matches, not the page in view: the list to work through where the records come from. */}
+            <ExportRecordsButton
+              fetchWorkbook={() => deliveryApi.exportRecords(pipelineId, { interface: interfaceName ?? undefined, partition: partition ?? undefined, ...filter })}
+              fileName={downloadFileName([flowName, interfaceName, partition, "records", status === ALL ? null : status], "xlsx", "records")}
+              unavailable={!ready
+                ? "The records are read once the partition in view is known."
+                : matchedCapped
+                  ? `More than ${matched.toLocaleString()} records match, and an export writes at most ${matched.toLocaleString()} at once. Narrow the filter and export each part.`
+                  : matched === 0 ? "No records match the filter, so there is nothing to export." : null}
+              title={`Download the ${matched.toLocaleString()} record${matched === 1 ? "" : "s"} the filter matches as an Excel workbook: a row each with its status, issue, problem, source file and row, key and OSDU id`}
+              testId="delivery-records-export"
+            />
           </FilterBar>
           {/* A flow that works in partitions has no records until the partition in view is known. */}
           {!ready ? <Skeleton className="h-40 w-full rounded-lg" /> : (

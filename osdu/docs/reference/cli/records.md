@@ -2,10 +2,14 @@
 id: delivery-cli-records
 title: "sqlflow records: a delivery flow's records in the ledger, their history, issues, release and reversal"
 type: cli-command
-summary: "Read and act on a delivery flow's ledger from a terminal: list records, one record's attempts, blocking issues, release, reverse a run, artifacts and undos."
+summary: "A delivery flow's ledger from a terminal: list or export records to Excel, one record's attempts, blocking issues, release, reverse a run, artifacts, undos."
 keywords:
   - records
   - record history
+  - export records
+  - excel
+  - xlsx
+  - working list
   - attempts
   - failed records
   - held records
@@ -41,6 +45,8 @@ sourceRefs:
   - osdu/src/SqlFlow.Delivery.Cli/DeliveryArtifactVerbs.cs
   - osdu/src/SqlFlow.Delivery.Cli/DeliveryRemovalVerbs.cs
   - osdu/src/SqlFlow.Delivery.Cli/CliPartitions.cs
+  - osdu/src/SqlFlow.Delivery/Engine/RecordExport.cs
+  - osdu/src/SqlFlow.Delivery/Storage/XlsxWorkbook.cs
   - osdu/src/SqlFlow.Delivery/Ledger/ILedger.cs
   - osdu/src/SqlFlow.Delivery/Ledger/OsduLedger.cs
   - osdu/src/SqlFlow.Delivery/Ledger/OsduLedger.Reversals.cs
@@ -57,8 +63,8 @@ sourceRefs:
 # sqlflow records: a delivery flow's records in the ledger, their history, issues, release and reversal
 
 `sqlflow records` reads and acts on a delivery flow's ledger where an operator already is, at a terminal, on a node or
-in a script, without a control plane to reach. It lists an interface's records, shows one record with every attempt it
-took, groups the blocked records into issues, releases blocked records once their cause is fixed, reverses what a run
+in a script, without a control plane to reach. It lists an interface's records, exports them as an Excel workbook, shows
+one record with every attempt it took, groups the blocked records into issues, releases blocked records once their cause is fixed, reverses what a run
 or a submission delivered, and shows what deliveries created in OSDU and what unfinished deliveries left behind. It is
 the same history the GUI's Records, Issues and record pages show, read from the same ledger
 ([The ledger](../concepts/ledger.md)).
@@ -71,6 +77,7 @@ command shares (`--db`, `--json`, `-v`, the `.sqlflow/env` file) are described i
 
 ```bash
 sqlflow records list      <flow.yaml> [--search <term>] [--contains] [--status <status>] [--issue <id>] [--max <n>]
+sqlflow records export    <flow.yaml> --out <file.xlsx> [--search <term>] [--contains] [--status <status>] [--issue <id>]
 sqlflow records show      <flow.yaml> --key <delivery key | source key> [--attempts <n>]
 sqlflow records issues    <flow.yaml> [--issue <id>] [--max <n>]
 sqlflow records release   <flow.yaml> [--key <delivery key>]... | [--issue <id>]
@@ -89,7 +96,7 @@ every form: [--interface <name>] [--partition <id>] [--db <conn-ref>] [--json] [
 
 | Argument or option | Description |
 | --- | --- |
-| subcommand | `list`, `show`, `issues`, `release`, `adopt`, `reverse`, `reversals`, `artifacts`, `undos`, `removed` or `lift-removal`. Anything else prints `ERROR  say what to do with the records: list, show, issues, release, adopt, reverse, reversals, artifacts, undos, removed or lift-removal.` and the usage, exit 1. |
+| subcommand | `list`, `export`, `show`, `issues`, `release`, `adopt`, `reverse`, `reversals`, `artifacts`, `undos`, `removed` or `lift-removal`. Anything else prints `ERROR  say what to do with the records: list, export, show, issues, release, adopt, reverse, reversals, artifacts, undos, removed or lift-removal.` and the usage, exit 1. |
 | `<flow.yaml>` | The delivery flow whose ledger is read. Without it: `ERROR  name the flow document whose records these are.` |
 | `--interface <name>` | The interface whose ledger is read. A source with several interfaces has to name one: `Flow '<name>' delivers <n> interfaces (<names>); name the one this operation is for.` |
 | `--partition <id>` | The partition whose ledger is read, for a flow that works in partitions (each partition keeps a ledger of its own). A partition named here is read as it is, even one taken out of the registry, since its records stay readable. Without it, the partition a run would take. |
@@ -135,6 +142,40 @@ stages nothing.`
 `lastVerifyOutcome`, `lastError`, `sourceFileName`, `sourceRowNumber`, `issue`, and what the last check before sending
 found: `validationOutcome`, `validatedUtc` and `assertionFailures` (how many judgements of the mapping's assertions
 failed; null when the mapping states none).
+
+## records export
+
+The interface's records a filter matches, every one rather than a page, as the Excel workbook the GUI's **Export** gives: a
+working list of what to fix where the records come from. It takes the filter `records list` takes (`--search`,
+`--contains`, `--status`, `--issue`) and writes at most 25,000 records, the listing's count limit. A filter matching more is
+refused, and nothing is written: `The filter matches more than 25000 records as far as the listing counts, and an export
+writes at most 25000 at once. Narrow it (a status, an issue, a submission, a run or a search) and export each part.` The
+file is written beside its name and moved into place, so a failure never leaves half a workbook under it.
+
+| Option | Description |
+| --- | --- |
+| `--out <file.xlsx>` | The workbook to write, required (`name the workbook to write with --out <file.xlsx>.`). A name not ending in `.xlsx` is refused (`--out '<path>' names no workbook: the export is an Excel workbook, so name a file ending in .xlsx.`). |
+
+```text
+welldb-wellbore-03-delivery: wrote 312 record(s) to /work/held-wellbores.xlsx
+```
+
+The **Records** sheet has a row for each record, sorted by record (its label, or its source key when its mapping gives
+none) and then by source key, under a bold header row that stays in view and carries a filter: **Record**, **Source key**,
+a column for each key column the flow declares (`source.record.key`, named as it names them) holding that part of the
+record's key, **Status**, **Blocked**, **Issue** (the 16 characters `records issues` prints), **Problem** (the last error,
+or why the record is held), **Source file** and **Source row** (where its newest version came from: the queued version's
+while work waits), **Identities**, **Attempts**, **Next attempt (UTC)**, **Waiting for**, **Document waiting**,
+**Delivered (UTC)**, **Verified (UTC)**, **Verify**, **OSDU id**, **OSDU version** (text, since its sixteen digits are more
+than a spreadsheet number keeps), **Mapping**, **Updated (UTC)** and **Delivery key**. Times are UTC date-time cells and
+counts are numbers; no text is read as a formula. The **About** sheet names the flow, interface, ledger and partition, the
+filter in words, how many records were written, how they are sorted and when, and what each column holds.
+
+The workbench's Records page exports what its lookup reaches the same way, at most the 1,000 records a lookup reaches,
+with the flow, interface and partition of each record and, for a search, the values the term matched
+([The OSDU pages](../concepts/gui.md#records)).
+
+`--json`: `flow`, `flowId`, `file` (the full path written) and `records`.
 
 ## records show
 
@@ -392,6 +433,12 @@ The failed wellbores of the `dev` partition:
 sqlflow records list flows/welldb-wellbore-03-delivery.yaml --partition dev --status failed
 ```
 
+The held wellbores of the `dev` partition, as a workbook for the people who fix them at the source:
+
+```bash
+sqlflow records export flows/welldb-wellbore-03-delivery.yaml --partition dev --status held --out held-wellbores.xlsx
+```
+
 One wellbore's history, by its source key:
 
 ```bash
@@ -424,7 +471,7 @@ sqlflow records reverse flows/welldb-wellbore-03-delivery.yaml --partition dev -
 | Exit code | Condition |
 | --- | --- |
 | 0 | The answer was printed, the release or reversal completed with no failed record, or every key a lift named was lifted. |
-| 1 | A usage error; the flow, its partition or interface could not be settled; no module database; a record, issue or reversal that does not exist; a reversal with a failed record; `records reversals` naming a source with no reversal; or a lift naming a key the ledger keeps out for no removal. Errors print one `ERROR  <message>` line on stderr, credentials redacted. |
+| 1 | A usage error; the flow, its partition or interface could not be settled; no module database; an export whose filter matches more records than it writes; a record, issue or reversal that does not exist; a reversal with a failed record; `records reversals` naming a source with no reversal; or a lift naming a key the ledger keeps out for no removal. Errors print one `ERROR  <message>` line on stderr, credentials redacted. |
 | 130 | Interrupted with Ctrl+C. |
 
 ## See also

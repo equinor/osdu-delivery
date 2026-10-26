@@ -1,6 +1,6 @@
 import { DELIVERY_FLOW } from "./global-setup";
 import { stageWellLogRecords } from "./delivery-cli";
-import { expect, test } from "./helpers";
+import { expect, expectRecordsWorkbook, test } from "./helpers";
 
 // Traceability from the product's front door (CLAUDE.md: traceability is the product). An operator holding a source key,
 // an OSDU id or a file name finds the record without knowing which flow delivered it, and the record's page tells its
@@ -61,6 +61,14 @@ test.describe.serial("record trace", () => {
     // The empty answer to the last state stays on screen until this one arrives, so the row is waited for by what it holds.
     await expect(adminPage).toHaveURL(/status=pending/);
     await expect(rows.first()).toContainText("PROJECT_A", { timeout: 30_000 });
+
+    // What the lookup lists downloads as an Excel workbook, each record with the flow that delivers it.
+    const [workbook] = await Promise.all([
+      adminPage.waitForEvent("download"),
+      adminPage.getByTestId("delivery-lookup-export").click(),
+    ]);
+    expect(workbook.suggestedFilename()).toMatch(/^records-.*pending\.xlsx$/);
+    expectRecordsWorkbook(await workbook.path());
 
     // A row opens the record, whose timeline tells the one chapter it has lived so far: its row arrived, the ledger
     // picked it up and reserved its OSDU id, and the document waits to be sent. Nothing was sent, and no row of the

@@ -11,6 +11,8 @@
     <PackageReference Include="xunit" />
     <PackageReference Include="xunit.runner.visualstudio" />
     <PackageReference Include="Microsoft.AspNetCore.Mvc.Testing" />
+    <!-- An exported workbook is read back as the engine suite reads it (WorkbookReading). Tests only. -->
+    <PackageReference Include="ClosedXML" />
   </ItemGroup>
 
   <ItemGroup>
@@ -35,6 +37,7 @@
          (xUnit reads a collection's definition only from the assembly whose tests join it, so it is compiled in here too).
          One fixture, two suites, so the API tests run a flow against exactly what the engine tests run it against. -->
     <Compile Include="..\SqlFlow.Delivery.Tests\TestSupport.cs" Link="Fixtures\TestSupport.cs" />
+    <Compile Include="..\SqlFlow.Delivery.Tests\WorkbookReading.cs" Link="Fixtures\WorkbookReading.cs" />
     <Compile Include="..\SqlFlow.Delivery.Tests\MemoryTemplates.cs" Link="Fixtures\MemoryTemplates.cs" />
     <Compile Include="..\SqlFlow.Delivery.Tests\OsduTestDatabase.cs" Link="Fixtures\OsduTestDatabase.cs" />
     <Compile Include="..\SqlFlow.Delivery.Tests\SqlServerSuite.cs" Link="Fixtures\SqlServerSuite.cs" />

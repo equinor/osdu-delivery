@@ -240,7 +240,7 @@ where each record's files are.
 
 | Key | Type | Default | Meaning |
 | --- | --- | --- | --- |
-| `connection` | string | required | The database holding the ingestion tables, as a `${env:NAME}` or `${keyvault:vault/secret}` reference, or a SQL Server connection string whose password is such a reference. Resolved on the node that runs the flow ([connections and secrets](../../../../sqlflow/docs/reference/concepts/connections-and-secrets.md)). |
+| `connection` | string | required | The database holding the ingestion tables, as a `${env:NAME}` or `${keyvault:vault/secret}` reference, or a SQL Server connection string whose password is such a reference. Resolved on the node that runs the flow ([connections and secrets](../../../../sqlflow/docs/reference/concepts/connections-and-secrets.md)); an `${env:...}` reference in it takes the values set for no partition, then the node's environment, and on the control plane, for a preview or a source read, from its environment alone ([a flow's source connection](../concepts/environment-variables.md#a-flows-source-connection)). |
 | `record.object` | string | required | The record table's three-part name, `[database].[schema].[table]` (`OsduData.silver.WellLog`). |
 | `record.key` | list | required | The key columns, in order: the ing flow's `load.keyColumns`. They must name the same columns, in the same order, as the mapping's `dataset.key`. |
 | `record.primaryKey` | string | none | The table's identity primary key (the ing flow's `target.identityColumn`, such as `RecId`). A fan-out cuts the read on it; without it the read is planned on one run and only the sending fans out. See [The identity primary key](#the-identity-primary-key). |

@@ -224,7 +224,10 @@ Osdu__Properties__OSDU_DATA_DB=${keyvault:welldb-vault/osdu-data-db}
 A name a partition's values leave out resolves as every reference does: the repository's or the control plane's value
 for no partition, then the node's environment ([sqlflow config](../cli/config.md)). The client secret stays in the
 vault: the value is a `${keyvault:<vault>/<secret>}` reference, carried unresolved in the run's payload, which the node
-resolves with its own identity when a run needs it, as the control plane does for the reads a person waits on.
+resolves with its own identity when a run needs it, as the control plane does for the reads a person waits on. A flow's
+source connection is the exception: a partition's own value does not reach it, and the control plane's reads of a
+flow's ingestion tables take it from the control plane's environment
+([a flow's source connection](environment-variables.md#a-flows-source-connection)).
 
 `OSDU_URL`, `OSDU_TOKEN_URL`, `OSDU_SCOPE`, `OSDU_CLIENT_ID` and `OSDU_CLIENT_SECRET` are also the partition's own
 connection to OSDU: the explorer reads the partition through them, resolved the same way but with no repository's

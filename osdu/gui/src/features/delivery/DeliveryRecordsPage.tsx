@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { CloudUpload, History, TextSearch } from "lucide-react";
@@ -14,9 +14,11 @@ import { Page } from "@/components/Page";
 import { PageHeader } from "@/components/PageHeader";
 import { PagedTable } from "@/components/PagedTable";
 import { SearchInput } from "@/components/SearchInput";
+import { downloadFileName } from "@/lib/download";
 import { useActivePartition } from "./activePartition";
 import { useLinkedPartition } from "./useLinkedPartition";
 import { RecordStatusBadge } from "./DeliveryBadges";
+import { ExportRecordsButton } from "./ExportRecordsButton";
 import { ledgerFlowOptions } from "./ledgerFlowOptions";
 import { CompactTime, OsduTarget, RecordIdentity } from "./RecordCells";
 
@@ -214,11 +216,40 @@ export default function DeliveryRecordsPage() {
   const selectStatus = (next: string) => setParam("status", next === ALL ? null : next);
   const selectFlow = (next: string) => setParam("flow", next === "" ? null : next);
 
+  // The lookup the table pages through and the export writes whole: the same one, so the file is what the page lists.
+  const lookup = useMemo(() => ({
+    search: searching ? term : undefined,
+    status: status === ALL ? undefined : (status as DeliveryRecordStatus),
+    flowId: flow === "" ? undefined : flow,
+    partition: active ?? undefined,
+  }), [searching, term, status, flow, active]);
+  // How many records the lookup reached, as its last page counted them; capped when more match than it reaches.
+  const [reached, setReached] = useState<{ total: number; capped: boolean } | null>(null);
+  const onPageLoaded = useCallback((_rows: DeliveryRecordHit[], total: number, capped: boolean) => {
+    setReached((known) => (known?.total === total && known.capped === capped ? known : { total, capped }));
+  }, []);
+  const flowLabel = flow === "" ? null : flowOptions.find((option) => option.value === flow)?.label ?? flow;
+
   return (
     <Page data-testid="page-delivery-records">
       <PageHeader
         title="Records"
         subtitle={`The records of every flow${active === null ? "" : ` in ${active}`}, newest first, and a way back to any one of them: a wellbore id or well name the mapping declares, a source key or label, an OSDU id, a delivery key, or the ingestion file it came from. Every flow is searched unless one is chosen, and each hit says which value matched.`}
+        // What the lookup lists, every record it reaches rather than the page in view: a page-wide action, so it stays in
+        // the header at any width rather than wrapping the filters.
+        actions={(
+          <ExportRecordsButton
+            fetchWorkbook={() => deliveryApi.exportLookup(lookup)}
+            fileName={downloadFileName(["records", active, flowLabel, status === ALL ? null : status], "xlsx", "records")}
+            unavailable={reached === null
+              ? "The lookup has not answered yet."
+              : reached.total === 0 ? "No records match, so there is nothing to export." : null}
+            title={reached?.capped
+              ? `Download the first ${reached.total.toLocaleString()} records the lookup reaches as an Excel workbook, with the flow of each; more match, and the workbook says so. A flow's Records tab exports every record its filter matches.`
+              : `Download the ${(reached?.total ?? 0).toLocaleString()} record${reached?.total === 1 ? "" : "s"} the lookup finds as an Excel workbook: a row each with its flow, status, issue, problem, source file and row, and OSDU id`}
+            testId="delivery-lookup-export"
+          />
+        )}
       />
       <FilterBar>
         <SearchInput
@@ -261,14 +292,8 @@ export default function DeliveryRecordsPage() {
       )}
       <PagedTable
         queryKey={["delivery", "lookup", term, status, flow, active]}
-        fetchPage={(page, pageSize) => deliveryApi.lookupRecords({
-          search: searching ? term : undefined,
-          status: status === ALL ? undefined : (status as DeliveryRecordStatus),
-          flowId: flow === "" ? undefined : flow,
-          partition: active ?? undefined,
-          page,
-          pageSize,
-        })}
+        fetchPage={(page, pageSize) => deliveryApi.lookupRecords({ ...lookup, page, pageSize })}
+        onPageLoaded={onPageLoaded}
         columns={columns}
         rowKey={(row) => `${row.flowId}/${row.deliveryKey}`}
         onRowClick={(row) => navigate(deliveryRecordRoute(row))}
