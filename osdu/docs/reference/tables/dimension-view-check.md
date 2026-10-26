@@ -41,6 +41,8 @@ them.
 | `Error` | `nvarchar(4000)` | yes | Why the view could not be read, redacted. |
 | `CheckedUtc` | `datetime2` | no | When the check was made. |
 | `DurationMs` | `int` | no | How long the check read the view, in milliseconds. |
+| `ReadVersion` | `varchar(64)` | yes | What the check read, as one text: SHA-256, hex, of the view's statement hash and the version of every dimension table it reads, and every table a view it joins reads, in the partition ([`osdu.Dimension`](dimension.md)'s `TableVersion`). Two checks of the same text read the same rows. Null for a check made before checks kept it. |
+| `ReusedCheckId` | `bigint` | yes | The check whose findings this one keeps, when nothing the view reads had changed since it (the same `ReadVersion`) and the view was not read again ([A check kept](../flow/dimension-views.md)); null for a check that read the view. |
 
 ## Keys and indexes
 
@@ -52,5 +54,6 @@ them.
 
 ## Written and read by
 
-- **Written** and pruned by a build after it writes the views (`SqlServerDimensionViewStore.cs`).
-- **Read** by the dimension flow's views page.
+- **Written** and pruned by a build after it writes the views (`SqlServerDimensionViewStore.cs`); a check whose
+  `ReadVersion` is that of the view's last passed check of the partition is written with that check's findings.
+- **Read** by the dimension flow's views page, and by a build, which compares its `ReadVersion` with the last check's.

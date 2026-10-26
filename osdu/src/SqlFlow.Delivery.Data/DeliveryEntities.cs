@@ -2586,6 +2586,14 @@ public sealed class DeliveryDimension
     /// </summary>
     public string? ValueColumn { get; set; }
 
+    /// <summary>
+    /// How many times a write changed the rows the dimension's table holds of the partition: a build's write that added,
+    /// rewrote or deleted one, and a rewrite of the table outside a build. A view's check keeps the versions of the tables it
+    /// read, so a build whose tables a view reads hold what they held at its last check keeps that check rather than reading
+    /// the view again (<see cref="DeliveryDimensionViewCheck.ReadVersion"/>).
+    /// </summary>
+    public long TableVersion { get; set; }
+
     /// <summary>The members the dimension holds now.</summary>
     public long Members { get; set; }
 
@@ -3035,6 +3043,19 @@ public sealed class DeliveryDimensionViewCheck
 
     /// <summary>How long the check read the view.</summary>
     public int DurationMs { get; set; }
+
+    /// <summary>
+    /// What the check read, as one text: SHA-256, hex, of the view's statement hash and the version of every dimension table
+    /// it reads, and every table a view it joins reads, in the partition (<see cref="DeliveryDimension.TableVersion"/>). Two
+    /// checks of the same text read the same rows. Null for a check made before checks kept it.
+    /// </summary>
+    public string? ReadVersion { get; set; }
+
+    /// <summary>
+    /// The check whose findings this one keeps, when nothing the view reads had changed since it (<see cref="ReadVersion"/>
+    /// the same) and the view was not read again; null for a check that read the view.
+    /// </summary>
+    public long? ReusedCheckId { get; set; }
 }
 
 /// <summary>
@@ -3165,235 +3186,6 @@ public sealed class DeliveryDimensionChange
     public long? ToMemberId { get; set; }
 
     public DateTime ChangedUtc { get; set; }
-}
-
-/// <summary>
-/// One key a running dimension build read (osdu/docs/reference/flow/dimension-build.md, What a build does): the key exactly as
-/// the index holds it and how many records hold it, in the order the build read them. A build reads its keys a batch at a
-/// time from here to label and clean them. For an incremental load, a key it read again and found held by no record is kept
-/// as gone. Every row of a build is deleted when it ends; a build its process stopped leaves them for the next build of the
-/// dimension to delete.
-/// </summary>
-public sealed class DeliveryDimensionStageKey
-{
-    public short PartitionId { get; set; }
-
-    /// <summary>The dimension the build builds.</summary>
-    public int DimensionId { get; set; }
-
-    /// <summary>The build staging the key (<see cref="DeliveryDimensionRun.DimensionRunId"/>).</summary>
-    public long DimensionRunId { get; set; }
-
-    /// <summary>The key's place in the order the build read its keys, from 0.</summary>
-    public long Seq { get; set; }
-
-    /// <summary>SHA-256 of the key, as UTF-8.</summary>
-    public byte[] KeyHash { get; set; } = [];
-
-    public string Key { get; set; } = string.Empty;
-
-    /// <summary>The records (or objects of a nested array) holding the key.</summary>
-    public long Count { get; set; }
-
-    /// <summary>An incremental load read the key again and no record holds it now: it is removed.</summary>
-    public bool Gone { get; set; }
-}
-
-/// <summary>
-/// One key of a running dimension build as the build cleaned it: the value it belongs to or why it belongs to none, the label
-/// read for it, its count and the search filter finding its records. These are the keys the build's write holds.
-/// </summary>
-public sealed class DeliveryDimensionStageValue
-{
-    public short PartitionId { get; set; }
-
-    /// <summary>The dimension the build builds.</summary>
-    public int DimensionId { get; set; }
-
-    public long DimensionRunId { get; set; }
-
-    /// <summary>The key's place in the order the build read its keys, which new keys take their ids in.</summary>
-    public long Seq { get; set; }
-
-    /// <summary>SHA-256 of the key, as UTF-8.</summary>
-    public byte[] OriginalHash { get; set; } = [];
-
-    public string Original { get; set; } = string.Empty;
-
-    /// <summary>The value the key belongs to; null when it belongs to none.</summary>
-    public string? CleanValue { get; set; }
-
-    /// <summary>Why the key belongs to no value (<c>empty</c>, <c>too-long</c>, <c>dropped</c>, <c>failed</c>); null when it belongs to one.</summary>
-    public string? LeftOut { get; set; }
-
-    public string? Note { get; set; }
-
-    public string? Label { get; set; }
-
-    public string? LabelFrom { get; set; }
-
-    public string? Filter { get; set; }
-
-    public long Count { get; set; }
-
-    public bool Filterable { get; set; }
-}
-
-/// <summary>One value of a running dimension build, as the build laid it out from all its keys: its counts and its filter.</summary>
-public sealed class DeliveryDimensionStageMember
-{
-    public short PartitionId { get; set; }
-
-    /// <summary>The dimension the build builds.</summary>
-    public int DimensionId { get; set; }
-
-    public long DimensionRunId { get; set; }
-
-    /// <summary>The value's place in the order the build laid its values out.</summary>
-    public long Seq { get; set; }
-
-    public string Value { get; set; } = string.Empty;
-
-    public long Records { get; set; }
-
-    public bool RecordsExact { get; set; }
-
-    public int Originals { get; set; }
-
-    public int Unfilterable { get; set; }
-
-    public string? Filter { get; set; }
-
-    public int FilterParts { get; set; }
-}
-
-/// <summary>
-/// One attribute value of a key of a running dimension build: read through the record the key names (no records), or
-/// collected from records holding the key, as many rows of one key, attribute and value as the build counted them in, which
-/// its write adds up.
-/// </summary>
-public sealed class DeliveryDimensionStageAttributeValue
-{
-    public short PartitionId { get; set; }
-
-    /// <summary>The dimension the build builds.</summary>
-    public int DimensionId { get; set; }
-
-    public long DimensionRunId { get; set; }
-
-    /// <summary>The row's place in the order the build staged its rows.</summary>
-    public long Seq { get; set; }
-
-    /// <summary>SHA-256 of the key, as UTF-8.</summary>
-    public byte[] KeyHash { get; set; } = [];
-
-    public string Name { get; set; } = string.Empty;
-
-    public string Value { get; set; } = string.Empty;
-
-    /// <summary>The record the value was read from, or for a collected value the text its records hold.</summary>
-    public string? ValueFrom { get; set; }
-
-    /// <summary>For a collected value, the records holding it that this row counts; null for a value read through the key's record.</summary>
-    public long? Records { get; set; }
-}
-
-/// <summary>
-/// One text a running dimension build collected, with the value it is shown as and the records holding it, as many rows of
-/// one text as the build counted it in, which its write adds up.
-/// </summary>
-public sealed class DeliveryDimensionStageText
-{
-    public short PartitionId { get; set; }
-
-    /// <summary>The dimension the build builds.</summary>
-    public int DimensionId { get; set; }
-
-    public long DimensionRunId { get; set; }
-
-    public long Seq { get; set; }
-
-    public string Name { get; set; } = string.Empty;
-
-    /// <summary>SHA-256 of the text, as UTF-8.</summary>
-    public byte[] TextHash { get; set; } = [];
-
-    public string Text { get; set; } = string.Empty;
-
-    public string Value { get; set; } = string.Empty;
-
-    public long Records { get; set; }
-}
-
-/// <summary>
-/// One field of one object of a nested array a key's records hold, as a running dimension build read it: the record holding
-/// the object and the object's place in it, which number a key's objects in its write (in the order of the records' ids, then
-/// of the objects in each), and the field's value. An object holding none of the fields is one row with no field.
-/// </summary>
-public sealed class DeliveryDimensionStageElement
-{
-    /// <summary>The longest record id an object is staged under.</summary>
-    public const int MaxRecordLength = 1024;
-
-    public short PartitionId { get; set; }
-
-    /// <summary>The dimension the build builds.</summary>
-    public int DimensionId { get; set; }
-
-    public long DimensionRunId { get; set; }
-
-    public long Seq { get; set; }
-
-    /// <summary>SHA-256 of the key, as UTF-8.</summary>
-    public byte[] KeyHash { get; set; } = [];
-
-    /// <summary>The id of the record holding the object.</summary>
-    public string Record { get; set; } = string.Empty;
-
-    /// <summary>The object's place among the record's objects, from 0.</summary>
-    public int Ordinal { get; set; }
-
-    /// <summary>The field; null for the one row of an object holding none of the fields.</summary>
-    public string? Name { get; set; }
-
-    public string? Value { get; set; }
-}
-
-/// <summary>
-/// One record a running dimension build met, by its kind: a record a key's label or attributes were read through (with the
-/// key and the entity type its id names), a record read by its unique key, or a key such a record holds.
-/// </summary>
-public sealed class DeliveryDimensionStageRecord
-{
-    /// <summary>A record a key's label or attributes were read through.</summary>
-    public const byte ReadThrough = 1;
-
-    /// <summary>A record read by its unique key (the flow's <c>incremental.keyColumns</c>).</summary>
-    public const byte Read = 2;
-
-    /// <summary>A key a record read by its unique key holds.</summary>
-    public const byte Held = 3;
-
-    public short PartitionId { get; set; }
-
-    /// <summary>The dimension the build builds.</summary>
-    public int DimensionId { get; set; }
-
-    public long DimensionRunId { get; set; }
-
-    public long Seq { get; set; }
-
-    /// <summary><see cref="ReadThrough"/>, <see cref="Read"/> or <see cref="Held"/>.</summary>
-    public byte Kind { get; set; }
-
-    /// <summary>SHA-256 of the record's id without its version (read through), or of its unique key (read and held).</summary>
-    public byte[] RecordHash { get; set; } = [];
-
-    /// <summary>SHA-256 of the key: the key read through the record, or held by it; null for a record read.</summary>
-    public byte[]? KeyHash { get; set; }
-
-    /// <summary>For a record read through, the entity type its id names.</summary>
-    public string? EntityType { get; set; }
 }
 
 /// <summary>
@@ -4645,7 +4437,9 @@ public static class DeliveryModel
             // A flow's dimension in a partition, by its name: what a build registers and a page finds.
             e.HasIndex(d => new { d.PartitionId, d.FlowId, d.Name }).IsUnique();
             // The dimensions writing one table, one a partition: what a build asks before it writes and a removal before it drops.
-            e.HasIndex(d => d.TableName);
+            // It holds what the build asks, so the build reads no row of another dimension, which a build of that one may be
+            // writing.
+            e.HasIndex(d => d.TableName).IncludeProperties(d => new { d.FlowName, d.Name });
         });
 
         modelBuilder.Entity<DeliveryDimensionRun>(e =>
@@ -4774,6 +4568,7 @@ public static class DeliveryModel
             e.Property(c => c.CheckId).ValueGeneratedOnAdd();
             e.Property(c => c.Status).HasMaxLength(16).IsRequired();
             e.Property(c => c.Error).HasMaxLength(4000);
+            e.Property(c => c.ReadVersion).HasMaxLength(64).IsUnicode(false);
             e.HasIndex(c => c.CheckId).IsUnique();
             // A view's checks of a partition, newest first: its page, and what a build prunes past the newest it keeps.
             e.HasIndex(c => new { c.ViewId, c.PartitionId, c.CheckedUtc });
@@ -4859,78 +4654,6 @@ public static class DeliveryModel
             // An original's history, and a build's changes.
             e.HasIndex(c => new { c.PartitionId, c.DimensionId, c.ValueId, c.ChangeId });
             e.HasIndex(c => new { c.PartitionId, c.DimensionRunId });
-        });
-
-        // A running build's staging (osdu/docs/reference/flow/dimension-build.md, What a build does): each table keeps a
-        // dimension's builds' rows together, each build's in the order it staged them, so a build appends to its own rows,
-        // reads them back in order and deletes them by its own key, and finds what an earlier build of its dimension left by
-        // a seek of the dimension's rows, never reading another dimension's.
-        modelBuilder.Entity<DeliveryDimensionStageKey>(e =>
-        {
-            e.ToTable("DimensionStageKey", SchemaName);
-            e.HasKey(k => new { k.PartitionId, k.DimensionId, k.DimensionRunId, k.Seq });
-            e.Property(k => k.KeyHash).HasMaxLength(32).IsFixedLength().IsRequired();
-            ExactText(e.Property(k => k.Key)).HasMaxLength(DeliveryDimensionValue.MaxOriginalLength).IsRequired();
-        });
-
-        modelBuilder.Entity<DeliveryDimensionStageValue>(e =>
-        {
-            e.ToTable("DimensionStageValue", SchemaName);
-            e.HasKey(v => new { v.PartitionId, v.DimensionId, v.DimensionRunId, v.Seq });
-            e.Property(v => v.OriginalHash).HasMaxLength(32).IsFixedLength().IsRequired();
-            ExactText(e.Property(v => v.Original)).HasMaxLength(DeliveryDimensionValue.MaxOriginalLength).IsRequired();
-            OptionalOsduId(e.Property(v => v.CleanValue)).HasMaxLength(256);
-            e.Property(v => v.LeftOut).HasMaxLength(16);
-            e.Property(v => v.Note).HasMaxLength(400);
-            e.Property(v => v.Label).HasMaxLength(DeliveryDimensionValue.MaxLabelLength);
-            e.Property(v => v.LabelFrom).HasMaxLength(DeliveryDimensionValue.MaxOriginalLength);
-            e.Property(v => v.Filter).HasMaxLength(DeliveryDimensionValue.MaxFilterLength);
-        });
-
-        modelBuilder.Entity<DeliveryDimensionStageMember>(e =>
-        {
-            e.ToTable("DimensionStageMember", SchemaName);
-            e.HasKey(m => new { m.PartitionId, m.DimensionId, m.DimensionRunId, m.Seq });
-            ExactText(e.Property(m => m.Value)).HasMaxLength(256).IsRequired();
-        });
-
-        modelBuilder.Entity<DeliveryDimensionStageAttributeValue>(e =>
-        {
-            e.ToTable("DimensionStageAttribute", SchemaName);
-            e.HasKey(a => new { a.PartitionId, a.DimensionId, a.DimensionRunId, a.Seq });
-            e.Property(a => a.KeyHash).HasMaxLength(32).IsFixedLength().IsRequired();
-            ExactText(e.Property(a => a.Name)).HasMaxLength(DeliveryDimensionAttributeValue.MaxNameLength).IsRequired();
-            ExactText(e.Property(a => a.Value)).HasMaxLength(DeliveryDimensionAttributeValue.MaxValueLength).IsRequired();
-            e.Property(a => a.ValueFrom).HasMaxLength(DeliveryDimensionValue.MaxOriginalLength);
-        });
-
-        modelBuilder.Entity<DeliveryDimensionStageText>(e =>
-        {
-            e.ToTable("DimensionStageText", SchemaName);
-            e.HasKey(t => new { t.PartitionId, t.DimensionId, t.DimensionRunId, t.Seq });
-            ExactText(e.Property(t => t.Name)).HasMaxLength(DeliveryDimensionAttributeValue.MaxNameLength).IsRequired();
-            e.Property(t => t.TextHash).HasMaxLength(32).IsFixedLength().IsRequired();
-            ExactText(e.Property(t => t.Text)).HasMaxLength(DeliveryDimensionValue.MaxOriginalLength).IsRequired();
-            ExactText(e.Property(t => t.Value)).HasMaxLength(DeliveryDimensionAttributeValue.MaxValueLength).IsRequired();
-        });
-
-        modelBuilder.Entity<DeliveryDimensionStageElement>(e =>
-        {
-            e.ToTable("DimensionStageElement", SchemaName);
-            e.HasKey(x => new { x.PartitionId, x.DimensionId, x.DimensionRunId, x.Seq });
-            e.Property(x => x.KeyHash).HasMaxLength(32).IsFixedLength().IsRequired();
-            ExactText(e.Property(x => x.Record)).HasMaxLength(DeliveryDimensionStageElement.MaxRecordLength).IsRequired();
-            OptionalOsduId(e.Property(x => x.Name)).HasMaxLength(DeliveryDimensionAttributeValue.MaxNameLength);
-            OptionalOsduId(e.Property(x => x.Value)).HasMaxLength(DeliveryDimensionElement.MaxValueLength);
-        });
-
-        modelBuilder.Entity<DeliveryDimensionStageRecord>(e =>
-        {
-            e.ToTable("DimensionStageRecord", SchemaName);
-            e.HasKey(r => new { r.PartitionId, r.DimensionId, r.DimensionRunId, r.Seq });
-            e.Property(r => r.RecordHash).HasMaxLength(32).IsFixedLength().IsRequired();
-            e.Property(r => r.KeyHash).HasMaxLength(32).IsFixedLength();
-            OptionalOsduId(e.Property(r => r.EntityType)).HasMaxLength(DeliveryDimensionKeyRecord.MaxEntityTypeLength);
         });
 
         modelBuilder.Entity<DeliveryMapping>(e =>

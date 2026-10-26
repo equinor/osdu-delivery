@@ -283,19 +283,34 @@ public sealed class LabelTally
 /// <remarks>
 /// <para>
 /// What a read holds is bounded however many keys it is given. The keys are read in passes of at most
-/// <see cref="MaxKeysPerPass"/>, fewer when a label or an attribute reads through several steps (<see cref="PassSize"/>),
-/// each pass reading every step of its keys before the next begins, so what a key reads never depends on another pass. A
-/// record is read as its search answers: each path the step reads of it is read there (with the records its filters look
-/// up), and the record itself is let go, so a pass holds what its paths read of its records, never the records. A build
-/// reads a dimension's keys a batch at a time and adds the batches up (<see cref="LabelTally"/>); a key reads the same in
-/// any batch.
+/// <see cref="MaxKeysPerPass"/>, each pass reading every step of its keys before the next begins, so what a key reads never
+/// depends on another pass. A record is read as its search answers: each path the step reads of it is read there (with the
+/// records its filters look up), and the record itself is let go, so a pass holds what its paths read of its records, never
+/// the records. A build reads a dimension's keys a batch at a time, <see cref="PassesAtOnce"/> batches side by side, and
+/// adds the batches up in the order of their keys (<see cref="LabelTally"/>); a key reads the same in any batch.
+/// </para>
+/// <para>
+/// A pass holds the references its keys follow from one step to the next, at most <see cref="MaxReachedPerPass"/> of them.
+/// How many keys that is depends on the records, not only on the declaration: a wellbore names one well although its label
+/// may follow twenty. The first pass for a label and attributes reads as many keys as their declaration bounds
+/// (<see cref="PassSize"/>); every later pass as many as the references the passes before it followed a key say fit, with
+/// room to spare (<see cref="PassSizeFor"/>). A pass whose keys reach more is let go the moment they do, and its keys are read
+/// again in passes half its size, so a pass never holds more however its records differ from those before. Searches stay
+/// full that way: a pass of thousands of keys asks for each record type five hundred ids a search, where a pass sized for
+/// the worst a declaration allows asked a few ids each.
 /// </para>
 /// <para>
 /// A record a later step reaches (a wellbore's field, a field's country) is usually reached by many keys, so what each path
 /// read of it, or that the search does not hold it, is kept between passes and batches, up to <see cref="CacheCapacity"/>
 /// records, and so are the records a filter looked up. A key's own record is read once and never kept.
 /// </para>
+/// <para>
+/// Every search the labeler asks, of every pass reading at once, takes one of its <c>concurrency</c> places, so passes read
+/// side by side never ask more at once than one would.
+/// </para>
 /// </remarks>
+[System.Diagnostics.CodeAnalysis.SuppressMessage("Usage", "CA1001:Types that own disposable fields should be disposable",
+    Justification = "The SemaphoreSlim's wait handle is never accessed, so it holds no unmanaged resource to release.")]
 public sealed class DimensionLabeler
 {
     /// <summary>The ids one search finds: each is a clause, and the service allows 1024 in a query.</summary>
@@ -308,10 +323,19 @@ public sealed class DimensionLabeler
     public const int MaxKeysPerPass = 4_000;
 
     /// <summary>
-    /// The most records a pass's later steps may reach between its keys, each key following at most as many as each label and
-    /// attribute of several steps follows (its <c>maxReferences</c>): what bounds a pass's keys below <see cref="MaxKeysPerPass"/>.
+    /// The most references a pass holds between its keys from one step to the next. A build reads <see cref="PassesAtOnce"/>
+    /// passes side by side, so it holds at most twice as many.
     /// </summary>
-    public const int MaxReachedPerPass = 100_000;
+    public const int MaxReachedPerPass = 50_000;
+
+    /// <summary>How many batches of keys a build reads side by side, so the search is asked from one while another's answers are read.</summary>
+    public const int PassesAtOnce = 2;
+
+    /// <summary>
+    /// How much room a pass sized by the references keys followed leaves: the references a key followed in the passes before
+    /// it, times this, fit a pass, so a pass of keys a little more reaching than those before still fits.
+    /// </summary>
+    private const double Headroom = 1.25;
 
     /// <summary>The most records reached past a key's own, and records looked up, whose reading is kept between passes.</summary>
     public const int CacheCapacity = 50_000;
@@ -326,16 +350,22 @@ public sealed class DimensionLabeler
 
     private readonly OsduSearch _search;
     private readonly int _concurrency;
+    private readonly SemaphoreSlim _searches;
     private readonly BoundedCache<(string Path, string Id), Projection?> _reached = new(CacheCapacity);
     private readonly BoundedCache<(string Fields, string Id), JsonObject?> _lookedUp = new(CacheCapacity);
+    private readonly System.Collections.Concurrent.ConcurrentDictionary<string, PassSizer> _sizers = new(StringComparer.Ordinal);
 
     /// <param name="search">The search the records are read from.</param>
-    /// <param name="concurrency">The most searches asked at once: the records of a step are read five hundred ids a search, each on its own.</param>
+    /// <param name="concurrency">
+    /// The most searches asked at once, whatever passes read side by side: the records of a step are read five hundred ids a
+    /// search, each on its own.
+    /// </param>
     public DimensionLabeler(OsduSearch search, int concurrency = 1)
     {
         ArgumentNullException.ThrowIfNull(search);
         _search = search;
         _concurrency = Math.Max(1, concurrency);
+        _searches = new SemaphoreSlim(_concurrency, _concurrency);
     }
 
     /// <summary>The label of each of <paramref name="keys"/>, read through <paramref name="steps"/>.</summary>
@@ -343,8 +373,10 @@ public sealed class DimensionLabeler
         => ReadAsync(keys, steps, [], null, ct);
 
     /// <summary>
-    /// How many keys one pass reads for <paramref name="label"/> and <paramref name="attributes"/>: <see cref="MaxKeysPerPass"/>,
-    /// fewer when the records their later steps may reach between that many keys are more than <see cref="MaxReachedPerPass"/>.
+    /// How many keys the first pass reads for <paramref name="label"/> and <paramref name="attributes"/>, before any pass has
+    /// said how many references their keys follow: <see cref="MaxKeysPerPass"/>, fewer when the references their later steps
+    /// may follow between that many keys, each as many as its <c>maxReferences</c> allows, are more than
+    /// <see cref="MaxReachedPerPass"/>.
     /// </summary>
     public static int PassSize(IReadOnlyList<string> label, IReadOnlyList<DimensionAttributeSpec> attributes)
     {
@@ -353,6 +385,27 @@ public sealed class DimensionLabeler
         var reached = (label.Count > 1 ? (long)DimensionAttributeSpec.DefaultMaxReferences : 0)
             + attributes.Where(a => a.Steps.Count > 1).Sum(a => (long)a.MaxReferences);
         return reached == 0 ? MaxKeysPerPass : (int)Math.Clamp(MaxReachedPerPass / reached, 1, MaxKeysPerPass);
+    }
+
+    /// <summary>
+    /// How many keys this labeler's next pass reads for <paramref name="label"/> and <paramref name="attributes"/>: as many as
+    /// the declaration bounds before any pass was read (<see cref="PassSize"/>); after, as many as the references the keys
+    /// of the passes before followed say fit <see cref="MaxReachedPerPass"/>, with room to spare, up to
+    /// <see cref="MaxKeysPerPass"/>. A build asks it for the size of each batch of keys it reads.
+    /// </summary>
+    public int PassSizeFor(IReadOnlyList<string> label, IReadOnlyList<DimensionAttributeSpec> attributes)
+    {
+        ArgumentNullException.ThrowIfNull(label);
+        ArgumentNullException.ThrowIfNull(attributes);
+        return SizerOf(label, attributes).Size;
+    }
+
+    /// <summary>The sizer of the passes reading <paramref name="label"/> and <paramref name="attributes"/>, made with the declaration's bound the first time.</summary>
+    private PassSizer SizerOf(IReadOnlyList<string> label, IReadOnlyList<DimensionAttributeSpec> attributes)
+    {
+        var declared = string.Join('\u001F', label) + '\u001E'
+            + string.Join('\u001E', attributes.Where(a => a.Steps.Count > 0).Select(a => string.Create(CultureInfo.InvariantCulture, $"{a.Name}\u001F{a.MaxReferences}\u001F{string.Join('\u001F', a.Steps)}")));
+        return _sizers.GetOrAdd(declared, _ => new PassSizer(PassSize(label, attributes)));
     }
 
     /// <summary>
@@ -388,9 +441,27 @@ public sealed class DimensionLabeler
         long labelled = 0;
         long unlabelled = 0;
         var queries = 0;
-        foreach (var pass in keys.Distinct(StringComparer.Ordinal).Chunk(PassSize(label, attributes)))
+        var sizer = SizerOf(label, attributes);
+        var pending = keys.Distinct(StringComparer.Ordinal).ToList();
+
+        // A pass of these keys that reached too many makes every later pass of them smaller, whatever a pass of other keys read
+        // side by side says, so the keys are read however many times they are let go.
+        var most = MaxKeysPerPass;
+        for (var at = 0; at < pending.Count;)
         {
-            var read = await ReadPassAsync(pass, chains, kinds, ct).ConfigureAwait(false);
+            var size = Math.Min(Math.Min(sizer.Size, most), pending.Count - at);
+            var (read, asked) = await ReadPassAsync(pending.GetRange(at, size), chains, kinds, ct).ConfigureAwait(false);
+            queries += asked;
+            if (read is null)
+            {
+                // The pass's keys reached more references than a pass holds: they are read again in passes half its size.
+                most = Math.Max(1, size / 2);
+                sizer.TooMany(size);
+                continue;
+            }
+
+            sizer.Read(size, read.MostReached);
+            at += size;
             foreach (var (key, found) in read.Labels)
             {
                 labels[key] = found;
@@ -408,7 +479,6 @@ public sealed class DimensionLabeler
 
             labelled += read.Labelled;
             unlabelled += read.Unlabelled;
-            queries += read.Queries;
             if (tally is null)
             {
                 tally = read.Tally;
@@ -422,16 +492,22 @@ public sealed class DimensionLabeler
         return new KeyLabels(labels, values, labelled, unlabelled, queries, tally!.Notes(), records) { Tally = tally };
     }
 
-    /// <summary>What one pass read of its keys, as <see cref="KeyLabels"/> holds it of all of them.</summary>
+    /// <summary>
+    /// What one pass read of its keys, as <see cref="KeyLabels"/> holds it of all of them, and the most references its keys
+    /// held between them from one step to the next.
+    /// </summary>
     private sealed record PassRead(
-        Dictionary<string, KeyLabel> Labels, Dictionary<string, IReadOnlyList<DimensionAttributeState>> Attributes, long Labelled, long Unlabelled, int Queries,
-        Dictionary<string, IReadOnlyList<string>> Records, LabelTally Tally);
+        Dictionary<string, KeyLabel> Labels, Dictionary<string, IReadOnlyList<DimensionAttributeState>> Attributes, long Labelled, long Unlabelled,
+        Dictionary<string, IReadOnlyList<string>> Records, LabelTally Tally, long MostReached);
 
     /// <summary>
     /// Reads every step of every chain for <paramref name="keys"/>, in order: each step reads the records the keys have reached,
-    /// then each key goes on to the references they hold, or stops with its value or why it has none.
+    /// then each key goes on to the references they hold, or stops with its value or why it has none. A pass of more than one
+    /// key whose keys go on to more than <see cref="MaxReachedPerPass"/> references between them stops there and reads nothing
+    /// (null), so it never holds more; one key alone holds what its declaration lets it follow. Returns the searches asked
+    /// either way.
     /// </summary>
-    private async Task<PassRead> ReadPassAsync(IReadOnlyList<string> keys, List<Chain> chains, IReadOnlyDictionary<string, string> kinds, CancellationToken ct)
+    private async Task<(PassRead? Read, int Queries)> ReadPassAsync(IReadOnlyList<string> keys, List<Chain> chains, IReadOnlyDictionary<string, string> kinds, CancellationToken ct)
     {
         var place = new Dictionary<string, int>(keys.Count, StringComparer.Ordinal);
         foreach (var key in keys)
@@ -455,6 +531,7 @@ public sealed class DimensionLabeler
         var readThrough = new Dictionary<string, List<string>>(keys.Count, StringComparer.Ordinal);
         var tally = LabelTally.For(chains.Select(c => (c.Name, c.IsLabel, c.MaxReferences)));
         var queries = 0;
+        long mostReached = 0;
 
         void Stop(int chain, string key, KeyLabel label, int step)
         {
@@ -523,6 +600,8 @@ public sealed class DimensionLabeler
                 }
             }
 
+            // The references the keys go on to, between them: a pass holds them until the next step has read them.
+            long holding = 0;
             foreach (var c in active)
             {
                 var chain = chains[c];
@@ -568,8 +647,15 @@ public sealed class DimensionLabeler
                     where[key] = next.Count > 0 ? (next, null)
                         : named.Count > 0 ? ([], $"record {held[0]} holds only references no query can carry at {path.Text}")
                         : ([], $"record {held[0]} holds no record reference at {path.Text}");
+                    holding += next.Count;
+                    if (holding > MaxReachedPerPass && keys.Count > 1)
+                    {
+                        return (null, queries);
+                    }
                 }
             }
+
+            mostReached = Math.Max(mostReached, holding);
         }
 
         var labels = chains[0].IsLabel ? found[0] : new Dictionary<string, KeyLabel>(StringComparer.Ordinal);
@@ -594,7 +680,7 @@ public sealed class DimensionLabeler
         }
 
         var records = readThrough.ToDictionary(a => a.Key, a => (IReadOnlyList<string>)a.Value, StringComparer.Ordinal);
-        return new PassRead(labels, attributes, labels.Count - unlabelled, unlabelled, queries, records, tally);
+        return (new PassRead(labels, attributes, labels.Count - unlabelled, unlabelled, records, tally, mostReached), queries);
     }
 
     /// <summary>
@@ -720,9 +806,7 @@ public sealed class DimensionLabeler
             new ParallelOptions { MaxDegreeOfParallelism = _concurrency, CancellationToken = ct },
             async (ask, token) =>
             {
-                var (_, hits) = await _search.FirstAsync(
-                    new OsduSearchQuery { Kind = ask.Kind, Query = OsduQuery.AnyOf(Id, ask.Ids).Text, ReturnedFields = ask.Fields }, OsduSearch.MaxPage, token)
-                    .ConfigureAwait(false);
+                var hits = await FindAsync(ask.Kind, ask.Ids, ask.Fields, token).ConfigureAwait(false);
                 var records = new Dictionary<string, JsonObject>(hits.Count, StringComparer.Ordinal);
                 foreach (var hit in hits)
                 {
@@ -824,8 +908,7 @@ public sealed class DimensionLabeler
             foreach (var chunk in missing.Chunk(IdsPerQuery))
             {
                 queries++;
-                var (_, hits) = await _search.FirstAsync(
-                    new OsduSearchQuery { Kind = kind, Query = OsduQuery.AnyOf(Id, chunk).Text, ReturnedFields = fields }, OsduSearch.MaxPage, ct).ConfigureAwait(false);
+                var hits = await FindAsync(kind, chunk, fields, ct).ConfigureAwait(false);
                 var answered = new HashSet<string>(StringComparer.Ordinal);
                 foreach (var hit in hits)
                 {
@@ -845,6 +928,55 @@ public sealed class DimensionLabeler
         }
 
         return (looked, queries);
+    }
+
+    /// <summary>
+    /// The records of <paramref name="kind"/> among <paramref name="ids"/>, each holding <paramref name="fields"/>: one search,
+    /// asked once one of the labeler's places is free, so every pass reading at once shares them.
+    /// </summary>
+    private async Task<IReadOnlyList<JsonObject>> FindAsync(string kind, string[] ids, List<string> fields, CancellationToken ct)
+    {
+        await _searches.WaitAsync(ct).ConfigureAwait(false);
+        try
+        {
+            var (_, hits) = await _search.FirstAsync(
+                new OsduSearchQuery { Kind = kind, Query = OsduQuery.AnyOf(Id, ids).Text, ReturnedFields = fields }, OsduSearch.MaxPage, ct).ConfigureAwait(false);
+            return hits;
+        }
+        finally
+        {
+            _searches.Release();
+        }
+    }
+
+    /// <summary>
+    /// How many keys a pass reads for one label and set of attributes: the declaration's bound until a pass was read, then as
+    /// many as the references the keys of the last pass read followed say fit a pass, with <see cref="Headroom"/> to spare;
+    /// half the size of a pass whose keys reached too many. Passes read side by side each say what they found, and the last to
+    /// say it sizes the next.
+    /// </summary>
+    private sealed class PassSizer(int first)
+    {
+        private int _size = Math.Clamp(first, 1, MaxKeysPerPass);
+
+        /// <summary>The keys the next pass reads.</summary>
+        public int Size => Volatile.Read(ref _size);
+
+        /// <summary>A pass of <paramref name="keys"/> keys was read, its keys holding at most <paramref name="reached"/> references between them.</summary>
+        public void Read(int keys, long reached)
+        {
+            if (keys < 1)
+            {
+                return;
+            }
+
+            var perKey = (double)reached / keys;
+            var fits = perKey <= 0 ? MaxKeysPerPass : MaxReachedPerPass / (perKey * Headroom);
+            Volatile.Write(ref _size, (int)Math.Clamp(Math.Floor(fits), 1, MaxKeysPerPass));
+        }
+
+        /// <summary>A pass of <paramref name="keys"/> keys reached more references than a pass holds: the next reads half as many.</summary>
+        public void TooMany(int keys) => Volatile.Write(ref _size, Math.Max(1, keys / 2));
     }
 
     /// <summary>The records the filters through a reference of <paramref name="path"/> look up from <paramref name="record"/>, in order.</summary>

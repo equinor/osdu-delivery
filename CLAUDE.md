@@ -83,7 +83,7 @@ history and schema version ([the osdu schema](osdu/docs/reference/concepts/archi
 - SQLFlow's model never holds an OSDU table, OSDU never changes SQLFlow's tables, and no foreign key or navigation runs
   from `osdu` into them: OSDU rows hold plain ids.
 - The only `osdu` objects outside the model are the ones flows create at run time: a dimension's `dim_` table and
-  `v_dim_` views, and a duplicate check's `dup_` table.
+  `v_dim_` views, a dimension build's `dimstage_` staging tables, and a duplicate check's `dup_` table.
 - One database, one connection: reach it through `OsduModuleDatabase`, never by a literal name, and never add a second
   connection, variable or database for it. The control plane owns the schema and keeps its grants
   ([decision 0026](osdu/docs/wiki/decisions/0026-one-database-connection.md)). Work that must commit with the catalog

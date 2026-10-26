@@ -182,9 +182,11 @@ Nothing else of a record comes back, however much it holds. A collected attribut
 are read from the dimension's own records, as [Collected attributes](dimension-attributes.md) and [Elements](dimension-elements.md)
 say.
 
-A build reads its keys' labels and attributes a batch of keys at a time, every step of a batch before the next batch
-([What a build holds](dimension-build.md#what-a-build-holds)). Of each record that comes back it keeps only what the
-step's paths read, never the record. What a later step reads of a record (a wellbore's field, a field's country), and
+A build reads its keys' labels and attributes a batch of keys at a time, every step of a batch before the next batch,
+two batches side by side ([What a build holds](dimension-build.md#what-a-build-holds)). A batch is as large as the
+references its keys follow allow, not as the most `maxReferences` could allow, so its searches ask 500 ids each: an
+attribute that may follow a thousand references and follows one reads as fast as one that may follow one. Of each record
+that comes back it keeps only what the step's paths read, never the record. What a later step reads of a record (a wellbore's field, a field's country), and
 that the search holds no record of an id, is kept from batch to batch for up to 50,000 records, so a record many keys
 reach is asked for once; a key's own record is read once and not kept. A key reads the same in any batch, and the notes
 count over every batch, as one read of every key would.

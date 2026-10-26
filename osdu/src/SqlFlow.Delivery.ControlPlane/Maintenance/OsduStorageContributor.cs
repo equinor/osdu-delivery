@@ -305,14 +305,10 @@ public sealed class OsduStorageContributor : IStorageContributor
                 Title = "Dimension build staging",
                 Verdict = StorageVerdict.Safe,
                 Holds = "What each running dimension build has read so far: its keys, their values, labels and attributes, the values laid out from them, the texts it collected, the objects of a nested array, and the records the keys were read through or are held by.",
-                Reason = "A build merges it into its dimension when it completes, so it holds rows only while a build runs, or what a build whose process stopped left.",
-                Brief = "Cleared when the build ends",
-                Lifecycle = $"A build deletes its rows when it ends, written or not. What a build whose process stopped left is deleted by the next build of the same dimension: once the build is closed, or once it has run for {DimensionStage.AbandonedAfter.TotalHours.ToString(CultureInfo.InvariantCulture)} hours.",
-                Tables =
-                [
-                    T("DimensionStageKey"), T("DimensionStageValue"), T("DimensionStageMember"), T("DimensionStageAttribute"), T("DimensionStageText"),
-                    T("DimensionStageElement"), T("DimensionStageRecord"),
-                ],
+                Reason = "A build merges it into its dimension when it completes, so its tables exist only while a build runs, or as what a build whose process stopped left.",
+                Brief = "Dropped when the build ends",
+                Lifecycle = $"Each build stages into tables of its own (osdu.{DimensionStage.TablePrefix}*) and drops them when it ends, written or not. What a build whose process stopped left is dropped by the next build of the same dimension: once the build is closed, or once it has run for {DimensionStage.AbandonedAfter.TotalHours.ToString(CultureInfo.InvariantCulture)} hours. Removing the dimension drops them too.",
+                Tables = [StorageTable.StartingWith(Schema, DimensionStage.TablePrefix)],
                 ManagedAt = "/delivery/dimensions",
             },
             new()

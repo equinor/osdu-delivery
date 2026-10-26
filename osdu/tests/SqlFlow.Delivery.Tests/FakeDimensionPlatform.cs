@@ -46,6 +46,16 @@ internal sealed class FakeDimensionPlatform : HttpMessageHandler
     /// <summary>When true, a plain number's groups come back without keys, as the service renders them from key_as_string.</summary>
     public bool NumberKeysMissing { get; set; }
 
+    /// <summary>
+    /// When true, a query that only names ids (<c>id:("a" OR "b")</c>) finds its records by their ids, and any other query
+    /// holds only the records of its kinds against it, instead of every record, as the service's index does: for a suite of
+    /// hundreds of thousands of records that adds them all first and changes none after. The records are indexed when the
+    /// first query comes.
+    /// </summary>
+    public bool IndexIds { get; set; }
+
+    private Dictionary<string, (int Place, JsonObject Record)>? _byId;
+
     /// <summary>Answers a request with this status instead, when it says so.</summary>
     public Func<string?, HttpStatusCode?>? Fail { get; set; }
 
@@ -145,7 +155,49 @@ internal sealed class FakeDimensionPlatform : HttpMessageHandler
         // The query is taken apart once for the request, not once for each record it is held against: a label search names
         // five hundred ids, and the records it is held against are every record of the platform.
         var parse = new QueryParse();
-        return Records.Where(r => KindMatches(kind, r["kind"]!.GetValue<string>()) && Holds(r, query, parse)).ToList();
+        if (IndexIds && IdsOnly(query, parse) is { } ids)
+        {
+            _byId ??= Records.Select((r, place) => (Id: r["id"]!.GetValue<string>(), Place: place, Record: r))
+                .ToDictionary(r => r.Id, r => (r.Place, r.Record), StringComparer.Ordinal);
+            return ids.Select(id => _byId.TryGetValue(id, out var found) ? found : (Place: -1, Record: null))
+                .Where(f => f.Record is not null && KindMatches(kind, f.Record["kind"]!.GetValue<string>()))
+                .OrderBy(f => f.Place)
+                .Select(f => f.Record!)
+                .ToList();
+        }
+
+        var candidates = IndexIds ? OfKind(kind) : Records.Where(r => KindMatches(kind, r["kind"]!.GetValue<string>()));
+        return candidates.Where(r => Holds(r, query, parse)).ToList();
+    }
+
+    private Dictionary<string, List<(int Place, JsonObject Record)>>? _byKind;
+
+    /// <summary>The records of the kinds <paramref name="pattern"/> matches, in the order they were added, found by their kind.</summary>
+    private IEnumerable<JsonObject> OfKind(string pattern)
+    {
+        _byKind ??= Records.Select((r, place) => (Place: place, Record: r))
+            .GroupBy(r => r.Record["kind"]!.GetValue<string>(), StringComparer.OrdinalIgnoreCase)
+            .ToDictionary(g => g.Key, g => g.ToList(), StringComparer.OrdinalIgnoreCase);
+        var lists = _byKind.Where(k => KindMatches(pattern, k.Key)).Select(k => k.Value).ToList();
+        return lists.Count == 1 ? lists[0].Select(r => r.Record) : lists.SelectMany(l => l).OrderBy(r => r.Place).Select(r => r.Record);
+    }
+
+    /// <summary>The ids a query names when it is one clause on <c>id</c> naming values and nothing else; null otherwise.</summary>
+    private static IReadOnlyCollection<string>? IdsOnly(string? query, QueryParse parse)
+    {
+        if (string.IsNullOrWhiteSpace(query))
+        {
+            return null;
+        }
+
+        var clause = parse.Strip(query);
+        if (!clause.StartsWith("id:", StringComparison.Ordinal) || parse.Split(clause, " AND ").Count > 1 || parse.Split(clause, " OR ").Count > 1)
+        {
+            return null;
+        }
+
+        var leaf = parse.Leaf(clause);
+        return leaf.IsRange ? null : leaf.Values ?? (IReadOnlyCollection<string>)[leaf.Wanted!];
     }
 
     /// <summary>
@@ -307,12 +359,45 @@ internal sealed class FakeDimensionPlatform : HttpMessageHandler
         }
 
         var order = numeric ? DimensionValueText.Order(OsduFieldIndex.Number) : DimensionValueText.Order(OsduFieldIndex.Keyword);
-        return new JsonArray(counts
-            .OrderByDescending(kv => kv.Value)
-            .ThenBy(kv => kv.Key, order)
-            .Take(AggregationSize)
+        return new JsonArray(Top(counts, AggregationSize, order)
             .Select(kv => (JsonNode?)new JsonObject { ["key"] = numeric && NumberKeysMissing ? null : JsonValue.Create(kv.Key), ["count"] = kv.Value })
             .ToArray());
+    }
+
+    /// <summary>
+    /// The <paramref name="size"/> groups the service returns, by count and then by key, in that order: chosen without
+    /// sorting every group, as a suite of hundreds of thousands of keys asks it hundreds of times.
+    /// </summary>
+    private static List<KeyValuePair<string, long>> Top(Dictionary<string, long> counts, int size, IComparer<string> order)
+    {
+        var first = Comparer<KeyValuePair<string, long>>.Create((a, b) => a.Value != b.Value ? b.Value.CompareTo(a.Value) : order.Compare(a.Key, b.Key));
+        if (counts.Count <= size)
+        {
+            return counts.OrderBy(kv => kv, first).ToList();
+        }
+
+        // The worst kept group is at the head of the queue, and a group better than it takes its place.
+        var kept = new PriorityQueue<KeyValuePair<string, long>, KeyValuePair<string, long>>(size, Comparer<KeyValuePair<string, long>>.Create((a, b) => first.Compare(b, a)));
+        foreach (var group in counts)
+        {
+            if (kept.Count < size)
+            {
+                kept.Enqueue(group, group);
+            }
+            else if (first.Compare(group, kept.Peek()) < 0)
+            {
+                kept.EnqueueDequeue(group, group);
+            }
+        }
+
+        var top = new List<KeyValuePair<string, long>>(size);
+        while (kept.TryDequeue(out var group, out _))
+        {
+            top.Add(group);
+        }
+
+        top.Reverse();
+        return top;
     }
 
     /// <summary>The terms a field holds: the keyword sub-field's (no text over 256 characters, a null as the text null), or the value's own.</summary>

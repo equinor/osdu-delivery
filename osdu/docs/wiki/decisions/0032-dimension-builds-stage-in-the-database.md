@@ -28,16 +28,22 @@ referenceRefs:
   - delivery-flow-dimension-attributes
   - delivery-flow-dimension-incremental
   - delivery-concept-database
-  - delivery-table-dimension-stage-key
+  - delivery-flow-dimension-staging
 related:
   - delivery-wiki-0011-dimension-flows
+  - delivery-wiki-0033-dimension-builds-at-scale
   - delivery-wiki-0030-dimension-rows-one-range
 updated: 2026-10-26
 ---
 # 0032: A dimension build stages what it reads in the database and holds one batch in memory
 
-Status: accepted. Documented in [What a build holds](../../reference/flow/dimension-build.md#what-a-build-holds) and on
-the staging tables' pages.
+Status: accepted. Documented in [What a build holds](../../reference/flow/dimension-build.md#what-a-build-holds) and
+[A dimension build's staging](../../reference/flow/dimension-staging.md).
+
+> **Amended by [0033](0033-dimension-builds-at-scale.md).** A build still stages what it reads in the database and holds
+> one batch in memory. Its staging is no longer seven tables every build shares: each build makes seven of its own,
+> heaps loaded in bulk, and drops them when it ends. A label batch after the first is sized by the references the keys
+> before it followed, not by the most the declaration allows.
 
 ## Context
 

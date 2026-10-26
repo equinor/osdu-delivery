@@ -180,20 +180,41 @@ internal static class SqlServerDimensionStore
     private static string Slots(Func<string, string> each, string between)
         => string.Join(between, Enumerable.Range(1, DimensionTables.Slots).Select(i => each(DimensionTables.Slot(i))));
 
-    private static string Slots(Func<int, string, string> each, string between)
-        => string.Join(between, Enumerable.Range(1, DimensionTables.Slots).Select(i => each(i, DimensionTables.Slot(i))));
-
     // The dimension laid out as its table holds it (osdu/docs/reference/flow/dimension-table.md, The dimension's table): a
     // row per key the dimension holds now and value it collects, each attribute in the column of its place, read from
-    // what the write has just kept and joined by the attributes' numbers. An attribute read from the record a key names
-    // is one value of the key, so every such attribute of a key is read in one pass and laid out by its place; the
-    // collected attribute is the one that makes rows, so it is joined.
+    // what the write has just kept and joined by the attributes' numbers (DimensionTables.RowsSql, made for the table's
+    // own columns, so a dimension of a few attributes lays out those alone). An incremental load's write changes the rows of
+    // the keys it read again and of those it removed, and no other (its every statement above reads #DimValue and
+    // #DimChange alone), so it lays out and compares those keys' rows alone (#DimScope): its table write takes as long as
+    // what changed, not as the dimension. A table whose rows are written anew (@rewrite) is laid out whole.
     private static readonly string RowsSql = $"""
         DECLARE @collectedId int, @collectedOrdinal smallint, @collectedNow nvarchar(64);
         SELECT TOP (1) @collectedId = n.[AttributeId], @collectedOrdinal = n.[Ordinal], @collectedNow = n.[Name]
         FROM [osdu].[DimensionAttributeName] AS n WITH (FORCESEEK)
         WHERE n.[PartitionId] = @p AND n.[DimensionId] = @d AND n.[Ordinal] IS NOT NULL AND n.[Collected] = 1
         ORDER BY n.[Ordinal];
+
+        -- A table whose rows were made per element, written by a declaration that reads none, has no row to match one by.
+        DECLARE @elementRows bit = 0;
+        IF @elements = 0 AND COL_LENGTH(N'[osdu].' + QUOTENAME(@tableName), N'element') IS NOT NULL
+        BEGIN
+            DECLARE @elementCheck nvarchar(max) = N'SELECT @found = CASE WHEN EXISTS (SELECT 1 FROM [osdu].' + QUOTENAME(@tableName)
+                + N' AS t WITH (FORCESEEK) WHERE t.[partition] = @partition AND t.[element] IS NOT NULL) THEN 1 ELSE 0 END;';
+            EXEC sys.sp_executesql @elementCheck, N'@partition nvarchar(256), @found bit OUTPUT', @partition = @partitionName, @found = @elementRows OUTPUT;
+        END;
+
+        DECLARE @rewrite bit = CASE WHEN ISNULL(@collectedWas, N'') <> ISNULL(@collectedNow, N'') OR @elementRows = 1 THEN 1 ELSE 0 END;
+        DECLARE @scoped bit = CASE WHEN @partial = 1 AND @rewrite = 0 THEN 1 ELSE 0 END;
+        DROP TABLE IF EXISTS #DimScope;
+        CREATE TABLE #DimScope ([ValueId] bigint NOT NULL PRIMARY KEY);
+        IF @scoped = 1
+            INSERT INTO #DimScope ([ValueId])
+            SELECT v.[ValueId]
+            FROM [osdu].[DimensionValue] AS v WITH (FORCESEEK)
+            INNER JOIN #DimValue AS s ON s.[OriginalHash] = v.[OriginalHash]
+            WHERE v.[PartitionId] = @p AND v.[DimensionId] = @d
+            UNION
+            SELECT c.[ValueId] FROM #DimChange AS c;
 
         DROP TABLE IF EXISTS #DimRow;
         CREATE TABLE #DimRow (
@@ -207,30 +228,8 @@ internal static class SqlServerDimensionStore
             [Filter] nvarchar(4000) COLLATE Latin1_General_100_BIN2 NULL,
             PRIMARY KEY ([ValueId], [Part]));
 
-        -- An element is a row of its own, the key's other attributes beside each; a key holding none is one row.
-        INSERT INTO #DimRow ([ValueId], [Part], [Element], [Key], [Value], {Slots(slot => $"[{slot}]", ", ")}, [Records], [Filter])
-        SELECT k.[ValueId], COALESCE(c.[Value], CONVERT(nvarchar(256), el.[Seq]), N''), el.[Seq], k.[Original], m.[Value],
-            {Slots((i, slot) => $"CASE WHEN @collectedOrdinal = {i} THEN c.[Value] ELSE COALESCE(x.[{slot}], el.[{slot}]) END", ",\n    ")},
-            COALESCE(c.[Records], CASE WHEN el.[Seq] IS NULL THEN k.[Count] ELSE 1 END), k.[Filter]
-        FROM [osdu].[DimensionValue] AS k WITH (FORCESEEK)
-        INNER JOIN [osdu].[DimensionMember] AS m WITH (FORCESEEK) ON m.[PartitionId] = @p AND m.[DimensionId] = @d AND m.[MemberId] = k.[MemberId]
-        LEFT JOIN (
-            SELECT a.[ValueId],
-                {Slots((i, slot) => $"MAX(CASE WHEN n.[Ordinal] = {i} THEN a.[Value] END) AS [{slot}]", ",\n        ")}
-            FROM [osdu].[DimensionAttribute] AS a WITH (FORCESEEK)
-            INNER JOIN [osdu].[DimensionAttributeName] AS n WITH (FORCESEEK) ON n.[PartitionId] = @p AND n.[DimensionId] = @d AND n.[AttributeId] = a.[AttributeId]
-            WHERE a.[PartitionId] = @p AND a.[DimensionId] = @d AND n.[Ordinal] IS NOT NULL AND n.[Collected] = 0
-            GROUP BY a.[ValueId]) AS x ON x.[ValueId] = k.[ValueId]
-        LEFT JOIN (
-            SELECT e.[ValueId], e.[Seq],
-                {Slots((i, slot) => $"MAX(CASE WHEN n.[Ordinal] = {i} THEN e.[Value] END) AS [{slot}]", ",\n        ")}
-            FROM [osdu].[DimensionElement] AS e WITH (FORCESEEK)
-            INNER JOIN [osdu].[DimensionAttributeName] AS n WITH (FORCESEEK) ON n.[PartitionId] = @p AND n.[DimensionId] = @d AND n.[AttributeId] = e.[AttributeId]
-            WHERE e.[PartitionId] = @p AND e.[DimensionId] = @d AND n.[Ordinal] IS NOT NULL AND @elements = 1
-            GROUP BY e.[ValueId], e.[Seq]) AS el ON el.[ValueId] = k.[ValueId]
-        LEFT JOIN [osdu].[DimensionAttribute] AS c WITH (FORCESEEK)
-            ON c.[PartitionId] = @p AND c.[DimensionId] = @d AND c.[AttributeId] = @collectedId AND c.[ValueId] = k.[ValueId]
-        WHERE k.[PartitionId] = @p AND k.[DimensionId] = @d AND k.[RemovedRunId] IS NULL;
+        EXEC sys.sp_executesql @rowsSql, N'@p smallint, @d int, @elements bit, @collectedId int, @collectedOrdinal smallint, @scoped bit',
+            @p = @p, @d = @d, @elements = @elements, @collectedId = @collectedId, @collectedOrdinal = @collectedOrdinal, @scoped = @scoped;
         """;
 
     // The dimension's table brought to what the write kept: the rows are laid out, then the statements made for this
@@ -243,23 +242,20 @@ internal static class SqlServerDimensionStore
         BEGIN
 
         """ + RowsSql + "\n\n" + """
-            -- A table whose rows were made per element, written by a declaration that reads none, has no row to match one by.
-            DECLARE @elementRows bit = 0;
-            IF @elements = 0 AND COL_LENGTH(N'[osdu].' + QUOTENAME(@tableName), N'element') IS NOT NULL
-            BEGIN
-                DECLARE @elementCheck nvarchar(max) = N'SELECT @found = CASE WHEN EXISTS (SELECT 1 FROM [osdu].' + QUOTENAME(@tableName)
-                    + N' AS t WITH (FORCESEEK) WHERE t.[partition] = @partition AND t.[element] IS NOT NULL) THEN 1 ELSE 0 END;';
-                EXEC sys.sp_executesql @elementCheck, N'@partition nvarchar(256), @found bit OUTPUT', @partition = @partitionName, @found = @elementRows OUTPUT;
-            END;
-
-            DECLARE @rewrite bit = CASE WHEN ISNULL(@collectedWas, N'') <> ISNULL(@collectedNow, N'') OR @elementRows = 1 THEN 1 ELSE 0 END;
-            EXEC sys.sp_executesql @applySql, N'@partition nvarchar(256), @rewrite bit', @partition = @partitionName, @rewrite = @rewrite;
+            DECLARE @tableChanged bigint = 0;
+            EXEC sys.sp_executesql @applySql, N'@partition nvarchar(256), @rewrite bit, @scoped bit, @changed bigint OUTPUT',
+                @partition = @partitionName, @rewrite = @rewrite, @scoped = @scoped, @changed = @tableChanged OUTPUT;
             DROP TABLE #DimRow;
+            DROP TABLE #DimScope;
 
+            -- A table whose rows of the partition changed, or that the dimension writes under another name now, is of a new
+            -- version: a view reading it is read again by its next check, and one reading only tables of the same versions
+            -- keeps the check it had.
             DECLARE @tableWas sysname = (SELECT d.[TableName] FROM [osdu].[Dimension] AS d WITH (FORCESEEK) WHERE d.[PartitionId] = @p AND d.[DimensionId] = @d);
-            UPDATE d SET d.[TableName] = @tableName
+            UPDATE d SET d.[TableName] = @tableName, d.[TableVersion] = d.[TableVersion] + 1
             FROM [osdu].[Dimension] AS d WITH (FORCESEEK)
-            WHERE d.[PartitionId] = @p AND d.[DimensionId] = @d AND (d.[TableName] IS NULL OR d.[TableName] <> @tableName);
+            WHERE d.[PartitionId] = @p AND d.[DimensionId] = @d
+              AND (@tableChanged > 0 OR d.[TableName] IS NULL OR d.[TableName] <> @tableName);
 
             IF @tableWas IS NOT NULL AND @tableWas <> @tableName AND NOT EXISTS (SELECT 1 FROM [osdu].[Dimension] AS d WITH (FORCESEEK) WHERE d.[TableName] = @tableWas)
             BEGIN
@@ -629,14 +625,9 @@ internal static class SqlServerDimensionStore
             WHILE 1 = 1 BEGIN DELETE TOP (@batch) k FROM [osdu].[DimensionKeyRecord] AS k WITH (FORCESEEK) WHERE k.[PartitionId] = @p AND k.[DimensionId] = @d; SET @n = @@ROWCOUNT; SET @attributes += @n; IF @n < @batch BREAK; END;
             WHILE 1 = 1 BEGIN DELETE TOP (@batch) r FROM [osdu].[DimensionRecord] AS r WITH (FORCESEEK) WHERE r.[PartitionId] = @p AND r.[DimensionId] = @d; SET @n = @@ROWCOUNT; SET @attributes += @n; IF @n < @batch BREAK; END;
 
-            -- What a build of the dimension staged and left: a build its process stopped before it ended.
-            WHILE 1 = 1 BEGIN DELETE TOP (@batch) s FROM [osdu].[DimensionStageValue] AS s WHERE s.[PartitionId] = @p AND s.[DimensionId] = @d; IF @@ROWCOUNT < @batch BREAK; END;
-            WHILE 1 = 1 BEGIN DELETE TOP (@batch) s FROM [osdu].[DimensionStageMember] AS s WHERE s.[PartitionId] = @p AND s.[DimensionId] = @d; IF @@ROWCOUNT < @batch BREAK; END;
-            WHILE 1 = 1 BEGIN DELETE TOP (@batch) s FROM [osdu].[DimensionStageKey] AS s WHERE s.[PartitionId] = @p AND s.[DimensionId] = @d; IF @@ROWCOUNT < @batch BREAK; END;
-            WHILE 1 = 1 BEGIN DELETE TOP (@batch) s FROM [osdu].[DimensionStageAttribute] AS s WHERE s.[PartitionId] = @p AND s.[DimensionId] = @d; IF @@ROWCOUNT < @batch BREAK; END;
-            WHILE 1 = 1 BEGIN DELETE TOP (@batch) s FROM [osdu].[DimensionStageText] AS s WHERE s.[PartitionId] = @p AND s.[DimensionId] = @d; IF @@ROWCOUNT < @batch BREAK; END;
-            WHILE 1 = 1 BEGIN DELETE TOP (@batch) s FROM [osdu].[DimensionStageElement] AS s WHERE s.[PartitionId] = @p AND s.[DimensionId] = @d; IF @@ROWCOUNT < @batch BREAK; END;
-            WHILE 1 = 1 BEGIN DELETE TOP (@batch) s FROM [osdu].[DimensionStageRecord] AS s WHERE s.[PartitionId] = @p AND s.[DimensionId] = @d; IF @@ROWCOUNT < @batch BREAK; END;
+            -- What a build of the dimension staged and left: a build its process stopped before it ended, or one this removal stops.
+
+        """ + SqlServerDimensionStage.DiscardEverySql + """
 
             WHILE 1 = 1 BEGIN DELETE TOP (@batch) c FROM [osdu].[DimensionChange] AS c WITH (FORCESEEK) WHERE c.[PartitionId] = @p AND c.[DimensionId] = @d; SET @n = @@ROWCOUNT; SET @changes += @n; IF @n < @batch BREAK; END;
             WHILE 1 = 1 BEGIN DELETE TOP (@batch) v FROM [osdu].[DimensionValue] AS v WITH (FORCESEEK) WHERE v.[PartitionId] = @p AND v.[DimensionId] = @d; SET @n = @@ROWCOUNT; SET @keys += @n; IF @n < @batch BREAK; END;
@@ -1321,6 +1312,7 @@ internal static class SqlServerDimensionStore
     {
         command.Parameters.Add(new SqlParameter("@tableName", SqlDbType.NVarChar, 128) { Value = (object?)table?.Name ?? DBNull.Value });
         command.Parameters.Add(new SqlParameter("@applySql", SqlDbType.NVarChar, -1) { Value = (object?)prepared?.ApplySql ?? DBNull.Value });
+        command.Parameters.Add(new SqlParameter("@rowsSql", SqlDbType.NVarChar, -1) { Value = table is null ? DBNull.Value : DimensionTables.RowsSql(table.Columns.Count) });
         command.Parameters.Add(new SqlParameter("@partitionName", SqlDbType.NVarChar, 256) { Value = partition });
         command.Parameters.Add(new SqlParameter("@elements", SqlDbType.Bit) { Value = table?.HasElements ?? false });
     }
@@ -1350,6 +1342,9 @@ internal static class SqlServerDimensionStore
             {
                 command.Parameters.Add(new SqlParameter("@p", SqlDbType.SmallInt) { Value = partitionId });
                 command.Parameters.Add(new SqlParameter("@d", SqlDbType.Int) { Value = dimensionId });
+
+                // Written again outside a build, the table is laid out whole: no build's keys stand for what changed.
+                command.Parameters.Add(new SqlParameter("@partial", SqlDbType.Bit) { Value = false });
                 AddTable(command, table, prepared, partition);
                 await command.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
             }
@@ -1598,7 +1593,7 @@ internal static class SqlServerDimensionStore
 
             // The staging, copied into the write's own tables where the database holds it: no row of the build passes
             // through the process writing it.
-            await using (var copy = SqlServerDimensionStage.Command(connection, transaction, SqlServerDimensionStage.CopySql, stage))
+            await using (var copy = SqlServerDimensionStage.Command(connection, transaction, SqlServerDimensionStage.CopySql(stage), stage))
             {
                 var first = write.Table?.Columns.FirstOrDefault(c => c.Element)?.Name;
                 copy.Parameters.Add(new SqlParameter("@elements", SqlDbType.Bit) { Value = write.Table is { HasElements: true } && first is not null });
@@ -1655,21 +1650,26 @@ internal static class SqlServerDimensionStore
     }
 
     /// <summary>
-    /// Refuses a write whose staging no longer holds every key and value its build staged: a later build of the dimension took
-    /// the build for one its process left, which it does only once a build has run for <see cref="DimensionStage.AbandonedAfter"/>,
-    /// and began deleting its staging. Read under the dimension's write lock, which such a deletion takes too, so nothing of
-    /// the staging is deleted while the write copies it.
+    /// Refuses a write whose staging is gone or no longer holds every key and value its build staged: a later build of the
+    /// dimension took the build for one its process left, which it does only once a build has run for
+    /// <see cref="DimensionStage.AbandonedAfter"/>, and dropped its staging, or the dimension was removed. Read under the
+    /// dimension's write lock, which such a drop takes too, so nothing of the staging is dropped while the write copies it.
     /// </summary>
     private static async Task CheckStagedAsync(SqlConnection connection, SqlTransaction transaction, DimensionStage stage, CancellationToken ct)
     {
-        await using var command = SqlServerDimensionStage.Command(connection, transaction, SqlServerDimensionStage.CountSql, stage);
+        await using var command = SqlServerDimensionStage.Command(connection, transaction, SqlServerDimensionStage.CountSql(stage), stage);
         await using var reader = await command.ExecuteReaderAsync(ct).ConfigureAwait(false);
         await reader.ReadAsync(ct).ConfigureAwait(false);
         var (values, members) = (reader.GetInt64(0), reader.GetInt64(1));
+        if (values < 0 || members < 0)
+        {
+            throw new DeliveryException(SqlServerDimensionStage.GoneMessage(stage));
+        }
+
         if (values != stage.Values || members != stage.Members)
         {
             throw new DeliveryException(string.Create(CultureInfo.InvariantCulture,
-                $"The staging of dimension build {stage.DimensionRunId} holds {values} of the {stage.Values} key(s) and {members} of the {stage.Members} value(s) it staged: another build of the dimension deleted it, taking this build, running for more than {DimensionStage.AbandonedAfter.TotalHours:0} hours, for one its process left. Nothing was written; build the dimension again."));
+                $"The staging of dimension build {stage.DimensionRunId} holds {values} of the {stage.Values} key(s) and {members} of the {stage.Members} value(s) it staged, so it is not what the build read. Nothing was written; build the dimension again."));
         }
     }
 

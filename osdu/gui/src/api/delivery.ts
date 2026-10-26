@@ -3629,6 +3629,8 @@ export interface DeliveryDimensionViewCheck {
   checkedUtc: string;
   durationMs: number;
   notes: string[];
+  /** The check whose findings this one keeps, since nothing the view reads had changed since it; absent for a check that read the view. */
+  reusedFrom?: number | null;
 }
 
 /**

@@ -349,6 +349,7 @@ internal static class DeliveryDimensionVerbs
         ["status"] = check.Status,
         ["rows"] = check.Rows,
         ["checkedUtc"] = check.CheckedUtc,
+        ["reusedFrom"] = check.ReusedFrom,
         ["error"] = check.Error,
         ["joins"] = new JsonArray(check.Joins.Select(j => (JsonNode)new JsonObject
         {

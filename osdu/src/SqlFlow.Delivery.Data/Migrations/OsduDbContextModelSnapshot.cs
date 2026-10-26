@@ -1011,6 +1011,9 @@ namespace SqlFlow.Delivery.Data.Migrations
                         .HasMaxLength(128)
                         .HasColumnType("nvarchar(128)");
 
+                    b.Property<long>("TableVersion")
+                        .HasColumnType("bigint");
+
                     b.Property<string>("ValueColumn")
                         .HasMaxLength(128)
                         .HasColumnType("nvarchar(128)");
@@ -1021,6 +1024,8 @@ namespace SqlFlow.Delivery.Data.Migrations
                         .IsUnique();
 
                     b.HasIndex("TableName");
+
+                    SqlServerIndexBuilderExtensions.IncludeProperties(b.HasIndex("TableName"), new[] { "FlowName", "Name" });
 
                     b.HasIndex("PartitionId", "FlowId", "Name")
                         .IsUnique();
@@ -1563,320 +1568,6 @@ namespace SqlFlow.Delivery.Data.Migrations
                     b.ToTable("DimensionRun", "osdu");
                 });
 
-            modelBuilder.Entity("SqlFlow.Delivery.Data.DeliveryDimensionStageAttributeValue", b =>
-                {
-                    b.Property<short>("PartitionId")
-                        .HasColumnType("smallint");
-
-                    b.Property<int>("DimensionId")
-                        .HasColumnType("int");
-
-                    b.Property<long>("DimensionRunId")
-                        .HasColumnType("bigint");
-
-                    b.Property<long>("Seq")
-                        .HasColumnType("bigint");
-
-                    b.Property<byte[]>("KeyHash")
-                        .IsRequired()
-                        .HasMaxLength(32)
-                        .HasColumnType("binary(32)")
-                        .IsFixedLength();
-
-                    b.Property<string>("Name")
-                        .IsRequired()
-                        .HasMaxLength(64)
-                        .HasColumnType("nvarchar(64)")
-                        .UseCollation("Latin1_General_100_BIN2");
-
-                    b.Property<long?>("Records")
-                        .HasColumnType("bigint");
-
-                    b.Property<string>("Value")
-                        .IsRequired()
-                        .HasMaxLength(256)
-                        .HasColumnType("nvarchar(256)")
-                        .UseCollation("Latin1_General_100_BIN2");
-
-                    b.Property<string>("ValueFrom")
-                        .HasMaxLength(1024)
-                        .HasColumnType("nvarchar(1024)");
-
-                    b.HasKey("PartitionId", "DimensionId", "DimensionRunId", "Seq");
-
-                    b.ToTable("DimensionStageAttribute", "osdu");
-                });
-
-            modelBuilder.Entity("SqlFlow.Delivery.Data.DeliveryDimensionStageElement", b =>
-                {
-                    b.Property<short>("PartitionId")
-                        .HasColumnType("smallint");
-
-                    b.Property<int>("DimensionId")
-                        .HasColumnType("int");
-
-                    b.Property<long>("DimensionRunId")
-                        .HasColumnType("bigint");
-
-                    b.Property<long>("Seq")
-                        .HasColumnType("bigint");
-
-                    b.Property<byte[]>("KeyHash")
-                        .IsRequired()
-                        .HasMaxLength(32)
-                        .HasColumnType("binary(32)")
-                        .IsFixedLength();
-
-                    b.Property<string>("Name")
-                        .HasMaxLength(64)
-                        .HasColumnType("nvarchar(64)")
-                        .UseCollation("Latin1_General_100_BIN2");
-
-                    b.Property<int>("Ordinal")
-                        .HasColumnType("int");
-
-                    b.Property<string>("Record")
-                        .IsRequired()
-                        .HasMaxLength(1024)
-                        .HasColumnType("nvarchar(1024)")
-                        .UseCollation("Latin1_General_100_BIN2");
-
-                    b.Property<string>("Value")
-                        .HasMaxLength(4000)
-                        .HasColumnType("nvarchar(4000)")
-                        .UseCollation("Latin1_General_100_BIN2");
-
-                    b.HasKey("PartitionId", "DimensionId", "DimensionRunId", "Seq");
-
-                    b.ToTable("DimensionStageElement", "osdu");
-                });
-
-            modelBuilder.Entity("SqlFlow.Delivery.Data.DeliveryDimensionStageKey", b =>
-                {
-                    b.Property<short>("PartitionId")
-                        .HasColumnType("smallint");
-
-                    b.Property<int>("DimensionId")
-                        .HasColumnType("int");
-
-                    b.Property<long>("DimensionRunId")
-                        .HasColumnType("bigint");
-
-                    b.Property<long>("Seq")
-                        .HasColumnType("bigint");
-
-                    b.Property<long>("Count")
-                        .HasColumnType("bigint");
-
-                    b.Property<bool>("Gone")
-                        .HasColumnType("bit");
-
-                    b.Property<string>("Key")
-                        .IsRequired()
-                        .HasMaxLength(1024)
-                        .HasColumnType("nvarchar(1024)")
-                        .UseCollation("Latin1_General_100_BIN2");
-
-                    b.Property<byte[]>("KeyHash")
-                        .IsRequired()
-                        .HasMaxLength(32)
-                        .HasColumnType("binary(32)")
-                        .IsFixedLength();
-
-                    b.HasKey("PartitionId", "DimensionId", "DimensionRunId", "Seq");
-
-                    b.ToTable("DimensionStageKey", "osdu");
-                });
-
-            modelBuilder.Entity("SqlFlow.Delivery.Data.DeliveryDimensionStageMember", b =>
-                {
-                    b.Property<short>("PartitionId")
-                        .HasColumnType("smallint");
-
-                    b.Property<int>("DimensionId")
-                        .HasColumnType("int");
-
-                    b.Property<long>("DimensionRunId")
-                        .HasColumnType("bigint");
-
-                    b.Property<long>("Seq")
-                        .HasColumnType("bigint");
-
-                    b.Property<string>("Filter")
-                        .HasColumnType("nvarchar(max)");
-
-                    b.Property<int>("FilterParts")
-                        .HasColumnType("int");
-
-                    b.Property<int>("Originals")
-                        .HasColumnType("int");
-
-                    b.Property<long>("Records")
-                        .HasColumnType("bigint");
-
-                    b.Property<bool>("RecordsExact")
-                        .HasColumnType("bit");
-
-                    b.Property<int>("Unfilterable")
-                        .HasColumnType("int");
-
-                    b.Property<string>("Value")
-                        .IsRequired()
-                        .HasMaxLength(256)
-                        .HasColumnType("nvarchar(256)")
-                        .UseCollation("Latin1_General_100_BIN2");
-
-                    b.HasKey("PartitionId", "DimensionId", "DimensionRunId", "Seq");
-
-                    b.ToTable("DimensionStageMember", "osdu");
-                });
-
-            modelBuilder.Entity("SqlFlow.Delivery.Data.DeliveryDimensionStageRecord", b =>
-                {
-                    b.Property<short>("PartitionId")
-                        .HasColumnType("smallint");
-
-                    b.Property<int>("DimensionId")
-                        .HasColumnType("int");
-
-                    b.Property<long>("DimensionRunId")
-                        .HasColumnType("bigint");
-
-                    b.Property<long>("Seq")
-                        .HasColumnType("bigint");
-
-                    b.Property<string>("EntityType")
-                        .HasMaxLength(256)
-                        .HasColumnType("nvarchar(256)")
-                        .UseCollation("Latin1_General_100_BIN2");
-
-                    b.Property<byte[]>("KeyHash")
-                        .HasMaxLength(32)
-                        .HasColumnType("binary(32)")
-                        .IsFixedLength();
-
-                    b.Property<byte>("Kind")
-                        .HasColumnType("tinyint");
-
-                    b.Property<byte[]>("RecordHash")
-                        .IsRequired()
-                        .HasMaxLength(32)
-                        .HasColumnType("binary(32)")
-                        .IsFixedLength();
-
-                    b.HasKey("PartitionId", "DimensionId", "DimensionRunId", "Seq");
-
-                    b.ToTable("DimensionStageRecord", "osdu");
-                });
-
-            modelBuilder.Entity("SqlFlow.Delivery.Data.DeliveryDimensionStageText", b =>
-                {
-                    b.Property<short>("PartitionId")
-                        .HasColumnType("smallint");
-
-                    b.Property<int>("DimensionId")
-                        .HasColumnType("int");
-
-                    b.Property<long>("DimensionRunId")
-                        .HasColumnType("bigint");
-
-                    b.Property<long>("Seq")
-                        .HasColumnType("bigint");
-
-                    b.Property<string>("Name")
-                        .IsRequired()
-                        .HasMaxLength(64)
-                        .HasColumnType("nvarchar(64)")
-                        .UseCollation("Latin1_General_100_BIN2");
-
-                    b.Property<long>("Records")
-                        .HasColumnType("bigint");
-
-                    b.Property<string>("Text")
-                        .IsRequired()
-                        .HasMaxLength(1024)
-                        .HasColumnType("nvarchar(1024)")
-                        .UseCollation("Latin1_General_100_BIN2");
-
-                    b.Property<byte[]>("TextHash")
-                        .IsRequired()
-                        .HasMaxLength(32)
-                        .HasColumnType("binary(32)")
-                        .IsFixedLength();
-
-                    b.Property<string>("Value")
-                        .IsRequired()
-                        .HasMaxLength(256)
-                        .HasColumnType("nvarchar(256)")
-                        .UseCollation("Latin1_General_100_BIN2");
-
-                    b.HasKey("PartitionId", "DimensionId", "DimensionRunId", "Seq");
-
-                    b.ToTable("DimensionStageText", "osdu");
-                });
-
-            modelBuilder.Entity("SqlFlow.Delivery.Data.DeliveryDimensionStageValue", b =>
-                {
-                    b.Property<short>("PartitionId")
-                        .HasColumnType("smallint");
-
-                    b.Property<int>("DimensionId")
-                        .HasColumnType("int");
-
-                    b.Property<long>("DimensionRunId")
-                        .HasColumnType("bigint");
-
-                    b.Property<long>("Seq")
-                        .HasColumnType("bigint");
-
-                    b.Property<string>("CleanValue")
-                        .HasMaxLength(256)
-                        .HasColumnType("nvarchar(256)")
-                        .UseCollation("Latin1_General_100_BIN2");
-
-                    b.Property<long>("Count")
-                        .HasColumnType("bigint");
-
-                    b.Property<string>("Filter")
-                        .HasMaxLength(4000)
-                        .HasColumnType("nvarchar(4000)");
-
-                    b.Property<bool>("Filterable")
-                        .HasColumnType("bit");
-
-                    b.Property<string>("Label")
-                        .HasMaxLength(1024)
-                        .HasColumnType("nvarchar(1024)");
-
-                    b.Property<string>("LabelFrom")
-                        .HasMaxLength(1024)
-                        .HasColumnType("nvarchar(1024)");
-
-                    b.Property<string>("LeftOut")
-                        .HasMaxLength(16)
-                        .HasColumnType("nvarchar(16)");
-
-                    b.Property<string>("Note")
-                        .HasMaxLength(400)
-                        .HasColumnType("nvarchar(400)");
-
-                    b.Property<string>("Original")
-                        .IsRequired()
-                        .HasMaxLength(1024)
-                        .HasColumnType("nvarchar(1024)")
-                        .UseCollation("Latin1_General_100_BIN2");
-
-                    b.Property<byte[]>("OriginalHash")
-                        .IsRequired()
-                        .HasMaxLength(32)
-                        .HasColumnType("binary(32)")
-                        .IsFixedLength();
-
-                    b.HasKey("PartitionId", "DimensionId", "DimensionRunId", "Seq");
-
-                    b.ToTable("DimensionStageValue", "osdu");
-                });
-
             modelBuilder.Entity("SqlFlow.Delivery.Data.DeliveryDimensionValue", b =>
                 {
                     b.Property<short>("PartitionId")
@@ -2070,6 +1761,14 @@ namespace SqlFlow.Delivery.Data.Migrations
 
                     b.Property<string>("JoinsJson")
                         .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("ReadVersion")
+                        .HasMaxLength(64)
+                        .IsUnicode(false)
+                        .HasColumnType("varchar(64)");
+
+                    b.Property<long?>("ReusedCheckId")
+                        .HasColumnType("bigint");
 
                     b.Property<long>("Rows")
                         .HasColumnType("bigint");

@@ -47,9 +47,10 @@ public sealed class OsduStorageAreasTests
             .ToList();
         Assert.True(phantom.Count == 0, "Areas holding tables the model does not have: " + string.Join(", ", phantom.Select(p => $"{p.Area}: {p.Claim}")));
 
-        // The tables builds create at run time are claimed by prefix, and no table of the model starts with one.
+        // The tables builds create at run time (a dimension's table, a dimension build's staging, a duplicate check's
+        // download) are claimed by prefix, and no table of the model starts with one.
         var prefixes = areas.SelectMany(a => a.Tables.Where(c => c.IsPrefix)).ToList();
-        Assert.Equal(2, prefixes.Count);
+        Assert.Equal(3, prefixes.Count);
         Assert.DoesNotContain(modelTables, t => prefixes.Any(p => p.Matches(t.Schema, t.Name)));
     }
 

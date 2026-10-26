@@ -21,7 +21,7 @@ import { DimensionGrid } from "./DimensionGrid";
 import { CheckGlyph, JoinVerdictBadge, NotesMark } from "./DimensionViewBadges";
 import { DimensionViewYaml } from "./DimensionViewYaml";
 import {
-  VERDICT_VISUALS, VIEW_KEY_COLUMNS, columnFindings, exampleText, joinFindings, joinFoundNothing, joinVerdicts, tableObject, verdictText, viewObject,
+  VERDICT_VISUALS, VIEW_KEY_COLUMNS, checkWhen, columnFindings, exampleText, joinFindings, joinFoundNothing, joinVerdicts, tableObject, verdictText, viewObject,
 } from "./dimensionViewFormat";
 
 /** Opens a dimension of the view's flow on the Dimensions page, when the page knows it; null when it does not. */
@@ -291,7 +291,18 @@ export function ViewChecks({ checks }: { checks: DeliveryDimensionViewCheck[] })
           ? <span className="text-[12px] text-muted-foreground">every join found its row, every value converted</span>
           : <NotesMark notes={row.notes} title="What the check found" testId={`dimension-view-check-notes-${row.checkId}`} />),
     },
-    { id: "took", header: "Took", align: "right", render: (row) => <span className="font-mono text-[12px] tabular-nums">{duration(row.durationMs)}</span> },
+    {
+      id: "took",
+      header: "Took",
+      align: "right",
+      render: (row) => (row.reusedFrom != null
+        ? (
+          <ExplainTip title="Kept" text={checkWhen(row)} testId={`dimension-view-check-kept-${row.checkId}`}>
+            <span className="text-[12px] text-muted-foreground">kept</span>
+          </ExplainTip>
+        )
+        : <span className="font-mono text-[12px] tabular-nums">{duration(row.durationMs)}</span>),
+    },
     {
       id: "run",
       header: "Run",

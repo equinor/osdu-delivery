@@ -225,12 +225,78 @@ public static class DimensionTables
     internal static string KeyHash(string keySql) => $"CAST(HASHBYTES('SHA2_256', {keySql}) AS binary(32))";
 
     /// <summary>
+    /// The statement that lays out the rows a dimension's table holds into <c>#DimRow</c>, made for a table of
+    /// <paramref name="slots"/> attribute columns: a row per key the dimension holds now and value it collects, or element it
+    /// holds, each attribute in the column of its place (<c>A01</c> on), read from what the write has just kept and joined by
+    /// the attributes' numbers. An attribute read from the record a key names is one value of the key, so every such attribute
+    /// of a key is read in one pass and laid out by its place; the collected attribute is the one that makes rows, so it is
+    /// joined. Only the table's own columns are laid out, so a dimension of a few attributes computes those alone of every
+    /// attribute it keeps. It takes <c>@p</c>, <c>@d</c>, <c>@elements</c>, and the collected attribute's number and place
+    /// (<c>@collectedId</c>, <c>@collectedOrdinal</c>), null when it collects none; and <c>@scoped</c>: 1 to lay out the rows
+    /// of the keys <c>#DimScope</c> holds alone (an incremental load's: the keys it read again and those it removed), 0 to lay
+    /// out every key's.
+    /// </summary>
+    internal static string RowsSql(int slots)
+    {
+        ArgumentOutOfRangeException.ThrowIfNegative(slots);
+        ArgumentOutOfRangeException.ThrowIfGreaterThan(slots, Slots);
+        var places = Enumerable.Range(1, slots).Select(i => (Place: i, Slot: Slot(i))).ToList();
+        string Each(Func<(int Place, string Slot), string> each, string between) => string.Concat(places.Select(p => between + each(p)));
+
+        // Scoped, every read of the dimension's rows starts at the keys in scope, so it seeks their rows alone.
+        string Insert(bool scoped)
+        {
+            var keys = scoped ? "\n    INNER JOIN #DimScope AS z ON z.[ValueId] = k.[ValueId]" : string.Empty;
+            var attributes = scoped ? "\n        INNER JOIN #DimScope AS za ON za.[ValueId] = a.[ValueId]" : string.Empty;
+            var elements = scoped ? "\n        INNER JOIN #DimScope AS ze ON ze.[ValueId] = e.[ValueId]" : string.Empty;
+            return $"""
+                INSERT INTO #DimRow ([ValueId], [Part], [Element], [Key], [Value]{Each(p => $"[{p.Slot}]", ", ")}, [Records], [Filter])
+                SELECT k.[ValueId], COALESCE(c.[Value], CONVERT(nvarchar(256), el.[Seq]), N''), el.[Seq], k.[Original], m.[Value]{Each(p => $"CASE WHEN @collectedOrdinal = {p.Place} THEN c.[Value] ELSE COALESCE(x.[{p.Slot}], el.[{p.Slot}]) END", ",\n    ")},
+                    COALESCE(c.[Records], CASE WHEN el.[Seq] IS NULL THEN k.[Count] ELSE 1 END), k.[Filter]
+                FROM [osdu].[DimensionValue] AS k WITH (FORCESEEK){keys}
+                INNER JOIN [osdu].[DimensionMember] AS m WITH (FORCESEEK) ON m.[PartitionId] = @p AND m.[DimensionId] = @d AND m.[MemberId] = k.[MemberId]
+                LEFT JOIN (
+                    SELECT a.[ValueId]{Each(p => $"MAX(CASE WHEN n.[Ordinal] = {p.Place} THEN a.[Value] END) AS [{p.Slot}]", ",\n        ")}
+                    FROM [osdu].[DimensionAttribute] AS a WITH (FORCESEEK){attributes}
+                    INNER JOIN [osdu].[DimensionAttributeName] AS n WITH (FORCESEEK) ON n.[PartitionId] = @p AND n.[DimensionId] = @d AND n.[AttributeId] = a.[AttributeId]
+                    WHERE a.[PartitionId] = @p AND a.[DimensionId] = @d AND n.[Ordinal] IS NOT NULL AND n.[Collected] = 0
+                    GROUP BY a.[ValueId]) AS x ON x.[ValueId] = k.[ValueId]
+                LEFT JOIN (
+                    SELECT e.[ValueId], e.[Seq]{Each(p => $"MAX(CASE WHEN n.[Ordinal] = {p.Place} THEN e.[Value] END) AS [{p.Slot}]", ",\n        ")}
+                    FROM [osdu].[DimensionElement] AS e WITH (FORCESEEK){elements}
+                    INNER JOIN [osdu].[DimensionAttributeName] AS n WITH (FORCESEEK) ON n.[PartitionId] = @p AND n.[DimensionId] = @d AND n.[AttributeId] = e.[AttributeId]
+                    WHERE e.[PartitionId] = @p AND e.[DimensionId] = @d AND n.[Ordinal] IS NOT NULL AND @elements = 1
+                    GROUP BY e.[ValueId], e.[Seq]) AS el ON el.[ValueId] = k.[ValueId]
+                LEFT JOIN [osdu].[DimensionAttribute] AS c WITH (FORCESEEK)
+                    ON c.[PartitionId] = @p AND c.[DimensionId] = @d AND c.[AttributeId] = @collectedId AND c.[ValueId] = k.[ValueId]
+                WHERE k.[PartitionId] = @p AND k.[DimensionId] = @d AND k.[RemovedRunId] IS NULL;
+                """;
+        }
+
+        return $"""
+            -- An element is a row of its own, the key's other attributes beside each; a key holding none is one row.
+            IF @scoped = 1
+            BEGIN
+            {Insert(scoped: true)}
+            END
+            ELSE
+            BEGIN
+            {Insert(scoped: false)}
+            END;
+            """;
+    }
+
+    /// <summary>
     /// The statements that bring the rows of one partition in <paramref name="table"/> to the rows a build laid out in
     /// <c>#DimRow</c> (a key, the value it collects, and each attribute in the column of its place): a row that left is
     /// deleted, one that changed rewritten, a new one added, so a build that found the same thing writes nothing and a row
     /// keeps its number. <paramref name="retired"/> are the columns of attributes the dimension no longer declares, which
     /// are emptied. The statement takes <c>@partition</c>, and <c>@rewrite</c>: 1 when the attribute that makes the rows is
-    /// no longer the one the table's rows were written with, so no row of it can be matched and all are written again.
+    /// no longer the one the table's rows were written with, so no row of it can be matched and all are written again; and
+    /// <c>@scoped</c>: 1 when <c>#DimRow</c> holds the rows of the keys in <c>#DimScope</c> alone (an incremental load's
+    /// write), so only those keys' rows are compared and every other row is left as it is. It adds the rows it deleted,
+    /// rewrote and added to <c>@changed</c> (an output), which the write raises the table's version by
+    /// (<c>DeliveryDimension.TableVersion</c>).
     /// </summary>
     internal static string ApplySql(DimensionTableSpec table, IReadOnlyCollection<string> retired)
     {
@@ -250,8 +316,14 @@ public static class DimensionTables
                 ? "s.[ValueId] = t.[key_id]"
                 : $"s.[ValueId] = t.[key_id] AND s.[Part] = ISNULL(t.{collected}, N'') COLLATE {Exact}";
         var sql = new StringBuilder();
-        sql.Append(CultureInfo.InvariantCulture, $"IF @rewrite = 1\n    DELETE t FROM {target} AS t WITH (FORCESEEK) WHERE t.[partition] = @partition;\n\n");
-        sql.Append(CultureInfo.InvariantCulture, $"DELETE t\nFROM {target} AS t WITH (FORCESEEK)\nWHERE t.[partition] = @partition\n  AND NOT EXISTS (SELECT 1 FROM #DimRow AS s WHERE {same});\n\n");
+        sql.Append(CultureInfo.InvariantCulture, $"IF @rewrite = 1\nBEGIN\n    DELETE t FROM {target} AS t WITH (FORCESEEK) WHERE t.[partition] = @partition;\n    SET @changed += @@ROWCOUNT;\nEND;\n\n");
+
+        // Scoped (an incremental load's write), only the rows of the keys in scope are laid out, so only theirs can have left:
+        // every other row stays as it is.
+        sql.Append(CultureInfo.InvariantCulture,
+            $"IF @scoped = 1\nBEGIN\n    DELETE t\n    FROM #DimScope AS z\n    INNER JOIN {target} AS t WITH (FORCESEEK) ON t.[partition] = @partition AND t.[key_id] = z.[ValueId]\n    WHERE NOT EXISTS (SELECT 1 FROM #DimRow AS s WHERE {same});\n    SET @changed += @@ROWCOUNT;\nEND\n");
+        sql.Append(CultureInfo.InvariantCulture,
+            $"ELSE\nBEGIN\n    DELETE t\n    FROM {target} AS t WITH (FORCESEEK)\n    WHERE t.[partition] = @partition\n      AND NOT EXISTS (SELECT 1 FROM #DimRow AS s WHERE {same});\n    SET @changed += @@ROWCOUNT;\nEND;\n\n");
 
         sql.Append(CultureInfo.InvariantCulture,
             $"UPDATE t SET t.{key} = s.[Key], t.[{KeyHashColumn}] = {KeyHash("s.[Key]")}, t.{value} = s.[Value], t.[records] = s.[Records], t.[filter] = s.[Filter]");
@@ -284,7 +356,7 @@ public static class DimensionTables
             sql.Append(CultureInfo.InvariantCulture, $"\n       OR t.{Quoted(column)} IS NOT NULL");
         }
 
-        sql.Append(");\n\n");
+        sql.Append(");\nSET @changed += @@ROWCOUNT;\n\n");
 
         // New rows take their numbers in the table's own order: by value, then key, then the value collected or the element.
         sql.Append(CultureInfo.InvariantCulture, $"INSERT INTO {target} ([partition], [key_id], {key}, [{KeyHashColumn}], {value}, [records], [filter]");
@@ -310,7 +382,7 @@ public static class DimensionTables
         }
 
         sql.Append(CultureInfo.InvariantCulture,
-            $"\nFROM #DimRow AS s\nWHERE NOT EXISTS (SELECT 1 FROM {target} AS t WITH (FORCESEEK) WHERE t.[partition] = @partition AND {same})\nORDER BY s.[Value], s.[Key], {(table.HasElements ? "s.[Element]" : "s.[Part]")};");
+            $"\nFROM #DimRow AS s\nWHERE NOT EXISTS (SELECT 1 FROM {target} AS t WITH (FORCESEEK) WHERE t.[partition] = @partition AND {same})\nORDER BY s.[Value], s.[Key], {(table.HasElements ? "s.[Element]" : "s.[Part]")};\nSET @changed += @@ROWCOUNT;");
         sql.Append("\n\n").Append(FillKeyHashSql(table.Name, table.KeyColumn, onePartition: true));
         return sql.ToString();
     }

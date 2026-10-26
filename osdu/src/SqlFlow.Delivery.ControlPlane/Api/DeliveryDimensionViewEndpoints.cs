@@ -38,7 +38,11 @@ public sealed record DeliveryDimensionViewColumnCheckDto(string Name, long Value
 /// </summary>
 public sealed record DeliveryDimensionViewCheckDto(
     long CheckId, string Partition, Guid? RunId, string Status, long Rows, IReadOnlyList<DeliveryDimensionViewJoinCheckDto> Joins,
-    IReadOnlyList<DeliveryDimensionViewColumnCheckDto> Columns, string? Error, DateTime CheckedUtc, int DurationMs, IReadOnlyList<string> Notes);
+    IReadOnlyList<DeliveryDimensionViewColumnCheckDto> Columns, string? Error, DateTime CheckedUtc, int DurationMs, IReadOnlyList<string> Notes)
+{
+    /// <summary>The check whose findings this one keeps, since nothing the view reads had changed since it; null for a check that read the view.</summary>
+    public long? ReusedFrom { get; init; }
+}
 
 /// <summary>
 /// A view of a dimension flow (osdu/docs/reference/flow/dimension-views.md): as its flow declares it now
@@ -378,7 +382,10 @@ public static class DeliveryDimensionViewEndpoints
         c.CheckId, c.Partition, c.RunId, c.Status, c.Rows,
         c.Joins.Select(j => new DeliveryDimensionViewJoinCheckDto(j.Alias, j.To, j.On, j.Matched, j.Unmatched, j.Examples)).ToList(),
         c.Columns.Select(x => new DeliveryDimensionViewColumnCheckDto(x.Name, x.Values, x.Unconverted, x.Examples.Select(e => new DeliveryDimensionViewExampleDto(e.Id, e.Value)).ToList())).ToList(),
-        c.Error, c.CheckedUtc, c.DurationMs, c.Notes());
+        c.Error, c.CheckedUtc, c.DurationMs, c.Notes())
+    {
+        ReusedFrom = c.ReusedFrom,
+    };
 
     private static ProblemHttpResult Problem(int status, string title, string detail) => TypedResults.Problem(detail, statusCode: status, title: title);
 }

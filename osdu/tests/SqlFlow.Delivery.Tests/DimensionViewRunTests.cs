@@ -2,6 +2,7 @@ using System.Text.Json.Nodes;
 using Microsoft.Data.SqlClient;
 using SqlFlow.Delivery.Documents;
 using SqlFlow.Delivery.Engine.Dimensions;
+using SqlFlow.Delivery.Engine.Search;
 using SqlFlow.Delivery.Ledger;
 using SqlFlow.Delivery.Model;
 using Xunit;
@@ -213,6 +214,75 @@ public sealed class DimensionViewRunTests : IDisposable
 
         // The joined table is read through the index on its key's hash.
         Assert.Equal(["1"], await SqlAsync("SELECT COUNT(*) FROM sys.indexes WHERE [object_id] = OBJECT_ID(N'[osdu].[dim_TestUnit]') AND [name] = N'IX_key_hash';"));
+    }
+
+    [Fact]
+    public async Task A_view_whose_tables_hold_what_they_held_at_its_last_check_keeps_that_check_and_one_whose_table_changed_is_read_again()
+    {
+        Logs();
+        var (runner, ledger, _) = await RunnerAsync(Flow(CurveView));
+        var first = await runner.BuildAsync([], Guid.NewGuid(), "tests", CancellationToken.None);
+        var read = (await ledger.GetDimensionViewAsync("TestCurveView"))!.Checks[0];
+        Assert.Null(read.ReusedFrom);
+
+        // The same records built again: every table the view reads holds what it held, so its check is kept, findings and all.
+        var again = await runner.BuildAsync([], Guid.NewGuid(), "tests", CancellationToken.None);
+        Assert.Equal((DimensionViewWriteStatus.Unchanged, DimensionViewCheckStatus.Passed, (long?)4L), (again.Views[0].Status, again.Views[0].Check, again.Views[0].Rows));
+        Assert.Equal(first.Views[0].Notes, again.Views[0].Notes);
+        var kept = (await ledger.GetDimensionViewAsync("TestCurveView"))!.Checks;
+        Assert.Equal((read.CheckId, read.Rows), (kept[0].ReusedFrom, kept[0].Rows));
+        Assert.Equal(read.Joins.Select(j => (j.Alias, j.Matched, j.Unmatched)), kept[0].Joins.Select(j => (j.Alias, j.Matched, j.Unmatched)));
+
+        // Built a third time, the check names the one that read the view, not the one that kept it.
+        await runner.BuildAsync([], Guid.NewGuid(), "tests", CancellationToken.None);
+        Assert.Equal(read.CheckId, (await ledger.GetDimensionViewAsync("TestCurveView"))!.Checks[0].ReusedFrom);
+
+        // A unit's code changed: its table's rows change, so the view is read again and finds the new code.
+        _platform.Records.Single(r => r["id"]!.GetValue<string>() == "dev:reference-data--UnitOfMeasure:gAPI")["data"]!["Code"] = "API";
+        await runner.BuildAsync([], Guid.NewGuid(), "tests", CancellationToken.None);
+        Assert.Null((await ledger.GetDimensionViewAsync("TestCurveView"))!.Checks[0].ReusedFrom);
+        Assert.Equal(["API", "m"], await SqlAsync("SELECT DISTINCT [Unit] FROM [osdu].[v_dim_TestCurveView] WHERE [Unit] IS NOT NULL ORDER BY [Unit];"));
+
+        // A view written anew reads its rows, though its tables hold what they did.
+        var (renaming, renamedLedger, _) = await RunnerAsync(Flow(CurveView.Replace("Log.LogName", "Log.LogTitle", StringComparison.Ordinal), logValue: "LogTitle"));
+        await renaming.BuildAsync(["TestLog"], Guid.NewGuid(), "tests", CancellationToken.None);
+        Assert.Null((await renamedLedger.GetDimensionViewAsync("TestCurveView"))!.Checks[0].ReusedFrom);
+    }
+
+    [Fact]
+    public async Task An_incremental_load_that_reads_a_key_again_and_finds_it_the_same_keeps_its_table_and_the_view_s_check()
+    {
+        Logs();
+        foreach (var record in _platform.Records)
+        {
+            record["createTime"] = OsduSearch.LuceneTime(_clock.GetUtcNow().UtcDateTime.AddHours(-2));
+        }
+
+        var (runner, ledger, _) = await RunnerAsync(Flow(CurveView).Replace("dimensions:\n", "incremental:\n  keyColumns: [id]\ndimensions:\n", StringComparison.Ordinal));
+        await runner.BuildAsync([], Guid.NewGuid(), "tests", CancellationToken.None);
+        var read = (await ledger.GetDimensionViewAsync("TestCurveView"))!.Checks[0];
+        var rows = await SqlAsync("SELECT CONCAT([id], '|', [UnitID], '|', [UnitCode]) FROM [osdu].[dim_TestUnit] ORDER BY [id];");
+
+        // A unit saved again as it was: the next build reads its key again and finds what its table holds.
+        var unit = _platform.Records.Single(r => r["id"]!.GetValue<string>() == "dev:reference-data--UnitOfMeasure:gAPI");
+        unit["modifyTime"] = OsduSearch.LuceneTime(_clock.GetUtcNow().UtcDateTime.AddMinutes(30));
+        _clock.Advance(TimeSpan.FromHours(1));
+        var again = await runner.BuildAsync([], Guid.NewGuid(), "tests", CancellationToken.None);
+
+        var units = again.Dimensions.Single(d => d.Dimension == "TestUnit");
+        Assert.Equal((DimensionRunModes.Incremental, (long?)1L), (units.Load, units.TouchedKeys));
+        Assert.Equal(rows, await SqlAsync("SELECT CONCAT([id], '|', [UnitID], '|', [UnitCode]) FROM [osdu].[dim_TestUnit] ORDER BY [id];"));
+        Assert.Equal(read.CheckId, (await ledger.GetDimensionViewAsync("TestCurveView"))!.Checks[0].ReusedFrom);
+
+        // The unit's code changed in the next window: its row alone is rewritten, and the view is read again.
+        unit["data"]!["Code"] = "API";
+        unit["modifyTime"] = OsduSearch.LuceneTime(_clock.GetUtcNow().UtcDateTime.AddMinutes(30));
+        _clock.Advance(TimeSpan.FromHours(1));
+        await runner.BuildAsync([], Guid.NewGuid(), "tests", CancellationToken.None);
+        Assert.Equal(
+            rows.Select(r => r.EndsWith("|gAPI", StringComparison.Ordinal) ? r[..^4] + "API" : r),
+            await SqlAsync("SELECT CONCAT([id], '|', [UnitID], '|', [UnitCode]) FROM [osdu].[dim_TestUnit] ORDER BY [id];"));
+        Assert.Null((await ledger.GetDimensionViewAsync("TestCurveView"))!.Checks[0].ReusedFrom);
     }
 
     [Fact]

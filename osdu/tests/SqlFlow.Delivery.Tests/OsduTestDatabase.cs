@@ -426,8 +426,8 @@ public sealed class OsduTestDatabase : IDisposable
 
     /// <summary>
     /// Empties every table of the module's schema but its migration history, and drops the tables and the views dimension
-    /// builds made there (<c>dim_...</c>, <c>v_dim_...</c>), which are no objects of the model; a view a test made by hand
-    /// goes with them. The schema has no foreign keys, so each table of the model is truncated, which also starts its
+    /// builds made there (<c>dim_...</c>, <c>v_dim_...</c>, a build's staging <c>dimstage_...</c>), which are no objects of
+    /// the model; a view a test made by hand goes with them. The schema has no foreign keys, so each table of the model is truncated, which also starts its
     /// identity column from its seed again.
     /// </summary>
     private static void Empty(string connectionString)
@@ -438,12 +438,13 @@ public sealed class OsduTestDatabase : IDisposable
         command.Parameters.AddWithValue("@schema", DeliveryModel.SchemaName);
         command.Parameters.AddWithValue("@history", OsduDbContext.MigrationsHistoryTable);
         command.Parameters.AddWithValue("@made", DimensionTables.Prefix.Replace("_", "[_]", StringComparison.Ordinal) + "%");
+        command.Parameters.AddWithValue("@staged", DimensionStage.TablePrefix.Replace("_", "[_]", StringComparison.Ordinal) + "%");
         command.CommandText = """
             DECLARE @sql nvarchar(max) = N'';
             SELECT @sql = @sql + N'DROP VIEW ' + QUOTENAME(s.name) + N'.' + QUOTENAME(v.name) + N';'
             FROM sys.views v JOIN sys.schemas s ON s.schema_id = v.schema_id
             WHERE s.name = @schema;
-            SELECT @sql = @sql + CASE WHEN t.name LIKE @made THEN N'DROP TABLE ' ELSE N'TRUNCATE TABLE ' END + QUOTENAME(s.name) + N'.' + QUOTENAME(t.name) + N';'
+            SELECT @sql = @sql + CASE WHEN t.name LIKE @made OR t.name LIKE @staged THEN N'DROP TABLE ' ELSE N'TRUNCATE TABLE ' END + QUOTENAME(s.name) + N'.' + QUOTENAME(t.name) + N';'
             FROM sys.tables t JOIN sys.schemas s ON s.schema_id = t.schema_id
             WHERE s.name = @schema AND t.name <> @history;
             EXEC sys.sp_executesql @sql;

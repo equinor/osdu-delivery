@@ -3427,7 +3427,7 @@
         "delivery-flow-dimension-incremental",
         "delivery-flow-dimension-errors",
         "delivery-cli-dimensions",
-        "delivery-table-dimension-stage-key"
+        "delivery-flow-dimension-staging"
       ],
       "sourceRefs": [
         "osdu/src/SqlFlow.Delivery/Engine/DimensionExecutor.cs",
@@ -3553,6 +3553,37 @@
       ]
     },
     {
+      "id": "delivery-flow-dimension-staging",
+      "corpus": "reference",
+      "path": "flow/dimension-staging.md",
+      "title": "A dimension build's staging: the tables of its own a build stages what it reads in, and when they go",
+      "type": "flow-reference",
+      "summary": "The dimstage_ heaps a dimension build stages in, loaded in bulk and dropped when it ends: their columns, when one is indexed, and a build finding them gone.",
+      "keywords": [
+        "dimstage_",
+        "dimension staging",
+        "staging tables",
+        "heap",
+        "bulk load",
+        "TABLOCK",
+        "dimension build memory",
+        "staging tables are gone"
+      ],
+      "related": [
+        "delivery-flow-dimension-build",
+        "delivery-concept-database",
+        "delivery-concept-storage-and-retention",
+        "delivery-table-dimension-run"
+      ],
+      "sourceRefs": [
+        "osdu/src/SqlFlow.Delivery/Ledger/DimensionStage.cs",
+        "osdu/src/SqlFlow.Delivery/Ledger/OsduLedger.Dimensions.cs",
+        "osdu/src/SqlFlow.Delivery/Ledger/SqlServerDimensionStore.cs",
+        "osdu/src/SqlFlow.Delivery.Data/Migrations/20261026192825_DimensionStagePerBuild.cs",
+        "osdu/tests/SqlFlow.Delivery.Tests/DimensionStageTests.cs"
+      ]
+    },
+    {
       "id": "delivery-flow-dimension-table",
       "corpus": "reference",
       "path": "flow/dimension-table.md",
@@ -3606,6 +3637,8 @@
         "datatype",
         "conversions",
         "view check",
+        "check kept",
+        "view check slow",
         "template check",
         "join agrees differs unchecked",
         "suggest joins"
@@ -3630,7 +3663,8 @@
         "osdu/src/SqlFlow.Delivery.ControlPlane/Api/DeliveryDimensionViewEndpoints.cs",
         "osdu/gui/src/features/delivery/dimensions/DimensionViewTabs.tsx",
         "osdu/gui/src/features/delivery/dimensions/DimensionViewSuggest.tsx",
-        "osdu/src/SqlFlow.Delivery.Data/Migrations/20261009204033_DimensionViews.cs"
+        "osdu/src/SqlFlow.Delivery.Data/Migrations/20261009204033_DimensionViews.cs",
+        "osdu/src/SqlFlow.Delivery.Data/Migrations/20261026181652_DimensionViewCheckReuse.cs"
       ]
     },
     {
@@ -6439,196 +6473,6 @@
       ]
     },
     {
-      "id": "delivery-table-dimension-stage-attribute",
-      "corpus": "reference",
-      "path": "tables/dimension-stage-attribute.md",
-      "title": "osdu.DimensionStageAttribute: the attribute values a running dimension build read for its keys",
-      "type": "table",
-      "summary": "One row per attribute value a running dimension build read for a key, through the record it names or collected from its records.",
-      "keywords": [
-        "osdu.DimensionStageAttribute",
-        "dimension staging",
-        "staged attributes",
-        "collected attribute",
-        "dimension build memory"
-      ],
-      "related": [
-        "delivery-concept-database",
-        "delivery-flow-dimension-build",
-        "delivery-flow-dimension-attributes",
-        "delivery-table-dimension-attribute"
-      ],
-      "sourceRefs": [
-        "osdu/src/SqlFlow.Delivery.Data/DeliveryEntities.cs",
-        "osdu/src/SqlFlow.Delivery/Ledger/DimensionStage.cs",
-        "osdu/src/SqlFlow.Delivery/Engine/Dimensions/DimensionRunner.cs",
-        "osdu/src/SqlFlow.Delivery/Engine/Dimensions/DimensionCollector.cs"
-      ]
-    },
-    {
-      "id": "delivery-table-dimension-stage-element",
-      "corpus": "reference",
-      "path": "tables/dimension-stage-element.md",
-      "title": "osdu.DimensionStageElement: the objects of a nested array a running dimension build read",
-      "type": "table",
-      "summary": "One row per field of an object of a nested array a running dimension build read, with the record holding the object and its place there.",
-      "keywords": [
-        "osdu.DimensionStageElement",
-        "dimension staging",
-        "nested array",
-        "elements",
-        "dimension build memory"
-      ],
-      "related": [
-        "delivery-concept-database",
-        "delivery-flow-dimension-build",
-        "delivery-flow-dimension-elements",
-        "delivery-table-dimension-element"
-      ],
-      "sourceRefs": [
-        "osdu/src/SqlFlow.Delivery.Data/DeliveryEntities.cs",
-        "osdu/src/SqlFlow.Delivery/Ledger/DimensionStage.cs",
-        "osdu/src/SqlFlow.Delivery/Engine/Dimensions/DimensionElementReader.cs"
-      ]
-    },
-    {
-      "id": "delivery-table-dimension-stage-key",
-      "corpus": "reference",
-      "path": "tables/dimension-stage-key.md",
-      "title": "osdu.DimensionStageKey: the keys a running dimension build has read, in the order it read them",
-      "type": "table",
-      "summary": "One row per key a running dimension build read, with how many records hold it: what the build labels and cleans a batch at a time.",
-      "keywords": [
-        "osdu.DimensionStageKey",
-        "dimension staging",
-        "dimension build keys",
-        "staged keys",
-        "out of memory",
-        "dimension build memory"
-      ],
-      "related": [
-        "delivery-concept-database",
-        "delivery-flow-dimension-build",
-        "delivery-table-dimension-stage-value",
-        "delivery-table-dimension-run"
-      ],
-      "sourceRefs": [
-        "osdu/src/SqlFlow.Delivery.Data/DeliveryEntities.cs",
-        "osdu/src/SqlFlow.Delivery/Ledger/DimensionStage.cs",
-        "osdu/src/SqlFlow.Delivery/Engine/Dimensions/DimensionRunner.cs",
-        "osdu/src/SqlFlow.Delivery/Engine/Dimensions/DimensionRunner.Incremental.cs"
-      ]
-    },
-    {
-      "id": "delivery-table-dimension-stage-member",
-      "corpus": "reference",
-      "path": "tables/dimension-stage-member.md",
-      "title": "osdu.DimensionStageMember: the values a running dimension build laid out from its keys",
-      "type": "table",
-      "summary": "One row per value a running dimension build laid out from its keys: its records, keys and filter. What the build's write holds of its values.",
-      "keywords": [
-        "osdu.DimensionStageMember",
-        "dimension staging",
-        "staged values",
-        "members laid out",
-        "dimension build memory"
-      ],
-      "related": [
-        "delivery-concept-database",
-        "delivery-flow-dimension-build",
-        "delivery-table-dimension-stage-value",
-        "delivery-table-dimension-member"
-      ],
-      "sourceRefs": [
-        "osdu/src/SqlFlow.Delivery.Data/DeliveryEntities.cs",
-        "osdu/src/SqlFlow.Delivery/Ledger/DimensionStage.cs",
-        "osdu/src/SqlFlow.Delivery/Ledger/SqlServerDimensionStore.cs",
-        "osdu/src/SqlFlow.Delivery/Engine/Dimensions/DimensionRunner.cs"
-      ]
-    },
-    {
-      "id": "delivery-table-dimension-stage-record",
-      "corpus": "reference",
-      "path": "tables/dimension-stage-record.md",
-      "title": "osdu.DimensionStageRecord: the records a running dimension build read through, read, or found holding a key",
-      "type": "table",
-      "summary": "One row per record a running dimension build met: one a key's label or attributes were read through, one read by its unique key, or a key such a record holds.",
-      "keywords": [
-        "osdu.DimensionStageRecord",
-        "dimension staging",
-        "records read through",
-        "incremental load",
-        "keyColumns",
-        "dimension build memory"
-      ],
-      "related": [
-        "delivery-concept-database",
-        "delivery-flow-dimension-build",
-        "delivery-flow-dimension-incremental",
-        "delivery-table-dimension-key-record",
-        "delivery-table-dimension-record"
-      ],
-      "sourceRefs": [
-        "osdu/src/SqlFlow.Delivery.Data/DeliveryEntities.cs",
-        "osdu/src/SqlFlow.Delivery/Ledger/DimensionStage.cs",
-        "osdu/src/SqlFlow.Delivery/Engine/Dimensions/DimensionRunner.cs",
-        "osdu/src/SqlFlow.Delivery/Engine/Dimensions/DimensionRecordReader.cs"
-      ]
-    },
-    {
-      "id": "delivery-table-dimension-stage-text",
-      "corpus": "reference",
-      "path": "tables/dimension-stage-text.md",
-      "title": "osdu.DimensionStageText: the texts a running dimension build collected",
-      "type": "table",
-      "summary": "One row per text a running dimension build collected at a collected attribute's path, with the value it is shown as and the records holding it.",
-      "keywords": [
-        "osdu.DimensionStageText",
-        "dimension staging",
-        "collected texts",
-        "collected attribute",
-        "dimension build memory"
-      ],
-      "related": [
-        "delivery-concept-database",
-        "delivery-flow-dimension-build",
-        "delivery-flow-dimension-attributes",
-        "delivery-table-dimension-collected-text"
-      ],
-      "sourceRefs": [
-        "osdu/src/SqlFlow.Delivery.Data/DeliveryEntities.cs",
-        "osdu/src/SqlFlow.Delivery/Ledger/DimensionStage.cs",
-        "osdu/src/SqlFlow.Delivery/Engine/Dimensions/DimensionCollector.cs"
-      ]
-    },
-    {
-      "id": "delivery-table-dimension-stage-value",
-      "corpus": "reference",
-      "path": "tables/dimension-stage-value.md",
-      "title": "osdu.DimensionStageValue: the keys of a running dimension build, as it cleaned them",
-      "type": "table",
-      "summary": "One row per key a running dimension build cleaned: its value or why it has none, its label, count and filter. What the build's write holds.",
-      "keywords": [
-        "osdu.DimensionStageValue",
-        "dimension staging",
-        "cleaned keys",
-        "staged values",
-        "dimension build memory"
-      ],
-      "related": [
-        "delivery-concept-database",
-        "delivery-flow-dimension-build",
-        "delivery-table-dimension-stage-key",
-        "delivery-table-dimension-value"
-      ],
-      "sourceRefs": [
-        "osdu/src/SqlFlow.Delivery.Data/DeliveryEntities.cs",
-        "osdu/src/SqlFlow.Delivery/Ledger/DimensionStage.cs",
-        "osdu/src/SqlFlow.Delivery/Ledger/SqlServerDimensionStore.cs",
-        "osdu/src/SqlFlow.Delivery/Engine/Dimensions/DimensionRunner.cs"
-      ]
-    },
-    {
       "id": "delivery-table-dimension-value",
       "corpus": "reference",
       "path": "tables/dimension-value.md",
@@ -8761,6 +8605,7 @@
       ],
       "related": [
         "delivery-wiki-0011-dimension-flows",
+        "delivery-wiki-0033-dimension-builds-at-scale",
         "delivery-wiki-0030-dimension-rows-one-range"
       ],
       "sourceRefs": [
@@ -8774,6 +8619,45 @@
         "osdu/src/SqlFlow.Delivery/Engine/Dimensions/DistinctValues.cs",
         "osdu/src/SqlFlow.Delivery.Data/Migrations/20261026103651_DimensionBuildStaging.cs",
         "osdu/tests/SqlFlow.Delivery.Tests/DimensionBuildParityTests.cs",
+        "osdu/tests/SqlFlow.Delivery.Tests/DimensionStageTests.cs"
+      ]
+    },
+    {
+      "id": "delivery-wiki-0033-dimension-builds-at-scale",
+      "corpus": "wiki",
+      "path": "decisions/0033-dimension-builds-at-scale.md",
+      "title": "Decision 0033: a dimension build sizes its batches by what it reads, keeps what did not change, stages in heaps, and locks only its own rows",
+      "type": "decision",
+      "summary": "Why a dimension build sizes label batches by what keys reach, keeps unchanged checks, writes only touched rows, stages in heaps and locks its own rows.",
+      "keywords": [
+        "dimension build time",
+        "label batches",
+        "request budget",
+        "view check kept",
+        "heap staging",
+        "dimstage_",
+        "deadlock",
+        "row locks"
+      ],
+      "related": [
+        "delivery-wiki-0032-dimension-builds-stage-in-the-database",
+        "delivery-wiki-0030-dimension-rows-one-range",
+        "delivery-wiki-0025-parallelism-and-default-fan-out"
+      ],
+      "sourceRefs": [
+        "osdu/src/SqlFlow.Delivery/Engine/Dimensions/DimensionLabeler.cs",
+        "osdu/src/SqlFlow.Delivery/Engine/Dimensions/DimensionRunner.cs",
+        "osdu/src/SqlFlow.Delivery/Engine/Search/OsduSearch.cs",
+        "osdu/src/SqlFlow.Delivery/Ledger/DimensionStage.cs",
+        "osdu/src/SqlFlow.Delivery/Ledger/DimensionTables.cs",
+        "osdu/src/SqlFlow.Delivery/Ledger/OsduLedger.Dimensions.cs",
+        "osdu/src/SqlFlow.Delivery/Ledger/SqlServerDimensionStore.cs",
+        "osdu/src/SqlFlow.Delivery/Ledger/SqlServerDimensionViewStore.cs",
+        "osdu/src/SqlFlow.Delivery.Data/Migrations/20261026181652_DimensionViewCheckReuse.cs",
+        "osdu/src/SqlFlow.Delivery.Data/Migrations/20261026192825_DimensionStagePerBuild.cs",
+        "osdu/src/SqlFlow.Delivery.Data/Migrations/20261026202905_DimensionRowLocks.cs",
+        "osdu/tests/SqlFlow.Delivery.Tests/DimensionBuildScaleTests.cs",
+        "osdu/tests/SqlFlow.Delivery.Tests/DimensionRowLockTests.cs",
         "osdu/tests/SqlFlow.Delivery.Tests/DimensionStageTests.cs"
       ]
     },

@@ -188,7 +188,11 @@ public class DimensionViewDocumentEdgeCaseTests
         Assert.Contains("CROSS JOIN (", check, StringComparison.Ordinal);
         Assert.Contains("COUNT_BIG([j1].[id]) AS [j0]", check, StringComparison.Ordinal);
         Assert.Contains("WHERE [b].[partition] = @partition AND ([b].[element] IS NOT NULL)\n) AS [r]", check, StringComparison.Ordinal);
-        Assert.EndsWith("OPTION (MAX_GRANT_PERCENT = 10);", check, StringComparison.Ordinal);
+        Assert.EndsWith("OPTION (MAX_GRANT_PERCENT = 10, USE HINT('ENABLE_PARALLEL_PLAN_PREFERENCE'));", check, StringComparison.Ordinal);
+
+        // The check reads the rows it groups joined on the key's text alone, where the view's own statement joins on its hash too.
+        Assert.DoesNotContain("HASHBYTES", check, StringComparison.Ordinal);
+        Assert.Contains("HASHBYTES", definition.CreateSql, StringComparison.Ordinal);
 
         // A join's values that found nothing are read from the rows it is made over, before they are grouped.
         var unmatched = DimensionViews.UnmatchedSql(definition, definition.Joins[0]);

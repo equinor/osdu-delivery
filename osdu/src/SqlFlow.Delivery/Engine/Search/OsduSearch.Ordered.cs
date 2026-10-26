@@ -276,7 +276,7 @@ public sealed partial class OsduSearch
     /// <summary>One page of the plain search: answered, refused with the service's words, or failed after the retry policy.</summary>
     private async Task<PageAnswer> OrderedPageAsync(Uri url, JsonObject body, CancellationToken ct)
     {
-        var result = await _client.SendJsonAsync(HttpMethod.Post, url, body, Refusals, ct, idempotent: true).ConfigureAwait(false);
+        var result = await SendAsync(token => _client.SendJsonAsync(HttpMethod.Post, url, body, Refusals, token, idempotent: true), ct).ConfigureAwait(false);
         return result.Status == HttpStatusCode.BadRequest ? PageAnswer.Refused(RefusalOf(result)) : PageAnswer.Of(result, url);
     }
 

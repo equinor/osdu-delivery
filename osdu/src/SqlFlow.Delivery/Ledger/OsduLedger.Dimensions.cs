@@ -91,10 +91,10 @@ public sealed partial class OsduLedger
         var stage = new DimensionStage(Open, partition, dimensionId, dimensionRunId, flowId);
         try
         {
-            // What an earlier build of the dimension left (its process stopped before it ended) is deleted, unless the build is
+            // What an earlier build of the dimension left (its process stopped before it ended) is dropped, unless the build is
             // still running: one that has run for longer than any build takes is taken for one its process left. A build that
-            // is writing the dimension holds its write lock, which a deletion waits for no moment: what it left stays for a
-            // later build.
+            // is writing the dimension holds its write lock, which a drop waits for no moment: what it left stays for a later
+            // build.
             foreach (var (build, status, started) in await SqlServerDimensionStage.LeftAsync(Open, stage, ct).ConfigureAwait(false))
             {
                 if (status == DimensionRunStatus.Running && started is { } at && Now - at < DimensionStage.AbandonedAfter)
@@ -102,11 +102,13 @@ public sealed partial class OsduLedger
                     continue;
                 }
 
-                if (!await SqlServerDimensionStage.DeleteLeftAsync(Open, stage, build, ct).ConfigureAwait(false))
+                if (!await SqlServerDimensionStage.DiscardLeftAsync(Open, stage, build, ct).ConfigureAwait(false))
                 {
                     break;
                 }
             }
+
+            await stage.CreateAsync(ct).ConfigureAwait(false);
         }
         catch
         {
@@ -1078,11 +1080,13 @@ public sealed partial class OsduLedger
     /// </summary>
     private async Task GuardTableNameAsync(int dimensionId, DimensionTableSpec table, CancellationToken ct)
     {
+        // Each read seeks its index, the table's name read from the index alone: a scan, or a lookup of another dimension's
+        // row, would wait for a build writing that dimension, which holds its row until it has written.
         var name = table.Name;
         var rows = await ReadAsync(
-            db => db.DeliveryDimensions.AsNoTracking()
-                .Where(d => d.DimensionId == dimensionId)
-                .Concat(db.DeliveryDimensions.AsNoTracking().Where(d => d.TableName == name))
+            db => db.DeliveryDimensions.FromSql($"SELECT * FROM [osdu].[Dimension] WITH (FORCESEEK) WHERE [DimensionId] = {dimensionId}")
+                .Concat(db.DeliveryDimensions.FromSql($"SELECT * FROM [osdu].[Dimension] WITH (FORCESEEK) WHERE [TableName] = {name}"))
+                .AsNoTracking()
                 .Select(d => new { d.PartitionId, d.DimensionId, d.FlowName, d.Name, d.TableName })
                 .ToListAsync(ct),
             ct).ConfigureAwait(false);

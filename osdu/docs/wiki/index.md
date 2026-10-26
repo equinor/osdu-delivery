@@ -212,6 +212,10 @@ other packages adopt the same contract.
   why a build stages its keys, values, attributes, texts, elements and records in tables of the `osdu` schema as it
   reads them, reads labels a bounded batch at a time, and copies the staging into its merge inside the database; why a
   parity suite held the rebuild to the old engine; and why more memory, temporary tables and files were rejected.
+- [0033: a dimension build sizes its batches by what it reads, keeps what did not change, stages in heaps, and locks only its own rows](decisions/0033-dimension-builds-at-scale.md) -
+  why label batches are sized by what the keys before them reached under one request budget, why a view's check is
+  kept when nothing it reads changed and an incremental load writes only the rows it read again, why each build stages
+  in heaps of its own that it drops, why a build locks only its own rows, and what was held back: nodes, batched statements.
 
 ## Coverage
 

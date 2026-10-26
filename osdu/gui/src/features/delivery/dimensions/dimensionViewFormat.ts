@@ -94,7 +94,9 @@ export function utcText(value: string): string {
 
 /** Where and when a check ran, and how long it took, as a tooltip says it. */
 export function checkWhen(check: DeliveryDimensionViewCheck): string {
-  return `Checked ${utcText(check.checkedUtc)} in partition ${check.partition}, in ${duration(check.durationMs)}.`;
+  return check.reusedFrom != null
+    ? `Checked ${utcText(check.checkedUtc)} in partition ${check.partition}: nothing the view reads had changed since check ${check.reusedFrom}, so its findings were kept and the view was not read again.`
+    : `Checked ${utcText(check.checkedUtc)} in partition ${check.partition}, in ${duration(check.durationMs)}.`;
 }
 
 /** How the page's link names a view, and the tab it opens on. */

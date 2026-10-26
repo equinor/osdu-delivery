@@ -65,8 +65,13 @@ nothing is dropped or narrowed. An attribute taken out keeps its column, emptied
 When the key's or value's column is named otherwise (the path or label changed, or `columns` says so), the next build
 renames it where it is, keeping every row and its `id`; a query naming the old column has to change with the flow, and a
 name given under `columns` stays through a change of path or label. A build writes only the rows that differ, in the
-transaction that writes the rest of the dimension. When the collected attribute is added, taken out or replaced, the
-partition's rows are written again under new numbers.
+transaction that writes the rest of the dimension. A full load lays out every key's rows and compares them with the
+table's; an incremental load lays out and compares the rows of the keys it read again and of those it removed alone, the
+only rows it can change, so its write takes as long as what changed rather than as the dimension (a log's curves read
+again rewrite that log's rows, not the table's). When the collected attribute is added, taken out or replaced, the
+partition's rows are written again under new numbers. A write that changes a row raises the table's version
+([`osdu.Dimension`](../tables/dimension.md)'s `TableVersion`), which tells a view's check whether the rows it read changed
+([A check kept](dimension-views.md)).
 
 The table keeps a partition's rows together, and a key's rows together within it: `IX_key` (`partition`, `key_id`, `id`)
 is its clustered index, and `id` its key, a nonclustered one. Every statement of a build's write seeks the partition it

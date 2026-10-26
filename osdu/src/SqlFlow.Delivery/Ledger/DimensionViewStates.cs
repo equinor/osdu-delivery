@@ -125,6 +125,15 @@ public sealed record DimensionViewCheckState(
     DateTime CheckedUtc,
     int DurationMs)
 {
+    /// <summary>
+    /// The check whose findings this one keeps, when nothing the view reads had changed since it, so the view was not read
+    /// again; null for a check that read the view.
+    /// </summary>
+    public long? ReusedFrom { get; init; }
+
+    /// <summary>When the check this one keeps read the view; null when this one read it, or the build did not say.</summary>
+    public DateTime? ReusedCheckedUtc { get; init; }
+
     /// <summary>The notes a run's result carries of the check: each join that left rows without their row, each column whose conversion left values, a sentence each.</summary>
     public IReadOnlyList<string> Notes()
     {

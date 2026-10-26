@@ -192,9 +192,12 @@ public static class DimensionViews
     /// <summary>
     /// The view's <c>FROM</c> clause: <paramref name="fromTable"/>, every join left, compared on the partition, the key's
     /// hash (a dimension's table only, which keeps one) and the key's text exactly, then the values computed once each
-    /// (<paramref name="applies"/>, which the columns converting them read).
+    /// (<paramref name="applies"/>, which the columns converting them read). Without <paramref name="hashed"/> the hash is
+    /// left out: the rows joined are the same, since a key's hash is the hash of its text, and a statement reading every row
+    /// of a partition (the check) joins on the text alone rather than computing a hash for every row of every join, which
+    /// only a statement seeking a few rows gains by.
     /// </summary>
-    public static string FromSql(string fromTable, IReadOnlyList<JoinSql> joins, IReadOnlyList<string> applies)
+    public static string FromSql(string fromTable, IReadOnlyList<JoinSql> joins, IReadOnlyList<string> applies, bool hashed = true)
     {
         ArgumentNullException.ThrowIfNull(fromTable);
         ArgumentNullException.ThrowIfNull(joins);
@@ -205,7 +208,7 @@ public static class DimensionViews
         {
             sql.Append(CultureInfo.InvariantCulture, $"\nLEFT JOIN {DimensionTables.Qualified(join.Table)} AS [{join.SqlAlias}]");
             sql.Append(CultureInfo.InvariantCulture, $"\n    ON [{join.SqlAlias}].[partition] = [{FromSqlAlias}].[partition]");
-            if (!join.View)
+            if (!join.View && hashed)
             {
                 sql.Append(CultureInfo.InvariantCulture, $"\n   AND [{join.SqlAlias}].[{DimensionTables.KeyHashColumn}] = {DimensionTables.KeyHash(join.OnSql)}");
             }
@@ -268,6 +271,13 @@ public static class DimensionViews
             """;
     }
 
+    /// <summary>
+    /// How a statement reading every row of a partition of a view runs: with at most a tenth of the server's query memory, so
+    /// one large view never takes what other work needs, and over several of the server's processors when it has them, which
+    /// a read of every row of many joined tables gains by and the optimizer, costing a few thousand rows, may not choose.
+    /// </summary>
+    private const string ReadOptions = "OPTION (MAX_GRANT_PERCENT = 10, USE HINT('ENABLE_PARALLEL_PLAN_PREFERENCE'));";
+
     /// <summary>The rows of a partition of the view, as its check reads them: the partition's, and those its condition keeps.</summary>
     private static string Rows(DimensionViewDefinition view)
         => view.WhereSql is null
@@ -279,11 +289,11 @@ public static class DimensionViews
     /// are grouped, which its joins meet; for any other its own rows.
     /// </summary>
     private static (string From, string Where) JoinRows(DimensionViewDefinition view)
-        => view.RowsFromSql is { } rows
+        => view.CheckRowsFrom is { } rows
             ? (rows, view.RowsWhereSql is null
                 ? $"WHERE [{FromSqlAlias}].[partition] = @partition"
                 : $"WHERE [{FromSqlAlias}].[partition] = @partition AND {view.RowsWhereSql}")
-            : (view.FromSql, Rows(view));
+            : (view.CheckFrom, Rows(view));
 
     /// <summary>The hash a view's statement is known by: SHA-256 of its UTF-8 bytes, hex.</summary>
     public static string HashOf(string createSql)
@@ -336,21 +346,21 @@ public static class DimensionViews
             var counts = new List<string> { "COUNT_BIG(*)" };
             counts.AddRange(joins);
             counts.AddRange(columns);
-            return $"SELECT\n    {string.Join(",\n    ", counts)}\n{view.FromSql}\n{Rows(view)}\nOPTION (MAX_GRANT_PERCENT = 10);";
+            return $"SELECT\n    {string.Join(",\n    ", counts)}\n{view.CheckFrom}\n{Rows(view)}\n{ReadOptions}";
         }
 
         // A grouped view's joins meet the rows it groups, so they are counted over those rows, its columns over its groups;
         // the two reads are one row each, read side by side in the order the check reads every view's counts.
         var (rowsFrom, rowsWhere) = JoinRows(view);
         string Named(string prefix, IReadOnlyList<string> sql) => string.Join(",\n        ", sql.Select((c, i) => string.Create(CultureInfo.InvariantCulture, $"{c} AS [{prefix}{i}]")));
-        var grouped = $"(\n    SELECT\n        COUNT_BIG(*) AS [n0]{(columns.Count == 0 ? string.Empty : ",\n        " + Named("c", columns))}\n    {view.FromSql.Replace("\n", "\n    ", StringComparison.Ordinal)}\n    {Rows(view)}\n) AS [g]";
+        var grouped = $"(\n    SELECT\n        COUNT_BIG(*) AS [n0]{(columns.Count == 0 ? string.Empty : ",\n        " + Named("c", columns))}\n    {view.CheckFrom.Replace("\n", "\n    ", StringComparison.Ordinal)}\n    {Rows(view)}\n) AS [g]";
         var order = new List<string> { "[g].[n0]" };
         order.AddRange(joins.Select((_, i) => string.Create(CultureInfo.InvariantCulture, $"[r].[j{i}]")));
         order.AddRange(columns.Select((_, i) => string.Create(CultureInfo.InvariantCulture, $"[g].[c{i}]")));
         var from = joins.Count == 0
             ? $"FROM {grouped}"
             : $"FROM {grouped}\nCROSS JOIN (\n    SELECT\n        {Named("j", joins)}\n    {rowsFrom.Replace("\n", "\n    ", StringComparison.Ordinal)}\n    {rowsWhere}\n) AS [r]";
-        return $"SELECT\n    {string.Join(",\n    ", order)}\n{from}\nOPTION (MAX_GRANT_PERCENT = 10);";
+        return $"SELECT\n    {string.Join(",\n    ", order)}\n{from}\n{ReadOptions}";
     }
 
     /// <summary>The statement that computes one column of a partition of the view, to find which column a failing check failed on.</summary>
@@ -358,7 +368,7 @@ public static class DimensionViews
     {
         ArgumentNullException.ThrowIfNull(view);
         ArgumentNullException.ThrowIfNull(column);
-        return $"SELECT COUNT_BIG({column.Sql})\n{view.FromSql}\n{Rows(view)}\nOPTION (MAX_GRANT_PERCENT = 10);";
+        return $"SELECT COUNT_BIG({column.Sql})\n{view.CheckFrom}\n{Rows(view)}\n{ReadOptions}";
     }
 
     /// <summary>The statement that reads up to three values of a partition a join found no row for, distinct, in order.</summary>
@@ -375,7 +385,7 @@ public static class DimensionViews
     {
         ArgumentNullException.ThrowIfNull(view);
         ArgumentNullException.ThrowIfNull(column);
-        return $"SELECT TOP (3) [{FromSqlAlias}].[id], LEFT(CONVERT(nvarchar(4000), {column.InputSql}), 256)\n{view.FromSql}\n{Rows(view)} AND {column.InputSql} IS NOT NULL AND {column.Sql} IS NULL\nORDER BY [{FromSqlAlias}].[id];";
+        return $"SELECT TOP (3) [{FromSqlAlias}].[id], LEFT(CONVERT(nvarchar(4000), {column.InputSql}), 256)\n{view.CheckFrom}\n{Rows(view)} AND {column.InputSql} IS NOT NULL AND {column.Sql} IS NULL\nORDER BY [{FromSqlAlias}].[id];";
     }
 
     /// <summary>

@@ -110,7 +110,7 @@ own retention, and its current version is as large as the reference data the cac
 | View checks | `DimensionViewCheck` | The newest 50 checks per view and partition are kept |
 | Matches and duplicate checks | `InventoryScan`, `InventorySelection`, `InventorySelectionItem`, `InventoryDuplicateCheck`, `InventoryDuplicateGroup`, `InventoryDuplicateMember`, and every `dup_*` table | A build's staging when it ends; a match or a duplicate check 7 days after it was made (one a removal used keeps its row); a check's table when its download fails or a later download completes |
 | Removal staging | `RemovalKey` | Cleared when the run closes, or by the next run of the removal |
-| Dimension build staging | `DimensionStageKey`, `DimensionStageValue`, `DimensionStageMember`, `DimensionStageAttribute`, `DimensionStageText`, `DimensionStageElement`, `DimensionStageRecord` | Cleared when the build ends, written or not; what a build whose worker stopped left, by the next build of the same dimension once the stopped build is closed or has run for 48 hours ([What a build holds](../flow/dimension-build.md#what-a-build-holds)) |
+| Dimension build staging | Every `dimstage_*` table, seven a build | Dropped when the build ends, written or not; what a build whose worker stopped left, by the next build of the same dimension once the stopped build is closed or has run for 48 hours; every build's, when the dimension is removed ([A dimension build's staging](../flow/dimension-staging.md)) |
 
 ## Outside the database
 

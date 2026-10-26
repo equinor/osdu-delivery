@@ -278,13 +278,22 @@ internal static class SqlServerDimensionViewStore
     /// <summary>
     /// Reads the view's rows of the partition (osdu/docs/reference/flow/dimension-views.md) and keeps what it found:
     /// the rows, what each join found, the values each column holds and those each conversion could not read, with
-    /// examples. A view that cannot be read is checked column by column to name the column it fails at.
+    /// examples. A view that cannot be read is checked column by column to name the column it fails at. A view whose last
+    /// check of the partition passed and read what it would read now (the same statement, and every table it reads, itself
+    /// or through a view it joins, of the same version) is not read again: the check keeps that one's findings, and says so.
     /// </summary>
     private static async Task<DimensionViewCheckState> CheckAsync(
         SqlConnection connection, DimensionViewWrite write, DimensionViewSpec view, int viewId, short partitionId, CancellationToken ct)
     {
         var definition = view.Definition;
         var stopwatch = Stopwatch.StartNew();
+        var readVersion = await ReadVersionAsync(connection, write, view, partitionId, ct).ConfigureAwait(false);
+        if (await LastCheckAsync(connection, viewId, partitionId, ct).ConfigureAwait(false) is { Status: DimensionViewCheckStatus.Passed } last
+            && string.Equals(last.ReadVersion, readVersion, StringComparison.Ordinal))
+        {
+            return await KeepAsync(connection, write, viewId, partitionId, last, readVersion, stopwatch, ct).ConfigureAwait(false);
+        }
+
         var status = DimensionViewCheckStatus.Passed;
         long rows = 0;
         var joins = new List<DimensionViewJoinCheck>();
@@ -344,10 +353,28 @@ internal static class SqlServerDimensionViewStore
         stopwatch.Stop();
         var checkedUtc = write.Now;
         var duration = (int)Math.Min(int.MaxValue, stopwatch.ElapsedMilliseconds);
-        long checkId;
+        var joinsJson = joins.Count == 0 ? null : JsonSerializer.Serialize(joins, Json);
+        var columnsJson = columns.Count == 0 ? null : JsonSerializer.Serialize(columns, Json);
+        var checkId = await InsertCheckAsync(
+            connection, write, viewId, partitionId, new CheckRow(status, rows, joinsJson, columnsJson, OsduLedger.Truncate(error, 4000), readVersion, null), checkedUtc, duration, ct)
+            .ConfigureAwait(false);
+        return new DimensionViewCheckState(checkId, write.Partition, write.RunId, status, rows, joins, columns, error, checkedUtc, duration);
+    }
+
+    /// <summary>What a check keeps of a view: its findings, what it read, and the check whose findings it keeps, when it kept one.</summary>
+    private sealed record CheckRow(string Status, long Rows, string? JoinsJson, string? ColumnsJson, string? Error, string ReadVersion, long? ReusedCheckId);
+
+    /// <summary>A view's last check of a partition, as a later check compares itself with.</summary>
+    private sealed record LastCheck(long CheckId, string Status, long Rows, string? JoinsJson, string? ColumnsJson, string? ReadVersion, long? ReusedCheckId, DateTime CheckedUtc);
+
+    /// <summary>Keeps <paramref name="row"/> as the view's newest check of the partition, and lets go of those past the newest it keeps. Returns its number.</summary>
+    private static async Task<long> InsertCheckAsync(
+        SqlConnection connection, DimensionViewWrite write, int viewId, short partitionId, CheckRow row, DateTime checkedUtc, int duration, CancellationToken ct)
+    {
         const string Insert = """
-            INSERT INTO [osdu].[DimensionViewCheck] ([PartitionId], [ViewId], [RunId], [Status], [Rows], [JoinsJson], [ColumnsJson], [Error], [CheckedUtc], [DurationMs])
-            VALUES (@p, @view, @run, @status, @rows, @joins, @columns, @error, @checked, @duration);
+            INSERT INTO [osdu].[DimensionViewCheck] ([PartitionId], [ViewId], [RunId], [Status], [Rows], [JoinsJson], [ColumnsJson], [Error], [CheckedUtc], [DurationMs],
+                [ReadVersion], [ReusedCheckId])
+            VALUES (@p, @view, @run, @status, @rows, @joins, @columns, @error, @checked, @duration, @readVersion, @reused);
             SELECT CAST(SCOPE_IDENTITY() AS bigint);
 
             DELETE FROM [osdu].[DimensionViewCheck]
@@ -357,23 +384,149 @@ internal static class SqlServerDimensionViewStore
                   WHERE c.[ViewId] = @view AND c.[PartitionId] = @p
                   ORDER BY c.[CheckedUtc] DESC, c.[CheckId] DESC);
             """;
-        await using (var insert = new SqlCommand(Insert, connection) { CommandTimeout = CommandTimeoutSeconds })
+        await using var insert = new SqlCommand(Insert, connection) { CommandTimeout = CommandTimeoutSeconds };
+        insert.Parameters.Add(new SqlParameter("@p", SqlDbType.SmallInt) { Value = partitionId });
+        insert.Parameters.Add(new SqlParameter("@view", SqlDbType.Int) { Value = viewId });
+        insert.Parameters.Add(new SqlParameter("@run", SqlDbType.UniqueIdentifier) { Value = (object?)write.RunId ?? DBNull.Value });
+        insert.Parameters.Add(new SqlParameter("@status", SqlDbType.NVarChar, 16) { Value = row.Status });
+        insert.Parameters.Add(new SqlParameter("@rows", SqlDbType.BigInt) { Value = row.Rows });
+        insert.Parameters.Add(new SqlParameter("@joins", SqlDbType.NVarChar, -1) { Value = (object?)row.JoinsJson ?? DBNull.Value });
+        insert.Parameters.Add(new SqlParameter("@columns", SqlDbType.NVarChar, -1) { Value = (object?)row.ColumnsJson ?? DBNull.Value });
+        insert.Parameters.Add(new SqlParameter("@error", SqlDbType.NVarChar, 4000) { Value = (object?)row.Error ?? DBNull.Value });
+        insert.Parameters.Add(new SqlParameter("@checked", SqlDbType.DateTime2) { Value = checkedUtc });
+        insert.Parameters.Add(new SqlParameter("@duration", SqlDbType.Int) { Value = duration });
+        insert.Parameters.Add(new SqlParameter("@readVersion", SqlDbType.VarChar, 64) { Value = row.ReadVersion });
+        insert.Parameters.Add(new SqlParameter("@reused", SqlDbType.BigInt) { Value = (object?)row.ReusedCheckId ?? DBNull.Value });
+        insert.Parameters.Add(new SqlParameter("@kept", SqlDbType.Int) { Value = DeliveryDimensionViewCheck.Kept });
+        return Convert.ToInt64(await insert.ExecuteScalarAsync(ct).ConfigureAwait(false), CultureInfo.InvariantCulture);
+    }
+
+    /// <summary>
+    /// What a check of <paramref name="view"/> reads in the partition, as one text (<see cref="DeliveryDimensionViewCheck.ReadVersion"/>):
+    /// SHA-256, hex, of the view's statement hash and, for every dimension table the view reads, itself or through a view it
+    /// joins, the dimension writing it in the partition and the table's version there, or that none writes it. A write that
+    /// changes a table's rows of the partition raises its version, so two checks of the same text read the same rows.
+    /// </summary>
+    private static async Task<string> ReadVersionAsync(SqlConnection connection, DimensionViewWrite write, DimensionViewSpec view, short partitionId, CancellationToken ct)
+    {
+        var tables = TablesRead(write, view).Order(StringComparer.OrdinalIgnoreCase).ToList();
+        var versions = new Dictionary<string, List<string>>(StringComparer.OrdinalIgnoreCase);
+        const string Versions = """
+            SELECT d.[TableName], d.[DimensionId], d.[TableVersion]
+            FROM [osdu].[Dimension] AS d
+            WHERE d.[PartitionId] = @p AND d.[TableName] IN (SELECT t.[value] FROM OPENJSON(@tables) AS t);
+            """;
+        await using (var command = new SqlCommand(Versions, connection) { CommandTimeout = CommandTimeoutSeconds })
         {
-            insert.Parameters.Add(new SqlParameter("@p", SqlDbType.SmallInt) { Value = partitionId });
-            insert.Parameters.Add(new SqlParameter("@view", SqlDbType.Int) { Value = viewId });
-            insert.Parameters.Add(new SqlParameter("@run", SqlDbType.UniqueIdentifier) { Value = (object?)write.RunId ?? DBNull.Value });
-            insert.Parameters.Add(new SqlParameter("@status", SqlDbType.NVarChar, 16) { Value = status });
-            insert.Parameters.Add(new SqlParameter("@rows", SqlDbType.BigInt) { Value = rows });
-            insert.Parameters.Add(new SqlParameter("@joins", SqlDbType.NVarChar, -1) { Value = joins.Count == 0 ? DBNull.Value : JsonSerializer.Serialize(joins, Json) });
-            insert.Parameters.Add(new SqlParameter("@columns", SqlDbType.NVarChar, -1) { Value = columns.Count == 0 ? DBNull.Value : JsonSerializer.Serialize(columns, Json) });
-            insert.Parameters.Add(new SqlParameter("@error", SqlDbType.NVarChar, 4000) { Value = (object?)OsduLedger.Truncate(error, 4000) ?? DBNull.Value });
-            insert.Parameters.Add(new SqlParameter("@checked", SqlDbType.DateTime2) { Value = checkedUtc });
-            insert.Parameters.Add(new SqlParameter("@duration", SqlDbType.Int) { Value = duration });
-            insert.Parameters.Add(new SqlParameter("@kept", SqlDbType.Int) { Value = DeliveryDimensionViewCheck.Kept });
-            checkId = Convert.ToInt64(await insert.ExecuteScalarAsync(ct).ConfigureAwait(false), CultureInfo.InvariantCulture);
+            command.Parameters.Add(new SqlParameter("@p", SqlDbType.SmallInt) { Value = partitionId });
+            command.Parameters.Add(new SqlParameter("@tables", SqlDbType.NVarChar, -1) { Value = JsonSerializer.Serialize(tables) });
+            await using var reader = await command.ExecuteReaderAsync(ct).ConfigureAwait(false);
+            while (await reader.ReadAsync(ct).ConfigureAwait(false))
+            {
+                var table = reader.GetString(0);
+                (versions.TryGetValue(table, out var of) ? of : versions[table] = []).Add(
+                    string.Create(CultureInfo.InvariantCulture, $"{reader.GetInt32(1)}:{reader.GetInt64(2)}"));
+            }
         }
 
-        return new DimensionViewCheckState(checkId, write.Partition, write.RunId, status, rows, joins, columns, error, checkedUtc, duration);
+        var text = new System.Text.StringBuilder(view.Definition.Hash);
+        foreach (var table in tables)
+        {
+            text.Append('\n').Append(table.ToUpperInvariant()).Append('=')
+                .Append(versions.TryGetValue(table, out var held) ? string.Join(",", held.Order(StringComparer.Ordinal)) : "-");
+        }
+
+        return Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(text.ToString())));
+    }
+
+    /// <summary>The dimension tables <paramref name="view"/> reads: its own, and those of every view it joins, and so on, each once.</summary>
+    private static HashSet<string> TablesRead(DimensionViewWrite write, DimensionViewSpec view)
+    {
+        var byName = write.Views.ToDictionary(v => v.View.ViewName, v => v.View, StringComparer.OrdinalIgnoreCase);
+        var tables = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var reading = new Stack<DimensionViewSpec>([view]);
+        while (reading.TryPop(out var next))
+        {
+            if (!seen.Add(next.ViewName))
+            {
+                continue;
+            }
+
+            tables.UnionWith(next.Definition.Tables);
+            foreach (var joined in next.Definition.JoinedViews)
+            {
+                // A view joins only views of its own flow, every one of which the build writes; one it cannot find stands for
+                // what nothing keeps a version of, which no earlier check read, so the view is read again.
+                if (byName.TryGetValue(joined, out var spec))
+                {
+                    reading.Push(spec);
+                }
+                else
+                {
+                    tables.Add(string.Create(CultureInfo.InvariantCulture, $"view:{joined}:{Guid.NewGuid():N}"));
+                }
+            }
+        }
+
+        return tables;
+    }
+
+    /// <summary>The view's newest check of the partition; null when it has none.</summary>
+    private static async Task<LastCheck?> LastCheckAsync(SqlConnection connection, int viewId, short partitionId, CancellationToken ct)
+    {
+        const string Last = """
+            SELECT TOP (1) c.[CheckId], c.[Status], c.[Rows], c.[JoinsJson], c.[ColumnsJson], c.[ReadVersion], c.[ReusedCheckId], c.[CheckedUtc]
+            FROM [osdu].[DimensionViewCheck] AS c
+            WHERE c.[ViewId] = @view AND c.[PartitionId] = @p
+            ORDER BY c.[CheckedUtc] DESC, c.[CheckId] DESC;
+            """;
+        await using var command = new SqlCommand(Last, connection) { CommandTimeout = CommandTimeoutSeconds };
+        command.Parameters.Add(new SqlParameter("@view", SqlDbType.Int) { Value = viewId });
+        command.Parameters.Add(new SqlParameter("@p", SqlDbType.SmallInt) { Value = partitionId });
+        await using var reader = await command.ExecuteReaderAsync(ct).ConfigureAwait(false);
+        if (!await reader.ReadAsync(ct).ConfigureAwait(false))
+        {
+            return null;
+        }
+
+        return new LastCheck(
+            reader.GetInt64(0), reader.GetString(1), reader.GetInt64(2),
+            await reader.IsDBNullAsync(3, ct).ConfigureAwait(false) ? null : reader.GetString(3),
+            await reader.IsDBNullAsync(4, ct).ConfigureAwait(false) ? null : reader.GetString(4),
+            await reader.IsDBNullAsync(5, ct).ConfigureAwait(false) ? null : reader.GetString(5),
+            await reader.IsDBNullAsync(6, ct).ConfigureAwait(false) ? null : reader.GetInt64(6),
+            DateTime.SpecifyKind(reader.GetDateTime(7), DateTimeKind.Utc));
+    }
+
+    /// <summary>
+    /// The check of a view that read what <paramref name="last"/> read: its findings kept as this build's check, naming the
+    /// check that read the view (the one <paramref name="last"/> kept, when it kept one), and the view not read again.
+    /// </summary>
+    private static async Task<DimensionViewCheckState> KeepAsync(
+        SqlConnection connection, DimensionViewWrite write, int viewId, short partitionId, LastCheck last, string readVersion, Stopwatch stopwatch, CancellationToken ct)
+    {
+        var reused = last.ReusedCheckId ?? last.CheckId;
+        stopwatch.Stop();
+        var duration = (int)Math.Min(int.MaxValue, stopwatch.ElapsedMilliseconds);
+        var checkId = await InsertCheckAsync(
+            connection, write, viewId, partitionId, new CheckRow(last.Status, last.Rows, last.JoinsJson, last.ColumnsJson, null, readVersion, reused), write.Now, duration, ct)
+            .ConfigureAwait(false);
+        var kept = ToState(
+            new DeliveryDimensionViewCheck
+            {
+                CheckId = checkId,
+                RunId = write.RunId,
+                Status = last.Status,
+                Rows = last.Rows,
+                JoinsJson = last.JoinsJson,
+                ColumnsJson = last.ColumnsJson,
+                CheckedUtc = write.Now,
+                DurationMs = duration,
+                ReusedCheckId = reused,
+            },
+            write.Partition);
+        return kept with { ReusedCheckedUtc = last.CheckedUtc };
     }
 
     /// <summary>The first column of the view that cannot be computed for every row of the partition; null when each can alone.</summary>
@@ -741,7 +894,10 @@ internal static class SqlServerDimensionViewStore
             // A check written by a build this one cannot read shows its counts and its error.
         }
 
-        return new DimensionViewCheckState(row.CheckId, partition, row.RunId, row.Status, row.Rows, joins, columns, row.Error, row.CheckedUtc, row.DurationMs);
+        return new DimensionViewCheckState(row.CheckId, partition, row.RunId, row.Status, row.Rows, joins, columns, row.Error, row.CheckedUtc, row.DurationMs)
+        {
+            ReusedFrom = row.ReusedCheckId,
+        };
     }
 
     private static async Task LockAsync(SqlConnection connection, SqlTransaction transaction, string name, string doing, CancellationToken ct)

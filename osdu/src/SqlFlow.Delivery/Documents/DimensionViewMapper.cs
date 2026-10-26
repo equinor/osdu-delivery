@@ -287,7 +287,7 @@ internal static class DimensionViewMapper
             var createSql = DimensionViews.CreateSql(flow, viewName, all, fromSql, whereSql);
             definition = new DimensionViewDefinition(
                 viewName, tables, all, joinDefinitions, fromSql, createSql, DimensionViews.HashOf(createSql, joinedViews.Select(j => j.Spec.Definition.Hash)), whereSql,
-                viewsRead.Count == 0 ? null : viewsRead);
+                viewsRead.Count == 0 ? null : viewsRead, CheckFromSql: DimensionViews.FromSql(fromTable, joinSql, applies, hashed: false));
         }
         else
         {
@@ -302,9 +302,11 @@ internal static class DimensionViewMapper
             all.AddRange(columns);
             var fromSql = DimensionViews.GroupedFromSql(rowsSql, whereSql, groupedBy.Select(g => g.Sql).ToList(), columns);
             var createSql = DimensionViews.CreateSql(flow, viewName, all, fromSql, null);
+            var checkRowsSql = DimensionViews.FromSql(fromTable, joinSql, [], hashed: false);
             definition = new DimensionViewDefinition(
                 viewName, tables, all, joinDefinitions, fromSql, createSql, DimensionViews.HashOf(createSql, joinedViews.Select(j => j.Spec.Definition.Hash)), null,
-                viewsRead.Count == 0 ? null : viewsRead, rowsSql, whereSql);
+                viewsRead.Count == 0 ? null : viewsRead, rowsSql, whereSql,
+                DimensionViews.GroupedFromSql(checkRowsSql, whereSql, groupedBy.Select(g => g.Sql).ToList(), columns), checkRowsSql);
         }
 
         var spec = new DimensionViewSpec

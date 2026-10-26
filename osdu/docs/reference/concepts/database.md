@@ -58,9 +58,10 @@ fails it, and so does one a page names that the model does not.
   range of each table and no index reads a partition's rows of every dimension. Every statement of a build's write, and
   of a removal, names its partition and dimension on each table it reads and seeks them whatever the table holds, so a
   build reads and locks its own dimension's rows, never another's, and the builds of a flow's dimensions write beside
-  each other rather than waiting on, or deadlocking with, one another. A running build's staging is keyed on
-  `PartitionId`, `DimensionId`, the build and the row's place in the order it was staged, so a build reads and deletes
-  only its own.
+  each other rather than waiting on, or deadlocking with, one another. Every index of these tables takes no page lock,
+  since the page where one dimension's range meets the next holds rows of both; a statement writing 5,000 rows or more
+  of one table can still have SQL Server lock the table whole until its build commits. A running build stages in tables
+  of its own ([A dimension build's staging](../flow/dimension-staging.md)).
 - **Read models** of the repositories (mappings, interfaces, cache declarations, search terms) and the templates and
   lineage are keyed by stable ids derived from what they describe, and carry no partition number.
 - **OSDU ids** are kept in a binary collation (`Latin1_General_100_BIN2`) wherever a table keys or matches on one, since
@@ -155,13 +156,9 @@ says how they fit and how each dimension's `dim_` table is laid out from them.
 | [`osdu.DimensionChange`](../tables/dimension-change.md) | A change a build made to a key |
 | [`osdu.DimensionView`](../tables/dimension-view.md) | A view a dimension flow declares, as its builds last wrote it |
 | [`osdu.DimensionViewCheck`](../tables/dimension-view-check.md) | What a build's check of a view found in a partition |
-| [`osdu.DimensionStageKey`](../tables/dimension-stage-key.md) | A key a running build read, staged until the build ends |
-| [`osdu.DimensionStageValue`](../tables/dimension-stage-value.md) | A key of a running build as it cleaned it, staged until the build ends |
-| [`osdu.DimensionStageMember`](../tables/dimension-stage-member.md) | A value a running build laid out from its keys, staged until the build ends |
-| [`osdu.DimensionStageAttribute`](../tables/dimension-stage-attribute.md) | An attribute value a running build read for a key, staged until the build ends |
-| [`osdu.DimensionStageText`](../tables/dimension-stage-text.md) | A text a running build collected, staged until the build ends |
-| [`osdu.DimensionStageElement`](../tables/dimension-stage-element.md) | A field of an object of a nested array a running build read, staged until the build ends |
-| [`osdu.DimensionStageRecord`](../tables/dimension-stage-record.md) | A record a running build read through or read, or a key such a record holds, staged until the build ends |
+
+A running build stages what it reads in seven tables of its own, `dimstage_<dimension>_<build>_<table>`, made when it
+starts and dropped when it ends ([A dimension build's staging](../flow/dimension-staging.md)).
 
 ### The partition cache
 
@@ -203,7 +200,7 @@ says how they fit and how each dimension's `dim_` table is laid out from them.
 
 ## Objects outside the model
 
-Four kinds of object live in the `osdu` schema with no entity of the model behind them:
+Five kinds of object live in the `osdu` schema with no entity of the model behind them:
 
 - `[osdu].[__EFMigrationsHistory]`: EF Core's record of the module's migrations, written by `sqlflow db migrate`.
 - `[osdu].[dim_<dimension>]`: each dimension's own table, created and widened at run time by its builds through SQLFlow's
@@ -212,11 +209,14 @@ Four kinds of object live in the `osdu` schema with no entity of the model behin
 - `[osdu].[v_dim_<view>]`: each view a dimension flow declares, written from the flow's document alone and recorded in
   [`osdu.DimensionView`](../tables/dimension-view.md), so a build writes and drops only views it made
   ([Dimension views](../flow/dimension-views.md)).
+- `[osdu].[dimstage_<dimension>_<build>_<table>]`: the seven tables a dimension build stages what it reads in, heaps
+  made when the build starts and dropped when it ends; what a build whose worker stopped left, the next build of the
+  dimension drops, and removing the dimension drops them all ([A dimension build's staging](../flow/dimension-staging.md)).
 - `[osdu].[dup_<check>]`: each duplicate check's own table, the properties it downloaded of every id, created and widened
   at run time by its download through SQLFlow's schema evolution, named by
   [`osdu.InventoryDuplicateCheck`](../tables/inventory-duplicate-check.md) `TableName`, and dropped when the download
   fails, a later download of the inventory completes, or the sweep retires the check
   ([The check's table](../flow/inventory-duplicates.md#the-checks-table)).
 
-No migration creates or alters the `dim_` and `dup_` tables and `v_dim_` views; every other object of the schema ships with
+No migration creates or alters the `dim_`, `dimstage_` and `dup_` tables and `v_dim_` views; every other object of the schema ships with
 the migration that makes it.

@@ -187,7 +187,7 @@ the `osdu` schema holds a foreign key into SQLFlow's tables: OSDU rows carry pla
 | What flows render with | Templates, mapping and interface read models, cache definitions, cache versions and their items, update tags |
 | What the other kinds keep | Retrievals, assertion runs and results, dimensions with their values and changes, inventories with their records and removals, removal runs and the deletions they find (kept under the delivery ledgers) |
 | Setup | Partitions, the central configuration, search terms and their refinements |
-| Dimension tables | `[osdu].[dim_<dimension>]`, created and widened at run time by a dimension flow's build, the one kind of table no migration creates |
+| Tables made at run time | `[osdu].[dim_<dimension>]`, created and widened by a dimension flow's builds; `[osdu].[dimstage_<dimension>_<build>_<table>]`, a build's staging, dropped when it ends; `[osdu].[dup_<check>]`, a duplicate check's download. No migration creates them ([objects outside the model](database.md#objects-outside-the-model)) |
 
 `sqlflow db migrate` applies SQLFlow's catalog migrations and then the module's, and `sqlflow db status` reports both,
 exiting 2 unless every database is current; `--module osdu` limits either to the module

@@ -139,6 +139,8 @@ public enum SearchPaging
 /// scans, a cache capture, an assertion's reads and a workflow route's search go through the same requests, the same paging,
 /// the same check that a read is whole and the same release of a cursor a read leaves open.
 /// </summary>
+[System.Diagnostics.CodeAnalysis.SuppressMessage("Usage", "CA1001:Types that own disposable fields should be disposable",
+    Justification = "The SemaphoreSlim's wait handle is never accessed, so it holds no unmanaged resource to release.")]
 public sealed partial class OsduSearch
 {
     /// <summary>The largest page the search service returns (openapi search v2, limit).</summary>
@@ -162,18 +164,24 @@ public sealed partial class OsduSearch
     private readonly string _queryPath;
     private readonly string _cursorPath;
     private readonly ILogger _logger;
+    private readonly SemaphoreSlim? _requests;
 
     /// <param name="client">The client every request is sent through.</param>
     /// <param name="queryPath">The plain search (openapi search v2, POST /query).</param>
     /// <param name="cursorPath">The cursor search (openapi search v2, POST /query_with_cursor).</param>
     /// <param name="logger">Where the reads say what they did.</param>
     /// <param name="paging">How <see cref="PagesAsync"/> pages a search whose order the caller leaves open.</param>
-    public OsduSearch(OsduHttpClient client, string queryPath, string cursorPath, ILogger logger, SearchPaging paging = SearchPaging.Cursor)
+    /// <param name="requestsAtOnce">
+    /// The most requests this search sends at once, every reader using it together (a dimension build's dimensions share
+    /// one); 0 bounds none, leaving each reader to bound its own.
+    /// </param>
+    public OsduSearch(OsduHttpClient client, string queryPath, string cursorPath, ILogger logger, SearchPaging paging = SearchPaging.Cursor, int requestsAtOnce = 0)
     {
         ArgumentNullException.ThrowIfNull(client);
         ArgumentException.ThrowIfNullOrWhiteSpace(queryPath);
         ArgumentException.ThrowIfNullOrWhiteSpace(cursorPath);
         ArgumentNullException.ThrowIfNull(logger);
+        ArgumentOutOfRangeException.ThrowIfNegative(requestsAtOnce);
         if (!Enum.IsDefined(paging))
         {
             throw new ArgumentOutOfRangeException(nameof(paging), paging, "Not a way a search is paged.");
@@ -183,11 +191,39 @@ public sealed partial class OsduSearch
         _queryPath = queryPath;
         _cursorPath = cursorPath;
         _logger = logger;
+        _requests = requestsAtOnce > 0 ? new SemaphoreSlim(requestsAtOnce, requestsAtOnce) : null;
+        RequestsAtOnce = requestsAtOnce;
         Paging = paging;
     }
 
     /// <summary>How <see cref="PagesAsync"/> pages a search whose order the caller leaves open.</summary>
     public SearchPaging Paging { get; }
+
+    /// <summary>The most requests this search sends at once, every reader together; 0 when it bounds none.</summary>
+    public int RequestsAtOnce { get; }
+
+    /// <summary>
+    /// Sends one request once a place is free among the <see cref="RequestsAtOnce"/> this search allows, and frees it when the
+    /// answer is in; at once when it bounds none. A place is held only while a request is sent, never while a reader waits on
+    /// anything else, so readers sharing the search never wait on each other's work.
+    /// </summary>
+    private async Task<HttpFetchResult> SendAsync(Func<CancellationToken, Task<HttpFetchResult>> send, CancellationToken ct)
+    {
+        if (_requests is null)
+        {
+            return await send(ct).ConfigureAwait(false);
+        }
+
+        await _requests.WaitAsync(ct).ConfigureAwait(false);
+        try
+        {
+            return await send(ct).ConfigureAwait(false);
+        }
+        finally
+        {
+            _requests.Release();
+        }
+    }
 
     /// <summary>
     /// <paramref name="filter"/> joined with <paramref name="query"/>, as one search: the filter alone when the query is empty
@@ -266,7 +302,7 @@ public sealed partial class OsduSearch
             body["aggregateBy"] = aggregateBy;
         }
 
-        var result = await _client.SendJsonAsync(HttpMethod.Post, url, body, refusalAnswers ? Refusals : null, ct, idempotent: true).ConfigureAwait(false);
+        var result = await SendAsync(token => _client.SendJsonAsync(HttpMethod.Post, url, body, refusalAnswers ? Refusals : null, token, idempotent: true), ct).ConfigureAwait(false);
         if (result.Status == System.Net.HttpStatusCode.BadRequest)
         {
             return new OsduSearchAnswer(0, [], [], RefusalOf(result));
@@ -547,7 +583,7 @@ public sealed partial class OsduSearch
     /// </summary>
     private async Task<PageAnswer> FirstPageAsync(Uri url, JsonObject body, CancellationToken ct)
     {
-        var result = await _client.SendJsonAsync(HttpMethod.Post, url, body, null, ct, idempotent: true).ConfigureAwait(false);
+        var result = await SendAsync(token => _client.SendJsonAsync(HttpMethod.Post, url, body, null, token, idempotent: true), ct).ConfigureAwait(false);
         return PageAnswer.Of(result, url);
     }
 
@@ -559,7 +595,7 @@ public sealed partial class OsduSearch
     {
         try
         {
-            var result = await _client.SendJsonAsync(HttpMethod.Post, url, body, null, ct, idempotent: false, repeatRefused: true).ConfigureAwait(false);
+            var result = await SendAsync(token => _client.SendJsonAsync(HttpMethod.Post, url, body, null, token, idempotent: false, repeatRefused: true), ct).ConfigureAwait(false);
             return PageAnswer.Of(result, url);
         }
         catch (Exception ex) when ((ex is SqlFlowException or HttpRequestException or IOException) && !ct.IsCancellationRequested)
@@ -618,7 +654,7 @@ public sealed partial class OsduSearch
         try
         {
             var url = _client.Url(CloseTemplate(_cursorPath), cursor);
-            await _client.SendJsonAsync(HttpMethod.Delete, url, null, new HashSet<int> { 404 }, CancellationToken.None).ConfigureAwait(false);
+            await SendAsync(token => _client.SendJsonAsync(HttpMethod.Delete, url, null, new HashSet<int> { 404 }, token), CancellationToken.None).ConfigureAwait(false);
         }
         catch (Exception ex) when (ex is SqlFlowException or HttpRequestException)
         {

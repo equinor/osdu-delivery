@@ -105,6 +105,12 @@ public sealed record DimensionViewSpec
 /// <param name="Views">The views of the flow the view joins, by their names in the module's schema (<c>v_dim_...</c>), each once: written before it.</param>
 /// <param name="RowsFromSql">For a grouped view, the <c>FROM</c> clause of the rows it groups, its joins in it, which the check counts each join over; null for any other view.</param>
 /// <param name="RowsWhereSql">For a grouped view, the condition it keeps the rows it groups by; null when it keeps every row, and for any other view.</param>
+/// <param name="CheckFromSql">
+/// The <c>FROM</c> clause the check reads the view's rows by: <paramref name="FromSql"/> with every join compared on the
+/// key's text alone, which joins the same rows (a key's hash is the hash of its text) without computing a hash for each row
+/// of each join, as a read of every row of a partition does; null to read by <paramref name="FromSql"/>.
+/// </param>
+/// <param name="CheckRowsFromSql">For a grouped view, <paramref name="RowsFromSql"/> as the check reads it, compared on the key's text alone; null otherwise.</param>
 public sealed record DimensionViewDefinition(
     string ViewName,
     IReadOnlyList<string> Tables,
@@ -116,13 +122,21 @@ public sealed record DimensionViewDefinition(
     string? WhereSql,
     IReadOnlyList<string>? Views = null,
     string? RowsFromSql = null,
-    string? RowsWhereSql = null)
+    string? RowsWhereSql = null,
+    string? CheckFromSql = null,
+    string? CheckRowsFromSql = null)
 {
     /// <summary>Whether the view groups its rows.</summary>
     public bool Grouped => RowsFromSql is not null;
 
     /// <summary>The views the view joins; none when it joins dimensions alone.</summary>
     public IReadOnlyList<string> JoinedViews => Views ?? [];
+
+    /// <summary>The <c>FROM</c> clause the check reads the view's rows by.</summary>
+    public string CheckFrom => CheckFromSql ?? FromSql;
+
+    /// <summary>For a grouped view, the <c>FROM</c> clause the check reads the rows it groups by; null for any other.</summary>
+    public string? CheckRowsFrom => CheckRowsFromSql ?? RowsFromSql;
 }
 
 /// <summary>One column of a view as a build writes it.</summary>

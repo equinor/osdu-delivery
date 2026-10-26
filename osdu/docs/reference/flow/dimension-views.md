@@ -19,6 +19,8 @@ keywords:
   - datatype
   - conversions
   - view check
+  - check kept
+  - view check slow
   - template check
   - join agrees differs unchecked
   - suggest joins
@@ -42,6 +44,7 @@ sourceRefs:
   - osdu/gui/src/features/delivery/dimensions/DimensionViewTabs.tsx
   - osdu/gui/src/features/delivery/dimensions/DimensionViewSuggest.tsx
   - osdu/src/SqlFlow.Delivery.Data/Migrations/20261009204033_DimensionViews.cs
+  - osdu/src/SqlFlow.Delivery.Data/Migrations/20261026181652_DimensionViewCheckReuse.cs
 ---
 
 # Dimension views (views): dimensions of one flow joined into one table, typed, written and checked on every build
@@ -138,7 +141,21 @@ how many rows found theirs and some values that found none, and for each convert
 convert, with examples (the row's `id` and the text). The run's result says so (`CurveUnitID: 1,204 of 88,310 rows name
 no row of RefUnitOfMeasure`, `TopDepth: 37 value(s) did not convert, for example '12,5'`). A value no expression could be
 written around (an arithmetic overflow) fails the build, naming the view and the column, so the pipelines ordered after
-the flow do not read a view that cannot be read.
+the flow do not read a view that cannot be read. The check reads every row of the partition, so it joins on the key's
+text alone, which finds the same rows as the view's joins without computing a hash for each row of each join, and asks
+SQL Server for a plan over several processors, with at most a tenth of its query memory.
+
+**A check kept.** A build whose tables a view reads hold what they held at the view's last check of the partition does
+not read the view again: the check keeps the last one's findings, and the run says so (`view Curve (osdu.v_dim_Curve):
+unchanged, 88,310 row(s) in partition 'dev', checked as before: nothing it reads changed since its check of
+2026-10-26T16:41:50.000Z, so it was not read again`). Every write that changes a dimension table's rows of a partition
+(a build adding, rewriting or deleting one, a table written again outside a build) raises the table's version
+([`osdu.Dimension`](../tables/dimension.md)'s `TableVersion`), and a check keeps the versions of every table it read, the
+tables of the views it joins included, with the view's statement
+([`osdu.DimensionViewCheck`](../tables/dimension-view-check.md)'s `ReadVersion`). A view written anew, a table changed,
+a dimension removed or built under another table, or a last check that failed, and the view is read again. A kept check
+names the check that read the view (`ReusedCheckId`, `reusedFrom` on the view's page, where its time taken shows
+`kept`). An incremental load that found nothing changed writes no table, so a quiet build reads no view at all.
 
 **Writing.** A build writes each view in one transaction under a lock of its own, only when its statement changed, with
 its column list (never `*`), making a table it reads that no build has made yet (empty, so its join finds nothing). A

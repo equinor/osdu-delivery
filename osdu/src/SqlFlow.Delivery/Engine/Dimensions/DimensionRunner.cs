@@ -242,6 +242,21 @@ public sealed partial class DimensionRunner
 
     private DateTime Now => _context.Time.GetUtcNow().UtcDateTime;
 
+    /// <summary>
+    /// The most requests a build asks of the search at once, its dimensions together: <c>recordsAtOnce</c> dimensions build at
+    /// once, each asking up to <c>recordsAtOnce</c> at once, so the build as a whole asks up to their product, and a dimension's
+    /// labels and attributes may take the places the others leave free. The last dimension building asks as much as the
+    /// whole build may, where it asked as much as its own share.
+    /// </summary>
+    private int RequestsAtOnce
+    {
+        get
+        {
+            var each = Math.Max(1, _flow.Parallelism.RecordsAtOnce);
+            return (int)Math.Min((long)each * each, int.MaxValue);
+        }
+    }
+
     /// <summary>Builds the dimensions the run selects (every one when it names none), each loaded as the flow declares, and keeps each build.</summary>
     public Task<DimensionBuildOutcome> BuildAsync(IReadOnlyCollection<string> names, Guid runId, string actor, CancellationToken ct)
         => BuildAsync(names, DimensionLoadRequest.AsDeclared, runId, actor, ct);
@@ -292,7 +307,7 @@ public sealed partial class DimensionRunner
 
         using var http = new HttpRuntime(_flow.Reliability, _context.Secrets, _context.Time, _transport, _allowLoopback, observer: _context.HttpObserver);
         var client = await ProtocolFactory.ClientAsync(http, _flow.Source.Endpoint, _flow.Source.Auth, _flow.Source.Headers, _context.Secrets, ct).ConfigureAwait(false);
-        var search = new OsduSearch(client, _flow.Source.QueryPath, _flow.Source.SearchPath, _log, _flow.Source.Paging);
+        var search = new OsduSearch(client, _flow.Source.QueryPath, _flow.Source.SearchPath, _log, _flow.Source.Paging, RequestsAtOnce);
         using var templates = new TemplateCache(_context.DocumentTemplates, _flow.SourcePath);
         var summaries = new List<DimensionBuildSummary>(selected.Count);
         var gate = new Lock();
@@ -358,8 +373,12 @@ public sealed partial class DimensionRunner
             }
 
             _log.LogInformation(
-                "view {View} ({ViewName}): {Status}, {Rows} row(s) in partition '{Partition}'{Notes}", view.Name, DimensionTables.Shown(view.ViewName), view.Status,
-                view.Check?.Rows ?? 0, partition, view.Check?.Notes() is { Count: > 0 } notes ? "; " + string.Join(" ", notes) : string.Empty);
+                "view {View} ({ViewName}): {Status}, {Rows} row(s) in partition '{Partition}'{Kept}{Notes}", view.Name, DimensionTables.Shown(view.ViewName), view.Status,
+                view.Check?.Rows ?? 0, partition,
+                view.Check is { ReusedFrom: not null } kept
+                    ? string.Create(CultureInfo.InvariantCulture, $", checked as before: nothing it reads changed since its check of {OsduSearch.LuceneTime(kept.ReusedCheckedUtc ?? kept.CheckedUtc)}, so it was not read again")
+                    : string.Empty,
+                view.Check?.Notes() is { Count: > 0 } notes ? "; " + string.Join(" ", notes) : string.Empty);
         }
 
         foreach (var name in written.Dropped)
@@ -768,7 +787,9 @@ public sealed partial class DimensionRunner
         OsduSearch search, DimensionSpec dimension, DimensionStage stage, OsduField field, bool reads, IReadOnlyList<DimensionAttributeSpec> throughKeys,
         int concurrency, long tooLong, ReadProgress progress, Func<LabelCounts, DimensionReadCounts> labelled, CancellationToken ct)
     {
-        var labeler = reads ? new DimensionLabeler(search, concurrency) : null;
+        // The labels take as many places as the build's search allows, which every dimension building shares, so a dimension
+        // labelled while the others are done asks for as much as the whole build may.
+        var labeler = reads ? new DimensionLabeler(search, search.RequestsAtOnce > 0 ? search.RequestsAtOnce : concurrency) : null;
         var cleaner = Cleaner(dimension);
         LabelTally? tally = null;
         var counts = LabelCounts.None;
@@ -777,66 +798,94 @@ public sealed partial class DimensionRunner
         var leftOut = new Dictionary<string, int>(StringComparer.Ordinal);
         long unfilterable = 0;
         var unfilterableNamed = new List<string>();
-        var batch = reads ? DimensionLabeler.PassSize(dimension.Label, throughKeys) : DimensionLabeler.MaxKeysPerPass;
+        // A batch is as many keys as the labeler's next pass reads (DimensionLabeler.PassSizeFor), which it learns as it reads.
+        int Batch() => labeler is null ? DimensionLabeler.MaxKeysPerPass : labeler.PassSizeFor(dimension.Label, throughKeys);
 
-        // A batch is staged while the next one's labels are read, so the build waits on the search and on the database side by
-        // side rather than in turn, and holds two batches at most.
+        // Batches are read side by side (DimensionLabeler.PassesAtOnce), so the search is asked for one while the answers of
+        // another are read, and the labeler's places stay taken; each is cleaned and staged in the order of its keys, while the
+        // next ones are read, so the build waits on the search and the database side by side. It holds that many batches being
+        // read, and one being staged.
+        var reading = new Queue<(IReadOnlyList<StagedKey> Keys, Task<KeyLabels> Labels)>();
+        using var stop = CancellationTokenSource.CreateLinkedTokenSource(ct);
         var staging = Task.CompletedTask;
+
+        async Task TakeAsync()
+        {
+            var (staged, read) = reading.Dequeue();
+            var labels = await read.ConfigureAwait(false);
+            if (labels.Tally is { } tallied)
+            {
+                if (tally is null)
+                {
+                    tally = tallied;
+                }
+                else
+                {
+                    tally.Add(tallied);
+                }
+            }
+
+            var values = new List<(long Seq, DimensionOriginalWrite Original)>(staged.Count);
+            var held = new List<(string Key, DimensionAttributeState Attribute)>();
+            foreach (var key in staged)
+            {
+                ct.ThrowIfCancellationRequested();
+                var (value, attributesOf) = Cleaned(dimension, field, cleaner, key, labels);
+                values.Add((key.Seq, value));
+                held.AddRange(attributesOf.Select(a => (key.Key, a)));
+                if (value.LeftOut is { } reason)
+                {
+                    leftOut[reason] = leftOut.GetValueOrDefault(reason) + 1;
+                }
+                else if (!value.Filterable)
+                {
+                    unfilterable++;
+                    if (unfilterableNamed.Count < 5)
+                    {
+                        unfilterableNamed.Add(key.Key);
+                    }
+                }
+            }
+
+            await staging.ConfigureAwait(false);
+            staging = StageCleanedAsync(stage, values, held, labels.Records.ToList(), ct);
+            keys += staged.Count;
+            attributes += labels.Attributes.Values.Sum(a => a.Count);
+            counts = new LabelCounts(counts.Labelled + labels.Labelled, counts.Unlabelled + labels.Unlabelled, counts.Queries + labels.Queries);
+            progress.Read = labelled(counts);
+        }
+
         try
         {
-            await foreach (var staged in stage.KeysAsync(batch, ct).ConfigureAwait(false))
+            await foreach (var staged in stage.KeysAsync(Batch, ct).ConfigureAwait(false))
             {
-                var labels = labeler is null
-                    ? KeyLabels.None
-                    : await labeler.ReadAsync(staged.Select(k => k.Key).ToList(), dimension.Label, throughKeys, dimension.LookupKinds, ct).ConfigureAwait(false);
-                if (labels.Tally is { } read)
+                var read = labeler is null
+                    ? Task.FromResult(KeyLabels.None)
+                    : labeler.ReadAsync(staged.Select(k => k.Key).ToList(), dimension.Label, throughKeys, dimension.LookupKinds, stop.Token);
+                reading.Enqueue((staged, read));
+                if (reading.Count >= (labeler is null ? 1 : DimensionLabeler.PassesAtOnce))
                 {
-                    if (tally is null)
-                    {
-                        tally = read;
-                    }
-                    else
-                    {
-                        tally.Add(read);
-                    }
+                    await TakeAsync().ConfigureAwait(false);
                 }
+            }
 
-                var values = new List<(long Seq, DimensionOriginalWrite Original)>(staged.Count);
-                var held = new List<(string Key, DimensionAttributeState Attribute)>();
-                foreach (var key in staged)
-                {
-                    ct.ThrowIfCancellationRequested();
-                    var (value, attributesOf) = Cleaned(dimension, field, cleaner, key, labels);
-                    values.Add((key.Seq, value));
-                    held.AddRange(attributesOf.Select(a => (key.Key, a)));
-                    if (value.LeftOut is { } reason)
-                    {
-                        leftOut[reason] = leftOut.GetValueOrDefault(reason) + 1;
-                    }
-                    else if (!value.Filterable)
-                    {
-                        unfilterable++;
-                        if (unfilterableNamed.Count < 5)
-                        {
-                            unfilterableNamed.Add(key.Key);
-                        }
-                    }
-                }
-
-                await staging.ConfigureAwait(false);
-                staging = StageCleanedAsync(stage, values, held, labels.Records.ToList(), ct);
-                keys += staged.Count;
-                attributes += labels.Attributes.Values.Sum(a => a.Count);
-                counts = new LabelCounts(counts.Labelled + labels.Labelled, counts.Unlabelled + labels.Unlabelled, counts.Queries + labels.Queries);
-                progress.Read = labelled(counts);
+            while (reading.Count > 0)
+            {
+                await TakeAsync().ConfigureAwait(false);
             }
 
             await staging.ConfigureAwait(false);
         }
         catch
         {
-            // The batch being staged ends before the build fails, so nothing it does outlives the build; why the build failed is
-            // what it reports.
+            // The batches being read and staged end before the build fails, so nothing they do outlives the build; why the build
+            // failed is what it reports.
+            await stop.CancelAsync().ConfigureAwait(false);
+            foreach (var (_, read) in reading)
+            {
+                await ((Task)read).ConfigureAwait(ConfigureAwaitOptions.SuppressThrowing);
+            }
+
             await staging.ConfigureAwait(ConfigureAwaitOptions.SuppressThrowing);
             throw;
         }

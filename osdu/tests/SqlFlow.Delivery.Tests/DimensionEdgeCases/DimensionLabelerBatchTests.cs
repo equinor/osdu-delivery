@@ -29,7 +29,9 @@ public sealed class DimensionLabelerBatchTests : IDisposable
 
     public void Dispose() => _platform.Dispose();
 
-    private DimensionLabeler Labeler()
+    private DimensionLabeler Labeler(int concurrency = 2) => new(Search(), concurrency);
+
+    private OsduSearch Search(int requestsAtOnce = 0)
     {
         var runtime = new HttpRuntime(
             new FlowReliability { Retry = new FlowRetry { Attempts = 1, BaseDelayMs = 1, MaxDelayMs = 1 } },
@@ -37,8 +39,39 @@ public sealed class DimensionLabelerBatchTests : IDisposable
         var client = new OsduHttpClient(
             runtime, FakeDimensionPlatform.Endpoint, new TargetAuth { Type = TargetAuthType.None },
             new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase) { ["data-partition-id"] = "dev" });
-        return new DimensionLabeler(new OsduSearch(client, "/api/search/v2/query", "/api/search/v2/query_with_cursor", NullLogger.Instance), concurrency: 2);
+        return new OsduSearch(client, "/api/search/v2/query", "/api/search/v2/query_with_cursor", NullLogger.Instance, requestsAtOnce: requestsAtOnce);
     }
+
+    /// <summary>
+    /// Wellbores <paramref name="from"/> to <paramref name="to"/>, each naming <paramref name="fields"/> of the first fields
+    /// there are, all named <c>Field n</c>; the fields themselves are added once.
+    /// </summary>
+    private List<string> Wellbores(int from, int to, int fields)
+    {
+        if (!_platform.Records.Any(r => r["kind"]!.GetValue<string>() == Field))
+        {
+            for (var f = 0; f < 1_000; f++)
+            {
+                _platform.Add($"dev:master-data--Field:F{f:D4}", Field, new JsonObject { ["FieldName"] = $"Field {f}" });
+            }
+        }
+
+        var keys = new List<string>();
+        for (var i = from; i < to; i++)
+        {
+            var contexts = new JsonArray(Enumerable.Range(0, fields).Select(f => (JsonNode?)new JsonObject { ["FieldID"] = $"dev:master-data--Field:F{f:D4}:" }).ToArray());
+            _platform.Add($"dev:master-data--Wellbore:W{i:D5}", Wellbore, new JsonObject { ["FacilityName"] = $"Wellbore {i}", ["GeoContexts"] = contexts });
+            keys.Add($"dev:master-data--Wellbore:W{i:D5}:");
+        }
+
+        return keys;
+    }
+
+    /// <summary>What a read keeps of each key, as one text, to compare two reads by.</summary>
+    private static List<string> Kept(KeyLabels read)
+        => read.Attributes.OrderBy(a => a.Key, StringComparer.Ordinal)
+            .Select(a => a.Key + " = " + string.Join(" | ", a.Value.Select(v => $"{v.Name}:{v.Value}@{v.From}")) + " via " + string.Join(",", read.Records[a.Key]))
+            .ToList();
 
     /// <summary>
     /// Three hundred wellbore keys meeting every reason a key has no value, at every step: no record for the key, a name
@@ -208,8 +241,122 @@ public sealed class DimensionLabelerBatchTests : IDisposable
 
         // A label of two steps follows twenty records a key, and an attribute of two steps as many as it says.
         Assert.Equal(DimensionLabeler.MaxReachedPerPass / 50, DimensionLabeler.PassSize(["data.WellID", "data.Name"], [new("Fields", ["data.F", "data.N"], MaxReferences: 30)]));
-        Assert.Equal(DimensionLabeler.MaxKeysPerPass, DimensionLabeler.PassSize(["data.WellID", "data.Name"], []));
+        Assert.Equal(DimensionLabeler.MaxReachedPerPass / 20, DimensionLabeler.PassSize(["data.WellID", "data.Name"], []));
         Assert.Equal(DimensionLabeler.MaxReachedPerPass / 1_020, DimensionLabeler.PassSize(["data.WellID", "data.Name"], [new("Fields", ["data.F", "data.N"], MaxReferences: 1_000)]));
         Assert.Equal(DimensionLabeler.MaxKeysPerPass, DimensionLabeler.PassSize([], [new("Fields", ["data.F", "data.N"], MaxReferences: 1)]));
     }
+
+    [Fact]
+    public async Task Passes_grow_to_as_many_keys_as_the_references_their_keys_follow_fit_so_each_search_asks_five_hundred_ids()
+    {
+        // Each wellbore names one field, though its attributes may follow a thousand each: the declaration bounds the first
+        // pass to 25 keys, and the one reference each key follows lets every later pass read four thousand.
+        var keys = Wellbores(0, 3_000, 1);
+        DimensionAttributeSpec[] attributes =
+        [
+            new("Field", ["data.GeoContexts.FieldID", "data.FieldName"], MaxReferences: 1_000),
+            new("Fields", ["data.GeoContexts.FieldID", "data.FieldName"], Many: DimensionValueMany.Join, MaxReferences: 1_000),
+        ];
+        Assert.Equal(25, DimensionLabeler.PassSize([], attributes));
+        var labeler = Labeler(4);
+
+        var read = await labeler.ReadAsync(keys, [], attributes, null, CancellationToken.None);
+
+        // The first pass asks for its 25 wellbores and their field; the second for its 2,975 wellbores, five hundred a search,
+        // the field being read already. A pass of 25 keys at a time asked 120 searches for the wellbores alone.
+        Assert.Equal(3_000, read.Attributes.Count);
+        Assert.Equal("Field 0", read.Attributes["dev:master-data--Wellbore:W02999:"].Single(a => a.Name == "Field").Value);
+        Assert.Equal(DimensionLabeler.MaxKeysPerPass, labeler.PassSizeFor([], attributes));
+        var wellbores = _platform.Calls.Select(c => IdsIn(c.Body!, "master-data--Wellbore")).Where(n => n > 0).Order().ToList();
+        Assert.Equal([25, 475, 500, 500, 500, 500, 500], wellbores);
+        Assert.Equal(8, read.Queries);
+    }
+
+    [Fact]
+    public async Task A_pass_whose_keys_reach_more_than_a_pass_holds_is_read_again_in_smaller_passes_and_reads_what_a_key_at_a_time_reads()
+    {
+        // Wellbores naming one field each, then wellbores naming three hundred: once the first passes have sized passes for
+        // keys of one reference, a pass of the later ones reaches far more references than a pass holds.
+        var keys = Wellbores(0, 400, 1);
+        keys.AddRange(Wellbores(400, 600, 300));
+        DimensionAttributeSpec[] attributes = [new("Fields", ["data.GeoContexts.FieldID", "data.FieldName"], Many: DimensionValueMany.Join, MaxReferences: 1_000)];
+
+        var read = await Labeler(4).ReadAsync(keys, [], attributes, null, CancellationToken.None);
+
+        // Some wellbores were asked for more than once: a pass that reached too many was let go and its keys read again.
+        var asked = _platform.Calls.SelectMany(c => IdsOf(c.Body!, "master-data--Wellbore")).GroupBy(id => id).Count(g => g.Count() > 1);
+        Assert.True(asked > 0, "No pass was let go, so the test did not read a pass that reached too many references.");
+
+        // A key at a time, no pass holds more than one key's references; what the two read is the same, notes included.
+        var single = Labeler(4);
+        LabelTally? tally = null;
+        var one = new Dictionary<string, IReadOnlyList<DimensionAttributeState>>(StringComparer.Ordinal);
+        var through = new Dictionary<string, IReadOnlyList<string>>(StringComparer.Ordinal);
+        foreach (var key in keys)
+        {
+            var part = await single.ReadAsync([key], [], attributes, null, CancellationToken.None);
+            foreach (var (k, v) in part.Attributes)
+            {
+                one[k] = v;
+            }
+
+            foreach (var (k, v) in part.Records)
+            {
+                through[k] = v;
+            }
+
+            if (tally is null)
+            {
+                tally = part.Tally;
+            }
+            else
+            {
+                tally.Add(part.Tally!);
+            }
+        }
+
+        Assert.Equal(Kept(read), Kept(new KeyLabels(new Dictionary<string, KeyLabel>(), one, 0, 0, 0, [], through)));
+        Assert.Equal(read.Notes, tally!.Notes());
+    }
+
+    [Fact]
+    public async Task Reads_side_by_side_ask_no_more_searches_at_once_than_the_labeler_has_places()
+    {
+        var keys = Wellbores(0, 6_000, 1);
+        _platform.Latency = TimeSpan.FromMilliseconds(30);
+        var labeler = Labeler(3);
+        DimensionAttributeSpec[] attributes = [new("Name", ["data.FacilityName"])];
+
+        var reads = await Task.WhenAll(
+            labeler.ReadAsync(keys.Take(3_000).ToList(), [], attributes, null, CancellationToken.None),
+            labeler.ReadAsync(keys.Skip(3_000).ToList(), [], attributes, null, CancellationToken.None));
+
+        Assert.Equal(6_000, reads.Sum(r => r.Attributes.Count));
+        Assert.Equal(3, _platform.MostAtOnce);
+    }
+
+    [Fact]
+    public async Task Readers_sharing_a_search_that_bounds_its_requests_ask_no_more_at_once_together()
+    {
+        var keys = Wellbores(0, 6_000, 1);
+        _platform.Latency = TimeSpan.FromMilliseconds(30);
+        var search = Search(requestsAtOnce: 2);
+        DimensionAttributeSpec[] attributes = [new("Name", ["data.FacilityName"])];
+
+        await Task.WhenAll(
+            new DimensionLabeler(search, 4).ReadAsync(keys.Take(3_000).ToList(), [], attributes, null, CancellationToken.None),
+            new DimensionLabeler(search, 4).ReadAsync(keys.Skip(3_000).ToList(), [], attributes, null, CancellationToken.None));
+
+        Assert.Equal(2, search.RequestsAtOnce);
+        Assert.Equal(2, _platform.MostAtOnce);
+    }
+
+    /// <summary>The ids of <paramref name="type"/> a search's body asks for.</summary>
+    private static List<string> IdsOf(string body, string type)
+    {
+        var query = JsonNode.Parse(body)?["query"]?.GetValue<string>() ?? string.Empty;
+        return System.Text.RegularExpressions.Regex.Matches(query, "\"(dev:" + type + ":[^\"]+)\"").Select(m => m.Groups[1].Value).ToList();
+    }
+
+    private static int IdsIn(string body, string type) => IdsOf(body, type).Count;
 }

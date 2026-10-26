@@ -239,9 +239,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 - An incremental load of a dimension that finds more than 250,000 records changed, or more than 250,000 keys to read
   again, loads in full, which reads a range at a time
-  ([Full and incremental loads](osdu/docs/reference/flow/dimension-incremental.md)). The module's database gains seven
-  tables a running dimension build stages what it reads in, empty while no build runs
-  ([What the osdu schema stores](osdu/docs/reference/concepts/storage-and-retention.md#what-cleans-itself)).
+  ([Full and incremental loads](osdu/docs/reference/flow/dimension-incremental.md)). A running dimension build stages
+  what it reads in tables of its own (`osdu.dimstage_*`), heaps loaded in bulk and dropped when the build ends, and a
+  build whose staging was dropped under it (a later build took it for one its process left, or its dimension was
+  removed) fails saying so and writes nothing
+  ([A dimension build's staging](osdu/docs/reference/flow/dimension-staging.md)).
+- Dimension builds are much faster. Labels and attributes are read in batches sized by what the keys before them
+  reached, two at a time, where a batch was sized for the most every key might reach, so a dimension of 160,000 wellbores
+  reads its labels in a few hundred searches rather than tens of thousands; a build asks the search at most
+  `recordsAtOnce` x `recordsAtOnce` requests at once, its dimensions together
+  ([What a build holds](osdu/docs/reference/flow/dimension-build.md#what-a-build-holds)). An incremental load writes and
+  compares only the rows of the dimension's table whose keys it read again
+  ([The dimension's table](osdu/docs/reference/flow/dimension-table.md)). A view's check reads each row once, and a check
+  is kept, not read again, when nothing the view reads changed since it ran; the Checks tab says **kept**
+  ([Dimension views](osdu/docs/reference/flow/dimension-views.md)).
 - A delivery flow's `source.record.maxRecords` is the default its runs take rather than a ceiling: a run's payload
   `maxRecords` may now ask for more records than the document says, fewer, or 0 to read the whole scope, and a `replan`
   run takes it too; until now a payload could only ask for fewer
@@ -442,6 +453,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   says ([Upgrading an estate](osdu/docs/reference/concepts/templates.md#upgrading-an-estate-that-saved-templates-in-the-database)).
 
 ### Fixed
+- Builds of two dimensions running at once could deadlock, failing one of them as the victim, or wait for each other:
+  SQL Server locked the pages where one dimension's rows meet the next, and a check before each write
+  read every dimension's row. Each build now locks only its own rows
+  ([What a build does](osdu/docs/reference/flow/dimension-build.md#what-a-build-does)).
 
 - **A dimension build no longer runs out of memory.** A build held everything it read until it wrote, so a large
   dimension (a wellbore dimension with nine attributes read through references) failed with an `OutOfMemoryException`

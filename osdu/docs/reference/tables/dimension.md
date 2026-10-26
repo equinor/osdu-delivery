@@ -68,6 +68,7 @@ partition and drops its table with the last partition writing it.
 | `TableName` | `nvarchar(128)` | yes | The dimension's table in the schema (`dim_<dimension>`), as the last build wrote it; null before a build wrote one. |
 | `KeyColumn` | `nvarchar(128)` | yes | The column of the dimension's table that holds each key, as the table has it now: named after the property the dimension's path ends with unless its document names it, and `key` in a table made before dimensions named their columns. |
 | `ValueColumn` | `nvarchar(128)` | yes | The column of the dimension's table that holds each key's value, as the table has it now: named after the property the label ends with (or after the dimension, when it reads no label) unless its document names it, and `value` in a table made before dimensions named their columns. |
+| `TableVersion` | `bigint` | no | How many times a write changed the rows the dimension's table holds of the partition: a build's write that added, rewrote or deleted one, or wrote the table under another name, and a rewrite of the table outside a build. A view's check keeps the versions of the tables it read, and a build whose tables a view reads are of the same versions keeps that check rather than reading the view again ([A check kept](../flow/dimension-views.md)). 0 until a write changed a row. |
 | `Members` | `bigint` | no | The members the dimension holds now. |
 | `Originals` | `bigint` | no | The originals the dimension holds now, those under no member included. |
 | `LastRunId` | `bigint` | yes | The build that last wrote or read the dimension ([`osdu.DimensionRun`](dimension-run.md)). |
@@ -83,7 +84,7 @@ partition and drops its table with the last partition writing it.
 | `PK_Dimension` | `PartitionId`, `DimensionId` | primary key | none | none | A partition's dimensions together. |
 | `IX_Dimension_DimensionId` | `DimensionId` | unique | none | none | A dimension named by its id: every member, original, build and change of it names it so. |
 | `IX_Dimension_PartitionId_FlowId_Name` | `PartitionId`, `FlowId`, `Name` | unique | none | none | A flow's dimension in a partition, by its name: what a build registers and a page finds. |
-| `IX_Dimension_TableName` | `TableName` | index | none | none | The dimensions writing one table, one per partition: what a build asks before it writes and a removal before it drops. |
+| `IX_Dimension_TableName` | `TableName` | index | none | `FlowName`, `Name` | The dimensions writing one table, one per partition: what a build asks before it writes and a removal before it drops. It holds what the build asks, so the build reads no other dimension's row, which that dimension's build may be writing. |
 
 ## Written and read by
 

@@ -494,3 +494,15 @@ the human, chose to rebuild the build to stage what it reads in the database, ke
 [0032](decisions/0032-dimension-builds-stage-in-the-database.md): seven staging tables, labels read a bounded batch at a
 time, the write copying the staging into its unchanged merge, a parity suite written on the old engine first, the
 staging's cleanup, and the incremental load's caps; with the time and memory measured before and after.
+
+## [2026-10-26] ingest | Dimension builds at scale, decision 0033
+
+Read the trace of a production estate's well log dimension flow taking 30 minutes (16 in one wellbore dimension's labels,
+read in 20,919 searches; 4.8 in its write; 7 in the view checks), the labeler, the view checks, the incremental write and
+the staging behind it, and measured the build on the suites' stand-in search at the estate's size, where two dimensions'
+builds deadlocked. With the human, who asked for large inserts into heaps and for the build to scale over nodes as a
+delivery does, filed [0033](decisions/0033-dimension-builds-at-scale.md): label batches sized by what the keys before them
+reached, one request budget per build, view checks kept when nothing they read changed, an incremental load writing only
+the rows it read again, each build's staging in heaps of its own, and a build locking only its own rows. A split over
+nodes and statements batched under 5,000 rows were built or tried and held back with the human. Amended
+[0032](decisions/0032-dimension-builds-stage-in-the-database.md) (the staging's tables).

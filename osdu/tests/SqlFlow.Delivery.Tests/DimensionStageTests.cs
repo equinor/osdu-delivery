@@ -1,6 +1,5 @@
 using System.Globalization;
 using Microsoft.Data.SqlClient;
-using Microsoft.EntityFrameworkCore;
 using SqlFlow.Delivery.Ledger;
 using Xunit;
 
@@ -8,10 +7,10 @@ namespace SqlFlow.Delivery.Tests;
 
 /// <summary>
 /// What a dimension build stages in the module's database as it reads (osdu/docs/reference/flow/dimension-build.md, What a
-/// build holds): keys read back in the order staged however many batches they filled, rows staged from several threads at
-/// once each kept once, a build's staging deleted when it ends, what a build whose process stopped left deleted by the next
-/// build of its dimension unless that build may still be running or is writing, and a write refused, writing nothing, when
-/// its staging was deleted under it.
+/// build holds): tables of the build's own, heaps until a table is read back in order; keys read back in the order staged
+/// however many batches they filled, rows staged from several threads at once each kept once, a build's tables dropped when
+/// it ends, what a build whose process stopped left dropped by the next build of its dimension unless that build may still
+/// be running or is writing, and a build whose tables were dropped under it failing, writing nothing.
 /// </summary>
 [Collection(SqlServerSuite.Name)]
 [Trait("Category", "Integration")]
@@ -66,20 +65,54 @@ public sealed class DimensionStageTests : IDisposable
         await stage.FlushAsync(CancellationToken.None);
     }
 
-    /// <summary>The rows every staging table holds, by the build that staged them.</summary>
+    /// <summary>The rows the staging tables hold, by the build whose tables they are: every build the database holds tables of.</summary>
     private async Task<Dictionary<long, int>> StagedAsync()
     {
-        await using var db = _db.CreateDbContext();
-        var builds = new List<long>();
-        builds.AddRange(await db.DeliveryDimensionStageKeys.Select(r => r.DimensionRunId).ToListAsync());
-        builds.AddRange(await db.DeliveryDimensionStageValues.Select(r => r.DimensionRunId).ToListAsync());
-        builds.AddRange(await db.DeliveryDimensionStageMembers.Select(r => r.DimensionRunId).ToListAsync());
-        builds.AddRange(await db.DeliveryDimensionStageAttributes.Select(r => r.DimensionRunId).ToListAsync());
-        builds.AddRange(await db.DeliveryDimensionStageTexts.Select(r => r.DimensionRunId).ToListAsync());
-        builds.AddRange(await db.DeliveryDimensionStageElements.Select(r => r.DimensionRunId).ToListAsync());
-        builds.AddRange(await db.DeliveryDimensionStageRecords.Select(r => r.DimensionRunId).ToListAsync());
-        return builds.GroupBy(b => b).ToDictionary(g => g.Key, g => g.Count());
+        var staged = new Dictionary<long, int>();
+        foreach (var (table, build, _) in await StagingTablesAsync())
+        {
+            staged[build] = staged.GetValueOrDefault(build) + Convert.ToInt32(await ScalarAsync($"SELECT COUNT_BIG(*) FROM [osdu].[{table}];"), CultureInfo.InvariantCulture);
+        }
+
+        return staged;
     }
+
+    /// <summary>Every staging table the database holds: its name, its build, and whether it has a clustered index or is a heap.</summary>
+    private async Task<List<(string Table, long Build, bool Clustered)>> StagingTablesAsync()
+    {
+        await using var connection = new SqlConnection(_db.ConnectionString);
+        await connection.OpenAsync();
+        await using var command = new SqlCommand("""
+            SELECT t.[name], CONVERT(bit, CASE WHEN EXISTS (SELECT 1 FROM sys.indexes AS i WHERE i.[object_id] = t.[object_id] AND i.[index_id] = 1) THEN 1 ELSE 0 END)
+            FROM sys.tables AS t
+            WHERE t.[schema_id] = SCHEMA_ID(N'osdu') AND t.[name] LIKE N'dimstage[_]%';
+            """, connection);
+        await using var reader = await command.ExecuteReaderAsync();
+        var tables = new List<(string, long, bool)>();
+        while (await reader.ReadAsync())
+        {
+            var name = reader.GetString(0);
+            var parts = name[DimensionStage.TablePrefix.Length..].Split('_');
+            tables.Add((name, long.Parse(parts[1], CultureInfo.InvariantCulture), reader.GetBoolean(1)));
+        }
+
+        return tables;
+    }
+
+    private async Task<object?> ScalarAsync(string sql)
+    {
+        await using var connection = new SqlConnection(_db.ConnectionString);
+        await connection.OpenAsync();
+        await using var command = new SqlCommand(sql, connection);
+        return await command.ExecuteScalarAsync();
+    }
+
+    /// <summary>The name of the stage's table <paramref name="table"/>.</summary>
+    private static string TableOf(DimensionStage stage, string table)
+        => string.Create(CultureInfo.InvariantCulture, $"{DimensionStage.TablePrefix}{stage.DimensionId}_{stage.DimensionRunId}_{table}");
+
+    private static string Gone(DimensionStage stage) => string.Create(CultureInfo.InvariantCulture,
+        $"The staging tables of dimension build {stage.DimensionRunId} are gone: another build of the dimension dropped them, taking this build, running for more than 48 hours, for one its process left, or the dimension was removed while it ran. Nothing was written; build the dimension again.");
 
     private static DimensionStagedWrite Write(DateTime completedUtc) => new()
     {
@@ -151,28 +184,53 @@ public sealed class DimensionStageTests : IDisposable
         })));
         await stage.FlushAsync(CancellationToken.None);
 
-        await using var db = _db.CreateDbContext();
-        var staged = await db.DeliveryDimensionStageAttributes.Where(a => a.DimensionRunId == stage.DimensionRunId).Select(a => a.Seq).ToListAsync();
-        Assert.Equal(20_000, staged.Count);
-        Assert.Equal(20_000, staged.Distinct().Count());
+        Assert.Equal(20_000L, Convert.ToInt64(await ScalarAsync($"SELECT COUNT_BIG(*) FROM [osdu].[{TableOf(stage, "attribute")}];"), CultureInfo.InvariantCulture));
+        Assert.Equal(20_000L, Convert.ToInt64(await ScalarAsync($"SELECT COUNT_BIG(DISTINCT [Seq]) FROM [osdu].[{TableOf(stage, "attribute")}];"), CultureInfo.InvariantCulture));
         await stage.DiscardAsync(CancellationToken.None);
     }
 
     [Fact]
-    public async Task A_build_deletes_its_staging_when_it_ends_written_or_not()
+    public async Task A_build_stages_into_heaps_of_its_own_and_indexes_a_table_only_once_it_is_read_back_in_order()
+    {
+        var ledger = await LedgerAsync();
+        await using var stage = await StageAsync(ledger);
+        var other = await StageAsync(ledger, "Unit");
+
+        // Each build has its seven tables, heaps a copy fills under a bulk update lock.
+        var tables = await StagingTablesAsync();
+        Assert.Equal(7, tables.Count(t => t.Build == stage.DimensionRunId));
+        Assert.Equal(7, tables.Count(t => t.Build == other.DimensionRunId));
+        Assert.All(tables, t => Assert.False(t.Clustered, $"{t.Table} has a clustered index before anything was read from it."));
+
+        // Read back in order, the keys are indexed on their place once staged whole; the other tables stay heaps.
+        await stage.AddKeysAsync([new("A", 1), new("B", 1)], CancellationToken.None);
+        await foreach (var _ in stage.KeysAsync(1000, CancellationToken.None))
+        {
+        }
+
+        tables = await StagingTablesAsync();
+        Assert.Equal([TableOf(stage, "key")], tables.Where(t => t.Clustered).Select(t => t.Table));
+        await other.DiscardAsync(CancellationToken.None);
+        await other.DisposeAsync();
+        await stage.DiscardAsync(CancellationToken.None);
+    }
+
+    [Fact]
+    public async Task A_build_drops_its_staging_when_it_ends_written_or_not()
     {
         var ledger = await LedgerAsync();
 
-        // A build of more rows than one statement deletes, which ends without writing.
+        // A build of more rows than a batch copies, which ends without writing, with rows still held that it never copies.
         var failed = await StageAsync(ledger);
-        await StageValuesAsync(failed, DimensionStage.DeleteSlice + 1234);
-        Assert.Equal(3 * (DimensionStage.DeleteSlice + 1234), (await StagedAsync())[failed.DimensionRunId]);
+        await StageValuesAsync(failed, 12_345);
+        Assert.Equal(3 * 12_345, (await StagedAsync())[failed.DimensionRunId]);
+        await failed.AddKeysAsync([new("held", 1)], CancellationToken.None);
         await failed.DiscardAsync(CancellationToken.None);
         await failed.DisposeAsync();
         Assert.True(failed.Discarded);
         Assert.Empty(await StagedAsync());
 
-        // A build written whole from memory stages its rows and deletes them once written.
+        // A build written whole from memory stages its rows and drops them once written.
         var (dimension, run) = await ledger.StartDimensionRunAsync(Declaration(), Guid.NewGuid(), "tests", _clock.GetUtcNow().UtcDateTime);
         var written = await ledger.WriteDimensionAsync(new DimensionWrite
         {
@@ -194,7 +252,7 @@ public sealed class DimensionStageTests : IDisposable
     [Theory]
     [InlineData(true, 1)]
     [InlineData(false, 49)]
-    public async Task What_a_build_whose_process_stopped_left_is_deleted_by_the_next_build_of_its_dimension(bool closed, int hoursLater)
+    public async Task What_a_build_whose_process_stopped_left_is_dropped_by_the_next_build_of_its_dimension(bool closed, int hoursLater)
     {
         var ledger = await LedgerAsync();
         var stopped = await StageAsync(ledger);
@@ -242,7 +300,7 @@ public sealed class DimensionStageTests : IDisposable
         await stopped.DisposeAsync();
         await ledger.CloseDimensionRunAsync(stopped.DimensionRunId, DimensionRunStatus.Failed, new DimensionReadCounts(), "the worker stopped", _clock.GetUtcNow().UtcDateTime);
 
-        // A build writing the dimension holds its write lock: the next build's staging starts at once, deleting nothing.
+        // A build writing the dimension holds its write lock: the next build's staging starts at once, dropping nothing.
         await using (var writing = new SqlConnection(_db.ConnectionString))
         {
             await writing.OpenAsync();
@@ -269,7 +327,7 @@ public sealed class DimensionStageTests : IDisposable
     }
 
     [Fact]
-    public async Task A_write_whose_staging_a_later_build_deleted_is_refused_and_writes_nothing()
+    public async Task A_write_whose_staging_a_later_build_dropped_is_refused_and_writes_nothing()
     {
         var ledger = await LedgerAsync();
         await using var slow = await StageAsync(ledger);
@@ -284,12 +342,49 @@ public sealed class DimensionStageTests : IDisposable
 
         var refused = await Assert.ThrowsAsync<DeliveryException>(() => ledger.WriteDimensionAsync(slow, Write(_clock.GetUtcNow().UtcDateTime)));
 
-        Assert.Equal(
-            string.Create(CultureInfo.InvariantCulture, $"The staging of dimension build {slow.DimensionRunId} holds 0 of the 3 key(s) and 0 of the 3 value(s) it staged: another build of the dimension deleted it, taking this build, running for more than 48 hours, for one its process left. Nothing was written; build the dimension again."),
-            refused.Message);
+        Assert.Equal(Gone(slow), refused.Message);
         Assert.Empty(await ledger.ListDimensionMembersAsync(slow.DimensionId, new DimensionMemberQuery(null, true, null, 10)));
         var run = Assert.Single(await ledger.ListDimensionRunsAsync(slow.DimensionId, 10), r => r.DimensionRunId == slow.DimensionRunId);
         Assert.Equal(DimensionRunStatus.Running, run.Status);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task A_build_whose_staging_was_dropped_under_it_fails_saying_so_and_ends_without_another_error(bool removed)
+    {
+        var ledger = await LedgerAsync();
+        await using var slow = await StageAsync(ledger);
+        await StageValuesAsync(slow, 3);
+
+        // A later build takes it for one its process left, or the dimension is removed while it runs.
+        if (removed)
+        {
+            await ledger.RemoveDimensionAsync(slow.DimensionId);
+        }
+        else
+        {
+            _clock.Advance(DimensionStage.AbandonedAfter + TimeSpan.FromHours(1));
+            await using var later = await StageAsync(ledger);
+            await later.DiscardAsync(CancellationToken.None);
+        }
+
+        // Staging more copies into a table that is gone, as does reading the keys back.
+        await slow.AddKeysAsync([new("more", 1)], CancellationToken.None);
+        var copy = await Assert.ThrowsAsync<DeliveryException>(() => slow.FlushAsync(CancellationToken.None));
+        Assert.Equal(Gone(slow), copy.Message);
+        var read = await Assert.ThrowsAsync<DeliveryException>(async () =>
+        {
+            await foreach (var _ in slow.KeysAsync(10, CancellationToken.None))
+            {
+            }
+        });
+        Assert.Equal(Gone(slow), read.Message);
+
+        // The build ends as any other does, its staging dropped with nothing left to drop.
+        await slow.DiscardAsync(CancellationToken.None);
+        Assert.True(slow.Discarded);
+        Assert.False((await StagedAsync()).ContainsKey(slow.DimensionRunId));
     }
 
     [Fact]
