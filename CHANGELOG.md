@@ -237,6 +237,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   ([The OSDU menu](osdu/docs/reference/concepts/gui.md#the-osdu-menu)).
 
 ### Changed
+- The Schedules page marks what a schedule runs its flows with by an icon, tinted when it gives an operation or values,
+  with the values on hover and a click opening what each flow is given, so a schedule giving a list no longer widens the
+  table into a sideways scroll ([The GUI](sqlflow/docs/reference/concepts/run-inputs.md#the-gui)).
 - An incremental load of a dimension that finds more than 250,000 records changed, or more than 250,000 keys to read
   again, loads in full, which reads a range at a time
   ([Full and incremental loads](osdu/docs/reference/flow/dimension-incremental.md)). A running dimension build stages
