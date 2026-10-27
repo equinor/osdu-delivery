@@ -8,6 +8,7 @@ import { DataTable, type Column } from "@/components/DataTable";
 import { EmptyState } from "@/components/EmptyState";
 import { RelativeTime } from "@/components/RelativeTime";
 import { TruncatedText } from "@/components/TruncatedText";
+import { parseUtc } from "@/lib/time";
 import { cn } from "@/lib/utils";
 import { deliveryApi, type DeliveryAssertionMatrix, type DeliveryAssertionRun } from "../../../api/delivery";
 import { useActivePartition } from "../activePartition";
@@ -131,7 +132,7 @@ export function AssertionHistoryPanel({ pipelineId }: { pipelineId: string }) {
                         </button>
                       </TooltipTrigger>
                       <TooltipContent>
-                        {`#${run.assertionRunId}, ${visual.label}, ${format(new Date(run.startedUtc), "yyyy-MM-dd HH:mm")}, ${selectionText(run.selection)}`}
+                        {`#${run.assertionRunId}, ${visual.label}, ${format(parseUtc(run.startedUtc), "yyyy-MM-dd HH:mm")}, ${selectionText(run.selection)}`}
                       </TooltipContent>
                     </Tooltip>
                   </th>
@@ -194,7 +195,7 @@ const runColumns: Column<DeliveryAssertionRun>[] = [
     align: "right",
     render: (row) => (
       <span className="font-mono tabular-nums">
-        {row.completedUtc === null ? "-" : duration(new Date(row.completedUtc).getTime() - new Date(row.startedUtc).getTime())}
+        {row.completedUtc === null ? "-" : duration(parseUtc(row.completedUtc).getTime() - parseUtc(row.startedUtc).getTime())}
       </span>
     ),
   },

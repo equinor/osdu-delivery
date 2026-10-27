@@ -12,6 +12,7 @@ import { IdChip } from "@/components/IdChip";
 import { Page } from "@/components/Page";
 import { PageHeader } from "@/components/PageHeader";
 import { useTabTitle } from "@/layout/workbench/TabsContext";
+import { parseUtc } from "@/lib/time";
 import { cn } from "@/lib/utils";
 import { deliveryApi, type DeliveryAssertionRun, type DeliveryAssertionRunDetail, type DeliveryTestResult, type TestOutcome } from "../../../api/delivery";
 import { KindText } from "../KindText";
@@ -144,8 +145,8 @@ function Subtitle({ detail }: { detail: DeliveryAssertionRunDetail }) {
         ? <Link to={`/pipelines/${detail.pipelineId}?tab=tests`} className="font-mono text-foreground hover:underline">{run.flowName}</Link>
         : <span className="font-mono">{run.flowName}</span>}
       {run.partition !== null && <span>in <span className="font-mono">{run.partition}</span></span>}
-      <span>{format(new Date(run.startedUtc), "yyyy-MM-dd HH:mm:ss")}</span>
-      {run.completedUtc !== null && <span>took {duration(new Date(run.completedUtc).getTime() - new Date(run.startedUtc).getTime())}</span>}
+      <span>{format(parseUtc(run.startedUtc), "yyyy-MM-dd HH:mm:ss")}</span>
+      {run.completedUtc !== null && <span>took {duration(parseUtc(run.completedUtc).getTime() - parseUtc(run.startedUtc).getTime())}</span>}
       <span>by {run.actor}</span>
       <span>ran {selectionText(run.selection)}</span>
     </span>

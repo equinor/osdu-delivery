@@ -1,3 +1,4 @@
+import { parseUtc } from "@/lib/time";
 import type { DeliveryAssertionFlow, DeliveryAssertionTest } from "../../../api/delivery";
 import { counted, standingOf, type TestStanding } from "./assertionFormat";
 
@@ -219,7 +220,7 @@ export interface BoardEntry {
 }
 
 function lastRunTime(flow: DeliveryAssertionFlow): number {
-  return flow.lastRun === null ? Number.NEGATIVE_INFINITY : Date.parse(flow.lastRun.startedUtc);
+  return flow.lastRun === null ? Number.NEGATIVE_INFINITY : parseUtc(flow.lastRun.startedUtc).getTime();
 }
 
 /**

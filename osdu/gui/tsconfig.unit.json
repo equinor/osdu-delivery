@@ -5,6 +5,7 @@
     "lib": ["ES2023", "DOM"],
     "skipLibCheck": true,
     "outDir": ".tsbuild/unit",
+    "rootDir": "../..",
     "emitDeclarationOnly": true,
     "module": "ESNext",
     "moduleResolution": "bundler",
@@ -21,6 +22,8 @@
     "src/features/delivery/osduRecordModel.ts",
     "src/features/delivery/inventories/duplicates/duplicateDocument.ts",
     "src/features/delivery/orphanedLedgers.ts",
-    "src/features/delivery/firstRecords.ts"
+    "src/features/delivery/firstRecords.ts",
+    "src/features/delivery/utcInstant.ts",
+    "../../sqlflow/gui/src/lib/time.ts"
   ]
 }

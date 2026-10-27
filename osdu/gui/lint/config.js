@@ -19,6 +19,21 @@ export default defineConfig([
       ecmaVersion: 2022,
       globals: globals.browser,
     },
+    rules: {
+      // The API's timestamps are UTC, and one the ledger read back comes without a zone, which Date.parse and new Date read
+      // as the browser's local time: east of UTC, a lease its worker still renewed read as run out. parseUtc reads it as UTC.
+      "no-restricted-syntax": [
+        "error",
+        {
+          selector: "CallExpression[callee.object.name='Date'][callee.property.name='parse']",
+          message: "Read a UTC timestamp with parseUtc from @/lib/time: Date.parse reads one without a zone as local time.",
+        },
+        {
+          selector: "NewExpression[callee.name='Date'][arguments.0.property.name=/Utc$/], NewExpression[callee.name='Date'][arguments.0.name=/Utc$/]",
+          message: "Read a UTC timestamp with parseUtc from @/lib/time: new Date reads one without a zone as local time.",
+        },
+      ],
+    },
   },
   {
     // The e2e suite, the unit tests and the tool configs, this one included, run in Node.

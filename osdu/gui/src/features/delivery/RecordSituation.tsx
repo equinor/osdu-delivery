@@ -12,6 +12,7 @@ import type { RemovedKey } from "../../api/removals";
 import { removalWhy } from "./removals/removalFormat";
 import { shortId } from "./idTail";
 import { stranded } from "./strandedRecord";
+import { hasPassed } from "./utcInstant";
 
 type Tone = "destructive" | "warning" | "info" | "muted";
 
@@ -49,12 +50,11 @@ export function RecordLink({ link, testId }: { link: DeliveryRecordLink; testId?
  * render, so a render is the same whenever it happens.
  */
 function useHasPassed(instantUtc: string | null): boolean {
-  const at = instantUtc === null ? Number.NaN : Date.parse(instantUtc);
   const subscribe = useCallback((onChange: () => void) => {
     const timer = window.setInterval(onChange, 15_000);
     return () => window.clearInterval(timer);
   }, []);
-  return useSyncExternalStore(subscribe, () => Number.isFinite(at) && Date.now() >= at);
+  return useSyncExternalStore(subscribe, () => hasPassed(instantUtc, Date.now()));
 }
 
 /**
@@ -279,7 +279,7 @@ export function RecordSituation({ record, waitsOn, waitedOnBy, removedKey, onLif
               <TruncatedText text={record.leaseOwner ?? "a worker"} mono maxWidth={220} />
               {" held ran out "}
               <RelativeTime value={record.leaseExpiresUtc} />
-              {": the worker stopped mid-delivery. The flow's next deliver run waits it out and recovers the record."}
+              {": the worker stopped mid-delivery. The flow's next deliver run recovers the record and sends it."}
             </Line>
           )
           : (

@@ -453,6 +453,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   says ([Upgrading an estate](osdu/docs/reference/concepts/templates.md#upgrading-an-estate-that-saved-templates-in-the-database)).
 
 ### Fixed
+- East of UTC, a record's page said a lease its worker still renewed had run out, at a time still to come, and west of
+  UTC it showed a stopped worker as still delivering; an assertion run's, a retrieval's and a release's times were off by
+  the same offset. The GUI read the UTC times the control plane sends without a zone as local time, and now reads them
+  as UTC ([Records are stuck in delivering](osdu/docs/reference/guides/operations-runbook.md#records-are-stuck-in-delivering)).
 - Builds of two dimensions running at once could deadlock, failing one of them as the victim, or wait for each other:
   SQL Server locked the pages where one dimension's rows meet the next, and a check before each write
   read every dimension's row. Each build now locks only its own rows

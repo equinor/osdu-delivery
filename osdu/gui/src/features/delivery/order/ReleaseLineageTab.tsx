@@ -11,6 +11,7 @@ import { ExplainMark, ExplainTip } from "@/components/ExplainTip";
 import { FilterCombobox } from "@/components/FilterCombobox";
 import { RelativeTime } from "@/components/RelativeTime";
 import { useLocalStorageState } from "@/hooks/useLocalStorageState";
+import { parseUtc } from "@/lib/time";
 import { cn } from "@/lib/utils";
 import { deliveryApi } from "../../../api/delivery";
 import { orderApi, type OrderDirection, type OrderEntity, type OrderGraph as OrderGraphData, type OrderGraphEdge } from "../../../api/order";
@@ -310,7 +311,7 @@ export function ReleaseLineageTab({ canBuild }: { canBuild: boolean }) {
                   <ExplainTip
                     title={`Release ${info.release}`}
                     testId="order-release-info"
-                    text={`Commit ${info.commit}. ${info.kinds} kinds, ${info.relationships} properties referring to other records. Built ${new Date(info.builtUtc).toLocaleString()} by ${info.builtBy}.`
+                    text={`Commit ${info.commit}. ${info.kinds} kinds, ${info.relationships} properties referring to other records. Built ${parseUtc(info.builtUtc).toLocaleString()} by ${info.builtBy}.`
                       + (info.failures.length === 0 ? "" : `\n\nNot read:\n${info.failures.map((f) => `${f.kind}: ${f.reason}`).join("\n")}`)}
                   >
                     <span className={cn("inline-flex cursor-default items-center gap-1 text-muted-foreground")}>

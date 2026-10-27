@@ -9,7 +9,7 @@ import { KpiCard } from "@/components/KpiCard";
 import { RelativeTime } from "@/components/RelativeTime";
 import { RunDuration } from "@/components/RunDuration";
 import { TruncatedText } from "@/components/TruncatedText";
-import { formatBytes } from "@/lib/time";
+import { formatBytes, parseUtc } from "@/lib/time";
 
 function RetrievalStatusBadge({ status }: { status: DeliveryRetrieval["status"] }) {
   const variant = status === "done" ? "default" : status === "failed" ? "destructive" : status === "cancelled" ? "secondary" : "outline";
@@ -75,13 +75,13 @@ export function RetrievalFlowPanel({ pipelineId }: { pipelineId: string }) {
         <KpiCard
           label="Last run"
           value={latest ? latest.status : "none"}
-          caption={latest ? new Date(latest.startedUtc).toLocaleString() : "no run yet"}
+          caption={latest ? parseUtc(latest.startedUtc).toLocaleString() : "no run yet"}
           testId="retrieval-kpi-last"
         />
         <KpiCard label="Records" value={written} caption="written by the completed runs listed here" testId="retrieval-kpi-records" />
         <KpiCard
           label="Watermark"
-          value={lastDone?.windowTo ? new Date(lastDone.windowTo).toLocaleString() : "none"}
+          value={lastDone?.windowTo ? parseUtc(lastDone.windowTo).toLocaleString() : "none"}
           caption={lastDone?.windowField ? `the next run continues from here on ${lastDone.windowField}` : "the flow is not incremental"}
           testId="retrieval-kpi-watermark"
         />
