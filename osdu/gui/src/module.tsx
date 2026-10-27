@@ -1,6 +1,6 @@
 import {
-  ClipboardList, CloudDownload, DatabaseZap, FileCode2, Layers, LayoutTemplate, ListChecks, ListX, Network, PackageCheck, PackageSearch,
-  ScrollText, Shapes, Telescope, TextSearch, Unlink,
+  Activity, Blocks, BookCheck, ClipboardList, CloudDownload, Compass, DatabaseZap, FileCode2, Layers, LayoutTemplate, ListChecks, ListX,
+  Network, PackageCheck, PackageSearch, ScrollText, Settings, Shapes, ShieldCheck, Telescope, TextSearch, Unlink,
 } from "lucide-react";
 import type { RunSummary } from "@/api/types";
 import type { Column } from "@/components/DataTable";
@@ -125,9 +125,6 @@ const census: GuiModule["census"] = [
   { documentType: "mapping", load: () => import("../../docs/census/keys.mapping.json?raw").then((file) => file.default) },
   { documentType: "dictionary", load: () => import("../../docs/census/keys.dictionary.json?raw").then((file) => file.default) },
 ];
-
-/** The module's own navigation group: one home for every surface this product adds. */
-const OSDU_GROUP = "osdu";
 
 /**
  * SQLFlow's pipeline tabs that describe its own flows' data (view columns, processed files), not these kinds, and the
@@ -392,49 +389,77 @@ export const osduDeliveryModule: GuiModule = {
     { path: "/delivery/explorer", component: ExplorerPage, requiredScope: "operate" },
     { path: "/delivery/search-terms", component: SearchTermsPage },
   ],
-  // Everything this product adds is one group of its own, rather than entries threaded through the platform's generic
-  // ones, so what is OSDU and what is the platform stays plain. It sits straight after Workspace, where the flows of every
-  // kind are defined and scheduled, these included: no flow is configured here. Its entries are of four sorts, a section
-  // each, in the order an operator reaches for them: the ledger (what was delivered, one record, who did what); what OSDU
-  // holds, read live by the explorer or by the assertion, inventory and dimension flows; what a delivered document is
-  // built from (the mapping, the template it pins, the cache it reads); and the setup kept here rather than in a flow.
-  // The mapping builder is reached from Mappings, which owns its path.
-  navGroups: [
-    {
-      id: OSDU_GROUP,
-      label: "OSDU",
-      icon: Layers,
-      after: "workspace",
-      sections: [
-        { id: "ledger", label: "Ledger" },
-        { id: "in-osdu", label: "In OSDU" },
-        { id: "build", label: "Build" },
-        { id: "setup", label: "Setup" },
-      ],
-    },
-  ],
+  // The whole menu, SQLFlow's pages and this product's side by side, grouped by what a person does there rather than by
+  // who added the page (decision 0034). Operate is the day's work: asking, the runs, and the health of what runs them.
+  // Ledger is what was delivered, flow by flow and record by record, and who did what. OSDU is what OSDU holds, read
+  // live, the checks of it, and its partitions. Build is what is delivered, how and from where, all of it kept in the
+  // repositories: the flows, what a delivered record is built from, and the sources they read. Explore is the data the
+  // flows read and write and how it connects. Admin is who and what may act, and Settings is the person's own. A group of
+  // more than one sort of page lists each sort under a section. The mapping builder is reached from Mappings, which owns
+  // its path.
+  menu: {
+    groups: [
+      {
+        id: "operate",
+        label: "Operate",
+        icon: Activity,
+        entries: ["/", "/chat", "/runs", "/schedules/timeline"],
+        sections: [{ id: "health", label: "Health", entries: ["/datastreams", "/insights", "/nodes", "/settings/maintenance"] }],
+      },
+      {
+        id: "ledger",
+        label: "Ledger",
+        icon: BookCheck,
+        entries: ["/delivery", "/delivery/records", "/delivery/removals", "/delivery/activity", "/delivery/ledgers/orphaned"],
+      },
+      {
+        id: "osdu",
+        label: "OSDU",
+        icon: Layers,
+        entries: [
+          "/delivery/explorer",
+          "/delivery/search-terms",
+          "/delivery/assertions",
+          "/delivery/inventories",
+          "/delivery/dimensions",
+          "/delivery/partitions",
+        ],
+      },
+      {
+        id: "build",
+        label: "Build",
+        icon: Blocks,
+        sections: [
+          { id: "flows", label: "Flows", entries: ["/repos", "/pipelines", "/schedules"] },
+          { id: "delivery", label: "Delivery", entries: ["/delivery/documents", "/delivery/templates", "/delivery/cache", "/delivery/order"] },
+          { id: "sources", label: "Sources", entries: ["/datasources", "/integrations", "/discover", "/key-detection"] },
+        ],
+      },
+      { id: "explore", label: "Explore", icon: Compass, entries: ["/catalog", "/lineage", "/subscribers", "/schema-changes", "/search"] },
+      { id: "admin", label: "Admin", icon: ShieldCheck, requiresScope: "admin", entries: ["/users", "/external-triggers", "/semantic-layer"] },
+      { id: "settings", label: "Settings", icon: Settings, bottom: true, entries: ["/settings/tokens", "/settings/notifications"] },
+    ],
+  },
   navItems: [
-    { group: OSDU_GROUP, section: "ledger", label: "Delivery", to: "/delivery", icon: PackageCheck, testId: "nav-delivery",
+    { label: "Delivery", to: "/delivery", icon: PackageCheck, testId: "nav-delivery",
         description: "Every delivery flow as a card with its counts in the picked partition: delivered, pending, held and failed. Open a card for that flow, or look up a record by its key." },
-    { group: OSDU_GROUP, section: "ledger", label: "Records", to: "/delivery/records", icon: PackageSearch, testId: "nav-delivery-records",
+    { label: "Records", to: "/delivery/records", icon: PackageSearch, testId: "nav-delivery-records",
         description: "The records the ledger took in or sent, newest first. Find one by well name, key, OSDU id or source file across every flow; open it for its timeline, render and OSDU copy." },
-    { group: OSDU_GROUP, section: "ledger", label: "Removals", to: "/delivery/removals", icon: ListX, testId: "nav-delivery-removals",
+    { label: "Removals", to: "/delivery/removals", icon: ListX, testId: "nav-delivery-removals",
         description: "Every removal of the partition: the ledger it writes to, its deletions by state and its last run. Open one to see its deletions, approve what its guard held, or run it." },
-    { group: OSDU_GROUP, section: "ledger", label: "Audit trail", to: "/delivery/activity", icon: ScrollText, testId: "nav-delivery-activity",
+    { label: "Audit trail", to: "/delivery/activity", icon: ScrollText, testId: "nav-delivery-activity",
         description: "Every run and intervention on the delivery flows, newest first: who did what, when, and how it ended. Filter by actor, flow, action or outcome; open one for its log." },
-    { group: OSDU_GROUP, section: "ledger", label: "Orphaned ledgers", to: "/delivery/ledgers/orphaned", icon: Unlink, testId: "nav-delivery-orphaned-ledgers",
+    { label: "Orphaned ledgers", to: "/delivery/ledgers/orphaned", icon: Unlink, testId: "nav-delivery-orphaned-ledgers",
         description: "Ledgers whose flow no repository declares any more but which still keep records and history; see what each left behind and hand it to the flow that replaced it." },
-    { group: OSDU_GROUP, section: "in-osdu", label: "Explorer", to: "/delivery/explorer", icon: Telescope, testId: "nav-delivery-explorer",
+    { label: "Explorer", to: "/delivery/explorer", icon: Telescope, testId: "nav-delivery-explorer",
         description: "What OSDU holds in the picked partition, read live: browse by type, search by id, text or query, and open a record with its versions and links. Nothing here is the ledger's." },
-    { group: OSDU_GROUP, section: "in-osdu", label: "Assertions", to: "/delivery/assertions", icon: ListChecks, testId: "nav-delivery-assertions",
+    { label: "Assertions", to: "/delivery/assertions", icon: ListChecks, testId: "nav-delivery-assertions",
         description: "The assertion flows' checks of what OSDU holds after delivery, what needs a look first; filter by outcome, type or tag, run all or the ones picked, and open their reports." },
-    { group: OSDU_GROUP, section: "in-osdu", label: "Inventories", to: "/delivery/inventories", icon: ClipboardList, testId: "nav-delivery-inventories",
+    { label: "Inventories", to: "/delivery/inventories", icon: ClipboardList, testId: "nav-delivery-inventories",
         description: "Every id an OSDU kind holds, set against the partition's ledgers, each with a finding such as orphan or stale. Open one to filter its ids, find duplicates, export or remove them." },
-    { group: OSDU_GROUP, section: "in-osdu", label: "Dimensions", to: "/delivery/dimensions", icon: Shapes, testId: "nav-delivery-dimensions",
+    { label: "Dimensions", to: "/delivery/dimensions", icon: Shapes, testId: "nav-delivery-dimensions",
         description: "The distinct keys the dimension flows find in OSDU records, each with the readable value it stands for and the search that finds its records; open one, or build a search." },
     {
-      group: OSDU_GROUP,
-      section: "build",
       label: "Mappings",
       to: "/delivery/documents",
       icon: FileCode2,
@@ -442,15 +467,15 @@ export const osduDeliveryModule: GuiModule = {
       description: "The mappings that turn source rows into OSDU records, as the last sync found them. Open one for its properties, YAML and record shape, or write a new one in the builder.",
       owns: ["/delivery/mappings/build"],
     },
-    { group: OSDU_GROUP, section: "build", label: "Templates", to: "/delivery/templates", icon: LayoutTemplate, testId: "nav-delivery-templates",
+    { label: "Templates", to: "/delivery/templates", icon: LayoutTemplate, testId: "nav-delivery-templates",
         description: "The record schemas the repositories keep in their template folders, which the mappings fill; Browse OSDU reads the published schemas and downloads a kind as a template." },
-    { group: OSDU_GROUP, section: "build", label: "Cache", to: "/delivery/cache", icon: DatabaseZap, testId: "nav-delivery-cache",
+    { label: "Cache", to: "/delivery/cache", icon: DatabaseZap, testId: "nav-delivery-cache",
         description: "The partition's cache of reference and master data that delivered records are built from: browse its records and versions, and approve or reject a change before records carry it." },
-    { group: OSDU_GROUP, section: "build", label: "Order", to: "/delivery/order", icon: Network, testId: "nav-delivery-order",
+    { label: "Order", to: "/delivery/order", icon: Network, testId: "nav-delivery-order",
         description: "The order records reach OSDU in, from what each kind refers to: the delivery schedules drawn against it, a partition's types level by level, and OSDU's own lineage by release." },
-    { group: OSDU_GROUP, section: "setup", label: "Partitions", to: "/delivery/partitions", icon: Layers, testId: "nav-delivery-partitions",
+    { label: "Partitions", to: "/delivery/partitions", icon: Layers, testId: "nav-delivery-partitions",
         description: "The OSDU partitions the flows run in, as the control plane's configuration names them, each with its cache and the flows serving it; an admin can describe or remove the others." },
-    { group: OSDU_GROUP, section: "setup", label: "Search terms", to: "/delivery/search-terms", icon: TextSearch, testId: "nav-delivery-search-terms",
+    { label: "Search terms", to: "/delivery/search-terms", icon: TextSearch, testId: "nav-delivery-search-terms",
         description: "The source columns the mappings read, which the Explorer searches by: rename one to what people call it, pick the route it searches through, add a note, or delete and restore it." },
   ],
   detailTitles: [

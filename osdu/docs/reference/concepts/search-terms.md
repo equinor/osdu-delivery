@@ -60,7 +60,7 @@ term is the source's own; the control plane carries it to what the record holds 
 OSDU's search service, as it asks any condition. Nothing is searched in the ledger or the cache: the mappings and the
 cache flows' declarations (metadata, never a cached value) only write the query, and what it finds is what OSDU holds.
 
-The **Search terms** page (`/delivery/search-terms`, under Setup in the OSDU menu) lists the terms of one entity type
+The **Search terms** page (`/delivery/search-terms`, beside the Explorer in the menu's OSDU group) lists the terms of one entity type
 and refines them: renamed to what the people searching call them, searched through another of their routes, given a
 note, or deleted from the explorer and restored.
 

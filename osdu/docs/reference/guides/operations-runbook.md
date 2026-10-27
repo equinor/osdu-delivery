@@ -240,7 +240,7 @@ stayed in the old one with the OSDU ids they claimed. Nothing was sent, and noth
   ledger to it once it committed, and says so in its result (`Partition '<partition>': moved <n> record(s) of '<old>' to
   '<new>', ...`, and a `ledger-move` entry by `service:repository-sync` in the audit trail).
 - Otherwise (the flow was also changed, its file was deleted and added back in separate syncs, or the rename was synced
-  before documents' hashes were recorded), open **Orphaned ledgers** under the OSDU menu's Ledger section, find the old
+  before documents' hashes were recorded), open **Orphaned ledgers** in the menu's Ledger group, find the old
   name, press **Take over** and pick the renamed flow, which is suggested when it pins the same mapping. Each ledger moves
   at once, as you.
 

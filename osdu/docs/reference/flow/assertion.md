@@ -699,7 +699,7 @@ its test's definition hash, so a result that answers an earlier definition of th
 
 Where to read it:
 
-- The GUI: **OSDU**, **In OSDU**, **Assertions** is the board of every assertion flow in the partition, where each test
+- The GUI: **OSDU**, **Assertions** is the board of every assertion flow in the partition, where each test
   is an assertion and each of its assertions a check. An assertion flow's pipeline has an **Assertions** tab (its
   board), a **History** tab (its assertions against its runs) and a **Reports** tab (its runs); a report page runs the
   assertions not passing again. A report page shows "The run stopped" only for a run that

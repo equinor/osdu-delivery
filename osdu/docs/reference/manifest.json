@@ -1676,11 +1676,11 @@
       "path": "concepts/gui.md",
       "title": "The OSDU pages of the workbench: what each page and tab shows, and its actions",
       "type": "concept",
-      "summary": "The OSDU menu the SQLFlow workbench gains (Ledger, In OSDU, Build, Setup), each page's tabs and buttons, the flow and run page additions, and who may use them.",
+      "summary": "The pages OSDU Delivery adds to the workbench (Ledger, OSDU, Build), their tabs and buttons, the flow and run page additions, and who may use them.",
       "keywords": [
         "gui",
         "workbench",
-        "osdu menu",
+        "osdu pages",
         "delivery page",
         "records page",
         "export records to excel",
@@ -1704,6 +1704,7 @@
         "delivery-concept-ledger",
         "delivery-concept-removal-and-reversal",
         "delivery-concept-partition-cache",
+        "delivery-concept-menu",
         "delivery-guide-operations-runbook"
       ],
       "sourceRefs": [
@@ -1883,6 +1884,47 @@
         "sqlflow/src/SqlFlow.ControlPlane/Api/LineageEndpoints.cs",
         "sqlflow/src/SqlFlow.Lineage/Graph/LineageGraphBuilder.cs",
         "sqlflow/src/SqlFlow.Lineage/Collection/FlowSetCollector.cs"
+      ]
+    },
+    {
+      "id": "delivery-concept-menu",
+      "corpus": "reference",
+      "path": "concepts/menu.md",
+      "title": "The menu: where each page of OSDU Delivery sits in the side bar, the activity bar and the command palette",
+      "type": "concept",
+      "summary": "The workbench's menu as OSDU Delivery lays it out: its groups and sections, every page under them, what each group is for, and how the menu folds.",
+      "keywords": [
+        "menu",
+        "side bar",
+        "sidebar",
+        "activity bar",
+        "navigation",
+        "command palette",
+        "where is a page",
+        "find a page",
+        "menu groups",
+        "operate",
+        "health",
+        "ledger",
+        "osdu group",
+        "build",
+        "flows",
+        "sources",
+        "explore",
+        "admin",
+        "settings"
+      ],
+      "related": [
+        "delivery-concept-gui",
+        "delivery-wiki-0034-one-menu-by-task"
+      ],
+      "sourceRefs": [
+        "osdu/gui/src/module.tsx",
+        "sqlflow/gui/src/layout/menuLayout.ts",
+        "sqlflow/gui/src/layout/nav.ts",
+        "sqlflow/gui/src/layout/workbench/SideBar.tsx",
+        "sqlflow/gui/src/layout/workbench/ActivityBar.tsx",
+        "sqlflow/gui/src/layout/workbench/CommandPalette.tsx"
       ]
     },
     {
@@ -8659,6 +8701,32 @@
         "osdu/tests/SqlFlow.Delivery.Tests/DimensionBuildScaleTests.cs",
         "osdu/tests/SqlFlow.Delivery.Tests/DimensionRowLockTests.cs",
         "osdu/tests/SqlFlow.Delivery.Tests/DimensionStageTests.cs"
+      ]
+    },
+    {
+      "id": "delivery-wiki-0034-one-menu-by-task",
+      "corpus": "wiki",
+      "path": "decisions/0034-one-menu-by-task.md",
+      "title": "Decision 0034: the module lays out the whole menu, SQLFlow's pages and its own, by what a person does there",
+      "type": "decision",
+      "summary": "Why OSDU Delivery's menu is one layout of every page grouped by task, not SQLFlow's groups plus an OSDU group, and why every entry must be placed.",
+      "keywords": [
+        "menu",
+        "side bar",
+        "activity bar",
+        "navigation groups",
+        "menu layout",
+        "subscribers",
+        "osdu group"
+      ],
+      "related": [],
+      "sourceRefs": [
+        "osdu/gui/src/module.tsx",
+        "osdu/gui/e2e/02-navigation.spec.ts",
+        "sqlflow/gui/src/layout/menuLayout.ts",
+        "sqlflow/gui/src/layout/nav.ts",
+        "sqlflow/gui/src/modules/registry.ts",
+        "sqlflow/gui/unit/menuLayout.test.ts"
       ]
     },
     {

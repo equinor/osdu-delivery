@@ -51,7 +51,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   followed up, and is kept on the Assistant page
   ([Explain](sqlflow/docs/reference/guides/chat-assistant.md#explain)).
 
-- Settings > Maintenance shows what the whole database holds, the `osdu` schema included: every table in areas a person
+- Maintenance (Operate > Health) shows what the whole database holds, the `osdu` schema included: every table in areas a person
   recognises, each marked keep, safe to remove or optional, with its size, how its data leaves and what removing it
   costs. **Clean up** is the safe purge: what is safe to remove starts ticked, superseded delivery attempts, finished
   activities' logs and superseded assertion runs are optional and never ticked for you, each area shows what would go at
@@ -212,7 +212,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   repository delivering the entity types its records refer to, as OSDU's schemas declare them, however its mapping writes
   the reference (a column, a literal, the cache or a search), and each repository sync warns where its waves cannot keep
   that order ([The OSDU order](osdu/docs/reference/concepts/osdu-order.md)).
-- **The Order page.** Under OSDU, Build: which schedules run best before which, with how their next fires fall and the
+- **The Order page.** Under Build, Delivery: which schedules run best before which, with how their next fires fall and the
   schedules that refer to each other in a circle; a partition's order level by level; and OSDU's lineage of any release
   of the OSDU data definitions, built on demand. The same is served under `/api/v1/delivery/order`
   ([The OSDU order](osdu/docs/reference/concepts/osdu-order.md#in-the-gui-and-the-api)).
@@ -231,15 +231,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   them, each tab counts its matching ids, the grid lists them with their values, and every matching orphan, stale or
   forgotten id can be removed at once, however many
   ([Selecting ids by what OSDU holds](osdu/docs/reference/flow/inventory-selections.md)).
-- **The OSDU menu's sections fold, and the menu starts folded.** A click on Ledger, In OSDU, Build or Setup in the side
-  bar folds its entries away or brings them back. A browser opening the workbench for the first time shows every group
-  and section folded to its name; from then on each starts as it was left
-  ([The OSDU menu](osdu/docs/reference/concepts/gui.md#the-osdu-menu)).
+- **The menu's sections fold, and the menu starts folded.** A click on a section's name in the side bar, such as Health
+  or Flows, folds its entries away or brings them back. A browser opening the workbench for the first time shows every
+  group and section folded to its name; from then on each starts as it was left
+  ([The menu](osdu/docs/reference/concepts/menu.md)).
 
 ### Changed
 - The Schedules page marks what a schedule runs its flows with by an icon, tinted when it gives an operation or values,
   with the values on hover and a click opening what each flow is given, so a schedule giving a list no longer widens the
   table into a sideways scroll ([The GUI](sqlflow/docs/reference/concepts/run-inputs.md#the-gui)).
+- **The menu is grouped by what you do there.** SQLFlow's pages and OSDU Delivery's sit side by side in Operate, Ledger,
+  OSDU, Build (Flows, Delivery, Sources), Explore, Admin and Settings, in place of Workspace, Tools and the OSDU group's
+  sections: Subscribers is under Explore, Maintenance under Operate's Health, Datasources and Integrations under Build's
+  Sources, and every page keeps its address ([The menu](osdu/docs/reference/concepts/menu.md)).
 - An incremental load of a dimension that finds more than 250,000 records changed, or more than 250,000 keys to read
   again, loads in full, which reads a range at a time
   ([Full and incremental loads](osdu/docs/reference/flow/dimension-incremental.md)). A running dimension build stages
@@ -319,11 +323,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   features, it shows the README's pitch in two lines and one sentence, a picture of the kinds of data it delivers
   (wells, logs, seismic, documents, production data and more) flowing into OSDU, the "powered by SQLFlow" lockup, and the
   sign-in form, in both themes ([The GUI](osdu/docs/reference/concepts/gui.md)).
-- **The side bar's menu is a tree.** OSDU and the platform's groups are branches, each OSDU section a branch under its
-  group and each entry a leaf under its section, every level indented under the one above with a guide line, and a
+- **The side bar's menu is a tree.** Each group is a branch, each section a branch under its group and each entry a
+  leaf under its section, every level indented under the one above with a guide line, and a
   group's and a section's name the same size as its entries. Tab enters the menu at the page shown, the arrow keys move
   through it and fold or unfold a branch, and Enter opens a page
-  ([The OSDU menu](osdu/docs/reference/concepts/gui.md#the-osdu-menu)).
+  ([The menu](osdu/docs/reference/concepts/menu.md)).
 - **The explorer reads a partition through the partition's own connection, and needs no flow.** It signs in with the
   platform and client the deployment names for the partition (`OSDU_URL`, `OSDU_TOKEN_URL`, `OSDU_SCOPE`,
   `OSDU_CLIENT_ID` and `OSDU_CLIENT_SECRET`, from `Osdu:Partitions:<id>:Properties` or the control plane's environment,
@@ -387,11 +391,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **The Tests page is the Assertions page.** The GUI calls each test of an assertion flow an assertion, as the flow
   type names them, and each of its assertions a check: the page, a flow's tab, the board, the sheet, the run dialog
   (whose operation reads **Check**) and the reports say so. Flow documents, the API and the CLI keep `tests:`,
-  `assert:` and the `test` operation ([The GUI](osdu/docs/reference/concepts/gui.md#in-osdu)).
+  `assert:` and the `test` operation ([The GUI](osdu/docs/reference/concepts/gui.md#osdu)).
 - **The board says what an assertion's document says now.** A disabled assertion shows its reason, one whose proof
   values are past their day shows that it needs new proof values, the Definition tab says where the schema comes from
   and how long the proof values hold, and a skipped result no longer reads as an error
-  ([The GUI](osdu/docs/reference/concepts/gui.md#in-osdu)).
+  ([The GUI](osdu/docs/reference/concepts/gui.md#osdu)).
 - **A local start runs its work in workers, as a deployment does.** `dev.bat` and `./dev.sh` start the control plane
   with managed workers: worker processes it starts for queued runs and lets leave when idle, so Spawn, Always on and the
   target act on the Nodes page here too. `dev.bat single` (`./dev.sh single`) is the one-process start that ran by
@@ -543,7 +547,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Shift+Tab leaves a tree.** In the catalog, a repository's folders, the AI context tables and a template's
   variables, Shift+Tab from a row sent focus straight back into the tree, so the keyboard could not leave it backwards;
   it now steps out, and the schema changes tree can be reached with Tab at all
-  ([The OSDU menu](osdu/docs/reference/concepts/gui.md#the-osdu-menu)).
+  ([The menu](osdu/docs/reference/concepts/menu.md)).
 - **Runs that finish together no longer deadlock in the catalog.** When a schedule's members ended at once, as a set
   of failing assertion flows does, each completion waited on the others and the control plane's log filled with failed
   commands and deadlock victims. Every read on a connection a catalog or ledger write had used also ran serializable,

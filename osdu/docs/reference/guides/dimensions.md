@@ -155,7 +155,7 @@ sqlflow dimensions keys   flows/welldb-welllog-05-dimensions.yaml --dimension We
 ```
 
 `values` lists each name with its records and the ids behind it; `keys` lists each wellbore id with the name read for it
-and the search filter that finds its logs. In the GUI, **OSDU**, **In OSDU**, **Dimensions** opens the same, and the
+and the search filter that finds its logs. In the GUI, **OSDU**, **Dimensions** opens the same, and the
 dimension's **Definition** tab draws how each column is read from the YAML.
 
 Two things to look for:

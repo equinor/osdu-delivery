@@ -216,6 +216,10 @@ other packages adopt the same contract.
   why label batches are sized by what the keys before them reached under one request budget, why a view's check is
   kept when nothing it reads changed and an incremental load writes only the rows it read again, why each build stages
   in heaps of its own that it drops, why a build locks only its own rows, and what was held back: nodes, batched statements.
+- [0034: the module lays out the whole menu, SQLFlow's pages and its own, by what a person does there](decisions/0034-one-menu-by-task.md) -
+  why the menu is one layout of every page in groups that each answer one question (Operate, Ledger, OSDU, Build,
+  Explore, Admin, Settings) rather than SQLFlow's groups plus an OSDU group, why a page left out fails at startup, and
+  why fixing SQLFlow's own groups, moving entries one by one, per-entry scopes and more groups were rejected.
 
 ## Coverage
 

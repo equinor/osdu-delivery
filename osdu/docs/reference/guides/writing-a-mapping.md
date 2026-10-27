@@ -107,7 +107,7 @@ it (a mapping, OSDU Delivery, or OSDU), the entity types it points to and its un
 
 Start from a scaffold rather than an empty file. There are two ways; the command line has no scaffold verb.
 
-**The mapping builder.** In the GUI, open **Mappings** under the OSDU menu's Build section and press **New mapping**
+**The mapping builder.** In the GUI, open **Mappings** under **Build**, **Delivery** and press **New mapping**
 (an existing mapping opens with **Open in builder**). Pick the partition in the title bar: the builder reads that
 partition's cache to prefill and check. Then, under Setup:
 

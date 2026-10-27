@@ -93,7 +93,7 @@ and the records that mention them are what OSDU answers at that moment. Delivery
 a search by a column of a source system ([search terms](search-terms.md)) is carried to what the records hold the way a
 delivery carries it, then asked of OSDU like any other. The explorer never reads a DDMS.
 
-It is the **Explorer** entry under **In OSDU** in the workbench's OSDU menu (`/delivery/explorer`), and it reads the
+It is the **Explorer** entry of the menu's **OSDU** group (`/delivery/explorer`, [the menu](menu.md)), and it reads the
 partition picked in the title bar.
 
 ## How it reaches OSDU

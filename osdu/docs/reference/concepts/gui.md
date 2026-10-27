@@ -2,11 +2,11 @@
 id: delivery-concept-gui
 title: "The OSDU pages of the workbench: what each page and tab shows, and its actions"
 type: concept
-summary: "The OSDU menu the SQLFlow workbench gains (Ledger, In OSDU, Build, Setup), each page's tabs and buttons, the flow and run page additions, and who may use them."
+summary: "The pages OSDU Delivery adds to the workbench (Ledger, OSDU, Build), their tabs and buttons, the flow and run page additions, and who may use them."
 keywords:
   - gui
   - workbench
-  - osdu menu
+  - osdu pages
   - delivery page
   - records page
   - export records to excel
@@ -29,6 +29,7 @@ related:
   - delivery-concept-ledger
   - delivery-concept-removal-and-reversal
   - delivery-concept-partition-cache
+  - delivery-concept-menu
   - delivery-guide-operations-runbook
 sourceRefs:
   - osdu/gui/src/module.tsx
@@ -100,20 +101,17 @@ scopes](../../../../sqlflow/docs/reference/concepts/authentication-and-identity.
 [assistant](../../../../sqlflow/docs/reference/guides/chat-assistant.md). This page covers what the module adds:
 
 - the product name, "OSDU Delivery, powered by SQLFlow", on the login page and the title bar;
-- an **OSDU** menu group of its own, straight after Workspace, with the pages below;
-- the side bar closed the first time the workbench opens, so it opens on the page with only the activity bar beside
-  it; a click on any activity bar icon opens the side bar, and from then on it starts as the person last left it in
-  their browser;
-- the side bar's menu folded the first time it opens, every group and section showing only its name; an activity bar
-  icon unfolds the group it names, and from then on each group and section starts as the person last left it in their
-  browser;
+- the whole menu, laid out by what a person does there, SQLFlow's pages and the ones below side by side, with the side
+  bar closed and the menu folded the first time the workbench opens ([the menu](menu.md));
 - a **Partition** picker in the title bar, which every OSDU page reads in;
 - tabs and header actions on the pipeline and run pages of the seven kinds it adds (delivery, retrieval, cache, assertion,
   dimension, inventory, removal), and their fields in the trigger dialog;
 - a **records** category in the workbench's search.
 
-No flow is configured in the OSDU group. Flows of every kind, these included, are defined, synced and scheduled in
-Workspace, and a flow's own page is reached through **Pipelines** like any other. On these kinds' pipeline pages,
+The pages it adds sit in three of the menu's groups, and the sections below follow them: **Ledger**, **OSDU**, and the
+**Delivery** section of **Build**. No flow is configured on them. Flows of every kind, these included, are written in
+their repository, synced and scheduled under **Build**, **Flows**, and a flow's own page is reached through
+**Pipelines** like any other. On these kinds' pipeline pages,
 SQLFlow's Transforms, Files and Definition tabs are hidden, and on their run pages its Files, Statements, Surrogate keys,
 Assertions and Health metrics tabs.
 
@@ -156,36 +154,6 @@ Under SQLFlow's headline counts, **Delivery** says what the delivery flows hold 
 it is delivered, a bar of the records by where they stand, and their counts (delivered, pending, held, failed, drifted,
 delivered in the last 24 hours), added up exactly as the [Delivery](#delivery) page adds them. **Find a record** looks a
 record up by any of its keys, and **Open Delivery** opens the page. The newest runs and the runs by state follow.
-
-## The OSDU menu
-
-| Section | Entry | Page |
-| --- | --- | --- |
-| Ledger | Delivery | `/delivery` |
-| | Records | `/delivery/records` |
-| | Removals | `/delivery/removals` |
-| | Audit trail | `/delivery/activity` |
-| | Orphaned ledgers | `/delivery/ledgers/orphaned` |
-| In OSDU | Explorer | `/delivery/explorer` |
-| | Assertions | `/delivery/assertions` |
-| | Inventories | `/delivery/inventories` |
-| | Dimensions | `/delivery/dimensions` |
-| Build | Mappings | `/delivery/documents` (and the Mapping builder, `/delivery/mappings/build`) |
-| | Templates | `/delivery/templates` |
-| | Cache | `/delivery/cache` |
-| | Order | `/delivery/order` |
-| Setup | Partitions | `/delivery/partitions` |
-| | Search terms | `/delivery/search-terms` |
-
-**Ledger** is what the delivery system sent and keeps; **In OSDU** is what OSDU holds, read live by the explorer or by
-the assertion, inventory and dimension flows; **Build** is what a delivered document is built from; **Setup** is what is
-kept in the GUI rather than in a flow. The side bar's menu is a tree, like the catalog's: **OSDU** is a branch beside
-SQLFlow's own groups, each section a branch under it and each entry a leaf under its section, every level indented
-under the one above with a guide line down its side. A click on a section's name folds its entries away or brings them
-back, as a click on **OSDU** does for the whole group, and the browser keeps each section as it was left. The menu is one
-stop for Tab: it lands on the page shown, the arrow keys move through it (left and right fold and unfold a branch), and
-Enter opens an entry's page. The command palette lists the same entries, headed `OSDU · Ledger`, `OSDU · In OSDU` and so
-on, whatever is folded.
 
 ## Ledger
 
@@ -440,9 +408,10 @@ last run, **Approve** for what a guard held, and **Open** to the Removals page).
 the keys removal flows found its source no longer holds, as the Removals page's grid shows them, with **Deliver again** for
 picked records, and the removal runs that wrote to its ledger.
 
-## In OSDU
+## OSDU
 
 - **Explorer**: what the partition holds, read live from OSDU. See [the explorer](explorer.md).
+- **Search terms**: the source columns the explorer searches by. See [search terms](search-terms.md).
 - **Assertions**: every assertion flow's assertions in the partition, one line per flow, what needs a look first. The
   GUI calls each entry of a flow's `tests:` an assertion, and each item of its `assert:` a check. A strip counts
   **Failing**, **Errored**, **Warned**, **Not run**, **Passing**, **Unfit** and **Changed**, each a filter; a search and
@@ -474,8 +443,20 @@ picked records, and the removal runs that wrote to its ledger.
   with **Export** (the table, values or keys as CSV or JSON Lines), **Run pipeline**, and tabs **Table**, **Values**,
   **Keys**, **Changes**, **Builds** and **Definition**. A dimension its flow no longer declares can be removed for good
   by an admin with **Remove**. See [dimension flows](../flow/dimension.md).
+- **Partitions**: the registry, as the control plane's configuration names it. Each partition with its description,
+  whether it is the default, its cache, the flows that serve it, and when and by whom it was registered. The page
+  registers nothing: the configuration names the partitions, and the control plane registers them when it starts. A
+  configured partition carries a **configured** badge, whose tooltip names its setting (`Osdu:Partitions:<name>`), and has
+  no actions. A registered partition the configuration does not name keeps, for an admin, **Make default** (hidden while
+  the configuration names the default), **Describe** and **Remove**; removing deletes nothing kept under the partition
+  (caches, ledgers and runs stay). The **Actions** column shows only when some row has one. With no partition at all
+  the page says **No partition to work against** and how to name one in the configuration. See
+  [configured partitions](partitions.md#configured-partitions).
 
 ## Build
+
+The **Delivery** section of Build: what a delivered record is built from, and the order records reach OSDU in. Its
+**Flows** and **Sources** sections are SQLFlow's pages.
 
 ### Mappings
 
@@ -564,19 +545,6 @@ The order records reach OSDU in, from what each kind refers to. Three tabs:
   it, and **Build** builds a release.
 
 See [the OSDU order](osdu-order.md).
-
-## Setup
-
-- **Partitions**: the registry, as the control plane's configuration names it. Each partition with its description,
-  whether it is the default, its cache, the flows that serve it, and when and by whom it was registered. The page
-  registers nothing: the configuration names the partitions, and the control plane registers them when it starts. A
-  configured partition carries a **configured** badge, whose tooltip names its setting (`Osdu:Partitions:<name>`), and has
-  no actions. A registered partition the configuration does not name keeps, for an admin, **Make default** (hidden while
-  the configuration names the default), **Describe** and **Remove**; removing deletes nothing kept under the partition
-  (caches, ledgers and runs stay). The **Actions** column shows only when some row has one. With no partition at all
-  the page says **No partition to work against** and how to name one in the configuration. See
-  [configured partitions](partitions.md#configured-partitions).
-- **Search terms**: the source columns the explorer searches by. See [search terms](search-terms.md).
 
 ## Records in the workbench's search
 

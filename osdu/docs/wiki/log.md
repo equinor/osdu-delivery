@@ -506,3 +506,13 @@ reached, one request budget per build, view checks kept when nothing they read c
 the rows it read again, each build's staging in heaps of its own, and a build locking only its own rows. A split over
 nodes and statements batched under 5,000 rows were built or tried and held back with the human. Amended
 [0032](decisions/0032-dimension-builds-stage-in-the-database.md) (the staging's tables).
+
+## [2026-10-27] ingest | The menu by task, decision 0034
+
+Read the workbench's navigation model (SQLFlow's groups in `nav.ts`, the module's OSDU group and its four sections), the
+side bar, activity bar and command palette that render it, and what each of the forty pages is for. The owner asked why
+Subscribers sat under Workspace and for the whole menu to be built again with its groups. Found the menu grouped by who
+added a page, and five more entries whose group did not say what they were for. Filed
+[0034](decisions/0034-one-menu-by-task.md): the module lays out the whole menu (`GuiModule.menu`, every entry placed
+once, a page left out refused at startup) in seven groups that each answer one question, and wrote
+[the menu](../reference/concepts/menu.md) as its reference.

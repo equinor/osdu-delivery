@@ -176,7 +176,7 @@ The registry is the table `[osdu].[Partition]`: the partitions registered with t
 A deployment fills it from the control plane's configuration, which the control plane writes into it when it starts
 ([configured partitions](#configured-partitions)). A partition can also be registered by hand, with
 [sqlflow partition](../cli/partition.md) or `POST /api/v1/delivery/partitions`: what a workstation against a local catalog,
-or an estate whose registry is kept by hand, does. The GUI's Partitions page (under Setup in the OSDU menu) lists the
+or an estate whose registry is kept by hand, does. The GUI's Partitions page (in the menu's OSDU group) lists the
 registry and registers nothing. The first partition registered becomes the default, and the default can be removed only
 when it is the last. Removing a partition deletes nothing kept under it. What the configuration sets (a configured
 partition, its description, the default it names, its values) is changed only in the configuration.
@@ -406,7 +406,7 @@ bar's partition is one a delivery flow does not deliver to, the flow's own tabs 
 than show another partition's ledger
 ([when the title bar's partition is not the flow's](gui.md#when-the-title-bars-partition-is-not-the-flows)).
 
-The Partitions page (under Setup) lists the registry and what each partition holds; it registers nothing, since the
+The Partitions page (in the menu's OSDU group) lists the registry and what each partition holds; it registers nothing, since the
 configuration names the partitions. A configured partition carries a **configured** badge, whose tooltip names its
 setting (`Osdu:Partitions:<name>`), and has no actions. A registered partition the configuration does not name keeps
 **Make default** (hidden while the configuration names the default), **Describe** and **Remove** for an admin. With no

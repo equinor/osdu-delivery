@@ -136,7 +136,7 @@ sqlflow inventory lookup dev dev:work-product-component--WellLog:9a41c7e2d05b4f6
 
 `show` gives the ids by finding, with the raised ones marked, and the owners the reconcile used. `records` pages through
 one finding, each id with what OSDU serves of it, the ledger and record or minted id it rests on, and why it has its
-finding. `lookup` answers what every inventory of the partition holds of one id. In the GUI, **OSDU**, **In OSDU**,
+finding. `lookup` answers what every inventory of the partition holds of one id. In the GUI, **OSDU**,
 **Inventories** lists the inventories; an inventory's report shows the findings as tabs over a grid of ids, and a row
 opens the id as OSDU holds it now. `sqlflow inventory export dev 5 --finding orphan --out orphans.csv` writes a finding
 as CSV.

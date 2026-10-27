@@ -281,7 +281,7 @@ changed since its build, the search requests it sent, its notes, and why it stop
 
 An inventory flow reads each inventory's kind on its platform and partition and writes nothing another flow reads, so
 lineage orders it after the delivery flows writing those kinds ([lineage](../concepts/lineage.md)). An inventory flow's
-pipeline has an **Inventories** tab. **OSDU**, **In OSDU**, **Inventories** lists every inventory with what its last
+pipeline has an **Inventories** tab. **OSDU**, **Inventories** lists every inventory with what its last
 reconcile raised; an inventory's report has its counts by finding over a grid of ids, the tabs Ids, Runs and (for a flow
 that allows removal, or one that has removed anything) Removals, a lookup by OSDU id, and a CSV export. The **gone** tab
 picks ids, or every one, to remove from the inventory, and the **missing** tab picks ids to deliver again. **Filter**

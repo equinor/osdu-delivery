@@ -365,7 +365,7 @@ A view the flow no longer declares is dropped by its next build. One whose flow 
   cache flow holding one of its dimensions is ordered after it ([lineage](../concepts/lineage.md)). With
   `target.connection` it also writes its tables and views on that connection ([Views](#views)), and its pipeline names
   that connection as its target, as an ingestion flow's names the server it loads.
-- **The GUI.** A dimension flow's pipeline has a **Dimensions** tab. **OSDU**, **In OSDU**, **Dimensions** lists every
+- **The GUI.** A dimension flow's pipeline has a **Dimensions** tab. **OSDU**, **Dimensions** lists every
   dimension with the search builder; a dimension's page has the tabs Table, Values, Keys, Changes, Builds and
   Definition (the YAML beside a diagram of how each column is read: [The blueprint](../concepts/dimension-blueprint.md)).
 - **The cache.** A [cache flow](cache.md) can hold a dimension's values as a lookup table (`dimension:` and
