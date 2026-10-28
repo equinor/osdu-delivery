@@ -1,7 +1,7 @@
 import { useCallback, useMemo, useState } from "react";
 import { Link as RouterLink, useNavigate, useSearchParams } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Link2, Loader2, Radar, RefreshCcw, RefreshCw, Trash2, Unlock } from "lucide-react";
+import { CircleAlert, Link2, Loader2, Radar, RefreshCcw, RefreshCw, Trash2, Unlock } from "lucide-react";
 import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -20,6 +20,7 @@ import { CodeView } from "@/components/CodeView";
 import { CopyButton } from "@/components/CopyButton";
 import { CorrelationError } from "@/components/CorrelationError";
 import { DataTable, type Column } from "@/components/DataTable";
+import { ExplainTip } from "@/components/ExplainTip";
 import { FilterBar } from "@/components/FilterBar";
 import { PagedTable } from "@/components/PagedTable";
 import { RelativeTime } from "@/components/RelativeTime";
@@ -34,6 +35,7 @@ import { InterfacePicker } from "./InterfacePicker";
 import { KindText } from "./KindText";
 import { OutsidePartition } from "./PartitionNotice";
 import { CompactTime, OsduTarget, RecordIdentity, type RecordOrigin } from "./RecordCells";
+import { RunRef } from "./DeliveryRefs";
 import { useInterfaceChoice } from "./useInterfaceChoice";
 import { useFollowDeliveryRuns } from "./followRuns";
 import { RemovalDialog, type RemovalSelection } from "./RemovalDialog";
@@ -822,21 +824,37 @@ const interfaceColumns: Column<DeliveryInterface>[] = [
   },
 ];
 
+/** Why a submission stopped, as a mark whose card holds the whole error and a copy of it; nothing when it kept none. */
+function SubmissionError({ error }: { error: string | null }) {
+  if (error === null || error === "") {
+    return null;
+  }
+
+  return (
+    <ExplainTip title="Why it stopped" text={error} testId="delivery-submission-error">
+      <button
+        type="button"
+        className="inline-flex size-5 items-center justify-center rounded-md align-middle text-destructive focus-visible:outline-1 focus-visible:outline-ring"
+        aria-label="Why it stopped"
+        // Inside a row that opens the submission: the mark only explains, so a click on it stays here.
+        onClick={(event) => event.stopPropagation()}
+        data-testid="delivery-submission-error"
+      >
+        <CircleAlert className="size-4" aria-hidden />
+      </button>
+    </ExplainTip>
+  );
+}
+
+/**
+ * A row opens its submission, so the row needs no id of its own; the run that coordinated it is one icon away, and an
+ * error is a mark with the whole text on hover, which keeps every row to one line.
+ */
 const submissionColumns: Column<DeliverySubmission>[] = [
   { id: "status", header: "Status", render: (row) => <SubmissionStatusBadge status={row.status} /> },
-  {
-    id: "id",
-    header: "Submission",
-    // The sending system's own name for the work sits above this ledger's id, because it is what an operator holding a
-    // filename or a ticket recognises; the id stays, because it is what every other page is keyed by.
-    render: (row) => (
-      <div className="flex min-w-0 flex-col">
-        <span className="font-mono text-[12px] text-muted-foreground">{row.submissionId}</span>
-      </div>
-    ),
-  },
+  { id: "run", header: "Run", align: "center", render: (row) => <RunRef runId={row.runId} iconOnly /> },
   { id: "kind", header: "Read", render: (row) => <Badge variant="outline" className="font-mono text-[11px]">{row.kind}</Badge> },
-  { id: "received", header: "Received", render: (row) => <RelativeTime value={row.receivedUtc} /> },
+  { id: "received", header: "Received", render: (row) => <CompactTime value={row.receivedUtc} caption="Received" className="text-[12px]" /> },
   { id: "records", header: "Records", align: "right", render: (row) => <span className="font-mono tabular-nums">{row.recordCount}</span> },
   { id: "planned", header: "Planned", align: "right", render: (row) => <span className="font-mono tabular-nums">{row.planned}</span> },
   { id: "delivered", header: "Delivered", align: "right", render: (row) => <span className="font-mono tabular-nums">{row.delivered}</span> },
@@ -845,7 +863,7 @@ const submissionColumns: Column<DeliverySubmission>[] = [
   { id: "held", header: "Held", align: "right", render: (row) => <span className="font-mono tabular-nums">{row.held}</span> },
   { id: "failed", header: "Failed", align: "right", render: (row) => <span className="font-mono tabular-nums">{row.failed}</span> },
   { id: "waiting", header: "Waiting", align: "right", render: (row) => <span className="font-mono tabular-nums">{row.waiting}</span> },
-  { id: "error", header: "Error", render: (row) => <TruncatedText text={row.error} maxWidth={280} /> },
+  { id: "error", header: "Error", align: "center", render: (row) => <SubmissionError error={row.error} /> },
 ];
 
 /**

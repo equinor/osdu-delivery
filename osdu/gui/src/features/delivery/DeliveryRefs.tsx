@@ -1,4 +1,7 @@
 import { Link as RouterLink } from "react-router-dom";
+import { CirclePlay } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { deliveryRecordRoute } from "../../api/delivery";
 import { shortId } from "./idTail";
 
@@ -15,20 +18,44 @@ function RefKind({ children }: { children: string }) {
 /**
  * A link to a platform run by the random end of its id (`run …1a2b3c`), the whole id on hover. The run is the execution:
  * its status, its log and its trace. It swallows the click so a link inside a clickable row opens the run, not the row.
+ * `iconOnly` shows the icon runs wear in the menu instead, for a grid whose rows open something else and only lead to
+ * their run; the id is then on hover alone.
  */
-export function RunRef({ runId }: { runId: string | null }) {
-  return runId === null
-    ? null
-    : (
-      <RouterLink
-        to={`/runs/${runId}`}
-        className={REF_CLASS}
-        title={`run ${runId.toLowerCase()}`}
-        onClick={(event) => event.stopPropagation()}
-      >
-        <RefKind>run</RefKind>{shortId(runId)}
-      </RouterLink>
+export function RunRef({ runId, iconOnly = false }: { runId: string | null; iconOnly?: boolean }) {
+  if (runId === null) {
+    return null;
+  }
+
+  if (iconOnly) {
+    return (
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <Button asChild variant="ghost" size="icon-xs" className="size-5 align-middle text-muted-foreground hover:text-primary">
+            <RouterLink
+              to={`/runs/${runId}`}
+              aria-label={`Open run ${shortId(runId)}`}
+              onClick={(event) => event.stopPropagation()}
+              data-testid="run-ref-icon"
+            >
+              <CirclePlay />
+            </RouterLink>
+          </Button>
+        </TooltipTrigger>
+        <TooltipContent>{`Open run ${runId.toLowerCase()}`}</TooltipContent>
+      </Tooltip>
     );
+  }
+
+  return (
+    <RouterLink
+      to={`/runs/${runId}`}
+      className={REF_CLASS}
+      title={`run ${runId.toLowerCase()}`}
+      onClick={(event) => event.stopPropagation()}
+    >
+      <RefKind>run</RefKind>{shortId(runId)}
+    </RouterLink>
+  );
 }
 
 /**

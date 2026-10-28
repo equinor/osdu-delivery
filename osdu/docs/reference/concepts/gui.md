@@ -373,7 +373,10 @@ partitions is read in the title bar's partition.
   narrowed to it) and **Release N**, which can queue a deliver run straight after. An issue of records held because OSDU
   already holds a record at the ids their keys make also offers **Adopt N**, which asks every record of it to adopt the
   record OSDU holds once the partition is typed back, and can queue a deliver run straight after.
-- **Submissions**: every submission with what it read and its counts; a row opens its page.
+- **Submissions**: every submission with what it read, when it was received and its counts, one line each, in a grid
+  that fits the window; a row opens its page. The **Run** icon opens the run that coordinated it (its id on hover), and a
+  submission that stopped wears a mark under **Error** whose card holds the whole reason with a copy. **Received** reads
+  as the Records tab's times do: the clock alone today, the whole instant on hover.
 - **Preview**: **Preview a record** renders one record exactly as a delivery would and sends nothing: the first record of
   the scope, or the one a key names, with a field for each parameter the flow declares. The answer shows what the next run
   would do, the document, the route's requests, the payload files, the records it refers to and its source rows, and

@@ -143,6 +143,23 @@ test.describe.serial("record trace", () => {
     await expect(adminPage.getByTestId("submission-delivered-records")).toContainText("(0)", { timeout: 30_000 });
     await expect(adminPage.getByTestId("submission-reverse")).toHaveCount(0);
 
+    // On its flow's Submissions tab a row opens the submission and carries no id of its own; its icon opens the run that
+    // coordinated it, one of the runs this page names.
+    const submissionPage = adminPage.url();
+    const runIds = await adminPage.getByTestId(/^submission-run-[0-9a-f-]{36}$/).evaluateAll(
+      (chips) => chips.map((chip) => chip.getAttribute("data-value")).filter((id): id is string => id !== null));
+    expect(runIds.length).toBeGreaterThan(0);
+    await adminPage.getByTestId("submission-pipeline-link").click();
+    await adminPage.getByTestId("pipeline-tabs").getByRole("tab", { name: /submissions/i }).click();
+    const runIcon = adminPage.getByTestId("delivery-submissions-table")
+      .locator(runIds.map((id) => `a[href="/runs/${id}"]`).join(", ")).first();
+    await expect(runIcon).toBeVisible({ timeout: 30_000 });
+    await runIcon.click();
+    await expect(adminPage.getByTestId("page-run-detail")).toBeVisible();
+    expect(runIds).toContain(new URL(adminPage.url()).pathname.replace("/runs/", ""));
+    await adminPage.goto(submissionPage);
+    await expect(adminPage.getByTestId("page-delivery-submission")).toBeVisible();
+
     // Its two record sets are two links: what it delivered (nothing yet), and what it last planned (every record).
     await adminPage.getByTestId("submission-delivered-records").click();
     await expect(adminPage.getByTestId("delivery-records-clear-delivered")).toBeVisible();

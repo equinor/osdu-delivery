@@ -280,6 +280,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   ([Records](osdu/docs/reference/concepts/gui.md#records), [finding records](osdu/docs/reference/concepts/ledger.md#finding-records)).
 
 ### Changed
+- **A flow's Submissions tab fits the window.** The submission's id, which its row already opens, gives way to an icon
+  that opens the run that coordinated it; an error is a mark with the whole reason and a copy on hover, in place of a line
+  that ran off the grid; and the time received reads as the Records tab's times do
+  ([A delivery flow's page](osdu/docs/reference/concepts/gui.md#a-delivery-flows-page)).
 - **A record's page says why it is held once, and its Render tab leads to the record.** The error under a held or
   failed record reads as the Issues tab reads one (the property, how far through a list, the reason on one line, the
   whole on hover with a copy), with blocked said in the same line. The Render tab says the next run's reason on one line
