@@ -201,24 +201,24 @@ internal static class DeliveryPreviewVerbs
                 writer.WriteLine($"    unverified  {id}: the cache holds no such record");
             }
 
-            // What each step of enrich: added, in the order the steps render (osdu/docs/reference/flow/enrich.md).
+            // What each enrichment of the mapping added, in the order they render (osdu/docs/reference/flow/enrich.md).
             foreach (var step in document.Enrichment)
             {
-                writer.WriteLine($"    enrich      {step.Step} ({step.Mapping ?? "its files"}): {EnrichOutcome(step)}");
+                writer.WriteLine($"    enrich      {step.Step} ({step.Mapping ?? "its records"}): {EnrichOutcome(step)}");
                 foreach (var effect in step.Effects)
                 {
                     var value = effect.Value is null ? string.Empty : $" {Clip(effect.Value.ToJsonString(), 120)}";
                     writer.WriteLine($"                {effect.Kind} {effect.Path}{value}");
                 }
 
-                foreach (var dataset in step.Datasets)
+                foreach (var added in step.Records)
                 {
-                    writer.WriteLine(string.Create(CultureInfo.InvariantCulture, $"                registers {dataset.Id} ({dataset.Kind}) from row {dataset.Row + 1}"));
+                    writer.WriteLine(string.Create(CultureInfo.InvariantCulture, $"                adds {added.Id} ({added.Kind}) from row {added.Row + 1}"));
                 }
 
-                foreach (var kept in step.KeptDatasets)
+                foreach (var kept in step.KeptRecords)
                 {
-                    writer.WriteLine($"                keeps linking {kept}, registered by its last delivery");
+                    writer.WriteLine($"                keeps linking {kept}, added by its last delivery");
                 }
             }
         }
@@ -288,12 +288,12 @@ internal static class DeliveryPreviewVerbs
                 $"the scope's first record{(asked.ScopeRecords is { } total ? $" of {total:N0}" : string.Empty)}{(asked.PassedOver > 0 ? $", after {asked.PassedOver} row(s) that cannot render" : string.Empty)}")
             : $"'{asked.Key}' read as {asked.How}";
 
-    /// <summary>What a step of enrich: came to for the record, as one phrase.</summary>
+    /// <summary>What an enrichment came to for the record, as one phrase.</summary>
     private static string EnrichOutcome(PreviewEnrichStep step)
     {
         if (step.NotRendered)
         {
-            return "not rendered, since a step before it holds the record or waits for the platform";
+            return "not rendered, since an enrichment before it holds the record or waits for the platform";
         }
 
         if (step.SetAside)

@@ -9,8 +9,9 @@ using Xunit;
 namespace SqlFlow.Delivery.Tests;
 
 /// <summary>
-/// A step supplying a well log's bulk data, end to end (osdu/docs/reference/flow/enrich-bulk.md): the sample well logs delivered
-/// on the ddms route, their curves named by a table of their own. Every run is made as the executor makes it, over the sample
+/// An enrichment supplying a well log's bulk data, end to end (osdu/docs/reference/flow/enrich-bulk.md): the sample well logs
+/// delivered on the ddms route, their mapping declaring the enrichment, their curves named by a table of their own the flow binds
+/// with its files. Every run is made as the executor makes it, over the sample
 /// estate, the module's database on SQL Server and a fake protocol counting what is sent. A log with a row of the step goes with
 /// its bulk data from that row's folder; one without goes without; new curves send the bulk data alone; nothing changed sends
 /// nothing; a row arriving sends its log's bulk data; and two rows hold the log.
@@ -24,11 +25,14 @@ public sealed class StepBulkDeliveryTests : IDisposable
     private readonly TestClock _clock = new();
     private readonly string _root = Samples.NewTempDirectory();
     private readonly string _curves;
+    private readonly string _mappings;
     private DateTime? _readThrough;
 
     public StepBulkDeliveryTests()
     {
         _curves = Directory.CreateDirectory(Path.Combine(_root, "curves")).FullName;
+        _mappings = Directory.CreateDirectory(Path.Combine(_root, "mappings")).FullName;
+        EnrichmentSuite.WriteWellLogMapping(_mappings, "grid:\n  rows: one\n  bulk: true\n");
     }
 
     public void Dispose()
@@ -39,8 +43,6 @@ public sealed class StepBulkDeliveryTests : IDisposable
 
     private DateTime Now => _clock.GetUtcNow().UtcDateTime;
 
-    private FlowPayload Bulk => new() { Root = _curves, LocationColumn = "curve_folder", Pattern = "*.parquet", HashColumn = "curves_hash", Step = "grid" };
-
     private FlowDefinition Flow()
     {
         var flow = Samples.LocalFlow(_root);
@@ -50,13 +52,14 @@ public sealed class StepBulkDeliveryTests : IDisposable
             {
                 Object = "OsduData.silver.WellLogGrid",
                 Join = new Dictionary<string, string>(StringComparer.Ordinal) { ["source_project"] = "source_project", ["log_id"] = "log_id" },
+                Files = new FlowPayload { Root = _curves, LocationColumn = "curve_folder", Pattern = "*.parquet", HashColumn = "curves_hash" },
             },
         };
         return flow with
         {
-            Source = flow.Source with { Datasets = datasets, Payloads = new Dictionary<string, FlowPayload>(StringComparer.Ordinal) { [PayloadParts.Bulk] = Bulk } },
+            Source = flow.Source with { Datasets = datasets, Payloads = new Dictionary<string, FlowPayload>(StringComparer.Ordinal) },
+            Render = flow.Render with { MappingsDirectory = _mappings },
             Target = flow.Target with { Protocol = DeliveryProtocol.Ddms, ProtocolOptions = flow.Target.ProtocolOptions with { Payload = null } },
-            Enrich = [new EnrichStep { Name = "grid", ReadsRows = true, Bulk = Bulk }],
         };
     }
 
@@ -68,6 +71,7 @@ public sealed class StepBulkDeliveryTests : IDisposable
         var templates = new MemoryTemplates(Samples.TemplateKinds().Select(Samples.SampleTemplate));
         var engine = Samples.Engine(ledger, _clock, templates: templates, sources: tables) with { Protocols = new FakeProtocolFactory(protocol) };
         var runtime = await FlowRuntime.CreateAsync(engine, Flow(), SampleEstate.Values);
+        Assert.Equal("grid", runtime.Flow.Source.Payloads[PayloadParts.Bulk].Step);
         await ledger.RegisterAsync(runtime.Flow);
 
         var selection = SourceSelection.Incremental(_readThrough);

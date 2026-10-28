@@ -445,8 +445,11 @@ internal sealed record KeyPaths(string? Interface)
 
     public string Mapping => Interface is null ? "render.mapping" : At + ".mapping";
 
-    /// <summary>The steps that extend the records: <c>enrich</c>, or the interface's own.</summary>
+    /// <summary>Where enrichments were declared before the mapping declared them: <c>enrich</c>, or the interface's own.</summary>
     public string Enrich => Interface is null ? "enrich" : At + ".enrich";
+
+    /// <summary>The workflows run over the records of the mapping's enrichments: <c>workflows</c>, or the interface's own.</summary>
+    public string Workflows => Interface is null ? "workflows" : At + ".workflows";
 
     /// <summary>A payload set: <c>source.payloads.name</c>, or the interface's <c>files</c> or <c>bulk</c>.</summary>
     public string Payload(string name) => Interface is null ? $"source.payloads.{name}" : $"{At}.{name}";
@@ -760,22 +763,15 @@ internal static partial class FlowMapper
 
         var protocol = ParseProtocol(Require(target.Protocol, "target.protocol", source), source);
 
-        // A step adds paths to an OSDU record; a DSPDM row and an Energistics object are written whole by routes of their own.
-        if (y.Enrich is not null && protocol is DeliveryProtocol.Dspdm or DeliveryProtocol.Etp)
+        // What is added to each record is the mapping's to say (osdu/docs/reference/flow/enrich.md): the flow binds the rows,
+        // the files and the workflows.
+        if (y.Enrich is not null)
         {
             throw new FlowValidationException(
-                $"{source}: {paths.Enrich} adds paths to the OSDU records the flow renders, and the {DeliveryProtocols.Name(protocol)} route writes "
-                + (protocol == DeliveryProtocol.Dspdm ? "rows of DSPDM business objects" : "Energistics objects into a dataspace of the Reservoir DDMS")
-                + ", which no step extends. Map what the steps would add in the flow's own mapping, or remove enrich.");
+                $"{source}: {paths.Enrich} declares what is added to each record, which the mapping says now: move each enrichment to the enrich: block of {paths.Mapping}'s mapping, with its rows, mapping, key, after and onHold; bind its rows here under {paths.Datasets}.<name> (their files under {paths.Datasets}.<name>.files), and its workflow under {paths.Workflows}.<name>.");
         }
 
         var options = MapOptions(target.ProtocolOptions, source);
-        if (y.Enrich is not null && y.Enrich.Values.Any(s => s?.Files is not null)
-            && DeliveryProtocols.ReachesDdms(protocol) && paths.Interface is null && string.IsNullOrWhiteSpace(options.DdmsRoot) && target.Ddms is null)
-        {
-            throw new FlowValidationException(
-                $"{source}: {paths.Enrich} registers files through the Dataset service, which a flow reaches under its endpoint, and this flow's endpoint is the DDMS itself (no target.protocolOptions.ddmsRoot, no target.ddms). Make the endpoint the platform and name the DDMS under it with ddmsRoot, or register the files elsewhere.");
-        }
 
         var mapping = Require(render.Mapping, paths.Mapping, source);
         if (!mapping.Contains('@', StringComparison.Ordinal))
@@ -785,55 +781,6 @@ internal static partial class FlowMapper
 
         var workflow = MapWorkflow(target.Workflow, protocol, src.Payloads?.ContainsKey(FilesPayload) == true, source, paths);
         var mappedSource = WithInputs(MapSource(src, source, paths), target.Workflow, source, paths);
-
-        // A step's rows are a child dataset of the source under the step's name: read beside the record's row, part of the
-        // record's ingestion fingerprint, and a candidate of the run's window when they change, as every child dataset is.
-        var (enrich, stepDatasets) = MapEnrich(y.Enrich, mappedSource, source, paths);
-        if (stepDatasets.Count > 0)
-        {
-            var datasets = new Dictionary<string, FlowSourceDataset>(mappedSource.Datasets, StringComparer.Ordinal);
-            foreach (var (stepName, dataset) in stepDatasets)
-            {
-                datasets[stepName] = dataset;
-            }
-
-            mappedSource = mappedSource with { Datasets = datasets };
-        }
-
-        // A step's bulk data is the record's payload set bulk, read from the step's row (osdu/docs/reference/flow/enrich-bulk.md).
-        if (enrich?.Where(s => s.Bulk is not null).ToList() is { Count: > 0 } suppliers)
-        {
-            var names = string.Join(", ", suppliers.Select(s => s.Name));
-            if (suppliers.Count > 1)
-            {
-                throw new FlowValidationException($"{source}: {paths.Enrich} steps {names} each supply bulk data, and a record has one set of it; let one step supply it.");
-            }
-
-            var supplier = suppliers[0];
-            if (protocol != DeliveryProtocol.Ddms)
-            {
-                throw new FlowValidationException(
-                    $"{source}: {paths.Enrich}.{supplier.Name}.bulk is the record's DDMS bulk data, which the ddms route sends as the record's payload, and this flow's route is {DeliveryProtocols.Name(protocol)}. "
-                    + "A route that sends files and bulk data as parts (fileAndDdms, manifestAndDdms) reads both from the record's row under source.payloads; another route sends no bulk data.");
-            }
-
-            if (mappedSource.Payloads.Count > 0)
-            {
-                throw new FlowValidationException(
-                    $"{source}: {paths.Enrich}.{supplier.Name}.bulk is the record's bulk data, and {string.Join(", ", mappedSource.Payloads.Keys.Select(paths.Payload))} names its payload already; the record's payload comes from one place, so declare it once.");
-            }
-
-            if (options.Payload is { } named && !string.Equals(named, PayloadParts.Bulk, StringComparison.Ordinal))
-            {
-                throw new FlowValidationException(
-                    $"{source}: target.protocolOptions.payload names '{named}', and the step {supplier.Name} supplies the payload set {PayloadParts.Bulk}; remove target.protocolOptions.payload, or name {PayloadParts.Bulk}.");
-            }
-
-            mappedSource = mappedSource with
-            {
-                Payloads = new Dictionary<string, FlowPayload>(StringComparer.Ordinal) { [PayloadParts.Bulk] = supplier.Bulk! },
-            };
-        }
 
         var flow = new FlowDefinition
         {
@@ -883,331 +830,66 @@ internal static partial class FlowMapper
             Verify = new FlowVerify { Reconcile = y.Verify?.Reconcile ?? false },
             FailWhen = MapFailWhen(y.FailWhen, source, paths),
             Cache = MapCacheSteps(y.Cache, source, paths),
-            Enrich = enrich,
+            EnrichWorkflows = MapEnrichWorkflows(y.Workflows, source, paths),
         };
 
         Validate(flow, source, paths);
         return flow;
     }
 
-    /// <summary>The words <c>enrich.&lt;name&gt;.rows</c> takes.</summary>
-    internal const string RowsOne = "one";
-
-    /// <inheritdoc cref="RowsOne"/>
-    internal const string RowsMany = "many";
-
-    /// <summary>The words <c>enrich.&lt;name&gt;.onHold</c> takes.</summary>
-    internal const string HoldRecord = "record";
-
-    /// <inheritdoc cref="HoldRecord"/>
-    internal const string HoldStep = "step";
-
     /// <summary>
-    /// The flow's <c>enrich:</c> steps (osdu/docs/reference/flow/enrich.md), in the order they render, and the dataset of each
-    /// step that reads rows, by the step's name: null and none for a flow that declares no step. The order is the order the
-    /// document lists them in, a step moved after every step its <c>after:</c> names; names, references and cycles are refused
-    /// here, and each dataset is checked with the source's child datasets once the flow is mapped (<see cref="Validate"/>).
+    /// The workflows the flow runs over the records of its mapping's enrichments (<c>workflows:</c>,
+    /// osdu/docs/reference/flow/enrich-workflow.md), by the enrichment's name: each declared as <c>target.workflow</c> declares
+    /// the workflow route, over the record the flow's route wrote. Which enrichments the names are is the mapping's to say, so a
+    /// run checks them when it binds the flow to its mapping.
     /// </summary>
-    private static (IReadOnlyList<EnrichStep>? Steps, IReadOnlyDictionary<string, FlowSourceDataset> Datasets) MapEnrich(
-        OrderedDictionary<string, EnrichStepYaml?>? declared, FlowSource mapped, string source, KeyPaths paths)
+    private static Dictionary<string, WorkflowRoute> MapEnrichWorkflows(OrderedDictionary<string, WorkflowYaml?>? declared, string source, KeyPaths paths)
     {
-        var datasets = new Dictionary<string, FlowSourceDataset>(StringComparer.Ordinal);
-        if (declared is null)
-        {
-            return (null, datasets);
-        }
-
-        var at = paths.Enrich;
-        if (declared.Count == 0)
-        {
-            throw new FlowValidationException($"{source}: {at} lists no step. Declare the steps that extend each record under it, or remove it.");
-        }
-
-        if (declared.Count > EnrichStep.MaxSteps)
-        {
-            throw new FlowValidationException(
-                string.Create(CultureInfo.InvariantCulture, $"{source}: {at} lists {declared.Count} steps; a flow declares at most {EnrichStep.MaxSteps}. Fold steps that read the same rows into one fragment."));
-        }
-
-        var steps = new List<EnrichStep>(declared.Count);
-        var names = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-        foreach (var (key, written) in declared)
+        var workflows = new Dictionary<string, WorkflowRoute>(StringComparer.Ordinal);
+        foreach (var (key, written) in declared ?? [])
         {
             var name = key?.Trim() ?? string.Empty;
-            var step = $"{at}.{name}";
-            if (!DatasetName().IsMatch(name) || name.Length > EnrichStep.MaxNameLength || name.Equals(SourceDatasets.Record, StringComparison.OrdinalIgnoreCase))
+            var at = $"{paths.Workflows}.{name}";
+            if (!DatasetName().IsMatch(name) || name.Length > EnrichStep.MaxNameLength)
             {
                 throw new FlowValidationException(
-                    string.Create(CultureInfo.InvariantCulture, $"{source}: {at} names a step '{name}'; a step is named by letters, digits and '_', at most {EnrichStep.MaxNameLength} characters, since its rows are read as a child dataset of that name, and '{SourceDatasets.Record}' names the record table itself."));
+                    $"{source}: {paths.Workflows} names '{name}', and each workflow there is named by the enrichment of the flow's mapping it runs over: letters, digits and '_', at most {EnrichStep.MaxNameLength.ToString(CultureInfo.InvariantCulture)} characters.");
             }
 
-            if (!names.Add(name))
+            if (workflows.Keys.Any(n => n.Equals(name, StringComparison.OrdinalIgnoreCase)))
             {
-                throw new FlowValidationException($"{source}: {at} declares '{name}' more than once (step names are compared ignoring case, as the child datasets named after them are).");
+                throw new FlowValidationException($"{source}: {paths.Workflows} names '{name}' more than once (enrichment names are compared ignoring case).");
             }
 
-            if (mapped.Datasets.Keys.FirstOrDefault(d => d.Equals(name, StringComparison.OrdinalIgnoreCase)) is { } taken)
-            {
-                throw new FlowValidationException(
-                    $"{source}: {step} is named as {paths.Datasets}.{taken} is; a step's rows are read as a child dataset under the step's name, so a step and a child dataset take different names.");
-            }
-
-            var y = written ?? throw Missing(step + ".mapping", source);
-            var mapping = Optional(y.Mapping);
-            if (mapping is null && y.Files is null && y.Bulk is null && y.Workflow is null)
-            {
-                throw new FlowValidationException(
-                    $"{source}: {step} declares neither a mapping nor files nor bulk data nor a workflow, so it does nothing for the record; pin the fragment it renders under {step}.mapping, declare the files it registers under {step}.files, the record's bulk data under {step}.bulk, or the workflow it runs under {step}.workflow.");
-            }
-
-            if (mapping is not null && !mapping.Contains('@', StringComparison.Ordinal))
-            {
-                throw new FlowValidationException($"{source}: {step}.mapping '{mapping}' must be pinned as 'Name@version'; floating references are not allowed.");
-            }
-
-            var rows = y.Rows?.Trim() switch
-            {
-                null => EnrichRows.One,
-                RowsOne => EnrichRows.One,
-                RowsMany => EnrichRows.Many,
-                var other => throw new FlowValidationException(
-                    $"{source}: {step}.rows is '{other}'; write {RowsOne} for a step that takes at most one row per record, read as its fragment's own row (the default), or {RowsMany} for one whose fragment reads its rows with $forEach: {name}."),
-            };
-
-            if (y.Dataset is { } dataset)
-            {
-                datasets[name] = new FlowSourceDataset
-                {
-                    Object = Require(dataset.Object, step + ".dataset.object", source),
-                    Join = Trimmed(dataset.Join),
-                    OrderBy = (dataset.OrderBy ?? []).Select(c => c?.Trim() ?? string.Empty).ToList(),
-                    MaxRowsPerRecord = dataset.MaxRowsPerRecord ?? FlowSourceDataset.DefaultMaxRowsPerRecord,
-                };
-            }
-            else if (y.Rows is not null)
-            {
-                throw new FlowValidationException(
-                    $"{source}: {step}.rows says how many rows of the step's dataset one record takes, and the step declares no dataset; declare {step}.dataset, or remove rows.");
-            }
-
-            EnrichFiles? files = null;
-            if (y.Files is { } declaredFiles)
-            {
-                if (y.Dataset is null)
-                {
-                    throw new FlowValidationException(
-                        $"{source}: {step}.files registers the files each of the step's rows names, and the step declares no dataset, so it has no row to name any; declare {step}.dataset.");
-                }
-
-                files = MapStepFiles(declaredFiles, rows, step + ".files", source);
-            }
-
-            FlowPayload? bulk = null;
-            if (y.Bulk is { } declaredBulk)
-            {
-                bulk = MapStepBulk(declaredBulk, y.Dataset is not null, rows, name, step + ".bulk", source);
-            }
-
-            var workflow = y.Workflow is { } declaredWorkflow ? MapStepWorkflow(declaredWorkflow, step + ".workflow", source) : null;
-
-            var onHold = y.OnHold?.Trim() switch
-            {
-                null => EnrichHold.Record,
-                HoldRecord => EnrichHold.Record,
-                HoldStep => EnrichHold.Step,
-                var other => throw new FlowValidationException(
-                    $"{source}: {step}.onHold is '{other}'; write {HoldRecord} for a step whose hold holds the record (the default), or {HoldStep} for one set aside while the record goes ahead with what the step added to its last delivery."),
-            };
-
-            steps.Add(new EnrichStep
-            {
-                Name = name,
-                Description = string.IsNullOrWhiteSpace(y.Description) ? null : y.Description.Trim(),
-                Mapping = mapping,
-                Files = files,
-                After = (y.After ?? []).Select(a => a?.Trim() ?? string.Empty).ToList(),
-                ReadsRows = y.Dataset is not null,
-                Rows = rows,
-                OnHold = onHold,
-                Bulk = bulk,
-                Workflow = workflow,
-            });
+            workflows[name] = MapStepWorkflow(written ?? throw Missing(at + ".stages", source), at, source);
         }
 
-        return (OrderSteps(steps, at, source), datasets);
+        return workflows;
     }
 
     /// <summary>
-    /// The files a step registers (osdu/docs/reference/flow/enrich-files.md): where each row's files are and
-    /// the column holding their content hash, which decides when they go again; the dataset kind they become, one the Dataset
-    /// service registers; the columns telling a row's dataset from the step's others', which a step taking many rows needs and
-    /// one taking one row does not; the fragment rendered into each dataset record; and the record's path the datasets are
-    /// listed at.
+    /// The files a child dataset's rows name (<c>source.datasets.&lt;name&gt;.files</c>, osdu/docs/reference/flow/enrich-records.md):
+    /// where each row's files are, in the row's columns, and the column holding their content hash, which says when they go
+    /// again. What they become (datasets of the record, or its bulk data) is the enrichment of the flow's mapping reading the
+    /// rows to say.
     /// </summary>
-    private static EnrichFiles MapStepFiles(EnrichFilesYaml declared, EnrichRows rows, string at, string source)
+    private static FlowPayload MapDatasetFiles(DatasetFilesYaml declared, string at, string source)
     {
-        var root = Require(declared.Root, at + ".root", source);
-        var location = Require(declared.LocationColumn, at + ".locationColumn", source);
-        var hash = Optional(declared.HashColumn) ?? throw new FlowValidationException(
-            $"{source}: {at}.hashColumn names the column holding the content hash of each row's files, which says when they are sent again; a step's files go again only when it moves.");
-        CheckColumn(location, at + ".locationColumn", source);
-        CheckColumn(hash, at + ".hashColumn", source);
-
-        var kind = Optional(declared.Kind) ?? EnrichFiles.DefaultKind;
-        if (!IsRecordKind(kind))
-        {
-            throw new FlowValidationException($"{source}: {at}.kind '{kind}' must be 'authority:source:entityType:major.minor.patch', as the storage service requires of every record it accepts.");
-        }
-
-        var entityType = Identity.TargetId.EntityTypeFromKind(kind);
-        if (!Engine.Protocols.DatasetService.IsDatasetType(entityType))
-        {
-            throw new FlowValidationException(
-                $"{source}: {at}.kind '{kind}' is not a dataset kind; a step's files are registered as a dataset record, such as {EnrichFiles.DefaultKind}, or osdu:wks:dataset--FileCollection.Generic:1.0.0 for a row naming several files.");
-        }
-
-        if (Engine.EdsRecordRules.IsProxyDataset(entityType))
-        {
-            throw new FlowValidationException(
-                $"{source}: {at}.kind '{kind}' is an External Data Services proxy dataset, which points at data held elsewhere and registers no file of its own.");
-        }
-
-        var key = (declared.Key ?? []).Select(c => c?.Trim() ?? string.Empty).ToList();
-        foreach (var column in key)
-        {
-            CheckColumn(column, at + ".key", source);
-        }
-
-        if (key.Distinct(StringComparer.OrdinalIgnoreCase).Count() != key.Count)
-        {
-            throw new FlowValidationException($"{source}: {at}.key names a column more than once.");
-        }
-
-        if (rows == EnrichRows.Many && key.Count == 0)
-        {
-            throw new FlowValidationException(
-                $"{source}: {at}.key names the columns telling each row's dataset from the step's other rows' (such as key: [file_name]), and a step taking many rows needs them, since every row registers a dataset of its own under an id they make.");
-        }
-
-        if (rows == EnrichRows.One && key.Count > 0)
-        {
-            throw new FlowValidationException(
-                $"{source}: {at}.key tells the datasets of a step's rows apart, and the step takes one row per record (rows: one), whose one dataset the step's name names; remove {at}.key, or declare rows: many.");
-        }
-
-        var mapping = Optional(declared.Mapping);
-        if (mapping is not null && !mapping.Contains('@', StringComparison.Ordinal))
-        {
-            throw new FlowValidationException($"{source}: {at}.mapping '{mapping}' must be pinned as 'Name@version'; floating references are not allowed.");
-        }
-
-        var link = Optional(declared.Link) ?? EnrichFiles.DefaultLink;
-        if (!link.StartsWith("data.", StringComparison.Ordinal) || !MappingMapper.ParentPathPattern().IsMatch(link))
-        {
-            throw new FlowValidationException(
-                $"{source}: {at}.link is the path of the record's data the datasets are listed at, its property names joined by dots, such as {EnrichFiles.DefaultLink}; '{link}' is not one.");
-        }
-
-        return new EnrichFiles
-        {
-            Payload = new FlowPayload
-            {
-                Root = root,
-                LocationColumn = location,
-                Pattern = Optional(declared.Pattern) ?? FlowPayload.DefaultPattern,
-                HashColumn = hash,
-            },
-            Kind = kind,
-            Key = key,
-            Mapping = mapping,
-            Link = link,
-            ContentType = Optional(declared.ContentType),
-        };
-    }
-
-    /// <summary>
-    /// The bulk data a step supplies (osdu/docs/reference/flow/enrich-bulk.md): a payload set read from the step's one row, so
-    /// the step declares a dataset and takes one row per record. Its columns are the step table's.
-    /// </summary>
-    private static FlowPayload MapStepBulk(FlowPayloadYaml declared, bool readsRows, EnrichRows rows, string name, string at, string source)
-    {
-        if (!readsRows)
-        {
-            throw new FlowValidationException(
-                $"{source}: {at} names the files of the record's bulk data by the step's row, and the step declares no dataset, so it has no row to name them; declare its dataset.");
-        }
-
-        if (rows == EnrichRows.Many)
-        {
-            throw new FlowValidationException(
-                $"{source}: {at} is the record's bulk data, of which a record has one, and the step takes many rows (rows: many); a step supplying bulk data takes one row per record.");
-        }
-
-        var payload = new FlowPayload
+        var files = new FlowPayload
         {
             Root = Require(declared.Root, at + ".root", source),
             LocationColumn = Require(declared.LocationColumn, at + ".locationColumn", source),
             Pattern = Optional(declared.Pattern) ?? FlowPayload.DefaultPattern,
             HashColumn = Optional(declared.HashColumn),
             ChunkCountColumn = Optional(declared.ChunkCountColumn),
-            Step = name,
+            ContentType = Optional(declared.ContentType),
         };
-        foreach (var column in new[] { payload.LocationColumn, payload.HashColumn, payload.ChunkCountColumn }.OfType<string>())
+        foreach (var column in new[] { files.LocationColumn, files.HashColumn, files.ChunkCountColumn }.OfType<string>())
         {
             CheckColumn(column, at, source);
         }
 
-        return payload;
-    }
-
-    /// <summary>
-    /// The steps in the order they render: the order the document lists them in, each step moved after every step its
-    /// <c>after:</c> names. A name no step has, a step naming itself or one step twice, and steps whose <c>after:</c> wait for
-    /// each other are refused.
-    /// </summary>
-    private static List<EnrichStep> OrderSteps(List<EnrichStep> steps, string at, string source)
-    {
-        var byName = steps.ToDictionary(s => s.Name, StringComparer.OrdinalIgnoreCase);
-        foreach (var step in steps)
-        {
-            var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-            foreach (var name in step.After)
-            {
-                if (!byName.ContainsKey(name))
-                {
-                    throw new FlowValidationException($"{source}: {at}.{step.Name}.after names '{name}', which is no step of {at}.");
-                }
-
-                if (name.Equals(step.Name, StringComparison.OrdinalIgnoreCase))
-                {
-                    throw new FlowValidationException($"{source}: {at}.{step.Name}.after names the step itself; a step renders after other steps.");
-                }
-
-                if (!seen.Add(name))
-                {
-                    throw new FlowValidationException($"{source}: {at}.{step.Name}.after names '{name}' more than once.");
-                }
-            }
-        }
-
-        // A stable topological order: each pass takes, in document order, the first step whose after: steps are all placed.
-        var ordered = new List<EnrichStep>(steps.Count);
-        var placed = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-        while (ordered.Count < steps.Count)
-        {
-            var next = steps.FirstOrDefault(s => !placed.Contains(s.Name) && s.After.All(placed.Contains));
-            if (next is null)
-            {
-                var waiting = steps.Where(s => !placed.Contains(s.Name)).Select(s => s.Name).ToList();
-                throw new FlowValidationException(
-                    $"{source}: the steps {string.Join(", ", waiting)} of {at} wait for each other through after:, so none of them could render first.");
-            }
-
-            ordered.Add(next with { After = next.After.Select(name => byName[name].Name).ToList() });
-            placed.Add(next.Name);
-        }
-
-        return ordered;
+        return files;
     }
 
     /// <summary>
@@ -1291,7 +973,7 @@ internal static partial class FlowMapper
         var interfaces = y.Interfaces!;
         var src = y.Source ?? throw Missing("source", source);
         var target = y.Target ?? throw Missing("target", source);
-        RefuseAtSourceLevel(src, y.Render, target, y.Ledger, y.Enrich, source);
+        RefuseAtSourceLevel(src, y.Render, target, y.Ledger, y.Enrich, y.Workflows, source);
         if (y.Render is { } shared)
         {
             // What the source declares for every interface is checked once, whatever the interfaces make of it.
@@ -1396,7 +1078,7 @@ internal static partial class FlowMapper
 
     /// <summary>What belongs to an interface, written at the source level, is refused rather than applied to every interface.</summary>
     private static void RefuseAtSourceLevel(
-        FlowSourceYaml src, FlowRenderYaml? render, FlowTargetYaml target, string? ledger, OrderedDictionary<string, EnrichStepYaml?>? enrich, string source)
+        FlowSourceYaml src, FlowRenderYaml? render, FlowTargetYaml target, string? ledger, object? enrich, OrderedDictionary<string, WorkflowYaml?>? workflows, string source)
     {
         var misplaced = new List<string>();
         if (ledger is not null)
@@ -1406,7 +1088,12 @@ internal static partial class FlowMapper
 
         if (enrich is not null)
         {
-            misplaced.Add("enrich (the steps that extend an interface's records are interfaces.<name>.enrich, since each interface renders records of its own kind)");
+            misplaced.Add("enrich (what is added to an interface's records is declared in the enrich: block of its mapping, and its rows are bound under interfaces.<name>.datasets)");
+        }
+
+        if (workflows is not null)
+        {
+            misplaced.Add("workflows (the workflows run over an interface's enrichments are interfaces.<name>.workflows, since each interface's mapping declares enrichments of its own)");
         }
 
         if (src.Record is not null)
@@ -1546,8 +1233,10 @@ internal static partial class FlowMapper
             // An interface delivers a kind of its own, so its cache steps replace the source's whole rather than merge.
             Cache = i.Cache ?? y.Cache,
 
-            // The steps that extend the interface's records are the interface's own: the source level declares none.
+            // An interface's enrichments are its mapping's, and the workflows run over them the interface's own: the source level
+            // declares none.
             Enrich = i.Enrich,
+            Workflows = i.Workflows,
         };
     }
 
@@ -1950,6 +1639,7 @@ internal static partial class FlowMapper
                 Join = Trimmed(declared.Join),
                 OrderBy = (declared.OrderBy ?? []).Select(c => c?.Trim() ?? string.Empty).ToList(),
                 MaxRowsPerRecord = declared.MaxRowsPerRecord ?? FlowSourceDataset.DefaultMaxRowsPerRecord,
+                Files = declared.Files is { } files ? MapDatasetFiles(files, at + ".files", source) : null,
             };
         }
 
@@ -2069,14 +1759,10 @@ internal static partial class FlowMapper
             }
         }
 
-        // The rows of a step of enrich: are a child dataset under the step's name, checked as every child dataset is and named
-        // in messages by the key the document writes them under.
-        var steps = new HashSet<string>((flow.Enrich ?? []).Where(s => s.ReadsRows).Select(s => s.Name), StringComparer.Ordinal);
         foreach (var (name, dataset) in src.Datasets)
         {
-            var stepRows = steps.Contains(name);
-            var at = stepRows ? $"{paths.Enrich}.{name}.dataset" : $"{paths.Datasets}.{name}";
-            if (!stepRows && (!DatasetName().IsMatch(name) || name.Length > MaxColumnLength || name.Equals(SourceDatasets.Record, StringComparison.OrdinalIgnoreCase)))
+            var at = $"{paths.Datasets}.{name}";
+            if (!DatasetName().IsMatch(name) || name.Length > MaxColumnLength || name.Equals(SourceDatasets.Record, StringComparison.OrdinalIgnoreCase))
             {
                 throw new FlowValidationException(
                     $"{source}: {paths.Datasets} names a dataset '{name}'; a child dataset is letters, digits and '_', and '{SourceDatasets.Record}' names the record table itself.");
@@ -2117,6 +1803,15 @@ internal static partial class FlowMapper
                 throw new FlowValidationException(
                     string.Create(CultureInfo.InvariantCulture, $"{source}: {at}.maxRowsPerRecord must be between 1 and {FlowSourceDataset.MaxRowsPerRecordCeiling}."));
             }
+
+            if (dataset.Files is { } files)
+            {
+                CheckLocation(flow, files.Root, at + ".files.root", source);
+                if (files.Pattern.Contains('/', StringComparison.Ordinal) || files.Pattern.Contains('\\', StringComparison.Ordinal) || files.Pattern.Contains("..", StringComparison.Ordinal))
+                {
+                    throw new FlowValidationException($"{source}: {at}.files.pattern '{files.Pattern}' is a file name glob under each row's folder, without a path.");
+                }
+            }
         }
 
         foreach (var (name, payload) in src.Payloads)
@@ -2140,8 +1835,11 @@ internal static partial class FlowMapper
         }
         else if (DeliveryProtocols.CarriesPayload(flow.Target.Protocol))
         {
+            // The bulk data an enrichment of the flow's mapping names is the payload set bulk once the flow is bound to its
+            // mapping, which checks it then (osdu/docs/reference/flow/enrich-bulk.md).
             var selected = flow.Target.ProtocolOptions.Payload;
-            if (selected is not null && !src.Payloads.ContainsKey(selected))
+            var enrichmentBulk = selected == PayloadParts.Bulk && src.Payloads.Count == 0 && flow.Target.Protocol == DeliveryProtocol.Ddms;
+            if (selected is not null && !src.Payloads.ContainsKey(selected) && !enrichmentBulk)
             {
                 throw new FlowValidationException($"{source}: target.protocolOptions.payload '{selected}' is not declared under source.payloads.");
             }
@@ -2152,7 +1850,7 @@ internal static partial class FlowMapper
                     $"{source}: source.payloads declares {src.Payloads.Count} payloads; target.protocolOptions.payload must name the one the {flow.Target.Protocol} protocol streams.");
             }
 
-            var payloadName = selected ?? src.Payloads.Keys.FirstOrDefault();
+            var payloadName = enrichmentBulk ? null : selected ?? src.Payloads.Keys.FirstOrDefault();
             if (payloadName is not null)
             {
                 RequirePartColumns(flow, payloadName, source, paths);

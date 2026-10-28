@@ -6,25 +6,25 @@ using SqlFlow.Delivery.Ledger;
 namespace SqlFlow.Delivery.Rendering;
 
 /// <summary>
-/// What a step set aside on its hold (<c>onHold: step</c>) added to the version of the record the last delivery wrote
-/// (osdu/docs/reference/flow/enrich-holds.md): the fragments it composed into the record, in the order it composed them (its
-/// own, then the links to its datasets), and the datasets it registered. A record whose step holds is rendered with these in the
-/// step's place, so OSDU keeps what the step gave until it renders again.
+/// What an enrichment set aside on its hold (<c>onHold: step</c>) added to the version of the record the last delivery wrote
+/// (osdu/docs/reference/flow/enrich-holds.md): the paths its mapping composed into the record, in the order it composed them,
+/// and the records it added. A record whose enrichment holds is rendered with these in the enrichment's place, so OSDU keeps
+/// what the enrichment gave until it renders again.
 /// </summary>
-/// <param name="Fragments">What the step composed into the record, each as the composition took it.</param>
-/// <param name="Datasets">The ids of the datasets the step registered for the record, which it keeps linking.</param>
-public sealed record KeptStep(IReadOnlyList<JsonObject> Fragments, IReadOnlyList<string> Datasets)
+/// <param name="Fragments">What the enrichment composed into the record, each as the composition took it.</param>
+/// <param name="Records">The ids of the records the enrichment added to the record, which it keeps linking.</param>
+public sealed record KeptStep(IReadOnlyList<JsonObject> Fragments, IReadOnlyList<string> Records)
 {
-    /// <summary>The target state value a step's last delivered contribution is kept under.</summary>
+    /// <summary>The target state value an enrichment's last delivered contribution is kept under.</summary>
     public static string StateKey(string step) => "enrich.step." + step;
 
-    /// <summary>The contribution as the target state keeps it: canonical JSON, its fragments in order and its datasets in id order.</summary>
+    /// <summary>The contribution as the target state keeps it: canonical JSON, its fragments in order and its records in id order.</summary>
     public string ToText()
     {
         var node = new JsonObject
         {
-            ["datasets"] = new JsonArray(Datasets.Distinct(StringComparer.Ordinal).Order(StringComparer.Ordinal).Select(d => (JsonNode?)JsonValue.Create(d)).ToArray()),
             ["fragments"] = new JsonArray(Fragments.Select(f => (JsonNode?)f.DeepClone()).ToArray()),
+            ["records"] = new JsonArray(Records.Distinct(StringComparer.Ordinal).Order(StringComparer.Ordinal).Select(d => (JsonNode?)JsonValue.Create(d)).ToArray()),
         };
         return CanonicalJson.ToString(node);
     }
@@ -39,13 +39,13 @@ public sealed record KeptStep(IReadOnlyList<JsonObject> Fragments, IReadOnlyList
 
         try
         {
-            if (JsonNode.Parse(text) is not JsonObject node || node["fragments"] is not JsonArray fragments || node["datasets"] is not JsonArray datasets)
+            if (JsonNode.Parse(text) is not JsonObject node || node["fragments"] is not JsonArray fragments || node["records"] is not JsonArray records)
             {
                 return null;
             }
 
             var composed = fragments.Select(f => f as JsonObject).ToList();
-            var ids = datasets.Select(d => d is JsonValue value && value.TryGetValue<string>(out var id) ? id : null).ToList();
+            var ids = records.Select(d => d is JsonValue value && value.TryGetValue<string>(out var id) ? id : null).ToList();
             return composed.Contains(null) || ids.Contains(null)
                 ? null
                 : new KeptStep(composed.Select(f => (JsonObject)f!.DeepClone()).ToList(), ids.Select(i => i!).ToList());

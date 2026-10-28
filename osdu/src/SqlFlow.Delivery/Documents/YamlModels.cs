@@ -63,40 +63,43 @@ internal sealed class FlowYaml
     // For the single form: the earlier flow whose ledger this one keeps instead of its own (ledger: <old name>), as a renamed flow does.
     public string? Ledger { get; set; }
 
-    /// <summary>The steps that extend each record after the mapping renders it, by name, in document order; null when none.</summary>
-    public OrderedDictionary<string, EnrichStepYaml?>? Enrich { get; set; }
+    /// <summary>
+    /// Where enrichments were declared before the mapping declared them: read only to refuse it, saying where they go now
+    /// (osdu/docs/reference/flow/enrich.md).
+    /// </summary>
+    public object? Enrich { get; set; }
+
+    /// <summary>
+    /// The OSDU workflows a delivery runs over an enrichment's records once they landed, by the name of the enrichment of the
+    /// flow's mapping, in document order; null when none.
+    /// </summary>
+    public OrderedDictionary<string, WorkflowYaml?>? Workflows { get; set; }
 }
 
-/// <summary>One step of <c>enrich:</c> (osdu/docs/reference/flow/enrich.md): its rows, its fragment and the steps it follows.</summary>
-internal sealed class EnrichStepYaml
+/// <summary>One enrichment of a mapping (osdu/docs/reference/flow/enrich.md): its rows, its mapping and what its rows' files become.</summary>
+internal sealed class MappingEnrichYaml
 {
     public string? Description { get; set; }
 
-    /// <summary>The step's rows: a child table joined to the record table by its key, as a child dataset is.</summary>
-    public FlowSourceDatasetYaml? Dataset { get; set; }
-
-    /// <summary>How many of those rows one record takes: <c>one</c> (the default) or <c>many</c>.</summary>
+    /// <summary>How many rows of the child dataset named after it one record takes: <c>one</c> or <c>many</c>; none when left out.</summary>
     public string? Rows { get; set; }
 
     public string? Mapping { get; set; }
 
+    /// <summary>The columns of a row that tell its dataset from the enrichment's other rows'.</summary>
+    public List<string>? Key { get; set; }
+
     public List<string>? After { get; set; }
 
-    /// <summary>The files each of the step's rows names, registered as a dataset record of their own and linked from the record.</summary>
-    public EnrichFilesYaml? Files { get; set; }
-
-    /// <summary>What the step's hold does: <c>record</c> (the default) holds the record, <c>step</c> sets the step aside.</summary>
+    /// <summary>What its hold does: <c>record</c> (the default) holds the record, <c>step</c> sets the enrichment aside.</summary>
     public string? OnHold { get; set; }
 
-    /// <summary>The record's DDMS bulk data, named by the step's one row, as a payload set declares files.</summary>
-    public FlowPayloadYaml? Bulk { get; set; }
-
-    /// <summary>The workflow the step runs over the record once it and the step's datasets landed, as target.workflow declares one.</summary>
-    public WorkflowYaml? Workflow { get; set; }
+    /// <summary>True when the files its one row names are the record's DDMS bulk data.</summary>
+    public bool? Bulk { get; set; }
 }
 
-/// <summary>The files a step registers (osdu/docs/reference/flow/enrich-files.md): where each row's files are, and what they become.</summary>
-internal sealed class EnrichFilesYaml
+/// <summary>The files a child dataset's rows name (osdu/docs/reference/flow/enrich-records.md): where they are, in each row's columns.</summary>
+internal sealed class DatasetFilesYaml
 {
     public string? Root { get; set; }
 
@@ -106,17 +109,7 @@ internal sealed class EnrichFilesYaml
 
     public string? HashColumn { get; set; }
 
-    /// <summary>The dataset kind the files are registered as.</summary>
-    public string? Kind { get; set; }
-
-    /// <summary>The columns of a row that tell its dataset from the step's other rows'.</summary>
-    public List<string>? Key { get; set; }
-
-    /// <summary>A fragment over the dataset kind, rendered from the row into each dataset record.</summary>
-    public string? Mapping { get; set; }
-
-    /// <summary>The path of the record the datasets are listed at.</summary>
-    public string? Link { get; set; }
+    public string? ChunkCountColumn { get; set; }
 
     public string? ContentType { get; set; }
 }
@@ -174,8 +167,11 @@ internal sealed class InterfaceYaml
     /// <summary>The source's <c>target.validation</c>, with this interface's keys laid over it.</summary>
     public ValidationYaml? Validation { get; set; }
 
-    /// <summary>The steps that extend each of the interface's records after its mapping renders it; null when none.</summary>
-    public OrderedDictionary<string, EnrichStepYaml?>? Enrich { get; set; }
+    /// <summary>Where an interface's enrichments were declared before its mapping declared them: read only to refuse it.</summary>
+    public object? Enrich { get; set; }
+
+    /// <summary>The OSDU workflows a delivery runs over the records of the enrichments of the interface's mapping; null when none.</summary>
+    public OrderedDictionary<string, WorkflowYaml?>? Workflows { get; set; }
 }
 
 /// <summary>
@@ -408,6 +404,9 @@ internal sealed class FlowSourceDatasetYaml
     public List<string>? OrderBy { get; set; }
 
     public int? MaxRowsPerRecord { get; set; }
+
+    /// <summary>The files each row names, which an enrichment of the flow's mapping reading these rows registers or sends.</summary>
+    public DatasetFilesYaml? Files { get; set; }
 }
 
 internal sealed class FlowPayloadYaml
@@ -986,12 +985,18 @@ internal sealed class MappingYaml
     public string? Description { get; set; }
 
     /// <summary>
-    /// True for a fragment (osdu/docs/reference/flow/enrich.md): the paths a step of <c>enrich:</c> adds to a record the
-    /// flow's own mapping renders, never a record of its own, so it declares no <c>dataset</c> and no access or legal block.
+    /// True for an enrichment mapping (osdu/docs/reference/flow/enrich.md): what an enrichment of another mapping renders for
+    /// each of its records, never a record keyed of its own, so it declares no <c>dataset</c> and no access or legal block.
     /// </summary>
-    public bool? Fragment { get; set; }
+    public bool? Enrichment { get; set; }
+
+    /// <summary>What the header said before <c>enrichment: true</c>: read only to refuse it with the word to write.</summary>
+    public object? Fragment { get; set; }
 
     public MappingDatasetYaml? Dataset { get; set; }
+
+    /// <summary>What the mapping adds to every record it renders, by the enrichment's name, in document order; null when none.</summary>
+    public OrderedDictionary<string, MappingEnrichYaml?>? Enrich { get; set; }
 
     public Dictionary<string, MappingParameterYaml>? Parameters { get; set; }
 

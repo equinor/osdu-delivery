@@ -363,6 +363,12 @@ public sealed record RecordState
     /// </summary>
     public IReadOnlyList<string> Identities { get; init; } = [];
 
+    /// <summary>
+    /// The OSDU ids of the records the mapping's enrichments add to this one (osdu/docs/reference/flow/enrich-records.md), as
+    /// its last render made them: what finds the record it belongs to when an operator holds one of them. Search only.
+    /// </summary>
+    public IReadOnlyList<string> AddedRecords { get; init; } = [];
+
     public required string MappingName { get; init; }
 
     /// <summary>The render context of the last delivered document, canonical JSON.</summary>

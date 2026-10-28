@@ -56,8 +56,8 @@ public static class PayloadLocations
     }
 
     /// <summary>
-    /// Where the files one row of a step of <c>enrich:</c> names are (osdu/docs/reference/flow/enrich-files.md):
-    /// the row's location column joined to the step's root, checked against the flow's roots as a payload's is.
+    /// Where the files one row of an enrichment names are (osdu/docs/reference/flow/enrich-records.md): the row's location
+    /// column joined to its dataset's files root, checked against the flow's roots as a payload's is.
     /// </summary>
     public static PayloadResolution ResolveStepFiles(FlowDefinition flow, IReadOnlyDictionary<string, string> values, SourceRow row, EnrichStep step)
     {
@@ -65,9 +65,9 @@ public static class PayloadLocations
         ArgumentNullException.ThrowIfNull(values);
         ArgumentNullException.ThrowIfNull(row);
         ArgumentNullException.ThrowIfNull(step);
-        var files = step.Files ?? throw new ArgumentException($"Step '{step.Name}' registers no files.", nameof(step));
-        var key = $"enrich.{step.Name}.files";
-        var column = files.Payload.LocationColumn!;
+        var files = step.Records?.Files ?? throw new ArgumentException($"Enrichment '{step.Name}' registers no files.", nameof(step));
+        var key = $"{KeyPaths.Of(flow).Datasets}.{step.Name}.files";
+        var column = files.LocationColumn!;
         var value = row.GetString(column)?.Trim();
         if (string.IsNullOrEmpty(value))
         {
@@ -79,14 +79,14 @@ public static class PayloadLocations
             return new PayloadResolution(null, $"{key} column '{column}' holds '{value}', which climbs out of its folder with '..'");
         }
 
-        var root = FlowParameters.ResolvePath(flow, files.Payload.Root, values, key + ".root");
+        var root = FlowParameters.ResolvePath(flow, files.Root, values, key + ".root");
         var folder = IsAbsolute(value) ? Absolute(value) : Join(root, value);
         if (PayloadRoots.Refusal(flow, values, folder) is { } refusal)
         {
             return new PayloadResolution(null, $"{key} column '{column}': {refusal}");
         }
 
-        return new PayloadResolution(new PayloadLocation(folder, files.Payload.Pattern), null);
+        return new PayloadResolution(new PayloadLocation(folder, files.Pattern), null);
     }
 
     private static bool IsAbsolute(string value) => value.Contains("://", StringComparison.Ordinal) || Path.IsPathRooted(value);

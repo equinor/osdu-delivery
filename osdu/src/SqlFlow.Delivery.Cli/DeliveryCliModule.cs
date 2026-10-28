@@ -135,6 +135,10 @@ public sealed class DeliveryCliModule : ICliModule
                 "                                   What deliveries of one record created in OSDU, newest first: each",
                 "                                   dataset, session, version and the like with its OSDU id or what finds",
                 "                                   it, its versions, where it stands and who settled it (needs --db)",
+                "sqlflow records enrichments <flow.yaml> --key <delivery key | source key> [--interface <name>] [--partition <id>]",
+                "                                   What the mapping's enrichments added to one record: each with its",
+                "                                   mapping, where its rows came from, and every record it added with the",
+                "                                   version OSDU holds and every write made of it (needs --db)",
                 "sqlflow records undos <flow.yaml> [--interface <name>] [--partition <id>] [--max <n>]",
                 "                                   What unfinished deliveries left in OSDU that an undo may still take,",
                 "                                   counted by state, and the records holding it, those whose undo used",
@@ -152,7 +156,7 @@ public sealed class DeliveryCliModule : ICliModule
             ],
             DeliveryRecordVerbs.RecordsAsync)
         {
-            Subcommands = ["list", "export", "show", "issues", "release", "adopt", "reverse", "reversals", "artifacts", "undos", "removed", "lift-removal"],
+            Subcommands = ["list", "export", "show", "issues", "release", "adopt", "reverse", "reversals", "artifacts", "enrichments", "undos", "removed", "lift-removal"],
             Flags = ["--contains", "--preview"],
             ValueOptions = ["--interface", "--partition", "--search", "--status", "--max", "--key", "--attempts", "--issue", "--confirm", "--run", "--submission", "--outcome", "--state", "--after", "--out"],
         },

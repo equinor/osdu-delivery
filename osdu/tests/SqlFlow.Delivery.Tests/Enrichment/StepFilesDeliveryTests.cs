@@ -19,7 +19,8 @@ using Xunit;
 namespace SqlFlow.Delivery.Tests;
 
 /// <summary>
-/// A delivery flow whose step registers each log's LAS file as a dataset, end to end (osdu/docs/reference/flow/enrich-files.md):
+/// A delivery flow whose mapping's enrichment registers each log's LAS file as a dataset, linked from the log with <c>$link</c>,
+/// end to end (osdu/docs/reference/flow/enrich-records.md):
 /// every run made as the executor makes it, over the sample estate, the module's database on SQL Server, the
 /// flow's own route counting the records it writes, and a fake platform serving the Dataset service. The first run registers
 /// each log's dataset and writes the log naming it; new files register a new version of the same dataset and leave the log as
@@ -43,6 +44,7 @@ public sealed class StepFilesDeliveryTests : IDisposable
     private readonly TestClock _clock = new();
     private readonly string _root = Samples.NewTempDirectory();
     private readonly string _las;
+    private readonly string _mappings;
     private readonly FakeOsduPlatform _platform = new();
     private readonly HttpRuntime _http;
     private DateTime? _readThrough;
@@ -50,6 +52,9 @@ public sealed class StepFilesDeliveryTests : IDisposable
     public StepFilesDeliveryTests()
     {
         _las = Directory.CreateDirectory(Path.Combine(_root, "las")).FullName;
+        _mappings = Directory.CreateDirectory(Path.Combine(_root, "mappings")).FullName;
+        EnrichmentSuite.WriteWellLogMapping(_mappings, "lasfile:\n  rows: one\n  mapping: WellLogLasDataset@1.0.0\n", data: "Datasets: [{ $link: lasfile }]");
+        EnrichmentSuite.WriteEnrichmentMapping(_mappings, "WellLogLasDataset", EnrichmentSuite.DatasetKind, "tags:\n  LasFolder: { $from: las_folder }\n");
         _http = new HttpRuntime(
             new FlowReliability { Retry = new FlowRetry { Attempts = 1, BaseDelayMs = 1, MaxDelayMs = 1 } },
             new SecretResolver([new EnvSecretProvider()]), TimeProvider.System, _platform, allowLoopback: true);
@@ -73,25 +78,14 @@ public sealed class StepFilesDeliveryTests : IDisposable
             {
                 Object = "OsduData.silver.WellLogFile",
                 Join = new Dictionary<string, string>(StringComparer.Ordinal) { ["source_project"] = "source_project", ["log_id"] = "log_id" },
+                Files = new FlowPayload { Root = _las, LocationColumn = "las_folder", Pattern = "*.las", HashColumn = "las_hash", ContentType = "text/plain" },
             },
         };
         return flow with
         {
             Source = flow.Source with { Datasets = datasets, Payloads = new Dictionary<string, FlowPayload>(StringComparer.Ordinal) },
+            Render = flow.Render with { MappingsDirectory = _mappings },
             Target = flow.Target with { Protocol = DeliveryProtocol.Storage, ProtocolOptions = new ProtocolOptions() },
-            Enrich =
-            [
-                new EnrichStep
-                {
-                    Name = "lasfile",
-                    ReadsRows = true,
-                    Files = new EnrichFiles
-                    {
-                        Payload = new FlowPayload { Root = _las, LocationColumn = "las_folder", Pattern = "*.las", HashColumn = "las_hash" },
-                        ContentType = "text/plain",
-                    },
-                },
-            ],
         };
     }
 
@@ -106,15 +100,15 @@ public sealed class StepFilesDeliveryTests : IDisposable
     private async Task<(FakeProtocol Written, OsduLedger Ledger, Guid FlowId, RunResult Run)> DeliverAsync(MemoryIngestionTables tables)
     {
         var written = new FakeProtocol();
-        var (ledger, flowId, run) = await RunAsync(tables, Flow(), _ => written);
+        var (ledger, flowId, run, _) = await RunAsync(tables, Flow(), _ => written);
         return (written, ledger, flowId, run);
     }
 
     /// <summary>
     /// One deliver run of <paramref name="flow"/> as the executor makes it, the flow's own route made by <paramref name="inner"/>
-    /// over the platform and wrapped as a flow with step files is.
+    /// over the platform and wrapped as a flow adding records is; with the flow as the run bound it to its mapping's enrichments.
     /// </summary>
-    private async Task<(OsduLedger Ledger, Guid FlowId, RunResult Run)> RunAsync(MemoryIngestionTables tables, FlowDefinition flow, Func<OsduHttpClient, IDeliveryProtocol> inner)
+    private async Task<(OsduLedger Ledger, Guid FlowId, RunResult Run, FlowDefinition Bound)> RunAsync(MemoryIngestionTables tables, FlowDefinition flow, Func<OsduHttpClient, IDeliveryProtocol> inner)
     {
         _clock.Advance(TimeSpan.FromSeconds(1));
         var ledger = _db.Ledger(_clock);
@@ -133,7 +127,7 @@ public sealed class StepFilesDeliveryTests : IDisposable
         runtime.Selection = selection;
         var run = await runtime.RunAsync(force: false);
         _readThrough = Now;
-        return (ledger, runtime.Flow.Id, run);
+        return (ledger, runtime.Flow.Id, run, runtime.Flow);
     }
 
     /// <summary>The platform as the flow reaches it, in partition dev.</summary>
@@ -191,10 +185,12 @@ public sealed class StepFilesDeliveryTests : IDisposable
         Assert.Equal([dataset + ":"], Links(first.Document));
         Assert.Empty(Links(Assert.Single(written.Deliveries, d => d.Key == SampleEstate.Key(2)).Document));
         Assert.Equal("log.las", _platform.Records[dataset]["data"]!["Name"]!.GetValue<string>());
+        Assert.NotNull(_platform.Records[dataset]["tags"]!["LasFolder"]);
+        Assert.Equal(first.Document["acl"]!.ToJsonString(), _platform.Records[dataset]["acl"]!.ToJsonString());
         Assert.Equal(2, Registrations());
         var record = (await ledger.GetRecordAsync(flowId, SampleEstate.Key(0)))!;
         var kept = JsonMerge.ToValues(record.TargetStateJson);
-        Assert.Equal([dataset], EnrichParts.Datasets(kept));
+        Assert.Equal([dataset], EnrichParts.Records(kept));
         Assert.Equal(Hashing.ContentHash.Of("~Version Information A"), kept[EnrichParts.FilesStateKey(dataset)]);
 
         // 2. Nothing changed: nothing is sent, and nothing registered.
@@ -237,7 +233,61 @@ public sealed class StepFilesDeliveryTests : IDisposable
         Assert.Empty(Links(removed.Document));
         Assert.DoesNotContain(dataset, _platform.Removed);
         record = (await ledger.GetRecordAsync(flowId, SampleEstate.Key(0)))!;
-        Assert.Empty(EnrichParts.Datasets(JsonMerge.ToValues(record.TargetStateJson)));
+        Assert.Empty(EnrichParts.Records(JsonMerge.ToValues(record.TargetStateJson)));
+    }
+
+    [Fact]
+    public async Task The_ledger_traces_each_dataset_a_log_adds_to_the_log_its_files_and_every_write_made_of_it()
+    {
+        var tables = await SampleEstate.BuildAsync(_root, Now.AddMinutes(-5), time: _clock);
+        LasFile(tables.Records[0], "~Version Information A");
+
+        // 1. The first delivery registers the log's dataset: the ledger lists it under the log, linked, with its files and one write.
+        var (_, ledger, flowId, _) = await DeliverAsync(tables);
+        var (record, enrichment) = await EnrichmentAsync(ledger, flowId, 0);
+        var dataset = DatasetOf(record.TargetId!);
+        Assert.Equal("lasfile", enrichment.Name);
+        Assert.Equal(["records"], enrichment.Adds);
+        Assert.Equal("WellLogLasDataset@1.0.0", enrichment.Mapping);
+        Assert.Equal((EnrichmentSuite.DatasetKind, "dataset"), (enrichment.RecordKind, enrichment.WrittenThrough));
+        Assert.False(enrichment.SetAside);
+        Assert.Equal(1, enrichment.Rows!.Count);
+        var added = Assert.Single(enrichment.Records);
+        Assert.Equal((dataset, true), (added.Id, added.Linked));
+        Assert.Equal(Hashing.ContentHash.Of("~Version Information A"), added.FilesHash);
+        var created = Assert.Single(added.Writes);
+        Assert.Equal(("delivered", null), (created.Outcome, created.PriorVersion));
+
+        // A lookup by the dataset's id finds the log it was added to.
+        Assert.Equal(SampleEstate.Key(0), Assert.Single(await ledger.LookupAsync(dataset, 10, flowId: flowId)).DeliveryKey);
+
+        // A log without a LAS file lists the enrichment with nothing added.
+        Assert.Empty((await EnrichmentAsync(ledger, flowId, 2)).Enrichment.Records);
+
+        // 2. New files register the dataset again: both writes are listed, the newest first, the new one replacing the version
+        // the first landed as, and the files hash is the new one.
+        LasFile(tables.Records[0], "~Version Information A, corrected");
+        (_, ledger, _, _) = await DeliverAsync(tables);
+        added = Assert.Single((await EnrichmentAsync(ledger, flowId, 0)).Enrichment.Records);
+        Assert.Equal(2, added.Writes.Count);
+        Assert.True(added.Writes[0].AtUtc >= added.Writes[1].AtUtc);
+        Assert.Equal((created.AttemptId, null), (added.Writes[1].AttemptId, added.Writes[1].PriorVersion));
+        Assert.NotNull(added.Writes[0].PriorVersion);
+        Assert.Equal(Hashing.ContentHash.Of("~Version Information A, corrected"), added.FilesHash);
+
+        // 3. The log's LAS file row goes: the dataset stays listed with its writes, no longer linked.
+        LasFile(tables.Records[0], null);
+        (_, ledger, _, _) = await DeliverAsync(tables);
+        added = Assert.Single((await EnrichmentAsync(ledger, flowId, 0)).Enrichment.Records);
+        Assert.Equal((dataset, false, 2), (added.Id, added.Linked, added.Writes.Count));
+    }
+
+    /// <summary>The log at <paramref name="index"/> of the sample estate as the ledger holds it, and its one enrichment as the ledger traces it.</summary>
+    private static async Task<(RecordState Record, RecordEnrichment Enrichment)> EnrichmentAsync(OsduLedger ledger, Guid flowId, int index)
+    {
+        var record = (await ledger.GetRecordAsync(flowId, SampleEstate.Key(index)))!;
+        var attempts = await ledger.ListAttemptsAsync(flowId, SampleEstate.Key(index), RecordEnrichments.MaxAttempts);
+        return (record, Assert.Single(RecordEnrichments.Of(record, attempts)));
     }
 
     [Fact]
@@ -247,7 +297,7 @@ public sealed class StepFilesDeliveryTests : IDisposable
         LasFile(tables.Records[0], "~Version Information A");
 
         // 1. The log is created through the DDMS naming its dataset: OSDU holds no list of it to carry over yet.
-        var (ledger, flowId, run) = await RunAsync(tables, PreservingDdmsFlow(), Ddms);
+        var (ledger, flowId, run, _) = await RunAsync(tables, PreservingDdmsFlow(), Ddms);
         Assert.Equal(tables.Records.Count, run.Work.Delivered);
         var logId = (await ledger.GetRecordAsync(flowId, SampleEstate.Key(0)))!.TargetId!;
         var link = EnrichParts.Link(DatasetOf(logId));
@@ -264,7 +314,7 @@ public sealed class StepFilesDeliveryTests : IDisposable
         SampleEstate.Change(tables.Records[0], "log_run", "RUN-CHANGED", Now);
         SampleEstate.Change(tables.Records[1], "log_run", "RUN-CHANGED", Now);
         var mark = _platform.Calls.Count;
-        (_, _, run) = await RunAsync(tables, PreservingDdmsFlow(), Ddms);
+        (_, _, run, _) = await RunAsync(tables, PreservingDdmsFlow(), Ddms);
         Assert.Equal(2, run.Work.Delivered);
         Assert.Equal(0, Registrations(mark));
         Assert.Equal([foreign, link], Links(_platform.Records[logId]));
@@ -272,7 +322,7 @@ public sealed class StepFilesDeliveryTests : IDisposable
 
         // 4. The log's LAS file row goes: the update takes the step's link off and keeps the other system's, the dataset left live.
         LasFile(tables.Records[0], null);
-        (_, _, run) = await RunAsync(tables, PreservingDdmsFlow(), Ddms);
+        (_, _, run, _) = await RunAsync(tables, PreservingDdmsFlow(), Ddms);
         Assert.Equal(1, run.Work.Delivered);
         Assert.Equal([foreign], Links(_platform.Records[logId]));
         Assert.DoesNotContain(DatasetOf(logId), _platform.Removed);
@@ -284,13 +334,12 @@ public sealed class StepFilesDeliveryTests : IDisposable
         var tables = await SampleEstate.BuildAsync(_root, Now.AddMinutes(-5), time: _clock);
         LasFile(tables.Records[0], "~Version Information A");
         var started = Now;
-        var flow = PreservingDdmsFlow();
-        var (ledger, flowId, _) = await RunAsync(tables, flow, Ddms);
+        var (ledger, flowId, _, flow) = await RunAsync(tables, PreservingDdmsFlow(), Ddms);
         var logId = TargetId.WithoutVersion((await ledger.GetRecordAsync(flowId, SampleEstate.Key(0)))!.TargetId!).TrimEnd(':');
         var dataset = DatasetOf(logId);
 
         // The ledger names the dataset beside the logs the run changed when asked for what their target state lists.
-        Assert.Contains(dataset, await ledger.ChangedSinceAsync(flowId, started, 1_000, EnrichParts.DatasetsValue));
+        Assert.Contains(dataset, await ledger.ChangedSinceAsync(flowId, started, 1_000, EnrichParts.RegisteredValue));
         Assert.DoesNotContain(dataset, await ledger.ChangedSinceAsync(flowId, started, 1_000));
 
         await _db.DeclareCacheAsync("dev", "welldb-logs-cache", new ReferenceTypeSpec
@@ -310,7 +359,7 @@ public sealed class StepFilesDeliveryTests : IDisposable
         var caches = _db.Caches();
         var plan = CacheStepPlan.Resolve(
             flow.Label, new FlowCacheSteps { After = new CacheStepEntries { Auto = true } }, await caches.DeclarationAsync("dev"),
-            Samples.WellLogKind, new MappingCacheReads([], [], []), EnrichFiles.KindsOf(flow));
+            Samples.WellLogKind, new MappingCacheReads([], [], []), EnrichRecords.KindsOf(flow));
         Assert.Equal(["LasFile", "WellLog"], plan.After.Select(t => t.TypeName).Order(StringComparer.Ordinal));
         Assert.True(plan.TakesStepDatasets);
 
@@ -342,5 +391,94 @@ public sealed class StepFilesDeliveryTests : IDisposable
 
         Assert.Equal(SampleEstate.Key(0), Assert.Single(written.Deliveries).Key);
         Assert.Equal(1, Registrations(mark));
+    }
+
+    /// <summary>
+    /// The flow over a mapping whose enrichment <c>note</c> adds a Document record to each log from a row of its own, written
+    /// through storage, and links it from the log's extension properties.
+    /// </summary>
+    private FlowDefinition NotesFlow()
+    {
+        const string documentKind = "osdu:wks:work-product-component--Document:1.0.0";
+        var mappings = Directory.CreateDirectory(Path.Combine(_root, "notes-mappings")).FullName;
+        EnrichmentSuite.WriteWellLogMapping(mappings, "note:\n  rows: one\n  mapping: WellLogNote@1.0.0\n", data: "ExtensionProperties:\n  WellDb:\n    NoteID: { $link: note }");
+        EnrichmentSuite.WriteEnrichmentMapping(mappings, "WellLogNote", documentKind, "data:\n  Name: { $from: note }\n  Description: { $base: data.Name }\n");
+        var flow = Flow();
+        var datasets = flow.Source.Datasets.Where(d => d.Key != "lasfile").ToDictionary(d => d.Key, d => d.Value, StringComparer.Ordinal);
+        datasets["note"] = new FlowSourceDataset
+        {
+            Object = "OsduData.silver.WellLogNote",
+            Join = new Dictionary<string, string>(StringComparer.Ordinal) { ["source_project"] = "source_project", ["log_id"] = "log_id" },
+        };
+        return flow with { Source = flow.Source with { Datasets = datasets }, Render = flow.Render with { MappingsDirectory = mappings } };
+    }
+
+    /// <summary>Gives a log its note row, or takes it away (null).</summary>
+    private void Note(MemoryRecord record, string? note)
+    {
+        _clock.Advance(TimeSpan.FromSeconds(1));
+        record.Datasets.Remove("note");
+        if (note is not null)
+        {
+            record.AddChild("note", new Dictionary<string, object?>(StringComparer.OrdinalIgnoreCase)
+            {
+                ["source_project"] = record.Row["source_project"],
+                ["log_id"] = record.Row["log_id"],
+                ["note"] = note,
+            });
+        }
+
+        record.DatasetUpdatedUtc["note"] = Now;
+    }
+
+    private int StorageWrites(string id, int from = 0)
+        => _platform.Calls.Skip(from).Count(c => c.Method == HttpMethod.Put && Uri.UnescapeDataString(c.Uri.AbsolutePath) == "/api/storage/v2/records"
+            && c.Body is { } body && body.Contains('"' + id + '"', StringComparison.Ordinal));
+
+    [Fact]
+    public async Task A_record_of_another_kind_is_written_through_storage_and_again_only_when_it_changes()
+    {
+        var tables = await SampleEstate.BuildAsync(_root, Now.AddMinutes(-5), time: _clock);
+        Note(tables.Records[0], "first note");
+
+        // 1. The log goes once, linking the Document its note row renders, written through storage under the id its own makes.
+        var written = new FakeProtocol();
+        var (ledger, flowId, run, bound) = await RunAsync(tables, NotesFlow(), _ => written);
+        Assert.Equal(tables.Records.Count, run.Work.Delivered);
+        var log = Assert.Single(written.Deliveries, d => d.Key == SampleEstate.Key(0));
+        var note = WorkflowValues.DerivedDatasetId(log.TargetId, "work-product-component--Document", "enrich.note");
+        Assert.Equal(note + ":", log.Document["data"]!["ExtensionProperties"]!["WellDb"]!["NoteID"]!.GetValue<string>());
+        var stored = _platform.Records[note];
+        Assert.Equal(("osdu:wks:work-product-component--Document:1.0.0", "first note"), (stored["kind"]!.GetValue<string>(), stored["data"]!["Name"]!.GetValue<string>()));
+        Assert.Equal(log.Document["legal"]!.ToJsonString(), stored["legal"]!.ToJsonString());
+        Assert.Equal(0, Registrations());
+        Assert.False(Assert.Single(bound.Enrich!).Records!.RegistersFiles);
+        var record = (await ledger.GetRecordAsync(flowId, SampleEstate.Key(0)))!;
+        Assert.Equal([note], EnrichParts.Records(JsonMerge.ToValues(record.TargetStateJson)));
+
+        // 2. Nothing changed: nothing is written.
+        var mark = _platform.Calls.Count;
+        written = new FakeProtocol();
+        (_, _, run, _) = await RunAsync(tables, NotesFlow(), _ => written);
+        Assert.Empty(written.Deliveries);
+        Assert.Equal(0, StorageWrites(note, mark));
+
+        // 3. The note changed: the Document gets a new version, and the log, which links it already, is not written.
+        Note(tables.Records[0], "second note");
+        mark = _platform.Calls.Count;
+        written = new FakeProtocol();
+        (_, _, run, _) = await RunAsync(tables, NotesFlow(), _ => written);
+        Assert.Empty(written.Deliveries);
+        Assert.Equal(1, StorageWrites(note, mark));
+        Assert.Equal(2, _platform.History[note].Count);
+        Assert.Equal("second note", _platform.Records[note]["data"]!["Name"]!.GetValue<string>());
+
+        // 4. The note row goes: the log is written once without the link, and the Document stays live.
+        Note(tables.Records[0], null);
+        written = new FakeProtocol();
+        (ledger, _, _, _) = await RunAsync(tables, NotesFlow(), _ => written);
+        Assert.Null(Assert.Single(written.Deliveries).Document["data"]!["ExtensionProperties"]);
+        Assert.DoesNotContain(note, _platform.Removed);
+        Assert.Empty(EnrichParts.Records(JsonMerge.ToValues((await ledger.GetRecordAsync(flowId, SampleEstate.Key(0)))!.TargetStateJson)));
     }
 }

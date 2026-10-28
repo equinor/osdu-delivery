@@ -8,35 +8,43 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
-- **Records built in steps.** A delivery flow's `enrich:` steps extend each record its mapping renders: each step
-  renders a fragment (a mapping with `fragment: true`) from rows of its own, a table joined to the record on its key,
-  and can read what the mapping and the steps before it added with `$base`. The record is rendered as one chain and
-  sent once, so a change to the record's row, to a step's rows, to a fragment or to the cache values they read writes
-  it once, and a change that renders the same record sends nothing. `sqlflow check` lists the steps and
-  `sqlflow preview` shows what each added ([enrich](osdu/docs/reference/flow/enrich.md),
-  [fragments](osdu/docs/reference/flow/mapping-fragment.md)). A flow without steps renders and hashes as before.
-  A pipeline's `cache.before: auto` brings up to date what every fragment reads ([cache](osdu/docs/reference/flow/delivery.md#cache)).
+- **Enrichments: a mapping adds to each record it renders.** A mapping's `enrich:` block declares what is added to each
+  record from rows of its own: paths of the record, records of any kind the record links, or its bulk data. Each enrichment
+  renders an enrichment mapping (`enrichment: true`) and can read what the mapping and the enrichments before it added with
+  `$base`; the delivery flow binds its rows as the child dataset of its name (`source.datasets.<name>`). The record is
+  rendered as one chain and sent once, so a change to the record's row, to an enrichment's rows, to a mapping or to the
+  cache values they read writes it once, and a change that renders the same record sends nothing. `sqlflow check` lists
+  the enrichments and `sqlflow preview` shows what each added ([enrichments](osdu/docs/reference/flow/enrich.md),
+  [enrichment mappings](osdu/docs/reference/flow/mapping-enrichment.md)). A mapping without enrichments renders and hashes
+  as before, and a pipeline's `cache.before: auto` brings up to date what every enrichment mapping reads
+  ([cache](osdu/docs/reference/flow/delivery.md#cache)).
 
-- **A step registers files as datasets of the record.** A step of `enrich:` with `files:` uploads the files each of its
-  rows names through the Dataset service and registers them as a dataset of the record, under an id made from the
-  record's own and kept for good, which the record lists in `data.Datasets` (or the step's `link`). New files register a
-  new version of the same dataset and leave the record as OSDU holds it; a change to the record writes it once and
-  registers nothing that did not change ([files a step registers](osdu/docs/reference/flow/enrich-files.md)). On a flow
-  that carries `data.Datasets` over from the record OSDU holds (`preserveDataKeys`), an update keeps the links OSDU holds
-  and adds or takes off the step's own ([preserved keys](osdu/docs/reference/flow/enrich-files.md#preserved-keys)). A
-  pipeline's `cache.after` can take the datasets a step registers, read back with the records
-  ([the cache](osdu/docs/reference/flow/enrich-files.md#the-cache)).
+- **An enrichment adds records of any kind, linked with `$link`.** An enrichment whose mapping fills another kind than the
+  record's adds a record for each of its rows under an id made from the record's own and kept for good: a dataset registered
+  with the files its row names through the Dataset service (`source.datasets.<name>.files`), or any other record written
+  through storage, each with the record's access list and legal block. The mapping links them with `$link: <name>`
+  wherever its template takes a reference, such as `data.Datasets`. A changed row writes a new version of the same record
+  and leaves the record as OSDU holds it ([records an enrichment adds](osdu/docs/reference/flow/enrich-records.md)). On a
+  flow that carries `data.Datasets` over from the record OSDU holds (`preserveDataKeys`), an update keeps the links OSDU
+  holds and adds or takes off the enrichment's own ([preserved keys](osdu/docs/reference/flow/enrich-records.md#preserved-keys)),
+  and a pipeline's `cache.after` can take the records an enrichment adds ([the cache](osdu/docs/reference/flow/enrich-records.md#the-cache)).
 
-- **A step that holds can be set aside.** A step of `enrich:` with `onHold: step` that cannot render for a record no
-  longer holds it: the record goes ahead with what the step added to its last delivery, and the flow's Records tab
-  (**Step held**), its counts and the Delivery page list the records a step holds in until it renders again
-  ([a step set aside on its hold](osdu/docs/reference/flow/enrich-holds.md)).
+- **A record's enrichments are traced from the record.** Its ledger row keeps where each enrichment's rows came from, and
+  for every record an enrichment added its row, hash and landed version, beside every write in its attempts. A record's
+  **Enrichments** tab, `sqlflow records enrichments` and `GET /api/v1/delivery/records/{flowId}/{key}/enrichments` show
+  them, and a search for an added record's OSDU id finds the record it belongs to
+  ([what the ledger keeps](osdu/docs/reference/flow/enrich.md#what-the-ledger-keeps)).
 
-- **A step supplies the record's bulk data, or runs a workflow over it.** On the ddms route, a step's `bulk:` names the
-  record's DDMS bulk data by the step's row, so a well log's curves can come from a table of their own and go only when
-  they move ([a step's bulk data](osdu/docs/reference/flow/enrich-bulk.md)); a step's `workflow:` runs OSDU workflows
-  over the record and the step's dataset once they landed, declared as `target.workflow` is
-  ([a step's workflow](osdu/docs/reference/flow/enrich-workflow.md)).
+- **An enrichment that holds can be set aside.** An enrichment with `onHold: step` that cannot render for a record no
+  longer holds it: the record goes ahead with what the enrichment added to its last delivery, and the flow's Records tab
+  (**Step held**), its counts and the Delivery page list the records an enrichment holds in until it renders again
+  ([an enrichment set aside on its hold](osdu/docs/reference/flow/enrich-holds.md)).
+
+- **An enrichment supplies the record's bulk data, or has a workflow run over it.** On the ddms route, `bulk: true` names the
+  record's DDMS bulk data by the enrichment's row, so a well log's curves can come from a table of their own and go only
+  when they move ([an enrichment's bulk data](osdu/docs/reference/flow/enrich-bulk.md)); the flow's `workflows.<name>` runs
+  OSDU workflows over the record and what the enrichment added once they landed, declared as `target.workflow` is
+  ([an enrichment's workflow](osdu/docs/reference/flow/enrich-workflow.md)).
 
 - **Export records to Excel.** A delivery flow's Records tab has **Export**, which downloads every record its filter
   matches (up to 25,000) as an Excel workbook to work through where the records come from: a row for each record with its

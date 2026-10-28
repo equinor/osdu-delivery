@@ -450,7 +450,8 @@ public sealed partial class OsduLedger : ILedger
             RecordIdentities.KeyValues(record.SourceKeyJson),
             record.Label,
             record.TargetId,
-            record.SourceFileName ?? record.PendingSourceFileName);
+            record.SourceFileName ?? record.PendingSourceFileName,
+            record.AddedRecords);
 
     /// <summary>Refuses records of another flow than the one a flow-scoped write was called for, naming the first.</summary>
     private static void RequireFlow(Guid flowId, IEnumerable<(Guid FlowId, DeliveryKey Key)> records)

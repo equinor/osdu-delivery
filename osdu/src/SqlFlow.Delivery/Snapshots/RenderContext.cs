@@ -249,22 +249,23 @@ public sealed partial record RenderContext
 }
 
 /// <summary>
-/// One step of the flow's <c>enrich:</c> as a record's render context names it (osdu/docs/reference/flow/enrich.md): what
-/// rendered the step's fragment, so the ledger says what rendered every part of a record's document.
+/// One enrichment of the mapping's <c>enrich:</c> as a record's render context names it (osdu/docs/reference/flow/enrich.md):
+/// what rendered what it adds, so the ledger says what rendered every part of a record's document and every record added to it.
 /// </summary>
-/// <param name="Name">The step's name.</param>
-/// <param name="MappingReference">The fragment, <c>Name@version</c>; null for a step that registers files alone.</param>
-/// <param name="MappingFingerprint">The fragment document's fingerprint; null for one built in code.</param>
-/// <param name="SchemaSnapshotVersion">The version of the template the fragment fills.</param>
-/// <param name="Parameters">The fragment's parameters as they resolved.</param>
+/// <param name="Name">The enrichment's name.</param>
+/// <param name="MappingReference">The enrichment mapping adding paths to the record, <c>Name@version</c>; null for one adding none.</param>
+/// <param name="MappingFingerprint">That enrichment mapping's document fingerprint; null for one built in code.</param>
+/// <param name="SchemaSnapshotVersion">The version of the template it fills.</param>
+/// <param name="Parameters">Its parameters as they resolved.</param>
 public sealed record RenderStep(
     string Name, string? MappingReference, string? MappingFingerprint, string SchemaSnapshotVersion, IReadOnlyDictionary<string, string> Parameters)
 {
     /// <summary>
-    /// For a step that registers files, what decides its datasets as canonical JSON: their kind, key and link, and the fragment
-    /// rendered into them with its fingerprint, template version and parameters; null for a step that registers none.
+    /// For an enrichment that adds records, what decides them as canonical JSON: their kind and key, whether they are
+    /// registered with files, and the enrichment mapping rendered into them with its fingerprint, template version and
+    /// parameters; null for an enrichment that adds none.
     /// </summary>
-    public string? Files { get; init; }
+    public string? Records { get; init; }
 
     /// <summary>
     /// True for a step set aside when it holds (<c>onHold: step</c>), whose last delivered contribution a record keeps; a step
@@ -302,9 +303,9 @@ public sealed record RenderStep(
             node["mappingFingerprint"] = MappingFingerprint;
         }
 
-        if (Files is not null)
+        if (Records is not null)
         {
-            node["files"] = JsonNode.Parse(Files);
+            node["records"] = JsonNode.Parse(Records);
         }
 
         if (SetAsideOnHold)
@@ -329,9 +330,9 @@ public sealed record RenderStep(
     {
         if (node is not JsonObject step
             || step["name"]?.GetValue<string>() is not { Length: > 0 } name
-            || (step["mapping"] is null && step["files"] is null && step["bulk"] is null && step["workflow"] is null))
+            || (step["mapping"] is null && step["records"] is null && step["bulk"] is null && step["workflow"] is null))
         {
-            throw new DeliveryException($"Render context enrich[{index}] is not a step with a name and a mapping, files, bulk data or a workflow.");
+            throw new DeliveryException($"Render context enrich[{index}] is not an enrichment with a name and a mapping, records, bulk data or a workflow.");
         }
 
         var mapping = step["mapping"]?.GetValue<string>();
@@ -347,7 +348,7 @@ public sealed record RenderStep(
 
         return new RenderStep(name, mapping, step["mappingFingerprint"]?.GetValue<string>(), step["schema"]?.GetValue<string>() ?? string.Empty, parameters)
         {
-            Files = step["files"] is JsonObject files ? CanonicalJson.ToString(files) : null,
+            Records = step["records"] is JsonObject records ? CanonicalJson.ToString(records) : null,
             SetAsideOnHold = step["onHold"]?.GetValue<string>() == "step",
             SuppliesBulk = step["bulk"]?.GetValue<bool>() == true,
             RunsWorkflow = step["workflow"]?.GetValue<bool>() == true,

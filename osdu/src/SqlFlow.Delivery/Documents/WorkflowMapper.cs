@@ -52,23 +52,24 @@ internal static partial class FlowMapper
     }
 
     /// <summary>
-    /// The workflow a step of <c>enrich:</c> runs over the record once the record and the step's datasets landed
-    /// (osdu/docs/reference/flow/enrich-workflow.md): stages, results, secrets and when it runs, as the workflow route declares
-    /// them, over the record the flow's route wrote. The record is written already, so the step names no anchor and writes no
-    /// anchor tag; its datasets are registered already, so it names no inputs and reads them as <c>{dataset:enrich.&lt;step&gt;}</c>.
+    /// The workflow a flow runs over the record of an enrichment of its mapping once the record and the enrichment's datasets
+    /// landed (<c>workflows.&lt;name&gt;</c>, osdu/docs/reference/flow/enrich-workflow.md): stages, results, secrets and when it
+    /// runs, as the workflow route declares them, over the record the flow's route wrote. The record is written already, so it
+    /// names no anchor and writes no anchor tag; the enrichment's datasets are registered already, so it names no inputs and
+    /// reads them as <c>{dataset:enrich.&lt;name&gt;}</c>.
     /// </summary>
     private static WorkflowRoute MapStepWorkflow(WorkflowYaml declared, string at, string source)
     {
         if (declared.Inputs is { Count: > 0 })
         {
             throw new FlowValidationException(
-                $"{source}: {at}.inputs registers files as the workflow's inputs, and a step's files are registered by its files: and read by the workflow as {{dataset:enrich.<step>}}; remove {at}.inputs.");
+                $"{source}: {at}.inputs registers files as the workflow's inputs, and an enrichment's files are registered as its datasets and read by the workflow as {{dataset:enrich.<name>}}; remove {at}.inputs.");
         }
 
         if (!string.IsNullOrWhiteSpace(declared.Anchor) || !string.IsNullOrWhiteSpace(declared.AnchorTag))
         {
             throw new FlowValidationException(
-                $"{source}: {at} names an anchor or an anchor tag, and a step's workflow runs over the record the flow's route wrote, which it neither registers nor tags; remove {at}.anchor and {at}.anchorTag.");
+                $"{source}: {at} names an anchor or an anchor tag, and an enrichment's workflow runs over the record the flow's route wrote, which it neither registers nor tags; remove {at}.anchor and {at}.anchorTag.");
         }
 
         return MapWorkflowRoute(declared, at, declaresFiles: false, source) with { Anchor = WorkflowAnchor.Storage };
@@ -460,13 +461,10 @@ internal static partial class FlowMapper
             }
         }
 
-        // Each step's workflow is checked as the route's is, with no inputs of its own (osdu/docs/reference/flow/enrich-workflow.md).
-        foreach (var step in flow.Enrich ?? [])
+        // Each enrichment's workflow is checked as the route's is, with no inputs of its own (osdu/docs/reference/flow/enrich-workflow.md).
+        foreach (var (name, enrichWorkflow) in flow.EnrichWorkflows)
         {
-            if (step.Workflow is { } stepWorkflow)
-            {
-                ValidateWorkflowRoute(stepWorkflow, new HashSet<string>(StringComparer.Ordinal), $"{paths.Enrich}.{step.Name}.workflow", source);
-            }
+            ValidateWorkflowRoute(enrichWorkflow, new HashSet<string>(StringComparer.Ordinal), $"{paths.Workflows}.{name}", source);
         }
 
         if (flow.Target.Workflow is not { } workflow)

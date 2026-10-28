@@ -12,19 +12,23 @@ using ContentHash = SqlFlow.Delivery.Hashing.ContentHash;
 namespace SqlFlow.Delivery.Engine.Protocols;
 
 /// <summary>
-/// The route of a flow whose <c>enrich:</c> steps register files (osdu/docs/reference/flow/enrich-files.md):
-/// the flow's own route, with each record's step datasets registered before it in the same delivery. Each dataset whose hash
-/// moved (its files or what its fragment rendered into it) has its files stored where the Dataset service says and is
-/// registered under the id the record's id and the step make, with an intent declared first, so a registration whose answer
-/// is lost is undone or found again rather than registered twice, and is checked to answer retrieval instructions. The record
-/// names its datasets already, so it is written through the flow's route only when its document changed: new files register
-/// a new version of the same dataset and leave the record as OSDU holds it. A delivery that does not complete is undone at
-/// the Dataset service's reversible scope, and removing everything purges the datasets with the record.
+/// The route of a flow whose mapping's enrichments add records to each record (osdu/docs/reference/flow/enrich-records.md):
+/// the flow's own route, with each record's enrichment records written before it in the same delivery. Each record whose hash
+/// moved (what its mapping rendered into it, or its files) is written under the id the record's id and the enrichment make,
+/// with an intent declared first, so a write whose answer is lost is undone or found again rather than made twice blind: a
+/// dataset whose rows name files has them stored where the Dataset service says, is registered through it and is checked to
+/// answer retrieval instructions; every other record is written through storage as it rendered. The record links them
+/// already, so it is written through the flow's route only when its document changed: a changed enrichment record writes a
+/// new version of the same id and leaves the record as OSDU holds it. A delivery that does not complete is undone at the
+/// reversible scope, and removing everything purges the enrichment records with the record.
 /// </summary>
 public sealed class EnrichPartsProtocol : IDeliveryProtocol
 {
-    /// <summary>The artifact slot of a dataset a step registers, which this route undoes and the flow's own route does not.</summary>
+    /// <summary>The artifact slot of a dataset an enrichment registers with its files, which this route undoes and the flow's own route does not.</summary>
     public const string DatasetSlot = "enrich-dataset";
+
+    /// <summary>The artifact slot of a record an enrichment writes through storage, which this route undoes and the flow's own route does not.</summary>
+    public const string RecordSlot = "enrich-record";
 
     private readonly IDeliveryProtocol _inner;
     private readonly OsduHttpClient _client;
@@ -34,15 +38,24 @@ public sealed class EnrichPartsProtocol : IDeliveryProtocol
     private readonly long _requestBodyCeiling;
     private readonly TimeProvider _time;
     private readonly IReadOnlyList<StepWorkflow> _workflows;
+    private readonly bool _registersFiles;
+    private readonly RemovalPaths _removals;
 
     /// <param name="inner">The flow's own route, which writes the record.</param>
     /// <param name="client">The flow's client, under its endpoint, credentials and partition.</param>
-    /// <param name="options">The flow's route options: the Dataset service's paths and the media type files go as.</param>
+    /// <param name="options">The flow's route options: the Dataset and storage services' paths and the media type files go as.</param>
     /// <param name="requestBodyCeiling">The largest file one upload sends, or 0 for no ceiling.</param>
     /// <param name="time">The clock the steps are timed by.</param>
-    /// <param name="workflows">The workflows the flow's steps run over each record once it landed (osdu/docs/reference/flow/enrich-workflow.md).</param>
+    /// <param name="workflows">The workflows the flow runs over each record's enrichments once it landed (osdu/docs/reference/flow/enrich-workflow.md).</param>
+    /// <param name="registersFiles">True when an enrichment registers datasets with their files, so the probe asks the Dataset service too.</param>
     public EnrichPartsProtocol(
-        IDeliveryProtocol inner, OsduHttpClient client, ProtocolOptions options, long requestBodyCeiling = 0, TimeProvider? time = null, IReadOnlyList<StepWorkflow>? workflows = null)
+        IDeliveryProtocol inner,
+        OsduHttpClient client,
+        ProtocolOptions options,
+        long requestBodyCeiling = 0,
+        TimeProvider? time = null,
+        IReadOnlyList<StepWorkflow>? workflows = null,
+        bool registersFiles = true)
     {
         ArgumentNullException.ThrowIfNull(inner);
         ArgumentNullException.ThrowIfNull(client);
@@ -55,6 +68,8 @@ public sealed class EnrichPartsProtocol : IDeliveryProtocol
         _records = new OsduRecordProtocol(client, options, _time);
         _requestBodyCeiling = requestBodyCeiling;
         _workflows = workflows ?? [];
+        _registersFiles = registersFiles;
+        _removals = RemovalPaths.From(options);
     }
 
     /// <summary>The workflows the flow's steps run over each record, by step.</summary>
@@ -71,14 +86,20 @@ public sealed class EnrichPartsProtocol : IDeliveryProtocol
 
     public bool VerifiesWithTargetState => _inner.VerifiesWithTargetState;
 
-    /// <summary>A step's dataset is registered before the record is written, so a delivery can leave one behind until its undo.</summary>
+    /// <summary>An enrichment's records are written before the record is, so a delivery can leave one behind until its undo.</summary>
     public bool Undoes => true;
 
+    /// <summary>What the name of every step a part's registration intent is reported under begins with.</summary>
+    public const string IntentStepPrefix = "enrich-register-intent-";
+
+    /// <summary>What the name of every step a part's registration is reported under begins with, followed by the part's index.</summary>
+    public const string RegisterStepPrefix = "enrich-register-";
+
     /// <summary>The step a part's registration intent is reported under, before the registration is sent.</summary>
-    public static string IntentStep(int index) => string.Create(CultureInfo.InvariantCulture, $"enrich-register-intent-{index}");
+    public static string IntentStep(int index) => IntentStepPrefix + index.ToString(CultureInfo.InvariantCulture);
 
     /// <summary>The step a part's registration is reported under.</summary>
-    public static string RegisterStep(int index) => string.Create(CultureInfo.InvariantCulture, $"enrich-register-{index}");
+    public static string RegisterStep(int index) => RegisterStepPrefix + index.ToString(CultureInfo.InvariantCulture);
 
     /// <summary>The payload name a part's uploads are reported under (<c>storage-enrich-0</c>, <c>upload-enrich-0-1</c>).</summary>
     public static string PayloadName(int index) => string.Create(CultureInfo.InvariantCulture, $"enrich-{index}");
@@ -198,9 +219,9 @@ public sealed class EnrichPartsProtocol : IDeliveryProtocol
     }
 
     /// <summary>
-    /// Stages the record's parts whose hash moved (or that a redelivery naming <c>files</c> forces): each one's files stored where
-    /// the Dataset service says for its kind, and its dataset record built around them. A part whose dataset an earlier try of the
-    /// same work registered is not staged again.
+    /// Stages the record's parts whose hash moved (or that a redelivery naming <c>files</c> forces): a dataset's files stored
+    /// where the Dataset service says for its kind and its record built around them, and every other record built as it
+    /// rendered. A part an earlier try of the same work wrote is not staged again.
     /// </summary>
     private async Task StageAsync(Plan plan, CancellationToken ct)
     {
@@ -209,56 +230,69 @@ public sealed class EnrichPartsProtocol : IDeliveryProtocol
         for (var index = 0; index < work.StepParts.Count; index++)
         {
             var (part, source) = (work.StepParts[index].Part, work.StepParts[index].Source);
-            if (!forced && work.TargetState.TryGetValue(EnrichParts.StateKey(part.DatasetId), out var delivered) && string.Equals(delivered, part.Hash, StringComparison.Ordinal))
+            if (!forced && work.TargetState.TryGetValue(EnrichParts.StateKey(part.RecordId), out var delivered) && string.Equals(delivered, part.Hash, StringComparison.Ordinal))
             {
                 continue;
             }
 
-            if (work.Completed(RegisterStep(index)) is { } done && done.TryGetValue("version", out _))
+            if (work.Completed(RegisterStep(index)) is { } done && done.TryGetValue("version", out var resumed))
             {
                 plan.Steps.Resumed(RegisterStep(index), done);
                 plan.Registered.Add(part);
+                if (long.TryParse(resumed, NumberStyles.Integer, CultureInfo.InvariantCulture, out var landedVersion))
+                {
+                    plan.Versions[part.RecordId] = landedVersion;
+                }
+
+                continue;
+            }
+
+            if (!part.RegistersFiles)
+            {
+                plan.Staged.Add(new StagedPart(plan, index, part, PartRecord(work, part)));
                 continue;
             }
 
             var entityType = TargetId.EntityTypeFromKind(part.Kind);
             var options = part.ContentType is { } contentType ? _options with { PayloadContentType = contentType } : _options;
-            var staged = await DatasetUploads.UploadAsync(_client, _datasets, options, work, PayloadName(index), source, entityType, _requestBodyCeiling, plan.Steps, ct).ConfigureAwait(false);
-            var record = DatasetRecord(work, part, staged);
+            var files = source ?? throw new DeliveryException($"the dataset {part.RecordId} enrichment '{part.Step}' adds registers files, and the work names nowhere to read them from");
+            var staged = await DatasetUploads.UploadAsync(_client, _datasets, options, work, PayloadName(index), files, entityType, _requestBodyCeiling, plan.Steps, ct).ConfigureAwait(false);
+            var record = PartRecord(work, part);
+            if (record["data"] is not JsonObject data)
+            {
+                data = new JsonObject();
+                record["data"] = data;
+            }
+
+            if (data["Name"] is null && staged.Files.Count > 0)
+            {
+                data["Name"] = staged.Files[0].Name;
+            }
+
             DatasetUploads.Point(record, staged);
             plan.Staged.Add(new StagedPart(plan, index, part, record));
         }
     }
 
     /// <summary>
-    /// The dataset record a part registers: what its fragment rendered, under the id and kind the part names, with the record's
-    /// own access list and legal block, which a dataset beside it shares, and the name of its first file where the fragment
-    /// names none.
+    /// The record a part writes: what its enrichment mapping rendered, under the id and kind the part names, with the enriched
+    /// record's own access list and legal block, which a record beside it shares, so whoever may read the one may read the
+    /// other.
     /// </summary>
-    private static JsonObject DatasetRecord(DeliveryWork work, EnrichPart part, StagedDataset staged)
+    private static JsonObject PartRecord(DeliveryWork work, EnrichPart part)
     {
         var record = EnrichParts.RecordOf(part);
-        record["id"] = part.DatasetId;
+        record["id"] = part.RecordId;
         record["kind"] = part.Kind;
-        record["acl"] = work.Document["acl"]?.DeepClone() ?? throw new RecordHeldException($"the rendered record has no acl block to copy onto its dataset {part.DatasetId}");
-        record["legal"] = work.Document["legal"]?.DeepClone() ?? throw new RecordHeldException($"the rendered record has no legal block to copy onto its dataset {part.DatasetId}");
-        if (record["data"] is not JsonObject data)
-        {
-            data = new JsonObject();
-            record["data"] = data;
-        }
-
-        if (data["Name"] is null && staged.Files.Count > 0)
-        {
-            data["Name"] = staged.Files[0].Name;
-        }
-
+        record["acl"] = work.Document["acl"]?.DeepClone() ?? throw new RecordHeldException($"the rendered record has no acl block to copy onto the record {part.RecordId} its enrichment {part.Step} adds");
+        record["legal"] = work.Document["legal"]?.DeepClone() ?? throw new RecordHeldException($"the rendered record has no legal block to copy onto the record {part.RecordId} its enrichment {part.Step} adds");
         return record;
     }
 
     /// <summary>
-    /// Registers the staged parts, twenty to a request, each declared first, and checks that the Dataset service answers retrieval
-    /// instructions for each. A registration refused as a whole is tried part by part, so one bad dataset fails its record alone.
+    /// Writes the staged parts, twenty to a request, each declared first: datasets with files registered through the Dataset
+    /// service and checked to answer retrieval instructions, every other record written through storage. A request refused as
+    /// a whole is tried part by part, so one bad record fails its own enriched record alone.
     /// </summary>
     private async Task RegisterAsync(List<StagedPart> staged, CancellationToken ct)
     {
@@ -294,7 +328,8 @@ public sealed class EnrichPartsProtocol : IDeliveryProtocol
 
     private async Task RegisterChunkAsync(IReadOnlyList<StagedPart> chunk, CancellationToken ct)
     {
-        var intents = await RegistrationIntents.DeclareAsync(_records, chunk.Select(c => new Registration(DatasetSlot, c.Part.DatasetId)).ToList(), ct).ConfigureAwait(false);
+        var intents = await RegistrationIntents.DeclareAsync(
+            _records, chunk.Select(c => new Registration(c.Part.RegistersFiles ? DatasetSlot : RecordSlot, c.Part.RecordId)).ToList(), ct).ConfigureAwait(false);
         var ready = new List<(StagedPart Part, TargetArtifact Declared)>(chunk.Count);
         for (var i = 0; i < chunk.Count; i++)
         {
@@ -310,7 +345,7 @@ public sealed class EnrichPartsProtocol : IDeliveryProtocol
                 continue;
             }
 
-            var values = new Dictionary<string, string>(StringComparer.Ordinal) { ["datasetId"] = item.Part.DatasetId, ["step"] = item.Part.Step };
+            var values = new Dictionary<string, string>(StringComparer.Ordinal) { ["recordId"] = item.Part.RecordId, ["step"] = item.Part.Step };
             if (declared.PriorVersion is { } prior)
             {
                 values["priorVersion"] = prior.ToString(CultureInfo.InvariantCulture);
@@ -326,22 +361,52 @@ public sealed class EnrichPartsProtocol : IDeliveryProtocol
         }
 
         var started = _time.GetUtcNow().UtcDateTime;
-        var landed = await _datasets.RegisterAsync(ready.Select(r => r.Part.Record).ToList(), ct).ConfigureAwait(false);
-        var retrievable = await _datasets.RetrievableAsync(ready.Select(r => r.Part.Part.DatasetId).ToList(), ct).ConfigureAwait(false);
-        foreach (var (item, declared) in ready)
+        var datasets = ready.Where(r => r.Part.Part.RegistersFiles).ToList();
+        var landed = new Dictionary<string, long?>(StringComparer.Ordinal);
+        var retrievable = new HashSet<string>(StringComparer.Ordinal);
+        if (datasets.Count > 0)
         {
-            var id = item.Part.DatasetId;
-            if (!retrievable.Contains(id))
+            foreach (var (id, version) in await _datasets.RegisterAsync(datasets.Select(r => r.Part.Record).ToList(), ct).ConfigureAwait(false))
             {
-                item.Plan.Failure ??= new DeliveryException($"the dataset service registered {id}, the dataset of step '{item.Part.Step}', and answers no retrieval instructions for it, so its files cannot be read back; the next try registers it again");
-                continue;
+                landed[id] = version;
             }
 
-            var version = landed.GetValueOrDefault(id);
-            var values = new Dictionary<string, string>(StringComparer.Ordinal) { ["datasetId"] = id, ["step"] = item.Part.Step, ["retrievable"] = "true" };
+            retrievable.UnionWith(await _datasets.RetrievableAsync(datasets.Select(r => r.Part.Part.RecordId).ToList(), ct).ConfigureAwait(false));
+        }
+
+        foreach (var (item, declared) in ready)
+        {
+            var id = item.Part.RecordId;
+            long? version;
+            var values = new Dictionary<string, string>(StringComparer.Ordinal) { ["recordId"] = id, ["step"] = item.Part.Step };
+            if (item.Part.RegistersFiles)
+            {
+                if (!retrievable.Contains(id))
+                {
+                    item.Plan.Failure ??= new DeliveryException($"the dataset service registered {id}, the dataset enrichment '{item.Part.Step}' adds, and answers no retrieval instructions for it, so its files cannot be read back; the next try registers it again");
+                    continue;
+                }
+
+                version = landed.GetValueOrDefault(id);
+                values["retrievable"] = "true";
+            }
+            else
+            {
+                try
+                {
+                    (version, _) = await RecordWriter.SendAsync(_client, _options, _options.RecordPath ?? OsduRecordProtocol.DefaultRecordPath, "PUT", item.Record, ct).ConfigureAwait(false);
+                }
+                catch (Exception ex) when (ex is SqlFlowException or HttpRequestException or IOException or JsonException)
+                {
+                    item.Plan.Failure ??= new DeliveryException($"storage refused {id}, the record enrichment '{item.Part.Step}' adds: {ex.Message}", ex);
+                    continue;
+                }
+            }
+
             if (version is { } v)
             {
                 values["version"] = v.ToString(CultureInfo.InvariantCulture);
+                item.Plan.Versions[id] = v;
             }
 
             item.Plan.Steps.Add(RegisterStep(item.Index), started, 201, values);
@@ -360,9 +425,9 @@ public sealed class EnrichPartsProtocol : IDeliveryProtocol
         => _inner.InvalidLegalTagsAsync(tags, ct);
 
     /// <summary>
-    /// The record goes as the flow's route removes it. Its step datasets stay at the reversible scopes, since the record's
-    /// earlier versions name them and a restored record finds them; removing everything purges them too, as the dataset
-    /// route purges a record's own dataset.
+    /// The record goes as the flow's route removes it. Its enrichment records stay at the reversible scopes, since the record's
+    /// earlier versions link them and a restored record finds them; removing everything purges them too, as the dataset route
+    /// purges a record's own dataset.
     /// </summary>
     public async Task<DeleteOutcome> DeleteAsync(string targetId, RemovalScope scope, IReadOnlyDictionary<string, string>? targetState = null, CancellationToken ct = default)
     {
@@ -385,30 +450,30 @@ public sealed class EnrichPartsProtocol : IDeliveryProtocol
             }
         }
 
-        var datasets = EnrichParts.Datasets(targetState);
-        if (scope != RemovalScope.Everything || datasets.Count == 0)
+        var added = EnrichParts.Records(targetState);
+        if (scope != RemovalScope.Everything || added.Count == 0)
         {
             return outcome;
         }
 
         var purged = 0;
-        foreach (var id in datasets)
+        foreach (var id in added)
         {
-            var dataset = await RecordWriter.DeleteAsync(_client, RemovalPaths.From(_options), id, RemovalScope.Everything, ct).ConfigureAwait(false);
-            if (dataset.Deleted || dataset.AlreadyGone)
+            var removed = await RecordWriter.DeleteAsync(_client, _removals, id, RemovalScope.Everything, ct).ConfigureAwait(false);
+            if (removed.Deleted || removed.AlreadyGone)
             {
                 purged++;
             }
         }
 
-        return outcome with { Detail = string.Create(CultureInfo.InvariantCulture, $"{outcome.Detail}; {purged} of the {datasets.Count} dataset(s) its enrich: steps registered purged too") };
+        return outcome with { Detail = string.Create(CultureInfo.InvariantCulture, $"{outcome.Detail}; {purged} of the {added.Count} record(s) its enrichments added purged too") };
     }
 
-    /// <summary>Removes as the flow's route batches its removals, except removing everything, which purges each record's step datasets after it.</summary>
+    /// <summary>Removes as the flow's route batches its removals, except removing everything, which purges each record's enrichment records after it.</summary>
     public Task<IReadOnlyList<RemovalResult>> DeleteBatchAsync(IReadOnlyList<RecordRemoval> removals, RemovalScope scope, CancellationToken ct = default)
     {
         ArgumentNullException.ThrowIfNull(removals);
-        return (scope == RemovalScope.Everything && removals.Any(r => EnrichParts.Datasets(r.TargetState).Count > 0))
+        return (scope == RemovalScope.Everything && removals.Any(r => EnrichParts.Records(r.TargetState).Count > 0))
             || (scope != RemovalScope.History && _workflows.Count > 0)
             ? ((IDeliveryProtocol)this).DeleteOneByOneAsync(removals, scope, ct)
             : _inner.DeleteBatchAsync(removals, scope, ct);
@@ -427,8 +492,8 @@ public sealed class EnrichPartsProtocol : IDeliveryProtocol
         => _inner.ReadVersionAsync(targetId, version, ct);
 
     /// <summary>
-    /// The flow's own services as its route asks them, then the Dataset service the steps register their files through, then the
-    /// Workflow service and the workflows each step's stages name, as the workflow route asks them.
+    /// The flow's own services as its route asks them, then the Dataset service the enrichments register their files through
+    /// (when one does), then the Workflow service and the workflows each one's stages name, as the workflow route asks them.
     /// </summary>
     public async Task<ProbeOutcome> ProbeAsync(CancellationToken ct = default)
     {
@@ -438,7 +503,11 @@ public sealed class EnrichPartsProtocol : IDeliveryProtocol
             return probe;
         }
 
-        probe = await RecordWriter.ProbeAsync(_client, DatasetService.DefaultProbePath, ct).ConfigureAwait(false);
+        if (_registersFiles)
+        {
+            probe = await RecordWriter.ProbeAsync(_client, DatasetService.DefaultProbePath, ct).ConfigureAwait(false);
+        }
+
         foreach (var workflow in _workflows)
         {
             if (!probe.Reachable)
@@ -453,35 +522,43 @@ public sealed class EnrichPartsProtocol : IDeliveryProtocol
     }
 
     /// <summary>
-    /// Undoes what unfinished deliveries left: a step dataset a unit created is removed through the Dataset service's reversible
-    /// removal once storage confirms OSDU created it after the unit began, and one a unit wrote a new version of is given back the
-    /// version before, as the dataset route undoes its own datasets; everything else is the flow's own route's to undo.
+    /// Undoes what unfinished deliveries left: an enrichment record a unit created is removed reversibly once storage confirms
+    /// OSDU created it after the unit began (a dataset through the Dataset service's removal, any other record through
+    /// storage's), and one a unit wrote a new version of is given back the version before, as the dataset route undoes its own
+    /// datasets; everything else is the flow's own route's to undo.
     /// </summary>
     public async Task<IReadOnlyList<UndoResult>> UndoAsync(IReadOnlyList<UndoWork> works, CancellationToken ct = default)
     {
         ArgumentNullException.ThrowIfNull(works);
-        var side = new RecordSide
+        var datasetSide = new RecordSide
         {
             Remove = _datasets.SoftDeleteAsync,
             Read = _records.ReadAsync,
             Restorer = _records,
             Versions = _records.VersionsAsync,
         };
+        var recordSide = datasetSide with { Remove = (id, token) => RecordWriter.DeleteAsync(_client, _removals, id, RemovalScope.Record, token) };
         var results = new List<UndoResult>();
         var rest = new List<UndoWork>();
         foreach (var work in works)
         {
+            // A newer try writes the same id again from rows and files that may differ, so what this unit wrote is undone whatever
+            // the newer work is, as the dataset route undoes the dataset a record keeps its files in.
             var datasets = work.Items.Where(i => string.Equals(i.Artifact.Slot, DatasetSlot, StringComparison.Ordinal)).ToList();
             if (datasets.Count > 0)
             {
-                // A newer try registers the same id again from files that may differ, so what this unit registered is undone whatever
-                // the newer work is, as the dataset route undoes the dataset a record keeps its files in.
-                results.AddRange(await ArtifactUndo.RecordItselfAsync(work with { KeepRecord = false }, datasets, side, ct).ConfigureAwait(false));
+                results.AddRange(await ArtifactUndo.RecordItselfAsync(work with { KeepRecord = false }, datasets, datasetSide, ct).ConfigureAwait(false));
             }
 
-            // What a step's workflow left (its runs, the records they created) is the workflow route's to undo, under the names it
-            // reported them by; the results carry the items as the ledger holds them.
-            var claimed = new List<UndoItem>(datasets);
+            var records = work.Items.Where(i => string.Equals(i.Artifact.Slot, RecordSlot, StringComparison.Ordinal)).ToList();
+            if (records.Count > 0)
+            {
+                results.AddRange(await ArtifactUndo.RecordItselfAsync(work with { KeepRecord = false }, records, recordSide, ct).ConfigureAwait(false));
+            }
+
+            // What an enrichment's workflow left (its runs, the records they created) is the workflow route's to undo, under the
+            // names it reported them by; the results carry the items as the ledger holds them.
+            var claimed = new List<UndoItem>([.. datasets, .. records]);
             foreach (var workflow in _workflows)
             {
                 var items = work.Items.Where(i => i.Artifact.Slot.StartsWith(workflow.Prefix, StringComparison.Ordinal)).ToList();
@@ -515,11 +592,8 @@ public sealed class EnrichPartsProtocol : IDeliveryProtocol
     public Task<IReadOnlyList<RestoreResult>> RestoreBatchAsync(IReadOnlyList<VersionRestore> restores, CancellationToken ct = default)
         => _inner.RestoreBatchAsync(restores, ct);
 
-    /// <summary>A part staged for registration: its record's plan, its place among the record's parts, the part, and the dataset record to register.</summary>
-    private sealed record StagedPart(Plan Plan, int Index, EnrichPart Part, JsonObject Record)
-    {
-        public string DatasetId => Part.DatasetId;
-    }
+    /// <summary>A part staged to be written: its record's plan, its place among the record's parts, the part, and the record to write.</summary>
+    private sealed record StagedPart(Plan Plan, int Index, EnrichPart Part, JsonObject Record);
 
     /// <summary>What one record's delivery comes to: its parts staged and registered, and the flow's route's write of the record.</summary>
     private sealed class Plan(int index, DeliveryWork work, DeliverySteps steps)
@@ -534,6 +608,9 @@ public sealed class EnrichPartsProtocol : IDeliveryProtocol
 
         /// <summary>The parts this try registered, or found registered by an earlier try of the same work.</summary>
         public List<EnrichPart> Registered { get; } = [];
+
+        /// <summary>The version OSDU answered each part this try registered with, by its id; none when it answered none.</summary>
+        public Dictionary<string, long> Versions { get; } = new(StringComparer.Ordinal);
 
         public DeliveryOutcome? Written { get; set; }
 
@@ -606,7 +683,7 @@ public sealed class EnrichPartsProtocol : IDeliveryProtocol
         /// written yet, OSDU lost it, or it was asked to be sent again.
         /// </summary>
         public bool WritesRecord
-            => (Work.StepParts.Count == 0 && Work.StepKeptDatasets.Count == 0)
+            => (Work.StepParts.Count == 0 && Work.StepKeptRecords.Count == 0)
                 || !Work.StepDocumentUnchanged
                 || Work.DeliverPayload
                 || Work.ExistingVersion is null
@@ -615,19 +692,19 @@ public sealed class EnrichPartsProtocol : IDeliveryProtocol
 
         public DeliveryOutcome Outcome()
         {
-            if (Work.StepParts.Count == 0 && Work.StepKeptDatasets.Count == 0)
+            if (Work.StepParts.Count == 0 && Work.StepKeptRecords.Count == 0)
             {
                 var outcome = Written ?? DeliveryOutcome.Failed(Failure ?? new DeliveryException("the record was not written"));
-                var dropped = EnrichParts.Datasets(Work.TargetState);
+                var dropped = EnrichParts.Records(Work.TargetState);
                 if (!outcome.Succeeded || dropped.Count == 0)
                 {
                     return outcome;
                 }
 
-                // The record no longer links the datasets its steps registered: they stay live, since earlier versions name them.
+                // The record no longer links the records its enrichments added: they stay live, since earlier versions name them.
                 return outcome with
                 {
-                    Returned = new Dictionary<string, string>(outcome.Returned, StringComparer.Ordinal) { [EnrichParts.DatasetsValue] = EnrichParts.DatasetsText([]) },
+                    Returned = new Dictionary<string, string>(outcome.Returned, StringComparer.Ordinal) { [EnrichParts.RegisteredValue] = EnrichParts.RegisteredText([]) },
                     Superseded = [.. outcome.Superseded, .. dropped],
                 };
             }
@@ -643,22 +720,30 @@ public sealed class EnrichPartsProtocol : IDeliveryProtocol
                 return DeliveryOutcome.Failed(writeFailure, steps);
             }
 
-            // The record links the datasets registered now and those of the steps set aside, which an earlier delivery registered.
-            var linked = Work.StepParts.Select(p => p.Part.DatasetId).Concat(Work.StepKeptDatasets).ToList();
+            // The record links the records added now and those of the enrichments set aside, which an earlier delivery added.
+            var linked = Work.StepParts.Select(p => p.Part.RecordId).Concat(Work.StepKeptRecords).ToList();
             var returned = new Dictionary<string, string>(Written?.Returned ?? new Dictionary<string, string>(), StringComparer.Ordinal)
             {
-                [EnrichParts.DatasetsValue] = EnrichParts.DatasetsText(linked),
+                [EnrichParts.RegisteredValue] = EnrichParts.RegisteredText(linked),
                 [EnrichParts.DocumentValue] = DocumentHash,
             };
             foreach (var part in Work.StepParts.Select(p => p.Part))
             {
-                returned[EnrichParts.StateKey(part.DatasetId)] = part.Hash;
-                returned[EnrichParts.FilesStateKey(part.DatasetId)] = part.FilesHash;
+                returned[EnrichParts.StateKey(part.RecordId)] = part.Hash;
+                if (part.RegistersFiles)
+                {
+                    returned[EnrichParts.FilesStateKey(part.RecordId)] = part.FilesHash;
+                }
+
+                if (Versions.TryGetValue(part.RecordId, out var version))
+                {
+                    returned[EnrichTrace.VersionKey(part.RecordId)] = version.ToString(CultureInfo.InvariantCulture);
+                }
             }
 
-            // A dataset the record no longer links stays live, since earlier versions of the record name it: superseded, not removed.
+            // A record the enriched record no longer links stays live, since its earlier versions name it: superseded, not removed.
             var current = linked.ToHashSet(StringComparer.Ordinal);
-            var superseded = EnrichParts.Datasets(Work.TargetState).Where(id => !current.Contains(id)).ToList();
+            var superseded = EnrichParts.Records(Work.TargetState).Where(id => !current.Contains(id)).ToList();
             var registered = Registered.Count;
             if (Written is { } written)
             {
@@ -668,7 +753,7 @@ public sealed class EnrichPartsProtocol : IDeliveryProtocol
                     Returned = returned,
                     PayloadDelivered = written.PayloadDelivered || registered > 0,
                     Superseded = [.. written.Superseded, .. superseded],
-                    Detail = registered == 0 ? written.Detail : string.Create(CultureInfo.InvariantCulture, $"{written.Detail}{(written.Detail is null ? string.Empty : "; ")}{registered} dataset(s) of its enrich: steps registered"),
+                    Detail = registered == 0 ? written.Detail : string.Create(CultureInfo.InvariantCulture, $"{written.Detail}{(written.Detail is null ? string.Empty : "; ")}{registered} record(s) of its enrichments written"),
                 };
             }
 
@@ -677,7 +762,7 @@ public sealed class EnrichPartsProtocol : IDeliveryProtocol
                 MetadataDelivered = true,
                 PayloadDelivered = registered > 0,
                 TargetVersion = Work.ExistingVersion,
-                Detail = string.Create(CultureInfo.InvariantCulture, $"{registered} dataset(s) of its enrich: steps registered; the record names them already and is not written again"),
+                Detail = string.Create(CultureInfo.InvariantCulture, $"{registered} record(s) of its enrichments written; the record links them already and is not written again"),
                 Returned = returned,
                 Steps = steps,
                 Superseded = superseded,

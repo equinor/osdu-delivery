@@ -71,10 +71,10 @@ public sealed record StepContribution
     public bool NotRendered { get; init; }
 
     /// <summary>
-    /// The datasets the step's files are registered as (osdu/docs/reference/flow/enrich-files.md), one per
-    /// row, each under the id the record's own id and the step make; empty for a step that registers no files.
+    /// The records the enrichment adds to the record (osdu/docs/reference/flow/enrich-records.md), one per row, each under the
+    /// id the record's own id and the enrichment make; empty for an enrichment that adds none.
     /// </summary>
-    public IReadOnlyList<StepDataset> Datasets { get; init; } = [];
+    public IReadOnlyList<EnrichRecord> Records { get; init; } = [];
 
     /// <summary>
     /// True when the step held and was set aside (<c>onHold: step</c>, osdu/docs/reference/flow/enrich-holds.md): the record
@@ -83,37 +83,39 @@ public sealed record StepContribution
     /// </summary>
     public bool SetAside { get; init; }
 
-    /// <summary>What the step composed into the record, in order: its fragment, then the links to its datasets. Kept for a step set aside on its hold.</summary>
+    /// <summary>What the enrichment composed into the record: the paths its mapping added. Kept for an enrichment set aside on its hold.</summary>
     public IReadOnlyList<JsonObject> Composed { get; init; } = [];
 
-    /// <summary>For a step set aside, the datasets its last delivery registered, which the record keeps linking.</summary>
-    public IReadOnlyList<string> KeptDatasets { get; init; } = [];
+    /// <summary>For an enrichment set aside, the records its last delivery added, which the record keeps linking.</summary>
+    public IReadOnlyList<string> KeptRecords { get; init; } = [];
 }
 
 /// <summary>
-/// One dataset a step's files are registered as: its id, made from the record's id, the step and the row's key; its kind; the
-/// row of the step's dataset it registers the files of, counting from zero; and what the step's dataset fragment rendered into
-/// it, beside the file properties the registration writes.
+/// One record an enrichment adds to the record: its id, made from the record's id, the enrichment and the row's key; its kind;
+/// the row of the enrichment's dataset it is rendered from, counting from zero; and what the enrichment's mapping rendered into
+/// it, beside the id, kind, access list and legal block the delivery writes (and, for a dataset registered with files, the file
+/// properties the registration writes).
 /// </summary>
-public sealed record StepDataset(string Id, string Kind, int Row, JsonObject Record);
+public sealed record EnrichRecord(string Id, string Kind, int Row, JsonObject Record);
 
 /// <summary>
-/// One step of a flow's <c>enrich:</c> as a run renders it: the step, the fragment it pins and the renderer over that fragment,
-/// which shares the flow's cache version, parameters and platform search; both null for a step that registers files alone.
+/// One enrichment of a mapping as a run renders it: the enrichment, the enrichment mapping adding paths it pins and the
+/// renderer over it, which shares the flow's cache version, parameters and platform search; both null for an enrichment that
+/// adds records of their own (<see cref="Records"/>) or names bulk data alone.
 /// </summary>
 public sealed record ResolvedStep(EnrichStep Step, MappingDefinition? Mapping, SchemaSnapshot Schema, MappingRenderer? Renderer)
 {
-    /// <summary>The files the step registers, resolved; null for a step that registers none.</summary>
-    public ResolvedFiles? Files { get; init; }
+    /// <summary>The records the enrichment adds, resolved; null for an enrichment that adds none.</summary>
+    public ResolvedRecords? Records { get; init; }
 }
 
 /// <summary>
-/// The files a step registers, as a run renders them: the step's settings, the entity type of the dataset kind, and the fragment
-/// over that kind rendered into each dataset record with its renderer, or null for a dataset record of its file properties alone.
+/// The records an enrichment adds, as a run renders them: the enrichment's settings, the entity type of their kind, and the
+/// enrichment mapping rendered into each record with its renderer.
 /// </summary>
-public sealed record ResolvedFiles(EnrichFiles Files, string EntityType, MappingDefinition? Mapping, MappingRenderer? Renderer)
+public sealed record ResolvedRecords(EnrichRecords Records, string EntityType, MappingDefinition? Mapping, MappingRenderer? Renderer)
 {
-    /// <summary>The template of the dataset kind <see cref="Mapping"/> fills, which says what its references name; null without a fragment.</summary>
+    /// <summary>The template of the kind <see cref="Mapping"/> fills, which says what its references name.</summary>
     public SchemaSnapshot? Schema { get; init; }
 }
 
@@ -252,6 +254,24 @@ public sealed class RecordChain
     public RenderResult Render(SourceRecord record) => Render(record, ChainInputs.None);
 
     /// <summary>
+    /// Renders the record and every enrichment over it (<see cref="Render(SourceRecord, ChainInputs, IReadOnlyDictionary{string, IReadOnlyList{string}}, out Dictionary{string, IReadOnlyList{string}})"/>).
+    /// The mapping's <c>$link</c> nodes write the ids of the datasets the enrichments register, made from the record's rows
+    /// before any enrichment renders. An enrichment that holds and is set aside registers nothing and keeps what its last
+    /// delivery registered, so when those differ the record renders once more, linking what was kept: a record never links a
+    /// dataset the delivery does not register, nor drops one it keeps.
+    /// </summary>
+    public RenderResult Render(SourceRecord record, ChainInputs inputs)
+    {
+        ArgumentNullException.ThrowIfNull(record);
+        ArgumentNullException.ThrowIfNull(inputs);
+        var rendered = Render(record, inputs, NoKeptLinks, out var kept);
+        return kept.Count == 0 ? rendered : Render(record, inputs, kept, out _);
+    }
+
+    /// <summary>No enrichment set aside: every <c>$link</c> writes the ids the record's rows make.</summary>
+    private static readonly IReadOnlyDictionary<string, IReadOnlyList<string>> NoKeptLinks = new Dictionary<string, IReadOnlyList<string>>(StringComparer.OrdinalIgnoreCase);
+
+    /// <summary>
     /// Renders the record and every step over it. A record the flow's mapping holds, or renders unfinished, is returned as it
     /// rendered: the steps render once it is whole. A step that renders unfinished stops the chain there, with its questions,
     /// and the whole chain renders again once they are answered, since a later step reads what this one adds. A step that holds,
@@ -259,13 +279,18 @@ public sealed class RecordChain
     /// unless it is set aside on its hold (<c>onHold: step</c>, osdu/docs/reference/flow/enrich-holds.md): then what it added to
     /// the record's last delivery (<paramref name="inputs"/>) takes its place, nothing for a record never delivered, and the
     /// steps after it render. A step whose dataset holds no row for the record adds nothing; one that reads one row and finds
-    /// several holds.
+    /// several holds. <paramref name="linked"/> says what the record links of an enrichment set aside; an enrichment set aside
+    /// whose kept datasets are not what the record linked is named in <paramref name="kept"/>, for the render that links them.
     /// </summary>
-    public RenderResult Render(SourceRecord record, ChainInputs inputs)
+    private RenderResult Render(
+        SourceRecord record,
+        ChainInputs inputs,
+        IReadOnlyDictionary<string, IReadOnlyList<string>> linked,
+        out Dictionary<string, IReadOnlyList<string>> kept)
     {
-        ArgumentNullException.ThrowIfNull(record);
-        ArgumentNullException.ThrowIfNull(inputs);
-        var owner = _owner.Render(record);
+        kept = new Dictionary<string, IReadOnlyList<string>>(StringComparer.OrdinalIgnoreCase);
+        var links = new EnrichLinks(record, _steps, linked);
+        var owner = _owner.Render(record, links);
         if (_steps.Count == 0 || owner.IsIncomplete || owner.IsHeld)
         {
             return owner;
@@ -310,7 +335,7 @@ public sealed class RecordChain
             var working = (JsonObject)document.DeepClone();
             var effects = new List<CompositionEffect>();
             var reasons = new List<string>();
-            var datasets = new List<StepDataset>();
+            var added = new List<EnrichRecord>();
             var composed = new List<JsonObject>();
             var waiting = false;
             if (inputs.Holding.TryGetValue(step.Name, out var holding))
@@ -339,9 +364,9 @@ public sealed class RecordChain
                     }
                 }
 
-                if (!waiting && reasons.Count == 0 && resolved.Files is { } files)
+                if (!waiting && reasons.Count == 0 && resolved.Records is { } records)
                 {
-                    waiting = AddFiles(record, step, files, rows!, owner.TargetId!, working, datasets, effects, reasons, composed, trail);
+                    waiting = AddRecords(record, step, records, rows, owner.TargetId!, working, added, reasons, trail);
                 }
             }
 
@@ -358,10 +383,17 @@ public sealed class RecordChain
                 var held = reasons.Select(r => Prefixed(step, r)).ToList();
                 if (step.OnHold == EnrichHold.Step)
                 {
-                    if (SetAside(step, inputs.Kept, document, out var kept) is not { } refusal)
+                    if (SetAside(step, inputs.Kept, document, out var aside) is not { } refusal)
                     {
-                        // Set aside: the record goes ahead with what the step added to its last delivery, and the steps after it render.
-                        contributions.Add(named with { Effects = kept.Effects, Holds = held, SetAside = true, KeptDatasets = kept.Datasets });
+                        // Set aside: the record goes ahead with what the step added to its last delivery, and the steps after it
+                        // render. It adds no record, so the record links the records its last delivery added.
+                        contributions.Add(named with { Effects = aside.Effects, Holds = held, SetAside = true, KeptRecords = aside.Records });
+                        if (step.Records is not null && owner.TargetId is { } ownerId
+                            && !links.Ids(step.Name, ownerId).ToHashSet(StringComparer.Ordinal).SetEquals(aside.Records))
+                        {
+                            kept[step.Name] = aside.Records;
+                        }
+
                         continue;
                     }
 
@@ -369,13 +401,13 @@ public sealed class RecordChain
                 }
 
                 holds.AddRange(held);
-                contributions.Add(named with { Effects = effects, Holds = held, Datasets = datasets });
+                contributions.Add(named with { Effects = effects, Holds = held, Records = added });
                 stopped = true;
                 continue;
             }
 
             document = working;
-            contributions.Add(named with { Effects = effects, Datasets = datasets, Composed = composed });
+            contributions.Add(named with { Effects = effects, Records = added, Composed = composed });
         }
 
         var assertions = Validation.AssertionFindings.Combine(findings);
@@ -445,7 +477,7 @@ public sealed class RecordChain
     /// with what it added in <paramref name="kept"/>; otherwise why the step holds the record after all: OSDU holds a version
     /// whose contribution of the step was not kept, or what it kept no longer fits the record.
     /// </summary>
-    private static string? SetAside(EnrichStep step, KeptSteps last, JsonObject document, out (IReadOnlyList<CompositionEffect> Effects, IReadOnlyList<string> Datasets) kept)
+    private static string? SetAside(EnrichStep step, KeptSteps last, JsonObject document, out (IReadOnlyList<CompositionEffect> Effects, IReadOnlyList<string> Records) kept)
     {
         kept = ([], []);
         if (!last.Steps.TryGetValue(step.Name, out var previous))
@@ -473,70 +505,52 @@ public sealed class RecordChain
             document[name] = value?.DeepClone();
         }
 
-        kept = (effects, previous.Datasets);
+        kept = (effects, previous.Records);
         return null;
     }
 
     /// <summary>
-    /// The datasets a step's files are registered as, one per row it takes (osdu/docs/reference/flow/enrich-files.md),
-    /// and the links to them added to the record at the step's link path. Each id is the record's own with the
-    /// dataset's entity type and a suffix of <c>enrich.</c>, the step's name and, for a step taking many rows, a hash of the row's key, so the
-    /// same row names the same dataset on every render and the record names it before anything is sent. What the step's dataset
-    /// fragment renders from the row goes into the dataset record. True when that fragment waits for the platform.
+    /// The records an enrichment adds, one per row it takes (osdu/docs/reference/flow/enrich-records.md), or one for the record
+    /// for an enrichment reading no rows, each under the id <see cref="EnrichLinks"/> makes from the record's own, which the
+    /// mapping's <c>$link</c> nodes wrote into the record already. What the enrichment's mapping renders from the row goes into
+    /// the record. True when that mapping waits for the platform.
     /// </summary>
-    private static bool AddFiles(
+    private static bool AddRecords(
         SourceRecord record,
         EnrichStep step,
-        ResolvedFiles files,
-        IReadOnlyList<SourceRow> rows,
+        ResolvedRecords records,
+        IReadOnlyList<SourceRow>? rows,
         string ownerId,
         JsonObject document,
-        List<StepDataset> datasets,
-        List<CompositionEffect> effects,
+        List<EnrichRecord> added,
         List<string> reasons,
-        List<JsonObject> composed,
         ChainTrail trail)
     {
-        var taken = step.Rows == EnrichRows.One ? rows.Take(1).ToList() : rows;
+        IReadOnlyList<SourceRow> taken = rows is null ? [SourceRow.Empty] : step.Rows == EnrichRows.One ? rows.Take(1).ToList() : rows;
         for (var i = 0; i < taken.Count; i++)
         {
-            // The suffix holds a dot, which neither the dataset a record's own files go in (files) nor a workflow input's name can,
-            // so a step's dataset never takes the id another route derives from the record's.
             var row = taken[i];
-            var suffix = EnrichFiles.SuffixPrefix + step.Name;
-            if (files.Files.Key.Count > 0)
+            if (EnrichLinks.Derive(step, records, row, i, ownerId, out var problem) is not { } id)
             {
-                var values = files.Files.Key.Select(column => row.GetString(column)?.Trim()).ToList();
-                if (values.FindIndex(string.IsNullOrEmpty) is var empty and >= 0)
+                reasons.Add(problem!);
+                return false;
+            }
+
+            if (added.FirstOrDefault(d => string.Equals(d.Id, id, StringComparison.Ordinal)) is { } same)
+            {
+                reasons.Add($"rows {same.Row + 1} and {i + 1} of the enrichment's dataset name the same record {id}: their key values are the same");
+                return false;
+            }
+
+            var rendered = new JsonObject();
+            if (records.Renderer is { } renderer)
+            {
+                var scopes = new Dictionary<string, IReadOnlyList<SourceRow>>(StringComparer.OrdinalIgnoreCase);
+                if (rows is not null)
                 {
-                    reasons.Add($"files.key column '{files.Files.Key[empty]}' is empty in row {i + 1} of the step's dataset, and each row's dataset is named by its key");
-                    return false;
+                    scopes[step.Name] = rows;
                 }
 
-                suffix = $"{EnrichFiles.SuffixPrefix}{step.Name}.{DeliveryKey.Derive(step.Name, values).Value:N}";
-            }
-
-            string id;
-            try
-            {
-                id = Engine.Workflows.WorkflowValues.DerivedDatasetId(ownerId, files.EntityType, suffix);
-            }
-            catch (DeliveryException ex)
-            {
-                reasons.Add(ex.Message);
-                return false;
-            }
-
-            if (datasets.FirstOrDefault(d => string.Equals(d.Id, id, StringComparison.Ordinal)) is { } same)
-            {
-                reasons.Add($"rows {same.Row + 1} and {i + 1} of the step's dataset name the same dataset {id}: their files.key values are the same");
-                return false;
-            }
-
-            var dataset = new JsonObject();
-            if (files.Renderer is { } renderer)
-            {
-                var scopes = new Dictionary<string, IReadOnlyList<SourceRow>>(StringComparer.OrdinalIgnoreCase) { [step.Name] = rows };
                 var fragment = renderer.RenderFragment(record with { Row = row, Scopes = scopes }, document);
                 if (trail.Gather(fragment))
                 {
@@ -545,32 +559,14 @@ public sealed class RecordChain
 
                 if (fragment.Holds.Count > 0)
                 {
-                    reasons.AddRange(fragment.Holds.Select(h => $"the dataset of row {i + 1}: {h}"));
+                    reasons.AddRange(fragment.Holds.Select(h => rows is null ? $"the record it adds: {h}" : $"the record of row {i + 1}: {h}"));
                     return false;
                 }
 
-                dataset = fragment.Document;
+                rendered = fragment.Document;
             }
 
-            datasets.Add(new StepDataset(id, files.Files.Kind, i, dataset));
-        }
-
-        if (datasets.Count > 0)
-        {
-            // The links, as the record holds them (EnrichParts.Link).
-            var link = new JsonObject();
-            var holder = link;
-            var segments = files.Files.Link.Split('.');
-            for (var i = 0; i < segments.Length - 1; i++)
-            {
-                var next = new JsonObject();
-                holder[segments[i]] = next;
-                holder = next;
-            }
-
-            holder[segments[^1]] = new JsonArray(datasets.Select(d => (JsonNode?)JsonValue.Create(EnrichParts.Link(d.Id))).ToArray());
-            RecordComposer.Compose(document, link, effects, reasons);
-            composed.Add(link);
+            added.Add(new EnrichRecord(id, records.Records.Kind, i, rendered));
         }
 
         return false;

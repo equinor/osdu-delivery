@@ -230,7 +230,7 @@ schedule:
 | `verify` | map | no | What a verify run does with drift. See [verify](#verify). |
 | `failWhen` | map | no | When record failures stop the run. See [failWhen](#failwhen). |
 | `cache` | map | no | The types of the partition's cache the pipeline brings up to date before it runs and after it. See [cache](#cache). |
-| `enrich` | map | no | Steps that extend each record once the mapping has rendered it, each a fragment rendering from rows of its own; the record is sent once with every step in it. See [enrich](enrich.md). |
+| `workflows` | map | no | The OSDU workflows run over the records of the enrichments of the flow's mapping once each record landed, by the enrichment's name. See [an enrichment's workflow](enrich-workflow.md). What a record is enriched with is its mapping's `enrich:` ([enrichments](enrich.md)); a flow `enrich:` key is refused. |
 | `interfaces` | map | no | The interface form. See [a source with interfaces](interfaces.md). |
 
 ## source
@@ -252,6 +252,7 @@ where each record's files are.
 | `datasets.<name>.join` | map | required | Child column to record key column. Every record key column must be joined. |
 | `datasets.<name>.orderBy` | list | none | The order of a record's child rows. |
 | `datasets.<name>.maxRowsPerRecord` | integer | 100000 | The most child rows one record may carry, 1 to 1000000. A record over it is held. |
+| `datasets.<name>.files` | map | none | The files each child row names (`root`, `locationColumn`, `pattern`, `hashColumn`, `chunkCountColumn`, `contentType`), for the enrichment of the mapping named like the dataset: registered with the datasets it adds, or sent as the record's bulk data ([records an enrichment adds](enrich-records.md#the-keys), [an enrichment's bulk data](enrich-bulk.md)). Refused on a dataset no enrichment reads. |
 | `payloads.<name>.root` | string | required | The folder or storage prefix a record's files must sit under. Relative to the flow file; `{parameter}` tokens allowed, each taking one value. A `${...}` reference is refused: a location is not resolved from one. |
 | `payloads.<name>.locationColumn` | string | none | The record column holding the record's folder, relative to `root` or absolute under it. Required when the route sends the payload. |
 | `payloads.<name>.pattern` | string | `*` | A file name glob under the record's folder, without a path. |
@@ -656,15 +657,15 @@ cache:
 | Key | Default | Meaning |
 | --- | --- | --- |
 | `cache.before` | none | The types brought up to date before the run renders. An OSDU type is searched with each declaring cache flow's kind and query through this pipeline's own connection to its partition, and the capture is merged as that flow's, so the run renders against what OSDU holds now, whoever delivered it. A lookup table from an ingestion table is read over its cache flow's connection, as that flow reads it. |
-| `cache.after` | none | The types the records the run changes in OSDU go into as it ends: what it delivered, removed or reverted is read back from OSDU's storage service by id; a record storage returns goes in as it is now, into the types holding its kind, and one it no longer holds is taken out. With a type holding a kind the flow's steps of `enrich:` register, the datasets those records link are read back with them ([files a step registers](enrich-files.md#the-cache)). |
+| `cache.after` | none | The types the records the run changes in OSDU go into as it ends: what it delivered, removed or reverted is read back from OSDU's storage service by id; a record storage returns goes in as it is now, into the types holding its kind, and one it no longer holds is taken out. With a type holding a kind the enrichments of the flow's mapping add, the records those records link are read back with them ([records an enrichment adds](enrich-records.md#the-cache)). |
 
 Each step is `auto`, or a list of at most 64 entries, each once. An entry is a type of the partition's cache by its name
 (`UnitOfMeasure`), or an OSDU entity type (`reference-data--UnitOfMeasure`), which stands for every type of the cache
 holding records of it, whichever repository's cache flow declares it. `auto` works the entries out:
 
-- **`before: auto`** takes the OSDU types the mapping and every fragment of its steps of `enrich:` read, by name or by the
-  entity type they check the ids they build against, and the lookup tables from ingestion tables they read by name.
-- **`after: auto`** takes every type holding the kind the pipeline delivers, or a kind its steps register their files as,
+- **`before: auto`** takes the OSDU types the mapping and every enrichment mapping of its enrichments read, by name or by
+  the entity type they check the ids they build against, and the lookup tables from ingestion tables they read by name.
+- **`after: auto`** takes every type holding the kind the pipeline delivers, or a kind its enrichments add records of,
   that some cache flow declares without a query.
 
 A run resolves the entries against what the partition's synced cache flows declare, and refuses before it reads or sends

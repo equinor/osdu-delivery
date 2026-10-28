@@ -47,7 +47,7 @@ function FlowCard({ pipeline, stats, active, elsewhere, onOpen }: {
         {!pipeline.active && <Badge variant="outline" className="border-warning/50 text-warning">inactive</Badge>}
         {stats && stats.drifted > 0 && <Badge variant="secondary" className="bg-warning/15 text-warning">{stats.drifted} drifted</Badge>}
         {stats && (stats.stepsHeld ?? 0) > 0 && (
-          <Badge variant="outline" title="Records a step of enrich: held in and was set aside on: each went ahead with what the step added to its last delivery" data-testid={`delivery-flow-steps-held-${pipeline.id}`}>
+          <Badge variant="outline" title="Records an enrichment held in and was set aside on: each went ahead with what the enrichment added to its last delivery" data-testid={`delivery-flow-steps-held-${pipeline.id}`}>
             {`${(stats.stepsHeld ?? 0).toLocaleString()} with a step held`}
           </Badge>
         )}

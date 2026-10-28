@@ -1036,12 +1036,22 @@ public sealed class SubmissionIntake
         // The children the held render looked for: what a child landing finds the record by once its hold is lifted.
         ChildLinkKey = entry.Render?.ChildLinkKey,
         HeldSteps = HeldStepsOf(entry.Render),
+        AddedRecords = AddedRecordsOf(entry.Render),
         Basis = PlanBasis.Of(entry.Existing),
     };
 
     /// <summary>The steps a render set aside on their holds (osdu/docs/reference/flow/enrich-holds.md), as the ledger lists them; null for none.</summary>
     private static string? HeldStepsOf(RenderResult? render)
         => render?.StepsSetAside is { Count: > 0 } aside ? string.Join(',', aside) : null;
+
+    /// <summary>
+    /// The ids of the records a render's enrichments add, and those its enrichments set aside keep linking
+    /// (osdu/docs/reference/flow/enrich-records.md): what the record is found by beside its own values.
+    /// </summary>
+    private static IReadOnlyList<string> AddedRecordsOf(RenderResult? render)
+        => render is null
+            ? []
+            : render.Enrichment.SelectMany(c => c.Records.Select(r => r.Id).Concat(c.KeptRecords)).Distinct(StringComparer.Ordinal).ToList();
 
     private RecordState PendingState(FlowDefinition flow, SubmissionState submission, ResolvedMapping resolved, PlanEntry entry, DocumentRef reference, int batch) => new()
     {
@@ -1078,6 +1088,8 @@ public sealed class SubmissionIntake
         ChildLinkKey = entry.Render.ChildLinkKey,
         // The steps the document went ahead without rendering, each with what it added to the record's last delivery.
         HeldSteps = HeldStepsOf(entry.Render),
+        // The records its enrichments add, which find the record in the ledger's lookup.
+        AddedRecords = AddedRecordsOf(entry.Render),
         Basis = PlanBasis.Of(entry.Existing),
     };
 

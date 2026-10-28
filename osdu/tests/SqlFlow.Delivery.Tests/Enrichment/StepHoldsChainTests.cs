@@ -41,11 +41,14 @@ public sealed class StepHoldsChainTests
 
     private static RecordChain Chain(params ResolvedStep[] steps) => new(Renderer(Owner()), steps);
 
-    private static KeptSteps Kept(bool delivered, params (string Step, JsonObject[] Fragments, string[] Datasets)[] steps) => new()
+    private static KeptSteps Kept(bool delivered, params (string Step, JsonObject[] Fragments, string[] Records)[] steps) => new()
     {
         Delivered = delivered,
-        Steps = steps.ToDictionary(s => s.Step, s => new KeptStep(s.Fragments, s.Datasets), StringComparer.Ordinal),
+        Steps = steps.ToDictionary(s => s.Step, s => new KeptStep(s.Fragments, s.Records), StringComparer.Ordinal),
     };
+
+    private static List<string> Aliases(RenderResult result)
+        => result.Document["data"]?["Aliases"] is JsonArray links ? links.Select(n => n!.GetValue<string>()).ToList() : [];
 
     private static JsonObject SymbolOf(string symbol) => new() { ["data"] = new JsonObject { ["Symbol"] = symbol } };
 
@@ -129,7 +132,7 @@ public sealed class StepHoldsChainTests
         Assert.Equal("K", Symbol(result));
         var step = Assert.Single(result.Enrichment);
         Assert.Equal(["enrich.grade: its files are not there"], step.Holds);
-        Assert.Equal(["dev:dataset--File.Generic:a-enrich.grade"], step.KeptDatasets);
+        Assert.Equal(["dev:dataset--File.Generic:a-enrich.grade"], step.KeptRecords);
     }
 
     [Fact]
@@ -163,11 +166,59 @@ public sealed class StepHoldsChainTests
         var read = KeptStep.Parse(text)!;
 
         Assert.Equal(text, read.ToText());
-        Assert.Equal(["a", "b"], read.Datasets);
+        Assert.Equal(["a", "b"], read.Records);
         Assert.Equal(2, read.Fragments.Count);
+        Assert.Contains("\"records\":[\"a\",\"b\"]", text, StringComparison.Ordinal);
         Assert.Null(KeptStep.Parse("not json"));
-        Assert.Null(KeptStep.Parse("{\"fragments\":[1],\"datasets\":[]}"));
+        Assert.Null(KeptStep.Parse("{\"fragments\":[1],\"records\":[]}"));
+        Assert.Null(KeptStep.Parse("{\"fragments\":[],\"datasets\":[]}"));
         Assert.Null(KeptStep.Parse(null));
+    }
+
+    [Fact]
+    public void An_enrichment_adding_records_set_aside_links_what_its_last_delivery_added_rather_than_what_its_rows_would()
+    {
+        const string kept = "dev:dataset--File.Generic:earlier-enrich.lasfile";
+        var owner = Owner(data: "Aliases: [{ $link: lasfile }]", enrich: "lasfile:\n  rows: one\n  mapping: LasDataset@1.0.0\n  onHold: step\n");
+        var chain = new RecordChain(Renderer(owner), [RecordsStep(files: LasFiles(), onHold: EnrichHold.Step)]);
+        var file = Row(("las_folder", "f"), ("las_hash", "h"));
+
+        // Two rows under rows: one hold the enrichment: it is set aside, and the record links the record its last delivery added.
+        var result = chain.Render(Record("a", 1, ("lasfile", [file, file])), new ChainInputs { Kept = Kept(true, ("lasfile", [], [kept])) });
+
+        Assert.False(result.IsHeld, string.Join("; ", result.Holds));
+        var step = Assert.Single(result.Enrichment);
+        Assert.True(step.SetAside);
+        Assert.Equal([kept], step.KeptRecords);
+        Assert.Equal([kept + ":"], Aliases(result));
+    }
+
+    [Fact]
+    public void An_enrichment_adding_records_set_aside_on_a_record_never_delivered_links_nothing()
+    {
+        var owner = Owner(data: "Aliases: [{ $link: lasfile }]", enrich: "lasfile:\n  rows: one\n  mapping: LasDataset@1.0.0\n  onHold: step\n");
+        var chain = new RecordChain(Renderer(owner), [RecordsStep(files: LasFiles(), onHold: EnrichHold.Step)]);
+        var inputs = new ChainInputs().Hold("lasfile", "its files are not there");
+
+        var result = chain.Render(Record("a", 1, ("lasfile", [Row(("las_folder", "f"), ("las_hash", "h"))])), inputs);
+
+        Assert.False(result.IsHeld, string.Join("; ", result.Holds));
+        Assert.True(Assert.Single(result.Enrichment).SetAside);
+        Assert.Empty(Aliases(result));
+    }
+
+    [Fact]
+    public void An_enrichment_set_aside_whose_kept_record_is_the_one_its_row_makes_links_it_once()
+    {
+        var owner = Owner(data: "Aliases: [{ $link: lasfile }]", enrich: "lasfile:\n  rows: one\n  mapping: LasDataset@1.0.0\n  onHold: step\n");
+        var chain = new RecordChain(Renderer(owner), [RecordsStep(files: LasFiles(), onHold: EnrichHold.Step)]);
+        var record = Record("a", 1, ("lasfile", [Row(("las_folder", "f"), ("las_hash", "h"))]));
+        var own = chain.Render(record).Enrichment[0].Records[0].Id;
+
+        var result = chain.Render(record, new ChainInputs { Kept = Kept(true, ("lasfile", [], [own])) }.Hold("lasfile", "its files are not there"));
+
+        Assert.True(result.Enrichment[0].SetAside);
+        Assert.Equal([own + ":"], Aliases(result));
     }
 
     [Fact]

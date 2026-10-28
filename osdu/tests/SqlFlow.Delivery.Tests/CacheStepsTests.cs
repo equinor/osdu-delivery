@@ -138,7 +138,7 @@ public sealed class CacheStepsTests
             Assert.Throws<DeliveryException>(() => After(Named("LasFile"), WellboreKind, null)).Message,
             StringComparison.Ordinal);
         Assert.Contains(
-            "and the pipeline delivers osdu:wks:master-data--Wellbore:1.3.0, and its steps of enrich: register osdu:wks:dataset--File.Generic:1.0.0",
+            "and the pipeline delivers osdu:wks:master-data--Wellbore:1.3.0, and its mapping's enrichments add records of osdu:wks:dataset--File.Generic:1.0.0",
             Assert.Throws<DeliveryException>(() => After(Named("UnitOfMeasure"), WellboreKind, [datasetKind])).Message,
             StringComparison.Ordinal);
     }

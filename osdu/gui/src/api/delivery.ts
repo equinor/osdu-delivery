@@ -62,7 +62,7 @@ export interface DeliveryFlowStats {
   adoptable?: number;
   drifted: number;
   /**
-   * Records whose last render set a step of enrich: aside on its hold, each going ahead with what the step added to its last
+   * Records whose last render set an enrichment aside on its hold, each going ahead with what the enrichment added to its last
    * delivery. Absent from an older control plane.
    */
   stepsHeld?: number;
@@ -1014,7 +1014,7 @@ export interface DeliveryRecordListQuery extends PageQuery {
   drifted?: boolean;
   /** Only the blocked records one issue keeps blocked, by its id. */
   issue?: string;
-  /** Only records whose last render set a step of enrich: aside on its hold. */
+  /** Only records whose last render set an enrichment aside on its hold. */
   stepHeld?: boolean;
 }
 
@@ -1325,47 +1325,47 @@ export interface DeliveryPreviewDocument {
    */
   assertions?: AssertionFindings | null;
   /**
-   * What each step of the flow's enrich: added to the document, in the order the steps render
-   * (osdu/docs/reference/flow/enrich.md); empty, or absent from an older control plane, for a flow that declares none.
+   * What each enrichment of the flow's mapping added to the document, in the order they render
+   * (osdu/docs/reference/flow/enrich.md); empty, or absent from an older control plane, for a mapping that declares none.
    */
   enrichment?: DeliveryPreviewEnrichStep[];
 }
 
-/** What one step of the flow's enrich: did to the previewed record. */
+/** What one enrichment of the flow's mapping did to the previewed record. */
 export interface DeliveryPreviewEnrichStep {
-  /** The step's name, as enrich: declares it. */
+  /** The enrichment's name, as the mapping's enrich: declares it. */
   step: string;
-  /** The fragment it rendered, Name@version; absent for a step that registers files alone. */
+  /** The enrichment mapping adding paths it rendered, Name@version; absent for one that adds records of their own. */
   mapping?: string;
-  /** How many rows of its dataset the record had; absent for a step that reads no rows. */
+  /** How many rows of its dataset the record had; absent for one that reads no rows. */
   rows?: number;
   /** Each path it set and each list it added items to, in the order it did them. */
   effects: DeliveryPreviewEnrichEffect[];
-  /** The datasets it registers for the record, each under the id the record links; absent or empty for a step without files. */
-  datasets?: DeliveryPreviewEnrichDataset[];
-  /** Why it holds the record, each prefixed with the step. */
+  /** The records it adds to the record, each under the id the record links; absent or empty for one that adds none. */
+  records?: DeliveryPreviewEnrichRecord[];
+  /** Why it holds the record, each prefixed with the enrichment. */
   holds: string[];
-  /** True when it did not render: a step before it holds the record, or waits for the platform. */
+  /** True when it did not render: one before it holds the record, or it waits for the platform. */
   notRendered?: boolean;
   /** True when it held and was set aside: the record goes ahead with what it added to its last delivery, which `effects` lists. */
   setAside?: boolean;
-  /** For a step set aside, the datasets its last delivery registered, which the record keeps linking. */
-  keptDatasets?: string[];
-  /** What the step does beside a fragment: files it registers, the record's bulk data, a workflow it runs. Absent from an older control plane. */
-  supplies?: ("files" | "bulk" | "workflow")[];
+  /** For one set aside, the records its last delivery added, which the record keeps linking. */
+  keptRecords?: string[];
+  /** What it does beside adding paths: records it adds, the record's bulk data, a workflow run over it. Absent from an older control plane. */
+  supplies?: ("records" | "bulk" | "workflow")[];
 }
 
-/** One dataset a step registers for the record: its id, made from the record's id and the step, its kind and its row. */
-export interface DeliveryPreviewEnrichDataset {
+/** One record an enrichment adds to the previewed record: its id, made from the record's id and the enrichment, its kind and its row. */
+export interface DeliveryPreviewEnrichRecord {
   id: string;
   kind: string;
-  /** The row of the step's dataset it is registered from, counting from zero. */
+  /** The row of the enrichment's dataset it is rendered from, counting from zero. */
   row: number;
-  /** What the step's dataset fragment rendered into it; absent when the preview is too large to show its document. */
+  /** What the enrichment's mapping rendered into it; absent when the preview is too large to show its document. */
   record?: unknown;
 }
 
-/** One thing a step did to the record: set a path the record held nothing at, or add items to the list there. */
+/** One thing an enrichment did to the record: set a path the record held nothing at, or add items to the list there. */
 export interface DeliveryPreviewEnrichEffect {
   kind: "set" | "add";
   path: string;
@@ -1661,7 +1661,7 @@ export interface DeliveryRecordFilter {
   drifted?: boolean;
   /** The blocked records one issue keeps blocked, by its id. */
   issue?: string;
-  /** The records whose last render set a step of enrich: aside on its hold. */
+  /** The records whose last render set an enrichment aside on its hold. */
   stepHeld?: boolean;
 }
 

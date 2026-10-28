@@ -128,7 +128,8 @@ A value node reads its value with exactly one of these:
 | `$lookup` | A field of the record a lookup of the `lookups` block finds (`wellbore.id`). See [mapping lookups](mapping-lookups.md). |
 | `$parent` | A section of the record's parent, by its path (`data.DDMSDatasets`), for a template linked to a parent. See [mapping $parent](mapping-parent.md). |
 | `$child` | The reference to the record's child of a kind (`welldb:wks:work-product-component--WellLogDetail:1.0.0`) whose template is linked to the mapping's own, once OSDU holds it. See [mapping $child](mapping-child.md). |
-| `$base` | In a fragment only: a section of the record the fragment adds to (`data.Name`), as the flow's mapping and the steps of `enrich:` before it left it. See [fragments](mapping-fragment.md#base-the-record-as-the-steps-before-left-it). |
+| `$base` | In an enrichment mapping only: a section of the record (`data.Name`), as its mapping and the enrichments before it left it. See [enrichment mappings](mapping-enrichment.md#base-the-record-as-the-enrichments-before-left-it). |
+| `$link` | The ids of the records an enrichment of the mapping adds to the record, each with the version separator and no version: every one as an item of a list of values, the one as a value of its own. See [$link](#link). |
 | `$coalesce` | The first of two or more alternatives that gives a value. See [$coalesce](#coalesce-the-first-value-that-is-there). |
 
 and takes its settings beside it:
@@ -220,6 +221,28 @@ through its `$modifiers` as a column's does ([mapping $parent](mapping-parent.md
 `$child` links the record's child, the record of a custom template linked to the mapping's own kind with the same minted
 id, by its reference once OSDU holds it, and leaves the property out until then without holding the record
 ([mapping $child](mapping-child.md)).
+
+## $link
+
+`$link: <name>` links what the mapping's enrichment `<name>` adds to the record ([records an enrichment adds](enrich-records.md#linking-with-link)):
+the ids made from the record's own id, the enrichment and its rows, each with the version separator and no version, so the
+record names them before anything is sent.
+
+```yaml
+enrich:
+  lasfile: { rows: many, key: [file_name], mapping: WellLogLasDataset@1.0.0 }
+record:
+  data:
+    Datasets:
+      - "{$param.dataPartition}:dataset--File.Generic:shared-legend:"   # a literal every record carries
+      - $link: lasfile                                                 # and every LAS file the log's rows add
+```
+
+As an item of a list of values it gives every id, after the items before it; as a value of its own, the one an enrichment
+taking one row adds. It takes `$when` and `$description`, never holds the record (an enrichment adding nothing for it gives
+nothing, and the property is left out), and is written for the record as a whole: never under a `$forEach`, in an item of
+a list of objects, in a `$coalesce`, or in an enrichment mapping. It names an enrichment of the same mapping whose enrichment
+mapping fills another kind than the record's.
 
 ## Changing a value: $modifiers
 

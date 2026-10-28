@@ -85,6 +85,7 @@ sqlflow records adopt     <flow.yaml> [--key <delivery key>... | --issue <id>] [
 sqlflow records reverse   <flow.yaml> (--run <id> | --submission <id>) [--preview]
 sqlflow records reversals <flow.yaml> [--run <id> | --submission <id>] [--outcome <outcome>] [--max <n>]
 sqlflow records artifacts <flow.yaml> --key <delivery key | source key> [--max <n>]
+sqlflow records enrichments <flow.yaml> --key <delivery key | source key>
 sqlflow records undos     <flow.yaml> [--max <n>]
 sqlflow records removed   <flow.yaml> [--state <state>] [--after <delivery key>] [--max <n>]
 sqlflow records lift-removal <flow.yaml> --key <delivery key>...
@@ -361,6 +362,30 @@ welldb-wellbore-03-delivery: <record>: <n> artifact(s) shown, newest first; <n> 
 `unitStartedUtc`, `slot`, `role`, `targetId`, `locator`, `version`, `priorVersion`, `state`, `open`, `exhausted`,
 `note`, `undoAttempts`, `nextUndoUtc`, `submissionId`, `createdRunId`, `createdUtc`, `updatedUtc`, `settledUtc`,
 `settledRunId` and `settledBy`.
+
+## records enrichments
+
+What the mapping's enrichments added to one record, read from the ledger alone ([enrichments](../flow/enrich.md#what-the-ledger-keeps)):
+each enrichment in the order it renders, with what it adds (`paths`, `records`, `bulk`, `workflow`), its enrichment
+mapping, the kind of the records it adds and how they are written, whether it was set aside on the record's last render,
+and where its rows came from; then every record it added, linked now or no longer linked, with the version OSDU holds, the
+row it was rendered from and how many writes deliveries made of it. `--key` takes a delivery key or a source key.
+
+```text
+welldb-welllog-03-delivery: <record>: <n> enrichment(s), in the order they render
+  lasfile: adds records (WellLogLasDataset@1.0.0), records of osdu:wks:dataset--File.Generic:1.0.0 written through dataset
+      1 row(s) at las_files_20261028.csv#4
+      linked      dev:dataset--File.Generic:<log>-enrich.lasfile v<version>, from las_files_20261028.csv#4, <n> write(s)
+  quality: adds paths (WellLogGrade@1.0.0); set aside on its holds on the last render
+      1 row(s) at log_quality_20261026.csv#118
+```
+
+A record its mapping enriches with nothing says `none. The record was rendered by a mapping that declares no enrich: block.`
+
+`--json`: `flow`, `flowId`, `deliveryKey`, `record` and `enrichments`, each with `name`, `adds`, `mapping`,
+`mappingFingerprint`, `recordKind`, `writtenThrough`, `setAside`, `rows` (`count`, `files`, `filesCounted`, `row`) and
+`records`, each with `id`, `linked`, `version`, `hash`, `filesHash`, `source` and `writes`, each with `attemptId`, `atUtc`,
+`runId`, `outcome` (how the record's try ended), `version` and `priorVersion` (null for the write that created it).
 
 ## records undos
 

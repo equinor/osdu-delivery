@@ -47,6 +47,7 @@ internal static partial class MappingMapper
     internal const string ParentKey = "$parent";
     internal const string ChildKey = "$child";
     internal const string BaseKey = "$base";
+    internal const string LinkKey = "$link";
     internal const string FindAllKey = "$findAll";
     internal const string AssertKey = "$assert";
 
@@ -60,13 +61,16 @@ internal static partial class MappingMapper
     internal const string CacheReference = Marker + MappingSource.CachePrefix;
 
     /// <summary>The keys a value node reads its value with; naming one of them makes a map a value node.</summary>
-    internal static readonly IReadOnlyList<string> SourceKeys = [FromKey, ExprKey, ValueKey, CacheKey, SearchKey, LookupKey, ParentKey, ChildKey, BaseKey, CoalesceKey];
+    internal static readonly IReadOnlyList<string> SourceKeys = [FromKey, ExprKey, ValueKey, CacheKey, SearchKey, LookupKey, ParentKey, ChildKey, BaseKey, LinkKey, CoalesceKey];
 
     /// <summary>The settings a value node takes beside the key it reads its value with.</summary>
     internal static readonly IReadOnlyList<string> ValueSettings = [FindByKey, FindAllKey, ModifiersKey, WhenKey, RequiredKey, IgnoreSeparatorsKey, UnverifiedKey, AssertKey, DescriptionKey];
 
     /// <summary>The settings a <c>$lookup</c> node takes beside it: the lookup says how its record is found.</summary>
     internal static readonly IReadOnlyList<string> LookupSettings = [WhenKey, RequiredKey, AssertKey, DescriptionKey];
+
+    /// <summary>The settings a <c>$link</c> node takes beside it: the enrichment says what it links.</summary>
+    internal static readonly IReadOnlyList<string> LinkSettings = [WhenKey, DescriptionKey];
 
     /// <summary>The keys a lookup of the <c>lookups</c> block is written with.</summary>
     internal static readonly IReadOnlyList<string> LookupKeys = [CacheKey, FindByKey, ModifiersKey, IgnoreSeparatorsKey, DescriptionKey];
@@ -79,7 +83,7 @@ internal static partial class MappingMapper
 
     /// <summary>Every word of the mapping language a key of the record tree can be.</summary>
     internal static readonly IReadOnlyList<string> NodeKeys =
-        [FromKey, ExprKey, ValueKey, CacheKey, SearchKey, LookupKey, ParentKey, ChildKey, BaseKey, CoalesceKey, ForEachKey, ItemKey, WhereKey, FindByKey, FindAllKey, ModifiersKey, WhenKey, RequiredKey, IgnoreSeparatorsKey, UnverifiedKey, AssertKey, DescriptionKey];
+        [FromKey, ExprKey, ValueKey, CacheKey, SearchKey, LookupKey, ParentKey, ChildKey, BaseKey, LinkKey, CoalesceKey, ForEachKey, ItemKey, WhereKey, FindByKey, FindAllKey, ModifiersKey, WhenKey, RequiredKey, IgnoreSeparatorsKey, UnverifiedKey, AssertKey, DescriptionKey];
 
     /// <summary>The value keys, as a message lists them.</summary>
     private static string SourceList => string.Join(", ", SourceKeys.Take(SourceKeys.Count - 1)) + " or " + SourceKeys[^1];
@@ -599,6 +603,11 @@ internal static partial class MappingMapper
             return LookupNode(map, target, location, scope, index, condition, description, source);
         }
 
+        if (named[0] == LinkKey)
+        {
+            return LinkNode(map, target, location, scope, index, condition, description, source);
+        }
+
         var read = named[0] switch
         {
             FromKey => new MappingSource { Kind = MappingSourceKind.DatasetColumn, Column = Column(RequiredText(map, FromKey, at), scope, $"{at}: {FromKey}") },
@@ -738,6 +747,57 @@ internal static partial class MappingMapper
             IgnoreSeparators = Flag(map, IgnoreSeparatorsKey, at) ?? false,
             Unverified = unverified,
             Assertions = Assertions(map, notIncoming, scope, required, location, source),
+            Description = description,
+        };
+    }
+
+    /// <summary>
+    /// A <c>$link</c> node: <c>$link: lasfile</c> writes the ids of the records the mapping's enrichment <c>lasfile</c>
+    /// registers for the record (osdu/docs/reference/flow/enrich-records.md), each as OSDU names a record it links, with the
+    /// version separator and no version. As an item of a list of values it gives every one of them; as a value of its own,
+    /// the one an enrichment taking one row registers. The ids are made from the record's own id, so the node is written for
+    /// the record as a whole: never under a <c>$forEach</c>, never in an item of a list of objects. It takes <c>$when</c> and
+    /// <c>$description</c>, and never holds its record: an enrichment with no record for it gives nothing, and the property
+    /// is left out.
+    /// </summary>
+    private static MappingEntry LinkNode(
+        IDictionary<object, object> map, TemplatePath target, string location, TreeScope scope, int index, MappingExpression? condition, string? description, string source)
+    {
+        const string Example = "Datasets: [ { " + LinkKey + ": lasfile } ]";
+        var at = $"{source}: {location}";
+        foreach (var key in map.Keys.Select(KeyText).Where(key => key != LinkKey && !LinkSettings.Contains(key)))
+        {
+            throw new FlowValidationException(key == RequiredKey
+                ? $"{at}: a {LinkKey} node never holds its record: an enrichment that registers no record for it gives no id, and the property is left out; remove {RequiredKey}."
+                : $"{at}: a {LinkKey} node writes the ids an enrichment's records are registered under, as OSDU names them, so it takes {SettingList(LinkSettings)} beside it, not '{key}'.");
+        }
+
+        if (scope.Child is not null)
+        {
+            throw new FlowValidationException(
+                $"{at}: {LinkKey} links the records an enrichment registers for the whole record, whose ids are made from the record's own, and a row of {scope.Child} has none of its own; write the link outside the {ForEachKey}, as an item of a list of values such as {Example}.");
+        }
+
+        if (scope.List is not null)
+        {
+            throw new FlowValidationException(
+                $"{at}: {LinkKey} gives every id an enrichment registers, and an item of the list of objects {scope.List} is one object; write the link as an item of a list of values, such as {Example}, or as a value of its own.");
+        }
+
+        var name = RequiredText(map, LinkKey, at).Trim();
+        if (!EnrichNamePattern().IsMatch(name))
+        {
+            throw new FlowValidationException($"{at}: {LinkKey} names an enrichment of the mapping, such as {Example}; '{name}' is not the name of one.");
+        }
+
+        return new MappingEntry
+        {
+            Index = index,
+            Location = location,
+            Target = target,
+            Source = new MappingSource { Kind = MappingSourceKind.Link, LinkName = name },
+            AppliesWhen = condition,
+            Required = false,
             Description = description,
         };
     }
@@ -962,6 +1022,12 @@ internal static partial class MappingMapper
             {
                 throw new FlowValidationException(
                     $"{alternativeAt}: a {ChildKey} node links one of the record's children, and gives nothing while OSDU does not hold it, which no other value stands in for; write it as a node of its own, or, to link several children, as the items of a list.");
+            }
+
+            if (Has(alternative, LinkKey))
+            {
+                throw new FlowValidationException(
+                    $"{alternativeAt}: a {LinkKey} node gives the ids of the records an enrichment registers for the record, and nothing when it registers none, which no other value stands in for; write it as a node of its own, or as an item of a list.");
             }
 
             foreach (var setting in CoalesceSettings.Where(setting => Has(alternative, setting)))

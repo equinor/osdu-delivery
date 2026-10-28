@@ -52,6 +52,31 @@ public sealed class EnrichmentGuardTests
         var mappings = new Dictionary<string, string>(StringComparer.Ordinal) { ["WellLog@1.4.0"] = "mapping-hash" };
 
         Assert.All(source.Interfaces, flow => Assert.Null(flow.Enrich));
+        Assert.All(source.Interfaces, flow => Assert.Empty(flow.EnrichWorkflows));
         Assert.Equal(DeliveryDocumentHashTests.SampleFlowHash, DeliveryDocumentHash.Of(source, mappings));
+    }
+
+    [Fact]
+    public void A_flow_running_workflows_over_its_mappings_enrichments_hashes_apart_from_the_same_flow_without()
+    {
+        const string workflows = """
+            workflows:
+              lasfile:
+                stages:
+                  - workflow: csv_ingestion
+                    context:
+                      id: "{dataset:enrich.lasfile}"
+                      dataPartitionId: "{partition}"
+                      data_service_to_use: file
+                results:
+                  ids: "dev:master-data--Well:from-las"
+                  minimum: 1
+            """;
+        var text = File.ReadAllText(Samples.Flow).ReplaceLineEndings("\n");
+        var mappings = new Dictionary<string, string>(StringComparer.Ordinal) { ["WellLog@1.4.0"] = "mapping-hash" };
+
+        var running = new DeliveryDocumentLoader().ParseSource(text.TrimEnd('\n') + "\n" + workflows.ReplaceLineEndings("\n") + "\n", Samples.Flow);
+
+        Assert.NotEqual(DeliveryDocumentHashTests.SampleFlowHash, DeliveryDocumentHash.Of(running, mappings));
     }
 }

@@ -10,10 +10,11 @@ using Xunit;
 namespace SqlFlow.Delivery.Tests;
 
 /// <summary>
-/// A list an update carries forward from the record OSDU holds (<c>target.protocolOptions.preserveDataKeys</c>) that a step of
-/// <c>enrich:</c> links its datasets in (osdu/docs/reference/flow/enrich-files.md, Preserved keys): OSDU's items stay in OSDU's
-/// order, other systems' among them; the step's links the document has are added, each once; those the last delivery wrote and
-/// the document no longer has are taken off; and a list the steps link nothing in, now or before, is copied whole as before.
+/// A list an update carries forward from the record OSDU holds (<c>target.protocolOptions.preserveDataKeys</c>) that the mapping
+/// links its enrichments' records in with <c>$link</c> (osdu/docs/reference/flow/enrich-records.md, Preserved keys): OSDU's items
+/// stay in OSDU's order, other systems' among them; the links the document has are added, each once; those the last delivery
+/// wrote and the document no longer has are taken off; and a list the enrichments link nothing in, now or before, is copied whole
+/// as before.
 /// </summary>
 [Trait(EnrichmentSuite.Trait, EnrichmentSuite.Name)]
 public sealed class StepLinksTests
@@ -95,7 +96,7 @@ public sealed class StepLinksTests
     }
 
     [Fact]
-    public void A_deliverys_step_links_are_its_registered_and_kept_datasets_now_and_those_its_last_delivery_wrote()
+    public void A_deliverys_links_are_its_added_and_kept_records_now_and_those_its_last_delivery_wrote()
     {
         var work = new DeliveryWork
         {
@@ -104,9 +105,9 @@ public sealed class StepLinksTests
             Document = Record(EnrichParts.Link(Las), EnrichParts.Link(Dlis)),
             DeliverMetadata = true,
             DeliverPayload = false,
-            StepParts = [new WorkStepPart(new EnrichPart("lasfile", Las, EnrichFiles.DefaultKind, "mem://las/*", "h1", "{}", null), new MemoryFiles(("a.las", "~Version")))],
-            StepKeptDatasets = [Dlis],
-            TargetState = new Dictionary<string, string>(StringComparer.Ordinal) { [EnrichParts.DatasetsValue] = EnrichParts.DatasetsText([Old, Las]) },
+            StepParts = [new WorkStepPart(new EnrichPart("lasfile", Las, EnrichmentSuite.DatasetKind, "mem://las/*", "h1", "{}", null), new MemoryFiles(("a.las", "~Version")))],
+            StepKeptRecords = [Dlis],
+            TargetState = new Dictionary<string, string>(StringComparer.Ordinal) { [EnrichParts.RegisteredValue] = EnrichParts.RegisteredText([Old, Las]) },
         };
 
         var written = Written(Record(EnrichParts.Link(Old), Foreign), work.Document, StepLinks.Of(work));
@@ -115,29 +116,32 @@ public sealed class StepLinksTests
     }
 
     [Fact]
-    public void The_preview_says_a_preserved_list_a_step_links_its_datasets_in_merges()
+    public void The_preview_says_a_preserved_list_the_mapping_links_records_in_merges()
     {
         var flow = Samples.Targeting(new FlowTarget
         {
             Endpoint = FakeOsduPlatform.Endpoint,
             Protocol = DeliveryProtocol.Storage,
             ProtocolOptions = new ProtocolOptions { PreserveDataKeys = ["Datasets", "Aliases"] },
-        }) with
-        {
-            Enrich =
-            [
-                new EnrichStep
-                {
-                    Name = "lasfile",
-                    ReadsRows = true,
-                    Files = new EnrichFiles { Payload = new FlowPayload { Root = "../data/las", LocationColumn = "las_folder", HashColumn = "las_hash" } },
-                },
-            ],
-        };
+        });
 
-        var notes = RouteRehearsal.Rehearse(flow, Record(EnrichParts.Link(Las)), "dev:work-product-component--WellLog:log-1", [], null).Notes;
+        var notes = RouteRehearsal.Rehearse(flow, Record(EnrichParts.Link(Las)), "dev:work-product-component--WellLog:log-1", [], null, ["data.Datasets", "data.Nested.Inner"]).Notes;
+        var none = RouteRehearsal.Rehearse(flow, Record(EnrichParts.Link(Las)), "dev:work-product-component--WellLog:log-1", [], null).Notes;
 
         Assert.Contains(notes, n => n.StartsWith("An update copies data.Datasets, data.Aliases forward from the record OSDU holds", StringComparison.Ordinal));
-        Assert.Contains("data.Datasets merges instead: the update keeps what OSDU holds there, adds the links the steps of enrich: render now and takes off those they no longer do.", notes);
+        Assert.Contains("data.Datasets merges instead: the update keeps what OSDU holds there, adds the records the mapping's enrichments link there now ($link) and takes off those they no longer do.", notes);
+        Assert.DoesNotContain(none, n => n.Contains("merges instead", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void A_mapping_names_the_paths_its_links_are_written_at()
+    {
+        var owner = EnrichmentSuite.Owner(
+            data: "Aliases: [x, { $link: lasfile }]\nSymbol: { $link: lasfile }",
+            enrich: "lasfile:\n  rows: one\n  mapping: LasDataset@1.0.0\n");
+
+        Assert.Equal(["data.Aliases", "data.Symbol"], owner.LinkPaths());
+        Assert.Equal(["lasfile"], owner.LinkNames());
+        Assert.Empty(EnrichmentSuite.Owner().LinkPaths());
     }
 }

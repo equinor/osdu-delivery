@@ -34,20 +34,12 @@ public sealed class StepHoldsDeliveryTests : IDisposable
     public StepHoldsDeliveryTests()
     {
         _mappings = Directory.CreateDirectory(Path.Combine(_root, "mappings")).FullName;
-        File.Copy(Path.Combine(Samples.Mappings, "WellLog@1.4.0.yaml"), Path.Combine(_mappings, "WellLog@1.4.0.yaml"));
-        File.WriteAllText(Path.Combine(_mappings, "WellLogGrade@1.0.0.yaml"), $$"""
-            documentType: mapping
-            name: WellLogGrade
-            version: 1.0.0
-            template:
-              kind: {{WellLogKind}}
-              version: {{Samples.SampleTemplate(WellLogKind).Version}}
-            fragment: true
-            record:
-              data:
-                ExtensionProperties:
-                  WellDb:
-                    Grade: { $from: grade }
+        EnrichmentSuite.WriteWellLogMapping(_mappings, "grade:\n  rows: one\n  mapping: WellLogGrade@1.0.0\n  onHold: step\n");
+        EnrichmentSuite.WriteEnrichmentMapping(_mappings, "WellLogGrade", WellLogKind, """
+            data:
+              ExtensionProperties:
+                WellDb:
+                  Grade: { $from: grade }
             """);
     }
 
@@ -75,7 +67,6 @@ public sealed class StepHoldsDeliveryTests : IDisposable
             Source = flow.Source with { Datasets = datasets, Payloads = new Dictionary<string, FlowPayload>(StringComparer.Ordinal) },
             Render = flow.Render with { MappingsDirectory = _mappings },
             Target = flow.Target with { Protocol = DeliveryProtocol.Storage, ProtocolOptions = new ProtocolOptions() },
-            Enrich = [new EnrichStep { Name = "grade", Mapping = "WellLogGrade@1.0.0", ReadsRows = true, OnHold = EnrichHold.Step }],
         };
     }
 

@@ -130,6 +130,14 @@ internal static partial class EntryValues
                 return null;
             }
         }
+        else if (entry.Source.Kind == MappingSourceKind.Link)
+        {
+            raw = Linked(entry, renderer, holds, searched);
+            if (raw is null)
+            {
+                return null;
+            }
+        }
         else
         {
             raw = entry.FindAll is not null
@@ -522,11 +530,38 @@ internal static partial class EntryValues
     }
 
     /// <summary>
-    /// The value of a <c>$base</c> node (osdu/docs/reference/flow/enrich.md): the section at its path of the record a fragment
-    /// adds to, as the flow's own mapping and the steps of <c>enrich:</c> before this one left it. It is read as the step
-    /// renders, never from the platform, so it never waits. A record without the section, or with an empty text there, is an
-    /// empty value, which <c>$required</c> decides. The section is copied whole, an object or a list as the record holds it,
-    /// and a single value passes through the node's modifiers like a column's.
+    /// The value of a <c>$link</c> node (osdu/docs/reference/flow/enrich-records.md): the ids of the datasets the mapping's
+    /// enrichment registers for the record, each as OSDU names a record a list links, with the version separator and no
+    /// version. Where the template takes a list, every one of them; where it takes one value, the one an enrichment taking one
+    /// row registers. Nothing when it registers none, which leaves the property out: a link never holds its record.
+    /// </summary>
+    private static JsonNode? Linked(MappingEntry entry, MappingRenderer renderer, List<string> holds, RenderTrail searched)
+    {
+        var name = entry.Source!.LinkName!;
+        var ids = searched.Links?.Ids(name, searched.OwnerId) ?? [];
+        if (renderer.Schema.Resolve(entry.Target.SchemaPath)?.Type == SchemaType.Array)
+        {
+            return ids.Count == 0 ? null : new JsonArray(ids.Select(id => (JsonNode?)JsonValue.Create(EnrichParts.Link(id))).ToArray());
+        }
+
+        switch (ids.Count)
+        {
+            case 0:
+                return null;
+            case 1:
+                return JsonValue.Create(EnrichParts.Link(ids[0]));
+            default:
+                holds.Add($"{entry.Target.Text}: $link: {name} gives the {ids.Count} datasets the enrichment registers for this record, and the template takes one value here; link them from a list, or let the enrichment take one row (rows: one)");
+                return null;
+        }
+    }
+
+    /// <summary>
+    /// The value of a <c>$base</c> node (osdu/docs/reference/flow/enrich.md): the section at its path of the record an
+    /// enrichment mapping renders into, as the record's mapping and the enrichments before this one left it. It is read as the
+    /// enrichment renders, never from the platform, so it never waits. A record without the section, or with an empty text
+    /// there, is an empty value, which <c>$required</c> decides. The section is copied whole, an object or a list as the record
+    /// holds it, and a single value passes through the node's modifiers like a column's.
     /// </summary>
     private static object? FromBase(
         MappingEntry entry, SourceRow root, SourceRow? item, MappingRenderer renderer, List<string> holds, List<CacheUsage> usages, RenderTrail searched)

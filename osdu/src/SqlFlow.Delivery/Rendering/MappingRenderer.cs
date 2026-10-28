@@ -151,7 +151,7 @@ public sealed class MappingRenderer
 
     /// <summary>
     /// The shape of the records <paramref name="mapping"/> renders, drawn without a source record or a cache: the record
-    /// <see cref="Render"/> assembles, with every value read from a row or the cache replaced by a placeholder naming the
+    /// <see cref="Render(SourceRecord)"/> assembles, with every value read from a row or the cache replaced by a placeholder naming the
     /// type the template gives it and where it comes from, static values as they render, and one item in each repeated
     /// array. The notes say what the placeholders cannot: how many items an array takes, parameters without a value, and
     /// what a render would hold for whatever the row.
@@ -212,7 +212,7 @@ public sealed class MappingRenderer
             };
         if (mapping.Fragment)
         {
-            notes.Add($"{mapping.Reference} is a fragment: the paths a step of enrich: adds to every record the flow's own mapping renders, after the steps it comes after");
+            notes.Add($"{mapping.Reference} is an enrichment mapping: what an enrichment of another mapping renders for each of its records, the paths it adds or the records it adds, after the enrichments it comes after");
         }
         renderer.Assemble(document, new ShapeValues(renderer, notes), notes);
         foreach (var (entry, assertion) in renderer.Assertions)
@@ -288,7 +288,13 @@ public sealed class MappingRenderer
         return list.Any(string.IsNullOrWhiteSpace) ? null : DeliveryKey.Derive(_mapping.Dataset.System, list);
     }
 
-    public RenderResult Render(SourceRecord record)
+    public RenderResult Render(SourceRecord record) => Render(record, null);
+
+    /// <summary>
+    /// Renders one record, its <c>$link</c> nodes writing the ids <paramref name="links"/> gives for the enrichments of the
+    /// mapping (osdu/docs/reference/flow/enrich-records.md); with none, they give nothing.
+    /// </summary>
+    public RenderResult Render(SourceRecord record, EnrichLinks? links)
     {
         ArgumentNullException.ThrowIfNull(record);
         RefuseFragment(nameof(Render));
@@ -297,9 +303,10 @@ public sealed class MappingRenderer
 
         // What this render asks of the platform, the alternatives it takes and what its assertions find are its own: the plan
         // renders on several threads over one renderer.
-        var searched = new RenderTrail { Assertions = AssertionsLog() };
+        var searched = new RenderTrail { Assertions = AssertionsLog(), Links = links };
 
         var (document, key, sourceKey, targetId) = Start(record, holds);
+        searched.OwnerId = targetId;
         Assemble(document, new RowValues(this, record, holds, usages, searched), holds);
         var asserted = Assert(document, searched.Assertions);
 
@@ -353,7 +360,7 @@ public sealed class MappingRenderer
         ArgumentNullException.ThrowIfNull(baseRecord);
         if (!_mapping.Fragment)
         {
-            throw new InvalidOperationException($"{_mapping.Reference} renders a whole record, and only a fragment renders the paths a step of enrich: adds; render it with Render.");
+            throw new InvalidOperationException($"{_mapping.Reference} renders a whole record, and only an enrichment mapping renders what an enrichment adds; render it with Render.");
         }
 
         var holds = new List<string>();
@@ -383,7 +390,7 @@ public sealed class MappingRenderer
         if (_mapping.Fragment)
         {
             throw new InvalidOperationException(
-                $"{_mapping.Reference} is a fragment, the paths a step of enrich: adds to a record, and {operation} renders a whole record; render it with {nameof(RenderFragment)} over the record its flow's mapping renders.");
+                $"{_mapping.Reference} is an enrichment mapping, what an enrichment adds to a record, and {operation} renders a whole record; render it with {nameof(RenderFragment)} over the record its keying mapping renders.");
         }
     }
 
@@ -429,11 +436,11 @@ public sealed class MappingRenderer
     }
 
     /// <summary>
-    /// Renders one record the way <see cref="Render"/> does, entry by entry, and says what each entry of
+    /// Renders one record the way <see cref="Render(SourceRecord)"/> does, entry by entry, and says what each entry of
     /// <paramref name="selection"/> gave: the value it wrote, that it left the variable out and why, that its <c>$when</c>
     /// does not hold, or the reasons it holds the record. The entries not selected are not evaluated at all, so a check of
     /// one variable reads only what that variable needs. The record is assembled by the one pass a delivery assembles it
-    /// by; with every entry selected its document and holds are the ones <see cref="Render"/> writes and holds for.
+    /// by; with every entry selected its document and holds are the ones <see cref="Render(SourceRecord)"/> writes and holds for.
     /// </summary>
     /// <remarks>
     /// An entry waiting on a search the platform has not been asked yet is reported as waiting, with the question; the
@@ -1199,7 +1206,7 @@ public sealed record RenderResult
     public IReadOnlyList<StepContribution> Enrichment { get; init; } = [];
 
     /// <summary>
-    /// The datasets the record's steps register (osdu/docs/reference/flow/enrich-files.md), each with where its
+    /// The datasets the record's steps register (osdu/docs/reference/flow/enrich-records.md), each with where its
     /// files are and their hash, and what the delivery does with them, which the plan resolves after the render
     /// (<see cref="EnrichParts.Resolve"/>) and the delivery follows; null for a record whose steps register no files.
     /// </summary>

@@ -28,6 +28,16 @@ internal sealed class RenderTrail
     public JsonObject? Base { get; init; }
 
     /// <summary>
+    /// The ids the record's <c>$link</c> nodes write (osdu/docs/reference/flow/enrich-records.md): those of the datasets its
+    /// mapping's enrichments register for it. Null for a render with no enrichments to link, whose <c>$link</c> nodes give
+    /// nothing.
+    /// </summary>
+    public EnrichLinks? Links { get; init; }
+
+    /// <summary>The id of the record being rendered, once its key made one: what the ids <see cref="Links"/> gives are made from.</summary>
+    public string? OwnerId { get; set; }
+
+    /// <summary>
     /// Which row of its child dataset the node being evaluated reads, counting from zero, while the items of a repeated array
     /// are evaluated; null for the dataset's own row. An incoming assertion names the row it judged by it.
     /// </summary>

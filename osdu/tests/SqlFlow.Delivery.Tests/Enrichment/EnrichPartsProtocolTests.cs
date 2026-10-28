@@ -16,12 +16,13 @@ using Xunit;
 namespace SqlFlow.Delivery.Tests;
 
 /// <summary>
-/// The route of a flow whose steps register files (osdu/docs/reference/flow/enrich-files.md), over the
-/// storage route and a fake platform that checks every request against the pinned contracts: a step's dataset is stored and
-/// registered under its derived id, declared before and checked for retrieval after, before the record is written; new files
-/// register a new version of the same dataset and leave the record as OSDU holds it; a changed document writes the record and
-/// leaves an unchanged dataset alone; a failure fails its record alone, unwritten; a retry resumes after what landed; an
-/// unfinished delivery is undone at the Dataset service's reversible scope; and removing everything purges the datasets too.
+/// The route of a flow whose mapping's enrichments add records (osdu/docs/reference/flow/enrich-records.md), over the storage
+/// route and a fake platform that checks every request against the pinned contracts: a dataset an enrichment adds is stored and
+/// registered under its derived id, declared before and checked for retrieval after, before the record is written; a record of
+/// another kind is written through storage the same way; new files or a changed record write a new version of the same id and
+/// leave the record as OSDU holds it; a changed document writes the record and leaves an unchanged part alone; a failure fails
+/// its record alone, unwritten; a retry resumes after what landed; an unfinished delivery is undone at the reversible scope; and
+/// removing everything purges what the enrichments added too.
 /// </summary>
 [Trait(EnrichmentSuite.Trait, EnrichmentSuite.Name)]
 public sealed class EnrichPartsProtocolTests
@@ -33,12 +34,13 @@ public sealed class EnrichPartsProtocolTests
     private const string Instructions = "/api/dataset/v1/storageInstructions";
     private const string Retrieval = "/api/dataset/v1/retrievalInstructions";
     private const string StorageRecords = "/api/storage/v2/records";
+    private const string NoteKind = "osdu:wks:work-product-component--Document:1.0.0";
 
     private static readonly SecretResolver Secrets = new([new EnvSecretProvider()]);
 
     private sealed class Rig : IDisposable
     {
-        public Rig()
+        public Rig(bool registersFiles = true)
         {
             Platform = new FakeOsduPlatform();
             Faults = new FileFamilyFaults(Platform);
@@ -53,7 +55,7 @@ public sealed class EnrichPartsProtocolTests
                 PayloadContentType = "application/json",
                 UploadHeaders = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase) { ["x-ms-blob-type"] = "BlockBlob" },
             };
-            Protocol = new EnrichPartsProtocol(new OsduRecordProtocol(Client, Options), Client, Options);
+            Protocol = new EnrichPartsProtocol(new OsduRecordProtocol(Client, Options), Client, Options, registersFiles: registersFiles);
         }
 
         public FakeOsduPlatform Platform { get; }
@@ -103,10 +105,19 @@ public sealed class EnrichPartsProtocolTests
         });
 
     private static EnrichPart Part(string hash = "h1", string? id = null, string record = "{}")
-        => new("lasfile", id ?? DatasetId(), EnrichFiles.DefaultKind, "mem://las/*", hash, record, null);
+        => new("lasfile", id ?? DatasetId(), EnrichmentSuite.DatasetKind, "mem://las/*", hash, record, null);
 
     private static WorkStepPart Step(EnrichPart part, string text = "~Version Information")
         => new(part, new MemoryFiles(("a.las", text)));
+
+    private static string NoteId(string owner = OwnerId) => WorkflowValues.DerivedDatasetId(owner, "work-product-component--Document", "enrich.note");
+
+    /// <summary>A record of another kind than a dataset an enrichment adds, written through storage as it renders: no files.</summary>
+    private static WorkStepPart Note(string name = "note of log 7", string? id = null)
+        => new(new EnrichPart("note", id ?? NoteId(), NoteKind, string.Empty, string.Empty, new JsonObject { ["data"] = new JsonObject { ["Name"] = name } }.ToJsonString(), null), null);
+
+    private static JsonObject NoteOwner(string name = "log 7")
+        => FakeOsduPlatform.Record(OwnerId, OwnerKind, new JsonObject { ["Name"] = name, ["Datasets"] = new JsonArray(NoteId() + ":") });
 
     private static DeliveryWork Work(
         JsonObject document, IReadOnlyList<WorkStepPart> parts, long? existing = null, IReadOnlyDictionary<string, string>? state = null, bool unchanged = false, bool forced = false)
@@ -157,7 +168,7 @@ public sealed class EnrichPartsProtocolTests
         Assert.True(outcome.Succeeded, outcome.Failure?.Message);
         var id = DatasetId();
         var dataset = rig.Platform.Records[id];
-        Assert.Equal(EnrichFiles.DefaultKind, dataset["kind"]!.GetValue<string>());
+        Assert.Equal(EnrichmentSuite.DatasetKind, dataset["kind"]!.GetValue<string>());
         Assert.Equal("a.las", dataset["data"]!["Name"]!.GetValue<string>());
         Assert.NotNull(dataset["data"]!["DatasetProperties"]!["FileSourceInfo"]!["FileSource"]);
         Assert.True(JsonNode.DeepEquals(Owner()["acl"], dataset["acl"]), dataset["acl"]!.ToJsonString());
@@ -175,7 +186,7 @@ public sealed class EnrichPartsProtocolTests
 
         Assert.Equal(Part().Hash, outcome.Returned[EnrichParts.StateKey(id)]);
         Assert.Equal("h1", outcome.Returned[EnrichParts.FilesStateKey(id)]);
-        Assert.Equal([id], EnrichParts.Datasets(outcome.Returned));
+        Assert.Equal([id], EnrichParts.Records(outcome.Returned));
         Assert.Equal(HashOf(Owner()), outcome.Returned[EnrichParts.DocumentValue]);
         Assert.Equal(rig.VersionOf(OwnerId), outcome.TargetVersion);
         Assert.True(outcome.PayloadDelivered);
@@ -332,7 +343,7 @@ public sealed class EnrichPartsProtocolTests
         Assert.True(outcome.Succeeded, outcome.Failure?.Message);
         Assert.Equal(2, rig.Count(HttpMethod.Put, Register));
         Assert.All(ids, id => Assert.Contains(id, rig.Platform.Records.Keys));
-        Assert.Equal(ids.Order(StringComparer.Ordinal), EnrichParts.Datasets(outcome.Returned));
+        Assert.Equal(ids.Order(StringComparer.Ordinal), EnrichParts.Records(outcome.Returned));
     }
 
     [Fact]
@@ -411,7 +422,7 @@ public sealed class EnrichPartsProtocolTests
         Assert.True(everything.Deleted);
         Assert.DoesNotContain(OwnerId, purge.Platform.Records.Keys);
         Assert.DoesNotContain(DatasetId(), purge.Platform.Records.Keys);
-        Assert.Contains("1 of the 1 dataset(s) its enrich: steps registered purged too", everything.Detail, StringComparison.Ordinal);
+        Assert.Contains("1 of the 1 record(s) its enrichments added purged too", everything.Detail, StringComparison.Ordinal);
 
         var batch = await purge.Protocol.DeleteBatchAsync([new RecordRemoval(DeliveryKey.Derive("x", ["y"]), OwnerId, purged.Returned)], RemovalScope.Everything);
         Assert.True(Assert.Single(batch).Succeeded);
@@ -427,13 +438,13 @@ public sealed class EnrichPartsProtocolTests
         var moved = await rig.DeliverAsync(Next(Owner(datasets: other), [Step(Part(id: other))], first, unchanged: false));
         Assert.True(moved.Succeeded, moved.Failure?.Message);
         Assert.Equal([DatasetId()], moved.Superseded);
-        Assert.Equal([other], EnrichParts.Datasets(moved.Returned));
+        Assert.Equal([other], EnrichParts.Records(moved.Returned));
         Assert.DoesNotContain(DatasetId(), rig.Platform.Removed);
 
         var none = await rig.DeliverAsync(Work(FakeOsduPlatform.Record(OwnerId, OwnerKind), [], moved.TargetVersion, moved.Returned));
         Assert.True(none.Succeeded, none.Failure?.Message);
         Assert.Equal([other], none.Superseded);
-        Assert.Empty(EnrichParts.Datasets(none.Returned));
+        Assert.Empty(EnrichParts.Records(none.Returned));
     }
 
     [Fact]
@@ -458,5 +469,109 @@ public sealed class EnrichPartsProtocolTests
 
         Assert.True(probe.Reachable, probe.Detail);
         Assert.Equal(DatasetService.DefaultProbePath, probe.Path);
+    }
+
+    [Fact]
+    public async Task The_probe_of_a_flow_registering_no_files_asks_the_flows_own_services_alone()
+    {
+        using var rig = new Rig(registersFiles: false);
+
+        var probe = await rig.Protocol.ProbeAsync();
+
+        Assert.True(probe.Reachable, probe.Detail);
+        Assert.NotEqual(DatasetService.DefaultProbePath, probe.Path);
+        Assert.DoesNotContain(rig.Platform.Calls, c => c.Uri.AbsolutePath.Contains("/dataset/", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task A_record_of_another_kind_is_written_through_storage_under_its_id_before_the_record_that_links_it()
+    {
+        using var rig = new Rig(registersFiles: false);
+        var ledger = rig.Ledger();
+
+        var outcome = await rig.DeliverAsync(ledger.Track(Work(NoteOwner(), [Note()], forced: true)));
+
+        Assert.True(outcome.Succeeded, outcome.Failure?.Message);
+        var note = rig.Platform.Records[NoteId()];
+        Assert.Equal((NoteKind, "note of log 7"), (note["kind"]!.GetValue<string>(), note["data"]!["Name"]!.GetValue<string>()));
+        Assert.True(JsonNode.DeepEquals(NoteOwner()["acl"], note["acl"]), note["acl"]!.ToJsonString());
+        Assert.True(JsonNode.DeepEquals(NoteOwner()["legal"], note["legal"]), note["legal"]!.ToJsonString());
+        Assert.Equal(0, rig.Count(HttpMethod.Put, Register));
+        Assert.Equal(0, rig.Count(HttpMethod.Post, Retrieval));
+        Assert.Equal(2, rig.Count(HttpMethod.Put, StorageRecords));
+        Assert.True(rig.Writes(NoteId()) == 1 && rig.Platform.Calls.FindIndex(c => c.Body?.Contains('"' + NoteId() + '"', StringComparison.Ordinal) == true)
+            < rig.Platform.Calls.FindIndex(c => c.Method == HttpMethod.Put && c.Body?.Contains('"' + OwnerId + '"', StringComparison.Ordinal) == true));
+        var landed = ledger.Slot(EnrichPartsProtocol.RecordSlot);
+        Assert.Equal((NoteId(), ArtifactRoles.Record), (landed.TargetId, landed.Role));
+        Assert.Equal([NoteId()], EnrichParts.Records(outcome.Returned));
+        Assert.False(outcome.Returned.ContainsKey(EnrichParts.FilesStateKey(NoteId())));
+        Assert.Contains("1 record(s) of its enrichments written", outcome.Detail, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task A_record_of_another_kind_is_written_again_as_a_new_version_only_when_it_changes()
+    {
+        using var rig = new Rig(registersFiles: false);
+        var first = await rig.DeliverAsync(Work(NoteOwner(), [Note()], forced: true));
+        Assert.True(first.Succeeded, first.Failure?.Message);
+        var owner = rig.VersionOf(OwnerId);
+
+        var mark = rig.Platform.Calls.Count;
+        var same = await rig.DeliverAsync(Next(NoteOwner(), [Note()], first, unchanged: true));
+        Assert.True(same.Succeeded, same.Failure?.Message);
+        Assert.Equal(0, rig.Platform.Calls.Count - mark);
+
+        var changed = await rig.DeliverAsync(Next(NoteOwner(), [Note("note of log 7, corrected")], same, unchanged: true));
+        Assert.True(changed.Succeeded, changed.Failure?.Message);
+        Assert.Equal(1, rig.Writes(NoteId(), mark));
+        Assert.Equal(0, rig.Writes(OwnerId, mark));
+        Assert.Equal(owner, rig.VersionOf(OwnerId));
+        Assert.Equal(2, rig.Platform.History[NoteId()].Count);
+        Assert.Equal("note of log 7, corrected", rig.Platform.Records[NoteId()]["data"]!["Name"]!.GetValue<string>());
+    }
+
+    [Fact]
+    public async Task An_unfinished_delivery_removes_the_record_it_wrote_through_storage_reversibly()
+    {
+        using var rig = new Rig(registersFiles: false);
+        var ledger = rig.Ledger();
+        var work = ledger.Track(Work(NoteOwner(), [Note()], forced: true));
+        rig.Faults.Refuse(FileFamilyFaults.Nth(HttpMethod.Put, StorageRecords, 2), HttpStatusCode.InternalServerError);
+        Assert.False((await rig.DeliverAsync(work)).Succeeded);
+        Assert.Contains(NoteId(), rig.Platform.Records.Keys);
+
+        var result = Assert.Single(await rig.Protocol.UndoAsync([ledger.Undo(work)]));
+
+        Assert.Equal(ArtifactStatus.Removed, result.Outcome);
+        Assert.Contains(NoteId(), rig.Platform.Removed);
+        Assert.Equal(1, rig.Count(HttpMethod.Post, StorageRecords + "/" + NoteId() + ":delete"));
+        Assert.Equal(0, rig.Count(HttpMethod.Post, "/api/dataset/v1/metadataRecord/" + NoteId() + "/softDelete"));
+    }
+
+    [Fact]
+    public async Task Removing_everything_purges_a_record_of_another_kind_the_enrichments_added()
+    {
+        using var rig = new Rig(registersFiles: false);
+        var first = await rig.DeliverAsync(Work(NoteOwner(), [Note()], forced: true));
+        Assert.True(first.Succeeded, first.Failure?.Message);
+
+        var everything = await rig.Protocol.DeleteAsync(OwnerId, RemovalScope.Everything, first.Returned);
+
+        Assert.True(everything.Deleted);
+        Assert.DoesNotContain(NoteId(), rig.Platform.Records.Keys);
+        Assert.Contains("1 of the 1 record(s) its enrichments added purged too", everything.Detail, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task A_record_storage_refuses_fails_its_enriched_record_alone_unwritten()
+    {
+        using var rig = new Rig(registersFiles: false);
+        rig.Faults.Refuse(HttpMethod.Put, StorageRecords, HttpStatusCode.BadRequest);
+
+        var outcome = await rig.DeliverAsync(Work(NoteOwner(), [Note()], forced: true));
+
+        Assert.False(outcome.Succeeded);
+        Assert.Contains($"storage refused {NoteId()}, the record enrichment 'note' adds", outcome.Failure!.Message, StringComparison.Ordinal);
+        Assert.DoesNotContain(OwnerId, rig.Platform.Records.Keys);
     }
 }

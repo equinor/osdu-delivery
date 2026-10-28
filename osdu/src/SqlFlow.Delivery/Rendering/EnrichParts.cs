@@ -11,27 +11,30 @@ using ContentHash = SqlFlow.Delivery.Hashing.ContentHash;
 namespace SqlFlow.Delivery.Rendering;
 
 /// <summary>
-/// One dataset a step of <c>enrich:</c> registers for a record (osdu/docs/reference/flow/enrich-files.md):
-/// its id and kind, where its files are and their content hash, what the step's dataset fragment rendered into it, and the
-/// media type its files go as. <see cref="Hash"/> is what the record's ledger keeps of it: a change to the files or to the
-/// dataset record moves it, and the delivery registers the dataset again.
+/// One record an enrichment adds to a record (osdu/docs/reference/flow/enrich-records.md): its id and kind, what the
+/// enrichment's mapping rendered into it, and, for a dataset registered with files, where its files are, their content hash
+/// and the media type they go as. <see cref="Hash"/> is what the record's ledger keeps of it: a change to the record or to its
+/// files moves it, and the delivery writes it again.
 /// </summary>
-/// <param name="Step">The step's name.</param>
-/// <param name="DatasetId">The dataset's OSDU id, made from the record's id and the step.</param>
-/// <param name="Kind">The dataset kind it is registered as.</param>
-/// <param name="Location">Where its files are, as a payload location (folder and pattern).</param>
-/// <param name="FilesHash">The content hash of its files, from the step's hash column.</param>
-/// <param name="Record">What the step's dataset fragment rendered into the dataset record, as canonical JSON (<c>{}</c> for none).</param>
+/// <param name="Step">The enrichment's name.</param>
+/// <param name="RecordId">The record's OSDU id, made from the enriched record's id and the enrichment.</param>
+/// <param name="Kind">The kind it is written as.</param>
+/// <param name="Location">Where its files are, as a payload location (folder and pattern); empty for a record written through storage.</param>
+/// <param name="FilesHash">The content hash of its files, from the dataset's hash column; empty for a record written through storage.</param>
+/// <param name="Record">What the enrichment's mapping rendered into the record, as canonical JSON (<c>{}</c> for none).</param>
 /// <param name="ContentType">The media type its files are uploaded as; null takes the flow's.</param>
-public sealed record EnrichPart(string Step, string DatasetId, string Kind, string Location, string FilesHash, string Record, string? ContentType)
+public sealed record EnrichPart(string Step, string RecordId, string Kind, string Location, string FilesHash, string Record, string? ContentType)
 {
-    /// <summary>The role every step part is forced by in a redelivery: <c>files</c> sends a record's step files again too.</summary>
+    /// <summary>The role every enrichment part is forced by in a redelivery: <c>files</c> sends a record's enrichment records again too.</summary>
     public const string Role = PayloadParts.Files;
 
-    /// <summary>The hash of the dataset record as the part renders it: its kind and what the fragment wrote, without the files.</summary>
+    /// <summary>True for a dataset registered with its files through the Dataset service; false for a record written through storage.</summary>
+    public bool RegistersFiles => Location.Length > 0;
+
+    /// <summary>The hash of the record as the part renders it: its kind and what the mapping wrote, without the files.</summary>
     public string RecordHash => ContentHash.Of(Kind + "\n" + Record);
 
-    /// <summary>The hash of the whole part: the dataset record and its files.</summary>
+    /// <summary>The hash of the whole part: the record and its files.</summary>
     public string Hash => ContentHash.Of(RecordHash + "\n" + FilesHash);
 }
 
@@ -54,18 +57,25 @@ public sealed record EnrichWork(IReadOnlyList<EnrichPart> Parts, bool DocumentUn
     /// </summary>
     public IReadOnlyDictionary<string, string> Keep { get; init; } = new Dictionary<string, string>(StringComparer.Ordinal);
 
-    /// <summary>The datasets the steps set aside on this render registered on an earlier one, which the record keeps linking.</summary>
-    public IReadOnlyList<string> KeptDatasets { get; init; } = [];
+    /// <summary>The records the enrichments set aside on this render added on an earlier one, which the record keeps linking.</summary>
+    public IReadOnlyList<string> KeptRecords { get; init; } = [];
 
-    /// <summary>Whether a delivery has anything of the steps to do: datasets to register or keep linking, or contributions to keep.</summary>
-    public bool IsEmpty => Parts.Count == 0 && Keep.Count == 0 && KeptDatasets.Count == 0;
+    /// <summary>
+    /// Where the delivered document's enrichments came from (<see cref="EnrichTrace"/>), by target state key: the rows of each
+    /// enrichment reading rows, and the row of each record one adds. The worker keeps them with the record once the delivery
+    /// succeeds, so the ledger traces every enrichment from the record it belongs to.
+    /// </summary>
+    public IReadOnlyDictionary<string, string> Trace { get; init; } = new Dictionary<string, string>(StringComparer.Ordinal);
+
+    /// <summary>Whether a delivery has anything of the enrichments to do: records to add or keep linking, contributions to keep, or where they came from to keep.</summary>
+    public bool IsEmpty => Parts.Count == 0 && Keep.Count == 0 && KeptRecords.Count == 0 && Trace.Count == 0;
 }
 
 /// <summary>A step set aside on its holds whose files could not be found where its row says, with why: the plan renders the record again with it held.</summary>
 public sealed record StepAside(string Step, string Reason);
 
 /// <summary>
-/// The step parts of a record (osdu/docs/reference/flow/enrich-files.md): resolved by the plan from the rows
+/// The step parts of a record (osdu/docs/reference/flow/enrich-records.md): resolved by the plan from the rows
 /// of each step that registers files, written beside the document into its work batch line, and read back by the delivery that
 /// registers them. A record whose steps register no files has none, and its document's hash is the document's alone.
 /// </summary>
@@ -100,6 +110,8 @@ public static class EnrichParts
         ArgumentNullException.ThrowIfNull(steps);
         var parts = new List<EnrichPart>();
         var keep = new Dictionary<string, string>(StringComparer.Ordinal);
+        var trace = new Dictionary<string, string>(StringComparer.Ordinal);
+        var columns = flow.Source.SystemColumns;
         foreach (var contribution in render.Enrichment)
         {
             var step = steps.First(s => string.Equals(s.Step.Name, contribution.Step, StringComparison.Ordinal)).Step;
@@ -108,14 +120,31 @@ public static class EnrichParts
                 continue;
             }
 
-            foreach (var dataset in contribution.Datasets)
+            if (step.ReadsRows)
             {
-                var row = record.ScopeRows(step.Name)[dataset.Row];
-                var files = step.Files!;
+                trace[EnrichTrace.RowsKey(step.Name)] = EnrichTrace.Rows(record.ScopeRows(step.Name), columns);
+            }
+
+            foreach (var added in contribution.Records)
+            {
+                if (step.ReadsRows && EnrichTrace.Row(record.ScopeRows(step.Name)[added.Row], columns) is { } source)
+                {
+                    trace[EnrichTrace.SourceKey(added.Id)] = source;
+                }
+
+                var records = step.Records!;
+                if (records.Files is not { } files)
+                {
+                    // A record of any kind, written through storage as the enrichment's mapping rendered it.
+                    parts.Add(new EnrichPart(step.Name, added.Id, added.Kind, string.Empty, string.Empty, CanonicalJson.ToString(added.Record), null));
+                    continue;
+                }
+
+                var row = record.ScopeRows(step.Name)[added.Row];
                 var location = PayloadLocations.ResolveStepFiles(flow, values, row, step);
-                var hash = row.GetString(files.Payload.HashColumn!)?.Trim();
+                var hash = row.GetString(files.HashColumn!)?.Trim();
                 var refusal = location.Refusal ?? (string.IsNullOrEmpty(hash)
-                    ? $"files take their content hash from column '{files.Payload.HashColumn}', which row {dataset.Row + 1} of the step's dataset leaves empty"
+                    ? $"files take their content hash from column '{files.HashColumn}', which row {added.Row + 1} of the enrichment's dataset leaves empty"
                     : null);
                 if (refusal is not null)
                 {
@@ -124,28 +153,28 @@ public static class EnrichParts
                         : (render, $"enrich.{step.Name}: {refusal}", null);
                 }
 
-                parts.Add(new EnrichPart(step.Name, dataset.Id, dataset.Kind, location.Location!.Value.ToString(), hash!, CanonicalJson.ToString(dataset.Record), files.ContentType));
+                parts.Add(new EnrichPart(step.Name, added.Id, added.Kind, location.Location!.Value.ToString(), hash!, CanonicalJson.ToString(added.Record), records.ContentType));
             }
 
             if (step.OnHold == EnrichHold.Step)
             {
-                keep[step.Name] = new KeptStep(contribution.Composed, contribution.Datasets.Select(d => d.Id).ToList()).ToText();
+                keep[step.Name] = new KeptStep(contribution.Composed, contribution.Records.Select(d => d.Id).ToList()).ToText();
             }
         }
 
         var kept = JsonMerge.ToValues(state?.TargetStateJson);
-        var keptDatasets = render.Enrichment.Where(c => c.SetAside).SelectMany(c => c.KeptDatasets).Distinct(StringComparer.Ordinal).ToList();
-        var work = new EnrichWork(parts, false, false) { Keep = keep, KeptDatasets = keptDatasets };
+        var keptRecords = render.Enrichment.Where(c => c.SetAside).SelectMany(c => c.KeptRecords).Distinct(StringComparer.Ordinal).ToList();
+        var work = new EnrichWork(parts, false, false) { Keep = keep, KeptRecords = keptRecords, Trace = trace };
         if (work.IsEmpty)
         {
             return (render, null, null);
         }
 
-        // The document's hash takes in every dataset the record links: those registered now at their new hash, those of a step
-        // set aside at the hash their last delivery kept.
-        var linked = parts.Select(p => (p.DatasetId, p.Hash)).Concat(keptDatasets.Select(id => (id, kept.GetValueOrDefault(StateKey(id)) ?? string.Empty))).ToList();
+        // The document's hash takes in every record the enrichments add: those rendered now at their new hash, those of an
+        // enrichment set aside at the hash their last delivery kept.
+        var linked = parts.Select(p => (p.RecordId, p.Hash)).Concat(keptRecords.Select(id => (id, kept.GetValueOrDefault(StateKey(id)) ?? string.Empty))).ToList();
         var delivered = state?.MetadataHash;
-        var previous = Datasets(kept).Select(id => (id, kept.GetValueOrDefault(StateKey(id)))).Where(p => p.Item2 is not null).Select(p => (p.id, p.Item2!));
+        var previous = Records(kept).Select(id => (id, kept.GetValueOrDefault(StateKey(id)))).Where(p => p.Item2 is not null).Select(p => (p.id, p.Item2!));
         var unchanged = delivered is not null && string.Equals(Fold(render.Canonical, previous), delivered, StringComparison.Ordinal);
         var forced = delivered is null
             || (hasPayload && state!.PayloadHash is null)
@@ -200,22 +229,22 @@ public static class EnrichParts
         }
     }
 
-    /// <summary>The target state value holding the hash a step's dataset was last delivered with.</summary>
-    public static string StateKey(string datasetId) => "enrich." + datasetId;
+    /// <summary>The target state value holding the hash a record an enrichment adds was last delivered with.</summary>
+    public static string StateKey(string recordId) => "enrich." + recordId;
 
-    /// <summary>The target state value holding the content hash of the files a step's dataset was last registered with.</summary>
-    public static string FilesStateKey(string datasetId) => "enrich." + datasetId + ".files";
+    /// <summary>The target state value holding the content hash of the files a dataset an enrichment adds was last registered with.</summary>
+    public static string FilesStateKey(string recordId) => "enrich." + recordId + ".files";
 
-    /// <summary>The target state value listing, as a JSON array, every dataset the record's steps registered and the record links.</summary>
-    public const string DatasetsValue = "enrich.datasets";
+    /// <summary>The target state value listing, as a JSON array, every record the record's enrichments added and the record links.</summary>
+    public const string RegisteredValue = "enrich.records";
 
     /// <summary>The target state value holding the hash of the document the record was last written with, its parts left out.</summary>
     public const string DocumentValue = "enrich.document";
 
-    /// <summary>The datasets the record's steps registered, as its target state lists them.</summary>
-    public static IReadOnlyList<string> Datasets(IReadOnlyDictionary<string, string>? state)
+    /// <summary>The records the record's enrichments added, as its target state lists them.</summary>
+    public static IReadOnlyList<string> Records(IReadOnlyDictionary<string, string>? state)
     {
-        if (state is null || !state.TryGetValue(DatasetsValue, out var text) || string.IsNullOrWhiteSpace(text))
+        if (state is null || !state.TryGetValue(RegisteredValue, out var text) || string.IsNullOrWhiteSpace(text))
         {
             return [];
         }
@@ -230,13 +259,13 @@ public static class EnrichParts
         }
     }
 
-    /// <summary>A list of dataset ids as the target state keeps it.</summary>
-    public static string DatasetsText(IEnumerable<string> ids) => JsonSerializer.Serialize(ids.Distinct(StringComparer.Ordinal).Order(StringComparer.Ordinal).ToList());
+    /// <summary>A list of record ids as the target state keeps it.</summary>
+    public static string RegisteredText(IEnumerable<string> ids) => JsonSerializer.Serialize(ids.Distinct(StringComparer.Ordinal).Order(StringComparer.Ordinal).ToList());
 
-    /// <summary>A step's dataset as the record links it, the way the work product component schemas take a dataset: its id with the version separator and no version.</summary>
-    public static string Link(string datasetId) => datasetId + ":";
+    /// <summary>A record an enrichment adds, as the record links it, the way OSDU schemas take a reference: its id with the version separator and no version.</summary>
+    public static string Link(string recordId) => recordId + ":";
 
-    /// <summary>The record a step part registers, as its fragment rendered it.</summary>
+    /// <summary>The record an enrichment part writes, as its mapping rendered it.</summary>
     public static JsonObject RecordOf(EnrichPart part)
     {
         ArgumentNullException.ThrowIfNull(part);

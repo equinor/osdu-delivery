@@ -103,6 +103,108 @@ internal static class DeliveryArtifactVerbs
     }
 
     /// <summary>
+    /// What the mapping's enrichments added to one record (osdu/docs/reference/flow/enrich.md, What the ledger keeps): each
+    /// enrichment with its mapping and where its rows came from, and every record it added with whether the record links it,
+    /// the version OSDU holds, the row it came from and every write made of it. Read from the ledger alone.
+    /// </summary>
+    public static async Task<int> EnrichmentsAsync(CliVerbContext context, ILedger ledger, Guid flowId, string label, CancellationToken ct)
+    {
+        ArgumentNullException.ThrowIfNull(context);
+        ArgumentNullException.ThrowIfNull(ledger);
+        if (context.Arguments.GetOption("--key") is not { } asked)
+        {
+            return context.UsageError("name the record with --key <delivery key or source key>.");
+        }
+
+        var (key, name) = await FindAsync(ledger, flowId, label, asked, ct).ConfigureAwait(false);
+        var record = await ledger.GetRecordAsync(flowId, key, ct).ConfigureAwait(false)
+            ?? throw new DeliveryException($"{label}: the ledger holds no record {key}.");
+        var enrichments = RecordEnrichments.Of(record, await ledger.ListAttemptsAsync(flowId, key, RecordEnrichments.MaxAttempts, ct).ConfigureAwait(false));
+        if (context.Json)
+        {
+            context.Out.WriteLine(CanonicalJson.Pretty(new JsonObject
+            {
+                ["flow"] = label,
+                ["flowId"] = flowId.ToString(),
+                ["deliveryKey"] = key.Value.ToString("N", CultureInfo.InvariantCulture),
+                ["record"] = name,
+                ["enrichments"] = new JsonArray(enrichments.Select(e => (JsonNode)Described(e)).ToArray()),
+            }));
+            return 0;
+        }
+
+        context.Out.WriteLine(string.Create(CultureInfo.InvariantCulture, $"{label}: {name}: {enrichments.Count} enrichment(s), in the order they render"));
+        if (enrichments.Count == 0)
+        {
+            context.Out.WriteLine("  none. The record was rendered by a mapping that declares no enrich: block.");
+            return 0;
+        }
+
+        foreach (var enrichment in enrichments)
+        {
+            context.Out.WriteLine(
+                $"  {enrichment.Name}: adds {string.Join(", ", enrichment.Adds)}"
+                + (enrichment.Mapping is { } mapping ? $" ({mapping})" : string.Empty)
+                + (enrichment.RecordKind is { } kind ? $", records of {kind} written through {enrichment.WrittenThrough}" : string.Empty)
+                + (enrichment.SetAside ? "; set aside on its holds on the last render" : string.Empty));
+            if (enrichment.Rows is { } rows)
+            {
+                context.Out.WriteLine(string.Create(
+                    CultureInfo.InvariantCulture,
+                    $"      {rows.Count} row(s){(rows.Row is { } row ? $" at {row}" : string.Empty)}{(rows.Files.Count > 0 ? $", from {string.Join(", ", rows.Files)}{(rows.FilesCounted > rows.Files.Count ? $" and {rows.FilesCounted - rows.Files.Count} more file(s)" : string.Empty)}" : string.Empty)}"));
+            }
+
+            foreach (var added in enrichment.Records)
+            {
+                context.Out.WriteLine(string.Create(
+                    CultureInfo.InvariantCulture,
+                    $"      {(added.Linked ? "linked    " : "superseded")}  {added.Id}{(added.Version is { } version ? $" v{version}" : string.Empty)}{(added.Source is { } source ? $", from {source}" : string.Empty)}, {added.Writes.Count} write(s)"));
+            }
+        }
+
+        return 0;
+    }
+
+    /// <summary>An enrichment as the JSON form names it.</summary>
+    private static JsonObject Described(RecordEnrichment enrichment) => new()
+    {
+        ["name"] = enrichment.Name,
+        ["adds"] = new JsonArray(enrichment.Adds.Select(a => (JsonNode)JsonValue.Create(a)).ToArray()),
+        ["mapping"] = enrichment.Mapping,
+        ["mappingFingerprint"] = enrichment.MappingFingerprint,
+        ["recordKind"] = enrichment.RecordKind,
+        ["writtenThrough"] = enrichment.WrittenThrough,
+        ["setAside"] = enrichment.SetAside,
+        ["rows"] = enrichment.Rows is { } rows
+            ? new JsonObject
+            {
+                ["count"] = rows.Count,
+                ["files"] = new JsonArray(rows.Files.Select(f => (JsonNode)JsonValue.Create(f)).ToArray()),
+                ["filesCounted"] = rows.FilesCounted,
+                ["row"] = rows.Row,
+            }
+            : null,
+        ["records"] = new JsonArray(enrichment.Records.Select(r => (JsonNode)new JsonObject
+        {
+            ["id"] = r.Id,
+            ["linked"] = r.Linked,
+            ["version"] = r.Version,
+            ["hash"] = r.Hash,
+            ["filesHash"] = r.FilesHash,
+            ["source"] = r.Source,
+            ["writes"] = new JsonArray(r.Writes.Select(w => (JsonNode)new JsonObject
+            {
+                ["attemptId"] = w.AttemptId,
+                ["atUtc"] = w.AtUtc,
+                ["runId"] = w.RunId?.ToString("D"),
+                ["outcome"] = w.Outcome,
+                ["version"] = w.Version,
+                ["priorVersion"] = w.PriorVersion,
+            }).ToArray()),
+        }).ToArray()),
+    };
+
+    /// <summary>
     /// The artifacts unfinished deliveries left in the interface's ledger that an undo may still take, counted by state, and the
     /// records that hold them, those whose undo has used its tries first.
     /// </summary>

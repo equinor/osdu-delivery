@@ -5,7 +5,7 @@
   "strictKeys": true,
   "generatedFrom": "osdu/docs/reference/flow/mapping.md, osdu/src/SqlFlow.Delivery/Documents/YamlModels.cs, MappingMapper.cs and MappingMapper.Record.cs",
   "naming": "The loader reads the document with YamlDotNet's CamelCaseNamingConvention and refuses any key it does not know.",
-  "keyCount": 36,
+  "keyCount": 48,
   "keys": [
     {
       "path": "documentType",
@@ -53,17 +53,24 @@
       "description": "The template version the mapping fills exactly: the 16 hexadecimal characters the Templates page and 'sqlflow template folders' show for a template file. Left out, the mapping fills the one version of the kind the nearest template folder holding the kind holds."
     },
     {
-      "path": "fragment",
+      "path": "enrichment",
       "type": "boolean",
       "required": false,
-      "description": "true for a fragment: the paths a step of a delivery flow's enrich adds to every record the flow's own mapping renders, never a record of its own. A fragment declares no dataset and need not declare dataPartition, writes only under record.data and record.tags (no acl, legal, id, kind or ancestry), reads its step's row or rows, and reads the record as the mapping and the steps before it left it with $base: data.<path>. It cannot read $parent or $child. See osdu/docs/reference/flow/enrich.md.",
+      "description": "true for an enrichment mapping: what an enrichment of another mapping (its enrich: block) renders for each of that mapping's records, never a record keyed of its own. Of the record's own kind it adds paths to the record; of any other kind it renders the record the enrichment adds for each of its rows, which the record links with $link (a dataset kind whose rows the flow binds files for is registered with them through the Dataset service; every other record is written through storage). It declares no dataset and need not declare dataPartition, writes only under record.data and record.tags (the id, kind, access list and legal block are the record's, and a record it adds carries the record's access list and legal block), reads its enrichment's row or rows, and reads the record as its mapping and the enrichments before it left it with $base: data.<path>. It cannot read $parent or $child. See osdu/docs/reference/flow/enrich.md.",
       "default": "false"
+    },
+    {
+      "path": "fragment",
+      "type": "object",
+      "required": false,
+      "description": "Refused: what this key said is written enrichment: true. An enrichment mapping is what an enrichment of another mapping's enrich: block renders.",
+      "freeForm": true
     },
     {
       "path": "dataset",
       "type": "object",
       "required": true,
-      "description": "The rows the mapping renders: the source system, the key the delivery key and the OSDU id are derived from, and what identifies a record to a person. Required for a mapping of a whole record; a fragment (fragment: true) declares none."
+      "description": "The rows the mapping renders: the source system, the key the delivery key and the OSDU id are derived from, and what identifies a record to a person. Required for a mapping of a whole record; an enrichment mapping (enrichment: true) declares none."
     },
     {
       "path": "dataset.system",
@@ -110,6 +117,82 @@
         "deliveryKey",
         "key"
       ]
+    },
+    {
+      "path": "enrich",
+      "type": "map",
+      "required": false,
+      "description": "What the mapping adds to every record it renders, by the enrichment's name, in the order they render unless after says otherwise: paths of the record, records of their own (a LAS file's dataset, a record of a custom kind), the record's bulk data. Each renders an enrichment mapping (enrichment: true) from rows of its own, the child dataset the flow binds under source.datasets.<name>, over the record as the mapping and the enrichments before it left it; the record is hashed and sent once with every enrichment in it. At most 16. Refused in an enrichment mapping and in a mapping of a DSPDM row. See osdu/docs/reference/flow/enrich.md."
+    },
+    {
+      "path": "enrich.<name>",
+      "type": "object",
+      "required": false,
+      "description": "One enrichment, named by the key: letters, digits and `_`, not starting with a digit, at most 32 characters, not `record`. Its rows are the child dataset of the same name the flow binds; names are compared ignoring case, and the record's ledger names what it added by it."
+    },
+    {
+      "path": "enrich.<name>.description",
+      "type": "string",
+      "required": false,
+      "description": "What the enrichment adds to each record, shown with the record's composition."
+    },
+    {
+      "path": "enrich.<name>.rows",
+      "type": "enum(one|many)",
+      "required": false,
+      "description": "How many rows of the child dataset named after the enrichment one record takes. one: at most one, read as its mapping's own row; a record with none gets nothing from it, and two or more hold the record. many: any number, read with $forEach: <name>, one record added per row. Left out, the enrichment reads no rows: it adds paths from what the record holds and its parameters, or adds one record for the record.",
+      "enumValues": [
+        "one",
+        "many"
+      ]
+    },
+    {
+      "path": "enrich.<name>.mapping",
+      "type": "string",
+      "required": false,
+      "description": "The enrichment mapping it renders, pinned as Name@version and found the way the flow's mapping is (enrichment: true). Of the record's own kind and template version, it adds paths to the record; of another kind, it renders the record the enrichment adds for each row. Required unless bulk: true."
+    },
+    {
+      "path": "enrich.<name>.key",
+      "type": "list",
+      "required": false,
+      "description": "The columns telling each row's record from the enrichment's other rows', which make its id with the record's (`<record id>-enrich.<name>.<hash of the key>`): required for an enrichment adding records from many rows, refused for one taking one row or none."
+    },
+    {
+      "path": "enrich.<name>.key[]",
+      "type": "string",
+      "required": false,
+      "description": "A column of the enrichment's table."
+    },
+    {
+      "path": "enrich.<name>.after",
+      "type": "list",
+      "required": false,
+      "description": "The enrichments this one renders after, beside the order the document lists them in: those whose paths it reads with $base, and any other it has to follow."
+    },
+    {
+      "path": "enrich.<name>.after[]",
+      "type": "string",
+      "required": false,
+      "description": "The name of another enrichment of the same enrich block."
+    },
+    {
+      "path": "enrich.<name>.onHold",
+      "type": "enum(record|step)",
+      "required": false,
+      "description": "What the enrichment's hold does. record: the record is held with its reasons and OSDU keeps the version it has. step: the enrichment is set aside and the record goes ahead with what it added to its last delivery (the paths it composed, the records it linked); the ledger lists the record with it held (osdu/docs/reference/flow/enrich-holds.md).",
+      "default": "record",
+      "enumValues": [
+        "record",
+        "step"
+      ]
+    },
+    {
+      "path": "enrich.<name>.bulk",
+      "type": "boolean",
+      "required": false,
+      "description": "true when the files its one row names (source.datasets.<name>.files in the flow) are the record's DDMS bulk data, which the ddms route sends as the record's payload set bulk. Needs rows: one; one enrichment of a mapping names it (osdu/docs/reference/flow/enrich-bulk.md).",
+      "default": "false"
     },
     {
       "path": "parameters",
@@ -207,7 +290,7 @@
       "type": "object",
       "required": false,
       "freeForm": true,
-      "description": "A property of the record, written as one of four nodes. A literal is the value it is: text, a number, a boolean or a list, such as ReferenceCurveID: MD. Its text reads a parameter as {$param.<name>} and no other token. An object is a map of the property names it holds, each a node in turn. A value node is a map whose keys all start with '$'. It reads one value with $from: <column>, $expr: <expression>, $value: <literal>, $cache: <Type>.<field>, $search: <name>, $lookup: <lookup>.<field> (a field of the record a lookup of the lookups block finds, taking only $when, $required and $description beside it) or $parent: <path> (a section of the record's parent, its path from the record's root such as data.DDMSDatasets: the record of the kind the template links to in x-osdu-inheriting-from-kind whose OSDU id is the record's own in the parent's namespace, read from storage as the run renders, copied whole, an object or a list as it holds it; a parent storage does not hold holds the record; never under $forEach) or $child: <kind> (the reference, with the version separator and no version, to the record's child of that kind: the record of a kind whose template links to this template's kind in x-osdu-inheriting-from-kind, whose OSDU id is the record's own in the child's namespace, looked up in storage as the run renders; written once storage holds it and left out until then, never a hold, so it takes no $modifiers and no $required: true; a canonical template carries it in a property of ExtensionProperties or in a tag; never under $forEach and never an alternative of $coalesce; several children are the items of a list of values), and takes beside it $findBy (with $cache and $search: one line or a list of <field> = <column> or <field> = 'text', tried in order), $findAll (with $cache, in place of $findBy: every row of the type that meets one line <field> = <column>, <field> = 'text' or <field> = $lookup.<lookup>.<field>, each of whose values is a key, and any number of lines <field> is empty; the node gives the field it reads from every such row as a list, a value two rows give written once), $modifiers (a list applied top to bottom: trim, upper, lower, split: { separator, part }, replace: { <value>: <value or ~> } with otherwise beside it, or replace: $cache.<Type> with match, field and otherwise beside it, equals: <text>, date or date: <format>, number or number: { decimal, group }, id: \"<template>\", or ref, ref: <Entity> or ref: <group>--<Entity>, the reference {$param.dataPartition}:<group>--<Entity>:{$value}: to the record whose code is the value, of the type the property points to; id or ref is always the last), $when (a condition: an expression giving true or false, such as log_status = \"FINAL\" or not empty(curve_unit); false leaves the property out), $required (true by default: an empty value holds the record; false leaves the property out), $ignoreSeparators (with $cache), $unverified (true on a node that builds an id with id or ref: the id is written even when the cache holds records of its entity type and not this one, recorded as an unverified reference) and $description. A $coalesce node takes the first of several alternatives that gives a value: $coalesce: a list of two or more nodes, each reading one value with $from, $expr, $value, $cache, $search or $parent and its own $findBy, $modifiers, $ignoreSeparators and $unverified, tried in order; an alternative that gives nothing passes to the next, a literal $value can only be the last, and $when, $required and $description are written beside the list, since they decide for all of them. A $forEach node repeats the rows of a child dataset as the items of an array: $forEach: <child dataset>, and $item laying out the properties each row fills, with $where (a condition each child row must hold to become an item), $when (decides for the whole array), $required and $description. A list some of whose items are value nodes is a list of values: each item is a literal or a value node (never $coalesce or $forEach), and the list is what they give in order, a value given twice (whatever its case) written once; acl.owners and acl.viewers take one with at least one literal, and the legal lists never do. A list some of whose items are objects is a list of objects: each item is an object laid out as the record tree, whose properties are literals, objects, value nodes, $coalesce nodes or lists of values (never $forEach, and never a list of objects of its own) reading the row the list is in, or an object written as the literal it is; the list is the objects its items give in order, an object given twice written once, and an item none of whose properties gives a value adds nothing. $assert, beside a value node's own settings, a $coalesce node's or a $forEach node's (never on a literal $value, an alternative of $coalesce or an item of a list of values), lists at most 20 assertions on the property's value, each written in the assertion flows' words, which carry no '$': one condition, equals, notEquals, in, notIn, atLeast, atMost, greaterThan, lessThan, between, matches, notMatches, startsWith, endsWith, contains, notContains, exists, empty, type or length, with ignoreCase and tolerance; stage, record (the default: the value the record carries, after the modifiers and the conversion to the property's type, which is what OSDU holds) or incoming (the value the row gives a $from or $expr node before its modifiers); onFail, hold (the default: the record is not sent, its document kept, until a release accepts it), report (sent, the failure recorded) or omit (the value left out, which needs $required: false); values, all (the default) or any, for a property holding several values, record stage only; where, 1 to 10 conditions it is judged under, each with one operator, reading a field of the record on the record stage (a field inside the same repeated array reads the same item) or a column of the row on the incoming stage; and name and description. A property the record does not carry is judged only by exists and empty. A bare column name reads the row the node is in: the dataset's own row, or under $forEach the item's row; $dataset.<column> reads the dataset's own row from anywhere. An id template reads {$value}, {<column>}, {$dataset.<column>}, {$cache.<Type>.<field>} and {$param.<name>}. A property whose own name starts with '$' is written with one more, $$<name>; what $value holds is written verbatim. An expression reads a column by its name (in backticks when the name is a keyword, starts with a digit or holds '-'), $dataset.<column> and $param.<name>, and writes text in quotes; it compares with =, !=, <, <=, >, >= and in [ ... ], joins conditions with and, or and not, joins text with &, computes with + - * /, and calls iif(condition, value, other), coalesce(value, value, ...), nullif(value, other), empty(value), trim(text), upper(text), lower(text), substring(text, start, length), left(text, count), right(text, count), replace(text, find, with), length(text), contains(text, part), startsWith(text, part), endsWith(text, part), number(value), text(value), round(number, digits) and abs(number). Text compares ignoring case and surrounding spaces; no value is the same only as no value; arithmetic on no value gives no value. In a fragment (fragment: true) a value node may also read $base: data.<path>, a section of the record as the flow's mapping and the steps of enrich before this one left it, copied whole, an object or a list as the record holds it; it takes $when, $required, $modifiers (on a single value), $assert and $description, is an alternative of a $coalesce, and is read outside a $forEach only."
+      "description": "A property of the record, written as one of four nodes. A literal is the value it is: text, a number, a boolean or a list, such as ReferenceCurveID: MD. Its text reads a parameter as {$param.<name>} and no other token. An object is a map of the property names it holds, each a node in turn. A value node is a map whose keys all start with '$'. It reads one value with $from: <column>, $expr: <expression>, $value: <literal>, $cache: <Type>.<field>, $search: <name>, $lookup: <lookup>.<field> (a field of the record a lookup of the lookups block finds, taking only $when, $required and $description beside it) or $parent: <path> (a section of the record's parent, its path from the record's root such as data.DDMSDatasets: the record of the kind the template links to in x-osdu-inheriting-from-kind whose OSDU id is the record's own in the parent's namespace, read from storage as the run renders, copied whole, an object or a list as it holds it; a parent storage does not hold holds the record; never under $forEach) or $child: <kind> (the reference, with the version separator and no version, to the record's child of that kind: the record of a kind whose template links to this template's kind in x-osdu-inheriting-from-kind, whose OSDU id is the record's own in the child's namespace, looked up in storage as the run renders; written once storage holds it and left out until then, never a hold, so it takes no $modifiers and no $required: true; a canonical template carries it in a property of ExtensionProperties or in a tag; never under $forEach and never an alternative of $coalesce; several children are the items of a list of values), and takes beside it $findBy (with $cache and $search: one line or a list of <field> = <column> or <field> = 'text', tried in order), $findAll (with $cache, in place of $findBy: every row of the type that meets one line <field> = <column>, <field> = 'text' or <field> = $lookup.<lookup>.<field>, each of whose values is a key, and any number of lines <field> is empty; the node gives the field it reads from every such row as a list, a value two rows give written once), $modifiers (a list applied top to bottom: trim, upper, lower, split: { separator, part }, replace: { <value>: <value or ~> } with otherwise beside it, or replace: $cache.<Type> with match, field and otherwise beside it, equals: <text>, date or date: <format>, number or number: { decimal, group }, id: \"<template>\", or ref, ref: <Entity> or ref: <group>--<Entity>, the reference {$param.dataPartition}:<group>--<Entity>:{$value}: to the record whose code is the value, of the type the property points to; id or ref is always the last), $when (a condition: an expression giving true or false, such as log_status = \"FINAL\" or not empty(curve_unit); false leaves the property out), $required (true by default: an empty value holds the record; false leaves the property out), $ignoreSeparators (with $cache), $unverified (true on a node that builds an id with id or ref: the id is written even when the cache holds records of its entity type and not this one, recorded as an unverified reference) and $description. A $coalesce node takes the first of several alternatives that gives a value: $coalesce: a list of two or more nodes, each reading one value with $from, $expr, $value, $cache, $search or $parent and its own $findBy, $modifiers, $ignoreSeparators and $unverified, tried in order; an alternative that gives nothing passes to the next, a literal $value can only be the last, and $when, $required and $description are written beside the list, since they decide for all of them. A $forEach node repeats the rows of a child dataset as the items of an array: $forEach: <child dataset>, and $item laying out the properties each row fills, with $where (a condition each child row must hold to become an item), $when (decides for the whole array), $required and $description. A list some of whose items are value nodes is a list of values: each item is a literal or a value node (never $coalesce or $forEach), and the list is what they give in order, a value given twice (whatever its case) written once; acl.owners and acl.viewers take one with at least one literal, and the legal lists never do. A list some of whose items are objects is a list of objects: each item is an object laid out as the record tree, whose properties are literals, objects, value nodes, $coalesce nodes or lists of values (never $forEach, and never a list of objects of its own) reading the row the list is in, or an object written as the literal it is; the list is the objects its items give in order, an object given twice written once, and an item none of whose properties gives a value adds nothing. $assert, beside a value node's own settings, a $coalesce node's or a $forEach node's (never on a literal $value, an alternative of $coalesce or an item of a list of values), lists at most 20 assertions on the property's value, each written in the assertion flows' words, which carry no '$': one condition, equals, notEquals, in, notIn, atLeast, atMost, greaterThan, lessThan, between, matches, notMatches, startsWith, endsWith, contains, notContains, exists, empty, type or length, with ignoreCase and tolerance; stage, record (the default: the value the record carries, after the modifiers and the conversion to the property's type, which is what OSDU holds) or incoming (the value the row gives a $from or $expr node before its modifiers); onFail, hold (the default: the record is not sent, its document kept, until a release accepts it), report (sent, the failure recorded) or omit (the value left out, which needs $required: false); values, all (the default) or any, for a property holding several values, record stage only; where, 1 to 10 conditions it is judged under, each with one operator, reading a field of the record on the record stage (a field inside the same repeated array reads the same item) or a column of the row on the incoming stage; and name and description. A property the record does not carry is judged only by exists and empty. A bare column name reads the row the node is in: the dataset's own row, or under $forEach the item's row; $dataset.<column> reads the dataset's own row from anywhere. An id template reads {$value}, {<column>}, {$dataset.<column>}, {$cache.<Type>.<field>} and {$param.<name>}. A property whose own name starts with '$' is written with one more, $$<name>; what $value holds is written verbatim. An expression reads a column by its name (in backticks when the name is a keyword, starts with a digit or holds '-'), $dataset.<column> and $param.<name>, and writes text in quotes; it compares with =, !=, <, <=, >, >= and in [ ... ], joins conditions with and, or and not, joins text with &, computes with + - * /, and calls iif(condition, value, other), coalesce(value, value, ...), nullif(value, other), empty(value), trim(text), upper(text), lower(text), substring(text, start, length), left(text, count), right(text, count), replace(text, find, with), length(text), contains(text, part), startsWith(text, part), endsWith(text, part), number(value), text(value), round(number, digits) and abs(number). Text compares ignoring case and surrounding spaces; no value is the same only as no value; arithmetic on no value gives no value. In an enrichment mapping (enrichment: true) a value node may also read $base: data.<path>, a section of the record as its mapping and the enrichments before this one left it, copied whole, an object or a list as the record holds it; it takes $when, $required, $modifiers (on a single value), $assert and $description, is an alternative of a $coalesce, and is read outside a $forEach only. A value node $link: <name> writes the ids of the records the mapping's enrichment <name> adds to the record, each as OSDU names a record a reference takes, with the version separator and no version: as an item of a list of values (Datasets: [ { $link: lasfile } ]) every one of them, as a value of its own the one an enrichment taking one row adds. It takes $when and $description, never holds its record (an enrichment adding none gives nothing, and the property is left out), and is written for the record as a whole: never under a $forEach, in an item of a list of objects, in a $coalesce, or in an enrichment mapping."
     },
     {
       "path": "record.acl",
@@ -235,7 +318,7 @@
       "type": "object",
       "required": false,
       "freeForm": true,
-      "description": "The record's data, laid out as the template names its properties: each a literal, an object of properties, a value node ($from, $expr, $value, $cache, $search or, in a fragment, $base with its settings, its $assert among them, or $coalesce listing several of them to take the first that gives a value), a $forEach array whose $item lays out what each row of a child dataset fills, or a list of values or of objects some of whose items read values."
+      "description": "The record's data, laid out as the template names its properties: each a literal, an object of properties, a value node ($from, $expr, $value, $cache, $search, $link or, in an enrichment mapping, $base with its settings, its $assert among them, or $coalesce listing several of them to take the first that gives a value), a $forEach array whose $item lays out what each row of a child dataset fills, or a list of values or of objects some of whose items read values."
     }
   ]
 }

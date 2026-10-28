@@ -26,12 +26,12 @@ public sealed record ResolvedMapping(
     public string? TemplateOrigin { get; init; }
 
     /// <summary>
-    /// The flow's <c>enrich:</c> steps over <see cref="Renderer"/> (osdu/docs/reference/flow/enrich.md), or null for a flow that
-    /// declares none, whose records <see cref="Renderer"/> renders whole.
+    /// The enrichments of the flow's mapping over <see cref="Renderer"/> (osdu/docs/reference/flow/enrich.md), or null for a
+    /// mapping that declares none, whose records <see cref="Renderer"/> renders whole.
     /// </summary>
     public RecordChain? Chain { get; init; }
 
-    /// <summary>The flow's steps, in the order they render; empty for a flow that declares none.</summary>
+    /// <summary>The mapping's enrichments, in the order they render; empty for a mapping that declares none.</summary>
     public IReadOnlyList<ResolvedStep> Steps => Chain?.Steps ?? [];
 
     /// <summary>
@@ -47,10 +47,10 @@ public sealed record ResolvedMapping(
     public RenderResult Render(SourceRecord record, ChainInputs inputs) => Chain is { } chain ? chain.Render(record, inputs) : Renderer.Render(record);
 
     /// <summary>
-    /// True when a record's steps leave work for its delivery beyond the document (osdu/docs/reference/flow/enrich-files.md,
-    /// osdu/docs/reference/flow/enrich-holds.md): datasets to register, or contributions to keep for a step set aside on its holds.
+    /// True when a record's enrichments leave work for its delivery beyond the document (osdu/docs/reference/flow/enrich.md):
+    /// records to add, contributions to keep for one set aside on its holds, or where the rows it read came from to keep.
     /// </summary>
-    public bool HasStepWork => Steps.Any(s => s.Step.Files is not null || s.Step.OnHold == EnrichHold.Step);
+    public bool HasStepWork => Steps.Any(s => s.Step.Records is not null || s.Step.OnHold == EnrichHold.Step || s.Step.ReadsRows);
 
     /// <summary>
     /// How many rounds of questions a batch of the flow's records can need: the mapping's, then each step's after it, since a
@@ -58,7 +58,7 @@ public sealed record ResolvedMapping(
     /// </summary>
     public int SearchRounds => Planning.Planner.SearchRounds(Mapping)
         + Steps.Sum(s => (s.Mapping is { } fragment ? Planning.Planner.SearchRounds(fragment) : 0)
-            + (s.Files?.Mapping is { } files ? Planning.Planner.SearchRounds(files) : 0));
+            + (s.Records?.Mapping is { } records ? Planning.Planner.SearchRounds(records) : 0));
 }
 
 /// <summary>
@@ -98,7 +98,10 @@ public sealed class RenderResolver
         _search = search;
     }
 
-    /// <summary>Resolves the flow's mapping and runs its preflight.</summary>
+    /// <summary>
+    /// Resolves the flow's mapping and runs its preflight. The flow is bound to the enrichments its mapping declares first
+    /// (<see cref="EnrichBinding"/>), so a flow handed over unbound renders what a run of it renders.
+    /// </summary>
     public async Task<ResolvedMapping> ResolveAsync(FlowDefinition flow, CancellationToken ct = default)
     {
         ArgumentNullException.ThrowIfNull(flow);
@@ -107,16 +110,18 @@ public sealed class RenderResolver
         if (mapping.Fragment)
         {
             throw new FlowValidationException(
-                $"{where}: {KeyPaths.Of(flow).Mapping} names {mapping.Reference}, a fragment (fragment: true): the paths a step of enrich: adds to a record, never a record of its own. Pin the mapping of the whole record, and name the fragment under enrich.<step>.mapping.");
+                $"{where}: {KeyPaths.Of(flow).Mapping} names {mapping.Reference}, an enrichment mapping (enrichment: true): what an enrichment of another mapping renders for its records, never a record keyed of its own. Pin the mapping of the whole record, which names this one under its enrich:.");
         }
+
+        flow = EnrichBinding.Bind(flow, mapping, _mappings.Load);
 
         var template = await _templates.ResolveAsync(mapping.TemplateDocument, mapping.Template.Kind, mapping.Template.Version, ct).ConfigureAwait(false);
         var schema = template.Schema
             ?? throw new FlowValidationException($"{where}: mapping {mapping.Reference} cannot render: {template.Problem}");
 
-        // The fragments of the flow's enrich: steps render into the record the mapping renders, so they read the one cache
-        // version and system properties the record is rendered under: a flow reads the cache when any part of its chain does.
-        var fragments = LoadFragments(flow, mapping, where);
+        // The enrichment mappings render into the record the mapping renders, or beside it, so they read the one cache version
+        // and system properties the record is rendered under: a flow reads the cache when any part of its chain does.
+        var fragments = LoadFragments(flow);
         var chain = new List<MappingDefinition> { mapping };
         chain.AddRange(fragments.SelectMany(f => new[] { f.Fragment, f.FilesFragment }).OfType<MappingDefinition>());
         var (references, scope, systemProperties) = await CacheAsync(flow, chain, where, ct).ConfigureAwait(false);
@@ -161,35 +166,28 @@ public sealed class RenderResolver
         };
     }
 
-    /// <summary>One step of the flow's <c>enrich:</c> with the fragments it pins: its own, and the one its files' datasets render; each null when it pins none.</summary>
+    /// <summary>
+    /// One enrichment of the flow's mapping with the enrichment mapping it renders: one adding paths to the record, or one
+    /// rendering the datasets its files are registered as; the other null.
+    /// </summary>
     private sealed record StepFragments(EnrichStep Step, MappingDefinition? Fragment, MappingDefinition? FilesFragment);
 
     /// <summary>
-    /// The fragments each step of the flow's <c>enrich:</c> pins, in the order the steps render, read from the flow's mappings
-    /// the way its own mapping is: the step's own, and the one its files' datasets render. A step pinning a mapping of a whole
-    /// record is refused: it would render a record of its own.
+    /// The enrichment mapping each enrichment of the flow's mapping renders, in the order they render, read from the flow's
+    /// mappings the way its own mapping is. Binding the flow refused one that is not an enrichment mapping.
     /// </summary>
-    private List<StepFragments> LoadFragments(FlowDefinition flow, MappingDefinition mapping, string where)
+    private List<StepFragments> LoadFragments(FlowDefinition flow)
     {
         var fragments = new List<StepFragments>();
         foreach (var step in flow.Enrich ?? [])
         {
             fragments.Add(new StepFragments(
                 step,
-                step.Mapping is { } own ? Fragment(own, $"enrich.{step.Name}.mapping") : null,
-                step.Files?.Mapping is { } files ? Fragment(files, $"enrich.{step.Name}.files.mapping") : null));
+                step.Mapping is { } own ? _mappings.Load(own) : null,
+                step.Records is { } records ? _mappings.Load(records.Mapping) : null));
         }
 
         return fragments;
-
-        MappingDefinition Fragment(string reference, string key)
-        {
-            var fragment = _mappings.Load(reference);
-            return fragment.Fragment
-                ? fragment
-                : throw new FlowValidationException(
-                    $"{where}: {key} names {fragment.Reference}, a mapping of a whole record; a step renders a fragment, the paths it adds to the record {mapping.Reference} renders, declared with fragment: true and no dataset.");
-        }
     }
 
     /// <summary>
@@ -236,9 +234,10 @@ public sealed class RenderResolver
     }
 
     /// <summary>
-    /// One step resolved: its fragment's template, which has to be the very template the flow's mapping fills, its parameters,
-    /// its searches and its preflight, and a renderer over it under the record's cache version. What is wrong is added to
-    /// <paramref name="issues"/>, every problem of every step at once, and the step is left out (null).
+    /// One enrichment resolved: its enrichment mapping's template, which for one adding paths has to be the very template the
+    /// flow's mapping fills, its parameters, its searches and its preflight, and a renderer over it under the record's cache
+    /// version. What is wrong is added to <paramref name="issues"/>, every problem of every enrichment at once, and the
+    /// enrichment is left out (null).
     /// </summary>
     private async Task<(ResolvedStep Step, RenderStep Context)?> StepAsync(
         FlowDefinition flow,
@@ -262,24 +261,17 @@ public sealed class RenderResolver
         MappingRenderer? renderer = null;
         if (fragments.Fragment is { } fragment)
         {
-            if (!string.Equals(fragment.Template.Kind, mapping.Template.Kind, StringComparison.Ordinal))
-            {
-                issues.Add(ValidationIssue.Error(
-                    $"{at}: fragment {fragment.Reference} fills {fragment.Template.Kind}, and the flow's mapping {mapping.Reference} renders {mapping.Template.Kind} records; a step adds paths to the records the flow renders, so its fragment names the same kind."));
-                return null;
-            }
-
             var template = await _templates.ResolveAsync(fragment.TemplateDocument, fragment.Template.Kind, fragment.Template.Version, ct).ConfigureAwait(false);
             if (template.Schema is not { } filled)
             {
-                issues.Add(ValidationIssue.Error($"{at}: fragment {fragment.Reference} cannot render: {template.Problem}"));
+                issues.Add(ValidationIssue.Error($"{at}: enrichment mapping {fragment.Reference} cannot render: {template.Problem}"));
                 return null;
             }
 
             if (!string.Equals(filled.Version, schema.Version, StringComparison.Ordinal))
             {
                 issues.Add(ValidationIssue.Error(
-                    $"{at}: fragment {fragment.Reference} fills {filled.Kind} version {filled.Version}, and the flow's mapping {mapping.Reference} fills version {schema.Version}; a step adds to the record the flow's mapping renders, so both fill one version of the template. Pin the same template.version in both, or leave both to the template folder."));
+                    $"{at}: enrichment mapping {fragment.Reference} fills {filled.Kind} version {filled.Version}, and the flow's mapping {mapping.Reference} fills version {schema.Version}; an enrichment adds to the record the mapping renders, so both fill one version of the template. Pin the same template.version in both, or leave both to the template folder."));
                 return null;
             }
 
@@ -296,32 +288,25 @@ public sealed class RenderResolver
             }
         }
 
-        ResolvedFiles? files = null;
-        if (step.Files is { } declared)
+        ResolvedRecords? files = null;
+        if (step.Records is { } declared)
         {
-            // What decides the datasets' ids and where the record lists them enters the context: a new kind, key or link moves
-            // them, and the records render again.
+            // What decides the datasets' ids enters the context: a new kind or key moves them, and the records render again. Where
+            // the record links them is the mapping's $link nodes, which its fingerprint covers.
             var rules = new JsonObject
             {
                 ["kind"] = declared.Kind,
                 ["key"] = new JsonArray(declared.Key.Select(k => (JsonNode?)JsonValue.Create(k)).ToArray()),
-                ["link"] = declared.Link,
+                ["through"] = declared.RegistersFiles ? "dataset" : "storage",
             };
             MappingRenderer? filesRenderer = null;
             SchemaSnapshot? filesSchema = null;
             if (fragments.FilesFragment is { } filesFragment)
             {
-                if (!string.Equals(filesFragment.Template.Kind, declared.Kind, StringComparison.Ordinal))
-                {
-                    issues.Add(ValidationIssue.Error(
-                        $"{at}: files.mapping names fragment {filesFragment.Reference}, which fills {filesFragment.Template.Kind}, and the step registers its files as {declared.Kind}; the fragment renders into those dataset records, so it names their kind."));
-                    return null;
-                }
-
                 var template = await _templates.ResolveAsync(filesFragment.TemplateDocument, filesFragment.Template.Kind, filesFragment.Template.Version, ct).ConfigureAwait(false);
                 if (template.Schema is not { } datasetSchema)
                 {
-                    issues.Add(ValidationIssue.Error($"{at}: files.mapping fragment {filesFragment.Reference} cannot render: {template.Problem}"));
+                    issues.Add(ValidationIssue.Error($"{at}: enrichment mapping {filesFragment.Reference} cannot render: {template.Problem}"));
                     return null;
                 }
 
@@ -335,7 +320,7 @@ public sealed class RenderResolver
                     Parameters = parameters,
                     Steps = [],
                 };
-                filesRenderer = await FragmentRendererAsync(filesFragment, datasetSchema, references, filesContext, $"enrich.{step.Name}.files", issues, ct).ConfigureAwait(false);
+                filesRenderer = await FragmentRendererAsync(filesFragment, datasetSchema, references, filesContext, $"enrich.{step.Name}", issues, ct).ConfigureAwait(false);
                 if (filesRenderer is null)
                 {
                     return null;
@@ -353,11 +338,11 @@ public sealed class RenderResolver
                 rules["parameters"] = given;
             }
 
-            files = new ResolvedFiles(declared, TargetId.EntityTypeFromKind(declared.Kind), fragments.FilesFragment, filesRenderer) { Schema = filesSchema };
-            renderStep = renderStep with { Files = CanonicalJson.ToString(rules) };
+            files = new ResolvedRecords(declared, TargetId.EntityTypeFromKind(declared.Kind), fragments.FilesFragment, filesRenderer) { Schema = filesSchema };
+            renderStep = renderStep with { Records = CanonicalJson.ToString(rules) };
         }
 
-        return (new ResolvedStep(step, fragments.Fragment, schema, renderer) { Files = files }, renderStep);
+        return (new ResolvedStep(step, fragments.Fragment, schema, renderer) { Records = files }, renderStep);
     }
 
     /// <summary>

@@ -30,13 +30,14 @@ sourceRefs:
   - osdu/tests/SqlFlow.Delivery.Tests/Enrichment/StepWorkflowTests.cs
 referenceRefs:
   - delivery-flow-enrich
-  - delivery-flow-enrich-files
+  - delivery-flow-enrich-records
   - delivery-flow-enrich-holds
   - delivery-flow-enrich-bulk
   - delivery-flow-enrich-workflow
-  - delivery-flow-mapping-fragment
+  - delivery-flow-mapping-enrichment
   - delivery-concept-change-detection
 related:
+  - delivery-wiki-0036-enrich-in-the-mapping
   - delivery-wiki-0004-preserved-keys
   - delivery-wiki-0019-linked-templates
   - delivery-wiki-0023-child-links
@@ -44,8 +45,11 @@ updated: 2026-10-28
 ---
 # 0035: A record built in steps is rendered as one chain by its own flow, and sent once for any change
 
-Status: accepted. Documented in [enrich](../../reference/flow/enrich.md), [files a step registers](../../reference/flow/enrich-files.md)
-and [fragments](../../reference/flow/mapping-fragment.md).
+Status: accepted, amended by [0036](0036-enrich-in-the-mapping.md): the steps are now enrichments a mapping declares and
+the flow binds, adding paths or records of any kind, which the record links with `$link`; how the chain renders and is sent
+once, below, still holds. Documented in [enrichments](../../reference/flow/enrich.md),
+[records an enrichment adds](../../reference/flow/enrich-records.md) and
+[enrichment mappings](../../reference/flow/mapping-enrichment.md).
 
 ## Context
 

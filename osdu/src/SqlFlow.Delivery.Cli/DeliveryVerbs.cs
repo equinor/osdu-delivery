@@ -124,9 +124,10 @@ internal static class DeliveryVerbs
             parts.Add(fragment.Reference);
         }
 
-        if (step.Files is { } files)
+        if (step.Records is { } records)
         {
-            parts.Add($"files as {files.Files.Kind}{(files.Mapping is { } dataset ? $" ({dataset.Reference})" : string.Empty)}, linked from {files.Files.Link}");
+            parts.Add($"records of {records.Records.Kind}{(records.Mapping is { } rendered ? $" ({rendered.Reference})" : string.Empty)}, "
+                + (records.Records.RegistersFiles ? "registered with their files through the Dataset service" : "written through storage"));
         }
 
         if (step.Step.Bulk is { } bulk)
@@ -225,8 +226,8 @@ internal static class DeliveryVerbs
             result["read"] = await ReadAsync(engine, runtime, ct).ConfigureAwait(false);
         }
 
-        // The steps of enrich: in the order they render, each with the fragment it pins and what it reads and follows
-        // (osdu/docs/reference/flow/enrich.md).
+        // The enrichments of the flow's mapping in the order they render, each with the enrichment mapping it renders and what it
+        // reads and follows (osdu/docs/reference/flow/enrich.md).
         var steps = runtime.Mapping.Steps
             .Select(s => (
                 Line: $"    enrich      {s.Step.Name}: {StepRenders(s)}"
@@ -236,8 +237,14 @@ internal static class DeliveryVerbs
                 {
                     ["name"] = s.Step.Name,
                     ["mapping"] = s.Mapping?.Reference,
-                    ["files"] = s.Files is { } files
-                        ? new JsonObject { ["kind"] = files.Files.Kind, ["link"] = files.Files.Link, ["mapping"] = files.Mapping?.Reference }
+                    ["records"] = s.Records is { } records
+                        ? new JsonObject
+                        {
+                            ["kind"] = records.Records.Kind,
+                            ["mapping"] = records.Mapping?.Reference,
+                            ["through"] = records.Records.RegistersFiles ? "dataset" : "storage",
+                            ["key"] = new JsonArray(records.Records.Key.Select(k => (JsonNode)JsonValue.Create(k)).ToArray()),
+                        }
                         : null,
                     ["bulk"] = s.Step.Bulk is { } bulk ? new JsonObject { ["root"] = bulk.Root, ["locationColumn"] = bulk.LocationColumn, ["pattern"] = bulk.Pattern } : null,
                     ["workflow"] = s.Step.Workflow is { } workflow
@@ -250,7 +257,7 @@ internal static class DeliveryVerbs
                     ["dataset"] = s.Step.ReadsRows ? flow.Source.Datasets[s.Step.Name].Object : null,
                     ["rows"] = s.Step.ReadsRows ? (s.Step.Rows == Model.EnrichRows.Many ? "many" : "one") : null,
                     ["after"] = new JsonArray(s.Step.After.Select(a => (JsonNode)JsonValue.Create(a)).ToArray()),
-                    ["reads"] = new JsonArray((s.Mapping?.BasePaths() ?? []).Concat(s.Files?.Mapping?.BasePaths() ?? []).Distinct(StringComparer.Ordinal)
+                    ["reads"] = new JsonArray((s.Mapping?.BasePaths() ?? []).Concat(s.Records?.Mapping?.BasePaths() ?? []).Distinct(StringComparer.Ordinal)
                         .Select(p => (JsonNode)JsonValue.Create(p)).ToArray()),
                 }))
             .ToList();

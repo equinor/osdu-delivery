@@ -8,9 +8,10 @@ using Xunit;
 namespace SqlFlow.Delivery.Tests;
 
 /// <summary>
-/// A fragment as its loader reads it (osdu/docs/reference/flow/enrich.md, Fragments): <c>fragment: true</c>, no dataset and no
-/// envelope, written under <c>data</c> and <c>tags</c> only, reading its step's rows and the record with <c>$base</c>, and
-/// refused where it would key, mint or envelope a record. A mapping of a whole record never reads <c>$base</c>.
+/// An enrichment mapping as its loader reads it (osdu/docs/reference/flow/mapping-enrichment.md): <c>enrichment: true</c>, no
+/// dataset and no envelope, written under <c>data</c> and <c>tags</c> only, reading its enrichment's rows and the record with
+/// <c>$base</c>, and refused where it would key, mint or envelope a record. A mapping of a whole record never reads
+/// <c>$base</c>, and the header word it took before, <c>fragment:</c>, is refused naming the one to write.
 /// </summary>
 [Trait(EnrichmentSuite.Trait, EnrichmentSuite.Name)]
 public sealed class FragmentMappingTests
@@ -44,11 +45,23 @@ public sealed class FragmentMappingTests
         var document = EnrichmentSuite.FragmentDocument("""
             data:
               Symbol: { $from: grade }
-            """).Replace("fragment: true\n", "fragment: true\ndataset:\n  system: test\n  key: [name]\n", StringComparison.Ordinal);
+            """).Replace("enrichment: true\n", "enrichment: true\ndataset:\n  system: test\n  key: [name]\n", StringComparison.Ordinal);
 
         var refused = Assert.Throws<FlowValidationException>(() => new DeliveryDocumentLoader().ParseMapping(document, "extra.yaml"));
 
-        Assert.Contains("declares no dataset; its rows are the step's, declared under enrich.<step>.dataset", refused.Message, StringComparison.Ordinal);
+        Assert.Contains("so it declares no dataset; its rows are its enrichment's, the child dataset of the enrichment's name the flow binds under source.datasets", refused.Message, StringComparison.Ordinal);
+    }
+
+    [Theory]
+    [InlineData("fragment: true")]
+    [InlineData("fragment: false")]
+    public void The_header_word_fragment_is_refused_naming_enrichment(string written)
+    {
+        var document = EnrichmentSuite.FragmentDocument("data:\n  Symbol: { $from: grade }").Replace("enrichment: true", written, StringComparison.Ordinal);
+
+        var refused = Assert.Throws<FlowValidationException>(() => new DeliveryDocumentLoader().ParseMapping(document, "extra.yaml"));
+
+        Assert.Contains("fragment: is written enrichment: true", refused.Message, StringComparison.Ordinal);
     }
 
     [Theory]
@@ -59,7 +72,7 @@ public sealed class FragmentMappingTests
     {
         var refused = Refused(record);
 
-        Assert.Contains("a fragment writes under record.data and record.tags only", refused.Message, StringComparison.Ordinal);
+        Assert.Contains("an enrichment mapping writes under record.data and record.tags only", refused.Message, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -74,8 +87,8 @@ public sealed class FragmentMappingTests
     }
 
     [Theory]
-    [InlineData("$parent: data.Name", "$parent finds a record by the id the flow's own mapping makes from its key")]
-    [InlineData("$child: test:wks:work-product-component--Other:1.0.0", "$child finds a record by the id the flow's own mapping makes from its key")]
+    [InlineData("$parent: data.Name", "$parent finds a record by the id the keying mapping makes from its key, and an enrichment mapping keys no record")]
+    [InlineData("$child: test:wks:work-product-component--Other:1.0.0", "$child finds a record by the id the keying mapping makes from its key, and an enrichment mapping keys no record")]
     public void A_fragment_cannot_find_a_parent_or_a_child_by_an_id_it_does_not_have(string node, string reason)
     {
         var refused = Refused($"data:\n  Symbol: {{ {node} }}");
@@ -136,7 +149,7 @@ public sealed class FragmentMappingTests
 
         var refused = Assert.Throws<FlowValidationException>(() => new DeliveryDocumentLoader().ParseMapping(document, "thing.yaml"));
 
-        Assert.Contains("only a fragment (fragment: true), which a step of enrich: renders, reads one", refused.Message, StringComparison.Ordinal);
+        Assert.Contains("only an enrichment mapping (enrichment: true) reads one", refused.Message, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -147,7 +160,7 @@ public sealed class FragmentMappingTests
 
         var refused = Assert.Throws<FlowValidationException>(() => new DeliveryDocumentLoader().ParseMapping(document, "extra.yaml"));
 
-        Assert.Contains("which no step of enrich: extends", refused.Message, StringComparison.Ordinal);
+        Assert.Contains("which no enrichment extends", refused.Message, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -157,7 +170,19 @@ public sealed class FragmentMappingTests
 
         var refused = Assert.Throws<FlowValidationException>(() => MappingBuilder.FromDefinition(fragment));
 
-        Assert.Contains("is a fragment (fragment: true)", refused.Message, StringComparison.Ordinal);
+        Assert.Contains("is an enrichment mapping (enrichment: true)", refused.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void The_mapping_builder_refuses_a_mapping_declaring_enrichments_rather_than_drop_them_from_a_draft()
+    {
+        var owner = EnrichmentSuite.Owner(
+            data: "Aliases: [{ $link: lasfile }]",
+            enrich: "lasfile:\n  rows: one\n  mapping: LasDataset@1.0.0\n");
+
+        var refused = Assert.Throws<FlowValidationException>(() => MappingBuilder.FromDefinition(owner));
+
+        Assert.Contains("declares enrichments (enrich:), which the mapping builder does not lay out", refused.Message, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -174,7 +199,7 @@ public sealed class FragmentMappingTests
         Assert.Null(shape.Document["id"]);
         Assert.Null(shape.Document["kind"]);
         Assert.Contains("base.data.Name", shape.Document["data"]!["Description"]!.GetValue<string>(), StringComparison.Ordinal);
-        Assert.Contains(shape.Notes, note => note.Contains("is a fragment", StringComparison.Ordinal));
+        Assert.Contains(shape.Notes, note => note.Contains("is an enrichment mapping", StringComparison.Ordinal));
     }
 
     [Fact]

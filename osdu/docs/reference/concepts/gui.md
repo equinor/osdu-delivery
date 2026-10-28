@@ -273,6 +273,13 @@ for a record that was.
 - **OSDU**: **Read** reads the record as OSDU holds it through the flow's route, in the record inspector the explorer uses
   (outline, fields or JSON, versions and **Compare**, linked records, Validation). Icons open it in the explorer, or in a
   window of its own (`/delivery/records/{flowId}/{key}/osdu`).
+- **Enrichments**: shown for a record its mapping enriches ([enrichments](../flow/enrich.md#what-the-ledger-keeps)), read from
+  the ledger alone. A line of counts (enrichments, records added, linked, no longer linked, set aside), each enrichment in
+  the order it renders with what it adds, its mapping and where its rows came from (**set aside** under its name when it was
+  on the last render), then **Records the enrichments added**: each with whether the record links it, its type and the row
+  key that tells it from the others (the whole OSDU id on hover and a copy away), the version OSDU holds, the row it came
+  from and its writes, each listed on hover with when it went, the version it landed as and the one it replaced, read from
+  the record's attempts.
 - **Artifacts**: what deliveries of the record created in OSDU, with each one's state, and the ones an undo still has to
   take; the header says so while an unfinished delivery left something. Once a delivery completes, only the datasets,
   content, outputs and dataspaces it made stay listed; the record's own write, a version or a session leaves the list, so
@@ -329,8 +336,8 @@ partitions is read in the title bar's partition.
   flow's newest run as the Delivery page does: its counts and submissions move with a run, and every view of the flow is
   read again within seconds of a run ending.
 - **Records**: the ledger's records, searched by delivery key, label, source key or OSDU id, with a status picker,
-  **Drifted only**, **Step held** (while a step of `enrich:` is set aside on any record,
-  [a step set aside on its hold](../flow/enrich-holds.md)) and **Match anywhere**; links from elsewhere narrow it to one run (`?run=`), what a submission last
+  **Drifted only**, **Step held** (while an enrichment is set aside on any record,
+  [an enrichment set aside on its hold](../flow/enrich-holds.md)) and **Match anywhere**; links from elsewhere narrow it to one run (`?run=`), what a submission last
   planned (`?submission=`) or delivered (`?delivered=`), or one issue (`?issue=`). **Export** downloads every record the
   filter matches, not the page in view, as an Excel workbook to work through where the records come from
   ([records export](../cli/records.md#records-export)); it says on hover why it cannot when nothing matches or more than

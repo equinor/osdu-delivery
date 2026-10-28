@@ -300,7 +300,7 @@ public sealed class CacheKeeper
 
         var names = types.Select(t => t.TypeName).ToList();
         IReadOnlyList<string> changed = [
-            .. await ledger.ChangedSinceAsync(ledgerFlowId, sinceUtc, MaxRecords + 1, stepDatasets ? EnrichParts.DatasetsValue : null, ct).ConfigureAwait(false),
+            .. await ledger.ChangedSinceAsync(ledgerFlowId, sinceUtc, MaxRecords + 1, stepDatasets ? EnrichParts.RegisteredValue : null, ct).ConfigureAwait(false),
             .. alsoChanged ?? []];
         if (changed.Count == 0)
         {

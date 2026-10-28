@@ -7,10 +7,11 @@ using static SqlFlow.Delivery.Tests.EnrichmentSuite;
 namespace SqlFlow.Delivery.Tests;
 
 /// <summary>
-/// The checks of a flow's <c>enrich:</c> chain as a whole (osdu/docs/reference/flow/enrich.md, What the preflight checks): a
-/// value the flow supplies that no mapping of the chain declares, two writers of one path unless both add items to a list, a
-/// step writing under a key the flow preserves, a <c>$base</c> read of what is not written before the step renders, and a
-/// fragment reading rows its step does not have. Each is refused before anything renders, naming the step and the path.
+/// The checks of a mapping's enrichments as a whole (osdu/docs/reference/flow/enrich.md, What the preflight checks): a value the
+/// flow supplies that no mapping of the chain declares, two writers of one path unless both add items to a list, an enrichment
+/// writing under a key the flow preserves, a <c>$base</c> read of what is not written before the enrichment renders, an
+/// enrichment mapping reading rows its enrichment does not have, and a <c>$link</c> inside a preserved key or writing one
+/// value of an enrichment taking many rows. Each is refused before anything renders, naming the enrichment and the path.
 /// </summary>
 [Trait(EnrichmentSuite.Trait, EnrichmentSuite.Name)]
 public sealed class EnrichPreflightTests
@@ -47,7 +48,7 @@ public sealed class EnrichPreflightTests
 
         var message = Only(Check(Flow(parameters), Owner(), Step("labelled", withLabel)));
 
-        Assert.Contains("render.parameters supplies 'typo', which neither the flow's mapping Thing@1.0.0 nor the fragment of any step of enrich: declares", message, StringComparison.Ordinal);
+        Assert.Contains("render.parameters supplies 'typo', which neither the flow's mapping Thing@1.0.0 nor the mapping of any of its enrichments declares", message, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -57,7 +58,7 @@ public sealed class EnrichPreflightTests
 
         var message = Only(Check(Flow(), Owner(), Step("clash", clash)));
 
-        Assert.Contains("enrich.clash: fragment Clash@1.0.0 writes data.Name, which the flow's mapping Thing@1.0.0 writes", message, StringComparison.Ordinal);
+        Assert.Contains("enrich.clash: enrichment mapping Clash@1.0.0 writes data.Name, which the flow's mapping Thing@1.0.0 writes", message, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -68,7 +69,7 @@ public sealed class EnrichPreflightTests
 
         var message = Only(Check(Flow(), Owner(), Step("first", first), Step("second", second)));
 
-        Assert.Contains("enrich.second: fragment Second@1.0.0 writes data.Symbol, which step 'first' (First@1.0.0) writes", message, StringComparison.Ordinal);
+        Assert.Contains("enrich.second: enrichment mapping Second@1.0.0 writes data.Symbol, which enrichment 'first' (First@1.0.0) writes", message, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -90,6 +91,7 @@ public sealed class EnrichPreflightTests
         var message = Only(Check(Flow(preserved: ["Aliases"]), Owner(), Step("extension", extension)));
 
         Assert.Contains("carries data.Aliases over from the record OSDU holds into every update", message, StringComparison.Ordinal);
+        Assert.Contains("Only the datasets the mapping links there with $link merge with what OSDU holds", message, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -109,7 +111,7 @@ public sealed class EnrichPreflightTests
 
         var message = Only(Check(Flow(), Owner(), Step("copy", copy, readsRows: false), Step("inner", inner)));
 
-        Assert.Contains("reads data.Nested.Inner with $base, which step 'inner' writes after this one renders; name it under enrich.copy.after", message, StringComparison.Ordinal);
+        Assert.Contains("reads data.Nested.Inner with $base, which enrichment 'inner' writes after this one renders; name it under enrich.copy.after", message, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -117,7 +119,7 @@ public sealed class EnrichPreflightTests
     {
         var self = Fragment("data:\n  Symbol: { $from: s }\n  Description: { $base: data.Symbol }", name: "Self");
 
-        Assert.Contains("which the step itself writes", Only(Check(Flow(), Owner(), Step("self", self))), StringComparison.Ordinal);
+        Assert.Contains("which the enrichment itself writes", Only(Check(Flow(), Owner(), Step("self", self))), StringComparison.Ordinal);
     }
 
     [Fact]
@@ -126,7 +128,7 @@ public sealed class EnrichPreflightTests
         var unwritten = Fragment("data:\n  Description: { $base: data.Symbol }", name: "Unwritten");
         var unknown = Fragment("data:\n  Description: { $base: data.Nested.Nowhere }", name: "Unknown");
 
-        Assert.Contains("neither the flow's mapping Thing@1.0.0 nor a step that renders before this one writes it", Only(Check(Flow(), Owner(), Step("unwritten", unwritten, readsRows: false))), StringComparison.Ordinal);
+        Assert.Contains("neither the flow's mapping Thing@1.0.0 nor an enrichment that renders before this one writes it", Only(Check(Flow(), Owner(), Step("unwritten", unwritten, readsRows: false))), StringComparison.Ordinal);
         Assert.Contains("declares no data.Nested.Nowhere", Only(Check(Flow(), Owner(), Step("unknown", unknown, readsRows: false))), StringComparison.Ordinal);
     }
 
@@ -135,7 +137,7 @@ public sealed class EnrichPreflightTests
     {
         var reads = Fragment("data:\n  Symbol: { $from: grade }", name: "Reads");
 
-        Assert.Contains("the step declares no dataset, so it has no row to read", Only(Check(Flow(), Owner(), Step("reads", reads, readsRows: false))), StringComparison.Ordinal);
+        Assert.Contains("the enrichment reads no rows, so it has no row to read; declare rows: in the mapping's enrich.reads", Only(Check(Flow(), Owner(), Step("reads", reads, readsRows: false))), StringComparison.Ordinal);
     }
 
     [Fact]
@@ -144,7 +146,7 @@ public sealed class EnrichPreflightTests
         var outside = Fragment("data:\n  Symbol: { $from: grade }", name: "Outside");
         var inside = Fragment("data:\n  Curves:\n    $forEach: many\n    $item:\n      CurveID: { $from: grade }", name: "Inside");
 
-        Assert.Contains("outside a $forEach, and the step takes many rows per record (rows: many)", Only(Check(Flow(), Owner(), Step("many", outside, rows: EnrichRows.Many))), StringComparison.Ordinal);
+        Assert.Contains("outside a $forEach, and the enrichment takes many rows per record (rows: many)", Only(Check(Flow(), Owner(), Step("many", outside, rows: EnrichRows.Many))), StringComparison.Ordinal);
         Assert.Empty(Check(Flow(), Owner(), Step("many", inside, rows: EnrichRows.Many)));
     }
 
@@ -153,6 +155,30 @@ public sealed class EnrichPreflightTests
     {
         var other = Fragment("data:\n  Curves:\n    $forEach: curves\n    $item:\n      CurveID: { $from: id }", name: "Other");
 
-        Assert.Contains("a fragment reads its step's rows alone: write $forEach: many", Only(Check(Flow(), Owner(), Step("many", other, rows: EnrichRows.Many))), StringComparison.Ordinal);
+        Assert.Contains("an enrichment mapping reads its enrichment's rows alone: write $forEach: many", Only(Check(Flow(), Owner(), Step("many", other, rows: EnrichRows.Many))), StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void A_link_in_a_preserved_list_passes_and_one_inside_a_preserved_object_is_refused()
+    {
+        const string enrich = "lasfile:\n  rows: one\n  mapping: LasDataset@1.0.0\n";
+        var listed = Owner(data: "Aliases: [x, { $link: lasfile }]", enrich: enrich);
+        var nested = Owner(data: "Nested:\n  Inner: { $link: lasfile }", enrich: enrich);
+
+        Assert.Empty(Check(Flow(preserved: ["Aliases"]), listed, RecordsStep()));
+        var message = Only(Check(Flow(preserved: ["Nested"]), nested, RecordsStep()));
+        Assert.Contains("links the datasets of enrich.lasfile inside data.Nested, which target.protocolOptions.preserveDataKeys carries over whole", message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void A_link_writing_one_value_of_an_enrichment_taking_many_rows_is_refused_and_one_taking_one_row_passes()
+    {
+        var single = Owner(data: "Symbol: { $link: lasfile }", enrich: "lasfile:\n  rows: many\n  key: [file_name]\n  mapping: LasDataset@1.0.0\n");
+        var one = Owner(data: "Symbol: { $link: lasfile }", enrich: "lasfile:\n  rows: one\n  mapping: LasDataset@1.0.0\n");
+
+        var message = Only(Check(Flow(), single, RecordsStep(rows: EnrichRows.Many)));
+        Assert.Contains("which registers one for each of its rows (rows: many), and template", message, StringComparison.Ordinal);
+        Assert.Contains("link them from a list of values, such as Datasets: [ { $link: lasfile } ]", message, StringComparison.Ordinal);
+        Assert.Empty(Check(Flow(), one, RecordsStep()));
     }
 }

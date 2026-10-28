@@ -14,11 +14,12 @@ using Xunit;
 namespace SqlFlow.Delivery.Tests;
 
 /// <summary>
-/// The workflow a step of <c>enrich:</c> runs over each record (osdu/docs/reference/flow/enrich-workflow.md): declared as
-/// <c>target.workflow</c> is, with no anchor, anchor tag or inputs, its placeholders checked against what it has; run through
-/// the workflow route itself once the record and the step's dataset landed, reading the dataset as
-/// <c>{dataset:enrich.&lt;step&gt;}</c>, its steps, values and artifacts kept under the step; run again only when the step's
-/// files move; a failed run failing the record; its runs undone, and its records removed with the record.
+/// The workflow a flow runs over an enrichment of its mapping (<c>workflows.&lt;name&gt;</c>,
+/// osdu/docs/reference/flow/enrich-workflow.md): declared as <c>target.workflow</c> is, with no anchor, anchor tag or inputs,
+/// its placeholders checked against what it has; run through the workflow route itself once the record and the enrichment's
+/// dataset landed, reading the dataset as <c>{dataset:enrich.&lt;name&gt;}</c>, its steps, values and artifacts kept under the
+/// enrichment; run again only when the enrichment's files move; a failed run failing the record; its runs undone, and its
+/// records removed with the record.
 /// </summary>
 [Trait(EnrichmentSuite.Trait, EnrichmentSuite.Name)]
 public sealed class StepWorkflowTests
@@ -37,6 +38,14 @@ public sealed class StepWorkflowTests
           record:
             object: OsduData.silver.WellLog
             key: [source_project, log_id]
+          datasets:
+            lasfile:
+              object: OsduData.silver.WellLogFile
+              join: { source_project: source_project, log_id: log_id }
+              files:
+                root: ../data/las
+                locationColumn: las_folder
+                hashColumn: las_hash
           work: work
         render:
           mapping: WellLog@1.4.0
@@ -45,36 +54,38 @@ public sealed class StepWorkflowTests
           endpoint: https://example.org/api
           headers: { data-partition-id: dev }
           protocol: storage
-        enrich:
-          lasfile:
-            dataset:
-              object: OsduData.silver.WellLogFile
-              join: { source_project: source_project, log_id: log_id }
-            files:
-              root: ../data/las
-              locationColumn: las_folder
-              hashColumn: las_hash
 
         """;
 
     private const string Workflow = """
-            workflow:
-              stages:
-                - workflow: csv_ingestion
-                  context:
-                    id: "{dataset:enrich.lasfile}"
-                    dataPartitionId: "{partition}"
-                    data_service_to_use: file
-              results:
-                ids: "dev:master-data--Well:from-las"
-                minimum: 1
+        workflows:
+          lasfile:
+            stages:
+              - workflow: csv_ingestion
+                context:
+                  id: "{dataset:enrich.lasfile}"
+                  dataPartitionId: "{partition}"
+                  data_service_to_use: file
+            results:
+              ids: "dev:master-data--Well:from-las"
+              minimum: 1
 
         """;
 
-    private static FlowDefinition Parsed(string workflow) => new DeliveryDocumentLoader().ParseFlow(Head + workflow, "flows/demo.yaml");
+    private static readonly MappingDefinition LasDataset = EnrichmentSuite.Fragment("data:\n  Name: { $from: file_name }", name: "LasDataset", kind: EnrichmentSuite.DatasetKind);
+
+    private static readonly MappingDefinition Grade = EnrichmentSuite.Fragment("data:\n  Symbol: { $from: grade }", name: "Grade");
+
+    /// <summary>The test flow with <paramref name="workflow"/>, bound to a mapping whose enrichment <c>lasfile</c> registers the LAS files as datasets.</summary>
+    private static FlowDefinition Parsed(string workflow, string head = Head, string enrichment = "LasDataset@1.0.0")
+        => EnrichmentSuite.Bound(
+            new DeliveryDocumentLoader().ParseFlow(head + workflow, "flows/demo.yaml"),
+            EnrichmentSuite.Owner(enrich: $"lasfile:\n  rows: one\n  mapping: {enrichment}\n"),
+            LasDataset,
+            Grade);
 
     [Fact]
-    public void A_steps_workflow_is_read_as_the_routes_is_and_anchored_on_the_record()
+    public void An_enrichments_workflow_is_read_as_the_routes_is_and_anchored_on_the_record()
     {
         var step = Assert.Single(Parsed(Workflow).Enrich!);
 
@@ -84,20 +95,20 @@ public sealed class StepWorkflowTests
     }
 
     [Theory]
-    [InlineData("      anchor: storage\n", "names an anchor or an anchor tag")]
-    [InlineData("      anchorTag: osduAnchor\n", "names an anchor or an anchor tag")]
-    [InlineData("      inputs:\n        logs:\n          root: r\n          locationColumn: c\n", "enrich.lasfile.workflow.inputs registers files")]
-    public void A_steps_workflow_names_no_anchor_and_no_inputs(string extra, string reason)
+    [InlineData("    anchor: storage\n", "names an anchor or an anchor tag")]
+    [InlineData("    anchorTag: osduAnchor\n", "names an anchor or an anchor tag")]
+    [InlineData("    inputs:\n      logs:\n        root: r\n        locationColumn: c\n", "workflows.lasfile.inputs registers files")]
+    public void An_enrichments_workflow_names_no_anchor_and_no_inputs(string extra, string reason)
     {
-        var refused = Assert.Throws<FlowValidationException>(() => Parsed(Workflow.Replace("      stages:\n", extra + "      stages:\n", StringComparison.Ordinal)));
+        var refused = Assert.Throws<FlowValidationException>(() => Parsed(Workflow.Replace("    stages:\n", extra + "    stages:\n", StringComparison.Ordinal)));
 
         Assert.Contains(reason, refused.Message, StringComparison.Ordinal);
     }
 
     [Theory]
     [InlineData("\"{input:logs}\"", "names the input 'logs', and the route registers none")]
-    [InlineData("\"{secret:key}\"", "names the secret 'key', which enrich.lasfile.workflow.secrets does not declare")]
-    public void A_steps_workflow_names_only_what_it_has(string value, string reason)
+    [InlineData("\"{secret:key}\"", "names the secret 'key', which workflows.lasfile.secrets does not declare")]
+    public void An_enrichments_workflow_names_only_what_it_has(string value, string reason)
     {
         var refused = Assert.Throws<FlowValidationException>(() => Parsed(Workflow.Replace("\"{dataset:enrich.lasfile}\"", value, StringComparison.Ordinal)));
 
@@ -105,18 +116,19 @@ public sealed class StepWorkflowTests
     }
 
     [Fact]
-    public void A_step_running_a_workflow_alone_does_something_for_the_record()
+    public void A_workflow_runs_over_an_enrichment_adding_paths_alone()
     {
-        var yaml = Head.Replace("""
-                files:
-                  root: ../data/las
-                  locationColumn: las_folder
-                  hashColumn: las_hash
+        var head = Head.Replace("""
+                  files:
+                    root: ../data/las
+                    locationColumn: las_folder
+                    hashColumn: las_hash
             """.ReplaceLineEndings("\n"), string.Empty, StringComparison.Ordinal);
-        var flow = new DeliveryDocumentLoader().ParseFlow(yaml + Workflow.Replace("{dataset:enrich.lasfile}", "{record:id}", StringComparison.Ordinal), "flows/demo.yaml");
+        var flow = Parsed(Workflow.Replace("{dataset:enrich.lasfile}", "{record:id}", StringComparison.Ordinal), head, "Grade@1.0.0");
 
         var step = Assert.Single(flow.Enrich!);
-        Assert.Null(step.Files);
+        Assert.Null(step.Records);
+        Assert.Equal("Grade@1.0.0", step.Mapping);
         Assert.NotNull(step.Workflow);
     }
 
@@ -183,7 +195,7 @@ public sealed class StepWorkflowTests
             Document = document,
             DeliverMetadata = true,
             DeliverPayload = false,
-            StepParts = [new WorkStepPart(new EnrichPart("lasfile", DatasetId, EnrichFiles.DefaultKind, "mem://las/*", hash, "{}", null), new MemoryFiles(("a.csv", "uwi\n1\n" + hash)))],
+            StepParts = [new WorkStepPart(new EnrichPart("lasfile", DatasetId, EnrichmentSuite.DatasetKind, "mem://las/*", hash, "{}", null), new MemoryFiles(("a.csv", "uwi\n1\n" + hash)))],
             StepDocumentUnchanged = unchanged,
             StepPartsForced = earlier is null,
             ExistingVersion = earlier?.TargetVersion,

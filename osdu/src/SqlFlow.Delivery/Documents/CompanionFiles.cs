@@ -35,25 +35,27 @@ internal static class CompanionFiles
                 continue;
             }
 
-            if (Read(() => Whole(new MappingCatalog(directory, documents).Load(reference, full => Shown(full, folder)))) is { } problem)
+            MappingDefinition? pinned = null;
+            if (Read(() => pinned = Whole(new MappingCatalog(directory, documents).Load(reference, full => Shown(full, folder)))) is { } problem)
             {
                 problems.Add($"{KeyPaths.Of(flow).Mapping}: {problem}");
+                continue;
             }
 
-            // Each step of enrich: pins a fragment, and its files the fragment of their dataset, found the way the flow's mapping is.
-            foreach (var step in flow.Enrich ?? [])
+            // Each enrichment of the mapping names an enrichment mapping, found the way the flow's mapping is; the flow binds what
+            // it reads.
+            foreach (var enrichment in pinned!.Enrich)
             {
-                if (step.Mapping is { } fragment
-                    && Read(() => Fragment(new MappingCatalog(directory, documents).Load(fragment, full => Shown(full, folder)))) is { } refused)
+                if (enrichment.Mapping is { } named
+                    && Read(() => Fragment(new MappingCatalog(directory, documents).Load(named, full => Shown(full, folder)))) is { } refused)
                 {
-                    problems.Add($"{KeyPaths.Of(flow).Enrich}.{step.Name}.mapping: {refused}");
+                    problems.Add($"{KeyPaths.Of(flow).Mapping} {reference}: enrich.{enrichment.Name}.mapping: {refused}");
                 }
+            }
 
-                if (step.Files?.Mapping is { } files
-                    && Read(() => Fragment(new MappingCatalog(directory, documents).Load(files, full => Shown(full, folder)))) is { } filesRefused)
-                {
-                    problems.Add($"{KeyPaths.Of(flow).Enrich}.{step.Name}.files.mapping: {filesRefused}");
-                }
+            if (Read(() => EnrichBinding.Bind(flow, pinned, named => new MappingCatalog(directory, documents).Load(named, full => Shown(full, folder)))) is { } unbound)
+            {
+                problems.Add(unbound);
             }
         }
 
@@ -103,23 +105,20 @@ internal static class CompanionFiles
         return problems;
     }
 
-    /// <summary>A flow pins the mapping of a whole record; a fragment renders only the paths a step adds.</summary>
-    private static void Whole(MappingDefinition mapping)
-    {
-        if (mapping.Fragment)
-        {
-            throw new FlowValidationException(
-                $"{mapping.Reference} is a fragment (fragment: true), the paths a step of enrich: adds to a record; pin the mapping of the whole record, and name the fragment under enrich.<step>.mapping.");
-        }
-    }
+    /// <summary>A flow pins the mapping that keys its records; an enrichment mapping renders only what an enrichment adds.</summary>
+    private static MappingDefinition Whole(MappingDefinition mapping)
+        => mapping.Fragment
+            ? throw new FlowValidationException(
+                $"{mapping.Reference} is an enrichment mapping (enrichment: true), what an enrichment of another mapping renders for its records; pin the mapping that keys the records, which names this one under its enrich:.")
+            : mapping;
 
-    /// <summary>A step pins a fragment; the mapping of a whole record would render a record of its own.</summary>
+    /// <summary>An enrichment names an enrichment mapping; a mapping keying records of its own would deliver records of its own.</summary>
     private static void Fragment(MappingDefinition mapping)
     {
         if (!mapping.Fragment)
         {
             throw new FlowValidationException(
-                $"{mapping.Reference} is a mapping of a whole record; a step renders a fragment, the paths it adds, declared with fragment: true and no dataset.");
+                $"{mapping.Reference} keys records of its own; an enrichment renders an enrichment mapping, declared with enrichment: true and no dataset.");
         }
     }
 

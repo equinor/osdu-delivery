@@ -526,13 +526,13 @@ record, with one write for a small change once the record exists. After a SWOT o
 block of the delivery document, filed [0035](decisions/0035-enrich-chains.md): `enrich:` steps rendering fragments
 (`fragment: true`, `$base`) as one chain with the flow's mapping, the record sent once, a fragment only adding, and the
 preflight refusing what could never render; and wrote [enrich](../reference/flow/enrich.md) and
-[fragments](../reference/flow/mapping-fragment.md) as their reference.
+[fragments](../reference/flow/mapping-enrichment.md) as their reference.
 
 ## [2026-10-28] ingest | A step's files, decision 0035
 
 A step of `enrich:` registers the files its rows name as datasets of the record, under ids derived from the record's, as
 parts of the record's own delivery; [0035](decisions/0035-enrich-chains.md) says why they are not sub-deliveries or File
-service registrations, and [files a step registers](../reference/flow/enrich-files.md) documents them.
+service registrations, and [files a step registers](../reference/flow/enrich-records.md) documents them.
 
 ## [2026-10-28] ingest | A step set aside on its hold, decision 0035
 
@@ -552,5 +552,14 @@ document them.
 
 A step's files may be linked from a list the flow carries over from the record OSDU holds (`preserveDataKeys`), which
 an update now merges, and a pipeline's cache steps take what every fragment reads and the datasets the steps register:
-[0035](decisions/0035-enrich-chains.md) records why, and [files a step registers](../reference/flow/enrich-files.md)
+[0035](decisions/0035-enrich-chains.md) records why, and [files a step registers](../reference/flow/enrich-records.md)
 documents both (Preserved keys, The cache).
+
+## [2026-10-28] ingest | Enrichments in the mapping, decision 0036
+
+What a record is enriched with moved from the delivery flow to its mapping: an `enrich:` block of the mapping, each
+enrichment rendering an enrichment mapping (`enrichment: true`) that adds paths or records of any kind, linked with `$link`,
+its rows and files bound by the flow under `source.datasets`, and every enrichment traced from the record in the ledger.
+[0036](decisions/0036-enrich-in-the-mapping.md) records why, and [enrichments](../reference/flow/enrich.md),
+[records an enrichment adds](../reference/flow/enrich-records.md) and
+[enrichment mappings](../reference/flow/mapping-enrichment.md) document it.

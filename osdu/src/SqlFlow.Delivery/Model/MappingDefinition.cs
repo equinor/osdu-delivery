@@ -54,12 +54,44 @@ public sealed record MappingDefinition
     public string? Description { get; init; }
 
     /// <summary>
-    /// True for a fragment (<c>fragment: true</c>, osdu/docs/reference/flow/enrich.md): the paths a step of a delivery flow's
-    /// <c>enrich:</c> adds to every record the flow's own mapping renders. A fragment renders no record of its own: it has no
-    /// key, so its <see cref="Dataset"/> is <see cref="MappingDataset.None"/>, and no access or legal block, so its
-    /// <see cref="Envelope"/> is empty. It reads the record as the steps before it left it with <c>$base</c>.
+    /// True for an enrichment mapping (<c>enrichment: true</c>, osdu/docs/reference/flow/enrich.md): what an enrichment of
+    /// another mapping renders for each record that mapping renders. Of that mapping's kind, it adds paths to the record; of a
+    /// dataset kind, it renders the dataset records the enrichment registers the files of its rows as. Either way it keys no
+    /// record of its own, so its <see cref="Dataset"/> is <see cref="MappingDataset.None"/>, and writes no access or legal
+    /// block, which the record's are, so its <see cref="Envelope"/> is empty. It reads the record as the mapping and the
+    /// enrichments before it left it with <c>$base</c>.
     /// </summary>
     public bool Fragment { get; init; }
+
+    /// <summary>
+    /// What the mapping adds to every record it renders (<c>enrich:</c>, osdu/docs/reference/flow/enrich.md), in the order the
+    /// enrichments render: the order the document lists them in, each moved after every one its <c>after:</c> names. Empty
+    /// for a mapping that declares none, and for an enrichment mapping, which declares none of its own.
+    /// </summary>
+    public IReadOnlyList<MappingEnrichment> Enrich { get; init; } = [];
+
+    /// <summary>
+    /// The paths of the record the mapping's <c>$link</c> nodes write at, from the record's root (<c>data.Datasets</c>), each
+    /// once, in document order: where its records list what its enrichments register.
+    /// </summary>
+    public IReadOnlyList<string> LinkPaths() => Entries
+        .SelectMany(e => e.ValueNodes)
+        .Where(n => n.Source?.Kind == MappingSourceKind.Link)
+        .Select(n => string.Join('.', n.Target.Segments.Select(s => s.Name)))
+        .Distinct(StringComparer.Ordinal)
+        .ToList();
+
+    /// <summary>
+    /// The enrichments the mapping links the records of (<c>$link</c>), each once, in ordinal order: those whose ids its
+    /// records carry. Empty for a mapping that links none.
+    /// </summary>
+    public IReadOnlyList<string> LinkNames() => Entries
+        .SelectMany(e => e.ValueNodes)
+        .Where(n => n.Source is { Kind: MappingSourceKind.Link, LinkName: not null })
+        .Select(n => n.Source!.LinkName!)
+        .Distinct(StringComparer.Ordinal)
+        .Order(StringComparer.Ordinal)
+        .ToList();
 
     public required MappingDataset Dataset { get; init; }
 
@@ -204,6 +236,50 @@ public sealed record MappingDefinition
 }
 
 /// <summary>
+/// One enrichment a mapping declares (<c>enrich.&lt;name&gt;</c>, osdu/docs/reference/flow/enrich.md): what it adds to every
+/// record the mapping renders, from rows of its own. Its enrichment mapping, of the record's own kind, adds paths to the
+/// record; of a dataset kind, it renders the dataset each row's files are registered as, which the record links with
+/// <c>$link</c>. The flow binds its rows and files (<c>source.datasets.&lt;name&gt;</c>); the mapping says what they become.
+/// </summary>
+public sealed record MappingEnrichment
+{
+    /// <summary>The enrichment's name: the child dataset its rows are read as, and what messages and the ledger name it by.</summary>
+    public required string Name { get; init; }
+
+    public string? Description { get; init; }
+
+    /// <summary>
+    /// How many rows of the child dataset named after it one record takes (<c>rows:</c>); null for an enrichment that reads
+    /// none, which renders from what the record holds and the mapping's parameters.
+    /// </summary>
+    public EnrichRows? Rows { get; init; }
+
+    /// <summary>
+    /// The enrichment mapping it renders, pinned as <c>Name@version</c> (<c>mapping:</c>); null for one that names the
+    /// record's bulk data alone (<see cref="Bulk"/>).
+    /// </summary>
+    public string? Mapping { get; init; }
+
+    /// <summary>
+    /// The columns of a row that tell its dataset from the enrichment's other rows' (<c>key:</c>): required for an
+    /// enrichment registering datasets from many rows, and refused for one taking one row.
+    /// </summary>
+    public IReadOnlyList<string> Key { get; init; } = [];
+
+    /// <summary>The enrichments this one renders after, beside the order the mapping lists them in.</summary>
+    public IReadOnlyList<string> After { get; init; } = [];
+
+    /// <summary>What its hold does (<c>onHold:</c>): hold the record (the default), or set the enrichment aside.</summary>
+    public EnrichHold OnHold { get; init; } = EnrichHold.Record;
+
+    /// <summary>
+    /// True when the files its one row names are the record's DDMS bulk data (<c>bulk: true</c>,
+    /// osdu/docs/reference/flow/enrich-bulk.md).
+    /// </summary>
+    public bool Bulk { get; init; }
+}
+
+/// <summary>
 /// The four envelope values OSDU requires on every record, which a mapping gives as static lists. A mapping of a DSPDM
 /// business object's rows (<see cref="DspdmKinds"/>) has none: its rows are no OSDU records.
 /// </summary>
@@ -312,11 +388,18 @@ public enum MappingSourceKind
     Child,
 
     /// <summary>
-    /// A section of the record a fragment adds to (<c>$base</c>, osdu/docs/reference/flow/enrich.md): the record as the flow's
-    /// own mapping rendered it and the steps of <c>enrich:</c> before this one added to it, read as the step renders, never
-    /// from the platform.
+    /// A section of the record an enrichment mapping renders into or beside (<c>$base</c>, osdu/docs/reference/flow/enrich.md):
+    /// the record as its mapping rendered it and the enrichments before this one added to it, read as the enrichment renders,
+    /// never from the platform.
     /// </summary>
     Base,
+
+    /// <summary>
+    /// The ids of the records an enrichment of the mapping registers for the record (<c>$link</c>,
+    /// osdu/docs/reference/flow/enrich-records.md), each with the version separator and no version: made from the record's own
+    /// id, the enrichment and its row, so the record links them from its first delivery.
+    /// </summary>
+    Link,
 }
 
 /// <summary>Where an entry's value comes from.</summary>
@@ -335,6 +418,9 @@ public sealed record MappingSource
 
     /// <summary>The prefix a section of the record a fragment adds to is named with: <c>base.data.Name</c>.</summary>
     public const string BasePrefix = "base";
+
+    /// <summary>The prefix the ids an enrichment registers are named with: <c>link.lasfile</c>.</summary>
+    public const string LinkPrefix = "link";
 
     public required MappingSourceKind Kind { get; init; }
 
@@ -371,6 +457,9 @@ public sealed record MappingSource
     /// </summary>
     public string? BasePath { get; init; }
 
+    /// <summary>For a link source: the enrichment of the mapping whose records' ids it gives (<c>lasfile</c>).</summary>
+    public string? LinkName { get; init; }
+
     /// <summary>
     /// For a node written with <c>$lookup</c>, the lookup it reads (<see cref="MappingDefinition.Lookups"/>): its cached type
     /// is the lookup's, and the entry carries the lookup's findBy lines and modifiers, so it finds the record every other
@@ -389,6 +478,7 @@ public sealed record MappingSource
         MappingSourceKind.Parent => $"{ParentPrefix}.{ParentPath}",
         MappingSourceKind.Child => $"{ChildPrefix}.{ChildKind}",
         MappingSourceKind.Base => $"{BasePrefix}.{BasePath}",
+        MappingSourceKind.Link => $"{LinkPrefix}.{LinkName}",
         _ when Lookup is not null => $"{MappingLookup.Prefix}.{Lookup}.{CacheField}",
         _ => $"{Prefix}.{CacheType}.{CacheField}",
     };

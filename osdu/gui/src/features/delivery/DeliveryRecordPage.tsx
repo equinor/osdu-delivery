@@ -21,6 +21,7 @@ import { BlockedBadge, RecordStatusBadge } from "./DeliveryBadges";
 import { RecordJourney, RecordMilestones } from "./RecordJourney";
 import { RecordName } from "./RecordName";
 import { RECORD_ARTIFACTS_SHOWN, RecordArtifacts, RecordUndoNotice } from "./RecordArtifacts";
+import { RecordEnrichments } from "./RecordEnrichments";
 import { RecordOsduView } from "./RecordOsduView";
 import { RecordParentChips } from "./RecordParentChips";
 import { settle } from "./answers";
@@ -40,7 +41,7 @@ import { shortId } from "./idTail";
  * (and whether OSDU holds that), what OSDU holds, and what its deliveries created there beside it. `?tab=` opens the page
  * on one of them, and `?tab=osdu` also reads the record from OSDU.
  */
-const RECORD_TABS = ["timeline", "source", "render", "osdu", "artifacts"] as const;
+const RECORD_TABS = ["timeline", "source", "render", "osdu", "enrichments", "artifacts"] as const;
 type RecordTab = (typeof RECORD_TABS)[number];
 
 /** The tabs the page's earlier tabs went by, and the tab each now lands on, so an old link still lands somewhere. */
@@ -127,7 +128,16 @@ function DeliveryRecordContent({ flowId, deliveryKey }: DeliveryRecordRef) {
     queryFn: () => artifactApi.recordArtifacts(ref, RECORD_ARTIFACTS_SHOWN),
     refetchInterval: 15000,
   });
+  // What the mapping's enrichments added to the record, read from its ledger row: its own tab, counted on the tab when any.
+  const enrichments = useQuery({
+    queryKey: ["delivery", "record", flowId, deliveryKey, "enrichments"],
+    queryFn: () => artifactApi.recordEnrichments(ref),
+    refetchInterval: 15000,
+  });
   useTabTitle(query.data ? (query.data.record.label ?? query.data.record.sourceKey) : undefined);
+
+  // A link to the Enrichments tab of a record its mapping adds nothing to opens on the Timeline: the tab is not shown.
+  const shownTab: RecordTab = tab === "enrichments" && enrichments.data?.length === 0 ? "timeline" : tab;
 
   const refresh = useCallback(() => void queryClient.invalidateQueries({ queryKey: ["delivery"] }), [queryClient]);
 
@@ -357,12 +367,18 @@ function DeliveryRecordContent({ flowId, deliveryKey }: DeliveryRecordRef) {
 
       <RecordMilestones record={record} attempts={attempts.data} chain={chain.data} />
 
-      <Tabs value={tab} onValueChange={(next) => setTab(tabFromParam(next))}>
+      <Tabs value={shownTab} onValueChange={(next) => setTab(tabFromParam(next))}>
         <TabsList data-testid="record-tabs">
           <TabsTrigger value="timeline" data-testid="record-tab-timeline">Timeline</TabsTrigger>
           <TabsTrigger value="source" data-testid="record-tab-source">Source</TabsTrigger>
           <TabsTrigger value="render" data-testid="record-tab-render">Render</TabsTrigger>
           <TabsTrigger value="osdu" data-testid="record-tab-osdu">OSDU</TabsTrigger>
+          {(enrichments.data?.length ?? 0) > 0 && (
+            <TabsTrigger value="enrichments" data-testid="record-tab-enrichments">
+              Enrichments
+              <span className="font-mono text-[11px] tabular-nums text-muted-foreground">{enrichments.data!.length.toLocaleString()}</span>
+            </TabsTrigger>
+          )}
           <TabsTrigger value="artifacts" data-testid="record-tab-artifacts">
             Artifacts
             {(artifacts.data?.length ?? 0) > 0 && (
@@ -404,6 +420,9 @@ function DeliveryRecordContent({ flowId, deliveryKey }: DeliveryRecordRef) {
             osdu={osdu}
             popout
           />
+        </TabsContent>
+        <TabsContent value="enrichments">
+          <RecordEnrichments query={enrichments} />
         </TabsContent>
         <TabsContent value="artifacts">
           <RecordArtifacts query={artifacts} />

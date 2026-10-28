@@ -6,7 +6,7 @@
   "includeEnvelope": true,
   "generatedFrom": "osdu/docs/reference/flow/delivery.md and osdu/src/SqlFlow.Delivery/Documents/YamlModels.cs",
   "naming": "The loader deserializes with YamlDotNet's CamelCaseNamingConvention and refuses any key it does not know.",
-  "keyCount": 689,
+  "keyCount": 643,
   "keys": [
     {
       "path": "batch",
@@ -128,264 +128,138 @@
     },
     {
       "path": "enrich",
+      "type": "object",
+      "required": false,
+      "freeForm": true,
+      "description": "Refused: what is added to each record is the mapping's to say now. Declare each enrichment under the enrich: block of the mapping the flow pins (its rows, mapping, key, after, onHold and bulk), bind its rows here under source.datasets.<name> (their files under source.datasets.<name>.files), and the workflow run over it under workflows.<name> (osdu/docs/reference/flow/enrich.md)."
+    },
+    {
+      "path": "workflows",
       "type": "map",
       "required": false,
-      "description": "The steps that extend each record once the mapping has rendered it, by name, in the order they render unless after says otherwise. Each step renders a fragment (a mapping with fragment: true) from rows of its own, read beside the record's row as a child dataset under the step's name, over the record as the mapping and the steps before it left it; the record is hashed and sent once with every step in it, so a change to any part of the chain writes it once. At most 16 steps. See osdu/docs/reference/flow/enrich.md.",
-      "appliesWhen": "Single form. Refused at the source level when the document declares interfaces: each interface declares its own `enrich`."
+      "description": "The OSDU workflows a delivery runs over the records of the enrichments of the flow's mapping once each record and its enrichment's records landed, by the enrichment's name (osdu/docs/reference/flow/enrich-workflow.md)."
     },
     {
-      "path": "enrich.<name>",
+      "path": "workflows.<name>",
       "type": "object",
       "required": false,
-      "description": "One step, named by the key: letters, digits and `_`, not starting with a digit, at most 32 characters, not `record`, and not the name of a child dataset, since its rows are read as a child dataset of that name. Names are compared ignoring case."
-    },
-    {
-      "path": "enrich.<name>.description",
-      "type": "string",
-      "required": false,
-      "description": "What the step adds to each record, shown with the record's composition."
-    },
-    {
-      "path": "enrich.<name>.mapping",
-      "type": "string",
-      "required": false,
-      "description": "The fragment the step renders, pinned as Name@version and found the way the flow's mapping is. It must be a fragment (fragment: true), fill the same template version as the flow's mapping, and write only under data and tags. A step declares a mapping, files, or both."
-    },
-    {
-      "path": "enrich.<name>.dataset",
-      "type": "object",
-      "required": false,
-      "description": "The step's rows: a child table joined to the record table on the record key, as a child dataset is. Its rows are part of the record's ingestion fingerprint, so a change to them plans the record again. Left out, the step reads no rows and renders the same fragment for every record, from what the record holds ($base) and its parameters."
-    },
-    {
-      "path": "enrich.<name>.dataset.object",
-      "type": "string",
-      "required": true,
-      "description": "The step table's three-part name, `[database].[schema].[table]`."
-    },
-    {
-      "path": "enrich.<name>.dataset.join",
-      "type": "map",
-      "required": true,
-      "description": "How a row of the step joins its record: step column to record key column. It must cover every key column of the record table, or a row could belong to several records."
-    },
-    {
-      "path": "enrich.<name>.dataset.join.<name>",
-      "type": "string",
-      "required": false,
-      "description": "The key is a column of the step's table; the value is the record table's key column it joins."
-    },
-    {
-      "path": "enrich.<name>.dataset.orderBy",
-      "type": "list",
-      "required": false,
-      "description": "The columns the step's rows are ordered by within a record, which orders the items a $forEach over them adds."
-    },
-    {
-      "path": "enrich.<name>.dataset.orderBy[]",
-      "type": "string",
-      "required": false,
-      "description": "A column of the step's table."
-    },
-    {
-      "path": "enrich.<name>.dataset.maxRowsPerRecord",
-      "type": "integer",
-      "required": false,
-      "description": "The most rows of the step one record may carry, 1 to 1000000. A record with more is held rather than rendered.",
-      "default": "100000"
-    },
-    {
-      "path": "enrich.<name>.rows",
-      "type": "string",
-      "required": false,
-      "enumValues": [
-        "one",
-        "many"
-      ],
-      "description": "How many of the step's rows one record takes. one: at most one, read as the fragment's own row; a record with none gets nothing from the step, and one with two or more is held. many: any number, read with $forEach: <step name>; the fragment reads no row outside it. Only with dataset.",
-      "default": "one"
-    },
-    {
-      "path": "enrich.<name>.after",
-      "type": "list",
-      "required": false,
-      "description": "The steps this one renders after, beside the order the document lists them in: the steps whose paths it reads with $base, and any other it has to follow. A step naming an unknown step, itself or one step twice, and steps waiting for each other, are refused."
-    },
-    {
-      "path": "enrich.<name>.after[]",
-      "type": "string",
-      "required": false,
-      "description": "The name of another step of the same enrich block."
-    },
-    {
-      "path": "enrich.<name>.onHold",
-      "type": "string",
-      "required": false,
-      "enumValues": [
-        "record",
-        "step"
-      ],
-      "description": "What the step's hold does. record: the record is held with the step's reasons and OSDU keeps the version it has. step: the step is set aside, the record goes ahead with what the step added to its last delivery (nothing for a record never delivered), the steps after it render, and the ledger lists the record with the step held. A record delivered before the step was set aside, or whose kept contribution no longer fits it, is held. See osdu/docs/reference/flow/enrich-holds.md.",
-      "default": "record"
-    },
-    {
-      "path": "enrich.<name>.bulk",
-      "type": "object",
-      "required": false,
-      "description": "The record's DDMS bulk data (a well log's curves), named by the step's one row: the flow's payload set bulk, which the ddms route sends as the record's payload after the record, read from the step's row instead of the record's. A record without a row of the step has no bulk data; one with several is held. Only on the ddms route, with no payload set of the record's own, and on one step. See osdu/docs/reference/flow/enrich-bulk.md."
-    },
-    {
-      "path": "enrich.<name>.bulk.root",
-      "type": "string",
-      "required": true,
-      "description": "The folder the rows' bulk data folders are under, relative to the flow's file or a storage location, as a payload set's root is."
-    },
-    {
-      "path": "enrich.<name>.bulk.locationColumn",
-      "type": "string",
-      "required": true,
-      "description": "The column of the step's table naming each row's folder under root."
-    },
-    {
-      "path": "enrich.<name>.bulk.pattern",
-      "type": "string",
-      "required": false,
-      "default": "*",
-      "description": "The files of a row's folder that are its bulk data."
-    },
-    {
-      "path": "enrich.<name>.bulk.hashColumn",
-      "type": "string",
-      "required": false,
-      "description": "The column of the step's table holding the content hash of the row's bulk data, which says when it goes again; required unless change.payloadDetect is lastModified."
-    },
-    {
-      "path": "enrich.<name>.bulk.chunkCountColumn",
-      "type": "string",
-      "required": false,
-      "description": "The column of the step's table holding how many files the row's bulk data has, which spares a listing when the plan queues it."
-    },
-    {
-      "path": "enrich.<name>.workflow",
-      "type": "object",
-      "required": false,
-      "description": "The workflow the step runs over the record once the record and the step's datasets landed, declared as target.workflow is: stages, results, secrets and when it runs. It writes nothing of the record; it names no anchor, anchor tag or inputs, and reads the step's dataset as {dataset:enrich.<step>}. Its runs, values and artifacts are kept under enrich.<step>. See osdu/docs/reference/flow/enrich-workflow.md.",
+      "description": "The workflow run over one enrichment of the flow's mapping, named by it, declared as target.workflow is: stages, results, secrets and runWhen, over the record the flow's route wrote. It names no anchor and no inputs: the enrichment's datasets are read as {dataset:enrich.<name>}. Refused for a name the mapping declares no enrichment by.",
       "appliesWhen": "Single form, with `target.protocol: workflow`, which refuses a document without it. Refused on any other route, and at the source level when the document declares interfaces."
     },
     {
-      "path": "enrich.<name>.workflow.results",
+      "path": "workflows.<name>.results",
       "type": "object",
       "required": false,
       "description": "How the records the runs wrote are found once the last run finished: one of `anchor`, `ids`, `artefact`, `search`, `manifest` or `xcom`, or none, with `minimum`, `waitSeconds`, `keep` and `remove`. Naming two ways is refused."
     },
     {
-      "path": "enrich.<name>.workflow.results.anchor",
+      "path": "workflows.<name>.results.anchor",
       "type": "boolean",
       "required": false,
       "description": "True when the run writes the record itself, which is then read back."
     },
     {
-      "path": "enrich.<name>.workflow.results.artefact",
+      "path": "workflows.<name>.results.artefact",
       "type": "object",
       "required": false,
       "description": "Finds the records through the record's `data.Artefacts` entries of a role and kind."
     },
     {
-      "path": "enrich.<name>.workflow.results.artefact.kind",
+      "path": "workflows.<name>.results.artefact.kind",
       "type": "string",
       "required": true,
       "description": "The text the artefact's resource kind contains."
     },
     {
-      "path": "enrich.<name>.workflow.results.artefact.role",
+      "path": "workflows.<name>.results.artefact.role",
       "type": "string",
       "required": true,
       "description": "The artefact role (`ConvertedContent`)."
     },
     {
-      "path": "enrich.<name>.workflow.results.ids",
+      "path": "workflows.<name>.results.ids",
       "type": "string",
       "required": false,
       "description": "A template naming the ids the run writes."
     },
     {
-      "path": "enrich.<name>.workflow.results.keep",
+      "path": "workflows.<name>.results.keep",
       "type": "integer",
       "required": false,
       "description": "How many of the ids found are kept on the record, 0 to 1000; the count is always kept.",
       "default": "100"
     },
     {
-      "path": "enrich.<name>.workflow.results.manifest",
+      "path": "workflows.<name>.results.manifest",
       "type": "string",
       "required": false,
       "description": "A template naming a manifest dataset; the records are the ones the manifest names, read from its retrieval instructions."
     },
     {
-      "path": "enrich.<name>.workflow.results.minimum",
+      "path": "workflows.<name>.results.minimum",
       "type": "integer",
       "required": false,
       "description": "How many records the runs must have written for the delivery to count; fewer fails the try, and the next try looks again without running the workflows again. It must not be negative, and above 0 needs a way to find them.",
       "default": "1 (0 with no way named, or with anchor)"
     },
     {
-      "path": "enrich.<name>.workflow.results.remove",
+      "path": "workflows.<name>.results.remove",
       "type": "boolean",
       "required": false,
       "description": "Whether a removal of the record takes the records its runs created with it.",
       "default": "true"
     },
     {
-      "path": "enrich.<name>.workflow.results.search",
+      "path": "workflows.<name>.results.search",
       "type": "object",
       "required": false,
       "description": "Finds the records with a search by cursor."
     },
     {
-      "path": "enrich.<name>.workflow.results.search.kind",
+      "path": "workflows.<name>.results.search.kind",
       "type": "string",
       "required": true,
       "description": "The kind searched, a template (`*:*:*--*:*.*.*`)."
     },
     {
-      "path": "enrich.<name>.workflow.results.search.query",
+      "path": "workflows.<name>.results.search.query",
       "type": "string",
       "required": false,
       "description": "The search query, a template (`data.Tags:\"{anchorTag}\"`)."
     },
     {
-      "path": "enrich.<name>.workflow.results.waitSeconds",
+      "path": "workflows.<name>.results.waitSeconds",
       "type": "integer",
       "required": false,
       "description": "How long the results are looked for, asked again every `protocolOptions.workflowPollSeconds` until `minimum` records are present; for a search, how long it waits for the index. 0 to 86400 seconds.",
       "default": "protocolOptions.datasetIndexWaitSeconds"
     },
     {
-      "path": "enrich.<name>.workflow.results.xcom",
+      "path": "workflows.<name>.results.xcom",
       "type": "object",
       "required": false,
       "description": "Finds the records' ids in an XCom entry of the last run."
     },
     {
-      "path": "enrich.<name>.workflow.results.xcom.key",
+      "path": "workflows.<name>.results.xcom.key",
       "type": "string",
       "required": true,
       "description": "The XCom key under that task."
     },
     {
-      "path": "enrich.<name>.workflow.results.xcom.match",
+      "path": "workflows.<name>.results.xcom.match",
       "type": "string",
       "required": false,
       "description": "The entity type the record ids taken from the entry must have (`dataset--File.Generic`); left out, every id."
     },
     {
-      "path": "enrich.<name>.workflow.results.xcom.task",
+      "path": "workflows.<name>.results.xcom.task",
       "type": "string",
       "required": true,
       "description": "The Airflow task whose XCom entry holds the ids."
     },
     {
-      "path": "enrich.<name>.workflow.runWhen",
+      "path": "workflows.<name>.runWhen",
       "type": "enum(changed|created|requested)",
       "required": false,
       "description": "When a delivery runs the workflow: changed (the default), when it registers the step's datasets, or for a step registering none, when it writes the record; created, when it creates the record; requested, when a redelivery names the workflow. A redelivery of the whole record, or a record never delivered, runs it whatever this says.",
@@ -397,44 +271,44 @@
       "default": "changed"
     },
     {
-      "path": "enrich.<name>.workflow.secrets",
+      "path": "workflows.<name>.secrets",
       "type": "map",
       "required": false,
       "description": "Names a context uses as `{secret:name}`, each a `${env:...}` or `${keyvault:...}` reference. Each is resolved only for the trigger request, and every step and message shows `***`. A context entry named as a secret must name one of these."
     },
     {
-      "path": "enrich.<name>.workflow.secrets.<name>",
+      "path": "workflows.<name>.secrets.<name>",
       "type": "string",
       "required": false,
       "description": "One secret: the key is a letter followed by letters, digits, `_` and `-`; the value must be a whole `${env:NAME}` or `${keyvault:NAME}` reference, never a credential."
     },
     {
-      "path": "enrich.<name>.workflow.stages",
+      "path": "workflows.<name>.stages",
       "type": "list",
       "required": true,
       "description": "The workflow runs, 1 to 4, run in order; a stage's outputs are what later stages and the results read."
     },
     {
-      "path": "enrich.<name>.workflow.stages[]",
+      "path": "workflows.<name>.stages[]",
       "type": "object",
       "required": false,
       "description": "One workflow run: the workflow, its execution context, its timing and its outputs."
     },
     {
-      "path": "enrich.<name>.workflow.stages[].context",
+      "path": "workflows.<name>.stages[].context",
       "type": "map",
       "required": false,
       "description": "The execution context, any YAML, with placeholders in its strings (`{partition}`, `{record:path}`, `{input:name}`, `{stage:n.output}`, `{secret:name}` and others). It is checked against the workflow's contract when the document loads, and filled and checked again before every trigger. Whatever the workflow, a value under a key the contract marks a credential, or under any key named as a secret (a password, secret, token, assertion, signature, authorization, an API or account key), is a single `{secret:name}` placeholder; a literal is refused when the document loads."
     },
     {
-      "path": "enrich.<name>.workflow.stages[].context.<name>",
+      "path": "workflows.<name>.stages[].context.<name>",
       "type": "object",
       "required": false,
       "description": "One entry of the execution context: any YAML value the workflow reads, with placeholders in its strings.",
       "freeForm": true
     },
     {
-      "path": "enrich.<name>.workflow.stages[].contract",
+      "path": "workflows.<name>.stages[].contract",
       "type": "enum(osduIngest|osduIngestByReference|csvParser|energymlConverter|energymlDelivery|enyparserTranslation|segyToVds|segyToZgy|segyToMdio|edsIngest|edsScheduler|edsNaturalization)",
       "required": false,
       "description": "The known workflow whose payload contract the context follows, when `workflow` is not one of its names. The Workflow service's test DAG is refused.",
@@ -454,69 +328,69 @@
       ]
     },
     {
-      "path": "enrich.<name>.workflow.stages[].outputs",
+      "path": "workflows.<name>.stages[].outputs",
       "type": "map",
       "required": false,
       "description": "Values the run produces, read by later stages and the results as `{stage:n.name}`."
     },
     {
-      "path": "enrich.<name>.workflow.stages[].outputs.<name>",
+      "path": "workflows.<name>.stages[].outputs.<name>",
       "type": "object",
       "required": false,
       "description": "One output, named by the key (a letter, then letters, digits, `_` and `-`, at most 64 characters): a `value` template or an `xcom` entry, exactly one of the two."
     },
     {
-      "path": "enrich.<name>.workflow.stages[].outputs.<name>.value",
+      "path": "workflows.<name>.stages[].outputs.<name>.value",
       "type": "string",
       "required": false,
       "description": "A template the value is, known before the run."
     },
     {
-      "path": "enrich.<name>.workflow.stages[].outputs.<name>.xcom",
+      "path": "workflows.<name>.stages[].outputs.<name>.xcom",
       "type": "object",
       "required": false,
       "description": "The XCom entry of the run the value is read from: through the Workflow service's `latestInfo`, which serves the run's latest task only, or from Airflow's REST API when `target.airflow` is declared."
     },
     {
-      "path": "enrich.<name>.workflow.stages[].outputs.<name>.xcom.key",
+      "path": "workflows.<name>.stages[].outputs.<name>.xcom.key",
       "type": "string",
       "required": true,
       "description": "The XCom key under that task."
     },
     {
-      "path": "enrich.<name>.workflow.stages[].outputs.<name>.xcom.match",
+      "path": "workflows.<name>.stages[].outputs.<name>.xcom.match",
       "type": "string",
       "required": false,
       "description": "The entity type the record ids taken from the entry must have; left out, every id."
     },
     {
-      "path": "enrich.<name>.workflow.stages[].outputs.<name>.xcom.task",
+      "path": "workflows.<name>.stages[].outputs.<name>.xcom.task",
       "type": "string",
       "required": true,
       "description": "The Airflow task whose XCom entry holds the value."
     },
     {
-      "path": "enrich.<name>.workflow.stages[].pollSeconds",
+      "path": "workflows.<name>.stages[].pollSeconds",
       "type": "integer",
       "required": false,
       "description": "How often the run is polled, 0 to 3600 seconds; 0 or left out takes `protocolOptions.workflowPollSeconds`.",
       "default": "0"
     },
     {
-      "path": "enrich.<name>.workflow.stages[].timeoutMinutes",
+      "path": "workflows.<name>.stages[].timeoutMinutes",
       "type": "integer",
       "required": false,
       "description": "How long the run may take, 0 to 10080 minutes (a week); 0 or left out takes the longer of `protocolOptions.workflowTimeoutMinutes` and the contract's.",
       "default": "0"
     },
     {
-      "path": "enrich.<name>.workflow.stages[].workflow",
+      "path": "workflows.<name>.stages[].workflow",
       "type": "string",
       "required": true,
       "description": "The workflow as the partition registers it (letters, digits, `_`, `-` and `.`). The run's preflight asks the Workflow service for it."
     },
     {
-      "path": "enrich.<name>.workflow.anchor",
+      "path": "workflows.<name>.anchor",
       "type": "enum(dataset|storage)",
       "required": false,
       "description": "Refused under a step: a step's workflow runs over the record the flow's route wrote, which it neither registers nor tags.",
@@ -526,137 +400,67 @@
       ]
     },
     {
-      "path": "enrich.<name>.workflow.anchorTag",
+      "path": "workflows.<name>.anchorTag",
       "type": "string",
       "required": false,
       "description": "Refused under a step: a step's workflow runs over the record the flow's route wrote, which it neither registers nor tags."
     },
     {
-      "path": "enrich.<name>.workflow.inputs",
+      "path": "workflows.<name>.inputs",
       "type": "map",
       "required": false,
       "description": "Refused under a step: the step's files are registered by its files: and read by the workflow as {dataset:enrich.<step>}."
     },
     {
-      "path": "enrich.<name>.workflow.inputs.<name>",
+      "path": "workflows.<name>.inputs.<name>",
       "type": "object",
       "required": false,
       "description": "Refused under a step, with the step's workflow.inputs."
     },
     {
-      "path": "enrich.<name>.workflow.inputs.<name>.chunkCountColumn",
+      "path": "workflows.<name>.inputs.<name>.chunkCountColumn",
       "type": "string",
       "required": false,
       "description": "Refused under a step, with the step's workflow.inputs."
     },
     {
-      "path": "enrich.<name>.workflow.inputs.<name>.datasetKind",
+      "path": "workflows.<name>.inputs.<name>.datasetKind",
       "type": "string",
       "required": false,
       "description": "Refused under a step, with the step's workflow.inputs.",
       "default": "osdu:wks:dataset--File.Generic:1.0.0"
     },
     {
-      "path": "enrich.<name>.workflow.inputs.<name>.hashColumn",
+      "path": "workflows.<name>.inputs.<name>.hashColumn",
       "type": "string",
       "required": false,
       "description": "Refused under a step, with the step's workflow.inputs."
     },
     {
-      "path": "enrich.<name>.workflow.inputs.<name>.locationColumn",
+      "path": "workflows.<name>.inputs.<name>.locationColumn",
       "type": "string",
       "required": false,
       "description": "Refused under a step, with the step's workflow.inputs."
     },
     {
-      "path": "enrich.<name>.workflow.inputs.<name>.optional",
+      "path": "workflows.<name>.inputs.<name>.optional",
       "type": "boolean",
       "required": false,
       "description": "Refused under a step, with the step's workflow.inputs.",
       "default": "false"
     },
     {
-      "path": "enrich.<name>.workflow.inputs.<name>.pattern",
+      "path": "workflows.<name>.inputs.<name>.pattern",
       "type": "string",
       "required": false,
       "description": "Refused under a step, with the step's workflow.inputs.",
       "default": "*"
     },
     {
-      "path": "enrich.<name>.workflow.inputs.<name>.root",
+      "path": "workflows.<name>.inputs.<name>.root",
       "type": "string",
       "required": false,
       "description": "Refused under a step, with the step's workflow.inputs."
-    },
-    {
-      "path": "enrich.<name>.files",
-      "type": "object",
-      "required": false,
-      "description": "The files each of the step's rows names, registered through the Dataset service as a dataset record of their own under an id made from the record's id and the step, and listed in the record (link), so the record names them already when it is written. A dataset goes again only when its files' hash or what its fragment renders into it moves, and then under the same id, so new files never write the record. Needs dataset, and an endpoint that is the platform. See osdu/docs/reference/flow/enrich.md."
-    },
-    {
-      "path": "enrich.<name>.files.root",
-      "type": "string",
-      "required": true,
-      "description": "The folder the rows' file folders are under, relative to the flow's file or a storage location, as a payload set's root is."
-    },
-    {
-      "path": "enrich.<name>.files.locationColumn",
-      "type": "string",
-      "required": true,
-      "description": "The column of the step's table naming each row's folder under root. A row that names none holds its record."
-    },
-    {
-      "path": "enrich.<name>.files.pattern",
-      "type": "string",
-      "required": false,
-      "description": "The files of a row's folder that are its files, as a payload set's pattern is.",
-      "default": "*"
-    },
-    {
-      "path": "enrich.<name>.files.hashColumn",
-      "type": "string",
-      "required": true,
-      "description": "The column holding the content hash of each row's files, which says when they go again. A row that leaves it empty holds its record."
-    },
-    {
-      "path": "enrich.<name>.files.kind",
-      "type": "string",
-      "required": false,
-      "description": "The dataset kind the files are registered as: a dataset kind the Dataset service registers, a dataset--FileCollection kind for a row naming several files. An External Data Services proxy dataset is refused.",
-      "default": "osdu:wks:dataset--File.Generic:1.0.0"
-    },
-    {
-      "path": "enrich.<name>.files.key",
-      "type": "list",
-      "required": false,
-      "description": "The columns telling each row's dataset from the step's other rows', which make its id with the record's: required with rows: many, refused with rows: one, whose one dataset the step's name names."
-    },
-    {
-      "path": "enrich.<name>.files.key[]",
-      "type": "string",
-      "required": false,
-      "description": "A column of the step's table."
-    },
-    {
-      "path": "enrich.<name>.files.mapping",
-      "type": "string",
-      "required": false,
-      "description": "A fragment over the dataset kind, pinned as Name@version, rendered from the row into each dataset record (its name, description, tags); its file properties are the Dataset service's. Left out, a dataset record holds its file properties and the name of its first file."
-    },
-    {
-      "path": "enrich.<name>.files.link",
-      "type": "string",
-      "required": false,
-      "description": "The record's list the datasets are linked from, each as its id with a trailing colon, added after the items the record holds: a list of values the template declares, or a path under an object it leaves open. It may be a list the flow preserves (preserveDataKeys), which an update merges: OSDU's items stay, the step's links are added and those it no longer renders are taken off; a path inside a preserved key is refused.",
-      "default": "data.Datasets"
-    },
-    {
-      "path": "enrich.<name>.files.contentType",
-      "type": "string",
-      "required": false,
-      "description": "The media type the files are uploaded as.",
-      "default": "target.protocolOptions.filesContentType, else application/octet-stream"
     },
     {
       "path": "interfaces",
@@ -834,6 +638,48 @@
       "type": "string",
       "required": false,
       "description": "A column of the child table."
+    },
+    {
+      "path": "interfaces.<name>.datasets.<name>.files",
+      "type": "object",
+      "required": false,
+      "description": "The files each row names: where they are, in the columns of this table's rows. The enrichment of the flow's mapping named like this dataset says what they become: a mapping of a dataset kind registers them through the Dataset service with the dataset each row adds (osdu/docs/reference/flow/enrich-records.md), and bulk: true sends them as the record's DDMS bulk data (osdu/docs/reference/flow/enrich-bulk.md). Refused on a dataset no enrichment of the mapping reads."
+    },
+    {
+      "path": "interfaces.<name>.datasets.<name>.files.root",
+      "type": "string",
+      "required": false,
+      "description": "The folder the rows' file folders are under, relative to the flow's file or a storage location, as a payload set's root is."
+    },
+    {
+      "path": "interfaces.<name>.datasets.<name>.files.locationColumn",
+      "type": "string",
+      "required": false,
+      "description": "The column of this table naming each row's folder under root. A row that names none holds its record."
+    },
+    {
+      "path": "interfaces.<name>.datasets.<name>.files.pattern",
+      "type": "string",
+      "required": false,
+      "description": "The files of a row's folder that are its files, as a payload set's pattern is."
+    },
+    {
+      "path": "interfaces.<name>.datasets.<name>.files.hashColumn",
+      "type": "string",
+      "required": false,
+      "description": "The column holding the content hash of each row's files, which says when they go again: required for files registered with datasets, and for bulk data unless change.payloadDetect is lastModified. A row that leaves it empty holds its record."
+    },
+    {
+      "path": "interfaces.<name>.datasets.<name>.files.chunkCountColumn",
+      "type": "string",
+      "required": false,
+      "description": "The column holding how many files a row's bulk data has, which spares a listing when the plan queues it."
+    },
+    {
+      "path": "interfaces.<name>.datasets.<name>.files.contentType",
+      "type": "string",
+      "required": false,
+      "description": "The media type registered files are uploaded as; the flow's filesContentType, else application/octet-stream, when left out."
     },
     {
       "path": "interfaces.<name>.description",
@@ -1258,7 +1104,7 @@
       "path": "interfaces.<name>.protocolOptions.preserveDataKeys",
       "type": "list",
       "required": false,
-      "description": "Data keys other systems write (`Datasets`, `DDMSDatasets`, `ExtensionProperties`), read from the stored record and carried into every update. A list a step of enrich: links its datasets in (files.link) is merged instead: OSDU's items stay, the step's links are added and those it no longer renders are taken off. Empty, the rendered document replaces the whole data block. Set here, it replaces the source's list whole for this interface."
+      "description": "Data keys other systems write (`Datasets`, `DDMSDatasets`, `ExtensionProperties`), read from the stored record and carried into every update. A list the mapping links the records its enrichments add in (`$link`) is merged instead: OSDU's items stay, those links are added and those the record no longer renders are taken off. Empty, the rendered document replaces the whole data block. Set here, it replaces the source's list whole for this interface."
     },
     {
       "path": "interfaces.<name>.protocolOptions.preserveDataKeys[]",
@@ -2137,263 +1983,138 @@
     },
     {
       "path": "interfaces.<name>.enrich",
+      "type": "object",
+      "required": false,
+      "freeForm": true,
+      "description": "Refused: what is added to each record is the mapping's to say now. Declare each enrichment under the enrich: block of the mapping the flow pins (its rows, mapping, key, after, onHold and bulk), bind its rows here under interfaces.<name>.datasets.<name> (their files under interfaces.<name>.datasets.<name>.files), and the workflow run over it under interfaces.<name>.workflows.<name> (osdu/docs/reference/flow/enrich.md)."
+    },
+    {
+      "path": "interfaces.<name>.workflows",
       "type": "map",
       "required": false,
-      "description": "The interface's own steps that extend each of its records once its mapping has rendered them, as `enrich` declares them in the single form."
+      "description": "The OSDU workflows a delivery runs over the records of the enrichments of the flow's mapping once each record and its enrichment's records landed, by the enrichment's name (osdu/docs/reference/flow/enrich-workflow.md)."
     },
     {
-      "path": "interfaces.<name>.enrich.<name>",
+      "path": "interfaces.<name>.workflows.<name>",
       "type": "object",
       "required": false,
-      "description": "One step, named by the key: letters, digits and `_`, not starting with a digit, at most 32 characters, not `record`, and not the name of a child dataset, since its rows are read as a child dataset of that name. Names are compared ignoring case."
-    },
-    {
-      "path": "interfaces.<name>.enrich.<name>.description",
-      "type": "string",
-      "required": false,
-      "description": "What the step adds to each record, shown with the record's composition."
-    },
-    {
-      "path": "interfaces.<name>.enrich.<name>.mapping",
-      "type": "string",
-      "required": false,
-      "description": "The fragment the step renders, pinned as Name@version and found the way the flow's mapping is. It must be a fragment (fragment: true), fill the same template version as the flow's mapping, and write only under data and tags. A step declares a mapping, files, or both."
-    },
-    {
-      "path": "interfaces.<name>.enrich.<name>.dataset",
-      "type": "object",
-      "required": false,
-      "description": "The step's rows: a child table joined to the record table on the record key, as a child dataset is. Its rows are part of the record's ingestion fingerprint, so a change to them plans the record again. Left out, the step reads no rows and renders the same fragment for every record, from what the record holds ($base) and its parameters."
-    },
-    {
-      "path": "interfaces.<name>.enrich.<name>.dataset.object",
-      "type": "string",
-      "required": true,
-      "description": "The step table's three-part name, `[database].[schema].[table]`."
-    },
-    {
-      "path": "interfaces.<name>.enrich.<name>.dataset.join",
-      "type": "map",
-      "required": true,
-      "description": "How a row of the step joins its record: step column to record key column. It must cover every key column of the record table, or a row could belong to several records."
-    },
-    {
-      "path": "interfaces.<name>.enrich.<name>.dataset.join.<name>",
-      "type": "string",
-      "required": false,
-      "description": "The key is a column of the step's table; the value is the record table's key column it joins."
-    },
-    {
-      "path": "interfaces.<name>.enrich.<name>.dataset.orderBy",
-      "type": "list",
-      "required": false,
-      "description": "The columns the step's rows are ordered by within a record, which orders the items a $forEach over them adds."
-    },
-    {
-      "path": "interfaces.<name>.enrich.<name>.dataset.orderBy[]",
-      "type": "string",
-      "required": false,
-      "description": "A column of the step's table."
-    },
-    {
-      "path": "interfaces.<name>.enrich.<name>.dataset.maxRowsPerRecord",
-      "type": "integer",
-      "required": false,
-      "description": "The most rows of the step one record may carry, 1 to 1000000. A record with more is held rather than rendered.",
-      "default": "100000"
-    },
-    {
-      "path": "interfaces.<name>.enrich.<name>.rows",
-      "type": "string",
-      "required": false,
-      "enumValues": [
-        "one",
-        "many"
-      ],
-      "description": "How many of the step's rows one record takes. one: at most one, read as the fragment's own row; a record with none gets nothing from the step, and one with two or more is held. many: any number, read with $forEach: <step name>; the fragment reads no row outside it. Only with dataset.",
-      "default": "one"
-    },
-    {
-      "path": "interfaces.<name>.enrich.<name>.after",
-      "type": "list",
-      "required": false,
-      "description": "The steps this one renders after, beside the order the document lists them in: the steps whose paths it reads with $base, and any other it has to follow. A step naming an unknown step, itself or one step twice, and steps waiting for each other, are refused."
-    },
-    {
-      "path": "interfaces.<name>.enrich.<name>.after[]",
-      "type": "string",
-      "required": false,
-      "description": "The name of another step of the same enrich block."
-    },
-    {
-      "path": "interfaces.<name>.enrich.<name>.onHold",
-      "type": "string",
-      "required": false,
-      "enumValues": [
-        "record",
-        "step"
-      ],
-      "description": "What the step's hold does. record: the record is held with the step's reasons and OSDU keeps the version it has. step: the step is set aside, the record goes ahead with what the step added to its last delivery (nothing for a record never delivered), the steps after it render, and the ledger lists the record with the step held. A record delivered before the step was set aside, or whose kept contribution no longer fits it, is held. See osdu/docs/reference/flow/enrich-holds.md.",
-      "default": "record"
-    },
-    {
-      "path": "interfaces.<name>.enrich.<name>.bulk",
-      "type": "object",
-      "required": false,
-      "description": "The record's DDMS bulk data (a well log's curves), named by the step's one row: the flow's payload set bulk, which the ddms route sends as the record's payload after the record, read from the step's row instead of the record's. A record without a row of the step has no bulk data; one with several is held. Only on the ddms route, with no payload set of the record's own, and on one step. See osdu/docs/reference/flow/enrich-bulk.md."
-    },
-    {
-      "path": "interfaces.<name>.enrich.<name>.bulk.root",
-      "type": "string",
-      "required": true,
-      "description": "The folder the rows' bulk data folders are under, relative to the flow's file or a storage location, as a payload set's root is."
-    },
-    {
-      "path": "interfaces.<name>.enrich.<name>.bulk.locationColumn",
-      "type": "string",
-      "required": true,
-      "description": "The column of the step's table naming each row's folder under root."
-    },
-    {
-      "path": "interfaces.<name>.enrich.<name>.bulk.pattern",
-      "type": "string",
-      "required": false,
-      "default": "*",
-      "description": "The files of a row's folder that are its bulk data."
-    },
-    {
-      "path": "interfaces.<name>.enrich.<name>.bulk.hashColumn",
-      "type": "string",
-      "required": false,
-      "description": "The column of the step's table holding the content hash of the row's bulk data, which says when it goes again; required unless change.payloadDetect is lastModified."
-    },
-    {
-      "path": "interfaces.<name>.enrich.<name>.bulk.chunkCountColumn",
-      "type": "string",
-      "required": false,
-      "description": "The column of the step's table holding how many files the row's bulk data has, which spares a listing when the plan queues it."
-    },
-    {
-      "path": "interfaces.<name>.enrich.<name>.workflow",
-      "type": "object",
-      "required": false,
-      "description": "The workflow the step runs over the record once the record and the step's datasets landed, declared as target.workflow is: stages, results, secrets and when it runs. It writes nothing of the record; it names no anchor, anchor tag or inputs, and reads the step's dataset as {dataset:enrich.<step>}. Its runs, values and artifacts are kept under enrich.<step>. See osdu/docs/reference/flow/enrich-workflow.md.",
+      "description": "The workflow run over one enrichment of the flow's mapping, named by it, declared as target.workflow is: stages, results, secrets and runWhen, over the record the flow's route wrote. It names no anchor and no inputs: the enrichment's datasets are read as {dataset:enrich.<name>}. Refused for a name the mapping declares no enrichment by.",
       "appliesWhen": "Single form, with `target.protocol: workflow`, which refuses a document without it. Refused on any other route, and at the source level when the document declares interfaces."
     },
     {
-      "path": "interfaces.<name>.enrich.<name>.workflow.results",
+      "path": "interfaces.<name>.workflows.<name>.results",
       "type": "object",
       "required": false,
       "description": "How the records the runs wrote are found once the last run finished: one of `anchor`, `ids`, `artefact`, `search`, `manifest` or `xcom`, or none, with `minimum`, `waitSeconds`, `keep` and `remove`. Naming two ways is refused."
     },
     {
-      "path": "interfaces.<name>.enrich.<name>.workflow.results.anchor",
+      "path": "interfaces.<name>.workflows.<name>.results.anchor",
       "type": "boolean",
       "required": false,
       "description": "True when the run writes the record itself, which is then read back."
     },
     {
-      "path": "interfaces.<name>.enrich.<name>.workflow.results.artefact",
+      "path": "interfaces.<name>.workflows.<name>.results.artefact",
       "type": "object",
       "required": false,
       "description": "Finds the records through the record's `data.Artefacts` entries of a role and kind."
     },
     {
-      "path": "interfaces.<name>.enrich.<name>.workflow.results.artefact.kind",
+      "path": "interfaces.<name>.workflows.<name>.results.artefact.kind",
       "type": "string",
       "required": true,
       "description": "The text the artefact's resource kind contains."
     },
     {
-      "path": "interfaces.<name>.enrich.<name>.workflow.results.artefact.role",
+      "path": "interfaces.<name>.workflows.<name>.results.artefact.role",
       "type": "string",
       "required": true,
       "description": "The artefact role (`ConvertedContent`)."
     },
     {
-      "path": "interfaces.<name>.enrich.<name>.workflow.results.ids",
+      "path": "interfaces.<name>.workflows.<name>.results.ids",
       "type": "string",
       "required": false,
       "description": "A template naming the ids the run writes."
     },
     {
-      "path": "interfaces.<name>.enrich.<name>.workflow.results.keep",
+      "path": "interfaces.<name>.workflows.<name>.results.keep",
       "type": "integer",
       "required": false,
       "description": "How many of the ids found are kept on the record, 0 to 1000; the count is always kept.",
       "default": "100"
     },
     {
-      "path": "interfaces.<name>.enrich.<name>.workflow.results.manifest",
+      "path": "interfaces.<name>.workflows.<name>.results.manifest",
       "type": "string",
       "required": false,
       "description": "A template naming a manifest dataset; the records are the ones the manifest names, read from its retrieval instructions."
     },
     {
-      "path": "interfaces.<name>.enrich.<name>.workflow.results.minimum",
+      "path": "interfaces.<name>.workflows.<name>.results.minimum",
       "type": "integer",
       "required": false,
       "description": "How many records the runs must have written for the delivery to count; fewer fails the try, and the next try looks again without running the workflows again. It must not be negative, and above 0 needs a way to find them.",
       "default": "1 (0 with no way named, or with anchor)"
     },
     {
-      "path": "interfaces.<name>.enrich.<name>.workflow.results.remove",
+      "path": "interfaces.<name>.workflows.<name>.results.remove",
       "type": "boolean",
       "required": false,
       "description": "Whether a removal of the record takes the records its runs created with it.",
       "default": "true"
     },
     {
-      "path": "interfaces.<name>.enrich.<name>.workflow.results.search",
+      "path": "interfaces.<name>.workflows.<name>.results.search",
       "type": "object",
       "required": false,
       "description": "Finds the records with a search by cursor."
     },
     {
-      "path": "interfaces.<name>.enrich.<name>.workflow.results.search.kind",
+      "path": "interfaces.<name>.workflows.<name>.results.search.kind",
       "type": "string",
       "required": true,
       "description": "The kind searched, a template (`*:*:*--*:*.*.*`)."
     },
     {
-      "path": "interfaces.<name>.enrich.<name>.workflow.results.search.query",
+      "path": "interfaces.<name>.workflows.<name>.results.search.query",
       "type": "string",
       "required": false,
       "description": "The search query, a template (`data.Tags:\"{anchorTag}\"`)."
     },
     {
-      "path": "interfaces.<name>.enrich.<name>.workflow.results.waitSeconds",
+      "path": "interfaces.<name>.workflows.<name>.results.waitSeconds",
       "type": "integer",
       "required": false,
       "description": "How long the results are looked for, asked again every `protocolOptions.workflowPollSeconds` until `minimum` records are present; for a search, how long it waits for the index. 0 to 86400 seconds.",
       "default": "protocolOptions.datasetIndexWaitSeconds"
     },
     {
-      "path": "interfaces.<name>.enrich.<name>.workflow.results.xcom",
+      "path": "interfaces.<name>.workflows.<name>.results.xcom",
       "type": "object",
       "required": false,
       "description": "Finds the records' ids in an XCom entry of the last run."
     },
     {
-      "path": "interfaces.<name>.enrich.<name>.workflow.results.xcom.key",
+      "path": "interfaces.<name>.workflows.<name>.results.xcom.key",
       "type": "string",
       "required": true,
       "description": "The XCom key under that task."
     },
     {
-      "path": "interfaces.<name>.enrich.<name>.workflow.results.xcom.match",
+      "path": "interfaces.<name>.workflows.<name>.results.xcom.match",
       "type": "string",
       "required": false,
       "description": "The entity type the record ids taken from the entry must have (`dataset--File.Generic`); left out, every id."
     },
     {
-      "path": "interfaces.<name>.enrich.<name>.workflow.results.xcom.task",
+      "path": "interfaces.<name>.workflows.<name>.results.xcom.task",
       "type": "string",
       "required": true,
       "description": "The Airflow task whose XCom entry holds the ids."
     },
     {
-      "path": "interfaces.<name>.enrich.<name>.workflow.runWhen",
+      "path": "interfaces.<name>.workflows.<name>.runWhen",
       "type": "enum(changed|created|requested)",
       "required": false,
       "description": "When a delivery runs the workflow: changed (the default), when it registers the step's datasets, or for a step registering none, when it writes the record; created, when it creates the record; requested, when a redelivery names the workflow. A redelivery of the whole record, or a record never delivered, runs it whatever this says.",
@@ -2405,44 +2126,44 @@
       "default": "changed"
     },
     {
-      "path": "interfaces.<name>.enrich.<name>.workflow.secrets",
+      "path": "interfaces.<name>.workflows.<name>.secrets",
       "type": "map",
       "required": false,
       "description": "Names a context uses as `{secret:name}`, each a `${env:...}` or `${keyvault:...}` reference. Each is resolved only for the trigger request, and every step and message shows `***`. A context entry named as a secret must name one of these."
     },
     {
-      "path": "interfaces.<name>.enrich.<name>.workflow.secrets.<name>",
+      "path": "interfaces.<name>.workflows.<name>.secrets.<name>",
       "type": "string",
       "required": false,
       "description": "One secret: the key is a letter followed by letters, digits, `_` and `-`; the value must be a whole `${env:NAME}` or `${keyvault:NAME}` reference, never a credential."
     },
     {
-      "path": "interfaces.<name>.enrich.<name>.workflow.stages",
+      "path": "interfaces.<name>.workflows.<name>.stages",
       "type": "list",
       "required": true,
       "description": "The workflow runs, 1 to 4, run in order; a stage's outputs are what later stages and the results read."
     },
     {
-      "path": "interfaces.<name>.enrich.<name>.workflow.stages[]",
+      "path": "interfaces.<name>.workflows.<name>.stages[]",
       "type": "object",
       "required": false,
       "description": "One workflow run: the workflow, its execution context, its timing and its outputs."
     },
     {
-      "path": "interfaces.<name>.enrich.<name>.workflow.stages[].context",
+      "path": "interfaces.<name>.workflows.<name>.stages[].context",
       "type": "map",
       "required": false,
       "description": "The execution context, any YAML, with placeholders in its strings (`{partition}`, `{record:path}`, `{input:name}`, `{stage:n.output}`, `{secret:name}` and others). It is checked against the workflow's contract when the document loads, and filled and checked again before every trigger. Whatever the workflow, a value under a key the contract marks a credential, or under any key named as a secret (a password, secret, token, assertion, signature, authorization, an API or account key), is a single `{secret:name}` placeholder; a literal is refused when the document loads."
     },
     {
-      "path": "interfaces.<name>.enrich.<name>.workflow.stages[].context.<name>",
+      "path": "interfaces.<name>.workflows.<name>.stages[].context.<name>",
       "type": "object",
       "required": false,
       "description": "One entry of the execution context: any YAML value the workflow reads, with placeholders in its strings.",
       "freeForm": true
     },
     {
-      "path": "interfaces.<name>.enrich.<name>.workflow.stages[].contract",
+      "path": "interfaces.<name>.workflows.<name>.stages[].contract",
       "type": "enum(osduIngest|osduIngestByReference|csvParser|energymlConverter|energymlDelivery|enyparserTranslation|segyToVds|segyToZgy|segyToMdio|edsIngest|edsScheduler|edsNaturalization)",
       "required": false,
       "description": "The known workflow whose payload contract the context follows, when `workflow` is not one of its names. The Workflow service's test DAG is refused.",
@@ -2462,69 +2183,69 @@
       ]
     },
     {
-      "path": "interfaces.<name>.enrich.<name>.workflow.stages[].outputs",
+      "path": "interfaces.<name>.workflows.<name>.stages[].outputs",
       "type": "map",
       "required": false,
       "description": "Values the run produces, read by later stages and the results as `{stage:n.name}`."
     },
     {
-      "path": "interfaces.<name>.enrich.<name>.workflow.stages[].outputs.<name>",
+      "path": "interfaces.<name>.workflows.<name>.stages[].outputs.<name>",
       "type": "object",
       "required": false,
       "description": "One output, named by the key (a letter, then letters, digits, `_` and `-`, at most 64 characters): a `value` template or an `xcom` entry, exactly one of the two."
     },
     {
-      "path": "interfaces.<name>.enrich.<name>.workflow.stages[].outputs.<name>.value",
+      "path": "interfaces.<name>.workflows.<name>.stages[].outputs.<name>.value",
       "type": "string",
       "required": false,
       "description": "A template the value is, known before the run."
     },
     {
-      "path": "interfaces.<name>.enrich.<name>.workflow.stages[].outputs.<name>.xcom",
+      "path": "interfaces.<name>.workflows.<name>.stages[].outputs.<name>.xcom",
       "type": "object",
       "required": false,
       "description": "The XCom entry of the run the value is read from: through the Workflow service's `latestInfo`, which serves the run's latest task only, or from Airflow's REST API when `target.airflow` is declared."
     },
     {
-      "path": "interfaces.<name>.enrich.<name>.workflow.stages[].outputs.<name>.xcom.key",
+      "path": "interfaces.<name>.workflows.<name>.stages[].outputs.<name>.xcom.key",
       "type": "string",
       "required": true,
       "description": "The XCom key under that task."
     },
     {
-      "path": "interfaces.<name>.enrich.<name>.workflow.stages[].outputs.<name>.xcom.match",
+      "path": "interfaces.<name>.workflows.<name>.stages[].outputs.<name>.xcom.match",
       "type": "string",
       "required": false,
       "description": "The entity type the record ids taken from the entry must have; left out, every id."
     },
     {
-      "path": "interfaces.<name>.enrich.<name>.workflow.stages[].outputs.<name>.xcom.task",
+      "path": "interfaces.<name>.workflows.<name>.stages[].outputs.<name>.xcom.task",
       "type": "string",
       "required": true,
       "description": "The Airflow task whose XCom entry holds the value."
     },
     {
-      "path": "interfaces.<name>.enrich.<name>.workflow.stages[].pollSeconds",
+      "path": "interfaces.<name>.workflows.<name>.stages[].pollSeconds",
       "type": "integer",
       "required": false,
       "description": "How often the run is polled, 0 to 3600 seconds; 0 or left out takes `protocolOptions.workflowPollSeconds`.",
       "default": "0"
     },
     {
-      "path": "interfaces.<name>.enrich.<name>.workflow.stages[].timeoutMinutes",
+      "path": "interfaces.<name>.workflows.<name>.stages[].timeoutMinutes",
       "type": "integer",
       "required": false,
       "description": "How long the run may take, 0 to 10080 minutes (a week); 0 or left out takes the longer of `protocolOptions.workflowTimeoutMinutes` and the contract's.",
       "default": "0"
     },
     {
-      "path": "interfaces.<name>.enrich.<name>.workflow.stages[].workflow",
+      "path": "interfaces.<name>.workflows.<name>.stages[].workflow",
       "type": "string",
       "required": true,
       "description": "The workflow as the partition registers it (letters, digits, `_`, `-` and `.`). The run's preflight asks the Workflow service for it."
     },
     {
-      "path": "interfaces.<name>.enrich.<name>.workflow.anchor",
+      "path": "interfaces.<name>.workflows.<name>.anchor",
       "type": "enum(dataset|storage)",
       "required": false,
       "description": "Refused under a step: a step's workflow runs over the record the flow's route wrote, which it neither registers nor tags.",
@@ -2534,137 +2255,67 @@
       ]
     },
     {
-      "path": "interfaces.<name>.enrich.<name>.workflow.anchorTag",
+      "path": "interfaces.<name>.workflows.<name>.anchorTag",
       "type": "string",
       "required": false,
       "description": "Refused under a step: a step's workflow runs over the record the flow's route wrote, which it neither registers nor tags."
     },
     {
-      "path": "interfaces.<name>.enrich.<name>.workflow.inputs",
+      "path": "interfaces.<name>.workflows.<name>.inputs",
       "type": "map",
       "required": false,
       "description": "Refused under a step: the step's files are registered by its files: and read by the workflow as {dataset:enrich.<step>}."
     },
     {
-      "path": "interfaces.<name>.enrich.<name>.workflow.inputs.<name>",
+      "path": "interfaces.<name>.workflows.<name>.inputs.<name>",
       "type": "object",
       "required": false,
       "description": "Refused under a step, with the step's workflow.inputs."
     },
     {
-      "path": "interfaces.<name>.enrich.<name>.workflow.inputs.<name>.chunkCountColumn",
+      "path": "interfaces.<name>.workflows.<name>.inputs.<name>.chunkCountColumn",
       "type": "string",
       "required": false,
       "description": "Refused under a step, with the step's workflow.inputs."
     },
     {
-      "path": "interfaces.<name>.enrich.<name>.workflow.inputs.<name>.datasetKind",
+      "path": "interfaces.<name>.workflows.<name>.inputs.<name>.datasetKind",
       "type": "string",
       "required": false,
       "description": "Refused under a step, with the step's workflow.inputs.",
       "default": "osdu:wks:dataset--File.Generic:1.0.0"
     },
     {
-      "path": "interfaces.<name>.enrich.<name>.workflow.inputs.<name>.hashColumn",
+      "path": "interfaces.<name>.workflows.<name>.inputs.<name>.hashColumn",
       "type": "string",
       "required": false,
       "description": "Refused under a step, with the step's workflow.inputs."
     },
     {
-      "path": "interfaces.<name>.enrich.<name>.workflow.inputs.<name>.locationColumn",
+      "path": "interfaces.<name>.workflows.<name>.inputs.<name>.locationColumn",
       "type": "string",
       "required": false,
       "description": "Refused under a step, with the step's workflow.inputs."
     },
     {
-      "path": "interfaces.<name>.enrich.<name>.workflow.inputs.<name>.optional",
+      "path": "interfaces.<name>.workflows.<name>.inputs.<name>.optional",
       "type": "boolean",
       "required": false,
       "description": "Refused under a step, with the step's workflow.inputs.",
       "default": "false"
     },
     {
-      "path": "interfaces.<name>.enrich.<name>.workflow.inputs.<name>.pattern",
+      "path": "interfaces.<name>.workflows.<name>.inputs.<name>.pattern",
       "type": "string",
       "required": false,
       "description": "Refused under a step, with the step's workflow.inputs.",
       "default": "*"
     },
     {
-      "path": "interfaces.<name>.enrich.<name>.workflow.inputs.<name>.root",
+      "path": "interfaces.<name>.workflows.<name>.inputs.<name>.root",
       "type": "string",
       "required": false,
       "description": "Refused under a step, with the step's workflow.inputs."
-    },
-    {
-      "path": "interfaces.<name>.enrich.<name>.files",
-      "type": "object",
-      "required": false,
-      "description": "The files each of the step's rows names, registered through the Dataset service as a dataset record of their own under an id made from the record's id and the step, and listed in the record (link), so the record names them already when it is written. A dataset goes again only when its files' hash or what its fragment renders into it moves, and then under the same id, so new files never write the record. Needs dataset, and an endpoint that is the platform. See osdu/docs/reference/flow/enrich.md."
-    },
-    {
-      "path": "interfaces.<name>.enrich.<name>.files.root",
-      "type": "string",
-      "required": true,
-      "description": "The folder the rows' file folders are under, relative to the flow's file or a storage location, as a payload set's root is."
-    },
-    {
-      "path": "interfaces.<name>.enrich.<name>.files.locationColumn",
-      "type": "string",
-      "required": true,
-      "description": "The column of the step's table naming each row's folder under root. A row that names none holds its record."
-    },
-    {
-      "path": "interfaces.<name>.enrich.<name>.files.pattern",
-      "type": "string",
-      "required": false,
-      "description": "The files of a row's folder that are its files, as a payload set's pattern is.",
-      "default": "*"
-    },
-    {
-      "path": "interfaces.<name>.enrich.<name>.files.hashColumn",
-      "type": "string",
-      "required": true,
-      "description": "The column holding the content hash of each row's files, which says when they go again. A row that leaves it empty holds its record."
-    },
-    {
-      "path": "interfaces.<name>.enrich.<name>.files.kind",
-      "type": "string",
-      "required": false,
-      "description": "The dataset kind the files are registered as: a dataset kind the Dataset service registers, a dataset--FileCollection kind for a row naming several files. An External Data Services proxy dataset is refused.",
-      "default": "osdu:wks:dataset--File.Generic:1.0.0"
-    },
-    {
-      "path": "interfaces.<name>.enrich.<name>.files.key",
-      "type": "list",
-      "required": false,
-      "description": "The columns telling each row's dataset from the step's other rows', which make its id with the record's: required with rows: many, refused with rows: one, whose one dataset the step's name names."
-    },
-    {
-      "path": "interfaces.<name>.enrich.<name>.files.key[]",
-      "type": "string",
-      "required": false,
-      "description": "A column of the step's table."
-    },
-    {
-      "path": "interfaces.<name>.enrich.<name>.files.mapping",
-      "type": "string",
-      "required": false,
-      "description": "A fragment over the dataset kind, pinned as Name@version, rendered from the row into each dataset record (its name, description, tags); its file properties are the Dataset service's. Left out, a dataset record holds its file properties and the name of its first file."
-    },
-    {
-      "path": "interfaces.<name>.enrich.<name>.files.link",
-      "type": "string",
-      "required": false,
-      "description": "The record's list the datasets are linked from, each as its id with a trailing colon, added after the items the record holds: a list of values the template declares, or a path under an object it leaves open. It may be a list the flow preserves (preserveDataKeys), which an update merges: OSDU's items stay, the step's links are added and those it no longer renders are taken off; a path inside a preserved key is refused.",
-      "default": "data.Datasets"
-    },
-    {
-      "path": "interfaces.<name>.enrich.<name>.files.contentType",
-      "type": "string",
-      "required": false,
-      "description": "The media type the files are uploaded as.",
-      "default": "target.protocolOptions.filesContentType, else application/octet-stream"
     },
     {
       "path": "keepLedger",
@@ -3130,6 +2781,48 @@
       "type": "string",
       "required": false,
       "description": "A column of the child table."
+    },
+    {
+      "path": "source.datasets.<name>.files",
+      "type": "object",
+      "required": false,
+      "description": "The files each row names: where they are, in the columns of this table's rows. The enrichment of the flow's mapping named like this dataset says what they become: a mapping of a dataset kind registers them through the Dataset service with the dataset each row adds (osdu/docs/reference/flow/enrich-records.md), and bulk: true sends them as the record's DDMS bulk data (osdu/docs/reference/flow/enrich-bulk.md). Refused on a dataset no enrichment of the mapping reads."
+    },
+    {
+      "path": "source.datasets.<name>.files.root",
+      "type": "string",
+      "required": false,
+      "description": "The folder the rows' file folders are under, relative to the flow's file or a storage location, as a payload set's root is."
+    },
+    {
+      "path": "source.datasets.<name>.files.locationColumn",
+      "type": "string",
+      "required": false,
+      "description": "The column of this table naming each row's folder under root. A row that names none holds its record."
+    },
+    {
+      "path": "source.datasets.<name>.files.pattern",
+      "type": "string",
+      "required": false,
+      "description": "The files of a row's folder that are its files, as a payload set's pattern is."
+    },
+    {
+      "path": "source.datasets.<name>.files.hashColumn",
+      "type": "string",
+      "required": false,
+      "description": "The column holding the content hash of each row's files, which says when they go again: required for files registered with datasets, and for bulk data unless change.payloadDetect is lastModified. A row that leaves it empty holds its record."
+    },
+    {
+      "path": "source.datasets.<name>.files.chunkCountColumn",
+      "type": "string",
+      "required": false,
+      "description": "The column holding how many files a row's bulk data has, which spares a listing when the plan queues it."
+    },
+    {
+      "path": "source.datasets.<name>.files.contentType",
+      "type": "string",
+      "required": false,
+      "description": "The media type registered files are uploaded as; the flow's filesContentType, else application/octet-stream, when left out."
     },
     {
       "path": "source.incremental",
@@ -4141,7 +3834,7 @@
       "path": "target.protocolOptions.preserveDataKeys",
       "type": "list",
       "required": false,
-      "description": "Data keys other systems write (`Datasets`, `DDMSDatasets`, `ExtensionProperties`), read from the stored record and carried into every update. A list a step of enrich: links its datasets in (files.link) is merged instead: OSDU's items stay, the step's links are added and those it no longer renders are taken off. Empty, the rendered document replaces the whole data block."
+      "description": "Data keys other systems write (`Datasets`, `DDMSDatasets`, `ExtensionProperties`), read from the stored record and carried into every update. A list the mapping links the records its enrichments add in (`$link`) is merged instead: OSDU's items stay, those links are added and those the record no longer renders are taken off. Empty, the rendered document replaces the whole data block."
     },
     {
       "path": "target.protocolOptions.preserveDataKeys[]",

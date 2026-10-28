@@ -25,10 +25,17 @@ internal static class RouteRehearsal
     /// <summary>
     /// Rehearses a delivery of the record in full: its document and its payload. <paramref name="payload"/> is the files the
     /// record's payload parts hold now, and <paramref name="targetState"/> what the ledger recorded of an earlier delivery
-    /// (the dataset ids a metadata-only change writes the record with again).
+    /// (the dataset ids a metadata-only change writes the record with again). <paramref name="linkPaths"/> are the paths the
+    /// mapping's <c>$link</c> nodes write the ids of its enrichments' records at, which an update merges where the flow
+    /// preserves them.
     /// </summary>
     public static RehearsedRoute Rehearse(
-        FlowDefinition flow, JsonObject rendered, string? targetId, IReadOnlyList<PreviewPayloadPart> payload, IReadOnlyDictionary<string, string>? targetState)
+        FlowDefinition flow,
+        JsonObject rendered,
+        string? targetId,
+        IReadOnlyList<PreviewPayloadPart> payload,
+        IReadOnlyDictionary<string, string>? targetState,
+        IReadOnlyList<string>? linkPaths = null)
     {
         ArgumentNullException.ThrowIfNull(flow);
         ArgumentNullException.ThrowIfNull(rendered);
@@ -41,14 +48,14 @@ internal static class RouteRehearsal
         {
             case DeliveryProtocol.Storage:
                 StorageWrite(steps, options, "the record below");
-                Preserved(notes, flow);
+                Preserved(notes, flow, linkPaths ?? []);
                 return new RehearsedRoute(null, [], steps.All, notes);
 
             case DeliveryProtocol.File:
             {
                 var (sent, placeholders) = WithFileDatasets(steps, options, rendered, Part(payload, null), targetState, notes);
                 StorageWrite(steps, options, $"the record below, its data.{options.DatasetsProperty} listing the dataset records of its files");
-                Preserved(notes, flow);
+                Preserved(notes, flow, linkPaths ?? []);
                 return new RehearsedRoute(sent, placeholders, steps.All, notes);
             }
 
@@ -126,7 +133,7 @@ internal static class RouteRehearsal
             "the record's id and version");
     }
 
-    private static void Preserved(List<string> notes, FlowDefinition flow)
+    private static void Preserved(List<string> notes, FlowDefinition flow, IReadOnlyList<string> linkPaths)
     {
         var preserved = flow.Target.ProtocolOptions.PreserveDataKeys;
         if (preserved.Count == 0)
@@ -135,15 +142,13 @@ internal static class RouteRehearsal
         }
 
         notes.Add($"An update copies data.{string.Join(", data.", preserved)} forward from the record OSDU holds (target.protocolOptions.preserveDataKeys), so those keys are sent as that record has them, not as rendered.");
-        var linked = (flow.Enrich ?? [])
-            .Select(step => step.Files?.Link)
-            .OfType<string>()
+        var linked = linkPaths
             .Where(link => link.Split('.') is ["data", var key] && preserved.Contains(key, StringComparer.Ordinal))
             .Distinct(StringComparer.Ordinal)
             .ToList();
         if (linked.Count > 0)
         {
-            notes.Add($"{string.Join(" and ", linked)} merges instead: the update keeps what OSDU holds there, adds the links the steps of enrich: render now and takes off those they no longer do.");
+            notes.Add($"{string.Join(" and ", linked)} merges instead: the update keeps what OSDU holds there, adds the records the mapping's enrichments link there now ($link) and takes off those they no longer do.");
         }
     }
 

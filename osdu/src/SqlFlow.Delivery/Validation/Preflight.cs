@@ -578,6 +578,13 @@ public static partial class Preflight
                 : $"{entry.Source} is the reference to one of the record's children, one value, and {target} is {Describe(variable)}.";
         }
 
+        if (entry.Source.Kind == MappingSourceKind.Link)
+        {
+            return shape is TemplateVariableShape.Value or TemplateVariableShape.ValueList || (shape == TemplateVariableShape.Whole && variable.Type is "array" or "any")
+                ? null
+                : $"{entry.Source} gives the references to the records an enrichment adds to the record, values, and {target} is {Describe(variable)}.";
+        }
+
         if (entry.FindAll is not null)
         {
             return shape is TemplateVariableShape.ValueList || (shape == TemplateVariableShape.Whole && variable.Type is "array" or "any")

@@ -440,7 +440,7 @@ export function DeliveryFlowPanel({ pipelineId, flowName, section }: { pipelineI
               Drifted only
             </Label>
             {((s?.stepsHeld ?? 0) > 0 || stepHeld) && (
-              <Label className="flex items-center gap-2 text-[13px] font-normal" title="Records a step of enrich: held in and was set aside on: each went ahead with what the step added to its last delivery">
+              <Label className="flex items-center gap-2 text-[13px] font-normal" title="Records an enrichment held in and was set aside on: each went ahead with what the enrichment added to its last delivery">
                 <Switch checked={stepHeld} onCheckedChange={setStepHeld} data-testid="delivery-records-step-held" />
                 Step held
               </Label>

@@ -13,8 +13,8 @@ namespace SqlFlow.Delivery.Engine.Snapshots;
 public sealed record CacheStepPlan(IReadOnlyList<CacheStepType> Before, IReadOnlyList<CacheStepType> After)
 {
     /// <summary>
-    /// True when a type of the after step holds a kind the pipeline's steps of <c>enrich:</c> register: the step reads back
-    /// the datasets the changed records link besides the records (osdu/docs/reference/flow/enrich-files.md, The cache).
+    /// True when a type of the after step holds a kind the enrichments of the pipeline's mapping add: the step reads back
+    /// the records the changed records link besides the records (osdu/docs/reference/flow/enrich-records.md, The cache).
     /// </summary>
     public bool TakesStepDatasets { get; init; }
 
@@ -26,8 +26,8 @@ public sealed record CacheStepPlan(IReadOnlyList<CacheStepType> Before, IReadOnl
 
     /// <summary>
     /// The types <paramref name="steps"/> name in the partition's cache <paramref name="declaration"/>, for a pipeline that
-    /// delivers <paramref name="kind"/>, whose chain reads <paramref name="reads"/> and whose steps of <c>enrich:</c> register
-    /// <paramref name="stepKinds"/>. Everything a step cannot do is refused here, before the run reads or sends anything, with
+    /// delivers <paramref name="kind"/>, whose chain reads <paramref name="reads"/> and whose mapping's enrichments add records
+    /// of <paramref name="stepKinds"/>. Everything a step cannot do is refused here, before the run reads or sends anything, with
     /// every finding at once.
     /// </summary>
     /// <param name="flow">The pipeline, as its messages name it.</param>
@@ -38,7 +38,7 @@ public sealed record CacheStepPlan(IReadOnlyList<CacheStepType> Before, IReadOnl
     /// The cache types the mapping and every fragment of its steps read by name, and the entity types they check the ids they
     /// build against (<see cref="MappingCacheReads.OfChain"/>).
     /// </param>
-    /// <param name="stepKinds">The kinds the pipeline's steps register their files as (<see cref="EnrichFiles.KindsOf"/>); none when left out.</param>
+    /// <param name="stepKinds">The kinds the pipeline's steps register their files as (<see cref="EnrichRecords.KindsOf"/>); none when left out.</param>
     /// <exception cref="DeliveryException">An entry names nothing the partition's cache holds, or a type a step cannot work on.</exception>
     public static CacheStepPlan Resolve(
         string flow, FlowCacheSteps steps, CacheDeclaration declaration, string kind, MappingCacheReads reads, IReadOnlyList<string>? stepKinds = null)
@@ -133,7 +133,7 @@ public sealed record CacheStepPlan(IReadOnlyList<CacheStepType> Before, IReadOnl
 
         if (!type.Holds(kind) && !stepKinds.Any(type.Holds))
         {
-            var registered = stepKinds.Count == 0 ? string.Empty : $", and its steps of enrich: register {string.Join(", ", stepKinds)}";
+            var registered = stepKinds.Count == 0 ? string.Empty : $", and its mapping's enrichments add records of {string.Join(", ", stepKinds)}";
             return $"{type.TypeName} holds {string.Join(", ", type.Declarations.Select(d => d.Kind).Distinct(StringComparer.Ordinal))}, and the pipeline delivers {kind}{registered}";
         }
 

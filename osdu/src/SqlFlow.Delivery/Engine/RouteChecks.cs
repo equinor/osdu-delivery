@@ -113,6 +113,7 @@ public static class RouteChecks
 
         var written = mapping.Entries
             .Where(entry => entry.Target.Root == "data" && entry.Target.Segments.Count > 1 && preserved.Contains(entry.Target.Segments[1].Name, StringComparer.Ordinal))
+            .Where(entry => !LinksAlone(entry))
             .Select(entry => entry.Target)
             .ToList();
         if (written.Count == 0)
@@ -129,6 +130,16 @@ public static class RouteChecks
             + $"into every update, in place of what the mapping renders, and {mapping.Reference} writes {named}: what it writes there would reach a record only when it is created. "
             + $"Take {string.Join(", ", keys)} out of preserveDataKeys, or leave {(keys.Count == 1 ? "it" : "them")} out of the mapping.");
     }
+
+    /// <summary>
+    /// Whether <paramref name="entry"/> writes nothing but the links to the records the mapping's enrichments add (<c>$link</c>)
+    /// at a preserved key itself (<c>data.Datasets</c>): an update merges those with what OSDU holds there
+    /// (osdu/docs/reference/flow/enrich-records.md, Preserved keys), so they reach every update, not only the record's creation.
+    /// A literal beside them, or a link inside the key, would not, and is refused with the rest.
+    /// </summary>
+    private static bool LinksAlone(MappingEntry entry)
+        => entry.Target.Segments.Count == 2
+            && (entry.Source?.Kind == MappingSourceKind.Link || (entry.IsList && entry.Parts.All(part => part.Source?.Kind == MappingSourceKind.Link)));
 
     /// <summary>
     /// Whether the flow's route registers files for the records it delivers: the record's own files, or the files of the

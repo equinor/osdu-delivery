@@ -9,9 +9,9 @@ using Xunit;
 namespace SqlFlow.Delivery.Tests;
 
 /// <summary>
-/// A delivery flow with two <c>enrich:</c> steps, end to end (osdu/docs/reference/flow/enrich.md, One change, one write): the
-/// sample well logs delivered through storage, a step adding each log's LAS file name from a table of its own, and a step
-/// after it copying that name into a note of the record. Every run is made as the executor makes it, over the sample estate,
+/// A delivery flow whose mapping declares two enrichments, end to end (osdu/docs/reference/flow/enrich.md, One change, one
+/// write): the sample well logs delivered through storage, an enrichment adding each log's LAS file name from a table of its own
+/// the flow binds, and one after it copying that name into a note of the record. Every run is made as the executor makes it, over the sample estate,
 /// the module's database on SQL Server and a fake protocol counting what is sent. A change to the log's row, to a step's row,
 /// or a step's row arriving or leaving, sends the record once with the whole chain in it; a change that renders the same
 /// record sends nothing; and a run with nothing changed sends nothing.
@@ -32,37 +32,27 @@ public sealed class EnrichDeliveryTests : IDisposable
     public EnrichDeliveryTests()
     {
         _mappings = Directory.CreateDirectory(Path.Combine(_root, "mappings")).FullName;
-        File.Copy(Path.Combine(Samples.Mappings, "WellLog@1.4.0.yaml"), Path.Combine(_mappings, "WellLog@1.4.0.yaml"));
-        var version = Samples.SampleTemplate(WellLogKind).Version;
-        File.WriteAllText(Path.Combine(_mappings, "WellLogFile@1.0.0.yaml"), $$"""
-            documentType: mapping
-            name: WellLogFile
-            version: 1.0.0
-            template:
-              kind: {{WellLogKind}}
-              version: {{version}}
-            fragment: true
-            record:
-              tags:
-                LasFile: { $from: las_file }
-              data:
-                ExtensionProperties:
-                  WellDb:
-                    LasFile: { $from: las_file }
+        EnrichmentSuite.WriteWellLogMapping(_mappings, """
+            lasfile:
+              rows: one
+              mapping: WellLogFile@1.0.0
+            note:
+              mapping: WellLogNote@1.0.0
+              after: [lasfile]
             """);
-        File.WriteAllText(Path.Combine(_mappings, "WellLogNote@1.0.0.yaml"), $$"""
-            documentType: mapping
-            name: WellLogNote
-            version: 1.0.0
-            template:
-              kind: {{WellLogKind}}
-              version: {{version}}
-            fragment: true
-            record:
-              data:
-                ExtensionProperties:
-                  WellDb:
-                    Note: { $base: data.ExtensionProperties.WellDb.LasFile, $modifiers: [upper], $required: false }
+        EnrichmentSuite.WriteEnrichmentMapping(_mappings, "WellLogFile", WellLogKind, """
+            tags:
+              LasFile: { $from: las_file }
+            data:
+              ExtensionProperties:
+                WellDb:
+                  LasFile: { $from: las_file }
+            """);
+        EnrichmentSuite.WriteEnrichmentMapping(_mappings, "WellLogNote", WellLogKind, """
+            data:
+              ExtensionProperties:
+                WellDb:
+                  Note: { $base: data.ExtensionProperties.WellDb.LasFile, $modifiers: [upper], $required: false }
             """);
     }
 
@@ -94,11 +84,6 @@ public sealed class EnrichDeliveryTests : IDisposable
             },
             Render = flow.Render with { MappingsDirectory = _mappings },
             Target = flow.Target with { Protocol = DeliveryProtocol.Storage, ProtocolOptions = new ProtocolOptions() },
-            Enrich =
-            [
-                new EnrichStep { Name = "lasfile", Mapping = "WellLogFile@1.0.0", ReadsRows = true },
-                new EnrichStep { Name = "note", Mapping = "WellLogNote@1.0.0", After = ["lasfile"] },
-            ],
         };
     }
 
@@ -164,6 +149,7 @@ public sealed class EnrichDeliveryTests : IDisposable
         Assert.Null(Sent(sent, 2)["data"]!["ExtensionProperties"]);
         var record = (await ledger.GetRecordAsync(flowId, SampleEstate.Key(0)))!;
         Assert.Contains("\"enrich\":[", record.RenderContext, StringComparison.Ordinal);
+        Assert.Contains("\"mapping\":\"WellLogNote@1.0.0\"", record.RenderContext, StringComparison.Ordinal);
 
         // 2. Nothing changed: nothing is sent.
         (sent, _, _, _) = await DeliverAsync(tables);

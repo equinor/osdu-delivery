@@ -117,6 +117,16 @@ public static class DeliveryLineage
             }
         }
 
+        // The files a child dataset's rows name, which an enrichment registers with the datasets it adds or sends as the record's
+        // bulk data (osdu/docs/reference/flow/enrich-records.md).
+        foreach (var (_, dataset) in flow.Source.Datasets.OrderBy(d => d.Key, StringComparer.Ordinal))
+        {
+            if (dataset.Files is { } rowFiles)
+            {
+                files.Add(new DeclaredFileLocation { Relation = LineageRelation.Reads, Location = rowFiles.Root, FilePattern = rowFiles.Pattern });
+            }
+        }
+
         var datasets = new List<DeclaredDataset>();
         var derivations = new List<DeclaredDerivation>();
         var partition = flow.FollowsRegistry && flow.Partition is null
@@ -129,16 +139,16 @@ public static class DeliveryLineage
             if (pinned is { } found)
             {
                 var mapping = found.Mapping;
+                var mappings = DeliveryLayout.ResolveWithin(flow, scan.Context.DocumentFolder, scan.Context.Contains)!.MappingsDirectory;
+                flow = Bound(flow, mapping, mappings, scan, who, warnings);
                 Add(datasets, OsduLineage.Type(
                     LineageRelation.Writes, endpoint, partition, mapping.Kind, who, $"the kind of mapping '{mapping.Reference}'", warnings));
 
                 // The pipeline's cache steps write the types they bring up to date (osdu/docs/reference/flow/delivery.md,
-                // cache): a type its after step puts what it delivered into, the records or the datasets its steps register,
-                // is read by the flows after it, and a type its before step searches for what the chain reads (the mapping
-                // and every fragment of its steps) is read from the kinds that type captures, so the flows delivering them
-                // run first.
-                var mappings = DeliveryLayout.ResolveWithin(flow, scan.Context.DocumentFolder, scan.Context.Contains)!.MappingsDirectory;
-                var stepKinds = EnrichFiles.KindsOf(flow);
+                // cache): a type its after step puts what it delivered into, the records or those its enrichments add, is read by
+                // the flows after it, and a type its before step searches for what the chain reads (the mapping and every
+                // enrichment mapping) is read from the kinds that type captures, so the flows delivering them run first.
+                var stepKinds = EnrichRecords.KindsOf(flow);
                 foreach (var type in scan.StepTypes(
                              partition,
                              flow.Cache.After,
@@ -151,7 +161,7 @@ public static class DeliveryLineage
                 if (!flow.Cache.Before.IsEmpty)
                 {
                     var fragments = (flow.Enrich ?? [])
-                        .SelectMany(step => new[] { step.Mapping, step.Files?.Mapping })
+                        .SelectMany(step => new[] { step.Mapping, step.Records?.Mapping })
                         .OfType<string>()
                         .Select(reference => scan.Mapping(mappings, reference).Mapping)
                         .OfType<MappingDefinition>()
@@ -185,10 +195,9 @@ public static class DeliveryLineage
                     datasets.AddRange(reads);
                 }
 
-                // Each step of enrich: renders its fragment into the record (osdu/docs/reference/flow/enrich.md): a mapping node
-                // of its own, read by the flow, reading what the fragment reads, so the flows capturing those run first. A step
-                // that registers files reads them where its rows say, writes their dataset kind, and renders its dataset
-                // fragment the same way.
+                // Each enrichment of the mapping renders its enrichment mapping (osdu/docs/reference/flow/enrich.md): a mapping node
+                // of its own, read by the flow, reading what it reads, so the flows capturing those run first. One that adds
+                // records writes their kind; the files its rows name are read with every child dataset's above.
                 foreach (var step in flow.Enrich ?? [])
                 {
                     if (step.Mapping is { } reference)
@@ -196,15 +205,11 @@ public static class DeliveryLineage
                         StepFragment(reference, $"enrich.{step.Name}");
                     }
 
-                    if (step.Files is { } stepFiles)
+                    if (step.Records is { } records)
                     {
-                        files.Add(new DeclaredFileLocation { Relation = LineageRelation.Reads, Location = stepFiles.Payload.Root, FilePattern = stepFiles.Payload.Pattern });
                         Add(datasets, OsduLineage.Type(
-                            LineageRelation.Writes, endpoint, partition, stepFiles.Kind, who, $"enrich.{step.Name}.files.kind", warnings));
-                        if (stepFiles.Mapping is { } filesReference)
-                        {
-                            StepFragment(filesReference, $"enrich.{step.Name}.files");
-                        }
+                            LineageRelation.Writes, endpoint, partition, records.Kind, who, $"the records enrich.{step.Name} adds", warnings));
+                        StepFragment(records.Mapping, $"enrich.{step.Name}");
                     }
                 }
 
@@ -442,6 +447,26 @@ public static class DeliveryLineage
 
         var relative = Path.GetRelativePath(context.EstateRoot, layout.MappingsDirectory).Replace('\\', '/').Trim('/');
         return (mapping, relative.Length == 0 || relative == "." ? OsduLineage.RootGroup : relative);
+    }
+
+    /// <summary>
+    /// The flow bound to the enrichments its mapping declares (<see cref="EnrichBinding"/>), each enrichment mapping read from
+    /// the scanned checkout; the flow as it stands, with a warning saying why, when the two cannot be bound, so lineage still
+    /// shows what the flow's own mapping reads and writes.
+    /// </summary>
+    private static FlowDefinition Bound(FlowDefinition flow, MappingDefinition mapping, string directory, Scan scan, string who, List<string> warnings)
+    {
+        try
+        {
+            return EnrichBinding.Bind(flow, mapping, reference => scan.Mapping(directory, reference) is { Mapping: { } read }
+                ? read
+                : throw new FlowValidationException($"mapping '{reference}' could not be read ({scan.Mapping(directory, reference).Reason})."));
+        }
+        catch (FlowValidationException ex)
+        {
+            warnings.Add($"{who} shows no enrichment of mapping '{mapping.Reference}' in lineage: {ex.Message}");
+            return flow;
+        }
     }
 
     private static void Add(List<DeclaredDataset> datasets, DeclaredDataset? dataset)

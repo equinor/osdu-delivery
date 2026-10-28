@@ -2,49 +2,62 @@ using SqlFlow.Core;
 using SqlFlow.Delivery.Documents;
 using SqlFlow.Delivery.Model;
 using Xunit;
+using static SqlFlow.Delivery.Tests.EnrichmentSuite;
 
 namespace SqlFlow.Delivery.Tests;
 
 /// <summary>
-/// The <c>bulk:</c> of a step of <c>enrich:</c> as the loader reads it (osdu/docs/reference/flow/enrich-bulk.md): the record's
-/// DDMS bulk data, the flow's payload set <c>bulk</c> read from the step's one row, on the ddms route alone, with no payload of
-/// the record's own and from one step; and what could never send it, refused when the document loads.
+/// An enrichment naming the record's bulk data (<c>bulk: true</c>, osdu/docs/reference/flow/enrich-bulk.md), bound to the files
+/// its dataset's rows name: the record's DDMS bulk data, the flow's payload set <c>bulk</c> read from the enrichment's one row,
+/// on the ddms route alone, with no payload of the record's own and from one enrichment; and what could never send it, refused
+/// when a run binds the flow to its mapping.
 /// </summary>
 [Trait(EnrichmentSuite.Trait, EnrichmentSuite.Name)]
 public sealed class StepBulkDocumentTests
 {
-    private static string Head(string protocol = "ddms", string payloads = "", string options = "    ddmsRoot: /api/os-wellbore-ddms\n") => $$"""
-        flowType: delivery
-        name: demo
-        source:
-          connection: ${env:OSDU_DATA_DB}
-          record:
-            object: OsduData.silver.WellLog
-            key: [source_project, log_id]
-        {{payloads}}  work: work
-        render:
-          mapping: WellLog@1.4.0
-          parameters: { dataPartition: dev }
-        target:
-          endpoint: https://example.org/api
-          headers: { data-partition-id: dev }
-          protocol: {{protocol}}
-          protocolOptions:
-        {{options}}
-        """;
+    private const string Bulk = "curves:\n  rows: one\n  bulk: true\n";
 
-    private const string Curves = "  curves:\n    dataset:\n      object: OsduData.silver.WellLogCurves\n      join: { source_project: source_project, log_id: log_id }\n";
+    private const string CurveFiles = "      files:\n        root: ../data/curves\n        locationColumn: curve_folder\n        pattern: \"*.parquet\"\n        hashColumn: curves_hash\n";
 
-    private const string Bulk = "    bulk:\n      root: ../data/curves\n      locationColumn: curve_folder\n      pattern: \"*.parquet\"\n      hashColumn: curves_hash\n";
+    private static readonly MappingDefinition Note = Fragment("data:\n  Symbol: { $from: note }", name: "WellLogCurveNote");
 
-    private static FlowDefinition Parsed(string enrich, string? head = null) => new DeliveryDocumentLoader().ParseFlow((head ?? Head()) + "enrich:\n" + enrich, "flows/demo.yaml");
+    private static string Head(string protocol = "ddms", string payloads = "", string options = "    ddmsRoot: /api/os-wellbore-ddms\n", string datasets = "curves")
+    {
+        var bound = string.Concat(datasets.Split(',', StringSplitOptions.TrimEntries)
+            .Select(name => $"    {name}:\n      object: OsduData.silver.WellLog{name}\n      join: {{ source_project: source_project, log_id: log_id }}\n" + CurveFiles));
+        return """
+            flowType: delivery
+            name: demo
+            source:
+              connection: ${env:OSDU_DATA_DB}
+              record:
+                object: OsduData.silver.WellLog
+                key: [source_project, log_id]
+              datasets:
+
+            """ + bound + payloads + $$"""
+              work: work
+            render:
+              mapping: WellLog@1.4.0
+              parameters: { dataPartition: dev }
+            target:
+              endpoint: https://example.org/api
+              headers: { data-partition-id: dev }
+              protocol: {{protocol}}
+              protocolOptions:
+
+            """ + options;
+    }
+
+    private static FlowDefinition Parsed(string enrich, string? head = null)
+        => Bound(new DeliveryDocumentLoader().ParseFlow(head ?? Head(), "flows/demo.yaml"), Owner(enrich: enrich), Note);
 
     private static FlowValidationException Refused(string enrich, string? head = null) => Assert.Throws<FlowValidationException>(() => Parsed(enrich, head));
 
     [Fact]
-    public void A_steps_bulk_is_the_flows_bulk_payload_read_from_the_steps_row()
+    public void An_enrichments_bulk_is_the_flows_bulk_payload_read_from_its_row()
     {
-        var flow = Parsed(Curves + Bulk);
+        var flow = Parsed(Bulk);
 
         var payload = Assert.Single(flow.Source.Payloads);
         Assert.Equal(PayloadParts.Bulk, payload.Key);
@@ -54,59 +67,68 @@ public sealed class StepBulkDocumentTests
     }
 
     [Fact]
-    public void A_step_supplying_bulk_may_render_a_fragment_beside_it()
+    public void An_enrichment_supplying_bulk_may_add_paths_beside_it()
     {
-        var step = Assert.Single(Parsed(Curves + Bulk + "    mapping: WellLogCurveNote@1.0.0\n").Enrich!);
+        var step = Assert.Single(Parsed(Bulk + "  mapping: WellLogCurveNote@1.0.0\n").Enrich!);
 
         Assert.Equal("WellLogCurveNote@1.0.0", step.Mapping);
         Assert.NotNull(step.Bulk);
     }
 
     [Fact]
-    public void Bulk_on_a_route_that_sends_no_ddms_bulk_data_of_a_steps_is_refused()
+    public void Bulk_on_a_route_that_sends_no_ddms_bulk_data_of_an_enrichments_is_refused()
     {
-        var refused = Refused(Curves + Bulk, Head(protocol: "storage", options: "    batchSize: 10\n"));
+        var refused = Refused(Bulk, Head(protocol: "storage", options: "    batchSize: 10\n"));
 
-        Assert.Contains("enrich.curves.bulk is the record's DDMS bulk data, which the ddms route sends", refused.Message, StringComparison.Ordinal);
+        Assert.Contains("enrich.curves of the mapping Thing@1.0.0 names the record's DDMS bulk data, which the ddms route sends", refused.Message, StringComparison.Ordinal);
     }
 
     [Fact]
     public void Bulk_beside_a_payload_the_record_names_itself_is_refused()
     {
         var payloads = "  payloads:\n    curves:\n      root: ../data/curves\n      locationColumn: curve_folder\n      hashColumn: curves_hash\n";
-        var refused = Refused(Curves + Bulk, Head(payloads: payloads));
+        var refused = Refused(Bulk, Head(payloads: payloads));
 
         Assert.Contains("source.payloads.curves names its payload already", refused.Message, StringComparison.Ordinal);
     }
 
     [Fact]
-    public void Bulk_needs_the_steps_rows_and_one_of_them()
+    public void Bulk_needs_the_files_of_the_enrichments_one_row()
     {
-        Assert.Contains("the step declares no dataset", Refused("  curves:\n" + Bulk).Message, StringComparison.Ordinal);
-        Assert.Contains("a step supplying bulk data takes one row per record", Refused(Curves + "    rows: many\n" + Bulk + "    mapping: X@1.0.0\n").Message, StringComparison.Ordinal);
+        var noFiles = Head().Replace(CurveFiles, string.Empty, StringComparison.Ordinal);
+
+        Assert.Contains("names the record's bulk data by its row (bulk: true), and the flow binds no files for curves", Refused(Bulk, noFiles).Message, StringComparison.Ordinal);
+        Assert.Contains("one supplying bulk data takes one row per record", Assert.Throws<FlowValidationException>(() => Owner(enrich: "curves:\n  rows: many\n  bulk: true\n")).Message, StringComparison.Ordinal);
     }
 
     [Fact]
-    public void Two_steps_supplying_bulk_are_refused()
+    public void Two_enrichments_supplying_bulk_are_refused()
     {
-        var second = Curves.Replace("curves", "more", StringComparison.Ordinal).Replace("OsduData.silver.WellLogMore", "OsduData.silver.WellLogMore", StringComparison.Ordinal);
-        var refused = Refused(Curves + Bulk + second + Bulk);
+        var refused = Refused(Bulk + "more:\n  rows: one\n  bulk: true\n", Head(datasets: "curves, more"));
 
-        Assert.Contains("steps curves, more each supply bulk data", refused.Message, StringComparison.Ordinal);
+        Assert.Contains("the enrichments curves, more of the mapping Thing@1.0.0 each name the record's bulk data", refused.Message, StringComparison.Ordinal);
     }
 
     [Fact]
-    public void A_payload_option_naming_another_set_is_refused()
+    public void A_payload_option_naming_the_bulk_data_an_enrichment_supplies_passes_and_one_naming_another_set_is_refused()
     {
-        var refused = Refused(Curves + Bulk, Head(options: "    ddmsRoot: /api/os-wellbore-ddms\n    payload: curves\n"));
+        var named = Parsed(Bulk, Head(options: "    ddmsRoot: /api/os-wellbore-ddms\n    payload: bulk\n"));
+        Assert.Equal("curves", named.Source.Payloads[PayloadParts.Bulk].Step);
 
-        Assert.Contains("target.protocolOptions.payload names 'curves'", refused.Message, StringComparison.Ordinal);
+        var other = Assert.Throws<FlowValidationException>(() => new DeliveryDocumentLoader().ParseFlow(Head(options: "    ddmsRoot: /api/os-wellbore-ddms\n    payload: curves\n"), "flows/demo.yaml"));
+        Assert.Contains("target.protocolOptions.payload 'curves' is not declared under source.payloads", other.Message, StringComparison.Ordinal);
+
+        var none = Assert.Throws<FlowValidationException>(() => Parsed("curves:\n  rows: one\n  mapping: WellLogCurveNote@1.0.0\n", Head(options: "    ddmsRoot: /api/os-wellbore-ddms\n    payload: bulk\n")));
+        Assert.Contains("target.protocolOptions.payload names 'bulk', and the flow declares no payload set of that name, nor does any enrichment of the mapping Thing@1.0.0 name the record's bulk data", none.Message, StringComparison.Ordinal);
     }
 
     [Fact]
-    public void Bulk_names_its_root_and_its_folder_column()
+    public void The_files_bulk_data_is_read_from_name_their_root_and_their_folder_column()
     {
-        Assert.Contains("enrich.curves.bulk.root", Refused(Curves + "    bulk:\n      locationColumn: curve_folder\n      hashColumn: h\n").Message, StringComparison.Ordinal);
-        Assert.Contains("enrich.curves.bulk.locationColumn", Refused(Curves + "    bulk:\n      root: r\n      hashColumn: h\n").Message, StringComparison.Ordinal);
+        var noRoot = Head().Replace("        root: ../data/curves\n", string.Empty, StringComparison.Ordinal);
+        var noColumn = Head().Replace("        locationColumn: curve_folder\n", string.Empty, StringComparison.Ordinal);
+
+        Assert.Contains("source.datasets.curves.files.root", Assert.Throws<FlowValidationException>(() => new DeliveryDocumentLoader().ParseFlow(noRoot, "flows/demo.yaml")).Message, StringComparison.Ordinal);
+        Assert.Contains("source.datasets.curves.files.locationColumn", Assert.Throws<FlowValidationException>(() => new DeliveryDocumentLoader().ParseFlow(noColumn, "flows/demo.yaml")).Message, StringComparison.Ordinal);
     }
 }

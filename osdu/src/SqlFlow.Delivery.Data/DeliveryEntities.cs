@@ -529,7 +529,7 @@ public sealed class DeliveryRecordIdentity
     /// <summary>The value as it was read, for showing beside a hit.</summary>
     public string Display { get; set; } = string.Empty;
 
-    /// <summary>Where the token came from: identity, key, label, osdu or file, as the ledger's identity kinds name them.</summary>
+    /// <summary>Where the token came from: identity, key, label, osdu, file or added, as the ledger's identity kinds name them.</summary>
     public string Kind { get; set; } = string.Empty;
 }
 
@@ -3849,7 +3849,7 @@ public static class DeliveryModel
             // A child that lands finds the records of its partition that link it, of whatever flow, by the unique segment of
             // its id, to plan them again.
             e.HasIndex(r => new { r.PartitionId, r.ChildLinkKey }).HasFilter("[ChildLinkKey] IS NOT NULL");
-            // The records of a flow that a step of enrich: held in and was set aside on: the Records tab's filter and the flow's
+            // The records of a flow that an enrichment held in and was set aside on: the Records tab's filter and the flow's
             // count, the few such records and no others.
             e.HasIndex(r => new { r.PartitionId, r.FlowId }, "IX_Record_PartitionId_FlowId_HeldSteps").IncludeProperties(r => r.HeldSteps).HasFilter("[HeldSteps] IS NOT NULL");
             // One OSDU record, one flow: the database refuses a second flow's claim on an id, whatever races the intakes

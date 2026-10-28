@@ -58,19 +58,37 @@ internal static partial class MappingMapper
 
         var pinned = Pinned(kind, templateVersion, $"{source}: template", pins);
 
-        // A fragment adds paths to a record a delivery flow's own mapping keys (osdu/docs/reference/flow/enrich.md): it keys
-        // nothing, mints no id and carries no envelope of its own.
-        var fragment = y.Fragment ?? false;
+        if (y.Fragment is not null)
+        {
+            throw new FlowValidationException(
+                $"{source}: fragment: is written enrichment: true: an enrichment mapping is what an enrichment of another mapping (its enrich: block) renders for each of that mapping's records (osdu/docs/reference/flow/enrich.md).");
+        }
+
+        // An enrichment mapping renders into, or beside, a record another mapping keys (osdu/docs/reference/flow/enrich.md): it
+        // keys nothing, mints no id and carries no envelope of its own.
+        var fragment = y.Enrichment ?? false;
         if (fragment && DspdmKinds.Is(kind))
         {
             throw new FlowValidationException(
-                $"{source}: fragment: true adds paths to OSDU records, and {kind} is a row of a DSPDM business object, which no step of enrich: extends; map every attribute in the row's own mapping.");
+                $"{source}: enrichment: true renders part of an OSDU record, and {kind} is a row of a DSPDM business object, which no enrichment extends; map every attribute in the row's own mapping.");
         }
 
         if (fragment && y.Dataset is not null)
         {
             throw new FlowValidationException(
-                $"{source}: a fragment (fragment: true) adds paths to the records a delivery flow's own mapping keys, so it declares no dataset; its rows are the step's, declared under enrich.<step>.dataset in the flow. Remove dataset.");
+                $"{source}: an enrichment mapping (enrichment: true) renders part of the records another mapping keys, so it declares no dataset; its rows are its enrichment's, the child dataset of the enrichment's name the flow binds under source.datasets. Remove dataset.");
+        }
+
+        if (fragment && y.Enrich is not null)
+        {
+            throw new FlowValidationException(
+                $"{source}: an enrichment mapping (enrichment: true) declares no enrichments of its own; declare every enrichment of the record in the enrich: block of the mapping that keys it, in the order they render.");
+        }
+
+        if (y.Enrich is not null && DspdmKinds.Is(kind))
+        {
+            throw new FlowValidationException(
+                $"{source}: enrich: adds to OSDU records, and {kind} is a row of a DSPDM business object, which the dspdm route writes whole; map every attribute in the row's own mapping.");
         }
 
         var dataset = fragment ? MappingDataset.None : Dataset(y.Dataset ?? throw FlowMapper.Missing("dataset", source), source);
@@ -106,6 +124,9 @@ internal static partial class MappingMapper
             RefuseBase(entries, source);
         }
 
+        var enrich = MapEnrich(y.Enrich, source);
+        ValidateLinks(entries, enrich, fragment, source);
+
         return new MappingDefinition
         {
             SourcePath = source == "<inline>" ? null : source,
@@ -115,6 +136,7 @@ internal static partial class MappingMapper
             TemplateVersionNamed = templateVersion is not null,
             Description = y.Description,
             Fragment = fragment,
+            Enrich = enrich,
             Dataset = dataset,
             Parameters = parameters,
             Searches = searches,
@@ -166,10 +188,10 @@ internal static partial class MappingMapper
     }
 
     /// <summary>
-    /// A fragment writes under the record's <c>data</c> and <c>tags</c> alone: the id, the kind, the access list, the legal
-    /// block and the lineage of the record it adds to are the flow's own mapping's, which a step never changes. It keys no
-    /// record, so it cannot find a parent or a child by the record's id: what it needs of the record it reads with
-    /// <c>$base</c>.
+    /// An enrichment mapping writes under the record's <c>data</c> and <c>tags</c> alone: the id, the kind, the access list,
+    /// the legal block and the lineage of the record it renders into are the keying mapping's, which an enrichment never
+    /// changes, and the datasets it renders carry the record's access list and legal block. It keys no record, so it cannot
+    /// find a parent or a child by the record's id: what it needs of the record it reads with <c>$base</c>.
     /// </summary>
     private static void ValidateFragment(IReadOnlyList<MappingEntry> entries, string source)
     {
@@ -179,25 +201,25 @@ internal static partial class MappingMapper
             if (!FragmentRoots.Contains(root, StringComparer.Ordinal))
             {
                 throw new FlowValidationException(
-                    $"{source}: {entry.Where} fills {entry.Target.Text}, and a fragment writes under record.data and record.tags only: the id, kind, access list, legal block and lineage of the record it adds to are the flow's own mapping's.");
+                    $"{source}: {entry.Where} fills {entry.Target.Text}, and an enrichment mapping writes under record.data and record.tags only: the id, kind, access list, legal block and lineage of the record it renders into are the keying mapping's, and a dataset it renders carries the record's access list and legal block.");
             }
 
             foreach (var node in entry.ValueNodes.Where(n => n.Source?.Kind is MappingSourceKind.Parent or MappingSourceKind.Child))
             {
                 var word = node.Source!.Kind == MappingSourceKind.Parent ? ParentKey : ChildKey;
                 throw new FlowValidationException(
-                    $"{source}: {node.Where}: {word} finds a record by the id the flow's own mapping makes from its key, and a fragment keys no record; write {word} in the flow's mapping, and read what the record holds with {BaseKey}.");
+                    $"{source}: {node.Where}: {word} finds a record by the id the keying mapping makes from its key, and an enrichment mapping keys no record; write {word} in the mapping that keys the record, and read what the record holds with {BaseKey}.");
             }
         }
     }
 
-    /// <summary>A mapping of a whole record reads its own row; only a fragment reads the record it adds to (<c>$base</c>).</summary>
+    /// <summary>A mapping of a whole record reads its own row; only an enrichment mapping reads the record it renders into (<c>$base</c>).</summary>
     private static void RefuseBase(IReadOnlyList<MappingEntry> entries, string source)
     {
         if (entries.SelectMany(e => e.ValueNodes).FirstOrDefault(n => n.Source?.Kind == MappingSourceKind.Base) is { } node)
         {
             throw new FlowValidationException(
-                $"{source}: {node.Where}: {BaseKey} reads the record a fragment adds to, as the flow's mapping and the steps before it rendered it, and this mapping renders a record of its own; only a fragment (fragment: true), which a step of enrich: renders, reads one. A mapping reads its row with {FromKey}.");
+                $"{source}: {node.Where}: {BaseKey} reads the record an enrichment renders into, as its mapping and the enrichments before it rendered it, and this mapping renders a record of its own; only an enrichment mapping (enrichment: true) reads one. A mapping reads its row with {FromKey}.");
         }
     }
 

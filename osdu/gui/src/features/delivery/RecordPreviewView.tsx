@@ -197,19 +197,19 @@ export function PreviewChoices({ choices, unverified, testId }: { choices: Deliv
 const EFFECTS_SHOWN = 8;
 
 const enrichColumns: Column<DeliveryPreviewEnrichStep>[] = [
-  { id: "step", header: "Step", render: (row) => <span className="font-mono text-[12px]">{row.step}</span> },
+  { id: "step", header: "Enrichment", render: (row) => <span className="font-mono text-[12px]">{row.step}</span> },
   {
     id: "mapping",
-    header: "Fragment",
+    header: "Mapping",
     render: (row) => {
       const supplies = suppliesText(row.supplies);
       return (
         <span className="flex min-w-0 flex-col gap-0.5">
           {row.mapping
             ? <TruncatedText text={row.mapping} mono maxWidth={220} />
-            : <span className="text-[12px] text-muted-foreground" title="The step renders no fragment into the record">no fragment</span>}
+            : <span className="text-[12px] text-muted-foreground" title="The enrichment adds no paths to the record">no paths</span>}
           {supplies !== null && (
-            <span className="text-[11px] text-muted-foreground" title="What the step does beside its fragment: the files it registers as datasets, the record's bulk data, the workflow it runs" data-testid="preview-enrich-supplies">
+            <span className="text-[11px] text-muted-foreground" title="What the enrichment does beside adding paths: the records it adds, the record's bulk data, the workflow run over it" data-testid="preview-enrich-supplies">
               {`with ${supplies}`}
             </span>
           )}
@@ -230,20 +230,20 @@ const enrichColumns: Column<DeliveryPreviewEnrichStep>[] = [
     id: "effects",
     header: "What it added",
     fill: true,
-    render: (row) => (row.effects.length === 0 && (row.datasets ?? []).length === 0 && (row.keptDatasets ?? []).length === 0
+    render: (row) => (row.effects.length === 0 && (row.records ?? []).length === 0 && (row.keptRecords ?? []).length === 0
       ? <span className="text-muted-foreground">-</span>
       : (
         <ul className="flex flex-col gap-0.5 text-[12px]">
-          {(row.keptDatasets ?? []).map((id) => (
-            <li key={`kept|${id}`} className="flex min-w-0 items-baseline gap-1.5" data-testid="preview-enrich-kept-dataset">
-              <Badge variant="outline" className="shrink-0 px-1 py-0 text-[10px]" title="Registered by the record's last delivery, and still linked while the step is set aside">kept</Badge>
-              <RecordName id={id} copy className="min-w-0 max-w-[420px] text-[12px]" copyTestId="copy-preview-enrich-kept-dataset" />
+          {(row.keptRecords ?? []).map((id) => (
+            <li key={`kept|${id}`} className="flex min-w-0 items-baseline gap-1.5" data-testid="preview-enrich-kept-record">
+              <Badge variant="outline" className="shrink-0 px-1 py-0 text-[10px]" title="Added by the record's last delivery, and still linked while the enrichment is set aside">kept</Badge>
+              <RecordName id={id} copy className="min-w-0 max-w-[420px] text-[12px]" copyTestId="copy-preview-enrich-kept-record" />
             </li>
           ))}
-          {(row.datasets ?? []).map((dataset) => (
-            <li key={dataset.id} className="flex min-w-0 items-baseline gap-1.5" data-testid="preview-enrich-dataset">
-              <Badge variant="outline" className="shrink-0 px-1 py-0 text-[10px]" title={`Registered as ${dataset.kind} from row ${dataset.row + 1} of the step's dataset, under the id the record links`}>dataset</Badge>
-              <RecordName id={dataset.id} copy className="min-w-0 max-w-[420px] text-[12px]" copyTestId="copy-preview-enrich-dataset" />
+          {(row.records ?? []).map((added) => (
+            <li key={added.id} className="flex min-w-0 items-baseline gap-1.5" data-testid="preview-enrich-record">
+              <Badge variant="outline" className="shrink-0 px-1 py-0 text-[10px]" title={`Added as ${added.kind} from row ${added.row + 1} of the enrichment's dataset, under the id the record links`}>record</Badge>
+              <RecordName id={added.id} copy className="min-w-0 max-w-[420px] text-[12px]" copyTestId="copy-preview-enrich-record" />
             </li>
           ))}
           {row.effects.slice(0, EFFECTS_SHOWN).map((effect) => {
@@ -265,9 +265,9 @@ const enrichColumns: Column<DeliveryPreviewEnrichStep>[] = [
 ];
 
 /**
- * What each step of the flow's enrich: added to the record, in the order the steps render (osdu/docs/reference/flow/enrich.md):
- * the fragment, how many rows the record had, and each path it set or list it added to. The document above is the record
- * with every step in it, the one a delivery sends. Nothing for a flow that declares no step.
+ * What each enrichment of the mapping added to the record, in the order they render (osdu/docs/reference/flow/enrich.md):
+ * its enrichment mapping, how many rows the record had, and each path it set or list it added to. The document above is the
+ * record with every enrichment in it, the one a delivery sends. Nothing for a mapping that declares no enrichment.
  */
 export function PreviewEnrichment({ document, testId }: { document: DeliveryPreviewDocument; testId: string }) {
   const steps = document.enrichment ?? [];
@@ -277,7 +277,7 @@ export function PreviewEnrichment({ document, testId }: { document: DeliveryPrev
 
   return (
     <div className="flex flex-col gap-1" data-testid={testId}>
-      <h3 className="text-[13px] font-medium">What each step of enrich added</h3>
+      <h3 className="text-[13px] font-medium">What each enrichment added</h3>
       <DataTable columns={enrichColumns} rows={steps} rowKey={(row) => row.step} emptyMessage="The flow declares no step." data-testid={`${testId}-steps`} />
     </div>
   );

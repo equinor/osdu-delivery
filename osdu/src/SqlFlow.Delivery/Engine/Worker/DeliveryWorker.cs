@@ -818,15 +818,15 @@ public sealed class DeliveryWorker
                 }
             }
 
-            // The datasets the record's steps register, each streaming from where its row said its files are, and what the plan
-            // decided a delivery does with them.
+            // The records the record's enrichments add, a dataset's files streaming from where its row said they are, and what the
+            // plan decided a delivery does with them.
             EnrichWork stepWork;
             IReadOnlyList<WorkStepPart> stepParts;
             try
             {
                 stepWork = EnrichParts.Decode(item.Enrich);
                 stepParts = stepWork.Parts
-                    .Select(p => new WorkStepPart(p, new StoragePayloadSource(_payloads, PayloadLocation.Parse(p.Location))))
+                    .Select(p => new WorkStepPart(p, p.RegistersFiles ? new StoragePayloadSource(_payloads, PayloadLocation.Parse(p.Location)) : null))
                     .ToList();
             }
             catch (DeliveryException ex)
@@ -857,8 +857,9 @@ public sealed class DeliveryWorker
                 StepParts = stepParts,
                 StepDocumentUnchanged = stepWork.DocumentUnchanged,
                 StepPartsForced = stepWork.Forced,
-                StepKeptDatasets = stepWork.KeptDatasets,
+                StepKeptRecords = stepWork.KeptRecords,
                 StepKeep = stepWork.Keep.ToDictionary(k => KeptStep.StateKey(k.Key), k => k.Value, StringComparer.Ordinal),
+                StepTrace = stepWork.Trace,
                 ExistingVersion = state.TargetVersion,
                 // A record OSDU no longer held when it was last looked for (a verify, or an inventory's repair) is brought back
                 // under its id by a route that can, before it is written; the mark goes with the first write that lands.
@@ -941,12 +942,13 @@ public sealed class DeliveryWorker
             var (index, state, work) = works[i];
             var latestSteps = reportedSteps.TryGetValue(state.DeliveryKey.Value, out var reported) ? reported : state.PendingStepJson;
             var outcome = outcomes[i]!;
-            if (outcome.Succeeded && work.StepKeep.Count > 0)
+            if (outcome.Succeeded && (work.StepKeep.Count > 0 || work.StepTrace.Count > 0))
             {
-                // What the steps set aside on their holds composed into the document that landed: kept with the record, so a
-                // later render one of them holds in goes ahead with it (osdu/docs/reference/flow/enrich-holds.md).
+                // What the enrichments set aside on their holds composed into the document that landed: kept with the record, so
+                // a later render one of them holds in goes ahead with it (osdu/docs/reference/flow/enrich-holds.md). And where
+                // the document's enrichments came from, kept with the record it belongs to (osdu/docs/reference/flow/enrich.md).
                 var returned = new Dictionary<string, string>(outcome.Returned, StringComparer.Ordinal);
-                foreach (var (key, value) in work.StepKeep)
+                foreach (var (key, value) in work.StepKeep.Concat(work.StepTrace))
                 {
                     returned[key] = value;
                 }

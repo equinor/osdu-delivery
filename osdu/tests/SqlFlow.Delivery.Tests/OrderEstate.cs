@@ -78,7 +78,9 @@ internal sealed class OrderEstate
     /// <summary>
     /// A delivery flow of <paramref name="name"/> writing <paramref name="entityType"/>, its mapping filling the properties named
     /// from columns, <paramref name="searched"/> by a search, <paramref name="refChecked"/> with a ref checked against the
-    /// cache, and <paramref name="literals"/> as written. <paramref name="partition"/> null leaves it to the registry.
+    /// cache, and <paramref name="literals"/> as written, and declaring the enrichments <paramref name="enrich"/> (its
+    /// <c>enrich:</c> block, written at the document's top level); the flow binding the child datasets <paramref name="datasets"/>
+    /// (its <c>datasets:</c> block, written under <c>source</c>). <paramref name="partition"/> null leaves it to the registry.
     /// </summary>
     public void Delivery(
         string name,
@@ -89,9 +91,10 @@ internal sealed class OrderEstate
         (string Property, string Target)? refChecked = null,
         (string Property, string Value)[]? literals = null,
         string? cache = null,
-        string? enrich = null)
+        string? enrich = null,
+        string? datasets = null)
     {
-        WriteMapping(name, entityType, columns ?? [], searched, refChecked, literals);
+        WriteMapping(name, entityType, columns ?? [], searched, refChecked, literals, enrich);
         Write($"flows/{name}.yaml", $$"""
             flowType: delivery
             name: {{name}}
@@ -103,10 +106,10 @@ internal sealed class OrderEstate
                 object: OsduData.silver.{{Table(name)}}
                 key: [name]
                 primaryKey: RecId
+            {{datasets ?? string.Empty}}
               work: ../.work/{{name}}
             render:
               mapping: {{Mapping(name)}}@1.0.0
-            {{enrich ?? string.Empty}}
             target:
               endpoint: ${env:OSDU_URL}
               auth:
@@ -120,8 +123,9 @@ internal sealed class OrderEstate
     }
 
     /// <summary>
-    /// A fragment of <paramref name="name"/> over <paramref name="entityType"/>'s template, as a step of <c>enrich:</c> renders
-    /// it: it fills the property named from its row, checked against the entity type that property references.
+    /// An enrichment mapping of <paramref name="name"/> over <paramref name="entityType"/>'s template, as an enrichment of a
+    /// mapping renders it: it fills the property named from its row, checked against the entity type that property references.
+    /// Over the record's own kind it adds that path to the record; over another kind it renders the records the enrichment adds.
     /// </summary>
     public void Fragment(string name, string entityType, (string Property, string Target) refChecked)
     {
@@ -133,7 +137,7 @@ internal sealed class OrderEstate
             template:
               kind: {{kind}}
               version: {{Templates.VersionOf(kind)}}
-            fragment: true
+            enrichment: true
             parameters:
               dataPartition:
                 required: true
@@ -143,6 +147,27 @@ internal sealed class OrderEstate
                   $from: {{refChecked.Property.ToLowerInvariant()}}
                   $modifiers:
                     - ref: {{refChecked.Target}}
+            """);
+    }
+
+    /// <summary>
+    /// An enrichment mapping of <paramref name="name"/> over <paramref name="entityType"/>'s template filling its name from its
+    /// row: over another kind than the record's, the records an enrichment adds to it.
+    /// </summary>
+    public void Enrichment(string name, string entityType)
+    {
+        var kind = $"osdu:wks:{entityType}:1.0.0";
+        Write($"mappings/{Mapping(name)}@1.0.0.yaml", $$"""
+            documentType: mapping
+            name: {{Mapping(name)}}
+            version: 1.0.0
+            template:
+              kind: {{kind}}
+              version: {{Templates.VersionOf(kind)}}
+            enrichment: true
+            record:
+              data:
+                Name: { $from: name }
             """);
     }
 
@@ -227,7 +252,7 @@ internal sealed class OrderEstate
     }
 
     private void WriteMapping(
-        string name, string entityType, string[] columns, string? searched, (string Property, string Target)? refChecked, (string Property, string Value)[]? literals)
+        string name, string entityType, string[] columns, string? searched, (string Property, string Target)? refChecked, (string Property, string Value)[]? literals, string? enrich = null)
     {
         var kind = $"osdu:wks:{entityType}:1.0.0";
         var version = Templates.VersionOf(kind);
@@ -278,6 +303,7 @@ internal sealed class OrderEstate
             parameters:
               dataPartition:
                 required: true
+            {{enrich ?? string.Empty}}
             {{searches}}record:
               acl:
                 owners: [data.tests.owners@dev.example.com]

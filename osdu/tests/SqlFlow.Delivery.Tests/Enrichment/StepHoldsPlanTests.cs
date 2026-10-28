@@ -15,10 +15,10 @@ using static SqlFlow.Delivery.Tests.EnrichmentSuite;
 namespace SqlFlow.Delivery.Tests;
 
 /// <summary>
-/// What a step set aside on its hold (osdu/docs/reference/flow/enrich-holds.md) is in the document, the render context and the
-/// plan: <c>onHold</c> read with its default and refused otherwise, named in the context only when it sets the step aside; and
-/// the plan keeping what each such step composed, linking a set-aside step's datasets at the hash its last delivery kept, and
-/// naming a step whose files cannot be found so the record renders again with it held.
+/// What an enrichment set aside on its hold (osdu/docs/reference/flow/enrich-holds.md) is in the mapping, the render context and
+/// the plan: <c>onHold</c> read with its default and refused otherwise, named in the context only when it sets the enrichment
+/// aside; and the plan keeping what each such enrichment composed, linking a set-aside enrichment's records at the hash its last
+/// delivery kept, and naming one whose files cannot be found so the record renders again with it held.
 /// </summary>
 [Trait(EnrichmentSuite.Trait, EnrichmentSuite.Name)]
 public sealed class StepHoldsPlanTests
@@ -31,6 +31,10 @@ public sealed class StepHoldsPlanTests
           record:
             object: OsduData.silver.Thing
             key: [name]
+          datasets:
+            grade:
+              object: OsduData.silver.ThingGrade
+              join: { name: name }
           work: work
         render:
           mapping: Thing@1.0.0
@@ -39,21 +43,18 @@ public sealed class StepHoldsPlanTests
           endpoint: https://example.org/api
           headers: { data-partition-id: dev }
           protocol: storage
-        enrich:
-          grade:
-            dataset:
-              object: OsduData.silver.ThingGrade
-              join: { name: name }
-            mapping: Grade@1.0.0
 
         """;
 
-    private static FlowDefinition Parsed(string extra) => new DeliveryDocumentLoader().ParseFlow(Head + extra, Path.Combine(Path.GetTempPath(), "enrich-holds", "flows", "demo.yaml"));
+    private static FlowDefinition Unbound(string head = Head) => new DeliveryDocumentLoader().ParseFlow(head, Path.Combine(Path.GetTempPath(), "enrich-holds", "flows", "demo.yaml"));
+
+    /// <summary>The test flow bound to a mapping whose enrichment <c>grade</c> adds paths, with <paramref name="line"/> under it.</summary>
+    private static FlowDefinition Parsed(string line) => Bound(Unbound(), Owner(enrich: "grade:\n  rows: one\n  mapping: Grade@1.0.0\n" + line), Grade);
 
     [Theory]
     [InlineData("", EnrichHold.Record)]
-    [InlineData("    onHold: record\n", EnrichHold.Record)]
-    [InlineData("    onHold: step\n", EnrichHold.Step)]
+    [InlineData("  onHold: record\n", EnrichHold.Record)]
+    [InlineData("  onHold: step\n", EnrichHold.Step)]
     public void OnHold_is_read_with_its_default(string line, EnrichHold expected)
     {
         Assert.Equal(expected, Assert.Single(Parsed(line).Enrich!).OnHold);
@@ -62,7 +63,7 @@ public sealed class StepHoldsPlanTests
     [Fact]
     public void Another_onHold_is_refused_naming_both_words()
     {
-        var refused = Assert.Throws<FlowValidationException>(() => Parsed("    onHold: skip\n"));
+        var refused = Assert.Throws<FlowValidationException>(() => Parsed("  onHold: skip\n"));
 
         Assert.Contains("enrich.grade.onHold is 'skip'; write record", refused.Message, StringComparison.Ordinal);
         Assert.Contains("or step for one set aside", refused.Message, StringComparison.Ordinal);
@@ -99,7 +100,7 @@ public sealed class StepHoldsPlanTests
     [Fact]
     public void The_plan_keeps_what_a_step_set_aside_on_its_hold_composed_and_nothing_of_one_that_holds_the_record()
     {
-        var flow = Parsed("    onHold: step\n");
+        var flow = Parsed("  onHold: step\n");
         var (render, hold, aside) = Plan(flow, [AsideStep(flow)], Record("a", 1, ("grade", [Row(("grade", "A"))])), ChainInputs.None);
 
         Assert.Null(hold);
@@ -111,18 +112,19 @@ public sealed class StepHoldsPlanTests
 
         var plain = Parsed(string.Empty);
         var (none, _, _) = Plan(plain, [Step("grade", Grade) with { Step = plain.Enrich![0] }], Record("a", 1, ("grade", [Row(("grade", "A"))])), ChainInputs.None);
-        Assert.Null(none.StepWork);
+        Assert.Empty(none.StepWork?.Keep ?? new Dictionary<string, string>(StringComparer.Ordinal));
+        Assert.Empty(none.StepWork?.Parts ?? []);
     }
 
     [Fact]
-    public void A_step_set_aside_is_not_kept_again_and_its_datasets_go_on_being_linked_at_their_kept_hash()
+    public void A_step_set_aside_is_not_kept_again_and_its_records_go_on_being_linked_at_their_kept_hash()
     {
-        var flow = Parsed("    onHold: step\n");
+        var flow = Parsed("  onHold: step\n");
         var dataset = WorkflowValues.DerivedDatasetId("dev:work-product-component--Thing:x", "dataset--File.Generic", "enrich.grade");
         var keptState = new JsonObject
         {
             [KeptStep.StateKey("grade")] = new KeptStep([new JsonObject { ["data"] = new JsonObject { ["Symbol"] = "K" } }], [dataset]).ToText(),
-            [EnrichParts.DatasetsValue] = EnrichParts.DatasetsText([dataset]),
+            [EnrichParts.RegisteredValue] = EnrichParts.RegisteredText([dataset]),
             [EnrichParts.StateKey(dataset)] = "kept-hash",
         };
         var state = new RecordState
@@ -141,7 +143,7 @@ public sealed class StepHoldsPlanTests
         Assert.Null(hold);
         Assert.Equal(["grade"], render.StepsSetAside);
         Assert.False(render.StepWork!.Keep.ContainsKey("grade"));
-        Assert.Equal([dataset], render.StepWork.KeptDatasets);
+        Assert.Equal([dataset], render.StepWork.KeptRecords);
         Assert.Equal(EnrichParts.Fold(render.Canonical, [(dataset, "kept-hash")]), render.MetadataHash);
 
         // Delivered as it was, the record hashes as it did: nothing is sent while the step holds.
@@ -154,18 +156,20 @@ public sealed class StepHoldsPlanTests
     [Fact]
     public void A_step_set_aside_whose_files_cannot_be_found_is_named_for_the_plan_to_render_without_it()
     {
-        var yaml = Head.Replace("    mapping: Grade@1.0.0\n", "    mapping: Grade@1.0.0\n    onHold: step\n    files:\n      root: ../data/las\n      locationColumn: las_folder\n      hashColumn: las_hash\n", StringComparison.Ordinal);
-        var flow = new DeliveryDocumentLoader().ParseFlow(yaml, Path.Combine(Path.GetTempPath(), "enrich-holds", "flows", "demo.yaml"));
-        var files = flow.Enrich![0].Files!;
-        var step = Step("grade", Grade) with { Step = flow.Enrich[0] };
-        step = step with { Files = new ResolvedFiles(files, "dataset--File.Generic", null, null) };
+        var head = Head.Replace(
+            "      join: { name: name }\n",
+            "      join: { name: name }\n      files:\n        root: ../data/las\n        locationColumn: las_folder\n        hashColumn: las_hash\n",
+            StringComparison.Ordinal);
+        var dataset = Fragment("data:\n  Name: { $from: grade }", name: "GradeDataset", kind: DatasetKind);
+        var flow = Bound(Unbound(head), Owner(enrich: "grade:\n  rows: one\n  mapping: GradeDataset@1.0.0\n  onHold: step\n"), dataset);
+        var step = RecordsStep("grade", files: flow.Enrich![0].Records!.Files, mapping: dataset, onHold: EnrichHold.Step) with { Step = flow.Enrich[0] };
         var record = Record("a", 1, ("grade", [Row(("grade", "A"), ("las_folder", " "), ("las_hash", "h"))]));
 
         var (_, hold, aside) = Plan(flow, [step], record, ChainInputs.None);
 
         Assert.Null(hold);
         Assert.Equal("grade", aside!.Step);
-        Assert.Contains("takes its folder from column 'las_folder'", aside.Reason, StringComparison.Ordinal);
+        Assert.Contains("source.datasets.grade.files takes its folder from column 'las_folder'", aside.Reason, StringComparison.Ordinal);
 
         // Held for it, the step is set aside and the plan has nothing more to find.
         var (render, again, second) = Plan(flow, [step], record, ChainInputs.None.Hold(aside.Step, aside.Reason));
@@ -175,7 +179,7 @@ public sealed class StepHoldsPlanTests
     }
 
     [Fact]
-    public async Task The_route_keeps_a_set_aside_steps_datasets_listed_neither_sent_nor_superseded()
+    public async Task The_route_keeps_a_set_aside_steps_records_listed_neither_sent_nor_superseded()
     {
         var owner = "dev:work-product-component--WellLog:holds-1";
         var kept = WorkflowValues.DerivedDatasetId(owner, "dataset--File.Generic", "enrich.grade");
@@ -184,7 +188,7 @@ public sealed class StepHoldsPlanTests
         using var http = new Http.HttpRuntime(new FlowReliability { Retry = new FlowRetry { Attempts = 1 } }, new Core.Secrets.SecretResolver([new Core.Secrets.EnvSecretProvider()]), TimeProvider.System, platform, allowLoopback: true);
         var client = new OsduHttpClient(http, FakeOsduPlatform.Endpoint, new TargetAuth { Type = TargetAuthType.None }, new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase) { ["data-partition-id"] = "dev" });
         var route = new EnrichPartsProtocol(new OsduRecordProtocol(client, new ProtocolOptions()), client, new ProtocolOptions());
-        var state = new Dictionary<string, string>(StringComparer.Ordinal) { [EnrichParts.DatasetsValue] = EnrichParts.DatasetsText([kept]), [EnrichParts.StateKey(kept)] = "h" };
+        var state = new Dictionary<string, string>(StringComparer.Ordinal) { [EnrichParts.RegisteredValue] = EnrichParts.RegisteredText([kept]), [EnrichParts.StateKey(kept)] = "h" };
 
         var outcome = await route.DeliverAsync(new DeliveryWork
         {
@@ -193,12 +197,12 @@ public sealed class StepHoldsPlanTests
             Document = document,
             DeliverMetadata = true,
             DeliverPayload = false,
-            StepKeptDatasets = [kept],
+            StepKeptRecords = [kept],
             TargetState = state,
         });
 
         Assert.True(outcome.Succeeded, outcome.Failure?.Message);
-        Assert.Equal([kept], EnrichParts.Datasets(outcome.Returned));
+        Assert.Equal([kept], EnrichParts.Records(outcome.Returned));
         Assert.Empty(outcome.Superseded);
         Assert.DoesNotContain(platform.Calls, c => c.Uri.AbsolutePath.Contains("registerDataset", StringComparison.Ordinal));
     }

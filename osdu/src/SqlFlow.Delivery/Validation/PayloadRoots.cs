@@ -23,12 +23,12 @@ public static class PayloadRoots
             Add(roots, FlowParameters.ResolvePath(flow, payload.Root, values, $"source.payloads.{name}.root"));
         }
 
-        // The files a step of enrich: registers sit under the step's own root (osdu/docs/reference/flow/enrich.md).
-        foreach (var step in flow.Enrich ?? [])
+        // The files a child dataset's rows name sit under its own root (osdu/docs/reference/flow/enrich-records.md).
+        foreach (var (name, dataset) in flow.Source.Datasets)
         {
-            if (step.Files is { } files)
+            if (dataset.Files is { } files)
             {
-                Add(roots, FlowParameters.ResolvePath(flow, files.Payload.Root, values, $"enrich.{step.Name}.files.root"));
+                Add(roots, FlowParameters.ResolvePath(flow, files.Root, values, $"{Documents.KeyPaths.Of(flow).Datasets}.{name}.files.root"));
             }
         }
 

@@ -51,6 +51,34 @@ public sealed record DeliveryArtifactCountsDto(long Intent, long Pending, long D
     }
 }
 
+/// <summary>
+/// One enrichment of a record as its ledger row holds it (osdu/docs/reference/flow/enrich.md, What the ledger keeps): its name,
+/// what it adds (<c>paths</c>, <c>records</c>, <c>bulk</c>, <c>workflow</c>), the enrichment mapping that rendered it with
+/// the fingerprint of its document, the kind of the records it adds and how they are written (<c>dataset</c> with files, or
+/// <c>storage</c>), whether it was set aside on its holds on the record's last render, where its rows came from, and every
+/// record it added.
+/// </summary>
+public sealed record DeliveryRecordEnrichmentDto(
+    string Name, IReadOnlyList<string> Adds, string? Mapping, string? MappingFingerprint, string? RecordKind, string? WrittenThrough,
+    bool SetAside, DeliveryEnrichmentRowsDto? Rows, IReadOnlyList<DeliveryEnrichmentRecordDto> Records);
+
+/// <summary>How many rows the delivered document's enrichment read, the ingestion files they came from (at most twenty listed of <c>FilesCounted</c>), and for one row where it is (<c>file#row</c>).</summary>
+public sealed record DeliveryEnrichmentRowsDto(int Count, IReadOnlyList<string> Files, int FilesCounted, string? Row);
+
+/// <summary>
+/// One record an enrichment added: its OSDU id, whether the record links it now (one it no longer links stays in OSDU, since
+/// the record's earlier versions name it), the version the ledger last saw land, the hashes of what was written and of its
+/// files, the row it was rendered from (<c>file#row</c>), and every write deliveries made of it, the newest first.
+/// </summary>
+public sealed record DeliveryEnrichmentRecordDto(
+    string Id, bool Linked, long? Version, string? Hash, string? FilesHash, string? Source, IReadOnlyList<DeliveryEnrichmentWriteDto> Writes);
+
+/// <summary>
+/// One write a delivery made of a record an enrichment added, as the record's attempt holds it: the attempt, when the write went,
+/// the run, how the attempt ended, the version it landed as and the version it replaced.
+/// </summary>
+public sealed record DeliveryEnrichmentWriteDto(long AttemptId, DateTime AtUtc, Guid? RunId, string Outcome, long? Version, long? PriorVersion);
+
 /// <summary>One interface of a source, its ledger identity, and its open artifacts counted by state.</summary>
 public sealed record DeliveryInterfaceUndosDto(string? Interface, Guid FlowId, DeliveryArtifactCountsDto Counts);
 
@@ -92,6 +120,7 @@ public static class DeliveryArtifactEndpoints
     {
         ArgumentNullException.ThrowIfNull(delivery);
         delivery.MapGet("/records/{flowId:guid}/{key:guid}/artifacts", ListRecordArtifactsAsync).WithName("ListDeliveryRecordArtifacts");
+        delivery.MapGet("/records/{flowId:guid}/{key:guid}/enrichments", ListRecordEnrichmentsAsync).WithName("ListDeliveryRecordEnrichments");
         delivery.MapGet("/flows/{pipelineId:guid}/undos", ListOpenUndosAsync).WithName("ListDeliveryOpenUndos");
     }
 
@@ -111,6 +140,35 @@ public static class DeliveryArtifactEndpoints
 
         var artifacts = await ledger.RecordArtifactsAsync(flowId, deliveryKey, Math.Clamp(max ?? DefaultArtifacts, 1, MaxArtifacts), ct).ConfigureAwait(false);
         return TypedResults.Ok<IReadOnlyList<DeliveryArtifactDto>>(artifacts.Select(ToDto).ToList());
+    }
+
+    /// <summary>
+    /// The enrichments of one record (osdu/docs/reference/flow/enrich.md, What the ledger keeps), in the order they render, each
+    /// with the records it added and every write made of them, read from the record's ledger row and its attempts; a key the
+    /// ledger holds no record of is 404.
+    /// </summary>
+    private static async Task<Results<Ok<IReadOnlyList<DeliveryRecordEnrichmentDto>>, ProblemHttpResult>> ListRecordEnrichmentsAsync(
+        Guid flowId, Guid key, ILedger ledger, CancellationToken ct)
+    {
+        var deliveryKey = new DeliveryKey(key);
+        if (await ledger.GetRecordAsync(flowId, deliveryKey, ct).ConfigureAwait(false) is not { } record)
+        {
+            return TypedResults.Problem(detail: $"No record '{key}' in the ledger of flow '{flowId}'.", statusCode: StatusCodes.Status404NotFound, title: "Not found");
+        }
+
+        var attempts = await ledger.ListAttemptsAsync(flowId, deliveryKey, RecordEnrichments.MaxAttempts, ct).ConfigureAwait(false);
+        return TypedResults.Ok<IReadOnlyList<DeliveryRecordEnrichmentDto>>(RecordEnrichments.Of(record, attempts).Select(ToDto).ToList());
+    }
+
+    internal static DeliveryRecordEnrichmentDto ToDto(RecordEnrichment e)
+    {
+        ArgumentNullException.ThrowIfNull(e);
+        return new DeliveryRecordEnrichmentDto(
+            e.Name, e.Adds, e.Mapping, e.MappingFingerprint, e.RecordKind, e.WrittenThrough, e.SetAside,
+            e.Rows is { } rows ? new DeliveryEnrichmentRowsDto(rows.Count, rows.Files, rows.FilesCounted, rows.Row) : null,
+            e.Records.Select(r => new DeliveryEnrichmentRecordDto(
+                r.Id, r.Linked, r.Version, r.Hash, r.FilesHash, r.Source,
+                r.Writes.Select(w => new DeliveryEnrichmentWriteDto(w.AttemptId, w.AtUtc, w.RunId, w.Outcome, w.Version, w.PriorVersion)).ToList())).ToList());
     }
 
     /// <summary>

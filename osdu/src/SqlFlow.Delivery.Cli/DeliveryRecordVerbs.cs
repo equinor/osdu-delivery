@@ -67,10 +67,11 @@ internal static class DeliveryRecordVerbs
             "reverse" => await DeliveryReversalVerbs.ReverseAsync(context, ledger, engine, flow, label, ct).ConfigureAwait(false),
             "reversals" => await DeliveryReversalVerbs.ListAsync(context, ledger, flow, label, ct).ConfigureAwait(false),
             "artifacts" => await DeliveryArtifactVerbs.ArtifactsAsync(context, ledger, flowId, label, ct).ConfigureAwait(false),
+            "enrichments" => await DeliveryArtifactVerbs.EnrichmentsAsync(context, ledger, flowId, label, ct).ConfigureAwait(false),
             "undos" => await DeliveryArtifactVerbs.UndosAsync(context, ledger, flowId, label, ct).ConfigureAwait(false),
             "removed" => await DeliveryRemovalVerbs.RemovedAsync(context, ledger, flowId, label, ct).ConfigureAwait(false),
             "lift-removal" => await DeliveryRemovalVerbs.LiftAsync(context, engine, flow, label, ct).ConfigureAwait(false),
-            _ => context.UsageError("say what to do with the records: list, export, show, issues, release, adopt, reverse, reversals, artifacts, undos, removed or lift-removal."),
+            _ => context.UsageError("say what to do with the records: list, export, show, issues, release, adopt, reverse, reversals, artifacts, enrichments, undos, removed or lift-removal."),
         };
     }
 

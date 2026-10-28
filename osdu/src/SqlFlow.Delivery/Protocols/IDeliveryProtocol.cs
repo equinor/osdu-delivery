@@ -92,7 +92,7 @@ public sealed record DeliveryWork
     public IReadOnlySet<string> ForcedParts { get; init; } = new HashSet<string>(StringComparer.Ordinal);
 
     /// <summary>
-    /// The datasets the record's steps of <c>enrich:</c> register (osdu/docs/reference/flow/enrich-files.md),
+    /// The datasets the record's steps of <c>enrich:</c> register (osdu/docs/reference/flow/enrich-records.md),
     /// each with its files to stream; empty for a record whose steps register none. The route that wraps the flow's own sends
     /// each whose hash moved before the record, and the record names them already.
     /// </summary>
@@ -100,7 +100,7 @@ public sealed record DeliveryWork
 
     /// <summary>
     /// True when the plan found the record's document the one the last delivery wrote, its step datasets alone having moved
-    /// (osdu/docs/reference/flow/enrich-files.md, What a change sends): the datasets go, and the record, which names them already, is
+    /// (osdu/docs/reference/flow/enrich-records.md, What a change sends): the datasets go, and the record, which names them already, is
     /// not written again. False writes it.
     /// </summary>
     public bool StepDocumentUnchanged { get; init; }
@@ -112,13 +112,19 @@ public sealed record DeliveryWork
     /// The datasets of the steps set aside on their holds (osdu/docs/reference/flow/enrich-holds.md), which an earlier delivery
     /// registered and the document still links: the route keeps them listed as the record's, neither sent nor superseded.
     /// </summary>
-    public IReadOnlyList<string> StepKeptDatasets { get; init; } = [];
+    public IReadOnlyList<string> StepKeptRecords { get; init; } = [];
 
     /// <summary>
     /// What each step set aside on its holds composed into this document, by target state key (<c>enrich.step.&lt;name&gt;</c>):
     /// the worker keeps it with the record once the delivery succeeds, for a later render the step holds in.
     /// </summary>
     public IReadOnlyDictionary<string, string> StepKeep { get; init; } = new Dictionary<string, string>(StringComparer.Ordinal);
+
+    /// <summary>
+    /// Where the document's enrichments came from, by target state key (<see cref="Rendering.EnrichTrace"/>): the worker keeps
+    /// it with the record once the delivery succeeds.
+    /// </summary>
+    public IReadOnlyDictionary<string, string> StepTrace { get; init; } = new Dictionary<string, string>(StringComparer.Ordinal);
 
     /// <summary>
     /// Whether this delivery sends <paramref name="part"/>: the payload is due, and the part is forced or its content
@@ -176,8 +182,11 @@ public sealed record DeliveryWork
 /// <param name="Hash">Its content hash, which the record's target state keeps once the part is delivered.</param>
 public sealed record WorkPayloadPart(string Role, string Payload, IPayloadSource? Source, string Hash);
 
-/// <summary>One dataset a step of the flow's <c>enrich:</c> registers for the record, and where its files stream from.</summary>
-public sealed record WorkStepPart(Rendering.EnrichPart Part, IPayloadSource Source);
+/// <summary>
+/// One record an enrichment of the flow's mapping adds to the record, and where its files stream from: null for a record written
+/// through storage, which has none.
+/// </summary>
+public sealed record WorkStepPart(Rendering.EnrichPart Part, IPayloadSource? Source);
 
 /// <summary>One step of a delivery attempt, with its timing, the status the target answered, and what it returned.</summary>
 public sealed record DeliveryStep(

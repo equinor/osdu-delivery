@@ -17,7 +17,7 @@ namespace SqlFlow.Delivery.Storage;
 /// <param name="Document">The record's canonical document.</param>
 /// <param name="Assertions">What the mapping's assertions found of the document, as compact JSON, or null.</param>
 /// <param name="Enrich">
-/// The datasets the record's steps register (osdu/docs/reference/flow/enrich-files.md) and what the plan
+/// The datasets the record's steps register (osdu/docs/reference/flow/enrich-records.md) and what the plan
 /// decided a delivery does with them, as compact JSON, or
 /// null for a record whose steps register none.
 /// </param>

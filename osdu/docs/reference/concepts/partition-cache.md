@@ -269,8 +269,8 @@ unfinished deliveries; a drain of the whole flow, a removal and a reversal end w
 1. **It takes what the run changed from the ledger:** the records the flow delivered since the run started, and the ones
    it deleted or reverted (a minute earlier, for the clocks of the nodes a fanned-out run delivers on), at most 50,000. A
    run changing more is a bulk load: the step reads nothing, and says to run the cache flows' refresh. When a type it
-   names holds a kind the flow's steps of `enrich:` register, the datasets those records link (`enrich.datasets` in their
-   target state) come with them ([files a step registers](../flow/enrich-files.md#the-cache)).
+   names holds a kind the enrichments of the flow's mapping add, the records those records link (`enrich.records` in their
+   target state) come with them ([records an enrichment adds](../flow/enrich-records.md#the-cache)).
 2. **It reads them back from OSDU's storage service by id** (`POST /api/storage/v2/query/records`, 100 at a time), not the
    search service, whose index holds a record a moment after it is written.
 3. **A record storage returns goes in as it is now,** into the types holding its kind, with the paths the partition keeps

@@ -354,9 +354,9 @@ public sealed class OrderLineageTests : IDisposable
     }
 
     [Fact]
-    public void A_pipeline_whose_before_step_is_auto_searches_what_a_step_s_fragment_reads_and_runs_after_its_deliverer()
+    public void A_pipeline_whose_before_step_is_auto_searches_what_an_enrichment_mapping_reads_and_runs_after_its_deliverer()
     {
-        // The wells' own mapping checks nothing; a step of enrich: checks the elevation unit, so auto brings the units up to
+        // The wells' own mapping checks nothing; an enrichment of it checks the elevation unit, so auto brings the units up to
         // date before the wells render, and the flow delivering the units runs first.
         Schema("reference-data--UnitOfMeasure");
         Schema("master-data--Well", ("ElevationUnitID", "reference-data--UnitOfMeasure"));
@@ -366,8 +366,11 @@ public sealed class OrderLineageTests : IDisposable
         Delivery("wells", "master-data--Well", cache: "{ before: auto }", enrich: """
             enrich:
               unit:
+                rows: one
                 mapping: WellsUnit@1.0.0
-                dataset:
+            """, datasets: """
+              datasets:
+                unit:
                   object: OsduData.silver.WellsUnit
                   join: { name: name }
             """);
@@ -379,28 +382,36 @@ public sealed class OrderLineageTests : IDisposable
     }
 
     [Fact]
-    public void A_pipeline_whose_after_step_names_the_datasets_its_steps_register_writes_their_type()
+    public void A_pipeline_whose_after_step_names_the_datasets_its_enrichments_add_writes_their_type()
     {
         const string lasFiles = """
             enrich:
               lasfile:
-                dataset:
+                rows: one
+                mapping: LogsLas@1.0.0
+            """;
+        const string lasRows = """
+              datasets:
+                lasfile:
                   object: OsduData.silver.LogsLas
                   join: { name: name }
-                files:
-                  root: ../data/las
-                  locationColumn: las_folder
-                  hashColumn: las_hash
+                  files:
+                    root: ../data/las
+                    locationColumn: las_folder
+                    hashColumn: las_hash
             """;
         Schema("work-product-component--WellLog");
+        Schema("dataset--File.Generic");
+        _estate.Enrichment("logs-las", "dataset--File.Generic");
         Cache("dataset-cache", "dataset--File.Generic");
-        Delivery("logs", "work-product-component--WellLog", cache: "{ after: [dataset--File.Generic] }", enrich: lasFiles);
+        Delivery("logs", "work-product-component--WellLog", cache: "{ after: [dataset--File.Generic] }", enrich: lasFiles, datasets: lasRows);
         Assert.Contains(CacheWrites("flows/logs.yaml"), d => d.Name == "File.Generic");
 
-        Delivery("logs", "work-product-component--WellLog", cache: "{ after: auto }", enrich: lasFiles);
+        Delivery("logs", "work-product-component--WellLog", cache: "{ after: auto }", enrich: lasFiles, datasets: lasRows);
         Assert.Contains(CacheWrites("flows/logs.yaml"), d => d.Name == "File.Generic");
+        Assert.Contains(Describe("flows/logs.yaml").Datasets, d => d.Relation == LineageRelation.Writes && d.Name.Contains("dataset--File.Generic", StringComparison.Ordinal));
 
-        // Without the step, the pipeline writes nothing into the type of datasets.
+        // Without the enrichment, the pipeline writes nothing into the type of datasets.
         Delivery("logs", "work-product-component--WellLog", cache: "{ after: auto }");
         Assert.Empty(CacheWrites("flows/logs.yaml"));
     }
@@ -445,8 +456,9 @@ public sealed class OrderLineageTests : IDisposable
         (string Property, string Target)? refChecked = null,
         (string Property, string Value)[]? literals = null,
         string? cache = null,
-        string? enrich = null)
-        => _estate.Delivery(name, entityType, columns, partition, searched, refChecked, literals, cache, enrich);
+        string? enrich = null,
+        string? datasets = null)
+        => _estate.Delivery(name, entityType, columns, partition, searched, refChecked, literals, cache, enrich, datasets);
 
     private void Source(string name, params (string Interface, string EntityType, string? Column)[] interfaces) => _estate.Source(name, interfaces);
 

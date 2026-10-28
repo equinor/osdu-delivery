@@ -163,7 +163,7 @@ public sealed class RecordPreviewer
             }
 
             var targetState = decided.Existing?.TargetStateJson is { } state ? JsonMerge.ToValues(state) : null;
-            rehearsal = RouteRehearsal.Rehearse(flow, render.Document, render.TargetId, payload, targetState);
+            rehearsal = RouteRehearsal.Rehearse(flow, render.Document, render.TargetId, payload, targetState, resolved.Mapping.LinkPaths());
             document = Document(render, resolved.Mapping.Kind, rehearsal, flow.Enrich ?? []);
         }
 

@@ -1,5 +1,5 @@
-// What each step of a delivery flow's enrich: did to a record (osdu/docs/reference/flow/enrich.md), as the record's Render
-// tab and the flow's Preview tab say it.
+// What each enrichment of a mapping did to a record (osdu/docs/reference/flow/enrich.md), as the record's Render tab and the
+// flow's Preview tab say it.
 
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
@@ -20,7 +20,7 @@ describe("a step's outcome", () => {
   it("says a step holds the record, or did not render because one before it did", () => {
     assert.equal(enrichOutcomeText({ rows: 2, effects: [], holds: ["enrich.a: two rows"] }), "holds the record");
     assert.equal(enrichOutcomeText({ effects: [], holds: ["a", "b"] }), "holds the record (2 reasons)");
-    assert.equal(enrichOutcomeText({ effects: [], holds: [], notRendered: true }), "not rendered: a step before it holds the record or waits for the platform");
+    assert.equal(enrichOutcomeText({ effects: [], holds: [], notRendered: true }), "not rendered: an enrichment before it holds the record or waits for the platform");
   });
 
   it("says a step set aside on its hold keeps what it last added, and does not hold the record", () => {
@@ -42,9 +42,9 @@ describe("a value a step wrote", () => {
   });
 });
 
-describe("what a step does beside its fragment", () => {
-  it("names its files, the record's bulk data and its workflow, and nothing for a fragment alone", () => {
-    assert.equal(suppliesText(["files", "workflow"]), "files, workflow");
+describe("what an enrichment does beside adding paths", () => {
+  it("names the records it adds, the record's bulk data and its workflow, and nothing for paths alone", () => {
+    assert.equal(suppliesText(["records", "workflow"]), "records, workflow");
     assert.equal(suppliesText(["bulk"]), "bulk data");
     assert.equal(suppliesText([]), null);
     assert.equal(suppliesText(undefined), null);

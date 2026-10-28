@@ -135,13 +135,14 @@ public sealed class DeliveryAssistantAccessTests
     [InlineData("POST", "/api/v1/delivery/records/" + SomeGuid + "/" + SomeGuid + "/redeliver")]
     [InlineData("POST", "/api/v1/delivery/cache/tags/decide")]
     // Data no tool reads: a dimension's values and table, a record's source row, its rendered document, what OSDU
-    // holds for it, and its stored artifacts.
+    // holds for it, its stored artifacts, and what its enrichments added.
     [InlineData("GET", "/api/v1/delivery/dimensions/1/values")]
     [InlineData("GET", "/api/v1/delivery/dimensions/1/table")]
     [InlineData("POST", "/api/v1/delivery/records/" + SomeGuid + "/" + SomeGuid + "/source")]
     [InlineData("POST", "/api/v1/delivery/records/" + SomeGuid + "/" + SomeGuid + "/preview")]
     [InlineData("POST", "/api/v1/delivery/records/" + SomeGuid + "/" + SomeGuid + "/read")]
     [InlineData("GET", "/api/v1/delivery/records/" + SomeGuid + "/" + SomeGuid + "/artifacts")]
+    [InlineData("GET", "/api/v1/delivery/records/" + SomeGuid + "/" + SomeGuid + "/enrichments")]
     // A read route opened to the assistant does not open the operate route beside it, which any signed-in person may take
     // (syncing the OSDU data definitions).
     [InlineData("POST", "/api/v1/delivery/templates/osdu/sync")]

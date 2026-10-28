@@ -313,6 +313,12 @@ public sealed partial class FlowRuntime : IDisposable
     /// <summary>The submissions this runtime holds, created when it first holds one.</summary>
     private SubmissionHolds? _holds;
 
+    /// <summary>
+    /// Why a runtime opened for target operations is not bound to its mapping's enrichments: the mapping could not be read or
+    /// bound. Only its worker needs the binding, and refuses with this.
+    /// </summary>
+    private FlowValidationException? _unbound;
+
     private FlowRuntime(
         EngineContext context,
         FlowDefinition flow,
@@ -416,6 +422,10 @@ public sealed partial class FlowRuntime : IDisposable
         var layout = DeliveryLayout.Resolve(flow);
         var mappings = new MappingCatalog(layout.MappingsDirectory, context.Documents);
 
+        // What the mapping adds to each record, bound to what the flow says of its rows, files and workflows: every part of the run
+        // reads the flow's enrichments from here (osdu/docs/reference/flow/enrich.md).
+        flow = EnrichBinding.Bind(flow, mappings);
+
         // A search source asks the platform the flow delivers to, under the flow's own auth and partition, over the
         // connection the runtime delivers with; nothing is sent until a render asks its first question.
         var target = new TargetConnection(context, flow);
@@ -444,16 +454,35 @@ public sealed partial class FlowRuntime : IDisposable
     /// <summary>
     /// A runtime for the operations that touch the target and the ledger but never the source (verify, delete,
     /// release, redeliver, probe, drain): no parameters are required and no mapping is resolved, so they work for a
-    /// flow whose parameters are unknown or whose mapping could not render right now.
+    /// flow whose parameters are unknown or whose mapping could not render right now. The flow is bound to its mapping's
+    /// enrichments when the mapping reads; a drain needs that, and refuses when the mapping does not.
     /// </summary>
     public static FlowRuntime ForTarget(EngineContext context, FlowDefinition flow, IReadOnlyDictionary<string, string>? values = null)
     {
         ArgumentNullException.ThrowIfNull(context);
         ArgumentNullException.ThrowIfNull(flow);
         var layout = DeliveryLayout.Resolve(flow);
+        var mappings = new MappingCatalog(layout.MappingsDirectory, context.Documents);
+
+        // A drain writes what the mapping's enrichments add, so the flow is bound to them as a run's is; only the mapping document
+        // is read for that, never its template or the cache. Verify, delete, release and the rest write nothing an enrichment adds,
+        // so a mapping that does not read leaves them working, and the worker refuses with the reason.
+        FlowValidationException? unbound = null;
+        try
+        {
+            flow = EnrichBinding.Bind(flow, mappings);
+        }
+        catch (FlowValidationException ex)
+        {
+            unbound = ex;
+        }
+
         return new FlowRuntime(
-            context, flow, layout, new MappingCatalog(layout.MappingsDirectory, context.Documents),
-            values ?? new Dictionary<string, string>(StringComparer.Ordinal), null, new TargetConnection(context, flow), null);
+            context, flow, layout, mappings,
+            values ?? new Dictionary<string, string>(StringComparer.Ordinal), null, new TargetConnection(context, flow), null)
+        {
+            _unbound = unbound,
+        };
     }
 
     /// <summary>
@@ -577,7 +606,16 @@ public sealed partial class FlowRuntime : IDisposable
     /// when they are given: a part's, on the batches of its slices in the folder it wrote them to.
     /// </summary>
     private async Task<DeliveryWorker> WorkerAsync(BatchRange? batches, string? workRoot, CancellationToken ct)
-        => new(RequireLedger(), _context.Payloads, _context.Stores, await ProtocolAsync(ct).ConfigureAwait(false), Flow, _context.Time, _context.Listener, _context.Loggers.CreateLogger<DeliveryWorker>())
+    {
+        if (_unbound is { } unbound)
+        {
+            // Pending work carries what the mapping's enrichments add to each record, which only a flow bound to them writes.
+            throw new FlowValidationException(
+                $"{Flow.SourcePath ?? Flow.Name}: the pending work is not sent, since it is written with what the mapping {Flow.Render.Mapping} adds to each record through its enrichments, and the flow could not be bound to them: {unbound.Message}",
+                unbound);
+        }
+
+        return new(RequireLedger(), _context.Payloads, _context.Stores, await ProtocolAsync(ct).ConfigureAwait(false), Flow, _context.Time, _context.Listener, _context.Loggers.CreateLogger<DeliveryWorker>())
         {
             RunId = RunId,
             Guard = Guard,
@@ -588,6 +626,7 @@ public sealed partial class FlowRuntime : IDisposable
             Batches = batches,
             WorkRoot = workRoot,
         };
+    }
 
     /// <summary>
     /// The gate every document of the flow goes through before it is sent (<see cref="ValidationGate"/>): its policy is the
@@ -954,12 +993,12 @@ public sealed partial class FlowRuntime : IDisposable
         var reads = _mapping is { } resolved
             ? MappingCacheReads.OfChain(resolved.Mapping, resolved.Schema, resolved.Steps.SelectMany(ChainFragments))
             : new MappingCacheReads([], [], []);
-        var plan = Snapshots.CacheStepPlan.Resolve(Flow.Label, Flow.Cache, declaration, kind, reads, EnrichFiles.KindsOf(Flow));
+        var plan = Snapshots.CacheStepPlan.Resolve(Flow.Label, Flow.Cache, declaration, kind, reads, EnrichRecords.KindsOf(Flow));
         _cacheSteps = (scope, plan);
         return _cacheSteps;
     }
 
-    /// <summary>The fragments a step renders, each with the template it fills: its own, and the one over the datasets it registers.</summary>
+    /// <summary>The enrichment mapping an enrichment renders, with the template it fills: one adding paths, or one rendering the records it adds.</summary>
     private static IEnumerable<(MappingDefinition Fragment, SchemaSnapshot? Schema)> ChainFragments(ResolvedStep step)
     {
         if (step.Mapping is { } fragment)
@@ -967,9 +1006,9 @@ public sealed partial class FlowRuntime : IDisposable
             yield return (fragment, step.Schema);
         }
 
-        if (step.Files is { Mapping: { } datasetFragment } files)
+        if (step.Records is { Mapping: { } recordsMapping } records)
         {
-            yield return (datasetFragment, files.Schema);
+            yield return (recordsMapping, records.Schema);
         }
     }
 

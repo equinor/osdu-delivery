@@ -1,230 +1,284 @@
 ---
 id: delivery-flow-enrich
-title: "Enrich (enrich): steps that extend each record a delivery flow renders, rendered as one chain and sent once"
+title: "Enrichments (enrich:): what a mapping adds to each record it renders, bound by the flow and kept under the record"
 type: flow-reference
-summary: "The enrich block of a delivery flow: steps adding paths to each record from rows of their own, rendered after the mapping, the record sent once per change."
+summary: "A mapping's enrich block: paths, records of any kind and bulk data added to each record from rows of their own, sent once per change, traced in the ledger."
 keywords:
   - enrich
-  - enrich step
+  - enrichment
+  - enrichment mapping
   - enhance a record
   - extend an existing record
   - add to a record after it is delivered
+  - add a record to a record
   - chained rendering
   - one change one write
-  - fragment
-  - step rows
   - rows one
   - rows many
   - after
-  - base
-  - enrich.dataset
+  - $link
+  - $base
   - multi-step record
-  - steps of a record
-yamlPath: "enrich (flowType: delivery), interfaces.<name>.enrich"
+  - Enrichments tab
+  - records enrichments
+yamlPath: "enrich (documentType: mapping); source.datasets.<name> and workflows.<name> (flowType: delivery)"
 related:
-  - delivery-flow-enrich-files
+  - delivery-flow-enrich-records
   - delivery-flow-enrich-holds
   - delivery-flow-enrich-bulk
   - delivery-flow-enrich-workflow
-  - delivery-flow-mapping-fragment
+  - delivery-flow-mapping-enrichment
+  - delivery-flow-mapping
   - delivery-flow-delivery
   - delivery-flow-interfaces
-  - delivery-flow-mapping
   - delivery-concept-change-detection
   - delivery-concept-preflight
   - delivery-concept-lineage
+  - delivery-concept-ledger
 sourceRefs:
+  - osdu/src/SqlFlow.Delivery/Model/MappingDefinition.cs
   - osdu/src/SqlFlow.Delivery/Model/FlowDefinition.cs
   - osdu/src/SqlFlow.Delivery/Documents/YamlModels.cs
+  - osdu/src/SqlFlow.Delivery/Documents/MappingMapper.Enrich.cs
+  - osdu/src/SqlFlow.Delivery/Documents/EnrichBinding.cs
   - osdu/src/SqlFlow.Delivery/Documents/DeliveryDocumentLoader.cs
-  - osdu/src/SqlFlow.Delivery/Documents/CompanionFiles.cs
   - osdu/src/SqlFlow.Delivery/Documents/DeliveryLineage.cs
   - osdu/src/SqlFlow.Delivery/Rendering/RecordComposition.cs
+  - osdu/src/SqlFlow.Delivery/Rendering/EnrichTrace.cs
   - osdu/src/SqlFlow.Delivery/Engine/RenderResolver.cs
-  - osdu/src/SqlFlow.Delivery/Engine/Planning/Planner.cs
+  - osdu/src/SqlFlow.Delivery/Engine/FlowRuntime.cs
   - osdu/src/SqlFlow.Delivery/Validation/Preflight.Chain.cs
   - osdu/src/SqlFlow.Delivery/Snapshots/RenderContext.cs
-  - osdu/src/SqlFlow.Delivery/Catalog/DeliveryDocumentHash.cs
+  - osdu/src/SqlFlow.Delivery/Ledger/RecordEnrichments.cs
+  - osdu/src/SqlFlow.Delivery/Ledger/RecordIdentity.cs
   - osdu/src/SqlFlow.Delivery/Engine/Preview/RecordPreview.cs
   - osdu/src/SqlFlow.Delivery.Cli/DeliveryVerbs.cs
-  - osdu/src/SqlFlow.Delivery.Cli/DeliveryPreviewVerbs.cs
-  - osdu/tests/SqlFlow.Delivery.Tests/Enrichment/EnrichDeliveryTests.cs
+  - osdu/src/SqlFlow.Delivery.Cli/DeliveryArtifactVerbs.cs
+  - osdu/src/SqlFlow.Delivery.ControlPlane/Api/DeliveryArtifactEndpoints.cs
+  - osdu/docs/census/keys.mapping.json
   - osdu/docs/census/keys.delivery.json
 ---
 
-# Enrich (enrich): steps that extend each record a delivery flow renders, rendered as one chain and sent once
+# Enrichments (enrich:): what a mapping adds to each record it renders, bound by the flow and kept under the record
 
-A record often holds more than one source knows. A well log's header and curves come from one table, its original LAS file
-name from another, a quality grade from a third, each kept by someone else and changed at its own time. The record is
-still one OSDU record, with one id and one writer. `enrich:` is how a delivery flow builds it: the flow's own mapping
-renders the record, then each **step**, in order, renders a **fragment** of it from rows of its own and adds the fragment
-to the record. The record that goes to OSDU is the record with every step in it, hashed and sent once. A step may also
-register the files its rows name as datasets of the record, under ids kept for good ([files a step registers](enrich-files.md)),
-supply the record's DDMS bulk data ([a step's bulk data](enrich-bulk.md)), and run an OSDU workflow over the record once it
-landed ([a step's workflow](enrich-workflow.md)).
+A record OSDU holds is often built from more than one source. A well log's header and curves come from one table, its LAS
+file from a file register, a quality grade from a third table, each kept by someone else and changed at its own time. The
+record is still one OSDU record with one writer. An **enrichment** is how its mapping adds what those other sources hold:
+paths of the record itself, records of their own that the record links (a dataset per LAS file, a record of a custom kind),
+or the record's DDMS bulk data. The mapping says what each enrichment adds and where the record links it; the flow says
+where its rows and files are. The record with every enrichment in it is hashed and sent once, and the ledger keeps every
+enrichment under the record it belongs to.
 
-A flow without `enrich:` renders, hashes and delivers exactly as it always did: its render context, its document hash and
-its records are unchanged.
+A mapping without `enrich:` renders, hashes and delivers exactly as it always did.
 
 ## An example
 
-The well logs of the well database, delivered as WellLog 1.4.0, with two steps: the log's LAS file name from a table of
-its own, then a note the second step makes from what the first added.
+The well logs of the well database, delivered as WellLog 1.4.0. The mapping adds each log's LAS file as a dataset of its own
+and a quality grade to the log itself:
+
+```yaml
+documentType: mapping
+name: WellLog
+version: 1.4.0
+template:
+  kind: osdu:wks:work-product-component--WellLog:1.4.0
+dataset:
+  system: welldb
+  key: [source_project, log_id]
+
+enrich:
+  lasfile:
+    description: The log's original LAS file, registered as a dataset of the log.
+    rows: one
+    mapping: WellLogLasDataset@1.0.0     # of a dataset kind: adds a record per row
+  quality:
+    description: The quality grade the log office assigns.
+    rows: one
+    mapping: WellLogGrade@1.0.0          # of the log's own kind: adds paths to the log
+    onHold: step
+
+record:
+  data:
+    Name: { $from: log_name }
+    Datasets:
+      - $link: lasfile                   # the id of the dataset lasfile registers
+```
+
+The flow binds each enrichment's rows, as a child dataset named like it, and the files a row names:
 
 ```yaml
 flowType: delivery
 name: welldb-welllog-03-delivery
-# source, render and target as the delivery flow page shows them
-
-enrich:
-  lasfile:
-    description: The name of the log's original LAS file, from the file register.
-    dataset:
+source:
+  connection: ${env:OSDU_DATA_DB}
+  record:
+    object: OsduData.silver.WellLog
+    key: [source_project, log_id]
+  datasets:
+    lasfile:
       object: OsduData.silver.WellLogFile
       join: { source_project: source_project, log_id: log_id }
-    mapping: WellLogFile@1.0.0
-  note:
-    description: A note naming the file, in capitals.
-    after: [lasfile]
-    mapping: WellLogNote@1.0.0
+      files:
+        root: ../data/las
+        locationColumn: las_folder
+        pattern: "*.las"
+        hashColumn: las_hash
+        contentType: text/plain
+    quality:
+      object: OsduData.silver.WellLogQuality
+      join: { source_project: source_project, log_id: log_id }
+  work: ../.work/welllog
+render:
+  mapping: WellLog@1.4.0
+# target as the delivery flow page shows it
 ```
 
-`WellLogFile@1.0.0` is a fragment ([fragments](mapping-fragment.md)): a mapping whose header says `fragment: true`, filling
-the same template as the flow's mapping, writing only the paths the step adds.
-
-```yaml
-documentType: mapping
-name: WellLogFile
-version: 1.0.0
-template:
-  kind: osdu:wks:work-product-component--WellLog:1.4.0
-fragment: true
-record:
-  tags:
-    LasFile: { $from: las_file }
-  data:
-    ExtensionProperties:
-      WellDb:
-        LasFile: { $from: las_file }
-```
-
-`WellLogNote@1.0.0` reads no rows: it reads the record as the mapping and the first step left it.
-
-```yaml
-documentType: mapping
-name: WellLogNote
-version: 1.0.0
-template:
-  kind: osdu:wks:work-product-component--WellLog:1.4.0
-fragment: true
-record:
-  data:
-    ExtensionProperties:
-      WellDb:
-        Note: { $base: data.ExtensionProperties.WellDb.LasFile, $modifiers: [upper], $required: false }
-```
+`WellLogGrade@1.0.0` and `WellLogLasDataset@1.0.0` are enrichment mappings ([enrichment mappings](mapping-enrichment.md)):
+mappings whose header says `enrichment: true`, keying no record of their own.
 
 ## The keys
 
-`enrich` is a map of steps by name, in the single form at the root of the document and in the interface form under each
-interface (`interfaces.<name>.enrich`), since each interface renders records of its own kind. At the source level of a
-document with interfaces it is refused.
+`enrich` is a block of the mapping that keys the records, a map of enrichments by name:
 
 | Key | Type | Required | Meaning |
 | --- | --- | --- | --- |
-| `enrich.<name>` | map | | One step. The name is letters, digits and `_`, not starting with a digit, at most 32 characters, not `record` and not the name of a child dataset, compared ignoring case. At most 16 steps. |
-| `enrich.<name>.description` | string | no | What the step adds, shown with the record's composition. |
-| `enrich.<name>.mapping` | string | one of `mapping`, `files`, `bulk` and `workflow` | The fragment the step renders, pinned as `Name@version` and found the way the flow's mapping is. |
-| `enrich.<name>.files` | map | one of `mapping`, `files`, `bulk` and `workflow` | The files each of the step's rows names, registered as a dataset of the record and linked from it ([files a step registers](enrich-files.md)). Needs `dataset`. |
-| `enrich.<name>.dataset` | map | no | The step's rows: `object`, `join`, `orderBy` and `maxRowsPerRecord`, as a child dataset declares them ([delivery flow](delivery.md#source)). `join` covers every key column of the record table. Left out, the step reads no rows and renders from what the record holds and its parameters. |
-| `enrich.<name>.rows` | string | no | `one` (the default) or `many`: how many of the step's rows one record takes. Only with `dataset`. |
-| `enrich.<name>.after` | list | no | The steps this one renders after, beside the order the document lists them in. |
-| `enrich.<name>.bulk` | map | no | The record's DDMS bulk data, named by the step's one row: the payload the `ddms` route sends after the record ([a step's bulk data](enrich-bulk.md)). |
-| `enrich.<name>.workflow` | map | no | An OSDU workflow the step runs over the record once it and the step's datasets landed, declared as `target.workflow` is ([a step's workflow](enrich-workflow.md)). |
-| `enrich.<name>.onHold` | string | no | `record` (the default) holds the record when the step holds; `step` sets the step aside, the record going ahead with what the step added to its last delivery ([a step set aside on its hold](enrich-holds.md)). |
+| `enrich.<name>` | map | | One enrichment. The name is letters, digits and `_`, not starting with a digit, at most 32 characters, not `record`, compared ignoring case. At most 16. |
+| `enrich.<name>.description` | string | no | What it adds, shown with the record's composition and on its Enrichments tab. |
+| `enrich.<name>.rows` | `one` or `many` | no | How many rows of the child dataset named after it one record takes. Left out, it reads no rows. |
+| `enrich.<name>.mapping` | string | unless `bulk` | The enrichment mapping it renders, `Name@version`, found the way the flow's mapping is. Its kind says what the enrichment adds: the record's own kind adds paths, any other kind adds a record per row. |
+| `enrich.<name>.key` | list | with records from `rows: many` | The columns telling each row's record from the others' ([records an enrichment adds](enrich-records.md#the-ids)). |
+| `enrich.<name>.after` | list | no | The enrichments this one renders after, beside the order the document lists them in. |
+| `enrich.<name>.onHold` | `record` or `step` | no | `record` (the default) holds the record when the enrichment holds; `step` sets it aside ([an enrichment set aside on its hold](enrich-holds.md)). |
+| `enrich.<name>.bulk` | boolean | no | `true` when the files its one row names are the record's DDMS bulk data ([an enrichment's bulk data](enrich-bulk.md)). |
 
-`render.parameters` supplies every mapping of the chain: each mapping, the flow's and every fragment, takes the values it
-declares, and a value none of them declares is refused.
+The flow binds what the mapping names. An enrichment with `rows` reads the child dataset of its own name
+(`source.datasets.<name>`, or `interfaces.<name>.datasets.<name>`), whose `files` say where each row's files are; a workflow
+run over an enrichment's records is `workflows.<name>` ([an enrichment's workflow](enrich-workflow.md)). `render.parameters`
+supplies every mapping of the chain: each takes the values it declares, and a value none of them declares is refused.
 
-A step is refused on the `dspdm` and `etp` routes, which write DSPDM rows and Energistics objects rather than OSDU records.
+A flow `enrich:` key is refused, saying where its parts go now: the enrichment to the mapping, its rows and files to
+`source.datasets`, its workflow to `workflows`.
+
+## What an enrichment adds
+
+| Its mapping fills | It adds | Written | Linked |
+| --- | --- | --- | --- |
+| The record's own kind and template version | Paths of the record: values where the record holds none, items to lists | With the record | Part of the record |
+| A dataset kind whose rows the flow binds `files` for | A dataset per row, registered with its files | Through the Dataset service, before the record | Where the mapping writes `$link: <name>` |
+| Any other kind, a dataset without files among them | A record per row, as rendered | Through storage, before the record | Where the mapping writes `$link: <name>` |
+| Nothing (`bulk: true` alone) | The record's DDMS bulk data | By the `ddms` route, after the record | Part of the record |
+
+An enrichment that adds records and reads no rows adds one for the record. Every added record carries the record's access
+list and legal block, so whoever may read the record may read what it adds, and is written under an id made from the record's
+own ([records an enrichment adds](enrich-records.md)).
 
 ## How a record renders
 
-For each record the plan reads, the flow's mapping renders the record, and then each step in order:
+For each record the plan reads:
 
-1. The step's rows are the rows of its dataset that join the record, read beside the record's row as a child dataset under
-   the step's name.
-2. Under `rows: one`, a record with no row gets nothing from the step; one row is the fragment's own row, which `$from`
-   reads; two or more hold the record (`enrich.<step>: the step reads one row per record (rows: one), and its dataset holds 2
-   for this record; ...`). Under `rows: many`, the fragment reads every row with `$forEach: <step>`, and no row is its own.
-   A step without a dataset renders once for every record.
-3. The fragment renders over the record as the mapping and the steps before it left it, which it reads with `$base`.
-4. What it renders is added to the record ([how a fragment adds to the record](mapping-fragment.md#how-a-fragment-adds-to-the-record)).
+1. The mapping renders the record. A `$link` writes the ids of the records the enrichment it names adds for the record's
+   rows, made from the record's own id, so the record links them before anything is sent.
+2. Each enrichment, in order, renders its enrichment mapping. Its rows are those of its child dataset that join the record:
+   under `rows: one`, no row adds nothing and two or more hold the record; under `rows: many`, its mapping reads them with
+   `$forEach: <name>`. It reads the record as the mapping and the enrichments before it left it with `$base`.
+3. An enrichment adding paths adds them to the record
+   ([how an enrichment adds to the record](mapping-enrichment.md#how-an-enrichment-adds-to-the-record)); one adding records
+   renders each, beside the record.
 
-The record with every step in it is normalized, written as canonical JSON and hashed: that hash is the document hash
-change detection compares ([change detection](../concepts/change-detection.md)). The order is the order the document lists
-the steps in, each moved after every step its `after:` names; a name no step has, a step naming itself, a name given
-twice, and steps waiting for each other are refused when the document loads.
+The record with every enrichment in it is normalized, written as canonical JSON and hashed, taken with the hash of every
+record its enrichments add: that hash is what change detection compares ([change detection](../concepts/change-detection.md)).
+The order is the order the mapping lists the enrichments in, each moved after every one its `after:` names; a name no
+enrichment has, one naming itself, a name given twice, and enrichments waiting for each other are refused when the mapping
+loads.
 
-A record the flow's mapping holds is held as it always was, and its steps do not render. A step that holds (a required
-value empty, a value its template refuses, several rows under `rows: one`) or that would change what the record holds
-holds the record, its reasons named `enrich.<step>: ...`, and the steps after it do not render, so every reason given is a
-true one. OSDU keeps the version it has until the record renders whole. A step with `onHold: step` is set aside instead,
-and the record goes ahead with what the step added to its last delivery ([a step set aside on its hold](enrich-holds.md)).
+A record the mapping holds is held as it always was. An enrichment that holds, or would change what the record holds, holds
+the record with its reasons named `enrich.<name>: ...`, and the enrichments after it do not render, so every reason given is
+a true one; one with `onHold: step` is set aside instead ([an enrichment set aside on its hold](enrich-holds.md)), and the
+record links the records its last delivery added.
 
 ## One change, one write
 
-The steps' rows are child datasets of the flow's source. A change to any of them is a change to the record:
+An enrichment's rows are a child dataset of the flow's source, so a change to them is a change to the record:
 
-- **A step's rows changed, arrived or went.** The record is a candidate of the run's window, as a record whose child rows
-  changed always is, and its ingestion fingerprint moved. The whole chain renders again and the record is sent once.
-- **The record's own row changed.** The chain renders again over the new row: a step reading what changed renders the new
-  value, and every step is in the one write.
-- **A mapping or a fragment was edited, a step added, removed or reordered.** The render context names every step's fragment,
-  its fingerprint, its template version and its parameters, so the rules moved: the scope is read whole once and every
-  record renders again.
-- **A cache value a fragment read changed.** The record's cache usages are its mapping's and every fragment's, so the
-  cache rollout reaches it. A pipeline's `cache.before: auto` brings up to date what every fragment reads as well as what
-  the mapping reads ([cache](delivery.md#cache)).
-- **The rows changed but the record renders the same** (a row written again with the same values). Nothing is sent.
+- **Its rows changed, arrived or went.** The record is a candidate of the run's window and its ingestion fingerprint moved;
+  the whole chain renders again and the record goes once.
+- **The record's own row changed.** The chain renders again over the new row, every enrichment in the one write.
+- **A mapping was edited, or an enrichment added, removed or reordered.** The render context names every enrichment's
+  mapping, its fingerprint, template version, parameters and rules, so every record renders again.
+- **A cache value a mapping of the chain read changed.** The record's cache usages are every mapping's, so the cache rollout
+  reaches it; a pipeline's `cache.before: auto` brings up to date what every one of them reads ([cache](delivery.md#cache)).
+- **Only a record an enrichment adds changed** (its row or its files). That record is written again under its id, and the
+  record, which links it already, is not ([what a change sends](enrich-records.md#what-a-change-sends)).
+- **The rows changed but nothing renders differently.** Nothing is sent.
 
-So a record is written at most once for each change, however many steps it has and whichever part of its chain moved.
+So a record is written at most once for each change, whichever part of its chain moved.
+
+## What the ledger keeps
+
+Everything an enrichment did is kept with the record it belongs to, in the record's own ledger row, so it goes wherever the
+record goes (a move, a reversal, a purge):
+
+- **What rendered it.** The record's render context names each enrichment, its mapping, fingerprint and parameters, and for
+  one adding records their kind, key and how they are written.
+- **Where its rows came from.** The record's target state keeps, for each enrichment reading rows, how many rows the
+  delivered document read and the ingestion files they came from (`enrich.source.<name>`); and for each record it adds, the
+  file and row it was rendered from (`enrich.<id>.source`).
+- **What OSDU holds of each record it adds.** Its id among the record's links (`enrich.records`), the hash of what was
+  written (`enrich.<id>`), of its files (`enrich.<id>.files`) and the version that landed (`enrich.<id>.version`). Every
+  write of it is a step of the record's [attempt](../tables/attempt.md) that made it, with the version it landed as and the
+  one it replaced, so a record no longer linked stays listed with the writes made of it. A write landed whatever the
+  record's own write did after it, so a try that held lists its writes too; a try that resumed one does not list it again.
+- **What was set aside.** The record's `HeldSteps`.
+- **How to find it.** Each added record's id is one of the record's identity values (kind `added`), so the lookup across
+  flows finds the record from the id of a dataset it added ([the ledger](../concepts/ledger.md#finding-records)).
+
+A record's **Enrichments** tab, `sqlflow records enrichments <flow.yaml> --key <key>` and
+`GET /api/v1/delivery/records/{flowId}/{key}/enrichments` show it: each enrichment with what it adds, its mapping and where
+its rows came from, then every record it added with whether the record links it, its version, its row and every write made
+of it. Nothing there is read from OSDU.
 
 ## What the preflight checks
 
-Before anything renders, every run and `sqlflow check` refuse a chain when:
+When the mapping loads, and before anything renders on every run and `sqlflow check`:
 
-- a step's mapping is not a fragment, fills another kind than the flow's mapping, or another version of its template;
-- a fragment's own preflight fails, as any mapping's does ([fragments](mapping-fragment.md#what-the-preflight-checks));
-- a step writes what the flow's mapping or another step writes, unless both add items to one list, or writes inside what
-  another writes whole;
-- a step writes under a key the flow preserves (`target.protocolOptions.preserveDataKeys`), which every update carries over
-  from the record OSDU holds, unless it is a step's files linked from the preserved list itself, which an update merges
-  ([preserved keys](enrich-files.md#preserved-keys));
-- a step reads with `$base` what neither the flow's mapping nor a step before it writes, what the step itself writes, or what
-  a later step writes (`... which step 'inner' writes after this one renders; name it under enrich.copy.after ...`);
-- a fragment reads a column its step does not have: any column when the step declares no dataset, a column outside its
-  `$forEach` under `rows: many`, or a `$forEach` over anything but the step's own rows;
-- `render.parameters` supplies a value no mapping of the chain declares.
+- an enrichment names an enrichment mapping (`enrichment: true`), and one of the record's kind fills the same template
+  version as the mapping;
+- the flow binds the child dataset of every enrichment reading rows, binds `files` only for an enrichment that registers
+  them or names bulk data, and names `workflows` only for enrichments the mapping declares;
+- the mapping does not repeat an enrichment's rows with `$forEach` itself: they are the enrichment's;
+- a `$link` names an enrichment adding records, sits in a list the flow preserves only as the list itself, and writes one
+  value only for an enrichment taking one row;
+- an enrichment writes no path the mapping or another enrichment writes, unless both add items to one list, and nothing under
+  a key the flow preserves;
+- an enrichment reads with `$base` only what the mapping or an enrichment before it writes, and only the columns of its rows;
+- `render.parameters` supplies no value no mapping of the chain declares;
+- an enrichment is refused on the `dspdm` and `etp` routes, and one adding records on a `ddms` flow whose endpoint is the DDMS
+  itself.
 
-`sqlflow validate` finds each step's fragment beside the flow's mapping and refuses one that is not there or not a fragment.
+`sqlflow validate` finds every enrichment mapping beside the flow's mapping and binds the flow to them.
 
-## Where the chain shows
+The operations that write nothing an enrichment adds (verify, delete, release, redeliver) read only the mapping document to bind
+the flow, and go ahead when it does not read. A drain sends what the enrichments add with each record, so it refuses then:
+`... the pending work is not sent, since it is written with what the mapping <Name@version> adds to each record through its
+enrichments, and the flow could not be bound to them: ...`.
 
-- `sqlflow check` lists each step in the order it renders: `enrich      lasfile: WellLogFile@1.0.0, one row of OsduData.silver.WellLogFile`; `--json` lists them under `enrich`.
-- `sqlflow preview`, the flow's Preview tab and a record's preview show what each step did to the record: each path it set
-  and each item it added, or why it held the record (`document.enrichment`).
-- A record's render context, on its Render tab and in `sqlflow records show`, names every step's fragment.
-- Lineage reads each fragment as a mapping node of its own, reading the cache types and kinds it reads
-  ([lineage](../concepts/lineage.md)).
+## Where it shows
+
+- `sqlflow check` lists each enrichment in the order it renders: `enrich      lasfile: records of osdu:wks:dataset--File.Generic:1.0.0 (WellLogLasDataset@1.0.0), registered with their files through the Dataset service, one row of OsduData.silver.WellLogFile`.
+- `sqlflow preview`, the flow's Preview tab and a record's Render tab show what each enrichment did: each path it set, each
+  item it added, each record it adds with its id and row, or why it held the record (`document.enrichment`).
+- A record's **Enrichments** tab shows what the ledger keeps of them.
+- Lineage reads each enrichment mapping as a mapping node of its own, reading what it reads and writing the kind of the
+  records it adds ([lineage](../concepts/lineage.md)).
+
+The mapping builder lays out a mapping without enrichments; a mapping declaring `enrich:` is edited in its file.
 
 ## Related
 
-- [Files a step registers](enrich-files.md): datasets a step adds to each record, their ids, and what a change sends.
-- [A step set aside on its hold](enrich-holds.md): a step that holds without holding the record.
-- [A step's bulk data](enrich-bulk.md): a well log's curves named by a table of their own.
-- [A step's workflow](enrich-workflow.md): an OSDU workflow run over the record and the step's dataset.
-- [Fragments](mapping-fragment.md): the mapping a step renders, `$base`, and how a fragment adds to the record.
+- [Records an enrichment adds](enrich-records.md): datasets and records of any kind, their ids, `$link`, and what a change sends.
+- [An enrichment set aside on its hold](enrich-holds.md): one that holds without holding the record.
+- [An enrichment's bulk data](enrich-bulk.md): a well log's curves named by a table of their own.
+- [An enrichment's workflow](enrich-workflow.md): an OSDU workflow run over the record and what an enrichment added.
+- [Enrichment mappings](mapping-enrichment.md): `enrichment: true`, `$base`, and how paths are added to the record.
 - [Delivery flow](delivery.md): the source, its child datasets and the target the record goes to.
-- [A source with interfaces](interfaces.md): an interface's own `enrich`.
-- [Change detection](../concepts/change-detection.md): what makes a record render and send again.
+- [The ledger](../concepts/ledger.md): what is kept of every record.

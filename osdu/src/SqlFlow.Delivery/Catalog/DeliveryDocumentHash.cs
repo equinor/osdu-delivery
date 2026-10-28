@@ -1,6 +1,7 @@
 using System.Security.Cryptography;
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using System.Text.Json.Serialization.Metadata;
 using SqlFlow.Core;
 using SqlFlow.Delivery.Model;
 using YamlDotNet.RepresentationModel;
@@ -30,31 +31,42 @@ public static class DeliveryDocumentHash
         PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
         DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,
         Converters = { new JsonStringEnumConverter() },
+        TypeInfoResolver = new DefaultJsonTypeInfoResolver { Modifiers = { LeaveOutNoWorkflows } },
     };
+
+    /// <summary>
+    /// A flow that runs no workflow over its mapping's enrichments (<see cref="FlowDefinition.EnrichWorkflows"/> empty) hashes as
+    /// one written before <c>workflows:</c> existed, so the hash every such flow was synced with, which the sync tells a renamed
+    /// flow by, stays what it was.
+    /// </summary>
+    private static void LeaveOutNoWorkflows(JsonTypeInfo info)
+    {
+        if (info.Type != typeof(FlowDefinition))
+        {
+            return;
+        }
+
+        foreach (var property in info.Properties.Where(p => p.Name == "enrichWorkflows"))
+        {
+            property.ShouldSerialize = (_, value) => value is IReadOnlyDictionary<string, WorkflowRoute> { Count: > 0 };
+        }
+    }
 
     /// <summary>
     /// The hash of <paramref name="source"/> with its name and path left out, and of the mapping each interface pins, by its
     /// reference in <paramref name="mappings"/> (the content hash of each mapping document the repository holds); a mapping
-    /// the repository does not hold counts as none. The fragments the interfaces' <c>enrich:</c> steps pin count the same
-    /// way; a source whose interfaces declare no step hashes as it always did.
+    /// the repository does not hold counts as none. What a mapping adds to its records (its <c>enrich:</c> block) is the
+    /// mapping's content, and what each enrichment mapping renders enters every record's render context.
     /// </summary>
     public static string Of(SourceDefinition source, IReadOnlyDictionary<string, string> mappings)
     {
         ArgumentNullException.ThrowIfNull(source);
         ArgumentNullException.ThrowIfNull(mappings);
-        var fragments = source.Interfaces.Any(f => f.Enrich is { Count: > 0 })
-            ? source.Interfaces.Select(f => (f.Enrich ?? [])
-                .SelectMany(s => new[] { s.Mapping, s.Files?.Mapping })
-                .OfType<string>()
-                .Select(reference => mappings.GetValueOrDefault(reference))
-                .ToList()).ToList()
-            : null;
         return Hash(new
         {
             source.ParallelInterfaces,
             Interfaces = source.Interfaces.Select(f => f with { Name = string.Empty, SourcePath = null }).ToList(),
             Mappings = source.Interfaces.Select(f => mappings.GetValueOrDefault(f.Render.Mapping)).ToList(),
-            Fragments = fragments,
         });
     }
 

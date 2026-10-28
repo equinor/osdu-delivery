@@ -90,7 +90,7 @@ assertion after the delivery that writes the type it tests ([lineage](../concept
 | `flowType: dimension` | Dimension flow | Reads every distinct value of an attribute of OSDU records, cleans each into a value a person picks, and keeps both with the search filter they stand for | `build` | [dimension](dimension.md) |
 | `flowType: inventory` | Inventory flow | Keeps every id and version a kind holds in a partition and compares them with the ledgers: orphans, missing records, ids a ledger forgot | `build` | [inventory](inventory.md) |
 | `flowType: removal` | Removal flow | Reads the keys a source holds now, whole, and the keys it lists as removed, compares them with a delivery flow's ledger, and takes out of OSDU, once, the records the source no longer holds | `remove` | [removal](removal.md) |
-| `documentType: mapping` | Mapping | How one row of an ingestion table becomes one OSDU record of one kind, pinned by `Name@version`; with `fragment: true`, the paths a step of `enrich:` adds to it | (never runs) | [mapping](mapping.md), [fragments](mapping-fragment.md) |
+| `documentType: mapping` | Mapping | How one row of an ingestion table becomes one OSDU record of one kind, pinned by `Name@version`, and what its `enrich:` adds to the record; with `enrichment: true`, what an enrichment renders | (never runs) | [mapping](mapping.md), [enrichments](enrich.md), [enrichment mappings](mapping-enrichment.md) |
 | `documentType: dictionary` | Dictionary | A small lookup table kept in the repository, held in a partition's cache by a cache flow | (never runs) | [dictionary](dictionary.md) |
 
 The OSDU verbs of the `sqlflow` command line (`check`, `preview`, `values`, `records`, `cache`, `template`,
@@ -309,9 +309,10 @@ the nearest folder holding it holds.
 `dataset.idFrom: key` makes each record's OSDU id from its key (`dev:master-data--Wellbore:WB-0001`), so other mappings
 can refer to it ([the OSDU id](mapping.md#the-osdu-id)).
 
-A delivery flow may extend each record it renders with `enrich:` steps: each renders a fragment, a mapping with
-`fragment: true`, from rows of its own and adds it to the record, which is sent once with every step in it
-([enrich](enrich.md), [fragments](mapping-fragment.md)).
+A mapping may add to each record it renders with `enrich:`: paths of the record, records of their own the record links
+(a LAS file's dataset, a record of a custom kind) and its bulk data, each rendered by an enrichment mapping
+(`enrichment: true`) from rows of its own that the flow binds under `source.datasets`; the record is sent once with every
+enrichment in it, and the ledger keeps them under it ([enrichments](enrich.md), [enrichment mappings](mapping-enrichment.md)).
 
 ### flowType: cache
 

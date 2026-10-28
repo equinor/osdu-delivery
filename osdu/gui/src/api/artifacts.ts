@@ -118,11 +118,71 @@ export interface UndoneCounts {
   failed: number;
 }
 
+/**
+ * One enrichment of a record as its ledger row holds it (osdu/docs/reference/flow/enrich.md, What the ledger keeps): what it
+ * adds, the enrichment mapping that rendered it, the kind of the records it adds and how they are written, whether it was set
+ * aside on its holds on the record's last render, where its rows came from, and every record it added.
+ */
+export interface DeliveryRecordEnrichment {
+  name: string;
+  /** What it adds to the record, in this order: paths, records, bulk, workflow. */
+  adds: ("paths" | "records" | "bulk" | "workflow")[];
+  mapping: string | null;
+  mappingFingerprint: string | null;
+  /** The kind of the records it adds, and how they are written: `dataset` with their files, or `storage`. */
+  recordKind: string | null;
+  writtenThrough: "dataset" | "storage" | null;
+  setAside: boolean;
+  /** Where the rows of the delivered document's enrichment came from; null for one reading no rows, or not delivered yet. */
+  rows: DeliveryEnrichmentRows | null;
+  records: DeliveryEnrichmentRecord[];
+}
+
+/** How many rows the enrichment read, the ingestion files they came from (at most twenty of `filesCounted`), and for one row where it is (`file#row`). */
+export interface DeliveryEnrichmentRows {
+  count: number;
+  files: string[];
+  filesCounted: number;
+  row: string | null;
+}
+
+/**
+ * One record an enrichment added: its OSDU id, whether the record links it now (one it no longer links stays in OSDU), the
+ * version the ledger last saw land, the hashes of what was written and of its files, the row it came from, and every write.
+ */
+export interface DeliveryEnrichmentRecord {
+  id: string;
+  linked: boolean;
+  version: number | null;
+  hash: string | null;
+  filesHash: string | null;
+  source: string | null;
+  writes: DeliveryEnrichmentWrite[];
+}
+
+/**
+ * One write a delivery made of a record an enrichment added, as the record's attempt holds it: the attempt, when the write
+ * went, the run, how the attempt ended (a write that landed stays in OSDU however the record's own write went), the version it
+ * landed as, and the version it replaced (null when it created the record).
+ */
+export interface DeliveryEnrichmentWrite {
+  attemptId: number;
+  atUtc: string;
+  runId: string | null;
+  outcome: string;
+  version: number | null;
+  priorVersion: number | null;
+}
+
 export const artifactApi = {
   /** A record's artifacts, newest first; a record deleted from the ledger keeps its own. */
   recordArtifacts: ({ flowId, deliveryKey }: DeliveryRecordRef, max?: number) =>
     get<DeliveryArtifact[]>(
       `/api/v1/delivery/records/${encodeURIComponent(flowId)}/${encodeURIComponent(deliveryKey)}/artifacts`, max ? { max } : {}),
+  /** What the mapping's enrichments added to a record, in the order they render, read from its ledger row. */
+  recordEnrichments: ({ flowId, deliveryKey }: DeliveryRecordRef) =>
+    get<DeliveryRecordEnrichment[]>(
+      `/api/v1/delivery/records/${encodeURIComponent(flowId)}/${encodeURIComponent(deliveryKey)}/enrichments`),
   /** A flow's open undos in the partition the scope names, with a page of the records of its interface. */
   openUndos: (pipelineId: string, scope: DeliveryFlowScope | undefined, page = 1, pageSize = 50) =>
     get<DeliveryOpenUndos>(flowPath(pipelineId, "/undos", scope), { page, pageSize }),

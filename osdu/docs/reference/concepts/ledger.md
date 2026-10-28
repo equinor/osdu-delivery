@@ -242,17 +242,19 @@ Every question about a delivered record is answered from the ledger:
 | Which OSDU id and version did it land as? | `TargetId`, `TargetVersion`, `TargetStateJson`; each delivered attempt's `TargetVersion` and the version it replaced. |
 | Who released, redelivered, removed or reversed it, and when? | The record's activities: its own and those naming it in `osdu.ActivityRecord`. |
 | What did its deliveries create in OSDU? | Its artifacts. |
+| What did its enrichments add, from which rows, and what landed? | Its render context names each enrichment and its mapping; its target state keeps where each enrichment's rows came from (`enrich.source.<name>`), the records it added (`enrich.records`) and, for each, its row, hash and landed version (`enrich.<id>.source`, `enrich.<id>`, `enrich.<id>.version`); its attempts hold every write of them ([enrichments](../flow/enrich.md#what-the-ledger-keeps)). |
 
-In the GUI a record's page has the tabs **Timeline** (attempts and activities), **Source**, **Render**, **OSDU** and
-**Artifacts**. On the command line:
+In the GUI a record's page has the tabs **Timeline** (attempts and activities), **Source**, **Render**, **OSDU**,
+**Enrichments** (for a record its mapping enriches) and **Artifacts**. On the command line:
 
 ```bash
 sqlflow records show flows/welldb-wellbore-03-delivery.yaml --key welldb:WB-0123 --partition dev --attempts 50
 sqlflow records artifacts flows/welldb-wellbore-03-delivery.yaml --key welldb:WB-0123 --partition dev
+sqlflow records enrichments flows/welldb-welllog-03-delivery.yaml --key welldb:WL-0042 --partition dev
 ```
 
 `--key` takes the delivery key or the source key. The API routes are `GET /api/v1/delivery/records/{flowId}/{key}` and its
-`/attempts`, `/activities`, `/chain`, `/cache` and `/artifacts`. The flow id in these routes is the ledger identity, not the
+`/attempts`, `/activities`, `/chain`, `/cache`, `/artifacts` and `/enrichments`. The flow id in these routes is the ledger identity, not the
 pipeline id, so a record's history stays reachable after its flow leaves the repository.
 
 ## Statistics are counted from the records
@@ -285,8 +287,10 @@ partition-first index. A term that parses as a UUID is a delivery key and finds 
 | `label` | Up to 8 words of the rendered label. |
 | `osdu` | The OSDU id, and its part after the last colon. |
 | `file` | The ingestion file the current version came from. |
+| `added` | The OSDU id of each record the mapping's enrichments add to the record, and its part after the last colon ([enrichments](../flow/enrich.md#what-the-ledger-keeps)). |
 
-A record contributes at most 24 values, each at most 200 characters; values shorter than 3 characters are not stored. A
+A record contributes at most 24 values of its own and at most 64 of the records its enrichments add, each at most 200
+characters; values shorter than 3 characters are not stored. A
 record's values are rewritten as a set whenever it is staged. The lookup takes at most 1,000 candidates from the index and
 reports a larger match as a floor.
 

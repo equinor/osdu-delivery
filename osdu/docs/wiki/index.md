@@ -223,7 +223,12 @@ other packages adopt the same contract.
 - [0035: a record built in steps is rendered as one chain by its own flow, and sent once for any change](decisions/0035-enrich-chains.md) -
   why steps that extend a record are an `enrich:` block of its delivery flow rendering fragments with its mapping, why
   the whole chain renders again on every change and the record is written once, why a fragment only adds, and why
-  steps writing the record in OSDU, a landing per step, stored fragments and preserved keys were rejected.
+  steps writing the record in OSDU, a landing per step, stored fragments and preserved keys were rejected. Amended by
+  0036, which moved the declaration to the mapping.
+- [0036: what a record is enriched with is its mapping's to say, the flow binds the rows, and the ledger keeps it under the record](decisions/0036-enrich-in-the-mapping.md) -
+  why enrichments are a block of the mapping the flow binds rather than flow steps, why one enrichment mapping adds paths
+  or records of any kind by the kind it fills, why the record links them with `$link`, and why the ledger keeps them in the
+  record's own row and identity index rather than a table of their own.
 
 ## Coverage
 

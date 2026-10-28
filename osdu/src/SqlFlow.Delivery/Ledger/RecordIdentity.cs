@@ -23,6 +23,9 @@ public enum RecordIdentityKind
 
     /// <summary>The ingestion file the record's current version came from.</summary>
     File,
+
+    /// <summary>The OSDU id of a record an enrichment of the record's mapping adds to it, and the part of it after the last colon.</summary>
+    Added,
 }
 
 /// <summary>What bounds the identity index, so a record costs a known number of small rows however wide its source row is.</summary>
@@ -39,6 +42,12 @@ public static class RecordIdentityLimits
 
     /// <summary>The most words taken from a label, in order; the rest are found by the label's own prefix index.</summary>
     public const int MaxLabelWords = 8;
+
+    /// <summary>
+    /// The most tokens the records an enrichment adds contribute, beside <see cref="MaxPerRecord"/>: each added record's id
+    /// and its trailing part, so a record adding many is found by the first of them.
+    /// </summary>
+    public const int MaxAddedPerRecord = 64;
 }
 
 /// <summary>
@@ -60,10 +69,17 @@ public static class RecordIdentities
     /// <summary>
     /// Every token a record is findable by, folded, de-duplicated and capped. Order decides what survives the cap:
     /// the declared identities first, then the source key and its parts, the OSDU id, the label's words and the file
-    /// name.
+    /// name. The ids of the records its enrichments add (<paramref name="added"/>) follow under a cap of their own, so a
+    /// record is found by them as well as by its own.
     /// </summary>
     public static IReadOnlyList<RecordIdentityToken> Of(
-        IEnumerable<string>? declared, string? sourceKey, IEnumerable<string?>? keyValues, string? label, string? targetId, string? sourceFileName)
+        IEnumerable<string>? declared,
+        string? sourceKey,
+        IEnumerable<string?>? keyValues,
+        string? label,
+        string? targetId,
+        string? sourceFileName,
+        IEnumerable<string>? added = null)
     {
         var tokens = new List<RecordIdentityToken>();
         var seen = new HashSet<string>(StringComparer.Ordinal);
@@ -107,7 +123,26 @@ public static class RecordIdentities
         }
 
         Add(tokens, seen, sourceFileName, RecordIdentityKind.File);
-        return tokens.Count <= RecordIdentityLimits.MaxPerRecord ? tokens : tokens[..RecordIdentityLimits.MaxPerRecord];
+        var own = tokens.Count <= RecordIdentityLimits.MaxPerRecord ? tokens : tokens[..RecordIdentityLimits.MaxPerRecord];
+
+        // What the record's enrichments add, by its id and the id's own part, as the record's own id is found.
+        var others = new List<RecordIdentityToken>();
+        foreach (var id in added ?? [])
+        {
+            if (others.Count >= RecordIdentityLimits.MaxAddedPerRecord)
+            {
+                break;
+            }
+
+            AddUnder(others, seen, id, RecordIdentityKind.Added, RecordIdentityLimits.MaxAddedPerRecord);
+            var at = id.LastIndexOf(':');
+            if (at >= 0 && at < id.Length - 1)
+            {
+                AddUnder(others, seen, id[(at + 1)..], RecordIdentityKind.Added, RecordIdentityLimits.MaxAddedPerRecord);
+            }
+        }
+
+        return [.. own, .. others];
     }
 
     /// <summary>The key values a record's <c>SourceKeyJson</c> holds; empty when it holds none or is not a JSON array.</summary>
@@ -149,8 +184,12 @@ public static class RecordIdentities
 
     /// <summary>Adds one token when it is worth an index row and is not already held; says whether it was added.</summary>
     private static bool Add(List<RecordIdentityToken> tokens, HashSet<string> seen, string? value, RecordIdentityKind kind)
+        => AddUnder(tokens, seen, value, kind, RecordIdentityLimits.MaxPerRecord);
+
+    /// <summary>Adds one token when <paramref name="tokens"/> holds fewer than <paramref name="cap"/> and it is worth an index row and not already held.</summary>
+    private static bool AddUnder(List<RecordIdentityToken> tokens, HashSet<string> seen, string? value, RecordIdentityKind kind, int cap)
     {
-        if (value is null || tokens.Count >= RecordIdentityLimits.MaxPerRecord)
+        if (value is null || tokens.Count >= cap)
         {
             return false;
         }
@@ -184,6 +223,7 @@ public static class RecordIdentities
         RecordIdentityKind.Label => "label",
         RecordIdentityKind.Target => "osdu",
         RecordIdentityKind.File => "file",
+        RecordIdentityKind.Added => "added",
         _ => throw new ArgumentOutOfRangeException(nameof(kind), kind, "unknown identity kind"),
     };
 
@@ -195,6 +235,7 @@ public static class RecordIdentities
         "label" => RecordIdentityKind.Label,
         "osdu" => RecordIdentityKind.Target,
         "file" => RecordIdentityKind.File,
+        "added" => RecordIdentityKind.Added,
         _ => RecordIdentityKind.Declared,
     };
 

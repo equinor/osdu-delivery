@@ -6,7 +6,7 @@ namespace SqlFlow.Delivery.Engine.Protocols;
 
 /// <summary>
 /// The links a record's steps of <c>enrich:</c> own in the lists an update carries forward from the version OSDU holds
-/// (osdu/docs/reference/flow/enrich-files.md, Preserved keys): the datasets its steps link now, registered by this delivery or
+/// (osdu/docs/reference/flow/enrich-records.md, Preserved keys): the datasets its steps link now, registered by this delivery or
 /// kept for a step set aside, and those its last delivery linked. A list the steps own links in is merged rather than copied
 /// whole: OSDU's items stay, other systems' among them, the step's links the document has are added, and the step's links it
 /// no longer has are taken off. Each link is compared as the record holds it, the dataset's id and a colon
@@ -31,8 +31,8 @@ internal sealed class StepLinks
     {
         ArgumentNullException.ThrowIfNull(work);
         return new StepLinks(
-            work.StepParts.Select(p => p.Part.DatasetId).Concat(work.StepKeptDatasets),
-            EnrichParts.Datasets(work.TargetState));
+            work.StepParts.Select(p => p.Part.RecordId).Concat(work.StepKeptRecords),
+            EnrichParts.Records(work.TargetState));
     }
 
     /// <summary>The links of <paramref name="current"/> datasets now and <paramref name="previous"/> ones before, for a test or a caller without a delivery.</summary>

@@ -206,13 +206,22 @@ public sealed record FlowDefinition
     public FlowVerify Verify { get; init; } = new();
 
     /// <summary>
-    /// The steps that extend each record once the flow's own mapping has rendered it (<c>enrich:</c>,
-    /// osdu/docs/reference/flow/enrich.md), in the order they render: each renders a fragment of the record from rows of its
-    /// own, read beside the record's row as a child dataset under the step's name, over the record as the mapping and the steps
-    /// before it left it, and the record is sent once with all of them. Null for a flow that declares none, which renders,
-    /// hashes and delivers as it always did.
+    /// The enrichments of the flow's mapping bound to what the flow says of them (osdu/docs/reference/flow/enrich.md), in the
+    /// order they render: the mapping declares each under its <c>enrich:</c>, and the flow binds its rows
+    /// (<c>source.datasets.&lt;name&gt;</c>), the files they name and the workflow it runs (<see cref="EnrichWorkflows"/>).
+    /// Each renders its part of the record from its rows, read beside the record's row as the child dataset of its name, over
+    /// the record as the mapping and the enrichments before it left it, and the record is sent once with all of them. Null
+    /// until a run binds the flow to its mapping (<see cref="Documents.EnrichBinding"/>), and for a mapping that declares none,
+    /// whose records render, hash and deliver as they always did.
     /// </summary>
     public IReadOnlyList<EnrichStep>? Enrich { get; init; }
+
+    /// <summary>
+    /// The OSDU workflows a delivery runs over an enrichment's records once they landed (<c>workflows.&lt;enrichment&gt;</c>,
+    /// osdu/docs/reference/flow/enrich-workflow.md), by the name of the enrichment of the flow's mapping each runs over. Empty
+    /// for a flow that runs none.
+    /// </summary>
+    public IReadOnlyDictionary<string, WorkflowRoute> EnrichWorkflows { get; init; } = new Dictionary<string, WorkflowRoute>(StringComparer.Ordinal);
 
     /// <summary>
     /// The secret references the target declares (auth secrets, header values, token body values, the endpoint),
@@ -390,152 +399,162 @@ public sealed record FlowSourceDataset
 
     /// <summary>The most child rows one record may carry; a record above it is held rather than rendered.</summary>
     public int MaxRowsPerRecord { get; init; } = DefaultMaxRowsPerRecord;
+
+    /// <summary>
+    /// The files each row names (<c>source.datasets.&lt;name&gt;.files</c>, osdu/docs/reference/flow/enrich-records.md): where
+    /// they are, in the columns of this table's rows. An enrichment of the flow's mapping reading these rows registers them
+    /// with the dataset records it adds, or sends them as the record's DDMS bulk data; null for a dataset whose rows name none.
+    /// </summary>
+    public FlowPayload? Files { get; init; }
 }
 
 /// <summary>
-/// One step of a flow's <c>enrich:</c> chain (osdu/docs/reference/flow/enrich.md): a fragment mapping that adds paths to
-/// every record the flow renders, from the rows of its own dataset, after the flow's mapping and the steps it comes after.
+/// One enrichment of a flow's mapping as a run renders and delivers it (osdu/docs/reference/flow/enrich.md): what the
+/// mapping's <c>enrich.&lt;name&gt;</c> declares, bound to the rows, files and workflow the flow gives it
+/// (<see cref="Documents.EnrichBinding"/>). It adds paths to every record the mapping renders (<see cref="Mapping"/>), or
+/// adds records of their own to it, of any kind, one for each of its rows (<see cref="Records"/>), or names the record's DDMS
+/// bulk data (<see cref="Bulk"/>), after the mapping and the enrichments it comes after.
 /// </summary>
 public sealed record EnrichStep
 {
-    /// <summary>The most steps one flow or interface declares.</summary>
+    /// <summary>The most enrichments one mapping declares.</summary>
     public const int MaxSteps = 16;
 
-    /// <summary>The longest name a step takes.</summary>
+    /// <summary>The longest name an enrichment takes.</summary>
     public const int MaxNameLength = 32;
 
-    /// <summary>The step's name: what its dataset is read as, and what a message and the record's composition name it by.</summary>
+    /// <summary>The enrichment's name: what its rows are read as, and what a message and the record's composition name it by.</summary>
     public required string Name { get; init; }
 
     public string? Description { get; init; }
 
     /// <summary>
-    /// The fragment the step renders, pinned as <c>Name@version</c>: a mapping whose header says <c>fragment: true</c>. Null
-    /// for a step that registers files alone (<see cref="Files"/>), which adds only the links to them.
+    /// The enrichment mapping that adds paths to the record, pinned as <c>Name@version</c>: one of the record's own kind. Null
+    /// for an enrichment whose mapping renders records of their own (<see cref="Records"/>), and for one that names the
+    /// record's bulk data alone.
     /// </summary>
     public string? Mapping { get; init; }
 
     /// <summary>
-    /// The files each of the step's rows names, registered as a dataset record of their own and linked from the record
-    /// (<c>enrich.&lt;name&gt;.files</c>); null for a step that registers none.
+    /// The records the enrichment adds to the record, one for each of its rows (or one, for an enrichment reading none), of the
+    /// kind its mapping fills, which the record links with <c>$link</c>; null for an enrichment that adds none.
     /// </summary>
-    public EnrichFiles? Files { get; init; }
+    public EnrichRecords? Records { get; init; }
 
     /// <summary>
-    /// The steps this one renders after, beside the order the document lists them in: those whose paths it reads with
+    /// The enrichments this one renders after, beside the order the mapping lists them in: those whose paths it reads with
     /// <c>$base</c>, and any other it has to follow.
     /// </summary>
     public IReadOnlyList<string> After { get; init; } = [];
 
     /// <summary>
-    /// Whether the step reads rows of its own (<c>enrich.&lt;name&gt;.dataset</c>), the child dataset of the flow's source
-    /// named after it. A step without one renders the same fragment for every record, from what the record holds and the
-    /// mapping's parameters.
+    /// Whether the enrichment reads rows of its own (<c>rows:</c>), the child dataset of the flow's source named after it. One
+    /// without them renders the same paths for every record, from what the record holds and the mapping's parameters.
     /// </summary>
     public bool ReadsRows { get; init; }
 
-    /// <summary>How many rows of its dataset one record takes: one, read as the fragment's row, or many, read with <c>$forEach</c>.</summary>
+    /// <summary>How many rows of its dataset one record takes: one, read as its mapping's row, or many, read with <c>$forEach</c>.</summary>
     public EnrichRows Rows { get; init; } = EnrichRows.One;
 
     /// <summary>
-    /// The record's DDMS bulk data, from the step's one row (<c>enrich.&lt;name&gt;.bulk</c>, osdu/docs/reference/flow/enrich-bulk.md):
-    /// the flow's route sends it as the record's payload, which is the flow's payload set <c>bulk</c>, read from the step's row;
-    /// null for a step that supplies none.
+    /// The record's DDMS bulk data, named by the enrichment's one row (<c>bulk: true</c>, osdu/docs/reference/flow/enrich-bulk.md):
+    /// the files its dataset binds, which the flow's route sends as the record's payload set <c>bulk</c>; null for an
+    /// enrichment that supplies none.
     /// </summary>
     public FlowPayload? Bulk { get; init; }
 
     /// <summary>
-    /// The workflow the step runs over the record once the record and the step's datasets landed (<c>enrich.&lt;name&gt;.workflow</c>,
-    /// osdu/docs/reference/flow/enrich-workflow.md): stages, results, secrets and when it runs, as the workflow route declares
-    /// them, over the record the flow's route wrote; null for a step that runs none.
+    /// The workflow the flow runs over the record once the record and the enrichment's datasets landed
+    /// (<c>workflows.&lt;name&gt;</c>, osdu/docs/reference/flow/enrich-workflow.md): stages, results, secrets and when it runs,
+    /// as the workflow route declares them, over the record the flow's route wrote; null for an enrichment it runs none over.
     /// </summary>
     public WorkflowRoute? Workflow { get; init; }
 
     /// <summary>
-    /// What the step's hold does (<c>enrich.&lt;name&gt;.onHold</c>, osdu/docs/reference/flow/enrich-holds.md): hold the
-    /// record, or set the step aside, the record going ahead with what the step added to its last delivery.
+    /// What the enrichment's hold does (<c>onHold:</c>, osdu/docs/reference/flow/enrich-holds.md): hold the record, or set the
+    /// enrichment aside, the record going ahead with what it added to its last delivery.
     /// </summary>
     public EnrichHold OnHold { get; init; } = EnrichHold.Record;
 }
 
-/// <summary>What a step of <c>enrich:</c> that holds does to its record (osdu/docs/reference/flow/enrich-holds.md).</summary>
+/// <summary>What an enrichment that holds does to its record (osdu/docs/reference/flow/enrich-holds.md).</summary>
 public enum EnrichHold
 {
-    /// <summary>The record is held with the step's reasons, and OSDU keeps the version it has until the record renders whole.</summary>
+    /// <summary>The record is held with the enrichment's reasons, and OSDU keeps the version it has until the record renders whole.</summary>
     Record,
 
     /// <summary>
-    /// The step is set aside: the record goes ahead with what the step added to the version the last delivery wrote (nothing
-    /// for a record never delivered), the other steps render as they do, and the ledger lists the record with the step held.
+    /// The enrichment is set aside: the record goes ahead with what it added to the version the last delivery wrote (nothing
+    /// for a record never delivered), the other enrichments render as they do, and the ledger lists the record with it held.
     /// </summary>
     Step,
 }
 
 /// <summary>
-/// The files a step of <c>enrich:</c> registers (osdu/docs/reference/flow/enrich-files.md): for each of the
-/// step's rows, the files its row names are uploaded through the Dataset service and registered as one dataset record, under
-/// an id made from the record's own id and the step (and, for a step taking many rows, the row's key), so the same row lands
-/// on the same dataset on every delivery and the record names it before anything is sent.
+/// The records an enrichment adds to each record (osdu/docs/reference/flow/enrich-records.md): one for each of its rows, of
+/// any kind, rendered by the enrichment's mapping under an id made from the record's own id and the enrichment (and, for one
+/// taking many rows, the row's key), so the same row lands on the same record on every delivery and the record links it
+/// before anything is sent. A dataset whose rows name files has them uploaded and is registered through the Dataset service;
+/// every other record is written through storage as its mapping renders it. Each carries the record's access list and legal
+/// block, so whoever may read the record may read what it adds.
 /// </summary>
-public sealed record EnrichFiles
+public sealed record EnrichRecords
 {
-    /// <summary>The kind every dataset is registered as, unless the step names another.</summary>
-    public const string DefaultKind = "osdu:wks:dataset--File.Generic:1.0.0";
-
-    /// <summary>Where the record lists its datasets, unless the step names another path.</summary>
-    public const string DefaultLink = "data.Datasets";
-
     /// <summary>
-    /// What every dataset id a step derives starts its suffix with, before the step's name: a dot, which neither the dataset a
-    /// record's own files go in (<c>files</c>) nor a workflow input's name holds, so no other route derives the same id.
+    /// What every id an enrichment derives starts its suffix with, before its name: a dot, which neither the dataset a record's
+    /// own files go in (<c>files</c>) nor a workflow input's name holds, so no other route derives the same id.
     /// </summary>
     public const string SuffixPrefix = "enrich.";
 
-    /// <summary>Where each row's files are: the root, the row's column naming its folder, the pattern, and the column holding their content hash.</summary>
-    public required FlowPayload Payload { get; init; }
-
-    /// <summary>The dataset kind each row's files are registered as: one file for a <c>dataset--File.*</c> kind, several for a <c>dataset--FileCollection.*</c>.</summary>
-    public string Kind { get; init; } = DefaultKind;
+    /// <summary>
+    /// Where each row's files are (the root, the row's column naming its folder, the pattern, and the column holding their
+    /// content hash), for a dataset kind whose rows name files, which are uploaded and registered with it through the Dataset
+    /// service; null for records written through storage as they render.
+    /// </summary>
+    public FlowPayload? Files { get; init; }
 
     /// <summary>
-    /// The columns of a row that tell its dataset from the step's other rows' (<c>files.key</c>): required when the step takes
-    /// many rows, and none when it takes one, whose one dataset the step's name alone names.
+    /// The kind of every record the enrichment adds, the kind its mapping fills: a dataset kind for files (one file for a
+    /// <c>dataset--File.*</c> kind, several for a <c>dataset--FileCollection.*</c>), or any kind the storage service accepts.
+    /// </summary>
+    public required string Kind { get; init; }
+
+    /// <summary>
+    /// The columns of a row that tell its record from the enrichment's other rows' (<c>key:</c>): required when it takes many
+    /// rows, and none when it takes one, whose one record the enrichment's name alone names.
     /// </summary>
     public IReadOnlyList<string> Key { get; init; } = [];
 
-    /// <summary>
-    /// A fragment over the dataset kind (<c>files.mapping</c>, <c>Name@version</c>) rendered from the row into each dataset
-    /// record's data, beside the file properties the registration writes; null for a dataset record of those alone.
-    /// </summary>
-    public string? Mapping { get; init; }
+    /// <summary>The enrichment mapping (<c>Name@version</c>) rendered from the row into each record it adds.</summary>
+    public required string Mapping { get; init; }
 
-    /// <summary>The path of the record the datasets are listed at, as <c>{id}:</c>; <c>data.Datasets</c> unless named.</summary>
-    public string Link { get; init; } = DefaultLink;
+    /// <summary>True when the records are datasets registered with the files their rows name, through the Dataset service.</summary>
+    public bool RegistersFiles => Files is not null;
 
     /// <summary>
-    /// The kinds <paramref name="flow"/>'s steps of <c>enrich:</c> register their files as, each once: what the pipeline's
-    /// cache after step may put in besides its records (osdu/docs/reference/flow/delivery.md, cache).
+    /// The kinds <paramref name="flow"/>'s enrichments add records of, each once: what the pipeline's cache after step may put
+    /// in besides its records (osdu/docs/reference/flow/delivery.md, cache).
     /// </summary>
     public static IReadOnlyList<string> KindsOf(FlowDefinition flow)
     {
         ArgumentNullException.ThrowIfNull(flow);
-        return [.. (flow.Enrich ?? []).Select(step => step.Files?.Kind).OfType<string>().Distinct(StringComparer.Ordinal)];
+        return [.. (flow.Enrich ?? []).Select(step => step.Records?.Kind).OfType<string>().Distinct(StringComparer.Ordinal)];
     }
 
-    /// <summary>The media type the files are uploaded as; the flow's <c>filesContentType</c>, else <c>application/octet-stream</c>, unless named.</summary>
-    public string? ContentType { get; init; }
+    /// <summary>The media type the files are uploaded as: the dataset's <c>files.contentType</c>, else the flow's <c>filesContentType</c>, else <c>application/octet-stream</c>.</summary>
+    public string? ContentType => Files?.ContentType;
 }
 
-/// <summary>How many rows of its dataset a step of <c>enrich:</c> takes for one record.</summary>
+/// <summary>How many rows of its dataset an enrichment takes for one record.</summary>
 public enum EnrichRows
 {
     /// <summary>
-    /// At most one: the fragment reads it as its own row, as a mapping reads the record table's. A record without one gets
-    /// nothing from the step; one with two or more is held, since the step would have to pick one.
+    /// At most one: the enrichment's mapping reads it as its own row, as a mapping reads the record table's. A record without
+    /// one gets nothing from the enrichment; one with two or more is held, since the enrichment would have to pick one.
     /// </summary>
     One,
 
-    /// <summary>Any number: the fragment reads them with <c>$forEach</c> over the step's name, as a mapping reads a child dataset.</summary>
+    /// <summary>Any number: the enrichment's mapping reads them with <c>$forEach</c> over its name, as a mapping reads a child dataset.</summary>
     Many,
 }
 
@@ -563,11 +582,17 @@ public sealed record FlowPayload
     public string? ChunkCountColumn { get; init; }
 
     /// <summary>
-    /// The step of <c>enrich:</c> whose one row names the files, for the bulk data a step supplies
-    /// (<c>enrich.&lt;name&gt;.bulk</c>, osdu/docs/reference/flow/enrich-bulk.md): its columns are the step table's, and a record
-    /// without a row of the step has no payload. Null for a payload set the record's own row names.
+    /// The enrichment whose one row names the files, for the bulk data an enrichment supplies (<c>bulk: true</c>,
+    /// osdu/docs/reference/flow/enrich-bulk.md): its columns are the enrichment's table's, and a record without a row of it has
+    /// no payload. Null for a payload set the record's own row names.
     /// </summary>
     public string? Step { get; init; }
+
+    /// <summary>
+    /// The media type the files are uploaded as when an enrichment registers them as datasets (a child dataset's
+    /// <c>files.contentType</c>); null for the record's own payload sets, and for files the flow's <c>filesContentType</c> types.
+    /// </summary>
+    public string? ContentType { get; init; }
 }
 
 /// <summary>The names of SQLFlow's system columns an ingestion table carries.</summary>

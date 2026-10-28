@@ -9,9 +9,12 @@ using SqlFlow.Catalog;
 using SqlFlow.ControlPlane.Api;
 using SqlFlow.Core.Identity;
 using SqlFlow.Delivery.ControlPlane;
+using SqlFlow.Delivery.Engine.Protocols;
 using SqlFlow.Delivery.Identity;
 using SqlFlow.Delivery.Ledger;
 using SqlFlow.Delivery.Protocols;
+using SqlFlow.Delivery.Rendering;
+using SqlFlow.Delivery.Snapshots;
 using SqlFlow.Delivery.Tests;
 using Xunit;
 
@@ -189,6 +192,136 @@ public sealed class DeliveryArtifactApiTests
     }
 
     [Fact]
+    public async Task A_record_s_enrichments_are_served_in_render_order_with_the_records_they_added_and_every_write_of_them()
+    {
+        var cs = OsduTestServer.Require();
+        await CatalogDatabase.MigrateAsync(cs);
+        await SampleEstate.MigrateModuleAsync(cs);
+
+        var suffix = Guid.NewGuid().ToString("N")[..10];
+        var flowName = "api-enrichments-" + suffix;
+        var repoId = FlowIdentity.FromName("repo/cp-enrichments-" + suffix);
+        var flowId = FlowId.Of(flowName);
+        var ledger = new OsduLedger(() => SampleEstate.Context(cs));
+        await ledger.RegisterAsync(flowId, TestLedgers.Partition, flowName);
+        var log = Key(suffix, "log");
+        var plain = Key(suffix, "plain");
+        const string logId = "dev:work-product-component--WellLog:L-1001";
+        const string linked = logId + "-enrich.lasfile";
+        const string superseded = "dev:dataset--File.Generic:L-1001-enrich.lasfile.0c4f";
+
+        // The log rendered with two enrichments: a quality grade composed into it, and its LAS file registered as a dataset.
+        var context = new RenderContext
+        {
+            MappingReference = "WellLog@1.4.0",
+            CacheVersion = string.Empty,
+            SchemaSnapshotVersion = "1.4.0",
+            Parameters = new Dictionary<string, string>(StringComparer.Ordinal),
+            Steps =
+            [
+                new RenderStep("quality", "WellLogQuality@1.0.0", "fp-quality", "1.4.0", new Dictionary<string, string>(StringComparer.Ordinal)),
+                new RenderStep("lasfile", null, null, "1.4.0", new Dictionary<string, string>(StringComparer.Ordinal))
+                {
+                    Records = """{"kind":"osdu:wks:dataset--File.Generic:1.0.0","mapping":"WellLogLasDataset@1.0.0","mappingFingerprint":"fp-las","through":"dataset"}""",
+                },
+            ],
+        }.Canonical();
+        await ledger.UpsertPendingAsync(flowId, [Pending(flowId, log, "L-1001") with { PendingRenderContext = context }, Pending(flowId, plain, "WB-PLAIN")]);
+
+        try
+        {
+            // A try created a dataset the log no longer links, then held; the next resumed that registration and replaced the
+            // version of the dataset the log links now, and delivered. Each write is a step of its attempt, as the worker keeps it.
+            const string held = "the record's own write was refused";
+            await CompleteAsync(ledger, flowId, new RecordCompletion
+            {
+                DeliveryKey = log,
+                Status = RecordStatus.Held,
+                Error = held,
+                Attempt = Attempt(log, AttemptOutcome.Held, "metadata") with
+                {
+                    Error = held,
+                    ResultJson = Registrations(
+                        Registration(EnrichPartsProtocol.IntentStep(0), superseded, "step", "lasfile"),
+                        Registration(EnrichPartsProtocol.RegisterStep(0), superseded, "version", "1")),
+                },
+            });
+            var delivered = Attempt(log, AttemptOutcome.Delivered, "metadata") with
+            {
+                RunId = Guid.NewGuid(),
+                ResultJson = Registrations(
+                    Registration(EnrichPartsProtocol.RegisterStep(0), superseded, "version", "1", resumed: true),
+                    Registration(EnrichPartsProtocol.IntentStep(1), linked, "priorVersion", "3"),
+                    Registration(EnrichPartsProtocol.RegisterStep(1), linked, "version", "4")),
+            };
+            await CompleteAsync(ledger, flowId, new RecordCompletion
+            {
+                DeliveryKey = log,
+                Status = RecordStatus.Delivered,
+                Promote = true,
+                TargetId = logId,
+                TargetVersion = 3,
+                TargetStateJson = new JsonObject
+                {
+                    [EnrichParts.RegisteredValue] = EnrichParts.RegisteredText([linked]),
+                    [EnrichParts.StateKey(linked)] = "doc-hash",
+                    [EnrichParts.FilesStateKey(linked)] = "files-hash",
+                    [EnrichTrace.SourceKey(linked)] = "welllog_files.csv#12",
+                    [EnrichTrace.VersionKey(linked)] = "4",
+                    [EnrichTrace.RowsKey("lasfile")] = """{"files":["welllog_files.csv"],"filesCounted":1,"row":"welllog_files.csv#12","rows":1}""",
+                }.ToJsonString(),
+                Attempt = delivered,
+            });
+
+            await using var factory = Factory(cs);
+            using var client = factory.CreateClient();
+            var token = await TokenAsync(client);
+
+            // In the order they render: the grade adds paths, the LAS file adds records through the Dataset service.
+            var enrichments = (await JsonAsync(client, token, $"/api/v1/delivery/records/{flowId:D}/{log.Value:D}/enrichments")).EnumerateArray().ToList();
+            Assert.Equal(["quality", "lasfile"], enrichments.Select(e => e.GetProperty("name").GetString()));
+            var quality = enrichments[0];
+            Assert.Equal(["paths"], quality.GetProperty("adds").EnumerateArray().Select(a => a.GetString()));
+            Assert.Equal(("WellLogQuality@1.0.0", "fp-quality", 0), (quality.GetProperty("mapping").GetString(), quality.GetProperty("mappingFingerprint").GetString(), quality.GetProperty("records").GetArrayLength()));
+            var las = enrichments[1];
+            Assert.Equal(["records"], las.GetProperty("adds").EnumerateArray().Select(a => a.GetString()));
+            Assert.Equal(
+                ("WellLogLasDataset@1.0.0", "osdu:wks:dataset--File.Generic:1.0.0", "dataset", false),
+                (las.GetProperty("mapping").GetString(), las.GetProperty("recordKind").GetString(), las.GetProperty("writtenThrough").GetString(), las.GetProperty("setAside").GetBoolean()));
+            var rows = las.GetProperty("rows");
+            Assert.Equal((1, "welllog_files.csv#12", "welllog_files.csv"), (rows.GetProperty("count").GetInt32(), rows.GetProperty("row").GetString(), rows.GetProperty("files")[0].GetString()));
+
+            // The record the log links first, with the version the ledger saw land and where it came from; the one it no longer links after.
+            var records = las.GetProperty("records").EnumerateArray().ToList();
+            Assert.Equal([linked, superseded], records.Select(r => r.GetProperty("id").GetString()));
+            Assert.Equal(
+                (true, 4L, "doc-hash", "files-hash", "welllog_files.csv#12"),
+                (records[0].GetProperty("linked").GetBoolean(), records[0].GetProperty("version").GetInt64(), records[0].GetProperty("hash").GetString(), records[0].GetProperty("filesHash").GetString(), records[0].GetProperty("source").GetString()));
+            var replaced = Assert.Single(records[0].GetProperty("writes").EnumerateArray().ToList());
+            Assert.Equal(
+                ("delivered", 4L, 3L),
+                (replaced.GetProperty("outcome").GetString(), replaced.GetProperty("version").GetInt64(), replaced.GetProperty("priorVersion").GetInt64()));
+            Assert.Equal(delivered.RunId, replaced.GetProperty("runId").GetGuid());
+
+            // The dataset it no longer links: written once, by the try that held, which created it; the try resuming that write is not counted again.
+            Assert.Equal((false, 1L), (records[1].GetProperty("linked").GetBoolean(), records[1].GetProperty("version").GetInt64()));
+            var createdWrite = Assert.Single(records[1].GetProperty("writes").EnumerateArray().ToList());
+            Assert.Equal(
+                ("held", 1L, JsonValueKind.Null),
+                (createdWrite.GetProperty("outcome").GetString(), createdWrite.GetProperty("version").GetInt64(), createdWrite.GetProperty("priorVersion").ValueKind));
+            Assert.NotEqual(replaced.GetProperty("attemptId").GetInt64(), createdWrite.GetProperty("attemptId").GetInt64());
+
+            // A record rendered without enrichments has none; a key the ledger does not hold is not found.
+            Assert.Empty((await JsonAsync(client, token, $"/api/v1/delivery/records/{flowId:D}/{plain.Value:D}/enrichments")).EnumerateArray());
+            await StatusAsync(client, token, $"/api/v1/delivery/records/{flowId:D}/{Guid.NewGuid():D}/enrichments", HttpStatusCode.NotFound);
+        }
+        finally
+        {
+            await CleanUpAsync(cs, repoId, flowId);
+        }
+    }
+
+    [Fact]
     public async Task A_source_s_open_undos_are_counted_per_interface_and_listed_one_ledger_at_a_time()
     {
         var cs = OsduTestServer.Require();
@@ -263,6 +396,31 @@ public sealed class DeliveryArtifactApiTests
         PendingDocumentRef = "1:0:10",
         PendingMetadata = true,
     };
+
+    /// <summary>An attempt's result listing <paramref name="steps"/>, as the worker writes it.</summary>
+    private static string Registrations(params JsonObject[] steps) => new JsonObject { ["steps"] = new JsonArray(steps) }.ToJsonString();
+
+    /// <summary>
+    /// A step of an enrichment's registration of <paramref name="recordId"/>, returning <paramref name="name"/> as
+    /// <paramref name="value"/> beside the id, as the worker keeps it; <paramref name="resumed"/> for one taken over from an earlier try.
+    /// </summary>
+    private static JsonObject Registration(string step, string recordId, string name, string value, bool resumed = false)
+    {
+        var node = new JsonObject
+        {
+            ["name"] = step,
+            ["startedUtc"] = DateTime.UtcNow.ToString("O", CultureInfo.InvariantCulture),
+            ["ms"] = 5,
+            ["status"] = 201,
+            ["returned"] = new JsonObject { ["recordId"] = recordId, [name] = value },
+        };
+        if (resumed)
+        {
+            node["resumed"] = true;
+        }
+
+        return node;
+    }
 
     /// <summary>A step of <paramref name="unit"/> reporting <paramref name="artifacts"/>, applied as a worker's checkpoint applies it.</summary>
     private static async Task StepAsync(OsduLedger ledger, Guid flowId, DeliveryKey key, DeliveryUnit unit, params TargetArtifact[] artifacts)

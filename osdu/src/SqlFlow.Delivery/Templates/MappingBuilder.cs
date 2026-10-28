@@ -1465,12 +1465,20 @@ public static partial class MappingBuilder
     {
         ArgumentNullException.ThrowIfNull(mapping);
 
-        // The builder lays out a whole record: its key, its id, its access list and legal block. A fragment has none of them,
-        // and its $base nodes read the record a step adds to, which no draft input stands for.
+        // The builder lays out a whole record: its key, its id, its access list and legal block. An enrichment mapping has none of
+        // them, and its $base nodes read the record it renders into, which no draft input stands for. What a mapping adds to its
+        // records (enrich:, and the $link nodes linking what it adds) has no draft input either, and a draft saved without them
+        // would drop them.
         if (mapping.Fragment)
         {
             throw new FlowValidationException(
-                $"Mapping {mapping.Reference} is a fragment (fragment: true), the paths a step of a delivery flow's enrich: adds to a record, and the mapping builder lays out whole records; edit the fragment's file.");
+                $"Mapping {mapping.Reference} is an enrichment mapping (enrichment: true), what an enrichment of another mapping renders for its records, and the mapping builder lays out whole records; edit its file.");
+        }
+
+        if (mapping.Enrich.Count > 0 || mapping.LinkNames().Count > 0)
+        {
+            throw new FlowValidationException(
+                $"Mapping {mapping.Reference} declares enrichments (enrich:), which the mapping builder does not lay out, so a draft saved from it would drop them; edit the mapping's file.");
         }
 
         return new MappingDraft
