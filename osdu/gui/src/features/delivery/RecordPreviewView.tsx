@@ -31,6 +31,8 @@ import {
 import { AssertionFindingsView } from "./AssertionFindingsView";
 import { effectValueText, enrichOutcomeText, suppliesText } from "./enrichSteps";
 import { RecordStatusBadge } from "./DeliveryBadges";
+import { IssueMessage } from "./IssueMessage";
+import { assertionHoldText, heldByAssertion, wouldHold } from "./previewHolds";
 import { RecordName } from "./RecordName";
 import { downloadJson, envelopeFirst, fileNameOf, formatBytes } from "./osduDocument";
 
@@ -72,50 +74,37 @@ export function PreviewActionBadge({ decision }: { decision: DeliveryPreviewDeci
   );
 }
 
-/** Whether a failed assertion of the mapping would hold the record at the check before sending. */
-function heldByAssertion(document: DeliveryPreviewDocument): boolean {
-  return (document.assertions?.held ?? 0) > 0;
-}
-
 /**
- * The failed assertion that would hold the record, in a line of a preview's holds: the first that holds and where its
- * value is, and how many more do. After the render's own holds it is said as one more reason, as the record is held at
- * render then and never reaches the check before sending.
+ * Why a delivery would hold the record, as a preview says it: each of the render's own holds under the property it names,
+ * with what each alternative of a `$coalesce` said as a numbered list, then a failed assertion of the mapping whose failure
+ * holds it at the check before sending, its document kept. Sized like the facts it sits among.
  */
-function assertionHoldText(document: DeliveryPreviewDocument): string {
-  const findings = document.assertions;
-  const held = findings?.held ?? 0;
-  const first = findings?.failures.find((failure) => failure.onFail === "hold") ?? null;
-  const more = first === null ? held : held - 1;
-  const which = first === null
-    ? `${held.toLocaleString()} ${held === 1 ? "failure" : "failures"} of an assertion that holds`
-    : `"${first.assertion}" fails at ${first.path !== "" ? first.path : first.at}${more > 0 ? `, and ${more.toLocaleString()} more ${more === 1 ? "failure holds" : "failures hold"}` : ""}`;
-  return document.holds.length === 0
-    ? `The check before sending would hold it, its document kept: ${which}.`
-    : `An assertion of the mapping holds it as well: ${which}.`;
+export function HoldReasons({ document, testId }: { document: DeliveryPreviewDocument; testId: string }) {
+  return (
+    <div className="flex min-w-0 flex-col gap-2" data-testid={testId}>
+      {document.holds.map((hold) => <IssueMessage key={hold} text={hold} compact />)}
+      {heldByAssertion(document) && <span className="text-[12px] leading-5" data-testid={`${testId}-assertion`}>{assertionHoldText(document)}</span>}
+    </div>
+  );
 }
 
 /**
- * Why a delivery would hold the record, as a preview says it: the render's own holds, then a failed assertion of the
- * mapping whose failure holds it at the check before sending, its document kept. Nothing when neither would.
+ * Why a delivery would hold the record, as a section of the preview: a heading marked with the error's glyph, and the
+ * reasons under it. Nothing when nothing would hold it.
  */
 export function PreviewHolds({ document, testId }: { document: DeliveryPreviewDocument; testId: string }) {
-  const asserted = heldByAssertion(document);
-  if (document.holds.length === 0 && !asserted) {
+  if (!wouldHold(document)) {
     return null;
   }
 
   return (
-    <Alert variant="destructive" data-testid={testId}>
-      <CircleAlert />
-      <AlertTitle>A delivery would hold this record</AlertTitle>
-      <AlertDescription>
-        <ul className="list-disc pl-5">
-          {document.holds.map((hold) => <li key={hold}>{hold}</li>)}
-          {asserted && <li data-testid={`${testId}-assertion`}>{assertionHoldText(document)}</li>}
-        </ul>
-      </AlertDescription>
-    </Alert>
+    <section className="flex flex-col gap-2 rounded-lg border bg-card px-4 py-3" data-testid={testId}>
+      <h3 className="flex items-center gap-1.5 text-[13px] font-medium">
+        <CircleAlert className="size-4 text-destructive" aria-hidden />
+        A delivery would hold this record
+      </h3>
+      <HoldReasons document={document} testId={`${testId}-reasons`} />
+    </section>
   );
 }
 

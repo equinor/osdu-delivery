@@ -7,12 +7,14 @@ import { Card } from "@/components/ui/card";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { CodeView } from "@/components/CodeView";
 import { DiffView } from "@/components/DiffView";
+import { ExplainMark } from "@/components/ExplainTip";
 import { TruncatedText } from "@/components/TruncatedText";
 import { cn } from "@/lib/utils";
 import type { DeliveryOsduRead, DeliveryPreviewInputs, DeliveryRecord, DeliveryRecordPreview } from "../../api/delivery";
 import { Fact, FactGrid, NoFact } from "./Facts";
 import { canonicalText, differences, envelopeFirst, withoutOsduFields, type DifferenceKind } from "./osduDocument";
-import { PreviewActionBadge, PreviewAssertions, PreviewChoices, PreviewEnrichment, PreviewHolds, PreviewSearches } from "./RecordPreviewView";
+import { HoldReasons, PreviewActionBadge, PreviewAssertions, PreviewChoices, PreviewEnrichment, PreviewSearches } from "./RecordPreviewView";
+import { wouldHold } from "./previewHolds";
 import type { Settled } from "./answers";
 
 /**
@@ -162,6 +164,7 @@ function RenderResult({ results }: { results: RenderResults }) {
   // Nothing to set it beside: the record has no OSDU id a read could follow, or OSDU answered that it holds none.
   const noTarget = results.read === null;
   const absent = readResult !== null && !readResult.found;
+  const held = document !== null && wouldHold(document);
 
   return (
     <div className="flex flex-col gap-3">
@@ -194,7 +197,7 @@ function RenderResult({ results }: { results: RenderResults }) {
         </Alert>
       )}
 
-      {result?.found && (result.route.ddms || result.notes.length > 0 || decision !== null) && (
+      {result?.found && (result.route.ddms || result.notes.length > 0 || decision !== null || held) && (
         <FactGrid>
           {(result.route.ddms || result.notes.length > 0) && (
             <Fact label="Route" wide testId="record-render-route">
@@ -206,16 +209,21 @@ function RenderResult({ results }: { results: RenderResults }) {
           )}
           {decision !== null && (
             <Fact label="Next run" wide testId="record-render-next">
-              <span className="inline-flex flex-wrap items-baseline gap-2">
+              {/* The reason on one line: when the record is held, what holds it is said in full under it. */}
+              <span className="flex min-w-0 items-baseline gap-2">
                 <PreviewActionBadge decision={decision} />
-                <span className="text-muted-foreground">{decision.reason}</span>
+                <TruncatedText text={decision.reason} maxWidth={4000} title="Next run" className="text-muted-foreground" />
               </span>
+            </Fact>
+          )}
+          {document !== null && held && (
+            <Fact label="Held for" wide testId="record-render-holds">
+              <HoldReasons document={document} testId="record-render-hold-reasons" />
             </Fact>
           )}
         </FactGrid>
       )}
 
-      {document !== null && <PreviewHolds document={document} testId="record-render-holds" />}
       {result !== null && result.issues.length > 0 && (
         <Alert data-testid="record-render-issues">
           <Info />
@@ -228,21 +236,11 @@ function RenderResult({ results }: { results: RenderResults }) {
       {document?.omitted && <Alert data-testid="record-render-omitted"><Info /><AlertDescription>{document.omitted}</AlertDescription></Alert>}
       {document !== null && <PreviewAssertions document={document} testId="record-render-assertions" />}
 
-      {rendered !== null && (noTarget || absent) && (
-        <Alert data-testid={noTarget ? "record-render-no-target" : "record-render-absent"}>
-          <Info />
-          <AlertTitle>{noTarget ? "OSDU holds nothing of this record to set it beside" : "OSDU holds no record under this id"}</AlertTitle>
-          <AlertDescription>
-            {noTarget
-              ? "The record has no OSDU id this flow delivered to, or was removed. A delivery would send the document below."
-              : "A delivery would create it with the document below."}
-          </AlertDescription>
-        </Alert>
-      )}
-
       {rendered !== null && read !== null && (
         <div className="flex flex-col gap-2">
           <div className="flex flex-wrap items-center gap-3 text-[12px] text-muted-foreground">
+            {/* What the tab is for, named where it starts, so the facts above read as about it. */}
+            <h3 className="text-[13px] font-medium text-foreground" data-testid="record-render-document-heading">Rendered record</h3>
             {compared !== null && (
               <ToggleGroup
                 type="single"
@@ -268,6 +266,19 @@ function RenderResult({ results }: { results: RenderResults }) {
               </span>
             )}
             {shown === "document" && document !== null && <span>{document.sent ? "As the route sends it" : "As the mapping renders it"}</span>}
+            {/* Nothing to set it beside: said beside the document it is about, not above everything else. */}
+            {(noTarget || absent) && (
+              <span className="inline-flex items-center gap-1" data-testid={noTarget ? "record-render-no-target" : "record-render-absent"}>
+                {noTarget ? "OSDU holds nothing of this record to set it beside" : "OSDU holds no record under this id"}
+                <ExplainMark
+                  title={noTarget ? "Nothing to set it beside" : "Not in OSDU"}
+                  text={noTarget
+                    ? "The record has no OSDU id this flow delivered to, or was removed. A delivery would send this document."
+                    : "A delivery would create the record with this document."}
+                  testId="record-render-beside-why"
+                />
+              </span>
+            )}
           </div>
           {/* The comparison stays mounted while the whole document is in view, and is only hidden: Monaco's diff editor
               throws as it unmounts (its models are disposed before the widget lets go of them), and it lays itself out
@@ -342,9 +353,13 @@ export function RecordRenderTab({ record, canOperate, canRender, rendering, onRe
           {rendering ? <Loader2 className="animate-spin" /> : <FileCode2 />}
           {results === null ? "Render" : "Render again"}
         </Button>
-        <p className="min-w-0 flex-1 basis-96 text-[12px] text-muted-foreground" data-testid="record-render-scope">
-          Builds the record&apos;s manifest from the data available now (source row, mapping, cache) and sets it beside
-          what OSDU holds; nothing is sent. DDMS sections (bulk data, series, rows) are not built.
+        <p className="inline-flex min-w-0 flex-1 basis-96 items-center gap-1 text-[12px] text-muted-foreground" data-testid="record-render-scope">
+          Builds the record&apos;s manifest from its row, mapping and cache as they are now; nothing is sent.
+          <ExplainMark
+            title="What a render builds"
+            text="The record's manifest, from the data available now (its source row, the mapping and the cache), set beside what OSDU holds. Nothing is sent. The DDMS sections a DDMS route sends besides it (bulk data, series, rows) are not built."
+            testId="record-render-scope-why"
+          />
         </p>
       </div>
       <InputsGrid

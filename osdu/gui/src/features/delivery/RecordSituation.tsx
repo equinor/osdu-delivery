@@ -3,12 +3,15 @@ import { Link as RouterLink } from "react-router-dom";
 import { Ban, CircleAlert, Hourglass, KeyRound, Loader2, RotateCcw, Send, ShieldAlert, Trash2, Undo2, type LucideIcon } from "lucide-react";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
+import { HoverCard, HoverCardContent, HoverCardTrigger } from "@/components/ui/hover-card";
 import { cn } from "@/lib/utils";
+import { CopyButton } from "@/components/CopyButton";
 import { ExplainMark } from "@/components/ExplainTip";
 import { RelativeTime } from "@/components/RelativeTime";
 import { TruncatedText } from "@/components/TruncatedText";
 import type { DeliveryRecord, DeliveryRecordLink } from "../../api/delivery";
 import type { RemovedKey } from "../../api/removals";
+import { IssueMessage, IssueSummary } from "./IssueMessage";
 import { removalWhy } from "./removals/removalFormat";
 import { shortId } from "./idTail";
 import { stranded } from "./strandedRecord";
@@ -28,8 +31,9 @@ function Line({ tone, icon: Icon, spin = false, testId, children }: { tone: Tone
     <Alert variant={tone === "destructive" ? "destructive" : "default"} className={cn("py-2", TONE[tone])} data-testid={testId}>
       <Icon className={spin ? "animate-spin" : undefined} />
       {/* One block for the whole line: the description lays its children out as rows, which would put every
-          clipped value and time of the sentence on a row of its own. */}
-      <AlertDescription className="text-[13px]"><div className="min-w-0 break-words">{children}</div></AlertDescription>
+          clipped value and time of the sentence on a row of its own. The block takes the line's width, so a value
+          clipped to one line (an error's reason) ends at the line's edge rather than past it. */}
+      <AlertDescription className="text-[13px]"><div className="w-full min-w-0 break-words">{children}</div></AlertDescription>
     </Alert>
   );
 }
@@ -103,6 +107,30 @@ function RemovalLine({ removedKey, onLift, lifting }: { removedKey: RemovedKey; 
 /** When the record was held or failed, by the tries made for its pending work: after them, or before any. */
 function afterTries(count: number): string {
   return count === 0 ? "before any try" : `after ${count} ${count === 1 ? "try" : "tries"}`;
+}
+
+/**
+ * A held or failed record's error as its line says it: the property it names and how far through a list it reaches, over
+ * what it says of it on one line (an error naming no property, on two). The whole of it is on hover, each reason under
+ * its property and a `$coalesce`'s alternatives as a numbered list, with a copy of the text.
+ */
+function ErrorSummary({ text, testId }: { text: string; testId: string }) {
+  return (
+    <HoverCard openDelay={350} closeDelay={150}>
+      <HoverCardTrigger asChild>
+        <div className="mt-1 min-w-0 cursor-default" tabIndex={0} data-testid={testId}>
+          <IssueSummary text={text} />
+        </div>
+      </HoverCardTrigger>
+      <HoverCardContent side="bottom" align="start" className="w-[min(44rem,90vw)] p-3" data-testid={`${testId}-tip`}>
+        <div className="mb-1.5 flex items-start justify-between gap-2">
+          <span className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground">The error</span>
+          <CopyButton iconOnly label="Copy the error" text={text} testId={`${testId}-copy`} />
+        </div>
+        <IssueMessage text={text} />
+      </HoverCardContent>
+    </HoverCard>
+  );
 }
 
 /** What is waiting to go: the metadata, the payload, or both. */
@@ -200,7 +228,9 @@ export function RecordSituation({ record, waitsOn, waitedOnBy, removedKey, onLif
     lines.push(<RemovalLine key="removal" removedKey={removedKey} onLift={onLift} lifting={lifting} />);
   }
 
-  if (record.blocked) {
+  // A held or failed record says it is blocked in the line that says why it is held, so one state takes one line.
+  const heldOrFailed = record.status === "held" || record.status === "failed";
+  if (record.blocked && !heldOrFailed) {
     lines.push(
       <Line key="blocked" tone="warning" icon={Ban} testId="record-blocked-note">
         Blocked: nothing is sent until its row changes or the record is released.
@@ -210,8 +240,7 @@ export function RecordSituation({ record, waitsOn, waitedOnBy, removedKey, onLif
 
   // Released and asked to be planned again from its row: nothing is wrong to show, only what comes next. The run that
   // plans it holds it again, sends it, or finds OSDU already holding it and settles it as delivered.
-  const released = (record.status === "held" || record.status === "failed") && !record.blocked && !record.hasPendingDocument
-    && record.planRequestedUtc !== null;
+  const released = heldOrFailed && !record.blocked && !record.hasPendingDocument && record.planRequestedUtc !== null;
 
   switch (record.status) {
     case "held":
@@ -222,7 +251,7 @@ export function RecordSituation({ record, waitsOn, waitedOnBy, removedKey, onLif
             {"Asked to be planned again "}
             <RelativeTime value={record.planRequestedUtc} />
             {": the flow's next deliver run plans it from its ingestion row."}
-            {record.lastError !== null && <div className="mt-1 break-words text-muted-foreground">{record.lastError}</div>}
+            {record.lastError !== null && <ErrorSummary text={record.lastError} testId="record-error-summary" />}
           </Line>,
         );
         break;
@@ -233,7 +262,7 @@ export function RecordSituation({ record, waitsOn, waitedOnBy, removedKey, onLif
           <Line key="stranded" tone="warning" icon={CircleAlert} testId="record-stranded">
             Nothing will move this record: it is not blocked, no run is asked to plan it, and it keeps no document to send.
             Release it, and the flow&apos;s next deliver run plans it from its ingestion row.
-            {record.lastError !== null && <div className="mt-1 break-words">{record.lastError}</div>}
+            {record.lastError !== null && <ErrorSummary text={record.lastError} testId="record-error-summary" />}
           </Line>,
         );
         break;
@@ -248,11 +277,12 @@ export function RecordSituation({ record, waitsOn, waitedOnBy, removedKey, onLif
             <span>
               {` The rendered ${pendingWhat(record)} waits`}
               {record.workBatch !== null && ` in work batch ${record.workBatch}`}
-              {record.blocked ? " until the record is released." : " for the next try."}
+              {record.blocked ? "." : " for the next try."}
               <StepsDone record={record} />
             </span>
           )}
-          {record.lastError !== null && <div className="mt-1 break-words">{record.lastError}</div>}
+          {record.blocked && <span data-testid="record-blocked-note">{" Blocked: nothing is sent until its row changes or the record is released."}</span>}
+          {record.lastError !== null && <ErrorSummary text={record.lastError} testId="record-error-summary" />}
         </Line>,
       );
       break;

@@ -280,6 +280,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   ([Records](osdu/docs/reference/concepts/gui.md#records), [finding records](osdu/docs/reference/concepts/ledger.md#finding-records)).
 
 ### Changed
+- **A record's page says why it is held once, and its Render tab leads to the record.** The error under a held or
+  failed record reads as the Issues tab reads one (the property, how far through a list, the reason on one line, the
+  whole on hover with a copy), with blocked said in the same line. The Render tab says the next run's reason on one line
+  and why a delivery would hold the record under **Held for**, each reason under its property with a `$coalesce`'s
+  alternatives numbered, in place of three red blocks repeating it, so the **Rendered record** follows on screen; the
+  Preview page shows the holds the same way ([a record's page](osdu/docs/reference/concepts/gui.md#a-records-page)).
 - **The Issues tab is redesigned.** A flow's issues fill a grid that fits the window, each headed by the property its
   error names over what it says, with a filter by words or id; an issue opens in the bottom panel over the grid, as a
   run's trace does, with Up and Down stepping through the issues, in place of the detail beside the list. An issue reads

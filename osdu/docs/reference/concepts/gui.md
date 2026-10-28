@@ -249,9 +249,11 @@ exists, the Delivery page says so and links here. See
 ([mapping $parent](../flow/mapping-parent.md)) its **parent** (the record of the canonical kind with the same minted id,
 opening on that record's page, or in the explorer when no flow of the partition delivers it) or the records it is
 **read by**, each named by its type; each try on the timeline gives the **Parent version** its document was rendered
-from. Then the one situation its state calls for (held or failed with the error and next try, waiting
-for another record, under a lease, blocked, released and waiting for its run, held with nothing to move it, removed,
-records waiting on this one). Its buttons:
+from. Then the one situation its state calls for (held or failed with the error and next try, and blocked in the same
+line, waiting for another record, under a lease, blocked, released and waiting for its run, held with nothing to move it,
+removed, records waiting on this one). An error is said as the Issues tab says one: the property it names and how far
+through a list it reaches, over its reason on one line; the whole of it is on hover, each reason under its property and a
+`$coalesce`'s alternatives numbered, with a copy. Its buttons:
 
 | Button | What it does |
 | --- | --- |
@@ -276,9 +278,11 @@ for a record that was.
   rows as the ingestion tables hold them now, with the flow's own connection.
 - **Render**: **Render** builds the record from its current row with the mapping and the cache as they are now, and reads
   what OSDU holds, at once; nothing is sent. It shows the mapping and cache versions used beside those that rendered what
-  OSDU holds, the route, what the next run would do, why a delivery would hold the record, the preflight's warnings, and
-  the document **Beside OSDU** (the differences) or **Whole document**. A record its flow never wrote to OSDU is rendered
-  without a read, and the tab says OSDU holds nothing of it to set it beside.
+  OSDU holds, the route, what the next run would do (its reason on one line, the whole of it on hover), **Held for**:
+  why a delivery would hold the record (each reason under the property it names, a `$coalesce`'s alternatives numbered),
+  the preflight's warnings, and the **Rendered record** **Beside OSDU** (the differences) or **Whole document**. A record
+  its flow never wrote to OSDU is rendered without a read, and the document's line says OSDU holds nothing of it to set
+  it beside.
 - **OSDU**: **Read** reads the record as OSDU holds it through the flow's route, in the record inspector the explorer uses
   (outline, fields or JSON, versions and **Compare**, linked records, Validation). Icons open it in the explorer, or in a
   window of its own (`/delivery/records/{flowId}/{key}/osdu`). Only a record that claimed its OSDU id (it queued a document
