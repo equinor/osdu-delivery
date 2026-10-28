@@ -1416,6 +1416,15 @@ public enum SearchMode
 }
 
 /// <summary>
+/// The filters the lookup across flows and its recency listing take besides a term, a status, a flow and a partition: the
+/// ones a flow's listing has too (<see cref="RecordQuery.Drifted"/>, <see cref="RecordQuery.StepHeld"/>), read the same way
+/// over every flow of the partitions in view.
+/// </summary>
+/// <param name="Drifted">Only the records whose last verify found drift or a missing record.</param>
+/// <param name="StepHeld">Only the records whose last render set a step of <c>enrich:</c> aside on its hold.</param>
+public readonly record struct LookupNarrowing(bool Drifted = false, bool StepHeld = false);
+
+/// <summary>
 /// What a release reaches: the records named by key, the records one problem keeps blocked, or every blocked record of
 /// the flow.
 /// </summary>
@@ -2745,22 +2754,32 @@ public interface ILedger
     /// updated of them are returned. With <paramref name="status"/>, only the candidates in that state. With
     /// <paramref name="flowId"/>, the records of that ledger identity alone, its candidates read from its own tokens. With
     /// <paramref name="partition"/>, the records of that partition alone (the workbench reads one partition at a time); a
-    /// ledger identity names its own partition.</summary>
-    Task<IReadOnlyList<RecordState>> LookupAsync(string term, int max, RecordStatus? status = null, Guid? flowId = null, string? partition = null, CancellationToken ct = default);
+    /// ledger identity names its own partition. <paramref name="narrowTo"/> keeps the candidates it names. With
+    /// <see cref="SearchMode.Contains"/>, a term that is not a delivery key matches anywhere in the source key, the label,
+    /// the OSDU id or the origin file name; it has no index, so it runs only when the rest of the lookup leaves at most
+    /// <see cref="RecordListing.ContainsScanLimit"/> records, and throws <see cref="RecordQueryTooBroadException"/>
+    /// otherwise.</summary>
+    Task<IReadOnlyList<RecordState>> LookupAsync(
+        string term, int max, RecordStatus? status = null, Guid? flowId = null, string? partition = null, SearchMode mode = SearchMode.Prefix,
+        LookupNarrowing narrowTo = default, CancellationToken ct = default);
 
     /// <summary>How many records a lookup matches, counting no further than <paramref name="limit"/>.</summary>
-    Task<BoundedCount> CountLookupAsync(string term, int limit, RecordStatus? status = null, Guid? flowId = null, string? partition = null, CancellationToken ct = default);
+    Task<BoundedCount> CountLookupAsync(
+        string term, int limit, RecordStatus? status = null, Guid? flowId = null, string? partition = null, SearchMode mode = SearchMode.Prefix,
+        LookupNarrowing narrowTo = default, CancellationToken ct = default);
 
     /// <summary>The ledger's most recently updated records across every flow, at most <paramref name="max"/> of them,
     /// newest first and ties broken by key: what the delivery system last took in, sent or was answered about, without a
     /// term to seek. With <paramref name="status"/>, only the records in that state; with <paramref name="flowId"/>, only
-    /// the records of that ledger identity. It reads the end of a recency index, so it costs the same however many records
-    /// the ledger holds, and it reaches no further back than <see cref="RecordListing.LookupCandidateLimit"/> records.
+    /// the records of that ledger identity; with <paramref name="narrowTo"/>, only the records it names. It reads the end
+    /// of a recency index, and it reaches no further back than <see cref="RecordListing.LookupCandidateLimit"/> records.
     /// With <paramref name="partition"/>, the records of that partition alone.</summary>
-    Task<IReadOnlyList<RecordState>> ListRecentAsync(int max, RecordStatus? status = null, Guid? flowId = null, string? partition = null, CancellationToken ct = default);
+    Task<IReadOnlyList<RecordState>> ListRecentAsync(
+        int max, RecordStatus? status = null, Guid? flowId = null, string? partition = null, LookupNarrowing narrowTo = default, CancellationToken ct = default);
 
     /// <summary>How many records the recency listing has to show, counting no further than <paramref name="limit"/>.</summary>
-    Task<BoundedCount> CountRecentAsync(int limit, RecordStatus? status = null, Guid? flowId = null, string? partition = null, CancellationToken ct = default);
+    Task<BoundedCount> CountRecentAsync(
+        int limit, RecordStatus? status = null, Guid? flowId = null, string? partition = null, LookupNarrowing narrowTo = default, CancellationToken ct = default);
 
     /// <summary>The ledger identities among <paramref name="flowIds"/> that hold at least one record, in any state. It asks
     /// whether each holds one, never how many, so it costs one index seek per identity however many records the ledger

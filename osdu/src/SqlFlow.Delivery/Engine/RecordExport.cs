@@ -148,14 +148,18 @@ public static class RecordExport
             sheet.AddRow(columns.Cells(hit.Record, hit, hit.FlowName));
         }
 
+        var narrowed = Narrowing(lookup.Narrowing.Drifted, lookup.Narrowing.StepHeld);
         List<(string, XlsxCell)> about =
         [
-            ("Lookup", XlsxCell.Text(lookup.Search is { } search
-                ? $"'{search}': the start of an identity, the source key, a word of the label, the OSDU id, the delivery key or the file"
-                : "none: the records the delivery system last took in or sent")),
+            ("Lookup", XlsxCell.Text(lookup.Search is not { } search
+                ? "none: the records the delivery system last took in or sent"
+                : lookup.Mode == SearchMode.Contains
+                    ? $"'{search}' anywhere in the source key, the label, the OSDU id or the file, or the delivery key"
+                    : $"'{search}': the start of an identity, the source key, a word of the label, the OSDU id, the delivery key or the file")),
             ("Status", XlsxCell.Text(StatusText(lookup.Status) ?? "every status")),
             ("Flow", XlsxCell.Text(lookup.FlowName ?? "every flow")),
             ("Partition", XlsxCell.Text(lookup.Partition ?? "every partition")),
+            ("Narrowed to", XlsxCell.Text(narrowed.Count == 0 ? null : string.Join("; ", narrowed))),
             ("Records", XlsxCell.Number(sheet.Rows)),
         ];
         if (lookup.More)
@@ -186,11 +190,7 @@ public static class RecordExport
             parts.Add(query.Mode == SearchMode.Contains ? $"'{search}' anywhere" : $"'{search}' at the start");
         }
 
-        if (query.Drifted)
-        {
-            parts.Add("drifted only");
-        }
-
+        parts.AddRange(Narrowing(query.Drifted, query.StepHeld));
         if (query.Problem is { } problem)
         {
             parts.Add($"issue {ProblemSignature.Format(problem)}");
@@ -217,6 +217,23 @@ public static class RecordExport
         }
 
         return parts.Count == 0 ? "none: every record of the ledger" : string.Join("; ", parts);
+    }
+
+    /// <summary>The drift and held-step filters in words, as a flow's listing and the lookup across flows both say them.</summary>
+    private static List<string> Narrowing(bool drifted, bool stepHeld)
+    {
+        var parts = new List<string>();
+        if (drifted)
+        {
+            parts.Add("drifted only");
+        }
+
+        if (stepHeld)
+        {
+            parts.Add("an enrichment set aside on its hold");
+        }
+
+        return parts;
     }
 
     private static void WriteAbout(XlsxWorkbook workbook, IReadOnlyList<(string Field, XlsxCell Value)> facts, Layout columns)
@@ -404,6 +421,9 @@ public sealed record RecordExportHit(RecordState Record, string? FlowName, strin
 
 /// <summary>
 /// What a lookup across every flow asked, for the About sheet and the file's name: the term (null for the newest records), the
-/// status, the flow it was narrowed to, the partition it read, and whether more records matched than the lookup reaches.
+/// status, the flow it was narrowed to, the partition it read, whether more records matched than the lookup reaches, how
+/// the term matched, and the drift and held-step filters.
 /// </summary>
-public sealed record RecordLookupExport(string? Search, RecordStatus? Status, string? FlowName, string? Partition, bool More);
+public sealed record RecordLookupExport(
+    string? Search, RecordStatus? Status, string? FlowName, string? Partition, bool More, SearchMode Mode = SearchMode.Prefix,
+    LookupNarrowing Narrowing = default);

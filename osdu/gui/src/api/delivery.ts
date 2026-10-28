@@ -1084,14 +1084,26 @@ export interface DeliveryRecordChain {
   note: string | null;
 }
 
-/** What the Records page asks the ledger for: a term over every flow, and a custody state and a flow to narrow it to. */
+/**
+ * What the Records page asks the ledger for: a term over every flow, and the filters a flow's Records tab has (a custody
+ * state, drift, a held step, matching anywhere) with a flow to narrow it to.
+ */
 export interface DeliveryRecordLookupQuery extends PageQuery {
   /**
    * A delivery key, or the start of an OSDU id, a source key, a label or an ingestion file name. Left out, the
    * records the ledger last touched are listed instead, newest first.
    */
   search?: string;
+  /**
+   * `contains` matches the term anywhere in the source key, the label, the OSDU id or the ingestion file. It has no
+   * index, so the answer is a 400 naming what to narrow when the other filters leave more than 100,000 records.
+   */
+  mode?: "prefix" | "contains";
   status?: DeliveryRecordStatus;
+  /** Only the records whose last verify found drift or a missing record. */
+  drifted?: boolean;
+  /** Only the records whose last render set an enrichment aside on its hold. */
+  stepHeld?: boolean;
   /** The ledger identity of one flow (a {@link DeliveryRecordFlow}'s `flowId`); left out, every flow. */
   flowId?: string;
   /** The partition whose ledgers are read; left out, the workbench's, which every call carries. */
@@ -3841,9 +3853,10 @@ export const deliveryApi = {
     getBlob("/api/v1/delivery/records/export", query as QueryParams),
   /**
    * A record by what an operator holds, across every flow: a delivery key lands on the record of every flow reading
-   * that row; anything else is a prefix over the OSDU id, the source key, the label and the ingestion file name. With
-   * no search term, the records the ledger last took in or sent, newest first. The ledger's indexed reads, so they
-   * answer at production volume and count no further than the candidate bound.
+   * that row; anything else is a prefix over the OSDU id, the source key, the label and the ingestion file name, or
+   * with `mode: "contains"` the same values matched anywhere. With no search term, the records the ledger last took in
+   * or sent, newest first. A prefix and the listing are the ledger's indexed reads, so they answer at production volume
+   * and count no further than the candidate bound; a contains term reads what the other filters leave.
    */
   lookupRecords: (query: DeliveryRecordLookupQuery) =>
     get<PagedResult<DeliveryRecordHit>>("/api/v1/delivery/records", query as unknown as QueryParams),

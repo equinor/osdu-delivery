@@ -146,6 +146,58 @@ public sealed class DeliveryRecordLookupApiTests
     }
 
     [Fact]
+    public async Task The_lookup_narrows_as_a_flows_records_tab_does_and_matches_a_term_anywhere()
+    {
+        var cs = OsduTestServer.Require();
+        await CatalogDatabase.MigrateAsync(cs);
+        await SampleEstate.MigrateModuleAsync(cs);
+
+        var flowId = FlowId.Of(FlowName + "-lookup-anywhere");
+        var marker = "LA" + Guid.NewGuid().ToString("N")[..8].ToUpperInvariant();
+        var plain = new DeliveryKey(Guid.NewGuid());
+        var held = new DeliveryKey(Guid.NewGuid());
+        var ledger = new OsduLedger(() => SampleEstate.Context(cs));
+        await ledger.RegisterAsync(flowId);
+
+        try
+        {
+            await ledger.UpsertPendingAsync(flowId,
+            [
+                Record(flowId, plain, $"NO 16/2-10 {marker}", $"dev:master-data--Wellbore:{marker}-A", marker + "_wellbores.csv", 1),
+                Record(flowId, held, $"NO 25/8-4 {marker}", $"dev:master-data--Wellbore:{marker}-B", marker + "_wellbores.csv", 2) with { HeldSteps = "grade" },
+            ]);
+
+            await using var factory = Factory(cs);
+            using var client = factory.CreateClient();
+            var token = await TokenAsync(client);
+            var scope = $"flowId={flowId:D}";
+
+            // No value of either record starts with a term from inside the well name; matching anywhere finds it, and the
+            // hit names the value that holds it.
+            Assert.Equal(0, (await LookupAsync(client, token, $"search=6/2-10&{scope}")).GetProperty("total").GetInt64());
+            var anywhere = await LookupAsync(client, token, $"search=6/2-10&mode=contains&{scope}");
+            var hit = Assert.Single(anywhere.GetProperty("items").EnumerateArray().ToList());
+            Assert.Equal(plain.Value, hit.GetProperty("deliveryKey").GetGuid());
+            Assert.Equal($"NO 16/2-10 {marker}", Assert.Single(hit.GetProperty("matched").EnumerateArray().ToList()).GetProperty("value").GetString());
+
+            // The Records tab's switches narrow the lookup and the listing of what came in last alike.
+            var stepHeld = await LookupAsync(client, token, $"search={marker}&stepHeld=true&{scope}");
+            Assert.Equal(held.Value, Assert.Single(stepHeld.GetProperty("items").EnumerateArray().ToList()).GetProperty("deliveryKey").GetGuid());
+            Assert.Equal(1, (await LookupAsync(client, token, $"stepHeld=true&{scope}")).GetProperty("total").GetInt64());
+            Assert.Equal(1, (await LookupAsync(client, token, $"search=_wellbores&mode=contains&stepHeld=true&{scope}")).GetProperty("total").GetInt64());
+            Assert.Equal(0, (await LookupAsync(client, token, $"drifted=true&{scope}")).GetProperty("total").GetInt64());
+            Assert.Equal(2, (await LookupAsync(client, token, $"drifted=false&stepHeld=false&{scope}")).GetProperty("total").GetInt64());
+        }
+        finally
+        {
+            await using var osdu = SampleEstate.Context(cs);
+            var keys = new[] { plain.Value, held.Value };
+            await osdu.DeliveryRecordIdentities.Where(i => keys.Contains(i.DeliveryKey)).ExecuteDeleteAsync();
+            await osdu.DeliveryRecords.Where(r => keys.Contains(r.DeliveryKey)).ExecuteDeleteAsync();
+        }
+    }
+
+    [Fact]
     public async Task A_record_and_its_parent_each_link_to_the_other_on_their_pages()
     {
         var cs = OsduTestServer.Require();

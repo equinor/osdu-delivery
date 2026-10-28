@@ -128,7 +128,8 @@ function DeliveryRecordContent({ flowId, deliveryKey }: DeliveryRecordRef) {
     queryFn: () => artifactApi.recordArtifacts(ref, RECORD_ARTIFACTS_SHOWN),
     refetchInterval: 15000,
   });
-  // What the mapping's enrichments added to the record, read from its ledger row: its own tab, counted on the tab when any.
+  // What the mapping's enrichments added to the record, read from its ledger row: its own tab, shown when there are any.
+  // A tab is named for the question it answers and carries no count; the tab's own summary line counts what it holds.
   const enrichments = useQuery({
     queryKey: ["delivery", "record", flowId, deliveryKey, "enrichments"],
     queryFn: () => artifactApi.recordEnrichments(ref),
@@ -374,17 +375,9 @@ function DeliveryRecordContent({ flowId, deliveryKey }: DeliveryRecordRef) {
           <TabsTrigger value="render" data-testid="record-tab-render">Render</TabsTrigger>
           <TabsTrigger value="osdu" data-testid="record-tab-osdu">OSDU</TabsTrigger>
           {(enrichments.data?.length ?? 0) > 0 && (
-            <TabsTrigger value="enrichments" data-testid="record-tab-enrichments">
-              Enrichments
-              <span className="font-mono text-[11px] tabular-nums text-muted-foreground">{enrichments.data!.length.toLocaleString()}</span>
-            </TabsTrigger>
+            <TabsTrigger value="enrichments" data-testid="record-tab-enrichments">Enrichments</TabsTrigger>
           )}
-          <TabsTrigger value="artifacts" data-testid="record-tab-artifacts">
-            Artifacts
-            {(artifacts.data?.length ?? 0) > 0 && (
-              <span className="font-mono text-[11px] tabular-nums text-muted-foreground">{artifacts.data!.length.toLocaleString()}</span>
-            )}
-          </TabsTrigger>
+          <TabsTrigger value="artifacts" data-testid="record-tab-artifacts">Artifacts</TabsTrigger>
         </TabsList>
         <TabsContent value="timeline">
           <RecordJourney record={record} attempts={attempts.data} activities={activities.data} chain={chain.data} />

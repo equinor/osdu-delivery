@@ -116,7 +116,7 @@ The interface's records, the most recently changed first, 50 unless `--max` says
 | Option | Description |
 | --- | --- |
 | `--search <term>` | A delivery key (exact), or a prefix of the source key, the label, the OSDU id or the name of the file the row was landed from. A prefix search is indexed. |
-| `--contains` | Match `--search` anywhere in the source key, the label or the OSDU id instead. It has no index, so it is refused when the rest of the filter leaves more than 100,000 records: `A contains search reads every record the rest of the filter leaves, and this filter leaves more than 100000. Use a prefix search, which is indexed, or narrow by status, submission or run first.` |
+| `--contains` | Match `--search` anywhere in the source key, the label, the OSDU id or the ingestion file instead. It has no index, so it is refused when the rest of the filter leaves more than 100,000 records: `A contains search reads every record the rest of the filter leaves, and this filter leaves more than 100000. Use a prefix search, which is indexed, or narrow by status, submission or run first.` |
 | `--status <status>` | One status, any case: `pending`, `delivering`, `delivered`, `held`, `failed`, `deleted`, `reverted` or `waiting` ([Record lifecycle](../concepts/record-lifecycle.md)). Anything else fails naming them. |
 | `--issue <id>` | Only the records one issue keeps blocked: the 16 characters `records issues` prints for it. |
 | `--max <n>` | Records listed; a number above 1,000 is taken as 1,000, and one that is not a whole number above zero is refused (`--max '<value>' is not a whole number of records above zero.`). |

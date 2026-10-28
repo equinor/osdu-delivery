@@ -1481,7 +1481,9 @@ public sealed partial class OsduLedger : ILedger
         return keys.Select(k => new DeliveryKey(k)).ToList();
     }
 
-    public async Task<IReadOnlyList<RecordState>> LookupAsync(string term, int max, RecordStatus? status = null, Guid? flowId = null, string? partition = null, CancellationToken ct = default)
+    public async Task<IReadOnlyList<RecordState>> LookupAsync(
+        string term, int max, RecordStatus? status = null, Guid? flowId = null, string? partition = null, SearchMode mode = SearchMode.Prefix,
+        LookupNarrowing narrowTo = default, CancellationToken ct = default)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(term);
         var partitions = await ReadPartitionsAsync(flowId, partition, ct).ConfigureAwait(false);
@@ -1493,17 +1495,20 @@ public sealed partial class OsduLedger : ILedger
         var states = await ReadAsync(
             async db =>
             {
-                var page = LookupFilter(db, term, RecordListing.LookupCandidateLimit, status, flowId, partitions)
+                var found = await LookupMatchingAsync(db, term, RecordListing.LookupCandidateLimit, status, flowId, partitions, mode, narrowTo, ct).ConfigureAwait(false);
+                var page = found
                     .OrderByDescending(r => r.UpdatedUtc)
                     .ThenByDescending(r => r.DeliveryKey)
-                    .Take(Math.Clamp(max, 1, 200));
+                    .Take(Math.Clamp(max, 1, RecordListing.LookupCandidateLimit));
                 return await ReadLeasedAsync(db, page, ct).ConfigureAwait(false);
             },
             ct).ConfigureAwait(false);
         return await NamedAsync(states, ct).ConfigureAwait(false);
     }
 
-    public async Task<BoundedCount> CountLookupAsync(string term, int limit, RecordStatus? status = null, Guid? flowId = null, string? partition = null, CancellationToken ct = default)
+    public async Task<BoundedCount> CountLookupAsync(
+        string term, int limit, RecordStatus? status = null, Guid? flowId = null, string? partition = null, SearchMode mode = SearchMode.Prefix,
+        LookupNarrowing narrowTo = default, CancellationToken ct = default)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(term);
         ArgumentOutOfRangeException.ThrowIfLessThan(limit, 1);
@@ -1513,11 +1518,18 @@ public sealed partial class OsduLedger : ILedger
             return new BoundedCount(0, Exact: true);
         }
 
-        var count = await ReadAsync(db => LookupFilter(db, term, limit, status, flowId, partitions).Select(r => r.DeliveryKey).Take(limit).CountAsync(ct), ct).ConfigureAwait(false);
+        var count = await ReadAsync(
+            async db =>
+            {
+                var found = await LookupMatchingAsync(db, term, limit, status, flowId, partitions, mode, narrowTo, ct).ConfigureAwait(false);
+                return await found.Select(r => r.DeliveryKey).Take(limit).CountAsync(ct).ConfigureAwait(false);
+            },
+            ct).ConfigureAwait(false);
         return new BoundedCount(count, Exact: count < limit);
     }
 
-    public async Task<IReadOnlyList<RecordState>> ListRecentAsync(int max, RecordStatus? status = null, Guid? flowId = null, string? partition = null, CancellationToken ct = default)
+    public async Task<IReadOnlyList<RecordState>> ListRecentAsync(
+        int max, RecordStatus? status = null, Guid? flowId = null, string? partition = null, LookupNarrowing narrowTo = default, CancellationToken ct = default)
     {
         var take = Math.Clamp(max, 1, RecordListing.LookupCandidateLimit);
         var partitions = await ReadPartitionsAsync(flowId, partition, ct).ConfigureAwait(false);
@@ -1530,7 +1542,7 @@ public sealed partial class OsduLedger : ILedger
             rows.AddRange(await ReadAsync(
                 db => ReadLeasedAsync(
                     db,
-                    RecentFilter(db, status, flowId, within)
+                    RecentFilter(db, status, flowId, within, narrowTo)
                         .OrderByDescending(r => r.UpdatedUtc)
                         .ThenByDescending(r => r.DeliveryKey)
                         .Take(take),
@@ -1547,7 +1559,8 @@ public sealed partial class OsduLedger : ILedger
         return await NamedAsync(newest, ct).ConfigureAwait(false);
     }
 
-    public async Task<BoundedCount> CountRecentAsync(int limit, RecordStatus? status = null, Guid? flowId = null, string? partition = null, CancellationToken ct = default)
+    public async Task<BoundedCount> CountRecentAsync(
+        int limit, RecordStatus? status = null, Guid? flowId = null, string? partition = null, LookupNarrowing narrowTo = default, CancellationToken ct = default)
     {
         ArgumentOutOfRangeException.ThrowIfLessThan(limit, 1);
         var count = 0;
@@ -1559,7 +1572,7 @@ public sealed partial class OsduLedger : ILedger
                 break;
             }
 
-            count += await ReadAsync(db => RecentFilter(db, status, flowId, within).Select(r => r.DeliveryKey).Take(left).CountAsync(ct), ct).ConfigureAwait(false);
+            count += await ReadAsync(db => RecentFilter(db, status, flowId, within, narrowTo).Select(r => r.DeliveryKey).Take(left).CountAsync(ct), ct).ConfigureAwait(false);
         }
 
         return new BoundedCount(count, Exact: count < limit);
@@ -1638,11 +1651,18 @@ public sealed partial class OsduLedger : ILedger
     /// one ledger identity, or those of one identity in one state. Each reads an index that starts with the partition and
     /// ends with the update time ([PartitionId, UpdatedUtc], [PartitionId, Status, UpdatedUtc], [PartitionId, FlowId,
     /// UpdatedUtc] or [PartitionId, FlowId, Status, UpdatedUtc]), so the newest rows are the end of a range the server walks
-    /// backwards, and the listing costs what it shows rather than what the ledger holds.
+    /// backwards, and the listing costs what it shows rather than what the ledger holds. A narrowing keeps the records it
+    /// names among them.
     /// </summary>
-    private static IQueryable<DeliveryRecord> RecentFilter(OsduDbContext db, RecordStatus? status, Guid? flowId, short partition)
+    private static IQueryable<DeliveryRecord> RecentFilter(OsduDbContext db, RecordStatus? status, Guid? flowId, short partition, LookupNarrowing narrowing)
+        => Within(db.DeliveryRecords.AsNoTracking().Where(r => r.PartitionId == partition), status, flowId, narrowing);
+
+    /// <summary>
+    /// The records among <paramref name="rows"/> of one ledger identity and one custody state, each when asked, and of
+    /// those the ones <paramref name="narrowing"/> keeps: what every read across flows narrows by besides its term.
+    /// </summary>
+    private static IQueryable<DeliveryRecord> Within(IQueryable<DeliveryRecord> rows, RecordStatus? status, Guid? flowId, LookupNarrowing narrowing)
     {
-        var rows = db.DeliveryRecords.AsNoTracking().Where(r => r.PartitionId == partition);
         if (flowId is { } flow)
         {
             rows = rows.Where(r => r.FlowId == flow);
@@ -1654,8 +1674,77 @@ public sealed partial class OsduLedger : ILedger
             rows = rows.Where(r => r.Status == text);
         }
 
+        return Narrowed(rows, narrowing);
+    }
+
+    /// <summary>
+    /// The records among <paramref name="rows"/> a narrowing keeps: those whose last verify found drift or a missing
+    /// record, and those an enrichment was set aside on. A flow's listing narrows by the same two (<see cref="Narrow"/>).
+    /// </summary>
+    private static IQueryable<DeliveryRecord> Narrowed(IQueryable<DeliveryRecord> rows, LookupNarrowing narrowing)
+    {
+        if (narrowing.Drifted)
+        {
+            rows = rows.Where(r => r.LastVerifyOutcome == "drifted" || r.LastVerifyOutcome == "missing");
+        }
+
+        if (narrowing.StepHeld)
+        {
+            // The held-steps index holds the records a step was set aside on, and no others.
+            rows = rows.Where(r => r.HeldSteps != null);
+        }
+
         return rows;
     }
+
+    /// <summary>
+    /// The records a lookup across flows matches, unordered. A delivery key and a prefix are found through the identity
+    /// index (<see cref="LookupFilter"/>). A contains term has no index, so it is matched as a flow's listing matches one:
+    /// over the records the rest of the lookup leaves (its partitions, flow, status and narrowing), counted first and
+    /// refused when they are more than the scan limit (<see cref="RefuseBroadContainsAsync"/>).
+    /// </summary>
+    private async Task<IQueryable<DeliveryRecord>> LookupMatchingAsync(
+        OsduDbContext db, string term, int candidates, RecordStatus? status, Guid? flowId, IReadOnlyList<short> partitions, SearchMode mode,
+        LookupNarrowing narrowing, CancellationToken ct)
+    {
+        var t = term.Trim();
+        if (mode != SearchMode.Contains || Guid.TryParse(t, out _))
+        {
+            return LookupFilter(db, t, candidates, status, flowId, partitions, narrowing);
+        }
+
+        var rows = Within(db.DeliveryRecords.AsNoTracking().Where(r => partitions.Contains(r.PartitionId)), status, flowId, narrowing);
+        await RefuseBroadContainsAsync(rows, "narrow by flow or status", ct).ConfigureAwait(false);
+        return Containing(rows, t);
+    }
+
+    /// <summary>
+    /// Refuses a contains search over <paramref name="rows"/> when they are more than the scan limit: a contains term has
+    /// no index, so it reads every one of them. The count stops one past the limit, so the check costs at most that read.
+    /// <paramref name="narrowBy"/> says which filters bring the records under it.
+    /// </summary>
+    private async Task RefuseBroadContainsAsync(IQueryable<DeliveryRecord> rows, string narrowBy, CancellationToken ct)
+    {
+        var scanned = await rows.Select(r => r.DeliveryKey).Take(ContainsScanLimit + 1).CountAsync(ct).ConfigureAwait(false);
+        if (scanned > ContainsScanLimit)
+        {
+            throw new RecordQueryTooBroadException(string.Create(
+                CultureInfo.InvariantCulture,
+                $"A contains search reads every record the rest of the filter leaves, and this filter leaves more than {ContainsScanLimit}. Use a prefix search, which is indexed, or {narrowBy} first."));
+        }
+    }
+
+    /// <summary>
+    /// The records among <paramref name="rows"/> whose source key, label, OSDU id or ingestion file (the one the version
+    /// OSDU holds came from, or the queued version's) holds <paramref name="term"/> anywhere: what a contains search
+    /// matches, in a flow's listing and across flows alike.
+    /// </summary>
+    private static IQueryable<DeliveryRecord> Containing(IQueryable<DeliveryRecord> rows, string term)
+        => rows.Where(r => r.SourceKey.Contains(term)
+            || (r.Label != null && r.Label.Contains(term))
+            || (r.TargetId != null && r.TargetId.Contains(term))
+            || (r.SourceFileName != null && r.SourceFileName.Contains(term))
+            || (r.PendingSourceFileName != null && r.PendingSourceFileName.Contains(term)));
 
     /// <summary>
     /// A UUID is a delivery key, which every flow reading the row holds a record under (a seek of the partition's key
@@ -1666,10 +1755,12 @@ public sealed partial class OsduLedger : ILedger
     /// candidates to the primary key, so the read stays the size of the candidates however many records the ledger holds.
     /// A status narrows the candidates after they are found, so it costs nothing more than reading them: the index is what
     /// bounds the read. A flow is different: its candidates are its own tokens, read from the identity index in flow order,
-    /// so the candidate bound is spent on that flow's records rather than on every flow's. Every read is a range of the
-    /// partitions in <paramref name="partitions"/>, each index leading with the partition.
+    /// so the candidate bound is spent on that flow's records rather than on every flow's. A narrowing keeps candidates as a
+    /// status does. Every read is a range of the partitions in <paramref name="partitions"/>, each index leading with the
+    /// partition.
     /// </summary>
-    private static IQueryable<DeliveryRecord> LookupFilter(OsduDbContext db, string term, int candidates, RecordStatus? status, Guid? flowId, IReadOnlyList<short> partitions)
+    private static IQueryable<DeliveryRecord> LookupFilter(
+        OsduDbContext db, string term, int candidates, RecordStatus? status, Guid? flowId, IReadOnlyList<short> partitions, LookupNarrowing narrowing)
     {
         var t = term.Trim();
         var rows = db.DeliveryRecords.AsNoTracking();
@@ -1677,18 +1768,7 @@ public sealed partial class OsduLedger : ILedger
             ? rows.Where(r => partitions.Contains(r.PartitionId) && r.DeliveryKey == key)
             : IdentityCandidates(db, t, candidates, flowId, partitions)
                 .Join(rows, m => new { m.PartitionId, m.FlowId, m.DeliveryKey }, r => new { r.PartitionId, r.FlowId, r.DeliveryKey }, (_, r) => r);
-        if (flowId is { } flow)
-        {
-            found = found.Where(r => r.FlowId == flow);
-        }
-
-        if (status is { } wanted)
-        {
-            var text = StatusText.Of(wanted);
-            found = found.Where(r => r.Status == text);
-        }
-
-        return found;
+        return Within(found, status, flowId, narrowing);
     }
 
     /// <summary>
@@ -1753,15 +1833,8 @@ public sealed partial class OsduLedger : ILedger
             return rows.Where(r => matches.Contains(r.DeliveryKey));
         }
 
-        var scanned = await rows.Select(r => r.DeliveryKey).Take(ContainsScanLimit + 1).CountAsync(ct).ConfigureAwait(false);
-        if (scanned > ContainsScanLimit)
-        {
-            throw new RecordQueryTooBroadException(string.Create(
-                CultureInfo.InvariantCulture,
-                $"A contains search reads every record the rest of the filter leaves, and this filter leaves more than {ContainsScanLimit}. Use a prefix search, which is indexed, or narrow by status, submission or run first."));
-        }
-
-        return rows.Where(r => r.SourceKey.Contains(term) || (r.Label != null && r.Label.Contains(term)) || (r.TargetId != null && r.TargetId.Contains(term)));
+        await RefuseBroadContainsAsync(rows, "narrow by status, submission or run", ct).ConfigureAwait(false);
+        return Containing(rows, term);
     }
 
     /// <summary>The listing's filters other than its search, over one flow's records; each one seeks an index.</summary>
@@ -1796,21 +1869,11 @@ public sealed partial class OsduLedger : ILedger
             rows = rows.Where(r => sent.Contains(r.DeliveryKey));
         }
 
-        if (query.Drifted)
-        {
-            rows = rows.Where(r => r.LastVerifyOutcome == "drifted" || r.LastVerifyOutcome == "missing");
-        }
-
+        rows = Narrowed(rows, new LookupNarrowing(query.Drifted, query.StepHeld));
         if (query.Problem is { } problem)
         {
             // The problem index holds the blocked records alone; naming its filter lets the server read it.
             rows = rows.Where(r => r.ProblemHash != null && r.ProblemHash == problem);
-        }
-
-        if (query.StepHeld)
-        {
-            // The held-steps index holds the flow's records a step was set aside on, and no others.
-            rows = rows.Where(r => r.HeldSteps != null);
         }
 
         if (query.EverDelivered is { } everDelivered)

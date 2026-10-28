@@ -1,9 +1,11 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { CloudUpload, History, TextSearch } from "lucide-react";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
+import { Label } from "@/components/ui/label";
+import { Switch } from "@/components/ui/switch";
 import {
   DELIVERY_RECORD_STATUSES, deliveryApi, deliveryRecordRoute, type DeliveryRecordHit, type DeliveryRecordStatus,
 } from "../../api/delivery";
@@ -147,7 +149,8 @@ const RECENT_POLL_MS = 10_000;
  * Where an operator starts from what they hold, not from a flow: a well name, an OSDU id, a delivery key or the file a
  * record came from finds the record across every flow, and its row opens the record's page with its whole history.
  * With nothing typed it opens on the records the ledger last took in or sent, so the page answers "what has come in?"
- * before it is asked anything. The term and the state travel in the URL, so a lookup is a link that can be sent on; a link
+ * before it is asked anything. It narrows as a flow's Records tab does (a state, drift, a held step, a term matched
+ * anywhere), and by flow. The term and the filters travel in the URL, so a lookup is a link that can be sent on; a link
  * that names a partition opens it in that one.
  */
 export default function DeliveryRecordsPage() {
@@ -156,7 +159,29 @@ export default function DeliveryRecordsPage() {
   const [searchParams, setSearchParams] = useSearchParams();
   const term = searchParams.get("q")?.trim() ?? "";
   const status = isRecordStatus(searchParams.get("status")) ? searchParams.get("status")! : ALL;
+  // The flow tab's switches, named in the address as the lookup's API names them.
+  const anywhere = searchParams.get("mode") === "contains";
+  const drifted = searchParams.get("drifted") === "true";
+  const stepHeld = searchParams.get("stepHeld") === "true";
   const [typed, setTyped] = useState(term);
+
+  // The address as last asked. It is drawn a render after each change, so every change builds on this rather than on the
+  // address last drawn, and filters changed closer together than a render all stick.
+  const asked = useRef(searchParams);
+  useEffect(() => {
+    asked.current = searchParams;
+  }, [searchParams]);
+  const setParam = useCallback((name: string, next: string | null) => {
+    const params = new URLSearchParams(asked.current);
+    if (next === null) {
+      params.delete(name);
+    } else {
+      params.set(name, next);
+    }
+
+    asked.current = params;
+    setSearchParams(params, { replace: true });
+  }, [setSearchParams]);
 
   // The field is what the operator types; the URL is what is looked up, a moment after they stop.
   useEffect(() => {
@@ -164,20 +189,9 @@ export default function DeliveryRecordsPage() {
       return;
     }
 
-    const handle = window.setTimeout(() => {
-      setSearchParams((current) => {
-        const next = new URLSearchParams(current);
-        if (typed.trim() === "") {
-          next.delete("q");
-        } else {
-          next.set("q", typed.trim());
-        }
-
-        return next;
-      }, { replace: true });
-    }, DEBOUNCE_MS);
+    const handle = window.setTimeout(() => setParam("q", typed.trim() === "" ? null : typed.trim()), DEBOUNCE_MS);
     return () => window.clearTimeout(handle);
-  }, [typed, term, setSearchParams]);
+  }, [typed, term, setParam]);
 
   // A link that arrives with a term (from the Delivery page's field, or sent on) fills the field it would have been typed in.
   const [shownTerm, setShownTerm] = useState(term);
@@ -203,26 +217,20 @@ export default function DeliveryRecordsPage() {
     [flows.data, flows.isSuccess, flow, active],
   );
 
-  const setParam = (name: string, next: string | null) => setSearchParams((current) => {
-    const params = new URLSearchParams(current);
-    if (next === null) {
-      params.delete(name);
-    } else {
-      params.set(name, next);
-    }
-
-    return params;
-  }, { replace: true });
   const selectStatus = (next: string) => setParam("status", next === ALL ? null : next);
   const selectFlow = (next: string) => setParam("flow", next === "" ? null : next);
 
   // The lookup the table pages through and the export writes whole: the same one, so the file is what the page lists.
   const lookup = useMemo(() => ({
     search: searching ? term : undefined,
+    mode: searching && anywhere ? "contains" as const : undefined,
     status: status === ALL ? undefined : (status as DeliveryRecordStatus),
+    drifted: drifted || undefined,
+    stepHeld: stepHeld || undefined,
     flowId: flow === "" ? undefined : flow,
     partition: active ?? undefined,
-  }), [searching, term, status, flow, active]);
+  }), [searching, term, anywhere, status, drifted, stepHeld, flow, active]);
+  const narrowed = status !== ALL || flow !== "" || drifted || stepHeld;
   // How many records the lookup reached, as its last page counted them; capped when more match than it reaches.
   const [reached, setReached] = useState<{ total: number; capped: boolean } | null>(null);
   const onPageLoaded = useCallback((_rows: DeliveryRecordHit[], total: number, capped: boolean) => {
@@ -234,7 +242,7 @@ export default function DeliveryRecordsPage() {
     <Page data-testid="page-delivery-records">
       <PageHeader
         title="Records"
-        subtitle={`The records of every flow${active === null ? "" : ` in ${active}`}, newest first, and a way back to any one of them: a wellbore id or well name the mapping declares, a source key or label, an OSDU id, a delivery key, or the ingestion file it came from. Every flow is searched unless one is chosen, and each hit says which value matched.`}
+        subtitle={`The records of every flow${active === null ? "" : ` in ${active}`}, newest first, and a way back to any one of them: a wellbore id or well name the mapping declares, a source key or label, an OSDU id, a delivery key, or the ingestion file it came from. A term matches the start of a value, or anywhere in one with Match anywhere. Every flow is searched unless one is chosen, and each hit says which value matched.`}
         // What the lookup lists, every record it reaches rather than the page in view: a page-wide action, so it stays in
         // the header at any width rather than wrapping the filters.
         actions={(
@@ -280,6 +288,21 @@ export default function DeliveryRecordsPage() {
           testId="delivery-lookup-flow"
           className="w-64"
         />
+        <Label className="flex items-center gap-2 text-[13px] font-normal" title="Records whose last verify found OSDU holding something else, or nothing">
+          <Switch checked={drifted} onCheckedChange={(on) => setParam("drifted", on ? "true" : null)} data-testid="delivery-lookup-drifted" />
+          Drifted only
+        </Label>
+        <Label className="flex items-center gap-2 text-[13px] font-normal" title="Records an enrichment held in and was set aside on: each went ahead with what the enrichment added to its last delivery">
+          <Switch checked={stepHeld} onCheckedChange={(on) => setParam("stepHeld", on ? "true" : null)} data-testid="delivery-lookup-step-held" />
+          Step held
+        </Label>
+        <Label
+          className="flex items-center gap-2 text-[13px] font-normal"
+          title="Match the term anywhere in the source key, the label, the OSDU id or the ingestion file, not only at the start of a value. It reads every record the other filters leave, so with more than 100,000 of them it asks for a flow or a status first."
+        >
+          <Switch checked={anywhere} onCheckedChange={(on) => setParam("mode", on ? "contains" : null)} data-testid="delivery-lookup-contains" />
+          Match anywhere
+        </Label>
       </FilterBar>
       {!searching && (
         <p className="flex items-center gap-1.5 text-[12px] text-muted-foreground" data-testid="delivery-lookup-caption">
@@ -291,7 +314,7 @@ export default function DeliveryRecordsPage() {
         </p>
       )}
       <PagedTable
-        queryKey={["delivery", "lookup", term, status, flow, active]}
+        queryKey={["delivery", "lookup", term, anywhere, status, drifted, stepHeld, flow, active]}
         fetchPage={(page, pageSize) => deliveryApi.lookupRecords({ ...lookup, page, pageSize })}
         onPageLoaded={onPageLoaded}
         columns={columns}
@@ -299,8 +322,12 @@ export default function DeliveryRecordsPage() {
         onRowClick={(row) => navigate(deliveryRecordRoute(row))}
         pollMs={searching ? undefined : RECENT_POLL_MS}
         emptyMessage={searching
-          ? "No record starts with that. A term matches the start of a value the record is known by; try a shorter one, or open the flow's Records tab and match anywhere."
-          : "No records yet. A delivery flow takes its records into the ledger on its first run, and they appear here as they arrive."}
+          ? anywhere
+            ? `No record${narrowed ? " the filters leave" : ""} holds that in its source key, label, OSDU id or ingestion file.`
+            : `No record${narrowed ? " the filters leave" : ""} starts with that. A term matches the start of a value the record is known by; try a shorter one, or turn on Match anywhere.`
+          : narrowed
+            ? "No records match the filters."
+            : "No records yet. A delivery flow takes its records into the ledger on its first run, and they appear here as they arrive."}
         data-testid="delivery-lookup-table"
       />
     </Page>

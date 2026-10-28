@@ -111,6 +111,14 @@ public sealed class DeliveryRecordExportApiTests
                 Assert.Equal($"'W-{suffix}': the start of an identity, the source key, a word of the label, the OSDU id, the delivery key or the file", read.About()["Lookup"].GetText());
             }
 
+            // A term matched anywhere finds what no value starts with, and the About sheet says how it matched.
+            using (var read = new WorkbookReading((await WorkbookAsync(client, token, $"/api/v1/delivery/records/export?search=ellbore&mode=contains&flowId={flowId:D}")).Bytes))
+            {
+                Assert.Equal(["wellbore a", "Wellbore B", "Wellbore C"], read.Rows().Select(r => r["Record"].GetText()));
+                Assert.Equal("'ellbore' anywhere in the source key, the label, the OSDU id or the file, or the delivery key", read.About()["Lookup"].GetText());
+                Assert.False(read.About().ContainsKey("Narrowed to"));
+            }
+
             await ProblemAsync(client, token, "/api/v1/delivery/records/export?status=nonsense", HttpStatusCode.BadRequest);
         }
         finally

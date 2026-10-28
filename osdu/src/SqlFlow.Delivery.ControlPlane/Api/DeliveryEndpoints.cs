@@ -1021,45 +1021,56 @@ public static class DeliveryEndpoints
     /// <summary>
     /// A record by what an operator holds, across every flow: the Records page's lookup. A delivery key lands on the
     /// record of every flow reading that row; anything else is a prefix over the OSDU id, the source key, the label and
-    /// the ingestion file name, narrowed to one custody state and to one flow's ledger identity (<paramref name="flowId"/>,
-    /// one of <see cref="ListRecordFlowsAsync"/>) when asked. With no term it is the ledger's recency listing instead: the
-    /// records the delivery system last took in or sent, newest first, which is what the page shows before anything is
-    /// typed. Both are indexed reads, so they answer in milliseconds at production volume and reach no further than the
-    /// candidate bound; a page past that bound is empty rather than a scan, and the listing has to be narrowed instead.
+    /// the ingestion file name, or, with <c>mode=contains</c>, the same values matched anywhere. It is narrowed, when
+    /// asked, to one custody state, to one flow's ledger identity (<paramref name="flowId"/>, one of
+    /// <see cref="ListRecordFlowsAsync"/>), to the records a verify found drifted or missing, and to the records an
+    /// enrichment was set aside on: the filters a flow's Records tab has, read across every flow. With no term it is the
+    /// ledger's recency listing instead: the records the delivery system last took in or sent, newest first, which is what
+    /// the page shows before anything is typed. A prefix and the listing are indexed reads that reach no further than the
+    /// candidate bound, so a page past that bound is empty rather than a scan; a contains term reads every record the
+    /// rest of the lookup leaves, and is refused as too broad when they are more than the scan limit.
     /// </summary>
     private static async Task<Results<Ok<PagedResult<DeliveryRecordHitDto>>, ProblemHttpResult>> LookupRecordsAsync(
-        string? search, string? status, Guid? flowId, [FromQuery] string? partition, int? page, int? pageSize, CatalogDbContext db, OsduDbContext osdu, ILedger ledger,
-        HttpRequest request, CancellationToken ct)
+        string? search, string? mode, string? status, Guid? flowId, bool? drifted, bool? stepHeld, [FromQuery] string? partition, int? page, int? pageSize,
+        CatalogDbContext db, OsduDbContext osdu, ILedger ledger, HttpRequest request, CancellationToken ct)
     {
         // The partition the page reads: the one the request names, else the workbench's.
         partition = WorkbenchPartition.Named(partition, request);
         var term = search?.Trim() is { Length: > 0 } typed ? typed : null;
-        var (query, invalid) = BuildQuery(new DeliveryRecordFilterDto(status, null, null, null, null));
+        var (query, invalid) = BuildQuery(new DeliveryRecordFilterDto(status, term, mode, null, null, drifted == true, StepHeld: stepHeld == true));
         if (query is null)
         {
             return invalid!;
         }
 
+        var narrowing = new LookupNarrowing(query.Drifted, query.StepHeld);
         var (p, size) = PageRequest.Normalize(page, pageSize);
         var wanted = (long)p * size;
         var take = (int)Math.Min(wanted, RecordListing.LookupCandidateLimit);
         var skip = (p - 1) * size;
-        var found = skip >= RecordListing.LookupCandidateLimit
-            ? []
-            : term is null
-                ? await ledger.ListRecentAsync(take, query.Status, flowId, partition, ct).ConfigureAwait(false)
-                : await ledger.LookupAsync(term, take, query.Status, flowId, partition, ct).ConfigureAwait(false);
-        var items = found.Skip(skip).Take(size).ToList();
+        try
+        {
+            var found = skip >= RecordListing.LookupCandidateLimit
+                ? []
+                : term is null
+                    ? await ledger.ListRecentAsync(take, query.Status, flowId, partition, narrowing, ct).ConfigureAwait(false)
+                    : await ledger.LookupAsync(term, take, query.Status, flowId, partition, query.Mode, narrowing, ct).ConfigureAwait(false);
+            var items = found.Skip(skip).Take(size).ToList();
 
-        // Fewer records than asked for means neither the recency index nor an identity index ran into its bound, so that count is exact.
-        var total = found.Count < take
-            ? new BoundedCount(found.Count, Exact: true)
-            : term is null
-                ? await ledger.CountRecentAsync(RecordListing.LookupCandidateLimit, query.Status, flowId, partition, ct).ConfigureAwait(false)
-                : await ledger.CountLookupAsync(term, RecordListing.LookupCandidateLimit, query.Status, flowId, partition, ct).ConfigureAwait(false);
+            // Fewer records than asked for means neither the recency index nor an identity index ran into its bound, so that count is exact.
+            var total = found.Count < take
+                ? new BoundedCount(found.Count, Exact: true)
+                : term is null
+                    ? await ledger.CountRecentAsync(RecordListing.LookupCandidateLimit, query.Status, flowId, partition, narrowing, ct).ConfigureAwait(false)
+                    : await ledger.CountLookupAsync(term, RecordListing.LookupCandidateLimit, query.Status, flowId, partition, query.Mode, narrowing, ct).ConfigureAwait(false);
 
-        var hits = await DeliveryRecordHits.DescribeAsync(db, osdu, items, ct, term).ConfigureAwait(false);
-        return TypedResults.Ok(new PagedResult<DeliveryRecordHitDto>(hits, p, size, total.Count, TotalCapped: !total.Exact));
+            var hits = await DeliveryRecordHits.DescribeAsync(db, osdu, items, ct, term, query.Mode).ConfigureAwait(false);
+            return TypedResults.Ok(new PagedResult<DeliveryRecordHitDto>(hits, p, size, total.Count, TotalCapped: !total.Exact));
+        }
+        catch (RecordQueryTooBroadException ex)
+        {
+            return TooBroad(ex.Message);
+        }
     }
 
     /// <summary>
@@ -1100,43 +1111,53 @@ public static class DeliveryEndpoints
     /// <summary>
     /// The records the Records page's lookup reaches, as an Excel workbook (<see cref="RecordExport.WriteLookup"/>): the same
     /// lookup as <see cref="LookupRecordsAsync"/>, every record it reaches rather than a page of them, each with the flow that
-    /// delivers it. The About sheet says when more records match than a lookup reaches.
+    /// delivers it. The About sheet says when more records match than a lookup reaches. A contains term that reads more
+    /// records than the scan limit is refused as too broad, before any of the file is written.
     /// </summary>
     private static async Task<Results<PushStreamHttpResult, ProblemHttpResult>> ExportRecordLookupAsync(
-        string? search, string? status, Guid? flowId, [FromQuery] string? partition, CatalogDbContext db, OsduDbContext osdu, ILedger ledger,
-        TimeProvider clock, HttpRequest request, HttpResponse response, CancellationToken ct)
+        string? search, string? mode, string? status, Guid? flowId, bool? drifted, bool? stepHeld, [FromQuery] string? partition, CatalogDbContext db,
+        OsduDbContext osdu, ILedger ledger, TimeProvider clock, HttpRequest request, HttpResponse response, CancellationToken ct)
     {
         partition = WorkbenchPartition.Named(partition, request);
         var term = search?.Trim() is { Length: > 0 } typed ? typed : null;
-        var (query, invalid) = BuildQuery(new DeliveryRecordFilterDto(status, null, null, null, null));
+        var (query, invalid) = BuildQuery(new DeliveryRecordFilterDto(status, term, mode, null, null, drifted == true, StepHeld: stepHeld == true));
         if (query is null)
         {
             return invalid!;
         }
 
+        var narrowing = new LookupNarrowing(query.Drifted, query.StepHeld);
         const int reach = RecordListing.LookupCandidateLimit;
-        var found = term is null
-            ? await ledger.ListRecentAsync(reach, query.Status, flowId, partition, ct).ConfigureAwait(false)
-            : await ledger.LookupAsync(term, reach, query.Status, flowId, partition, ct).ConfigureAwait(false);
-
-        // Fewer records than the lookup reaches means it reached them all; otherwise one more than it reaches is counted.
+        IReadOnlyList<RecordState> found;
         var more = false;
-        if (found.Count >= reach)
+        try
         {
-            var total = term is null
-                ? await ledger.CountRecentAsync(reach + 1, query.Status, flowId, partition, ct).ConfigureAwait(false)
-                : await ledger.CountLookupAsync(term, reach + 1, query.Status, flowId, partition, ct).ConfigureAwait(false);
-            more = !total.Exact;
+            found = term is null
+                ? await ledger.ListRecentAsync(reach, query.Status, flowId, partition, narrowing, ct).ConfigureAwait(false)
+                : await ledger.LookupAsync(term, reach, query.Status, flowId, partition, query.Mode, narrowing, ct).ConfigureAwait(false);
+
+            // Fewer records than the lookup reaches means it reached them all; otherwise one more than it reaches is counted.
+            if (found.Count >= reach)
+            {
+                var total = term is null
+                    ? await ledger.CountRecentAsync(reach + 1, query.Status, flowId, partition, narrowing, ct).ConfigureAwait(false)
+                    : await ledger.CountLookupAsync(term, reach + 1, query.Status, flowId, partition, query.Mode, narrowing, ct).ConfigureAwait(false);
+                more = !total.Exact;
+            }
+        }
+        catch (RecordQueryTooBroadException ex)
+        {
+            return TooBroad(ex.Message);
         }
 
         // A hit names the flow, interface and partition of its record, in the order the records were given.
-        var described = await DeliveryRecordHits.DescribeAsync(db, osdu, found, ct, term).ConfigureAwait(false);
+        var described = await DeliveryRecordHits.DescribeAsync(db, osdu, found, ct, term, query.Mode).ConfigureAwait(false);
         var hits = found
             .Select((record, i) => new RecordExportHit(
                 record, described[i].FlowName, described[i].Interface, described[i].Partition, described[i].Matched?.Select(m => m.Value).ToList() ?? []))
             .ToList();
         var narrowed = flowId is { } id ? (await ledger.GetLedgerAsync(id, ct).ConfigureAwait(false))?.LedgerName ?? id.ToString("D") : null;
-        var lookup = new RecordLookupExport(term, query.Status, narrowed, partition, more);
+        var lookup = new RecordLookupExport(term, query.Status, narrowed, partition, more, query.Mode, narrowing);
 
         var file = WorkbookBuffer(response);
         RecordExport.WriteLookup(lookup, hits, clock.GetUtcNow().UtcDateTime, file);

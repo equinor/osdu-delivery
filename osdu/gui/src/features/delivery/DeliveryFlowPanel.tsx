@@ -425,7 +425,7 @@ export function DeliveryFlowPanel({ pipelineId, flowName, section }: { pipelineI
       {section === "records" && (
         <>
           <FilterBar>
-            <SearchInput value={search} onChange={setSearch} placeholder="Delivery key, label, source key or OSDU id" label="Search records" testId="delivery-records-search" className="sm:w-96" />
+            <SearchInput value={search} onChange={setSearch} placeholder="Delivery key, label, source key, OSDU id or file" label="Search records" testId="delivery-records-search" className="sm:w-96" />
             <Select value={status} onValueChange={setStatus}>
               <SelectTrigger size="sm" className="h-8 w-40" data-testid="delivery-records-status">
                 <SelectValue />

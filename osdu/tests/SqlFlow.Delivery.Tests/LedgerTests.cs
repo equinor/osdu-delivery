@@ -314,6 +314,80 @@ public class SqlLedgerTests : IAsyncLifetime, IDisposable
     }
 
     [Fact]
+    public async Task The_lookup_across_flows_narrows_as_a_flows_listing_does_and_matches_anywhere_within_its_bound()
+    {
+        var submission = Guid.NewGuid();
+        var delivering = Guid.NewGuid();
+        var otherFlow = FlowId.Of("other-flow");
+        await Ledger.UpsertPendingAsync(_flow, [
+            Pending("WELL-1", submission) with { Label = "NO 16/2-10 / STAT_COMP / 47523/1", PendingSourceFileName = "stat_comp_welllog_20261027152610.csv" },
+            Pending("WELL-2", delivering) with { Label = "NO 16/2-11 / STAT_COMP / 47524/1" },
+            Pending("WELL-3", submission) with { Label = "NO 25/8-4 / CPI / 1/1", HeldSteps = "grade" },
+        ]);
+        await Ledger.UpsertPendingAsync(otherFlow, [Pending("WELL-4", submission) with { FlowId = otherFlow, Label = "NO 16/2-12 / STAT_COMP / 1/1" }]);
+
+        // A term inside a value is no prefix of any value the records are known by, so only matching anywhere finds it,
+        // in every flow, in one flow, and in the file a record's queued version came from.
+        Assert.Empty(await Ledger.LookupAsync("6/2-1", 10));
+        var anywhere = await Ledger.LookupAsync("6/2-1", 10, mode: SearchMode.Contains);
+        Assert.Equal(["WELL-1", "WELL-2", "WELL-4"], anywhere.Select(r => r.SourceKey).Order().ToList());
+        Assert.Equal(new BoundedCount(3, Exact: true), await Ledger.CountLookupAsync("6/2-1", 10, mode: SearchMode.Contains));
+        Assert.Equal(new BoundedCount(2, Exact: false), await Ledger.CountLookupAsync("6/2-1", 2, mode: SearchMode.Contains));
+        Assert.Equal(2, (await Ledger.LookupAsync("6/2-1", 10, flowId: _flow, mode: SearchMode.Contains)).Count);
+        Assert.Equal("WELL-1", Assert.Single(await Ledger.LookupAsync("20261027", 10, mode: SearchMode.Contains)).SourceKey);
+        Assert.Empty(await Ledger.LookupAsync("6/2-1", 10, RecordStatus.Delivered, mode: SearchMode.Contains));
+
+        // A delivery key is still the record itself, whichever way the term matches.
+        Assert.Single(await Ledger.LookupAsync(DeliveryKey.Derive("test", ["WELL-3"]).Value.ToString("D"), 10, mode: SearchMode.Contains));
+
+        // It reads every record the rest of the lookup leaves, so a lookup that leaves more than the scan limit is
+        // refused, and one narrowed under it runs.
+        var bounded = new OsduLedger(_db.CreateDbContext, _clock) { ContainsScanLimit = 3 };
+        var refused = await Assert.ThrowsAsync<RecordQueryTooBroadException>(() => bounded.LookupAsync("6/2-1", 10, mode: SearchMode.Contains));
+        Assert.Contains("narrow by flow or status", refused.Message, StringComparison.Ordinal);
+        await Assert.ThrowsAsync<RecordQueryTooBroadException>(() => bounded.CountLookupAsync("6/2-1", 10, mode: SearchMode.Contains));
+        Assert.Equal(2, (await bounded.LookupAsync("6/2-1", 10, flowId: _flow, mode: SearchMode.Contains)).Count);
+
+        // The records a verify found drifted, and the records an enrichment was set aside on, narrow the lookup and the
+        // listing of what came in last alike.
+        var claimed = Assert.Single((await Ledger.ClaimAsync(_flow, delivering, "w", 10, TimeSpan.FromMinutes(1), Now)).Records);
+        await Ledger.CompleteAsync(_flow, new RecordCompletion
+        {
+            DeliveryKey = claimed.DeliveryKey,
+            Status = RecordStatus.Delivered,
+            Promote = true,
+            TargetVersion = 1,
+            Attempt = new AttemptRecord { DeliveryKey = claimed.DeliveryKey, Worker = "w", StartedUtc = Now, CompletedUtc = Now, Outcome = AttemptOutcome.Delivered, Phase = "metadata" },
+        });
+        await Ledger.RecordVerifyAsync(_flow, claimed.DeliveryKey, VerifyOutcome.Drifted, 2, Now, requeue: false);
+
+        var drifted = new LookupNarrowing(Drifted: true);
+        Assert.Equal("WELL-2", Assert.Single(await Ledger.ListRecentAsync(10, narrowTo: drifted)).SourceKey);
+        Assert.Equal(new BoundedCount(1, Exact: true), await Ledger.CountRecentAsync(10, narrowTo: drifted));
+        Assert.Equal("WELL-2", Assert.Single(await Ledger.LookupAsync("WELL-", 10, narrowTo: drifted)).SourceKey);
+        Assert.Equal("WELL-2", Assert.Single(await Ledger.LookupAsync("6/2-1", 10, mode: SearchMode.Contains, narrowTo: drifted)).SourceKey);
+        Assert.Empty(await Ledger.ListRecentAsync(10, flowId: otherFlow, narrowTo: drifted));
+
+        var held = new LookupNarrowing(StepHeld: true);
+        Assert.Equal("WELL-3", Assert.Single(await Ledger.ListRecentAsync(10, narrowTo: held)).SourceKey);
+        Assert.Equal(new BoundedCount(1, Exact: true), await Ledger.CountLookupAsync("WELL-", 10, narrowTo: held));
+        Assert.Empty(await Ledger.LookupAsync("WELL-", 10, narrowTo: new LookupNarrowing(Drifted: true, StepHeld: true)));
+    }
+
+    [Fact]
+    public async Task A_lookup_returns_every_record_it_reaches_up_to_its_bound()
+    {
+        // The Records page pages through what a lookup reaches, and its export writes all of it: a term matching more
+        // than a page of records answers every one of them, up to the candidate bound.
+        var submission = Guid.NewGuid();
+        await Ledger.UpsertPendingAsync(_flow, Enumerable.Range(1, 250).Select(i => Pending($"BULK-{i:D3}", submission)).ToList());
+
+        Assert.Equal(250, (await Ledger.LookupAsync("BULK-", RecordListing.LookupCandidateLimit)).Count);
+        Assert.Equal(250, (await Ledger.LookupAsync("ULK-", RecordListing.LookupCandidateLimit, mode: SearchMode.Contains)).Count);
+        Assert.Equal(new BoundedCount(250, Exact: true), await Ledger.CountLookupAsync("BULK-", RecordListing.LookupCandidateLimit));
+    }
+
+    [Fact]
     public async Task A_record_is_found_by_every_value_an_operator_holds_and_a_restaging_leaves_nothing_stale()
     {
         var submission = Guid.NewGuid();

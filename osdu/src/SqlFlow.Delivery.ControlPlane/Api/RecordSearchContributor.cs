@@ -37,10 +37,12 @@ internal static class DeliveryRecordHits
     /// <summary>
     /// The records as hits, each with the pipeline and interface its ledger belongs to, in the order given. With a
     /// <paramref name="term"/>, each hit also carries the values of the record that start with it, read from the same
-    /// identity index the lookup seeks, so the page can say which value answered.
+    /// identity index the lookup seeks, so the page can say which value answered; with <see cref="SearchMode.Contains"/>,
+    /// the values of its own that hold the term anywhere, as the lookup matched them (<see cref="ContainedMatches"/>).
     /// </summary>
     public static async Task<IReadOnlyList<DeliveryRecordHitDto>> DescribeAsync(
-        CatalogDbContext catalog, OsduDbContext osdu, IReadOnlyList<RecordState> records, CancellationToken ct, string? term = null)
+        CatalogDbContext catalog, OsduDbContext osdu, IReadOnlyList<RecordState> records, CancellationToken ct, string? term = null,
+        SearchMode mode = SearchMode.Prefix)
     {
         ArgumentNullException.ThrowIfNull(catalog);
         ArgumentNullException.ThrowIfNull(osdu);
@@ -51,7 +53,9 @@ internal static class DeliveryRecordHits
         }
 
         var pipelines = await DeliveryPipelines.ForLedgersAsync(catalog, osdu, records.Select(r => r.FlowId).Distinct().ToList(), ct).ConfigureAwait(false);
-        var matches = await MatchesAsync(osdu, records, term, ct).ConfigureAwait(false);
+        var matches = mode == SearchMode.Contains
+            ? ContainedMatches(records, term)
+            : await MatchesAsync(osdu, records, term, ct).ConfigureAwait(false);
         return records
             .Select(record => Describe(
                 record,
@@ -95,6 +99,44 @@ internal static class DeliveryRecordHits
             if (list.Count < MaxMatchesShown)
             {
                 list.Add(new DeliveryRecordMatchDto(row.Display, row.Kind));
+            }
+        }
+
+        return by;
+    }
+
+    /// <summary>
+    /// Which of each record's own values hold the term anywhere: the source key, the label, the OSDU id and the ingestion
+    /// file names, the values a contains lookup matches. They are on the records already, so nothing more is read.
+    /// </summary>
+    private static Dictionary<(Guid FlowId, Guid DeliveryKey), List<DeliveryRecordMatchDto>> ContainedMatches(IReadOnlyList<RecordState> records, string? term)
+    {
+        var by = new Dictionary<(Guid, Guid), List<DeliveryRecordMatchDto>>();
+        if (string.IsNullOrWhiteSpace(term) || Guid.TryParse(term.Trim(), out _))
+        {
+            // A delivery key matched the record itself, not one of its values; there is nothing to explain.
+            return by;
+        }
+
+        var wanted = term.Trim();
+        foreach (var record in records)
+        {
+            var found = new (string? Value, string Kind)[]
+                {
+                    (record.SourceKey, "key"),
+                    (record.Label, "label"),
+                    (record.TargetId, "osdu"),
+                    (record.Origin.FileName, "file"),
+                    (record.PendingOrigin.FileName, "file"),
+                }
+                .Where(v => v.Value is not null && v.Value.Contains(wanted, StringComparison.OrdinalIgnoreCase))
+                .Select(v => new DeliveryRecordMatchDto(v.Value!, v.Kind))
+                .DistinctBy(m => m.Value)
+                .Take(MaxMatchesShown)
+                .ToList();
+            if (found.Count > 0)
+            {
+                by[(record.FlowId, record.DeliveryKey.Value)] = found;
             }
         }
 

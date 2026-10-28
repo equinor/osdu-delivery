@@ -174,15 +174,22 @@ Where an operator starts from what they hold rather than from a flow. With nothi
 records the delivery system took in or sent, newest first, refreshing every ten seconds. Typed, it lists the records any
 of whose values start with the term, across every flow: an identity the mapping declares (`dataset.identity`), the
 source key or one of its key columns, a word of the label, the OSDU id, the delivery key (which lands on one record),
-or the ingestion file. Each hit says which value matched. A status picker (`pending`, `waiting`, `delivering`,
-`delivered`, `held`, `failed`, `deleted`, `reverted`) and a flow picker narrow both. A row shows the status, the record
-(label, source key, ingestion file and row), the flow, when it last changed and was last delivered, and its OSDU type,
-a link to the record's OSDU tab; a row opens the record's page. The term (`q`), status (`status`) and flow (`flow`, the
-ledger's flow id) are in the address, so a lookup is a link; a link that names a partition (`partition`) makes it the
-title bar's, so the lookup is read in the partition it is about. **Export**, in the header, downloads every record the
-lookup reaches (at most 1,000) as an Excel workbook, each with its flow, interface and partition and the values the term
-matched; when more match, its About sheet says so, and a flow's Records tab exports up to 25,000 records of the flow
-([records export](../cli/records.md#records-export)).
+or the ingestion file. **Match anywhere** finds the term inside the source key, the label, the OSDU id or the ingestion
+file instead (`6/2-1` finds `NO 16/2-10`); it reads every record the other filters leave, so with more than 100,000 of
+them it asks for a flow or a status first ([finding records](ledger.md#finding-records)). Each hit says which value
+matched. The filters a flow's Records tab has narrow both the listing and a lookup: a status picker (`pending`,
+`waiting`, `delivering`, `delivered`, `held`, `failed`, `deleted`, `reverted`), **Drifted only** (the records whose last
+verify found OSDU holding something else, or nothing) and **Step held** ([an enrichment set aside on its
+hold](../flow/enrich-holds.md)), with a flow picker beside them. A row shows the status, the record (label, source key,
+ingestion file and row), the flow, when it last changed and was last delivered, and its OSDU type, a link to the
+record's OSDU tab; a row opens the record's page. The term (`q`), status (`status`), flow (`flow`, the ledger's flow
+id), **Match anywhere** (`mode=contains`), **Drifted only** (`drifted=true`) and **Step held** (`stepHeld=true`) are in
+the address, so a lookup is a link; a link that names a partition (`partition`) makes it the title bar's, so the lookup
+is read in the partition it is about. **Export**, in the header, downloads every record the lookup reaches (at most
+1,000) as an Excel workbook, each with its flow, interface and partition and the values the term matched; its About
+sheet says how the term matched and what narrowed it, and when more match, so does it, and a flow's Records tab exports
+up to 25,000 records of the flow ([records export](../cli/records.md#records-export)). Selecting records and acting on
+them (**Redeliver**, **Adopt**, **Sync timelines**, **Remove**) is a flow's Records tab's, since each acts in one ledger.
 
 ### Removals
 
@@ -258,7 +265,7 @@ records waiting on this one). Its buttons:
 **The milestones** under it: **From file**, **Loaded**, **Last change**, **Delivered**, **Verified**, and **Removed**
 for a record that was.
 
-**The tabs:**
+**The tabs**, each named for the question it answers and carrying no count (a tab's own first line counts what it holds):
 
 - **Timeline**: what happened to the record, newest first, in chapters (each started by a row arriving, changing or
   going, or by someone's request), on three lanes (**Source**, **Ledger**, **OSDU**); every try with what OSDU answered,
@@ -335,7 +342,7 @@ partitions is read in the title bar's partition.
   left to undo. The tab follows the
   flow's newest run as the Delivery page does: its counts and submissions move with a run, and every view of the flow is
   read again within seconds of a run ending.
-- **Records**: the ledger's records, searched by delivery key, label, source key or OSDU id, with a status picker,
+- **Records**: the ledger's records, searched by delivery key, label, source key, OSDU id or ingestion file, with a status picker,
   **Drifted only**, **Step held** (while an enrichment is set aside on any record,
   [an enrichment set aside on its hold](../flow/enrich-holds.md)) and **Match anywhere**; links from elsewhere narrow it to one run (`?run=`), what a submission last
   planned (`?submission=`) or delivered (`?delivered=`), or one issue (`?issue=`). **Export** downloads every record the

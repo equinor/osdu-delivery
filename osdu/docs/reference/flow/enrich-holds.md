@@ -93,7 +93,7 @@ queued, the record is held for another reason, or nothing is sent, so a hold tha
 
 - The flow's counts carry `stepsHeld`, the records listed with an enrichment held; the Delivery page shows it beside each flow
   (`3 with a step held`).
-- The flow's **Records** tab has **Step held** while any record is listed, and the records API takes `stepHeld=true`.
+- The flow's **Records** tab has **Step held** while any record is listed, the Records page has it across every flow, and both records APIs take `stepHeld=true`.
 - The record's **Enrichments** tab marks the enrichment **set aside**.
 - The preview and a record's Render tab show it as `held, set aside: keeps what it last added`, its reasons on hover, and
   what it kept; `sqlflow preview` writes `held and set aside, the record going ahead with what it added to its last

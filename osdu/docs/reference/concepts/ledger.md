@@ -291,14 +291,25 @@ partition-first index. A term that parses as a UUID is a delivery key and finds 
 
 A record contributes at most 24 values of its own and at most 64 of the records its enrichments add, each at most 200
 characters; values shorter than 3 characters are not stored. A
-record's values are rewritten as a set whenever it is staged. The lookup takes at most 1,000 candidates from the index and
-reports a larger match as a floor.
+record's values are rewritten as a set whenever it is staged. The lookup takes at most 1,000 candidates from the index,
+answers every one of them that matches (newest first), and reports a larger match as a floor.
+
+The lookup takes the filters a flow's listing has, read over every flow of the partition: `status`, `flowId` (one
+ledger), `drifted=true` (the records whose last verify found drift or a missing record) and `stepHeld=true` (the records
+an enrichment was set aside on, [held steps](../flow/enrich-holds.md)). Without a term they narrow the records listed
+newest first; with one, the candidates. `mode=contains` matches a term that is not a UUID anywhere in the source key, the
+label, the OSDU id or the ingestion file (the one the version OSDU holds came from, or the queued version's), as a flow's
+listing does. It has no index: it runs only when the rest of the lookup leaves at most 100,000 records, and is refused
+otherwise (400) with
+`A contains search reads every record the rest of the filter leaves, and this filter leaves more than 100000. Use a prefix search, which is indexed, or narrow by flow or status first.`
+`GET /api/v1/delivery/records/export` takes the same parameters.
 
 **A flow's listing** (a flow's Records tab, `GET /flows/{pipelineId}/records`, `sqlflow records list`) filters by status,
-submission, run, the submission that delivered it, issue or drift, and searches by a UUID (exact) or a prefix over the
-source key, label, OSDU id and origin file name. It counts no further than 25,000 matches, pages through the first 25,000
-in update order (newest first, ties broken by key), and refuses a page past them, saying to narrow the filter. A contains
-search has no index: it runs only when the rest of the filter leaves at most 100,000 records, and is refused otherwise with
+submission, run, the submission that delivered it, issue, drift or a held step, and searches by a UUID (exact) or a
+prefix over the source key, label, OSDU id and origin file name. It counts no further than 25,000 matches, pages through
+the first 25,000 in update order (newest first, ties broken by key), and refuses a page past them, saying to narrow the
+filter. A contains search matches the same values and the queued version's file anywhere. It has no index: it runs only
+when the rest of the filter leaves at most 100,000 records, and is refused otherwise with
 `A contains search reads every record the rest of the filter leaves, and this filter leaves more than 100000. Use a prefix search, which is indexed, or narrow by status, submission or run first.`
 
 ### The indexes behind it

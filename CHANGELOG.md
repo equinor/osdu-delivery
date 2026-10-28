@@ -273,8 +273,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   or Flows, folds its entries away or brings them back. A browser opening the workbench for the first time shows every
   group and section folded to its name; from then on each starts as it was left
   ([The menu](osdu/docs/reference/concepts/menu.md)).
+- **The Records page searches as a flow's Records tab does, across every flow.** **Match anywhere** finds a term inside
+  the source key, the label, the OSDU id or the ingestion file (`6/2-1` finds `NO 16/2-10`), and **Drifted only** and
+  **Step held** narrow the page beside its status and flow pickers; each is in the address, the export takes them, and
+  `GET /api/v1/delivery/records` takes `mode=contains`, `drifted` and `stepHeld`
+  ([Records](osdu/docs/reference/concepts/gui.md#records), [finding records](osdu/docs/reference/concepts/ledger.md#finding-records)).
 
 ### Changed
+- A record's tabs no longer carry counts: the Enrichments and Artifacts tabs are named alone, and each tab's own first
+  line still counts what it holds ([A record's page](osdu/docs/reference/concepts/gui.md#a-records-page)). A contains
+  search of a flow's records also matches the ingestion file a record came from
+  ([finding records](osdu/docs/reference/concepts/ledger.md#finding-records)).
 - The Schedules page marks what a schedule runs its flows with by an icon, tinted when it gives an operation or values,
   with the values on hover and a click opening what each flow is given, so a schedule giving a list no longer widens the
   table into a sideways scroll ([The GUI](sqlflow/docs/reference/concepts/run-inputs.md#the-gui)).
@@ -498,6 +507,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   says ([Upgrading an estate](osdu/docs/reference/concepts/templates.md#upgrading-an-estate-that-saved-templates-in-the-database)).
 
 ### Fixed
+- A Records page search answered at most 200 records, so its pages past the 200th record came back empty and its export
+  held 200 however many matched; it now answers every record the lookup reaches, up to 1,000
+  ([finding records](osdu/docs/reference/concepts/ledger.md#finding-records)).
 - A delivery flow's document hash, which pairs a renamed flow with its ledger, took in the render threads of the machine
   that synced it, so control planes on machines with different processor counts hashed one document differently; it now
   takes in the document alone, and each delivery flow's stored hash changes once, at the first sync after the upgrade

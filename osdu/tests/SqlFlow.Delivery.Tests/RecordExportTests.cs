@@ -215,6 +215,19 @@ public sealed class RecordExportTests
     }
 
     [Fact]
+    public void A_lookup_matched_anywhere_and_narrowed_says_so_on_its_about_sheet()
+    {
+        using var output = new MemoryStream();
+        var lookup = new RecordLookupExport("6/2-1", null, null, "dev", More: false, SearchMode.Contains, new LookupNarrowing(Drifted: true, StepHeld: true));
+        RecordExport.WriteLookup(lookup, [], Exported, output);
+
+        using var read = new WorkbookReading(output.ToArray());
+        var about = read.About();
+        Assert.Equal("'6/2-1' anywhere in the source key, the label, the OSDU id or the file, or the delivery key", about["Lookup"].GetText());
+        Assert.Equal("drifted only; an enrichment set aside on its hold", about["Narrowed to"].GetText());
+    }
+
+    [Fact]
     public void A_filter_is_described_in_words()
     {
         var submission = Guid.Parse("11111111-2222-3333-4444-555555555555");
@@ -224,6 +237,7 @@ public sealed class RecordExportTests
             {
                 Status = RecordStatus.Held, Search = "NO 34", Drifted = true, Problem = 0xff, SubmissionId = submission, EverDelivered = false,
             }));
+        Assert.Equal("'NO' anywhere; an enrichment set aside on its hold", RecordExport.Describe(new RecordQuery { Search = "NO", Mode = SearchMode.Contains, StepHeld = true }));
     }
 
     [Fact]
