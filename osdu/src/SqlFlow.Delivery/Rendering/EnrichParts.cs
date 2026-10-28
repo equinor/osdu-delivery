@@ -233,6 +233,9 @@ public static class EnrichParts
     /// <summary>A list of dataset ids as the target state keeps it.</summary>
     public static string DatasetsText(IEnumerable<string> ids) => JsonSerializer.Serialize(ids.Distinct(StringComparer.Ordinal).Order(StringComparer.Ordinal).ToList());
 
+    /// <summary>A step's dataset as the record links it, the way the work product component schemas take a dataset: its id with the version separator and no version.</summary>
+    public static string Link(string datasetId) => datasetId + ":";
+
     /// <summary>The record a step part registers, as its fragment rendered it.</summary>
     public static JsonObject RecordOf(EnrichPart part)
     {

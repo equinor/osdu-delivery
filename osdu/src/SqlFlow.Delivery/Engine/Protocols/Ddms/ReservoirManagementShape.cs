@@ -446,7 +446,7 @@ internal sealed class ReservoirManagementShape(DdmsShapeContext context) : IDdms
         var document = (JsonObject)work.Document.DeepClone();
         if (_options.PreserveDataKeys.Count > 0 && work.ExistingVersion is not null)
         {
-            await RecordWriter.PreserveAsync(_client, route.RecordPath, work.TargetId, document, _options.PreserveDataKeys, ct).ConfigureAwait(false);
+            await RecordWriter.PreserveAsync(_client, route.RecordPath, work.TargetId, document, _options.PreserveDataKeys, StepLinks.Of(work), ct).ConfigureAwait(false);
         }
 
         var started = steps.Now;

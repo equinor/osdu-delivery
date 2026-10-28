@@ -41,14 +41,14 @@ internal static class RouteRehearsal
         {
             case DeliveryProtocol.Storage:
                 StorageWrite(steps, options, "the record below");
-                Preserved(notes, options);
+                Preserved(notes, flow);
                 return new RehearsedRoute(null, [], steps.All, notes);
 
             case DeliveryProtocol.File:
             {
                 var (sent, placeholders) = WithFileDatasets(steps, options, rendered, Part(payload, null), targetState, notes);
                 StorageWrite(steps, options, $"the record below, its data.{options.DatasetsProperty} listing the dataset records of its files");
-                Preserved(notes, options);
+                Preserved(notes, flow);
                 return new RehearsedRoute(sent, placeholders, steps.All, notes);
             }
 
@@ -126,11 +126,24 @@ internal static class RouteRehearsal
             "the record's id and version");
     }
 
-    private static void Preserved(List<string> notes, ProtocolOptions options)
+    private static void Preserved(List<string> notes, FlowDefinition flow)
     {
-        if (options.PreserveDataKeys.Count > 0)
+        var preserved = flow.Target.ProtocolOptions.PreserveDataKeys;
+        if (preserved.Count == 0)
         {
-            notes.Add($"An update copies data.{string.Join(", data.", options.PreserveDataKeys)} forward from the record OSDU holds (target.protocolOptions.preserveDataKeys), so those keys are sent as that record has them, not as rendered.");
+            return;
+        }
+
+        notes.Add($"An update copies data.{string.Join(", data.", preserved)} forward from the record OSDU holds (target.protocolOptions.preserveDataKeys), so those keys are sent as that record has them, not as rendered.");
+        var linked = (flow.Enrich ?? [])
+            .Select(step => step.Files?.Link)
+            .OfType<string>()
+            .Where(link => link.Split('.') is ["data", var key] && preserved.Contains(key, StringComparer.Ordinal))
+            .Distinct(StringComparer.Ordinal)
+            .ToList();
+        if (linked.Count > 0)
+        {
+            notes.Add($"{string.Join(" and ", linked)} merges instead: the update keeps what OSDU holds there, adds the links the steps of enrich: render now and takes off those they no longer do.");
         }
     }
 

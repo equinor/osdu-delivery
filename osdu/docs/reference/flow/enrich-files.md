@@ -18,6 +18,9 @@ keywords:
   - data.Datasets
   - registerDataset
   - one change one write
+  - preserveDataKeys
+  - preserved Datasets merge
+  - cache after step datasets
 yamlPath: "enrich.<name>.files, interfaces.<name>.enrich.<name>.files"
 related:
   - delivery-flow-enrich
@@ -36,10 +39,14 @@ sourceRefs:
   - osdu/src/SqlFlow.Delivery/Validation/Preflight.Chain.cs
   - osdu/src/SqlFlow.Delivery/Engine/Planning/Planner.cs
   - osdu/src/SqlFlow.Delivery/Engine/Protocols/EnrichPartsProtocol.cs
+  - osdu/src/SqlFlow.Delivery/Engine/Protocols/StepLinks.cs
+  - osdu/src/SqlFlow.Delivery/Engine/Snapshots/CacheSteps.cs
+  - osdu/src/SqlFlow.Delivery/Engine/Snapshots/CacheKeeper.cs
   - osdu/src/SqlFlow.Delivery/Engine/Protocols/ProtocolFactory.cs
   - osdu/src/SqlFlow.Delivery/Storage/WorkBatchFile.cs
   - osdu/tests/SqlFlow.Delivery.Tests/Enrichment/StepFilesDeliveryTests.cs
   - osdu/tests/SqlFlow.Delivery.Tests/Enrichment/EnrichPartsProtocolTests.cs
+  - osdu/tests/SqlFlow.Delivery.Tests/Enrichment/StepLinksTests.cs
   - osdu/docs/census/keys.delivery.json
   - osdu/specs/core/dataset/openapi.yaml
 ---
@@ -169,12 +176,47 @@ A removal at the `record` scope takes the record out and leaves its datasets, wh
 finds again. `history` removes the record's history alone. `everything` purges the record and every dataset its steps
 registered.
 
+## Preserved keys
+
+Other systems list datasets of a record too, so a flow may carry the link's list over from the record OSDU holds
+(`target.protocolOptions.preserveDataKeys: [Datasets]`, as a well log flow over the Wellbore DDMS does). An update then
+merges the list rather than copying it whole:
+
+- OSDU's items stay, in OSDU's order, other systems' among them;
+- the step's links the record renders now are added after them, each once;
+- the step's links the last delivery wrote that the record no longer renders (a row that went) are taken off.
+
+Every route that carries preserved keys merges the same way. A record OSDU holds without the list gets the one rendered,
+and a list the steps link nothing in, now or before, is copied whole as before. What the flow's mapping renders in a
+preserved list besides the steps' links reaches the record only when it is created, as before. Links are compared as the
+record holds them, the dataset's id and a colon. A verify leaves preserved keys out of the content it compares
+(`ownedContent.excluded`, [routes](routes.md#storage)), so it does not report a link another system took off.
+
+## The cache
+
+A pipeline's cache steps ([cache](delivery.md#cache)) take a step's datasets as they take its records. `cache.after` may
+name a type holding the kind the step registers (`dataset--File.Generic`), and `after: auto` takes such a type when a cache
+flow declares it without a query. As the run ends, the datasets the records it changed link (`enrich.datasets` in their
+target state) are read back from storage with the records, and each goes into the types holding its own kind: the logs
+into a type of logs, their datasets into a type of datasets. A dataset a record stopped linking keeps its place, since OSDU
+still holds it. A flow later in the schedule can then find the datasets in the cache before the next refresh.
+
+A run has one before step and one after step, never a refresh between two steps of `enrich:`: every step renders in one
+pass before anything is sent, and the ids a step registers are made from the record's, so the chain needs nothing from the
+cache that it does not render itself. `cache.before: auto` takes what every fragment reads, a step's own and its dataset
+fragment's, as it takes what the flow's mapping reads.
+
 ## What the preflight checks
 
 `files.link` names a list of values the template declares (`data.Datasets` on a work product component), or a path in an
 object the template leaves open; a list of objects, a single value or a path the template lacks is refused. Every writer
 of the link's list, the flow's mapping and every step, adds items to it, so they share it. A step may read with `$base`
 the links an earlier step added. `files.mapping` is checked as every fragment is, and its `$base` reads count as the step's.
+
+The link may be a list the flow preserves (`data.Datasets` with `Datasets` in `preserveDataKeys`), whose links an update
+merges ([Preserved keys](#preserved-keys)). A link inside a preserved key (`data.ExtensionProperties.Files` with
+`ExtensionProperties` preserved) is refused, since only the list itself merges, and so is a fragment writing under a
+preserved key.
 
 ## Where it shows
 

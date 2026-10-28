@@ -133,16 +133,31 @@ public static class DeliveryLineage
                     LineageRelation.Writes, endpoint, partition, mapping.Kind, who, $"the kind of mapping '{mapping.Reference}'", warnings));
 
                 // The pipeline's cache steps write the types they bring up to date (osdu/docs/reference/flow/delivery.md,
-                // cache): a type its after step puts what it delivered into is read by the flows after it, and a type its
-                // before step searches is read from the kinds that type captures, so the flows delivering them run first.
-                foreach (var type in scan.StepTypes(partition, flow.Cache.After, h => h.Kind is { } pattern && Engine.Dimensions.KindPatterns.Matches(pattern, mapping.Kind)))
+                // cache): a type its after step puts what it delivered into, the records or the datasets its steps register,
+                // is read by the flows after it, and a type its before step searches for what the chain reads (the mapping
+                // and every fragment of its steps) is read from the kinds that type captures, so the flows delivering them
+                // run first.
+                var mappings = DeliveryLayout.ResolveWithin(flow, scan.Context.DocumentFolder, scan.Context.Contains)!.MappingsDirectory;
+                var stepKinds = EnrichFiles.KindsOf(flow);
+                foreach (var type in scan.StepTypes(
+                             partition,
+                             flow.Cache.After,
+                             h => h.Kind is { } pattern
+                                 && (Engine.Dimensions.KindPatterns.Matches(pattern, mapping.Kind) || stepKinds.Any(k => Engine.Dimensions.KindPatterns.Matches(pattern, k)))))
                 {
                     Add(datasets, OsduLineage.CacheType(LineageRelation.Writes, type.Partition, type.Name, who, warnings));
                 }
 
                 if (!flow.Cache.Before.IsEmpty)
                 {
-                    var cacheReads = MappingCacheReads.Of(mapping, scan.Template(mapping).Schema);
+                    var fragments = (flow.Enrich ?? [])
+                        .SelectMany(step => new[] { step.Mapping, step.Files?.Mapping })
+                        .OfType<string>()
+                        .Select(reference => scan.Mapping(mappings, reference).Mapping)
+                        .OfType<MappingDefinition>()
+                        .Select(fragment => (fragment, scan.Template(fragment).Schema))
+                        .ToList();
+                    var cacheReads = MappingCacheReads.OfChain(mapping, scan.Template(mapping).Schema, fragments);
                     foreach (var type in scan.StepTypes(
                                  partition,
                                  flow.Cache.Before,
@@ -174,7 +189,6 @@ public static class DeliveryLineage
                 // of its own, read by the flow, reading what the fragment reads, so the flows capturing those run first. A step
                 // that registers files reads them where its rows say, writes their dataset kind, and renders its dataset
                 // fragment the same way.
-                var mappings = DeliveryLayout.ResolveWithin(flow, scan.Context.DocumentFolder, scan.Context.Contains)!.MappingsDirectory;
                 foreach (var step in flow.Enrich ?? [])
                 {
                     if (step.Mapping is { } reference)

@@ -6,6 +6,7 @@ using SqlFlow.Delivery.Engine.Snapshots;
 using SqlFlow.Delivery.Model;
 using SqlFlow.Delivery.Snapshots;
 using Xunit;
+using static SqlFlow.Delivery.Tests.EnrichmentSuite;
 
 namespace SqlFlow.Delivery.Tests;
 
@@ -94,6 +95,52 @@ public sealed class CacheStepsTests
         var reads = new MappingCacheReads(["UnitAlias"], ["reference-data--UnitOfMeasure"], []);
         var plan = Plan(new FlowCacheSteps { Before = Auto() }, WellboreKind, reads);
         Assert.Equal(["UnitOfMeasure"], plan.Before.Select(t => t.TypeName));
+    }
+
+    [Fact]
+    public void Auto_before_takes_what_the_chain_reads_the_mapping_and_every_fragment_of_its_steps()
+    {
+        var unit = Fragment("data:\n  Unit:\n    $from: unit\n    $modifiers:\n      - ref: reference-data--UnitOfMeasure", name: "Unit", parameters: "dataPartition: { required: true }\n");
+
+        // The flow's own mapping checks no reference; the step's fragment checks the unit against the cached units.
+        Assert.Empty(MappingCacheReads.Of(Owner(), TestSchema.Build()).EntityTypes);
+        var reads = MappingCacheReads.OfChain(Owner(), TestSchema.Build(), [(unit, TestSchema.Build())]);
+        Assert.Equal(["reference-data--UnitOfMeasure"], reads.EntityTypes);
+
+        Assert.Equal(["UnitOfMeasure"], Plan(new FlowCacheSteps { Before = Auto() }, WellboreKind, reads).Before.Select(t => t.TypeName));
+    }
+
+    [Fact]
+    public void The_after_step_takes_a_type_holding_the_kind_the_pipeline_s_steps_register_and_reads_their_datasets_back()
+    {
+        const string datasetKind = "osdu:wks:dataset--File.Generic:1.0.0";
+        var declaration = new CacheDeclaration("dev",
+        [
+            Declared("reference-cache", "UnitOfMeasure", "osdu:wks:reference-data--UnitOfMeasure:*", ["data.Code"]),
+            Declared("dataset-cache", "LasFile", "osdu:wks:dataset--File.Generic:*", ["data.Name"]),
+        ]);
+        CacheStepPlan After(CacheStepEntries after, string kind, IReadOnlyList<string>? stepKinds)
+            => CacheStepPlan.Resolve("welldb-logs", new FlowCacheSteps { After = after }, declaration, kind, new MappingCacheReads([], [], []), stepKinds);
+
+        var auto = After(Auto(), UnitKind, [datasetKind]);
+        Assert.Equal(["LasFile", "UnitOfMeasure"], auto.After.Select(t => t.TypeName).Order(StringComparer.Ordinal));
+        Assert.True(auto.TakesStepDatasets);
+        var named = After(Named("dataset--File.Generic"), WellboreKind, [datasetKind]);
+        Assert.Equal(["LasFile"], named.After.Select(t => t.TypeName));
+        Assert.True(named.TakesStepDatasets);
+
+        // Without a step registering the kind, auto leaves the type out and a name is refused; with steps, the refusal names what they register.
+        var without = After(Auto(), UnitKind, null);
+        Assert.Equal(["UnitOfMeasure"], without.After.Select(t => t.TypeName));
+        Assert.False(without.TakesStepDatasets);
+        Assert.Contains(
+            "LasFile holds osdu:wks:dataset--File.Generic:*, and the pipeline delivers osdu:wks:master-data--Wellbore:1.3.0",
+            Assert.Throws<DeliveryException>(() => After(Named("LasFile"), WellboreKind, null)).Message,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "and the pipeline delivers osdu:wks:master-data--Wellbore:1.3.0, and its steps of enrich: register osdu:wks:dataset--File.Generic:1.0.0",
+            Assert.Throws<DeliveryException>(() => After(Named("UnitOfMeasure"), WellboreKind, [datasetKind])).Message,
+            StringComparison.Ordinal);
     }
 
     [Fact]

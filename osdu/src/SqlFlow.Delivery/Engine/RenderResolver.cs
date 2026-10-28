@@ -308,6 +308,7 @@ public sealed class RenderResolver
                 ["link"] = declared.Link,
             };
             MappingRenderer? filesRenderer = null;
+            SchemaSnapshot? filesSchema = null;
             if (fragments.FilesFragment is { } filesFragment)
             {
                 if (!string.Equals(filesFragment.Template.Kind, declared.Kind, StringComparison.Ordinal))
@@ -324,6 +325,7 @@ public sealed class RenderResolver
                     return null;
                 }
 
+                filesSchema = datasetSchema;
                 var parameters = await ParametersAsync(flow, filesFragment, ct).ConfigureAwait(false);
                 var filesContext = context with
                 {
@@ -351,7 +353,7 @@ public sealed class RenderResolver
                 rules["parameters"] = given;
             }
 
-            files = new ResolvedFiles(declared, TargetId.EntityTypeFromKind(declared.Kind), fragments.FilesFragment, filesRenderer);
+            files = new ResolvedFiles(declared, TargetId.EntityTypeFromKind(declared.Kind), fragments.FilesFragment, filesRenderer) { Schema = filesSchema };
             renderStep = renderStep with { Files = CanonicalJson.ToString(rules) };
         }
 

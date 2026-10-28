@@ -88,7 +88,8 @@ internal sealed class OrderEstate
         string? searched = null,
         (string Property, string Target)? refChecked = null,
         (string Property, string Value)[]? literals = null,
-        string? cache = null)
+        string? cache = null,
+        string? enrich = null)
     {
         WriteMapping(name, entityType, columns ?? [], searched, refChecked, literals);
         Write($"flows/{name}.yaml", $$"""
@@ -105,6 +106,7 @@ internal sealed class OrderEstate
               work: ../.work/{{name}}
             render:
               mapping: {{Mapping(name)}}@1.0.0
+            {{enrich ?? string.Empty}}
             target:
               endpoint: ${env:OSDU_URL}
               auth:
@@ -114,6 +116,33 @@ internal sealed class OrderEstate
                 token:
                   url: ${env:OSDU_TOKEN_URL}
               protocol: storage
+            """);
+    }
+
+    /// <summary>
+    /// A fragment of <paramref name="name"/> over <paramref name="entityType"/>'s template, as a step of <c>enrich:</c> renders
+    /// it: it fills the property named from its row, checked against the entity type that property references.
+    /// </summary>
+    public void Fragment(string name, string entityType, (string Property, string Target) refChecked)
+    {
+        var kind = $"osdu:wks:{entityType}:1.0.0";
+        Write($"mappings/{Mapping(name)}@1.0.0.yaml", $$"""
+            documentType: mapping
+            name: {{Mapping(name)}}
+            version: 1.0.0
+            template:
+              kind: {{kind}}
+              version: {{Templates.VersionOf(kind)}}
+            fragment: true
+            parameters:
+              dataPartition:
+                required: true
+            record:
+              data:
+                {{refChecked.Property}}:
+                  $from: {{refChecked.Property.ToLowerInvariant()}}
+                  $modifiers:
+                    - ref: {{refChecked.Target}}
             """);
     }
 

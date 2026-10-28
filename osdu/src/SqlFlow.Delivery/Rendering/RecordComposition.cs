@@ -111,7 +111,11 @@ public sealed record ResolvedStep(EnrichStep Step, MappingDefinition? Mapping, S
 /// The files a step registers, as a run renders them: the step's settings, the entity type of the dataset kind, and the fragment
 /// over that kind rendered into each dataset record with its renderer, or null for a dataset record of its file properties alone.
 /// </summary>
-public sealed record ResolvedFiles(EnrichFiles Files, string EntityType, MappingDefinition? Mapping, MappingRenderer? Renderer);
+public sealed record ResolvedFiles(EnrichFiles Files, string EntityType, MappingDefinition? Mapping, MappingRenderer? Renderer)
+{
+    /// <summary>The template of the dataset kind <see cref="Mapping"/> fills, which says what its references name; null without a fragment.</summary>
+    public SchemaSnapshot? Schema { get; init; }
+}
 
 /// <summary>
 /// How a fragment is added to the record (osdu/docs/reference/flow/enrich.md, How a fragment adds to the record). Two things
@@ -553,7 +557,7 @@ public sealed class RecordChain
 
         if (datasets.Count > 0)
         {
-            // The links, as the work product component schemas take a dataset: its id with the version separator and no version.
+            // The links, as the record holds them (EnrichParts.Link).
             var link = new JsonObject();
             var holder = link;
             var segments = files.Files.Link.Split('.');
@@ -564,7 +568,7 @@ public sealed class RecordChain
                 holder = next;
             }
 
-            holder[segments[^1]] = new JsonArray(datasets.Select(d => (JsonNode?)JsonValue.Create(d.Id + ":")).ToArray());
+            holder[segments[^1]] = new JsonArray(datasets.Select(d => (JsonNode?)JsonValue.Create(EnrichParts.Link(d.Id))).ToArray());
             RecordComposer.Compose(document, link, effects, reasons);
             composed.Add(link);
         }

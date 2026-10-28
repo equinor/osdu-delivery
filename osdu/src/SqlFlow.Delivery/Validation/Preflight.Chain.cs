@@ -14,7 +14,8 @@ public static partial class Preflight
     /// <summary>
     /// The problems of the flow's <c>enrich:</c> chain as a whole: every value the flow supplies is declared by a mapping of
     /// the chain; no step writes what the flow's mapping or another step writes, unless both add items to one list; no step
-    /// writes under a key the flow preserves from the record OSDU holds; every path a step reads with <c>$base</c> is written by
+    /// writes under a key the flow preserves from the record OSDU holds, but for a step's files linked from the preserved list
+    /// itself, which an update merges with what OSDU holds; every path a step reads with <c>$base</c> is written by
     /// the flow's mapping or a step that renders before it; and every column a fragment reads is a column of its step's rows.
     /// </summary>
     /// <param name="flow">The flow, whose <see cref="FlowDefinition.Enrich"/> lists the steps in the order they render.</param>
@@ -62,10 +63,16 @@ public static partial class Preflight
 
             foreach (var write in stepWrites[step.Step.Name])
             {
-                if (write.Path.Count > 1 && write.Path[0] == "data" && preserved.Contains(write.Path[1], StringComparer.Ordinal))
+                // A step's links in a preserved list are merged with what OSDU holds (osdu/docs/reference/flow/enrich-files.md,
+                // Preserved keys); any other write there would be replaced by OSDU's value on every update.
+                if (write.Path.Count > 1 && write.Path[0] == "data" && preserved.Contains(write.Path[1], StringComparer.Ordinal)
+                    && !(write.Link && write.Path.Count == 2))
                 {
+                    var preserveDataKeys = KeyPaths.Of(flow).Shared("target.protocolOptions.preserveDataKeys");
                     issues.Add(ValidationIssue.Error(
-                        $"{at}: {Writer(step)} writes {write.Text}, and {KeyPaths.Of(flow).Shared("target.protocolOptions.preserveDataKeys")} carries data.{write.Path[1]} over from the record OSDU holds into every update, in place of what is rendered: what the step adds there would reach a record only when it is created. Take {write.Path[1]} out of preserveDataKeys, or write somewhere else.",
+                        write.Link
+                            ? $"{at}: files.link names {write.Text}, inside data.{write.Path[1]}, which {preserveDataKeys} carries over whole from the record OSDU holds into every update: an update merges a step's links into what OSDU holds only in the preserved list itself. Link the datasets from a list the flow preserves (data.{write.Path[1]}, when it is one), or from one it does not."
+                            : $"{at}: {Writer(step)} writes {write.Text}, and {preserveDataKeys} carries data.{write.Path[1]} over from the record OSDU holds into every update, in place of what is rendered: what the step adds there would reach a record only when it is created. Only a step's files may link datasets there (files.link), since an update merges those links with what OSDU holds; take {write.Path[1]} out of preserveDataKeys, or write somewhere else.",
                         write.Text));
                 }
 
@@ -88,9 +95,10 @@ public static partial class Preflight
 
     /// <summary>
     /// One path a mapping writes into the record: the property names from the record's root, whether the mapping adds items to
-    /// a list there (a <c>$forEach</c>, a list of values, or a property the template makes a list), and how a message names it.
+    /// a list there (a <c>$forEach</c>, a list of values, or a property the template makes a list), how a message names it, and
+    /// whether it is the list a step's files are linked from (<c>files.link</c>) rather than a fragment's write.
     /// </summary>
-    private sealed record Write(IReadOnlyList<string> Path, bool List, string Text);
+    private sealed record Write(IReadOnlyList<string> Path, bool List, string Text, bool Link = false);
 
     /// <summary>What a message names a step's writes by: its fragment, or its files for a step that registers files alone.</summary>
     private static string Writer(ResolvedStep step) => step.Mapping is { } fragment ? $"fragment {fragment.Reference}" : "the step's files";
@@ -104,7 +112,7 @@ public static partial class Preflight
         var writes = step.Mapping is { } fragment ? Writes(fragment, schema) : [];
         if (step.Files is { } files && !writes.Any(w => string.Equals(w.Text, files.Files.Link, StringComparison.Ordinal)))
         {
-            writes.Add(new Write(files.Files.Link.Split('.'), true, files.Files.Link));
+            writes.Add(new Write(files.Files.Link.Split('.'), true, files.Files.Link, Link: true));
         }
 
         return writes;

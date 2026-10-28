@@ -916,7 +916,7 @@ public sealed class OsduManifestProtocol : IDeliveryProtocol
         {
             if (stored.TryGetValue(staged.Work.TargetId, out var record))
             {
-                RecordWriter.Preserve(record, staged.Document, staged.Preserved);
+                RecordWriter.Preserve(record, staged.Document, staged.Preserved, StepLinks.Of(staged.Work));
             }
         }
     }

@@ -85,6 +85,15 @@ What OSDU and the module already have shaped the choice:
   renders the records again, and the ledger says what rendered every part of a document.
 - **The preflight refuses what could never render**: a step writing what another writes, writing under a preserved key,
   reading what nothing before it writes, or reading rows it does not have.
+- **A step's links merge into a preserved list** (2026-10-28). A flow that carries `Datasets` over from the record OSDU
+  holds, as the well log estate's Wellbore DDMS flow does, may still link a step's datasets there: an update keeps OSDU's
+  items and adds or takes off the step's own, on every route that carries preserved keys. Copying the list whole would
+  have kept a link only from the record's creation and never taken one off, and dropping `Datasets` from the flow's
+  preserved keys would lose what other systems list.
+- **A step's cache reads and datasets join the pipeline's cache steps** (2026-10-28), not a refresh of a step's own:
+  `cache.before: auto` takes what every fragment reads, and `cache.after` may take the types holding a kind a step
+  registers, whose datasets are read back with the records. A refresh between two steps would read nothing new, since
+  the chain renders in one pass before anything is sent and a step's dataset ids are made from the record's.
 - **A step that holds holds the record**, unless it is set aside on its holds (`onHold: step`, 2026-10-28). OSDU keeps the
   version it has until the record renders whole. A step set aside lets the record go ahead with what it added to the
   record's last delivery, which every delivery keeps in the record's target state; a record whose kept contribution no

@@ -430,7 +430,7 @@ internal sealed class WellboreDdmsV3Shape(DdmsShapeContext context) : IDdmsShape
             stored = await RecordWriter.ReadAsync(_client, paths.Record, work.TargetId, ct).ConfigureAwait(false);
             if (stored is not null && preserve)
             {
-                RecordWriter.Preserve(stored, document, _options.PreserveDataKeys);
+                RecordWriter.Preserve(stored, document, _options.PreserveDataKeys, StepLinks.Of(work));
             }
         }
 

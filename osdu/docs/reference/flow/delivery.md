@@ -656,21 +656,22 @@ cache:
 | Key | Default | Meaning |
 | --- | --- | --- |
 | `cache.before` | none | The types brought up to date before the run renders. An OSDU type is searched with each declaring cache flow's kind and query through this pipeline's own connection to its partition, and the capture is merged as that flow's, so the run renders against what OSDU holds now, whoever delivered it. A lookup table from an ingestion table is read over its cache flow's connection, as that flow reads it. |
-| `cache.after` | none | The types the records the run changes in OSDU go into as it ends: what it delivered, removed or reverted is read back from OSDU's storage service by id; a record storage returns goes in as it is now, and one it no longer holds is taken out. |
+| `cache.after` | none | The types the records the run changes in OSDU go into as it ends: what it delivered, removed or reverted is read back from OSDU's storage service by id; a record storage returns goes in as it is now, into the types holding its kind, and one it no longer holds is taken out. With a type holding a kind the flow's steps of `enrich:` register, the datasets those records link are read back with them ([files a step registers](enrich-files.md#the-cache)). |
 
 Each step is `auto`, or a list of at most 64 entries, each once. An entry is a type of the partition's cache by its name
 (`UnitOfMeasure`), or an OSDU entity type (`reference-data--UnitOfMeasure`), which stands for every type of the cache
 holding records of it, whichever repository's cache flow declares it. `auto` works the entries out:
 
-- **`before: auto`** takes the OSDU types the mapping reads, by name or by the entity type it checks the ids it builds
-  against, and the lookup tables from ingestion tables it reads by name.
-- **`after: auto`** takes every type holding the kind the pipeline delivers that some cache flow declares without a query.
+- **`before: auto`** takes the OSDU types the mapping and every fragment of its steps of `enrich:` read, by name or by the
+  entity type they check the ids they build against, and the lookup tables from ingestion tables they read by name.
+- **`after: auto`** takes every type holding the kind the pipeline delivers, or a kind its steps register their files as,
+  that some cache flow declares without a query.
 
 A run resolves the entries against what the partition's synced cache flows declare, and refuses before it reads or sends
 anything an entry naming nothing the cache holds; in `before` a dictionary or a dimension type, which only its cache flow
 reads, from the repository or the dimension's build, in the order lineage gives; and in `after` a lookup table, a type
-holding another kind than the pipeline delivers, and a type every declaring flow narrows with a query, since a delivered
-record the query does not match would stay in the cache.
+holding neither the kind the pipeline delivers nor one its steps register, and a type every declaring flow narrows with a
+query, since a delivered record the query does not match would stay in the cache.
 
 The two steps differ in what their failure means. **The before step is the run's to complete:** when a type cannot be read
 whole, the run fails before anything is sent, as a cache it must not render without demands. **The after step's failure is

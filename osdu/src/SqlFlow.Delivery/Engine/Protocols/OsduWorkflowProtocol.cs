@@ -424,7 +424,7 @@ public sealed class OsduWorkflowProtocol : IDeliveryProtocol
             {
                 var stored = await RecordWriter.ReadAsync(_client, _options.VerifyPath ?? OsduRecordProtocol.DefaultVerifyPath, work.TargetId, ct).ConfigureAwait(false)
                     ?? throw new DeliveryException($"{work.TargetId} is not in storage, so its dataset properties cannot be carried into the rewrite; redeliver its files");
-                RecordWriter.Preserve(stored, document, ["DatasetProperties"]);
+                RecordWriter.Preserve(stored, document, ["DatasetProperties"], StepLinks.None);
             }
 
             if (fileIds is { Count: > 0 })

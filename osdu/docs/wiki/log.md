@@ -547,3 +547,10 @@ A step supplies the record's DDMS bulk data from its row, and runs an OSDU workf
 [0035](decisions/0035-enrich-chains.md) records how each stays inside the record's one delivery, and
 [a step's bulk data](../reference/flow/enrich-bulk.md) and [a step's workflow](../reference/flow/enrich-workflow.md)
 document them.
+
+## [2026-10-28] ingest | A step's links in a preserved list and the cache steps, decision 0035
+
+A step's files may be linked from a list the flow carries over from the record OSDU holds (`preserveDataKeys`), which
+an update now merges, and a pipeline's cache steps take what every fragment reads and the datasets the steps register:
+[0035](decisions/0035-enrich-chains.md) records why, and [files a step registers](../reference/flow/enrich-files.md)
+documents both (Preserved keys, The cache).

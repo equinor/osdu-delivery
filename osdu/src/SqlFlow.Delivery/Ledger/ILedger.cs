@@ -3069,9 +3069,10 @@ public interface ILedger
     /// at most <paramref name="max"/> of them, in no particular order: the delivered records last sent since then, and the
     /// records deleted or reverted since then. A pipeline's after step reads them back
     /// (osdu/docs/reference/concepts/partition-cache.md, Pipelines bring the cache up to date). A record found unchanged was
-    /// not sent, and is not among them.
+    /// not sent, and is not among them. With <paramref name="listedUnder"/>, each record's ids its target state lists under
+    /// that value (a JSON array, as <c>enrich.datasets</c> lists the datasets its steps registered) come with it.
     /// </summary>
-    Task<IReadOnlyList<string>> ChangedSinceAsync(Guid flowId, DateTime sinceUtc, int max, CancellationToken ct = default);
+    Task<IReadOnlyList<string>> ChangedSinceAsync(Guid flowId, DateTime sinceUtc, int max, string? listedUnder = null, CancellationToken ct = default);
 
     /// <summary>
     /// The held records, of every flow and partition, whose held render read one of <paramref name="setIds"/>, at most

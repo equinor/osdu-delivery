@@ -127,7 +127,7 @@ public sealed class OsduRecordProtocol : IDeliveryProtocol
                 var preserved = OwnedContent.PreservedKeys(_options, document);
                 if (preserved.Count > 0 && work.ExistingVersion is not null && restored != RecordRestore.NotHeld)
                 {
-                    await RecordWriter.PreserveAsync(_client, _options.VerifyPath ?? DefaultVerifyPath, work.TargetId, document, preserved, ct).ConfigureAwait(false);
+                    await RecordWriter.PreserveAsync(_client, _options.VerifyPath ?? DefaultVerifyPath, work.TargetId, document, preserved, StepLinks.Of(work), ct).ConfigureAwait(false);
                 }
 
                 toWrite.Add((i, work, document, preserved));
@@ -1095,21 +1095,29 @@ internal static class RecordWriter
         _ => "active",
     };
 
-    /// <summary>Copies the OSDU-owned data keys (osdu/docs/reference/flow/routes.md, Options every route reads) from the current record, read from the target, into the document.</summary>
-    public static async Task PreserveAsync(OsduHttpClient client, string verifyPath, string targetId, JsonObject document, IReadOnlyList<string> keys, CancellationToken ct)
+    /// <summary>
+    /// Copies the OSDU-owned data keys (osdu/docs/reference/flow/routes.md, Options every route reads) from the current record,
+    /// read from the target, into the document, merging a list the record's steps link datasets in (<paramref name="links"/>).
+    /// </summary>
+    public static async Task PreserveAsync(OsduHttpClient client, string verifyPath, string targetId, JsonObject document, IReadOnlyList<string> keys, StepLinks links, CancellationToken ct)
     {
         if (await ReadAsync(client, verifyPath, targetId, ct).ConfigureAwait(false) is { } existing)
         {
-            Preserve(existing, document, keys);
+            Preserve(existing, document, keys, links);
         }
     }
 
-    /// <summary>Copies the OSDU-owned data keys (osdu/docs/reference/flow/routes.md, Options every route reads) from <paramref name="existing"/> into the document.</summary>
-    public static void Preserve(JsonObject existing, JsonObject document, IReadOnlyList<string> keys)
+    /// <summary>
+    /// Copies the OSDU-owned data keys (osdu/docs/reference/flow/routes.md, Options every route reads) from
+    /// <paramref name="existing"/> into the document. A list the record's steps of <c>enrich:</c> link datasets in is merged
+    /// instead (<see cref="StepLinks.Merge"/>): OSDU's items stay, with the step's links as the document has them now.
+    /// </summary>
+    public static void Preserve(JsonObject existing, JsonObject document, IReadOnlyList<string> keys, StepLinks links)
     {
         ArgumentNullException.ThrowIfNull(existing);
         ArgumentNullException.ThrowIfNull(document);
         ArgumentNullException.ThrowIfNull(keys);
+        ArgumentNullException.ThrowIfNull(links);
         if (existing["data"] is not JsonObject existingData)
         {
             return;
@@ -1125,7 +1133,7 @@ internal static class RecordWriter
         {
             if (existingData[key] is { } value)
             {
-                data[key] = value.DeepClone();
+                data[key] = value is JsonArray stored && links.Merge(stored, data[key] as JsonArray) is { } merged ? merged : value.DeepClone();
             }
         }
     }

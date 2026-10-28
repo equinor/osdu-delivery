@@ -3822,7 +3822,10 @@
         "files.mapping",
         "data.Datasets",
         "registerDataset",
-        "one change one write"
+        "one change one write",
+        "preserveDataKeys",
+        "preserved Datasets merge",
+        "cache after step datasets"
       ],
       "yamlPath": "enrich.<name>.files, interfaces.<name>.enrich.<name>.files",
       "related": [
@@ -3843,10 +3846,14 @@
         "osdu/src/SqlFlow.Delivery/Validation/Preflight.Chain.cs",
         "osdu/src/SqlFlow.Delivery/Engine/Planning/Planner.cs",
         "osdu/src/SqlFlow.Delivery/Engine/Protocols/EnrichPartsProtocol.cs",
+        "osdu/src/SqlFlow.Delivery/Engine/Protocols/StepLinks.cs",
+        "osdu/src/SqlFlow.Delivery/Engine/Snapshots/CacheSteps.cs",
+        "osdu/src/SqlFlow.Delivery/Engine/Snapshots/CacheKeeper.cs",
         "osdu/src/SqlFlow.Delivery/Engine/Protocols/ProtocolFactory.cs",
         "osdu/src/SqlFlow.Delivery/Storage/WorkBatchFile.cs",
         "osdu/tests/SqlFlow.Delivery.Tests/Enrichment/StepFilesDeliveryTests.cs",
         "osdu/tests/SqlFlow.Delivery.Tests/Enrichment/EnrichPartsProtocolTests.cs",
+        "osdu/tests/SqlFlow.Delivery.Tests/Enrichment/StepLinksTests.cs",
         "osdu/docs/census/keys.delivery.json",
         "osdu/specs/core/dataset/openapi.yaml"
       ]

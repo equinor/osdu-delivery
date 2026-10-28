@@ -366,7 +366,7 @@ public sealed class OsduDatasetProtocol : IDeliveryProtocol
             throw new DeliveryException($"{targetId} holds no DatasetProperties in storage, so the rewrite would not point at its files; redeliver its files");
         }
 
-        RecordWriter.Preserve(stored, document, ["DatasetProperties"]);
+        RecordWriter.Preserve(stored, document, ["DatasetProperties"], StepLinks.None);
     }
 
     public Task<VerifyResult> VerifyAsync(string targetId, long? expectedVersion, CancellationToken ct = default)

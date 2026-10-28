@@ -24,6 +24,24 @@ namespace SqlFlow.Delivery.Documents;
 public sealed record MappingCacheReads(IReadOnlyList<string> Types, IReadOnlyList<string> EntityTypes, IReadOnlyList<string> Untold)
 {
     /// <summary>
+    /// What a flow's chain reads (osdu/docs/reference/flow/enrich.md): its <paramref name="mapping"/>'s reads and those of every
+    /// fragment its steps of <c>enrich:</c> render, each fragment with the template it fills, every type and entity type once.
+    /// A run's <c>cache.before: auto</c> and lineage's cache steps read it alike, so a type only a step reads is brought up to
+    /// date as one the mapping reads is.
+    /// </summary>
+    public static MappingCacheReads OfChain(
+        MappingDefinition mapping, SchemaSnapshot? schema, IEnumerable<(MappingDefinition Fragment, SchemaSnapshot? Schema)> fragments)
+    {
+        ArgumentNullException.ThrowIfNull(mapping);
+        ArgumentNullException.ThrowIfNull(fragments);
+        var reads = fragments.Select(f => Of(f.Fragment, f.Schema)).Prepend(Of(mapping, schema)).ToList();
+        return new MappingCacheReads(
+            [.. reads.SelectMany(r => r.Types).Distinct(StringComparer.OrdinalIgnoreCase).Order(StringComparer.Ordinal)],
+            [.. reads.SelectMany(r => r.EntityTypes).Distinct(StringComparer.Ordinal).Order(StringComparer.Ordinal)],
+            [.. reads.SelectMany(r => r.Untold).Distinct(StringComparer.Ordinal)]);
+    }
+
+    /// <summary>
     /// What <paramref name="mapping"/> reads. <paramref name="schema"/> is the template the mapping pins, which says which
     /// entity type a <c>ref</c> written without one references; without it, a <c>ref</c> that writes its entity type in
     /// full and an <c>id</c> whose template writes it as text are still known, and the rest are <see cref="Untold"/>.

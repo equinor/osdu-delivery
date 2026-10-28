@@ -354,6 +354,58 @@ public sealed class OrderLineageTests : IDisposable
     }
 
     [Fact]
+    public void A_pipeline_whose_before_step_is_auto_searches_what_a_step_s_fragment_reads_and_runs_after_its_deliverer()
+    {
+        // The wells' own mapping checks nothing; a step of enrich: checks the elevation unit, so auto brings the units up to
+        // date before the wells render, and the flow delivering the units runs first.
+        Schema("reference-data--UnitOfMeasure");
+        Schema("master-data--Well", ("ElevationUnitID", "reference-data--UnitOfMeasure"));
+        Delivery("units", "reference-data--UnitOfMeasure");
+        Cache("reference-cache", "reference-data--UnitOfMeasure");
+        _estate.Fragment("wells-unit", "master-data--Well", ("ElevationUnitID", "reference-data--UnitOfMeasure"));
+        Delivery("wells", "master-data--Well", cache: "{ before: auto }", enrich: """
+            enrich:
+              unit:
+                mapping: WellsUnit@1.0.0
+                dataset:
+                  object: OsduData.silver.WellsUnit
+                  join: { name: name }
+            """);
+
+        Assert.Contains(CacheWrites("flows/wells.yaml"), d => d.Name == "UnitOfMeasure");
+        var report = Scan();
+        Assert.Empty(report.ExecutionPlan.Unordered);
+        Assert.True(WaveOf(report, "units") < WaveOf(report, "wells"));
+    }
+
+    [Fact]
+    public void A_pipeline_whose_after_step_names_the_datasets_its_steps_register_writes_their_type()
+    {
+        const string lasFiles = """
+            enrich:
+              lasfile:
+                dataset:
+                  object: OsduData.silver.LogsLas
+                  join: { name: name }
+                files:
+                  root: ../data/las
+                  locationColumn: las_folder
+                  hashColumn: las_hash
+            """;
+        Schema("work-product-component--WellLog");
+        Cache("dataset-cache", "dataset--File.Generic");
+        Delivery("logs", "work-product-component--WellLog", cache: "{ after: [dataset--File.Generic] }", enrich: lasFiles);
+        Assert.Contains(CacheWrites("flows/logs.yaml"), d => d.Name == "File.Generic");
+
+        Delivery("logs", "work-product-component--WellLog", cache: "{ after: auto }", enrich: lasFiles);
+        Assert.Contains(CacheWrites("flows/logs.yaml"), d => d.Name == "File.Generic");
+
+        // Without the step, the pipeline writes nothing into the type of datasets.
+        Delivery("logs", "work-product-component--WellLog", cache: "{ after: auto }");
+        Assert.Empty(CacheWrites("flows/logs.yaml"));
+    }
+
+    [Fact]
     public void A_pipeline_that_checks_references_against_a_type_its_after_step_writes_is_still_ordered()
     {
         // A wellbore refers to its parent wellbore: the pipeline reads the type it writes, which is no cycle with another
@@ -392,8 +444,9 @@ public sealed class OrderLineageTests : IDisposable
         string? searched = null,
         (string Property, string Target)? refChecked = null,
         (string Property, string Value)[]? literals = null,
-        string? cache = null)
-        => _estate.Delivery(name, entityType, columns, partition, searched, refChecked, literals, cache);
+        string? cache = null,
+        string? enrich = null)
+        => _estate.Delivery(name, entityType, columns, partition, searched, refChecked, literals, cache, enrich);
 
     private void Source(string name, params (string Interface, string EntityType, string? Column)[] interfaces) => _estate.Source(name, interfaces);
 

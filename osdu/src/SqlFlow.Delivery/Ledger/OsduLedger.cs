@@ -1387,7 +1387,7 @@ public sealed partial class OsduLedger : ILedger
             ct).ConfigureAwait(false);
     }
 
-    public async Task<IReadOnlyList<string>> ChangedSinceAsync(Guid flowId, DateTime sinceUtc, int max, CancellationToken ct = default)
+    public async Task<IReadOnlyList<string>> ChangedSinceAsync(Guid flowId, DateTime sinceUtc, int max, string? listedUnder = null, CancellationToken ct = default)
     {
         ArgumentOutOfRangeException.ThrowIfNegativeOrZero(max);
         if (await PartitionOfAsync(flowId, ct).ConfigureAwait(false) is not { } partition)
@@ -1397,32 +1397,64 @@ public sealed partial class OsduLedger : ILedger
 
         // Two ranges, each on an index of its own: (PartitionId, FlowId, LastDeliveredUtc) for what was sent, and
         // (PartitionId, FlowId, Status, UpdatedUtc) for what was deleted or reverted. A record sent and then removed in the same
-        // run is answered by the second; the reader asks OSDU what it holds of each either way.
+        // run is answered by the second; the reader asks OSDU what it holds of each either way. The target state is read only
+        // when its ids are asked for.
+        var listed = listedUnder is not null;
         var delivered = StatusText.Of(RecordStatus.Delivered);
         var deleted = StatusText.Of(RecordStatus.Deleted);
         var reverted = StatusText.Of(RecordStatus.Reverted);
+        var changed = new List<string>();
         var sent = await ReadAsync(
             db => db.DeliveryRecords.AsNoTracking()
                 .Where(r => r.PartitionId == partition && r.FlowId == flowId && r.LastDeliveredUtc != null && r.LastDeliveredUtc >= sinceUtc
                     && r.Status == delivered && r.TargetId != null)
-                .Select(r => r.TargetId!)
+                .Select(r => new { Id = r.TargetId!, State = listed ? r.TargetStateJson : null })
                 .Take(max)
                 .ToListAsync(ct),
             ct).ConfigureAwait(false);
-        if (sent.Count >= max)
+        foreach (var row in sent)
         {
-            return sent;
+            changed.Add(row.Id);
+            changed.AddRange(ListedIds(row.State, listedUnder));
         }
 
-        var taken = await ReadAsync(
-            db => db.DeliveryRecords.AsNoTracking()
-                .Where(r => r.PartitionId == partition && r.FlowId == flowId && (r.Status == deleted || r.Status == reverted) && r.UpdatedUtc >= sinceUtc
-                    && r.TargetId != null)
-                .Select(r => r.TargetId!)
-                .Take(max - sent.Count)
-                .ToListAsync(ct),
-            ct).ConfigureAwait(false);
-        return [.. sent, .. taken];
+        if (sent.Count < max)
+        {
+            var taken = await ReadAsync(
+                db => db.DeliveryRecords.AsNoTracking()
+                    .Where(r => r.PartitionId == partition && r.FlowId == flowId && (r.Status == deleted || r.Status == reverted) && r.UpdatedUtc >= sinceUtc
+                        && r.TargetId != null)
+                    .Select(r => new { Id = r.TargetId!, State = listed ? r.TargetStateJson : null })
+                    .Take(max - sent.Count)
+                    .ToListAsync(ct),
+                ct).ConfigureAwait(false);
+            foreach (var row in taken)
+            {
+                changed.Add(row.Id);
+                changed.AddRange(ListedIds(row.State, listedUnder));
+            }
+        }
+
+        return [.. changed.Distinct(StringComparer.Ordinal).Take(max)];
+    }
+
+    /// <summary>The ids a record's target state lists under <paramref name="value"/>, as a JSON array of strings; none when it lists none or no value is asked for.</summary>
+    private static IEnumerable<string> ListedIds(string? targetStateJson, string? value)
+    {
+        if (value is null || !JsonMerge.ToValues(targetStateJson).TryGetValue(value, out var text) || string.IsNullOrWhiteSpace(text))
+        {
+            return [];
+        }
+
+        try
+        {
+            return System.Text.Json.JsonSerializer.Deserialize<List<string>>(text)?.Where(id => !string.IsNullOrWhiteSpace(id)) ?? [];
+        }
+        catch (System.Text.Json.JsonException)
+        {
+            // A value that is not a list of ids names nothing to read back; the records themselves still are.
+            return [];
+        }
     }
 
     public async Task<IReadOnlyList<DeliveryKey>> ListKeysAsync(Guid flowId, RecordQuery query, int max, CancellationToken ct = default)

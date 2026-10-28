@@ -844,7 +844,7 @@ internal sealed partial class RafsShape(DdmsShapeContext context) : IDdmsShape
                 CarryLink(stored, document);
                 if (_options.PreserveDataKeys.Count > 0)
                 {
-                    RecordWriter.Preserve(stored, document, _options.PreserveDataKeys);
+                    RecordWriter.Preserve(stored, document, _options.PreserveDataKeys, StepLinks.Of(work));
                 }
             }
         }

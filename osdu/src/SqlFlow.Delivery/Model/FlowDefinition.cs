@@ -512,6 +512,16 @@ public sealed record EnrichFiles
     /// <summary>The path of the record the datasets are listed at, as <c>{id}:</c>; <c>data.Datasets</c> unless named.</summary>
     public string Link { get; init; } = DefaultLink;
 
+    /// <summary>
+    /// The kinds <paramref name="flow"/>'s steps of <c>enrich:</c> register their files as, each once: what the pipeline's
+    /// cache after step may put in besides its records (osdu/docs/reference/flow/delivery.md, cache).
+    /// </summary>
+    public static IReadOnlyList<string> KindsOf(FlowDefinition flow)
+    {
+        ArgumentNullException.ThrowIfNull(flow);
+        return [.. (flow.Enrich ?? []).Select(step => step.Files?.Kind).OfType<string>().Distinct(StringComparer.Ordinal)];
+    }
+
     /// <summary>The media type the files are uploaded as; the flow's <c>filesContentType</c>, else <c>application/octet-stream</c>, unless named.</summary>
     public string? ContentType { get; init; }
 }

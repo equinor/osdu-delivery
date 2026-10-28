@@ -949,12 +949,28 @@ public sealed partial class FlowRuntime : IDisposable
         var declaration = await store.DeclarationAsync(scope, ct).ConfigureAwait(false);
 
         // A runtime opened for target work has no resolved mapping: the kind comes from the mapping's own header, and what the
-        // mapping reads matters only to the before step, which such a run does not take.
+        // chain reads matters only to the before step, which such a run does not take.
         var kind = _mapping?.Mapping.Kind ?? Mappings.Load(Flow.Render.Mapping).Kind;
-        var reads = _mapping is { } resolved ? MappingCacheReads.Of(resolved.Mapping, resolved.Schema) : new MappingCacheReads([], [], []);
-        var plan = Snapshots.CacheStepPlan.Resolve(Flow.Label, Flow.Cache, declaration, kind, reads);
+        var reads = _mapping is { } resolved
+            ? MappingCacheReads.OfChain(resolved.Mapping, resolved.Schema, resolved.Steps.SelectMany(ChainFragments))
+            : new MappingCacheReads([], [], []);
+        var plan = Snapshots.CacheStepPlan.Resolve(Flow.Label, Flow.Cache, declaration, kind, reads, EnrichFiles.KindsOf(Flow));
         _cacheSteps = (scope, plan);
         return _cacheSteps;
+    }
+
+    /// <summary>The fragments a step renders, each with the template it fills: its own, and the one over the datasets it registers.</summary>
+    private static IEnumerable<(MappingDefinition Fragment, SchemaSnapshot? Schema)> ChainFragments(ResolvedStep step)
+    {
+        if (step.Mapping is { } fragment)
+        {
+            yield return (fragment, step.Schema);
+        }
+
+        if (step.Files is { Mapping: { } datasetFragment } files)
+        {
+            yield return (datasetFragment, files.Schema);
+        }
     }
 
     /// <summary>
@@ -1051,6 +1067,7 @@ public sealed partial class FlowRuntime : IDisposable
                 RunId,
                 Actor,
                 alsoChanged,
+                steps.Plan.TakesStepDatasets,
                 ct).ConfigureAwait(false);
         }
         catch (Exception ex) when (ex is SqlFlowException or System.Data.Common.DbException or TimeoutException or InvalidOperationException or HttpRequestException

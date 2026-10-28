@@ -12,21 +12,25 @@ namespace SqlFlow.Delivery.Tests;
 /// <summary>
 /// What the chain's preflight checks of a step registering files (osdu/docs/reference/flow/enrich.md, What the preflight
 /// checks): the path the datasets are linked from is a list of values of the template, which every writer shares by adding items;
-/// a step's <c>$base</c> read may read what it links; its dataset fragment's reads count as the step's; and the route a flow
-/// with step files gets wraps its own.
+/// it may be a list the flow preserves, whose links an update merges, but not a path inside one; a step's <c>$base</c> read may
+/// read what it links; its dataset fragment's reads count as the step's; and the route a flow with step files gets wraps its own.
 /// </summary>
 [Trait(EnrichmentSuite.Trait, EnrichmentSuite.Name)]
 public sealed class StepFilesPreflightTests
 {
-    private static FlowDefinition Flow() => Samples.Targeting(new FlowTarget
+    private static FlowDefinition Flow(IReadOnlyList<string>? preserved = null) => Samples.Targeting(new FlowTarget
     {
         Endpoint = FakeOsduPlatform.Endpoint,
         Protocol = Protocols.DeliveryProtocol.Storage,
-        ProtocolOptions = new ProtocolOptions(),
+        ProtocolOptions = new ProtocolOptions { PreserveDataKeys = preserved ?? [] },
     });
 
     private static IReadOnlyList<ValidationIssue> Check(MappingDefinition owner, params ResolvedStep[] steps)
         => Preflight.CheckChain(Flow(), owner, TestSchema.Build(), steps, "flows/demo.yaml");
+
+    /// <summary>The chain's checks on a flow that carries <paramref name="preserved"/> over from the record OSDU holds.</summary>
+    private static IReadOnlyList<ValidationIssue> CheckPreserving(IReadOnlyList<string> preserved, MappingDefinition owner, params ResolvedStep[] steps)
+        => Preflight.CheckChain(Flow(preserved), owner, TestSchema.Build(), steps, "flows/demo.yaml");
 
     private static ResolvedStep FilesStep(string name, string link, MappingDefinition? fragment = null, MappingDefinition? datasetFragment = null, IReadOnlyList<string>? after = null)
     {
@@ -52,6 +56,33 @@ public sealed class StepFilesPreflightTests
         var grade = Fragment("data:\n  Aliases: [{ $from: alias }]", name: "Grade");
 
         Assert.Empty(Check(Owner("Aliases: [x]"), FilesStep("lasfile", "data.Aliases"), FilesStep("dlis", "data.Aliases"), Step("grade", grade)));
+    }
+
+    [Fact]
+    public void Datasets_linked_from_a_list_the_flow_preserves_pass_since_an_update_merges_the_steps_links()
+    {
+        Assert.Empty(CheckPreserving(["Aliases"], Owner(), FilesStep("lasfile", "data.Aliases"), FilesStep("dlis", "data.Aliases")));
+    }
+
+    [Fact]
+    public void A_fragment_adding_to_a_preserved_list_is_refused_though_the_steps_files_may_link_there()
+    {
+        var grade = Fragment("data:\n  Aliases: [{ $from: alias }]", name: "Grade");
+
+        var message = Assert.Single(CheckPreserving(["Aliases"], Owner(), FilesStep("lasfile", "data.Aliases", fragment: grade))).Message;
+
+        Assert.Contains("enrich.lasfile: fragment Grade@1.0.0 writes data.Aliases, and", message, StringComparison.Ordinal);
+        Assert.Contains("Only a step's files may link datasets there (files.link), since an update merges those links with what OSDU holds", message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void A_link_inside_a_preserved_object_is_refused_since_only_the_preserved_list_itself_merges()
+    {
+        var issues = CheckPreserving(["Nested"], Owner(), FilesStep("lasfile", "data.Nested.Inner"));
+
+        Assert.Contains(issues, i => i.Message.Contains(
+            "enrich.lasfile: files.link names data.Nested.Inner, inside data.Nested, which target.protocolOptions.preserveDataKeys carries over whole from the record OSDU holds",
+            StringComparison.Ordinal));
     }
 
     [Fact]

@@ -7,6 +7,7 @@ using SqlFlow.Delivery.Hosting;
 using SqlFlow.Delivery.Identity;
 using SqlFlow.Delivery.Ledger;
 using SqlFlow.Delivery.Model;
+using SqlFlow.Delivery.Rendering;
 using SqlFlow.Delivery.Snapshots;
 
 namespace SqlFlow.Delivery.Engine.Snapshots;
@@ -250,8 +251,9 @@ public sealed class CacheKeeper
     /// <summary>
     /// Puts what the ledger <paramref name="ledgerFlowId"/> (named <paramref name="ledgerName"/>) changed in OSDU since
     /// <paramref name="sinceUtc"/> into <paramref name="types"/> of <paramref name="scope"/>'s cache as a run ends: the records
-    /// it delivered, removed or reverted are read back from OSDU's storage service by id; a record storage returns is put in
-    /// as it is now, held by the delivery, and one storage no longer holds is taken out of the types whoever held it.
+    /// it delivered, removed or reverted, and with <paramref name="stepDatasets"/> the datasets their steps of <c>enrich:</c>
+    /// link, are read back from OSDU's storage service by id; a record storage returns is put in as it is now, held by the
+    /// delivery, into the types holding its kind, and one storage no longer holds is taken out of the types whoever held it.
     /// </summary>
     /// <param name="scope">The partition the run delivered to.</param>
     /// <param name="types">The types <c>cache.after</c> names, resolved (<see cref="CacheStepPlan"/>).</param>
@@ -266,6 +268,10 @@ public sealed class CacheKeeper
     /// OSDU ids the run changed that the ledger no longer names: the records a removal deleted from the ledger as it took
     /// them out of OSDU.
     /// </param>
+    /// <param name="stepDatasets">
+    /// True when a type holds a kind the pipeline's steps register (<see cref="CacheStepPlan.TakesStepDatasets"/>): the datasets
+    /// the changed records link, as their target state lists them, are read back too.
+    /// </param>
     /// <param name="ct">Cancels the step; what it merged before stands.</param>
     public async Task<CacheStepOutcome?> AfterAsync(
         string scope,
@@ -278,6 +284,7 @@ public sealed class CacheKeeper
         Guid? runId,
         string actor,
         IReadOnlyCollection<string>? alsoChanged,
+        bool stepDatasets,
         CancellationToken ct)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(scope);
@@ -293,7 +300,7 @@ public sealed class CacheKeeper
 
         var names = types.Select(t => t.TypeName).ToList();
         IReadOnlyList<string> changed = [
-            .. await ledger.ChangedSinceAsync(ledgerFlowId, sinceUtc, MaxRecords + 1, ct).ConfigureAwait(false),
+            .. await ledger.ChangedSinceAsync(ledgerFlowId, sinceUtc, MaxRecords + 1, stepDatasets ? EnrichParts.DatasetsValue : null, ct).ConfigureAwait(false),
             .. alsoChanged ?? []];
         if (changed.Count == 0)
         {
@@ -331,6 +338,7 @@ public sealed class CacheKeeper
                 type.TypeName,
                 type.EntityType,
                 records
+                    .Where(record => Takes(type, record))
                     .Select(record => SnapshotBuilder.Project(record, type.Fields, pool))
                     .OfType<ReferenceItem>()
                     .GroupBy(item => item.Id, StringComparer.Ordinal)
@@ -354,6 +362,13 @@ public sealed class CacheKeeper
         _logger.LogInformation("{Outcome}", outcome.Describe());
         return outcome;
     }
+
+    /// <summary>
+    /// Whether <paramref name="type"/> takes <paramref name="record"/>: a type holds the records of its own kinds, so a delivered
+    /// log goes into a type of logs and the dataset its step registered into a type of datasets, never the other way round.
+    /// </summary>
+    private static bool Takes(CacheStepType type, JsonObject record)
+        => record["kind"] is not JsonValue value || !value.TryGetValue<string>(out var kind) || type.Holds(kind);
 
     /// <summary>
     /// Tags what a step's version changed for the records built from it, as a refresh's changes are tagged, and carries the

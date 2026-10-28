@@ -15,12 +15,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   it once, and a change that renders the same record sends nothing. `sqlflow check` lists the steps and
   `sqlflow preview` shows what each added ([enrich](osdu/docs/reference/flow/enrich.md),
   [fragments](osdu/docs/reference/flow/mapping-fragment.md)). A flow without steps renders and hashes as before.
+  A pipeline's `cache.before: auto` brings up to date what every fragment reads ([cache](osdu/docs/reference/flow/delivery.md#cache)).
 
 - **A step registers files as datasets of the record.** A step of `enrich:` with `files:` uploads the files each of its
   rows names through the Dataset service and registers them as a dataset of the record, under an id made from the
   record's own and kept for good, which the record lists in `data.Datasets` (or the step's `link`). New files register a
   new version of the same dataset and leave the record as OSDU holds it; a change to the record writes it once and
-  registers nothing that did not change ([files a step registers](osdu/docs/reference/flow/enrich-files.md)).
+  registers nothing that did not change ([files a step registers](osdu/docs/reference/flow/enrich-files.md)). On a flow
+  that carries `data.Datasets` over from the record OSDU holds (`preserveDataKeys`), an update keeps the links OSDU holds
+  and adds or takes off the step's own ([preserved keys](osdu/docs/reference/flow/enrich-files.md#preserved-keys)). A
+  pipeline's `cache.after` can take the datasets a step registers, read back with the records
+  ([the cache](osdu/docs/reference/flow/enrich-files.md#the-cache)).
 
 - **A step that holds can be set aside.** A step of `enrich:` with `onHold: step` that cannot render for a record no
   longer holds it: the record goes ahead with what the step added to its last delivery, and the flow's Records tab

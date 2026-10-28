@@ -156,7 +156,7 @@ public sealed class CacheStepsStoreTests : IDisposable
         var keeper = new CacheKeeper(engine with { Cache = caches }, NullLogger.Instance);
         var after = await keeper.AfterAsync(
             Scope, [declaration.Step("WellLog")!], runtime.Flow.Id, runtime.Flow.LedgerName, started, _ => Task.FromResult(rig.Client),
-            OsduRecordProtocol.DefaultVerifyBatchPath, Guid.NewGuid(), "tests", null, CancellationToken.None);
+            OsduRecordProtocol.DefaultVerifyBatchPath, Guid.NewGuid(), "tests", null, false, CancellationToken.None);
 
         Assert.NotNull(after);
         Assert.Equal(["WellLog"], after.Types);
@@ -171,7 +171,7 @@ public sealed class CacheStepsStoreTests : IDisposable
         // A step naming no type does nothing, and does not read storage.
         Assert.Null(await keeper.AfterAsync(
             Scope, [], runtime.Flow.Id, runtime.Flow.LedgerName, started, _ => throw new InvalidOperationException("storage is not read"),
-            OsduRecordProtocol.DefaultVerifyBatchPath, null, "tests", null, CancellationToken.None));
+            OsduRecordProtocol.DefaultVerifyBatchPath, null, "tests", null, false, CancellationToken.None));
     }
 
     [Fact]
