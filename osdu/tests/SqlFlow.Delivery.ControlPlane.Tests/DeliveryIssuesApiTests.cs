@@ -69,6 +69,9 @@ public sealed class DeliveryIssuesApiTests
             // The wellbores the cache lacks name each its own row's value: row errors. The empty tag is the same everywhere.
             Assert.Equal("rows", first.GetProperty("shape").GetString());
             Assert.Equal("set", listing.GetProperty("issues")[1].GetProperty("shape").GetString());
+            // What the records share: a placeholder where each row names its own value, the error itself where all say the same.
+            Assert.Equal(first.GetProperty("pattern").GetString(), first.GetProperty("shared").GetString());
+            Assert.Equal(EmptyTag, listing.GetProperty("issues")[1].GetProperty("shared").GetString());
             var example = first.GetProperty("example");
             Assert.Equal(missing, example.GetProperty("issue").GetString());
             Assert.Contains(example.GetProperty("deliveryKey").GetGuid(), wellbores.Select(w => w.DeliveryKey.Value));
@@ -86,6 +89,7 @@ public sealed class DeliveryIssuesApiTests
                 ["WB-1", "WB-2", "WB-3"],
                 samples.Select(x => Assert.Single(x.GetProperty("values").EnumerateArray().ToList()).GetString()).Order(StringComparer.Ordinal).ToList());
             Assert.Equal("rows", detail.GetProperty("issue").GetProperty("shape").GetString());
+            Assert.Equal("osdu.data.WellboreID: '<value>' matches no cached Wellbore, and the entry is required", detail.GetProperty("issue").GetProperty("shared").GetString());
             await StatusAsync(client, token, HttpMethod.Get, $"/api/v1/delivery/flows/{pipelineId:D}/issues/not-a-issue", HttpStatusCode.BadRequest);
             await StatusAsync(client, token, HttpMethod.Get, $"/api/v1/delivery/flows/{pipelineId:D}/issues/{new string('0', 16)}", HttpStatusCode.NotFound);
 

@@ -295,8 +295,8 @@ internal static class DeliveryRecordVerbs
             var files = await ledger.ListProblemFilesAsync(flowId, named, IssueFiles, ct).ConfigureAwait(false);
             var samples = await ledger.ListProblemSamplesAsync(flowId, named, IssueSamples, ct).ConfigureAwait(false);
 
-            // The samples know more of where the issue lies than the listing's newest and oldest record.
-            problem = problem with { Shape = ProblemSignature.ShapeOf(samples.Select(s => s.LastError).Append(problem.Example?.LastError)) };
+            // The samples know more of where the issue lies, and of what its records share, than the newest and oldest record.
+            problem = problem.Sampled(samples);
             if (context.Json)
             {
                 var described = Described(problem);
@@ -375,21 +375,21 @@ internal static class DeliveryRecordVerbs
     }
 
     /// <summary>
-    /// One issue as the terminal shows it: its id, where it lies and its counts, its pattern, and the example with its own
-    /// error.
+    /// One issue as the terminal shows it: its id, where it lies and its counts, the error as its records share it, and the
+    /// example, with its own error where that says more than what they share.
     /// </summary>
     private static void WriteIssue(CliVerbContext context, ProblemGroup problem)
     {
         context.Out.WriteLine(string.Create(
             CultureInfo.InvariantCulture,
             $"  {ProblemSignature.Format(problem.Problem)}  {Shape(problem.Shape)}, {problem.Records} record(s): {problem.Held} held, {problem.Failed} failed; last changed {problem.OldestUtc:u} to {problem.NewestUtc:u}"));
-        context.Out.WriteLine("      " + One(problem.Pattern));
+        context.Out.WriteLine("      " + One(problem.Shared));
         if (problem.Example is { } example)
         {
             context.Out.WriteLine(string.Create(
                 CultureInfo.InvariantCulture,
                 $"      for example {example.DeliveryKey.Value:N}  {example.SourceKey}{(example.PendingSourceFileName is { Length: > 0 } file ? $"  ({file}{(example.PendingSourceRowNumber is { } row ? $" row {row}" : string.Empty)})" : string.Empty)}"));
-            if (example.LastError is { Length: > 0 } error)
+            if (example.LastError is { Length: > 0 } error && One(error) != One(problem.Shared))
             {
                 context.Out.WriteLine("        " + One(error));
             }
@@ -654,6 +654,7 @@ internal static class DeliveryRecordVerbs
         ["shape"] = problem.Shape == ProblemShape.Rows ? "rows" : "set",
         ["values"] = new JsonArray(problem.Values.Select(v => (JsonNode)JsonValue.Create(v)!).ToArray()),
         ["pattern"] = problem.Pattern,
+        ["shared"] = problem.Shared,
         ["records"] = problem.Records,
         ["held"] = problem.Held,
         ["failed"] = problem.Failed,

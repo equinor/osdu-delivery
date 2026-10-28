@@ -1726,6 +1726,7 @@
         "osdu/gui/src/features/delivery/DeliverySubmissionPage.tsx",
         "osdu/gui/src/features/delivery/DeliveryFlowPanel.tsx",
         "osdu/gui/src/features/delivery/DeliveryIssuesPanel.tsx",
+        "osdu/gui/src/features/delivery/DeliveryIssuePanel.tsx",
         "osdu/gui/src/features/delivery/DeliveryPreviewPanel.tsx",
         "osdu/gui/src/features/delivery/PartitionNotice.tsx",
         "osdu/gui/src/features/delivery/useInterfaceChoice.ts",

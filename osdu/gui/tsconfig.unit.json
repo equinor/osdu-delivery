@@ -26,6 +26,7 @@
     "src/features/delivery/utcInstant.ts",
     "src/features/delivery/enrichSteps.ts",
     "src/features/delivery/enrichmentText.ts",
+    "src/features/delivery/issueText.ts",
     "../../sqlflow/gui/src/lib/time.ts"
   ]
 }

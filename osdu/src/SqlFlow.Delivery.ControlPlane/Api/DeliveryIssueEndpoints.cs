@@ -23,11 +23,12 @@ namespace SqlFlow.Delivery.ControlPlane.Api;
 /// failed), when they last changed, its most recently changed record as an example, with that record's own error, and
 /// where it lies: <c>set</c> when its records carry the same error (no value of their own, or the same values in each),
 /// <c>rows</c> when they name values of their own rows. <c>Values</c> are the values the example names, which for a set
-/// error every record names.
+/// error every record names. <c>Shared</c> is the error as the records looked at say it: the pattern with every part they
+/// all name written in, and the placeholder kept where they differ.
 /// </summary>
 public sealed record DeliveryIssueDto(
     string Issue, string Pattern, long Records, long Held, long Failed, DateTime OldestUtc, DateTime NewestUtc, DeliveryRecordDto? Example,
-    string Shape, IReadOnlyList<string> Values);
+    string Shape, IReadOnlyList<string> Values, string Shared);
 
 /// <summary>A record of an issue looked at closely, with the values its error names.</summary>
 public sealed record DeliveryIssueSampleDto(DeliveryRecordDto Record, IReadOnlyList<string> Values);
@@ -43,8 +44,8 @@ public sealed record DeliveryIssueFileDto(string? FileName, long Records);
 
 /// <summary>
 /// One issue with the files its records came from, the most records first, and samples spread evenly across its records
-/// (its newest, its oldest and the ones between), which are what tell its shape: the issue's <c>Shape</c> here is the
-/// samples' word, which knows more than the listing's two records.
+/// (its newest, its oldest and the ones between), which are what tell its shape: the issue's <c>Shape</c> and
+/// <c>Shared</c> here are the samples' word, which knows more than the listing's two records.
 /// </summary>
 public sealed record DeliveryIssueDetailDto(DeliveryIssueDto Issue, IReadOnlyList<DeliveryIssueFileDto> Files, IReadOnlyList<DeliveryIssueSampleDto> Samples);
 
@@ -137,9 +138,8 @@ public static class DeliveryIssueEndpoints
 
         var files = await ledger.ListProblemFilesAsync(flow.FlowId, hash, MaxFiles, ct).ConfigureAwait(false);
         var sampled = await ledger.ListProblemSamplesAsync(flow.FlowId, hash, Math.Clamp(samples ?? DefaultSamples, 1, OsduLedger.MaxProblemSamples), ct).ConfigureAwait(false);
-        var shape = sampled.Count == 0 ? group.Shape : ProblemSignature.ShapeOf(sampled.Select(s => s.LastError).Append(group.Example?.LastError));
         return TypedResults.Ok(new DeliveryIssueDetailDto(
-            ToDto(group with { Shape = shape }),
+            ToDto(group.Sampled(sampled)),
             files.Select(f => new DeliveryIssueFileDto(f.FileName, f.Records)).ToList(),
             sampled.Select(s => new DeliveryIssueSampleDto(DeliveryEndpoints.ToDto(s), ProblemSignature.Values(s.LastError))).ToList()));
     }
@@ -253,7 +253,7 @@ public static class DeliveryIssueEndpoints
     private static DeliveryIssueDto ToDto(ProblemGroup group) => new(
         ProblemSignature.Format(group.Problem), group.Pattern, group.Records, group.Held, group.Failed, group.OldestUtc, group.NewestUtc,
         group.Example is { } example ? DeliveryEndpoints.ToDto(example) : null,
-        ShapeName(group.Shape), group.Values);
+        ShapeName(group.Shape), group.Values, group.Shared);
 
     /// <summary>An issue's shape as the API names it.</summary>
     private static string ShapeName(ProblemShape shape) => shape == ProblemShape.Rows ? "rows" : "set";

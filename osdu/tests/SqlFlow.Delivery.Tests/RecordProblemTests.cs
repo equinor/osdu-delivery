@@ -121,13 +121,19 @@ public sealed class RecordProblemTests : IAsyncLifetime, IDisposable
         var unit = Assert.Single(listing.Problems, p => p.Pattern.Contains("CurveUnit", StringComparison.Ordinal));
         Assert.Equal(ProblemShape.Set, unit.Shape);
         Assert.Equal(["gAPI "], unit.Values);
+        // A set error reads as its records say it; row errors keep the place each row names its own value.
+        Assert.Equal("osdu.data.CurveUnit: 'gAPI ' is not a unit the cache lists", unit.Shared);
         var missing = Assert.Single(listing.Problems, p => p.Pattern.Contains("WellboreID", StringComparison.Ordinal));
         Assert.Equal(ProblemShape.Rows, missing.Shape);
+        Assert.Equal(missing.Pattern, missing.Shared);
 
         // Samples spread across the problem, newest first: every record of a three-record problem, each once.
         var samples = await Ledger.ListProblemSamplesAsync(_flow, missing.Problem, 5);
         Assert.Equal(wellbores.Select(w => w.DeliveryKey.Value).Order(), samples.Select(s => s.DeliveryKey.Value).Order());
         Assert.Equal(ProblemShape.Rows, ProblemSignature.ShapeOf(samples.Select(s => s.LastError)));
+        var sampled = missing.Sampled(samples);
+        Assert.Equal((ProblemShape.Rows, missing.Pattern), (sampled.Shape, sampled.Shared));
+        Assert.Equal(missing, missing.Sampled([]));
         Assert.Equal(2, (await Ledger.ListProblemSamplesAsync(_flow, unit.Problem, 2)).Count);
         Assert.Empty(await Ledger.ListProblemSamplesAsync(_flow, 42, 5));
     }

@@ -1496,6 +1496,28 @@ public sealed record ProblemGroup
 
     /// <summary>The values the example names (<see cref="ProblemSignature.Values"/>): for a set error, the values every record names.</summary>
     public IReadOnlyList<string> Values { get; init; } = [];
+
+    /// <summary>
+    /// The error as the problem's records looked at say it (<see cref="ProblemSignature.Shared"/>): the pattern with what
+    /// they all name written in, a placeholder where they differ. Read like the shape, from the newest and the oldest record.
+    /// </summary>
+    public required string Shared { get; init; }
+
+    /// <summary>
+    /// The problem as <paramref name="samples"/> spread across it tell it, which know more than its newest and oldest record:
+    /// its shape and what its records share, read from the samples and the example. With no sample it is as it was.
+    /// </summary>
+    public ProblemGroup Sampled(IReadOnlyCollection<RecordState> samples)
+    {
+        ArgumentNullException.ThrowIfNull(samples);
+        if (samples.Count == 0)
+        {
+            return this;
+        }
+
+        var errors = samples.Select(s => s.LastError).Append(Example?.LastError).ToList();
+        return this with { Shape = ProblemSignature.ShapeOf(errors), Shared = ProblemSignature.Shared(Pattern, errors) };
+    }
 }
 
 /// <summary>A ledger's problems, the largest first, with what the page leaves out.</summary>

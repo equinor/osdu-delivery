@@ -360,6 +360,17 @@ Curves:
 | `$required` | `true` (default) holds a record that ends with no item; `false` writes the list empty. |
 | `$description` | Free text. |
 
+A reason a property of the items holds the record for is said once, with how many of the items the `$where` kept say it,
+so a record whose three curves of twelve have no unit names the reason once:
+
+```text
+osdu.data.Curves[].CurveUnit, in 3 of 12 items: dataset.curves.curve_unit is empty, and the entry is required
+```
+
+Records held for the same reason in different numbers of their items are then one [issue](../concepts/record-lifecycle.md#issues).
+A reason naming each item's own value (a unit the cache does not list) is said once for each value. A record's Render tab
+says what each item came to.
+
 An item none of whose properties gives a value is left out of the array. Two `$forEach` nodes may repeat the same child
 dataset (the curves of a log, and the source's own notes about them in `ExtensionProperties`). A path steps into one array
 at most, so these are refused by name:

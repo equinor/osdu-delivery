@@ -226,10 +226,13 @@ The issues keeping the interface's records blocked, the most records first (50 u
 ```text
 welldb-wellbore-03-delivery: <n> blocked record(s) in <n> issue(s)
   <issue id>  <row errors | set error>, <n> record(s): <n> held, <n> failed; last changed <time> to <time>
-      <the pattern the records' errors share>
+      <the error as the records share it>
       for example <delivery key>  <source key>  (<file> row <n>)
-        <that record's own error>
+        <that record's own error, when it says more than what they share>
 ```
+
+What the records share is the pattern with every part they all name written in, and a placeholder (`<n>`, `<value>`)
+where they differ; the listing reads it from each issue's newest and oldest record, `--issue` from its samples.
 
 `set error` is the same error in every record looked at, made once for the whole set (a dataset, a cache entry, a
 mapping, a legal tag) and fixed once; `row errors` name different values, each its own row's, fixed in the rows
@@ -243,7 +246,8 @@ across it, with the values their errors name. `records list --issue <id>` lists 
 blocked record under fails with `<flow> has no record blocked by issue <id>; 'records issues' lists the issues it has.`
 
 `--json`: `flow`, `flowId`, `totalIssues`, `totalRecords`, `unsorted` and `issues`, each with `issue`, `shape` (`rows` or
-`set`), `values`, `pattern`, `records`, `held`, `failed`, `oldestUtc`, `newestUtc` and `example`. With `--issue`:
+`set`), `values`, `pattern`, `shared` (the error as the records share it), `records`, `held`, `failed`, `oldestUtc`,
+`newestUtc` and `example`. With `--issue`:
 `flow`, `flowId` and `issue`, which adds `files` (`fileName`, `records`) and `samples` (each record with its `values`).
 
 ## records release

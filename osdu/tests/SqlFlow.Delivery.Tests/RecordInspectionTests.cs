@@ -1,5 +1,6 @@
 using System.Text.Json.Nodes;
 using SqlFlow.Delivery.Json;
+using SqlFlow.Delivery.Ledger;
 using SqlFlow.Delivery.Rendering;
 using SqlFlow.Delivery.Snapshots;
 using SqlFlow.Delivery.Templates;
@@ -135,9 +136,55 @@ public sealed class RecordInspectionTests
         Assert.Equal(render.Key, inspection.Key);
         Assert.Equal(render.SourceKey, inspection.SourceKey);
 
-        // Every hold the render gives is one some outcome gives, apart from a key with an empty part, which is the record's own.
+        // Every hold the render gives is one some outcome gives, apart from a key with an empty part, which is the record's own;
+        // what the items of a repeated array hold for is said once with how many items said it, and each item's outcome says it.
         var reasons = inspection.Outcomes.SelectMany(o => o.Reasons).ToHashSet(StringComparer.Ordinal);
-        Assert.All(render.Holds.Where(h => !h.StartsWith("dataset key incomplete", StringComparison.Ordinal)), hold => Assert.Contains(hold, reasons));
+        Assert.All(render.Holds.Where(h => !h.StartsWith("dataset key incomplete", StringComparison.Ordinal)), hold => Assert.Contains(Uncounted(hold), reasons));
+    }
+
+    /// <summary>A reason the items of a repeated array give, as each item's outcome says it: without how many items said it.</summary>
+    private static string Uncounted(string hold)
+        => System.Text.RegularExpressions.Regex.Replace(hold, @"^(?<target>[^\s,:]+), in \d+ of \d+ items: ", "${target}: ", System.Text.RegularExpressions.RegexOptions.None, TimeSpan.FromSeconds(1));
+
+    [Fact]
+    public void A_reason_several_items_of_a_repeated_array_share_is_said_once_with_how_many_items_say_it()
+    {
+        var renderer = Renderer("""
+            Curves:
+              $forEach: curves
+              $item:
+                CurveID: { $from: curve_id }
+                TopDepth:
+                  $coalesce:
+                    - $from: top
+                    - $from: top_md
+            """);
+        var curve = (string id, string? top) => ("curves", Row(("curve_id", id), ("top", top), ("top_md", null)));
+        var three = Record(Row(), curve("GR", null), curve("DT", "10"), curve("RHOB", null), curve("NPHI", null));
+        var one = Record(Row(), curve("GR", "10"), curve("DT", null));
+
+        // Three curves of four with no top: one reason, naming how far it reaches, rather than the same reason three times.
+        const string Why = "none of the 2 alternatives of $coalesce gives a value, and the entry is required: 1. dataset.curves.top is empty; 2. dataset.curves.top_md is empty";
+        var held = renderer.Render(three);
+        Assert.Equal([$"osdu.data.Curves[].TopDepth, in 3 of 4 items: {Why}"], held.Holds);
+        Assert.Equal([$"osdu.data.Curves[].TopDepth, in 1 of 2 items: {Why}"], renderer.Render(one).Holds);
+
+        // However many of a record's items it reaches, records held for it are one problem.
+        Assert.Equal(
+            ProblemSignature.Of(string.Join("; ", held.Holds)),
+            ProblemSignature.Of(string.Join("; ", renderer.Render(one).Holds)));
+
+        // An inspection says what each item came to, the reason in each item that gave it.
+        var tops = renderer.Inspect(three, EntrySelection.All).Outcomes.Where(o => o.Target == "osdu.data.Curves[].TopDepth").ToList();
+        Assert.Equal([0, 2, 3], tops.Where(o => o.Kind == EntryOutcomeKind.Held).Select(o => o.Item));
+        Assert.All(tops.Where(o => o.Kind == EntryOutcomeKind.Held), o => Assert.Equal([$"osdu.data.Curves[].TopDepth: {Why}"], o.Reasons));
+
+        // A reason naming each item's own value is each item's own.
+        var values = renderer.Render(Record(Row(), curve("GR", "x"), curve("DT", "y")));
+        Assert.Equal(2, values.Holds.Count);
+        Assert.All(values.Holds, h => Assert.StartsWith("osdu.data.Curves[].TopDepth, in 1 of 2 items: ", h, StringComparison.Ordinal));
+        Assert.Contains("'x'", values.Holds[0], StringComparison.Ordinal);
+        Assert.Contains("'y'", values.Holds[1], StringComparison.Ordinal);
     }
 
     [Fact]

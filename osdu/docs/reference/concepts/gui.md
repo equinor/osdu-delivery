@@ -50,6 +50,7 @@ sourceRefs:
   - osdu/gui/src/features/delivery/DeliverySubmissionPage.tsx
   - osdu/gui/src/features/delivery/DeliveryFlowPanel.tsx
   - osdu/gui/src/features/delivery/DeliveryIssuesPanel.tsx
+  - osdu/gui/src/features/delivery/DeliveryIssuePanel.tsx
   - osdu/gui/src/features/delivery/DeliveryPreviewPanel.tsx
   - osdu/gui/src/features/delivery/PartitionNotice.tsx
   - osdu/gui/src/features/delivery/useInterfaceChoice.ts
@@ -351,12 +352,18 @@ partitions is read in the title bar's partition.
   25,000 records do. Rows tick; the selection bar offers
   **Select all N matching**, **Redeliver**, **Adopt** (when the selection holds a record held for an id OSDU holds; the
   others selected are left), **Sync timelines** and **Remove**.
-- **Issues**: the blocked records grouped by the issue that keeps them blocked, each a **Set error** or **Row errors**,
-  with its records and when it last changed. The issue picked shows samples, each with **Check** (opens it on its Render
-  tab) and **Try** (releases it alone and queues a deliver run), the files its records came from, **Records** (the
-  Records tab narrowed to it) and **Release N**, which can queue a deliver run straight after. An issue of records held
-  because OSDU already holds a record at the ids their keys make also offers **Adopt N**, which asks every record of it
-  to adopt the record OSDU holds once the partition is typed back, and can queue a deliver run straight after.
+- **Issues**: the blocked records grouped by the issue that keeps them blocked, the most records first, in a grid that
+  fits the window. Each issue is headed by the property its error names (`data.Curves[].CurveUnit`) over what it says,
+  with whether it is a **Set error** or **Row errors**, its records, held or failed, and when they last changed; the
+  filter finds one by its words or id. The error reads as its records share it, with a chip (`n`, `value`) only where
+  each says something of its own ([issues](record-lifecycle.md#issues)). A click on an issue, or Enter on it, opens it in
+  the workbench's bottom panel over the grid, as a run's trace opens, and the address names it (`?issue=`), so a link
+  opens it too; Up and Down step through the issues and Escape closes it. The panel shows the whole error, each reason it
+  joins on its own and a `$coalesce`'s alternatives as a list; samples, each with **Check** (opens it on its Render tab)
+  and **Try** (releases it alone and queues a deliver run); the files its records came from; **Records** (the Records tab
+  narrowed to it) and **Release N**, which can queue a deliver run straight after. An issue of records held because OSDU
+  already holds a record at the ids their keys make also offers **Adopt N**, which asks every record of it to adopt the
+  record OSDU holds once the partition is typed back, and can queue a deliver run straight after.
 - **Submissions**: every submission with what it read and its counts; a row opens its page.
 - **Preview**: **Preview a record** renders one record exactly as a delivery would and sends nothing: the first record of
   the scope, or the one a key names, with a field for each parameter the flow declares. The answer shows what the next run

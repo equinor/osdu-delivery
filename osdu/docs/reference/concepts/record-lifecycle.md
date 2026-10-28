@@ -432,10 +432,19 @@ oldest record; an issue's own page reads it from samples spread across it (five 
 a set error into row errors, never the reverse.
 
 **Reading issues.** `GET /flows/{pipelineId}/issues` and `sqlflow records issues` list a flow's issues, the most records
-first (50 by default in the CLI): each with its records, held and failed, when they last changed, the pattern and an
-example record. `GET /flows/{pipelineId}/issues/{issue}` and `--issue` add the files its records came from and the
-samples; `sqlflow records list --issue <id>` lists its records. Everything is counted from the blocked records through a
-filtered index that holds them alone, never kept beside them.
+first (50 by default in the CLI): each with its records, held and failed, when they last changed, the pattern, an
+example record, and `shared`, the error as the records looked at say it: the pattern with every part they all name
+written in (a value, a number, a moment, an address) and the placeholder kept where they differ, which is what the GUI
+and the CLI show. The listing reads `shared` and the shape from the newest and the oldest record.
+`GET /flows/{pipelineId}/issues/{issue}` and `--issue` add the files its records came from and the samples, and read the
+shape and `shared` from the samples; `sqlflow records list --issue <id>` lists its records. Everything is counted from the
+blocked records through a filtered index that holds them alone, never kept beside them.
+
+A reason the items of a `$forEach` array share is said once, with how many items say it
+(`osdu.data.Curves[].CurveUnit, in 3 of 12 items: ...`), so records held for it are one issue however many of their items
+it reaches ([mapping values](../flow/mapping-values.md#foreach-repeated-arrays-from-a-child-dataset)). A record held while such a
+reason was said once an item (1.0.1 and before) keeps that error and its issue until it is planned again: released, it
+falls into the one issue if it is held again.
 
 **Releasing an issue** (`POST /flows/{pipelineId}/issues/{issue}/release`, `sqlflow records release --issue`) walks the
 issue's records a page of 1,000 at a time and releases each page in its own statement; a record a run blocks with the same

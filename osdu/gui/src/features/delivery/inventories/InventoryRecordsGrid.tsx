@@ -26,6 +26,7 @@ import { InventoryIdPanel } from "./InventoryIdPanel";
 import { InventoryRepairDialog } from "./InventoryRepairDialog";
 import { RemovalDialog } from "../RemovalDialog";
 import { fieldLabel } from "../explorer/explorerModel";
+import { arrowsKeptByTarget, typedInField } from "../panelKeys";
 import { findingVisual, findingWhy } from "./inventoryFormat";
 import { SelectionPanel, SelectionValueCell } from "./InventorySelectionParts";
 import type { InventorySelectionState } from "./inventorySelection";
@@ -58,18 +59,6 @@ export interface GridSelection {
   state: InventorySelectionState;
   sentence: string;
   onClear: () => void;
-}
-
-/** Whether a key went to a field, which keeps every key it is given. */
-function typedInField(target: EventTarget | null): boolean {
-  return target instanceof HTMLElement && (target.isContentEditable || ["INPUT", "TEXTAREA", "SELECT"].includes(target.tagName));
-}
-
-/** Whether an arrow key went to something that moves by arrows of its own: a field, a menu, a tree, a handle, the panel. */
-function arrowsKeptByTarget(target: EventTarget | null): boolean {
-  return typedInField(target)
-    || (target instanceof HTMLElement
-      && target.closest("[role=menu],[role=listbox],[role=tree],[role=dialog],[role=separator],[data-testid=bottom-panel]") !== null);
 }
 
 /**

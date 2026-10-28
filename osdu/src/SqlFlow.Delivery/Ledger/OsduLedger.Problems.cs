@@ -192,23 +192,31 @@ public sealed partial class OsduLedger
 
     /// <summary>
     /// A problem as a listing names it: its counts, its example, its pattern read from the example's error, and its shape
-    /// as its newest and oldest records say. A problem whose records all moved on between the count and the example's read
-    /// has no example, and is left out.
+    /// and what its records share as its newest and oldest records say. A problem whose records all moved on between the
+    /// count and the example's read has no example, and is left out.
     /// </summary>
     private static ProblemGroup? Group(SqlServerLedgerBulk.ProblemCount count, (RecordState Newest, RecordState Oldest)? ends, string? partition)
-        => ends is not { } found
-            ? null
-            : new ProblemGroup
-            {
-                Problem = count.Problem,
-                Pattern = ProblemSignature.Pattern(found.Newest.LastError),
-                Records = count.Records,
-                Held = count.Held,
-                Failed = count.Failed,
-                OldestUtc = count.OldestUtc,
-                NewestUtc = count.NewestUtc,
-                Example = found.Newest with { Partition = partition },
-                Shape = ProblemSignature.ShapeOf([found.Newest.LastError, found.Oldest.LastError]),
-                Values = ProblemSignature.Values(found.Newest.LastError),
-            };
+    {
+        if (ends is not { } found)
+        {
+            return null;
+        }
+
+        var pattern = ProblemSignature.Pattern(found.Newest.LastError);
+        string?[] errors = [found.Newest.LastError, found.Oldest.LastError];
+        return new ProblemGroup
+        {
+            Problem = count.Problem,
+            Pattern = pattern,
+            Records = count.Records,
+            Held = count.Held,
+            Failed = count.Failed,
+            OldestUtc = count.OldestUtc,
+            NewestUtc = count.NewestUtc,
+            Example = found.Newest with { Partition = partition },
+            Shape = ProblemSignature.ShapeOf(errors),
+            Values = ProblemSignature.Values(found.Newest.LastError),
+            Shared = ProblemSignature.Shared(pattern, errors),
+        };
+    }
 }

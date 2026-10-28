@@ -280,6 +280,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   ([Records](osdu/docs/reference/concepts/gui.md#records), [finding records](osdu/docs/reference/concepts/ledger.md#finding-records)).
 
 ### Changed
+- **The Issues tab is redesigned.** A flow's issues fill a grid that fits the window, each headed by the property its
+  error names over what it says, with a filter by words or id; an issue opens in the bottom panel over the grid, as a
+  run's trace does, with Up and Down stepping through the issues, in place of the detail beside the list. An issue reads
+  as its records share it, with what they all name written in and a chip only where each says its own: the issues
+  listing gives it as `shared`, and `sqlflow records issues` prints it in place of the pattern
+  ([A delivery flow's page](osdu/docs/reference/concepts/gui.md#a-delivery-flows-page),
+  [issues](osdu/docs/reference/concepts/record-lifecycle.md#issues)).
 - A record's tabs no longer carry counts: the Enrichments and Artifacts tabs are named alone, and each tab's own first
   line still counts what it holds ([A record's page](osdu/docs/reference/concepts/gui.md#a-records-page)). A contains
   search of a flow's records also matches the ingestion file a record came from
@@ -507,6 +514,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   says ([Upgrading an estate](osdu/docs/reference/concepts/templates.md#upgrading-an-estate-that-saved-templates-in-the-database)).
 
 ### Fixed
+- A record held for one reason in several items of a `$forEach` array (three curves with no unit) said the reason once an
+  item, so its error repeated it, and records held for it fell into as many issues as there were counts of such items. The
+  reason is now said once with how many items say it (`in 3 of 12 items`), and they are one issue; a record held before
+  keeps its issue until it is released ([mapping values](osdu/docs/reference/flow/mapping-values.md#foreach-repeated-arrays-from-a-child-dataset)).
 - A Records page search answered at most 200 records, so its pages past the 200th record came back empty and its export
   held 200 however many matched; it now answers every record the lookup reaches, up to 1,000
   ([finding records](osdu/docs/reference/concepts/ledger.md#finding-records)).

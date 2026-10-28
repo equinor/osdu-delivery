@@ -801,6 +801,7 @@ public sealed class MappingRenderer
             var array = new JsonArray();
             var ordinal = -1;
             var kept = 0;
+            var itemHolds = values.HoldsTheRecord ? new ItemHolds(repeater.Target.Text) : null;
             foreach (var row in values.Items(repeater))
             {
                 ordinal++;
@@ -814,6 +815,7 @@ public sealed class MappingRenderer
                 kept++;
                 var item = new JsonObject();
                 var emptyInItem = new List<MappingEntry>();
+                var itemStart = holds.Count;
                 foreach (var entry in selected)
                 {
                     var held = holds.Count;
@@ -829,7 +831,10 @@ public sealed class MappingRenderer
                     }
 
                     trail?.Add(Outcome(entry, ordinal, row, value, applied, holds, held, values, asked));
+                    itemHolds?.Note(entry, holds, held);
                 }
+
+                itemHolds?.EndItem(holds, itemStart);
 
                 // An item none of whose properties gives a value adds nothing; one that does carries its empty lists too.
                 if (item.Count > 0)
@@ -841,6 +846,11 @@ public sealed class MappingRenderer
 
                     array.Add(item);
                 }
+            }
+
+            if (itemHolds is not null)
+            {
+                holds.AddRange(itemHolds.Said(kept));
             }
 
             // An entry of the items met none because the row has no child row the repeater takes, or because testing its
@@ -1047,6 +1057,12 @@ public sealed class MappingRenderer
 
         /// <summary>Why an entry that wrote nothing gave no value for the row, as a render holding it for that would say.</summary>
         string WhyEmpty(MappingEntry entry, SourceRow? item);
+
+        /// <summary>
+        /// Whether what the entries add to the holds is what holds the record, so a reason several items share is said once
+        /// (<see cref="ItemHolds"/>); a shape's are notes on each entry, said as they are.
+        /// </summary>
+        bool HoldsTheRecord { get; }
     }
 
     /// <summary>A source record's values, as a delivery renders them.</summary>
@@ -1069,6 +1085,8 @@ public sealed class MappingRenderer
         public IReadOnlyList<PlatformQuestion> Asked => searched.Unanswered;
 
         public string WhyEmpty(MappingEntry entry, SourceRow? item) => EntryValues.WhyEmpty(entry, record.Row, item, renderer, searched.Base);
+
+        public bool HoldsTheRecord => true;
     }
 
     /// <summary>Placeholders in place of a record's values: one item per repeater, whatever its condition, with a note saying how many a record takes.</summary>
@@ -1096,6 +1114,68 @@ public sealed class MappingRenderer
         public IReadOnlyList<PlatformQuestion> Asked => [];
 
         public string WhyEmpty(MappingEntry entry, SourceRow? item) => "a shape reads no row";
+
+        public bool HoldsTheRecord => false;
+    }
+
+    /// <summary>
+    /// What the entries of one repeater's items hold the record for, each reason said once with how many items said it
+    /// (osdu/docs/reference/flow/mapping-values.md, $forEach). Three curves of twelve with no unit are one reason, not three:
+    /// <c>osdu.data.Curves[].CurveUnit, in 3 of 12 items: dataset.curves.curve_unit is empty, and the entry is required</c>.
+    /// Said once an item, a record's error would repeat the reason as many times as it has items holding for it, and records
+    /// held for it would fall into as many issues as there are counts of such items. A reason whose values differ from item
+    /// to item is a reason of its own for each.
+    /// </summary>
+    private sealed class ItemHolds(string repeater)
+    {
+        /// <summary>Each reason in the order an item first said it, with the entry that said it and how many items did.</summary>
+        private readonly List<(string Reason, string Target, int Items)> _said = [];
+
+        /// <summary>The entry each reason of the item in hand came from.</summary>
+        private readonly Dictionary<string, string> _targets = new(StringComparer.Ordinal);
+
+        /// <summary>Notes that the reasons <paramref name="entry"/> added to <paramref name="holds"/>, from <paramref name="from"/> on, are its own.</summary>
+        public void Note(MappingEntry entry, List<string> holds, int from)
+        {
+            for (var i = from; i < holds.Count; i++)
+            {
+                _targets.TryAdd(holds[i], entry.Target.Text);
+            }
+        }
+
+        /// <summary>
+        /// Takes what one item held the record for out of <paramref name="holds"/>, from <paramref name="start"/> on, each
+        /// reason counted once for the item however many of its entries gave it.
+        /// </summary>
+        public void EndItem(List<string> holds, int start)
+        {
+            foreach (var reason in holds.Skip(start).Distinct(StringComparer.Ordinal).ToList())
+            {
+                var at = _said.FindIndex(s => string.Equals(s.Reason, reason, StringComparison.Ordinal));
+                if (at >= 0)
+                {
+                    _said[at] = _said[at] with { Items = _said[at].Items + 1 };
+                }
+                else
+                {
+                    _said.Add((reason, _targets.GetValueOrDefault(reason, repeater), 1));
+                }
+            }
+
+            holds.RemoveRange(start, holds.Count - start);
+            _targets.Clear();
+        }
+
+        /// <summary>
+        /// Each reason once, after the entry it names: how many of the <paramref name="items"/> items the repeater kept said
+        /// it, then what they said without the entry's own name.
+        /// </summary>
+        public IEnumerable<string> Said(int items) => _said.Select(s =>
+        {
+            var own = s.Target + ": ";
+            var why = s.Reason.StartsWith(own, StringComparison.Ordinal) ? s.Reason[own.Length..] : s.Reason;
+            return string.Create(System.Globalization.CultureInfo.InvariantCulture, $"{s.Target}, in {s.Items} of {items} items: {why}");
+        });
     }
 }
 

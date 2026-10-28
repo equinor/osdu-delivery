@@ -922,6 +922,12 @@ export interface DeliveryIssue {
   shape: DeliveryIssueShape;
   /** The values the example's error names (what its row held); for a set error, the values every record names. */
   values: string[];
+  /**
+   * The error as the records looked at say it: the pattern with every part they all name written in (a value, a number, a
+   * moment), and the placeholder kept where they differ. The listing reads it from the newest and the oldest record; an
+   * issue's own page from its samples.
+   */
+  shared: string;
 }
 
 export type DeliveryIssueShape = "set" | "rows";

@@ -124,6 +124,86 @@ public static partial class ProblemSignature
         return ProblemShape.Set;
     }
 
+    /// <summary>
+    /// The problem as <paramref name="errors"/>, errors of its records, say it: <paramref name="pattern"/> with each part every
+    /// one of them names alike written as they name it, and the placeholder kept where they differ. A set error's records
+    /// say the same values, numbers and moments, so it reads as they wrote it; row errors keep a placeholder at each value
+    /// their rows differ in. Two records can share a part by chance, so the more records are read the surer it is: a
+    /// problem's newest and oldest say it for a listing, samples spread across it for the problem's own page. An error of
+    /// another problem is passed over, and with none left the pattern is what is said.
+    /// </summary>
+    public static string Shared(string pattern, IEnumerable<string?> errors)
+    {
+        ArgumentNullException.ThrowIfNull(pattern);
+        ArgumentNullException.ThrowIfNull(errors);
+        List<string>? between = null;
+        List<(string Masked, string Said)>? parts = null;
+        var alike = new List<bool>();
+        foreach (var error in errors)
+        {
+            if (string.IsNullOrWhiteSpace(error) || !string.Equals(Pattern(error), pattern, StringComparison.Ordinal))
+            {
+                continue;
+            }
+
+            var (text, said) = Read(error);
+            if (parts is null)
+            {
+                (between, parts) = (text, said);
+                alike.AddRange(said.Select(_ => true));
+                continue;
+            }
+
+            // An error read into other parts though it makes the same pattern (a placeholder written in its own words) says
+            // nothing part by part.
+            if (said.Count != parts.Count)
+            {
+                continue;
+            }
+
+            for (var i = 0; i < said.Count; i++)
+            {
+                alike[i] = alike[i] && string.Equals(said[i].Said, parts[i].Said, StringComparison.Ordinal);
+            }
+        }
+
+        if (parts is null || between is null)
+        {
+            return pattern;
+        }
+
+        var builder = new StringBuilder(pattern.Length);
+        for (var i = 0; i < parts.Count; i++)
+        {
+            builder.Append(between[i]).Append(alike[i] ? parts[i].Said : parts[i].Masked);
+        }
+
+        builder.Append(between[^1]);
+        var collapsed = Whitespace().Replace(builder.ToString(), " ").Trim();
+        return collapsed.Length > MaxPatternLength ? collapsed[..MaxPatternLength] : collapsed;
+    }
+
+    /// <summary>
+    /// An error read as its pattern reads it: the text between the parts that name the record, and each part as the pattern
+    /// writes it and as the error said it.
+    /// </summary>
+    private static (List<string> Between, List<(string Masked, string Said)> Parts) Read(string error)
+    {
+        var bounded = error.Length > MaxPatternLength ? error[..MaxPatternLength] : error;
+        var between = new List<string>();
+        var parts = new List<(string Masked, string Said)>();
+        var at = 0;
+        foreach (Match match in Parts().Matches(bounded))
+        {
+            between.Add(bounded[at..match.Index]);
+            parts.Add((Mask(match), match.Value));
+            at = match.Index + match.Length;
+        }
+
+        between.Add(bounded[at..]);
+        return (between, parts);
+    }
+
     /// <summary>Whether a pattern holds a value a record read from its row (<see cref="Values"/>).</summary>
     public static bool NamesValues(string pattern)
     {

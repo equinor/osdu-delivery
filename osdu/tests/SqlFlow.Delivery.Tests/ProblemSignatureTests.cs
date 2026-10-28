@@ -1,3 +1,4 @@
+using System.Globalization;
 using SqlFlow.Delivery.Ledger;
 using Xunit;
 
@@ -137,6 +138,52 @@ public class ProblemSignatureTests
         // Each record its own row's value.
         Assert.Equal(ProblemShape.Rows, ProblemSignature.ShapeOf(["'WB-1' matches no wellbore", "'WB-1' matches no wellbore", "'WB-2' matches no wellbore"]));
         Assert.Equal(ProblemShape.Set, ProblemSignature.ShapeOf([]));
+    }
+
+    [Fact]
+    public void What_a_problem_s_records_share_is_written_in_and_where_they_differ_the_placeholder_stays()
+    {
+        static string Unit(int of, string cache) =>
+            $"osdu.data.Curves[].CurveUnit, in {of} of 12 items: none of the 3 alternatives of $coalesce gives a value, and the entry is required: "
+            + $"1. dataset.curves.curve_unit is empty; 2. no UnitOfMeasure matches 'gAPI ' in version {cache} of the cache; 3. dataset.curves.curve_unit is empty";
+        var pattern = ProblemSignature.Pattern(Unit(3, "20261028T142555Z"));
+
+        // The alternatives, their numbers, the value and the cache version are the same in both; how many items differs.
+        Assert.Equal(
+            "osdu.data.Curves[].CurveUnit, in <n> of 12 items: none of the 3 alternatives of $coalesce gives a value, and the entry is required: "
+            + "1. dataset.curves.curve_unit is empty; 2. no UnitOfMeasure matches 'gAPI ' in version 20261028T142555Z of the cache; 3. dataset.curves.curve_unit is empty",
+            ProblemSignature.Shared(pattern, [Unit(3, "20261028T142555Z"), Unit(1, "20261028T142555Z")]));
+
+        // One error is said as it is; a third record naming another cache version turns that part back into its placeholder.
+        Assert.Equal(Unit(3, "20261028T142555Z"), ProblemSignature.Shared(pattern, [Unit(3, "20261028T142555Z")]));
+        Assert.Contains(
+            "in version <time> of the cache",
+            ProblemSignature.Shared(pattern, [Unit(3, "20261028T142555Z"), Unit(3, "20261028T142555Z"), Unit(3, "20261029T080000Z")]),
+            StringComparison.Ordinal);
+
+        // Row errors keep the value each row names; an address shared by every record is written whole.
+        Assert.Equal(
+            "osdu.data.WellboreID: '<value>' matches no cached Wellbore, and the entry is required",
+            ProblemSignature.Shared(
+                "osdu.data.WellboreID: '<value>' matches no cached Wellbore, and the entry is required",
+                ["osdu.data.WellboreID: 'WB-1' matches no cached Wellbore, and the entry is required", "osdu.data.WellboreID: 'WB-2' matches no cached Wellbore, and the entry is required"]));
+        const string Refused = "HTTP 403 Forbidden from PUT https://osdu.example.com/api/storage/v2/records (correlation-id {0})";
+        Assert.Equal(
+            "HTTP 403 Forbidden from PUT https://osdu.example.com/api/storage/v2/records (correlation-id <id>)",
+            ProblemSignature.Shared(ProblemSignature.Pattern(string.Format(CultureInfo.InvariantCulture, Refused, "a")), [string.Format(CultureInfo.InvariantCulture, Refused, "a"), string.Format(CultureInfo.InvariantCulture, Refused, "b")]));
+    }
+
+    [Fact]
+    public void An_error_of_another_problem_says_nothing_of_what_a_problem_s_records_share()
+    {
+        const string Pattern = "osdu.data.WellboreID: '<value>' matches no cached Wellbore, and the entry is required";
+
+        Assert.Equal(Pattern, ProblemSignature.Shared(Pattern, []));
+        Assert.Equal(Pattern, ProblemSignature.Shared(Pattern, [null, " ", "osdu.tags.Tag4: dataset.tag4 is empty, and the entry is required"]));
+        Assert.Equal(
+            "osdu.data.WellboreID: 'WB-1' matches no cached Wellbore, and the entry is required",
+            ProblemSignature.Shared(Pattern, ["something else entirely", "osdu.data.WellboreID: 'WB-1'  matches no cached Wellbore, and the entry is required"]));
+        Assert.Equal(ProblemSignature.NoReason, ProblemSignature.Shared(ProblemSignature.NoReason, [null, ""]));
     }
 
     [Theory]

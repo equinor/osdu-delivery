@@ -231,7 +231,7 @@ public sealed class OpenObjectTests
             """);
 
         var result = new MappingRenderer(mapping, Schema(), Cache(), Context()).Render(Log(("GR", "GAPI"), ("CALI", null)));
-        Assert.Equal(["osdu.data.ExtensionProperties.WellDB.Curves[].OriginalUnit: dataset.curves.curve_unit is empty, and the entry is required"], result.Holds);
+        Assert.Equal(["osdu.data.ExtensionProperties.WellDB.Curves[].OriginalUnit, in 1 of 2 items: dataset.curves.curve_unit is empty, and the entry is required"], result.Holds);
     }
 
     [Fact]

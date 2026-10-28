@@ -90,9 +90,10 @@ sqlflow records issues flows/welldb-wellbore-03-delivery.yaml --partition dev
 **You see** records with status `held` on the Delivery tab, or a run summary with "held".
 
 **Look** at the Issues tab, or `sqlflow records issues`. Each issue is one reason, with how many records it holds, the
-error pattern they share, an example, and whether it is a **set error** (every record names the same values: one cause
-upstream) or **row errors** (each record names its own row's values). `--issue <id>` adds the files the records came from
-and five samples spread across the issue.
+error as they share it (a placeholder such as `n` or `value` where each record says something of its own), and whether it
+is a **set error** (every record names the same values: one cause upstream) or **row errors** (each record names its own
+row's values). Click an issue, or `--issue <id>`, for the files the records came from and five samples spread across the
+issue; on the tab it opens in the bottom panel, where Up and Down step through the issues.
 
 ```bash
 sqlflow records issues flows/welldb-wellbore-03-delivery.yaml --partition dev --issue 3fa1c09b5d2e7a44
