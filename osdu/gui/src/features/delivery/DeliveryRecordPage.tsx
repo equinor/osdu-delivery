@@ -24,6 +24,7 @@ import { RECORD_ARTIFACTS_SHOWN, RecordArtifacts, RecordUndoNotice } from "./Rec
 import { RecordEnrichments } from "./RecordEnrichments";
 import { RecordOsduView } from "./RecordOsduView";
 import { RecordParentChips } from "./RecordParentChips";
+import { wroteToOsdu } from "./recordTarget";
 import { settle } from "./answers";
 import { RecordRenderTab, type RenderResults } from "./RecordRenderTab";
 import { RecordSituation } from "./RecordSituation";
@@ -194,8 +195,8 @@ function DeliveryRecordContent({ flowId, deliveryKey }: DeliveryRecordRef) {
     onError: fail,
   });
   // A read of the record from OSDU, shown on the OSDU tab and kept here so it is still there after a look at another
-  // tab. A page opened with ?tab=osdu reads it once, as soon as the record is known to have an id OSDU may hold.
-  const readable = query.data !== undefined && query.data.record.targetId !== null && query.data.record.status !== "deleted" && canOperate;
+  // tab. A page opened with ?tab=osdu reads it once, as soon as the record is known to have an id its flow wrote to.
+  const readable = query.data !== undefined && wroteToOsdu(query.data.record) && canOperate;
   const osdu = useRecordOsduRead(ref, { readable, readAtOnce: askedTab === "osdu" });
   // Where the record came from: its rows as the ingestion tables hold them now, read with the flow's own connection, with
   // the origin file and row the ledger records against every delivered version. The Source tab shows the answer, or why
@@ -251,7 +252,7 @@ function DeliveryRecordContent({ flowId, deliveryKey }: DeliveryRecordRef) {
   const record = detail.record;
   const busy = verify.isPending || sync.isPending || release.isPending || adopt.isPending || osdu.pending || readSource.isPending
     || render.isPending;
-  const canActOnTarget = record.targetId !== null && record.status !== "deleted";
+  const canActOnTarget = wroteToOsdu(record);
   // The record's ledger: the interface of its source and the partition it delivers to, which every view of it acts in.
   const flowScope: DeliveryFlowScope = { interfaceName: detail.interface ?? null, partition: detail.partition ?? null };
   const flowLabel = detail.flowName === null ? undefined : ledgerLabel(detail.flowName, { interfaceName: flowScope.interfaceName });

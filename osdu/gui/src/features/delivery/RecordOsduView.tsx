@@ -9,6 +9,7 @@ import { explorerApi, type ExplorerValidation } from "../../api/explorer";
 import { ExplorerValidationView, ValidationFieldMark } from "./explorer/ExplorerValidation";
 import type { InspectorExtras } from "./OsduRecordInspector";
 import { OsduRecordPanel } from "./OsduRecordView";
+import { osduEmptyText, wroteToOsdu } from "./recordTarget";
 import type { RecordOsduRead } from "./useRecordOsduRead";
 
 /**
@@ -41,7 +42,7 @@ export function RecordOsduView({ record, deliveryRef, pipelineId, flowScope, can
   if (flowScope.partition) {
     explorerParams.set("partition", flowScope.partition);
   }
-  const canActOnTarget = record.targetId !== null && record.status !== "deleted";
+  const canActOnTarget = wroteToOsdu(record);
   const reading = osdu.pending;
   const rootId = record.targetId ?? record.deliveryKey;
 
@@ -64,6 +65,7 @@ export function RecordOsduView({ record, deliveryRef, pipelineId, flowScope, can
     ),
     fieldActions: (field) => <ValidationFieldMark result={validated} id={rootId} field={field} />,
   };
+  const empty = osduEmptyText(record);
   // The read's controls: on their own above the empty state, and on the inspector's location bar once there is a read.
   const actions = (
     <>
@@ -109,12 +111,8 @@ export function RecordOsduView({ record, deliveryRef, pipelineId, flowScope, can
       {!osdu.asked && (
         <EmptyState
           icon={<BookOpenCheck />}
-          title={canActOnTarget ? "Not read yet" : record.status === "deleted" ? "Removed from OSDU" : "No OSDU id yet"}
-          description={canActOnTarget
-            ? "Read shows the record as OSDU holds it now, through its flow's route and credentials. Nothing is written."
-            : record.status === "deleted"
-              ? "The record was removed, so there is nothing of this flow's to read."
-              : "The record has not been planned for delivery, so there is nothing to read."}
+          title={empty.title}
+          description={empty.description}
           data-testid="record-osdu-empty"
         />
       )}

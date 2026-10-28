@@ -277,10 +277,13 @@ for a record that was.
 - **Render**: **Render** builds the record from its current row with the mapping and the cache as they are now, and reads
   what OSDU holds, at once; nothing is sent. It shows the mapping and cache versions used beside those that rendered what
   OSDU holds, the route, what the next run would do, why a delivery would hold the record, the preflight's warnings, and
-  the document **Beside OSDU** (the differences) or **Whole document**.
+  the document **Beside OSDU** (the differences) or **Whole document**. A record its flow never wrote to OSDU is rendered
+  without a read, and the tab says OSDU holds nothing of it to set it beside.
 - **OSDU**: **Read** reads the record as OSDU holds it through the flow's route, in the record inspector the explorer uses
   (outline, fields or JSON, versions and **Compare**, linked records, Validation). Icons open it in the explorer, or in a
-  window of its own (`/delivery/records/{flowId}/{key}/osdu`).
+  window of its own (`/delivery/records/{flowId}/{key}/osdu`). Only a record that claimed its OSDU id (it queued a document
+  under it, or took over the record OSDU held there) is read: one that was only ever held names the id its key makes, but
+  its flow wrote nothing there, so the tab says **Not sent yet**, and **Read** and **Verify** wait until it is sent.
 - **Enrichments**: shown for a record its mapping enriches ([enrichments](../flow/enrich.md#what-the-ledger-keeps)), read from
   the ledger alone. A line of counts (enrichments, records added, linked, no longer linked, set aside), each enrichment in
   the order it renders with what it adds, its mapping and where its rows came from (**set aside** under its name when it was

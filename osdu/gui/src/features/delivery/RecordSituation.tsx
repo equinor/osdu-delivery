@@ -100,8 +100,9 @@ function RemovalLine({ removedKey, onLift, lifting }: { removedKey: RemovedKey; 
   );
 }
 
-function tries(count: number): string {
-  return `${count} ${count === 1 ? "try" : "tries"}`;
+/** When the record was held or failed, by the tries made for its pending work: after them, or before any. */
+function afterTries(count: number): string {
+  return count === 0 ? "before any try" : `after ${count} ${count === 1 ? "try" : "tries"}`;
 }
 
 /** What is waiting to go: the metadata, the payload, or both. */
@@ -241,7 +242,7 @@ export function RecordSituation({ record, waitsOn, waitedOnBy, removedKey, onLif
       lines.push(
         <Line key="error" tone="destructive" icon={CircleAlert} testId="record-error">
           <span className="font-medium">{record.status === "held" ? "Held back" : "Failed"}</span>
-          {` after ${tries(record.attemptCount)}.`}
+          {` ${afterTries(record.attemptCount)}.`}
           <NextTry record={record} />
           {record.hasPendingDocument && (
             <span>

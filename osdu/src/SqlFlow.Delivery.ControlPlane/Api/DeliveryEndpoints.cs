@@ -124,7 +124,9 @@ public sealed record DeliveryWorkBatchDto(
 /// <summary>
 /// The current state of one deliverable: what OSDU holds for it, what is pending, and why it is where it is. A record of a
 /// linked template that reads its parent names it (<c>ParentId</c>) and the version of it its delivered and its queued
-/// document were rendered from (osdu/docs/reference/flow/mapping-parent.md).
+/// document were rendered from (osdu/docs/reference/flow/mapping-parent.md). <c>Claimed</c> says whether the record claimed
+/// its OSDU id for its flow (it queued a document once, or took over the record OSDU held there): a record that was only
+/// ever held names the id its key makes, but its flow wrote nothing there, so there is nothing of its flow's to read back.
 /// </summary>
 public sealed record DeliveryRecordDto(
     Guid DeliveryKey, Guid FlowId, string SourceKey, string? Label, string MappingName, string? RenderContext,
@@ -138,7 +140,8 @@ public sealed record DeliveryRecordDto(
     string? SourceKeyJson, DateTime? PlanRequestedUtc,
     string? WaitingFor = null, IReadOnlyList<DeliveryRecordReferenceDto>? References = null, DateTime? SourceInsertedUtc = null,
     string? Partition = null, string? Issue = null, string? ParentId = null, long? ParentVersion = null, long? PendingParentVersion = null,
-    string? OccupiedTargetId = null, long? OccupiedTargetVersion = null, bool Adoptable = false, DateTime? AdoptRequestedUtc = null);
+    string? OccupiedTargetId = null, long? OccupiedTargetVersion = null, bool Adoptable = false, DateTime? AdoptRequestedUtc = null,
+    bool Claimed = false);
 
 /// <summary>An OSDU id a record's pending document refers to, and the property of the record holding it.</summary>
 public sealed record DeliveryRecordReferenceDto(string Id, string Property);
@@ -3806,7 +3809,9 @@ public static class DeliveryEndpoints
         r.ParentId, r.ParentVersion, r.PendingParentVersion,
         // While it is held because OSDU already holds a record at the id its key makes: that id and version when the hold kept
         // them, whether an adoption may be asked of it, and when one was.
-        r.OccupiedTargetId, r.OccupiedTargetVersion, OccupiedHolds.Adoptable(r), r.AdoptRequestedUtc);
+        r.OccupiedTargetId, r.OccupiedTargetVersion, OccupiedHolds.Adoptable(r), r.AdoptRequestedUtc,
+        // Whether its flow wrote to OSDU under the id: only a claimed id is read back or removed.
+        r.ClaimedTargetId is not null);
 
     private static DeliveryAttemptDto ToDto(AttemptRecord a) => new(
         a.AttemptId, a.DeliveryKey.Value, a.SubmissionId, a.RunId, a.Worker, a.StartedUtc, a.CompletedUtc, a.Outcome.ToString().ToLowerInvariant(),

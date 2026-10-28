@@ -514,6 +514,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   says ([Upgrading an estate](osdu/docs/reference/concepts/templates.md#upgrading-an-estate-that-saved-templates-in-the-database)).
 
 ### Fixed
+- A record that was only ever held, such as a log held for a curve without a unit, showed **OSDU could not be read** in
+  red on its Render tab, and its OSDU tab offered a **Read** that failed: the page read OSDU for any record with an id,
+  and the control plane reads back only an id the record's flow wrote to. The record now says whether it claimed its id
+  (`claimed`), its Render tab says OSDU holds nothing of it to set it beside, its OSDU tab says **Not sent yet**, and a
+  record held before any try says so rather than "after 0 tries" ([a record's page](osdu/docs/reference/concepts/gui.md#a-records-page)).
 - A record held for one reason in several items of a `$forEach` array (three curves with no unit) said the reason once an
   item, so its error repeated it, and records held for it fell into as many issues as there were counts of such items. The
   reason is now said once with how many items say it (`in 3 of 12 items`), and they are one issue; a record held before

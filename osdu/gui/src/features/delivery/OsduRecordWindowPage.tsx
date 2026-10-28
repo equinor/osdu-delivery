@@ -8,6 +8,7 @@ import { CorrelationError } from "@/components/CorrelationError";
 import { deliveryApi, type DeliveryRecordRef } from "../../api/delivery";
 import { RecordStatusBadge } from "./DeliveryBadges";
 import { RecordOsduView } from "./RecordOsduView";
+import { wroteToOsdu } from "./recordTarget";
 import { useRecordOsduRead } from "./useRecordOsduRead";
 
 export default function OsduRecordWindowPage() {
@@ -30,7 +31,7 @@ function OsduRecordWindow({ flowId, deliveryKey }: DeliveryRecordRef) {
   const canOperate = hasScope("operate");
   const query = useQuery({ queryKey: ["delivery", "record", flowId, deliveryKey], queryFn: () => deliveryApi.record(ref) });
   const detail = query.data;
-  const readable = detail !== undefined && detail.record.targetId !== null && detail.record.status !== "deleted" && canOperate;
+  const readable = detail !== undefined && wroteToOsdu(detail.record) && canOperate;
   const osdu = useRecordOsduRead(ref, { readable, readAtOnce: true });
   const label = detail === undefined ? null : detail.record.label ?? detail.record.sourceKey;
 

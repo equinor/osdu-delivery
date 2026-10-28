@@ -270,6 +270,12 @@ export interface DeliveryRecord {
   adoptable?: boolean;
   /** When an adoption was asked of the record; the flow's next run takes it over. Null otherwise. */
   adoptRequestedUtc?: string | null;
+  /**
+   * Whether the record claimed its OSDU id for its flow: it queued a document once, or took over the record OSDU held
+   * there. A record that was only ever held names the id its key makes, but its flow wrote nothing there to read back.
+   * Absent from an older control plane.
+   */
+  claimed?: boolean;
 }
 
 /** An OSDU id a record's pending document refers to, and the property of the record holding it. */
