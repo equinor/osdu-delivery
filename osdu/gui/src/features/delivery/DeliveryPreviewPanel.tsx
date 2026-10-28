@@ -5,10 +5,11 @@ import { Eye, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
 import type { RunValue } from "@/api/types";
 import { useAuth } from "@/auth/AuthContext";
+import { ExplainMark } from "@/components/ExplainTip";
+import { RichTooltip } from "@/components/RichTooltip";
 import { RunParameterFields } from "@/features/runs/RunParameterFields";
 import { parametersFor, parameterValuesToSend, type ParameterFieldValues } from "@/features/runs/runInputs";
 import { usePipelineParameters, useRunExplanation } from "@/features/runs/useRunInputs";
@@ -24,6 +25,16 @@ const MAX_KEY = 4000;
 
 /** A preview is explained as a plan with no payload: it reads and renders one row as a plan would. */
 const NO_PAYLOAD: Readonly<Record<string, unknown>> = {};
+
+/** What a preview does and what its key field takes, behind the bar's info mark rather than above the bar. */
+function howItWorks(keyColumns: readonly string[]): string {
+  const keyed = keyColumns.length > 0 ? ` The records are keyed by ${keyColumns.join(", ")}.` : "";
+  return [
+    "Renders one record exactly as a delivery would, on a node, with the flow's mapping, cache and route. Nothing is sent, and the ledger and the work location are left as they are.",
+    `Leave the key empty for the first record of the scope, or give a source key, a delivery key, an OSDU id the ledger holds, or the key's parts as ["part", "part"].${keyed}`,
+    "The fields beside it are the flow's parameters, which fill its scope; one left empty takes the flow's default.",
+  ].join("\n\n");
+}
 
 /**
  * The scope's values a link names (`previewValues`, a JSON object of strings, and of arrays of strings for a parameter
@@ -104,6 +115,19 @@ export function DeliveryPreviewPanel({ pipelineId, flowName }: { pipelineId: str
   const tooLong = key.trim().length > MAX_KEY;
   const running = preview.isPending;
   const blocked = !canOperate || current === undefined || refused || tooLong || running;
+  // What the button does, or why it cannot: on hover, since a disabled button says nothing of itself.
+  const runWhy = !canOperate
+    ? "A preview reads the flow's tables and renders with its credentials, which takes a session allowed to operate."
+    : running
+      ? "Rendering the record."
+      : refused || tooLong
+        ? "The line under the bar says what to change first."
+        : "Render the record as a delivery would. Nothing is sent.";
+  const problems = [
+    ...Object.entries(parameterProblems).map(([name, problem]) => ({ key: name, text: problem, testId: `preview-parameter-${name}-problem` })),
+    ...inputProblems.map((problem) => ({ key: problem, text: problem, testId: "preview-problem" })),
+    ...(tooLong ? [{ key: "too-long", text: `The key is ${key.trim().length.toLocaleString()} characters; a record key is at most ${MAX_KEY.toLocaleString()}.`, testId: "preview-key-too-long" }] : []),
+  ];
   const submit = () => {
     if (!blocked) {
       preview.mutate();
@@ -143,72 +167,62 @@ export function DeliveryPreviewPanel({ pipelineId, flowName }: { pipelineId: str
   }
 
   return (
-    <div className="flex flex-col gap-4" data-testid="delivery-panel-preview">
+    <div className="flex flex-col gap-3" data-testid="delivery-panel-preview">
       {many && (
         <InterfacePicker names={names} interfaceName={interfaceName} onSelect={selectInterface} caption={`of ${names.length} interfaces of ${flowName}`} />
       )}
 
-      <Card className="gap-3 rounded-lg p-4" data-testid="preview-form-card">
-        <div className="flex flex-col gap-1">
-          <h2 className="text-sm font-semibold">Preview a record</h2>
-          <p className="text-[13px] text-muted-foreground">
-            Renders one record exactly as a delivery would. Nothing is sent, and the ledger and the work location are left as they are.
-            Leave the key empty for the first record of the scope.
-          </p>
-        </div>
+      <Card className="gap-1.5 rounded-lg px-3 py-2.5" data-testid="preview-form-card">
         {current === undefined
-          ? <Skeleton className="h-9 w-full rounded-md" />
+          ? <Skeleton className="h-8 w-full rounded-md" />
           : (
             <form
-              className="flex flex-col gap-3"
+              className="flex flex-wrap items-center gap-2"
               onSubmit={(event) => { event.preventDefault(); submit(); }}
               data-testid="preview-form"
             >
-              <div className="flex flex-wrap items-end gap-2">
-                <div className="flex min-w-0 flex-1 flex-col gap-1">
-                  <Label htmlFor="preview-key" className="text-[12px] text-muted-foreground">
-                    {keyColumns.length > 0 ? `Record key (${keyColumns.join(", ")})` : "Record key"}
-                  </Label>
-                  <Input
-                    id="preview-key"
-                    value={key}
-                    onChange={(event) => setKey(event.target.value)}
-                    placeholder="Empty for the first record; or a source key, a delivery key, an OSDU id, or [&quot;part&quot;, &quot;part&quot;]"
-                    className="h-9 font-mono text-[13px]"
-                    spellCheck={false}
-                    autoComplete="off"
-                    aria-invalid={tooLong}
-                    data-testid="preview-key"
-                  />
-                </div>
-                <Button type="submit" size="sm" className="h-9" disabled={blocked} title={canOperate ? undefined : "A preview reads the flow's tables and renders with its credentials, which takes a signed-in session."} data-testid="preview-run">
-                  {running ? <Loader2 className="animate-spin" /> : <Eye />}
-                  Preview
-                </Button>
-              </div>
-              {tooLong && <p className="text-[12px] text-destructive">{`The key is ${key.trim().length.toLocaleString()} characters; a record key is at most ${MAX_KEY.toLocaleString()}.`}</p>}
+              <Input
+                id="preview-key"
+                value={key}
+                onChange={(event) => setKey(event.target.value)}
+                placeholder="First record, or a key or OSDU id"
+                aria-label={keyColumns.length > 0 ? `Record key (${keyColumns.join(", ")})` : "Record key"}
+                className="h-8 min-w-48 flex-1 basis-64 font-mono text-[12px]"
+                spellCheck={false}
+                autoComplete="off"
+                aria-invalid={tooLong}
+                data-testid="preview-key"
+              />
               {parameters.length > 0 && (
-                <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-3" data-testid="preview-parameters">
-                  <RunParameterFields
-                    pipelineId={pipelineId}
-                    parameters={parameters}
-                    values={values}
-                    onChange={(name, value) => setValues((was) => ({ ...was, [name]: value }))}
-                    lookupValues={scope.partition ? { partition: scope.partition } : undefined}
-                    prefix="preview"
-                    problems={parameterProblems}
-                  />
-                </div>
+                <RunParameterFields
+                  pipelineId={pipelineId}
+                  parameters={parameters}
+                  values={values}
+                  onChange={(name, value) => setValues((was) => ({ ...was, [name]: value }))}
+                  lookupValues={scope.partition ? { partition: scope.partition } : undefined}
+                  prefix="preview"
+                  layout="inline"
+                  problems={parameterProblems}
+                  className="w-52"
+                />
               )}
-              {inputProblems.length > 0 && (
-                <ul className="flex flex-col gap-0.5" data-testid="preview-problems">
-                  {inputProblems.map((problem) => (
-                    <li key={problem} className="text-[12px] text-destructive">{problem}</li>
-                  ))}
-                </ul>
-              )}
+              <RichTooltip body={runWhy} delayDuration={300}>
+                {/* A disabled button takes no hover, so its wrapper carries the reason it cannot run. */}
+                <span className="inline-flex">
+                  <Button type="submit" size="sm" className="h-8" disabled={blocked} data-testid="preview-run">
+                    {running ? <Loader2 className="animate-spin" /> : <Eye />}
+                    Preview
+                  </Button>
+                </span>
+              </RichTooltip>
+              <ExplainMark title="What a preview does" text={howItWorks(keyColumns)} testId="preview-how" />
             </form>
           )}
+        {problems.length > 0 && (
+          <ul className="flex flex-wrap gap-x-4 gap-y-0.5 text-[12px] text-destructive" data-testid="preview-problems">
+            {problems.map((problem) => <li key={problem.key} data-testid={problem.testId}>{problem.text}</li>)}
+          </ul>
+        )}
       </Card>
 
       {preview.isError && <ProblemView error={preview.error} testId="preview-error" />}

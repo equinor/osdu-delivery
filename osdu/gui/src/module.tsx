@@ -183,6 +183,15 @@ const deliveryKind: FlowKindContribution = {
       ),
     },
     {
+      // The keys removal flows found the flow's source no longer holds: the ledger's deletions, whichever removal flow found them.
+      value: "deletions",
+      label: "Deletions",
+      testId: "pipeline-tab-deletions",
+      render: (pipeline) => (
+        <Deferred><DeliveryDeletionsPanel pipelineId={pipeline.id} flowName={pipeline.name} /></Deferred>
+      ),
+    },
+    {
       value: "submissions",
       label: "Submissions",
       testId: "pipeline-tab-submissions",
@@ -199,17 +208,10 @@ const deliveryKind: FlowKindContribution = {
         <Deferred><DeliveryPreviewPanel pipelineId={pipeline.id} flowName={pipeline.name} /></Deferred>
       ),
     },
-    {
-      // The keys removal flows found the flow's source no longer holds: the ledger's deletions, whichever removal flow found them.
-      value: "deletions",
-      label: "Deletions",
-      testId: "pipeline-tab-deletions",
-      render: (pipeline) => (
-        <Deferred><DeliveryDeletionsPanel pipelineId={pipeline.id} flowName={pipeline.name} /></Deferred>
-      ),
-    },
   ],
   defaultPipelineTab: "delivery",
+  // What the ledger holds, then when and how the flow ran (a run coordinates submissions), then what the flow is.
+  pipelineTabOrder: ["delivery", "records", "issues", "deletions", "runs", "submissions", "schedules", "preview", "yaml"],
   hiddenPipelineTabs: HIDDEN_PIPELINE_TABS,
   // A delivery source's target is an endpoint, not a server the catalog knows, which it names only as "file".
   hiddenPipelineFacts: ["targetServer"],

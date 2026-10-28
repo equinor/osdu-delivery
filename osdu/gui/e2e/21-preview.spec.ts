@@ -49,6 +49,9 @@ test.describe.serial("record preview and OSDU read", () => {
     await adminPage.getByTestId("filter-name").fill(DELIVERY_FLOW);
     await adminPage.getByTestId("repo-pipeline").filter({ hasText: DELIVERY_FLOW }).first().click();
     await expect(adminPage.getByTestId("page-pipeline-detail")).toBeVisible();
+    // A delivery flow's tabs read what its ledger holds, then when and how it ran, then what the flow is and renders.
+    await expect(adminPage.getByTestId("pipeline-tabs").getByRole("tab")).toHaveText(
+      ["Delivery", "Records", "Issues", "Deletions", "Runs", "Submissions", "Schedules", "Preview", "YAML"]);
     await adminPage.getByTestId("pipeline-tabs").getByRole("tab", { name: /preview/i }).click();
     await expect(adminPage.getByTestId("delivery-panel-preview")).toBeVisible();
 
@@ -70,16 +73,15 @@ test.describe.serial("record preview and OSDU read", () => {
     await expect(adminPage.getByTestId("preview-target")).toHaveAttribute("data-value", /work-product-component--WellLog/);
     await expect(adminPage.getByTestId("preview-document")).toContainText("work-product-component--WellLog", { timeout: 30_000 });
 
-    // The route's requests in order, and the parquet chunk the well log's bulk data is, measured by its footer.
-    await adminPage.getByTestId("preview-tab-steps").click();
+    // How a delivery would send it, on one tab: the route's requests in order, and the parquet chunk the well log's bulk
+    // data is, measured by its footer.
+    await adminPage.getByTestId("preview-tab-delivery").click();
     await expect(adminPage.getByTestId("preview-step").first()).toContainText("DDMS");
-    await adminPage.getByTestId("preview-tab-payload").click();
     await expect(adminPage.getByTestId("preview-payload-files")).toContainText(".parquet");
     await expect(adminPage.getByTestId("preview-payload-files")).toContainText(/rows x \d+ columns/);
 
-    // What the document refers to: the wellbore the render found by searching the platform, and the reference data the
-    // cache gave it, none of them records of this ledger.
-    await adminPage.getByTestId("preview-tab-references").click();
+    // What the document refers to, on the same tab: the wellbore the render found by searching the platform, and the
+    // reference data the cache gave it, none of them records of this ledger.
     // The reference is named by its type and unique part; the whole id is on hover and on copy.
     await expect(adminPage.getByTestId("preview-references")).toContainText(/Wellbore\s?Wellbore-[0-9A-Z-]+\s?data\.WellboreID/);
     await expect(adminPage.getByTestId("preview-references")).toContainText("not a record of the ledger");

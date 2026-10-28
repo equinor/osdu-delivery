@@ -280,6 +280,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   ([Records](osdu/docs/reference/concepts/gui.md#records), [finding records](osdu/docs/reference/concepts/ledger.md#finding-records)).
 
 ### Changed
+- **A flow's Preview tab answers first.** The form is one line (the key, the scope's fields and **Preview**, with what a
+  preview does on its info mark), and the answer opens on a verdict: what the next run would do and why, where the record
+  would land and how the ledger holds it, and a line for each thing to know before trusting it, in full on hover. The
+  details follow in four tabs, **Document**, **Render**, **Delivery** and **Source**, in place of a page of stacked boxes,
+  ten facts and five tabs ([A delivery flow's page](osdu/docs/reference/concepts/gui.md#a-delivery-flows-page)). What the
+  next run would do now reads as a neutral chip led by a glyph in its tone, on a record's Render tab as well.
+- **A delivery flow's tabs sit by what they are about.** What the ledger holds (Delivery, Records, Issues, Deletions),
+  then when and how the flow ran (Runs, Submissions, Schedules), then what it is (Preview, YAML), so Submissions sits
+  beside the Runs that coordinate them ([A delivery flow's page](osdu/docs/reference/concepts/gui.md#a-delivery-flows-page)).
 - **A flow's Submissions tab fits the window.** The submission's id, which its row already opens, gives way to an icon
   that opens the run that coordinated it; an error is a mark with the whole reason and a copy on hover, in place of a line
   that ran off the grid; and the time received reads as the Records tab's times do

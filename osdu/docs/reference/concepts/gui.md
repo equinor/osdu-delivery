@@ -52,6 +52,7 @@ sourceRefs:
   - osdu/gui/src/features/delivery/DeliveryIssuesPanel.tsx
   - osdu/gui/src/features/delivery/DeliveryIssuePanel.tsx
   - osdu/gui/src/features/delivery/DeliveryPreviewPanel.tsx
+  - osdu/gui/src/features/delivery/RecordPreviewView.tsx
   - osdu/gui/src/features/delivery/PartitionNotice.tsx
   - osdu/gui/src/features/delivery/useInterfaceChoice.ts
   - osdu/gui/src/features/delivery/DeliveryOpenUndos.tsx
@@ -332,9 +333,11 @@ reversal's card shows its state, its records by outcome and its runs.
 
 ## A delivery flow's page
 
-A delivery flow's pipeline page (Pipelines) gains five tabs, Delivery first. A source that delivers several interfaces
-is read one interface at a time, through an interface picker whose choice is in the address; a flow that names its
-partitions is read in the title bar's partition.
+A delivery flow's pipeline page (Pipelines) gains six tabs, Delivery first, and sets them among the page's own by what
+they are about: what the ledger holds (**Delivery**, **Records**, **Issues**, **Deletions**), then when and how the flow
+ran (**Runs**, **Submissions**, **Schedules**; a run coordinates the submissions it plans), then what the flow is and
+renders (**Preview**, **YAML**). A source that delivers several interfaces is read one interface at a time, through an
+interface picker whose choice is in the address; a flow that names its partitions is read in the title bar's partition.
 
 - **Delivery**: the source's counts and status bar, with **Probe target**, **Release blocked (N)** (N counts the blocked
   records and the held ones nothing moves, what the release reaches), **Adopt (N)** while records are held because OSDU
@@ -377,10 +380,20 @@ partitions is read in the title bar's partition.
   that fits the window; a row opens its page. The **Run** icon opens the run that coordinated it (its id on hover), and a
   submission that stopped wears a mark under **Error** whose card holds the whole reason with a copy. **Received** reads
   as the Records tab's times do: the clock alone today, the whole instant on hover.
-- **Preview**: **Preview a record** renders one record exactly as a delivery would and sends nothing: the first record of
-  the scope, or the one a key names, with a field for each parameter the flow declares. The answer shows what the next run
-  would do, the document, the route's requests, the payload files, the records it refers to and its source rows, and
-  **Download JSON**.
+- **Preview**: renders one record exactly as a delivery would and sends nothing. The bar is one line: the key (empty for
+  the first record of the scope, or a source key, delivery key, OSDU id or the key's parts), a field for each parameter
+  the flow declares, and **Preview**, which says on hover why it cannot run; what a preview does and what the key takes
+  are on the bar's info mark, and a value the scope still needs is said on the line under it. The answer opens on its
+  verdict: what the next run would do with the record and why, its OSDU id, how the ledger holds it (and whether that is
+  the document rendered now), the file and row it came from and how it was picked, with **Open record** and
+  **Download JSON**. Under it, a line for each thing to know before trusting it, only when there is one: the preflight's
+  warnings, rows before it passed over, assertions that failed without holding it and references the cache does not
+  hold, each in full on hover with a copy (the last two lead to the Render tab). When a delivery would hold the record,
+  **Held for** says why, as a record's Render tab does. Four tabs follow, the first filling the window: **Document** (as
+  the route sends it, or as the mapping renders it), **Render** (the mapping, kind, cache version and hash, what the
+  mapping's assertions found, the platform searches, where each `$coalesce` took its value and what each enrichment
+  added), **Delivery** (the route, its requests in order with each body on demand, the files it would upload and the
+  records it refers to) and **Source** (its keys, where and how it was picked, the record row and its child rows).
 
 A parameter the flow's `source.record.scope` binds to a column lists the values that column holds, with their row counts,
 wherever a scope is given values (the Preview tab, the value check, the trigger dialog), and takes several: a value picked
