@@ -40,6 +40,8 @@ sourceRefs:
   - osdu/src/SqlFlow.Delivery.ControlPlane/DeliveryControlPlaneModule.cs
   - osdu/src/SqlFlow.Delivery.ControlPlane/Configuration/DeliveryModuleOptions.cs
   - osdu/src/SqlFlow.Delivery.ControlPlane/Background/ConfiguredRunDispatcher.cs
+  - osdu/src/SqlFlow.Delivery/Engine/Operations/DeliveryOperations.cs
+  - osdu/src/SqlFlow.Delivery/Catalog/RepositoryFolders.cs
   - osdu/src/SqlFlow.Delivery.Data/OsduDbContext.cs
   - osdu/src/SqlFlow.Delivery.Data/OsduSchema.cs
   - osdu/src/SqlFlow.Delivery.Data/DeliveryEntities.cs
@@ -153,6 +155,14 @@ storage) also resolves on the node.
 
 **The command line** runs a flow locally through the same executors. Its module database is the catalog the command
 names (`--db`, else `${env:SQLFLOW_CATALOG_DB}`), which holds the `osdu` schema.
+
+**An operation**, direct or a node task, reads its flow's file in the repository's synced folder, found as [a template's
+is](templates.md#where-templates-are-read): the folder the repository's last sync read while the host sees it, and
+otherwise the commit that sync pulled, checked out again from the repository's remote into the cache a run's commit is
+checked out into. So a control plane redeployed into a new container, which holds none of the checkouts its predecessor
+made, answers a preview, a record's Render tab or a run form's lookup straight away, without waiting for the
+repository's next sync. A folder that does not hold the file says to sync the repository again, and a repository that
+cannot be had on the host says why.
 
 ## The databases
 

@@ -131,7 +131,8 @@ public sealed class RepositoryFoldersTests : IDisposable
         Assert.NotNull((await both.FolderOfAsync(other)).Path);
     }
 
-    private static string Commit(Repository git, string root, string relative, string content)
+    /// <summary>Writes <paramref name="content"/> at <paramref name="relative"/> in <paramref name="root"/> and commits it; the commit's sha.</summary>
+    internal static string Commit(Repository git, string root, string relative, string content)
     {
         var path = Path.Combine(root, relative.Replace('/', Path.DirectorySeparatorChar));
         Directory.CreateDirectory(Path.GetDirectoryName(path)!);
@@ -142,7 +143,7 @@ public sealed class RepositoryFoldersTests : IDisposable
     }
 
     /// <summary>Deletes a folder a git checkout was made in, whose object files git marks read-only.</summary>
-    private static void Delete(string folder)
+    internal static void Delete(string folder)
     {
         if (!Directory.Exists(folder))
         {

@@ -533,6 +533,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   says ([Upgrading an estate](osdu/docs/reference/concepts/templates.md#upgrading-an-estate-that-saved-templates-in-the-database)).
 
 ### Fixed
+- After a redeploy, a flow's preview, a record's Render tab, a run form's value list and the explorer failed with "The
+  flow file ... was not found where its repository was synced" until the repository synced again: the new container
+  held none of the checkouts the old one made, and an operation read its flow's file only in the folder the last sync
+  recorded. An operation now checks the commit that sync pulled out again from the repository's remote when that folder
+  is gone, as a run and a template read already did ([what runs where](osdu/docs/reference/concepts/architecture.md#what-runs-where)).
 - A record that was only ever held, such as a log held for a curve without a unit, showed **OSDU could not be read** in
   red on its Render tab, and its OSDU tab offered a **Read** that failed: the page read OSDU for any record with an id,
   and the control plane reads back only an id the record's flow wrote to. The record now says whether it claimed its id

@@ -1085,6 +1085,8 @@
         "osdu/src/SqlFlow.Delivery.ControlPlane/DeliveryControlPlaneModule.cs",
         "osdu/src/SqlFlow.Delivery.ControlPlane/Configuration/DeliveryModuleOptions.cs",
         "osdu/src/SqlFlow.Delivery.ControlPlane/Background/ConfiguredRunDispatcher.cs",
+        "osdu/src/SqlFlow.Delivery/Engine/Operations/DeliveryOperations.cs",
+        "osdu/src/SqlFlow.Delivery/Catalog/RepositoryFolders.cs",
         "osdu/src/SqlFlow.Delivery.Data/OsduDbContext.cs",
         "osdu/src/SqlFlow.Delivery.Data/OsduSchema.cs",
         "osdu/src/SqlFlow.Delivery.Data/DeliveryEntities.cs",

@@ -149,6 +149,12 @@ public sealed class DeliveryRunInputsApiTests
             Assert.Equal(("welllogs", "logSource", "o"), (asked.Argument("interface"), asked.Argument("parameter"), asked.Argument("search")));
             Assert.StartsWith("user:", asked.Argument("actor"), StringComparison.Ordinal);
 
+            // The flow file is located by the folder the sync recorded and by the repository, whose synced commit a host that
+            // no longer holds that folder (a redeployed one) checks out again.
+            Assert.Equal(
+                (Path.GetTempPath(), "flows/" + flowName + ".yaml", repoId.ToString("D")),
+                (asked.Argument("repoRoot"), asked.Argument("relativePath"), asked.Argument(DeliveryOperation.RepositoryArgument)));
+
             // A parameter its lookup places in another interface is read through that interface.
             using (var lookedUp = await SendAsync(client, token, HttpMethod.Post, $"/api/v1/pipelines/{pipelineId:D}/parameters/wellbore/values", new { }))
             {

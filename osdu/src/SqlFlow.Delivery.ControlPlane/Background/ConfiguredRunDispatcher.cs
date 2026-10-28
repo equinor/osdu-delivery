@@ -39,8 +39,9 @@ namespace SqlFlow.Delivery.ControlPlane.Background;
 /// </remarks>
 public sealed class ConfiguredRunDispatcher : IRunDispatcher
 {
-    /// <summary>The task argument naming the repository whose configuration a node task of the module is given.</summary>
-    public const string RepoArgument = "repoId";
+    /// <summary>The task argument naming the repository whose configuration a node task of the module is given, and whose
+    /// synced folder the task's flow file is read from.</summary>
+    public const string RepoArgument = DeliveryOperation.RepositoryArgument;
 
     private readonly IRunDispatcher _inner;
     private readonly DeliveryConfigStore _config;

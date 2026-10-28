@@ -22,17 +22,20 @@ namespace SqlFlow.Delivery.Engine.Operations;
 /// check) is queued for a node. What writes to OSDU or the ledger (a removal among them) is a run of the flow instead, so it
 /// is listed with the flow's runs and never runs beside another of them. Either way the payload is the same: it names the flow
 /// (<c>sourceRef</c>) whose target and credentials it uses and carries the flow file's location (<c>repoRoot</c> +
-/// <c>relativePath</c> as the catalog knows them, or an absolute <c>flowFile</c>), and the process running it resolves every
-/// credential itself, exactly as it does for a run. The document must declare the named flow, so a stale catalog can never
-/// aim an operation at the wrong target. A flow that declares interfaces is acted on through the one the payload names
-/// (<c>interface</c>); the others are never touched. A flow that names its partitions is acted on in the one the payload
-/// names (<c>partition</c>), resolving its references with the central configuration the control plane supplied for it
-/// (<c>references</c>).
+/// <c>relativePath</c> as the catalog knows them, with the repository's id, or an absolute <c>flowFile</c>), and the process
+/// running it resolves every credential itself, exactly as it does for a run. The document must declare the named flow, so
+/// a stale catalog can never aim an operation at the wrong target. A flow that declares interfaces is acted on through the
+/// one the payload names (<c>interface</c>); the others are never touched. A flow that names its partitions is acted on in
+/// the one the payload names (<c>partition</c>), resolving its references with the central configuration the control
+/// plane supplied for it (<c>references</c>).
 /// </summary>
 public abstract class DeliveryOperation : IComputeOperation
 {
     /// <summary>The task argument naming the partition a flow that names its partitions is acted on in.</summary>
     public const string PartitionArgument = "partition";
+
+    /// <summary>The task argument naming the repository the flow is synced from, by its catalog id.</summary>
+    public const string RepositoryArgument = "repoId";
 
     internal static readonly JsonSerializerOptions JsonOptions = new()
     {
@@ -53,7 +56,7 @@ public abstract class DeliveryOperation : IComputeOperation
     public virtual async Task<string> ExecuteAsync(ComputeTaskPayload payload, CancellationToken ct)
     {
         ArgumentNullException.ThrowIfNull(payload);
-        var flowFile = ResolveFlowFile(payload);
+        var flowFile = await ResolveFlowFileAsync(payload, ct).ConfigureAwait(false);
         var source = _context.Documents.LoadSource(flowFile);
         if (!string.Equals(source.Name, payload.SourceRef, StringComparison.OrdinalIgnoreCase))
         {
@@ -126,23 +129,47 @@ public abstract class DeliveryOperation : IComputeOperation
         }
     }
 
-    private static string ResolveFlowFile(ComputeTaskPayload payload)
+    /// <summary>The flow's file: an absolute <c>flowFile</c> as given, or <c>relativePath</c> in its repository's synced folder.</summary>
+    private async Task<string> ResolveFlowFileAsync(ComputeTaskPayload payload, CancellationToken ct)
     {
-        var file = payload.Argument("flowFile");
-        if (file is null)
-        {
-            var root = payload.RequireArgument("repoRoot");
-            var relative = payload.RequireArgument("relativePath");
-            file = Path.Combine(root, relative.Replace('/', Path.DirectorySeparatorChar));
-        }
-
-        file = Path.GetFullPath(file);
+        var file = payload.Argument("flowFile") is { } given
+            ? Path.GetFullPath(given)
+            : Path.GetFullPath(Path.Combine(
+                await RepositoryFolderAsync(payload, ct).ConfigureAwait(false),
+                payload.RequireArgument("relativePath").Replace('/', Path.DirectorySeparatorChar)));
         if (!File.Exists(file))
         {
             throw new SqlFlowException($"The flow file for '{payload.SourceRef}' was not found where its repository was synced: {file}. Re-sync the repository.");
         }
 
         return file;
+    }
+
+    /// <summary>
+    /// The folder holding the flow's repository on this host: the one the catalog recorded (<c>repoRoot</c>) while this host
+    /// sees it, else the one the engine finds for the repository the task names (<see cref="EngineContext.RepositoryFolders"/>),
+    /// which checks the repository's synced commit out again from its remote. So a host whose checkouts are gone (a redeployed
+    /// container, a node that never synced) reads the file the last sync recorded, as a run of the flow does.
+    /// </summary>
+    private async Task<string> RepositoryFolderAsync(ComputeTaskPayload payload, CancellationToken ct)
+    {
+        var recorded = payload.Argument("repoRoot");
+        if (!string.IsNullOrWhiteSpace(recorded) && Directory.Exists(recorded))
+        {
+            return recorded;
+        }
+
+        if (!Guid.TryParse(payload.Argument(RepositoryArgument), out var repoId))
+        {
+            var where = string.IsNullOrWhiteSpace(recorded)
+                ? "the task names no folder its repository was synced into"
+                : $"{recorded}, where its repository was synced, is not on this host";
+            throw new SqlFlowException(
+                $"The flow file for '{payload.SourceRef}' cannot be read: {where}, and the task names no repository ('{RepositoryArgument}') to check out again.");
+        }
+
+        var folder = await _context.RepositoryFolders.FolderOfAsync(repoId, ct).ConfigureAwait(false);
+        return folder.Path ?? throw new SqlFlowException($"The flow file for '{payload.SourceRef}' cannot be read: {folder.Problem}.");
     }
 }
 

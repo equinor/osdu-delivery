@@ -3719,8 +3719,9 @@ public static class DeliveryEndpoints
             ["repoRoot"] = rootPath,
             ["relativePath"] = flow.Pipeline.RelativePath,
             ["actor"] = actor,
-            // The repository whose central configuration the operation resolves its references with, as a run does.
-            [ConfiguredRunDispatcher.RepoArgument] = flow.Pipeline.RepoId.ToString("D"),
+            // The repository whose central configuration the operation resolves its references with, as a run does, and whose
+            // synced commit is checked out again where the folder above is not on the host (a redeployed one, a node).
+            [DeliveryOperation.RepositoryArgument] = flow.Pipeline.RepoId.ToString("D"),
         };
         if (flow.Flow.Interface is { } interfaceName)
         {
