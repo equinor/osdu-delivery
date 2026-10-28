@@ -350,7 +350,9 @@ partitions is read in the title bar's partition.
   left to undo. The tab follows the
   flow's newest run as the Delivery page does: its counts and submissions move with a run, and every view of the flow is
   read again within seconds of a run ending.
-- **Records**: the ledger's records, searched by delivery key, label, source key, OSDU id or ingestion file, with a status picker,
+- **Records**: the ledger's records, searched by delivery key, or by the start of the label, source key, OSDU id or
+  ingestion file, or of a word or key value a row shows inside them (`50372` finds `NO 16/2-10 / STAT_COMP / 50372/1`),
+  with a status picker,
   **Drifted only**, **Step held** (while an enrichment is set aside on any record,
   [an enrichment set aside on its hold](../flow/enrich-holds.md)) and **Match anywhere**; links from elsewhere narrow it to one run (`?run=`), what a submission last
   planned (`?submission=`) or delivered (`?delivered=`), or one issue (`?issue=`). **Export** downloads every record the

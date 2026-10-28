@@ -448,6 +448,70 @@ public class SqlLedgerTests : IAsyncLifetime, IDisposable
     }
 
     [Fact]
+    public async Task A_flows_listing_finds_a_record_by_every_value_its_row_shows()
+    {
+        // A flow's Records tab shows each record's label, source key, file and OSDU id, and an operator types what they
+        // read there: the log number inside the label, a key value inside the source key. Neither starts a column, so the
+        // listing reads the identity index as the lookup across flows does, as well as each column's start.
+        var submission = Guid.NewGuid();
+        var key = DeliveryKey.Derive("test", ["recall:NORWAY_WELLDB/50372/1"]);
+        var otherFlow = FlowId.Of("other-flow");
+        var record = Pending("recall:NORWAY_WELLDB/50372/1", submission) with
+        {
+            SourceKeyJson = """["NORWAY_WELLDB","50372/1"]""",
+            Label = "NO 16/2-10 / STAT_COMP / 50372/1",
+            TargetId = "dev:work-product-component--WellLog:79b342524ea553ee",
+            PendingSourceFileName = "stat_comp_welllog_20261027152610.csv",
+        };
+        await Ledger.UpsertPendingAsync(_flow, [
+            record,
+            Pending("recall:NORWAY_WELLDB/47523/1", submission) with
+            {
+                SourceKeyJson = """["NORWAY_WELLDB","47523/1"]""",
+                Label = "NO 16/2-11 / STAT_COMP / 47523/1",
+                PendingSourceFileName = "stat_comp_welllog_20261028090000.csv",
+            },
+        ]);
+        await Ledger.UpsertPendingAsync(otherFlow, [record with { FlowId = otherFlow, TargetId = "dev:work-product-component--WellLog:5f1c00aa" }]);
+
+        foreach (var term in new[]
+        {
+            "50372", "50372/1", "recall:NORWAY_WELLDB/503", "NO 16/2-10", "2-10", "79b342524ea5",
+            "dev:work-product-component--WellLog:79b3", "stat_comp_welllog_20261027", key.Value.ToString("D"),
+        })
+        {
+            var query = new RecordQuery { Search = term };
+            Assert.Equal(key, Assert.Single(await Ledger.ListAsync(_flow, query)).DeliveryKey);
+            Assert.Equal(new BoundedCount(1, Exact: true), await Ledger.CountAsync(_flow, query, 10));
+            Assert.Equal(key, Assert.Single(await Ledger.ListKeysAsync(_flow, query, 10)));
+        }
+
+        // A word both rows show finds both, and the other flow's record of the same row stays its own flow's.
+        Assert.Equal(2, (await Ledger.ListAsync(_flow, new RecordQuery { Search = "STAT_COMP" })).Count);
+        Assert.Equal(otherFlow, Assert.Single(await Ledger.ListAsync(otherFlow, new RecordQuery { Search = "50372" })).FlowId);
+
+        // The other filters still narrow what the index finds, and a term inside a word is still Match anywhere's.
+        Assert.Empty(await Ledger.ListAsync(_flow, new RecordQuery { Search = "50372", Status = RecordStatus.Delivered }));
+        Assert.Empty(await Ledger.ListAsync(_flow, new RecordQuery { Search = "0372" }));
+        Assert.Single(await Ledger.ListAsync(_flow, new RecordQuery { Search = "0372", Mode = SearchMode.Contains }));
+
+        // Candidates the index stops short of leave the count a floor. The two files share a start, and the held record's
+        // sorts second, so a bound of one spent on the other cannot say no held record matches; a bound past both counts it.
+        var heldKey = DeliveryKey.Derive("test", ["recall:NORWAY_WELLDB/47523/1"]);
+        await Ledger.CompleteAsync(_flow, new RecordCompletion
+        {
+            DeliveryKey = heldKey,
+            Status = RecordStatus.Held,
+            Error = "held by the test",
+            Attempt = new AttemptRecord { DeliveryKey = heldKey, Worker = "w", StartedUtc = Now, CompletedUtc = Now, Outcome = AttemptOutcome.Held, Phase = "metadata" },
+        });
+        var heldFiles = new RecordQuery { Search = "stat_comp_welllog_2026", Status = RecordStatus.Held };
+        Assert.Equal(new BoundedCount(0, Exact: false), await Ledger.CountAsync(_flow, heldFiles, 1));
+        Assert.Equal(new BoundedCount(1, Exact: true), await Ledger.CountAsync(_flow, heldFiles, 10));
+        Assert.Equal(heldKey, Assert.Single(await Ledger.ListAsync(_flow, heldFiles)).DeliveryKey);
+    }
+
+    [Fact]
     public void Identity_tokens_are_derived_once_and_bounded()
     {
         // What a record is findable by, and nothing else: the declared identities first, then the key values, the OSDU

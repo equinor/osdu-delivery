@@ -1348,7 +1348,7 @@ public sealed partial class OsduLedger : ILedger
                 // Below the limit the count is exact, unless a prefix search left out candidates another filter would have kept.
                 var truncated = PrefixTerm(query) is { } term
                     && Narrows(query)
-                    && await PrefixCandidatesTruncatedAsync(db.DeliveryRecords.AsNoTracking().Where(r => r.PartitionId == partition && r.FlowId == flowId), term, limit, ct).ConfigureAwait(false);
+                    && await PrefixCandidatesTruncatedAsync(db, partition, flowId, term, limit, ct).ConfigureAwait(false);
                 return new BoundedCount(count, Exact: !truncated);
             },
             ct).ConfigureAwait(false);
@@ -1808,9 +1808,9 @@ public sealed partial class OsduLedger : ILedger
     /// <summary>
     /// The records a listing matches, as a query each of whose paths reads a bounded part of the ledger. The filters
     /// other than the search seek their <c>(FlowId, column)</c> indexes. A prefix search takes at most
-    /// <paramref name="candidates"/> records from each identity column's index, in index order, and the rest of the
-    /// filter applies to those. A contains term has no index, so the records the rest of the filter leaves are counted
-    /// first, no further than the scan limit, and a filter that leaves more is refused.
+    /// <paramref name="candidates"/> records from each identity column's index and from the flow's identity tokens, in
+    /// index order, and the rest of the filter applies to those. A contains term has no index, so the records the rest of
+    /// the filter leaves are counted first, no further than the scan limit, and a filter that leaves more is refused.
     /// </summary>
     private async Task<IQueryable<DeliveryRecord>> MatchingAsync(OsduDbContext db, short partition, Guid flowId, RecordQuery query, int candidates, CancellationToken ct)
     {
@@ -1829,7 +1829,10 @@ public sealed partial class OsduLedger : ILedger
 
         if (query.Mode != SearchMode.Contains)
         {
-            var matches = PrefixCandidates(flow, term, candidates);
+            // A column's start finds a label written out (`NO 16/2-10 / STAT`); the identity tokens find the values a row
+            // shows inside one (its key values, the words of its label, the OSDU id's own part), as the lookup across flows does.
+            var matches = PrefixCandidates(flow, term, candidates)
+                .Concat(IdentityCandidates(db, term, candidates, flowId, [partition]).Select(i => i.DeliveryKey));
             return rows.Where(r => matches.Contains(r.DeliveryKey));
         }
 
@@ -1925,12 +1928,22 @@ public sealed partial class OsduLedger : ILedger
         public Guid DeliveryKey { get; init; }
     }
 
-    /// <summary>Whether any identity column has at least <paramref name="limit"/> prefix matches, so candidates were left out.</summary>
-    private static async Task<bool> PrefixCandidatesTruncatedAsync(IQueryable<DeliveryRecord> scope, string term, int limit, CancellationToken ct)
-        => await scope.Where(r => r.SourceKey.StartsWith(term)).Select(r => r.DeliveryKey).Take(limit).CountAsync(ct).ConfigureAwait(false) >= limit
+    /// <summary>
+    /// Whether any identity column, or the flow's identity tokens, has at least <paramref name="limit"/> prefix matches,
+    /// so candidates were left out.
+    /// </summary>
+    private static async Task<bool> PrefixCandidatesTruncatedAsync(OsduDbContext db, short partition, Guid flowId, string term, int limit, CancellationToken ct)
+    {
+        var scope = db.DeliveryRecords.AsNoTracking().Where(r => r.PartitionId == partition && r.FlowId == flowId);
+        var folded = RecordIdentities.Fold(term);
+        return await scope.Where(r => r.SourceKey.StartsWith(term)).Select(r => r.DeliveryKey).Take(limit).CountAsync(ct).ConfigureAwait(false) >= limit
             || await scope.Where(r => r.Label != null && r.Label.StartsWith(term)).Select(r => r.DeliveryKey).Take(limit).CountAsync(ct).ConfigureAwait(false) >= limit
             || await scope.Where(r => r.TargetId != null && r.TargetId.StartsWith(term)).Select(r => r.DeliveryKey).Take(limit).CountAsync(ct).ConfigureAwait(false) >= limit
-            || await scope.Where(r => r.SourceFileName != null && r.SourceFileName.StartsWith(term)).Select(r => r.DeliveryKey).Take(limit).CountAsync(ct).ConfigureAwait(false) >= limit;
+            || await scope.Where(r => r.SourceFileName != null && r.SourceFileName.StartsWith(term)).Select(r => r.DeliveryKey).Take(limit).CountAsync(ct).ConfigureAwait(false) >= limit
+            || await db.DeliveryRecordIdentities.AsNoTracking()
+                .Where(i => i.PartitionId == partition && i.FlowId == flowId && i.Token.StartsWith(folded))
+                .Select(i => i.DeliveryKey).Take(limit).CountAsync(ct).ConfigureAwait(false) >= limit;
+    }
 
     public async Task<FlowStats> StatsAsync(Guid flowId, DateTime nowUtc, CancellationToken ct = default)
     {

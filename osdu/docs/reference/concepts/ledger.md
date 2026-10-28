@@ -306,9 +306,13 @@ otherwise (400) with
 
 **A flow's listing** (a flow's Records tab, `GET /flows/{pipelineId}/records`, `sqlflow records list`) filters by status,
 submission, run, the submission that delivered it, issue, drift or a held step, and searches by a UUID (exact) or a
-prefix over the source key, label, OSDU id and origin file name. It counts no further than 25,000 matches, pages through
-the first 25,000 in update order (newest first, ties broken by key), and refuses a page past them, saying to narrow the
-filter. A contains search matches the same values and the queued version's file anywhere. It has no index: it runs only
+prefix. A prefix matches the start of the source key, label, OSDU id or origin file name whole, or of any value the
+flow's records hold in `osdu.RecordIdentity` (the table above: a key value, a word of the label, the OSDU id's own
+part), so a value a row shows inside its label or source key finds it. Each of those indexes gives at most as many
+candidates as the listing counts, and when the other filters narrow candidates that stopped short, the count is a floor.
+It counts no further than 25,000 matches, pages through the first 25,000 in update order (newest first, ties broken by
+key), and refuses a page past them, saying to narrow the filter. A contains search matches the source key, label, OSDU
+id and origin file name, and the queued version's file, anywhere. It has no index: it runs only
 when the rest of the filter leaves at most 100,000 records, and is refused otherwise with
 `A contains search reads every record the rest of the filter leaves, and this filter leaves more than 100000. Use a prefix search, which is indexed, or narrow by status, submission or run first.`
 

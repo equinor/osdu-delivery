@@ -445,7 +445,10 @@ export function DeliveryFlowPanel({ pipelineId, flowName, section }: { pipelineI
                 Step held
               </Label>
             )}
-            <Label className="flex items-center gap-2 text-[13px] font-normal">
+            <Label
+              className="flex items-center gap-2 text-[13px] font-normal"
+              title="Match the term anywhere in the source key, the label, the OSDU id or the ingestion file, not only at the start of a value or of a word in it. It reads every record the other filters leave, so with more than 100,000 of them it asks for a status, submission or run first."
+            >
               <Switch checked={contains} onCheckedChange={setContains} data-testid="delivery-records-contains" />
               Match anywhere
             </Label>
@@ -566,7 +569,11 @@ export function DeliveryFlowPanel({ pipelineId, flowName, section }: { pipelineI
                 </Button>
               </div>
             )}
-            emptyMessage="No records match. A flow's records appear here once its first submission has been planned."
+            emptyMessage={filter.search !== undefined && !contains
+              ? "No records match. A search finds the start of a value a record shows, or of a word in it; turn on Match anywhere to find the term inside one."
+              : Object.values(filter).some((value) => value !== undefined)
+                ? "No records match the filter."
+                : "No records match. A flow's records appear here once its first submission has been planned."}
             data-testid="delivery-records-table"
           />
           )}

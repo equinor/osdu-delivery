@@ -28,7 +28,7 @@ sourceRefs:
 One row per value a record is findable by: a value of the columns its mapping declares in `dataset.identity` (a wellbore
 name, a UWI), its source key whole and each key value, up to 8 words of its label, its OSDU id and the part after the
 last colon, and the ingestion file its current version came from. The token is folded to upper case, so one index answers
-"starts with" for every identifier an operator may hold, across every flow of a partition
+"starts with" for every identifier an operator may hold, across every flow of a partition and in one flow's listing
 ([The delivery ledger](../concepts/ledger.md#finding-records)).
 
 A record contributes at most 24 values, each at most 200 characters; values shorter than 3 characters are not stored. Rows
@@ -52,7 +52,7 @@ does not grow with activity.
 | --- | --- | --- | --- | --- | --- |
 | `PK_RecordIdentity` | `PartitionId`, `Token`, `FlowId`, `DeliveryKey` | primary key | none | none | The lookup: any identifier an operator holds, as a prefix, across the flows of a partition; the record it names is read by joining to the record's key. |
 | `IX_RecordIdentity_PartitionId_FlowId_DeliveryKey` | `PartitionId`, `FlowId`, `DeliveryKey` | index | none | none | A record's own values, to rewrite or delete them when its identity changes. |
-| `IX_RecordIdentity_PartitionId_FlowId_Token` | `PartitionId`, `FlowId`, `Token` | index | none | none | The same lookup narrowed to one flow (the Records page's flow filter), so a prefix many other flows share cannot use up the candidate bound before this flow is reached. |
+| `IX_RecordIdentity_PartitionId_FlowId_Token` | `PartitionId`, `FlowId`, `Token` | index | none | none | The same lookup narrowed to one flow (the Records page's flow filter), so a prefix many other flows share cannot use up the candidate bound before this flow is reached; and a flow's own listing searched by prefix (its Records tab, `sqlflow records list --search`). |
 
 ## Written and read by
 

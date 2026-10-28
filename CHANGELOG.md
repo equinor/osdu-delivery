@@ -532,6 +532,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - A Records page search answered at most 200 records, so its pages past the 200th record came back empty and its export
   held 200 however many matched; it now answers every record the lookup reaches, up to 1,000
   ([finding records](osdu/docs/reference/concepts/ledger.md#finding-records)).
+- A flow's Records tab (and `sqlflow records list --search`) found nothing for a value its rows show inside the label or
+  the source key, such as the log number `50372` in `NO 16/2-10 / STAT_COMP / 50372/1`, because it matched only the start
+  of each whole value. It now also matches the start of any word or key value, as the Records page does
+  ([finding records](osdu/docs/reference/concepts/ledger.md#finding-records)).
 - A delivery flow's document hash, which pairs a renamed flow with its ledger, took in the render threads of the machine
   that synced it, so control planes on machines with different processor counts hashed one document differently; it now
   takes in the document alone, and each delivery flow's stored hash changes once, at the first sync after the upgrade

@@ -106,8 +106,8 @@ every form: [--interface <name>] [--partition <id>] [--db <conn-ref>] [--json] [
 
 Records are named the way the product shows them: a **delivery key** (a UUID, which `records list` prints as 32
 hexadecimal characters; either UUID form is accepted) or a **source key** (`welldb:WB-0001`, the source system and the key's parts joined by `/`).
-Where a source key is accepted, it is looked up as a ledger search (a prefix of the source key, the label, the OSDU id or
-the file name) and has to match exactly one record, so write it whole, with its system (`welldb:WB-0001`).
+Where a source key is accepted, it is looked up as a ledger search (a prefix of the source key, the label, the OSDU id,
+the file name, or a key value or word of the label) and has to match exactly one record, so write it whole, with its system (`welldb:WB-0001`).
 
 ## records list
 
@@ -115,7 +115,7 @@ The interface's records, the most recently changed first, 50 unless `--max` says
 
 | Option | Description |
 | --- | --- |
-| `--search <term>` | A delivery key (exact), or a prefix of the source key, the label, the OSDU id or the name of the file the row was landed from. A prefix search is indexed. |
+| `--search <term>` | A delivery key (exact), or a prefix of the source key, the label, the OSDU id or the name of the file the row was landed from, or of one of the record's key values or a word of its label (`50372` finds `NO 16/2-10 / STAT_COMP / 50372/1`). A prefix search is indexed. |
 | `--contains` | Match `--search` anywhere in the source key, the label, the OSDU id or the ingestion file instead. It has no index, so it is refused when the rest of the filter leaves more than 100,000 records: `A contains search reads every record the rest of the filter leaves, and this filter leaves more than 100000. Use a prefix search, which is indexed, or narrow by status, submission or run first.` |
 | `--status <status>` | One status, any case: `pending`, `delivering`, `delivered`, `held`, `failed`, `deleted`, `reverted` or `waiting` ([Record lifecycle](../concepts/record-lifecycle.md)). Anything else fails naming them. |
 | `--issue <id>` | Only the records one issue keeps blocked: the 16 characters `records issues` prints for it. |
