@@ -224,14 +224,15 @@ written twice in one map (`Encountered duplicate key Name`).
 | `name` | string | yes | With `version`, the reference `Name@version` a delivery flow pins under `render.mapping`. |
 | `version` | string | yes | The mapping's version. It enters every record's render context, so a new version renders the records again. |
 | `description` | string | no | Free text. |
+| `fragment` | boolean | no | `true` for a fragment: the paths a step of a delivery flow's `enrich:` adds to every record the flow's own mapping renders. A fragment declares no `dataset`, need not declare `dataPartition`, writes under `data` and `tags` only, and reads the record with `$base`. See [fragments](mapping-fragment.md). |
 | `template.kind` | string | yes | The OSDU kind the records are, `authority:source:entityType:major.minor.patch`, such as `osdu:wks:work-product-component--WellLog:1.4.0`. |
 | `template.version` | string | no | The template version the mapping fills exactly: the 16 hexadecimal characters `sqlflow template folders` and the Templates page show. A template folder on the mapping's path must hold it. Left out, the mapping fills the one version of the kind the nearest template folder holding the kind holds, and follows that file as it changes ([template folders](../concepts/templates.md#template-folders)). |
-| `dataset.system` | string | yes | The source system. It enters the delivery key, and so the OSDU id. |
-| `dataset.key` | list | yes | The record table's columns that identify a record, in order. |
+| `dataset.system` | string | yes, except in a fragment | The source system. It enters the delivery key, and so the OSDU id. |
+| `dataset.key` | list | yes, except in a fragment | The record table's columns that identify a record, in order. |
 | `dataset.label` | string | no | Display text for the ledger and the GUI, with `{column}` tokens. Never in the record. |
 | `dataset.identity` | list | no | Columns whose values identify the record to a person; the ledger indexes them. Never in the record. |
 | `dataset.idFrom` | `deliveryKey` or `key` | no | What the last part of the OSDU id is made from. Default `deliveryKey`. See [The OSDU id](#the-osdu-id). |
-| `parameters` | map | yes (`dataPartition`) | The values the flow supplies, each `required`, `default` and `description`. See [parameters](#parameters). |
+| `parameters` | map | yes (`dataPartition`, except in a fragment) | The values the flow supplies, each `required`, `default` and `description`. See [parameters](#parameters). |
 | `searches` | map | no | The record sets `$search` nodes look in on the platform: a `kind`, the template (`schema.kind`, and `schema.version` when it means one exactly) that says how it is indexed, read from the template folders on the mapping's path, and a `description`. One search per kind, each read by a node. See [mapping lookups](mapping-lookups.md). |
 | `lookups` | map | no | Records found once in the partition's cache and read by name with `$lookup`: `$cache`, `$findBy`, `$modifiers`, `$ignoreSeparators`, `$description`. Each is read by a node. See [mapping lookups](mapping-lookups.md). |
 | `record` | map | yes | The record the mapping renders, laid out as the record is. See [The record tree](#the-record-tree). |

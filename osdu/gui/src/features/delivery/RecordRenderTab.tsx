@@ -12,7 +12,7 @@ import { cn } from "@/lib/utils";
 import type { DeliveryOsduRead, DeliveryPreviewInputs, DeliveryRecord, DeliveryRecordPreview } from "../../api/delivery";
 import { Fact, FactGrid, NoFact } from "./Facts";
 import { canonicalText, differences, envelopeFirst, withoutOsduFields, type DifferenceKind } from "./osduDocument";
-import { PreviewActionBadge, PreviewAssertions, PreviewChoices, PreviewHolds, PreviewSearches } from "./RecordPreviewView";
+import { PreviewActionBadge, PreviewAssertions, PreviewChoices, PreviewEnrichment, PreviewHolds, PreviewSearches } from "./RecordPreviewView";
 import type { Settled } from "./answers";
 
 /**
@@ -302,6 +302,7 @@ function RenderResult({ results }: { results: RenderResults }) {
         </div>
       )}
       {document !== null && <PreviewChoices choices={document.choices} unverified={document.unverified} testId="record-render-coalesce" />}
+      {document !== null && <PreviewEnrichment document={document} testId="record-render-enrichment" />}
     </div>
   );
 }

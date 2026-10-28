@@ -44,4 +44,23 @@ public sealed class DeliveryDocumentHashTests
         Assert.Equal(original.DocumentHash, commented.DocumentHash);
         Assert.NotEqual(original.DocumentHash, changed.DocumentHash);
     }
+
+    [Fact]
+    public void A_delivery_document_hashes_the_same_on_every_machine()
+    {
+        // Read with the line endings the repository keeps (LF), whatever the checkout made of them. The value is the one this
+        // machine and the CI runners compute alike, whatever their processor count: what a node derives for itself (its render
+        // threads) is no part of the document.
+        var source = new DeliveryDocumentLoader().ParseSource(File.ReadAllText(Samples.Flow).ReplaceLineEndings("\n"), Samples.Flow);
+        var mappings = new Dictionary<string, string>(StringComparer.Ordinal) { ["WellLog@1.4.0"] = "mapping-hash" };
+
+        Assert.Equal(SampleFlowHash, DeliveryDocumentHash.Of(source, mappings));
+        Assert.DoesNotContain(
+            "EffectiveRenderThreads",
+            System.Text.Json.JsonSerializer.Serialize(source.Interfaces[0].Parallelism),
+            StringComparison.OrdinalIgnoreCase);
+    }
+
+    /// <summary>The document hash of the sample well log flow, read with LF line endings.</summary>
+    internal const string SampleFlowHash = "a8c30f716110ea2279665928dedddcc9818ba9b34d0dd386819369e37f25b07a";
 }

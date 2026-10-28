@@ -62,6 +62,63 @@ internal sealed class FlowYaml
 
     // For the single form: the earlier flow whose ledger this one keeps instead of its own (ledger: <old name>), as a renamed flow does.
     public string? Ledger { get; set; }
+
+    /// <summary>The steps that extend each record after the mapping renders it, by name, in document order; null when none.</summary>
+    public OrderedDictionary<string, EnrichStepYaml?>? Enrich { get; set; }
+}
+
+/// <summary>One step of <c>enrich:</c> (osdu/docs/reference/flow/enrich.md): its rows, its fragment and the steps it follows.</summary>
+internal sealed class EnrichStepYaml
+{
+    public string? Description { get; set; }
+
+    /// <summary>The step's rows: a child table joined to the record table by its key, as a child dataset is.</summary>
+    public FlowSourceDatasetYaml? Dataset { get; set; }
+
+    /// <summary>How many of those rows one record takes: <c>one</c> (the default) or <c>many</c>.</summary>
+    public string? Rows { get; set; }
+
+    public string? Mapping { get; set; }
+
+    public List<string>? After { get; set; }
+
+    /// <summary>The files each of the step's rows names, registered as a dataset record of their own and linked from the record.</summary>
+    public EnrichFilesYaml? Files { get; set; }
+
+    /// <summary>What the step's hold does: <c>record</c> (the default) holds the record, <c>step</c> sets the step aside.</summary>
+    public string? OnHold { get; set; }
+
+    /// <summary>The record's DDMS bulk data, named by the step's one row, as a payload set declares files.</summary>
+    public FlowPayloadYaml? Bulk { get; set; }
+
+    /// <summary>The workflow the step runs over the record once it and the step's datasets landed, as target.workflow declares one.</summary>
+    public WorkflowYaml? Workflow { get; set; }
+}
+
+/// <summary>The files a step registers (osdu/docs/reference/flow/enrich-files.md): where each row's files are, and what they become.</summary>
+internal sealed class EnrichFilesYaml
+{
+    public string? Root { get; set; }
+
+    public string? LocationColumn { get; set; }
+
+    public string? Pattern { get; set; }
+
+    public string? HashColumn { get; set; }
+
+    /// <summary>The dataset kind the files are registered as.</summary>
+    public string? Kind { get; set; }
+
+    /// <summary>The columns of a row that tell its dataset from the step's other rows'.</summary>
+    public List<string>? Key { get; set; }
+
+    /// <summary>A fragment over the dataset kind, rendered from the row into each dataset record.</summary>
+    public string? Mapping { get; set; }
+
+    /// <summary>The path of the record the datasets are listed at.</summary>
+    public string? Link { get; set; }
+
+    public string? ContentType { get; set; }
 }
 
 /// <summary>
@@ -116,6 +173,9 @@ internal sealed class InterfaceYaml
 
     /// <summary>The source's <c>target.validation</c>, with this interface's keys laid over it.</summary>
     public ValidationYaml? Validation { get; set; }
+
+    /// <summary>The steps that extend each of the interface's records after its mapping renders it; null when none.</summary>
+    public OrderedDictionary<string, EnrichStepYaml?>? Enrich { get; set; }
 }
 
 /// <summary>
@@ -924,6 +984,12 @@ internal sealed class MappingYaml
     public MappingTemplateYaml? Template { get; set; }
 
     public string? Description { get; set; }
+
+    /// <summary>
+    /// True for a fragment (osdu/docs/reference/flow/enrich.md): the paths a step of <c>enrich:</c> adds to a record the
+    /// flow's own mapping renders, never a record of its own, so it declares no <c>dataset</c> and no access or legal block.
+    /// </summary>
+    public bool? Fragment { get; set; }
 
     public MappingDatasetYaml? Dataset { get; set; }
 

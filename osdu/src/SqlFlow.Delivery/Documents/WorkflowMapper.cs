@@ -48,6 +48,35 @@ internal static partial class FlowMapper
             throw new FlowValidationException($"{source}: {at} declares a workflow, which only the workflow route runs, and the flow's route is {protocol}. Remove {at}, or name the workflow route.");
         }
 
+        return MapWorkflowRoute(declared, at, declaresFiles, source);
+    }
+
+    /// <summary>
+    /// The workflow a step of <c>enrich:</c> runs over the record once the record and the step's datasets landed
+    /// (osdu/docs/reference/flow/enrich-workflow.md): stages, results, secrets and when it runs, as the workflow route declares
+    /// them, over the record the flow's route wrote. The record is written already, so the step names no anchor and writes no
+    /// anchor tag; its datasets are registered already, so it names no inputs and reads them as <c>{dataset:enrich.&lt;step&gt;}</c>.
+    /// </summary>
+    private static WorkflowRoute MapStepWorkflow(WorkflowYaml declared, string at, string source)
+    {
+        if (declared.Inputs is { Count: > 0 })
+        {
+            throw new FlowValidationException(
+                $"{source}: {at}.inputs registers files as the workflow's inputs, and a step's files are registered by its files: and read by the workflow as {{dataset:enrich.<step>}}; remove {at}.inputs.");
+        }
+
+        if (!string.IsNullOrWhiteSpace(declared.Anchor) || !string.IsNullOrWhiteSpace(declared.AnchorTag))
+        {
+            throw new FlowValidationException(
+                $"{source}: {at} names an anchor or an anchor tag, and a step's workflow runs over the record the flow's route wrote, which it neither registers nor tags; remove {at}.anchor and {at}.anchorTag.");
+        }
+
+        return MapWorkflowRoute(declared, at, declaresFiles: false, source) with { Anchor = WorkflowAnchor.Storage };
+    }
+
+    /// <summary>A workflow declaration under <paramref name="at"/>: its stages, inputs, results, secrets and when it runs.</summary>
+    private static WorkflowRoute MapWorkflowRoute(WorkflowYaml declared, string at, bool declaresFiles, string source)
+    {
         if (declared.Stages is not { Count: > 0 } stages)
         {
             throw new FlowValidationException($"{source}: {at}.stages lists no stage; name the workflow each run triggers and its context.");
@@ -431,6 +460,15 @@ internal static partial class FlowMapper
             }
         }
 
+        // Each step's workflow is checked as the route's is, with no inputs of its own (osdu/docs/reference/flow/enrich-workflow.md).
+        foreach (var step in flow.Enrich ?? [])
+        {
+            if (step.Workflow is { } stepWorkflow)
+            {
+                ValidateWorkflowRoute(stepWorkflow, new HashSet<string>(StringComparer.Ordinal), $"{paths.Enrich}.{step.Name}.workflow", source);
+            }
+        }
+
         if (flow.Target.Workflow is not { } workflow)
         {
             return;
@@ -444,6 +482,21 @@ internal static partial class FlowMapper
                 $"{source}: {at}.anchor is dataset, which registers each record with its files through the dataset service, and {paths.Payload(FilesPayload)} declares none. Declare the files, or anchor the workflow on a storage record.");
         }
 
+        var inputs = workflow.Inputs.Select(i => i.Name).ToHashSet(StringComparer.Ordinal);
+        if (files)
+        {
+            inputs.Add(FilesPayload);
+        }
+
+        ValidateWorkflowRoute(workflow, inputs, at, source);
+    }
+
+    /// <summary>
+    /// One workflow declaration under <paramref name="at"/>, the route's or a step's: its inputs, secrets, anchor tag, stages
+    /// and results, every placeholder naming something it has; <paramref name="inputs"/> are the inputs its templates may name.
+    /// </summary>
+    private static void ValidateWorkflowRoute(WorkflowRoute workflow, IReadOnlySet<string> inputs, string at, string source)
+    {
         if (workflow.Inputs.Count > WorkflowRoute.MaxInputs)
         {
             throw new FlowValidationException(
@@ -524,13 +577,13 @@ internal static partial class FlowMapper
                 if (output.Value is { } value)
                 {
                     problems.AddRange(WorkflowTemplate.Problems(JsonValue.Create(value), $"{stageAt}.outputs.{name}.value"));
-                    problems.AddRange(PlaceholderProblems(flow, workflow, JsonValue.Create(value), n + 1, $"{stageAt}.outputs.{name}.value"));
+                    problems.AddRange(PlaceholderProblems(workflow, inputs, at, JsonValue.Create(value), n + 1, $"{stageAt}.outputs.{name}.value"));
                 }
             }
 
             if (problems.Count == 0)
             {
-                problems.AddRange(PlaceholderProblems(flow, workflow, stage.Context, n + 1, $"{stageAt}.context"));
+                problems.AddRange(PlaceholderProblems(workflow, inputs, at, stage.Context, n + 1, $"{stageAt}.context"));
             }
 
             if (problems.Count > 0)
@@ -562,7 +615,7 @@ internal static partial class FlowMapper
             var problems = WorkflowTemplate.Problems(JsonValue.Create(text), where).ToList();
             if (problems.Count == 0)
             {
-                problems.AddRange(PlaceholderProblems(flow, workflow, JsonValue.Create(text), workflow.Stages.Count + 1, where));
+                problems.AddRange(PlaceholderProblems(workflow, inputs, at, JsonValue.Create(text), workflow.Stages.Count + 1, where));
             }
 
             if (problems.Count > 0)
@@ -586,21 +639,15 @@ internal static partial class FlowMapper
     /// What a template's placeholders name that the route does not have. <paramref name="stage"/> is the stage the
     /// template belongs to, counted from 1 (one past the last for the results): it reads only the stages before it.
     /// </summary>
-    private static IEnumerable<string> PlaceholderProblems(FlowDefinition flow, WorkflowRoute workflow, JsonNode? template, int stage, string where)
+    private static IEnumerable<string> PlaceholderProblems(WorkflowRoute workflow, IReadOnlySet<string> inputs, string at, JsonNode? template, int stage, string where)
     {
-        var inputs = workflow.Inputs.Select(i => i.Name).ToHashSet(StringComparer.Ordinal);
-        if (flow.Source.Payloads.ContainsKey(FilesPayload))
-        {
-            inputs.Add(FilesPayload);
-        }
-
         foreach (var (path, placeholder) in WorkflowTemplate.Placeholders(template))
         {
             var argument = placeholder.Argument;
             switch (placeholder.Name)
             {
                 case "secret" when !workflow.Secrets.ContainsKey(argument!):
-                    yield return $"{where}{path} names the secret '{argument}', which {WorkflowKey(KeyPaths.Of(flow))}.secrets does not declare";
+                    yield return $"{where}{path} names the secret '{argument}', which {at}.secrets does not declare";
                     break;
                 case "input":
                     var name = argument!.Split('[')[0];

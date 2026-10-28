@@ -569,6 +569,7 @@ public sealed partial class OsduLedger : ILedger
                 if (skip.Kind == SkipKind.Rendered)
                 {
                     entity.ChildLinkKey = skip.ChildLinkKey;
+                    entity.HeldSteps = skip.HeldSteps;
                 }
 
                 // A record the ledger parked (held, failed or reverted) that OSDU holds a version of, and that the plan
@@ -969,6 +970,7 @@ public sealed partial class OsduLedger : ILedger
                 entity.ParentId = record.ParentId;
                 entity.PendingParentVersion = record.PendingParentVersion;
                 entity.ChildLinkKey = record.ChildLinkKey;
+                entity.HeldSteps = record.HeldSteps;
                 held.Add(record.DeliveryKey);
                 db.DeliveryAttempts.Add(new DeliveryAttempt
                 {
@@ -1772,6 +1774,12 @@ public sealed partial class OsduLedger : ILedger
             rows = rows.Where(r => r.ProblemHash != null && r.ProblemHash == problem);
         }
 
+        if (query.StepHeld)
+        {
+            // The held-steps index holds the flow's records a step was set aside on, and no others.
+            rows = rows.Where(r => r.HeldSteps != null);
+        }
+
         if (query.EverDelivered is { } everDelivered)
         {
             rows = everDelivered ? rows.Where(r => r.LastDeliveredUtc != null) : rows.Where(r => r.LastDeliveredUtc == null);
@@ -1783,7 +1791,7 @@ public sealed partial class OsduLedger : ILedger
     /// <summary>Whether the listing has a filter besides its search.</summary>
     private static bool Narrows(RecordQuery query)
         => query.Status is not null || query.SubmissionId is not null || query.DeliveredBySubmissionId is not null || query.RunId is not null
-            || query.Drifted || query.EverDelivered is not null;
+            || query.Drifted || query.StepHeld || query.EverDelivered is not null;
 
     /// <summary>The listing's search term when it is a prefix search: not empty, not a delivery key, not a contains search.</summary>
     private static string? PrefixTerm(RecordQuery query)
@@ -1844,7 +1852,7 @@ public sealed partial class OsduLedger : ILedger
     private static async Task<FlowStats> StatsAsync(OsduDbContext db, short partition, Guid flowId, DateTime nowUtc, CancellationToken ct)
     {
         var since = nowUtc.AddHours(-24);
-        var (byStatus, drifted, last24) = await CountFromRecordsAsync(db, partition, flowId, since, ct).ConfigureAwait(false);
+        var (byStatus, drifted, last24, stepsHeld) = await CountFromRecordsAsync(db, partition, flowId, since, ct).ConfigureAwait(false);
         var (blocked, stranded) = await SqlServerLedgerBulk.ParkedCountsAsync(db, partition, flowId, ct).ConfigureAwait(false);
 
         // The held records an adoption may be asked of, read from the held records alone through the status index: the test is
@@ -1874,6 +1882,7 @@ public sealed partial class OsduLedger : ILedger
             Stranded = stranded,
             Adoptable = adoptable,
             Drifted = drifted,
+            StepsHeld = stepsHeld,
             DeliveredLast24h = last24,
             LastDeliveredUtc = lastDelivered,
             LastVerifiedUtc = lastVerified,
@@ -1887,7 +1896,7 @@ public sealed partial class OsduLedger : ILedger
     /// kept the counts in a few rows per flow and was written inside the transaction of every record write, so every
     /// node delivering a flow met every other one on those rows.
     /// </summary>
-    private static async Task<(Dictionary<string, long> ByStatus, long Drifted, long DeliveredSince)> CountFromRecordsAsync(
+    private static async Task<(Dictionary<string, long> ByStatus, long Drifted, long DeliveredSince, long StepsHeld)> CountFromRecordsAsync(
         OsduDbContext db, short partition, Guid flowId, DateTime since, CancellationToken ct)
     {
         var byStatus = await db.DeliveryRecords
@@ -1902,7 +1911,10 @@ public sealed partial class OsduLedger : ILedger
         var deliveredSince = await db.DeliveryRecords
             .LongCountAsync(r => r.PartitionId == partition && r.FlowId == flowId && r.LastDeliveredUtc != null && r.LastDeliveredUtc >= since, ct)
             .ConfigureAwait(false);
-        return (byStatus, drifted, deliveredSince);
+        var stepsHeld = await db.DeliveryRecords
+            .LongCountAsync(r => r.PartitionId == partition && r.FlowId == flowId && r.HeldSteps != null, ct)
+            .ConfigureAwait(false);
+        return (byStatus, drifted, deliveredSince, stepsHeld);
     }
 
     public async Task<IReadOnlyList<AttemptRecord>> ListAttemptsAsync(Guid flowId, DeliveryKey key, int max, CancellationToken ct = default)
@@ -2498,6 +2510,7 @@ public sealed partial class OsduLedger : ILedger
         entity.SourceFingerprint = null;
         entity.SourceModifiedUtc = null;
         entity.LastVerifiedUtc = null;
+        entity.HeldSteps = null;
         entity.LastVerifyOutcome = null;
         entity.LeaseOwner = null;
         entity.NextAttemptUtc = null;
@@ -4160,6 +4173,7 @@ public sealed partial class OsduLedger : ILedger
         ParentVersion = r.ParentVersion,
         PendingParentVersion = r.PendingParentVersion,
         ChildLinkKey = r.ChildLinkKey,
+        HeldSteps = r.HeldSteps,
         PlanRequestedUtc = r.PlanRequestedUtc,
         CreatedUtc = r.CreatedUtc,
         UpdatedUtc = r.UpdatedUtc,

@@ -53,6 +53,14 @@ public sealed record MappingDefinition
 
     public string? Description { get; init; }
 
+    /// <summary>
+    /// True for a fragment (<c>fragment: true</c>, osdu/docs/reference/flow/enrich.md): the paths a step of a delivery flow's
+    /// <c>enrich:</c> adds to every record the flow's own mapping renders. A fragment renders no record of its own: it has no
+    /// key, so its <see cref="Dataset"/> is <see cref="MappingDataset.None"/>, and no access or legal block, so its
+    /// <see cref="Envelope"/> is empty. It reads the record as the steps before it left it with <c>$base</c>.
+    /// </summary>
+    public bool Fragment { get; init; }
+
     public required MappingDataset Dataset { get; init; }
 
     /// <summary>Parameters the mapping accepts from the flow under <c>render.parameters</c>.</summary>
@@ -151,6 +159,18 @@ public sealed record MappingDefinition
     /// <summary>True when the mapping links its records to a child of theirs.</summary>
     public bool LinksChildren => Entries.SelectMany(e => e.ValueNodes).Any(n => n.Source?.Kind == MappingSourceKind.Child);
 
+    /// <summary>
+    /// The paths a fragment reads of the record as the steps before it left it (<c>$base</c>), each once, in ordinal order;
+    /// empty for a mapping that reads none (osdu/docs/reference/flow/enrich.md).
+    /// </summary>
+    public IReadOnlyList<string> BasePaths() => Entries
+        .SelectMany(e => e.ValueNodes)
+        .Where(n => n.Source is { Kind: MappingSourceKind.Base, BasePath: not null })
+        .Select(n => n.Source!.BasePath!)
+        .Distinct(StringComparer.Ordinal)
+        .Order(StringComparer.Ordinal)
+        .ToList();
+
     /// <summary>The access list and legal block, as the static entries for them declare them (parameter tokens unexpanded).</summary>
     public required MappingEnvelope Envelope { get; init; }
 
@@ -214,6 +234,13 @@ public sealed record MappingDataset
     /// mapping says the key's own values. Either way the ledger keys the record by its delivery key.
     /// </summary>
     public MappingIdSource IdFrom { get; init; } = MappingIdSource.DeliveryKey;
+
+    /// <summary>
+    /// The dataset of a fragment (<see cref="MappingDefinition.Fragment"/>), which keys no record of its own: no system and no
+    /// key columns. Nothing derives a key, a label or an id from it, since a fragment only ever renders into a record the flow's
+    /// own mapping keyed.
+    /// </summary>
+    public static MappingDataset None { get; } = new() { System = string.Empty, Key = [] };
 }
 
 /// <summary>What the unique segment of a mapping's OSDU ids is made from (<c>dataset.idFrom</c>).</summary>
@@ -283,6 +310,13 @@ public enum MappingSourceKind
     /// is written without the link while the child is not there.
     /// </summary>
     Child,
+
+    /// <summary>
+    /// A section of the record a fragment adds to (<c>$base</c>, osdu/docs/reference/flow/enrich.md): the record as the flow's
+    /// own mapping rendered it and the steps of <c>enrich:</c> before this one added to it, read as the step renders, never
+    /// from the platform.
+    /// </summary>
+    Base,
 }
 
 /// <summary>Where an entry's value comes from.</summary>
@@ -298,6 +332,9 @@ public sealed record MappingSource
 
     /// <summary>The prefix the reference to one of the record's children is named with: <c>child.welldb:wks:work-product-component--WellLogDetail:1.0.0</c>.</summary>
     public const string ChildPrefix = "child";
+
+    /// <summary>The prefix a section of the record a fragment adds to is named with: <c>base.data.Name</c>.</summary>
+    public const string BasePrefix = "base";
 
     public required MappingSourceKind Kind { get; init; }
 
@@ -329,6 +366,12 @@ public sealed record MappingSource
     public string? ChildKind { get; init; }
 
     /// <summary>
+    /// For a base source: the path of the section it reads in the record the fragment adds to, from the record's root, as
+    /// the record writes it (<c>data.Name</c>, <c>data.Datasets</c>).
+    /// </summary>
+    public string? BasePath { get; init; }
+
+    /// <summary>
     /// For a node written with <c>$lookup</c>, the lookup it reads (<see cref="MappingDefinition.Lookups"/>): its cached type
     /// is the lookup's, and the entry carries the lookup's findBy lines and modifiers, so it finds the record every other
     /// reader of the lookup finds. Null for any other source.
@@ -345,6 +388,7 @@ public sealed record MappingSource
         MappingSourceKind.Expression => Expression!.Text,
         MappingSourceKind.Parent => $"{ParentPrefix}.{ParentPath}",
         MappingSourceKind.Child => $"{ChildPrefix}.{ChildKind}",
+        MappingSourceKind.Base => $"{BasePrefix}.{BasePath}",
         _ when Lookup is not null => $"{MappingLookup.Prefix}.{Lookup}.{CacheField}",
         _ => $"{Prefix}.{CacheType}.{CacheField}",
     };

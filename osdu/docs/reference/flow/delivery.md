@@ -36,6 +36,7 @@ keywords:
 yamlPath: "(root, flowType: delivery)"
 related:
   - delivery-flow-interfaces
+  - delivery-flow-enrich
   - delivery-flow-routes
   - delivery-flow-mapping
   - delivery-concept-change-detection
@@ -229,6 +230,7 @@ schedule:
 | `verify` | map | no | What a verify run does with drift. See [verify](#verify). |
 | `failWhen` | map | no | When record failures stop the run. See [failWhen](#failwhen). |
 | `cache` | map | no | The types of the partition's cache the pipeline brings up to date before it runs and after it. See [cache](#cache). |
+| `enrich` | map | no | Steps that extend each record once the mapping has rendered it, each a fragment rendering from rows of its own; the record is sent once with every step in it. See [enrich](enrich.md). |
 | `interfaces` | map | no | The interface form. See [a source with interfaces](interfaces.md). |
 
 ## source

@@ -23,6 +23,15 @@ public static class PayloadRoots
             Add(roots, FlowParameters.ResolvePath(flow, payload.Root, values, $"source.payloads.{name}.root"));
         }
 
+        // The files a step of enrich: registers sit under the step's own root (osdu/docs/reference/flow/enrich.md).
+        foreach (var step in flow.Enrich ?? [])
+        {
+            if (step.Files is { } files)
+            {
+                Add(roots, FlowParameters.ResolvePath(flow, files.Payload.Root, values, $"enrich.{step.Name}.files.root"));
+            }
+        }
+
         return roots;
     }
 

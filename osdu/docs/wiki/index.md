@@ -220,6 +220,10 @@ other packages adopt the same contract.
   why the menu is one layout of every page in groups that each answer one question (Operate, Ledger, OSDU, Build,
   Explore, Admin, Settings) rather than SQLFlow's groups plus an OSDU group, why a page left out fails at startup, and
   why fixing SQLFlow's own groups, moving entries one by one, per-entry scopes and more groups were rejected.
+- [0035: a record built in steps is rendered as one chain by its own flow, and sent once for any change](decisions/0035-enrich-chains.md) -
+  why steps that extend a record are an `enrich:` block of its delivery flow rendering fragments with its mapping, why
+  the whole chain renders again on every change and the record is written once, why a fragment only adds, and why
+  steps writing the record in OSDU, a landing per step, stored fragments and preserved keys were rejected.
 
 ## Coverage
 

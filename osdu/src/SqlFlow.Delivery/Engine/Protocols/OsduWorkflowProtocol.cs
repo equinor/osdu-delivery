@@ -1039,7 +1039,21 @@ public sealed class OsduWorkflowProtocol : IDeliveryProtocol
             return outcome;
         }
 
-        var notes = new List<string> { outcome.Detail };
+        var (removed, notes) = await RemoveCreatedAsync(targetId, scope, targetState, ct).ConfigureAwait(false);
+        return outcome with { Deleted = outcome.Deleted || removed > 0, Detail = string.Join("; ", [outcome.Detail, .. notes]) };
+    }
+
+    /// <summary>
+    /// What a removal of <paramref name="targetId"/> at <paramref name="scope"/> takes with it beside the record (the records the
+    /// runs created, when the results remove them, and at <see cref="RemovalScope.Everything"/> the inputs and files registered for
+    /// it), each removed at the same scope: how many were, and what a note says of them. A step of <c>enrich:</c> running a workflow
+    /// over a record removes its runs' records this way, its record being the flow's route's (osdu/docs/reference/flow/enrich-workflow.md).
+    /// </summary>
+    internal async Task<(int Removed, IReadOnlyList<string> Notes)> RemoveCreatedAsync(
+        string targetId, RemovalScope scope, IReadOnlyDictionary<string, string>? targetState, CancellationToken ct)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(targetId);
+        var notes = new List<string>();
         var removed = 0;
         var created = new List<string>();
         if (_route.Results.Remove)
@@ -1081,7 +1095,7 @@ public sealed class OsduWorkflowProtocol : IDeliveryProtocol
             notes.Add(string.Create(CultureInfo.InvariantCulture, $"the runs created {count} record(s) and {created.Count} could be named for removal; remove the others by their kind"));
         }
 
-        return outcome with { Deleted = outcome.Deleted || removed > 0, Detail = string.Join("; ", notes) };
+        return (removed, notes);
     }
 
     /// <summary>

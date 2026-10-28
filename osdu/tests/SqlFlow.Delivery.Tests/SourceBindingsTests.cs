@@ -64,4 +64,40 @@ public sealed class SourceBindingsTests
         // A route that streams no payload streams none, whatever the source declares.
         Assert.Null(PayloadParts.Streamed(flow with { Target = flow.Target with { Protocol = DeliveryProtocol.Storage } }));
     }
+
+    [Fact]
+    public void A_payload_a_step_supplies_has_its_columns_checked_against_the_steps_table()
+    {
+        var sample = new DeliveryDocumentLoader().LoadFlow(Samples.Flow);
+        var mapping = new MappingCatalog(Samples.Mappings, new DeliveryDocumentLoader()).Load(sample.Render.Mapping);
+        var bulk = new FlowPayload { Root = "../data/grid", LocationColumn = "grid_folder", HashColumn = "grid_hash", Step = "grid" };
+        var datasets = new Dictionary<string, FlowSourceDataset>(sample.Source.Datasets, StringComparer.Ordinal)
+        {
+            ["grid"] = new FlowSourceDataset
+            {
+                Object = "OsduData.silver.WellLogGrid",
+                Join = new Dictionary<string, string>(StringComparer.Ordinal) { ["source_project"] = "source_project", ["log_id"] = "log_id" },
+            },
+        };
+        var flow = sample with
+        {
+            Source = sample.Source with { Datasets = datasets, Payloads = new Dictionary<string, FlowPayload>(StringComparer.Ordinal) { [PayloadParts.Bulk] = bulk } },
+            Enrich = [new EnrichStep { Name = "grid", ReadsRows = true, Bulk = bulk }],
+        };
+        SourceHeader WithGrid(params string[] without)
+        {
+            var header = Header("curve_folder", "payload_hash");
+            var columns = new Dictionary<string, IReadOnlySet<string>>(header.Columns, StringComparer.OrdinalIgnoreCase)
+            {
+                ["grid"] = new[] { "source_project", "log_id", "grid_folder", "grid_hash" }.Except(without).ToHashSet(StringComparer.OrdinalIgnoreCase),
+            };
+            return header with { Columns = columns };
+        }
+
+        // The record table holds none of the payload's columns, and need not: the step's table names its files.
+        SourceBindings.Check(flow, mapping, WithGrid(), "flow.yaml");
+
+        var hash = Assert.Throws<FlowValidationException>(() => SourceBindings.Check(flow, mapping, WithGrid("grid_hash"), "flow.yaml"));
+        Assert.Contains("payload 'bulk' takes its content hash from column 'grid_hash', which the table of step 'grid', OsduData.silver.WellLogGrid, does not hold", hash.Message, StringComparison.Ordinal);
+    }
 }

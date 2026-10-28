@@ -24,6 +24,7 @@
     "src/features/delivery/orphanedLedgers.ts",
     "src/features/delivery/firstRecords.ts",
     "src/features/delivery/utcInstant.ts",
+    "src/features/delivery/enrichSteps.ts",
     "../../sqlflow/gui/src/lib/time.ts"
   ]
 }

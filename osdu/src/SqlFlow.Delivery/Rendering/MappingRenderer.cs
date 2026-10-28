@@ -95,9 +95,11 @@ public sealed class MappingRenderer
             throw new FlowValidationException($"{Where(mapping)}: parameter '{missing.Name}' is required but the flow supplies no value under render.parameters.");
         }
 
-        _requiredData = schema.RequiredAt("data");
+        // A fragment adds paths to a record the flow's own mapping renders whole (osdu/docs/reference/flow/enrich.md): what the
+        // schema requires, and the lists a record carries empty, are that record's, so a fragment writes neither.
+        _requiredData = mapping.Fragment ? [] : schema.RequiredAt("data");
         // A DSPDM business object row is a row of single values that never reaches Storage: it is given no empty list.
-        _writesLists = !DspdmKinds.Is(mapping.Kind);
+        _writesLists = !DspdmKinds.Is(mapping.Kind) && !mapping.Fragment;
         _lists = new ListValues(schema, recordLists: _writesLists);
         _recordEntries = mapping.Entries.Where(e => !e.IsRepeater && !e.Target.IsRepeated).ToList();
         _assertions = mapping.Assertions().ToList();
@@ -196,14 +198,22 @@ public sealed class MappingRenderer
         }
 
         var columns = mapping.Dataset.Key.Select(column => $"{DatasetColumn.Prefix}.{column}").ToList();
-        var document = new JsonObject
+
+        // A fragment's shape is the paths it adds: the id and kind are those of the record the flow's own mapping renders.
+        var document = mapping.Fragment
+            ? new JsonObject { ["data"] = new JsonObject() }
+            : new JsonObject
+            {
+                ["id"] = mapping.Dataset.IdFrom == MappingIdSource.Key
+                    ? $"{partition}:{mapping.EntityType}:<{string.Join(":", columns)}, percent-encoded>"
+                    : $"{partition}:{mapping.EntityType}:<delivery key from {mapping.Dataset.System}, {string.Join(", ", columns)}>",
+                ["kind"] = mapping.Kind,
+                ["data"] = new JsonObject(),
+            };
+        if (mapping.Fragment)
         {
-            ["id"] = mapping.Dataset.IdFrom == MappingIdSource.Key
-                ? $"{partition}:{mapping.EntityType}:<{string.Join(":", columns)}, percent-encoded>"
-                : $"{partition}:{mapping.EntityType}:<delivery key from {mapping.Dataset.System}, {string.Join(", ", columns)}>",
-            ["kind"] = mapping.Kind,
-            ["data"] = new JsonObject(),
-        };
+            notes.Add($"{mapping.Reference} is a fragment: the paths a step of enrich: adds to every record the flow's own mapping renders, after the steps it comes after");
+        }
         renderer.Assemble(document, new ShapeValues(renderer, notes), notes);
         foreach (var (entry, assertion) in renderer.Assertions)
         {
@@ -281,6 +291,7 @@ public sealed class MappingRenderer
     public RenderResult Render(SourceRecord record)
     {
         ArgumentNullException.ThrowIfNull(record);
+        RefuseFragment(nameof(Render));
         var holds = new List<string>();
         var usages = new List<CacheUsage>();
 
@@ -326,6 +337,54 @@ public sealed class MappingRenderer
             Choices = searched.Chosen,
             Assertions = asserted,
         };
+    }
+
+    /// <summary>
+    /// Renders the paths a fragment adds (osdu/docs/reference/flow/enrich.md) for one record: its entries over the step's row
+    /// or rows in <paramref name="record"/>, its <c>$base</c> nodes over <paramref name="baseRecord"/>, the record as the
+    /// flow's own mapping and the steps before this one left it. The result is the fragment alone, which the record's chain
+    /// adds to the record; nothing here is hashed, since what is sent is the record with every step's fragment in it.
+    /// </summary>
+    /// <param name="record">The step's rows: its one row as the fragment's own, or its rows as the child dataset named after the step.</param>
+    /// <param name="baseRecord">The record the fragment adds to. It is read, never changed.</param>
+    public FragmentRender RenderFragment(SourceRecord record, JsonObject baseRecord)
+    {
+        ArgumentNullException.ThrowIfNull(record);
+        ArgumentNullException.ThrowIfNull(baseRecord);
+        if (!_mapping.Fragment)
+        {
+            throw new InvalidOperationException($"{_mapping.Reference} renders a whole record, and only a fragment renders the paths a step of enrich: adds; render it with Render.");
+        }
+
+        var holds = new List<string>();
+        var usages = new List<CacheUsage>();
+        var searched = new RenderTrail { Assertions = AssertionsLog(), Base = baseRecord };
+        var document = new JsonObject();
+        Assemble(document, new RowValues(this, record, holds, usages, searched), holds);
+        var asserted = Assert(document, searched.Assertions);
+        return new FragmentRender
+        {
+            Document = (JsonObject)CanonicalJson.Normalize(document)!,
+            Holds = holds,
+            CacheUsages = Distinct(usages),
+            SearchUsages = searched.Used,
+            Unanswered = searched.Unanswered,
+            Choices = searched.Chosen,
+            Assertions = asserted,
+        };
+    }
+
+    /// <summary>
+    /// A fragment keys no record, so it has no id, no kind and nothing to hash on its own: rendering one as a whole record is
+    /// an engine defect, and stops here rather than deliver a record keyed by nothing.
+    /// </summary>
+    private void RefuseFragment(string operation)
+    {
+        if (_mapping.Fragment)
+        {
+            throw new InvalidOperationException(
+                $"{_mapping.Reference} is a fragment, the paths a step of enrich: adds to a record, and {operation} renders a whole record; render it with {nameof(RenderFragment)} over the record its flow's mapping renders.");
+        }
     }
 
     /// <summary>
@@ -384,6 +443,7 @@ public sealed class MappingRenderer
     {
         ArgumentNullException.ThrowIfNull(record);
         ArgumentNullException.ThrowIfNull(selection);
+        RefuseFragment(nameof(Inspect));
         var holds = new List<string>();
         var searched = new RenderTrail { Assertions = AssertionsLog() };
         var trail = new InspectionTrail(selection);
@@ -1001,7 +1061,7 @@ public sealed class MappingRenderer
 
         public IReadOnlyList<PlatformQuestion> Asked => searched.Unanswered;
 
-        public string WhyEmpty(MappingEntry entry, SourceRow? item) => EntryValues.WhyEmpty(entry, record.Row, item, renderer);
+        public string WhyEmpty(MappingEntry entry, SourceRow? item) => EntryValues.WhyEmpty(entry, record.Row, item, renderer, searched.Base);
     }
 
     /// <summary>Placeholders in place of a record's values: one item per repeater, whatever its condition, with a note saying how many a record takes.</summary>
@@ -1129,6 +1189,30 @@ public sealed record RenderResult
     /// which holds the record for a failure whose action is hold. What an omission left out is already out of the document.
     /// </summary>
     public Validation.AssertionFindings? Assertions { get; init; }
+
+    /// <summary>
+    /// What each step of the flow's <c>enrich:</c> added to the document, in the order the steps rendered
+    /// (osdu/docs/reference/flow/enrich.md): the paths each set and the items each added, which the record's composition
+    /// shows. Empty for a flow that declares no step, or a render that stopped before its steps. Not part of the document's
+    /// hash beyond what it put into the document: rendering the record again from what the ledger records tells it again.
+    /// </summary>
+    public IReadOnlyList<StepContribution> Enrichment { get; init; } = [];
+
+    /// <summary>
+    /// The datasets the record's steps register (osdu/docs/reference/flow/enrich-files.md), each with where its
+    /// files are and their hash, and what the delivery does with them, which the plan resolves after the render
+    /// (<see cref="EnrichParts.Resolve"/>) and the delivery follows; null for a record whose steps register no files.
+    /// </summary>
+    public EnrichWork? StepWork { get; init; }
+
+    /// <summary>The datasets the record's steps register; empty for a record whose steps register no files.</summary>
+    public IReadOnlyList<EnrichPart> StepParts => StepWork?.Parts ?? [];
+
+    /// <summary>
+    /// The steps that held and were set aside (<c>onHold: step</c>, osdu/docs/reference/flow/enrich-holds.md), in the order they
+    /// render: the record goes ahead with what each added to its last delivery, and the ledger lists it with them held.
+    /// </summary>
+    public IReadOnlyList<string> StepsSetAside => Enrichment.Where(c => c.SetAside).Select(c => c.Step).ToList();
 }
 
 /// <summary>

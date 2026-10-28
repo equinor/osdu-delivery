@@ -66,6 +66,32 @@ public sealed record AssertionFindings
     [System.Text.Json.Serialization.JsonIgnore]
     public bool Holds => Held > 0;
 
+    /// <summary>
+    /// What the assertions of several mappings found of one record, as one: a record of a flow with <c>enrich:</c> steps is
+    /// judged by its flow's mapping and by each step's fragment (osdu/docs/reference/flow/enrich.md). The mappings are named
+    /// in order, the judgements and failures counted together, and the failures listed in order up to <see cref="MaxListed"/>.
+    /// Null when none of them states an assertion; the one findings as they are when only one does.
+    /// </summary>
+    public static AssertionFindings? Combine(IReadOnlyList<AssertionFindings> findings)
+    {
+        ArgumentNullException.ThrowIfNull(findings);
+        return findings.Count switch
+        {
+            0 => null,
+            1 => findings[0],
+            _ => new AssertionFindings
+            {
+                Mapping = string.Join(", ", findings.Select(f => f.Mapping).Distinct(StringComparer.Ordinal)),
+                Checked = findings.Sum(f => f.Checked),
+                Failed = findings.Sum(f => f.Failed),
+                Held = findings.Sum(f => f.Held),
+                Reported = findings.Sum(f => f.Reported),
+                Omitted = findings.Sum(f => f.Omitted),
+                Failures = findings.SelectMany(f => f.Failures).Take(MaxListed).ToList(),
+            },
+        };
+    }
+
     /// <summary>One line saying what the assertions found.</summary>
     public string Summary()
     {

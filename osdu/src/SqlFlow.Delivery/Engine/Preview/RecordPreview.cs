@@ -276,7 +276,128 @@ public sealed record PreviewDocument
     /// kept; what a failure that leaves its value out left out is already out of <see cref="Rendered"/>.
     /// </summary>
     public Validation.AssertionFindings? Assertions { get; init; }
+
+    /// <summary>
+    /// What each step of the flow's <c>enrich:</c> added to the document, in the order the steps render
+    /// (osdu/docs/reference/flow/enrich.md); empty for a flow that declares none.
+    /// </summary>
+    public IReadOnlyList<PreviewEnrichStep> Enrichment { get; init; } = [];
 }
+
+/// <summary>
+/// What one step of the flow's <c>enrich:</c> added to the previewed record: the fragment it rendered, how many rows of its
+/// dataset the record had, each path it set or added items to, the datasets it registers, and what it holds the record for.
+/// </summary>
+public sealed record PreviewEnrichStep
+{
+    public required string Step { get; init; }
+
+    /// <summary>The fragment the step rendered, as pinned; null for a step that registers files alone.</summary>
+    public string? Mapping { get; init; }
+
+    /// <summary>How many rows of its dataset the record had; null for a step that reads no rows.</summary>
+    public int? Rows { get; init; }
+
+    public IReadOnlyList<PreviewEnrichEffect> Effects { get; init; } = [];
+
+    /// <summary>
+    /// The datasets the step registers for the record (osdu/docs/reference/flow/enrich-files.md), each under
+    /// the id the record keeps linking; empty for a step that registers no files.
+    /// </summary>
+    public IReadOnlyList<PreviewEnrichDataset> Datasets { get; init; } = [];
+
+    public IReadOnlyList<string> Holds { get; init; } = [];
+
+    /// <summary>True when the step did not render: a step before it held the record, or waits for the platform.</summary>
+    public bool NotRendered { get; init; }
+
+    /// <summary>
+    /// True when the step held and was set aside (<c>onHold: step</c>, osdu/docs/reference/flow/enrich-holds.md): the record goes
+    /// ahead with what the step added to its last delivery, which <see cref="Effects"/> lists, and <see cref="Holds"/> says why.
+    /// </summary>
+    public bool SetAside { get; init; }
+
+    /// <summary>For a step set aside, the datasets its last delivery registered, which the record keeps linking.</summary>
+    public IReadOnlyList<string> KeptDatasets { get; init; } = [];
+
+    /// <summary>
+    /// What the step does beside rendering a fragment, in the order it does it: <c>files</c> it registers as datasets
+    /// (osdu/docs/reference/flow/enrich-files.md), the record's <c>bulk</c> data (enrich-bulk.md), a <c>workflow</c> it runs
+    /// (enrich-workflow.md); empty for a step that renders a fragment alone.
+    /// </summary>
+    public IReadOnlyList<string> Supplies { get; init; } = [];
+
+    /// <summary>What <paramref name="step"/> does beside its fragment, as <see cref="Supplies"/> names it; none for a step not found.</summary>
+    public static IReadOnlyList<string> SuppliesOf(Model.EnrichStep? step)
+    {
+        if (step is null)
+        {
+            return [];
+        }
+
+        var supplies = new List<string>(3);
+        if (step.Files is not null)
+        {
+            supplies.Add("files");
+        }
+
+        if (step.Bulk is not null)
+        {
+            supplies.Add("bulk");
+        }
+
+        if (step.Workflow is not null)
+        {
+            supplies.Add("workflow");
+        }
+
+        return supplies;
+    }
+
+    /// <summary>The preview of what <paramref name="contribution"/> says.</summary>
+    public static PreviewEnrichStep Of(Rendering.StepContribution contribution)
+    {
+        ArgumentNullException.ThrowIfNull(contribution);
+        return new PreviewEnrichStep
+        {
+            Step = contribution.Step,
+            Mapping = contribution.Mapping,
+            Rows = contribution.Rows,
+            Effects = contribution.Effects
+                .Select(e => new PreviewEnrichEffect(e.Kind == Rendering.CompositionEffectKind.Add ? "add" : "set", e.Path, e.Value.DeepClone()))
+                .ToList(),
+            Datasets = contribution.Datasets.Select(d => new PreviewEnrichDataset(d.Id, d.Kind, d.Row, d.Record.DeepClone())).ToList(),
+            Holds = contribution.Holds,
+            NotRendered = contribution.NotRendered,
+            SetAside = contribution.SetAside,
+            KeptDatasets = contribution.KeptDatasets,
+        };
+    }
+
+    /// <summary>The steps with the values they wrote left out, as a preview too large to show its document shows them: the paths stay.</summary>
+    public static IReadOnlyList<PreviewEnrichStep> WithoutValues(IReadOnlyList<PreviewEnrichStep> steps)
+    {
+        ArgumentNullException.ThrowIfNull(steps);
+        return steps.Select(s => s with
+        {
+            Effects = s.Effects.Select(e => e with { Value = null }).ToList(),
+            Datasets = s.Datasets.Select(d => d with { Record = null }).ToList(),
+        }).ToList();
+    }
+}
+
+/// <summary>
+/// One dataset a step registers for the previewed record: its id, made from the record's id and the step, its kind, the row of
+/// the step's dataset it is registered from, and what the step's dataset fragment rendered into it, left out (null) when the
+/// preview is too large to show its document. Its file properties are the Dataset service's, set when it is registered.
+/// </summary>
+public sealed record PreviewEnrichDataset(string Id, string Kind, int Row, JsonNode? Record);
+
+/// <summary>
+/// One thing a step did to the previewed record: <c>set</c> a path the record held nothing at, or <c>add</c> items to the list
+/// there; and what it wrote, left out (null) when the preview is too large to show its document.
+/// </summary>
+public sealed record PreviewEnrichEffect(string Kind, string Path, JsonNode? Value);
 
 /// <summary>
 /// The alternative of a <c>$coalesce</c> node that gave the value it wrote: which one of how many, where it reads, how many

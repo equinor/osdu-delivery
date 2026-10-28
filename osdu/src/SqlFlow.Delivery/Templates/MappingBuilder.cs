@@ -1464,6 +1464,15 @@ public static partial class MappingBuilder
     public static MappingDraft FromDefinition(MappingDefinition mapping)
     {
         ArgumentNullException.ThrowIfNull(mapping);
+
+        // The builder lays out a whole record: its key, its id, its access list and legal block. A fragment has none of them,
+        // and its $base nodes read the record a step adds to, which no draft input stands for.
+        if (mapping.Fragment)
+        {
+            throw new FlowValidationException(
+                $"Mapping {mapping.Reference} is a fragment (fragment: true), the paths a step of a delivery flow's enrich: adds to a record, and the mapping builder lays out whole records; edit the fragment's file.");
+        }
+
         return new MappingDraft
         {
             Name = mapping.Name,

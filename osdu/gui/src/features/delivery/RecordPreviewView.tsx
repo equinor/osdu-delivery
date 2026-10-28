@@ -20,6 +20,7 @@ import {
   type DeliveryPreviewChoice,
   type DeliveryPreviewDecision,
   type DeliveryPreviewDocument,
+  type DeliveryPreviewEnrichStep,
   type DeliveryPreviewFile,
   type DeliveryPreviewPayloadPart,
   type DeliveryPreviewReference,
@@ -28,6 +29,7 @@ import {
   type DeliveryRecordPreview,
 } from "../../api/delivery";
 import { AssertionFindingsView } from "./AssertionFindingsView";
+import { effectValueText, enrichOutcomeText, suppliesText } from "./enrichSteps";
 import { RecordStatusBadge } from "./DeliveryBadges";
 import { RecordName } from "./RecordName";
 import { downloadJson, envelopeFirst, fileNameOf, formatBytes } from "./osduDocument";
@@ -187,6 +189,96 @@ export function PreviewChoices({ choices, unverified, testId }: { choices: Deliv
           </ul>
         </div>
       )}
+    </div>
+  );
+}
+
+/** The most changes a step's row lists; the rest are counted, and the document above shows them all. */
+const EFFECTS_SHOWN = 8;
+
+const enrichColumns: Column<DeliveryPreviewEnrichStep>[] = [
+  { id: "step", header: "Step", render: (row) => <span className="font-mono text-[12px]">{row.step}</span> },
+  {
+    id: "mapping",
+    header: "Fragment",
+    render: (row) => {
+      const supplies = suppliesText(row.supplies);
+      return (
+        <span className="flex min-w-0 flex-col gap-0.5">
+          {row.mapping
+            ? <TruncatedText text={row.mapping} mono maxWidth={220} />
+            : <span className="text-[12px] text-muted-foreground" title="The step renders no fragment into the record">no fragment</span>}
+          {supplies !== null && (
+            <span className="text-[11px] text-muted-foreground" title="What the step does beside its fragment: the files it registers as datasets, the record's bulk data, the workflow it runs" data-testid="preview-enrich-supplies">
+              {`with ${supplies}`}
+            </span>
+          )}
+        </span>
+      );
+    },
+  },
+  {
+    id: "outcome",
+    header: "Outcome",
+    render: (row) => (
+      <span className="whitespace-nowrap text-[12px]" title={row.holds.length > 0 ? row.holds.join("; ") : undefined}>
+        {enrichOutcomeText(row)}
+      </span>
+    ),
+  },
+  {
+    id: "effects",
+    header: "What it added",
+    fill: true,
+    render: (row) => (row.effects.length === 0 && (row.datasets ?? []).length === 0 && (row.keptDatasets ?? []).length === 0
+      ? <span className="text-muted-foreground">-</span>
+      : (
+        <ul className="flex flex-col gap-0.5 text-[12px]">
+          {(row.keptDatasets ?? []).map((id) => (
+            <li key={`kept|${id}`} className="flex min-w-0 items-baseline gap-1.5" data-testid="preview-enrich-kept-dataset">
+              <Badge variant="outline" className="shrink-0 px-1 py-0 text-[10px]" title="Registered by the record's last delivery, and still linked while the step is set aside">kept</Badge>
+              <RecordName id={id} copy className="min-w-0 max-w-[420px] text-[12px]" copyTestId="copy-preview-enrich-kept-dataset" />
+            </li>
+          ))}
+          {(row.datasets ?? []).map((dataset) => (
+            <li key={dataset.id} className="flex min-w-0 items-baseline gap-1.5" data-testid="preview-enrich-dataset">
+              <Badge variant="outline" className="shrink-0 px-1 py-0 text-[10px]" title={`Registered as ${dataset.kind} from row ${dataset.row + 1} of the step's dataset, under the id the record links`}>dataset</Badge>
+              <RecordName id={dataset.id} copy className="min-w-0 max-w-[420px] text-[12px]" copyTestId="copy-preview-enrich-dataset" />
+            </li>
+          ))}
+          {row.effects.slice(0, EFFECTS_SHOWN).map((effect) => {
+            const value = effectValueText(effect.value);
+            return (
+              <li key={`${effect.kind}|${effect.path}`} className="flex min-w-0 items-baseline gap-1.5">
+                <Badge variant="outline" className="shrink-0 px-1 py-0 text-[10px]" title={effect.kind === "add" ? "Items added to the list here" : "A value set where the record held none"}>{effect.kind}</Badge>
+                <span className="shrink-0 font-mono">{effect.path}</span>
+                {value !== null && <TruncatedText text={value} mono maxWidth={360} className="text-muted-foreground" />}
+              </li>
+            );
+          })}
+          {row.effects.length > EFFECTS_SHOWN && (
+            <li className="text-muted-foreground">{`and ${(row.effects.length - EFFECTS_SHOWN).toLocaleString()} more`}</li>
+          )}
+        </ul>
+      )),
+  },
+];
+
+/**
+ * What each step of the flow's enrich: added to the record, in the order the steps render (osdu/docs/reference/flow/enrich.md):
+ * the fragment, how many rows the record had, and each path it set or list it added to. The document above is the record
+ * with every step in it, the one a delivery sends. Nothing for a flow that declares no step.
+ */
+export function PreviewEnrichment({ document, testId }: { document: DeliveryPreviewDocument; testId: string }) {
+  const steps = document.enrichment ?? [];
+  if (steps.length === 0) {
+    return null;
+  }
+
+  return (
+    <div className="flex flex-col gap-1" data-testid={testId}>
+      <h3 className="text-[13px] font-medium">What each step of enrich added</h3>
+      <DataTable columns={enrichColumns} rows={steps} rowKey={(row) => row.step} emptyMessage="The flow declares no step." data-testid={`${testId}-steps`} />
     </div>
   );
 }
@@ -494,6 +586,7 @@ export function RecordPreviewView({ preview }: { preview: DeliveryRecordPreview 
                 </div>
               )}
               <PreviewChoices choices={document.choices} unverified={document.unverified} testId="preview-coalesce" />
+              <PreviewEnrichment document={document} testId="preview-enrichment" />
             </div>
           )}
         </TabsContent>

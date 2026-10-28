@@ -335,7 +335,7 @@ public sealed class MemoryIngestionTables : IIngestionSourceFactory
             return _tables.Records.Where(r => InScope(r) && InWindow(r, header.Window, header.Selection.Kind));
         }
 
-        private static bool InWindow(MemoryRecord record, SourceWindow window, SourceSelectionKind kind)
+        private bool InWindow(MemoryRecord record, SourceWindow window, SourceSelectionKind kind)
         {
             if (kind != SourceSelectionKind.Incremental)
             {
@@ -343,8 +343,12 @@ public sealed class MemoryIngestionTables : IIngestionSourceFactory
             }
 
             // The row changed in the window, or was soft-deleted in it: the ingestion flow tags a row deleted without
-            // touching its update column.
-            return Within(record.UpdatedUtc, window) || (record.DeletedUtc is { } deleted && Within(deleted, window));
+            // touching its update column. A record whose own row did not change is still a candidate when a row of one of the
+            // flow's child datasets changed or was soft-deleted in it, as the SQL Server source reads it (IngestionSql), since
+            // the record's document is built from those rows too; DatasetUpdatedUtc is when the newest of them moved.
+            return Within(record.UpdatedUtc, window)
+                || (record.DeletedUtc is { } deleted && Within(deleted, window))
+                || _flow.Source.Datasets.Keys.Any(name => record.DatasetUpdatedUtc.TryGetValue(name, out var changed) && Within(changed, window));
         }
 
         private static bool Within(DateTime moment, SourceWindow window)

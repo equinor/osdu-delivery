@@ -35,17 +35,26 @@ public static class DeliveryDocumentHash
     /// <summary>
     /// The hash of <paramref name="source"/> with its name and path left out, and of the mapping each interface pins, by its
     /// reference in <paramref name="mappings"/> (the content hash of each mapping document the repository holds); a mapping
-    /// the repository does not hold counts as none.
+    /// the repository does not hold counts as none. The fragments the interfaces' <c>enrich:</c> steps pin count the same
+    /// way; a source whose interfaces declare no step hashes as it always did.
     /// </summary>
     public static string Of(SourceDefinition source, IReadOnlyDictionary<string, string> mappings)
     {
         ArgumentNullException.ThrowIfNull(source);
         ArgumentNullException.ThrowIfNull(mappings);
+        var fragments = source.Interfaces.Any(f => f.Enrich is { Count: > 0 })
+            ? source.Interfaces.Select(f => (f.Enrich ?? [])
+                .SelectMany(s => new[] { s.Mapping, s.Files?.Mapping })
+                .OfType<string>()
+                .Select(reference => mappings.GetValueOrDefault(reference))
+                .ToList()).ToList()
+            : null;
         return Hash(new
         {
             source.ParallelInterfaces,
             Interfaces = source.Interfaces.Select(f => f with { Name = string.Empty, SourcePath = null }).ToList(),
             Mappings = source.Interfaces.Select(f => mappings.GetValueOrDefault(f.Render.Mapping)).ToList(),
+            Fragments = fragments,
         });
     }
 

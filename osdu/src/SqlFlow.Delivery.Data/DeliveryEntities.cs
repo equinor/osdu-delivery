@@ -263,6 +263,14 @@ public sealed class DeliveryRecord
     /// </summary>
     public string? ChildLinkKey { get; set; }
 
+    /// <summary>
+    /// The steps of the flow's <c>enrich:</c> that held and were set aside on the record's last render
+    /// (osdu/docs/reference/flow/enrich-holds.md), comma-separated in the order they render: the record went ahead with what
+    /// each added to its last delivery. Null when none was. Set as the render is recorded (work queued, a hold, a render that
+    /// sent nothing), so the records a step holds in are found through their index.
+    /// </summary>
+    public string? HeldSteps { get; set; }
+
     public string? PendingRenderContext { get; set; }
 
     public string? PendingSourceFingerprint { get; set; }
@@ -3654,6 +3662,12 @@ public static class DeliveryModel
     /// </summary>
     public const int MaxTargetIdLength = 500;
 
+    /// <summary>
+    /// The longest list of held steps a record keeps: sixteen steps of at most 32 characters each, comma-separated, with room
+    /// to spare (the limits a delivery document's <c>enrich:</c> is refused beyond).
+    /// </summary>
+    public const int MaxHeldStepsLength = 600;
+
     /// <summary>The longest lease token, and the longest worker name a lease records as its owner.</summary>
     public const int MaxLeaseTokenLength = 200;
 
@@ -3805,6 +3819,7 @@ public static class DeliveryModel
             OptionalOsduId(e.Property(r => r.ParentId)).HasMaxLength(MaxTargetIdLength);
             OptionalOsduId(e.Property(r => r.ChildLinkKey)).HasMaxLength(MaxTargetIdLength);
             OptionalOsduId(e.Property(r => r.OccupiedTargetId)).HasMaxLength(MaxTargetIdLength);
+            e.Property(r => r.HeldSteps).HasMaxLength(MaxHeldStepsLength);
             e.Property(r => r.Status).HasMaxLength(16).IsRequired();
             e.Property(r => r.LastVerifyOutcome).HasMaxLength(16);
             e.Property(r => r.LeaseOwner).HasMaxLength(200);
@@ -3834,6 +3849,9 @@ public static class DeliveryModel
             // A child that lands finds the records of its partition that link it, of whatever flow, by the unique segment of
             // its id, to plan them again.
             e.HasIndex(r => new { r.PartitionId, r.ChildLinkKey }).HasFilter("[ChildLinkKey] IS NOT NULL");
+            // The records of a flow that a step of enrich: held in and was set aside on: the Records tab's filter and the flow's
+            // count, the few such records and no others.
+            e.HasIndex(r => new { r.PartitionId, r.FlowId }, "IX_Record_PartitionId_FlowId_HeldSteps").IncludeProperties(r => r.HeldSteps).HasFilter("[HeldSteps] IS NOT NULL");
             // One OSDU record, one flow: the database refuses a second flow's claim on an id, whatever races the intakes
             // run. An id names its partition, so this stays unique across every partition.
             e.HasIndex(r => r.ClaimedTargetId).IsUnique().HasFilter("[ClaimedTargetId] IS NOT NULL");

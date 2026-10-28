@@ -78,6 +78,7 @@ changes how a document gets to OSDU, never what it is, and redelivers nothing.
 | `render.mapping`, and the mapping file's content (a fingerprint of the document read as YAML: comments, layout and key order do not count, every other edit does, its `description` included) | `target.endpoint`, `target.auth`, `target.headers` |
 | The template version the mapping pins (its content hash) | `target.protocol` and `target.protocolOptions` |
 | The mapping's parameter values as they resolve (`render.parameters`, and the `${env:OSDU_LEGAL_TAG}`-style defaults the kind supplies) | `reliability`, `parallelism`, `failWhen`, `verify` |
+| For a flow with [`enrich:`](../flow/enrich.md) steps, each step's fragment: its reference and fingerprint, its template version and its parameter values, in the order the steps render | |
 | The partition whose cache the render reads, and the cache version | `target.validation`, `target.verifyReferences` |
 | For a mapping that searches the platform, the partition's system properties its searches rely on | `source.incremental`, `source.work`, `schedule` |
 

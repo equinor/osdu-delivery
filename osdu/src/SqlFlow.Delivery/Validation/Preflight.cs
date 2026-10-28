@@ -98,8 +98,12 @@ public static partial class Preflight
         }
 
         // 5. Every property the schema requires has an entry that is allowed to be empty only if the schema allows it. The
-        //    rule is MappingCoverage's, so the gate and the view of what a mapping covers judge a required property alike.
-        issues.AddRange(MappingCoverage.RequiredIssues(mapping, schema, where));
+        //    rule is MappingCoverage's, so the gate and the view of what a mapping covers judge a required property alike. A
+        //    fragment adds paths to a record the flow's own mapping renders whole, which is the one held to them.
+        if (!mapping.Fragment)
+        {
+            issues.AddRange(MappingCoverage.RequiredIssues(mapping, schema, where));
+        }
 
         // 6. Every dataset column and child dataset exists in the flow's source tables.
         if (sourceColumns is not null)

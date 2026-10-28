@@ -329,7 +329,8 @@ partitions is read in the title bar's partition.
   flow's newest run as the Delivery page does: its counts and submissions move with a run, and every view of the flow is
   read again within seconds of a run ending.
 - **Records**: the ledger's records, searched by delivery key, label, source key or OSDU id, with a status picker,
-  **Drifted only** and **Match anywhere**; links from elsewhere narrow it to one run (`?run=`), what a submission last
+  **Drifted only**, **Step held** (while a step of `enrich:` is set aside on any record,
+  [a step set aside on its hold](../flow/enrich-holds.md)) and **Match anywhere**; links from elsewhere narrow it to one run (`?run=`), what a submission last
   planned (`?submission=`) or delivered (`?delivered=`), or one issue (`?issue=`). **Export** downloads every record the
   filter matches, not the page in view, as an Excel workbook to work through where the records come from
   ([records export](../cli/records.md#records-export)); it says on hover why it cannot when nothing matches or more than

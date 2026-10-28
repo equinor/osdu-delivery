@@ -24,6 +24,7 @@ related:
   - delivery-wiki-0002-client-supplied-ids
   - delivery-wiki-0009-searched-references
   - delivery-wiki-linked-canonical-and-custom-records
+  - delivery-wiki-0035-enrich-chains
 sourceRefs:
   - osdu/src/SqlFlow.Delivery/Documents/MappingMapper.Record.cs
   - osdu/src/SqlFlow.Delivery/Rendering/EntryValues.cs
@@ -33,7 +34,7 @@ sourceRefs:
   - osdu/src/SqlFlow.Delivery/Ledger/OsduLedger.Children.cs
   - osdu/src/SqlFlow.Delivery/Documents/DeliveryLineage.cs
   - osdu/tests/SqlFlow.Delivery.Tests/ChildLedgerTests.cs
-updated: 2026-10-23
+updated: 2026-10-27
 ---
 # 0023: A canonical record links its children as it renders, once OSDU holds them, and a child landing plans it again
 

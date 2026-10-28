@@ -552,7 +552,7 @@ public sealed class SubmissionIntake
                         }
 
                         writer ??= await WorkBatchWriter.OpenAsync(_stores, workRoot, submission.SubmissionId, nextBatch, ct).ConfigureAwait(false);
-                        var reference = await writer.WriteAsync(new WorkItem(entry.Key.Value.Value, entry.TargetId!, entry.Render!.Canonical, entry.Render.Assertions?.ToText()), ct).ConfigureAwait(false);
+                        var reference = await writer.WriteAsync(new WorkItem(entry.Key.Value.Value, entry.TargetId!, entry.Render!.Canonical, entry.Render.Assertions?.ToText(), EnrichParts.Encode(entry.Render.StepWork)), ct).ConfigureAwait(false);
                         // The values this document was built from become one set id on the record: no row per
                         // dependency, and the id is resolved once per distinct combination for the whole run.
                         var cacheSet = entry.Render!.CacheUsages.Count == 0
@@ -656,6 +656,7 @@ public sealed class SubmissionIntake
         PayloadModifiedUtc = entry.PayloadModifiedUtc,
         RenderContext = entry.SkipTier == SkipTier.ContentHash ? renderContext : null,
         ChildLinkKey = entry.SkipTier == SkipTier.ContentHash ? entry.Render?.ChildLinkKey : null,
+        HeldSteps = entry.SkipTier == SkipTier.ContentHash ? HeldStepsOf(entry.Render) : null,
         RunId = RunId,
     };
 
@@ -1034,8 +1035,13 @@ public sealed class SubmissionIntake
         PendingParentVersion = entry.Render?.Parent?.Version,
         // The children the held render looked for: what a child landing finds the record by once its hold is lifted.
         ChildLinkKey = entry.Render?.ChildLinkKey,
+        HeldSteps = HeldStepsOf(entry.Render),
         Basis = PlanBasis.Of(entry.Existing),
     };
+
+    /// <summary>The steps a render set aside on their holds (osdu/docs/reference/flow/enrich-holds.md), as the ledger lists them; null for none.</summary>
+    private static string? HeldStepsOf(RenderResult? render)
+        => render?.StepsSetAside is { Count: > 0 } aside ? string.Join(',', aside) : null;
 
     private RecordState PendingState(FlowDefinition flow, SubmissionState submission, ResolvedMapping resolved, PlanEntry entry, DocumentRef reference, int batch) => new()
     {
@@ -1070,6 +1076,8 @@ public sealed class SubmissionIntake
         PendingParentVersion = entry.Render.Parent?.Version,
         // The children the document links, or was rendered without: a child landing plans the record again.
         ChildLinkKey = entry.Render.ChildLinkKey,
+        // The steps the document went ahead without rendering, each with what it added to the record's last delivery.
+        HeldSteps = HeldStepsOf(entry.Render),
         Basis = PlanBasis.Of(entry.Existing),
     };
 

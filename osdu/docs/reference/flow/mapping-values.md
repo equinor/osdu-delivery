@@ -128,6 +128,7 @@ A value node reads its value with exactly one of these:
 | `$lookup` | A field of the record a lookup of the `lookups` block finds (`wellbore.id`). See [mapping lookups](mapping-lookups.md). |
 | `$parent` | A section of the record's parent, by its path (`data.DDMSDatasets`), for a template linked to a parent. See [mapping $parent](mapping-parent.md). |
 | `$child` | The reference to the record's child of a kind (`welldb:wks:work-product-component--WellLogDetail:1.0.0`) whose template is linked to the mapping's own, once OSDU holds it. See [mapping $child](mapping-child.md). |
+| `$base` | In a fragment only: a section of the record the fragment adds to (`data.Name`), as the flow's mapping and the steps of `enrich:` before it left it. See [fragments](mapping-fragment.md#base-the-record-as-the-steps-before-left-it). |
 | `$coalesce` | The first of two or more alternatives that gives a value. See [$coalesce](#coalesce-the-first-value-that-is-there). |
 
 and takes its settings beside it:

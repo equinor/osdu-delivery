@@ -169,6 +169,50 @@ public static class DeliveryLineage
                     // A mapping that cannot be a node of its own still orders the flow: the flow reads what it reads.
                     datasets.AddRange(reads);
                 }
+
+                // Each step of enrich: renders its fragment into the record (osdu/docs/reference/flow/enrich.md): a mapping node
+                // of its own, read by the flow, reading what the fragment reads, so the flows capturing those run first. A step
+                // that registers files reads them where its rows say, writes their dataset kind, and renders its dataset
+                // fragment the same way.
+                var mappings = DeliveryLayout.ResolveWithin(flow, scan.Context.DocumentFolder, scan.Context.Contains)!.MappingsDirectory;
+                foreach (var step in flow.Enrich ?? [])
+                {
+                    if (step.Mapping is { } reference)
+                    {
+                        StepFragment(reference, $"enrich.{step.Name}");
+                    }
+
+                    if (step.Files is { } stepFiles)
+                    {
+                        files.Add(new DeclaredFileLocation { Relation = LineageRelation.Reads, Location = stepFiles.Payload.Root, FilePattern = stepFiles.Payload.Pattern });
+                        Add(datasets, OsduLineage.Type(
+                            LineageRelation.Writes, endpoint, partition, stepFiles.Kind, who, $"enrich.{step.Name}.files.kind", warnings));
+                        if (stepFiles.Mapping is { } filesReference)
+                        {
+                            StepFragment(filesReference, $"enrich.{step.Name}.files");
+                        }
+                    }
+                }
+
+                void StepFragment(string reference, string where)
+                {
+                    var (fragment, reason) = scan.Mapping(mappings, reference);
+                    if (fragment is null)
+                    {
+                        warnings.Add($"{who} shows fewer reads in lineage than it makes: fragment '{reference}' of {where} could not be read ({reason}).");
+                        return;
+                    }
+
+                    var stepReads = MappingReads(fragment, endpoint, partition, scan, who, warnings);
+                    if (OsduLineage.Mapping(endpoint, partition, found.Directory, fragment.Reference, who, warnings) is { } stepNode)
+                    {
+                        derivations.Add(new DeclaredDerivation { Dataset = stepNode, From = stepReads });
+                    }
+                    else
+                    {
+                        datasets.AddRange(stepReads.Where(r => !datasets.Contains(r)));
+                    }
+                }
             }
 
             // The routes that register datasets beside the record write the dataset kind too; the workflow route writes

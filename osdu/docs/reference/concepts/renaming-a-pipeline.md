@@ -89,7 +89,8 @@ and each retrieval, assertion, dimension and inventory flow ([`osdu.LedgerFlow`]
 of its document, SHA-256 of what it is apart from its name and its file's path, so comments and layout play no part:
 
 - a delivery flow as parsed, together with the content of the mapping document each interface pins, since what renders a
-  delivery is part of what it is;
+  delivery is part of what it is, and without what the machine reading it derives for itself (its render threads), so the
+  hash is the same whichever control plane syncs it;
 - a flow of another kind as its YAML reads, with its top-level `name` left out and the keys of every mapping taken in
   order, since such a flow derives values from its name as it is parsed (a dimension view's SQL names the flow).
 

@@ -112,6 +112,7 @@ export function DeliveryFlowPanel({ pipelineId, flowName, section }: { pipelineI
   const [search, setSearch] = useState("");
   const [status, setStatus] = useState<string>(ALL);
   const [drifted, setDrifted] = useState(false);
+  const [stepHeld, setStepHeld] = useState(false);
   const [contains, setContains] = useState(false);
   const [releaseOpen, setReleaseOpen] = useState(false);
   const [deleteLedgerOpen, setDeleteLedgerOpen] = useState(false);
@@ -135,11 +136,12 @@ export function DeliveryFlowPanel({ pipelineId, flowName, section }: { pipelineI
     mode: contains ? "contains" : undefined,
     status: status === ALL ? undefined : (status as DeliveryRecordStatus),
     drifted: drifted || undefined,
+    stepHeld: stepHeld || undefined,
     submissionId: submissionFilter ?? undefined,
     deliveredBy: deliveredFilter ?? undefined,
     runId: runFilter ?? undefined,
     issue: issueFilter ?? undefined,
-  }), [search, contains, status, drifted, submissionFilter, deliveredFilter, runFilter, issueFilter]);
+  }), [search, contains, status, drifted, stepHeld, submissionFilter, deliveredFilter, runFilter, issueFilter]);
 
   const clearSelection = useCallback(() => {
     setSelected(new Set());
@@ -437,6 +439,12 @@ export function DeliveryFlowPanel({ pipelineId, flowName, section }: { pipelineI
               <Switch checked={drifted} onCheckedChange={setDrifted} data-testid="delivery-records-drifted" />
               Drifted only
             </Label>
+            {((s?.stepsHeld ?? 0) > 0 || stepHeld) && (
+              <Label className="flex items-center gap-2 text-[13px] font-normal" title="Records a step of enrich: held in and was set aside on: each went ahead with what the step added to its last delivery">
+                <Switch checked={stepHeld} onCheckedChange={setStepHeld} data-testid="delivery-records-step-held" />
+                Step held
+              </Label>
+            )}
             <Label className="flex items-center gap-2 text-[13px] font-normal">
               <Switch checked={contains} onCheckedChange={setContains} data-testid="delivery-records-contains" />
               Match anywhere
@@ -477,7 +485,7 @@ export function DeliveryFlowPanel({ pipelineId, flowName, section }: { pipelineI
           {/* A flow that works in partitions has no records until the partition in view is known. */}
           {!ready ? <Skeleton className="h-40 w-full rounded-lg" /> : (
           <PagedTable
-            queryKey={["delivery", "records", pipelineId, interfaceName, partition, search, status, drifted, contains, submissionFilter, deliveredFilter, runFilter, issueFilter]}
+            queryKey={["delivery", "records", pipelineId, interfaceName, partition, search, status, drifted, stepHeld, contains, submissionFilter, deliveredFilter, runFilter, issueFilter]}
             fetchPage={(page, pageSize) => deliveryApi.records(pipelineId, {
               page, pageSize, interface: interfaceName ?? undefined, partition: partition ?? undefined, ...filter,
             })}

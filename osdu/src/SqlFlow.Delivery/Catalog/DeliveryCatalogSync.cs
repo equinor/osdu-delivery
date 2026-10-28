@@ -885,6 +885,9 @@ public sealed class DeliveryCatalogSync : ICatalogSyncExtension
         mapping.TemplateVersionNamed,
         mapping.EntityType,
         mapping.Description,
+
+        // A fragment is the paths a step of a delivery flow's enrich: adds; it keys no record, so its system and key are empty.
+        mapping.Fragment,
         System = mapping.Dataset.System,
         Key = mapping.Dataset.Key,
         IdFrom = mapping.Dataset.IdFrom == MappingIdSource.Key ? MappingMapper.IdFromKey : MappingMapper.IdFromDeliveryKey,

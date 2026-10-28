@@ -52,7 +52,7 @@ public sealed record DeliveryFlowStatsDto(
     long Deleted, long Drifted, long DeliveredLast24h, DateTime? LastDeliveredUtc, DateTime? LastVerifiedUtc, long Submissions,
     DeliverySubmissionDto? LastSubmission, string? Interface = null, int Interfaces = 1, long Waiting = 0, string? Partition = null,
     IReadOnlyList<string>? Partitions = null, string? HeaderPartition = null, IReadOnlyList<string>? RedeliverParts = null, long Reverted = 0,
-    long Blocked = 0, long Stranded = 0, long Adoptable = 0);
+    long Blocked = 0, long Stranded = 0, long Adoptable = 0, long StepsHeld = 0);
 
 /// <summary>
 /// One interface of a delivery flow (osdu/docs/reference/flow/interfaces.md): its ledger identity, how it is delivered
@@ -448,7 +448,8 @@ public sealed record DeliveryTargetDto(
 /// issue keeps blocked: the sixteen characters the flow's issues listing gives it.
 /// </summary>
 public sealed record DeliveryRecordFilterDto(
-    string? Status, string? Search, string? Mode, Guid? SubmissionId, Guid? RunId, bool Drifted = false, Guid? DeliveredBy = null, string? Issue = null);
+    string? Status, string? Search, string? Mode, Guid? SubmissionId, Guid? RunId, bool Drifted = false, Guid? DeliveredBy = null, string? Issue = null,
+    bool StepHeld = false);
 
 /// <summary>
 /// A removal of one or many records. <c>scope</c> is record, previous, history or everything. The records are named either
@@ -931,11 +932,12 @@ public static class DeliveryEndpoints
             stats.Sum(s => s.Stats.Reverted),
             stats.Sum(s => s.Stats.Blocked),
             stats.Sum(s => s.Stats.Stranded),
-            stats.Sum(s => s.Stats.Adoptable));
+            stats.Sum(s => s.Stats.Adoptable),
+            stats.Sum(s => s.Stats.StepsHeld));
     }
 
     private static async Task<Results<Ok<PagedResult<DeliveryRecordDto>>, ProblemHttpResult>> ListRecordsAsync(
-        Guid pipelineId, string? search, string? mode, string? status, Guid? submissionId, Guid? runId, bool? drifted, Guid? deliveredBy, string? issue, int? page, int? pageSize,
+        Guid pipelineId, string? search, string? mode, string? status, Guid? submissionId, Guid? runId, bool? drifted, Guid? deliveredBy, string? issue, bool? stepHeld, int? page, int? pageSize,
         [FromQuery(Name = "interface")] string? interfaceName, [FromQuery] string? partition, CatalogDbContext db, DeliveryDocumentLoader documents, IPartitionRegistry partitions, ILedger ledger, CancellationToken ct)
     {
         var (flow, unresolved) = await ResolveKeptAsync(db, documents, partitions, ledger, pipelineId, interfaceName, partition, ct).ConfigureAwait(false);
@@ -944,7 +946,7 @@ public static class DeliveryEndpoints
             return unresolved!;
         }
 
-        var (query, invalid) = BuildQuery(new DeliveryRecordFilterDto(status, search, mode, submissionId, runId, drifted == true, deliveredBy, issue));
+        var (query, invalid) = BuildQuery(new DeliveryRecordFilterDto(status, search, mode, submissionId, runId, drifted == true, deliveredBy, issue, stepHeld == true));
         if (query is null)
         {
             return invalid!;
@@ -1012,6 +1014,7 @@ public static class DeliveryEndpoints
             DeliveredBySubmissionId = filter.DeliveredBy,
             RunId = filter.RunId,
             Drifted = filter.Drifted,
+            StepHeld = filter.StepHeld,
         }, null);
     }
 
@@ -1065,7 +1068,7 @@ public static class DeliveryEndpoints
     /// starts, so a refusal or a failure is answered as a problem, never as half a file.
     /// </summary>
     private static async Task<Results<PushStreamHttpResult, ProblemHttpResult>> ExportRecordsAsync(
-        Guid pipelineId, string? search, string? mode, string? status, Guid? submissionId, Guid? runId, bool? drifted, Guid? deliveredBy, string? issue,
+        Guid pipelineId, string? search, string? mode, string? status, Guid? submissionId, Guid? runId, bool? drifted, Guid? deliveredBy, string? issue, bool? stepHeld,
         [FromQuery(Name = "interface")] string? interfaceName, [FromQuery] string? partition, CatalogDbContext db, DeliveryDocumentLoader documents,
         IPartitionRegistry partitions, ILedger ledger, TimeProvider clock, HttpResponse response, CancellationToken ct)
     {
@@ -1075,7 +1078,7 @@ public static class DeliveryEndpoints
             return unresolved!;
         }
 
-        var (query, invalid) = BuildQuery(new DeliveryRecordFilterDto(status, search, mode, submissionId, runId, drifted == true, deliveredBy, issue));
+        var (query, invalid) = BuildQuery(new DeliveryRecordFilterDto(status, search, mode, submissionId, runId, drifted == true, deliveredBy, issue, stepHeld == true));
         if (query is null)
         {
             return invalid!;

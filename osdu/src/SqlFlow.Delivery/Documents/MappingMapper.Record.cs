@@ -46,6 +46,7 @@ internal static partial class MappingMapper
     internal const string LookupKey = "$lookup";
     internal const string ParentKey = "$parent";
     internal const string ChildKey = "$child";
+    internal const string BaseKey = "$base";
     internal const string FindAllKey = "$findAll";
     internal const string AssertKey = "$assert";
 
@@ -59,7 +60,7 @@ internal static partial class MappingMapper
     internal const string CacheReference = Marker + MappingSource.CachePrefix;
 
     /// <summary>The keys a value node reads its value with; naming one of them makes a map a value node.</summary>
-    internal static readonly IReadOnlyList<string> SourceKeys = [FromKey, ExprKey, ValueKey, CacheKey, SearchKey, LookupKey, ParentKey, ChildKey, CoalesceKey];
+    internal static readonly IReadOnlyList<string> SourceKeys = [FromKey, ExprKey, ValueKey, CacheKey, SearchKey, LookupKey, ParentKey, ChildKey, BaseKey, CoalesceKey];
 
     /// <summary>The settings a value node takes beside the key it reads its value with.</summary>
     internal static readonly IReadOnlyList<string> ValueSettings = [FindByKey, FindAllKey, ModifiersKey, WhenKey, RequiredKey, IgnoreSeparatorsKey, UnverifiedKey, AssertKey, DescriptionKey];
@@ -78,7 +79,7 @@ internal static partial class MappingMapper
 
     /// <summary>Every word of the mapping language a key of the record tree can be.</summary>
     internal static readonly IReadOnlyList<string> NodeKeys =
-        [FromKey, ExprKey, ValueKey, CacheKey, SearchKey, LookupKey, ParentKey, ChildKey, CoalesceKey, ForEachKey, ItemKey, WhereKey, FindByKey, FindAllKey, ModifiersKey, WhenKey, RequiredKey, IgnoreSeparatorsKey, UnverifiedKey, AssertKey, DescriptionKey];
+        [FromKey, ExprKey, ValueKey, CacheKey, SearchKey, LookupKey, ParentKey, ChildKey, BaseKey, CoalesceKey, ForEachKey, ItemKey, WhereKey, FindByKey, FindAllKey, ModifiersKey, WhenKey, RequiredKey, IgnoreSeparatorsKey, UnverifiedKey, AssertKey, DescriptionKey];
 
     /// <summary>The value keys, as a message lists them.</summary>
     private static string SourceList => string.Join(", ", SourceKeys.Take(SourceKeys.Count - 1)) + " or " + SourceKeys[^1];
@@ -605,6 +606,7 @@ internal static partial class MappingMapper
             CacheKey => CacheSource(RequiredText(map, CacheKey, at), at),
             ParentKey => ParentSource(RequiredText(map, ParentKey, at), scope, at),
             ChildKey => ChildSource(RequiredText(map, ChildKey, at), scope, at),
+            BaseKey => BaseSource(RequiredText(map, BaseKey, at), scope, at),
             _ => SearchSource(RequiredText(map, SearchKey, at), at),
         };
 
@@ -615,6 +617,7 @@ internal static partial class MappingMapper
                 MappingSourceKind.Expression => $"{at}: {FindByKey} selects the record a {CacheKey} or a {SearchKey} node reads; this node computes its value with {ExprKey}.",
                 MappingSourceKind.Parent => $"{at}: {FindByKey} selects the record a {CacheKey} or a {SearchKey} node reads; this node reads its record's parent, which is found by the record's own id.",
                 MappingSourceKind.Child => $"{at}: {FindByKey} selects the record a {CacheKey} or a {SearchKey} node reads; this node links one of its record's children, which is found by the record's own id.",
+                MappingSourceKind.Base => $"{at}: {FindByKey} selects the record a {CacheKey} or a {SearchKey} node reads; this node reads the record the fragment adds to, which is the one being rendered.",
                 _ => $"{at}: {FindByKey} selects the record a {CacheKey} or a {SearchKey} node reads; this node reads the column {Written(read.Column!, scope)}.",
             });
         }
@@ -718,6 +721,7 @@ internal static partial class MappingMapper
                 MappingSourceKind.Search => "this node's value is the id a search of the platform finds",
                 MappingSourceKind.Parent => "this node's value is read from the record's parent",
                 MappingSourceKind.Child => "this node's value is the reference to one of the record's children",
+                MappingSourceKind.Base => "this node's value is read from the record the fragment adds to",
                 _ => "this node's value comes from the partition's cache",
             };
         return new MappingEntry
@@ -1028,6 +1032,38 @@ internal static partial class MappingMapper
         }
 
         return new MappingSource { Kind = MappingSourceKind.Parent, ParentPath = path };
+    }
+
+    /// <summary>
+    /// <c>$base: data.Name</c>: a section of the record a fragment adds to, as the flow's own mapping and the steps of
+    /// <c>enrich:</c> before this one left it, by its path from the record's root (osdu/docs/reference/flow/enrich.md). The
+    /// record is one for the whole fragment, so a node under a <c>$forEach</c>, which reads a row of the step's dataset, reads
+    /// no section of it of its own: it takes the whole array instead. Only a fragment reads one, which the mapping checks
+    /// once the whole tree is read.
+    /// </summary>
+    private static MappingSource BaseSource(string text, TreeScope scope, string at)
+    {
+        const string Example = BaseKey + ": data.Name";
+        var path = text.Trim();
+        if (scope.Child is not null)
+        {
+            throw new FlowValidationException(
+                $"{at}: {BaseKey} reads the record the fragment adds to, which is one for every row of {scope.Child}; read it outside the {ForEachKey}, or take a whole array of it with {BaseKey} on the array itself.");
+        }
+
+        if (path.Contains('[', StringComparison.Ordinal))
+        {
+            throw new FlowValidationException(
+                $"{at}: {BaseKey} '{path}' steps into an array, and a section of the record is read whole: name the array itself, as {BaseKey}: data.Datasets, and it is taken with every item.");
+        }
+
+        if (!ParentPathPattern().IsMatch(path))
+        {
+            throw new FlowValidationException(
+                $"{at}: {BaseKey} names the path of a section of the record from its root, its property names joined by dots, as {Example} or {BaseKey}: data.ExtensionProperties.WellDb; '{text}' is not one.");
+        }
+
+        return new MappingSource { Kind = MappingSourceKind.Base, BasePath = path };
     }
 
     /// <summary>

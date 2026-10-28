@@ -12,7 +12,16 @@ namespace SqlFlow.Delivery.Storage;
 /// mapping states none. The findings sit beside the document they judge, so the check before sending reads the findings
 /// of exactly the document it sends, and a release that accepts the document accepts them with it.
 /// </summary>
-public sealed record WorkItem(Guid Key, string TargetId, string Document, string? Assertions = null);
+/// <param name="Key">The record's delivery key.</param>
+/// <param name="TargetId">The OSDU id the record is delivered under.</param>
+/// <param name="Document">The record's canonical document.</param>
+/// <param name="Assertions">What the mapping's assertions found of the document, as compact JSON, or null.</param>
+/// <param name="Enrich">
+/// The datasets the record's steps register (osdu/docs/reference/flow/enrich-files.md) and what the plan
+/// decided a delivery does with them, as compact JSON, or
+/// null for a record whose steps register none.
+/// </param>
+public sealed record WorkItem(Guid Key, string TargetId, string Document, string? Assertions = null, string? Enrich = null);
 
 /// <summary>Where one document sits inside a work batch: the batch index and the byte range of its line.</summary>
 public readonly record struct DocumentRef(int Batch, long Offset, int Length)
@@ -88,6 +97,11 @@ public static class WorkBatchFile
             builder.Append(",\"assertions\":").Append(assertions);
         }
 
+        if (item.Enrich is { Length: > 0 } enrich)
+        {
+            builder.Append(",\"enrich\":").Append(enrich);
+        }
+
         builder.Append('}');
         return Utf8.GetBytes(builder.ToString());
     }
@@ -106,7 +120,10 @@ public static class WorkBatchFile
 
         // A line written before a mapping could assert carries no findings, and its document is judged by its schema alone.
         var assertions = root.TryGetProperty("assertions", out var found) && found.ValueKind == JsonValueKind.Object ? found.GetRawText() : null;
-        return new WorkItem(parsedKey, targetId, doc.GetRawText(), assertions);
+
+        // A line written before steps registered files carries no parts.
+        var enrich = root.TryGetProperty("enrich", out var parts) && parts.ValueKind == JsonValueKind.Object ? parts.GetRawText() : null;
+        return new WorkItem(parsedKey, targetId, doc.GetRawText(), assertions, enrich);
     }
 
     /// <summary>

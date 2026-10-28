@@ -8,6 +8,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Records built in steps.** A delivery flow's `enrich:` steps extend each record its mapping renders: each step
+  renders a fragment (a mapping with `fragment: true`) from rows of its own, a table joined to the record on its key,
+  and can read what the mapping and the steps before it added with `$base`. The record is rendered as one chain and
+  sent once, so a change to the record's row, to a step's rows, to a fragment or to the cache values they read writes
+  it once, and a change that renders the same record sends nothing. `sqlflow check` lists the steps and
+  `sqlflow preview` shows what each added ([enrich](osdu/docs/reference/flow/enrich.md),
+  [fragments](osdu/docs/reference/flow/mapping-fragment.md)). A flow without steps renders and hashes as before.
+
+- **A step registers files as datasets of the record.** A step of `enrich:` with `files:` uploads the files each of its
+  rows names through the Dataset service and registers them as a dataset of the record, under an id made from the
+  record's own and kept for good, which the record lists in `data.Datasets` (or the step's `link`). New files register a
+  new version of the same dataset and leave the record as OSDU holds it; a change to the record writes it once and
+  registers nothing that did not change ([files a step registers](osdu/docs/reference/flow/enrich-files.md)).
+
+- **A step that holds can be set aside.** A step of `enrich:` with `onHold: step` that cannot render for a record no
+  longer holds it: the record goes ahead with what the step added to its last delivery, and the flow's Records tab
+  (**Step held**), its counts and the Delivery page list the records a step holds in until it renders again
+  ([a step set aside on its hold](osdu/docs/reference/flow/enrich-holds.md)).
+
+- **A step supplies the record's bulk data, or runs a workflow over it.** On the ddms route, a step's `bulk:` names the
+  record's DDMS bulk data by the step's row, so a well log's curves can come from a table of their own and go only when
+  they move ([a step's bulk data](osdu/docs/reference/flow/enrich-bulk.md)); a step's `workflow:` runs OSDU workflows
+  over the record and the step's dataset once they landed, declared as `target.workflow` is
+  ([a step's workflow](osdu/docs/reference/flow/enrich-workflow.md)).
+
 - **Export records to Excel.** A delivery flow's Records tab has **Export**, which downloads every record its filter
   matches (up to 25,000) as an Excel workbook to work through where the records come from: a row for each record with its
   status, issue and problem, the file and row it came from, its key's parts and where it landed in OSDU, and an About sheet
@@ -460,6 +485,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   says ([Upgrading an estate](osdu/docs/reference/concepts/templates.md#upgrading-an-estate-that-saved-templates-in-the-database)).
 
 ### Fixed
+- A delivery flow's document hash, which pairs a renamed flow with its ledger, took in the render threads of the machine
+  that synced it, so control planes on machines with different processor counts hashed one document differently; it now
+  takes in the document alone, and each delivery flow's stored hash changes once, at the first sync after the upgrade
+  ([Renaming a pipeline](osdu/docs/reference/concepts/renaming-a-pipeline.md#the-same-document-under-a-new-name)).
 - East of UTC, a record's page said a lease its worker still renewed had run out, at a time still to come, and west of
   UTC it showed a stopped worker as still delivering; an assertion run's, a retrieval's and a release's times were off by
   the same offset. The GUI read the UTC times the control plane sends without a zone as local time, and now reads them

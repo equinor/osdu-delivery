@@ -516,3 +516,34 @@ added a page, and five more entries whose group did not say what they were for. 
 [0034](decisions/0034-one-menu-by-task.md): the module lays out the whole menu (`GuiModule.menu`, every entry placed
 once, a page left out refused at startup) in seven groups that each answer one question, and wrote
 [the menu](../reference/concepts/menu.md) as its reference.
+
+## [2026-10-27] ingest | Records built in steps, decision 0035
+
+Read how a delivery renders, hashes and sends a record (the planner, the renderer, the render context, change
+detection over child datasets, payload parts), the ledger's one writer per OSDU id, `$parent` and `$child`, and the
+storage contract's patches. The owner asked to enhance a record the ledger holds over several steps without another
+record, with one write for a small change once the record exists. After a SWOT of a flow kind of its own against a
+block of the delivery document, filed [0035](decisions/0035-enrich-chains.md): `enrich:` steps rendering fragments
+(`fragment: true`, `$base`) as one chain with the flow's mapping, the record sent once, a fragment only adding, and the
+preflight refusing what could never render; and wrote [enrich](../reference/flow/enrich.md) and
+[fragments](../reference/flow/mapping-fragment.md) as their reference.
+
+## [2026-10-28] ingest | A step's files, decision 0035
+
+A step of `enrich:` registers the files its rows name as datasets of the record, under ids derived from the record's, as
+parts of the record's own delivery; [0035](decisions/0035-enrich-chains.md) says why they are not sub-deliveries or File
+service registrations, and [files a step registers](../reference/flow/enrich-files.md) documents them.
+
+## [2026-10-28] ingest | A step set aside on its hold, decision 0035
+
+A step with `onHold: step` that holds is set aside, the record going ahead with what the step added to its last
+delivery; [0035](decisions/0035-enrich-chains.md) says why it is an option kept in the record's target state rather
+than the default or a table of its own, and [a step set aside on its hold](../reference/flow/enrich-holds.md) documents
+it.
+
+## [2026-10-28] ingest | A step's bulk data and workflow, decision 0035
+
+A step supplies the record's DDMS bulk data from its row, and runs an OSDU workflow over the record once it landed;
+[0035](decisions/0035-enrich-chains.md) records how each stays inside the record's one delivery, and
+[a step's bulk data](../reference/flow/enrich-bulk.md) and [a step's workflow](../reference/flow/enrich-workflow.md)
+document them.

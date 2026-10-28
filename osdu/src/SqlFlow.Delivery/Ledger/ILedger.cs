@@ -591,6 +591,12 @@ public sealed record RecordState
     /// </summary>
     public string? ChildLinkKey { get; init; }
 
+    /// <summary>
+    /// The steps of the flow's <c>enrich:</c> that held and were set aside on the record's last render
+    /// (osdu/docs/reference/flow/enrich-holds.md), comma-separated in the order they render; null when none was.
+    /// </summary>
+    public string? HeldSteps { get; init; }
+
     /// <summary>When the ledger asked for the record to be planned again (a redeliver, a release, a cache rollout, a parent or a child that landed); null once a plan took it.</summary>
     public DateTime? PlanRequestedUtc { get; init; }
 
@@ -898,6 +904,9 @@ public sealed record SkippedRecord
     /// </summary>
     public string? ChildLinkKey { get; init; }
 
+    /// <summary>For a rendered skip, the steps set aside on its holds (<see cref="RecordState.HeldSteps"/>); null when none was.</summary>
+    public string? HeldSteps { get; init; }
+
     /// <summary>The platform run of the intake, for the attempt a stale or identical skip writes.</summary>
     public Guid? RunId { get; init; }
 }
@@ -1150,6 +1159,9 @@ public sealed record FlowStats
 
     /// <summary>Delivered records whose last verify found drift or a missing record.</summary>
     public long Drifted { get; init; }
+
+    /// <summary>Records whose last render set a step of <c>enrich:</c> aside on its hold, the record going ahead without it.</summary>
+    public long StepsHeld { get; init; }
 
     public long DeliveredLast24h { get; init; }
 
@@ -1517,6 +1529,12 @@ public sealed record RecordQuery
 
     /// <summary>Only delivered records whose last verify found drift or a missing record.</summary>
     public bool Drifted { get; init; }
+
+    /// <summary>
+    /// Only records whose last render set a step of <c>enrich:</c> aside on its hold (osdu/docs/reference/flow/enrich-holds.md),
+    /// read from the held-steps index.
+    /// </summary>
+    public bool StepHeld { get; init; }
 
     /// <summary>Only the blocked records one problem keeps blocked (<see cref="ProblemSignature"/>), read from the problem index.</summary>
     public long? Problem { get; init; }

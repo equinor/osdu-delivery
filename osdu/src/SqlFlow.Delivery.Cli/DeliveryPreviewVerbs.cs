@@ -200,6 +200,27 @@ internal static class DeliveryPreviewVerbs
             {
                 writer.WriteLine($"    unverified  {id}: the cache holds no such record");
             }
+
+            // What each step of enrich: added, in the order the steps render (osdu/docs/reference/flow/enrich.md).
+            foreach (var step in document.Enrichment)
+            {
+                writer.WriteLine($"    enrich      {step.Step} ({step.Mapping ?? "its files"}): {EnrichOutcome(step)}");
+                foreach (var effect in step.Effects)
+                {
+                    var value = effect.Value is null ? string.Empty : $" {Clip(effect.Value.ToJsonString(), 120)}";
+                    writer.WriteLine($"                {effect.Kind} {effect.Path}{value}");
+                }
+
+                foreach (var dataset in step.Datasets)
+                {
+                    writer.WriteLine(string.Create(CultureInfo.InvariantCulture, $"                registers {dataset.Id} ({dataset.Kind}) from row {dataset.Row + 1}"));
+                }
+
+                foreach (var kept in step.KeptDatasets)
+                {
+                    writer.WriteLine($"                keeps linking {kept}, registered by its last delivery");
+                }
+            }
         }
 
         foreach (var reference in preview.References)
@@ -266,4 +287,31 @@ internal static class DeliveryPreviewVerbs
                 CultureInfo.InvariantCulture,
                 $"the scope's first record{(asked.ScopeRecords is { } total ? $" of {total:N0}" : string.Empty)}{(asked.PassedOver > 0 ? $", after {asked.PassedOver} row(s) that cannot render" : string.Empty)}")
             : $"'{asked.Key}' read as {asked.How}";
+
+    /// <summary>What a step of enrich: came to for the record, as one phrase.</summary>
+    private static string EnrichOutcome(PreviewEnrichStep step)
+    {
+        if (step.NotRendered)
+        {
+            return "not rendered, since a step before it holds the record or waits for the platform";
+        }
+
+        if (step.SetAside)
+        {
+            return $"held and set aside, the record going ahead with what it added to its last delivery: {string.Join("; ", step.Holds)}";
+        }
+
+        if (step.Holds.Count > 0)
+        {
+            return $"holds the record: {string.Join("; ", step.Holds)}";
+        }
+
+        var rows = step.Rows is { } count ? string.Create(CultureInfo.InvariantCulture, $"{count} row(s), ") : string.Empty;
+        return step.Effects.Count == 0
+            ? $"{rows}adds nothing"
+            : string.Create(CultureInfo.InvariantCulture, $"{rows}{step.Effects.Count} change(s)");
+    }
+
+    /// <summary><paramref name="text"/> cut to <paramref name="length"/> characters, its end marked when cut.</summary>
+    private static string Clip(string text, int length) => text.Length <= length ? text : text[..(length - 3)] + "...";
 }

@@ -122,6 +122,14 @@ internal static partial class EntryValues
                 return null;
             }
         }
+        else if (entry.Source.Kind == MappingSourceKind.Base)
+        {
+            raw = FromBase(entry, root, item, renderer, holds, usages, searched);
+            if (raw is null)
+            {
+                return null;
+            }
+        }
         else
         {
             raw = entry.FindAll is not null
@@ -184,7 +192,7 @@ internal static partial class EntryValues
             {
                 // Asked again as a required node, each alternative says why it gave nothing; what it reads is already known.
                 var said = new List<string>();
-                Evaluate(alternatives[i] with { Required = true }, root, item, renderer, said, [], new RenderTrail());
+                Evaluate(alternatives[i] with { Required = true }, root, item, renderer, said, [], new RenderTrail { Base = searched.Base });
                 reasons.Add($"{i + 1}. {(said.Count > 0 ? Reason(said[0], path) : "gives no value")}");
             }
 
@@ -211,14 +219,19 @@ internal static partial class EntryValues
     /// required clause. What the second evaluation reads is what the first already read, so it asks the platform nothing
     /// new and records nothing.
     /// </summary>
-    public static string WhyEmpty(MappingEntry entry, SourceRow root, SourceRow? item, MappingRenderer renderer)
+    /// <param name="entry">The entry that wrote nothing.</param>
+    /// <param name="root">The dataset's own row.</param>
+    /// <param name="item">The child row of the item the entry is in, or null for the record's own entries.</param>
+    /// <param name="renderer">The renderer the entry belongs to.</param>
+    /// <param name="baseRecord">For a fragment, the record it adds to, which its <c>$base</c> nodes read; null for a whole record.</param>
+    public static string WhyEmpty(MappingEntry entry, SourceRow root, SourceRow? item, MappingRenderer renderer, JsonObject? baseRecord = null)
     {
         ArgumentNullException.ThrowIfNull(entry);
         ArgumentNullException.ThrowIfNull(root);
         ArgumentNullException.ThrowIfNull(renderer);
         var said = new List<string>();
         var log = entry.IncomingAssertions.Any() ? new AssertionLog(renderer.Mapping.Reference) : null;
-        var value = Evaluate(entry with { Required = true, AppliesWhen = null }, root, item, renderer, said, [], new RenderTrail { Assertions = log }, out _);
+        var value = Evaluate(entry with { Required = true, AppliesWhen = null }, root, item, renderer, said, [], new RenderTrail { Assertions = log, Base = baseRecord }, out _);
         if (said.Count > 0)
         {
             return Reason(said[0], entry.Target.Text);
@@ -308,9 +321,9 @@ internal static partial class EntryValues
             return new JsonArray(JsonValue.Create(Placeholder(entry, itemFormat is not null ? $"{itemFormat} string" : Name(itemType))));
         }
 
-        // An object, or a list of objects: a cached field or a section of the record's parent can carry one whole, and a
-        // dataset column never can.
-        if (entry.ValueNodes.Any(node => node.Source?.Kind is MappingSourceKind.Cache or MappingSourceKind.Parent))
+        // An object, or a list of objects: a cached field, a section of the record's parent or of the record a fragment adds
+        // to can carry one whole, and a dataset column never can.
+        if (entry.ValueNodes.Any(node => node.Source?.Kind is MappingSourceKind.Cache or MappingSourceKind.Parent or MappingSourceKind.Base))
         {
             return JsonValue.Create(Placeholder(entry, Name(type)));
         }
@@ -506,6 +519,85 @@ internal static partial class EntryValues
         }
 
         return modified;
+    }
+
+    /// <summary>
+    /// The value of a <c>$base</c> node (osdu/docs/reference/flow/enrich.md): the section at its path of the record a fragment
+    /// adds to, as the flow's own mapping and the steps of <c>enrich:</c> before this one left it. It is read as the step
+    /// renders, never from the platform, so it never waits. A record without the section, or with an empty text there, is an
+    /// empty value, which <c>$required</c> decides. The section is copied whole, an object or a list as the record holds it,
+    /// and a single value passes through the node's modifiers like a column's.
+    /// </summary>
+    private static object? FromBase(
+        MappingEntry entry, SourceRow root, SourceRow? item, MappingRenderer renderer, List<string> holds, List<CacheUsage> usages, RenderTrail searched)
+    {
+        var path = entry.Target.Text;
+        var section = entry.Source!.BasePath!;
+        if (searched.Base is not { } record)
+        {
+            // A fragment always renders over a record, and every other mapping is refused for reading $base when it is read,
+            // so this is an engine defect; the hold says so rather than writing the record without the value.
+            holds.Add($"{path}: $base reads the record a fragment adds to, and this render was given none to read");
+            return null;
+        }
+
+        var value = Section(record, section);
+        if (value is null || (value is JsonValue text && text.TryGetValue<string>(out var said) && string.IsNullOrWhiteSpace(said)))
+        {
+            if (entry.Required)
+            {
+                holds.Add($"{path}: the record holds no {section} when the fragment renders, and the entry is required");
+            }
+
+            return null;
+        }
+
+        // The record is the one every later step adds to, so what is written is a copy of the section.
+        var copy = value.DeepClone();
+        if (entry.Modifiers.Count == 0)
+        {
+            return copy;
+        }
+
+        if (copy is JsonObject or JsonArray)
+        {
+            holds.Add($"{path}: $modifiers change a single value, and the record's {section} is {(copy is JsonArray ? "a list" : "an object")}");
+            return null;
+        }
+
+        if (!TryModify(entry, Native(copy), root, item, renderer, holds, usages, out var modified))
+        {
+            return null;
+        }
+
+        if (IsEmpty(modified))
+        {
+            if (entry.Required)
+            {
+                holds.Add($"{path}: the record's {section} gives no value once modified, and the entry is required");
+            }
+
+            return null;
+        }
+
+        return modified;
+    }
+
+    /// <summary>The node at <paramref name="path"/> (property names joined by dots) below <paramref name="record"/>, or null when the record holds none there.</summary>
+    internal static JsonNode? Section(JsonObject record, string path)
+    {
+        ArgumentNullException.ThrowIfNull(record);
+        ArgumentException.ThrowIfNullOrWhiteSpace(path);
+        JsonNode? node = record;
+        foreach (var step in path.Split('.'))
+        {
+            if (node is not JsonObject holder || !holder.TryGetPropertyValue(step, out node))
+            {
+                return null;
+            }
+        }
+
+        return node;
     }
 
     /// <summary>

@@ -43,7 +43,7 @@ public static class SourceBindings
             Require(record, lastModified, $"{where}: {keys.Name("source.lastModified")} names column '{lastModified}', which the record table {flow.Source.Record.Object} does not hold");
         }
 
-        CheckPayload(flow, record, where);
+        CheckPayload(flow, header, record, where);
 
         foreach (var name in flow.Source.Datasets.Keys)
         {
@@ -69,7 +69,7 @@ public static class SourceBindings
         }
     }
 
-    private static void CheckPayload(FlowDefinition flow, IReadOnlySet<string> record, string where)
+    private static void CheckPayload(FlowDefinition flow, SourceHeader header, IReadOnlySet<string> recordColumns, string where)
     {
         var keys = KeyPaths.Of(flow);
         if (PayloadParts.Streamed(flow) is not { } payloadName)
@@ -83,25 +83,37 @@ public static class SourceBindings
                 $"{where}: the {flow.Target.Protocol} protocol streams payload '{payloadName}', which {keys.Name("source.payloads")} does not declare.");
         }
 
+        // A payload a step supplies (osdu/docs/reference/flow/enrich-bulk.md) is named by the step's row, so its columns are the
+        // step table's; any other is named by the record's row.
+        var record = recordColumns;
+        var table = $"the record table {flow.Source.Record.Object}";
+        if (payload.Step is { } step)
+        {
+            table = $"the table of step '{step}', {flow.Source.Datasets[step].Object},";
+            record = header.Columns.TryGetValue(step, out var stepColumns)
+                ? stepColumns
+                : throw new FlowValidationException($"{where}: the opened source does not describe the table of step '{step}', which names the record's bulk data.");
+        }
+
         if (payload.LocationColumn is { } location)
         {
-            Require(record, location, $"{where}: payload '{payloadName}' takes each record's folder from column '{location}', which the record table {flow.Source.Record.Object} does not hold");
+            Require(record, location, $"{where}: payload '{payloadName}' takes each record's folder from column '{location}', which {table} does not hold");
         }
 
         if (payload.HashColumn is { } hash)
         {
-            Require(record, hash, $"{where}: payload '{payloadName}' takes its content hash from column '{hash}', which the record table {flow.Source.Record.Object} does not hold");
+            Require(record, hash, $"{where}: payload '{payloadName}' takes its content hash from column '{hash}', which {table} does not hold");
         }
         else if (flow.Change.PayloadDetect != ChangeDetection.LastModified)
         {
             throw new FlowValidationException(
                 $"{where}: payload '{payloadName}' declares no hashColumn, and the flow decides payload changes by content hash. "
-                + "Name the record column holding it, or take the files' modified times instead with change.payloadDetect: lastModified.");
+                + "Name the column holding it, or take the files' modified times instead with change.payloadDetect: lastModified.");
         }
 
         if (payload.ChunkCountColumn is { } count)
         {
-            Require(record, count, $"{where}: payload '{payloadName}' takes its file count from column '{count}', which the record table {flow.Source.Record.Object} does not hold");
+            Require(record, count, $"{where}: payload '{payloadName}' takes its file count from column '{count}', which {table} does not hold");
         }
     }
 

@@ -46,6 +46,11 @@ function FlowCard({ pipeline, stats, active, elsewhere, onOpen }: {
         <Badge variant="outline">{pipeline.batch ?? "default"}</Badge>
         {!pipeline.active && <Badge variant="outline" className="border-warning/50 text-warning">inactive</Badge>}
         {stats && stats.drifted > 0 && <Badge variant="secondary" className="bg-warning/15 text-warning">{stats.drifted} drifted</Badge>}
+        {stats && (stats.stepsHeld ?? 0) > 0 && (
+          <Badge variant="outline" title="Records a step of enrich: held in and was set aside on: each went ahead with what the step added to its last delivery" data-testid={`delivery-flow-steps-held-${pipeline.id}`}>
+            {`${(stats.stepsHeld ?? 0).toLocaleString()} with a step held`}
+          </Badge>
+        )}
         {partitions.length > 0 && (
           <span
             className="ml-auto flex flex-wrap items-center gap-1"

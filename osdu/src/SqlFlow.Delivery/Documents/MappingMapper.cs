@@ -58,7 +58,84 @@ internal static partial class MappingMapper
 
         var pinned = Pinned(kind, templateVersion, $"{source}: template", pins);
 
-        var dataset = y.Dataset ?? throw FlowMapper.Missing("dataset", source);
+        // A fragment adds paths to a record a delivery flow's own mapping keys (osdu/docs/reference/flow/enrich.md): it keys
+        // nothing, mints no id and carries no envelope of its own.
+        var fragment = y.Fragment ?? false;
+        if (fragment && DspdmKinds.Is(kind))
+        {
+            throw new FlowValidationException(
+                $"{source}: fragment: true adds paths to OSDU records, and {kind} is a row of a DSPDM business object, which no step of enrich: extends; map every attribute in the row's own mapping.");
+        }
+
+        if (fragment && y.Dataset is not null)
+        {
+            throw new FlowValidationException(
+                $"{source}: a fragment (fragment: true) adds paths to the records a delivery flow's own mapping keys, so it declares no dataset; its rows are the step's, declared under enrich.<step>.dataset in the flow. Remove dataset.");
+        }
+
+        var dataset = fragment ? MappingDataset.None : Dataset(y.Dataset ?? throw FlowMapper.Missing("dataset", source), source);
+
+        var parameters = (y.Parameters ?? []).ToDictionary(
+            kv => kv.Key,
+            kv => new MappingParameter { Required = kv.Value?.Required ?? false, Default = kv.Value?.Default, Description = kv.Value?.Description },
+            StringComparer.Ordinal);
+        if (!fragment && !parameters.ContainsKey(Snapshots.RenderContext.DataPartitionParameter))
+        {
+            throw new FlowValidationException(
+                $"{source}: the mapping must declare the '{Snapshots.RenderContext.DataPartitionParameter}' parameter; record ids and references are minted in that partition.");
+        }
+
+        // What each search: <name> node searches. Declared once here rather than on every node, so two nodes resolving
+        // against the same set cannot disagree about the kind they search or the schema it is read by.
+        var searches = (y.Searches ?? []).ToDictionary(
+            kv => kv.Key,
+            kv => ParseSearch(kv.Key, kv.Value, source, pins),
+            StringComparer.Ordinal);
+
+        var lookups = ReadLookups(y.Lookups, source);
+        var entries = ReadRecord(y.Record, lookups, source);
+        Validate(entries, parameters, source);
+        ValidateSearches(entries, searches, source);
+        ValidateLookups(entries, lookups, source);
+        if (fragment)
+        {
+            ValidateFragment(entries, source);
+        }
+        else
+        {
+            RefuseBase(entries, source);
+        }
+
+        return new MappingDefinition
+        {
+            SourcePath = source == "<inline>" ? null : source,
+            Name = name,
+            Version = version,
+            Template = pinned,
+            TemplateVersionNamed = templateVersion is not null,
+            Description = y.Description,
+            Fragment = fragment,
+            Dataset = dataset,
+            Parameters = parameters,
+            Searches = searches,
+            Lookups = lookups,
+            Entries = entries,
+            Envelope = fragment ? NoEnvelope : Envelope(entries, kind, source),
+        };
+    }
+
+    /// <summary>The envelope of a fragment, which writes none: the record it adds to carries the flow's own mapping's.</summary>
+    private static readonly MappingEnvelope NoEnvelope = new([], [], [], []);
+
+    /// <summary>The record roots a fragment writes under: the record's data and its tags. Its id, kind, access, legal block and lineage are the flow's own mapping's.</summary>
+    internal static readonly IReadOnlyList<string> FragmentRoots = ["data", "tags"];
+
+    /// <summary>
+    /// What identifies a record of the incoming dataset (<c>dataset</c>): its system, the key columns, the label and the
+    /// identity columns, and what the OSDU id's unique segment is made from.
+    /// </summary>
+    private static MappingDataset Dataset(MappingDatasetYaml dataset, string source)
+    {
         var declaredKey = dataset.Key is { Count: > 0 } k
             ? k
             : throw new FlowValidationException($"{source}: dataset.key must name at least one column, such as key: [log_id].");
@@ -78,53 +155,50 @@ internal static partial class MappingMapper
             throw new FlowValidationException($"{source}: dataset.identity names a column more than once.");
         }
 
-        var idFrom = IdFrom(dataset.IdFrom, source);
+        return new MappingDataset
+        {
+            System = FlowMapper.Require(dataset.System, "dataset.system", source),
+            Key = key,
+            Label = label,
+            Identity = identity,
+            IdFrom = IdFrom(dataset.IdFrom, source),
+        };
+    }
 
-        var parameters = (y.Parameters ?? []).ToDictionary(
-            kv => kv.Key,
-            kv => new MappingParameter { Required = kv.Value?.Required ?? false, Default = kv.Value?.Default, Description = kv.Value?.Description },
-            StringComparer.Ordinal);
-        if (!parameters.ContainsKey(Snapshots.RenderContext.DataPartitionParameter))
+    /// <summary>
+    /// A fragment writes under the record's <c>data</c> and <c>tags</c> alone: the id, the kind, the access list, the legal
+    /// block and the lineage of the record it adds to are the flow's own mapping's, which a step never changes. It keys no
+    /// record, so it cannot find a parent or a child by the record's id: what it needs of the record it reads with
+    /// <c>$base</c>.
+    /// </summary>
+    private static void ValidateFragment(IReadOnlyList<MappingEntry> entries, string source)
+    {
+        foreach (var entry in entries)
+        {
+            var root = entry.Target.Segments[0].Name;
+            if (!FragmentRoots.Contains(root, StringComparer.Ordinal))
+            {
+                throw new FlowValidationException(
+                    $"{source}: {entry.Where} fills {entry.Target.Text}, and a fragment writes under record.data and record.tags only: the id, kind, access list, legal block and lineage of the record it adds to are the flow's own mapping's.");
+            }
+
+            foreach (var node in entry.ValueNodes.Where(n => n.Source?.Kind is MappingSourceKind.Parent or MappingSourceKind.Child))
+            {
+                var word = node.Source!.Kind == MappingSourceKind.Parent ? ParentKey : ChildKey;
+                throw new FlowValidationException(
+                    $"{source}: {node.Where}: {word} finds a record by the id the flow's own mapping makes from its key, and a fragment keys no record; write {word} in the flow's mapping, and read what the record holds with {BaseKey}.");
+            }
+        }
+    }
+
+    /// <summary>A mapping of a whole record reads its own row; only a fragment reads the record it adds to (<c>$base</c>).</summary>
+    private static void RefuseBase(IReadOnlyList<MappingEntry> entries, string source)
+    {
+        if (entries.SelectMany(e => e.ValueNodes).FirstOrDefault(n => n.Source?.Kind == MappingSourceKind.Base) is { } node)
         {
             throw new FlowValidationException(
-                $"{source}: the mapping must declare the '{Snapshots.RenderContext.DataPartitionParameter}' parameter; record ids and references are minted in that partition.");
+                $"{source}: {node.Where}: {BaseKey} reads the record a fragment adds to, as the flow's mapping and the steps before it rendered it, and this mapping renders a record of its own; only a fragment (fragment: true), which a step of enrich: renders, reads one. A mapping reads its row with {FromKey}.");
         }
-
-        // What each search: <name> node searches. Declared once here rather than on every node, so two nodes resolving
-        // against the same set cannot disagree about the kind they search or the schema it is read by.
-        var searches = (y.Searches ?? []).ToDictionary(
-            kv => kv.Key,
-            kv => ParseSearch(kv.Key, kv.Value, source, pins),
-            StringComparer.Ordinal);
-
-        var lookups = ReadLookups(y.Lookups, source);
-        var entries = ReadRecord(y.Record, lookups, source);
-        Validate(entries, parameters, source);
-        ValidateSearches(entries, searches, source);
-        ValidateLookups(entries, lookups, source);
-
-        return new MappingDefinition
-        {
-            SourcePath = source == "<inline>" ? null : source,
-            Name = name,
-            Version = version,
-            Template = pinned,
-            TemplateVersionNamed = templateVersion is not null,
-            Description = y.Description,
-            Dataset = new MappingDataset
-            {
-                System = FlowMapper.Require(dataset.System, "dataset.system", source),
-                Key = key,
-                Label = label,
-                Identity = identity,
-                IdFrom = idFrom,
-            },
-            Parameters = parameters,
-            Searches = searches,
-            Lookups = lookups,
-            Entries = entries,
-            Envelope = Envelope(entries, kind, source),
-        };
     }
 
     /// <summary>The words <c>dataset.idFrom</c> takes, as a mapping writes them.</summary>

@@ -20,6 +20,9 @@
 #                                       ends, through the API as a GitHub job calls it, and a real GitHub Actions token
 #                                       checked against GitHub's keys when SQLFLOW_TEST_GITHUB_OIDC_REPOSITORY names a
 #                                       repository to mint one in (sqlflow/docs/reference/concepts/external-triggers.md).
+#                                       Enrichment, every rule of a delivery flow's enrich: steps: the documents and fragments, how a
+#                                       fragment adds to the record, the chain's preflight, and one write for any change to the chain
+#                                       (osdu/docs/reference/flow/enrich.md).
 #
 # The unit tier points the suites at a server that does not exist, so a test that needs SQL Server without carrying
 # [Trait("Category", "Integration")] fails here, as it would in CI, rather than passing on this machine's database.
@@ -37,7 +40,7 @@ root="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$root"
 
 # The suites a test opts into with [Trait("Suite", "<name>")]: run on demand alone, left out of both tiers.
-on_demand_suites="DimensionEdgeCases RunParameters ExternalTriggers"
+on_demand_suites="DimensionEdgeCases RunParameters ExternalTriggers Enrichment"
 
 if [ "$#" -gt 1 ] && [ "${1:-}" != --suite ]; then
   echo "tools/test.sh: takes one argument at most, or --suite and a suite's name, and was given $#." >&2

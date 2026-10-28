@@ -3143,6 +3143,10 @@ namespace SqlFlow.Delivery.Data.Migrations
                     b.Property<long?>("HeldCacheSetId")
                         .HasColumnType("bigint");
 
+                    b.Property<string>("HeldSteps")
+                        .HasMaxLength(600)
+                        .HasColumnType("nvarchar(600)");
+
                     b.Property<string>("Label")
                         .HasMaxLength(400)
                         .HasColumnType("nvarchar(400)");
@@ -3419,6 +3423,11 @@ namespace SqlFlow.Delivery.Data.Migrations
                         .HasFilter("[Status] IN (N'held', N'failed', N'deleted', N'reverted')");
 
                     SqlServerIndexBuilderExtensions.IncludeProperties(b.HasIndex(new[] { "PartitionId", "FlowId", "Blocked", "Status" }, "IX_Record_Parked"), new[] { "PlanRequestedUtc", "PendingDocumentRef" });
+
+                    b.HasIndex(new[] { "PartitionId", "FlowId" }, "IX_Record_PartitionId_FlowId_HeldSteps")
+                        .HasFilter("[HeldSteps] IS NOT NULL");
+
+                    SqlServerIndexBuilderExtensions.IncludeProperties(b.HasIndex(new[] { "PartitionId", "FlowId" }, "IX_Record_PartitionId_FlowId_HeldSteps"), new[] { "HeldSteps" });
 
                     b.HasIndex(new[] { "PartitionId", "FlowId" }, "IX_Record_Unsorted")
                         .HasFilter("[ProblemHash] IS NULL AND [Blocked]=(1) AND ([Status] IN (N'held', N'failed'))");

@@ -12,6 +12,7 @@ using SqlFlow.Delivery.Ledger;
 using SqlFlow.Delivery.Model;
 using SqlFlow.Delivery.Planning;
 using SqlFlow.Delivery.Protocols;
+using SqlFlow.Delivery.Rendering;
 using SqlFlow.Delivery.Storage;
 using SqlFlow.Delivery.Validation;
 
@@ -817,6 +818,25 @@ public sealed class DeliveryWorker
                 }
             }
 
+            // The datasets the record's steps register, each streaming from where its row said its files are, and what the plan
+            // decided a delivery does with them.
+            EnrichWork stepWork;
+            IReadOnlyList<WorkStepPart> stepParts;
+            try
+            {
+                stepWork = EnrichParts.Decode(item.Enrich);
+                stepParts = stepWork.Parts
+                    .Select(p => new WorkStepPart(p, new StoragePayloadSource(_payloads, PayloadLocation.Parse(p.Location))))
+                    .ToList();
+            }
+            catch (DeliveryException ex)
+            {
+                var (completion, evt, summary) = Settle(state, batch, started, RecordStatus.Held, AttemptOutcome.Held, "none", null, null, ex.Message, null, null);
+                await record(index, completion, evt, summary, null, []).ConfigureAwait(false);
+                settledEarly.Add(state);
+                continue;
+            }
+
             // The unit of work this try belongs to: the one an earlier try of the same work began, kept with its steps, or a new
             // one. The route is given the steps without it.
             var kept = ParseSteps(state.PendingStepJson);
@@ -834,6 +854,11 @@ public sealed class DeliveryWorker
                 Payload = single,
                 Parts = parts,
                 ForcedParts = forced,
+                StepParts = stepParts,
+                StepDocumentUnchanged = stepWork.DocumentUnchanged,
+                StepPartsForced = stepWork.Forced,
+                StepKeptDatasets = stepWork.KeptDatasets,
+                StepKeep = stepWork.Keep.ToDictionary(k => KeptStep.StateKey(k.Key), k => k.Value, StringComparer.Ordinal),
                 ExistingVersion = state.TargetVersion,
                 // A record OSDU no longer held when it was last looked for (a verify, or an inventory's repair) is brought back
                 // under its id by a route that can, before it is written; the mark goes with the first write that lands.
@@ -916,6 +941,19 @@ public sealed class DeliveryWorker
             var (index, state, work) = works[i];
             var latestSteps = reportedSteps.TryGetValue(state.DeliveryKey.Value, out var reported) ? reported : state.PendingStepJson;
             var outcome = outcomes[i]!;
+            if (outcome.Succeeded && work.StepKeep.Count > 0)
+            {
+                // What the steps set aside on their holds composed into the document that landed: kept with the record, so a
+                // later render one of them holds in goes ahead with it (osdu/docs/reference/flow/enrich-holds.md).
+                var returned = new Dictionary<string, string>(outcome.Returned, StringComparer.Ordinal);
+                foreach (var (key, value) in work.StepKeep)
+                {
+                    returned[key] = value;
+                }
+
+                outcome = outcome with { Returned = returned };
+            }
+
             var (completion, evt, summary) = Classify(state, batch, started, work, outcome, latestSteps, correlation.Id, verdicts[i]);
             completion = completion with { UnitId = work.Unit?.Id, Superseded = outcome.Succeeded ? outcome.Superseded : [] };
             settled.Add((index, state, work, outcome, completion, evt, summary));

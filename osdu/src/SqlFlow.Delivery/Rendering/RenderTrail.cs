@@ -1,3 +1,4 @@
+using System.Text.Json.Nodes;
 using SqlFlow.Delivery.Model;
 
 namespace SqlFlow.Delivery.Rendering;
@@ -19,6 +20,12 @@ internal sealed class RenderTrail
     /// or null when the mapping states none or the evaluation is a second look that records nothing (why a node is empty).
     /// </summary>
     public Validation.AssertionLog? Assertions { get; init; }
+
+    /// <summary>
+    /// For a fragment's render (osdu/docs/reference/flow/enrich.md): the record it adds to, as the flow's own mapping and the
+    /// steps of <c>enrich:</c> before it left it, which its <c>$base</c> nodes read. Null for the render of a whole record.
+    /// </summary>
+    public JsonObject? Base { get; init; }
 
     /// <summary>
     /// Which row of its child dataset the node being evaluated reads, counting from zero, while the items of a repeated array

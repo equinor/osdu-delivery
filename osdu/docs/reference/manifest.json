@@ -3189,6 +3189,7 @@
       "yamlPath": "(root, flowType: delivery)",
       "related": [
         "delivery-flow-interfaces",
+        "delivery-flow-enrich",
         "delivery-flow-routes",
         "delivery-flow-mapping",
         "delivery-concept-change-detection",
@@ -3707,6 +3708,224 @@
         "osdu/gui/src/features/delivery/dimensions/DimensionViewSuggest.tsx",
         "osdu/src/SqlFlow.Delivery.Data/Migrations/20261009204033_DimensionViews.cs",
         "osdu/src/SqlFlow.Delivery.Data/Migrations/20261026181652_DimensionViewCheckReuse.cs"
+      ]
+    },
+    {
+      "id": "delivery-flow-enrich",
+      "corpus": "reference",
+      "path": "flow/enrich.md",
+      "title": "Enrich (enrich): steps that extend each record a delivery flow renders, rendered as one chain and sent once",
+      "type": "flow-reference",
+      "summary": "The enrich block of a delivery flow: steps adding paths to each record from rows of their own, rendered after the mapping, the record sent once per change.",
+      "keywords": [
+        "enrich",
+        "enrich step",
+        "enhance a record",
+        "extend an existing record",
+        "add to a record after it is delivered",
+        "chained rendering",
+        "one change one write",
+        "fragment",
+        "step rows",
+        "rows one",
+        "rows many",
+        "after",
+        "base",
+        "enrich.dataset",
+        "multi-step record",
+        "steps of a record"
+      ],
+      "yamlPath": "enrich (flowType: delivery), interfaces.<name>.enrich",
+      "related": [
+        "delivery-flow-enrich-files",
+        "delivery-flow-enrich-holds",
+        "delivery-flow-enrich-bulk",
+        "delivery-flow-enrich-workflow",
+        "delivery-flow-mapping-fragment",
+        "delivery-flow-delivery",
+        "delivery-flow-interfaces",
+        "delivery-flow-mapping",
+        "delivery-concept-change-detection",
+        "delivery-concept-preflight",
+        "delivery-concept-lineage"
+      ],
+      "sourceRefs": [
+        "osdu/src/SqlFlow.Delivery/Model/FlowDefinition.cs",
+        "osdu/src/SqlFlow.Delivery/Documents/YamlModels.cs",
+        "osdu/src/SqlFlow.Delivery/Documents/DeliveryDocumentLoader.cs",
+        "osdu/src/SqlFlow.Delivery/Documents/CompanionFiles.cs",
+        "osdu/src/SqlFlow.Delivery/Documents/DeliveryLineage.cs",
+        "osdu/src/SqlFlow.Delivery/Rendering/RecordComposition.cs",
+        "osdu/src/SqlFlow.Delivery/Engine/RenderResolver.cs",
+        "osdu/src/SqlFlow.Delivery/Engine/Planning/Planner.cs",
+        "osdu/src/SqlFlow.Delivery/Validation/Preflight.Chain.cs",
+        "osdu/src/SqlFlow.Delivery/Snapshots/RenderContext.cs",
+        "osdu/src/SqlFlow.Delivery/Catalog/DeliveryDocumentHash.cs",
+        "osdu/src/SqlFlow.Delivery/Engine/Preview/RecordPreview.cs",
+        "osdu/src/SqlFlow.Delivery.Cli/DeliveryVerbs.cs",
+        "osdu/src/SqlFlow.Delivery.Cli/DeliveryPreviewVerbs.cs",
+        "osdu/tests/SqlFlow.Delivery.Tests/Enrichment/EnrichDeliveryTests.cs",
+        "osdu/docs/census/keys.delivery.json"
+      ]
+    },
+    {
+      "id": "delivery-flow-enrich-bulk",
+      "corpus": "reference",
+      "path": "flow/enrich-bulk.md",
+      "title": "A step's bulk data (enrich.<name>.bulk): the record's DDMS bulk data, named by the step's row",
+      "type": "flow-reference",
+      "summary": "enrich.<name>.bulk: a well log's curves named by a table of their own, sent by the ddms route as the record's bulk data, only when they move.",
+      "keywords": [
+        "enrich bulk",
+        "step bulk data",
+        "curves from another table",
+        "well log curves arrive later",
+        "DDMS bulk data of a step",
+        "bulk payload from a child table"
+      ],
+      "yamlPath": "enrich.<name>.bulk, interfaces.<name>.enrich.<name>.bulk",
+      "related": [
+        "delivery-flow-enrich",
+        "delivery-flow-ddms",
+        "delivery-flow-routes",
+        "delivery-guide-bulk-data",
+        "delivery-concept-change-detection"
+      ],
+      "sourceRefs": [
+        "osdu/src/SqlFlow.Delivery/Model/FlowDefinition.cs",
+        "osdu/src/SqlFlow.Delivery/Documents/DeliveryDocumentLoader.cs",
+        "osdu/src/SqlFlow.Delivery/Engine/Planning/Planner.cs",
+        "osdu/src/SqlFlow.Delivery/Source/SourceBindings.cs",
+        "osdu/src/SqlFlow.Delivery/Snapshots/RenderContext.cs",
+        "osdu/tests/SqlFlow.Delivery.Tests/Enrichment/StepBulkDeliveryTests.cs",
+        "osdu/docs/census/keys.delivery.json"
+      ]
+    },
+    {
+      "id": "delivery-flow-enrich-files",
+      "corpus": "reference",
+      "path": "flow/enrich-files.md",
+      "title": "Files a step registers (enrich.<name>.files): datasets a step adds to each record, under ids kept for good",
+      "type": "flow-reference",
+      "summary": "A step's files: one dataset per row, registered under an id made from the record's, linked from the record, sent again only when its files move.",
+      "keywords": [
+        "enrich files",
+        "step files",
+        "add a dataset to a record",
+        "add a file to an existing record",
+        "LAS file of a well log",
+        "dataset of a well log",
+        "derived dataset id",
+        "preserved ids",
+        "files.link",
+        "files.key",
+        "files.mapping",
+        "data.Datasets",
+        "registerDataset",
+        "one change one write"
+      ],
+      "yamlPath": "enrich.<name>.files, interfaces.<name>.enrich.<name>.files",
+      "related": [
+        "delivery-flow-enrich",
+        "delivery-flow-mapping-fragment",
+        "delivery-flow-routes",
+        "delivery-concept-artifacts-and-undo",
+        "delivery-concept-change-detection",
+        "delivery-concept-protocols"
+      ],
+      "sourceRefs": [
+        "osdu/src/SqlFlow.Delivery/Model/FlowDefinition.cs",
+        "osdu/src/SqlFlow.Delivery/Documents/YamlModels.cs",
+        "osdu/src/SqlFlow.Delivery/Documents/DeliveryDocumentLoader.cs",
+        "osdu/src/SqlFlow.Delivery/Rendering/RecordComposition.cs",
+        "osdu/src/SqlFlow.Delivery/Rendering/EnrichParts.cs",
+        "osdu/src/SqlFlow.Delivery/Validation/PayloadLocations.cs",
+        "osdu/src/SqlFlow.Delivery/Validation/Preflight.Chain.cs",
+        "osdu/src/SqlFlow.Delivery/Engine/Planning/Planner.cs",
+        "osdu/src/SqlFlow.Delivery/Engine/Protocols/EnrichPartsProtocol.cs",
+        "osdu/src/SqlFlow.Delivery/Engine/Protocols/ProtocolFactory.cs",
+        "osdu/src/SqlFlow.Delivery/Storage/WorkBatchFile.cs",
+        "osdu/tests/SqlFlow.Delivery.Tests/Enrichment/StepFilesDeliveryTests.cs",
+        "osdu/tests/SqlFlow.Delivery.Tests/Enrichment/EnrichPartsProtocolTests.cs",
+        "osdu/docs/census/keys.delivery.json",
+        "osdu/specs/core/dataset/openapi.yaml"
+      ]
+    },
+    {
+      "id": "delivery-flow-enrich-holds",
+      "corpus": "reference",
+      "path": "flow/enrich-holds.md",
+      "title": "A step set aside on its hold (enrich.<name>.onHold): the record goes ahead with what the step last added",
+      "type": "flow-reference",
+      "summary": "onHold: step sets a held step aside: the record goes ahead with what the step added to its last delivery, and the ledger lists it with the step held.",
+      "keywords": [
+        "onHold",
+        "step held",
+        "set aside",
+        "hold isolation",
+        "a step holds",
+        "keep what a step last added",
+        "HeldSteps",
+        "steps held filter",
+        "enrich.step"
+      ],
+      "yamlPath": "enrich.<name>.onHold, interfaces.<name>.enrich.<name>.onHold",
+      "related": [
+        "delivery-flow-enrich",
+        "delivery-flow-enrich-files",
+        "delivery-flow-mapping-fragment",
+        "delivery-table-record",
+        "delivery-concept-record-lifecycle"
+      ],
+      "sourceRefs": [
+        "osdu/src/SqlFlow.Delivery/Model/FlowDefinition.cs",
+        "osdu/src/SqlFlow.Delivery/Documents/DeliveryDocumentLoader.cs",
+        "osdu/src/SqlFlow.Delivery/Rendering/RecordComposition.cs",
+        "osdu/src/SqlFlow.Delivery/Rendering/KeptSteps.cs",
+        "osdu/src/SqlFlow.Delivery/Rendering/EnrichParts.cs",
+        "osdu/src/SqlFlow.Delivery/Engine/Planning/Planner.cs",
+        "osdu/src/SqlFlow.Delivery/Engine/Worker/DeliveryWorker.cs",
+        "osdu/src/SqlFlow.Delivery/Engine/Protocols/EnrichPartsProtocol.cs",
+        "osdu/src/SqlFlow.Delivery/Engine/Intake/SubmissionIntake.cs",
+        "osdu/src/SqlFlow.Delivery/Ledger/OsduLedger.cs",
+        "osdu/src/SqlFlow.Delivery.Data/DeliveryEntities.cs",
+        "osdu/tests/SqlFlow.Delivery.Tests/Enrichment/StepHoldsDeliveryTests.cs",
+        "osdu/docs/census/keys.delivery.json"
+      ]
+    },
+    {
+      "id": "delivery-flow-enrich-workflow",
+      "corpus": "reference",
+      "path": "flow/enrich-workflow.md",
+      "title": "A step's workflow (enrich.<name>.workflow): an OSDU workflow run over the record once it landed",
+      "type": "flow-reference",
+      "summary": "enrich.<name>.workflow: stages run through the Workflow service over the record and its step's dataset, run again only when the step's files move.",
+      "keywords": [
+        "enrich workflow",
+        "step workflow",
+        "run a workflow on a dataset of a record",
+        "parse a file after it is registered",
+        "csv parser on a step's file",
+        "runWhen",
+        "dataset placeholder"
+      ],
+      "yamlPath": "enrich.<name>.workflow, interfaces.<name>.enrich.<name>.workflow",
+      "related": [
+        "delivery-flow-enrich",
+        "delivery-flow-enrich-files",
+        "delivery-flow-routes",
+        "delivery-concept-artifacts-and-undo"
+      ],
+      "sourceRefs": [
+        "osdu/src/SqlFlow.Delivery/Model/FlowDefinition.cs",
+        "osdu/src/SqlFlow.Delivery/Documents/WorkflowMapper.cs",
+        "osdu/src/SqlFlow.Delivery/Documents/DeliveryDocumentLoader.cs",
+        "osdu/src/SqlFlow.Delivery/Engine/Protocols/EnrichPartsProtocol.cs",
+        "osdu/src/SqlFlow.Delivery/Engine/Protocols/OsduWorkflowProtocol.cs",
+        "osdu/src/SqlFlow.Delivery/Engine/Protocols/ProtocolFactory.cs",
+        "osdu/tests/SqlFlow.Delivery.Tests/Enrichment/StepWorkflowTests.cs",
+        "osdu/docs/census/keys.delivery.json",
+        "osdu/specs/core/workflow/openapi.yaml"
       ]
     },
     {
@@ -4288,6 +4507,50 @@
         "osdu/src/SqlFlow.Delivery/Rendering/EntryValues.cs",
         "osdu/src/SqlFlow.Delivery/Rendering/SourceRow.cs",
         "osdu/tests/SqlFlow.Delivery.Tests/ExpressionTests.cs"
+      ]
+    },
+    {
+      "id": "delivery-flow-mapping-fragment",
+      "corpus": "reference",
+      "path": "flow/mapping-fragment.md",
+      "title": "Fragments (fragment: true) and $base: the paths a step of enrich adds to a record, and how they are added",
+      "type": "flow-reference",
+      "summary": "A fragment mapping: no dataset or envelope, written under data and tags, reading its step's rows and the record with $base, and how it adds to a record.",
+      "keywords": [
+        "fragment",
+        "fragment: true",
+        "$base",
+        "base record",
+        "read what an earlier step added",
+        "add items to a list",
+        "set a path",
+        "composition",
+        "conflict",
+        "enrich mapping",
+        "partial mapping"
+      ],
+      "yamlPath": "fragment (documentType: mapping), record.<property>.$base",
+      "related": [
+        "delivery-flow-enrich",
+        "delivery-flow-mapping",
+        "delivery-flow-mapping-values",
+        "delivery-flow-mapping-parent",
+        "delivery-concept-preflight"
+      ],
+      "sourceRefs": [
+        "osdu/src/SqlFlow.Delivery/Documents/MappingMapper.cs",
+        "osdu/src/SqlFlow.Delivery/Documents/MappingMapper.Record.cs",
+        "osdu/src/SqlFlow.Delivery/Model/MappingDefinition.cs",
+        "osdu/src/SqlFlow.Delivery/Rendering/EntryValues.cs",
+        "osdu/src/SqlFlow.Delivery/Rendering/MappingRenderer.cs",
+        "osdu/src/SqlFlow.Delivery/Rendering/RecordComposition.cs",
+        "osdu/src/SqlFlow.Delivery/Rendering/RenderTrail.cs",
+        "osdu/src/SqlFlow.Delivery/Validation/Preflight.cs",
+        "osdu/src/SqlFlow.Delivery/Validation/Preflight.Chain.cs",
+        "osdu/src/SqlFlow.Delivery/Templates/MappingBuilder.cs",
+        "osdu/tests/SqlFlow.Delivery.Tests/Enrichment/FragmentMappingTests.cs",
+        "osdu/tests/SqlFlow.Delivery.Tests/Enrichment/RecordComposerTests.cs",
+        "osdu/docs/census/keys.mapping.json"
       ]
     },
     {
@@ -7236,7 +7499,8 @@
         "osdu/src/SqlFlow.Delivery/Ledger/SqlServerLedgerBulk.Adoptions.cs",
         "osdu/src/SqlFlow.Delivery/Ledger/SqlServerLedgerBulk.cs",
         "osdu/src/SqlFlow.Delivery/Identity/DeliveryKey.cs",
-        "osdu/src/SqlFlow.Delivery/Snapshots/RenderContext.cs"
+        "osdu/src/SqlFlow.Delivery/Snapshots/RenderContext.cs",
+        "osdu/src/SqlFlow.Delivery/Engine/Intake/SubmissionIntake.cs"
       ]
     },
     {
@@ -8320,7 +8584,8 @@
         "delivery-wiki-0019-linked-templates",
         "delivery-wiki-0002-client-supplied-ids",
         "delivery-wiki-0009-searched-references",
-        "delivery-wiki-linked-canonical-and-custom-records"
+        "delivery-wiki-linked-canonical-and-custom-records",
+        "delivery-wiki-0035-enrich-chains"
       ],
       "sourceRefs": [
         "osdu/src/SqlFlow.Delivery/Documents/MappingMapper.Record.cs",
@@ -8727,6 +8992,46 @@
         "sqlflow/gui/src/layout/nav.ts",
         "sqlflow/gui/src/modules/registry.ts",
         "sqlflow/gui/unit/menuLayout.test.ts"
+      ]
+    },
+    {
+      "id": "delivery-wiki-0035-enrich-chains",
+      "corpus": "wiki",
+      "path": "decisions/0035-enrich-chains.md",
+      "title": "Decision 0035: a record built in steps is rendered as one chain by its own flow, and sent once for any change",
+      "type": "decision",
+      "summary": "Why steps extending a record are an enrich block of its delivery flow, rendered with its mapping and written once, not flows writing the record in OSDU.",
+      "keywords": [
+        "enrich",
+        "fragment",
+        "$base",
+        "chained rendering",
+        "one change one write",
+        "enhance a record",
+        "multi-step record",
+        "storage patch",
+        "record versions"
+      ],
+      "related": [
+        "delivery-wiki-0004-preserved-keys",
+        "delivery-wiki-0019-linked-templates",
+        "delivery-wiki-0023-child-links"
+      ],
+      "sourceRefs": [
+        "osdu/src/SqlFlow.Delivery/Rendering/RecordComposition.cs",
+        "osdu/src/SqlFlow.Delivery/Engine/RenderResolver.cs",
+        "osdu/src/SqlFlow.Delivery/Validation/Preflight.Chain.cs",
+        "osdu/src/SqlFlow.Delivery/Documents/DeliveryDocumentLoader.cs",
+        "osdu/src/SqlFlow.Delivery/Snapshots/RenderContext.cs",
+        "osdu/tests/SqlFlow.Delivery.Tests/Enrichment/EnrichDeliveryTests.cs",
+        "osdu/tests/SqlFlow.Delivery.Tests/EnrichmentGuardTests.cs",
+        "osdu/src/SqlFlow.Delivery/Rendering/EnrichParts.cs",
+        "osdu/src/SqlFlow.Delivery/Engine/Protocols/EnrichPartsProtocol.cs",
+        "osdu/tests/SqlFlow.Delivery.Tests/Enrichment/StepFilesDeliveryTests.cs",
+        "osdu/src/SqlFlow.Delivery/Rendering/KeptSteps.cs",
+        "osdu/tests/SqlFlow.Delivery.Tests/Enrichment/StepHoldsDeliveryTests.cs",
+        "osdu/tests/SqlFlow.Delivery.Tests/Enrichment/StepBulkDeliveryTests.cs",
+        "osdu/tests/SqlFlow.Delivery.Tests/Enrichment/StepWorkflowTests.cs"
       ]
     },
     {

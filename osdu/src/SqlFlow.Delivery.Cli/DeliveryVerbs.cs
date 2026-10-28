@@ -115,6 +115,33 @@ internal static class DeliveryVerbs
 
     private static bool Same(string a, string b) => string.Equals(a, b, StringComparison.OrdinalIgnoreCase);
 
+    /// <summary>What a step renders, as the check lists it: its fragment, and the dataset kind its files are registered as.</summary>
+    private static string StepRenders(Rendering.ResolvedStep step)
+    {
+        var parts = new List<string>();
+        if (step.Mapping is { } fragment)
+        {
+            parts.Add(fragment.Reference);
+        }
+
+        if (step.Files is { } files)
+        {
+            parts.Add($"files as {files.Files.Kind}{(files.Mapping is { } dataset ? $" ({dataset.Reference})" : string.Empty)}, linked from {files.Files.Link}");
+        }
+
+        if (step.Step.Bulk is { } bulk)
+        {
+            parts.Add($"the record's bulk data from {bulk.Root}");
+        }
+
+        if (step.Step.Workflow is { } workflow)
+        {
+            parts.Add($"runs {string.Join(" then ", workflow.Stages.Select(s => s.Workflow))} when {workflow.RunWhen.ToString().ToLowerInvariant()}");
+        }
+
+        return string.Join(", ", parts);
+    }
+
     private static JsonArray Dependencies(IReadOnlyList<Model.InterfaceDependency> dependencies, Func<Model.InterfaceDependency, string> other)
         => new(dependencies
             .Select(d => (JsonNode)new JsonObject
@@ -198,6 +225,40 @@ internal static class DeliveryVerbs
             result["read"] = await ReadAsync(engine, runtime, ct).ConfigureAwait(false);
         }
 
+        // The steps of enrich: in the order they render, each with the fragment it pins and what it reads and follows
+        // (osdu/docs/reference/flow/enrich.md).
+        var steps = runtime.Mapping.Steps
+            .Select(s => (
+                Line: $"    enrich      {s.Step.Name}: {StepRenders(s)}"
+                    + (s.Step.ReadsRows ? $", {(s.Step.Rows == Model.EnrichRows.Many ? "many rows" : "one row")} of {flow.Source.Datasets[s.Step.Name].Object}" : ", no rows of its own")
+                    + (s.Step.After.Count == 0 ? string.Empty : $", after {string.Join(", ", s.Step.After)}"),
+                Json: (JsonNode)new JsonObject
+                {
+                    ["name"] = s.Step.Name,
+                    ["mapping"] = s.Mapping?.Reference,
+                    ["files"] = s.Files is { } files
+                        ? new JsonObject { ["kind"] = files.Files.Kind, ["link"] = files.Files.Link, ["mapping"] = files.Mapping?.Reference }
+                        : null,
+                    ["bulk"] = s.Step.Bulk is { } bulk ? new JsonObject { ["root"] = bulk.Root, ["locationColumn"] = bulk.LocationColumn, ["pattern"] = bulk.Pattern } : null,
+                    ["workflow"] = s.Step.Workflow is { } workflow
+                        ? new JsonObject
+                        {
+                            ["runWhen"] = workflow.RunWhen.ToString().ToLowerInvariant(),
+                            ["stages"] = new JsonArray(workflow.Stages.Select(st => (JsonNode)JsonValue.Create(st.Workflow)).ToArray()),
+                        }
+                        : null,
+                    ["dataset"] = s.Step.ReadsRows ? flow.Source.Datasets[s.Step.Name].Object : null,
+                    ["rows"] = s.Step.ReadsRows ? (s.Step.Rows == Model.EnrichRows.Many ? "many" : "one") : null,
+                    ["after"] = new JsonArray(s.Step.After.Select(a => (JsonNode)JsonValue.Create(a)).ToArray()),
+                    ["reads"] = new JsonArray((s.Mapping?.BasePaths() ?? []).Concat(s.Files?.Mapping?.BasePaths() ?? []).Distinct(StringComparer.Ordinal)
+                        .Select(p => (JsonNode)JsonValue.Create(p)).ToArray()),
+                }))
+            .ToList();
+        if (steps.Count > 0)
+        {
+            result["enrich"] = new JsonArray(steps.Select(s => s.Json).ToArray());
+        }
+
         // What the text form needs is captured now: the runtime is gone by the time it writes.
         var reference = runtime.Mapping.Mapping.Reference;
         var template = runtime.Mapping.Mapping.Template.ToString();
@@ -242,6 +303,11 @@ internal static class DeliveryVerbs
             }
 
             context.Out.WriteLine($"    mapping     {reference}");
+            foreach (var step in steps)
+            {
+                context.Out.WriteLine(step.Line);
+            }
+
             context.Out.WriteLine($"    template    {template} ({templateFrom})");
             context.Out.WriteLine(cacheLine);
             if (searchLine is not null)

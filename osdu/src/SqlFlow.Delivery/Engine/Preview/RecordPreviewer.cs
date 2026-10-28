@@ -145,7 +145,10 @@ public sealed class RecordPreviewer
             : await OnlyEntryAsync(_runtime.Planner.EntriesOfAsync(header, Once(row), 1, new PlanSummary(), ct), ct).ConfigureAwait(false);
 
         var payload = await PayloadAsync(header, rendered, ct).ConfigureAwait(false);
-        var render = rendered.Render;
+
+        // A flow whose steps keep what they added shows the record as the ledger's plan renders it, with what its last delivery
+        // kept of a step set aside (osdu/docs/reference/flow/enrich-holds.md); any other shows the render from the row alone.
+        var render = header.Mapping.HasStepWork && decided.Render is { } planned ? planned : rendered.Render;
         var references = new List<PreviewReference>();
         var referenceCount = 0;
         PreviewDocument? document = null;
@@ -161,7 +164,7 @@ public sealed class RecordPreviewer
 
             var targetState = decided.Existing?.TargetStateJson is { } state ? JsonMerge.ToValues(state) : null;
             rehearsal = RouteRehearsal.Rehearse(flow, render.Document, render.TargetId, payload, targetState);
-            document = Document(render, resolved.Mapping.Kind, rehearsal);
+            document = Document(render, resolved.Mapping.Kind, rehearsal, flow.Enrich ?? []);
         }
 
         var preview = new RecordPreview
@@ -215,6 +218,7 @@ public sealed class RecordPreviewer
             {
                 Rendered = null,
                 Sent = null,
+                Enrichment = PreviewEnrichStep.WithoutValues(document.Enrichment),
                 Omitted = string.Create(
                     CultureInfo.InvariantCulture,
                     $"The rendered document is {document.Characters:N0} characters, more than the {maxDocumentChars:N0} a preview shows. Its hash is {document.MetadataHash}; {whole}."),
@@ -259,6 +263,7 @@ public sealed class RecordPreviewer
                 {
                     Rendered = null,
                     Sent = null,
+                    Enrichment = PreviewEnrichStep.WithoutValues(document.Enrichment),
                     Omitted = $"The document was left out: with it the preview is over the {limit} characters it may answer with. 'sqlflow preview' writes it whole with --out.",
                 },
             };
@@ -504,7 +509,7 @@ public sealed class RecordPreviewer
         };
 
     /// <summary>The record's document whole, as rendered and as the route sends it; <see cref="Bound"/> decides what is shown of it.</summary>
-    private static PreviewDocument Document(RenderResult render, string kind, RehearsedRoute rehearsal)
+    private static PreviewDocument Document(RenderResult render, string kind, RehearsedRoute rehearsal, IReadOnlyList<EnrichStep> steps)
         => new()
         {
             TargetId = render.TargetId,
@@ -530,6 +535,9 @@ public sealed class RecordPreviewer
                 .Order(StringComparer.Ordinal)
                 .ToList(),
             Assertions = render.Assertions,
+            Enrichment = render.Enrichment
+                .Select(c => PreviewEnrichStep.Of(c) with { Supplies = PreviewEnrichStep.SuppliesOf(steps.FirstOrDefault(s => s.Name == c.Step)) })
+                .ToList(),
         };
 
     /// <summary>
