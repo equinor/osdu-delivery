@@ -41,7 +41,7 @@ export interface MissingDocument {
 }
 
 /** The kinds of flow that keep a ledger, in the order the page offers them. */
-export const KINDS = ["delivery", "retrieval", "assertion", "dimension", "inventory"] as const;
+export const KINDS = ["delivery", "retrieval", "assertion", "dimension", "inventory", "download"] as const;
 
 /** What each kind of ledger holds, by the rows the listing counts: one and many. */
 const HELD: Record<string, [string, string]> = {
@@ -50,6 +50,7 @@ const HELD: Record<string, [string, string]> = {
   assertion: ["assertion run", "assertion runs"],
   dimension: ["dimension", "dimensions"],
   inventory: ["inventory", "inventories"],
+  download: ["download", "downloads"],
 };
 
 /** How each thing a flow shares with a missing document reads on its chip, and why it counts, on hover. */

@@ -35,6 +35,8 @@ public sealed class ScopeValuesOperation : DeliveryOperation
 
     public override string Name => OperationName;
 
+    public override string CorrelationOperation => "scope";
+
     protected override async Task<object> RunAsync(EngineContext context, FlowDefinition flow, ComputeTaskPayload payload, CancellationToken ct)
     {
         // The listing reads no row of a scope, so it needs no parameter value: it is what a value is picked from.

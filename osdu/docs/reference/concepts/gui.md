@@ -106,8 +106,8 @@ scopes](../../../../sqlflow/docs/reference/concepts/authentication-and-identity.
 - the whole menu, laid out by what a person does there, SQLFlow's pages and the ones below side by side, with the side
   bar closed and the menu folded the first time the workbench opens ([the menu](menu.md));
 - a **Partition** picker in the title bar, which every OSDU page reads in;
-- tabs and header actions on the pipeline and run pages of the seven kinds it adds (delivery, retrieval, cache, assertion,
-  dimension, inventory, removal), and their fields in the trigger dialog;
+- tabs and header actions on the pipeline and run pages of the eight kinds it adds (delivery, retrieval, cache, assertion,
+  dimension, inventory, removal, download), and their fields in the trigger dialog;
 - a **records** category in the workbench's search.
 
 The pages it adds sit in three of the menu's groups, and the sections below follow them: **Ledger**, **OSDU**, and the
@@ -451,7 +451,12 @@ how long it took, its window, location, counts and outcome); a cache flow **Cach
 its cache, with a **Cache page** link); an assertion flow **Assertions**, **History** (its assertions against recent
 runs, each with its pass rate and how often it flipped) and **Reports**; a dimension flow **Dimensions**; an inventory flow
 **Inventories**; a removal flow **Removals** (each removal with its delivery flow, that ledger's deletions by state and its
-last run, **Approve** for what a guard held, and **Open** to the Removals page). A delivery flow also gains **Deletions**:
+last run, **Approve** for what a guard held, and **Open** to the Removals page); a download flow **Downloads** (each download
+with its kind, its records by state, the bytes its files hold and its last run, its folder on hover of its name; a row opens
+the download in place, on its records in a grid that fills the window, one tab per state with its count, found by any part
+of an id or file name, and on its runs, each with what its listing changed, the files it wrote and why it wrote every record
+again; the download open, its tab and its state live in the address). A download flow's trigger fields pick the downloads a
+run takes and whether it writes every record again. A delivery flow also gains **Deletions**:
 the keys removal flows found its source no longer holds, as the Removals page's grid shows them, with **Deliver again** for
 picked records, and the removal runs that wrote to its ledger.
 

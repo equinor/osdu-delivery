@@ -6,7 +6,7 @@
   "includeEnvelope": true,
   "generatedFrom": "osdu/docs/reference/flow/dimension.md and osdu/src/SqlFlow.Delivery/Documents/YamlModels.cs",
   "naming": "The loader deserializes with YamlDotNet's CamelCaseNamingConvention and refuses any key it does not know.",
-  "keyCount": 139,
+  "keyCount": 141,
   "keys": [
     {
       "path": "batch",
@@ -933,6 +933,19 @@
       "type": "list",
       "required": false,
       "description": "The columns the view groups its rows by: one column or a list of them, at most 16, each named as an expression names one (bare for the from dimension's, `alias.column` for a join's). A grouped view is a row per partition and group: its columns are the columns it groups by and aggregates of the rest (`COUNT`, `COUNT_BIG`, `MAX`, `MIN`, `SUM`, `AVG`, `STRING_AGG ... WITHIN GROUP (ORDER BY ...)`), its `id` the least number of the rows of its group, and its `where` keeps the rows before they are grouped. A grouped view lists its columns. A later view of the flow joins it (`join: { on: <key>, view: <name> }`) when it groups by one column holding a key and lists that column bare."
+    },
+    {
+      "path": "telemetry",
+      "type": "object",
+      "required": false,
+      "description": "What the correlation id every OSDU request of the flow's runs carries names: `correlation-id: osdu-delivery-<repository>-<operation>-<run id>`, the repository's code from the `osdu-delivery.yaml` nearest above the flow. Left out, the runs name the kind's own operation code."
+    },
+    {
+      "path": "telemetry.operation",
+      "type": "string",
+      "required": false,
+      "description": "The flow's operation code in its runs' correlation id: a lower-case letter, then lower-case letters and digits, at most 16 in all and no hyphen. Defaults to the kind's own, `dim`.",
+      "default": "dim"
     }
   ]
 }

@@ -122,7 +122,8 @@ runs with its trace, its run log and its outcome. Its payload names the interfac
 by `recordKeys` or by `filter` ([Running an OSDU flow](../cli/run.md)). As a run of the pipeline it never runs beside
 another of them: one asked for while a delivery of the pipeline runs starts once that run ends, and the next delivery
 waits for it. Records are removed in chunks of 500, batched into one request where the route and the scope allow it
-(only the reversible scope has a bulk call), each record with its own attempt and the chunk's correlation id. A record
+(only the reversible scope has a bulk call), each record with its own attempt and the run's correlation id
+([request correlation](request-correlation.md)). A record
 OSDU has already lost is reported as `already-gone` and settled as removed; a record with no OSDU id, or one that never
 queued a document (so this flow wrote nothing to OSDU under that id), is skipped. While a chunk is removed, its records
 are held under a lease of the removal's own, renewed every half of `reliability.leaseSeconds` as a worker renews its

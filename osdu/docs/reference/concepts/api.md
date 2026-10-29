@@ -43,6 +43,7 @@ sourceRefs:
   - osdu/src/SqlFlow.Delivery.ControlPlane/Api/DeliveryExplorerEndpoints.References.cs
   - osdu/src/SqlFlow.Delivery.ControlPlane/Api/DeliveryExplorerEndpoints.Validate.cs
   - osdu/src/SqlFlow.Delivery.ControlPlane/Api/DeliveryInventoryEndpoints.cs
+  - osdu/src/SqlFlow.Delivery.ControlPlane/Api/DeliveryDownloadEndpoints.cs
   - osdu/src/SqlFlow.Delivery.ControlPlane/Api/DeliveryIssueEndpoints.cs
   - osdu/src/SqlFlow.Delivery.ControlPlane/Api/DeliveryLedgerEndpoints.cs
   - osdu/src/SqlFlow.Delivery.ControlPlane/Api/DeliveryPartitionEndpoints.cs
@@ -406,6 +407,18 @@ is the one the query names, else the workbench's (`X-Osdu-Partition`).
 
 The deletions of a record are also on its detail (`GET /records/{flowId}/{key}`, `removedKey`), and delivering records
 again is an intervention (`POST /flows/{pipelineId}/lift-removal`, [Interventions](#interventions)).
+
+## Downloads
+
+A download flow keeps its downloads under its ledger in each partition it reads ([download flow](../flow/download.md)). The
+flow's route reads the partition the query names, else the workbench's (`X-Osdu-Partition`), else the one a run of the flow
+would read. Every route answers from the module's database: nothing here reads OSDU or a file of a download's folder.
+
+| Route | Policy | Parameters | Answers |
+| --- | --- | --- | --- |
+| `GET /flows/{pipelineId}/downloads` | read | `partition` | One download flow in the partition: how it lists OSDU, its `location`, its parameters, and each download it declares (then each it keeps and no longer declares) with what the partition keeps of it: its folder, its records by state (`written`, `due`, `problem`, `gone`) and their bytes, and its last run. A partition the flow does not read, or a copy that does not load, is answered with the flow as declared and `problem`; 409 for another kind, 404 for no pipeline. |
+| `GET /downloads/{partition}/{downloadId}/runs` | read | `limit` (30, at most 200) | A download's runs, newest first. 404 for a download the partition does not keep. |
+| `GET /downloads/{partition}/{downloadId}/records` | read | `state` (`written`, `due`, `problem`, `gone`), `q` (text an id or a file name holds, ignoring case, at most 500 characters), `after`, `limit` (100, at most 1,000) | A page of a download's records in the order they were first listed, with `next` (the `after` of the next page, when there is one): each with its file name, where it stands, the version listed and the version its file holds, its size and SHA-256, and why its last write did not happen. 400 for another state. |
 
 ## Retention
 

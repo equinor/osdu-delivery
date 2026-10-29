@@ -88,12 +88,15 @@ calls for it, and choose it in years rather than months: statistics and trends r
 | Inventory builds and removals | `InventoryRun`, `InventoryRemoval`, `InventoryRemovalItem` | Never removed |
 | Removal runs | `RemovalRun` | Never removed |
 | Retrievals | `Retrieval` | Never removed; the latest finished one is the next run's watermark |
+| Downloads | `Download`, `DownloadRecord` | Updated by each run; ids OSDU no longer serves stay listed as gone, as their files stay in the folder |
+| Download runs | `DownloadRun` | Never removed |
 | Mappings, templates and search terms | `Mapping`, `RepositoryTemplate`, `SearchTerm`, `SearchTermRefinement` | Rewritten by each repository sync |
 | OSDU schema lineage | `SchemaLineage`, `SchemaLineageKind` | One set per release built; building it again replaces it |
 | Partitions and configuration | `Partition`, `ConfigProperty`, `SchemaVersion`, `__EFMigrationsHistory` | Managed on the Partitions page and by the configuration |
 
 The page flags the kept areas that grow with use and that nothing removes (submissions, objects created in OSDU, purged
-records, activities, the render context, dimension builds, inventory builds and removals, removal runs, retrievals), so
+records, activities, the render context, dimension builds, inventory builds and removals, removal runs, retrievals,
+download runs), so
 their growth is visible even though nothing should remove them.
 
 **The largest areas are content, not history.** On a working estate the dimensions and the partition cache take most of
@@ -110,6 +113,7 @@ own retention, and its current version is as large as the reference data the cac
 | View checks | `DimensionViewCheck` | The newest 50 checks per view and partition are kept |
 | Matches and duplicate checks | `InventoryScan`, `InventorySelection`, `InventorySelectionItem`, `InventoryDuplicateCheck`, `InventoryDuplicateGroup`, `InventoryDuplicateMember`, and every `dup_*` table | A build's staging when it ends; a match or a duplicate check 7 days after it was made (one a removal used keeps its row); a check's table when its download fails or a later download completes |
 | Removal staging | `RemovalKey` | Cleared when the run closes, or by the next run of the removal |
+| Download staging | `DownloadScan` | Cleared when the run merges its listing or fails, or by the next run of the download |
 | Dimension build staging | Every `dimstage_*` table, seven a build | Dropped when the build ends, written or not; what a build whose worker stopped left, by the next build of the same dimension once the stopped build is closed or has run for 48 hours; every build's, when the dimension is removed ([A dimension build's staging](../flow/dimension-staging.md)) |
 
 ## Outside the database

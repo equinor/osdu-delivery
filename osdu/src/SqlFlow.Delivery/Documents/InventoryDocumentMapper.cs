@@ -26,7 +26,7 @@ internal static class InventoryMapper
     {
         var name = FlowMapper.Require(y.Name, "name", source);
         var src = y.Source ?? throw FlowMapper.Missing("source", source);
-        var headers = new Dictionary<string, string>(src.Headers ?? [], StringComparer.OrdinalIgnoreCase);
+        var headers = FlowMapper.MapHeaders(src.Headers, "source.headers", source);
         var partitions = MapPartitions(y.Partitions, source);
         if (partitions.Count > 0)
         {
@@ -69,6 +69,7 @@ internal static class InventoryMapper
             Name = name,
             Description = Optional(y.Description),
             Batch = Optional(y.Batch),
+            TelemetryOperation = FlowMapper.MapTelemetry(y.Telemetry, InventoryFlowDefinition.FlowTypeName, source),
             Parameters = parameters,
             Source = new InventorySource
             {
@@ -100,7 +101,7 @@ internal static class InventoryMapper
         return flow;
     }
 
-    private static IReadOnlyList<string> MapPartitions(IReadOnlyList<string>? declared, string source)
+    internal static IReadOnlyList<string> MapPartitions(IReadOnlyList<string>? declared, string source)
     {
         if (declared is null)
         {
@@ -112,7 +113,7 @@ internal static class InventoryMapper
         return names;
     }
 
-    private static InventoryRead MapRead(string? declared, string source) => (declared?.Trim().ToLowerInvariant()) switch
+    internal static InventoryRead MapRead(string? declared, string source) => (declared?.Trim().ToLowerInvariant()) switch
     {
         null or "" or "search" => InventoryRead.Search,
         "storage" => InventoryRead.Storage,
@@ -284,7 +285,7 @@ internal static class InventoryMapper
             : throw new FlowValidationException($"{source}: {key} '{path}' must name the record it acts on as {{id}}, as '{fallback}' does.");
     }
 
-    private static string ServicePath(string? declared, string fallback, string key, string source)
+    internal static string ServicePath(string? declared, string fallback, string key, string source)
     {
         if (string.IsNullOrWhiteSpace(declared))
         {

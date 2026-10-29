@@ -1,8 +1,8 @@
 ---
 id: delivery-table-ledger-flow
-title: "osdu.LedgerFlow: each retrieval, assertion, dimension and inventory flow as the repository sync found it"
+title: "osdu.LedgerFlow: each retrieval, assertion, dimension, inventory and download flow as the repository sync found it"
 type: table
-summary: "One row per retrieval, assertion, dimension or inventory flow of a repository: its kind, file, document hash, and whether it keeps a ledger per partition."
+summary: "One row per flow of a repository that keeps a ledger and delivers nothing: its kind, file, document hash, and whether it keeps a ledger per partition."
 keywords:
   - osdu.LedgerFlow
   - ledger flow
@@ -23,9 +23,9 @@ sourceRefs:
   - osdu/src/SqlFlow.Delivery.ControlPlane/Background/InterfaceCatalogBackfillService.cs
 ---
 
-# osdu.LedgerFlow: each retrieval, assertion, dimension and inventory flow as the repository sync found it
+# osdu.LedgerFlow: each retrieval, assertion, dimension, inventory and download flow as the repository sync found it
 
-One flow of a repository that keeps a ledger and delivers nothing (a retrieval, assertion, dimension or inventory flow), as
+One flow of a repository that keeps a ledger and delivers nothing (a retrieval, assertion, dimension, inventory or download flow), as
 the repository sync found it: the hash of its document, by which the sync pairs a renamed flow with the one it replaced,
 and whether it keeps a ledger in each partition it works in, which says the ledger it keeps in a partition
 ([Renaming a pipeline](../concepts/renaming-a-pipeline.md)). These flows keep their ledgers under their names, so a flow's

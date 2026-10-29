@@ -8,8 +8,8 @@ namespace SqlFlow.Delivery.Documents;
 /// <summary>
 /// A cache flow as the platform sees it: the OSDU endpoint (or, for a flow of table types, the connection) is the source
 /// reference, the catalog the target, and the source's secret references are what the hygiene check inspects. It needs the
-/// repository tree only when it holds a dictionary, whose file a refresh reads. Its lineage is the OSDU types, tables and
-/// dictionary files it reads and the partition cache types it writes (<see cref="CacheLineage"/>).
+/// repository tree: a refresh reads the repository document above it and the file of each dictionary it holds. Its lineage
+/// is the OSDU types, tables and dictionary files it reads and the partition cache types it writes (<see cref="CacheLineage"/>).
 /// </summary>
 public sealed record CacheFlowDocument : RegisteredFlowDocument
 {
@@ -40,10 +40,11 @@ public sealed record CacheFlowDocument : RegisteredFlowDocument
     public override IEnumerable<KeyValuePair<string, string>> CredentialReferences => Flow.CredentialReferences();
 
     /// <summary>
-    /// A flow holding a dictionary reads the dictionary's file from the repository, so its node needs the repository's tree
-    /// at the run's commit; a flow of OSDU and table types has everything it needs in the document.
+    /// A refresh reads the repository document above the flow, whose code its requests carry (osdu/docs/reference/flow/repository.md),
+    /// and the file of each dictionary the flow holds, so its node needs the repository's tree at the run's commit: a snapshot of
+    /// the flow's one file holds neither.
     /// </summary>
-    public override bool RequiresRepoTree => Flow.Types.Any(t => t.Origin == Snapshots.CacheOrigin.Dictionary);
+    public override bool RequiresRepoTree => true;
 
     public override RegisteredFlowLineage DescribeLineage(RegisteredLineageContext context)
     {
@@ -51,8 +52,12 @@ public sealed record CacheFlowDocument : RegisteredFlowDocument
         return OrderLineage.BindEveryPartition(CacheLineage.Describe(Flow, context), context);
     }
 
-    /// <summary>The dictionary each dictionary type holds, found and read as a refresh finds and reads it (<see cref="CompanionFiles.Dictionaries(CacheDefinition, string, DeliveryDocumentLoader)"/>).</summary>
-    public override IReadOnlyList<string> CheckOffline(string documentPath) => CompanionFiles.Dictionaries(Flow, documentPath, DictionaryDocuments);
+    /// <summary>
+    /// The repository document above the flow and the dictionary each dictionary type holds, found and read as a refresh finds and
+    /// reads them (<see cref="CompanionFiles.Repository"/>, <see cref="CompanionFiles.Dictionaries(CacheDefinition, string, DeliveryDocumentLoader)"/>).
+    /// </summary>
+    public override IReadOnlyList<string> CheckOffline(string documentPath)
+        => [.. CompanionFiles.Repository(documentPath, DictionaryDocuments), .. CompanionFiles.Dictionaries(Flow, documentPath, DictionaryDocuments)];
 }
 
 /// <summary>The <c>flowType: cache</c> document kind, registered in every host next to its executor.</summary>

@@ -1794,6 +1794,286 @@ namespace SqlFlow.Delivery.Data.Migrations
                     b.ToTable("DimensionViewCheck", "osdu");
                 });
 
+            modelBuilder.Entity("SqlFlow.Delivery.Data.DeliveryDownload", b =>
+                {
+                    b.Property<short>("PartitionId")
+                        .HasColumnType("smallint");
+
+                    b.Property<int>("DownloadId")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("DownloadId"));
+
+                    b.Property<DateTime>("CreatedUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<Guid>("FlowId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("FlowName")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)");
+
+                    b.Property<string>("Kind")
+                        .IsRequired()
+                        .HasMaxLength(300)
+                        .HasColumnType("nvarchar(300)");
+
+                    b.Property<DateTime?>("LastCompletedUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<long?>("LastRunId")
+                        .HasColumnType("bigint");
+
+                    b.Property<string>("Location")
+                        .HasMaxLength(2000)
+                        .HasColumnType("nvarchar(2000)");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)");
+
+                    b.Property<string>("Query")
+                        .HasMaxLength(4000)
+                        .HasColumnType("nvarchar(4000)");
+
+                    b.Property<string>("ReadMode")
+                        .IsRequired()
+                        .HasMaxLength(16)
+                        .HasColumnType("nvarchar(16)");
+
+                    b.Property<DateTime>("UpdatedUtc")
+                        .HasColumnType("datetime2");
+
+                    b.HasKey("PartitionId", "DownloadId");
+
+                    b.HasIndex("PartitionId", "FlowId", "Name")
+                        .IsUnique();
+
+                    b.ToTable("Download", "osdu");
+                });
+
+            modelBuilder.Entity("SqlFlow.Delivery.Data.DeliveryDownloadRecord", b =>
+                {
+                    b.Property<short>("PartitionId")
+                        .HasColumnType("smallint");
+
+                    b.Property<long>("DownloadRecordId")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<long>("DownloadRecordId"));
+
+                    b.Property<long?>("Bytes")
+                        .HasColumnType("bigint");
+
+                    b.Property<DateTime>("ChangedUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<int>("DownloadId")
+                        .HasColumnType("int");
+
+                    b.Property<string>("FileName")
+                        .IsRequired()
+                        .HasMaxLength(240)
+                        .HasColumnType("nvarchar(240)")
+                        .UseCollation("Latin1_General_100_CI_AS");
+
+                    b.Property<DateTime>("FirstSeenUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<DateTime?>("GoneUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("Kind")
+                        .HasMaxLength(300)
+                        .HasColumnType("nvarchar(300)");
+
+                    b.Property<string>("Problem")
+                        .HasMaxLength(1000)
+                        .HasColumnType("nvarchar(1000)");
+
+                    b.Property<DateTime?>("ProblemUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<byte[]>("Sha256")
+                        .HasMaxLength(32)
+                        .HasColumnType("binary(32)")
+                        .IsFixedLength();
+
+                    b.Property<string>("TargetId")
+                        .IsRequired()
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)")
+                        .UseCollation("Latin1_General_100_BIN2");
+
+                    b.Property<long?>("Version")
+                        .HasColumnType("bigint");
+
+                    b.Property<long?>("WrittenRunId")
+                        .HasColumnType("bigint");
+
+                    b.Property<DateTime?>("WrittenUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<long?>("WrittenVersion")
+                        .HasColumnType("bigint");
+
+                    b.HasKey("PartitionId", "DownloadRecordId");
+
+                    b.HasIndex("PartitionId", "TargetId");
+
+                    SqlServerIndexBuilderExtensions.IncludeProperties(b.HasIndex("PartitionId", "TargetId"), new[] { "DownloadId", "FileName", "WrittenVersion", "GoneUtc" });
+
+                    b.HasIndex("PartitionId", "DownloadId", "DownloadRecordId");
+
+                    SqlServerIndexBuilderExtensions.IncludeProperties(b.HasIndex("PartitionId", "DownloadId", "DownloadRecordId"), new[] { "TargetId", "Version", "WrittenVersion", "GoneUtc", "FileName" });
+
+                    b.HasIndex("PartitionId", "DownloadId", "FileName")
+                        .IsUnique();
+
+                    b.HasIndex("PartitionId", "DownloadId", "TargetId")
+                        .IsUnique();
+
+                    b.ToTable("DownloadRecord", "osdu");
+                });
+
+            modelBuilder.Entity("SqlFlow.Delivery.Data.DeliveryDownloadRun", b =>
+                {
+                    b.Property<short>("PartitionId")
+                        .HasColumnType("smallint");
+
+                    b.Property<long>("DownloadRunId")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<long>("DownloadRunId"));
+
+                    b.Property<string>("Actor")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)");
+
+                    b.Property<long>("Added")
+                        .HasColumnType("bigint");
+
+                    b.Property<long>("Bytes")
+                        .HasColumnType("bigint");
+
+                    b.Property<long>("Changed")
+                        .HasColumnType("bigint");
+
+                    b.Property<DateTime?>("CompletedUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<int>("DownloadId")
+                        .HasColumnType("int");
+
+                    b.Property<string>("Error")
+                        .HasMaxLength(4000)
+                        .HasColumnType("nvarchar(4000)");
+
+                    b.Property<long>("Gone")
+                        .HasColumnType("bigint");
+
+                    b.Property<long>("Listed")
+                        .HasColumnType("bigint");
+
+                    b.Property<string>("Location")
+                        .IsRequired()
+                        .HasMaxLength(2000)
+                        .HasColumnType("nvarchar(2000)");
+
+                    b.Property<long>("Missing")
+                        .HasColumnType("bigint");
+
+                    b.Property<int>("Pages")
+                        .HasColumnType("int");
+
+                    b.Property<string>("ReadMode")
+                        .IsRequired()
+                        .HasMaxLength(16)
+                        .HasColumnType("nvarchar(16)");
+
+                    b.Property<long>("Requests")
+                        .HasColumnType("bigint");
+
+                    b.Property<long>("Returned")
+                        .HasColumnType("bigint");
+
+                    b.Property<string>("Rewrite")
+                        .HasMaxLength(16)
+                        .HasColumnType("nvarchar(16)");
+
+                    b.Property<Guid?>("RunId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTime>("StartedUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(16)
+                        .HasColumnType("nvarchar(16)");
+
+                    b.Property<long>("Written")
+                        .HasColumnType("bigint");
+
+                    b.HasKey("PartitionId", "DownloadRunId");
+
+                    b.HasIndex("PartitionId", "DownloadId", "DownloadRunId");
+
+                    b.ToTable("DownloadRun", "osdu");
+                });
+
+            modelBuilder.Entity("SqlFlow.Delivery.Data.DeliveryDownloadScan", b =>
+                {
+                    b.Property<short>("PartitionId")
+                        .HasColumnType("smallint");
+
+                    b.Property<long>("ScanId")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<long>("ScanId"));
+
+                    b.Property<string>("DistinctName")
+                        .IsRequired()
+                        .HasMaxLength(240)
+                        .HasColumnType("nvarchar(240)")
+                        .UseCollation("Latin1_General_100_CI_AS");
+
+                    b.Property<long>("DownloadRunId")
+                        .HasColumnType("bigint");
+
+                    b.Property<string>("Kind")
+                        .HasMaxLength(300)
+                        .HasColumnType("nvarchar(300)");
+
+                    b.Property<string>("PlainName")
+                        .HasMaxLength(240)
+                        .HasColumnType("nvarchar(240)")
+                        .UseCollation("Latin1_General_100_CI_AS");
+
+                    b.Property<string>("TargetId")
+                        .IsRequired()
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)")
+                        .UseCollation("Latin1_General_100_BIN2");
+
+                    b.Property<long?>("Version")
+                        .HasColumnType("bigint");
+
+                    b.HasKey("PartitionId", "ScanId");
+
+                    b.HasIndex("PartitionId", "DownloadRunId", "TargetId");
+
+                    b.ToTable("DownloadScan", "osdu");
+                });
+
             modelBuilder.Entity("SqlFlow.Delivery.Data.DeliveryInterface", b =>
                 {
                     b.Property<Guid>("Id")

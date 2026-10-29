@@ -37,6 +37,7 @@ public sealed class OsduStorageContributor : IStorageContributor
     private const string Dimensions = "Dimensions";
     private const string Inventories = "Inventories";
     private const string Removals = "Removals and retrievals";
+    private const string Downloads = "Downloads";
     private const string Setup = "Repositories and setup";
 
     private readonly IServiceProvider? _services;
@@ -406,6 +407,43 @@ public sealed class OsduStorageContributor : IStorageContributor
                 Lifecycle = "Never removed.",
                 Grows = true,
                 Tables = [T("Retrieval")],
+            },
+            new()
+            {
+                Id = OsduSchema.Module + ".downloads",
+                Group = Downloads,
+                Title = "Downloads",
+                Verdict = StorageVerdict.Keep,
+                Holds = "Each download of a download flow, and every OSDU id it lists with the file it is written to, the version that file holds, and its size and hash.",
+                Reason = "It is how a run knows what is new or changed, and the record of what each file in a download's folder holds.",
+                Brief = "Updated by each run",
+                Lifecycle = "Each run updates it. Ids OSDU no longer serves stay listed as gone, as their files stay in the folder.",
+                Tables = [T("Download"), T("DownloadRecord")],
+            },
+            new()
+            {
+                Id = OsduSchema.Module + ".download-runs",
+                Group = Downloads,
+                Title = "Download runs",
+                Verdict = StorageVerdict.Keep,
+                Holds = "One row per run of a download: where it wrote, what its listing changed, and the files it wrote.",
+                Reason = "It is the history of what each run wrote to the folder.",
+                Brief = "Never removed",
+                Lifecycle = "Never removed.",
+                Grows = true,
+                Tables = [T("DownloadRun")],
+            },
+            new()
+            {
+                Id = OsduSchema.Module + ".download-staging",
+                Group = Downloads,
+                Title = "Download staging",
+                Verdict = StorageVerdict.Safe,
+                Holds = "The ids a running download listed, staged until its listing is whole.",
+                Reason = "They exist only while a run lists.",
+                Brief = "When the run merges them",
+                Lifecycle = "Cleared when the run merges its listing or fails, or by the next run of the download.",
+                Tables = [T("DownloadScan")],
             },
             new()
             {

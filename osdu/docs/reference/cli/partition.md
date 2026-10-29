@@ -74,8 +74,8 @@ schema (see [sqlflow db](db.md)).
 
 What the registry decides, and what it does not:
 
-- **A registry-driven flow serves every registered partition.** A delivery, cache, assertion, dimension or inventory
-  flow that names neither `partitions` nor a `data-partition-id` header serves the partitions registered now, and a run
+- **A registry-driven flow serves every registered partition.** A delivery, cache, assertion, dimension, inventory or
+  download flow that names neither `partitions` nor a `data-partition-id` header serves the partitions registered now, and a run
   of it has to name one of them (or take the default).
 - **A run that names no partition runs in the default**, when the flow serves it; for a flow that names exactly one
   partition, that one.

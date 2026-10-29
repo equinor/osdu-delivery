@@ -31,8 +31,26 @@ public static class DeliveryDocumentHash
         PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
         DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,
         Converters = { new JsonStringEnumConverter() },
-        TypeInfoResolver = new DefaultJsonTypeInfoResolver { Modifiers = { LeaveOutNoWorkflows } },
+        TypeInfoResolver = new DefaultJsonTypeInfoResolver { Modifiers = { LeaveOutNoWorkflows, LeaveOutTheKindsOperation } },
     };
+
+    /// <summary>
+    /// A flow that names no operation code of its own (<see cref="FlowDefinition.TelemetryOperation"/> the kind's,
+    /// <see cref="FlowTelemetry.Delivery"/>) hashes as one written before <c>telemetry:</c> existed, so the hash every such flow
+    /// was synced with stays what it was; a flow that names one is another document.
+    /// </summary>
+    private static void LeaveOutTheKindsOperation(JsonTypeInfo info)
+    {
+        if (info.Type != typeof(FlowDefinition))
+        {
+            return;
+        }
+
+        foreach (var property in info.Properties.Where(p => p.Name == "telemetryOperation"))
+        {
+            property.ShouldSerialize = (_, value) => !string.Equals(value as string, FlowTelemetry.Delivery, StringComparison.Ordinal);
+        }
+    }
 
     /// <summary>
     /// A flow that runs no workflow over its mapping's enrichments (<see cref="FlowDefinition.EnrichWorkflows"/> empty) hashes as

@@ -101,6 +101,7 @@ public sealed class LineageTests : IDisposable
                 new DeliveryFlowKind(documents, templates ?? new MappingTemplateSource()),
                 new CacheFlowKind(documents), new RetrievalFlowKind(documents), new AssertionFlowKind(documents),
                 new DimensionFlowKind(documents), new InventoryFlowKind(documents), new RemovalFlowKind(documents),
+                new DownloadFlowKind(documents),
             ]);
     }
 
@@ -550,7 +551,8 @@ public sealed class LineageTests : IDisposable
         Assert.Contains(report.Edges, e => e.Flow == "welldb-survey-03-delivery" && e.Relation == LineageRelation.Writes && e.ObjectKey == TypeKey("osdu:wks:work-product-component--WellboreMarkerSet:1.2.1"));
 
         // What reads OSDU back runs once what it reads has landed: the wells are tested, the wellbores read back into the
-        // lake, the dimensions built over the logs, and the inventory taken of every kind the estate delivers.
+        // lake, the dimensions built over the logs, the inventory taken of every kind the estate delivers, and the wells and
+        // wellbores written to the lake a file each.
         foreach (var (writer, reader) in new[]
         {
             ("welldb-well-03-delivery", "welldb-well-04-assertion"),
@@ -560,6 +562,8 @@ public sealed class LineageTests : IDisposable
             ("welldb-wellbore-03-delivery", "welldb-osdu-06-inventory"),
             ("welldb-welllog-03-header-delivery", "welldb-osdu-06-inventory"),
             ("welldb-wellbore-03-delivery", "welldb-wellbore-05-removal"),
+            ("welldb-well-03-delivery", "welldb-osdu-07-download"),
+            ("welldb-wellbore-03-delivery", "welldb-osdu-07-download"),
         })
         {
             Assert.True(WaveOf(report, writer) < WaveOf(report, reader), $"{writer} runs before {reader}");
@@ -584,6 +588,7 @@ public sealed class LineageTests : IDisposable
         var files = report.Objects.Where(o => o.Kind == LineageNodeKind.File).Select(o => o.Name).Order(StringComparer.Ordinal).ToList();
         Assert.Equal(
             [
+                "az://welldbstorage/lake/osdu/records/Wellbores", "az://welldbstorage/lake/osdu/records/Wells",
                 "az://welldbstorage/lake/osdu/wellbores",
                 InRepo("cache/data/curve-dictionary"), InRepo("cache/data/depth-unit-alias"), InRepo("cache/data/unit-alias"),
                 InRepo("data/curves"), InRepo("data/curves-meta"), InRepo("data/document-files"),

@@ -10,8 +10,8 @@ using SqlFlow.Delivery.Hosting;
 namespace SqlFlow.Delivery.Cli;
 
 /// <summary>
-/// The OSDU module as the <c>sqlflow</c> CLI composes it: the delivery, retrieval, cache, assertion, dimension, inventory
-/// and removal flow kinds (so SQLFlow's own <c>validate</c>, <c>run</c> and <c>worker</c> verbs read and execute them),
+/// The OSDU module as the <c>sqlflow</c> CLI composes it: the delivery, retrieval, cache, assertion, dimension, inventory,
+/// removal and download flow kinds (so SQLFlow's own <c>validate</c>, <c>run</c> and <c>worker</c> verbs read and execute them),
 /// the ledger, templates and caches over the module's database, and the module's own verbs: <c>check</c>,
 /// <c>preview</c>, <c>values</c>, <c>records</c>, <c>config</c>, <c>partition</c>, <c>cache</c>, <c>template</c>,
 /// <c>assertions</c>, <c>dimensions</c>, <c>inventory</c>, <c>removal</c> and <c>dev</c>, which sets a checkout up for a local run.

@@ -60,7 +60,7 @@ internal static partial class AssertionMapper
     {
         var name = FlowMapper.Require(y.Name, "name", source);
         var src = y.Source ?? throw FlowMapper.Missing("source", source);
-        var headers = new Dictionary<string, string>(src.Headers ?? [], StringComparer.OrdinalIgnoreCase);
+        var headers = FlowMapper.MapHeaders(src.Headers, "source.headers", source);
         var partitions = MapPartitions(y.Partitions, source);
         if (partitions.Count > 0)
         {
@@ -96,6 +96,7 @@ internal static partial class AssertionMapper
             Name = name,
             Description = Optional(y.Description),
             Batch = Optional(y.Batch),
+            TelemetryOperation = FlowMapper.MapTelemetry(y.Telemetry, AssertionFlowDefinition.FlowTypeName, source),
             Parameters = parameters,
             Source = new AssertionSource
             {

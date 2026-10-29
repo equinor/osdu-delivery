@@ -174,6 +174,7 @@ Unknown keys are refused: the document is read strictly, so a misspelled key fai
 | `name` | string | yes | none | The flow's name: its pipeline identity. The flow id, and so its ledger, derive from it. |
 | `batch` | string | no | none | The SQLFlow batch the pipeline is filed under. |
 | `description` | string | no | none | Free text. |
+| `telemetry.operation` | string | no | `ret` | The flow's operation code in the correlation id every OSDU request of its runs carries, `osdu-delivery-<repository>-<operation>-<run id>`: a lower-case letter, then lower-case letters and digits, at most 16, no hyphen. See [request correlation](../concepts/request-correlation.md). |
 | `parameters` | map | no | none | Named parameters, each with `required`, `default` and `description`. `{name}` tokens use them in `source.query` and `target.location`. A run supplies values with `--set name=value` or a schedule's `values`; a value for an undeclared name is refused. A parameter may list its `choices` ([parameters](parameters.md)). |
 | `source` | map | yes | none | The OSDU side: platform, credentials, partition, kinds, query, paging and watermark. |
 | `target` | map | yes | none | The lake side: where a run's files and manifest go and how the files are cut. |

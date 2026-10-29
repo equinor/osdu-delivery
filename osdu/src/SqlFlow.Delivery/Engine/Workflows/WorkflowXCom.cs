@@ -125,6 +125,7 @@ public sealed class AirflowXCom : IWorkflowXCom
 
             authorization.ApplyTo(request);
             request.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
+            OsduCorrelation.ApplyTo(request);
             return request;
         }, new HashSet<int> { 404 }, idempotent: true, ct: ct).ConfigureAwait(false);
         if ((int)result.Status == 404)

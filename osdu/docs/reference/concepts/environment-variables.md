@@ -191,7 +191,7 @@ target:
 ## Where a reference resolves from
 
 A reference does not have to be a variable on every node. The control plane keeps a central configuration in the `osdu`
-schema and attaches it to every delivery, retrieval, cache, assertion, dimension, inventory and removal run it queues
+schema and attaches it to every delivery, retrieval, cache, assertion, dimension, inventory, removal and download run it queues
 ([the control plane](control-plane.md#the-central-configuration-on-every-run)).
 A run bound to a partition resolves `${env:NAME}` in this order:
 

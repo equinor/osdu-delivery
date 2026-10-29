@@ -202,7 +202,7 @@ public sealed class DictionaryTests : IDisposable
         Assert.Contains("source.endpoint is required", Refused(Lookups + "\n  - kind: \"osdu:wks:reference-data--UnitOfMeasure:*\"\n    fields: [data.Code]\n"), StringComparison.Ordinal);
         Assert.Contains("needs a kind", Refused(Lookups.Replace("- dictionary: UnitAlias", "- name: Nothing", StringComparison.Ordinal)), StringComparison.Ordinal);
 
-        // A flow with no dictionary has everything it needs in the document.
+        // A flow with no dictionary still reads the repository document above it, whose code its requests carry.
         var searched = loader.ParseCache("""
             flowType: cache
             name: searched
@@ -213,7 +213,7 @@ public sealed class DictionaryTests : IDisposable
               - kind: "osdu:wks:reference-data--UnitOfMeasure:*"
                 fields: [data.Code, data.Name]
             """, "cache/searched.yaml");
-        Assert.False(new CacheFlowDocument { Flow = searched }.RequiresRepoTree);
+        Assert.True(new CacheFlowDocument { Flow = searched }.RequiresRepoTree);
     }
 
     [Fact]

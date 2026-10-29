@@ -212,7 +212,7 @@ public sealed class ProductionTimeSeriesRouteTests
     {
         var platform = new FakeOsduPlatform();
         using var rig = new Rig(platform);
-        using var correlation = OsduCorrelation.Begin();
+        using var correlation = OsduCorrelation.ForRun("pdms", FlowTelemetry.Delivery, Guid.CreateVersion7());
 
         var outcome = await rig.Protocol.DeliverAsync(Work(Values(Standard), Files(("points.parquet", await StandardTableAsync()))));
         Assert.True(outcome.Succeeded, outcome.Failure?.Message);
@@ -228,7 +228,7 @@ public sealed class ProductionTimeSeriesRouteTests
             ],
             Sent(platform));
 
-        // The request is typed exactly as the service's clients type it, and carries the attempt's correlation id twice.
+        // The request is typed exactly as the service's clients type it, and carries the run's correlation id twice.
         Assert.Equal("application/json", Assert.Single(platform.TimeSeriesContentTypes));
         Assert.Equal(correlation.Id, platform.Calls[1].Headers[ProductionTimeSeriesShape.TraceHeader]);
         Assert.Equal(correlation.Id, platform.Calls[1].Headers[OsduCorrelation.HeaderName]);

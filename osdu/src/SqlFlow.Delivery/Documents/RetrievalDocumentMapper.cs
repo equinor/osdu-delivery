@@ -64,12 +64,13 @@ internal static class RetrievalMapper
             Name = name,
             Description = string.IsNullOrWhiteSpace(y.Description) ? null : y.Description!.Trim(),
             Batch = string.IsNullOrWhiteSpace(y.Batch) ? null : y.Batch!.Trim(),
+            TelemetryOperation = FlowMapper.MapTelemetry(y.Telemetry, RetrievalDefinition.FlowTypeName, source),
             Parameters = FlowParameterDeclarations.Map(y.Parameters, source),
             Source = new RetrievalSource
             {
                 Endpoint = FlowMapper.Require(src.Endpoint, "source.endpoint", source),
                 Auth = FlowMapper.MapAuth(src.Auth, source, "source.auth"),
-                Headers = new Dictionary<string, string>(src.Headers ?? [], StringComparer.OrdinalIgnoreCase),
+                Headers = FlowMapper.MapHeaders(src.Headers, "source.headers", source),
                 Kinds = kinds,
                 Query = string.IsNullOrWhiteSpace(src.Query) ? null : src.Query!.Trim(),
                 ReturnedFields = (src.ReturnedFields ?? []).Where(f => !string.IsNullOrWhiteSpace(f)).Select(f => f.Trim()).ToList(),

@@ -627,6 +627,9 @@ public static class DeliveryEndpoints
         // Removal flows: a flow's removals in a partition, their runs, and the deletions a delivery ledger holds.
         DeliveryRemovalEndpoints.MapReads(delivery);
 
+        // Download flows: a flow's downloads in a partition, their runs, and their records with the file each is written to.
+        DeliveryDownloadEndpoints.MapReads(delivery);
+
         // The missing documents: flows no repository declares any more whose ledgers hold anything, and who can take them over.
         DeliveryOrphanedLedgerEndpoints.MapReads(delivery);
         delivery.MapGet("/caches", ListCachesAsync).WithName("ListDeliveryCaches");

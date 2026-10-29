@@ -85,7 +85,7 @@ hash: it is a missing document, taken over by hand.
 ## The same document under a new name
 
 Every sync describes each delivery interface ([The interface read model](../flow/interfaces.md#the-interface-read-model))
-and each retrieval, assertion, dimension and inventory flow ([`osdu.LedgerFlow`](../tables/ledger-flow.md)) with the hash
+and each retrieval, assertion, dimension, inventory and download flow ([`osdu.LedgerFlow`](../tables/ledger-flow.md)) with the hash
 of its document, SHA-256 of what it is apart from its name and its file's path, so comments and layout play no part:
 
 - a delivery flow as parsed, together with the content of the mapping document each interface pins, since what renders a
@@ -164,11 +164,12 @@ history, and the next run sends only what changed since the old name last ran, a
 | assertion | Its runs, their results and its audit trail | Never |
 | dimension | Its dimensions, which take the new flow's name, their builds, its audit trail, and the views it wrote, whose builds the new flow then owns | The new flow holds a dimension of a name the old one holds too |
 | inventory | Its inventories, which take the new flow's name, and its audit trail | The new flow holds an inventory of a name the old one holds too |
+| download | Its downloads, which take the new flow's name, with the record each lists and the file it is written to, and its audit trail | The new flow holds a download of a name the old one holds too |
 
-A flow holds one dimension or inventory of each name, so a move into a flow that already built one of the same name is
+A flow holds one dimension, inventory or download of each name, so a move into a flow that already built one of the same name is
 refused before anything moves:
 `not moved: '<new>' holds dimension(s) '<name>' of its own that '<old>' holds too, and a flow holds one of each name, so the two ledgers stay apart and the old one stays orphaned.`
-A dimension or inventory flow is therefore taken over before the renamed flow's first build. These kinds have no work in
+A dimension, inventory or download flow is therefore taken over before the renamed flow's first build or run. These kinds have no work in
 flight a move waits for, and the closing summary counts what moved: `moved <n> assertion run(s) of '<old>' to '<new>', ...`.
 
 ## Missing documents and taking them over
@@ -228,7 +229,7 @@ Records the old ledger never claimed are delivered as usual. Once the ledger has
 ones, and the next run sends nothing that has not changed. Deleting the new flow's ledger is never needed for this.
 
 A run of a retrieval or assertion flow keeps its own history under its new identity meanwhile, and a takeover adds the old
-runs beside it. A dimension or inventory flow is taken over before it builds, as above.
+runs beside it. A dimension, inventory or download flow is taken over before it builds or runs, as above.
 
 ## Keeping a ledger by name instead
 

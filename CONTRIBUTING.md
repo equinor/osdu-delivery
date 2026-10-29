@@ -48,7 +48,7 @@ any terminal that has it):
   runs the suites: the tests that carry `[Trait("Suite", "<name>")]`, which both tiers and CI leave out, for edge cases
   too many to run on every change. `DimensionEdgeCases` holds every edge of the dimension engine: its attributes,
   elements, lookups, incremental loads, grouped views and joins to views. Run it after a change to the engine.
-  `RunParameters` holds every rule of a flow's `parameters` and run settings for each of the seven kinds: choices and
+  `RunParameters` holds every rule of a flow's `parameters` and run settings for each of the eight kinds: choices and
   lookups, a run's resolution checked against what a run form and a schedule's preview explain, the first records of a
   delivery's scope over every operation and payload, and a schedule's fire against its preview. Run it after a change to
   how a run takes its values. `ExternalTriggers` holds every way a trigger request syncs, fires, follows its runs and

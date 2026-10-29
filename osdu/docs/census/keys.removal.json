@@ -6,7 +6,7 @@
   "includeEnvelope": true,
   "generatedFrom": "osdu/docs/reference/flow/removal.md and osdu/src/SqlFlow.Delivery/Documents/YamlModels.cs",
   "naming": "The loader deserializes with YamlDotNet's CamelCaseNamingConvention and refuses any key it does not know.",
-  "keyCount": 60,
+  "keyCount": 62,
   "keys": [
     {
       "path": "batch",
@@ -393,6 +393,19 @@
       "type": "string",
       "required": false,
       "description": "One parameter of the delivery flow, by its name, and the value its records were planned under."
+    },
+    {
+      "path": "telemetry",
+      "type": "object",
+      "required": false,
+      "description": "What the correlation id every OSDU request of the flow's runs carries names: `correlation-id: osdu-delivery-<repository>-<operation>-<run id>`, the repository's code from the `osdu-delivery.yaml` nearest above the flow. Left out, the runs name the kind's own operation code."
+    },
+    {
+      "path": "telemetry.operation",
+      "type": "string",
+      "required": false,
+      "description": "The flow's operation code in its runs' correlation id: a lower-case letter, then lower-case letters and digits, at most 16 in all and no hyphen. Defaults to the kind's own, `rmv`.",
+      "default": "rmv"
     }
   ]
 }

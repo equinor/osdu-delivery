@@ -1025,6 +1025,7 @@
         "osdu/src/SqlFlow.Delivery.ControlPlane/Api/DeliveryExplorerEndpoints.References.cs",
         "osdu/src/SqlFlow.Delivery.ControlPlane/Api/DeliveryExplorerEndpoints.Validate.cs",
         "osdu/src/SqlFlow.Delivery.ControlPlane/Api/DeliveryInventoryEndpoints.cs",
+        "osdu/src/SqlFlow.Delivery.ControlPlane/Api/DeliveryDownloadEndpoints.cs",
         "osdu/src/SqlFlow.Delivery.ControlPlane/Api/DeliveryIssueEndpoints.cs",
         "osdu/src/SqlFlow.Delivery.ControlPlane/Api/DeliveryLedgerEndpoints.cs",
         "osdu/src/SqlFlow.Delivery.ControlPlane/Api/DeliveryPartitionEndpoints.cs",
@@ -2528,6 +2529,68 @@
       ]
     },
     {
+      "id": "delivery-concept-request-correlation",
+      "corpus": "reference",
+      "path": "concepts/request-correlation.md",
+      "title": "Request correlation: the correlation id every OSDU request carries, from setting it up to finding a run in the platform's logs",
+      "type": "concept",
+      "summary": "Every OSDU request carries correlation-id osdu-delivery-<repository>-<operation>-<run id>: its parts, setup, scope, refusals, tracing and changes.",
+      "keywords": [
+        "correlation id",
+        "correlation-id header",
+        "telemetry",
+        "telemetry.operation",
+        "operation code",
+        "repository code",
+        "repository document",
+        "osdu-delivery.yaml",
+        "run id",
+        "azure logs",
+        "application insights",
+        "log analytics",
+        "trace a run",
+        "trace-id",
+        "osdu-delivery header",
+        "header policy",
+        "troubleshooting correlation"
+      ],
+      "related": [
+        "delivery-flow-repository",
+        "delivery-flow-overview",
+        "delivery-concept-ledger",
+        "delivery-concept-run-trace-and-metrics",
+        "delivery-concept-record-lifecycle",
+        "delivery-concept-removal-and-reversal",
+        "delivery-concept-renaming-a-pipeline",
+        "delivery-concept-protocols",
+        "delivery-concept-explorer",
+        "delivery-cli-validate",
+        "delivery-cli-run",
+        "delivery-table-attempt",
+        "delivery-guide-operations-runbook"
+      ],
+      "sourceRefs": [
+        "osdu/src/SqlFlow.Delivery/Http/OsduCorrelation.cs",
+        "osdu/src/SqlFlow.Delivery/Engine/RunCorrelation.cs",
+        "osdu/src/SqlFlow.Delivery/Model/FlowTelemetry.cs",
+        "osdu/src/SqlFlow.Delivery/Model/RepositoryDefinition.cs",
+        "osdu/src/SqlFlow.Delivery/Documents/RepositoryDocuments.cs",
+        "osdu/src/SqlFlow.Delivery/Documents/RepositoryDocumentKind.cs",
+        "osdu/src/SqlFlow.Delivery/Documents/CompanionFiles.cs",
+        "osdu/src/SqlFlow.Delivery/Documents/DeliveryDocumentLoader.cs",
+        "osdu/src/SqlFlow.Delivery/Engine/Protocols/OsduHttpClient.cs",
+        "osdu/src/SqlFlow.Delivery/Engine/Protocols/Etp/EtpConnection.cs",
+        "osdu/src/SqlFlow.Delivery/Engine/Protocols/Ddms/ProductionTimeSeriesShape.cs",
+        "osdu/src/SqlFlow.Delivery/Engine/Workflows/WorkflowXCom.cs",
+        "osdu/src/SqlFlow.Delivery/Engine/Operations/DeliveryOperations.cs",
+        "osdu/src/SqlFlow.Delivery/Engine/Search/PartitionSchemaIndex.cs",
+        "osdu/src/SqlFlow.Delivery/Http/HttpExecutor.cs",
+        "osdu/src/SqlFlow.Delivery/Ledger/ProblemSignature.cs",
+        "osdu/src/SqlFlow.Delivery/Catalog/DeliveryDocumentHash.cs",
+        "osdu/src/SqlFlow.Delivery.Setup/OsduSignIn.cs"
+      ]
+    },
+    {
       "id": "delivery-concept-run-trace-and-metrics",
       "corpus": "reference",
       "path": "concepts/run-trace-and-metrics.md",
@@ -3715,6 +3778,60 @@
       ]
     },
     {
+      "id": "delivery-flow-download",
+      "corpus": "reference",
+      "path": "flow/download.md",
+      "title": "Download flow (flowType: download): every record of OSDU kinds written to a folder, a JSON file each named after its id",
+      "type": "flow-reference",
+      "summary": "flowType: download: every record of OSDU kinds in a partition written to a folder, a JSON file each named after its id, rewritten only when new or changed.",
+      "keywords": [
+        "download flow",
+        "download records from osdu",
+        "one file per record",
+        "record metadata files",
+        "file named after the id",
+        "file name from osdu id",
+        "colon in file name",
+        "case-insensitive file names",
+        "target.location",
+        "downloads",
+        "force",
+        "rewrite",
+        "gone records"
+      ],
+      "yamlPath": "(root, flowType: download)",
+      "related": [
+        "delivery-flow-inventory",
+        "delivery-flow-retrieval",
+        "delivery-concept-search-paging",
+        "delivery-concept-partitions",
+        "delivery-concept-ledger",
+        "delivery-cli-run",
+        "delivery-table-download",
+        "delivery-table-download-run",
+        "delivery-table-download-record",
+        "delivery-table-download-scan",
+        "flow-schedule"
+      ],
+      "sourceRefs": [
+        "osdu/src/SqlFlow.Delivery/Documents/DownloadFlowKind.cs",
+        "osdu/src/SqlFlow.Delivery/Documents/DownloadDocumentMapper.cs",
+        "osdu/src/SqlFlow.Delivery/Documents/YamlModels.cs",
+        "osdu/src/SqlFlow.Delivery/Model/DownloadFlowDefinition.cs",
+        "osdu/src/SqlFlow.Delivery/Engine/DownloadExecutor.cs",
+        "osdu/src/SqlFlow.Delivery/Engine/Downloads/DownloadRunner.cs",
+        "osdu/src/SqlFlow.Delivery/Engine/Downloads/DownloadFileNames.cs",
+        "osdu/src/SqlFlow.Delivery/Engine/Inventories/InventoryReaders.cs",
+        "osdu/src/SqlFlow.Delivery/Ledger/Downloads.cs",
+        "osdu/src/SqlFlow.Delivery/Ledger/OsduLedger.Download.cs",
+        "osdu/src/SqlFlow.Delivery/Ledger/SqlServerLedgerBulk.Download.cs",
+        "osdu/src/SqlFlow.Delivery.ControlPlane/Api/DeliveryDownloadEndpoints.cs",
+        "osdu/src/SqlFlow.Delivery.Data/Migrations/20261029193513_DownloadFlows.cs",
+        "osdu/docs/census/keys.download.json",
+        "osdu/specs/core/storage/openapi.yaml"
+      ]
+    },
+    {
       "id": "delivery-flow-enrich",
       "corpus": "reference",
       "path": "flow/enrich.md",
@@ -4801,9 +4918,9 @@
       "id": "delivery-flow-overview",
       "corpus": "reference",
       "path": "flow/overview.md",
-      "title": "Anatomy of the OSDU documents: six flow kinds, mappings and dictionaries",
+      "title": "Anatomy of the OSDU documents: eight flow kinds, mappings, dictionaries and the repository document",
       "type": "flow-reference",
-      "summary": "Which documents OSDU Delivery adds to SQLFlow (six flowType kinds, mappings, dictionaries), how they chain after pre and ing flows, and how to lay them out.",
+      "summary": "The documents OSDU Delivery adds to SQLFlow (eight flow kinds, mappings, dictionaries, the repository document), how they chain, and how to lay them out.",
       "keywords": [
         "flowtype",
         "documenttype",
@@ -4817,7 +4934,9 @@
         "flow naming",
         "mappings folder",
         "strict keys",
-        "operations"
+        "operations",
+        "telemetry",
+        "repository document"
       ],
       "yamlPath": "(root: flowType, documentType)",
       "related": [
@@ -4837,7 +4956,9 @@
         "osdu/src/SqlFlow.Delivery/Documents/AssertionFlowKind.cs",
         "osdu/src/SqlFlow.Delivery/Documents/DimensionFlowKind.cs",
         "osdu/src/SqlFlow.Delivery/Documents/InventoryFlowKind.cs",
+        "osdu/src/SqlFlow.Delivery/Documents/DownloadFlowKind.cs",
         "osdu/src/SqlFlow.Delivery/Documents/DictionaryDocumentKind.cs",
+        "osdu/src/SqlFlow.Delivery/Documents/RepositoryDocumentKind.cs",
         "osdu/src/SqlFlow.Delivery/Documents/DeliveryDocumentLoader.cs",
         "osdu/src/SqlFlow.Delivery/Documents/YamlModels.cs",
         "osdu/src/SqlFlow.Delivery/Documents/DeliveryLayout.cs",
@@ -4968,6 +5089,39 @@
         "osdu/gui/src/features/delivery/removals/RemovedKeysGrid.tsx",
         "osdu/docs/census/keys.removal.json",
         "osdu/samples/welldb/flows/welldb-wellbore-05-removal.yaml"
+      ]
+    },
+    {
+      "id": "delivery-flow-repository",
+      "corpus": "reference",
+      "path": "flow/repository.md",
+      "title": "Repository document (documentType: repository): the code a repository's runs carry in their correlation id",
+      "type": "flow-reference",
+      "summary": "osdu-delivery.yaml at a repository's root names the code its runs carry in every OSDU request's correlation-id; how a flow finds it.",
+      "keywords": [
+        "repository document",
+        "documenttype repository",
+        "osdu-delivery.yaml",
+        "repository code",
+        "correlation id",
+        "telemetry",
+        "header policy"
+      ],
+      "yamlPath": "(root, documentType: repository)",
+      "related": [
+        "delivery-concept-request-correlation",
+        "delivery-flow-overview",
+        "delivery-cli-validate",
+        "delivery-cli-run"
+      ],
+      "sourceRefs": [
+        "osdu/src/SqlFlow.Delivery/Documents/RepositoryDocuments.cs",
+        "osdu/src/SqlFlow.Delivery/Documents/RepositoryDocumentKind.cs",
+        "osdu/src/SqlFlow.Delivery/Documents/DeliveryDocumentLoader.cs",
+        "osdu/src/SqlFlow.Delivery/Documents/CompanionFiles.cs",
+        "osdu/src/SqlFlow.Delivery/Model/RepositoryDefinition.cs",
+        "osdu/src/SqlFlow.Delivery/Engine/RunCorrelation.cs",
+        "osdu/docs/census/keys.repository.json"
       ]
     },
     {
@@ -6881,6 +7035,114 @@
       ]
     },
     {
+      "id": "delivery-table-download",
+      "corpus": "reference",
+      "path": "tables/download.md",
+      "title": "osdu.Download: each download of a download flow in a partition, and the folder its last run wrote",
+      "type": "table",
+      "summary": "One row per download of a download flow's ledger in a partition: the kind it reads, the folder its last completed run wrote the files to, and that run.",
+      "keywords": [
+        "osdu.Download",
+        "download table",
+        "download flow",
+        "download folder",
+        "last download run"
+      ],
+      "related": [
+        "delivery-concept-database",
+        "delivery-flow-download",
+        "delivery-table-download-run",
+        "delivery-table-download-record",
+        "delivery-table-download-scan"
+      ],
+      "sourceRefs": [
+        "osdu/src/SqlFlow.Delivery.Data/DeliveryEntities.cs",
+        "osdu/src/SqlFlow.Delivery/Ledger/OsduLedger.Download.cs"
+      ]
+    },
+    {
+      "id": "delivery-table-download-record",
+      "corpus": "reference",
+      "path": "tables/download-record.md",
+      "title": "osdu.DownloadRecord: each id a download lists, the file it is written to and the version that file holds",
+      "type": "table",
+      "summary": "One row per OSDU id a download lists: its file, the version, size and SHA-256 the file holds, when it was listed, changed and gone, and why a write failed.",
+      "keywords": [
+        "osdu.DownloadRecord",
+        "download record table",
+        "file name",
+        "written version",
+        "sha256",
+        "gone",
+        "downloaded record state"
+      ],
+      "related": [
+        "delivery-concept-database",
+        "delivery-flow-download",
+        "delivery-table-download",
+        "delivery-table-download-run",
+        "delivery-table-download-scan"
+      ],
+      "sourceRefs": [
+        "osdu/src/SqlFlow.Delivery.Data/DeliveryEntities.cs",
+        "osdu/src/SqlFlow.Delivery/Ledger/SqlServerLedgerBulk.Download.cs",
+        "osdu/src/SqlFlow.Delivery/Ledger/OsduLedger.Download.cs",
+        "osdu/src/SqlFlow.Delivery/Engine/Downloads/DownloadFileNames.cs"
+      ]
+    },
+    {
+      "id": "delivery-table-download-run",
+      "corpus": "reference",
+      "path": "tables/download-run.md",
+      "title": "osdu.DownloadRun: each run of a download, where it wrote and what it wrote",
+      "type": "table",
+      "summary": "One row per run of a download: who asked, where it wrote, why it wrote every record again, what its listing changed, and the files it wrote.",
+      "keywords": [
+        "osdu.DownloadRun",
+        "download run table",
+        "download history",
+        "files written",
+        "rewrite forced moved"
+      ],
+      "related": [
+        "delivery-concept-database",
+        "delivery-flow-download",
+        "delivery-table-download",
+        "delivery-table-download-record"
+      ],
+      "sourceRefs": [
+        "osdu/src/SqlFlow.Delivery.Data/DeliveryEntities.cs",
+        "osdu/src/SqlFlow.Delivery/Ledger/OsduLedger.Download.cs",
+        "osdu/src/SqlFlow.Delivery/Engine/Downloads/DownloadRunner.cs"
+      ]
+    },
+    {
+      "id": "delivery-table-download-scan",
+      "corpus": "reference",
+      "path": "tables/download-scan.md",
+      "title": "osdu.DownloadScan: each id a download run listed, staged until the listing is whole and merged",
+      "type": "table",
+      "summary": "One row per id a download run's listing gave, with the names its file may take, held only until the run merges or fails.",
+      "keywords": [
+        "osdu.DownloadScan",
+        "download scan table",
+        "staging",
+        "download listing",
+        "merge"
+      ],
+      "related": [
+        "delivery-concept-database",
+        "delivery-flow-download",
+        "delivery-table-download-run",
+        "delivery-table-download-record"
+      ],
+      "sourceRefs": [
+        "osdu/src/SqlFlow.Delivery.Data/DeliveryEntities.cs",
+        "osdu/src/SqlFlow.Delivery/Ledger/SqlServerLedgerBulk.Download.cs",
+        "osdu/src/SqlFlow.Delivery/Ledger/OsduLedger.Download.cs"
+      ]
+    },
+    {
       "id": "delivery-table-interface",
       "corpus": "reference",
       "path": "tables/interface.md",
@@ -7339,9 +7601,9 @@
       "id": "delivery-table-ledger-flow",
       "corpus": "reference",
       "path": "tables/ledger-flow.md",
-      "title": "osdu.LedgerFlow: each retrieval, assertion, dimension and inventory flow as the repository sync found it",
+      "title": "osdu.LedgerFlow: each retrieval, assertion, dimension, inventory and download flow as the repository sync found it",
       "type": "table",
-      "summary": "One row per retrieval, assertion, dimension or inventory flow of a repository: its kind, file, document hash, and whether it keeps a ledger per partition.",
+      "summary": "One row per flow of a repository that keeps a ledger and delivers nothing: its kind, file, document hash, and whether it keeps a ledger per partition.",
       "keywords": [
         "osdu.LedgerFlow",
         "ledger flow",
@@ -9090,6 +9352,57 @@
       ]
     },
     {
+      "id": "delivery-wiki-0037-request-correlation",
+      "corpus": "wiki",
+      "path": "decisions/0037-request-correlation.md",
+      "title": "Decision 0037: every OSDU request carries the run's correlation id, named by the repository and the flow",
+      "type": "decision",
+      "summary": "Why every OSDU request carries the run's id in correlation-id, under the flow's operation code and a repository document's code.",
+      "keywords": [
+        "correlation id",
+        "correlation-id header",
+        "telemetry",
+        "repository document",
+        "osdu-delivery.yaml",
+        "operation code",
+        "run id",
+        "azure logs"
+      ],
+      "related": [],
+      "sourceRefs": [
+        "osdu/src/SqlFlow.Delivery/Http/OsduCorrelation.cs",
+        "osdu/src/SqlFlow.Delivery/Engine/RunCorrelation.cs",
+        "osdu/src/SqlFlow.Delivery/Documents/RepositoryDocuments.cs",
+        "osdu/src/SqlFlow.Delivery/Model/FlowTelemetry.cs",
+        "osdu/src/SqlFlow.Delivery/Engine/Operations/DeliveryOperations.cs"
+      ]
+    },
+    {
+      "id": "delivery-wiki-0038-download-flow",
+      "corpus": "wiki",
+      "path": "decisions/0038-download-flow.md",
+      "title": "Decision 0038: a download flow writes each record to a file named after its id, and its ledger keeps the version each file holds",
+      "type": "decision",
+      "summary": "Why records go to a folder a file each through a flow kind of its own, named after the id by a reversible rule, with a ledger of the version each file holds.",
+      "keywords": [
+        "download flow",
+        "one file per record",
+        "file name from osdu id",
+        "reversible file name",
+        "case-insensitive file systems",
+        "mirror folder",
+        "record metadata files"
+      ],
+      "related": [],
+      "sourceRefs": [
+        "osdu/src/SqlFlow.Delivery/Engine/Downloads/DownloadFileNames.cs",
+        "osdu/src/SqlFlow.Delivery/Engine/Downloads/DownloadRunner.cs",
+        "osdu/src/SqlFlow.Delivery/Documents/DownloadDocumentMapper.cs",
+        "osdu/src/SqlFlow.Delivery/Ledger/SqlServerLedgerBulk.Download.cs",
+        "osdu/src/SqlFlow.Delivery.Data/DeliveryEntities.cs"
+      ]
+    },
+    {
       "id": "delivery-wiki-linked-canonical-and-custom-records",
       "corpus": "wiki",
       "path": "patterns/linked-canonical-and-custom-records.md",
@@ -9140,6 +9453,7 @@
         "interfaces",
         "which route",
         "retrieval vs explorer",
+        "one file per record",
         "assertion tests",
         "orphans",
         "redeliver",
@@ -9149,7 +9463,8 @@
         "wiki-pattern-catalog",
         "delivery-wiki-0018-template-folders",
         "delivery-wiki-linked-canonical-and-custom-records",
-        "delivery-wiki-0022-removal-flows"
+        "delivery-wiki-0022-removal-flows",
+        "delivery-wiki-0038-download-flow"
       ],
       "sourceRefs": [
         "osdu/src/SqlFlow.Delivery/Documents/CacheDocumentMapper.cs",
@@ -9174,6 +9489,8 @@
         "osdu/docs/census/keys.assertion.json",
         "osdu/docs/census/keys.inventory.json",
         "osdu/docs/census/keys.removal.json",
+        "osdu/docs/census/keys.download.json",
+        "osdu/src/SqlFlow.Delivery/Documents/DownloadFlowKind.cs",
         "osdu/src/SqlFlow.Delivery/Documents/RemovalFlowKind.cs",
         "osdu/gui/src/module.tsx"
       ]

@@ -18,6 +18,7 @@ public sealed class DeliveryDocumentHashTests
         { LedgerKinds.Assertion, Path.Combine(Samples.Source, "flows", "welldb-well-04-assertion.yaml") },
         { LedgerKinds.Dimension, Path.Combine(Samples.Source, "flows", "welldb-welllog-05-dimensions.yaml") },
         { LedgerKinds.Inventory, Path.Combine(Samples.Source, "flows", "welldb-osdu-06-inventory.yaml") },
+        { LedgerKinds.Download, Path.Combine(Samples.Source, "flows", "welldb-osdu-07-download.yaml") },
     };
 
     [Theory]
@@ -59,6 +60,17 @@ public sealed class DeliveryDocumentHashTests
             "EffectiveRenderThreads",
             System.Text.Json.JsonSerializer.Serialize(source.Interfaces[0].Parallelism),
             StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void A_flow_that_names_no_operation_code_of_its_own_hashes_as_before_and_one_that_does_is_another_document()
+    {
+        var yaml = File.ReadAllText(Samples.Flow).ReplaceLineEndings("\n");
+        var mappings = new Dictionary<string, string>(StringComparer.Ordinal) { ["WellLog@1.4.0"] = "mapping-hash" };
+        var documents = new DeliveryDocumentLoader();
+
+        Assert.Equal(SampleFlowHash, DeliveryDocumentHash.Of(documents.ParseSource(yaml + "\ntelemetry: { operation: dlv }\n", Samples.Flow), mappings));
+        Assert.NotEqual(SampleFlowHash, DeliveryDocumentHash.Of(documents.ParseSource(yaml + "\ntelemetry: { operation: whdr }\n", Samples.Flow), mappings));
     }
 
     /// <summary>The document hash of the sample well log flow, read with LF line endings.</summary>

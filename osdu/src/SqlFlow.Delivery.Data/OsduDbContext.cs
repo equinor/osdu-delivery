@@ -80,6 +80,15 @@ public sealed class OsduDbContext : DbContext
 
     public DbSet<DeliveryInventoryScan> DeliveryInventoryScans => Set<DeliveryInventoryScan>();
 
+    /// <summary>The downloads of download flows: every record an OSDU kind holds, written to a folder a file each, with the version each file holds.</summary>
+    public DbSet<DeliveryDownload> DeliveryDownloads => Set<DeliveryDownload>();
+
+    public DbSet<DeliveryDownloadRun> DeliveryDownloadRuns => Set<DeliveryDownloadRun>();
+
+    public DbSet<DeliveryDownloadRecord> DeliveryDownloadRecords => Set<DeliveryDownloadRecord>();
+
+    public DbSet<DeliveryDownloadScan> DeliveryDownloadScans => Set<DeliveryDownloadScan>();
+
     /// <summary>The removals an operator asked of an inventory's ids, one row per removal.</summary>
     public DbSet<DeliveryInventoryRemoval> DeliveryInventoryRemovals => Set<DeliveryInventoryRemoval>();
 

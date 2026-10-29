@@ -193,9 +193,9 @@ public sealed class ReversalRunner
         var settlements = new List<ReversalSettlement>(page.Count);
         var records = await _ledger.GetRecordsAsync(_flow.Id, page.Select(i => i.DeliveryKey), ct).ConfigureAwait(false);
 
-        // One correlation id for the page's calls, named on each record's attempt, so a reversal is followed into OSDU's own
-        // logs as a delivery is.
-        using var correlation = OsduCorrelation.Begin();
+        // The run's correlation id, which the page's calls carry and each record's attempt names, so a reversal is followed
+        // into OSDU's own logs as a delivery is.
+        using var correlation = OsduCorrelation.Begin(FlowTelemetry.Delivery);
         var work = new List<Work>(page.Count);
         foreach (var item in page)
         {

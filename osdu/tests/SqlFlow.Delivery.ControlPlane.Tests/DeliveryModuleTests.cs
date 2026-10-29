@@ -56,9 +56,11 @@ public sealed class DeliveryModuleTests
         Assert.Contains(DimensionFlowDefinition.FlowTypeName, kinds);
         Assert.Contains(InventoryFlowDefinition.FlowTypeName, kinds);
         Assert.Contains(RemovalFlowDefinition.FlowTypeName, kinds);
-        Assert.Equal(7, executors.Count);
+        Assert.Contains(DownloadFlowDefinition.FlowTypeName, kinds);
+        Assert.Equal(8, executors.Count);
         Assert.Contains(executors, e => e is InventoryExecutor);
         Assert.Contains(executors, e => e is RemovalExecutor);
+        Assert.Contains(executors, e => e is DownloadExecutor);
 
         // A node task is only what scans long (a value check): a removal writes, so it is a run of the flow, listed with its
         // runs; what a person asks for and waits on is run by the control plane itself, and is never offered to a node.

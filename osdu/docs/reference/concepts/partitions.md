@@ -88,7 +88,7 @@ explains how a flow says which partitions it works in, how a run picks one, and 
 
 | Form | How it is written | Serves |
 | --- | --- | --- |
-| **Header** | `data-partition-id` in `target.headers` (a delivery flow) or `source.headers` (a cache, retrieval, assertion, dimension or inventory flow), a literal id or a `${env:...}` reference. | The one partition the header names, resolved on the host that runs the flow. |
+| **Header** | `data-partition-id` in `target.headers` (a delivery flow) or `source.headers` (a cache, retrieval, assertion, dimension, inventory or download flow), a literal id or a `${env:...}` reference. | The one partition the header names, resolved on the host that runs the flow. |
 | **Hard-coded** | `partitions:` lists them, and the header is left out. | The partitions listed, whether or not they are registered. |
 | **Registry-driven** | Neither `partitions` nor the header. | Every partition registered with the catalog: the ones the control plane's configuration names ([configured partitions](#configured-partitions)), and any registered by hand ([sqlflow partition](../cli/partition.md)). The same documents then deploy to every environment, and a new environment is a partition named in the deployment's configuration rather than an edit to every flow. |
 

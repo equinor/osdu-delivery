@@ -76,7 +76,7 @@ ERROR  this host is the OSDU Delivery worker and takes the node's options only (
 ```
 
 `sqlflow worker` run from the OSDU Delivery CLI is the same node. Either way the module registers on the node's
-services, so a run of a delivery, retrieval, cache, assertion, dimension, inventory or removal flow executes exactly as it does
+services, so a run of a delivery, retrieval, cache, assertion, dimension, inventory, removal or download flow executes exactly as it does
 with `sqlflow run`, a removal of records from OSDU included, which is a `remove` run of the delivery flow. One compute
 task of the module also drains on nodes: a value check of a mapping across a scope (`delivery-check-values`). What a
 person asks and waits on (a probe of a target, a record read back, a preview, a scope's values, the explorer) is not a

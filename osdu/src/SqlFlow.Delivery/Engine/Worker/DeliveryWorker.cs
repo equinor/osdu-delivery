@@ -905,9 +905,9 @@ public sealed class DeliveryWorker
             TraceSending(state, work);
         }
 
-        // One id for the try: every OSDU request the protocol sends for these records carries it, and each attempt names
-        // it, so what happened can be followed into the services' own logs.
-        using var correlation = OsduCorrelation.Begin();
+        // The run's correlation id: every OSDU request the protocol sends for these records carries it, and each attempt
+        // names it, so what happened can be followed into the services' own logs.
+        using var correlation = OsduCorrelation.Begin(FlowTelemetry.Delivery);
         var outcomes = new DeliveryOutcome?[works.Count];
         var verdicts = new ValidationVerdict?[works.Count];
         try
@@ -1035,7 +1035,7 @@ public sealed class DeliveryWorker
         }
 
         var writing = sending.Select(s => s.Record.DeliveryKey).ToHashSet();
-        using var correlation = OsduCorrelation.Begin();
+        using var correlation = OsduCorrelation.Begin(FlowTelemetry.Delivery);
         var undos = await new UndoRunner(_protocol, _time, _workerId, RunId).RunAsync(requests, correlation.Id, ct).ConfigureAwait(false);
         foreach (var undo in undos)
         {

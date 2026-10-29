@@ -759,24 +759,28 @@ public class CorrelationIdTests
     }
 
     [Fact]
-    public async Task Every_request_of_a_unit_of_work_carries_its_correlation_id_and_none_outside_one()
+    public async Task Every_request_of_a_run_carries_the_runs_correlation_id_and_one_outside_any_an_id_of_its_own()
     {
         var handler = new FakeHttpHandler().On(HttpMethod.Get, "/records/r1", HttpStatusCode.OK, "{}");
         var (client, runtime) = Client(handler);
         using (runtime)
         {
             await client.SendJsonAsync(HttpMethod.Get, client.Url("/records/{id}", "r1"), null, null, CancellationToken.None);
-            string id;
-            using (var scope = OsduCorrelation.Begin())
+            await client.SendJsonAsync(HttpMethod.Get, client.Url("/records/{id}", "r1"), null, null, CancellationToken.None);
+            var runId = Guid.CreateVersion7();
+            using (var run = OsduCorrelation.ForRun("wl", FlowTelemetry.Delivery, runId))
             {
-                id = scope.Id;
+                Assert.Equal($"osdu-delivery-wl-dlv-{runId:D}", run.Id);
                 await client.SendJsonAsync(HttpMethod.Get, client.Url("/records/{id}", "r1"), null, null, CancellationToken.None);
                 await client.SendJsonAsync(HttpMethod.Get, client.Url("/records/{id}", "r1"), null, null, CancellationToken.None);
             }
 
-            Assert.False(handler.Calls[0].Headers.ContainsKey(OsduCorrelation.HeaderName));
-            Assert.Equal(id, handler.Calls[1].Headers[OsduCorrelation.HeaderName]);
-            Assert.Equal(id, handler.Calls[2].Headers[OsduCorrelation.HeaderName]);
+            // Outside a run each request is its own: the product, and an id of the request's.
+            var loose = handler.Calls.Take(2).Select(c => c.Headers[OsduCorrelation.HeaderName]).ToList();
+            Assert.All(loose, value => Assert.True(Guid.TryParseExact(value["osdu-delivery-".Length..], "D", out _) && value.StartsWith("osdu-delivery-", StringComparison.Ordinal), value));
+            Assert.NotEqual(loose[0], loose[1]);
+            Assert.Equal($"osdu-delivery-wl-dlv-{runId:D}", handler.Calls[2].Headers[OsduCorrelation.HeaderName]);
+            Assert.Equal($"osdu-delivery-wl-dlv-{runId:D}", handler.Calls[3].Headers[OsduCorrelation.HeaderName]);
             Assert.Null(OsduCorrelation.Current);
         }
     }
@@ -788,7 +792,7 @@ public class CorrelationIdTests
         var handler = new FakeHttpHandler().On(HttpMethod.Put, "/landing/file.las", HttpStatusCode.Created, null);
         var (client, runtime) = Client(handler);
         using (runtime)
-        using (OsduCorrelation.Begin())
+        using (OsduCorrelation.ForRun("wl", FlowTelemetry.Delivery, Guid.CreateVersion7()))
         {
             await client.SendToSignedUrlAsync(
                 HttpMethod.Put, new Uri("http://localhost/landing/file.las?sig=abc"), () => new MemoryStream([1, 2, 3]),

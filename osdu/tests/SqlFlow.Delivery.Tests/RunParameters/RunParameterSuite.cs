@@ -128,6 +128,22 @@ public sealed record FlowKindDocument(string FlowType, string Template, Func<Del
                   location: ../data/wellbore
                   options: { delimiter: ",", header: true }
             """, loader => new RemovalFlowKind(loader)),
+        new(DownloadFlowDefinition.FlowTypeName, """
+            flowType: download
+            name: download
+            partitions: [dev, test]
+            parameters:
+            {parameters}source:
+              endpoint: ${env:OSDU_URL}
+              auth:
+                type: bearer
+                secretRef: ${env:OSDU_TOKEN}
+            target:
+              location: abfss://lake@welldbstorage.dfs.core.windows.net/osdu/records
+            downloads:
+              - name: WellLogs
+                kind: "*:*:work-product-component--WellLog:*"
+            """, loader => new DownloadFlowKind(loader)),
     ];
 
     /// <summary>The kind named <paramref name="flowType"/>.</summary>
@@ -169,6 +185,7 @@ public sealed record FlowKindDocument(string FlowType, string Template, Func<Del
             DimensionFlowDefinition.FlowTypeName => FlowParameters.Resolve(loader.ParseDimension(yaml, Source).Parameters, Source, supplied),
             InventoryFlowDefinition.FlowTypeName => FlowParameters.Resolve(loader.ParseInventory(yaml, Source).Parameters, Source, supplied),
             RemovalFlowDefinition.FlowTypeName => FlowParameters.Resolve(loader.ParseRemoval(yaml, Source).Parameters, Source, supplied),
+            DownloadFlowDefinition.FlowTypeName => FlowParameters.Resolve(loader.ParseDownload(yaml, Source).Parameters, Source, supplied),
             _ => throw new InvalidOperationException($"The suite has no document of kind '{FlowType}'."),
         };
     }
@@ -187,6 +204,7 @@ public sealed record FlowKindDocument(string FlowType, string Template, Func<Del
             DimensionFlowDefinition.FlowTypeName => loader.ParseDimension(yaml, Source).Parameters,
             InventoryFlowDefinition.FlowTypeName => loader.ParseInventory(yaml, Source).Parameters,
             RemovalFlowDefinition.FlowTypeName => loader.ParseRemoval(yaml, Source).Parameters,
+            DownloadFlowDefinition.FlowTypeName => loader.ParseDownload(yaml, Source).Parameters,
             _ => throw new InvalidOperationException($"The suite has no document of kind '{FlowType}'."),
         };
     }

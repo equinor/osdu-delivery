@@ -28,6 +28,12 @@ public sealed record FlowDefinition
     /// <summary>The platform batch the flow belongs to (grouping in listings and batch runs), from the envelope.</summary>
     public string? Batch { get; init; }
 
+    /// <summary>
+    /// The flow's operation code (<c>telemetry.operation</c>), which its runs' correlation id says what ran with
+    /// (osdu/docs/reference/concepts/request-correlation.md); the kind's own when the flow names none.
+    /// </summary>
+    public string TelemetryOperation { get; init; } = FlowTelemetry.Delivery;
+
     /// <summary>The interface of its source this definition delivers, or null for a document in the single form.</summary>
     public string? Interface { get; init; }
 

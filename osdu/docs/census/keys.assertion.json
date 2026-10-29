@@ -6,7 +6,7 @@
   "includeEnvelope": true,
   "generatedFrom": "osdu/docs/reference/flow/assertion.md and osdu/src/SqlFlow.Delivery/Documents/YamlModels.cs",
   "naming": "The loader deserializes with YamlDotNet's CamelCaseNamingConvention and refuses any key it does not know.",
-  "keyCount": 266,
+  "keyCount": 268,
   "keys": [
     {
       "path": "batch",
@@ -1816,6 +1816,19 @@
       "type": "string",
       "required": false,
       "description": "The template the test's fields are checked against, read from the template folders on the flow's path: the mapping that renders the records as Name@version (`WellLog@1.5.0`), whose template kind and version are read from the synced mapping, or a template version itself (`2f8a99cb38d32480`) a folder there holds; left out, the one version of the kind the nearest template folder holding the kind holds. A test that reads fields of a kind no folder there holds is not evaluated, and says how to get its file."
+    },
+    {
+      "path": "telemetry",
+      "type": "object",
+      "required": false,
+      "description": "What the correlation id every OSDU request of the flow's runs carries names: `correlation-id: osdu-delivery-<repository>-<operation>-<run id>`, the repository's code from the `osdu-delivery.yaml` nearest above the flow. Left out, the runs name the kind's own operation code."
+    },
+    {
+      "path": "telemetry.operation",
+      "type": "string",
+      "required": false,
+      "description": "The flow's operation code in its runs' correlation id: a lower-case letter, then lower-case letters and digits, at most 16 in all and no hyphen. Defaults to the kind's own, `ast`.",
+      "default": "ast"
     }
   ]
 }

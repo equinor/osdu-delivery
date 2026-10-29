@@ -60,6 +60,8 @@ public sealed class AssertionExecutor : IFlowDocumentExecutor
         log.LogInformation("assertion flow '{Flow}': {Operation} (parameters: {Parameters}) requested by {Actor}, run {RunId}", flow.Name, operation, parameters.Describe(), actor, runId);
         try
         {
+            // Before anything else: every OSDU request the run sends carries the run's correlation id.
+            using var correlation = RunCorrelation.Begin(context.Documents, flowFile, flow.TelemetryOperation, runId, log);
             result = await ExecuteOperationAsync(context, flow, operation, parameters, runId, actor, log, ct).ConfigureAwait(false);
             success = true;
             log.LogInformation("{Operation} completed in {Seconds:0.###}s", operation, stopwatch.Elapsed.TotalSeconds);

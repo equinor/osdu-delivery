@@ -38,8 +38,10 @@ public sealed class EditorCensusTests
     [InlineData("keys.dimension.json", "dimension")]
     [InlineData("keys.inventory.json", "inventory")]
     [InlineData("keys.removal.json", "removal")]
+    [InlineData("keys.download.json", "download")]
     [InlineData("keys.mapping.json", "mapping")]
     [InlineData("keys.dictionary.json", "dictionary")]
+    [InlineData("keys.repository.json", "repository")]
     public void A_census_file_names_its_kind_and_documents_every_key_it_lists(string file, string kind)
     {
         var census = Census(file);
@@ -87,6 +89,7 @@ public sealed class EditorCensusTests
     [InlineData("keys.dimension.json", typeof(DimensionFlowYaml))]
     [InlineData("keys.inventory.json", typeof(InventoryFlowYaml))]
     [InlineData("keys.removal.json", typeof(RemovalFlowYaml))]
+    [InlineData("keys.download.json", typeof(DownloadFlowYaml))]
     public void A_flow_kinds_census_documents_exactly_the_keys_its_loader_accepts(string file, Type model)
     {
         var accepted = YamlKeyPaths.Of(model);
@@ -105,6 +108,13 @@ public sealed class EditorCensusTests
         {
             Assert.Contains(key["path"]!.GetValue<string>(), accepted.FreeForm);
         }
+    }
+
+    [Fact]
+    public void The_repository_census_documents_exactly_the_keys_its_loader_accepts()
+    {
+        var accepted = YamlKeyPaths.Of(typeof(RepositoryYaml)).Paths.Keys.ToHashSet(StringComparer.Ordinal);
+        Assert.Equal(accepted, Paths(Census("keys.repository.json")).ToHashSet(StringComparer.Ordinal));
     }
 
     [Fact]

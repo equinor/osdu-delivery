@@ -1189,7 +1189,7 @@ public sealed partial class FlowRuntime : IDisposable
                 continue;
             }
 
-            using var correlation = OsduCorrelation.Begin();
+            using var correlation = OsduCorrelation.Begin(FlowTelemetry.Delivery);
             var undos = await runner.RunAsync(requests, correlation.Id, ct).ConfigureAwait(false);
             await ledger.SettleArtifactsAsync(Flow.Id, undos, ct: ct).ConfigureAwait(false);
             var swept = UndoSummary.Of(undos);
@@ -1827,9 +1827,9 @@ public sealed partial class FlowRuntime : IDisposable
             return 0;
         }
 
-        // One correlation id for the chunk's calls, named on each removal attempt, so a removal can be followed
+        // The run's correlation id, which the chunk's calls carry and each removal attempt names, so a removal can be followed
         // into OSDU's own logs like a delivery.
-        using var correlation = OsduCorrelation.Begin();
+        using var correlation = OsduCorrelation.Begin(FlowTelemetry.Delivery);
         if (stepBack is not null)
         {
             var stepped = await stepBack.RestoreAsync(removals.Select(r => records[r.Key]).ToList(), correlation.Id, ct).ConfigureAwait(false);
@@ -1975,7 +1975,7 @@ public sealed partial class FlowRuntime : IDisposable
             .GroupBy(a => a.Key)
             .Select(g => new UndoRequest(free[g.Key], g.OrderBy(a => a.ArtifactId).ToList(), UndoReason.Removed, KeepRecord: false))
             .ToList();
-        using var correlation = OsduCorrelation.Begin();
+        using var correlation = OsduCorrelation.Begin(FlowTelemetry.Delivery);
         var undos = await new UndoRunner(protocol, _context.Time, Truncate(Actor, 200), RunId).RunAsync(requests, correlation.Id, ct).ConfigureAwait(false);
         await ledger.SettleArtifactsAsync(Flow.Id, undos, minted, ct).ConfigureAwait(false);
         var unsettled = undos.Where(u => u.Settlements.Any(s => s.Status == ArtifactStatus.Failed)).Select(u => u.DeliveryKey).ToHashSet();

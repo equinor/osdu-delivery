@@ -48,6 +48,7 @@ public sealed class RunPayloadPerKindTests
         [DeliveryRunPayload.SelectionProperty] = """{"selection":42}""",
         [DeliveryRunPayload.EntriesProperty] = """{"entries":["wellbores"]}""",
         [DeliveryRunPayload.ApproveProperty] = """{"approve":{"expected":3}}""",
+        [DeliveryRunPayload.DownloadsProperty] = """{"downloads":["Logs"]}""",
     };
 
     /// <summary>What each kind's runs take besides the central configuration, as its documentation lists them.</summary>
@@ -67,6 +68,7 @@ public sealed class RunPayloadPerKindTests
         [InventoryFlowDefinition.FlowTypeName] =
             [DeliveryRunPayload.InventoriesProperty, DeliveryRunPayload.RemovalProperty, DeliveryRunPayload.ConfirmProperty, DeliveryRunPayload.SelectionProperty],
         [RemovalFlowDefinition.FlowTypeName] = [DeliveryRunPayload.EntriesProperty, DeliveryRunPayload.ApproveProperty, DeliveryRunPayload.ConfirmProperty],
+        [DownloadFlowDefinition.FlowTypeName] = [DeliveryRunPayload.DownloadsProperty, DeliveryRunPayload.ForceProperty],
     };
 
     private const string Configuration = """
@@ -82,6 +84,7 @@ public sealed class RunPayloadPerKindTests
         DimensionFlowDefinition.FlowTypeName => new DimensionFlowKind(Loader),
         InventoryFlowDefinition.FlowTypeName => new InventoryFlowKind(Loader),
         RemovalFlowDefinition.FlowTypeName => new RemovalFlowKind(Loader),
+        DownloadFlowDefinition.FlowTypeName => new DownloadFlowKind(Loader),
         _ => throw new ArgumentOutOfRangeException(nameof(flowType), flowType, "not one of the module's kinds"),
     };
 
@@ -151,6 +154,16 @@ public sealed class RunPayloadPerKindTests
             "payload inventories does not apply to a removal flow: only an inventory flow's runs select inventories; a removal flow's payload names only entries, approve and confirm.",
             Refusal(new RemovalFlowKind(Loader), Payloads[DeliveryRunPayload.InventoriesProperty]));
         Assert.Equal(
+            "payload inventories does not apply to a download flow: only an inventory flow's runs select inventories; a download flow's payload names only downloads and force.",
+            Refusal(new DownloadFlowKind(Loader), Payloads[DeliveryRunPayload.InventoriesProperty]));
+        Assert.Equal(
+            "payload downloads does not apply to a retrieval flow: only a download flow's runs select downloads; a retrieval flow's payload names only force.",
+            Refusal(retrieval, Payloads[DeliveryRunPayload.DownloadsProperty]));
+        Assert.Equal(
+            "payload force does not apply to the plan operation: a plan writes no file, and only a download run writes every record again.",
+            Assert.Throws<SqlFlowException>(() => new DownloadFlowKind(Loader).ValidateParameters(
+                new RunParameters { Operation = DeliveryOperations.Plan, Payload = Payloads[DeliveryRunPayload.ForceProperty] })).Message);
+        Assert.Equal(
             "payload entries does not apply to a delivery flow: only a removal flow's runs select removals; a delivery flow's payload names only force, submissionId, runId, recordKeys, maxRecords, redeliver, rerender, slices, rateShare, interface, interfaces, confirm, scope, filter and purgeLedger.",
             Refusal(new DeliveryFlowKind(Loader), Payloads[DeliveryRunPayload.EntriesProperty]));
     }
@@ -180,6 +193,8 @@ public sealed class RunPayloadPerKindTests
         new RemovalFlowKind(Loader).ValidateParameters(With(DeliveryOperations.Plan, "\"entries\":[\"wellbores\"]"));
         new RemovalFlowKind(Loader).ValidateParameters(With(
             DeliveryOperations.Remove, "\"entries\":[\"wellbores\"],\"approve\":{\"expected\":3},\"confirm\":\"dev\""));
+        new DownloadFlowKind(Loader).ValidateParameters(With(null, "\"downloads\":[\"Logs\"],\"force\":true"));
+        new DownloadFlowKind(Loader).ValidateParameters(With(DeliveryOperations.Plan, "\"downloads\":[\"Logs\"]"));
 
         // A property written as false or empty asks for nothing, so no kind refuses it, as the delivery kind never has.
         new CacheFlowKind(Loader).ValidateParameters(new RunParameters { Payload = """{"force":false,"recordKeys":[],"tests":[]}""" });

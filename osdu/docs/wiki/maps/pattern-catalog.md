@@ -13,6 +13,7 @@ keywords:
   - interfaces
   - which route
   - retrieval vs explorer
+  - one file per record
   - assertion tests
   - orphans
   - redeliver
@@ -40,6 +41,8 @@ sourceRefs:
   - osdu/docs/census/keys.assertion.json
   - osdu/docs/census/keys.inventory.json
   - osdu/docs/census/keys.removal.json
+  - osdu/docs/census/keys.download.json
+  - osdu/src/SqlFlow.Delivery/Documents/DownloadFlowKind.cs
   - osdu/src/SqlFlow.Delivery/Documents/RemovalFlowKind.cs
   - osdu/gui/src/module.tsx
 referenceRefs:
@@ -57,7 +60,8 @@ related:
   - delivery-wiki-0018-template-folders
   - delivery-wiki-linked-canonical-and-custom-records
   - delivery-wiki-0022-removal-flows
-updated: 2026-10-24
+  - delivery-wiki-0038-download-flow
+updated: 2026-10-29
 ---
 
 # Pattern catalog: which delivery problem maps to which OSDU Delivery shape
@@ -161,7 +165,7 @@ The route is `target.protocol` (or, in a source with interfaces, follows from wh
 | Every partition the estate registers, without listing them | No `partitions` and no `data-partition-id` header; the deployment names its partitions in the control plane's configuration (`Osdu:Partitions`), or a workstation registers them with `sqlflow partition add` | [partitions](../../reference/concepts/partitions.md#configured-partitions), [partition](../../reference/cli/partition.md) |
 | A flow that delivered to one partition starts naming partitions | `partitions: [{ name: dev, keepLedger: true }, test]`: `dev` keeps the old ledger, so nothing is sent again | [partitions](../../reference/concepts/partitions.md) |
 | The legal tag or groups differ per partition | Leave them to the kind's defaults (`${env:OSDU_LEGAL_TAG}`, `${env:OSDU_ACL_OWNER}`, `${env:OSDU_ACL_VIEWER}`) and give each partition its values in the control plane's configuration (`Osdu:Partitions:<partition>:Properties:<NAME>`) | [partitions](../../reference/concepts/partitions.md#configured-partitions), [config](../../reference/cli/config.md), [environment variables](../../reference/concepts/environment-variables.md) |
-| Values must come from one place, not every node's environment | `sqlflow config set <NAME> --value ... [--partition ...]`: the control plane supplies them to every delivery, retrieval, cache, assertion, dimension and inventory run it queues | [config](../../reference/cli/config.md), [control plane](../../reference/concepts/control-plane.md) |
+| Values must come from one place, not every node's environment | `sqlflow config set <NAME> --value ... [--partition ...]`: the control plane supplies them to every delivery, retrieval, cache, assertion, dimension, inventory, removal and download run it queues | [config](../../reference/cli/config.md), [control plane](../../reference/concepts/control-plane.md) |
 
 ## Change, redelivery and repair
 
@@ -187,6 +191,7 @@ The route is `target.protocol` (or, in a source with interfaces, follows from wh
 | --- | --- | --- |
 | Look at what OSDU holds for a type or one record, now | The explorer (GUI, any signed-in user), read live from search and storage through the partition's own connection, with no flow needed | [explorer](../../reference/concepts/explorer.md), [0020](../decisions/0020-explorer-partition-connection.md) |
 | OSDU records must land in tables for reporting | A retrieval flow writes JSON Lines files; a SQLFlow file flow loads them, ordered after it by lineage | [retrieval](../../reference/flow/retrieval.md), [retrieving records](../../reference/guides/retrieving-records.md) |
+| Each record of a kind as a file of its own, named after its id, on a local disk or in Azure Storage | A download flow: the record's metadata as storage holds it, rewritten only when OSDU holds a newer version | [download](../../reference/flow/download.md), [0038](../decisions/0038-download-flow.md) |
 | Prove what landed: counts, values, references, schema, legal tags, bulk data | An assertion flow, with a report per run (JUnit for CI) | [assertion](../../reference/flow/assertion.md), [data quality tests](../../reference/guides/data-quality-tests.md) |
 | Prove that everything the ledger says it delivered is in OSDU | An assertion with the `delivered` subject | [assertion](../../reference/flow/assertion.md) |
 | Find ids in OSDU no ledger accounts for, and remove them | An inventory flow; `removal:` in the document allows removing the findings an operator picks | [inventory](../../reference/flow/inventory.md), [inventory removals](../../reference/flow/inventory-removals.md), [finding orphans](../../reference/guides/finding-orphans.md) |

@@ -77,7 +77,10 @@ public sealed class EtpConnection
         }.Uri;
     }
 
-    /// <summary>Opens one session, with the flow's credentials resolved into the upgrade.</summary>
+    /// <summary>
+    /// Opens one session, with the flow's credentials resolved into the upgrade and the correlation id of the run or operation
+    /// opening it, as every OSDU request carries one.
+    /// </summary>
     public async Task<EtpSession> OpenAsync(CancellationToken ct = default)
     {
         var applied = await _http.AuthResolver.ResolveAsync(_auth, _http.Auth, ct).ConfigureAwait(false);
@@ -86,6 +89,8 @@ public sealed class EtpConnection
         {
             headers[name] = value;
         }
+
+        headers[OsduCorrelation.HeaderName] = OsduCorrelation.Value;
 
         var endpoint = Endpoint;
         if (applied.Query.Count > 0)

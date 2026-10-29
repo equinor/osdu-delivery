@@ -67,6 +67,8 @@ public sealed class RetrievalExecutor : IFlowDocumentExecutor
         LogStart(log, flow.Name, operation, parameters.Describe(), actor, runId);
         try
         {
+            // Before anything else: every OSDU request the run sends carries the run's correlation id.
+            using var correlation = RunCorrelation.Begin(context.Documents, flowFile, flow.TelemetryOperation, runId, log);
             result = await ExecuteOperationAsync(context, flow, operation, parameters, runId, actor, log, ct).ConfigureAwait(false);
             success = true;
             LogDone(log, operation, stopwatch.Elapsed.TotalSeconds);

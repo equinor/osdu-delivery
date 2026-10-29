@@ -492,7 +492,7 @@ async fn the_products_documentation_and_flow_kinds_are_answered_by_sqlflows_own_
     assert!(related.iter().any(|id| !id.starts_with("delivery-")), "a guide leads to SQLFlow's pages too: {related:?}");
 
     // The flow-language tools know the kinds and documents the module adds.
-    for kind in ["delivery", "retrieval", "cache", "assertion", "dimension", "inventory", "removal"] {
+    for kind in ["delivery", "retrieval", "cache", "assertion", "dimension", "inventory", "removal", "download"] {
         let keys = session.json("list_flow_keys", json!({ "flowType": kind })).await;
         assert!(keys["count"].as_u64().is_some_and(|count| count > 5), "{kind}: {keys}");
     }

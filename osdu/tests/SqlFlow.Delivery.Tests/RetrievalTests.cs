@@ -104,7 +104,8 @@ public sealed class RetrievalTests : IDisposable
         Assert.Equal("retrieval", document.Kind);
         Assert.Equal("http://localhost/osdu", document.SourceReference);
         Assert.Equal("{root}/out/{region}", document.TargetReference);
-        Assert.False(document.RequiresRepoTree);
+        // A retrieval reads the repository document above the flow, whose code its requests carry.
+        Assert.True(document.RequiresRepoTree);
 
         // The operations a retrieval run may be asked for, and which of them writes: the platform reads them from the
         // kind, so a schedule and a trigger offer exactly these.

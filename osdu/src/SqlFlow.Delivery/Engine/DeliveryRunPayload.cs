@@ -13,7 +13,7 @@ using SqlFlow.Delivery.Source;
 
 namespace SqlFlow.Delivery.Engine;
 
-/// <summary>The operations a run of the delivery, cache, retrieval, assertion, dimension, inventory and removal kinds performs, by the names runs carry.</summary>
+/// <summary>The operations a run of the delivery, cache, retrieval, assertion, dimension, inventory, removal and download kinds performs, by the names runs carry.</summary>
 public static class DeliveryOperations
 {
     /// <summary>Plan the source and deliver what changed: the delivery kind's default.</summary>
@@ -109,6 +109,13 @@ public static class DeliveryOperations
     /// check the payload names: an inventory flow's operation, which reads OSDU's search and storage and changes nothing there.
     /// </summary>
     public const string Duplicates = "duplicates";
+
+    /// <summary>
+    /// Write every record of a download flow's kinds that is new or changed since the last run to its folder, a JSON file each
+    /// named after its id (osdu/docs/reference/flow/download.md): the download kind's default, which reads OSDU and changes
+    /// nothing there.
+    /// </summary>
+    public const string Download = "download";
 
     /// <summary>The operation a run of a delivery flow performs: the one it names, or <see cref="Deliver"/>.</summary>
     public static string Of(RunParameters parameters)
@@ -373,6 +380,9 @@ public sealed record DeliveryRunPayload
     /// <summary>The types of a cache flow a run refreshes or plans, by name.</summary>
     public const string TypesProperty = "types";
 
+    /// <summary>The downloads of a download flow a run writes or plans, by name.</summary>
+    public const string DownloadsProperty = "downloads";
+
     /// <summary>The removals of a removal flow a run carries out, by name.</summary>
     public const string EntriesProperty = "entries";
 
@@ -409,7 +419,7 @@ public sealed record DeliveryRunPayload
     private static readonly string[] Properties =
         [ForceProperty, SubmissionIdProperty, RunIdProperty, RecordKeysProperty, MaxRecordsProperty, RedeliverProperty, RerenderProperty, SlicesProperty, RateShareProperty, InterfaceProperty, InterfacesProperty, ReferencesProperty,
             PartitionReferencesProperty, ConfirmProperty, ScopeProperty, FilterProperty, PurgeLedgerProperty, TestsProperty, TagsProperty, DimensionsProperty, InventoriesProperty, RemovalProperty,
-            SelectionProperty, DuplicateCheckProperty, TypesProperty, EntriesProperty, ApproveProperty];
+            SelectionProperty, DuplicateCheckProperty, TypesProperty, EntriesProperty, ApproveProperty, DownloadsProperty];
 
     /// <summary>
     /// For every property a run asks something by (all but the central configuration, which every kind takes), the runs that
@@ -417,7 +427,7 @@ public sealed record DeliveryRunPayload
     /// </summary>
     private static readonly Dictionary<string, string> TakenBy = new(StringComparer.Ordinal)
     {
-        [ForceProperty] = "only delivery and retrieval runs force",
+        [ForceProperty] = "only delivery, retrieval and download runs force",
         [SubmissionIdProperty] = "only a delivery flow's runs name a submission",
         [RunIdProperty] = "only a delivery flow's reverse run names the run it reverses",
         [RecordKeysProperty] = "only a delivery flow's runs are scoped to records",
@@ -442,6 +452,7 @@ public sealed record DeliveryRunPayload
         [TypesProperty] = "only a cache flow's runs select types",
         [EntriesProperty] = "only a removal flow's runs select removals",
         [ApproveProperty] = "only a removal flow's remove run carries an approval",
+        [DownloadsProperty] = "only a download flow's runs select downloads",
     };
 
     /// <summary>The properties a delivery flow's runs take, besides the central configuration; which operation takes which is <see cref="Validate"/>'s.</summary>
@@ -619,6 +630,9 @@ public sealed record DeliveryRunPayload
     /// </summary>
     public RemovalApproval? Approve { get; init; }
 
+    /// <summary>The downloads of a download flow the run writes or plans, by name; with none, every download of the flow.</summary>
+    public IReadOnlyList<string> Downloads { get; init; } = [];
+
     /// <summary>True when the payload carries nothing.</summary>
     public bool IsEmpty => CarriesOnlyConfiguration && References.Count == 0 && PartitionReferences.Count == 0;
 
@@ -661,6 +675,7 @@ public sealed record DeliveryRunPayload
         Add(Types.Count > 0, TypesProperty);
         Add(Entries.Count > 0, EntriesProperty);
         Add(Approve is not null, ApproveProperty);
+        Add(Downloads.Count > 0, DownloadsProperty);
         return named;
 
         void Add(bool asks, string property)
@@ -794,6 +809,7 @@ public sealed record DeliveryRunPayload
             Types = Selection(root[TypesProperty], TypesProperty, "type names"),
             Entries = RemovalEntries(root[EntriesProperty]),
             Approve = root[ApproveProperty] is null ? null : ApprovalRequest(root[ApproveProperty]),
+            Downloads = Selection(root[DownloadsProperty], DownloadsProperty, "download names"),
         };
     }
 
@@ -1199,6 +1215,11 @@ public sealed record DeliveryRunPayload
         if (Types.Count > 0)
         {
             root[TypesProperty] = new JsonArray(Types.Select(t => (JsonNode?)JsonValue.Create(t)).ToArray());
+        }
+
+        if (Downloads.Count > 0)
+        {
+            root[DownloadsProperty] = new JsonArray(Downloads.Select(d => (JsonNode?)JsonValue.Create(d)).ToArray());
         }
 
         if (Removal is { } removal)

@@ -1941,6 +1941,8 @@ public static class LedgerKinds
     public const string Dimension = "dimension";
 
     public const string Inventory = "inventory";
+
+    public const string Download = "download";
 }
 
 /// <summary>
@@ -1961,7 +1963,7 @@ public sealed record LedgerEntry
 
     /// <summary>
     /// <see cref="LedgerKinds.Delivery"/>, <see cref="LedgerKinds.Retrieval"/>, <see cref="LedgerKinds.Assertion"/>,
-    /// <see cref="LedgerKinds.Dimension"/> or <see cref="LedgerKinds.Inventory"/>.
+    /// <see cref="LedgerKinds.Dimension"/>, <see cref="LedgerKinds.Inventory"/> or <see cref="LedgerKinds.Download"/>.
     /// </summary>
     public required string Kind { get; init; }
 
@@ -2288,6 +2290,61 @@ public interface ILedger
 
     /// <summary>One build or reconcile by its partition and number, or null: the run an inventory names as its last build or reconcile.</summary>
     Task<InventoryRunState?> GetInventoryRunAsync(string partition, long inventoryRunId, CancellationToken ct = default);
+
+    /// <summary>
+    /// The download <paramref name="name"/> of the download flow whose ledger is <paramref name="flowId"/>, created on its first
+    /// run and kept in step with what the flow declares (osdu/docs/reference/flow/download.md, What a run records).
+    /// </summary>
+    Task<DownloadState> RegisterDownloadAsync(Guid flowId, string flowName, string name, string kind, string? query, string readMode, CancellationToken ct = default);
+
+    /// <summary>
+    /// Starts a run of a download: an earlier one its process left running is closed as failed, and what it staged is deleted,
+    /// since a run of a flow is the only one of it. <paramref name="rewrite"/> says why the run writes every record again, or null.
+    /// </summary>
+    Task<long> StartDownloadRunAsync(Guid flowId, int downloadId, Guid? runId, string actor, string readMode, string location, string? rewrite, DateTime nowUtc, CancellationToken ct = default);
+
+    /// <summary>Stages one chunk of a run's listing; nothing of the download changes until <see cref="MergeDownloadAsync"/>.</summary>
+    Task AppendDownloadScanAsync(Guid flowId, long downloadRunId, IReadOnlyList<DownloadScanRow> rows, CancellationToken ct = default);
+
+    /// <summary>
+    /// Merges a run's whole listing into its download: ids added with the file name no other id of the download holds whatever its
+    /// case, ids whose version or kind changed, ids served again, and those it did not list marked gone.
+    /// </summary>
+    Task<DownloadMerge> MergeDownloadAsync(Guid flowId, int downloadId, long downloadRunId, DateTime nowUtc, CancellationToken ct = default);
+
+    /// <summary>
+    /// The next records of a download a run writes, in row order after <paramref name="after"/>, at most <paramref name="max"/>:
+    /// every one OSDU serves whose file holds no version, or an older one than listed; with <paramref name="every"/>, every one
+    /// OSDU serves.
+    /// </summary>
+    Task<IReadOnlyList<DownloadDue>> DownloadsDueAsync(Guid flowId, int downloadId, bool every, long after, int max, CancellationToken ct = default);
+
+    /// <summary>Records what came of writing each record: the version its file holds with its size and SHA-256, or why nothing was written.</summary>
+    Task RecordDownloadWritesAsync(Guid flowId, long downloadRunId, IReadOnlyList<DownloadWrite> writes, DateTime nowUtc, CancellationToken ct = default);
+
+    /// <summary>
+    /// Closes a run with what it did; a completed one becomes its download's last, and the folder it wrote the download's folder,
+    /// and a failed one's staged listing is discarded.
+    /// </summary>
+    Task CompleteDownloadRunAsync(Guid flowId, long downloadRunId, DownloadRunState outcome, DateTime nowUtc, CancellationToken ct = default);
+
+    /// <summary>The downloads the ledger <paramref name="flowId"/> keeps, by name.</summary>
+    Task<IReadOnlyList<DownloadState>> ListDownloadsAsync(Guid flowId, CancellationToken ct = default);
+
+    /// <summary>One download by its partition and number, or null.</summary>
+    Task<DownloadState?> GetDownloadAsync(string partition, int downloadId, CancellationToken ct = default);
+
+    /// <summary>How many records of a download stand where, read from its rows.</summary>
+    Task<DownloadCounts> DownloadCountsAsync(string partition, int downloadId, CancellationToken ct = default);
+
+    /// <summary>A download's latest runs, the newest first.</summary>
+    Task<IReadOnlyList<DownloadRunState>> ListDownloadRunsAsync(string partition, int downloadId, int limit, CancellationToken ct = default);
+
+    /// <summary>
+    /// A page of a download's records in row order after <paramref name="after"/>: of one state or all, and those whose id or
+    /// file name holds <paramref name="search"/>, ignoring case, when it is given.
+    /// </summary>
+    Task<IReadOnlyList<DownloadRecordState>> ListDownloadRecordsAsync(string partition, int downloadId, string? state, string? search, long? after, int limit, CancellationToken ct = default);
 
     /// <summary>
     /// Opens a removal of an inventory's ids (osdu/docs/reference/flow/inventory-removals.md, What a removal does): an earlier one

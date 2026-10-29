@@ -1,0 +1,42 @@
+# Flow: welldb-osdu-07-download
+#
+# Writes every well and wellbore record OSDU holds in the partition to the lake, a JSON file per record named after its id
+# (dev:master-data--Wellbore:WB-0001 is written as dev~master-data--Wellbore~WB-0001.json), holding the record as OSDU's
+# storage service holds it: its metadata, never a file a dataset links to. Each run writes only the records that are new or
+# changed since the last, replacing a file when OSDU holds a newer version of its record; a record OSDU no longer serves
+# keeps its file, and the flow's Downloads tab lists it as gone. It reads the kinds the well and wellbore deliveries write,
+# so lineage orders it after them.
+#
+# The lake below is the well database's; point target.location at a storage account the node's Azure credential can write
+# (or an absolute local folder) before its first run. It joins no schedule and runs when asked (mode: manual), from the
+# Pipelines page or with
+#   sqlflow run welldb-osdu-07-download.yaml --operation plan
+flowType: download
+name: welldb-osdu-07-download
+batch: welldb
+mode: manual
+description: Every well and wellbore record OSDU holds, written to the lake a JSON file each, named after its id.
+partitions: [dev]
+
+source:
+  endpoint: ${env:OSDU_URL}
+  auth:
+    type: oauth2ClientCredentials
+    secondarySecretRef: ${env:OSDU_CLIENT_ID}
+    secretRef: ${env:OSDU_CLIENT_SECRET}
+    token:
+      url: ${env:OSDU_TOKEN_URL}
+      body:
+        scope: ${env:OSDU_SCOPE}
+
+# Each download writes into a folder of its name under this one: .../osdu/records/Wells and .../osdu/records/Wellbores.
+target:
+  location: abfss://lake@welldbstorage.dfs.core.windows.net/osdu/records
+
+downloads:
+  - name: Wells
+    description: Every well record, whatever its authority, source and schema version.
+    kind: "*:*:master-data--Well:*"
+  - name: Wellbores
+    description: Every wellbore record, whatever its authority, source and schema version.
+    kind: "*:*:master-data--Wellbore:*"

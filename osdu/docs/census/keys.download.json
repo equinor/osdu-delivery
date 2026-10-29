@@ -1,0 +1,537 @@
+{
+  "version": 1,
+  "product": "OSDU Delivery",
+  "flowType": "download",
+  "strictKeys": true,
+  "includeEnvelope": true,
+  "generatedFrom": "osdu/docs/reference/flow/download.md and osdu/src/SqlFlow.Delivery/Documents/YamlModels.cs",
+  "naming": "The loader deserializes with YamlDotNet's CamelCaseNamingConvention and refuses any key it does not know.",
+  "keyCount": 77,
+  "keys": [
+    {
+      "path": "batch",
+      "type": "string",
+      "required": false,
+      "description": "Optional grouping label (the source system) the platform files the flow's pipeline and runs under. A blank value counts as none."
+    },
+    {
+      "path": "description",
+      "type": "string",
+      "required": false,
+      "description": "Optional text describing what the downloads are for."
+    },
+    {
+      "path": "downloads",
+      "type": "list",
+      "required": true,
+      "description": "The downloads, at least one and at most 100, names unique ignoring case. Each writes every record one kind holds in the partition to a folder of its name under `target.location`."
+    },
+    {
+      "path": "downloads[]",
+      "type": "object",
+      "required": true,
+      "description": "One download: the kind it reads (`kind`), narrowed by a search `query`, written to the folder of its `name`."
+    },
+    {
+      "path": "downloads[].description",
+      "type": "string",
+      "required": false,
+      "description": "Optional text describing what the download holds."
+    },
+    {
+      "path": "downloads[].kind",
+      "type": "string",
+      "required": true,
+      "description": "The kind read, `authority:source:entityType:version`, each segment a value, `*`, or a value with `*` inside it (`1.*.*`), matched ignoring case as the search service matches a kind."
+    },
+    {
+      "path": "downloads[].name",
+      "type": "string",
+      "required": true,
+      "description": "The download's name: a letter or digit followed by letters, digits, '.', '_' and '-', at most 100 characters, not ending in '.' and no Windows device name (CON, NUL, COM1, LPT1 and the like). It is the folder the download's files go to, and a run's payload (`downloads`) and the Downloads tab name it by it."
+    },
+    {
+      "path": "downloads[].query",
+      "type": "string",
+      "required": false,
+      "description": "A Lucene query narrowing the records a search read lists; `{name}` tokens of `parameters` and `{partition}` are filled in. A storage read takes none, and the flow is refused when one is written."
+    },
+    {
+      "path": "flowType",
+      "type": "enum(download)",
+      "required": true,
+      "description": "The document kind: `download`, every record OSDU kinds hold in a partition written to a folder, a JSON file each named after its id, holding the record as storage holds it: its metadata, never a file a dataset links to. Its ledger keeps the version each file holds, so a run writes only what is new or changed and a newer version replaces the file; an id OSDU no longer serves is marked gone and its file left in place. Nothing is written to OSDU.",
+      "enumValues": [
+        "download"
+      ]
+    },
+    {
+      "path": "name",
+      "type": "string",
+      "required": true,
+      "description": "The download flow's name: its pipeline identity, and the name its downloads are kept under. A flow that reads partitions keeps its downloads per partition."
+    },
+    {
+      "path": "parallelism",
+      "type": "object",
+      "required": false,
+      "description": "What one run works on at once: `recordsAtOnce`, how many storage reads a run has in flight at once. A download flow fans nothing out across the fleet."
+    },
+    {
+      "path": "parallelism.concurrency",
+      "type": "integer",
+      "required": false,
+      "description": "Renamed: it is written as `parallelism.recordsAtOnce`, as on a delivery flow. A document that still declares it is refused when it loads, naming the key it is now."
+    },
+    {
+      "path": "parallelism.recordsAtOnce",
+      "type": "integer",
+      "required": false,
+      "description": "How many storage reads a run has in flight at once, each of up to a hundred records (POST /query/records). At least 1.",
+      "default": "8"
+    },
+    {
+      "path": "parameters",
+      "type": "map",
+      "required": false,
+      "description": "Optional: the flow's parameters, by name. `{name}` tokens are usable in a download's `query` and in `target.location`; `{partition}` is always the partition the run reads, and may not be declared."
+    },
+    {
+      "path": "parameters.<name>",
+      "type": "object",
+      "required": false,
+      "description": "One parameter; `<name>` is the name its `{name}` tokens use. A run supplying a value for a name the flow does not declare is refused."
+    },
+    {
+      "path": "parameters.<name>.choices",
+      "type": "list",
+      "required": false,
+      "description": "The values the parameter may take, in the order a run form lists them: a run given any other value is refused (`parameter 'name' is given 'x', which is not one of its choices: a, b.`), and the run form offers them as a list to pick from. At least one and at most 500, each listed once and written as a run gives it; a `default` is one of them. Leave it out for a parameter that takes any value."
+    },
+    {
+      "path": "parameters.<name>.choices[]",
+      "type": "string",
+      "required": false,
+      "description": "One value the parameter may take."
+    },
+    {
+      "path": "parameters.<name>.default",
+      "type": "string",
+      "required": false,
+      "description": "The value used when a run supplies none; one of the parameter's `choices` when it lists them."
+    },
+    {
+      "path": "parameters.<name>.description",
+      "type": "string",
+      "required": false,
+      "description": "Text describing what the parameter is for."
+    },
+    {
+      "path": "parameters.<name>.required",
+      "type": "boolean",
+      "required": false,
+      "description": "When true, a run that supplies no value, for a parameter without a default, fails with \"parameter 'name' is required\". A scheduled fire supplies only the schedule's `values`, so give it one there.",
+      "default": "false"
+    },
+    {
+      "path": "partitions",
+      "type": "list",
+      "required": false,
+      "description": "The OSDU data partitions the flow downloads from, hard-coded: each by its `data-partition-id` written literally, never a reference, at least one, unique ignoring case. Leave it out to read the partition `source.headers` names, or every partition registered with the catalog when the headers name none. A run reads one partition."
+    },
+    {
+      "path": "partitions[]",
+      "type": "string",
+      "required": false,
+      "description": "One partition the flow downloads from, by its `data-partition-id`."
+    },
+    {
+      "path": "reliability",
+      "type": "object",
+      "required": false,
+      "description": "The HTTP settings: timeout, retry, rate limit, TLS, URL allowlist and response size. What runs at once is `parallelism`."
+    },
+    {
+      "path": "reliability.batchRecords",
+      "type": "integer",
+      "required": false,
+      "description": "Not a setting here any more: a delivery flow writes it as `parallelism.recordsPerBatch`, and a download flow has no use for it. A document that still declares it is refused when it loads; remove it."
+    },
+    {
+      "path": "reliability.batchSize",
+      "type": "integer",
+      "required": false,
+      "description": "Not a setting any more: a worker claims the records due for a retry `parallelism.recordsAtOnce` at a time, at least 50. A document that still declares it is refused when it loads; remove it."
+    },
+    {
+      "path": "reliability.concurrency",
+      "type": "integer",
+      "required": false,
+      "description": "Not a setting here any more: it is written as `parallelism.recordsAtOnce`, since what runs at once, and across the fleet, is the flow's parallelism, and reliability keeps what makes a request hold. A document that still declares it here is refused when it loads, naming where it goes."
+    },
+    {
+      "path": "reliability.fanOut",
+      "type": "integer",
+      "required": false,
+      "description": "Not a setting here any more: a delivery flow writes it as `parallelism.nodes`, and a download flow has no use for it. A document that still declares it is refused when it loads; remove it."
+    },
+    {
+      "path": "reliability.fanOutMinRecords",
+      "type": "integer",
+      "required": false,
+      "description": "Not a setting here any more: a delivery flow writes it as `parallelism.minRowsPerNode`, and a download flow has no use for it. A document that still declares it is refused when it loads; remove it."
+    },
+    {
+      "path": "reliability.leaseSeconds",
+      "type": "integer",
+      "required": false,
+      "description": "A delivery flow's setting: how long a worker's lease on a record lasts. The loader accepts it as on a delivery flow; a download flow does not use it.",
+      "default": "300"
+    },
+    {
+      "path": "reliability.maxRequestBodyBytes",
+      "type": "integer",
+      "required": false,
+      "description": "A delivery flow's setting: the target's declared request body ceiling (0 = not declared). The loader accepts it as on a delivery flow; a download flow does not use it.",
+      "default": "0"
+    },
+    {
+      "path": "reliability.maxResponseBytes",
+      "type": "integer",
+      "required": false,
+      "description": "The largest response body read, in bytes. A larger response fails the request with a message naming this setting.",
+      "default": "67108864"
+    },
+    {
+      "path": "reliability.parallelInterfaces",
+      "type": "integer",
+      "required": false,
+      "description": "Not a setting here any more: a delivery flow writes it as `parallelism.interfacesAtOnce`, and a download flow has no use for it. A document that still declares it is refused when it loads; remove it."
+    },
+    {
+      "path": "reliability.rateLimitRps",
+      "type": "number",
+      "required": false,
+      "description": "The most requests per second the flow sends to the platform; 0 means unlimited. Token requests are not limited.",
+      "default": "0"
+    },
+    {
+      "path": "reliability.renderParallelism",
+      "type": "integer",
+      "required": false,
+      "description": "Not a setting here any more: a delivery flow writes it as `parallelism.renderThreads`, and a download flow has no use for it. A document that still declares it is refused when it loads; remove it."
+    },
+    {
+      "path": "reliability.retry",
+      "type": "object",
+      "required": false,
+      "description": "How one request is repeated inline. Only requests that are safe to repeat are repeated, on 408, 425, 429, 503 and 504 and on a transport failure; 500 and 502 are not replayed."
+    },
+    {
+      "path": "reliability.retry.attempts",
+      "type": "integer",
+      "required": false,
+      "description": "The most attempts one request gets, the first included.",
+      "default": "4"
+    },
+    {
+      "path": "reliability.retry.backoff",
+      "type": "enum(exponential|fixed)",
+      "required": false,
+      "description": "The wait between attempts: `exponential` doubles `baseDelayMs` per attempt, `fixed` waits `baseDelayMs` each time; both are capped at `maxDelayMs`.",
+      "enumValues": [
+        "exponential",
+        "fixed"
+      ],
+      "default": "exponential"
+    },
+    {
+      "path": "reliability.retry.baseDelayMs",
+      "type": "integer",
+      "required": false,
+      "description": "The first wait between attempts, in milliseconds.",
+      "default": "500"
+    },
+    {
+      "path": "reliability.retry.honorRetryAfter",
+      "type": "boolean",
+      "required": false,
+      "description": "Whether a `Retry-After` the service sends is honoured. A requested wait within `maxDelayMs` becomes the floor of the backoff; a longer one is never shortened, so the request stops instead of waiting it out.",
+      "default": "true"
+    },
+    {
+      "path": "reliability.retry.maxDelayMs",
+      "type": "integer",
+      "required": false,
+      "description": "The longest wait between attempts, in milliseconds.",
+      "default": "30000"
+    },
+    {
+      "path": "reliability.retry.recordBaseDelayMinutes",
+      "type": "integer",
+      "required": false,
+      "description": "A delivery flow's setting: the first wait between a record's attempts across worker passes, in minutes. The loader accepts it as on a delivery flow; a download flow does not use it.",
+      "default": "1"
+    },
+    {
+      "path": "reliability.retry.recordMaxDelayMinutes",
+      "type": "integer",
+      "required": false,
+      "description": "A delivery flow's setting: the longest wait between a record's attempts across worker passes, in minutes. The loader accepts it as on a delivery flow; a download flow does not use it.",
+      "default": "60"
+    },
+    {
+      "path": "reliability.skipStatusCodes",
+      "type": "list",
+      "required": false,
+      "description": "A delivery flow's setting: statuses that hold a record instead of retrying it. The loader accepts it as on a delivery flow; a download flow does not use it."
+    },
+    {
+      "path": "reliability.skipStatusCodes[]",
+      "type": "integer",
+      "required": false,
+      "description": "One HTTP status code."
+    },
+    {
+      "path": "reliability.timeoutSeconds",
+      "type": "integer",
+      "required": false,
+      "description": "How long one HTTP request may take, in seconds.",
+      "default": "100"
+    },
+    {
+      "path": "reliability.urlAllowlist",
+      "type": "list",
+      "required": false,
+      "description": "The hosts requests may reach (an SSRF guard), checked on every request and every redirect hop. Empty allows any host the deployment's network policy reaches; token requests are not checked against it."
+    },
+    {
+      "path": "reliability.urlAllowlist[]",
+      "type": "string",
+      "required": false,
+      "description": "A host name, or `*.suffix` to match the bare domain and any subdomain of it. Compared ignoring case."
+    },
+    {
+      "path": "reliability.verifyTls",
+      "type": "boolean",
+      "required": false,
+      "description": "Whether the platform's TLS certificate is verified. `false` also needs `SQLFLOW_DELIVERY_ALLOW_INSECURE_TLS=true` on the node, or the run is refused.",
+      "default": "true"
+    },
+    {
+      "path": "source",
+      "type": "object",
+      "required": true,
+      "description": "The OSDU platform the downloads are read from, and how. A run only reads: nothing is ever written to OSDU."
+    },
+    {
+      "path": "source.auth",
+      "type": "object",
+      "required": false,
+      "description": "How requests to the OSDU platform authenticate, written as `target.auth` is on a delivery flow. Secrets are references only: ${env:NAME} or ${keyvault:vault/secret}. Left out, requests carry no credentials (type `none`).",
+      "appliesWhen": "Optional; written as `target.auth` on a delivery flow."
+    },
+    {
+      "path": "source.auth.headerName",
+      "type": "string",
+      "required": false,
+      "description": "The header an `apiKeyHeader` auth sends the key in.",
+      "appliesWhen": "source.auth.type is apiKeyHeader, which needs it."
+    },
+    {
+      "path": "source.auth.secondarySecretRef",
+      "type": "string",
+      "required": false,
+      "description": "The secondary secret, as a reference (${env:NAME} or ${keyvault:vault/secret}): the username for `basic`, the client id for `oauth2ClientCredentials` (sent as `client_id` unless the token body names one).",
+      "appliesWhen": "source.auth.type is basic or oauth2ClientCredentials."
+    },
+    {
+      "path": "source.auth.secretRef",
+      "type": "string",
+      "required": false,
+      "description": "The primary secret, as a reference (${env:NAME} or ${keyvault:vault/secret}), never a literal: the token for `bearer`, the key for `apiKeyHeader`, the password for `basic`, the client secret for `oauth2ClientCredentials` (sent as `client_secret` unless the token body names one). A literal is refused when the flow is read.",
+      "appliesWhen": "Needed by bearer, apiKeyHeader and basic; used by oauth2ClientCredentials."
+    },
+    {
+      "path": "source.auth.token",
+      "type": "object",
+      "required": false,
+      "description": "The OAuth2 token endpoint: where a token is requested and how it is read from the answer. One token serves the run and is requested again shortly before it expires.",
+      "appliesWhen": "source.auth.type is oauth2ClientCredentials, which needs it."
+    },
+    {
+      "path": "source.auth.token.applyPrefix",
+      "type": "string",
+      "required": false,
+      "description": "The text put before the access token in the `Authorization` header.",
+      "default": "\"Bearer \"",
+      "appliesWhen": "source.auth.type is oauth2ClientCredentials."
+    },
+    {
+      "path": "source.auth.token.basicAuthClient",
+      "type": "boolean",
+      "required": false,
+      "description": "When true, the client id and secret are sent as an HTTP Basic `Authorization` header on the token request instead of in its form body.",
+      "default": "false",
+      "appliesWhen": "source.auth.type is oauth2ClientCredentials."
+    },
+    {
+      "path": "source.auth.token.body",
+      "type": "map",
+      "required": false,
+      "description": "Extra form fields of the token request, by name. `grant_type` is `client_credentials` unless set here, and `client_id` and `client_secret` come from `secondarySecretRef` and `secretRef` unless set here. A field named as a secret (`client_secret`, `password`, `refresh_token`, `client_assertion`, ...) holds a reference only; a literal there is refused when the flow is read. `client_id`, `scope` and `audience` may be literals.",
+      "appliesWhen": "source.auth.type is oauth2ClientCredentials."
+    },
+    {
+      "path": "source.auth.token.body.<name>",
+      "type": "string",
+      "required": false,
+      "description": "One form field of the token request; `<name>` is the field name (such as `scope`). The value may be a reference (${env:NAME} or ${keyvault:vault/secret}), resolved before the request is sent. A field named as a secret must be a reference.",
+      "appliesWhen": "source.auth.type is oauth2ClientCredentials."
+    },
+    {
+      "path": "source.auth.token.discoveryUrl",
+      "type": "string",
+      "required": false,
+      "description": "An OIDC discovery document whose `token_endpoint` is the token URL. When set it is used instead of `url`; it may be a reference. Written literally, its user info and query may carry no credential: one that does is refused when the flow is read.",
+      "appliesWhen": "source.auth.type is oauth2ClientCredentials; give this or url."
+    },
+    {
+      "path": "source.auth.token.tokenPath",
+      "type": "string",
+      "required": false,
+      "description": "The path of the access token in the token endpoint's JSON answer.",
+      "default": "access_token",
+      "appliesWhen": "source.auth.type is oauth2ClientCredentials."
+    },
+    {
+      "path": "source.auth.token.url",
+      "type": "string",
+      "required": false,
+      "description": "The token endpoint URL, usually a reference such as `${env:OSDU_TOKEN_URL}`. Written literally, its user info and query may carry no credential: one that does is refused when the flow is read.",
+      "appliesWhen": "source.auth.type is oauth2ClientCredentials; give this or discoveryUrl."
+    },
+    {
+      "path": "source.auth.type",
+      "type": "enum(none|bearer|apiKeyHeader|basic|oauth2ClientCredentials)",
+      "required": false,
+      "description": "The auth scheme: `none`, `bearer` (a token as a reference), `apiKeyHeader` (a key in a named header), `basic` (username and password) or `oauth2ClientCredentials` (a token requested from `token`). Read ignoring case.",
+      "enumValues": [
+        "none",
+        "bearer",
+        "apiKeyHeader",
+        "basic",
+        "oauth2ClientCredentials"
+      ],
+      "default": "none"
+    },
+    {
+      "path": "source.auth.valuePrefix",
+      "type": "string",
+      "required": false,
+      "description": "The text put before the secret in the header value of a `bearer` or `apiKeyHeader` auth. An OAuth2 token takes `token.applyPrefix` instead.",
+      "default": "\"Bearer \" for bearer; nothing for apiKeyHeader",
+      "appliesWhen": "source.auth.type is bearer or apiKeyHeader."
+    },
+    {
+      "path": "source.endpoint",
+      "type": "string",
+      "required": true,
+      "description": "The base URL of the OSDU platform, usually a reference such as `${env:OSDU_URL}`. Written literally, its user info and query may carry no credential: one that does is refused when the flow is read."
+    },
+    {
+      "path": "source.headers",
+      "type": "map",
+      "required": false,
+      "description": "Headers sent with every request. A flow that names its partitions, or reads every registered one, may not name `data-partition-id` here: each run sets it to the partition it reads."
+    },
+    {
+      "path": "source.headers.<name>",
+      "type": "string",
+      "required": false,
+      "description": "One header; `<name>` is the header name (`data-partition-id: dev`). A value may be a reference (${env:NAME} or ${keyvault:vault/secret}). A header that carries a credential (`Authorization`, an API or subscription key, a token, any `x-api-*` header) holds a reference, after its scheme when it has one (`Bearer ${env:NAME}`); a literal is refused when the flow is read."
+    },
+    {
+      "path": "source.headersPath",
+      "type": "string",
+      "required": false,
+      "description": "Storage's read of up to 1,000 records' system properties by id (openapi storage v2, POST /query/records/headers). Where a deployment does not serve it (404 or 405), records are read through `recordQueryPath`, a hundred at a time.",
+      "default": "/api/storage/v2/query/records/headers"
+    },
+    {
+      "path": "source.paging",
+      "type": "enum(cursor|createTime)",
+      "required": false,
+      "description": "How a read of every record a search matches pages through them. `cursor` (the default) pages the search service's cursor (POST /query_with_cursor), a context the service holds between pages and moves on with each, so a read that loses a page reads the search again from its first page. `createTime` pages the plain search (POST /query) in the order of each record's createTime and then its id, each page asked from the last record handed out: the service holds nothing between pages, a page that fails is asked again from where the read stopped, and a read that comes back short reads again only the batch of about 10,000 records it is short in. Either way a search is read whole or the read fails.",
+      "default": "cursor",
+      "enumValues": [
+        "cursor",
+        "createTime"
+      ]
+    },
+    {
+      "path": "source.queryPath",
+      "type": "string",
+      "required": false,
+      "description": "The search service's offset search, which a plan counts a download's records through (openapi search v2, POST /query).",
+      "default": "/api/search/v2/query"
+    },
+    {
+      "path": "source.read",
+      "type": "enum(search|storage)",
+      "required": false,
+      "description": "How the downloads list OSDU. `search` (the default) pages the search index with a viewer's entitlements; the index lags writes and leaves out a record it failed to index, so a record written seconds before, or never indexed, is not listed, and no file is written for it until it is. `storage` lists every active record of each kind from storage itself (GET /query/records?kind=, which needs the storage service's admin role) and reads their system properties a thousand at a time: the complete answer, unindexed records included. A kind with wildcards is expanded through the schema service for a storage read. Either way, every record written is read from storage (POST /query/records), a hundred at a time.",
+      "default": "search",
+      "enumValues": [
+        "search",
+        "storage"
+      ]
+    },
+    {
+      "path": "source.recordQueryPath",
+      "type": "string",
+      "required": false,
+      "description": "Storage's listing of a kind's record ids (GET) for a storage read, and its read of records by id (POST), a hundred at a time, which every record written is read through; openapi storage v2 /query/records.",
+      "default": "/api/storage/v2/query/records"
+    },
+    {
+      "path": "source.schemaPath",
+      "type": "string",
+      "required": false,
+      "description": "The schema service, which expands a kind with wildcards into the kinds a storage read lists one at a time.",
+      "default": "/api/schema-service/v1/schema"
+    },
+    {
+      "path": "source.searchPath",
+      "type": "string",
+      "required": false,
+      "description": "The search service's cursor search, which a search read pages a download through, a thousand ids a page, whole or failing (openapi search v2, POST /query_with_cursor).",
+      "default": "/api/search/v2/query_with_cursor"
+    },
+    {
+      "path": "target",
+      "type": "object",
+      "required": true,
+      "description": "Where the files go: each download writes into a folder of its name under `location`, a file per record named after its id (`:` written `~`, `%` written `=`)."
+    },
+    {
+      "path": "target.location",
+      "type": "string",
+      "required": true,
+      "description": "The folder each download's folder is made in: an absolute local path, or an `abfss://` or `https://<account>.blob.core.windows.net` URI, with `{partition}` and `{parameter}` tokens; `{run}` and `{date}` are refused, since every run writes to the same folder. A relative path is refused (a run reads its flow from a checkout of its own), and so is a `${...}` reference or a credential in the URI: Azure Storage is written with the node's own Azure credential. A run that writes to another folder than the last one did writes every record again."
+    },
+    {
+      "path": "telemetry",
+      "type": "object",
+      "required": false,
+      "description": "What the correlation id every OSDU request of the flow's runs carries names: `correlation-id: osdu-delivery-<repository>-<operation>-<run id>`, the repository's code from the `osdu-delivery.yaml` nearest above the flow. Left out, the runs name the kind's own operation code."
+    },
+    {
+      "path": "telemetry.operation",
+      "type": "string",
+      "required": false,
+      "description": "The flow's operation code in its runs' correlation id: a lower-case letter, then lower-case letters and digits, at most 16 in all and no hyphen. Defaults to the kind's own, `dwn`.",
+      "default": "dwn"
+    }
+  ]
+}

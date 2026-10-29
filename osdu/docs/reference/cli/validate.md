@@ -69,7 +69,8 @@ reads the documents OSDU Delivery adds as well. This page says what each of them
 
 Validation is offline: no catalog, no module database, no OSDU, and no secret resolution (`${env:...}` and
 `${keyvault:...}` stay references). It does read the files a flow names beside it, from disk and the way a run finds
-them: the mapping a delivery flow pins, and the dictionaries a cache or dimension flow names (see each kind below). What
+them: the mapping a delivery flow pins, the dictionaries a cache or dimension flow names (see each kind below), and the
+[repository document](../flow/repository.md) above every flow, whose code its runs carry. What
 needs the template folders or the database (the template a mapping fills, the cache it reads, the partition registry)
 is [`sqlflow check`](check.md); what needs OSDU or the ingestion tables is the run.
 
@@ -85,16 +86,17 @@ is [`sqlflow check`](check.md); what needs OSDU or the ingestion tables is the r
 | Inventory flow | `flowType: inventory` | `OK  '<name>' is valid (inventory: <source.endpoint> -> inventories).` |
 | Mapping | `documentType: mapping` | `OK  '<Name>@<version> -> <template.kind>' is valid (mapping).` |
 | Dictionary | `documentType: dictionary` | `OK  '<name> (<n> entries, key <key>)' is valid (dictionary).` |
+| Repository document | `documentType: repository` | `OK  '<code>' is valid (repository).` |
 
-The six flow kinds take SQLFlow's envelope keys (`schedule`, `mode`, and the rest SQLFlow documents for every flow) as
-any flow does. The mapping and the dictionary are companion documents: they are not flows, have no envelope, and are
+The eight flow kinds take SQLFlow's envelope keys (`schedule`, `mode`, and the rest SQLFlow documents for every flow) as
+any flow does. The mapping, the dictionary and the repository document are companion documents: they are not flows, have no envelope, and are
 reported under their own document type. A `flowType` no kind registers fails with SQLFlow's message, which ends by
 listing the registered kinds (`Registered kinds: 'assertion' for ..., 'cache' for ..., 'delivery' for ..., ...`); a
 `documentType` no kind registers fails with
-`<file>: unknown documentType '<type>'. Registered document types: 'dictionary' for a lookup table a cache flow holds in the partition's cache, 'mapping' for how a delivery flow renders the rows of an ingestion table into records of one OSDU kind.`
+`<file>: unknown documentType '<type>'. Registered document types: 'dictionary' for a lookup table a cache flow holds in the partition's cache, 'mapping' for how a delivery flow renders the rows of an ingestion table into records of one OSDU kind, 'repository' for the code a repository's runs carry in the correlation id of their OSDU requests.`
 
 In the folder mode each document is one line, and `--json` reports each document's `kind` as the discriminator above
-(`delivery`, `mapping`, `dictionary`, ...).
+(`delivery`, `mapping`, `dictionary`, `repository`, ...).
 
 ## What every document checks
 
@@ -236,6 +238,19 @@ The mapping's vocabulary is on [The mapping document](../flow/mapping.md) and th
   `line 8: the key 'MD ' has spaces around it, and a value is matched trimmed.`
 - Neither the key nor a field may be called `id`.
 
+## Repository document
+
+- The file is `osdu-delivery.yaml` or `osdu-delivery.yml`, exactly; a file of another name declaring
+  `documentType: repository` is refused, since a flow finds the document by its name.
+- The keys are `documentType`, `code` and `description` only. `code` is required: a lower-case letter, then lower-case
+  letters and digits, at most 16 in all and no hyphen.
+- Every flow is checked against the document a run of it would read, the nearest above it up to the folder holding
+  `.git`, and is refused for one a run could not read:
+  `<file>: ../../osdu-delivery.yaml: code 'WL' is not a repository code: a lower-case letter, then lower-case letters and digits, at most 16 in all and no hyphen, so the correlation id splits on its hyphens.`
+  A flow with none above it is valid ([repository document](../flow/repository.md)).
+- Every flow's `telemetry.operation`, when written, is a code by the same rule, and no `headers` block of a flow names
+  `correlation-id` ([request correlation](../concepts/request-correlation.md)).
+
 ## Retrieval flow
 
 - `name`, `source.endpoint`, `source.headers` with a non-empty `data-partition-id`, `target` and `target.location` are
@@ -341,7 +356,7 @@ SQLFlow's: 0 when the document (or every document of the folder) is valid, 1 oth
 
 - [sqlflow validate](../../../../sqlflow/docs/reference/cli/validate.md): the verb, its folder mode and `--json` report.
 - [sqlflow check](check.md): the mapping against the template its template folders hold and the cache, which needs the module database.
-- [The documents OSDU Delivery adds](../flow/overview.md): the six flow kinds, the mapping and the dictionary.
+- [The documents OSDU Delivery adds](../flow/overview.md): the eight flow kinds, the mapping, the dictionary and the repository document.
 - [Delivery flow](../flow/delivery.md), [The mapping document](../flow/mapping.md), [Cache flow](../flow/cache.md),
   [Dictionary](../flow/dictionary.md): every key each document takes.
 - [CLI conventions](../../../../sqlflow/docs/reference/concepts/cli-conventions.md): options, streams and exit codes shared by every command.

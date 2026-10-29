@@ -74,8 +74,10 @@ pub const CENSUS: &[&str] = &[
     osdu_doc!("census/keys.dimension.json"),
     osdu_doc!("census/keys.inventory.json"),
     osdu_doc!("census/keys.removal.json"),
+    osdu_doc!("census/keys.download.json"),
     osdu_doc!("census/keys.mapping.json"),
     osdu_doc!("census/keys.dictionary.json"),
+    osdu_doc!("census/keys.repository.json"),
 ];
 
 #[cfg(test)]
@@ -275,7 +277,7 @@ mod tests {
             let kind = parsed["flowType"].as_str().or(parsed["documentType"].as_str()).expect("a kind").to_string();
             assert!(kinds.insert(kind.clone()), "{kind} is described twice");
         }
-        for kind in ["delivery", "retrieval", "cache", "assertion", "dimension", "inventory", "removal", "mapping", "dictionary"] {
+        for kind in ["delivery", "retrieval", "cache", "assertion", "dimension", "inventory", "removal", "download", "mapping", "dictionary", "repository"] {
             assert!(kinds.contains(kind), "no census describes {kind}");
         }
     }

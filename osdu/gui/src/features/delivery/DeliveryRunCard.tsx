@@ -19,6 +19,7 @@ const OUTCOME_COPY: Record<string, string> = {
   cache: "What the refresh reported when it finished: the version it wrote (or that nothing changed), each type's record count and changes, and the delivered records those changes reach.",
   retrieval: "What the retrieval reported when it finished: the window it covered, the records and files it wrote, and where they went.",
   assertion: "How the assertions came out: the report it kept, each outcome's count, and the assertions that did not pass. Every result, whole, is in the report.",
+  download: "What the download reported when it finished: per download, the folder it wrote to, what its listing changed, the files it wrote and the records storage did not return. Each record and its file are on the flow's Downloads tab.",
 };
 
 const DEFAULT_OUTCOME_COPY = "What the run reported when it finished: its counts, the submission it worked on, and how far it fanned out.";

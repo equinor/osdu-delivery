@@ -1363,10 +1363,15 @@ public class EndToEndTests : IDisposable
         var (runtime, protocol, ledger) = await RuntimeAsync(tables);
         using (runtime)
         {
-            await RunAsync(runtime, protocol, ledger);
+            // As the executor opens it around every run.
+            var runId = Guid.CreateVersion7();
+            using (OsduCorrelation.ForRun("wl", FlowTelemetry.Delivery, runId))
+            {
+                await RunAsync(runtime, protocol, ledger);
+            }
 
             var sent = protocol.Correlations[protocol.Deliveries.FindIndex(w => w.Key == SampleEstate.Key(0))];
-            Assert.True(Guid.TryParse(sent, out _));
+            Assert.Equal($"osdu-delivery-wl-dlv-{runId:D}", sent);
             var attempt = Assert.Single(await ledger.ListAttemptsAsync(runtime.Flow.Id, SampleEstate.Key(0), 10));
             using var result = System.Text.Json.JsonDocument.Parse(attempt.ResultJson!);
             Assert.Equal(sent, result.RootElement.GetProperty("correlationId").GetString());

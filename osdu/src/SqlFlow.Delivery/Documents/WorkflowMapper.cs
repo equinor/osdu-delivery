@@ -194,7 +194,7 @@ internal static partial class FlowMapper
         {
             Endpoint = endpoint,
             Auth = MapAuth(declared.Auth, source, "target.airflow.auth"),
-            Headers = new Dictionary<string, string>(declared.Headers ?? [], StringComparer.OrdinalIgnoreCase),
+            Headers = MapHeaders(declared.Headers, "target.airflow.headers", source),
             ApiVersion = ParseEnum(declared.ApiVersion, AirflowApiVersion.V1, "target.airflow.apiVersion", source),
         };
     }

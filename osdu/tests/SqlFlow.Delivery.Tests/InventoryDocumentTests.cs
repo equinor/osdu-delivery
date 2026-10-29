@@ -436,7 +436,8 @@ public class InventoryDocumentTests
         var document = Assert.IsType<InventoryFlowDocument>(kind.Parse(Head + WellLogs, "flows/inventory.yaml"));
         Assert.Equal(("welllog-inventory", "inventory", "reconciliation"), (document.Name, document.Kind, document.Batch));
         Assert.Equal(("${env:OSDU_URL}", InventoryFlowDocument.InventoriesTarget), (document.SourceReference, document.TargetReference));
-        Assert.False(document.RequiresRepoTree);
+        // A build reads the repository document above the flow, whose code its requests carry.
+        Assert.True(document.RequiresRepoTree);
     }
 
     [Fact]

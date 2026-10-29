@@ -5,6 +5,7 @@ using SqlFlow.Delivery.Engine.Snapshots;
 using SqlFlow.Delivery.Http;
 using SqlFlow.Delivery.Identity;
 using SqlFlow.Delivery.Ledger;
+using SqlFlow.Delivery.Model;
 using SqlFlow.Delivery.Protocols;
 
 namespace SqlFlow.Delivery.Engine;
@@ -293,7 +294,7 @@ public sealed partial class FlowRuntime
                 return ((IReadOnlyList<RemovalKeyOutcome>)outcomes, undoneFirst);
             }
 
-            using var correlation = OsduCorrelation.Begin();
+            using var correlation = OsduCorrelation.Begin(FlowTelemetry.Removal);
             var results = await protocol.DeleteBatchAsync(removals, RemovalScope.Record, ct).ConfigureAwait(false);
             var byKey = going.ToDictionary(g => g.Key.Key);
             var succeeded = results.Where(r => r.Succeeded).ToList();

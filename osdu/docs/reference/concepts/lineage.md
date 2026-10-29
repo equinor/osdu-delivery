@@ -112,6 +112,7 @@ A few rules follow from the identity:
 | `dimension` | Each dimension's kind (wildcards allowed); the dictionary file each cleaning `map` step names | Each dimension, as a dimension node of its partition |
 | `inventory` | Each inventory's kind (wildcards allowed) | Nothing another flow reads |
 | `removal` | Each key source: a reader's files at their repository-relative location, a table on its connection; and the OSDU types each delivery flow it names writes | Nothing another flow reads: what it takes out is the delivery flow's records, in the delivery flow's ledger |
+| `download` | Each download's kind (wildcards allowed), in every partition the flow reads | The record files (`*.json`) in each download's folder under `target.location`, as a file drop |
 
 The table reads are SQLFlow database nodes, on the identity SQLFlow gives every server reference, so a delivery flow
 reading `OsduData.silver.Wellbore` over `${env:OSDU_DATA_DB}` lands on the node the `ing` flow writes through the same
@@ -176,7 +177,7 @@ interfaces do, each read and write once however many interfaces declare it:
 
 So the source is ordered after everything any of its interfaces reads: the `ing` flows writing any interface's tables,
 the cache flows writing what any interface's mapping reads, the delivery flows writing the kinds those mappings search.
-A flow that reads what any interface writes (a cache, retrieval, assertion, dimension or inventory flow) is ordered after
+A flow that reads what any interface writes (a cache, retrieval, assertion, dimension, inventory or download flow) is ordered after
 the whole source. For the example source of [the interfaces page](../flow/interfaces.md#example), `welldb-03-delivery`,
 with a wellbore and a well log interface (in each of its partitions):
 
@@ -204,7 +205,7 @@ capturing a type any interface writes, that any interface's mapping also reads, 
 
 ## Wildcard kinds
 
-A cache, retrieval, dimension or inventory flow, and a mapping's search, may read a kind with `*` in any segment. The
+A cache, retrieval, dimension, inventory or download flow, and a mapping's search, may read a kind with `*` in any segment. The
 wildcard read is a node of its own, standing for everything of that type the platform holds, and SQLFlow also binds it to
 every exact kind the estate writes on the same platform and partition that matches segment by segment (`:` separates the
 segments, so `*` never spans two). A search for `osdu:wks:master-data--Wellbore:*` therefore reads the
@@ -225,9 +226,9 @@ Reads and writes of OSDU types, cache types and dimensions order flows exactly a
 - A flow reading a cache type a pipeline's cache steps name runs after that pipeline as well as after the cache flow
   capturing it, and a pipeline whose before step searches a kind runs after the flows delivering it
   ([Pipelines bring the cache up to date](partition-cache.md#pipelines-bring-the-cache-up-to-date)).
-- Retrieval, assertion, dimension and inventory flows run after the delivery flows writing the kinds they read, and a
+- Retrieval, assertion, dimension, inventory and download flows run after the delivery flows writing the kinds they read, and a
   removal flow after the delivery flows it names and the flows landing its keys; a file
-  flow reading a retrieval's folder runs after the retrieval.
+  flow reading a retrieval's or a download's folder runs after it.
 - A delivery does not read a cache type when every cache flow capturing it also captures what the delivery writes: that
   cache flow runs after the delivery. Two other flows that each read what the other writes are not ordered against each
   other. Longer loops are reported as dependency cycles and their flows go to SQLFlow's fallback wave.

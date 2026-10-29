@@ -128,6 +128,15 @@ What each table holds as the Maintenance page shows it, what may be removed and 
 | [`osdu.RemovalRun`](../tables/removal-run.md) | A run of one removal of a removal flow, kept under the delivery ledger it wrote to |
 | [`osdu.RemovalKey`](../tables/removal-key.md) | A key a running removal staged from one of its sources or the record table |
 
+### Downloads
+
+| Table | One row is |
+| --- | --- |
+| [`osdu.Download`](../tables/download.md) | A download of a download flow in a partition, and the folder its last run wrote |
+| [`osdu.DownloadRun`](../tables/download-run.md) | A run of a download: where it wrote and what it wrote |
+| [`osdu.DownloadScan`](../tables/download-scan.md) | An id a run listed, staged until the run merges |
+| [`osdu.DownloadRecord`](../tables/download-record.md) | An id a download lists, the file it is written to and the version that file holds |
+
 ### Retrieval and assertions
 
 | Table | One row is |
@@ -178,7 +187,7 @@ starts and dropped when it ends ([A dimension build's staging](../flow/dimension
 | --- | --- |
 | [`osdu.Mapping`](../tables/mapping.md) | A mapping document a repository sync found |
 | [`osdu.Interface`](../tables/interface.md) | An interface of a delivery flow, per partition it names, and the ledger it keeps |
-| [`osdu.LedgerFlow`](../tables/ledger-flow.md) | A retrieval, assertion, dimension or inventory flow a repository sync found, with its document's hash |
+| [`osdu.LedgerFlow`](../tables/ledger-flow.md) | A retrieval, assertion, dimension, inventory or download flow a repository sync found, with its document's hash |
 | [`osdu.SearchTerm`](../tables/search-term.md) | A search term a repository's pipelines give an entity type |
 | [`osdu.SearchTermRefinement`](../tables/search-term-refinement.md) | What a person made of a search term |
 | [`osdu.RepositoryTemplate`](../tables/repository-template.md) | A file of a repository's template folder, with the kind and version it holds, or why it holds none |

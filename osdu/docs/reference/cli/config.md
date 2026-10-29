@@ -50,7 +50,7 @@ sourceRefs:
 # sqlflow config
 
 OSDU Delivery's command line is `sqlflow`: SQLFlow's CLI with the OSDU verbs added. `config` is one of those verbs. It
-reads and writes the central configuration: named values the control plane attaches to the delivery, cache, retrieval, assertion, dimension and inventory runs it queues, so a
+reads and writes the central configuration: named values the control plane attaches to the delivery, cache, retrieval, assertion, dimension, inventory, removal and download runs it queues, so a
 flow that names `${env:OSDU_URL}` or `${env:OSDU_LEGAL_TAG}` gets its value from one place instead of from the
 environment of whichever node picks the run up.
 
@@ -113,7 +113,7 @@ the configuration does not set.
 - **Runs the control plane queues.** A run triggered from the GUI or with `sqlflow trigger`, a schedule fire, and every
   member of a run group is queued carrying the values set for no partition, whatever its kind: a pre-ingestion or
   ingestion flow reads its connections from them as a delivery flow reads its platform. A run of a flow kind of the
-  module (delivery, cache, retrieval, assertion, dimension, inventory and removal, a delivery flow's and an inventory's
+  module (delivery, cache, retrieval, assertion, dimension, inventory, removal and download, a delivery flow's and an inventory's
   remove run included) carries every partition's own values besides, and the node resolves with the values of the
   partition the run binds to over the ones set for none, except a flow's source connection, which takes the ones set for
   none ([a flow's source connection](../concepts/environment-variables.md#a-flows-source-connection)).

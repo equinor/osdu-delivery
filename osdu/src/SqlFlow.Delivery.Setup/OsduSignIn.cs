@@ -16,6 +16,15 @@ internal sealed class OsduSignIn : IOsduSignIn
 {
     private static readonly TimeSpan Timeout = TimeSpan.FromSeconds(30);
 
+    /// <summary>
+    /// The correlation id the read carries, as every OSDU request does (osdu/docs/reference/concepts/request-correlation.md):
+    /// the product's own operation <c>signin</c> with a new id. This project keeps to SQLFlow's core, so it writes the value
+    /// the module's <c>OsduCorrelation</c> composes itself, and a test holds the two to one form.
+    /// </summary>
+    internal const string CorrelationHeader = "correlation-id";
+
+    internal static string CorrelationValue() => $"osdu-delivery-signin-{Guid.NewGuid():D}";
+
     public async Task<OsduSignInResult> TestAsync(
         Uri tokenUrl, string clientId, string clientSecret, string scope, Uri? platform, string? partition, string? legalTag, CancellationToken ct)
     {
@@ -60,6 +69,7 @@ internal sealed class OsduSignIn : IOsduSignIn
             using var request = new HttpRequestMessage(HttpMethod.Get, uri);
             request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
             request.Headers.TryAddWithoutValidation("data-partition-id", partition);
+            request.Headers.TryAddWithoutValidation(CorrelationHeader, CorrelationValue());
             using var response = await http.SendAsync(request, ct).ConfigureAwait(false);
             var body = await response.Content.ReadAsStringAsync(ct).ConfigureAwait(false);
             return new OsduSignInResult(

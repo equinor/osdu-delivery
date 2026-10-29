@@ -105,7 +105,7 @@ public sealed class DimensionCacheTests : IDisposable
         Assert.Equal(["keys", "records", "filter"], curves.Fields.Select(f => f.Name));
         Assert.Equal("dimension CurveMnemonic of welllog-dimensions", curves.Describe());
         Assert.Equal(("Mnemonics", CacheChangeMode.Approve), (flow.Types[1].Name, flow.Types[1].OnChange));
-        Assert.False(new CacheFlowDocument { Flow = flow }.RequiresRepoTree);
+        Assert.True(new CacheFlowDocument { Flow = flow }.RequiresRepoTree);
 
         // Its lineage reads the dimension in the partition, which the dimension flow's build writes.
         var lineage = CacheLineage.Describe(flow);

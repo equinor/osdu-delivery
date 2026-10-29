@@ -106,6 +106,9 @@ public sealed class DeliveryExecutor : IFlowDocumentExecutor
         LogStart(log, declared.Name, operation, parameters.Describe(), actor, runId);
         try
         {
+            // Before anything else: every OSDU request the run sends carries the run's correlation id.
+            using var correlation = RunCorrelation.Begin(context.Documents, flowFile, declared.TelemetryOperation, runId, log);
+
             // A hard-coded partition settles itself; a flow that leaves its partition to the registry runs in the one named,
             // which the registry has to hold, or in the registry's default.
             var registry = declared.NeedsRegistry(partition)

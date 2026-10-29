@@ -216,6 +216,7 @@ schedule:
 | `name` | string | yes | The flow's pipeline in the catalog, its schedules and its run history. In the single form the ledger keeps the flow under this name, at most 200 characters, unless `ledger` names another ([ledger](../concepts/ledger.md)). |
 | `batch` | string | no | The platform batch the flow belongs to, read by SQLFlow ([flow overview](../../../../sqlflow/docs/reference/flow/overview.md)). |
 | `description` | string | no | Free text. |
+| `telemetry.operation` | string | no | The flow's operation code in the correlation id every OSDU request of its runs carries, `osdu-delivery-<repository>-<operation>-<run id>`: a lower-case letter, then lower-case letters and digits, at most 16, no hyphen; `dlv` when left out. See [request correlation](../concepts/request-correlation.md). |
 | `schedule`, `mode`, `lifecycle` | | no | SQLFlow's envelope keys, read by the platform ([schedule](../../../../sqlflow/docs/reference/flow/schedule.md), [flow overview](../../../../sqlflow/docs/reference/flow/overview.md)). See [Schedules](#schedules) for what a delivery flow adds. |
 | `parameters` | map | no | The flow's own run parameters. See [Parameters](#parameters). |
 | `partitions` | list | no | The OSDU data partitions the flow may deliver to. See [Partitions](#partitions). |

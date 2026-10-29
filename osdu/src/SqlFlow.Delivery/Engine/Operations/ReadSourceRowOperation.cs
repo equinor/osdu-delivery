@@ -29,6 +29,8 @@ public sealed class ReadSourceRowOperation : DeliveryOperation
 
     public override string Name => OperationName;
 
+    public override string CorrelationOperation => "row";
+
     protected override async Task<object> RunAsync(EngineContext context, FlowDefinition flow, ComputeTaskPayload payload, CancellationToken ct)
     {
         var values = FlowParameters.Resolve(flow, Values(payload));

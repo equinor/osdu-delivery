@@ -165,6 +165,7 @@ key never passes silently.
 | `name` | string | yes | none | The flow's pipeline identity, and the name the cache versions it writes and the records it holds are recorded under. Named globally: the repository sync warns when a second file of the same repository declares the name (the first file wins), and when another repository's cache flow has it (rename one, since both would capture under it). |
 | `description` | string | no | none | Free text. |
 | `batch` | string | no | none | SQLFlow's batch label for the pipeline and its runs. |
+| `telemetry.operation` | string | no | `cache` | The flow's operation code in the correlation id every OSDU request of its runs carries, `osdu-delivery-<repository>-<operation>-<run id>`: a lower-case letter, then lower-case letters and digits, at most 16, no hyphen. See [request correlation](../concepts/request-correlation.md). |
 | `partitions` | list | no | none | The partitions whose caches the flow fills, each a data-partition-id written literally, at most 64, each once. See [Which partitions a flow fills](#which-partitions-a-flow-fills). |
 | `parameters` | map | no | none | Named values a type's `query` uses as `{name}` tokens: each with `required`, `default` and `description`. A parameter may list its `choices` ([parameters](parameters.md)). |
 | `source` | map | yes | none | Where the types come from: `endpoint`, `auth` and `headers` for OSDU types, `connection` for table types. Required even when empty (`source: {}` for a flow of dictionaries or dimensions only); missing, it fails with `'source' is required.` |
@@ -352,7 +353,7 @@ matched without regard to case. A name the flow does not declare for the partiti
 `payload types names 'Well', which cache flow 'osdu-reference-00-cache' does not declare for partition 'dev'; it declares
 UnitOfMeasure, LogCurveType, WellLogSamplingDomainType.` In the GUI, the run dialog of a cache flow lists its types to
 pick from; none picked refreshes every one. The payload takes nothing else beside the configuration the control plane
-supplies (`payload force does not apply to a cache flow: only delivery and retrieval runs force; a cache flow's payload names only types.`),
+supplies (`payload force does not apply to a cache flow: only delivery, retrieval and download runs force; a cache flow's payload names only types.`),
 and a cache run takes none of SQLFlow's per-run overrides: `--full`, a backfill window and `--file-pattern` fail with `... do(es) not
 apply to 'cache' flows; a refresh sweeps every declared type in full.`, with or without a payload.
 

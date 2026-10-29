@@ -58,7 +58,7 @@ public static class LedgerMoves
     public static IReadOnlyList<string> NamingTables { get; } = ["RemovalRun", "InventoryRecord", "InventoryRemovalItem"];
 
     /// <summary>
-    /// What a move takes of a ledger of each other kind of flow (retrieval, assertion, dimension, inventory): the tables its
+    /// What a move takes of a ledger of each other kind of flow (retrieval, assertion, dimension, inventory, download): the tables its
     /// rows are kept in under its identity, the first of them the one that says whether it holds anything.
     /// </summary>
     public static IReadOnlyDictionary<string, LedgerKindTables> OtherKinds { get; } = new Dictionary<string, LedgerKindTables>(StringComparer.Ordinal)
@@ -67,6 +67,7 @@ public static class LedgerMoves
         [LedgerKinds.Assertion] = new(LedgerKinds.Assertion, ["AssertionRun", "AssertionResult", "Activity"], NamedRows: false, "assertion run(s)"),
         [LedgerKinds.Dimension] = new(LedgerKinds.Dimension, ["Dimension", "DimensionRun", "Activity"], NamedRows: true, "dimension(s)"),
         [LedgerKinds.Inventory] = new(LedgerKinds.Inventory, ["Inventory", "Activity"], NamedRows: true, "inventory(ies)"),
+        [LedgerKinds.Download] = new(LedgerKinds.Download, ["Download", "Activity"], NamedRows: true, "download(s)"),
     };
 
     /// <summary>

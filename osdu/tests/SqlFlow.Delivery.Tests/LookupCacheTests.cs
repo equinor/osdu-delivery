@@ -299,7 +299,7 @@ public sealed class LookupCacheTests : IDisposable
         Assert.Equal(["curve_family", "curve_main_family"], type.Fields.Select(f => f.Path));
         Assert.Contains(flow.CredentialReferences(), r => r.Key == "source.connection");
         var document = new Documents.CacheFlowDocument { Flow = flow };
-        Assert.False(document.RequiresRepoTree);
+        Assert.True(document.RequiresRepoTree);
         Assert.Equal("${env:OSDU_DATA_DB}", document.SourceConnectionReference);
         var read = Assert.Single(document.DeclaredObjects);
         Assert.Equal(("OsduData", "arc", "CurveDictionary"), (read.Database, read.Schema, read.Name));

@@ -53,9 +53,17 @@ public abstract class DeliveryOperation : IComputeOperation
 
     public abstract string Name { get; }
 
+    /// <summary>
+    /// The operation code the operation's OSDU requests carry in their correlation id, <c>osdu-delivery-&lt;code&gt;-&lt;id&gt;</c>
+    /// with a new id each time (osdu/docs/reference/concepts/request-correlation.md): it is the product's own, whichever flow's
+    /// target it reads through.
+    /// </summary>
+    public abstract string CorrelationOperation { get; }
+
     public virtual async Task<string> ExecuteAsync(ComputeTaskPayload payload, CancellationToken ct)
     {
         ArgumentNullException.ThrowIfNull(payload);
+        using var correlation = OsduCorrelation.Begin(CorrelationOperation);
         var flowFile = await ResolveFlowFileAsync(payload, ct).ConfigureAwait(false);
         var source = _context.Documents.LoadSource(flowFile);
         if (!string.Equals(source.Name, payload.SourceRef, StringComparison.OrdinalIgnoreCase))
@@ -188,6 +196,8 @@ public sealed class ProbeTargetOperation : DeliveryOperation
 
     public override string Name => OperationName;
 
+    public override string CorrelationOperation => "probe";
+
     protected override async Task<object> RunAsync(EngineContext context, FlowDefinition flow, ComputeTaskPayload payload, CancellationToken ct)
     {
         using var target = await OpenTargetAsync(context, flow, ct).ConfigureAwait(false);
@@ -222,7 +232,15 @@ public sealed class ReadRecordOperation : DeliveryOperation
     {
     }
 
+    /// <summary>
+    /// The operation code a record's read-back carries in its correlation id; one the explorer or a run makes carries theirs,
+    /// as every request made inside an operation or a run does.
+    /// </summary>
+    internal const string ReadCorrelation = "read";
+
     public override string Name => OperationName;
+
+    public override string CorrelationOperation => ReadCorrelation;
 
     protected override async Task<object> RunAsync(EngineContext context, FlowDefinition flow, ComputeTaskPayload payload, CancellationToken ct)
     {
@@ -283,7 +301,7 @@ public sealed class ReadRecordOperation : DeliveryOperation
     {
         ArgumentNullException.ThrowIfNull(protocol);
         ArgumentNullException.ThrowIfNull(time);
-        using var correlation = Http.OsduCorrelation.Begin();
+        using var correlation = Http.OsduCorrelation.Begin(ReadCorrelation);
         JsonObject? document = version is null
             ? await protocol.ReadAsync(targetId, targetState, ct).ConfigureAwait(false)
             : await protocol.ReadVersionAsync(targetId, version.Value, ct).ConfigureAwait(false);

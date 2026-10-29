@@ -132,6 +132,8 @@ public sealed class ExploreOperation : DeliveryOperation
 
     public override string Name => OperationName;
 
+    public override string CorrelationOperation => "explore";
+
     /// <summary>
     /// Runs a read through the partition's own connection when the payload asks for it (<see cref="ConnectionArgument"/>),
     /// with no flow file read; otherwise through the flow the payload names, as every operation of a flow runs.
@@ -155,6 +157,8 @@ public sealed class ExploreOperation : DeliveryOperation
             throw new SqlFlowException($"'{partition}' is not a partition id.");
         }
 
+        // A read of the partition is the explorer's own, as a read through a flow is (DeliveryOperation.ExecuteAsync).
+        using var correlation = OsduCorrelation.Begin(CorrelationOperation);
         var result = await ExploreAsync(ContextFor(payload), PartitionConnection.Of(partition), payload, ct).ConfigureAwait(false);
         return JsonSerializer.Serialize(result, JsonOptions);
     }
@@ -185,7 +189,7 @@ public sealed class ExploreOperation : DeliveryOperation
 
         var partition = await PartitionOfAsync(context, target, ct).ConfigureAwait(false);
         var explorer = new RecordExplorer(client, partition, context.Loggers.CreateLogger<RecordExplorer>());
-        using var correlation = OsduCorrelation.Begin();
+        using var correlation = OsduCorrelation.Begin(CorrelationOperation);
         object answer = action switch
         {
             ValidateAction => await (await ChecksAsync(context, target, client, ct).ConfigureAwait(false)).RecordAsync(

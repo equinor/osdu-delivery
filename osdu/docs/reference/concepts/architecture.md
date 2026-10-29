@@ -57,7 +57,7 @@ sourceRefs:
 
 OSDU Delivery is a module on SQLFlow, not a fork of it. SQLFlow's control plane, catalog, run queue, compute nodes,
 schedules, lineage, GUI shell and CLI run unchanged, and the module plugs into them through generic extension points.
-Everything OSDU lives in the module: the six flow kinds and their executors, the ledger and the rest of the `osdu`
+Everything OSDU lives in the module: the eight flow kinds and their executors, the ledger and the rest of the `osdu`
 schema, the delivery API, the OSDU verbs of the CLI and the OSDU pages of the GUI. This page shows how the two are
 composed, what each host runs, and where the data lives. SQLFlow's own architecture (two modes, one engine, the pull
 model) is on [SQLFlow's architecture page](../../../../sqlflow/docs/reference/concepts/architecture-and-execution.md).
@@ -69,7 +69,7 @@ flow runs the same way on the control plane, on a node and from the command line
 
 | Registered | What it is |
 | --- | --- |
-| The flow kinds | `delivery`, `retrieval`, `cache`, `assertion`, `dimension`, `inventory`, `removal`, each an `IFlowDocumentKind` |
+| The flow kinds | `delivery`, `retrieval`, `cache`, `assertion`, `dimension`, `inventory`, `removal`, `download`, each an `IFlowDocumentKind` |
 | The companion documents | `mapping` (owned by the delivery kind) and `dictionary`, each an `ICompanionDocumentKind` |
 | The executors | One `IFlowDocumentExecutor` per flow kind, behind SQLFlow's `DocumentExecutor` |
 | The node tasks | Two `IComputeOperation`s a node runs for the control plane: a value check across a scope, and a removal |

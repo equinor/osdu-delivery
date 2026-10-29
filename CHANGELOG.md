@@ -8,6 +8,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **A download flow writes every record of OSDU kinds to a folder, a JSON file each named after its id.** A new flow kind,
+  `flowType: download`, lists its kinds as an inventory does and writes each record's metadata as storage holds it to a local
+  folder or Azure Storage, `dev:master-data--Wellbore:WB-1` as `dev~master-data--Wellbore~WB-1.json`; its ledger keeps the
+  version each file holds, so a run writes only what is new or changed, and the flow's Downloads tab lists every record with
+  its file ([download flow](osdu/docs/reference/flow/download.md)).
+
+- **Every OSDU request says what sent it.** Each request carries `correlation-id: osdu-delivery-<repository>-<operation>-<run id>`,
+  which OSDU's services log with everything they do for it, so a run, or every run of a repository or a flow, can be
+  found in the platform's logs by the value or a prefix of it. The repository's code is a new document at its root,
+  `osdu-delivery.yaml` (`documentType: repository`, `code: wl`), and a flow names its operation code with
+  `telemetry.operation`, or takes its kind's (`dlv`, `cache`, `ret`, `ast`, `dim`, `inv`, `rmv`, `dwn`). The product's own
+  operations carry `osdu-delivery-<operation>-<id>` (`explore`, `probe`, `read`, ...), and a run's log says what its
+  requests carry ([request correlation](osdu/docs/reference/concepts/request-correlation.md),
+  [the repository document](osdu/docs/reference/flow/repository.md)).
+
 - **Enrichments: a mapping adds to each record it renders.** A mapping's `enrich:` block declares what is added to each
   record from rows of its own: paths of the record, records of any kind the record links, or its bulk data. Each enrichment
   renders an enrichment mapping (`enrichment: true`) and can read what the mapping and the enrichments before it added with
@@ -280,6 +295,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   ([Records](osdu/docs/reference/concepts/gui.md#records), [finding records](osdu/docs/reference/concepts/ledger.md#finding-records)).
 
 ### Changed
+- **A run's requests carry the run's correlation id, and so do its attempts.** The `correlation-id` an OSDU request
+  carries was a new GUID for each try, and the searches of cache, retrieval, dimension, inventory and assertion runs
+  carried none; every request of a run now carries the run's value, which each attempt's `correlationId` names. A
+  `correlation-id` in a flow's `headers` is refused, and retrieval and inventory flows, and cache flows holding no
+  dictionary, now run from a checkout of their repository rather than a snapshot of their one file, since every run reads
+  the repository document ([request correlation](osdu/docs/reference/concepts/request-correlation.md),
+  [which kinds need the repository](osdu/docs/reference/flow/overview.md#which-kinds-need-the-repository)).
 - **A flow's Preview tab answers first.** The form is one line (the key, the scope's fields and **Preview**, with what a
   preview does on its info mark), and the answer opens on a verdict: what the next run would do and why, where the record
   would land and how the ledger holds it, and a line for each thing to know before trusting it, in full on hover. The

@@ -91,6 +91,22 @@ internal static partial class DocumentSecrets
     }
 
     /// <summary>
+    /// A download flow: its OSDU source, and its target location written with a credential in it (a SAS token, a user and
+    /// password). A location is never resolved from a reference, so the credential is not moved behind one: Azure Storage is
+    /// written with the node's own Azure credential.
+    /// </summary>
+    public static void Check(DownloadFlowYaml y, string source)
+    {
+        ArgumentNullException.ThrowIfNull(y);
+        OsduSource(y.Source?.Endpoint, y.Source?.Auth, y.Source?.Headers, source);
+        if (y.Target?.Location is { } location && HeaderRedaction.QuotesCredential(location))
+        {
+            throw new FlowValidationException(
+                $"{source}: target.location carries a credential in its user info or query string (a SAS token); a flow document holds no credential, and a location takes none: write the storage URI alone, and the node writes it with its own Azure credential (sqlflow auth).");
+        }
+    }
+
+    /// <summary>
     /// A removal flow: a reader source's location written literally with a credential in it. A table source's connection is
     /// checked where it is mapped, as a delivery flow's is.
     /// </summary>

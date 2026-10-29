@@ -140,6 +140,7 @@ removals:
 | `name` | yes | The flow's name: its pipeline identity, and the name its runs and the deletions it finds are kept under in each delivery ledger. At most 200 characters. |
 | `description` | no | What the removals are for. |
 | `batch` | no | The platform batch label. |
+| `telemetry.operation` | no | The flow's operation code in the correlation id every OSDU request of its runs carries, `osdu-delivery-<repository>-<operation>-<run id>`: a lower-case letter, then lower-case letters and digits, at most 16, no hyphen; `rmv` when left out. See [request correlation](../concepts/request-correlation.md). |
 | `parameters` | no | The flow's parameters, by name, as every flow kind declares them: `{name}` tokens of a removal's `values` and a key source's `location` take them. `partition` is the run's and may not be declared. A parameter may list its `choices` ([parameters](parameters.md)). |
 | `partitions` | no | The partitions the flow removes in, each a literal `data-partition-id`, unique ignoring case. Left out, every partition registered with the catalog. A run removes in one partition, since the ledgers it writes to are a partition's; `*` is refused. |
 | `guard` | no | When a removal waits for an approval ([The guard](#the-guard)): `maxPercent` (0 to 100, default 20) and `maxRecords` (0 or more, no bound by default). |

@@ -1,0 +1,32 @@
+{
+  "version": 1,
+  "product": "OSDU Delivery",
+  "documentType": "repository",
+  "strictKeys": true,
+  "generatedFrom": "osdu/docs/reference/flow/repository.md and osdu/src/SqlFlow.Delivery/Documents/YamlModels.cs",
+  "naming": "The loader reads the document with YamlDotNet's CamelCaseNamingConvention and refuses any key it does not know.",
+  "keyCount": 3,
+  "keys": [
+    {
+      "path": "documentType",
+      "type": "enum(repository)",
+      "required": true,
+      "description": "Always repository: the file osdu-delivery.yaml (or osdu-delivery.yml) at the root of a repository, naming the code every run of its flows carries in the correlation id of its OSDU requests. A flow takes the nearest one in its folder or a folder above it, up to the folder holding .git.",
+      "enumValues": [
+        "repository"
+      ]
+    },
+    {
+      "path": "code",
+      "type": "string",
+      "required": true,
+      "description": "The repository's code: the segment after osdu-delivery in the correlation id of every OSDU request its flows' runs send, `osdu-delivery-<code>-<operation>-<run id>`. A lower-case letter, then lower-case letters and digits, at most 16 in all and no hyphen."
+    },
+    {
+      "path": "description",
+      "type": "string",
+      "required": false,
+      "description": "Free text describing the repository."
+    }
+  ]
+}

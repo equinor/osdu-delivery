@@ -107,6 +107,9 @@ public sealed partial class PartitionSchemaIndex : IDisposable
     /// <summary>How long after a pass failed an ask that does not ask for a pass leaves the failure standing.</summary>
     public static readonly TimeSpan RetryAfter = TimeSpan.FromMinutes(2);
 
+    /// <summary>The operation code a pass's requests carry in their correlation id (osdu/docs/reference/concepts/request-correlation.md).</summary>
+    public const string CorrelationOperation = "schema";
+
     private readonly Lock _gate = new();
     private readonly string _label;
     private readonly TimeProvider _time;
@@ -226,7 +229,8 @@ public sealed partial class PartitionSchemaIndex : IDisposable
 
     private async Task RunAsync(Pass pass, Func<CancellationToken, Task<SchemaIndexConnection>> open, SchemaIndexReading? previous, CancellationToken ct)
     {
-        using var correlation = OsduCorrelation.Begin();
+        // A pass outlives the ask that started it and serves every later one, so its requests carry a correlation id of their own.
+        using var correlation = OsduCorrelation.Detach(CorrelationOperation);
         try
         {
             var reading = await ReadAsync(pass, open, previous, ct).ConfigureAwait(false);

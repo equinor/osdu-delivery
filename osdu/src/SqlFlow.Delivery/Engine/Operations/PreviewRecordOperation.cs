@@ -28,6 +28,8 @@ public sealed class PreviewRecordOperation : DeliveryOperation
 
     public override string Name => OperationName;
 
+    public override string CorrelationOperation => "preview";
+
     protected override async Task<object> RunAsync(EngineContext context, FlowDefinition flow, ComputeTaskPayload payload, CancellationToken ct)
     {
         using var runtime = await FlowRuntime.CreateAsync(flow.Interface is null ? context : context.ForInterface(flow.Interface), flow, Values(payload), ct).ConfigureAwait(false);

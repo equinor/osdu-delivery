@@ -390,7 +390,10 @@ sqlflow run flows/welldb-welllog-03-delivery.yaml --operation undo --set partiti
 ## A failure has to be followed into OSDU's own logs
 
 **Do:** open the try on the record's Timeline (or `sqlflow records show`): it names the `correlationId` every request of
-the try carried, and a refused request's error quotes the id the service answered with. Give the OSDU operators that id.
+the try carried, and a refused request's error quotes the id the service answered with. Give the OSDU operators that id,
+or filter the platform's logs on it yourself: it is the run's `osdu-delivery-<repository>-<operation>-<run id>`, so the
+whole value finds the run and a prefix of it every run of a repository or a flow
+([request correlation](../concepts/request-correlation.md#finding-a-run-in-the-platforms-logs)).
 
 ## Related pages
 

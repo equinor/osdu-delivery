@@ -87,7 +87,7 @@ one: the repository sync moves the old ledger to it when only the name changed, 
 until a flow takes it over on the Orphaned ledgers page ([Renaming a pipeline](renaming-a-pipeline.md)).
 
 `osdu.Ledger` is the directory: one row per ledger identity, naming its partition, its kind (`delivery`, `retrieval`,
-`assertion`, `dimension` or `inventory`), its flow and interface. `osdu.LedgerPartition` numbers each partition once, and every ledger table's key
+`assertion`, `dimension`, `inventory` or `download`), its flow and interface. `osdu.LedgerPartition` numbers each partition once, and every ledger table's key
 starts with that two-byte number, so one partition's rows are one range of every clustered index. A run registers its
 ledger in the partition it delivers to before it writes a row; a registration that names another partition than the
 directory holds is refused, naming both. See [Partitions](partitions.md).
@@ -156,8 +156,9 @@ and what was sent, the hashes it established and the version OSDU returned, the 
 from, the redacted error, and every step of the route with what OSDU answered. Every column, key and index:
 [`osdu.Attempt`](../tables/attempt.md).
 
-The `correlationId` is the id each OSDU request of the try sent in its `correlation-id` header, so an attempt can be followed
-into the OSDU services' own logs.
+The `correlationId` is what each OSDU request of the try carried in its `correlation-id` header: the run's
+`osdu-delivery-<repository>-<operation>-<run id>` ([request correlation](request-correlation.md)), so an attempt can be
+followed into the OSDU services' own logs, and every attempt of one run names the same value.
 
 ### Runs, submissions and leases
 

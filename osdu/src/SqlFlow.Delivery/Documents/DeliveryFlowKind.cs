@@ -57,9 +57,12 @@ public sealed record DeliveryFlowDocument : RegisteredFlowDocument
     public override RegisteredFlowLineage DescribeLineage(RegisteredLineageContext context)
         => OrderLineage.BindEveryPartition(DeliveryLineage.Describe(Source, context, MappingDocuments, Templates, Order), context);
 
-    /// <summary>The mapping each interface pins, found and read as a run of the flow finds and reads it (<see cref="CompanionFiles.Mappings"/>).</summary>
+    /// <summary>
+    /// The repository document above the flow and the mapping each interface pins, found and read as a run of the flow finds
+    /// and reads them (<see cref="CompanionFiles.Repository"/>, <see cref="CompanionFiles.Mappings"/>).
+    /// </summary>
     public override IReadOnlyList<string> CheckOffline(string documentPath)
-        => CompanionFiles.Mappings(Source, documentPath, MappingDocuments);
+        => [.. CompanionFiles.Repository(documentPath, MappingDocuments), .. CompanionFiles.Mappings(Source, documentPath, MappingDocuments)];
 }
 
 /// <summary>The <c>flowType: delivery</c> document kind, registered in every host next to its executor; it also owns

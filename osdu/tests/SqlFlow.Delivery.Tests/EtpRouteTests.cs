@@ -29,6 +29,21 @@ public class EtpRouteTests : IDisposable
         new FlowReliability { TimeoutSeconds = 20 }, Secrets, TimeProvider.System, handler: null, allowLoopback: true);
 
     [Fact]
+    public async Task A_session_carries_the_correlation_id_of_the_run_that_opens_it_on_its_upgrade()
+    {
+        await using var server = new FakeEtpServer();
+        var route = Route(server);
+        var runId = Guid.CreateVersion7();
+
+        using (OsduCorrelation.ForRun("rddms", FlowTelemetry.Delivery, runId))
+        {
+            Assert.True((await route.DeliverAsync(Work(Guid.NewGuid(), "Top Field A"))).Succeeded);
+        }
+
+        Assert.Equal($"osdu-delivery-rddms-dlv-{runId:D}", server.UpgradeHeaders[OsduCorrelation.HeaderName]);
+    }
+
+    [Fact]
     public async Task A_record_creates_the_dataspace_its_own_access_declares_and_lands_as_an_object()
     {
         await using var server = new FakeEtpServer();

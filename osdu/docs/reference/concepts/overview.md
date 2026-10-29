@@ -60,7 +60,7 @@ needs, and nothing else.
 
 | SQLFlow provides (its documentation) | OSDU Delivery adds (this corpus) |
 | --- | --- |
-| Flow documents in git, file flows and `ing` flows ([flow overview](../../../../sqlflow/docs/reference/flow/overview.md)) | Six flow kinds and two companion documents ([OSDU documents](../flow/overview.md)) |
+| Flow documents in git, file flows and `ing` flows ([flow overview](../../../../sqlflow/docs/reference/flow/overview.md)) | Eight flow kinds and three companion documents ([OSDU documents](../flow/overview.md)) |
 | The catalog, the repository sync, schedules and the run queue ([control plane](../../../../sqlflow/docs/reference/concepts/control-plane.md)) | The `osdu` schema beside the catalog: the ledger, templates, caches, partitions ([architecture](architecture.md)) |
 | Compute nodes that pull runs ([architecture and execution](../../../../sqlflow/docs/reference/concepts/architecture-and-execution.md)) | The executors that run the OSDU kinds on those nodes |
 | Lineage and its waves ([lineage graph](../../../../sqlflow/docs/reference/concepts/lineage-graph-and-plan.md)) | OSDU types, mappings, cache types and dimensions as lineage nodes ([lineage](lineage.md)) |

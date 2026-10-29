@@ -34,8 +34,8 @@ public sealed record AssertionFlowDocument : RegisteredFlowDocument
 
     /// <summary>
     /// A test that reads a field is checked against the template its kind has in the template folders on the flow's path
-    /// (osdu/docs/reference/concepts/templates.md, What a document reads), so the node needs the repository's tree at the
-    /// run's commit: a snapshot of the flow's one file holds no template.
+    /// (osdu/docs/reference/concepts/templates.md, What a document reads), and a run reads the repository document above the
+    /// flow, so the node needs the repository's tree at the run's commit: a snapshot of the flow's one file holds neither.
     /// </summary>
     public override bool RequiresRepoTree => true;
 
@@ -44,6 +44,9 @@ public sealed record AssertionFlowDocument : RegisteredFlowDocument
         ArgumentNullException.ThrowIfNull(context);
         return OrderLineage.BindEveryPartition(AssertionLineage.Describe(Flow), context);
     }
+
+    /// <summary>The repository document above the flow, found and read as a run finds and reads it (<see cref="CompanionFiles.Repository"/>).</summary>
+    public override IReadOnlyList<string> CheckOffline(string documentPath) => CompanionFiles.Repository(documentPath, new DeliveryDocumentLoader());
 }
 
 /// <summary>The <c>flowType: assertion</c> document kind, registered in every host next to its executor.</summary>

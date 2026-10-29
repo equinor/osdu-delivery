@@ -73,12 +73,14 @@ public static class DeliveryServices
         services.AddSingleton<IFlowDocumentKind>(sp => sp.GetRequiredService<DeliveryFlowKind>());
         services.AddSingleton<ICompanionDocumentKind>(sp => sp.GetRequiredService<DeliveryFlowKind>());
         services.AddSingleton<ICompanionDocumentKind, DictionaryDocumentKind>();
+        services.AddSingleton<ICompanionDocumentKind, RepositoryDocumentKind>();
         services.AddSingleton<IFlowDocumentKind, RetrievalFlowKind>();
         services.AddSingleton<IFlowDocumentKind, CacheFlowKind>();
         services.AddSingleton<IFlowDocumentKind, AssertionFlowKind>();
         services.AddSingleton<IFlowDocumentKind, DimensionFlowKind>();
         services.AddSingleton<IFlowDocumentKind, InventoryFlowKind>();
         services.AddSingleton<IFlowDocumentKind, RemovalFlowKind>();
+        services.AddSingleton<IFlowDocumentKind, DownloadFlowKind>();
         // The repository sync's delivery half, whose rows ride the catalog's transaction: the osdu schema is in its database.
         // Once the sync committed, it makes the ledger moves it asked with this host's ledger, when the host has one.
         services.AddSingleton<ICatalogSyncExtension>(sp => new DeliveryCatalogSync(
@@ -137,6 +139,7 @@ public static class DeliveryServices
         services.AddSingleton<IFlowDocumentExecutor, DimensionExecutor>();
         services.AddSingleton<IFlowDocumentExecutor, InventoryExecutor>();
         services.AddSingleton<IFlowDocumentExecutor, RemovalExecutor>();
+        services.AddSingleton<IFlowDocumentExecutor, DownloadExecutor>();
 
         // What a removal flow reads its keys through: SQLFlow's own source readers, connection resolution, connection factory and
         // SQL dialects, as the platform registered them, so a removal reads every format and source system SQLFlow reads.

@@ -849,8 +849,11 @@ public sealed class DeliveryCatalogSync : ICatalogSyncExtension
             case LedgerKinds.Inventory:
                 var inventory = documents.ParseInventory(yaml, relative);
                 return new RepositoryFlow(relative, kind, inventory.Name, inventory.Partitioned, DeliveryDocumentHash.OfDocument(yaml));
+            case LedgerKinds.Download:
+                var download = documents.ParseDownload(yaml, relative);
+                return new RepositoryFlow(relative, kind, download.Name, download.Partitioned, DeliveryDocumentHash.OfDocument(yaml));
             default:
-                throw new ArgumentOutOfRangeException(nameof(kind), kind, "Only retrieval, assertion, dimension and inventory flows are described by the flow documents' read model.");
+                throw new ArgumentOutOfRangeException(nameof(kind), kind, "Only retrieval, assertion, dimension, inventory and download flows are described by the flow documents' read model.");
         }
     }
 

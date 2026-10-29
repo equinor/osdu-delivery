@@ -51,6 +51,8 @@ describe("what a missing document left behind", () => {
   it("counts another kind's history by what it is", () => {
     assert.equal(heldText("assertion", 1, 0), "1 assertion run");
     assert.equal(heldCount("inventory", 3), "3 inventories");
+    assert.equal(heldCount("download", 1), "1 download");
+    assert.equal(heldCount("download", 2), "2 downloads");
     assert.equal(heldText("dimension", 12, 0), "12 dimensions");
   });
 

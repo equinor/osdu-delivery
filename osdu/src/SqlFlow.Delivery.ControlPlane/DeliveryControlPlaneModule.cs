@@ -25,8 +25,8 @@ using SqlFlow.Delivery.Validation;
 namespace SqlFlow.Delivery.ControlPlane;
 
 /// <summary>
-/// The OSDU module as a control plane composes it: the delivery, retrieval, cache, assertion, dimension and inventory
-/// flow kinds (with the mapping and dictionary documents they read), their executors and compute operations, the ledger
+/// The OSDU module as a control plane composes it: the delivery, retrieval, cache, assertion, dimension, inventory, removal
+/// and download flow kinds (with the mapping and dictionary documents they read), their executors and compute operations, the ledger
 /// over the module's own database (schema <c>osdu</c>), the mapping and cache documents the repository sync reconciles
 /// beside the flows, the OSDU data definitions the Templates page browses, the background work that carries approved
 /// cache changes out, reads each partition's current cache version ahead of its renders, and probes the targets on a

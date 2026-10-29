@@ -105,6 +105,19 @@ internal static class CompanionFiles
         return problems;
     }
 
+    /// <summary>
+    /// What is wrong with the repository document the runs of the flow read from <paramref name="documentPath"/> take their
+    /// repository code from (<see cref="RepositoryDocuments"/>), found and read as a run finds and reads it: one sentence, or
+    /// none. A flow with no such document above it has nothing wrong: its runs carry no repository code.
+    /// </summary>
+    public static IReadOnlyList<string> Repository(string documentPath, DeliveryDocumentLoader documents)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(documentPath);
+        ArgumentNullException.ThrowIfNull(documents);
+        var folder = Folder(documentPath);
+        return Read(() => RepositoryDocuments.Find(documentPath, documents, full => Shown(full, folder))) is { } problem ? [problem] : [];
+    }
+
     /// <summary>A flow pins the mapping that keys its records; an enrichment mapping renders only what an enrichment adds.</summary>
     private static MappingDefinition Whole(MappingDefinition mapping)
         => mapping.Fragment

@@ -9,8 +9,9 @@ namespace SqlFlow.Delivery.Documents;
 
 /// <summary>
 /// An inventory flow as the platform sees it: the OSDU endpoint is the source reference, the inventories its builds keep in the
-/// module database the target, and the source's secret references are what the hygiene check inspects. It needs no repository
-/// tree. Its lineage is the kinds it reads (<see cref="InventoryLineage"/>), so it runs after the flows that write them.
+/// module database the target, and the source's secret references are what the hygiene check inspects. It needs the repository
+/// tree for the repository document above it, whose code its requests carry. Its lineage is the kinds it reads
+/// (<see cref="InventoryLineage"/>), so it runs after the flows that write them.
 /// </summary>
 public sealed record InventoryFlowDocument : RegisteredFlowDocument
 {
@@ -31,13 +32,20 @@ public sealed record InventoryFlowDocument : RegisteredFlowDocument
 
     public override IEnumerable<KeyValuePair<string, string>> CredentialReferences => Flow.CredentialReferences();
 
-    public override bool RequiresRepoTree => false;
+    /// <summary>
+    /// A build reads the repository document above the flow, whose code its requests carry (osdu/docs/reference/flow/repository.md),
+    /// so its node needs the repository's tree at the run's commit: a snapshot of the flow's one file holds none.
+    /// </summary>
+    public override bool RequiresRepoTree => true;
 
     public override RegisteredFlowLineage DescribeLineage(RegisteredLineageContext context)
     {
         ArgumentNullException.ThrowIfNull(context);
         return OrderLineage.BindEveryPartition(InventoryLineage.Describe(Flow), context);
     }
+
+    /// <summary>The repository document above the flow, found and read as a run finds and reads it (<see cref="CompanionFiles.Repository"/>).</summary>
+    public override IReadOnlyList<string> CheckOffline(string documentPath) => CompanionFiles.Repository(documentPath, new DeliveryDocumentLoader());
 }
 
 /// <summary>The <c>flowType: inventory</c> document kind, registered in every host next to its executor.</summary>

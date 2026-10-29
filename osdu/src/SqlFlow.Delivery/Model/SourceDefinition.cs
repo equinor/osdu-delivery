@@ -52,6 +52,9 @@ public sealed partial record SourceDefinition
     /// <summary>The parameters the document declares, shared by every interface.</summary>
     public IReadOnlyDictionary<string, FlowParameter> Parameters => First.Parameters;
 
+    /// <summary>The document's operation code (<c>telemetry.operation</c>), shared by every interface.</summary>
+    public string TelemetryOperation => First.TelemetryOperation;
+
     /// <summary>The connection reference of the ingestion database every interface reads.</summary>
     public string Connection => First.Source.Connection;
 

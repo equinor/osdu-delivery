@@ -13,14 +13,14 @@ public sealed record RepositoryFlow(string RelativePath, string Kind, string Nam
 
 /// <summary>
 /// The read model of the flows that keep a ledger and are no delivery flows (<see cref="DeliveryLedgerFlow"/>): retrieval,
-/// assertion, dimension and inventory flows, written for a whole repository at a time by the repository sync. It says which
+/// assertion, dimension, inventory and download flows, written for a whole repository at a time by the repository sync. It says which
 /// of their ledgers a declared flow keeps, and keeps the hash of a flow that left, so the sync pairs a renamed flow with the
 /// one it replaced by the rule every kind follows (<see cref="LedgerOwnership"/>), as the interfaces do a delivery flow's.
 /// </summary>
 public static class LedgerFlowCatalog
 {
     /// <summary>The kinds of flow this read model describes: every kind that keeps a ledger, but delivery.</summary>
-    public static IReadOnlyList<string> Kinds { get; } = [LedgerKinds.Retrieval, LedgerKinds.Assertion, LedgerKinds.Dimension, LedgerKinds.Inventory];
+    public static IReadOnlyList<string> Kinds { get; } = [LedgerKinds.Retrieval, LedgerKinds.Assertion, LedgerKinds.Dimension, LedgerKinds.Inventory, LedgerKinds.Download];
 
     /// <summary>
     /// Makes the repository's rows describe <paramref name="flows"/>: one row per flow, added or updated, and the rows of

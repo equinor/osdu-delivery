@@ -14,7 +14,7 @@ internal static class CacheMapper
     {
         var name = FlowMapper.Require(y.Name, "name", source);
         var src = y.Source ?? throw FlowMapper.Missing("source", source);
-        var headers = new Dictionary<string, string>(src.Headers ?? [], StringComparer.OrdinalIgnoreCase);
+        var headers = FlowMapper.MapHeaders(src.Headers, "source.headers", source);
         var partitions = MapPartitions(y.Partitions, source);
 
         if (partitions.Count > 0)
@@ -100,6 +100,7 @@ internal static class CacheMapper
             Name = name,
             Description = string.IsNullOrWhiteSpace(y.Description) ? null : y.Description!.Trim(),
             Batch = string.IsNullOrWhiteSpace(y.Batch) ? null : y.Batch!.Trim(),
+            TelemetryOperation = FlowMapper.MapTelemetry(y.Telemetry, CacheDefinition.FlowTypeName, source),
             Parameters = parameters,
             Partitions = partitions,
             FollowsRegistry = followsRegistry,

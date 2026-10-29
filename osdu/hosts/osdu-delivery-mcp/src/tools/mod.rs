@@ -45,7 +45,7 @@ impl DeliveryTools {
 
 /// The hint every tool gives for a pipeline id that is not one.
 pub(crate) const PIPELINE_HINT: &str =
-    "A pipeline id is the `id` of a flow in list_pipelines (kind delivery, retrieval, cache, assertion, dimension or inventory), \
+    "A pipeline id is the `id` of a flow in list_pipelines (kind delivery, retrieval, cache, assertion, dimension, inventory, removal or download), \
      or the `pipelineId` a delivery result carries.";
 
 /// The hint for the two ids a record is addressed by.

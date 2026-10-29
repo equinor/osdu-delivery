@@ -484,11 +484,22 @@ public sealed class WorkflowRouteTests
 
         using var rig = new Rig(platform);
         var protocol = rig.Protocol(route, rig.Airflow(AirflowApiVersion.V2));
-        var outcome = await protocol.DeliverAsync(Work(document));
+        var runId = Guid.CreateVersion7();
+        DeliveryOutcome outcome;
+        using (OsduCorrelation.ForRun("wl", FlowTelemetry.Delivery, runId))
+        {
+            outcome = await protocol.DeliverAsync(Work(document));
+        }
+
         Assert.True(outcome.Succeeded, outcome.Failure?.Message);
         Assert.Equal("dev:dataset--File.Generic:epc-out,dev:dataset--File.Generic:h5-out", outcome.Returned[OsduWorkflowProtocol.RecordIdsValue]);
         var sent = AssertContract(Assert.Single(platform.Runs), WorkflowCatalog.EnergymlDelivery);
         Assert.Equal("field-a.epc", sent["name"]!.GetValue<string>());
+
+        // The XCom entries are read from Airflow behind the Workflow service under the run's correlation id, as the service is asked.
+        var xcom = platform.Calls.Where(c => c.Uri.AbsolutePath.Contains("/xcomEntries/", StringComparison.Ordinal)).ToList();
+        Assert.NotEmpty(xcom);
+        Assert.All(xcom, c => Assert.Equal($"osdu-delivery-wl-dlv-{runId:D}", c.Headers[OsduCorrelation.HeaderName]));
 
         // Created: a later change to the record is written, and the export is not run again.
         var later = await protocol.DeliverAsync(Work(document, existing: outcome.TargetVersion, forced: new HashSet<string>()));

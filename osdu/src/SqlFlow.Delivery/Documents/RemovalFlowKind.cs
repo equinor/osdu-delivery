@@ -45,6 +45,9 @@ public sealed record RemovalFlowDocument : RegisteredFlowDocument
         ArgumentNullException.ThrowIfNull(context);
         return RemovalLineage.Describe(Flow, context);
     }
+
+    /// <summary>The repository document above the flow, found and read as a run finds and reads it (<see cref="CompanionFiles.Repository"/>).</summary>
+    public override IReadOnlyList<string> CheckOffline(string documentPath) => CompanionFiles.Repository(documentPath, new DeliveryDocumentLoader());
 }
 
 /// <summary>The <c>flowType: removal</c> document kind, registered in every host next to its executor.</summary>

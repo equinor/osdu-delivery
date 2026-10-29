@@ -64,7 +64,7 @@ An OSDU flow runs like any SQLFlow flow: `sqlflow run <flow.yaml>` runs it on th
 on the fleet, and a schedule fires it. The verbs, their other options, the run artifacts (`run.json`, `run.log`) and the
 catalog write-back are SQLFlow's, documented in [sqlflow run](../../../../sqlflow/docs/reference/cli/run.md) and
 [the control-plane verbs](../../../../sqlflow/docs/reference/cli/control-plane.md). This page covers what the OSDU flow
-kinds (`delivery`, `retrieval`, `cache`, `assertion`, `dimension`, `inventory`) add: the operations each kind runs, the
+kinds (`delivery`, `retrieval`, `cache`, `assertion`, `dimension`, `inventory`, `removal`, `download`) add: the operations each kind runs, the
 values a run takes (the partition among them), the payload, the result, and the exit codes.
 
 The command line is `sqlflow`: OSDU Delivery's CLI is SQLFlow's CLI with the OSDU verbs added. The options every
@@ -144,7 +144,7 @@ partition's ([Partitions](../concepts/partitions.md)).
 | --- | --- | --- |
 | `delivery` | The registry's default when the flow serves it, else the flow's only listed partition; otherwise refused (`Flow '<name>' serves dev, test and no partition is the default; name the one this run or request targets, or make one the default.`) | Refused: `A run or request of delivery flow '<name>' acts in one partition; name it rather than '*'.` |
 | `cache` | As for a delivery flow. | Refreshes every partition the flow serves, one after another. One that fails fails the run, naming it; the others stay refreshed. |
-| `assertion`, `dimension`, `inventory` | As for a delivery flow. | Refused: one partition per run (a report, a build, an inventory describes one partition). |
+| `assertion`, `dimension`, `inventory`, `download` | As for a delivery flow. | Refused: one partition per run (a report, a build, an inventory, a download describes one partition). |
 | `retrieval` | It reads the partition its `source.headers` name. | Any partition is refused: `Retrieval flow '<name>' names no partitions: it retrieves from the partition its source.headers name, so a run cannot target '<id>'. Leave the partition out of its run.` |
 
 A flow whose partition is its `data-partition-id` header refuses a partition too. A delivery, cache or retrieval flow of
@@ -213,7 +213,7 @@ no engine path could honour is refused before anything is queued.
 | `scope` | text | How much of each record a `remove` run takes: `record` (reversibly), `previous` (the version before the latest written back), `history` (the earlier versions) or `everything` ([the scopes](../concepts/removal-and-reversal.md#removing-records-from-osdu)). Required by `remove`, exactly as written. |
 | `filter` | object | The listing a `remove` run empties instead of naming `recordKeys`: `status`, `search` with `mode` (`prefix` or `contains`), `submissionId`, `deliveredBySubmissionId`, `runId`, `drifted` and `issue`, as the records list names them. The run resolves it when it removes the records and refuses a filter that matches more than 25,000. Any other property is refused. |
 | `purgeLedger` | `true`/`false` | With `scope` `record` or `everything`, a `remove` run also deletes from the ledger each record OSDU answered for, keeping one line of it. |
-| `references`, `partitionReferences` | objects | The central configuration the control plane supplies with every delivery, cache, retrieval, assertion, dimension and inventory run it queues ([sqlflow config](config.md)). Not written by hand. |
+| `references`, `partitionReferences` | objects | The central configuration the control plane supplies with every delivery, cache, retrieval, assertion, dimension, inventory, removal and download run it queues ([sqlflow config](config.md)). Not written by hand. |
 
 Which fields each operation takes:
 
@@ -252,14 +252,15 @@ A property counts when it asks for something (`force` set to `true`, a list that
 
 | Kind | Takes | Refused with, for example |
 | --- | --- | --- |
-| `cache` | `types`: the types to refresh or plan, at most 500 names, each once; every one when left out ([cache flow](../flow/cache.md#operations-and-the-run-payload)). | `payload force does not apply to a cache flow: only delivery and retrieval runs force; a cache flow's payload names only types.` |
+| `cache` | `types`: the types to refresh or plan, at most 500 names, each once; every one when left out ([cache flow](../flow/cache.md#operations-and-the-run-payload)). | `payload force does not apply to a cache flow: only delivery, retrieval and download runs force; a cache flow's payload names only types.` |
 | `retrieval` | `force`: restart an incremental retrieval at its declared start. | `payload submissionId does not apply to a retrieval flow: only a delivery flow's runs name a submission; a retrieval flow's payload names only force.` |
 | `assertion` | `tests` (test names) and `tags` (every test carrying one of them), each at most 500 names, each once. With neither, every test runs. | `payload recordKeys does not apply to an assertion flow: only a delivery flow's runs are scoped to records; an assertion flow's payload names only tests and tags.` |
 | `dimension` | `dimensions`: the dimensions to build; every one when left out. | `payload tests does not apply to a dimension flow: only an assertion flow's runs select tests; a dimension flow's payload names only dimensions.` |
 | `inventory` | `inventories`: the inventories to build or reconcile. A `remove` run names exactly one inventory, `removal` (`finding`, `scope` `record` or `everything`, `expected`, and optionally `ids`) and `confirm`, the partition. | `payload runId does not apply to an inventory flow: only a delivery flow's reverse run names the run it reverses; an inventory flow's payload names only inventories, removal and confirm.` |
 | `removal` | `entries`: the removals to carry out; every one when left out. An approval of what a guard held is `approve` (`expected`, the count the operator was shown waiting) with `confirm`, the partition, on a `remove` run naming exactly one removal; the Removals page sends it ([The guard](../flow/removal.md#the-guard)). | `payload tests does not apply to a removal flow: only an assertion flow's runs select tests; a removal flow's payload names only entries, approve and confirm.` |
+| `download` | `downloads`: the downloads to write or plan; every one when left out. `force`: a `download` run writes every record OSDU serves again, not only what is new or changed ([download flow](../flow/download.md#operations)). | `payload inventories does not apply to a download flow: only an inventory flow's runs select inventories; a download flow's payload names only downloads and force.` |
 
-A name that is not a test, tag, dimension, inventory, removal or type of the flow fails the run naming what the flow has, for example
+A name that is not a test, tag, dimension, inventory, removal, download or type of the flow fails the run naming what the flow has, for example
 `Assertion flow '<name>' has no test named '<x>'; its tests are <names>.`
 
 ## The result
@@ -292,12 +293,13 @@ summary a GitHub job writes say the run did ([External triggers](../../../../sql
 | A source with interfaces | `operation`, `source` and `interfaces`, each with its `interface`, `flowId`, `ledger`, `route`, `routeReason`, `waitsFor`, `waitReasons`, `wave`, `state` (`completed`, `stopped` or `skipped`), `reason`, `startedUtc`, `completedUtc` and `result` (what a run of it alone returns), with totals added up. |
 | `refresh` | `scope` (the partition), `flow`, `version`, `previousVersion`, `written`, `capturedUtc`, `types` (each with its origin, records, change and the delivered records its changes reach) and `systemProperties`. A run over several partitions gives `partitions`, each with its `outcome` or `error`. |
 | cache `plan` | `scope`, `flow`, `currentVersion`, `types` (each with what it would hold), `records`, `systemProperties`. |
-| `plan` of a retrieval, assertion, dimension or inventory flow | What the plan counted: a retrieval's `kinds`, `total` and the `location` a retrieve would write to; an assertion flow's `tests` (each with what it matches and would read, the template it fits and its problems) and `testsLeftOut`; a dimension flow's `dimensions`; an inventory flow's `inventories`. |
+| `plan` of a retrieval, assertion, dimension, inventory or download flow | What the plan counted: a retrieval's `kinds`, `total` and the `location` a retrieve would write to; an assertion flow's `tests` (each with what it matches and would read, the template it fits and its problems) and `testsLeftOut`; a dimension flow's `dimensions`; an inventory flow's `inventories`; a download flow's `downloads` (each with its query, the records it would list, the kinds a storage read expands to, the folder it would write to and its problems). |
 | `retrieve` | `retrievalId`, `location`, `manifest`, the window (`windowField`, `windowFrom`, `windowTo`), `records`, `files`, `bytes`, `nothingToDo`, `kinds`. |
 | `test` | `assertionRunId`, `flow`, `partition`, `status`, `tests`, `passed`, `failed`, `warned`, `errored`, `skipped`, `results` (the tests that did not pass, the first 50) and `resultsLeftOut`. |
 | `build` (dimension) | `flow`, `partition`, `built`, `failed`, `skipped`, `dimensions`. |
 | `build`, `reconcile` (inventory) | `flow`, `partition`, `completed`, `failed`, `inventories`. |
 | `remove` (inventory) | `inventoryRemovalId`, `inventory`, `finding`, `scope`, `requested`, `removed`, `gone`, `skipped`, `failed`, `error`. |
+| `download` | `flow`, `partition`, `completed`, `failed`, `downloads`, each with its `downloadRunId`, `location`, `rewrite`, `listed`, `added`, `changed`, `gone`, `returned`, `written`, `bytes`, `missing`, `pages`, `requests` and `error`. |
 | `remove`, `plan` (removal) | `operation`, `partition`, `removed` (across its removals) and `removals`, each with its `entry`, `deliveryFlow`, `removalRunId`, `status` (`completed`, `guarded` or `failed`), `tally` (the counts of [`osdu.RemovalRun`](../tables/removal-run.md)), `pending` and `awaitingApproval` after the run, `wouldHold` (a plan), `undone`, `cacheAfter` and `error`. |
 | A run that failed before it produced an outcome | `operation` and `error`. |
 

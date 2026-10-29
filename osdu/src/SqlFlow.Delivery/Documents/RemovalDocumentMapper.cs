@@ -54,6 +54,7 @@ internal static partial class RemovalMapper
             Name = name,
             Description = Optional(y.Description),
             Batch = Optional(y.Batch),
+            TelemetryOperation = FlowMapper.MapTelemetry(y.Telemetry, RemovalFlowDefinition.FlowTypeName, source),
             Parameters = parameters,
             Partitions = partitions,
             Guard = MapGuard(y.Guard, source),

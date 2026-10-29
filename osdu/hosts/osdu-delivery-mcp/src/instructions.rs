@@ -21,8 +21,9 @@ and the OSDU flows read those tables. Pre and ing flows, connections, schedules,
 SQLFlow's, documented in SQLFlow's pages (flow-ing, flow-source, guide-table-to-table-ingestion, ...). What the
 extension adds: delivery flows (render each row through a mapping checked against the OSDU template its repository's
 template folders hold, resolving ids from the partition's cache or a search, and deliver it), cache, retrieval,
-assertion, dimension, inventory and removal flows (a removal flow compares a source's keys with a delivery ledger and
-takes out of OSDU what the source no longer holds), mappings and dictionaries, and the ledger that tracks every record.
+assertion, dimension, inventory, removal and download flows (a removal flow compares a source's keys with a delivery ledger
+and takes out of OSDU what the source no longer holds; a download flow writes every record of its kinds to a folder, a JSON
+file each named after its id), mappings and dictionaries, and the ledger that tracks every record.
 
 Documentation: search_docs covers both corpora. The extension's pages have ids starting delivery-: delivery-flow-*
 (each document and its keys), delivery-cli-* (the OSDU verbs), delivery-concept-* (how it works), delivery-guide-*
@@ -35,7 +36,7 @@ then search with the question's own words and get_doc the page. Answer from the 
 removal are the extension's verbs
 (delivery-cli-<verb>); run, trigger, validate, db, worker and the rest are SQLFlow's (cli-<verb>).
 validate_flow, list_flow_keys and describe_flow_key know flowType delivery, retrieval, cache, assertion, dimension,
-inventory and removal, and the mapping and dictionary documents.
+inventory, removal and download, and the mapping and dictionary documents.
 
 The delivery_* tools read the ledger and the module's definitions: none returns record content, source rows,
 cached values or dimension values. Data is read only in data mode, for a `!` question, as SQLFlow's rules say: a
@@ -85,13 +86,15 @@ Running an OSDU flow: trigger_run with the kind's own arguments, never fullLoad 
 - operation: delivery takes deliver (default), plan, intake, drain, verify, replan, sync, reverse, undo, remove,
   delete-ledger; cache takes refresh (default), plan; retrieval takes retrieve (default), plan; assertion takes test
   (default), plan; dimension takes build (default), plan; inventory takes build (default), reconcile, plan, remove;
-  removal takes remove (default), plan. plan changes nothing and is the safe first step. reverse, undo, remove,
+  removal takes remove (default), plan; download takes download (default), plan. plan changes nothing and is the
+  safe first step; a download writes files to its folder and nothing to OSDU. reverse, undo, remove,
   delete-ledger, an inventory's remove and a removal flow's remove change or remove what OSDU holds: run one only when
   the person asked for that exact operation.
 - values: the flow's parameters by name (delivery_flow lists them), and partition for a flow that names its partitions.
 - payload: for delivery, force, submissionId, runId, recordKeys, redeliver, rerender, slices, interface, interfaces,
   confirm, and for its remove scope, filter and purgeLedger; for retrieval, force; for assertion, tests and tags; for dimension, dimensions; for inventory, inventories,
-  removal and confirm; for removal, entries (an approval, approve and confirm, is given in the GUI). A kind refuses any
+  removal and confirm; for removal, entries (an approval, approve and confirm, is given in the GUI); for download,
+  downloads and force (a download run writes every record again). A kind refuses any
   other property. get_doc(\"delivery-cli-run\") has the full table.
 
 Operator actions (they change state; each is recorded in the audit trail under the caller's name): delivery_probe_target,

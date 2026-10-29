@@ -29,6 +29,12 @@ public sealed record DimensionFlowDefinition
     /// <summary>The platform batch the flow belongs to, from the envelope.</summary>
     public string? Batch { get; init; }
 
+    /// <summary>
+    /// The flow's operation code (<c>telemetry.operation</c>), which its runs' correlation id says what ran with
+    /// (osdu/docs/reference/concepts/request-correlation.md); the kind's own when the flow names none.
+    /// </summary>
+    public string TelemetryOperation { get; init; } = FlowTelemetry.Dimension;
+
     /// <summary>Parameters the dimensions' queries may use as <c>{name}</c> tokens.</summary>
     public IReadOnlyDictionary<string, FlowParameter> Parameters { get; init; } = new Dictionary<string, FlowParameter>(StringComparer.Ordinal);
 

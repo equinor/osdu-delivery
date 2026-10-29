@@ -1,6 +1,7 @@
 using System.Collections.Frozen;
 using System.Globalization;
 using SqlFlow.Core;
+using SqlFlow.Delivery.Http;
 using SqlFlow.Delivery.Model;
 using SqlFlow.Delivery.Protocols;
 using SqlFlow.Delivery.Source;
@@ -135,9 +136,10 @@ public sealed class DeliveryDocumentLoader
         DimensionFlowDefinition.FlowTypeName,
         InventoryFlowDefinition.FlowTypeName,
         RemovalFlowDefinition.FlowTypeName,
+        DownloadFlowDefinition.FlowTypeName,
     ];
 
-    /// <summary>The discriminator of a document: one of <see cref="FlowTypes"/> for a flow, "mapping" or "dictionary" for a document.</summary>
+    /// <summary>The discriminator of a document: one of <see cref="FlowTypes"/> for a flow, "mapping", "dictionary" or "repository" for a document.</summary>
     public string Probe(string yaml, string source = "<inline>")
     {
         var probe = Deserialize<DocumentProbeYaml>(_probe, yaml, source);
@@ -151,7 +153,7 @@ public sealed class DeliveryDocumentLoader
             return probe!.DocumentType!;
         }
 
-        throw new FlowValidationException($"{source}: the document declares no 'flowType' ({string.Join(", ", FlowTypes)}) and no 'documentType' ({MappingDefinition.DocumentTypeName}, {DictionaryDefinition.DocumentTypeName}).");
+        throw new FlowValidationException($"{source}: the document declares no 'flowType' ({string.Join(", ", FlowTypes)}) and no 'documentType' ({MappingDefinition.DocumentTypeName}, {DictionaryDefinition.DocumentTypeName}, {RepositoryDefinition.DocumentTypeName}).");
     }
 
     /// <summary>Parses a delivery flow document as a source: every interface it declares, or the one its single form is.</summary>
@@ -298,6 +300,32 @@ public sealed class DeliveryDocumentLoader
         return ParseRemoval(File.ReadAllText(path), path);
     }
 
+    /// <summary>Parses a download flow document (<c>flowType: download</c>): the records of OSDU kinds, written to a folder a file each.</summary>
+    public DownloadFlowDefinition ParseDownload(string yaml, string source = "<inline>")
+    {
+        ArgumentNullException.ThrowIfNull(yaml);
+        var kind = Probe(yaml, source);
+        if (!kind.Equals(DownloadFlowDefinition.FlowTypeName, StringComparison.OrdinalIgnoreCase))
+        {
+            throw new FlowValidationException($"{source}: expected 'flowType: {DownloadFlowDefinition.FlowTypeName}', found '{kind}'.");
+        }
+
+        var y = Deserialize<DownloadFlowYaml>(_strict, yaml, source) ?? throw new FlowValidationException($"{source}: the document is empty.");
+        DocumentSecrets.Check(y, source);
+        return DownloadMapper.Map(y, source);
+    }
+
+    public DownloadFlowDefinition LoadDownload(string path)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(path);
+        if (!File.Exists(path))
+        {
+            throw new FlowValidationException($"Download flow file not found: '{path}'.");
+        }
+
+        return ParseDownload(File.ReadAllText(path), path);
+    }
+
     /// <summary>Loads the dictionary file at <paramref name="path"/>, naming it <paramref name="source"/> in every message.</summary>
     public DictionaryDefinition LoadDictionary(string path, string source)
     {
@@ -323,6 +351,48 @@ public sealed class DeliveryDocumentLoader
         // The dictionary reader checks documentType itself, node by node, so a malformed file is refused with the line
         // it is wrong on rather than by the typed probe every other document goes through.
         return DictionaryMapper.Map(yaml, source);
+    }
+
+    /// <summary>Loads the repository document at <paramref name="path"/>, naming it <paramref name="source"/> in every message.</summary>
+    public RepositoryDefinition LoadRepository(string path, string source)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(path);
+        ArgumentException.ThrowIfNullOrWhiteSpace(source);
+        if (!File.Exists(path))
+        {
+            throw new FlowValidationException($"Repository document not found: '{source}'.");
+        }
+
+        return ParseRepository(File.ReadAllText(path), source);
+    }
+
+    /// <summary>
+    /// Parses a repository document (<c>documentType: repository</c>, osdu/docs/reference/flow/repository.md): the code the runs
+    /// of the flows under it carry in their correlation id. A file is found by its name, so one named otherwise is refused.
+    /// </summary>
+    public RepositoryDefinition ParseRepository(string yaml, string source = "<inline>")
+    {
+        ArgumentNullException.ThrowIfNull(yaml);
+        var kind = Probe(yaml, source);
+        if (!kind.Equals(RepositoryDefinition.DocumentTypeName, StringComparison.OrdinalIgnoreCase))
+        {
+            throw new FlowValidationException($"{source}: expected 'documentType: {RepositoryDefinition.DocumentTypeName}', found '{kind}'.");
+        }
+
+        if (source != "<inline>" && !RepositoryDefinition.IsFileName(Path.GetFileName(source)))
+        {
+            throw new FlowValidationException(
+                $"{source}: a repository document is found by its name, walking up from each flow's folder; name the file {RepositoryDefinition.FileName}.");
+        }
+
+        var y = Deserialize<RepositoryYaml>(_strict, yaml, source) ?? throw new FlowValidationException($"{source}: the document is empty.");
+        var code = y.Code ?? throw new FlowValidationException($"{source}: code is required: the repository's code, which every run of its flows carries in its correlation id.");
+        if (!OsduCorrelation.IsCode(code))
+        {
+            throw new FlowValidationException($"{source}: code '{code}' is not a repository code: {OsduCorrelation.CodeRule}.");
+        }
+
+        return new RepositoryDefinition { Code = code, Description = string.IsNullOrWhiteSpace(y.Description) ? null : y.Description.Trim() };
     }
 
     public MappingDefinition ParseMapping(string yaml, string source = "<inline>") => ParseMapping(yaml, source, pins: null, location: null);
@@ -503,6 +573,43 @@ internal static partial class FlowMapper
 {
     /// <summary>The tenant header every OSDU service requires on every request.</summary>
     public const string PartitionHeader = "data-partition-id";
+
+    /// <summary>
+    /// The headers a flow declares on its requests, <paramref name="key"/> naming where: any but the correlation id, which every
+    /// request carries as its run sets it (osdu/docs/reference/concepts/request-correlation.md).
+    /// </summary>
+    public static Dictionary<string, string> MapHeaders(Dictionary<string, string>? declared, string key, string source)
+    {
+        var headers = declared is null
+            ? new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+            : new Dictionary<string, string>(declared, StringComparer.OrdinalIgnoreCase);
+        if (headers.ContainsKey(OsduCorrelation.HeaderName))
+        {
+            throw new FlowValidationException(
+                $"{source}: {key} names '{OsduCorrelation.HeaderName}', which every request of a run carries as the run sets it: {OsduCorrelation.Product}, the code of the repository ({RepositoryDefinition.FileName}), the flow's operation code (telemetry.operation) and the run's id. Remove the header.");
+        }
+
+        return headers;
+    }
+
+    /// <summary>
+    /// The flow's operation code (<c>telemetry.operation</c>): the segment of its runs' correlation id that says what ran
+    /// (osdu/docs/reference/concepts/request-correlation.md), or the code of its kind, <paramref name="flowType"/>, when it
+    /// names none.
+    /// </summary>
+    public static string MapTelemetry(TelemetryYaml? declared, string flowType, string source)
+    {
+        var kind = FlowTelemetry.KindOperation(flowType);
+        if (declared?.Operation is not { } operation)
+        {
+            return kind;
+        }
+
+        return OsduCorrelation.IsCode(operation)
+            ? operation
+            : throw new FlowValidationException(
+                $"{source}: telemetry.operation '{operation}' is not an operation code: {OsduCorrelation.CodeRule}. Leave it out to take the kind's own, '{kind}'.");
+    }
 
     /// <summary>The longest column name SQL Server accepts.</summary>
     private const int MaxColumnLength = 128;
@@ -809,11 +916,12 @@ internal static partial class FlowMapper
                 OnUnchanged = ParseEnum(y.Change?.OnUnchanged, UnchangedAction.Skip, paths.Shared("change.onUnchanged"), source),
                 UseSourceVersions = y.Change?.UseSourceVersions ?? true,
             },
+            TelemetryOperation = MapTelemetry(y.Telemetry, FlowDefinition.FlowTypeName, source),
             Target = new FlowTarget
             {
                 Endpoint = Require(target.Endpoint, "target.endpoint", source),
                 Auth = MapAuth(target.Auth, source),
-                Headers = new Dictionary<string, string>(target.Headers ?? [], StringComparer.OrdinalIgnoreCase),
+                Headers = MapHeaders(target.Headers, "target.headers", source),
                 Protocol = protocol,
                 ProtocolOptions = options,
                 Ddms = MapDdms(target.Ddms, protocol, paths.Interface is not null, options.DdmsRoot, source),
@@ -1237,6 +1345,9 @@ internal static partial class FlowMapper
             // declares none.
             Enrich = i.Enrich,
             Workflows = i.Workflows,
+
+            // A run delivers every interface of the document, so its operation code is the document's.
+            Telemetry = y.Telemetry,
         };
     }
 

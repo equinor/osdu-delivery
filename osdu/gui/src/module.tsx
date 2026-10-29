@@ -1,5 +1,5 @@
 import {
-  Activity, Blocks, BookCheck, ClipboardList, CloudDownload, Compass, DatabaseZap, FileCode2, Layers, LayoutTemplate, ListChecks, ListX,
+  Activity, Blocks, BookCheck, ClipboardList, CloudDownload, Compass, DatabaseZap, Download, FileCode2, Layers, LayoutTemplate, ListChecks, ListX,
   Network, PackageCheck, PackageSearch, ScrollText, Settings, Shapes, ShieldCheck, Telescope, TextSearch, Unlink,
 } from "lucide-react";
 import type { RunSummary } from "@/api/types";
@@ -17,12 +17,13 @@ import { InventoryRunActions, InventoryRunCounts } from "./features/delivery/inv
 import { InventoryTriggerFields } from "./features/delivery/inventories/InventoryTriggerFields";
 import { RemovalRunActions, RemovalRunCounts } from "./features/delivery/removals/RemovalRunHeader";
 import { RemovalTriggerFields } from "./features/delivery/removals/RemovalTriggerFields";
+import { DownloadTriggerFields } from "./features/delivery/downloads/DownloadTriggerFields";
 import { DeliveryTriggerFields } from "./features/delivery/DeliveryTriggerFields";
 import { activePartition } from "./features/delivery/activePartition";
 import { PartitionSwitcher } from "./features/delivery/PartitionSwitcher";
 import { shortId } from "./features/delivery/idTail";
 
-// The OSDU Delivery module: its pages, its navigation, the panels of the delivery, retrieval, cache, assertion, dimension, inventory and removal kinds on SQLFlow's
+// The OSDU Delivery module: its pages, its navigation, the panels of the delivery, retrieval, cache, assertion, dimension, inventory, removal and download kinds on SQLFlow's
 // pipeline, run and trigger pages, the delivery records in search, and the product's branding. Everything heavy (the
 // pages, the panels, anything with the code editor) loads with the surface that shows it.
 
@@ -99,6 +100,10 @@ const RemovalsPanel = lazyRoute(
   "RemovalsPanel",
   () => import("./features/delivery/removals/RemovalFlowPanels").then((loaded) => ({ default: loaded.RemovalsPanel })),
 );
+const DownloadsPanel = lazyRoute(
+  "DownloadsPanel",
+  () => import("./features/delivery/downloads/DownloadFlowPanels").then((loaded) => ({ default: loaded.DownloadsPanel })),
+);
 const DeliveryDeletionsPanel = lazyRoute(
   "DeliveryDeletionsPanel",
   () => import("./features/delivery/removals/DeliveryDeletionsPanel").then((loaded) => ({ default: loaded.DeliveryDeletionsPanel })),
@@ -111,7 +116,7 @@ const RecordSearchHits = lazyRoute(
 
 /**
  * The key census of every document this module adds, so the YAML editor documents, colours and checks them as it does
- * SQLFlow's own flows: the delivery, retrieval, cache, assertion, dimension, inventory and removal flows by their flowType, the mapping and the dictionary
+ * SQLFlow's own flows: the delivery, retrieval, cache, assertion, dimension, inventory, removal and download flows by their flowType, the mapping and the dictionary
  * by their documentType. Each file loads when the editor first starts, not with the page.
  */
 const census: GuiModule["census"] = [
@@ -122,8 +127,10 @@ const census: GuiModule["census"] = [
   { flowType: "dimension", load: () => import("../../docs/census/keys.dimension.json?raw").then((file) => file.default) },
   { flowType: "inventory", load: () => import("../../docs/census/keys.inventory.json?raw").then((file) => file.default) },
   { flowType: "removal", load: () => import("../../docs/census/keys.removal.json?raw").then((file) => file.default) },
+  { flowType: "download", load: () => import("../../docs/census/keys.download.json?raw").then((file) => file.default) },
   { documentType: "mapping", load: () => import("../../docs/census/keys.mapping.json?raw").then((file) => file.default) },
   { documentType: "dictionary", load: () => import("../../docs/census/keys.dictionary.json?raw").then((file) => file.default) },
+  { documentType: "repository", load: () => import("../../docs/census/keys.repository.json?raw").then((file) => file.default) },
 ];
 
 /**
@@ -341,6 +348,26 @@ const inventoryKind: FlowKindContribution = {
   trigger: { Fields: InventoryTriggerFields },
 };
 
+// A download flow brings OSDU's records back to a folder, a file each, as a retrieval flow brings them back to the lake, so it
+// wears the blue of the kinds that bring records in, with the glyph of a download.
+const downloadKind: FlowKindContribution = {
+  kind: "download",
+  identity: { label: "Download", icon: Download, tone: "blue" },
+  pipelineTabs: [
+    {
+      value: "downloads",
+      label: "Downloads",
+      testId: "pipeline-tab-downloads",
+      render: (pipeline) => <Deferred><DownloadsPanel pipelineId={pipeline.id} /></Deferred>,
+    },
+  ],
+  defaultPipelineTab: "downloads",
+  hiddenPipelineTabs: HIDDEN_PIPELINE_TABS,
+  runColumns,
+  run: runPanels({}),
+  trigger: { Fields: DownloadTriggerFields },
+};
+
 // A removal flow takes records out of OSDU through the delivery flow's own removal path and into its ledger, so it wears the
 // delivery flow's tone, with the glyph of keys no longer listed.
 const removalKind: FlowKindContribution = {
@@ -486,7 +513,7 @@ export const osduDeliveryModule: GuiModule = {
     { pattern: /^\/delivery\/submissions\/([^/]+)/, title: (match) => `Submission ${shortId(match[1])}` },
     { pattern: /^\/delivery\/assertions\/runs\/(\d+)/, title: (match) => `Report #${match[1]}` },
   ],
-  kinds: [deliveryKind, retrievalKind, cacheKind, assertionKind, dimensionKind, inventoryKind, removalKind],
+  kinds: [deliveryKind, retrievalKind, cacheKind, assertionKind, dimensionKind, inventoryKind, removalKind, downloadKind],
   searchCategories: [
     {
       key: "records",

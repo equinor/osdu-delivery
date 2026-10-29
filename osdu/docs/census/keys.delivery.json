@@ -6,7 +6,7 @@
   "includeEnvelope": true,
   "generatedFrom": "osdu/docs/reference/flow/delivery.md and osdu/src/SqlFlow.Delivery/Documents/YamlModels.cs",
   "naming": "The loader deserializes with YamlDotNet's CamelCaseNamingConvention and refuses any key it does not know.",
-  "keyCount": 643,
+  "keyCount": 645,
   "keys": [
     {
       "path": "batch",
@@ -4417,6 +4417,19 @@
       "required": false,
       "description": "Whether a verify run marks each drifted or missing record for redelivery of all of it, as a redelivery does, named under the verify's activity, so the flow's next deliver run reads it by key and sends it again whatever its incremental window reads.",
       "default": "false"
+    },
+    {
+      "path": "telemetry",
+      "type": "object",
+      "required": false,
+      "description": "What the correlation id every OSDU request of the flow's runs carries names: `correlation-id: osdu-delivery-<repository>-<operation>-<run id>`, the repository's code from the `osdu-delivery.yaml` nearest above the flow. Left out, the runs name the kind's own operation code."
+    },
+    {
+      "path": "telemetry.operation",
+      "type": "string",
+      "required": false,
+      "description": "The flow's operation code in its runs' correlation id: a lower-case letter, then lower-case letters and digits, at most 16 in all and no hyphen. Defaults to the kind's own, `dlv`.",
+      "default": "dlv"
     }
   ]
 }

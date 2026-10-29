@@ -12,7 +12,7 @@ data; the well logs in `samples/` are the worked example, not a special case. Th
 
 | Folder | What it holds |
 | --- | --- |
-| `src/SqlFlow.Delivery/` | The engine: the six flow kinds, mapping and rendering, the partition cache, change detection, the ten delivery routes, the ledger, the worker, verify, removal and reversal |
+| `src/SqlFlow.Delivery/` | The engine: the eight flow kinds, mapping and rendering, the partition cache, change detection, the ten delivery routes, the ledger, the worker, verify, removal and reversal |
 | `src/SqlFlow.Delivery.Data/` | `OsduDbContext` over the `osdu` schema, with its migrations and schema version |
 | `src/SqlFlow.Delivery.ControlPlane/` | The delivery API under `/api/v1/delivery` and the module's background services |
 | `src/SqlFlow.Delivery.Cli/` | The OSDU verbs of `sqlflow` (`check`, `preview`, `records`, `template`, `cache` and the rest) |

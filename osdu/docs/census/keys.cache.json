@@ -6,7 +6,7 @@
   "includeEnvelope": true,
   "generatedFrom": "osdu/docs/reference/flow/cache.md and osdu/src/SqlFlow.Delivery/Documents/YamlModels.cs",
   "naming": "The loader deserializes with YamlDotNet's CamelCaseNamingConvention and refuses any key it does not know.",
-  "keyCount": 81,
+  "keyCount": 83,
   "keys": [
     {
       "path": "batch",
@@ -575,6 +575,19 @@
       "required": false,
       "description": "The three-part name (`[database].[schema].[table]`) of an ingestion table an ingestion flow loads, read over `source.connection`. The type is named after the table unless `name` says otherwise, is kept as `lookup--<name>`, and holds every row its ingestion flow has not marked deleted (`DeletedDate_DW`, when the table has it); a table over 100,000 rows refuses the capture. Lineage orders the flow after the ingestion flow that loads the table.",
       "appliesWhen": "Table origin only: a type with `table`, read from an ingestion table. Not combined with `kind` or `dictionary`; needs `key` and `fields`, and makes `source.connection` required."
+    },
+    {
+      "path": "telemetry",
+      "type": "object",
+      "required": false,
+      "description": "What the correlation id every OSDU request of the flow's runs carries names: `correlation-id: osdu-delivery-<repository>-<operation>-<run id>`, the repository's code from the `osdu-delivery.yaml` nearest above the flow. Left out, the runs name the kind's own operation code."
+    },
+    {
+      "path": "telemetry.operation",
+      "type": "string",
+      "required": false,
+      "description": "The flow's operation code in its runs' correlation id: a lower-case letter, then lower-case letters and digits, at most 16 in all and no hyphen. Defaults to the kind's own, `cache`.",
+      "default": "cache"
     }
   ]
 }
