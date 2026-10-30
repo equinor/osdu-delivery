@@ -113,6 +113,10 @@ const RecordSearchHits = lazyRoute(
   "RecordSearchHits",
   () => import("./features/delivery/RecordSearchHits").then((loaded) => ({ default: loaded.RecordSearchHits })),
 );
+const RunSearchHits = lazyRoute(
+  "RunSearchHits",
+  () => import("./features/delivery/RunSearchHits").then((loaded) => ({ default: loaded.RunSearchHits })),
+);
 
 /**
  * The key census of every document this module adds, so the YAML editor documents, colours and checks them as it does
@@ -515,6 +519,10 @@ export const osduDeliveryModule: GuiModule = {
   ],
   kinds: [deliveryKind, retrievalKind, cacheKind, assertionKind, dimensionKind, inventoryKind, removalKind, downloadKind],
   searchCategories: [
+    {
+      key: "runs",
+      render: ({ category }) => <Deferred placeholder={false}><RunSearchHits category={category} /></Deferred>,
+    },
     {
       key: "records",
       render: ({ category }) => <Deferred placeholder={false}><RecordSearchHits category={category} /></Deferred>,

@@ -587,3 +587,9 @@ The lint's cross-reference check after decision 0037 found the repository docume
 document is checked: [request correlation](../reference/concepts/request-correlation.md) now says how the editor and
 `validate_flow` check `telemetry` and `osdu-delivery.yaml` from the key census, and the
 [pattern catalog](maps/pattern-catalog.md) cites the document's page among its references.
+
+## [2026-10-30] ingest | A run found from an id in the platform's logs
+
+[Request correlation](../reference/concepts/request-correlation.md#from-a-log-line-to-the-run) now says how a value in a
+platform's log leads back to its run, in the search, the Runs page, `delivery_run` and the API, and the
+[pattern catalog](maps/pattern-catalog.md) lists the problem it solves.

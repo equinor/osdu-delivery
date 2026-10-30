@@ -76,16 +76,16 @@ public sealed class DeliveryModuleTests
         await using var factory = Host();
         using var client = factory.CreateClient();
 
-        // The delivery kind owns the mapping documents; the dictionary documents cache flows hold are a companion of their own.
+        // The delivery kind owns the mapping documents; the dictionary documents cache flows hold and the repository document are companions of their own.
         var companions = factory.Services.GetServices<ICompanionDocumentKind>().Select(k => k.DocumentType).Order(StringComparer.Ordinal).ToList();
-        Assert.Equal([DictionaryDefinition.DocumentTypeName, MappingDefinition.DocumentTypeName], companions);
+        Assert.Equal([DictionaryDefinition.DocumentTypeName, MappingDefinition.DocumentTypeName, RepositoryDefinition.DocumentTypeName], companions);
         Assert.Same(
             factory.Services.GetServices<IFlowDocumentKind>().OfType<DeliveryFlowKind>().Single(),
             factory.Services.GetServices<ICompanionDocumentKind>().OfType<DeliveryFlowKind>().Single());
 
-        // The loader every consumer shares reads both under their own type.
+        // The loader every consumer shares reads each under its own type.
         var loader = factory.Services.GetRequiredService<YamlDocumentLoader>();
-        Assert.Equal([DictionaryDefinition.DocumentTypeName, MappingDefinition.DocumentTypeName], loader.CompanionKinds.Select(k => k.DocumentType).Order(StringComparer.Ordinal));
+        Assert.Equal([DictionaryDefinition.DocumentTypeName, MappingDefinition.DocumentTypeName, RepositoryDefinition.DocumentTypeName], loader.CompanionKinds.Select(k => k.DocumentType).Order(StringComparer.Ordinal));
     }
 
     [Fact]

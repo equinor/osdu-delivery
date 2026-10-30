@@ -21,6 +21,12 @@ pub struct FlowInput {
 }
 
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
+pub struct RunLookupInput {
+    /// A run id, or the correlation-id a platform's log shows: osdu-delivery-wl-dim-<run id>. A pasted log line works too.
+    pub id: String,
+}
+
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
 pub struct FlowRecordsInput {
     /// The delivery flow's pipeline id: `id` in list_pipelines(kind="delivery").
     #[serde(rename = "pipelineId")]
@@ -216,6 +222,17 @@ delivery_find_records; for one record's full history use delivery_record."
                 links,
             )
             .await
+    }
+
+    #[tool(
+        description = "One run from the id you hold: a run id, or the correlation-id in a platform's log. Returns the run, \
+every run of its execution (a split delivery's coordinating run and its parts, each with its own id), the plans it \
+registered with their counts, and, when no run has the id, why. Use it for 'what is this id in the logs', 'which run \
+sent this request'. get_run has a run's scope and failed statement; delivery_flow_records(runId) its records."
+    )]
+    async fn delivery_run(&self, Parameters(i): Parameters<RunLookupInput>) -> String {
+        let query = Query::new().text("id", Some(i.id));
+        self.ctx.get("/api/v1/delivery/runs/lookup", query.pairs()).await
     }
 
     #[tool(

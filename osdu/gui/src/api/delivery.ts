@@ -330,6 +330,39 @@ export interface DeliveryRecordDetail {
   removedKey?: object | null;
 }
 
+/** One run of an execution, as a lookup by run id or correlation id answers it (DeliveryRunLookupRunDto). */
+export interface DeliveryRunLookupRun {
+  runId: string;
+  pipelineId: string;
+  flowName: string;
+  flowKind: string;
+  status: string;
+  operation: string | null;
+  requestedBy: string | null;
+  triggerSource: string | null;
+  enqueuedUtc: string | null;
+  startUtc: string | null;
+  endUtc: string | null;
+  durationSeconds: number | null;
+  error: string | null;
+  /** What it did, in a few words; null when nothing is known. */
+  outcome: string | null;
+  /** The run that coordinates it, when it is a part of a split delivery. */
+  fanOutRoot: string | null;
+  /** Which part it is, from 1. */
+  fanOutSlot: number | null;
+  /** How many parts the delivery was split into. */
+  fanOutCount: number | null;
+}
+
+/** What a run hit of the search carries: the run, or why no run has the id (DeliveryRunHit). */
+export interface DeliveryRunHit {
+  run: DeliveryRunLookupRun | null;
+  /** Whether this is the run the search named, rather than another run of its execution. */
+  asked: boolean;
+  reason: string | null;
+}
+
 /**
  * A delivery record the combined search found: the `data` of each hit in the `records` category the module's search
  * contributor adds to GET /api/v1/search/all. It matches an exact delivery key, or a prefix of the record's OSDU id,

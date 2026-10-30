@@ -8,6 +8,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **A run is found by the id the platform's logs show.** Paste a correlation id or a run id into the search, and it lists the
+  run with every run of its execution, each part of a delivery split over nodes included; paste it into the Runs page's box,
+  and that run is listed however old it is. An id no run has says what that means. The MCP server's new `delivery_run` tool
+  and `GET /delivery/runs/lookup` answer the same
+  ([from a log line to the run](osdu/docs/reference/concepts/request-correlation.md#from-a-log-line-to-the-run)).
+
 - **A download flow writes every record of OSDU kinds to a folder, a JSON file each named after its id.** A new flow kind,
   `flowType: download`, lists its kinds as an inventory does and writes each record's metadata as storage holds it to a local
   folder or Azure Storage, `dev:master-data--Wellbore:WB-1` as `dev~master-data--Wellbore~WB-1.json`; its ledger keeps the

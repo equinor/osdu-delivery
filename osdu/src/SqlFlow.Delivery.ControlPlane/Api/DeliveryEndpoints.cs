@@ -596,6 +596,7 @@ public static class DeliveryEndpoints
         delivery.MapGet("/records/{flowId:guid}/{key:guid}/attempts", ListRecordAttemptsAsync).WithName("ListDeliveryRecordAttempts");
         delivery.MapGet("/records/{flowId:guid}/{key:guid}/chain", GetRecordChainAsync).WithName("GetDeliveryRecordChain");
         delivery.MapGet("/records/{flowId:guid}/{key:guid}/activities", ListRecordActivitiesAsync).WithName("ListDeliveryRecordActivities");
+        delivery.MapGet("/runs/lookup", DeliveryRunLookup.LookupAsync).WithName("LookupDeliveryRun");
         delivery.MapGet("/submissions/{submissionId:guid}", GetSubmissionAsync).WithName("GetDeliverySubmission");
         delivery.MapGet("/submissions/{submissionId:guid}/attempts", ListSubmissionAttemptsAsync).WithName("ListDeliverySubmissionAttempts");
         delivery.MapGet("/submissions/{submissionId:guid}/batches", ListSubmissionBatchesAsync).WithName("ListDeliverySubmissionBatches");
@@ -3779,7 +3780,7 @@ public static class DeliveryEndpoints
             extensions: new Dictionary<string, object?>(StringComparer.Ordinal) { ["purged"] = dto });
     }
 
-    private static DeliverySubmissionDto ToDto(SubmissionState s) => new(
+    internal static DeliverySubmissionDto ToDto(SubmissionState s) => new(
         s.SubmissionId, s.FlowId, s.FlowName, s.MappingReference, s.RenderContext, s.ParametersJson, s.RecordCount,
         s.Status.ToString().ToLowerInvariant(), s.ReceivedUtc, s.StartedUtc, s.CompletedUtc, s.Planned, s.SkippedUnchanged, s.AwaitingApproval, s.SkippedStale, s.UnchangedAtPush, s.Blocked,
         s.Delivered, s.Held, s.Failed, s.Error, s.WorkLocation, s.BatchCount, s.Slices,

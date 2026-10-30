@@ -11,6 +11,7 @@ keywords:
   - claude
   - delivery_* tools
   - delivery_find_records
+  - delivery_run
   - metadata only
   - data mode
   - "!exit"
@@ -134,6 +135,7 @@ Every `delivery_*` tool calls a route under `/api/v1/delivery` and nothing else 
 | Why did it fail? Who deleted it? Which file and row is it from? | `delivery_record` (state, attempts, chain, activities) |
 | How is this flow doing? Where does it deliver? What does a run need? | `delivery_flow` |
 | Which records of this flow failed, are held, drifted or came from that run? | `delivery_flow_records` |
+| Which run is this id in the platform's logs? What did each part of a split delivery do? | `delivery_run` (a run id or a whole correlation-id) |
 | What did the last run plan and deliver? Which batch is stuck? | `delivery_submissions` |
 | What did the last retrieval bring back, and where is it? | `delivery_retrievals` |
 | Who did what, and when? | `delivery_activities` |

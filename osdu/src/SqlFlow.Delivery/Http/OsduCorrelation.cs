@@ -89,6 +89,32 @@ public static partial class OsduCorrelation
         request.Headers.TryAddWithoutValidation(HeaderName, Value);
     }
 
+    /// <summary>
+    /// The correlation id a text holds, as a person copies it from a platform's log: a whole value, a bare id, or a log line
+    /// quoting either. The first found is read; null when the text holds none. A value with one code names its operation,
+    /// and with two its repository, then its operation.
+    /// </summary>
+    public static OsduCorrelationValue? Find(string? text)
+    {
+        if (string.IsNullOrWhiteSpace(text))
+        {
+            return null;
+        }
+
+        var match = ValuePattern().Match(text);
+        if (!match.Success)
+        {
+            return null;
+        }
+
+        var first = match.Groups["first"];
+        var second = match.Groups["second"];
+        return new OsduCorrelationValue(
+            second.Success ? first.Value : null,
+            second.Success ? second.Value : first.Success ? first.Value : null,
+            Guid.ParseExact(match.Groups["id"].Value, "D"));
+    }
+
     /// <summary>True when <paramref name="code"/> can be a repository or operation code (<see cref="CodeRule"/>).</summary>
     public static bool IsCode(string? code) => code is not null && CodePattern().IsMatch(code);
 
@@ -105,7 +131,15 @@ public static partial class OsduCorrelation
 
     [GeneratedRegex("^[a-z][a-z0-9]{0,15}$", RegexOptions.CultureInvariant)]
     private static partial Regex CodePattern();
+
+    [GeneratedRegex(
+        @"\b(?:osdu-delivery-(?:(?<first>[a-z][a-z0-9]{0,15})-(?:(?<second>[a-z][a-z0-9]{0,15})-)?)?)?(?<id>[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12})\b",
+        RegexOptions.CultureInvariant)]
+    private static partial Regex ValuePattern();
 }
+
+/// <summary>What a correlation id names: the repository's and the operation's codes, when it carries them, and its id.</summary>
+public sealed record OsduCorrelationValue(string? Repository, string? Operation, Guid Id);
 
 /// <summary>One run's or operation's correlation id; disposing it restores the enclosing one.</summary>
 public sealed class OsduCorrelationScope : IDisposable

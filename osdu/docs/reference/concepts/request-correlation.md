@@ -17,6 +17,9 @@ keywords:
   - application insights
   - log analytics
   - trace a run
+  - find a run by id
+  - look up a run
+  - delivery_run
   - trace-id
   - osdu-delivery header
   - header policy
@@ -57,6 +60,10 @@ sourceRefs:
   - osdu/src/SqlFlow.Delivery.Setup/OsduSignIn.cs
   - osdu/docs/census/keys.repository.json
   - osdu/gui/src/module.tsx
+  - osdu/gui/src/features/delivery/RunSearchHits.tsx
+  - osdu/src/SqlFlow.Delivery.ControlPlane/Api/DeliveryRunLookup.cs
+  - osdu/src/SqlFlow.Delivery.ControlPlane/Api/RunSearchContributor.cs
+  - osdu/hosts/osdu-delivery-mcp/src/tools/flows.rs
 ---
 
 # Request correlation: the correlation id every OSDU request carries, from setting it up to finding a run in the platform's logs
@@ -330,7 +337,26 @@ the value or a prefix of it:
 | Everything OSDU Delivery sent | `osdu-delivery-` |
 
 From the product's side, a failed try on a record's Timeline names the value its requests carried, so it leads to what
-the service logged for it; from the platform's side, the run's id at the end of a value leads to the run in the GUI.
+the service logged for it. From the platform's side, the id at the end of a value leads back to the run.
+
+## From a log line to the run
+
+Anything holding the id will do: the whole value as a log shows it, the bare run id, or a log line that quotes either.
+
+| Where | What to do | What it gives |
+| --- | --- | --- |
+| The search | Paste it into the workbench's search. | The run, with every run of its execution; a row opens the run's page. |
+| The **Runs** page | Paste it into the box beside the filters. | That run alone, whichever filters are set and however old it is. |
+| The MCP server | `delivery_run`, with the value as `id`. | The run, its execution and the plans it registered, each with its link. |
+| The API | `GET /api/v1/delivery/runs/lookup?id=<value>` | The same answer as the MCP server's ([the API](api.md)). |
+
+Each part of a delivery split over nodes sends under its own id, so a log shows several values for one execution. Any of
+them leads to all of them: the run that coordinated the parts first, then each part, with the one you pasted marked. The
+platform's logs cannot group those values themselves, since only a prefix they share with the flow's other runs joins them.
+
+An id no run has says so rather than coming back empty. That is how an explorer read or a probe answers, since a request
+sent outside a run carries an id of its own that nothing here records (`osdu-delivery-explore-<id>`). The same answer comes
+for a run of another environment, and for a run whose history has been removed.
 
 ## What changed for existing flows
 
@@ -375,6 +401,7 @@ the service logged for it; from the platform's side, the run's id at the end of 
 | --- | --- |
 | The value, the rule for a code, and the scope a value is open in | `osdu/src/SqlFlow.Delivery/Http/OsduCorrelation.cs` |
 | A run's value and its run log line, opened first by each kind's executor | `osdu/src/SqlFlow.Delivery/Engine/RunCorrelation.cs` |
+| A run found from a value or an id, and the search's runs category | `osdu/src/SqlFlow.Delivery.ControlPlane/Api/DeliveryRunLookup.cs`, `RunSearchContributor.cs` |
 | Finding and reading the repository document | `Documents/RepositoryDocuments.cs`, `Documents/RepositoryDocumentKind.cs`, `Model/RepositoryDefinition.cs`, `Documents/CompanionFiles.cs` |
 | The kinds' operation codes | `Model/FlowTelemetry.cs` |
 | `telemetry.operation` and the header refusal | `Documents/DeliveryDocumentLoader.cs` |

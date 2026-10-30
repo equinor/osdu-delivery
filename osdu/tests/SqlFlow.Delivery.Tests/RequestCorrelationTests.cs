@@ -49,6 +49,34 @@ public sealed class RequestCorrelationTests : IDisposable
         }
     }
 
+    [Theory]
+    [InlineData("osdu-delivery-wl-dim-0192f3a1-7c4e-7b2a-9d10-5e8f2c6a4b31", "wl", "dim")]
+    [InlineData("osdu-delivery-dim-0192f3a1-7c4e-7b2a-9d10-5e8f2c6a4b31", null, "dim")]
+    [InlineData("osdu-delivery-explore-0192f3a1-7c4e-7b2a-9d10-5e8f2c6a4b31", null, "explore")]
+    [InlineData("osdu-delivery-0192f3a1-7c4e-7b2a-9d10-5e8f2c6a4b31", null, null)]
+    [InlineData("0192f3a1-7c4e-7b2a-9d10-5e8f2c6a4b31", null, null)]
+    [InlineData("  0192F3A1-7C4E-7B2A-9D10-5E8F2C6A4B31  ", null, null)]
+    [InlineData("409 from storage (correlation-id osdu-delivery-wl-dim-0192f3a1-7c4e-7b2a-9d10-5e8f2c6a4b31)", "wl", "dim")]
+    public void A_value_copied_from_a_log_names_what_it_carries(string text, string? repository, string? operation)
+        => Assert.Equal(new OsduCorrelationValue(repository, operation, RunId), OsduCorrelation.Find(text));
+
+    [Fact]
+    public void An_id_that_opens_like_a_code_is_read_as_an_id()
+    {
+        var id = Guid.Parse("abcdef12-beef-4b2a-9d10-5e8f2c6a4b31");
+
+        Assert.Equal(new OsduCorrelationValue(null, null, id), OsduCorrelation.Find($"osdu-delivery-{id:D}"));
+        Assert.Equal(new OsduCorrelationValue(null, "dim", id), OsduCorrelation.Find($"osdu-delivery-dim-{id:D}"));
+    }
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData("")]
+    [InlineData("   ")]
+    [InlineData("welldb-welllog-05-dimensions")]
+    [InlineData("osdu-delivery-wl-dim-")]
+    public void A_text_with_no_id_names_nothing(string? text) => Assert.Null(OsduCorrelation.Find(text));
+
     [Fact]
     public void A_runs_requests_carry_its_repository_its_operation_and_its_id_and_an_operation_inside_it_is_the_runs()
     {

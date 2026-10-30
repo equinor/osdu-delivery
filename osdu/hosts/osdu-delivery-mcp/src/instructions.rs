@@ -74,7 +74,8 @@ Which tool:
 - One flow ('how is it doing', 'what failed', 'where does it deliver'): list_pipelines(kind=\"delivery\"), then
   delivery_flow, then delivery_flow_records(status=...).
 - One run ('what did last night's run do'): list_runs and get_run for the run, delivery_submissions for what it planned
-  and delivered, delivery_flow_records(runId=...) for its records.
+  and delivered, delivery_flow_records(runId=...) for its records. From an id in a platform's log: delivery_run, which
+  takes a run id or a whole correlation-id and gives every run of a split delivery.
 - Who did what, and when: delivery_activities.
 - Environments: delivery_partitions, then delivery_config for where a flow really delivers.
 - The cache: delivery_caches(partition) for its health, delivery_cache_versions for its history,

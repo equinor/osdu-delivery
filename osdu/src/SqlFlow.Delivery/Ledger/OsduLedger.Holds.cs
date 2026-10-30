@@ -108,6 +108,25 @@ public sealed partial class OsduLedger
         return named;
     }
 
+    public async Task<IReadOnlyList<SubmissionState>> ListSubmissionsOfRunAsync(Guid runId, CancellationToken ct = default)
+    {
+        var rows = await ReadAsync(
+            db => db.DeliverySubmissions
+                .Where(s => s.RunId == runId)
+                .OrderByDescending(s => s.ReceivedUtc)
+                .ThenByDescending(s => s.SubmissionId)
+                .Take(RunSubmissionsRead)
+                .ToListAsync(ct),
+            ct).ConfigureAwait(false);
+        var named = new List<SubmissionState>(rows.Count);
+        foreach (var row in rows)
+        {
+            named.Add(await NamedAsync(row, ct).ConfigureAwait(false));
+        }
+
+        return named;
+    }
+
     public async Task<SubmissionHold> HoldSubmissionAsync(Guid submissionId, CancellationToken ct = default)
     {
         // A context of its own: its connection carries the hold for as long as the run keeps it.

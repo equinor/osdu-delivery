@@ -94,6 +94,7 @@ sourceRefs:
   - osdu/src/SqlFlow.Delivery.ControlPlane/Api/DeliveryConfigEndpoints.cs
   - osdu/src/SqlFlow.Delivery.ControlPlane/Api/DeliveryDimensionEndpoints.cs
   - osdu/src/SqlFlow.Delivery.ControlPlane/Api/RecordSearchContributor.cs
+  - osdu/src/SqlFlow.Delivery.ControlPlane/Api/RunSearchContributor.cs
   - sqlflow/src/SqlFlow.ControlPlane/Hosting/ControlPlaneHost.cs
   - sqlflow/gui/src/auth/AuthContext.tsx
   - osdu/gui/src/features/delivery/order/OrderPage.tsx
@@ -115,7 +116,8 @@ scopes](../../../../sqlflow/docs/reference/concepts/authentication-and-identity.
 - a **Partition** picker in the title bar, which every OSDU page reads in;
 - tabs and header actions on the pipeline and run pages of the eight kinds it adds (delivery, retrieval, cache, assertion,
   dimension, inventory, removal, download), and their fields in the trigger dialog;
-- a **records** category in the workbench's search.
+- **records** and **runs** categories in the workbench's search: a run id, or a correlation id copied from a platform's log,
+  lists the run with every run of its execution ([from a log line to the run](request-correlation.md#from-a-log-line-to-the-run)).
 
 The pages it adds sit in three of the menu's groups, and the sections below follow them: **Ledger**, **OSDU**, and the
 **Delivery** section of **Build**. No flow is configured on them. Flows of every kind, these included, are written in

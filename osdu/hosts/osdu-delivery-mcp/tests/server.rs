@@ -55,6 +55,7 @@ const DELIVERY_TOOLS: &[&str] = &[
     "delivery_redeliver_record",
     "delivery_release_records",
     "delivery_retrievals",
+    "delivery_run",
     "delivery_scaffold_mapping",
     "delivery_submissions",
     "delivery_sync_with_source",
@@ -948,6 +949,38 @@ async fn submissions_are_listed_for_a_flow_or_read_one_with_its_parts() {
 
     let neither = session.call("delivery_submissions", json!({})).await;
     assert!(neither.starts_with("Error: Give pipelineId to list"), "{neither}");
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_run_is_found_by_the_id_a_platforms_log_shows_with_its_whole_execution() {
+    const ROOT: &str = "01a18a9d-4e8e-72be-a31f-435290fa8930";
+    const PART: &str = "01a18a9d-4e8e-72be-a31f-435290fa8931";
+    let run = |id: &str| json!({ "runId": id, "pipelineId": PIPELINE, "flowName": "welldb-welllog-05-delivery", "status": "succeeded" });
+    let estate = Estate::start(vec![(
+        "GET /api/v1/delivery/runs/lookup",
+        200,
+        json!({
+            "id": PART,
+            "repository": "wl",
+            "operation": "dlv",
+            "run": run(PART),
+            "execution": [run(ROOT), run(PART)],
+            "submissions": [{ "submissionId": SUBMISSION, "flowId": FLOW, "receivedUtc": "2026-10-01T00:00:00Z", "planned": 10, "runId": ROOT }],
+        }),
+    )])
+    .await;
+    let mut session = Session::open(&estate).await;
+
+    let value = format!("osdu-delivery-wl-dlv-{PART}");
+    let found = session.json("delivery_run", json!({ "id": value })).await;
+
+    assert!(estate.only("GET", "/api/v1/delivery/runs/lookup").query.contains(PART));
+    assert_eq!(found["run"]["links"]["page"], json!(format!("https://delivery.example.com/runs/{PART}")));
+    assert_eq!(found["execution"][0]["links"]["page"], json!(format!("https://delivery.example.com/runs/{ROOT}")));
+    assert_eq!(
+        found["submissions"][0]["links"]["page"],
+        json!(format!("https://delivery.example.com/delivery/submissions/{SUBMISSION}"))
+    );
 }
 
 #[tokio::test(flavor = "multi_thread")]

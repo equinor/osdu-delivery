@@ -130,6 +130,7 @@ to follow. The control plane never delivers.
 
 | Route | Policy | Parameters | Answers |
 | --- | --- | --- | --- |
+| `GET /runs/lookup` | read | `id`: a run id, a correlation id, or a log line holding one | The run, every run of its execution (the coordinating run, then the parts) and the plans it registered. `run` is null and `reason` says why when no run has the id; 400 when `id` holds none ([from a log line to the run](request-correlation.md#from-a-log-line-to-the-run)). |
 | `GET /submissions/{submissionId}` | read | | One submission with its counts and the runs that worked on it. |
 | `GET /submissions/{submissionId}/attempts` | read | `max` (500, at most 5,000) | The submission's attempts. |
 | `GET /submissions/{submissionId}/batches` | read | `status`, `page`, `pageSize` | Its work batches. |

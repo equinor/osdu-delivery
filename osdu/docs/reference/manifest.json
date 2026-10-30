@@ -1802,6 +1802,7 @@
         "osdu/src/SqlFlow.Delivery.ControlPlane/Api/DeliveryConfigEndpoints.cs",
         "osdu/src/SqlFlow.Delivery.ControlPlane/Api/DeliveryDimensionEndpoints.cs",
         "osdu/src/SqlFlow.Delivery.ControlPlane/Api/RecordSearchContributor.cs",
+        "osdu/src/SqlFlow.Delivery.ControlPlane/Api/RunSearchContributor.cs",
         "sqlflow/src/SqlFlow.ControlPlane/Hosting/ControlPlaneHost.cs",
         "sqlflow/gui/src/auth/AuthContext.tsx",
         "osdu/gui/src/features/delivery/order/OrderPage.tsx"
@@ -2587,6 +2588,9 @@
         "application insights",
         "log analytics",
         "trace a run",
+        "find a run by id",
+        "look up a run",
+        "delivery_run",
         "trace-id",
         "osdu-delivery header",
         "header policy",
@@ -2628,7 +2632,11 @@
         "osdu/src/SqlFlow.Delivery/Catalog/DeliveryDocumentHash.cs",
         "osdu/src/SqlFlow.Delivery.Setup/OsduSignIn.cs",
         "osdu/docs/census/keys.repository.json",
-        "osdu/gui/src/module.tsx"
+        "osdu/gui/src/module.tsx",
+        "osdu/gui/src/features/delivery/RunSearchHits.tsx",
+        "osdu/src/SqlFlow.Delivery.ControlPlane/Api/DeliveryRunLookup.cs",
+        "osdu/src/SqlFlow.Delivery.ControlPlane/Api/RunSearchContributor.cs",
+        "osdu/hosts/osdu-delivery-mcp/src/tools/flows.rs"
       ]
     },
     {
@@ -5900,6 +5908,7 @@
         "claude",
         "delivery_* tools",
         "delivery_find_records",
+        "delivery_run",
         "metadata only",
         "data mode",
         "!exit",

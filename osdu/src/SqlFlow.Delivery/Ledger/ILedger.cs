@@ -2682,6 +2682,12 @@ public interface ILedger
     Task<IReadOnlyList<SubmissionState>> ListUnsettledSubmissionsOfRunAsync(Guid flowId, Guid runId, CancellationToken ct = default);
 
     /// <summary>
+    /// The submissions platform run <paramref name="runId"/> registered, in any flow and partition, the newest first, as a run
+    /// is looked up by its id alone (IX_Submission_RunId).
+    /// </summary>
+    Task<IReadOnlyList<SubmissionState>> ListSubmissionsOfRunAsync(Guid runId, CancellationToken ct = default);
+
+    /// <summary>
     /// Holds submission <paramref name="submissionId"/> for the run working on it, until the hold is disposed: a shared,
     /// session-owned application lock on the module's database, on a connection of its own. Any number of runs hold one
     /// submission at once (a fan-out's coordinator and its members do); a process that stops frees its holds with its

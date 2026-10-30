@@ -92,6 +92,7 @@ public sealed class DeliveryControlPlaneModule : IControlPlaneModule
 
         // The delivery records category of the control plane's search: resolved per request, beside the built-in ones.
         services.Services.AddScoped<ISearchContributor, RecordSearchContributor>();
+        services.Services.AddScoped<ISearchContributor, RunSearchContributor>();
 
         // The osdu schema's storage areas on the Maintenance page, beside SQLFlow's own: what each holds, what may be removed
         // and why, and the three optional cleanups (superseded attempts, finished activities' logs, superseded assertion runs)

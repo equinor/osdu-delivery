@@ -28,7 +28,7 @@ public static class DeliveryAssistantAccess
     public static IReadOnlyList<string> ReaderTools { get; } =
     [
         "delivery_find_records", "delivery_record",
-        "delivery_flow", "delivery_flow_records", "delivery_submissions", "delivery_retrievals", "delivery_activities",
+        "delivery_flow", "delivery_flow_records", "delivery_run", "delivery_submissions", "delivery_retrievals", "delivery_activities",
         "delivery_partitions", "delivery_config",
         "delivery_caches", "delivery_cache_versions", "delivery_cache_changes",
         "delivery_mappings", "delivery_check_mapping", "delivery_scaffold_mapping",
@@ -59,8 +59,8 @@ public static class DeliveryAssistantAccess
         // delivery_find_records and delivery_record: the ledger's answer about a record and its trace.
         "LookupDeliveryRecords", "GetDeliveryRecord", "ListDeliveryRecordAttempts", "GetDeliveryRecordChain",
         "ListDeliveryRecordActivities",
-        // delivery_flow, delivery_flow_records, delivery_submissions, delivery_retrievals.
-        "GetDeliveryFlowStats", "ListDeliveryInterfaces", "GetDeliveryTarget", "ListDeliveryRecords",
+        // delivery_flow, delivery_flow_records, delivery_run, delivery_submissions, delivery_retrievals.
+        "GetDeliveryFlowStats", "ListDeliveryInterfaces", "GetDeliveryTarget", "ListDeliveryRecords", "LookupDeliveryRun",
         "ListDeliverySubmissions", "GetDeliverySubmission", "ListDeliverySubmissionBatches", "ListDeliverySubmissionAttempts",
         "ListDeliveryRetrievals",
         // delivery_activities: the audit trail.
