@@ -8,6 +8,7 @@ keywords:
   - workbench
   - osdu pages
   - delivery page
+  - sync a repository from the delivery page
   - records page
   - export records to excel
   - audit trail
@@ -36,6 +37,7 @@ sourceRefs:
   - osdu/gui/src/features/delivery/RecordParentChips.tsx
   - osdu/gui/src/features/delivery/PartitionSwitcher.tsx
   - osdu/gui/src/features/delivery/DeliveryOverviewPage.tsx
+  - osdu/gui/src/features/delivery/RepositorySyncControl.tsx
   - osdu/gui/src/features/delivery/DeliveryRecordsPage.tsx
   - osdu/gui/src/features/delivery/DeliveryActivityPage.tsx
   - osdu/gui/src/features/delivery/OrphanedLedgersPage.tsx
@@ -174,7 +176,11 @@ Every delivery flow as a card, counted in the title bar's partition: a delivered
 **Pending**, **Held**, **Failed** and **Last 24h**, with the last delivery, the last verify and the last submission. A
 flow that delivers only to other partitions says where, without counts. The header line totals what the flows hold
 (delivered of total, pending, held, failed, drifted). **Find a record** with **Look up** opens Records looked up for
-what is typed. A card opens the flow's Delivery tab. A card shows what a flow's run did within seconds of the run
+what is typed. A card opens the flow's Delivery tab. **Sync now** syncs the repository picked in the list beside it, so a commit reaches the
+flows without a trip to the Repos page: it is the Repos page's own sync, with its message and its trace in the bottom
+panel. The list shows how each repository last synced, a paused one cannot be picked, the pick is remembered, and a mark
+beside a repository whose last sync failed shows the error and opens that trace. When any sync ends, whoever started it,
+the page reads its flows and counts again. A card shows what a flow's run did within seconds of the run
 ending: the page checks each flow's newest run every five seconds (every three while one is queued or running), and reads
 a flow's counts again when its newest run starts, moves on or ends, and at every check while it runs. The counts are also
 read every 15 seconds, for what no run does (a release).

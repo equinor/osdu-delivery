@@ -29,6 +29,7 @@
     "src/features/delivery/issueText.ts",
     "src/features/delivery/recordTarget.ts",
     "src/features/delivery/previewHolds.ts",
+    "src/features/delivery/repositorySync.ts",
     "../../sqlflow/gui/src/lib/time.ts"
   ]
 }

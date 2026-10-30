@@ -8,6 +8,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Sync a repository from the Delivery page.** **Sync now** syncs the repository picked beside it, with the same message and
+  trace as the Repos page, and the page reads its flows and counts again when a sync ends, so a commit reaches the flows
+  without leaving the page. The list shows how each repository last synced and remembers the pick
+  ([the Delivery page](osdu/docs/reference/concepts/gui.md#delivery)).
+
 - **A run is found by the id the platform's logs show.** Paste a correlation id or a run id into the search, and it lists the
   run with every run of its execution, each part of a delivery split over nodes included; paste it into the Runs page's box,
   and that run is listed however old it is. An id no run has says what that means. The MCP server's new `delivery_run` tool

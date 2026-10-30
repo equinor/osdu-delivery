@@ -16,6 +16,7 @@ import { Count } from "./DeliveryCounts";
 import { deliversTo, useDeliveryTotals, type DeliveryTotals } from "./deliveryTotals";
 import { FindRecordForm } from "./FindRecordForm";
 import { OrphanedLedgersNotice } from "./OrphanedLedgersNotice";
+import { RepositorySyncControl } from "./RepositorySyncControl";
 
 /**
  * One delivery flow's card, in the workbench's partition. A flow that delivers there is counted there, and its partition
@@ -137,7 +138,12 @@ export default function DeliveryOverviewPage() {
       <PageHeader
         title="Delivery"
         subtitle={flows.data ? subtitle(pipelines.length - elsewhere.filter(Boolean).length, active, totals) : undefined}
-        actions={<FindRecordForm />}
+        actions={(
+          <>
+            <RepositorySyncControl />
+            <FindRecordForm />
+          </>
+        )}
       />
       <OrphanedLedgersNotice partition={active} />
       {flows.data === undefined ? (
