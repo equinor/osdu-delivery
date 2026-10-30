@@ -116,8 +116,8 @@ const RecordSearchHits = lazyRoute(
 
 /**
  * The key census of every document this module adds, so the YAML editor documents, colours and checks them as it does
- * SQLFlow's own flows: the delivery, retrieval, cache, assertion, dimension, inventory, removal and download flows by their flowType, the mapping and the dictionary
- * by their documentType. Each file loads when the editor first starts, not with the page.
+ * SQLFlow's own flows: the delivery, retrieval, cache, assertion, dimension, inventory, removal and download flows by their flowType, the
+ * mapping, the dictionary and the repository document by their documentType. Each file loads when the editor first starts, not with the page.
  */
 const census: GuiModule["census"] = [
   { flowType: "delivery", load: () => import("../../docs/census/keys.delivery.json?raw").then((file) => file.default) },

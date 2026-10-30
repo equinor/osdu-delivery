@@ -105,6 +105,11 @@ $ sqlflow validate welldb/flows/welldb-welllog-05-dimensions.yaml
 ERROR  welldb/flows/welldb-welllog-05-dimensions.yaml: ../../osdu-delivery.yaml: code 'WL' is not a repository code: a lower-case letter, then lower-case letters and digits, at most 16 in all and no hyphen, so the correlation id splits on its hyphens.
 ```
 
+The GUI's editor and the MCP server's `validate_flow` document and check its keys from the key census,
+`osdu/docs/census/keys.repository.json`: a missing `code` is flagged and an unknown key is an error there too. The rule
+for a code and the file's name are left to `sqlflow validate` and the run
+([in the editor](../concepts/request-correlation.md#in-the-editor)).
+
 ## See also
 
 - [Request correlation](../concepts/request-correlation.md): the whole design, from the value and the operation codes to

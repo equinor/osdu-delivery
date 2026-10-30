@@ -65,7 +65,8 @@ and ingestion flows ([table-to-table ingestion](../../../../sqlflow/docs/referen
 | `OsduData.silver.WellLogCurve` | `log_id`, `curve_id` | one row per curve of a log: `curve_mnemonic`, `curve_unit`, ... |
 
 Each ing flow sets `target.identityColumn: RecId`, which gives the table the integer identity primary key a delivery pages
-and fans out by, and `load.keyColumns` to the key above:
+and fans out by, and `load.keyColumns` to the key above, which gives it the unique key index a delivery with a primary
+key requires; both are created with the table ([the record table a delivery reads](../flow/delivery-record-table.md)):
 
 ```yaml
 flowType: ing

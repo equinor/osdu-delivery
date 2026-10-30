@@ -35,6 +35,7 @@ keywords:
   - cache steps
 yamlPath: "(root, flowType: delivery)"
 related:
+  - delivery-flow-delivery-record-table
   - delivery-flow-interfaces
   - delivery-flow-enrich
   - delivery-flow-routes
@@ -248,7 +249,7 @@ where each record's files are.
 | --- | --- | --- | --- |
 | `connection` | string | required | The database holding the ingestion tables, as a `${env:NAME}` or `${keyvault:vault/secret}` reference, or a SQL Server connection string whose password is such a reference. Resolved on the node that runs the flow ([connections and secrets](../../../../sqlflow/docs/reference/concepts/connections-and-secrets.md)); an `${env:...}` reference in it takes the values set for no partition, then the node's environment, and on the control plane, for a preview or a source read, from its environment alone ([a flow's source connection](../concepts/environment-variables.md#a-flows-source-connection)). |
 | `record.object` | string | required | The record table's three-part name, `[database].[schema].[table]` (`OsduData.silver.WellLog`). |
-| `record.key` | list | required | The key columns, in order: the ing flow's `load.keyColumns`. They must name the same columns, in the same order, as the mapping's `dataset.key`. |
+| `record.key` | list | required | The key columns, in order: the ing flow's `load.keyColumns`. They must name the same columns, in the same order, as the mapping's `dataset.key`. With `record.primaryKey` set, the table needs a unique index on them ([the record table](delivery-record-table.md#the-unique-key-index)). |
 | `record.primaryKey` | string | none | The table's identity primary key (the ing flow's `target.identityColumn`, such as `RecId`). A delivery is split over nodes on it ([parallelism](#parallelism)); without it a run is not split, and one node plans and sends it all. See [The identity primary key](#the-identity-primary-key). |
 | `record.scope` | map | none | Column to parameter: each entry becomes a typed `[column] = @parameter` predicate, so a run reads only the rows of its parameter values. A parameter the run gives several values reads the rows holding any of them, `[column] IN (@p0, @p1, ...)` ([Several values of a scope parameter](#several-values-of-a-scope-parameter)). A value is bound, never substituted into SQL. |
 | `record.maxRecords` | integer | none | The first records of the scope a run reads, 1 to 1000, by key, on every run that gives no `maxRecords` of its own: a smoke test before the whole scope goes; leave it out to read the scope whole. A run's own stands in for it. See [The first records of the scope](#the-first-records-of-the-scope). |
@@ -339,7 +340,8 @@ delivery key and OSDU id, and joins the child tables; the primary key is how row
 
 When a run opens the tables it refuses a declared column that is not an integer, not an identity column or not the
 table's single-column primary key, and a record key with no unique index without a filter (a record held by two rows
-could fall into two slices). The message gives the statement that adds the column:
+could fall into two slices; [the unique key index](delivery-record-table.md#the-unique-key-index) says how to create
+it). The message gives the statement that adds the column:
 
 ```text
 ... An existing table needs it added once, which rewrites the table (drop a plain column of that name first):
@@ -766,6 +768,8 @@ run before anything is sent ([preflight](../concepts/preflight.md)).
 
 ## See also
 
+- [The record table a delivery reads](delivery-record-table.md): what the table must hold, the ing flow keys that make
+  it, and each refusal with its fix.
 - [A source with interfaces](interfaces.md): several kinds of one source in one document.
 - [Routes](routes.md), [DDMSs](ddms.md) and [DDMS shapes and services](ddms-services.md): `target.protocol`, its
   options, and where DDMS records go.

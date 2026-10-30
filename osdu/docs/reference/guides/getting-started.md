@@ -222,11 +222,14 @@ sqlflow run welldb/flows/welldb-wellbore-01-pre.yaml
 sqlflow run welldb/flows/welldb-wellbore-02-ing.yaml
 ```
 
-Three things here matter to the delivery. The key (`wellbore_id`) is the record's identity, and the mapping and the
-delivery flow will name the same column. `UpdatedDate_DW`, which the `ing` flow stamps on every row it inserts or
+Four things here matter to the delivery. The key (`wellbore_id`) is the record's identity, and the mapping and the
+delivery flow will name the same column; `load.keyColumns` also gives the table a unique index on it, which a delivery
+that names the primary key requires. `UpdatedDate_DW`, which the `ing` flow stamps on every row it inserts or
 changes, is what the delivery's incremental read windows on, so keep `systemColumns.updatedDate` on. `identityColumn:
 RecId` gives the table the identity primary key a delivery pages by. The provenance columns the file flow wrote
 (`FileName_DW`, `RowNumber_DW`) pass through the view into the table, and become each record's origin in the ledger.
+The key index and the primary key are created only on the run that creates the table, so set both before the first run
+([the record table a delivery reads](../flow/delivery-record-table.md)).
 
 ## Step 4: keep the template the mapping fills
 

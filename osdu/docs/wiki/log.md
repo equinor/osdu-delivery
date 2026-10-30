@@ -580,3 +580,10 @@ Storage, a JSON file each named after its id (`:` written `~`, `%` written `=`, 
 named by the id's hash), and keeps in its ledger the version each file holds, so a run writes only what is new or
 changed. [0038](decisions/0038-download-flow.md) records why, and [the download flow](../reference/flow/download.md)
 documents it; the [pattern catalog](maps/pattern-catalog.md) maps a record per file onto it.
+
+## [2026-10-30] lint | How the editor checks the repository document
+
+The lint's cross-reference check after decision 0037 found the repository document missing from the pages that say how a
+document is checked: [request correlation](../reference/concepts/request-correlation.md) now says how the editor and
+`validate_flow` check `telemetry` and `osdu-delivery.yaml` from the key census, and the
+[pattern catalog](maps/pattern-catalog.md) cites the document's page among its references.

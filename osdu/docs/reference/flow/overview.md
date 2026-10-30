@@ -379,6 +379,17 @@ entries:
 
 The file is `dictionaries/sampling-domain.yaml`, and its `name` must match the file name.
 
+### documentType: repository
+
+```yaml
+documentType: repository
+code: wl
+description: The well log flows.
+```
+
+The file is `osdu-delivery.yaml` at the repository's root, found by that name from each flow's folder, and every run of a
+flow under it carries `wl` in the correlation id of its OSDU requests ([repository document](repository.md)).
+
 ### flowType: retrieval
 
 ```yaml

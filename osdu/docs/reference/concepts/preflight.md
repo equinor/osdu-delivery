@@ -196,6 +196,8 @@ that cannot be compared, a non-date `updated` column, a declared primary key tha
 primary key, a record key without an unfiltered unique index when a primary key is declared, a row in the run's scope
 with a null key column, and a database that refuses snapshot isolation under `isolation: snapshot`. Each message names
 the key and the table, and, where a statement fixes it, gives it ([delivery flow](../flow/delivery.md#the-identity-primary-key)).
+[The record table a delivery reads](../flow/delivery-record-table.md) lists what the table must hold, the ing flow keys
+that make it, and each message with its fix.
 
 ## The run's preflight
 

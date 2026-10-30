@@ -401,6 +401,6 @@ SQLFlow's: 0 when the document (or every document of the folder) is valid, 1 oth
 - [sqlflow check](check.md): the mapping against the template its template folders hold and the cache, which needs the module database.
 - [The documents OSDU Delivery adds](../flow/overview.md): the eight flow kinds, the mapping, the dictionary and the repository document.
 - [Delivery flow](../flow/delivery.md), [The mapping document](../flow/mapping.md), [Cache flow](../flow/cache.md),
-  [Dictionary](../flow/dictionary.md), [Removal flow](../flow/removal.md), [Download flow](../flow/download.md): every key
-  each document takes.
+  [Dictionary](../flow/dictionary.md), [Removal flow](../flow/removal.md), [Download flow](../flow/download.md),
+  [Repository document](../flow/repository.md): every key each document takes.
 - [CLI conventions](../../../../sqlflow/docs/reference/concepts/cli-conventions.md): options, streams and exit codes shared by every command.

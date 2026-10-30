@@ -2590,7 +2590,8 @@
         "trace-id",
         "osdu-delivery header",
         "header policy",
-        "troubleshooting correlation"
+        "troubleshooting correlation",
+        "editor key census"
       ],
       "related": [
         "delivery-flow-repository",
@@ -2625,7 +2626,9 @@
         "osdu/src/SqlFlow.Delivery/Http/HttpExecutor.cs",
         "osdu/src/SqlFlow.Delivery/Ledger/ProblemSignature.cs",
         "osdu/src/SqlFlow.Delivery/Catalog/DeliveryDocumentHash.cs",
-        "osdu/src/SqlFlow.Delivery.Setup/OsduSignIn.cs"
+        "osdu/src/SqlFlow.Delivery.Setup/OsduSignIn.cs",
+        "osdu/docs/census/keys.repository.json",
+        "osdu/gui/src/module.tsx"
       ]
     },
     {
@@ -3298,6 +3301,7 @@
       ],
       "yamlPath": "(root, flowType: delivery)",
       "related": [
+        "delivery-flow-delivery-record-table",
         "delivery-flow-interfaces",
         "delivery-flow-enrich",
         "delivery-flow-routes",
@@ -3338,6 +3342,48 @@
         "osdu/src/SqlFlow.Delivery/Http/UrlGuard.cs",
         "sqlflow/src/SqlFlow.Core/Engine/SourceLocations.cs",
         "sqlflow/src/SqlFlow.Yaml/YamlDocumentLoader.cs"
+      ]
+    },
+    {
+      "id": "delivery-flow-delivery-record-table",
+      "corpus": "reference",
+      "path": "flow/delivery-record-table.md",
+      "title": "The record table a delivery reads (source.record): one row per record, a unique key index and an identity primary key, made by its ing flow",
+      "type": "flow-reference",
+      "summary": "What a delivery's record table must hold and the ing flow keys that make it: a unique unfiltered key index with record.primaryKey, no SCD2; each refusal's fix.",
+      "keywords": [
+        "record table",
+        "source.record",
+        "source.record.key",
+        "source.record.primaryKey",
+        "unique index without a filter",
+        "has no unique index without a filter",
+        "NCI_KeyColumn",
+        "load.keyColumns",
+        "target.identityColumn",
+        "unique key index",
+        "record held by two rows",
+        "duplicate record key",
+        "SCD2 record table",
+        "versioning.scd2",
+        "write an ing flow for a delivery",
+        "ing flow and delivery flow together"
+      ],
+      "yamlPath": "source.record (flowType: delivery)",
+      "related": [
+        "delivery-flow-delivery",
+        "delivery-flow-mapping",
+        "delivery-concept-preflight",
+        "delivery-concept-submissions",
+        "delivery-guide-getting-started",
+        "flow-ing",
+        "flow-ing-versioning"
+      ],
+      "sourceRefs": [
+        "osdu/src/SqlFlow.Delivery/Source/SqlServerIngestionSource.cs",
+        "osdu/src/SqlFlow.Delivery/Source/IngestionSql.cs",
+        "sqlflow/src/SqlFlow.SqlServer/Ingestion/CanonicalIndexPlanner.cs",
+        "sqlflow/src/SqlFlow.SqlServer/Ingestion/IngestionFlowRunner.cs"
       ]
     },
     {

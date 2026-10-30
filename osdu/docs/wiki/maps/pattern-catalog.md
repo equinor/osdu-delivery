@@ -65,6 +65,7 @@ referenceRefs:
   - delivery-flow-enrich
   - delivery-concept-request-correlation
   - delivery-concept-renaming-a-pipeline
+  - delivery-flow-repository
 related:
   - wiki-pattern-catalog
   - delivery-wiki-0018-template-folders

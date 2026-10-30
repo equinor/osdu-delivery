@@ -21,6 +21,7 @@ keywords:
   - osdu-delivery header
   - header policy
   - troubleshooting correlation
+  - editor key census
 related:
   - delivery-flow-repository
   - delivery-flow-overview
@@ -54,6 +55,8 @@ sourceRefs:
   - osdu/src/SqlFlow.Delivery/Ledger/ProblemSignature.cs
   - osdu/src/SqlFlow.Delivery/Catalog/DeliveryDocumentHash.cs
   - osdu/src/SqlFlow.Delivery.Setup/OsduSignIn.cs
+  - osdu/docs/census/keys.repository.json
+  - osdu/gui/src/module.tsx
 ---
 
 # Request correlation: the correlation id every OSDU request carries, from setting it up to finding a run in the platform's logs
@@ -71,8 +74,8 @@ correlation-id: osdu-delivery-wl-dim-01a186ef-b444-7732-bb2e-9a7f4dfd4767
 ```
 
 This page holds the whole design: the value, the two documents that set it, how to set it up, which requests carry it,
-what is refused, where the value is kept, how to find a run in the platform's logs, what changed for existing flows, and
-where it is built. The [repository document](../flow/repository.md) page is that document's own reference, and
+what is refused, how the editor checks it, where the value is kept, how to find a run in the platform's logs, what
+changed for existing flows, and where it is built. The [repository document](../flow/repository.md) page is that document's own reference, and
 [decision 0037](../../wiki/decisions/0037-request-correlation.md) says why it is built this way.
 
 ## The value
@@ -278,6 +281,15 @@ $ sqlflow validate welldb/flows/welldb-welllog-05-dimensions.yaml
 ERROR  welldb/flows/welldb-welllog-05-dimensions.yaml: ../../osdu-delivery.yaml: code 'WL' is not a repository code: a lower-case letter, then lower-case letters and digits, at most 16 in all and no hyphen, so the correlation id splits on its hyphens.
 ```
 
+## In the editor
+
+The GUI's YAML editor and the MCP server's `validate_flow` know both documents from the key census: `telemetry` and
+`telemetry.operation` in every flow kind's file, and the repository document's own, `keys.repository.json`
+([the key census](../../census/README.md)). A key's hover says what it does, a missing `code` is flagged, and a key the
+loader would refuse, such as `telemetry.bogus`, or a `name` in `osdu-delivery.yaml`, is marked as an error. A
+`telemetry` block in a mapping is refused too, since a mapping is not a run. The census checks keys, not values: the rule
+for a code and the file's name are checked by `sqlflow validate` and by the run.
+
 ## Where the value is kept
 
 | Where | What it shows |
@@ -370,6 +382,7 @@ the service logged for it; from the platform's side, the run's id at the end of 
 | The product's operations' codes | `Engine/Operations/DeliveryOperations.cs` and each operation, `Engine/Search/PartitionSchemaIndex.cs` |
 | Naming the value in errors and issues | `Http/HttpExecutor.cs`, `Ledger/ProblemSignature.cs` |
 | Keeping existing flows' document hash | `Catalog/DeliveryDocumentHash.cs` |
+| The editor's and `validate_flow`'s key checks | `osdu/docs/census/keys.repository.json` and `telemetry` in each flow kind's census, registered in `osdu/gui/src/module.tsx` and `osdu/hosts/osdu-delivery-mcp/src/docs.rs` |
 | The tests | `osdu/tests/SqlFlow.Delivery.Tests/RequestCorrelationTests.cs` |
 
 Paths without a root are under `osdu/src/SqlFlow.Delivery/`.

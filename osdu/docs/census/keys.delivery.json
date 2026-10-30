@@ -1322,7 +1322,7 @@
       "path": "interfaces.<name>.record.key",
       "type": "list",
       "required": true,
-      "description": "The record table's key columns, in order: the ingestion flow's `load.keyColumns`, naming the same columns as the mapping's `dataset.key`. The key is what makes one row one deliverable: it derives the record's delivery key and OSDU id and joins the child tables. Each column is named once."
+      "description": "The record table's key columns, in order: the ingestion flow's `load.keyColumns`, naming the same columns as the mapping's `dataset.key`. The key is what makes one row one deliverable: it derives the record's delivery key and OSDU id and joins the child tables. Each column is named once. With `primaryKey` set, the table needs a unique index without a filter on exactly these columns, which `load.keyColumns` creates (`NCI_KeyColumn`) only on the run that creates the table."
     },
     {
       "path": "interfaces.<name>.record.key[]",
@@ -1346,7 +1346,7 @@
       "path": "interfaces.<name>.record.primaryKey",
       "type": "string",
       "required": false,
-      "description": "The record table's identity primary key (the ingestion flow's `target.identityColumn`, such as `RecId`): an integer identity column that is the table's single-column primary key. A read pages by it, and a fan-out cuts the read into slices on it; without it the read is planned on one run and only the sending fans out."
+      "description": "The record table's identity primary key (the ingestion flow's `target.identityColumn`, such as `RecId`): an integer identity column that is the table's single-column primary key. A read pages by it, and a delivery is split over nodes on it; without it a run is not split, and one node plans and sends it all. With it, the record key needs a unique index without a filter (the ingestion flow's `load.keyColumns`), which a table that keeps history (SCD2) never has."
     },
     {
       "path": "interfaces.<name>.record.scope",
@@ -2923,7 +2923,7 @@
       "path": "source.record.key",
       "type": "list",
       "required": true,
-      "description": "The record table's key columns, in order: the ingestion flow's `load.keyColumns`, naming the same columns as the mapping's `dataset.key`. The key is what makes one row one deliverable: it derives the record's delivery key and OSDU id and joins the child tables. Each column is named once."
+      "description": "The record table's key columns, in order: the ingestion flow's `load.keyColumns`, naming the same columns as the mapping's `dataset.key`. The key is what makes one row one deliverable: it derives the record's delivery key and OSDU id and joins the child tables. Each column is named once. With `primaryKey` set, the table needs a unique index without a filter on exactly these columns, which `load.keyColumns` creates (`NCI_KeyColumn`) only on the run that creates the table."
     },
     {
       "path": "source.record.key[]",
@@ -2947,7 +2947,7 @@
       "path": "source.record.primaryKey",
       "type": "string",
       "required": false,
-      "description": "The record table's identity primary key (the ingestion flow's `target.identityColumn`, such as `RecId`): an integer identity column that is the table's single-column primary key. A read pages by it, and a fan-out cuts the read into slices on it; without it the read is planned on one run and only the sending fans out."
+      "description": "The record table's identity primary key (the ingestion flow's `target.identityColumn`, such as `RecId`): an integer identity column that is the table's single-column primary key. A read pages by it, and a delivery is split over nodes on it; without it a run is not split, and one node plans and sends it all. With it, the record key needs a unique index without a filter (the ingestion flow's `load.keyColumns`), which a table that keeps history (SCD2) never has."
     },
     {
       "path": "source.record.scope",

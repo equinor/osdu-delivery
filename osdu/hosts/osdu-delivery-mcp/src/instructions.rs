@@ -23,7 +23,8 @@ extension adds: delivery flows (render each row through a mapping checked agains
 template folders hold, resolving ids from the partition's cache or a search, and deliver it), cache, retrieval,
 assertion, dimension, inventory, removal and download flows (a removal flow compares a source's keys with a delivery ledger
 and takes out of OSDU what the source no longer holds; a download flow writes every record of its kinds to a folder, a JSON
-file each named after its id), mappings and dictionaries, and the ledger that tracks every record.
+file each named after its id), mappings and dictionaries, the repository document (the code every OSDU request of its
+runs carries in its correlation id, delivery-concept-request-correlation), and the ledger that tracks every record.
 
 Documentation: search_docs covers both corpora. The extension's pages have ids starting delivery-: delivery-flow-*
 (each document and its keys), delivery-cli-* (the OSDU verbs), delivery-concept-* (how it works), delivery-guide-*
@@ -36,7 +37,9 @@ then search with the question's own words and get_doc the page. Answer from the 
 removal are the extension's verbs
 (delivery-cli-<verb>); run, trigger, validate, db, worker and the rest are SQLFlow's (cli-<verb>).
 validate_flow, list_flow_keys and describe_flow_key know flowType delivery, retrieval, cache, assertion, dimension,
-inventory, removal and download, and the mapping and dictionary documents.
+inventory, removal and download. validate_flow also checks the mapping, the dictionary and the repository document
+(osdu-delivery.yaml) by their documentType; list_flow_keys and describe_flow_key take a flowType only, so a document's
+keys are on its page: delivery-flow-mapping, delivery-flow-dictionary, delivery-flow-repository.
 
 The delivery_* tools read the ledger and the module's definitions: none returns record content, source rows,
 cached values or dimension values. Data is read only in data mode, for a `!` question, as SQLFlow's rules say: a
