@@ -24,18 +24,19 @@ pub struct DimensionsInput {
     /// With dimensionId: most builds, newest first (default 10, max 500).
     #[serde(rename = "maxBuilds")]
     pub max_builds: Option<i64>,
+    /// With pipelineId: lay out how this dimension (its name in the flow) is built instead of the board.
+    pub blueprint: Option<String>,
 }
 
 #[tool_router(router = dimensions_router, vis = "pub(crate)")]
 impl DeliveryTools {
     #[tool(
-        description = "Dimensions: the distinct values OSDU records hold at a path (every operator, every curve type), collected by \
-dimension flows. Returns their definitions and build health, never the values. The board lists each dimension with \
-the OSDU kind, query and path it reads, how many values and keys it holds, when it was last built, and whether its \
-last build failed or its definition changed since. With dimensionId, returns one dimension with its recent builds: \
-records read, key completeness, what was added and removed, notes and error. Use it for 'which dimensions exist', \
-'is the operator dimension up to date', 'why did the last build fail'. Build one by running its flow with \
-trigger_run."
+        description = "Dimensions: the distinct values OSDU records hold at a path (every operator, every curve type), collected by dimension flows. Returns \
+definitions and build health, never the values. The board lists each with its OSDU kind, query and path, how many \
+values and keys it holds, when it was last built and whether that build failed. dimensionId returns one with its \
+recent builds. pipelineId and blueprint (a dimension's name) lay out how it is built: its YAML beside what each line \
+does. Use it for 'which dimensions exist', 'why did the last build fail', 'what does this YAML make'. Build one by \
+running its flow with trigger_run."
     )]
     async fn delivery_dimensions(&self, Parameters(i): Parameters<DimensionsInput>) -> String {
         if let Some(dimension) = i.dimension_id {
@@ -69,6 +70,13 @@ trigger_run."
         };
         let partition = text(i.partition);
         let query = Query::new().text("partition", partition.clone());
+        if let Some(name) = text(i.blueprint) {
+            let Some(pipeline) = pipeline else {
+                return refuse("A blueprint is read from its flow: give pipelineId too.");
+            };
+            let path = format!("/api/v1/delivery/flows/{pipeline}/dimensions/{}/blueprint", encode(&name));
+            return self.ctx.get(&path, query.pairs()).await;
+        }
         let board = match pipeline {
             Some(pipeline) => {
                 let links = json!({

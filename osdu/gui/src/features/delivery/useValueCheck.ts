@@ -12,9 +12,11 @@ import {
   type DeliveryValueCheckFinding,
   type DeliveryValueCheckRows,
   type DeliveryValueCheckVariable,
+  type DeliveryValueIssuesExport,
 } from "../../api/delivery";
 import { useActivePartition } from "./activePartition";
-import { computeTaskQuery, isTerminalTask } from "./useComputeTask";
+import { workbookBlob } from "./checkedDocument";
+import { computeTaskQuery, isTerminalTask, settledTask } from "./useComputeTask";
 import {
   DEFAULT_ROW_BUDGET,
   SAMPLES_ALL,
@@ -71,6 +73,12 @@ export interface VariableCheck {
 export interface NestedFinding {
   finding: DeliveryValueCheckFinding;
   from: VariableCheck;
+}
+
+/** The record the Document tab shows by the reader's choice, with the scope's values its row is read with. */
+export interface PickedRecord {
+  key: string;
+  values: Record<string, RunValue>;
 }
 
 /** A check queued on a node and not yet taken in. */
@@ -249,6 +257,13 @@ export interface ValueCheckSession {
   /** A request to show one variable in the tree, from outside it. */
   focus: { path: string; nonce: number } | null;
   requestFocus: (path: string) => void;
+  /** The scope's values as a read of the flow's rows is given them now. */
+  sentValues: Record<string, RunValue>;
+  /** The record the Document tab shows by the reader's choice; none shows the one the attribute leads to. */
+  pickedRecord: PickedRecord | null;
+  pickRecord: (record: PickedRecord | null) => void;
+  /** Runs the check of one attribute again on a node, over the rows it read, and answers with the workbook of the rows that fail it. */
+  exportIssues: (check: VariableCheck) => Promise<Blob>;
 }
 
 export const ValueCheckContext = createContext<ValueCheckSession | null>(null);
@@ -313,12 +328,14 @@ export function useValueCheckSession(mappingId: string, reference: string): Valu
   const [focus, setFocus] = useState<{ path: string; nonce: number } | null>(null);
   const [store, setStore] = useState<Store>(() => emptyStore(null));
   const [tasks, setTasks] = useState<PendingTask[]>([]);
+  const [pickedRecord, pickRecord] = useState<PickedRecord | null>(null);
 
   // Another flow is other rows: what was found in the one before no longer describes what is shown.
   if (store.flowKey !== currentKey) {
     setStore(emptyStore(currentKey));
     setTasks([]);
     setFilter(null);
+    pickRecord(null);
   }
 
   const polled = useQueries({ queries: tasks.map((task) => computeTaskQuery(task.taskId)) });
@@ -426,6 +443,24 @@ export function useValueCheckSession(mappingId: string, reference: string): Valu
     });
   }, [canOperate, flow, currentKey, mutate, store.variables]);
 
+  const exportIssues = useCallback(async ({ variable, meta }: VariableCheck) => {
+    const accepted = await deliveryApi.exportValueIssues(
+      meta.flow.pipelineId,
+      { targets: [variable.target], values: meta.values, maxRows: meta.maxRows, mapping: reference },
+      flowScope(meta.flow));
+    const task = await settledTask(accepted.taskId);
+    if (task.status !== "succeeded" || task.result === null || task.result === undefined) {
+      throw new Error(task.error ?? (task.status === "cancelled" ? "The export was cancelled before a node finished it." : "The export ended without an answer."));
+    }
+
+    const exported = task.result as DeliveryValueIssuesExport;
+    if (exported.listed < exported.issues) {
+      toast.warning(`The workbook lists the first ${formatCount(exported.listed)} of ${formatCount(exported.issues)} issues, which is all a file from a node can hold. Its counts are whole; read fewer rows to list the rest.`);
+    }
+
+    return workbookBlob(exported.workbook);
+  }, [reference]);
+
   const checked = useMemo(() => [...store.variables.values()], [store.variables]);
 
   const resultFor = useCallback((path: string) => store.variables.get(path), [store.variables]);
@@ -485,6 +520,10 @@ export function useValueCheckSession(mappingId: string, reference: string): Valu
     fails,
     focus,
     requestFocus: (path) => setFocus((current) => ({ path, nonce: (current?.nonce ?? 0) + 1 })),
+    sentValues: sent,
+    pickedRecord,
+    pickRecord,
+    exportIssues,
   };
 }
 

@@ -222,6 +222,19 @@ jobs:
         run: npm run test:unit
 
       # SQLFlow's GitHub action is plain JavaScript with no dependencies, so its suite runs on the sources as they are.
+      - name: Install the VS Code extension's dependencies
+        working-directory: osdu/hosts/osdu-delivery-vscode
+        run: npm ci
+
+      - name: Type check the VS Code extension
+        working-directory: osdu/hosts/osdu-delivery-vscode
+        run: npm run compile
+
+      - name: Unit test the VS Code extension
+        run: |
+          (cd osdu/hosts/osdu-delivery-vscode && npm test)
+          node --test "sqlflow/tools/sqlflow-vscode/test/*.test.ts"
+
       - name: Unit test the GitHub action
         run: node --test "sqlflow/integrations/github/test/*.test.mjs"
 

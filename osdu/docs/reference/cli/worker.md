@@ -15,6 +15,7 @@ keywords:
   - private networks
   - worker container image
   - delivery-check-values
+  - delivery-export-value-issues
   - positional argument refused
   - hosted service failed to start
 related:
@@ -36,6 +37,7 @@ sourceRefs:
   - osdu/src/SqlFlow.Delivery/Http/HttpClientBuilder.cs
   - osdu/src/SqlFlow.Delivery/Storage/FileStore.cs
   - osdu/src/SqlFlow.Delivery/Engine/Operations/CheckValuesOperation.cs
+  - osdu/src/SqlFlow.Delivery/Engine/Operations/ExportValueIssuesOperation.cs
   - osdu/src/SqlFlow.Delivery/Engine/Operations/DeliveryOperations.cs
   - osdu/src/SqlFlow.Delivery.Telemetry/TelemetryOptions.cs
   - osdu/src/SqlFlow.Delivery.Telemetry/DeliveryTelemetry.cs
@@ -78,9 +80,9 @@ ERROR  this host is the OSDU Delivery worker and takes the node's options only (
 
 `sqlflow worker` run from the OSDU Delivery CLI is the same node. Either way the module registers on the node's
 services, so a run of a delivery, retrieval, cache, assertion, dimension, inventory, removal or download flow executes exactly as it does
-with `sqlflow run`, a removal of records from OSDU included, which is a `remove` run of the delivery flow. One compute
-task of the module also drains on nodes: a value check of a mapping across a scope (`delivery-check-values`). What a
-person asks and waits on (a probe of a target, a record read back, a preview, a scope's values, the explorer) is not a
+with `sqlflow run`, a removal of records from OSDU included, which is a `remove` run of the delivery flow. Two compute
+tasks of the module also drain on nodes: a value check of a mapping across a scope (`delivery-check-values`), and the
+same check writing the rows failing an attribute to an Excel workbook (`delivery-export-value-issues`). What a person asks and waits on (a probe of a target, a record read back, a preview, a scope's values, the explorer) is not a
 node task: the control plane runs it while the request waits.
 
 ## The module database: SQLFLOW_CATALOG_DB

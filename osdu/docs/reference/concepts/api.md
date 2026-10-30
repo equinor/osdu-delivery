@@ -52,6 +52,7 @@ sourceRefs:
   - osdu/src/SqlFlow.Delivery.ControlPlane/Api/DeliverySearchTermEndpoints.cs
   - osdu/src/SqlFlow.Delivery.ControlPlane/Api/DeliveryTemplateEndpoints.cs
   - osdu/src/SqlFlow.Delivery.ControlPlane/Api/DeliveryValueCheckEndpoints.cs
+  - osdu/src/SqlFlow.Delivery/Engine/Operations/ExportValueIssuesOperation.cs
   - osdu/src/SqlFlow.Delivery.ControlPlane/Api/RecordSearchContributor.cs
   - sqlflow/src/SqlFlow.ControlPlane/Hosting/ControlPlanePolicies.cs
   - sqlflow/src/SqlFlow.ControlPlane/Api/Contracts.cs
@@ -223,6 +224,7 @@ A takeover moves each ledger as the caller, as [Renaming a pipeline](renaming-a-
 | `GET /mappings/{mappingId}` | read | | One mapping with its YAML. |
 | `GET /mappings/{mappingId}/flows` | read | | The interfaces of delivery flows that render with the mapping, in every partition. |
 | `POST /flows/{pipelineId}/check-values` | operate | body `targets` (template paths, at most 200), `values`, `maxRows` (10,000; 0 for the whole scope), `samples` (20), `skipSamples`, `mapping`; `interface`, `partition` | 202 with a compute task that finds the rows whose values the mapping's template will not take. |
+| `POST /flows/{pipelineId}/check-values/export` | operate | the same; the GUI names one attribute in `targets` | 202 with a compute task that runs the same check and writes the rows failing the attributes named to an Excel workbook, each with the source columns they read, its result `flow`, `interface`, `rowsChecked`, `issues`, `listed` (fewer than `issues` when they do not fit, which the file says), `checkedUtc` and `workbook`, the file as Base64. |
 | `GET /templates` | read | | Every file of every synced repository's template folders, as its last sync recorded it: `repoId`, `repository`, `path`, `folder`, the `kind` and `version` it holds or the `problem` why it holds none, `seenUtc`, and the kind its template is linked to as its `parent`, when it is ([what the sync records](templates.md#what-the-sync-records), [linked templates](templates.md#linked-templates)). |
 | `GET /templates/detail` | read | `repoId`, `path`, `scope` | The template one repository's file holds, read from the file and laid out variable by variable, with the file it was read from (`file`), the kind it is linked to (`parent`), and the kinds of the repository's templates linked to it, which a mapping of it can link as children with `$child` (`children`, [mapping $child](../flow/mapping-child.md)); with `scope`, the cached types each variable can read. 404 for a file the sync did not record; 422 for one that holds no template, has changed since the sync, or whose repository's folder cannot be had on this host. |
 | `GET /templates/schema` | read | `repoId`, `path` | The template one repository's file holds, as a template file to save under the file's own name ([a template as a file](templates.md#a-template-as-a-file)); 404 and 422 as for `detail`. |

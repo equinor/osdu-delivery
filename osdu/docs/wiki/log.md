@@ -593,3 +593,10 @@ document is checked: [request correlation](../reference/concepts/request-correla
 [Request correlation](../reference/concepts/request-correlation.md#from-a-log-line-to-the-run) now says how a value in a
 platform's log leads back to its run, in the search, the Runs page, `delivery_run` and the API, and the
 [pattern catalog](maps/pattern-catalog.md) lists the problem it solves.
+
+## [2026-10-30] ingest | The VS Code extension: an MCP client with browser single sign-on
+
+Source: the human's request that the editor be the primary tool for YAML, with the MCP server built in and Microsoft
+sign-in through the browser, and the audit of what a developer needs against the server's tools.
+
+Added decision 0039 and the reference guide `delivery-guide-vscode`.

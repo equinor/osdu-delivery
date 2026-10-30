@@ -140,8 +140,8 @@ export default function DeliveryOverviewPage() {
         subtitle={flows.data ? subtitle(pipelines.length - elsewhere.filter(Boolean).length, active, totals) : undefined}
         actions={(
           <>
-            <RepositorySyncControl />
             <FindRecordForm />
+            <RepositorySyncControl />
           </>
         )}
       />

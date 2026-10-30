@@ -166,7 +166,7 @@ that flow is in:
 | `read` | A record read back from OSDU for its record page (`delivery-read`). |
 | `explore` | The explorer's reads of a partition (`delivery-explore`): types, searches, a record, validation, dimension samples. |
 | `preview` | A record rendered from its source row and sent nowhere (`delivery-preview`). |
-| `values` | A mapping's value check (`delivery-check-values`). |
+| `values` | A mapping's value check (`delivery-check-values`), and the export of its issues (`delivery-export-value-issues`). |
 | `row` | A record's source row (`delivery-source`), which reads the ingestion tables. |
 | `scope` | The values a run form offers for a parameter (`delivery-scope-values`), read from the ingestion tables. |
 | `schema` | A reading of a partition's schemas, kept for the explorer's referenced-by. |

@@ -105,6 +105,18 @@ test.describe("Syncing a repository from the Delivery page", () => {
     await expect(adminPage.getByTestId("delivery-repo-sync-now")).toBeEnabled();
   });
 
+  test("keeps the record search first in the page's header", async ({ adminPage }) => {
+    await adminPage.route(SOURCES, (route) => route.fulfill(listing([source("healthy")])));
+    await adminPage.goto("/delivery");
+    await expect(adminPage.getByTestId("delivery-repo-sync")).toBeVisible({ timeout: FIRST_PAGE_MS });
+
+    const syncFollows = await adminPage.getByTestId("delivery-find-record").evaluate((search) => {
+      const sync = document.querySelector("[data-testid=delivery-repo-sync]");
+      return sync !== null && (search.compareDocumentPosition(sync) & Node.DOCUMENT_POSITION_FOLLOWING) !== 0;
+    });
+    expect(syncFollows).toBe(true);
+  });
+
   test("asks nothing of a catalog with no repository, whose empty state says how to add one", async ({ adminPage }) => {
     await adminPage.route(SOURCES, (route) => route.fulfill(listing([])));
     await adminPage.goto("/delivery");

@@ -8,6 +8,42 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **A mapping's data check shows the record behind a count.** An attribute's new **Document** tab renders a record as a delivery
+  would, sent nowhere, with the attribute marked where it landed and what the mapping's assertions said of it, a value left out
+  of the document included. Its new **Source** tab shows where the row is and what it holds in the columns the attribute reads,
+  a child dataset's failing rows marked. A row in **Data** opens either beside the tree rather than leaving the sheet, and the
+  arrows step through the records the check lists ([the Mappings page](osdu/docs/reference/concepts/gui.md#mappings)).
+
+- **The rows failing an attribute can be saved as an Excel workbook, with the base data behind them.** **Export rows** in an
+  attribute's **Data** tab saves a row for each issue with the file and row it came from, the reason, the value, and what the
+  row holds in the record's key and the source columns the attribute reads, added up by reason on a second sheet.
+  `POST /flows/{id}/check-values/export` asks for the same ([the Mappings page](osdu/docs/reference/concepts/gui.md#mappings)).
+
+- **The VS Code extension.** `osdu-delivery-vscode` makes the editor the place a pipeline is developed: a repository's plain `*.yaml`
+  files open as what they are, every key of every kind has completion, hover and checks, a mapping completes and is checked
+  against the template folders on its path as it is typed, and the views show the document in front of you, the repository,
+  the estate, its runs and what keeps a flow's records blocked. A run is started with its kind's operations and followed
+  ([the VS Code extension](osdu/docs/reference/guides/vscode.md)).
+
+- **Sign in once, with Microsoft, in the browser.** A client's browser sign-in now reaches the GUI, behind its usual sign-in, so an
+  account that signs in with Entra approves the extension, an assistant's `login` or `sqlflow login`, which the control plane's
+  own page could not offer since it takes a password. It needs no new app registration, and the extension, the MCP server and
+  the command line share the credential ([signing in](osdu/docs/reference/guides/vscode.md#signing-in)).
+
+- **An assistant can script.** The extension carries the `sqlflow` command line beside the language server and the MCP server,
+  on the PATH of every integrated terminal, and `get_cli` tells an assistant where it is
+  ([scripting](osdu/docs/reference/guides/vscode.md#scripting-with-the-command-line)).
+
+- **The MCP server is built into the extension.** The editor's chat has the server's tools with nothing to install, one
+  registration per mode, signed in with the editor, and a command connects Claude Code, Cursor and Codex to the same server
+  ([the assistant](osdu/docs/reference/guides/vscode.md#the-assistant)).
+
+- **More for an assistant to read.** `run_trace` reads what a run did, `delivery_flow_issues` what keeps a flow's records blocked,
+  `delivery_inventories` and `delivery_removals` those flows, `list_flow_kinds` the kinds and their run operations, and
+  `list_datasources` the connections flows use, `list_ai_contexts` where each AI context stands; `list_flow_keys` and `describe_flow_key` read a mapping or a schedule library as
+  they read a flow, `delivery_dimensions` lays out a dimension's blueprint, and `sync_repo_source` and `run_schedule` act
+  ([the MCP server](osdu/docs/reference/guides/mcp.md)).
+
 - **Sync a repository from the Delivery page.** **Sync now** syncs the repository picked beside it, with the same message and
   trace as the Repos page, and the page reads its flows and counts again when a sync ends, so a commit reaches the flows
   without leaving the page. The list shows how each repository last synced and remembers the pick
@@ -327,6 +363,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   curve `MD` among its curves ([Assertions](osdu/docs/reference/flow/assertion.md#assertions)).
 
 ### Changed
+- `sqlflow login` with no `--username` opens the browser to sign in, where it used to ask for a username and a password;
+  `--username` keeps the password sign-in, and `--device` prints the link rather than opening a browser
+  ([signing in](sqlflow/docs/reference/cli/control-plane.md#signing-in)).
+
 - **A run's requests carry the run's correlation id, and so do its attempts.** The `correlation-id` an OSDU request
   carries was a new GUID for each try, and the searches of cache, retrieval, dimension, inventory and assertion runs
   carried none; every request of a run now carries the run's value, which each attempt's `correlationId` names. A

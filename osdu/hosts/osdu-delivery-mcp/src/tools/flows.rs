@@ -7,7 +7,7 @@ use sqlflow_mcp::rmcp::{self, schemars, tool, tool_router};
 
 use super::{DeliveryTools, PIPELINE_HINT};
 use crate::links::flow_page;
-use crate::support::{clip_field, composed, guid, optional_guid, refuse, section, text, Query, LOG_LIMIT, LOG_PREVIEW};
+use crate::support::{clip_field, composed, drop_fields, guid, optional_guid, refuse, section, text, Query, LOG_LIMIT, LOG_PREVIEW};
 
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
 pub struct FlowInput {
@@ -56,6 +56,21 @@ pub struct FlowRecordsInput {
     /// Default 25, max 200.
     #[serde(rename = "pageSize")]
     pub page_size: Option<i64>,
+}
+
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+pub struct FlowIssuesInput {
+    /// The delivery flow's pipeline id: `id` in list_pipelines(kind="delivery").
+    #[serde(rename = "pipelineId")]
+    pub pipeline_id: String,
+    /// Read ONE issue with the files its records came from: the `issue` a listing names.
+    pub issue: Option<String>,
+    /// Required for a source with several interfaces: issues are kept per interface.
+    pub interface: Option<String>,
+    /// Required for a flow that names several partitions.
+    pub partition: Option<String>,
+    /// Most issues, the most records first (default 100).
+    pub max: Option<i64>,
 }
 
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
@@ -124,6 +139,49 @@ pub struct ActivitiesInput {
 
 #[tool_router(router = flows_router, vis = "pub(crate)")]
 impl DeliveryTools {
+    #[tool(
+        description = "What keeps a delivery flow's records blocked, grouped by cause: each issue's error pattern, how many \
+records it holds and fails and whether it lies in the set or in rows of their own, the most records first; with issue, \
+also the files they came from. Use it for 'why are records failing', 'what do I fix first'. The values an error names \
+are left out. Follow with delivery_flow_records for the records behind a count."
+    )]
+    async fn delivery_flow_issues(&self, Parameters(i): Parameters<FlowIssuesInput>) -> String {
+        let pipeline = match guid("pipelineId", &i.pipeline_id, PIPELINE_HINT) {
+            Ok(pipeline) => pipeline,
+            Err(refused) => return refused,
+        };
+        let (interface, partition, issue) = (text(i.interface), text(i.partition), text(i.issue));
+        let base = format!("/api/v1/delivery/flows/{pipeline}/issues");
+        let scope = Query::new().text("interface", interface.clone()).text("partition", partition.clone());
+        let read = match issue {
+            Some(ref issue) => {
+                let path = format!("{base}/{}", sqlflow_mcp::encode(issue));
+                let query = scope.value("samples", Some(0));
+                self.ctx.read(&path, query.pairs()).await
+            }
+            None => {
+                let query = scope.value("max", i.max);
+                self.ctx.read(&base, query.pairs()).await
+            }
+        };
+        let mut answer = match read {
+            Ok(answer) => answer,
+            Err(error) => return refuse(format!("{error:#}")),
+        };
+        drop_fields(&mut answer, &["values", "samples", "example"]);
+        let mut narrowed = vec![("tab", "issues")];
+        if let Some(ref issue) = issue {
+            narrowed.push(("issue", issue.as_str()));
+        }
+        let mut links = Map::new();
+        links.insert(
+            "page".to_string(),
+            json!(flow_page(self.ctx.links(), &pipeline, interface.as_deref(), partition.as_deref(), &narrowed)),
+        );
+        crate::support::put_links(&mut answer, links);
+        sqlflow_mcp::json_str(&answer)
+    }
+
     #[tool(
         description = "A delivery flow at a glance. `stats`: records per custody state (pending, delivering, delivered, \
 held, failed, deleted, waiting), drifted, delivered in the last 24 hours, last delivery, last verify, last \

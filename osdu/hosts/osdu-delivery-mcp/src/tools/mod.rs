@@ -7,13 +7,14 @@
 //! one answer still only reads.
 //!
 //! The tools are grouped as the product is: the ledger's records, flows and submissions, the audit trail, mappings and
-//! templates, the partition caches, assertions, dimensions, and the operator's actions.
+//! templates, the partition caches, assertions, dimensions, inventories and removals, and the operator's actions.
 
 mod assertions;
 mod cache;
 mod dimensions;
 mod documents;
 mod flows;
+mod inventories;
 mod operate;
 mod records;
 
@@ -39,6 +40,7 @@ impl DeliveryTools {
             + Self::cache_router()
             + Self::assertions_router()
             + Self::dimensions_router()
+            + Self::inventories_router()
             + Self::operate_router()
     }
 }

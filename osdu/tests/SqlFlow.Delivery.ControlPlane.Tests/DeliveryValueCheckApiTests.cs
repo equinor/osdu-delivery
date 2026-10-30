@@ -195,6 +195,16 @@ public sealed class DeliveryValueCheckApiTests
             Assert.Equal("0", whole.Argument("maxRows"));
             Assert.Null(whole.Argument("samples"));
 
+            // An export of an attribute's rows is asked for as a check is, and queued for a node the same way.
+            var export = await QueuedAsync(client, token, $"/api/v1/delivery/flows/{pipelineId:D}/check-values/export?interface=welllogs", new { targets = new[] { "osdu.data.WellboreID" }, values, maxRows = 1000, mapping = "WellLog@1.4.0" });
+            Assert.Equal("delivery-export-value-issues", export.Operation);
+            Assert.Equal(flowName, export.SourceRef);
+            Assert.Equal("welllogs", export.Argument("interface"));
+            Assert.Equal(["osdu.data.WellboreID"], JsonSerializer.Deserialize<string[]>(export.Argument("targets")!)!);
+            Assert.Equal("1000", export.Argument("maxRows"));
+            Assert.Equal("WellLog@1.4.0", export.Argument("mapping"));
+            await RefusedAsync(client, token, $"/api/v1/delivery/flows/{pipelineId:D}/check-values/export?interface=welllogs", new { }, "needs a value for logSource");
+
             // What a node would refuse is refused here, before anything is queued.
             await RefusedAsync(client, token, path, new { targets = new[] { "data.Name" }, values }, "is not a variable a check can name");
             await RefusedAsync(client, token, path, new { targets = new[] { "osdu.data.Curves[]" }, values }, "is not a variable a check can name");

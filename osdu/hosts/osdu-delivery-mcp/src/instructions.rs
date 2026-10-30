@@ -72,7 +72,7 @@ Which tool:
 - One record ('was X delivered', 'why did it fail', 'which file is it from', 'who deleted it'): delivery_find_records,
   then delivery_record.
 - One flow ('how is it doing', 'what failed', 'where does it deliver'): list_pipelines(kind=\"delivery\"), then
-  delivery_flow, then delivery_flow_records(status=...).
+  delivery_flow, delivery_flow_issues for what keeps its records blocked, then delivery_flow_records(status=...).
 - One run ('what did last night's run do'): list_runs and get_run for the run, delivery_submissions for what it planned
   and delivered, delivery_flow_records(runId=...) for its records. From an id in a platform's log: delivery_run, which
   takes a run id or a whole correlation-id and gives every run of a split delivery.
@@ -85,6 +85,7 @@ Which tool:
   A custom copy of a canonical kind, delivered beside it and linked to it both ways (the custom template's
   x-osdu-inheriting-from-kind, $parent in its mapping, $child in the canonical mapping): delivery-guide-linked-records.
 - Tests and dimensions: delivery_assertions, delivery_assertion_runs, delivery_dimensions. Retrievals: delivery_retrievals.
+  Inventories and removal flows: delivery_inventories, delivery_removals (they read; a removal is made in the GUI).
 
 Running an OSDU flow: trigger_run with the kind's own arguments, never fullLoad or a backfill window.
 - operation: delivery takes deliver (default), plan, intake, drain, verify, replan, sync, reverse, undo, remove,

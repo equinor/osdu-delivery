@@ -33,7 +33,8 @@ The tests run in two tiers, both through `tools/test.sh` (on Windows from Git Ba
 any terminal that has it):
 
 - **The unit tier** (`bash tools/test.sh`) is the build with warnings as errors, every .NET test that needs no SQL
-  Server, host or other process, and the GUI's build, lint and unit tests. It takes a few minutes and needs no
+  Server, host or other process, the GUI's build, lint and unit tests, and the VS Code extension's type check and unit
+  tests. It takes a few minutes and needs no
   database. It is what CI's **Build and test** runs on every pull request, and what the pre-push hook runs before every
   push that carries commits (`git push --no-verify` skips it once). `dev.bat` and `./dev.sh` install the hook on a
   clone's first start, unless a hooks path is set already.
@@ -43,6 +44,10 @@ any terminal that has it):
   the pull request says which suites have not run.
   CI runs it as **Full test suite** on a release tag, whose release waits for it, on a pull request labelled
   `full-tests`, and when the CI workflow is run by hand (Actions, CI, Run workflow).
+
+- **The VS Code extension in a real editor** (`npm run test:integration` in `osdu/hosts/osdu-delivery-vscode`) runs the extension
+  with both servers over the welldb sample. It downloads an editor once and needs both programs built, so it runs on demand
+  after a change to the extension; a manifest, an activation and the servers fitting together is what the unit tests cannot reach.
 
 - **An on-demand suite** (`bash tools/test.sh --suite <name>`) runs one suite alone, against SQL Server as the full tier
   runs the suites: the tests that carry `[Trait("Suite", "<name>")]`, which both tiers and CI leave out, for edge cases

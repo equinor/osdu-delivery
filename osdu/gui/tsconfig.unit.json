@@ -23,6 +23,7 @@
     "src/features/delivery/inventories/duplicates/duplicateDocument.ts",
     "src/features/delivery/orphanedLedgers.ts",
     "src/features/delivery/firstRecords.ts",
+    "src/features/delivery/checkedDocument.ts",
     "src/features/delivery/utcInstant.ts",
     "src/features/delivery/enrichSteps.ts",
     "src/features/delivery/enrichmentText.ts",

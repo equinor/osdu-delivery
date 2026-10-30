@@ -12,7 +12,8 @@ their advisories (`ce98aca5`), the copy targets' path refusal (`6206a2b0`), the 
 pooled connection's isolation level (`92604e18`), the completion's consequences after its commit (`54e3862a`), the wiki
 linter's options for a product's wiki (`d7a06ff0`), the table page type (`84b152c2`), the doc search's table rule
 (`c80ca450`), the source-side trace steps (`5a2977c0`), the catalog's platform tables, spellings and forgotten objects
-(`4e1dfeaa`) and the catalog browse's one rule (`5b3903d1`) are not carried yet. Besides those, `sqlflow/` is SQLFlow as
+(`4e1dfeaa`), the catalog browse's one rule (`5b3903d1`), a client's sign-in approved in the GUI, the MCP server's reads and
+actions for an editor, and the VS Code extension as a client of the server and a library are not carried yet. Besides those, `sqlflow/` is SQLFlow as
 it stands except for the one difference section 5 lists. It is written for whoever wants the reason behind an extension
 point, or resolves a conflict during the next `git subtree pull`.
 
@@ -137,6 +138,9 @@ SQLFlow marked its database tests `[Trait("Category", "Integration")]`, but not 
 | SQLFlow commit | What it marks |
 | --- | --- |
 | `da3ce2c8` | The 34 test classes that start the control plane host (`ControlPlaneAppFactory`, `WebApplicationFactory`), start the control plane or the command line as a process, or reach a database through a fixture of their own carry the trait too. `dotnet test --filter "Category!=Integration"` then runs every other SQLFlow test with no SQL Server, host or process, in under a minute; nothing a test does changes. This project's unit tier (`tools/test.sh`, CI's Build and test) is that filter over the whole solution. |
+| (this change) | A device sign-in could not reach an account that signs in with Microsoft Entra: the page a client opens, `GET /device`, takes a password, so neither the MCP server's `login` nor any other client of the grant could use one. The GUI has a `/device` page behind its sign-in, and the control plane hands the request to it when it knows the GUI's address, from `ControlPlane:Notifications:GuiBaseUrl` or the one origin `ControlPlane:Cors:AllowedOrigins` names. |
+| (this change) | A person signed in separately to the command line and to each MCP server. `~/.sqlflow/credentials.json` now holds the credential of a control plane for both: the server reads and writes it, takes up what another client wrote on its next call, and the command line renews a session it finds there. `sqlflow login` opens the browser unless told otherwise, and with one control plane in the file a script needs no `--url`. `tools/sqlflow-mcp/tests/shared-credentials.json` holds both readers to one format. |
+| (this change) | The MCP server left out what a developer needs, though the routes were there: `run_trace` (a run's trace, or a pipeline's latest), `list_flow_kinds` (the kinds, the documents and each kind's run operations), `list_datasources`, `list_ai_contexts`, `get_cli`, `sync_repo_source` and `run_schedule`. `list_flow_keys` and `describe_flow_key` take a `documentType`, so they read a schedule library, an AI context or a module's document, where before they answered only for a flow kind. |
 
 ## 2. The extension points this project needed
 
@@ -148,6 +152,7 @@ Each of these lets a host add something of its own without SQLFlow knowing what 
 | SQLFlow commit | The extension point |
 | --- | --- |
 | `4d05cd9e` | A host composes the control plane and the CLI with modules of its own (`IControlPlaneModule`, `ICliModule`, `ControlPlaneHost`, `CliHost`). |
+| (this change) | A host composes the VS Code extension with modules of its own (`activateHost`, `VscodeHost`, `VscodeModule`), as it composes the MCP server: its server, its key census, its documentation, sections of the Document view, references, lenses, commands and what a run's panel and form show. The extension is a client of the MCP server rather than of the control plane's REST routes, recognises a document by its content as the estate's sync does, and passes the host's census directories to the language server. |
 | `8b73469d` | A host brands the product the control plane and the CLI name (`ProductBranding`). |
 | `3f0619e9` | A host builds its GUI from SQLFlow's workbench with modules of its own (the GUI module registry and bootstrap). |
 | `09aa0a5e` | A module's page renders in a window of its own (`ModuleRoute.frame: "window"`, `WindowFrame`): signed in like every page, holding the whole viewport, with nothing of the workbench around it. Every module page rendered inside the workbench, so a view a module opens beside it (a pop-out, a second screen) carried the whole frame again: title bar, activity bar, side bar, tabs and status bar around a view meant to stand alone. Generic: any module with a view worth a window of its own wants it. |

@@ -57,6 +57,26 @@ updates:
           - minor
           - patch
 
+  # The VS Code extension, which compiles the vendored sqlflow/tools/sqlflow-vscode sources in place with these packages.
+  # Its @types/vscode stays at the engine the manifest declares, which is moved by hand.
+  - package-ecosystem: npm
+    directory: /osdu/hosts/osdu-delivery-vscode
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: osdu
+    ignore:
+      - dependency-name: "@types/vscode"
+    groups:
+      vscode-extension:
+        patterns:
+          - "*"
+        update-types:
+          - minor
+          - patch
+
   # The packages the OSDU projects use and SQLFlow does not, pinned in osdu/Directory.Packages.props. Dependabot reads
   # projects, not props files, so it starts from OsduDelivery.sln; the allow list keeps it to the packages pinned in
   # osdu/, since every other pin is SQLFlow's, which a module never moves (osdu/Directory.Packages.props). A package

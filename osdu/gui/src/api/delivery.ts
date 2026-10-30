@@ -1554,6 +1554,20 @@ export interface DeliveryValueCheckRequest {
 }
 
 /**
+ * What `delivery-export-value-issues` answers: what the check found, and the workbook listing every issue, as Base64. It
+ * lists fewer than it found only when they do not fit a task's result, which its About sheet says.
+ */
+export interface DeliveryValueIssuesExport {
+  flow: string;
+  interface?: string | null;
+  rowsChecked: number;
+  issues: number;
+  listed: number;
+  checkedUtc: string;
+  workbook: string;
+}
+
+/**
  * What a variable came to in a row that did not give it a value the template accepts, that the mapping means no value for,
  * or (`asserted`) whose value fails an assertion of the mapping.
  */
@@ -1616,6 +1630,8 @@ export interface DeliveryValueCheckFinding {
 /** One variable checked: its rows by outcome, the values it was written with, and its findings. */
 export interface DeliveryValueCheckVariable {
   target: string;
+  /** The source columns the entry filling it reads, as the mapping names them (`dataset.curves.curve_unit`); absent from an older node. */
+  columns?: string[];
   /** Where the mapping writes its entry; absent for a variable of data the schema requires that no entry fills directly. */
   entry?: string | null;
   required: boolean;
@@ -4206,6 +4222,9 @@ export const deliveryApi = {
    */
   checkValues: (pipelineId: string, request: DeliveryValueCheckRequest, scope?: DeliveryFlowScope) =>
     post<ComputeTaskAccepted>(flowPath(pipelineId, "/check-values", scope), request),
+  /** Queues the same check on a node to write every issue it finds to an Excel workbook, which the task's result carries. */
+  exportValueIssues: (pipelineId: string, request: DeliveryValueCheckRequest, scope?: DeliveryFlowScope) =>
+    post<ComputeTaskAccepted>(flowPath(pipelineId, "/check-values/export", scope), request),
   /** Reads any OSDU record by id, through the flow's route and credentials. Answered at once. */
   readOsdu: (pipelineId: string, targetId: string, scope?: DeliveryFlowScope, version?: number) =>
     post<DeliveryOsduRead>(flowPath(pipelineId, "/osdu/read", scope), version === undefined ? { targetId } : { targetId, version }),

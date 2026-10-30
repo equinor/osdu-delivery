@@ -3,7 +3,7 @@
 #
 #   bash tools/test.sh                  the unit tier: the build with warnings as errors, every .NET test that needs no
 #                                       SQL Server, host or other process, the GUI's build, lint and unit tests, and the
-#                                       GitHub action's tests. It is what CI's Build and test runs on a pull request, and
+#                                       GitHub action's tests, and the VS Code extension's. It is what CI's Build and test runs on a pull request, and
 #                                       what the pre-push hook runs. It needs no database.
 #   bash tools/test.sh --full           everything: the whole .NET suite against SQL Server (and a test GitHub App when
 #                                       one is configured), the MCP server's crates and the GUI end-to-end suite. Run it
@@ -218,6 +218,12 @@ if [ "$mode" = full ] || [ -z "$base" ] || [ -n "$(git diff --name-only "$base" 
 else
   step "SQLFlow GUI: unchanged on this branch, not built"
 fi
+
+# The VS Code extension: both trees' type check and unit tests. The host compiles SQLFlow's sources in place, with its own packages.
+step "VS Code extension: type check and unit tests"
+gui_install osdu/hosts/osdu-delivery-vscode
+(cd osdu/hosts/osdu-delivery-vscode && npm run compile && npm test)
+node --test "sqlflow/tools/sqlflow-vscode/test/*.test.ts"
 
 step "GitHub action: unit tests"
 node --test "sqlflow/integrations/github/test/*.test.mjs"

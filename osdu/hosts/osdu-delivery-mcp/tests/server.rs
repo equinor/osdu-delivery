@@ -45,7 +45,9 @@ const DELIVERY_TOOLS: &[&str] = &[
     "delivery_dimensions",
     "delivery_find_records",
     "delivery_flow",
+    "delivery_flow_issues",
     "delivery_flow_records",
+    "delivery_inventories",
     "delivery_mappings",
     "delivery_osdu_schema_compare",
     "delivery_osdu_schemas",
@@ -54,6 +56,7 @@ const DELIVERY_TOOLS: &[&str] = &[
     "delivery_record",
     "delivery_redeliver_record",
     "delivery_release_records",
+    "delivery_removals",
     "delivery_retrievals",
     "delivery_run",
     "delivery_scaffold_mapping",
@@ -69,12 +72,12 @@ const DELIVERY_TOOLS: &[&str] = &[
 /// put on one side or the other.
 const SQLFLOW_OFFERED: &[&str] = &[
     "search_docs", "get_doc", "get_doc_by_yaml_path", "get_doc_by_cli_command", "related_docs", "list_docs",
-    "validate_flow", "list_flow_keys", "describe_flow_key",
+    "validate_flow", "list_flow_kinds", "list_flow_keys", "describe_flow_key",
     "get_control_plane_url", "set_control_plane_url", "check_connectivity", "login", "check_auth_status",
     "set_access_token", "logout",
     "list_repos", "get_repo", "list_pipelines", "list_flow_batches", "get_pipeline", "pipeline_definition",
     "pipeline_file_stats", "pipeline_columns",
-    "list_runs", "get_run", "run_statements", "run_assertions", "run_files", "run_health_metrics",
+    "list_runs", "get_run", "run_trace", "run_statements", "run_assertions", "run_files", "run_health_metrics",
     "list_schemas", "lineage_objects", "lineage_object_detail", "lineage_object_columns", "describe_object",
     "get_table_key", "get_table_joins", "object_lineage", "describe_object_refresh", "list_file_sources",
     "file_provenance", "catalog_tree", "lineage_edges", "lineage_waves", "lineage_dependencies",
@@ -91,7 +94,7 @@ const SQLFLOW_OFFERED: &[&str] = &[
     "prepare_query", "run_query", "auto_run_trusted_match",
     // The conversation's mode: which one it is in, and switching it on the person's own command, which the model relays.
     "get_mode", "start_data_mode", "end_data_mode",
-    "list_schedules", "get_schedule", "get_schedule_plan", "list_nodes", "list_repo_sources", "summary",
+    "list_schedules", "get_schedule", "get_schedule_plan", "list_nodes", "list_datasources", "list_ai_contexts", "get_cli", "sync_repo_source", "run_schedule", "list_repo_sources", "summary",
     "insights_flows", "insights_attention", "insights_recommendations", "insights_steps", "detect_stream_anomalies",
     "trigger_run", "cancel_run", "propose_pipelines",
 ];
@@ -405,7 +408,7 @@ async fn every_delivery_tool_is_described_for_a_model_choosing_between_tools() {
             );
         }
     }
-    assert!(total <= 17_000, "the delivery tools' descriptions add up to {total} characters");
+    assert!(total <= 18_000, "the delivery tools' descriptions add up to {total} characters");
 
     // The operator's actions say what they are; nothing else claims to be one.
     let acts = ["delivery_probe_target", "delivery_verify_record", "delivery_sync_with_source", "delivery_release_records",
@@ -1558,6 +1561,81 @@ async fn a_cache_decision_and_a_probe_say_what_they_did() {
     assert_eq!(probed["status"], json!(401));
     assert_eq!(estate.only("POST", &probe).query, "partition=dev");
     assert!(estate.seen().iter().all(|request| !request.path.starts_with("/api/v1/datasources/tasks")));
+}
+
+/// What keeps a flow's records blocked reads as causes: the pattern and its counts, with the values an error names and
+/// the example records left out, so the tool stays metadata while the GUI's Issues tab opens them.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_flows_issues_answer_the_cause_without_the_values_it_names() {
+    let base = format!("/api/v1/delivery/flows/{PIPELINE}/issues");
+    let estate = Estate::start(vec![
+        (
+            route(format!("GET {base}")),
+            200,
+            json!({
+                "issues": [{
+                    "issue": "abc",
+                    "pattern": "No record found for {value}",
+                    "records": 4,
+                    "shape": "rows",
+                    "values": ["SECRET-WELL"],
+                    "example": { "sourceKey": "SECRET-WELL" },
+                }],
+                "totalIssues": 1,
+            }),
+        ),
+    ])
+    .await;
+    let mut session = Session::open(&estate).await;
+
+    let answer = session.json("delivery_flow_issues", json!({ "pipelineId": PIPELINE })).await;
+
+    assert_eq!(answer["issues"][0]["pattern"], json!("No record found for {value}"));
+    assert_eq!(answer["issues"][0]["records"], json!(4));
+    assert!(!answer.to_string().contains("SECRET-WELL"), "{answer}");
+    assert_eq!(answer["links"]["page"], json!(format!("https://delivery.example.com/pipelines/{PIPELINE}?tab=issues")));
+}
+
+/// A removal flow's page reads with its runs, and its id is what narrows it; an inventory reads through its flow.
+#[tokio::test(flavor = "multi_thread")]
+async fn removals_and_inventories_read_their_flows() {
+    let estate = Estate::start(vec![
+        (route(format!("GET /api/v1/delivery/removals/flows/{PIPELINE}")), 200, json!({ "name": "wells-removal", "removals": [] })),
+        (route(format!("GET /api/v1/delivery/removals/flows/{PIPELINE}/runs")), 200, json!([{ "status": "completed" }])),
+        (route(format!("GET /api/v1/delivery/flows/{PIPELINE}/inventories")), 200, json!({ "inventories": [{ "name": "wells" }] })),
+    ])
+    .await;
+    let mut session = Session::open(&estate).await;
+
+    let removal = session.json("delivery_removals", json!({ "pipelineId": PIPELINE })).await;
+    let inventory = session.json("delivery_inventories", json!({ "pipelineId": PIPELINE })).await;
+
+    assert_eq!(removal["flow"]["name"], json!("wells-removal"));
+    assert_eq!(removal["runs"][0]["status"], json!("completed"));
+    assert_eq!(inventory["inventories"][0]["name"], json!("wells"));
+}
+
+/// The kinds a developer can write: SQLFlow's own, the module's, and the documents that are not flows, whose keys the key
+/// tools answer as they do a flow's.
+#[tokio::test(flavor = "multi_thread")]
+async fn the_kinds_are_listed_with_their_operations_and_a_documents_keys_are_answered() {
+    let estate = Estate::start(vec![(
+        route("GET /api/v1/kinds".to_string()),
+        200,
+        json!([{ "flowType": "delivery", "operations": [{ "name": "deliver", "writesTarget": true }], "defaultOperation": "deliver" }]),
+    )])
+    .await;
+    let mut session = Session::open(&estate).await;
+
+    let kinds = session.json("list_flow_kinds", json!({})).await;
+    let keys = session.json("list_flow_keys", json!({ "documentType": "mapping" })).await;
+
+    let flows = kinds["flowKinds"].as_array().expect("a list");
+    assert!(flows.contains(&json!("ing")) && flows.contains(&json!("delivery")), "{kinds}");
+    let documents = kinds["documentKinds"].as_array().expect("a list");
+    assert!(documents.contains(&json!("mapping")) && documents.contains(&json!("schedules")), "{kinds}");
+    assert_eq!(kinds["runOperations"][0]["defaultOperation"], json!("deliver"));
+    assert!(keys["keys"].as_array().expect("a list").iter().any(|key| key["path"] == json!("template.kind")), "{keys}");
 }
 
 #[tokio::test(flavor = "multi_thread")]

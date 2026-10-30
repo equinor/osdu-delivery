@@ -86,7 +86,8 @@ routes and user administration.
 - **Nodes** are not people. A worker authenticates with a personal access token minted with the `node` scope, as any
   SQLFlow node does ([sqlflow worker](../../../../sqlflow/docs/reference/cli/worker.md)); OSDU Delivery adds nothing to it.
   Mint it from an account whose own scopes cover it, and keep it in a secret store.
-- **The MCP server** holds the session of the person who approved its sign-in and renews it as the GUI renews its own,
+- **The MCP server** holds the session of the person who approved its sign-in, in the browser and through the GUI's sign-in, so
+  an Entra account approves one as it signs in anywhere ([signing in](../guides/vscode.md#signing-in)), and renews it as the GUI renews its own,
   or, run as a service, forwards each request's own bearer token after checking it with `GET /api/v1/me`. Its tools can
   do what that token can do ([the MCP server](../guides/mcp.md)).
 - **The GUI chat assistant** runs each question under a token delegated from the signed-in user, issued for that one

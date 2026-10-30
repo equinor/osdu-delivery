@@ -1,5 +1,6 @@
 using SqlFlow.Delivery.Engine;
 using SqlFlow.Delivery.Engine.Checks;
+using SqlFlow.Delivery.Engine.Operations;
 using SqlFlow.Delivery.Identity;
 using SqlFlow.Delivery.Model;
 using SqlFlow.Delivery.Rendering;
@@ -304,5 +305,69 @@ public sealed class ValueCheckTests : IDisposable
     }
 
     /// <summary>How many records a plan of the scope holds, rendering them as a first delivery would.</summary>
+    [Fact]
+    public async Task An_export_of_an_attribute_hands_back_the_rows_failing_it_with_the_base_data_behind_them_and_nothing_written()
+    {
+        var logs = SampleEstate.Logs();
+        var tables = await SampleEstate.BuildAsync(_root, Now.AddMinutes(-5), time: _clock);
+        tables.Records[0].Row["log_run"] = "   ";
+        tables.Records[1].Row["wellbore_uwi"] = "NOWHERE 1";
+        var engine = Samples.Engine(ledger: null, _clock, sources: tables, searches: FixedRecordSearchFactory.SampleWellbores());
+        var flow = Samples.LocalFlow(_root);
+
+        var arguments = new Dictionary<string, string>(StringComparer.Ordinal)
+        {
+            ["flowFile"] = Samples.Flow,
+            ["values"] = SqlFlow.Core.Runs.RunParameters.ValuesToJson(SampleEstate.Values)!,
+            ["targets"] = """["osdu.data.WellboreID"]""",
+            ["samples"] = "20",
+        };
+        if (flow.Interface is { } name)
+        {
+            arguments["interface"] = name;
+        }
+
+        if (flow.Partition is { } partition)
+        {
+            arguments[DeliveryOperation.PartitionArgument] = partition;
+        }
+
+        var payload = new SqlFlow.Core.Compute.ComputeTaskPayload { Operation = ExportValueIssuesOperation.OperationName, SourceRef = flow.Name, Arguments = arguments };
+        payload.Validate([ExportValueIssuesOperation.OperationName]);
+
+        var answer = await new ExportValueIssuesOperation(engine).ExecuteAsync(payload, CancellationToken.None);
+        using var json = System.Text.Json.JsonDocument.Parse(answer);
+        var root = json.RootElement;
+        Assert.Equal(logs.Count, root.GetProperty("rowsChecked").GetInt64());
+        Assert.Equal(1, root.GetProperty("issues").GetInt64());
+        Assert.Equal(1, root.GetProperty("listed").GetInt64());
+
+        // Only the attribute's own failing row, not the row another attribute fails, with what the row holds in the source.
+        using var read = new WorkbookReading(Convert.FromBase64String(root.GetProperty("workbook").GetString()!));
+        var row = Assert.Single(read.Rows(ValueIssuesWorkbook.IssuesSheet));
+        Assert.Equal("osdu.data.WellboreID", row["Attribute"].GetText());
+        Assert.Equal("Held", row["Outcome"].GetText());
+        Assert.Equal(SourceKeyOf(logs[1]), row["Source key"].GetText());
+        Assert.Equal(SampleEstate.FileName, row["Source file"].GetText());
+        Assert.Equal("NOWHERE 1", row["dataset.wellbore_uwi"].GetText());
+        Assert.DoesNotContain("dataset.log_run", read.Headers(ValueIssuesWorkbook.IssuesSheet));
+        Assert.Equal("osdu.data.WellboreID", read.About()["Attribute"].GetText());
+
+        Assert.False(Directory.Exists(Path.Combine(_root, "work")) && Directory.EnumerateFileSystemEntries(Path.Combine(_root, "work")).Any());
+    }
+
+    [Fact]
+    public async Task A_variable_says_which_source_columns_it_reads()
+    {
+        var (_, runtime, _) = await RuntimeAsync();
+        using (runtime)
+        {
+            var check = await new ValueChecker(runtime).CheckAsync(new ValueCheckRequest());
+
+            Assert.Contains("dataset.log_run", Variable(check, "osdu.data.LogRun").Columns);
+            Assert.Contains("dataset.curves.curve_version", Variable(check, "osdu.data.Curves[].CurveVersion").Columns);
+        }
+    }
+
     private static async Task<long> HeldByPlanAsync(FlowRuntime runtime) => (await runtime.PlanAsync(force: true)).Holds;
 }

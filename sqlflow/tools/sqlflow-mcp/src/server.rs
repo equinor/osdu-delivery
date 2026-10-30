@@ -415,6 +415,10 @@ pub struct FlowTypeInput {
     /// The flow kind: omit for the file flow, or one of ing, exp, sp, inv, hc, scm, sch, batch, api, cpy, sftp, cal, trl.
     #[serde(rename = "flowType")]
     pub flow_type: Option<String>,
+    /// A document that is not a flow, instead of a flow kind: "schedules", "subscribers", "ai-context", or a
+    /// documentType a module registers (list_flow_kinds names them).
+    #[serde(rename = "documentType")]
+    pub document_type: Option<String>,
 }
 
 #[derive(Debug, Deserialize, JsonSchema)]
@@ -424,6 +428,9 @@ pub struct DescribeKeyInput {
     /// The flow kind selecting which census applies (see list_flow_keys).
     #[serde(rename = "flowType")]
     pub flow_type: Option<String>,
+    /// A document that is not a flow, instead of a flow kind (see list_flow_keys).
+    #[serde(rename = "documentType")]
+    pub document_type: Option<String>,
 }
 
 #[derive(Debug, Deserialize, JsonSchema)]
@@ -465,6 +472,20 @@ pub struct RunIdInput {
     /// A run id (GUID).
     #[serde(rename = "runId")]
     pub run_id: String,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct RunTraceInput {
+    /// The run to read (GUID). Give this or pipelineId.
+    #[serde(rename = "runId")]
+    pub run_id: Option<String>,
+    /// A flow's pipeline id (GUID): reads its latest run, for "what did its last run do". Give this or runId.
+    #[serde(rename = "pipelineId")]
+    pub pipeline_id: Option<String>,
+    pub page: Option<i64>,
+    /// Entries a page, oldest first. The answer's `total` says how many there are, so the last page holds how it ended.
+    #[serde(rename = "pageSize")]
+    pub page_size: Option<i64>,
 }
 
 #[derive(Debug, Deserialize, JsonSchema)]
@@ -1093,6 +1114,22 @@ pub fn done(result: anyhow::Result<String>) -> String {
     }
 }
 
+/// The documents that are not flows and that SQLFlow itself knows, as `documentType` names them to the key tools.
+const LIBRARY_DOCUMENTS: &[&str] = &["schedules", "subscribers", "ai-context"];
+
+/// The census of a flow kind, or of a document that is not a flow when one is named. A document kind no census describes
+/// answers why, rather than the file flow's keys, which would read as that document's.
+fn census_of(flow_type: Option<&str>, document_type: Option<&str>) -> Result<Census, String> {
+    match document_type.map(str::trim).filter(|d| !d.is_empty()) {
+        None => Ok(Census::for_flow_type(flow_type)),
+        Some("schedules") => Ok(Census::for_schedules()),
+        Some("subscribers") => Ok(Census::for_subscribers()),
+        Some("ai-context") => Ok(Census::for_ai_context()),
+        Some(other) => Census::for_document_type(other)
+            .ok_or_else(|| format!("No key census describes documentType '{other}'. list_flow_kinds names the kinds.")),
+    }
+}
+
 /// A JSON value as the text a tool returns, with every SQL statement in it laid out on lines for the person who reads
 /// the answer ([`crate::sql_format`]). Every tool's answer, a host module's included, is rendered here, so none of
 /// them hands a person a statement as one line.
@@ -1499,14 +1536,45 @@ fn annotate_search_all(value: &mut Value, query: &str) {
     }
 }
 
-/// The `sqlflow` CLI executable the discover tool shells out to: `SQLFLOW_CLI` when
-/// set (a full path), otherwise `sqlflow` resolved from `PATH`.
+/// The `sqlflow` CLI executable: `SQLFLOW_CLI` when set (a full path), else the one packaged beside this program, as an
+/// editor's extension ships them, otherwise `sqlflow` resolved from `PATH`.
 fn sqlflow_cli_command() -> String {
     match std::env::var("SQLFLOW_CLI") {
         Ok(path) if !path.trim().is_empty() => path,
-        _ => "sqlflow".to_string(),
+        _ => cli_beside_this_program().unwrap_or_else(|| "sqlflow".to_string()),
     }
 }
+
+/// Where a command resolves to, found rather than run: a path as it stands, a bare name along `paths`.
+fn resolve_command(command: &str, paths: impl Iterator<Item = std::path::PathBuf>) -> Option<String> {
+    let given = std::path::Path::new(command);
+    if given.components().count() > 1 {
+        return given.is_file().then(|| command.to_string());
+    }
+    let names = if cfg!(windows) {
+        vec![format!("{command}.exe"), format!("{command}.cmd")]
+    } else {
+        vec![command.to_string()]
+    };
+    paths
+        .flat_map(|folder| names.iter().map(|name| folder.join(name)).collect::<Vec<_>>())
+        .find(|candidate| candidate.is_file())
+        .map(|found| found.to_string_lossy().into_owned())
+}
+
+fn cli_beside_this_program() -> Option<String> {
+    let program = std::env::current_exe().ok()?;
+    let cli = program.parent()?.join(if cfg!(windows) { "sqlflow.exe" } else { "sqlflow" });
+    cli.is_file().then(|| cli.to_string_lossy().into_owned())
+}
+
+/// How an assistant scripts with the command line, carried on the answer rather than only in the instructions, since a
+/// client may cut those short.
+const CLI_CONVENTIONS: &str = "It signs in with this server's own sign-in, per control plane, so a script needs no token. \
+Add --json for an answer to read rather than a person's text; get_doc_by_cli_command gives a verb's page. Run a verb that \
+writes (run, trigger, cancel, or anything else that changes the estate) only when the person asked for that action. \
+`preview` and `values` print row values, which reach you and your model provider, so run those only when the person asks \
+for them too.";
 
 /// Runs the `sqlflow` CLI with the given arguments and returns its stdout on success.
 /// The child is spawned on a blocking thread (the workspace tokio build omits the
@@ -1682,20 +1750,54 @@ and fix every finding first."
         json_str(&json!({ "problems": list }))
     }
 
-    #[tool(description = "List every documented attribute for a flow kind: {path, type, required}.")]
+    #[tool(
+        description = "The kinds of document this editor knows, for 'which flow kinds are there' and 'what can I \
+write here': flowKinds (the flowType values, SQLFlow's own and a module's), documentKinds (the documents that are not \
+flows, each a documentType or a library file), and runOperations (per kind a host module registers: what a run of it \
+can do, whether that writes to the flow's target, and the operation it does by default, which trigger_run's \
+operation names). Take a kind to list_flow_keys. The kinds answer offline; runOperations needs the control plane."
+    )]
+    async fn list_flow_kinds(&self, Parameters(_): Parameters<EmptyInput>) -> String {
+        let mut flow_kinds: Vec<String> = sqlflow_lang::census::BUILT_IN_FLOW_TYPES.iter().map(|t| t.to_string()).collect();
+        flow_kinds.extend(sqlflow_lang::census::registered_flow_types());
+        let mut document_kinds: Vec<String> = LIBRARY_DOCUMENTS.iter().map(|d| d.to_string()).collect();
+        document_kinds.extend(sqlflow_lang::census::registered_document_types());
+        let mut answer = json!({ "flowKinds": flow_kinds, "documentKinds": document_kinds });
+        match self.cp.get("/api/v1/kinds", &[]).await {
+            Ok(operations) => answer["runOperations"] = operations,
+            Err(e) => answer["runOperationsError"] = json!(format!("{e:#}")),
+        }
+        json_str(&answer)
+    }
+
+    #[tool(
+        description = "List every documented attribute for a flow kind, or with documentType for a document that is \
+not a flow (a mapping, a schedule library): {path, type, required}. list_flow_kinds names both."
+    )]
     async fn list_flow_keys(&self, Parameters(input): Parameters<FlowTypeInput>) -> String {
-        let census = Census::for_flow_type(input.flow_type.as_deref());
+        let census = match census_of(input.flow_type.as_deref(), input.document_type.as_deref()) {
+            Ok(census) => census,
+            Err(refused) => return refused,
+        };
         let list: Vec<Value> = census
             .entries
             .iter()
             .map(|e| json!({ "path": e.path, "type": e.ty, "required": e.required }))
             .collect();
-        json_str(&json!({ "flowType": input.flow_type, "count": list.len(), "keys": list }))
+        json_str(&json!({
+            "flowType": input.flow_type,
+            "documentType": input.document_type,
+            "count": list.len(),
+            "keys": list,
+        }))
     }
 
     #[tool(description = "Describe one `.flow.yaml` attribute: type, required, default, allowed values, and the full description with validation notes.")]
     async fn describe_flow_key(&self, Parameters(input): Parameters<DescribeKeyInput>) -> String {
-        let census = Census::for_flow_type(input.flow_type.as_deref());
+        let census = match census_of(input.flow_type.as_deref(), input.document_type.as_deref()) {
+            Ok(census) => census,
+            Err(refused) => return refused,
+        };
         let target = sqlflow_lang::census::parse_path(&input.path);
         let entry = census.entries.iter().find(|e| e.segs == target || e.path == input.path);
         match entry {
@@ -2041,6 +2143,25 @@ and fix every finding first."
     #[tool(description = "Get the SQL statement trace for a run.")]
     async fn run_statements(&self, Parameters(i): Parameters<RunIdInput>) -> String {
         self.get(&format!("/api/v1/runs/{}/statements", i.run_id), &[]).await
+    }
+
+    #[tool(
+        description = "A run's trace: everything it did, in order, in one feed: each stage's summary, its log lines and \
+the error that ended it. Use it for 'why did this run fail', 'what did the last run of this flow do', 'how far did it \
+get'. Give runId, or pipelineId for that flow's latest run. Pages run oldest first and `total` says how many entries \
+there are, so read the last page for how a long run ended. The SQL it executed is in run_statements."
+    )]
+    async fn run_trace(&self, Parameters(i): Parameters<RunTraceInput>) -> String {
+        let path = match (i.run_id.as_deref(), i.pipeline_id.as_deref()) {
+            (Some(run), None) => format!("/api/v1/runs/{run}/trace"),
+            (None, Some(pipeline)) => format!("/api/v1/pipelines/{pipeline}/trace"),
+            _ => return "Error: give runId or pipelineId, one of them.".to_string(),
+        };
+        let q = vec![
+            ("page", i.page.map(|n| n.to_string()).unwrap_or_default()),
+            ("pageSize", i.page_size.map(|n| n.to_string()).unwrap_or_default()),
+        ];
+        self.get(&path, &q).await
     }
 
     #[tool(description = "Get the assertion results for a run.")]
@@ -2783,6 +2904,18 @@ and fix every finding first."
         self.get(&format!("/api/v1/schedules/{}/plan", i.id), &[]).await
     }
 
+    #[tool(
+        description = "(operator action) Fire a schedule now, to test it: its flows run as one group in lineage order, and \
+its cadence does not move. Takes the schedule's id from list_schedules; get_schedule_plan says what it would run. Returns \
+the queued run or group, which list_runs follows. Use it when the person asks to run a schedule."
+    )]
+    async fn run_schedule(&self, Parameters(i): Parameters<GuidInput>) -> String {
+        done(self.cp.post(&format!("/api/v1/schedules/{}/run", i.id), json!({})).await.map(|mut v| {
+            self.links.decorate(&mut v);
+            json_str(&v)
+        }))
+    }
+
     #[tool(description = "List worker nodes (the compute fleet) and their heartbeats.")]
     async fn list_nodes(&self, Parameters(_): Parameters<EmptyInput>) -> String {
         self.get("/api/v1/nodes", &[]).await
@@ -2791,6 +2924,61 @@ and fix every finding first."
     #[tool(description = "List the registered git repo sources the control plane auto-syncs.")]
     async fn list_repo_sources(&self, Parameters(_): Parameters<EmptyInput>) -> String {
         self.get("/api/v1/repos/sources", &[]).await
+    }
+
+    #[tool(
+        description = "(operator action) Sync a tracked repo source now, so the catalog reads the commit just pushed \
+rather than waiting for the next scheduled sync. Takes the source's id from list_repo_sources, which then shows the \
+sync pending and, once it ends, the commit and any error. Use it when the person asks to sync, after a push whose \
+flows they want to run: a run reads the last synced commit."
+    )]
+    async fn sync_repo_source(&self, Parameters(i): Parameters<GuidInput>) -> String {
+        done(
+            self.cp
+                .post(&format!("/api/v1/repos/sources/{}/sync", i.id), json!({}))
+                .await
+                .map(|v| if v.is_null() { "Sync requested.".to_string() } else { json_str(&v) }),
+        )
+    }
+
+    #[tool(
+        description = "List the datasources the estate's flows declare: each connection reference as flows write it \
+(a whole ${...} reference or an @alias; a literal in a flow shows as a hash, never as itself), its provider kind, and \
+how many active flows read from and write to it. Use it for 'which connection do I write here', 'what do the other \
+flows connect to'. It reads no datasource and holds no secret."
+    )]
+    async fn list_datasources(&self, Parameters(_): Parameters<EmptyInput>) -> String {
+        self.get("/api/v1/datasources", &[]).await
+    }
+
+    #[tool(
+        description = "List the AI contexts the repositories' files propose, and where each stands: its status, the version \
+its file proposes and the version approved, who approved it, how many of its tables are served, and its problems. Use it \
+for 'is this context approved', 'why does the assistant not see this table'. Deciding what an assistant may use is a \
+governance decision, so this needs the 'admin' scope, and it decides nothing."
+    )]
+    async fn list_ai_contexts(&self, Parameters(_): Parameters<EmptyInput>) -> String {
+        self.get("/api/v1/powerai/ai-contexts", &[]).await
+    }
+
+    #[tool(
+        description = "The `sqlflow` command line on this machine: where it is, and how to script with it. Use it when a \
+script does the job better than a tool: checking every file of a working copy (`validate .`), a flow's preflight \
+(`check`), or steps run in a row. Returns its path, or how to get it."
+    )]
+    async fn get_cli(&self, Parameters(_): Parameters<EmptyInput>) -> String {
+        if self.http_mode {
+            return "This server runs as a service, so a command line beside it is not on the person's machine.".to_string();
+        }
+        let command = sqlflow_cli_command();
+        let on_path = std::env::var_os("PATH").map(|paths| std::env::split_paths(&paths).collect::<Vec<_>>()).unwrap_or_default();
+        match resolve_command(&command, on_path.into_iter()) {
+            Some(path) => json_str(&json!({ "path": path, "conventions": CLI_CONVENTIONS })),
+            None => format!(
+                "Error: the `sqlflow` command line was not found (looked for '{command}'). Install the editor's extension, \
+                 which carries it, or set SQLFLOW_CLI to the full path of the executable."
+            ),
+        }
     }
 
     #[tool(description = "Get the dashboard summary rollup (repos, pipelines, runs, health).")]
@@ -4399,7 +4587,9 @@ OFFLINE (always available):
 - Docs: search_docs, get_doc, get_doc_by_yaml_path, get_doc_by_cli_command, related_docs, list_docs.
   For ANY question about a SQLFlow CLI command, a `.flow.yaml` key, a source type, or a concept,
   search the docs FIRST and cite the page id; do not answer from memory.
-- Flow language: validate_flow (parse + census diagnostics), list_flow_keys, describe_flow_key.
+- Flow language: validate_flow (parse + census diagnostics), list_flow_kinds, list_flow_keys, describe_flow_key.
+- Scripting: get_cli says where the `sqlflow` command line is on this machine and how to use it, for what a script does
+  better than a tool. It shares this server's sign-in.
   Before returning any `.flow.yaml` you authored or edited, run validate_flow and fix what it reports.
 ";
 
@@ -4620,6 +4810,29 @@ distinct product from DeltaForge; use these tools and the embedded corpus as the
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_command_is_found_as_a_path_or_along_the_folders_given() {
+        let folder = std::env::temp_dir().join(format!("sqlflow-mcp-cli-{}", std::process::id()));
+        std::fs::create_dir_all(&folder).unwrap();
+        let program = folder.join(if cfg!(windows) { "probe-cli.exe" } else { "probe-cli" });
+        std::fs::write(&program, b"").unwrap();
+        let path = program.to_string_lossy().into_owned();
+
+        assert_eq!(resolve_command(&path, std::iter::empty()), Some(path.clone()));
+        assert_eq!(resolve_command("probe-cli", std::iter::once(folder.clone())), Some(path));
+        assert_eq!(resolve_command("probe-cli", std::iter::empty()), None);
+        assert_eq!(resolve_command(&folder.join("gone").to_string_lossy(), std::iter::empty()), None);
+        std::fs::remove_dir_all(&folder).unwrap();
+    }
+
+    #[test]
+    fn the_key_tools_read_a_library_document_and_refuse_one_no_census_describes() {
+        assert!(census_of(None, Some("schedules")).unwrap().entries.iter().any(|e| e.path.starts_with("schedules")));
+        assert!(census_of(None, Some("ai-context")).unwrap().entries.iter().any(|e| e.path == "aiContext"));
+        assert!(census_of(Some("ing"), None).unwrap().entries.iter().any(|e| e.path == "flowType"));
+        assert!(census_of(None, Some("nothing-registers-this")).unwrap_err().contains("list_flow_kinds"));
+    }
 
     /// A `/search/all` payload with the given per-surface totals; items are irrelevant to the annotation.
     fn payload(totals: &[(&str, i64)]) -> Value {

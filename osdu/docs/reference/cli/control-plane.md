@@ -12,6 +12,7 @@ keywords:
   - resultjson
   - remote verbs
   - delivery-check-values
+  - delivery-export-value-issues
   - module-databases readiness
   - osdu-partitions check
   - partition run value
@@ -35,6 +36,7 @@ sourceRefs:
   - osdu/src/SqlFlow.Delivery.Cli/DeliveryCliModule.cs
   - osdu/src/SqlFlow.Delivery/Engine/DeliveryRunPayload.cs
   - osdu/src/SqlFlow.Delivery/Engine/Operations/CheckValuesOperation.cs
+  - osdu/src/SqlFlow.Delivery/Engine/Operations/ExportValueIssuesOperation.cs
   - osdu/src/SqlFlow.Delivery/Engine/Operations/DeliveryOperations.cs
   - osdu/src/SqlFlow.Delivery/Model/DeclaredPartition.cs
   - sqlflow/src/SqlFlow.Cli/Remote/RemoteVerbs.cs
@@ -135,11 +137,12 @@ sqlflow pipelines list --repo welldb --kind cache
 
 ## Compute tasks of the module
 
-A value check of a mapping across a scope is queued as a compute task, drained by the nodes. It appears in SQLFlow's task
-listing under its operation name:
+A value check of a mapping across a scope, and the export of its issues, are queued as compute tasks, drained by the
+nodes. They appear in SQLFlow's task listing under their operation names:
 
 ```bash
 sqlflow datasources tasks --operation delivery-check-values
+sqlflow datasources tasks --operation delivery-export-value-issues
 sqlflow datasources task <id>
 ```
 

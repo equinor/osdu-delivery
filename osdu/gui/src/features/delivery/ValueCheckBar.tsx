@@ -20,7 +20,8 @@ const HOW_IT_WORKS = [
   "\n\nThe answer counts the rows held (not delivered), the rows writing a value the template does not accept, and the",
   "rows leaving an attribute out; apart from them, the rows failing an assertion, and how many of those a failure would",
   "hold before they are sent. Pick one of them to narrow the tree to the attributes behind it; select an attribute",
-  "and open its Data tab for the reasons, the values behind them and the records. Nothing is written anywhere.",
+  "and open its Data tab for the reasons, the values behind them and the records, its Document tab for a record's",
+  "rendered document, or its Source tab for what the row holds in the columns it reads. Nothing is written anywhere.",
 ].join(" ");
 
 /**

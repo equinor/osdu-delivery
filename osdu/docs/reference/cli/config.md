@@ -117,8 +117,9 @@ the configuration does not set.
   remove run included) carries every partition's own values besides, and the node resolves with the values of the
   partition the run binds to over the ones set for none, except a flow's source connection, which takes the ones set for
   none ([a flow's source connection](../concepts/environment-variables.md#a-flows-source-connection)).
-- **Compute tasks.** Every compute task carries the values set for no partition. The module's node task, a value check
-  (`delivery-check-values`), carries the effective values of the one partition it acts in.
+- **Compute tasks.** Every compute task carries the values set for no partition. The module's node tasks, a value check
+  (`delivery-check-values`) and the export of its issues (`delivery-export-value-issues`), carry the effective values of
+  the one partition they act in.
 - **What the control plane runs while a person waits**: a probe of the target, a record read back from OSDU, a preview,
   a scope's values. These resolve with the same values, except the connection of the flow's ingestion tables that a
   preview, a source read and a scope's values open, which the control plane takes from its own environment alone

@@ -1,8 +1,9 @@
 import { useState } from "react";
-import { Link as RouterLink } from "react-router-dom";
-import { ChevronRight, CircleCheck, Download, Eye, Info, ListPlus, Loader2, ScanSearch } from "lucide-react";
+import { ChevronRight, CircleCheck, Database, Download, Eye, Info, ListPlus, Loader2, ScanSearch } from "lucide-react";
+import type { RunValue } from "@/api/types";
 import { Button } from "@/components/ui/button";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+import { downloadFileName } from "@/lib/download";
 import { cn } from "@/lib/utils";
 import { CopyButton } from "@/components/CopyButton";
 import { DataTable, type Column } from "@/components/DataTable";
@@ -12,14 +13,14 @@ import { RichTooltip } from "@/components/RichTooltip";
 import { OutcomePill } from "@/components/StatusBadge";
 import { TruncatedText } from "@/components/TruncatedText";
 import {
-  flowLedgerRoute,
   type DeliveryValueCheckCounts,
   type DeliveryValueCheckFinding,
   type DeliveryValueCheckSample,
 } from "../../api/delivery";
 import { AssertionActionBadge } from "./AssertionFindingsView";
+import { ExportRecordsButton } from "./ExportRecordsButton";
 import { splitPath } from "./templateFormat";
-import { flowScope, useValueCheckContext, type CheckMeta, type ValueCheckSession, type VariableCheck } from "./useValueCheck";
+import { useValueCheckContext, type CheckMeta, type ValueCheckSession, type VariableCheck } from "./useValueCheck";
 import {
   ASSERTED,
   FINDING_OUTCOMES,
@@ -352,15 +353,16 @@ export function DataTabBadge({ path }: { path: string }) {
 /**
  * A variable's Data tab: what the checks found of it, or, before any check reached it, what a check would tell and
  * what stands in its way. The check itself is the button at the top of the properties, the one place it is started.
+ * `onRecord` opens a record the check lists in the Document or the Source tab.
  */
-export function VariableDataTab({ path, checkable }: { path: string; checkable: boolean }) {
+export function VariableDataTab({ path, checkable, onRecord }: { path: string; checkable: boolean; onRecord: OpenRecord }) {
   const session = useValueCheckContext();
   if (session === null) {
     return null;
   }
 
   if (session.resultFor(path) !== undefined || session.nestedFor(path).length > 0 || session.inside(path).length > 0) {
-    return <VariableValueCheck path={path} />;
+    return <VariableValueCheck path={path} onRecord={onRecord} />;
   }
 
   const checking = session.isChecking(path);
@@ -381,13 +383,16 @@ export function VariableDataTab({ path, checkable }: { path: string; checkable: 
   );
 }
 
+/** Opens a record a check names, with the scope's values its row was read with, in the view named. */
+export type OpenRecord = (key: string, values: Record<string, RunValue>, view: "document" | "source") => void;
+
 /**
  * What the checks found of one variable, in its properties: the rows of it by outcome, then the rows that will not give
  * it an expected value and those failing an assertion of the mapping, grouped by reason, each with the values behind it
  * and the records it holds for, and last the values it was written with. A variable found wrong only inside a value
  * another entry writes whole shows what that check found at it; a group shows the attributes inside it.
  */
-export function VariableValueCheck({ path }: { path: string }) {
+export function VariableValueCheck({ path, onRecord }: { path: string; onRecord: OpenRecord }) {
   const session = useValueCheckContext();
   if (session === null) {
     return null;
@@ -402,7 +407,7 @@ export function VariableValueCheck({ path }: { path: string }) {
 
   return (
     <section className="flex flex-col gap-4" aria-label="Values" data-testid="value-check-variable">
-      {own !== undefined && <VariableResult check={own} session={session} />}
+      {own !== undefined && <VariableResult check={own} session={session} onRecord={onRecord} />}
       {nested.length > 0 && (
         <div className="flex flex-col gap-2" data-testid="value-check-nested">
           <h4 className="text-[13px] font-medium">
@@ -417,6 +422,7 @@ export function VariableValueCheck({ path }: { path: string }) {
               unit="values"
               meta={from.meta}
               session={session}
+              onRecord={onRecord}
             />
           ))}
         </div>
@@ -426,7 +432,7 @@ export function VariableValueCheck({ path }: { path: string }) {
   );
 }
 
-function VariableResult({ check, session }: { check: VariableCheck; session: ValueCheckSession }) {
+function VariableResult({ check, session, onRecord }: { check: VariableCheck; session: ValueCheckSession; onRecord: OpenRecord }) {
   const { variable, meta } = check;
   const [unit, setUnit] = useState<"rows" | "items">("rows");
   const [only, setOnly] = useState<OutcomeKey | null>(null);
@@ -485,22 +491,35 @@ function VariableResult({ check, session }: { check: VariableCheck; session: Val
         )
         : (
           <div className="flex flex-col gap-2" data-testid="value-check-findings">
-            {/* The two counts stand side by side and are never added: a row can fail an assertion and the template both. */}
-            <h4 className="flex flex-wrap items-baseline gap-x-1.5 text-[13px] font-medium">
-              {failing > 0 && (
-                <span>
-                  {"Rows that will not give an expected value "}
-                  <span className="font-mono text-[12px] font-normal text-muted-foreground tabular-nums">{formatCount(failing)}</span>
-                </span>
-              )}
-              {failing > 0 && asserted > 0 && <span aria-hidden className="font-normal text-muted-foreground">&middot;</span>}
-              {asserted > 0 && (
-                <span className={cn(failing > 0 && "font-normal")} data-testid="value-check-asserted-rows">
-                  {failing > 0 ? "failing an assertion " : "Rows failing an assertion of the mapping "}
-                  <span className="font-mono text-[12px] font-normal text-muted-foreground tabular-nums">{formatCount(asserted)}</span>
-                </span>
-              )}
-            </h4>
+            <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+              {/* The two counts stand side by side and are never added: a row can fail an assertion and the template both. */}
+              <h4 className="flex min-w-0 flex-wrap items-baseline gap-x-1.5 text-[13px] font-medium">
+                {failing > 0 && (
+                  <span>
+                    {"Rows that will not give an expected value "}
+                    <span className="font-mono text-[12px] font-normal text-muted-foreground tabular-nums">{formatCount(failing)}</span>
+                  </span>
+                )}
+                {failing > 0 && asserted > 0 && <span aria-hidden className="font-normal text-muted-foreground">&middot;</span>}
+                {asserted > 0 && (
+                  <span className={cn(failing > 0 && "font-normal")} data-testid="value-check-asserted-rows">
+                    {failing > 0 ? "failing an assertion " : "Rows failing an assertion of the mapping "}
+                    <span className="font-mono text-[12px] font-normal text-muted-foreground tabular-nums">{formatCount(asserted)}</span>
+                  </span>
+                )}
+              </h4>
+              <span className="ml-auto">
+                <ExportRecordsButton
+                  fetchWorkbook={() => session.exportIssues(check)}
+                  fileName={downloadFileName([meta.flow.flow, meta.flow.interface, meta.flow.partition, splitPath(variable.target).leaf, "issues"], "xlsx", "issues")}
+                  unavailable={session.blocked}
+                  title="Save the rows failing this attribute as an Excel workbook: each with the file and row it came from, the reason, and what the row holds in the source columns the attribute reads. The rows are read again on a node, as this check read them."
+                  label="Export rows"
+                  what="the rows"
+                  testId="value-check-export"
+                />
+              </span>
+            </div>
             {failures.length === 0 && (
               <p className="text-[12px] text-muted-foreground">No finding of the outcome picked; pick it again in the legend to show them all.</p>
             )}
@@ -513,12 +532,13 @@ function VariableResult({ check, session }: { check: VariableCheck; session: Val
                 unit={variable.repeater ? "items" : "rows"}
                 meta={meta}
                 session={session}
+                onRecord={onRecord}
               />
             ))}
             {variable.unlisted > 0 && (
               <p className="text-[12px] text-muted-foreground" data-testid="value-check-unlisted">
                 {`${formatCount(variable.unlisted)} more occurrences fall under reasons not listed here. `}
-                The CLI&apos;s <span className="font-mono">sqlflow values --rows</span> lists every one.
+                <span className="font-medium">Export rows</span> lists every one.
               </p>
             )}
           </div>
@@ -545,6 +565,7 @@ function VariableResult({ check, session }: { check: VariableCheck; session: Val
               unit="rows"
               meta={meta}
               session={session}
+              onRecord={onRecord}
             />
           ))}
         </div>
@@ -589,7 +610,7 @@ function VariableResult({ check, session }: { check: VariableCheck; session: Val
  * as far as they go.
  */
 function FindingCard({
-  target, finding, total, unit, meta, session,
+  target, finding, total, unit, meta, session, onRecord,
 }: {
   /** The variable checked, whose check pages the finding. */
   target: string;
@@ -598,6 +619,7 @@ function FindingCard({
   unit: string;
   meta: CheckMeta;
   session: ValueCheckSession;
+  onRecord: OpenRecord;
 }) {
   const [open, setOpen] = useState(false);
   const visual = outcomeVisual(finding.outcome);
@@ -652,7 +674,7 @@ function FindingCard({
         </div>
       )}
 
-      {open && <FindingRecords target={target} finding={finding} unit={unit} meta={meta} session={session} />}
+      {open && <FindingRecords target={target} finding={finding} unit={unit} meta={meta} session={session} onRecord={onRecord} />}
     </div>
   );
 }
@@ -664,25 +686,25 @@ interface SampleRow {
 
 /**
  * The records a finding holds for, as far as they have been listed: the record's key and label, the file and row it came
- * from, the item, the value behind the reason and the reason as that record states it, each opening in the flow's
- * Preview. The next page is read from the node on request; the loaded ones copy as keys or save as CSV.
+ * from, the item, the value behind the reason and the reason as that record states it, each opening here beside the tree:
+ * its rendered document in the Document tab, or what its source row holds in the Source tab. The next page is read from the
+ * node on request; the loaded ones copy as keys or save as CSV.
  */
 function FindingRecords({
-  target, finding, unit, meta, session,
+  target, finding, unit, meta, session, onRecord,
 }: {
   target: string;
   finding: DeliveryValueCheckFinding;
   unit: string;
   meta: CheckMeta;
   session: ValueCheckSession;
+  onRecord: OpenRecord;
 }) {
   const rows: SampleRow[] = finding.samples.map((sample, index) => ({ index, sample }));
   const listed = finding.samplesFrom + finding.samples.length;
   const remaining = Math.max(0, finding.count - listed);
   const paging = session.isPaging(target, finding);
   const items = finding.samples.some((sample) => sample.item !== null && sample.item !== undefined);
-  const scope = flowScope(meta.flow);
-  const previewValues: Record<string, string> = Object.keys(meta.values).length === 0 ? {} : { previewValues: JSON.stringify(meta.values) };
 
   const columns: Column<SampleRow>[] = [
     {
@@ -727,16 +749,33 @@ function FindingRecords({
           )}
           <Tooltip>
             <TooltipTrigger asChild>
-              <Button asChild size="icon-xs" variant="ghost" aria-label="Preview the record">
-                <RouterLink
-                  to={flowLedgerRoute(meta.flow.pipelineId, scope, { tab: "preview", previewKey: sample.sourceKey, ...previewValues })}
-                  data-testid="value-check-sample-preview"
-                >
-                  <Eye />
-                </RouterLink>
+              <Button
+                type="button"
+                size="icon-xs"
+                variant="ghost"
+                aria-label="Show the rendered document"
+                onClick={() => onRecord(sample.sourceKey, meta.values, "document")}
+                data-testid="value-check-sample-preview"
+              >
+                <Eye />
               </Button>
             </TooltipTrigger>
-            <TooltipContent>Preview the record: rendered as a delivery would render it, and sent nowhere</TooltipContent>
+            <TooltipContent>Show the rendered document: as a delivery would render it, and sent nowhere</TooltipContent>
+          </Tooltip>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button
+                type="button"
+                size="icon-xs"
+                variant="ghost"
+                aria-label="Show the source row"
+                onClick={() => onRecord(sample.sourceKey, meta.values, "source")}
+                data-testid="value-check-sample-source"
+              >
+                <Database />
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent>Show the source row: what it holds in the columns this attribute reads</TooltipContent>
           </Tooltip>
           <CopyButton label="Copy the source key" text={sample.sourceKey} testId="value-check-sample-copy" iconOnly />
         </span>

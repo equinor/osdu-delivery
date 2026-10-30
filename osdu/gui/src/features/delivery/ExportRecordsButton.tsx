@@ -10,7 +10,7 @@ import { failureText } from "./answers";
  * The control plane writes the file (the same one `sqlflow records export` writes), so a page only names what it lists.
  * A button that cannot export says why on hover, which the disabled button itself would not show.
  */
-export function ExportRecordsButton({ fetchWorkbook, fileName, unavailable, title, testId }: {
+export function ExportRecordsButton({ fetchWorkbook, fileName, unavailable, title, label = "Export", what = "the records", testId }: {
   /** The workbook of what the page lists, as the control plane serves it. */
   fetchWorkbook: () => Promise<Blob>;
   /** The name the download is saved under. */
@@ -19,6 +19,10 @@ export function ExportRecordsButton({ fetchWorkbook, fileName, unavailable, titl
   unavailable: string | null;
   /** What the export writes, on hover. */
   title: string;
+  /** The button's word, for a page where Export alone would not say what goes out. */
+  label?: string;
+  /** What is exported, as the message saying how it went names it. */
+  what?: string;
   testId: string;
 }) {
   const [busy, setBusy] = useState(false);
@@ -27,9 +31,9 @@ export function ExportRecordsButton({ fetchWorkbook, fileName, unavailable, titl
     setBusy(true);
     try {
       downloadBlob(fileName, await fetchWorkbook());
-      toast.success(`Exported the records to ${fileName}`);
+      toast.success(`Exported ${what} to ${fileName}`);
     } catch (error) {
-      toast.error(`The records could not be exported: ${failureText(error)}`);
+      toast.error(`${what.charAt(0).toUpperCase()}${what.slice(1)} could not be exported: ${failureText(error)}`);
     } finally {
       setBusy(false);
     }
@@ -46,7 +50,7 @@ export function ExportRecordsButton({ fetchWorkbook, fileName, unavailable, titl
         data-testid={testId}
       >
         {busy ? <Loader2 className="animate-spin" /> : <FileSpreadsheet />}
-        {busy ? "Exporting" : "Export"}
+        {busy ? "Exporting" : label}
       </Button>
     </span>
   );

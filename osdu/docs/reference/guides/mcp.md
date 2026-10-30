@@ -33,6 +33,7 @@ related:
   - delivery-concept-authentication-and-identity
   - delivery-guide-deployment
   - delivery-cli-run
+  - delivery-guide-vscode
 sourceRefs:
   - osdu/hosts/osdu-delivery-mcp/Cargo.toml
   - osdu/hosts/osdu-delivery-mcp/build.rs
@@ -48,6 +49,7 @@ sourceRefs:
   - osdu/hosts/osdu-delivery-mcp/src/tools/cache.rs
   - osdu/hosts/osdu-delivery-mcp/src/tools/assertions.rs
   - osdu/hosts/osdu-delivery-mcp/src/tools/dimensions.rs
+  - osdu/hosts/osdu-delivery-mcp/src/tools/inventories.rs
   - osdu/hosts/osdu-delivery-mcp/src/tools/operate.rs
   - osdu/hosts/osdu-delivery-mcp/src/support.rs
   - osdu/hosts/osdu-delivery-mcp/tests/server.rs
@@ -72,7 +74,7 @@ sourceRefs:
 `osdu-delivery-mcp` is the Model Context Protocol server an AI assistant (Claude, Cursor, VS Code, Codex, or the GUI's own
 chat assistant) uses to answer questions about an OSDU Delivery estate. It is SQLFlow's MCP server
 (`sqlflow/tools/sqlflow-mcp`, a library) composed with the delivery module: everything SQLFlow's server answers about
-the catalog, runs, schedules, lineage, search and its documentation, plus 27 `delivery_*` tools over the ledger and the
+the catalog, runs, schedules, lineage, search and its documentation, plus 30 `delivery_*` tools over the ledger and the
 module's definitions, minus the SQLFlow tools that profile or sample data. Its instructions are the assistant's one set
 of rules: every client reads them, the GUI's chat and the Slack bot included. It calls the same control plane the GUI and `sqlflow` call,
 with the caller's own token (for the GUI's chat, a token delegated for one run), so it can do what that person can do
@@ -134,6 +136,7 @@ Every `delivery_*` tool calls a route under `/api/v1/delivery` and nothing else 
 | Was this record delivered? Which records came from this file? | `delivery_find_records` (indexed prefix search; with no search, the newest records) |
 | Why did it fail? Who deleted it? Which file and row is it from? | `delivery_record` (state, attempts, chain, activities) |
 | How is this flow doing? Where does it deliver? What does a run need? | `delivery_flow` |
+| What keeps this flow's records blocked, by cause? | `delivery_flow_issues` (each issue's pattern and counts, without the values an error names) |
 | Which records of this flow failed, are held, drifted or came from that run? | `delivery_flow_records` |
 | Which run is this id in the platform's logs? What did each part of a split delivery do? | `delivery_run` (a run id or a whole correlation-id) |
 | What did the last run plan and deliver? Which batch is stuck? | `delivery_submissions` |
@@ -151,7 +154,9 @@ Every `delivery_*` tool calls a route under `/api/v1/delivery` and nothing else 
 | Which versions of a kind does a release publish? | `delivery_osdu_schemas` |
 | What breaks if we move to the next version of a kind? | `delivery_osdu_schema_compare` |
 | Are the data quality tests passing? What failed last night? | `delivery_assertions`, `delivery_assertion_runs` |
-| Which dimensions exist, and are they up to date? | `delivery_dimensions` |
+| Which dimensions exist, and are they up to date? What does this dimension's YAML make? | `delivery_dimensions` (with `blueprint`, how it is built) |
+| Which inventories exist, and what did the last reconcile find? | `delivery_inventories` (counts by finding, never the ids) |
+| What will this removal take out, and how did it last run? | `delivery_removals` (it reads; approving and removing are in the GUI) |
 
 Six tools act. Each describes itself as an "(operator action)": the marker says the tool changes state, and the
 assistant is told to use one only when the person asked for that action. The control plane admits any signed-in user to
@@ -169,7 +174,9 @@ caller's name.
 | Approve or reject pending cache changes. | `delivery_decide_cache_changes` |
 
 An OSDU flow is run with SQLFlow's `trigger_run`, which carries the kind's `operation`, `values` and `payload`
-([running an OSDU flow](../cli/run.md)). The server's instructions tell the assistant to run an operation that changes
+([running an OSDU flow](../cli/run.md)); `list_flow_kinds` names each kind's operations and which of them write to the
+flow's target. `list_ai_contexts` says, to an admin, where each AI context stands. `run_trace` reads what a run did, `sync_repo_source` syncs a repository after a push and `run_schedule` fires a
+schedule, the last two operator actions of SQLFlow's that a chat run is refused as `trigger_run` is. The server's instructions tell the assistant to run an operation that changes
 or removes what OSDU holds (`reverse`, `undo`, `remove`, `delete-ledger`, an inventory's or a removal flow's `remove`)
 only when the person asked for that exact operation; nothing in the server enforces it.
 
@@ -221,7 +228,7 @@ once the manifest is regenerated and the server rebuilt. The instructions a clie
 `initialize` introduce the product as an extension of SQLFlow, send a "how do I" question to
 `delivery-wiki-pattern-catalog` first, and say which tool answers which question, the vocabulary the tools share
 (record, interface, partition, submission) and the operations `trigger_run` takes per kind. The flow-language tools
-(`validate_flow`, `list_flow_keys`, `describe_flow_key`) know the module's flow kinds and documents from the key census in
+(`validate_flow`, `list_flow_kinds`, `list_flow_keys`, `describe_flow_key`) know the module's flow kinds and documents from the key census in
 `osdu/docs/census`.
 
 ## Installing it for a person
@@ -232,7 +239,8 @@ osdu/hosts/osdu-delivery-mcp/target/release/osdu-delivery-mcp install claude
 # prints: claude mcp add osdu-delivery -- <path to osdu-delivery-mcp>
 ```
 
-`install` also prints a registration for `cursor`, `vscode` and `codex`.
+`install` also prints a registration for `cursor`, `vscode` and `codex`. [The VS Code extension](vscode.md) holds the
+server already: it registers it with the editor's chat, and connects Claude Code, Cursor and Codex from a command.
 
 An editor's session lists every tool, about 110 of them, since an editor keeps one session and does not refresh a
 changed list in time; GitHub Copilot then holds most of them back, and the model spends steps finding the one a
@@ -251,7 +259,8 @@ server stays in its mode: it lists no switch, and a call of the other mode's too
 it. `SQLFLOW_MCP_MODE` sets the mode when `--mode` is not given; an unknown argument or mode stops the server with its
 usage. Run by a client over stdio, the server reads
 `SQLFLOW_CONTROL_PLANE_URL` (else the address it was last given with `set_control_plane_url`, else
-`http://localhost:8080`). Sign in with the `login` tool: it returns an address and a code to approve in a browser, then
+`http://localhost:8080`). Sign in with the `login` tool: it returns an address and a code to approve in a browser, where
+you sign in as you do in the GUI, Microsoft single sign-on included ([signing in](vscode.md#signing-in)), then
 `check_auth_status` completes it. The server keeps the session token the approval grants, which carries no more than the
 approving person's scopes, and renews it at `POST /api/v1/auth/renew` before it lapses, as the GUI renews its own,
 until the session reaches its absolute cap; a refused renewal ends the session and the next tool call says so. `set_access_token` stores a token directly, and `SQLFLOW_CONTROL_PLANE_TOKEN`
@@ -289,7 +298,7 @@ The Container Apps templates deploy it when asked (Bicep `mcpEnabled` or `mcpIma
 The control plane's chat assistant ([SQLFlow's chat assistant guide](../../../../sqlflow/docs/reference/guides/chat-assistant.md))
 uses this server when `ControlPlane:Assistant:Mcp:ServerUrl` points at its `/mcp`. Each question runs under a token
 delegated from the signed-in user for that run alone, and the control plane refuses it on every route not opened to it;
-the delivery module opens exactly the routes its 21 `delivery_*` readers read (`DeliveryAssistantAccess.ReaderTools`,
+the delivery module opens exactly the routes its 25 `delivery_*` readers read (`DeliveryAssistantAccess.ReaderTools`,
 [authentication and identity](../concepts/authentication-and-identity.md)). The chat reads this server's instructions as
 its rules and opens each run's session in the conversation's mode, so it answers as any other client of the server
 does: schema whole in estate mode, and a `!` question answered from the data in data mode, with its query run and the

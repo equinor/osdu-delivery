@@ -1,3 +1,5 @@
+using SqlFlow.Delivery.Rendering;
+
 namespace SqlFlow.Delivery.Engine.Checks;
 
 /// <summary>What a value check is asked for: which variables, over how many rows, and how many example records it names.</summary>
@@ -209,6 +211,12 @@ public sealed record ValueCheckVariable
     /// <summary>Where the mapping writes the entry filling it; null for a variable of <c>data</c> the schema requires that no entry fills directly.</summary>
     public string? Entry { get; init; }
 
+    /// <summary>
+    /// The source columns the entry filling it reads, as the mapping names them (<c>dataset.curves.curve_unit</c>): where a
+    /// wrong value comes from. Empty for a variable no entry fills directly, and for one that reads no column.
+    /// </summary>
+    public IReadOnlyList<string> Columns { get; init; } = [];
+
     /// <summary>What an empty value does: true holds the record, false leaves the variable out.</summary>
     public bool Required { get; init; }
 
@@ -328,4 +336,10 @@ public sealed record ValueCheckOccurrence
     public string? Value { get; init; }
 
     public required ValueCheckSample Record { get; init; }
+
+    /// <summary>The row it was found in, which holds the source data behind it.</summary>
+    public SourceRecord? Source { get; init; }
+
+    /// <summary>For a repeated item: the child dataset whose rows <see cref="ValueCheckSample.Item"/> counts.</summary>
+    public string? Child { get; init; }
 }

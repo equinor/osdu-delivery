@@ -75,6 +75,7 @@ public static class DeliveryValueCheckEndpoints
     {
         ArgumentNullException.ThrowIfNull(delivery);
         delivery.MapPost("/flows/{pipelineId:guid}/check-values", CheckValuesAsync).WithName("CheckDeliveryFlowValues");
+        delivery.MapPost("/flows/{pipelineId:guid}/check-values/export", ExportIssuesAsync).WithName("ExportDeliveryFlowValueIssues");
     }
 
     /// <summary>
@@ -129,8 +130,22 @@ public static class DeliveryValueCheckEndpoints
     /// the example records it is asked for. Every part of the request is checked here, so a request a node would refuse
     /// answers 400 before anything is queued.
     /// </summary>
-    private static async Task<Results<Accepted<ComputeTaskAccepted>, ProblemHttpResult>> CheckValuesAsync(
+    private static Task<Results<Accepted<ComputeTaskAccepted>, ProblemHttpResult>> CheckValuesAsync(
         Guid pipelineId, DeliveryValueCheckRequest? request, [FromQuery(Name = "interface")] string? interfaceName, [FromQuery] string? partition,
+        CatalogDbContext db, DeliveryDocumentLoader documents, IPartitionRegistry partitions, IRunDispatcher dispatcher, ClaimsPrincipal user, CancellationToken ct)
+        => QueueAsync(CheckValuesOperation.OperationName, pipelineId, request, interfaceName, partition, db, documents, partitions, dispatcher, user, ct);
+
+    /// <summary>
+    /// The same check, asked for as one is, queued to write every issue it finds to an Excel workbook
+    /// (<see cref="ExportValueIssuesOperation"/>), which the task's result carries.
+    /// </summary>
+    private static Task<Results<Accepted<ComputeTaskAccepted>, ProblemHttpResult>> ExportIssuesAsync(
+        Guid pipelineId, DeliveryValueCheckRequest? request, [FromQuery(Name = "interface")] string? interfaceName, [FromQuery] string? partition,
+        CatalogDbContext db, DeliveryDocumentLoader documents, IPartitionRegistry partitions, IRunDispatcher dispatcher, ClaimsPrincipal user, CancellationToken ct)
+        => QueueAsync(ExportValueIssuesOperation.OperationName, pipelineId, request, interfaceName, partition, db, documents, partitions, dispatcher, user, ct);
+
+    private static async Task<Results<Accepted<ComputeTaskAccepted>, ProblemHttpResult>> QueueAsync(
+        string operation, Guid pipelineId, DeliveryValueCheckRequest? request, string? interfaceName, string? partition,
         CatalogDbContext db, DeliveryDocumentLoader documents, IPartitionRegistry partitions, IRunDispatcher dispatcher, ClaimsPrincipal user, CancellationToken ct)
     {
         var (flow, problem) = await DeliveryEndpoints.ResolveAsync(db, documents, partitions, pipelineId, interfaceName, partition, ct).ConfigureAwait(false);
@@ -144,7 +159,7 @@ public static class DeliveryValueCheckEndpoints
             return DeliveryEndpoints.Invalid(refused);
         }
 
-        return await DeliveryEndpoints.EnqueueOperationAsync(db, dispatcher, flow, CheckValuesOperation.OperationName, arguments, user, ct).ConfigureAwait(false);
+        return await DeliveryEndpoints.EnqueueOperationAsync(db, dispatcher, flow, operation, arguments, user, ct).ConfigureAwait(false);
     }
 
     /// <summary>The task's arguments for <paramref name="request"/>, or why a node would refuse it.</summary>

@@ -108,6 +108,43 @@ public sealed class MappingAssertionReportTests : IDisposable
         Assert.Contains("asserted", written, StringComparison.Ordinal);
     }
 
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task An_item_failing_an_assertion_names_the_child_row_it_was_written_from_however_many_rows_wrote_no_item(bool filtered)
+    {
+        var (engine, flow) = await EstateAsync(
+            """
+            - equals: no curve is named this
+              onFail: report
+            """,
+            node: "        Mnemonic: { $from: curve_id }\n",
+            block: "        Mnemonic:\n          $from: curve_id\n");
+        if (filtered)
+        {
+            // The first row of each log's curves writes no item, so an item's place in the array is not its child row.
+            var file = Path.Combine(flow.Render.MappingsDirectory!, "WellLog@1.4.0.yaml");
+            var mapping = await File.ReadAllTextAsync(file);
+            Assert.Contains("      $forEach: curves\n", mapping, StringComparison.Ordinal);
+            await File.WriteAllTextAsync(file, mapping.Replace("      $forEach: curves\n", "      $forEach: curves\n      $where: curve_id != \"MD\"\n", StringComparison.Ordinal));
+        }
+
+        using var runtime = await FlowRuntime.CreateAsync(engine, flow, SampleEstate.Values);
+        var met = new List<ValueCheckOccurrence>();
+        await new ValueChecker(runtime).CheckAsync(new ValueCheckRequest { Targets = ["osdu.data.Curves[].Mnemonic"] }, met.Add);
+
+        var failed = met.Where(o => o.Outcome == "asserted").ToList();
+        Assert.NotEmpty(failed);
+        Assert.Equal(filtered, failed.All(o => o.Value != "MD"));
+        Assert.All(failed, occurrence =>
+        {
+            // What the check says failed is what the row it names holds, which is the row the workbook reads the base data from.
+            Assert.Equal("curves", occurrence.Child);
+            var rows = occurrence.Source!.ScopeRows("curves");
+            Assert.Equal(occurrence.Value, rows[occurrence.Record.Item!.Value - 1].GetString("curve_id"));
+        });
+    }
+
     [Fact]
     public async Task Check_values_counts_each_item_of_a_repeated_array_failing_an_assertion_once()
     {

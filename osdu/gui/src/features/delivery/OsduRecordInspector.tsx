@@ -800,10 +800,12 @@ const PUNCTUATION = "text-muted-foreground";
 /**
  * A branch of the record as JSON that can be worked with, not only read: every object and list folds at its caret, a
  * key that holds a branch steps into it (and the brace of a list's item into that item), and a value that names another
- * OSDU record opens it. Lists show their first hundred items and the rest on a click; the search term is marked.
+ * OSDU record opens it. Lists show their first hundred items and the rest on a click; the search term is marked. Without
+ * `onSelect` a key only reads: a document that is not a stored record has nowhere to step to. A marked line says so
+ * (`data-hit`), so a page can bring it into view.
  */
-function JsonView({ node, term, hits, ownId, onOpenLink, opening, onSelect, actions }: {
-  node: RecordNode; term: string; hits: Set<string>; ownId: string | null; onOpenLink?: OpenLink; opening?: string | null; onSelect: (path: string) => void;
+export function JsonView({ node, term, hits, ownId, onOpenLink, opening, onSelect, actions }: {
+  node: RecordNode; term: string; hits: ReadonlySet<string>; ownId: string | null; onOpenLink?: OpenLink; opening?: string | null; onSelect?: (path: string) => void;
   /** What a page shows beside a value or a section, after the line it starts on. */
   actions?: (node: RecordNode) => ReactNode;
 }) {
@@ -823,7 +825,7 @@ function JsonView({ node, term, hits, ownId, onOpenLink, opening, onSelect, acti
   const lines: ReactNode[] = [];
   const line = (key: string, depth: number, content: ReactNode, caret?: { open: boolean; path: string }, hit = false) => {
     lines.push(
-      <div key={key} className={cn("flex min-w-0 items-start rounded-sm pr-2", hit && "bg-warning/10")} style={{ paddingLeft: depth * 16 }}>
+      <div key={key} className={cn("flex min-w-0 items-start rounded-sm pr-2", hit && "bg-warning/10")} style={{ paddingLeft: depth * 16 }} data-hit={hit || undefined}>
         <span className="flex h-5 w-4 shrink-0 items-center justify-center">
           {caret !== undefined && (
             <button type="button" className="text-muted-foreground hover:text-foreground" onClick={() => fold(caret.path)} aria-label={caret.open ? "Fold" : "Unfold"} data-testid="osdu-json-fold">
@@ -875,7 +877,7 @@ function JsonView({ node, term, hits, ownId, onOpenLink, opening, onSelect, acti
     const comma = last ? null : <span className={PUNCTUATION}>,</span>;
     const label = keyOf === null
       ? null
-      : current.kind === "leaf"
+      : current.kind === "leaf" || onSelect === undefined
         ? <span className="text-muted-foreground">&quot;<Highlight text={current.key} term={term} />&quot;<span className={PUNCTUATION}>: </span></span>
         : (
           <span>
@@ -893,7 +895,7 @@ function JsonView({ node, term, hits, ownId, onOpenLink, opening, onSelect, acti
 
     const [open, close] = current.kind === "array" ? ["[", "]"] : ["{", "}"];
     // An item of a list has no key to step into it by, so its opening brace does that work.
-    const opener = keyOf === null && depth > 0
+    const opener = keyOf === null && depth > 0 && onSelect !== undefined
       ? <button type="button" className={cn(PUNCTUATION, "cursor-pointer hover:text-primary")} onClick={() => onSelect(current.path)} title={`Go to ${current.path}`}>{open}</button>
       : <span className={PUNCTUATION}>{open}</span>;
     if (current.children.length === 0) {

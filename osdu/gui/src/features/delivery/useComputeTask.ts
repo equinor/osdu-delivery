@@ -7,6 +7,9 @@ const TERMINAL = new Set(["succeeded", "failed", "cancelled", "skipped"]);
 /** How long one poll waits on the control plane for the task to finish before it answers with the task as it stands. */
 const WAIT_MS = 10_000;
 
+/** How long to leave a task that answered unfinished before asking again. */
+const POLL_MS = 250;
+
 /**
  * The query that polls one compute task a node runs for the delivery pages (a value check) until it has finished, through
  * SQLFlow's compute task endpoint. Each request long-polls, so the result arrives in one round trip once a node has produced
@@ -32,4 +35,16 @@ export function computeTaskQuery(taskId: string | null): UseQueryOptions<Compute
 
 export function isTerminalTask(task: ComputeTask | undefined): boolean {
   return task !== undefined && TERMINAL.has(task.status);
+}
+
+/** One compute task followed to its end, for what acts on its result itself rather than drawing it: a file to save. */
+export async function settledTask(taskId: string): Promise<ComputeTask> {
+  for (;;) {
+    const task = await datasourceApi.task(taskId, WAIT_MS);
+    if (isTerminalTask(task)) {
+      return task;
+    }
+
+    await new Promise((resolve) => setTimeout(resolve, POLL_MS));
+  }
 }

@@ -122,6 +122,13 @@ metadata, never from the records' content, with the signed-in person's own permi
 message starting with `!` turns on, reads data, with a read-only query over what an approved AI context opens
 ([MCP guide](osdu/docs/reference/guides/mcp.md)).
 
+## Develop in your editor
+
+The VS Code extension makes the editor the place a pipeline is developed. Sign in through the browser with your Microsoft
+account, open a repository, and every flow and mapping in it is understood: completion and checks on every key, a mapping
+checked against its template as you type, how a flow last ran, what keeps its records blocked, and the assistant above
+built in, with nothing to install ([the VS Code extension](osdu/docs/reference/guides/vscode.md)).
+
 ## Try it
 
 Run `dev.bat` (Windows) or `./dev.sh` (macOS, Linux) from the checkout: the first start asks for a SQL Server, an OSDU

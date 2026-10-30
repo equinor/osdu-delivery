@@ -33,6 +33,7 @@ internal sealed partial class ValueTally
     private readonly Action<ValueCheckOccurrence>? _each;
     private readonly Dictionary<string, VariableTally> _variables = new(StringComparer.Ordinal);
     private readonly Dictionary<string, IReadOnlySet<string>> _itemTargets = new(StringComparer.Ordinal);
+    private readonly Dictionary<string, string> _childDatasets = new(StringComparer.Ordinal);
     private readonly Dictionary<string, (long Count, List<ValueCheckSample> Samples)> _passedOver = new(StringComparer.Ordinal);
     private readonly List<ValueCheckSample> _keyless = [];
     private long _checked;
@@ -44,6 +45,7 @@ internal sealed partial class ValueTally
     private long _withEmpty;
     private long _withFailedAssertion;
     private long _heldByAssertion;
+    private SourceRecord? _row;
 
     public ValueTally(
         MappingDefinition mapping, SchemaSnapshot schema, EntrySelection selection, ValueCheckRequest request, ValueCheckLimits limits, Action<ValueCheckOccurrence>? each)
@@ -66,6 +68,10 @@ internal sealed partial class ValueTally
             if (entry.IsRepeater)
             {
                 _itemTargets[target] = mapping.ItemEntries(entry).Select(e => e.Target.Text).ToHashSet(StringComparer.Ordinal);
+                if (entry.Source?.Child is { } child)
+                {
+                    _childDatasets[target] = child;
+                }
             }
         }
 
@@ -100,6 +106,7 @@ internal sealed partial class ValueTally
     public void Add(SourceRecord record, RecordInspection inspection, MappingRenderer renderer)
     {
         var row = _checked++;
+        _row = record;
         var basis = Sample(record, renderer, inspection);
         if (inspection.Key is null)
         {
@@ -135,7 +142,8 @@ internal sealed partial class ValueTally
         {
             if (_variables.TryGetValue($"{TemplatePath.Prefix}.{failure.At}", out var asserted))
             {
-                Note(asserted, "asserted", asserted.Target, failure.Assertion, Fails(failure), Clip(failure.Value, _limits.MaxValueChars), row, basis, failure.Message, failure.OnFail);
+                var sample = ItemOf(failure, inspection) is { } item ? basis with { Item = item + 1 } : basis;
+                Note(asserted, "asserted", asserted.Target, failure.Assertion, Fails(failure), Clip(failure.Value, _limits.MaxValueChars), row, sample, failure.Message, failure.OnFail);
                 asserted.CountAsserted(row, failure.Path);
             }
         }
@@ -258,8 +266,48 @@ internal sealed partial class ValueTally
         // What the mapping means no value for is no failure, so a listing of the failing rows leaves it out.
         if (_each is not null && outcome != "notApplicable")
         {
-            _each(new ValueCheckOccurrence { Target = variable.Target, At = at, Outcome = outcome, Rule = rule, Message = said ?? message, Value = value, Record = record });
+            _each(new ValueCheckOccurrence
+            {
+                Target = variable.Target,
+                At = at,
+                Outcome = outcome,
+                Rule = rule,
+                Message = said ?? message,
+                Value = value,
+                Record = record,
+                Source = _row,
+                Child = variable.Repeater is { } repeater ? _childDatasets.GetValueOrDefault(repeater) : null,
+            });
         }
+    }
+
+    /// <summary>
+    /// The child row a failed value was written from, counting from 0, or null for a failure of no one item. A value judged
+    /// as the row gives it names the row; one judged in the record names its place in the array, which leaves out the rows
+    /// that wrote no item, so the row is the one written at that place.
+    /// </summary>
+    private static int? ItemOf(Validation.AssertionFailure failure, RecordInspection inspection)
+    {
+        var open = failure.Path.IndexOf('[', StringComparison.Ordinal);
+        var close = open < 0 ? -1 : failure.Path.IndexOf(']', open);
+        if (close < 0 || !int.TryParse(failure.Path.AsSpan(open + 1, close - open - 1), System.Globalization.NumberStyles.None, System.Globalization.CultureInfo.InvariantCulture, out var place))
+        {
+            return null;
+        }
+
+        if (failure.Path.StartsWith(DatasetColumn.Prefix + ".", StringComparison.Ordinal))
+        {
+            return place;
+        }
+
+        var array = $"{TemplatePath.Prefix}.{failure.Path[..open]}";
+        var written = inspection.Outcomes
+            .Where(o => o.Kind == EntryOutcomeKind.Value && o.Item is not null && o.Entry?.Target.Repeater?.Text == array)
+            .Select(o => o.Item!.Value)
+            .Distinct()
+            .Order()
+            .ToList();
+        return place < written.Count ? written[place] : null;
     }
 
     private static ValueCheckSample Sample(SourceRecord record, MappingRenderer renderer, RecordInspection? inspection)
@@ -360,6 +408,8 @@ internal sealed partial class ValueTally
 
         public MappingEntry? Entry => entry;
 
+        public string? Repeater => repeater;
+
         public void CountRow(Standing standing) => _rows[standing] = _rows.GetValueOrDefault(standing) + 1;
 
         public void CountItem(Standing standing) => _items[standing] = _items.GetValueOrDefault(standing) + 1;
@@ -422,6 +472,7 @@ internal sealed partial class ValueTally
         {
             Target = target,
             Entry = entry?.Where,
+            Columns = entry?.Columns.Select(c => c.ToString()).Distinct(StringComparer.Ordinal).ToList() ?? [],
             Required = entry?.Required ?? true,
             Repeater = repeater,
             Rows = Counts(_rows) with { Asserted = _asserted },

@@ -34,6 +34,7 @@ sourceRefs:
   - osdu/src/SqlFlow.Delivery/Engine/Checks/ValueChecker.cs
   - osdu/src/SqlFlow.Delivery/Engine/Checks/ValueCheck.cs
   - osdu/src/SqlFlow.Delivery/Engine/Checks/ValueTally.cs
+  - osdu/src/SqlFlow.Delivery/Engine/Checks/ValueIssuesWorkbook.cs
   - osdu/src/SqlFlow.Delivery/Validation/TemplateValueRules.cs
   - osdu/src/SqlFlow.Delivery/Validation/SchemaWalk.cs
   - osdu/src/SqlFlow.Delivery/Engine/Preview/RecordPreview.cs
@@ -174,7 +175,8 @@ The JSON is the check, camelCase, properties without a value left out: `flow`, `
 (`mapping`, `kind`, `templateVersion`, `cachePartition`, `cacheVersion`), `asked` (`targets`, `maxRows`, `samples`,
 `skipSamples`, `values`), `rows` (`scopeRecords`, `read`, `checked`, `complete`, `passedOver`, `passedOverWhy`,
 `keyless`, `keylessSamples`, `clean`, `withHeld`, `withInvalid`, `withEmpty`, `withFailedAssertion`, `heldByAssertion`),
-`variables`, `issues`, `notes`, `startedUtc` and `checkedUtc`. Each variable has `target`, `entry`, `required`,
+`variables`, `issues`, `notes`, `startedUtc` and `checkedUtc`. Each variable has `target`, `entry`, `columns` (the source
+columns the entry filling it reads, as the mapping names them: `dataset.curves.curve_unit`), `required`,
 `repeater`, `rows` and `items` (each `valid`, `invalid`, `empty`, `notApplicable`, `held`, `asserted`, `total`;
 `asserted` counts each row, or each item of a repeated array, a value failed an assertion in, once however many failed,
 and `total` leaves it out, since those rows and items count under another outcome too; a failure of a repeated array's
@@ -209,7 +211,9 @@ held, invalid or empty for, or whose value fails an assertion of the mapping, wr
 | `file`, `row` | The file the row was landed from, and its row in that file. |
 | `item` | For an item of a repeated array, the child row it was written from, counting from 1. |
 
-It is the full list the answer's example records are the first of.
+It is the full list the answer's example records are the first of. The GUI's **Export rows** on a mapping's attribute
+writes that attribute's part of it as an Excel workbook, with the source columns it reads
+([the Mappings page](../concepts/gui.md#mappings)).
 
 ## Examples
 

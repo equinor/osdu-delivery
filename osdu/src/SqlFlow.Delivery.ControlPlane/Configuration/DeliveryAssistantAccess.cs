@@ -28,13 +28,14 @@ public static class DeliveryAssistantAccess
     public static IReadOnlyList<string> ReaderTools { get; } =
     [
         "delivery_find_records", "delivery_record",
-        "delivery_flow", "delivery_flow_records", "delivery_run", "delivery_submissions", "delivery_retrievals", "delivery_activities",
+        "delivery_flow", "delivery_flow_issues", "delivery_flow_records", "delivery_run", "delivery_submissions", "delivery_retrievals", "delivery_activities",
         "delivery_partitions", "delivery_config",
         "delivery_caches", "delivery_cache_versions", "delivery_cache_changes",
         "delivery_mappings", "delivery_check_mapping", "delivery_scaffold_mapping",
         "delivery_templates", "delivery_osdu_schemas", "delivery_osdu_schema_compare",
         "delivery_assertions", "delivery_assertion_runs",
         "delivery_dimensions",
+        "delivery_inventories", "delivery_removals",
     ];
 
     /// <summary>
@@ -62,7 +63,7 @@ public static class DeliveryAssistantAccess
         // delivery_flow, delivery_flow_records, delivery_run, delivery_submissions, delivery_retrievals.
         "GetDeliveryFlowStats", "ListDeliveryInterfaces", "GetDeliveryTarget", "ListDeliveryRecords", "LookupDeliveryRun",
         "ListDeliverySubmissions", "GetDeliverySubmission", "ListDeliverySubmissionBatches", "ListDeliverySubmissionAttempts",
-        "ListDeliveryRetrievals",
+        "ListDeliveryRetrievals", "ListDeliveryIssues", "GetDeliveryIssue",
         // delivery_activities: the audit trail.
         "ListDeliveryActivities", "GetDeliveryActivity",
         // delivery_partitions and delivery_config.
@@ -79,6 +80,10 @@ public static class DeliveryAssistantAccess
         "GetDeliveryAssertionRun",
         // delivery_dimensions: what a dimension is and how it was built, never its values.
         "GetDeliveryDimensionBoard", "GetDeliveryDimensionFlowBoard", "GetDeliveryDimension", "ListDeliveryDimensionBuilds",
+        "GetDeliveryDimensionBlueprint",
+        // delivery_inventories and delivery_removals: what they read and how they went, never an id or a key.
+        "ListDeliveryInventories", "GetDeliveryInventoryFlow",
+        "ListDeliveryRemovalFlows", "GetDeliveryRemovalFlow", "ListDeliveryRemovalRuns",
     };
 
     /// <summary>

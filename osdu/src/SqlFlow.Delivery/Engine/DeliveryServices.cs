@@ -152,6 +152,7 @@ public static class DeliveryServices
         // What scans long is a node task: a value check across a scope. A removal writes to OSDU and the ledger, so it is a
         // run of the flow (DeliveryOperations.Remove), listed with its runs.
         services.AddSingleton<IComputeOperation, CheckValuesOperation>();
+        services.AddSingleton<IComputeOperation, ExportValueIssuesOperation>();
 
         // What a person asks and waits on runs in the process asked (DirectOperations): a probe, a record read back, a
         // record's source rows, a preview, a scope's values and the explorer's reads.

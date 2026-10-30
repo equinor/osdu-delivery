@@ -52,6 +52,7 @@ import { entryText, propertyRow } from "./mappingDraft";
 import { EntryDetail } from "./MappingEntryDetail";
 import { holderPath, roleLabel, shapeText, splitPath } from "./templateFormat";
 import { useValueCheckContext } from "./useValueCheck";
+import { VariableDocumentTab } from "./ValueCheckDocument";
 import { CheckValuesButton, DataTabBadge, ValueCheckChip, VariableDataTab } from "./ValueCheckResult";
 import { outcomeVisual } from "./valueCheck";
 import { withKeyVariables } from "./variableRows";
@@ -413,12 +414,13 @@ function KindList({ icon, label, values, testId }: { icon: LucideIcon; label: st
 }
 
 /** The tabs of a variable's properties, kept as the reader moves from one variable to the next. */
-type DetailTab = "fill" | "data" | "schema";
+type DetailTab = "fill" | "data" | "document" | "source" | "schema";
 
 /**
  * The selected variable: its name, path and the facts that shape it at the top, then, with a mapping laid over the
- * template, three tabs a reader moves between as they go down the tree: what fills it, what a data check found of it,
- * and what the schema says. Without a mapping (the Templates page) the schema is all there is, and it is shown as it is.
+ * template, five tabs a reader moves between as they go down the tree: what fills it, what a data check found of it, where
+ * it lands in a record's rendered document, what the record's source row holds for it, and what the schema says. Without a
+ * mapping (the Templates page) the schema is all there is, and it is shown as it is.
  */
 function VariableProperties({ variable, holds, tab, onTab }: {
   variable: DeliveryTemplateVariable;
@@ -432,7 +434,7 @@ function VariableProperties({ variable, holds, tab, onTab }: {
   const valueCheck = useValueCheckContext();
   // What nothing of the mapping fills has no values to check.
   const checkable = covered !== undefined && (covered.entry !== null || covered.writtenBy !== null || covered.state !== "Empty");
-  const shown: DetailTab = tab === "data" && valueCheck === null ? "fill" : tab;
+  const shown: DetailTab = tab !== "schema" && tab !== "fill" && valueCheck === null ? "fill" : tab;
   return (
     <div className="flex flex-col gap-3" data-testid="templates-view-properties-variable">
       <div className="flex items-start gap-2">
@@ -489,6 +491,12 @@ function VariableProperties({ variable, holds, tab, onTab }: {
                   <DataTabBadge path={variable.path} />
                 </TabsTrigger>
               )}
+              {valueCheck !== null && (
+                <>
+                  <TabsTrigger value="document" className="flex-none px-0.5 text-[13px]" data-testid="templates-view-properties-tab-document">Document</TabsTrigger>
+                  <TabsTrigger value="source" className="flex-none px-0.5 text-[13px]" data-testid="templates-view-properties-tab-source">Source</TabsTrigger>
+                </>
+              )}
               <TabsTrigger value="schema" className="flex-none px-0.5 text-[13px]" data-testid="templates-view-properties-tab-schema">Schema</TabsTrigger>
             </TabsList>
             <TabsContent value="fill">
@@ -496,7 +504,24 @@ function VariableProperties({ variable, holds, tab, onTab }: {
             </TabsContent>
             {valueCheck !== null && (
               <TabsContent value="data">
-                <VariableDataTab path={variable.path} checkable={checkable} />
+                <VariableDataTab
+                  path={variable.path}
+                  checkable={checkable}
+                  onRecord={(key, values, view) => {
+                    valueCheck.pickRecord({ key, values });
+                    onTab(view);
+                  }}
+                />
+              </TabsContent>
+            )}
+            {valueCheck !== null && (
+              <TabsContent value="document">
+                <VariableDocumentTab path={variable.path} view="document" />
+              </TabsContent>
+            )}
+            {valueCheck !== null && (
+              <TabsContent value="source">
+                <VariableDocumentTab path={variable.path} view="source" />
               </TabsContent>
             )}
             <TabsContent value="schema">
