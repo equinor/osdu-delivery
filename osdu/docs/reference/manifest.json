@@ -4532,6 +4532,7 @@
       ],
       "yamlPath": "(root, documentType: mapping)",
       "related": [
+        "delivery-flow-mapping-transformations",
         "delivery-flow-mapping-values",
         "delivery-flow-mapping-expressions",
         "delivery-flow-mapping-lookups",
@@ -4767,6 +4768,7 @@
       ],
       "yamlPath": "record.<property>.$expr | $when | $where (documentType: mapping)",
       "related": [
+        "delivery-flow-mapping-transformations",
         "delivery-flow-mapping-values",
         "delivery-flow-mapping",
         "delivery-flow-mapping-modifiers",
@@ -4863,6 +4865,7 @@
       ],
       "yamlPath": "(documentType: mapping) record.<property>.$modifiers",
       "related": [
+        "delivery-flow-mapping-transformations",
         "delivery-flow-mapping-values",
         "delivery-flow-mapping-lookups",
         "delivery-flow-mapping-expressions",
@@ -4955,6 +4958,57 @@
       ]
     },
     {
+      "id": "delivery-flow-mapping-transformations",
+      "corpus": "reference",
+      "path": "flow/mapping-transformations.md",
+      "title": "Mapping transformations: every function, modifier and lookup a mapping supports, with results",
+      "type": "flow-reference",
+      "summary": "The catalog of what a mapping can do to a value: expression functions, operators, modifiers, lookups and type conversion, each with its result.",
+      "keywords": [
+        "transformation",
+        "transformations",
+        "transform a value",
+        "supported functions",
+        "list of functions",
+        "which functions",
+        "function reference",
+        "cheat sheet",
+        "convert a value",
+        "text functions",
+        "string functions",
+        "math functions",
+        "unit conversion",
+        "date conversion",
+        "not supported",
+        "blank value"
+      ],
+      "yamlPath": "(documentType: mapping) record.<property>",
+      "related": [
+        "delivery-flow-mapping",
+        "delivery-flow-mapping-values",
+        "delivery-flow-mapping-expressions",
+        "delivery-flow-mapping-modifiers",
+        "delivery-flow-mapping-lookups",
+        "delivery-flow-mapping-assertions",
+        "delivery-guide-writing-a-mapping",
+        "flow-transform",
+        "flow-ing"
+      ],
+      "sourceRefs": [
+        "osdu/src/SqlFlow.Delivery/Expressions/ExpressionFunctions.cs",
+        "osdu/src/SqlFlow.Delivery/Expressions/ExpressionParser.cs",
+        "osdu/src/SqlFlow.Delivery/Expressions/ExpressionNodes.cs",
+        "osdu/src/SqlFlow.Delivery/Expressions/ExpressionValues.cs",
+        "osdu/src/SqlFlow.Delivery/Documents/MappingMapper.cs",
+        "osdu/src/SqlFlow.Delivery/Documents/MappingMapper.Record.cs",
+        "osdu/src/SqlFlow.Delivery/Rendering/EntryValues.cs",
+        "osdu/src/SqlFlow.Delivery/Rendering/DateValues.cs",
+        "osdu/src/SqlFlow.Delivery/Rendering/NumberValues.cs",
+        "osdu/src/SqlFlow.Delivery/Rendering/ReplaceTables.cs",
+        "osdu/tests/SqlFlow.Delivery.Tests/MappingTransformationsPageTests.cs"
+      ]
+    },
+    {
       "id": "delivery-flow-mapping-values",
       "corpus": "reference",
       "path": "flow/mapping-values.md",
@@ -4980,6 +5034,7 @@
       "yamlPath": "record.<property> (documentType: mapping)",
       "related": [
         "delivery-flow-mapping",
+        "delivery-flow-mapping-transformations",
         "delivery-flow-mapping-expressions",
         "delivery-flow-mapping-lookups",
         "delivery-flow-mapping-parent",
@@ -6339,6 +6394,7 @@
       ],
       "related": [
         "delivery-flow-mapping",
+        "delivery-flow-mapping-transformations",
         "delivery-flow-mapping-values",
         "delivery-flow-mapping-lookups",
         "delivery-flow-mapping-modifiers",

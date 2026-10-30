@@ -89,6 +89,10 @@ record:
 This mapping is the only part that knows about well logs. Nothing in the engine does: given another template and
 mapping, it delivers wellbores, seismic, samples, production volumes or any other OSDU type.
 
+Between the source row and the record, a mapping can clean, translate, convert and compute.
+[Mapping transformations](osdu/docs/reference/flow/mapping-transformations.md) lists every function and modifier it
+supports, each with its result.
+
 ## What you get
 
 - **Every OSDU write path.** The storage, file and dataset services; manifest and workflow ingestion; and the domain
@@ -143,6 +147,8 @@ from scratch.
 
 - [What OSDU Delivery is](osdu/docs/reference/concepts/overview.md): the product on one page
 - [Reference documentation](osdu/docs/reference/README.md): every flow, mapping key, command and concept
+- [Mapping transformations](osdu/docs/reference/flow/mapping-transformations.md): every function, modifier and lookup
+  a mapping supports, with results
 - [Deployment](osdu/docs/reference/guides/deployment.md): Docker Compose, Kubernetes, Azure Bicep, Terraform and Radix
 - [Architecture](osdu/docs/reference/concepts/architecture.md): the components, the databases and how they fit
 - [Pattern catalog](osdu/docs/wiki/maps/pattern-catalog.md): which configuration solves which delivery problem

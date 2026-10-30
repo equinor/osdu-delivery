@@ -20,6 +20,7 @@ keywords:
   - percent-encoding
 yamlPath: "(documentType: mapping) record.<property>.$modifiers"
 related:
+  - delivery-flow-mapping-transformations
   - delivery-flow-mapping-values
   - delivery-flow-mapping-lookups
   - delivery-flow-mapping-expressions
@@ -51,7 +52,9 @@ node and applied top to bottom, each to what the one before gave. On a `$from` o
 `$parent` or `$base` node reads, they shape the value the property gets. On a `$cache`, `$search` or `$findAll` node, and on a lookup, they shape the value the node compares
 before it looks anything up ([mapping lookups](mapping-lookups.md)); what the cache or the platform holds is OSDU's own
 and is never modified. A modifier never runs on no value: once a value is gone (a null column, a `replace` to `~`, a
-missing `split` part) the rest are skipped and `$required` decides ([mapping values](mapping-values.md)).
+missing `split` part) the rest are skipped and `$required` decides ([mapping values](mapping-values.md)). Blank text is
+still text to a modifier: `date` and `number` cannot read it and hold the record, and `equals` gives `false`
+([blank text](mapping-transformations.md#blank-text-and-no-value)).
 
 Keep the work small: the ingestion SQL is where data is computed and joined, and the mapping shapes one value at a time
 ([expressions](mapping-expressions.md) choose between and combine a row's values).

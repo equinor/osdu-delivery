@@ -19,6 +19,7 @@ keywords:
   - backticks
   - no value
 related:
+  - delivery-flow-mapping-transformations
   - delivery-flow-mapping-values
   - delivery-flow-mapping
   - delivery-flow-mapping-modifiers
@@ -279,6 +280,7 @@ To see what an expression makes of every row of a scope before anything is sent,
 
 ## Related
 
+- [Mapping transformations](mapping-transformations.md): every function and modifier on one page, with results.
 - [Mapping values](mapping-values.md): `$expr`, `$when` and `$where` among the other words of a node.
 - [Mapping modifiers](mapping-modifiers.md): `trim`, `replace`, `date`, `number` and the id builders, applied after `$expr`.
 - [Mapping](mapping.md): the document as a whole.

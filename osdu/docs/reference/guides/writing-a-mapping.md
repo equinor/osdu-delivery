@@ -20,6 +20,7 @@ keywords:
   - mapping example
 related:
   - delivery-flow-mapping
+  - delivery-flow-mapping-transformations
   - delivery-flow-mapping-values
   - delivery-flow-mapping-lookups
   - delivery-flow-mapping-modifiers
@@ -59,7 +60,8 @@ loop sends anything to OSDU.
 
 The language itself is on [the mapping document](../flow/mapping.md), [mapping values](../flow/mapping-values.md),
 [mapping lookups](../flow/mapping-lookups.md), [modifiers](../flow/mapping-modifiers.md) and
-[expressions](../flow/mapping-expressions.md). This page is the path through them. For a custom copy of a canonical kind,
+[expressions](../flow/mapping-expressions.md), and [mapping transformations](../flow/mapping-transformations.md) lists
+every function and modifier on one page. This page is the path through them. For a custom copy of a canonical kind,
 delivered beside it and linked to it both ways, [linked records](linked-records.md) adds what the custom template and the
 two mappings need.
 

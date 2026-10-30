@@ -20,6 +20,7 @@ keywords:
   - child dataset
 related:
   - delivery-flow-mapping
+  - delivery-flow-mapping-transformations
   - delivery-flow-mapping-expressions
   - delivery-flow-mapping-lookups
   - delivery-flow-mapping-parent
@@ -164,7 +165,8 @@ The form the language used to write is refused with the one to write now:
 record.data.Name: $from: 'dataset.log_name' reads a column the way the mapping language no longer writes it: a column of the dataset's own row is $dataset.log_name, and a column of the dataset's own row is log_name alone.
 ```
 
-A column holding blank text is no value, the same as a missing one.
+A column holding blank text is no value, the same as a missing one, until a modifier reads it: `date` and `number` hold
+the record, and `equals` gives `false` ([blank text](mapping-transformations.md#blank-text-and-no-value)).
 
 ## Literals and $value
 
@@ -512,6 +514,7 @@ be left out) and against the ingestion tables and the cache are the [preflight's
 ## Related
 
 - [Mapping](mapping.md): the document, the header and what a rendered record contains.
+- [Mapping transformations](mapping-transformations.md): every function and modifier on one page, with results.
 - [Mapping expressions](mapping-expressions.md): what `$expr`, `$when` and `$where` can say.
 - [Mapping lookups](mapping-lookups.md) and [mapping modifiers](mapping-modifiers.md).
 - [Mapping assertions](mapping-assertions.md): `$assert`, the rules a property's value must meet.

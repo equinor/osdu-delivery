@@ -19,6 +19,7 @@ keywords:
   - yaml anchors
   - acl and legal lists
 related:
+  - delivery-flow-mapping-transformations
   - delivery-flow-mapping-values
   - delivery-flow-mapping-expressions
   - delivery-flow-mapping-lookups
@@ -78,6 +79,7 @@ header, the OSDU id, the record tree and what a render writes. The value nodes a
 [mapping values](mapping-values.md), the expression language in [mapping expressions](mapping-expressions.md), cache and
 platform lookups in [mapping lookups](mapping-lookups.md), modifiers in [mapping modifiers](mapping-modifiers.md), and
 the business rules a property's value must meet in [mapping assertions](mapping-assertions.md).
+[Mapping transformations](mapping-transformations.md) lists every function and modifier on one page, with results.
 
 ## A complete mapping
 
@@ -579,6 +581,7 @@ The node, condition and expression messages are on [mapping values](mapping-valu
 
 ## Related
 
+- [Mapping transformations](mapping-transformations.md): every function and modifier a mapping supports, with results.
 - [Mapping values](mapping-values.md): every node of the record tree, `$required`, lists and open objects.
 - [Mapping expressions](mapping-expressions.md): `$expr`, `$when` and `$where`.
 - [Mapping lookups](mapping-lookups.md) and [mapping modifiers](mapping-modifiers.md).
