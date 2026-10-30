@@ -61,10 +61,10 @@ needs, and nothing else.
 | SQLFlow provides (its documentation) | OSDU Delivery adds (this corpus) |
 | --- | --- |
 | Flow documents in git, file flows and `ing` flows ([flow overview](../../../../sqlflow/docs/reference/flow/overview.md)) | Eight flow kinds and three companion documents ([OSDU documents](../flow/overview.md)) |
-| The catalog, the repository sync, schedules and the run queue ([control plane](../../../../sqlflow/docs/reference/concepts/control-plane.md)) | The `osdu` schema beside the catalog: the ledger, templates, caches, partitions ([architecture](architecture.md)) |
+| The catalog, the repository sync, schedules and the run queue ([control plane](../../../../sqlflow/docs/reference/concepts/control-plane.md)) | The `osdu` schema beside the catalog: the ledger, the index of the repositories' templates, caches, partitions ([architecture](architecture.md)) |
 | Compute nodes that pull runs ([architecture and execution](../../../../sqlflow/docs/reference/concepts/architecture-and-execution.md)) | The executors that run the OSDU kinds on those nodes |
 | Lineage and its waves ([lineage graph](../../../../sqlflow/docs/reference/concepts/lineage-graph-and-plan.md)) | OSDU types, mappings, cache types and dimensions as lineage nodes ([lineage](lineage.md)) |
-| The `sqlflow` command line ([run](../../../../sqlflow/docs/reference/cli/run.md), [validate](../../../../sqlflow/docs/reference/cli/validate.md)) | The OSDU verbs: `check`, `preview`, `values`, `records`, `config`, `partition`, `cache`, `template`, `assertions`, `dimensions`, `inventory`, `removal` |
+| The `sqlflow` command line ([run](../../../../sqlflow/docs/reference/cli/run.md), [validate](../../../../sqlflow/docs/reference/cli/validate.md)) | The OSDU verbs: `check`, `preview`, `values`, `records`, `config`, `partition`, `cache`, `template`, `assertions`, `dimensions`, `inventory`, `removal`, and `dev` for a local estate |
 | The workbench GUI and the MCP server | The OSDU pages of the GUI, the delivery API under `/api/v1/delivery`, the `osdu-delivery-mcp` server |
 | Secret references, users, tokens and scopes ([connections and secrets](../../../../sqlflow/docs/reference/concepts/connections-and-secrets.md)) | Nothing of its own: the module reads secrets and checks people the platform's way |
 
@@ -99,7 +99,7 @@ A delivery run plans, then delivers, through one engine on whichever node takes 
    last run, re-reading a short overlap below the watermark. The first run, and the first after the mapping, its
    template or the parameters changed, reads every row of the scope.
 2. **Render.** Each row through the mapping the flow pins by `Name@version`, against the template that mapping pins
-   (an OSDU schema saved in the module database) and the version of the partition's cache it reads. The record's OSDU id
+   (an OSDU schema, a file of the repository's template folders) and the version of the partition's cache it reads. The record's OSDU id
    is minted from the delivery key, a UUID derived from the mapping's `dataset.system` and the row's key, so the same row
    always becomes the same record (`dev:master-data--Wellbore:<key>`); a mapping can make it from the key's own values
    instead.
@@ -135,9 +135,9 @@ search runs on indexes over it: by key, OSDU id, source file, or the values a ma
 
 ## More than delivery
 
-The other five flow kinds deliver no records. A cache flow captures what mappings read, so lineage runs it before the
-deliveries that read it; the other four read what OSDU holds and run after the deliveries that write it
-([lineage](lineage.md)):
+The other seven flow kinds deliver no records. A cache flow captures what mappings read, so lineage runs it before the
+deliveries that read it; the others read what OSDU holds, or take out what a source no longer holds, and run after the
+deliveries that write it ([lineage](lineage.md)):
 
 | Kind | Use it to |
 | --- | --- |
@@ -147,13 +147,14 @@ deliveries that read it; the other four read what OSDU holds and run after the d
 | [Dimension](../flow/dimension.md) | Keep the distinct values of an attribute of OSDU records, cleaned for people to pick from |
 | [Inventory](../flow/inventory.md) | Find every id a kind holds that no ledger accounts for, and remove what a flow allows |
 | [Removal](../flow/removal.md) | Take out of OSDU, once, the records whose keys the source no longer holds, on a schedule, with a guard |
+| [Download](../flow/download.md) | Write every record of OSDU kinds to a folder, a JSON file each named after its id, rewritten only when new or changed |
 
 ## Where to look
 
 | Where | What you find there |
 | --- | --- |
 | The GUI, the menu | SQLFlow's pages and this product's side by side, grouped by what a person does there ([the menu](menu.md)). **Ledger**: Delivery (the overview), Records, Removals, Audit trail, Orphaned ledgers. **OSDU**: Explorer (what OSDU holds, read live), Search terms, Assertions, Inventories, Dimensions, Partitions. **Build**, **Delivery**: Mappings (with the mapping builder), Templates, Cache, Order. A title bar picker sets the partition every OSDU page reads ([GUI](gui.md)). |
-| The GUI, a flow's pipeline page | Tabs per kind: Delivery, Records, Issues, Deletions, Submissions and Preview for a delivery flow, set among the page's Runs, Schedules and YAML by what each is about; Retrievals, Cache versions, Tests with History and Reports, Dimensions, Inventories, Removals for the others. Each kind adds its own fields to the trigger dialog. |
+| The GUI, a flow's pipeline page | Tabs per kind: Delivery, Records, Issues, Deletions, Submissions and Preview for a delivery flow, set among the page's Runs, Schedules and YAML by what each is about; Retrievals, Cache versions, Assertions with History and Reports, Dimensions, Inventories, Removals, Downloads for the others. Each kind adds its own fields to the trigger dialog. |
 | The `sqlflow` command line | SQLFlow's verbs plus the OSDU verbs: `check` and `preview` before a run, `records` after one, `template`, `cache`, `partition` and `config` to set an estate up ([CLI pages](../cli/run.md)). |
 | The API | Everything under `/api/v1/delivery`, on the control plane's authenticated routes ([API](api.md)). |
 | An AI assistant | `osdu-delivery-mcp`: SQLFlow's MCP server with the delivery tools added. It answers from metadata (states, ids, counts, history, definitions), never from record content or source rows, and a `!` question from the data an approved AI context opens, with a read-only query ([MCP server](../guides/mcp.md)). |

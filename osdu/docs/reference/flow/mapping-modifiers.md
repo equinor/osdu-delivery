@@ -47,8 +47,8 @@ sourceRefs:
 # Mapping modifiers ($modifiers): trim, upper, lower, split, replace, equals, date, number, id and ref
 
 Modifiers change an incoming dataset value on its way into the record. They are listed under `$modifiers` on a value
-node and applied top to bottom, each to what the one before gave. On a `$from` or `$expr` node they shape the value the
-property gets. On a `$cache`, `$search` or `$findAll` node, and on a lookup, they shape the value the node compares
+node and applied top to bottom, each to what the one before gave. On a `$from` or `$expr` node, and on a single value a
+`$parent` or `$base` node reads, they shape the value the property gets. On a `$cache`, `$search` or `$findAll` node, and on a lookup, they shape the value the node compares
 before it looks anything up ([mapping lookups](mapping-lookups.md)); what the cache or the platform holds is OSDU's own
 and is never modified. A modifier never runs on no value: once a value is gone (a null column, a `replace` to `~`, a
 missing `split` part) the rest are skipped and `$required` decides ([mapping values](mapping-values.md)).
@@ -106,7 +106,8 @@ record:
 
 - `$modifiers` is a list (`$modifiers: [trim]`), never a single name.
 - `id` and `ref` build the value a node writes, so a node takes one of them, it is the last modifier, and it goes only
-  on a `$from` or `$expr` node: a `$cache` or `$search` node already gives an id.
+  on a node that reads one value (`$from`, `$expr`, or `$parent` and `$base` on a single value): a `$cache` or `$search`
+  node already gives an id.
 - On a node whose `$findBy` lines compare only quoted texts there is no incoming value to change, so `$modifiers` there
   is refused.
 - A modifier that cannot read the value it is given (a date that is not a date, a number written another way) holds

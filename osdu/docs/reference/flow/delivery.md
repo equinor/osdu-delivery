@@ -48,14 +48,17 @@ sourceRefs:
   - osdu/src/SqlFlow.Delivery/Documents/DeliveryFlowKind.cs
   - osdu/src/SqlFlow.Delivery/Documents/DeliveryDocumentLoader.cs
   - osdu/src/SqlFlow.Delivery/Documents/WorkflowMapper.cs
+  - osdu/src/SqlFlow.Delivery/Documents/EnrichBinding.cs
   - osdu/src/SqlFlow.Delivery/Documents/YamlModels.cs
   - osdu/src/SqlFlow.Delivery/Documents/DeliveryLayout.cs
   - osdu/src/SqlFlow.Delivery/Documents/MappingCatalog.cs
   - osdu/src/SqlFlow.Delivery/Model/FlowDefinition.cs
+  - osdu/src/SqlFlow.Delivery/Model/FlowTelemetry.cs
   - osdu/src/SqlFlow.Delivery/Model/FlowCacheSteps.cs
   - osdu/src/SqlFlow.Delivery/Engine/Snapshots/CacheSteps.cs
   - osdu/src/SqlFlow.Delivery/Engine/Snapshots/CacheKeeper.cs
   - osdu/src/SqlFlow.Delivery/Engine/FlowRuntime.cs
+  - osdu/src/SqlFlow.Delivery/Engine/FlowRuntime.FanOut.cs
   - osdu/src/SqlFlow.Delivery/Model/SourceDefinition.cs
   - osdu/src/SqlFlow.Delivery/Model/DeliveryDestination.cs
   - osdu/src/SqlFlow.Delivery/Source/SqlServerIngestionSource.cs
@@ -246,7 +249,7 @@ where each record's files are.
 | `connection` | string | required | The database holding the ingestion tables, as a `${env:NAME}` or `${keyvault:vault/secret}` reference, or a SQL Server connection string whose password is such a reference. Resolved on the node that runs the flow ([connections and secrets](../../../../sqlflow/docs/reference/concepts/connections-and-secrets.md)); an `${env:...}` reference in it takes the values set for no partition, then the node's environment, and on the control plane, for a preview or a source read, from its environment alone ([a flow's source connection](../concepts/environment-variables.md#a-flows-source-connection)). |
 | `record.object` | string | required | The record table's three-part name, `[database].[schema].[table]` (`OsduData.silver.WellLog`). |
 | `record.key` | list | required | The key columns, in order: the ing flow's `load.keyColumns`. They must name the same columns, in the same order, as the mapping's `dataset.key`. |
-| `record.primaryKey` | string | none | The table's identity primary key (the ing flow's `target.identityColumn`, such as `RecId`). A fan-out cuts the read on it; without it the read is planned on one run and only the sending fans out. See [The identity primary key](#the-identity-primary-key). |
+| `record.primaryKey` | string | none | The table's identity primary key (the ing flow's `target.identityColumn`, such as `RecId`). A delivery is split over nodes on it ([parallelism](#parallelism)); without it a run is not split, and one node plans and sends it all. See [The identity primary key](#the-identity-primary-key). |
 | `record.scope` | map | none | Column to parameter: each entry becomes a typed `[column] = @parameter` predicate, so a run reads only the rows of its parameter values. A parameter the run gives several values reads the rows holding any of them, `[column] IN (@p0, @p1, ...)` ([Several values of a scope parameter](#several-values-of-a-scope-parameter)). A value is bound, never substituted into SQL. |
 | `record.maxRecords` | integer | none | The first records of the scope a run reads, 1 to 1000, by key, on every run that gives no `maxRecords` of its own: a smoke test before the whole scope goes; leave it out to read the scope whole. A run's own stands in for it. See [The first records of the scope](#the-first-records-of-the-scope). |
 | `datasets.<name>.object` | string | required | A child table's three-part name. The mapping reads it under `<name>` (a `$forEach` over it, or `$dataset.<column>`). |
@@ -329,9 +332,10 @@ ingestion creates it when the ing flow sets `target.identityColumn`. The record 
 delivery key and OSDU id, and joins the child tables; the primary key is how rows are paged and dealt out:
 
 - **Paging.** A read pages by the primary key; without one it pages by the record key.
-- **Fan-out.** The coordinating run counts the candidates per range of primary key values and cuts them into
-  contiguous slices, at most 1024, which it and its members plan ([submissions](../concepts/submissions.md#many-nodes)).
-  Without a primary key the read is planned on the coordinating run, and only the sending fans out.
+- **Splitting over nodes.** The first run cuts the rows it reads into contiguous ranges of primary key values, one per
+  part, and each part plans and sends its range from a node of its own
+  ([submissions](../concepts/submissions.md#many-nodes)). Without a primary key the run is not split: one node plans and
+  sends every row.
 
 When a run opens the tables it refuses a declared column that is not an integer, not an identity column or not the
 table's single-column primary key, and a record key with no unique index without a filter (a record held by two rows
@@ -441,7 +445,7 @@ each decision reads is on [change detection](../concepts/change-detection.md).
 | --- | --- | --- | --- |
 | `endpoint` | string | required | The OSDU platform root every service is reached under, usually `${env:OSDU_URL}` (a single-form flow on the ddms route may point at the DDMS itself; see [DDMSs](ddms.md#the-endpoint-the-platform-root-or-the-ddms-itself)). Changing it never redelivers a record by itself. A URL written literally whose user info or query carries a credential is refused. |
 | `auth` | map | `type: none` | How every request authenticates. See below. |
-| `headers` | map | none | Extra headers on every request. `data-partition-id` here hard-codes the flow's one partition. A header that carries a credential (`Authorization`, an API or subscription key, a token, any `x-api-*` header) holds a reference, after its scheme when it has one (`Bearer ${env:NAME}`); a literal is refused when the flow is read. |
+| `headers` | map | none | Extra headers on every request. `data-partition-id` here hard-codes the flow's one partition. A header that carries a credential (`Authorization`, an API or subscription key, a token, any `x-api-*` header) holds a reference, after its scheme when it has one (`Bearer ${env:NAME}`); a literal is refused when the flow is read. `correlation-id` is refused: every request carries the one its run sets ([request correlation](../concepts/request-correlation.md)). |
 | `protocol` | string | required in the single form | The route the records go by: `storage`, `file`, `dataset`, `manifest`, `ddms`, `fileAndDdms`, `manifestAndDdms`, `workflow`, `dspdm` or `etp` ([routes](routes.md)). |
 | `protocolOptions` | map | none | The route's options ([routes](routes.md#options-every-route-reads)). |
 | `ddms`, `eds`, `dspdm`, `etp` | map | none | The DDMSs and services some routes deliver to ([DDMSs](ddms.md), [DDMS shapes and services](ddms-services.md)). |
@@ -496,7 +500,7 @@ parameter](#several-values-of-a-scope-parameter)); every other parameter takes o
 | `parameters.<name>.lookup.column` | string | none | The record table's column whose values the run form offers for the parameter; a scope parameter is looked up in the column it binds without one. |
 | `parameters.<name>.lookup.interface` | string | the first | The interface whose record table holds that column. |
 
-`{name}` tokens are substituted in `source.work` and every payload `root`; a value carrying `/`, `\` or `..` is refused
+`{name}` tokens are substituted in `source.work`, every payload `root` and every `datasets.<name>.files.root`; a value carrying `/`, `\` or `..` is refused
 there, since these locations bound what a run reads and writes. `source.record.scope` binds a parameter to a column
 instead. A token or a scope naming an undeclared parameter is refused when the document loads, and a run supplying an
 undeclared one is refused when it starts. Each distinct set of values is a scope of its own, with its own watermark.
@@ -600,7 +604,7 @@ uses comes from the rows it reads, at most `nodes`:
 | 5,000 rows (a first, full delivery) | 5 |
 | 20,000 rows or more | 8, the most `nodes` allows |
 
-A worker claims the records due for a retry `recordsAtOnce` at a time, and at least 50. An assertion, dimension, inventory or retrieval flow writes what one of its runs works on at once with the same key, `recordsAtOnce`: its tests, dimensions, version lists or kinds ([assertion](assertion.md), [dimension](dimension.md), [inventory](inventory.md), [retrieval](retrieval.md)). How a run is cut into parts, how
+A worker claims the records due for a retry `recordsAtOnce` at a time, and at least 50. An assertion, dimension, inventory, retrieval or download flow writes what one of its runs works on at once with the same key, `recordsAtOnce`: its tests, dimensions, version lists, kinds or storage reads ([assertion](assertion.md), [dimension](dimension.md), [inventory](inventory.md), [retrieval](retrieval.md), [download](download.md)). How a run is cut into parts, how
 each part is delivered, and what the first run does with a part that does not finish is on
 [submissions](../concepts/submissions.md#many-nodes).
 
@@ -709,7 +713,7 @@ the document loads; its values are checked by each run, as a trigger's are.
 | --- | --- |
 | `deliver` | Plans the rows the ingestion tables changed and delivers what renders differently (the default). |
 | `plan` | Reports what a delivery would send, changing nothing. |
-| `intake` | Plans rows into work batches without delivering them: a fan-out member's share. |
+| `intake` | Plans rows into work batches without delivering them: a plan to drain later, or the key slices of a submission it names. |
 | `drain` | Delivers the work batches a submission already planned. |
 | `verify` | Compares what OSDU holds with what the ledger recorded. |
 | `replan` | Reads every row of the scope again and delivers what renders differently now. |
@@ -740,6 +744,7 @@ Every message starts with the file. A sample of what `sqlflow validate` refuses:
 | A literal password | `source.connection carries a literal password. A flow document holds references only: put the connection string, or its password, behind ${keyvault:vault/secret} or ${env:NAME}, or connect with Azure AD (Authentication=Active Directory Default).` |
 | A literal secret | `target.auth.secretRef holds a literal value, and it is the credential the flow authenticates with (the token, the API key, the password or the client secret). A flow document holds references only: ...` |
 | A literal credential header | `target.headers.Authorization holds a literal value, and the header carries a credential; it holds a reference, after its scheme when it has one (Bearer ${env:NAME}). ...` |
+| `enrich:` on the flow | `enrich declares what is added to each record, which the mapping says now: move each enrichment to the enrich: block of render.mapping's mapping, with its rows, mapping, key, after and onHold; bind its rows here under source.datasets.<name> (their files under source.datasets.<name>.files), and its workflow under workflows.<name>.` |
 | A pinned mapping that is not there | `render.mapping: Mapping 'Wellbore@1.0.0' was not found under '../mappings'. Expected one of: Wellbore@1.0.0.yaml, Wellbore@1.0.0.yml, 1.0.0.yaml, 1.0.0.yml.` |
 | A setting that moved to `parallelism` | `reliability.renderParallelism is now parallelism.renderThreads: what runs at once, and across the fleet, is the flow's parallelism, and reliability keeps what makes a request hold. Move it.` |
 | A `parallelism` key by its old name | `parallelism.batchRecords is now parallelism.recordsPerBatch: the records one batch file holds. Rename it.` |

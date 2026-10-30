@@ -43,6 +43,8 @@ sourceRefs:
   - osdu/src/SqlFlow.Delivery/Model/AssertionFlowDefinition.cs
   - osdu/src/SqlFlow.Delivery/Model/DimensionFlowDefinition.cs
   - osdu/src/SqlFlow.Delivery/Model/InventoryFlowDefinition.cs
+  - osdu/src/SqlFlow.Delivery/Model/RemovalFlowDefinition.cs
+  - osdu/src/SqlFlow.Delivery/Model/DownloadFlowDefinition.cs
   - osdu/src/SqlFlow.Delivery/Model/DeliveryDestination.cs
   - osdu/src/SqlFlow.Delivery/Snapshots/CacheScope.cs
   - osdu/src/SqlFlow.Delivery/Documents/DeliveryDocumentLoader.cs
@@ -168,6 +170,8 @@ Each example is an excerpt: the rest of each file (source, render, auth) is as [
 | Assertion | `partitions` | refused: a report describes one partition | its own report history |
 | Dimension | `partitions` | refused | its own dimensions |
 | Inventory | `partitions` | refused | its own inventories |
+| Removal | `partitions` (none: every registered partition; it has no header) | refused: a run removes in one partition | its runs and the deletions it finds, under the ledgers of the delivery flows it names there |
+| Download | `partitions` | refused: a download's ledger belongs to one partition | its own downloads |
 | Retrieval | the `data-partition-id` header only | a run that names any partition is refused | its runs, in the partition its header resolves to |
 
 ## The partition registry
@@ -328,7 +332,7 @@ names it in the run value `partition`:
 | The GUI | The partition picked in the title bar's switcher. Every run started from the GUI acts in it, and a flow that does not serve it refuses to start, saying which partitions it serves. |
 | `sqlflow run`, `sqlflow trigger` | `--set partition=<id>` ([Running an OSDU flow](../cli/run.md)). |
 | A schedule | `values: { partition: <id> }` in the YAML `schedule:` block, or `--set partition=<id>` on `sqlflow schedules create`. |
-| The module's own verbs | `--partition <id>` on `check`, `preview`, `values`, `records`, `cache`, `config`, `assertions`, `dimensions` and `inventory list`; the other `inventory` subcommands take the partition as an argument. |
+| The module's own verbs | `--partition <id>` on `check`, `preview`, `values`, `records`, `cache`, `config`, `assertions`, `dimensions`, `inventory list` and `removal runs`; the other `inventory` subcommands and `removal run` take the partition as an argument. |
 
 The partition is settled the same way on every host:
 

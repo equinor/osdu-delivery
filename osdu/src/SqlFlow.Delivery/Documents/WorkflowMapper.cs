@@ -383,6 +383,13 @@ internal static partial class FlowMapper
     private static bool SendsFiles(FlowDefinition flow)
         => DeliveryProtocols.CarriesPayload(flow.Target.Protocol) && flow.Source.Payloads.Count > 0;
 
+    /// <summary>
+    /// True when the flow's route may send the bulk data an enrichment of its mapping names (osdu/docs/reference/flow/enrich-bulk.md),
+    /// which only binding the flow to its mapping can tell: the ddms route, with no payload set of the flow's own.
+    /// </summary>
+    private static bool MayTakeEnrichmentBulk(FlowDefinition flow)
+        => flow.Target.Protocol == DeliveryProtocol.Ddms && flow.Source.Payloads.Count == 0;
+
     /// <summary>The manifest-by-reference options, and the Dataset service paths, as far as the document shows them.</summary>
     private static void ValidateReferenceOptions(FlowDefinition flow, string source, KeyPaths paths)
     {

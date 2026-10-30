@@ -172,6 +172,8 @@ root of the record (`data`, `acl`, `tags`, ...); arrays are crossed implicitly o
 | --- | --- | --- |
 | `$from`, `$expr` | yes | yes |
 | `$cache`, `$search`, `$lookup` | yes | no: the value comes from the cache, a search of the platform or a lookup's record, not from the row |
+| `$parent`, `$child`, `$base` | yes | no: the value comes from the record's parent, the reference to its child, or the record an enrichment renders into, not from the row |
+| `$link` | refused: it takes only `$when` and `$description` | refused |
 | `$coalesce` | yes, beside the list: the value of whichever alternative gave it | no: the value is the first its alternatives give |
 | `$forEach` | yes: the array as a whole, which the preflight lets `exists`, `empty` and `length` judge | no |
 | A property of a `$forEach` item, or of an item of a list of objects | yes, in each item | as its node allows |

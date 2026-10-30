@@ -91,7 +91,7 @@ else selects it, and `SQLFLOW_AZURE_AUTH` stays unset.
 
 Two databases on one server: `OsduDelivery` holds SQLFlow's catalog and the `osdu` schema beside it, and `OsduData`
 holds the ingestion tables the flows load and deliver from. Keep both names: the estate's flows name their tables
-through them (`OsduData.arc.WellLog`, `OsduDelivery.osdu.v_dim_WellLogCurve`). Both must exist; the control plane
+through them (`OsduData.silver.WellLog`, and a dimension view as `OsduDelivery.osdu.v_dim_<view>`). Both must exist; the control plane
 migrates the catalog and the `osdu` schema itself when it starts, and creates neither database. Both identities sign in
 with `Authentication=Active Directory Default`, so no connection carries a password. As the server's Entra
 administrator, create a user for each from its identity's name, with the same roles the Terraform estate grants:

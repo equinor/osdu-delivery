@@ -114,7 +114,8 @@ Because a delivery is configuration, an AI assistant can build one. `osdu-delive
 VS Code, Codex, Slack or the GUI's own chat to OSDU Delivery. Ask for a new data type and it reads the schema, drafts the
 mapping, checks it until it is valid, and opens a pull request for a person to review; ask whether a record was
 delivered, why it failed, or what a reference data change will resend. It works from definitions and delivery
-metadata, never from the records' content, with the signed-in person's own permissions
+metadata, never from the records' content, with the signed-in person's own permissions; only data mode, which a
+message starting with `!` turns on, reads data, with a read-only query over what an approved AI context opens
 ([MCP guide](osdu/docs/reference/guides/mcp.md)).
 
 ## Try it

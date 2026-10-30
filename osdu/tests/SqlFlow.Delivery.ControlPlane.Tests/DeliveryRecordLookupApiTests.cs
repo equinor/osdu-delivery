@@ -163,8 +163,8 @@ public sealed class DeliveryRecordLookupApiTests
         {
             await ledger.UpsertPendingAsync(flowId,
             [
-                Record(flowId, plain, $"NO 16/2-10 {marker}", $"dev:master-data--Wellbore:{marker}-A", marker + "_wellbores.csv", 1),
-                Record(flowId, held, $"NO 25/8-4 {marker}", $"dev:master-data--Wellbore:{marker}-B", marker + "_wellbores.csv", 2) with { HeldSteps = "grade" },
+                Record(flowId, plain, $"Wellbore B-10 {marker}", $"dev:master-data--Wellbore:{marker}-A", marker + "_wellbores.csv", 1),
+                Record(flowId, held, $"Wellbore C-4 {marker}", $"dev:master-data--Wellbore:{marker}-B", marker + "_wellbores.csv", 2) with { HeldSteps = "grade" },
             ]);
 
             await using var factory = Factory(cs);
@@ -174,11 +174,11 @@ public sealed class DeliveryRecordLookupApiTests
 
             // No value of either record starts with a term from inside the well name; matching anywhere finds it, and the
             // hit names the value that holds it.
-            Assert.Equal(0, (await LookupAsync(client, token, $"search=6/2-10&{scope}")).GetProperty("total").GetInt64());
-            var anywhere = await LookupAsync(client, token, $"search=6/2-10&mode=contains&{scope}");
+            Assert.Equal(0, (await LookupAsync(client, token, $"search=-10&{scope}")).GetProperty("total").GetInt64());
+            var anywhere = await LookupAsync(client, token, $"search=-10&mode=contains&{scope}");
             var hit = Assert.Single(anywhere.GetProperty("items").EnumerateArray().ToList());
             Assert.Equal(plain.Value, hit.GetProperty("deliveryKey").GetGuid());
-            Assert.Equal($"NO 16/2-10 {marker}", Assert.Single(hit.GetProperty("matched").EnumerateArray().ToList()).GetProperty("value").GetString());
+            Assert.Equal($"Wellbore B-10 {marker}", Assert.Single(hit.GetProperty("matched").EnumerateArray().ToList()).GetProperty("value").GetString());
 
             // The Records tab's switches narrow the lookup and the listing of what came in last alike.
             var stepHeld = await LookupAsync(client, token, $"search={marker}&stepHeld=true&{scope}");

@@ -123,6 +123,27 @@ public sealed class StepBulkDocumentTests
     }
 
     [Fact]
+    public void Bulk_needs_the_column_holding_its_hash_unless_the_flow_compares_the_files_modified_times()
+    {
+        var noHash = Head().Replace("        hashColumn: curves_hash\n", string.Empty, StringComparison.Ordinal);
+
+        Assert.Contains(
+            "enrich.curves of the mapping Thing@1.0.0 names the record's bulk data by its row (bulk: true), and the flow decides payload changes by content hash, so source.datasets.curves.files.hashColumn must name the column holding it",
+            Refused(Bulk, noHash).Message,
+            StringComparison.Ordinal);
+
+        var byTime = Parsed(Bulk, noHash + "change:\n  payloadDetect: lastModified\n");
+        Assert.Null(byTime.Source.Payloads[PayloadParts.Bulk].HashColumn);
+
+        // The loader cannot tell a ddms flow sending no bulk data from one an enrichment supplies, so binding refuses it.
+        var noFiles = Head().Replace(CurveFiles, string.Empty, StringComparison.Ordinal) + "change:\n  payloadDetect: lastModified\n";
+        Assert.Contains(
+            "change.payloadDetect is lastModified, and the flow declares no payload set, nor does any enrichment of the mapping Thing@1.0.0 name the record's bulk data (bulk: true)",
+            Refused("curves:\n  rows: one\n  mapping: WellLogCurveNote@1.0.0\n", noFiles).Message,
+            StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void The_files_bulk_data_is_read_from_name_their_root_and_their_folder_column()
     {
         var noRoot = Head().Replace("        root: ../data/curves\n", string.Empty, StringComparison.Ordinal);

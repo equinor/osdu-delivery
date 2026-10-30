@@ -60,8 +60,8 @@ template and cache version that rendered it and every try to send it, to the OSD
 operator action on it. Every delivery path, retry, removal, reversal and release goes through the ledger; there is no
 repair script or side door that changes what OSDU holds without writing it here.
 
-You read the ledger in the GUI (OSDU, Ledger: **Delivery**, **Records**, **Audit trail**, and a flow's Records, Issues and
-Submissions tabs), with [`sqlflow records`](../cli/records.md), and through the [delivery API](api.md). This page says what
+You read the ledger in the GUI (the menu's Ledger group, **Delivery**, **Records** and **Audit trail**, and a flow's
+Records, Issues and Submissions tabs), with [`sqlflow records`](../cli/records.md), and through the [delivery API](api.md). This page says what
 the ledger records and how to read it back. [Record lifecycle](record-lifecycle.md) says how a record moves between states,
 and [Submissions](submissions.md) how a run plans and sends.
 
@@ -74,13 +74,15 @@ key into SQLFlow's catalog: a ledger row names a run, a pipeline or a repository
 [Architecture](architecture.md) and [`sqlflow db`](../cli/db.md).
 
 The schema lives in the catalog's database. SQLFlow gives a worker node no catalog connection, so the module reaches the
-ledger there through `SQLFLOW_CATALOG_DB` itself, and a node started without it refuses to start.
+ledger there through `SQLFLOW_CATALOG_DB` itself, and a node started without it refuses to start (one whose older
+settings give only `SQLFLOW_OSDU_DB` reads the catalog's connection from that, and says so when it starts).
 
 ## Ledgers, flows and partitions
 
 A **ledger** is the records of one flow in one OSDU partition, under one ledger identity (the `FlowId` every ledger row
 carries). A flow in the single form has one identity, derived from its name; each interface of a source keeps its own,
-derived from `<flow>/<interface>` (see [Interfaces](../flow/interfaces.md)). A flow that works in partitions derives one
+derived from `<flow>/<interface>`; a flow that names a ledger with `ledger:` keeps that one instead (see
+[Interfaces](../flow/interfaces.md#ledger-identity)). A flow that works in partitions derives one
 identity per partition from that name and the partition, except in the partition marked `keepLedger`. The same source row read by two flows is two
 records, each with its own state and history. Because the identity is derived from the name, a renamed flow has a new
 one: the repository sync moves the old ledger to it when only the name changed, and otherwise the old ledger is orphaned
@@ -131,6 +133,9 @@ other tables of the schema are explained with what they serve:
 - `osdu.RemovedKey` (a ledger's deletions: the keys a removal flow found its source no longer holds), `osdu.RemovalRun` and
   `osdu.RemovalKey`: in [Removal flow](../flow/removal.md#the-ledgers-deletions). A removal flow keeps no ledger of its
   own; its runs and deletions are kept under the delivery flow's ledger identity.
+- `osdu.Download` and its tables: in [Download flow](../flow/download.md). `osdu.LedgerFlow` (the read model of the flows
+  of the other kinds, which the repository sync pairs a renamed flow by): in [Renaming a pipeline](renaming-a-pipeline.md).
+- `osdu.SchemaLineage`, `osdu.SchemaLineageKind`: in [The OSDU order](osdu-order.md).
 - `osdu.SearchTerm`, `osdu.SearchTermRefinement`: in [Search terms](search-terms.md).
 
 ### `osdu.Record`: the current state of one deliverable
@@ -176,7 +181,8 @@ One `osdu.Activity` row per run and per operator intervention, never deleted:
 - runs: `deliver`, `intake`, `drain`, `verify`, `sync`, `undo`, `reverse`, `delete-ledger`, and `probe` (a target probe,
   by button, the API, the MCP tool or the schedule);
 - interventions: `release`, `adopt` (a record taking over the OSDU record at the id its key makes), `redeliver`, `rerender` (bring up to date), `delete` (a removal from OSDU),
-  `restore-previous`, `purge` (deleting removed records from the ledger), `remove-dimension`, `inventory-remove`,
+  `restore-previous`, `purge` (deleting removed records from the ledger), `remove-dimension`, `remove-view` (a
+  dimension view no flow declares any more), `inventory-remove`,
   `inventory-repair`, `reassign-id`, `source-remove` (a removal flow taking out what the source no longer holds, in the
   delivery flow's ledger), `lift-removal` (an operator delivering such records again) and `ledger-move` (a ledger moved
   to another flow's identity: by the repository sync for a renamed flow, as `service:repository-sync`, or by a person
@@ -184,7 +190,8 @@ One `osdu.Activity` row per run and per operator intervention, never deleted:
 
 Each row carries the actor (for a run, who asked for it or `schedule:<name>` for a run a schedule fired; `user:<name>` for
 an intervention from the GUI or the API and for a probe asked for, `cli:<user>@<machine>` for one from a workstation,
-`service:schedule` for a scheduled probe;
+`service:schedule` for a scheduled probe; `parent` and `cache:<partition>@<version>` for the release of records held for a
+parent or a cached record that has since landed, as [Record lifecycle](record-lifecycle.md#releasing-a-record) says;
 see [Authentication and identity](authentication-and-identity.md)),
 start and end, outcome (`running`, `completed`, `failed` or `cancelled`), parameters, the submission, record and platform
 run it concerned, a summary of the counts that are not zero, and for runs the captured run log (at most 200,000
@@ -261,7 +268,8 @@ pipeline id, so a record's history stays reachable after its flow leaves the rep
 ## Statistics are counted from the records
 
 A flow's counts (`GET /api/v1/delivery/flows/{pipelineId}/stats`: total, pending, delivering, delivered, held, failed,
-deleted, reverted, waiting, drifted, delivered in the last 24 hours, the last delivery and verification, the submissions)
+deleted, reverted, waiting, blocked, stranded, adoptable, drifted, steps held, delivered in the last 24 hours, the last
+delivery and verification, the submissions)
 are counted from `osdu.Record` through its status indexes on every call. Nothing keeps a running total beside the records,
 so the counts are exact and cannot drift from the ledger. Drifted counts records whose last verify outcome is `drifted` or
 `missing`. A source's counts are its interfaces' added up, and a flow that serves several partitions is counted per

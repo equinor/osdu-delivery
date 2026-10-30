@@ -39,7 +39,7 @@ public sealed class RecordExportTests
                 Blocked = true,
                 ProblemHash = 0x1f2e3d4c5b6a7988,
                 LastError = "assertion: data.VerticalMeasurement fails \"reference-elevation-range\" with '822'",
-                PendingSourceFileName = "stat_comp_welllog_20261023103331.csv",
+                PendingSourceFileName = "composite_welllog_20261023103331.csv",
                 PendingSourceRowNumber = 2235,
                 SourceFileName = "older.csv",
                 SourceRowNumber = 1,
@@ -55,7 +55,7 @@ public sealed class RecordExportTests
                 TargetVersion = 1_729_012_345_678_901,
                 LastDeliveredUtc = Delivered,
                 LastVerifyOutcome = VerifyOutcome.Match,
-                SourceFileName = "stat_comp_welllog_20261023103331.csv",
+                SourceFileName = "composite_welllog_20261023103331.csv",
                 SourceRowNumber = 1546,
             };
         var unlabelled = Record(null, ["NO 34/10-32 A", "32 A"], "C") with { Status = RecordStatus.Pending };
@@ -83,7 +83,7 @@ public sealed class RecordExportTests
         Assert.Equal(("NO 34/10-A-48", "A-48"), (blocked["well"].GetText(), blocked["wellbore"].GetText()));
 
         // A held record names the file and row it was left at, the queued version's, as the Records tab does.
-        Assert.Equal(("stat_comp_welllog_20261023103331.csv", 2235d), (blocked["Source file"].GetText(), blocked["Source row"].GetNumber()));
+        Assert.Equal(("composite_welllog_20261023103331.csv", 2235d), (blocked["Source file"].GetText(), blocked["Source row"].GetNumber()));
         Assert.Equal(("NO 34/10-A-48; 22004", 1d, "yes"), (blocked["Identities"].GetText(), blocked["Attempts"].GetNumber(), blocked["Document waiting"].GetText()));
         Assert.True(blocked["OSDU id"].IsBlank);
         Assert.Equal(held.DeliveryKey.Value.ToString("D"), blocked["Delivery key"].GetText());
@@ -94,7 +94,7 @@ public sealed class RecordExportTests
         Assert.Equal("1729012345678901", landed["OSDU version"].GetText());
         Assert.Equal(Delivered, DateTime.SpecifyKind(landed["Delivered (UTC)"].GetDateTime(), DateTimeKind.Utc));
         Assert.Equal(("match", "WellLog"), (landed["Verify"].GetText(), landed["Mapping"].GetText()));
-        Assert.Equal(("stat_comp_welllog_20261023103331.csv", 1546d), (landed["Source file"].GetText(), landed["Source row"].GetNumber()));
+        Assert.Equal(("composite_welllog_20261023103331.csv", 1546d), (landed["Source file"].GetText(), landed["Source row"].GetNumber()));
 
         var about = read.About();
         Assert.Equal(Flow.Name, about["Flow"].GetText());

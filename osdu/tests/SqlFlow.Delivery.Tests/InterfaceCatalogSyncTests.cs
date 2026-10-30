@@ -308,7 +308,7 @@ public sealed class InterfaceCatalogSyncTests : IDisposable
 
         // Renamed and edited: another document, so the old ledger stays where it is.
         Delete(OldFile);
-        Write(NewFile, Flow(NewName).Replace("flowType: delivery\n", "flowType: delivery\ndescription: The Recall well logs, renamed.\n", StringComparison.Ordinal));
+        Write(NewFile, Flow(NewName).Replace("flowType: delivery\n", "flowType: delivery\ndescription: The well logs, renamed.\n", StringComparison.Ordinal));
         Assert.Empty((await SyncAsync(new DateTime(2026, 9, 16, 13, 0, 0, DateTimeKind.Utc))).Warnings);
         Assert.Empty(await MovesAsync());
 

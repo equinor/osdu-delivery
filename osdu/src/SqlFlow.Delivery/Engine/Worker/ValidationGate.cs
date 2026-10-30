@@ -97,7 +97,7 @@ public sealed class ValidationGate
                 checks[i] = new Check(
                     Unchecked(version is null
                         ? $"the document was rendered for no version of {kind} its flow reads, so it is not checked against its schema"
-                        : $"template {kind} at version {version}, which the document was rendered for, is neither in a template folder on the mapping's path nor saved, so the document is not checked against its schema"),
+                        : $"template {kind} at version {version}, which the document was rendered for, is in no template folder on the mapping's path, so the document is not checked against its schema"),
                     null,
                     null);
                 continue;

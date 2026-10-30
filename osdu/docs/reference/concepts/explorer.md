@@ -61,6 +61,8 @@ sourceRefs:
   - osdu/src/SqlFlow.Delivery/Engine/Search/ExplorerFieldCatalog.cs
   - osdu/src/SqlFlow.Delivery.Search/OsduQuery.cs
   - osdu/src/SqlFlow.Delivery/Engine/Protocols/OsduRecordProtocol.cs
+  - osdu/src/SqlFlow.Delivery/Http/OsduCorrelation.cs
+  - osdu/hosts/osdu-delivery-mcp/src/links.rs
   - osdu/gui/src/module.tsx
   - osdu/gui/src/features/delivery/explorer/ExplorerPage.tsx
   - osdu/gui/src/features/delivery/useLinkedPartition.ts
@@ -115,8 +117,11 @@ Each is read as a run reads it: the control plane's value for the partition (`Os
 or [sqlflow config](../cli/config.md) `set --partition <id>` with no repository), then its value for no partition
 (`Osdu:Properties:<NAME>`), then the control plane's own environment, which is where a local setup's `.sqlflow/env` puts
 them. A repository's values are not read, since the explorer belongs to no repository. Every request carries
-`data-partition-id` set to the partition. A deployment can therefore be searched as soon as its configuration names its
-partitions, before a repository is synced or a flow delivers anywhere.
+`data-partition-id` set to the partition, and a read's requests a `correlation-id` of `osdu-delivery-explore-<id>`, a
+new id for each read, which its answer gives back as `correlationId`; the reading of the partition's schemas behind
+Referenced by carries `osdu-delivery-schema-<id>` of its own ([request correlation](request-correlation.md)). A deployment can
+therefore be searched as soon as its configuration names its partitions, before a repository is synced or a flow
+delivers anywhere.
 
 The partition is the one picked in the title bar (the request's `partition`, else the workbench's `X-Osdu-Partition`
 header, else the registry's default), and it has to be registered. When its connection cannot be made, every read
@@ -127,8 +132,8 @@ one names the values its configuration and the control plane's environment leave
 
 When the connection can be made, a green badge with the partition's name stands beside the page's title; its tooltip,
 **Read live from OSDU**, names the platform it reaches: the base URL as scheme, host, port and path, without the
-credentials, query or fragment a URL can carry, or a configured `${keyvault:...}` reference as written, since that is
-resolved only when a read needs it.
+credentials, query or fragment a URL can carry, or a configured reference (such as `${keyvault:...}`) as written, since
+that is resolved only when a read needs it.
 
 The explorer reads:
 
@@ -136,7 +141,7 @@ The explorer reads:
 | --- | --- | --- |
 | Search | `POST /api/search/v2/query` | types and their counts, records, groups of values, mentions |
 | Storage | `GET /api/storage/v2/records/{id}`, `GET /api/storage/v2/records/versions/{id}`, `GET /api/storage/v2/records/{id}/{version}` | a record, its version list, an older version |
-| Storage | `POST /api/storage/v2/query/records` | the records a record refers to, during a validation |
+| Storage | `POST /api/storage/v2/query/records` | the records a check of a search reads, and those a record refers to, during a validation |
 | Schema | `GET /api/schema-service/v1/schema`, `GET /api/schema-service/v1/schema/{id}` | a kind's properties, validation, Referenced by |
 
 A record is read the way a record page's OSDU tab reads it back, so both pages show a record the same way. A record
@@ -153,7 +158,9 @@ flow's own shorter timeout) for an answer.
 **Who may use it.** The page's route asks for the `operate` scope, and its reads sit in the control plane's operate
 group, because they use the partition's credentials. SQLFlow resolves `operate` to any signed-in user
 ([authentication and identity](authentication-and-identity.md)), so in practice anyone signed in can use the explorer.
-The MCP server offers none of its routes: it answers from metadata alone, and the explorer reads OSDU's data.
+The MCP server offers none of its routes: it answers from metadata alone, and the explorer reads OSDU's data. Its
+answers link here instead: an OSDU id they name opens that record in its partition (`?id=...&partition=...`), a kind its
+records, and a partition the explorer on it.
 
 ## The welcome
 
@@ -163,7 +170,9 @@ The page opens on a welcome that reads nothing from OSDU, so it shows at once ho
 - **Types**: **Browse every type**, and the types browsed lately (the last 12).
 - **Search syntax**: what the search field takes, with an example of each.
 
-Both lists are kept in the browser only. `/` anywhere on the page outside a field puts the cursor in the search field.
+Both lists are kept in the browser only, and a record opened in another partition opens in that partition. Past the
+welcome, **Recent** beside the search field lists the same records (**Forget** clears them). While no record is open,
+`/` anywhere on the page outside a field puts the cursor in the search field.
 OSDU is read only once the reader asks: **Browse every type** reads the types and waits for one to be picked, a type
 picked reads its records, a search reads what it finds, and a record opened reads that record and nothing behind it.
 
@@ -180,7 +189,7 @@ Once asked, the page shows the partition's kinds beside the records of the place
   the kind). The counts follow the search and the conditions, so the list also says where else a search finds something.
 - **The records grid.** One row per record: its name (the first of `data.FacilityName`, `data.Name`,
   `data.ProjectName`, `data.Code` or the file name in `data.DatasetProperties.FileSourceInfo.Name`, else the unique part
-  of its id), its type when every type is in view, its id (cut from the start, so the end that tells ids apart stays
+  of its id), its type unless one type is in view, its id (cut from the start, so the end that tells ids apart stays
   visible, with a copy on hover), when it last changed, and a column for each property a condition asks, so the grid
   shows why each record is there. Rows load a hundred at a time as the grid scrolls; only the rows in view are drawn.
   The arrow keys, Page Up and Down, Home and End move through them, and Enter opens one.
@@ -207,8 +216,8 @@ lists every record of the place again. A hint at the field's end says what Enter
 | Typed | Read as | Query sent |
 | --- | --- | --- |
 | nothing | every record of the place | none |
-| a whole id, `dev:master-data--Wellbore:abc123` (a version or a trailing colon is dropped) | opens the record | |
-| the start of an id, `dev:master-data--Wellbore:WB-` or `master-data--Wellbore:WB-` (completed with the partition) | the ids starting with it | `id:dev\:master\-data\-\-Wellbore\:WB\-*` |
+| a whole id, `dev:master-data--Wellbore:abc123` (a trailing colon is dropped; with a version, it opens at that version) | opens the record | |
+| the start of an id, `dev:master-data--Wellbore:` or `master-data--Wellbore:WB-` (completed with the partition) | the ids starting with it | `id:dev\:master\-data\-\-Wellbore\:WB\-*` |
 | words, `Wellbore A 1` | a phrase anywhere in a record | `"Wellbore A 1"` |
 | one word of three or more characters with one type in view | the phrase, or the record of that type whose id is or starts with it | `"WB-0042" OR id:"dev:master-data--Wellbore:WB-0042" OR id:...*` |
 | a machine-minted unique part (a GUID, a hash) in every type | the phrase, or any id of the partition ending with it | `"..." OR id:dev\:*\:...*` |
@@ -218,7 +227,8 @@ A value is always sent as a quoted phrase, since the service ORs bare words toge
 is not a failure: the explorer drops the order, then the clause the reading added beyond its core (the id clauses), each
 with a note, and a query still refused is the page's answer, with the service's words (**The search service refused this
 search**). Anything else that keeps an answer from coming fails the read, since an empty page would say OSDU holds
-nothing. A search is at most 2,000 characters, and a character that cannot be printed is refused.
+nothing. A search is at most 2,000 characters, and a character that cannot be printed is refused (a Lucene query keeps
+its line breaks and tabs).
 
 **The query** icon in the place line shows what the list is read by, exactly as sent: the `kind` and the Lucene `query`
 (none where the list is every record of the kind). It is copied as written or as a request, or taken into the search
@@ -275,21 +285,23 @@ A record opens in the record inspector (the one the record page's OSDU tab uses)
 records** returning to the list as it was left. Its outline:
 
 - **Record**: **Full document** (the record as OSDU returned it), **System fields** (Id, Kind, Version, Created, Last
-  modified, when and through which flow it was read, the correlation id) and **Access & legal** (Viewers, Owners, Legal
-  tags, Countries, Legal status).
+  modified, when it was read and through what (here `partition <id>`, the partition's connection; on a record page, its
+  flow), the correlation id) and **Access & legal** (Viewers, Owners, Legal tags, Countries, Legal status).
 - **Content**: the record's own blocks (`data`, `meta`, `tags`, `ancestry`), shown as **Fields** (rows of field and
   value, a list of objects as a table) or **JSON**. A value that names another OSDU record is a link that opens it in the
   inspector. **Find in record** counts and steps through matches.
 - **References**: **Linked records**, every record the document names, by type, each with the paths that name it.
 - **Checks**: **Validation** (see [Validate](#validate)) and **Mentioned by**, the records whose values name this one
-  (`"<id>" AND NOT id:"<id>"` over every property), the first hundred listed by type.
+  (`"<id>" AND NOT id:"<id>"` over every property), counted by type with the first hundred listed (**Browse all** opens
+  them all as a search when there are more).
 
 **Versions.** The version picker reads the record at any version OSDU keeps. **Compare** puts any two side by side: what
 was added, changed and removed, the two documents with their unchanged stretches folded, and every moved value with its
 path. A version is read once and kept, since a version never changes. The record can also be downloaded as JSON.
 
 **An id OSDU holds nothing under** answers `OSDU holds no record under this id`, and offers **Records with a near id**:
-those whose ids go on from it (a paste cut short) and the same unique part under another type.
+those whose ids go on from it (a paste cut short) and the same unique part under another type. An id of another
+partition than the one in view says so, with **Read it in** that partition.
 
 **The query of an element.** Beside every value and section of a record, a search button shows the Lucene query that
 finds the records holding exactly that element, with **Copy** and **Search**: a value by its exact form (a text by its
@@ -299,7 +311,8 @@ template of the record's kind a synced repository holds (of a version no reposit
 hold); where no template says, the query is marked **guessed**. Nothing is read from OSDU to write it.
 
 Every record opened is remembered in this browser (the last 20). An [inventory](../flow/inventory.md) report opens one of
-its ids in this same record view, in the workbench's bottom panel, with **Open in the explorer** to come here.
+its ids in this same record view, in the workbench's bottom panel, with **Open in the explorer** to come here; a record
+page's OSDU tab opens its record here the same way.
 
 ## Validate
 
@@ -326,7 +339,8 @@ checked, with why. A record read back with `ancestry`, `meta` or `tags` null or 
 absent, and the answer says so.
 
 **Validate these records** (the shield in the place line) checks the records the search finds, as it stands, against the
-schemas of their kinds: the first 1,000 the search returns, read from storage in batches. It answers how many records
+schemas of their kinds (the Schema service's, or each kind's repository template, as the most recently synced repository
+holding it holds it): the first 1,000 the search returns, read from storage in batches. It answers how many records
 the search matches and how many were read, how many came to each outcome, **Rules broken most often** (each rule at each
 place with the records that break it and one example, at most 50 rules), and **Records** with each record's outcome and
 first problem. When the search matches more than a check reads, it says so; a whole kind is checked by an
@@ -338,8 +352,9 @@ partition.
 **A mapping's assertions.** A check can also hold the records to the business rules a mapping states
 ([mapping assertions](../flow/mapping-assertions.md)): the request names a synced mapping by its id (`mapping`, as
 `GET /api/v1/delivery/mappings` lists it), and the mapping's record-stage assertions are judged on each record, as a
-delivery judges the documents it renders. A record page's check judges the assertions of the record's own flow's mapping
-unless the request names another.
+delivery judges the documents it renders. In the explorer, both checks offer the mapping beside the schema (**No
+mapping's assertions** until one is picked). A record page's check judges the assertions of the record's own flow's
+mapping unless the request names another.
 
 - **Validate** adds `assertions` to the verdict: how many judgements were made and failed, and each failure with the
   property, where it was found, the assertion, its stage and `onFail`, why it fails and the value. A record no schema
@@ -482,8 +497,8 @@ the workbench's partition, else the registry's default, is read.
 | `POST /api/v1/delivery/explorer/search` | operate | One page of records: `text`, `lucene` or `mentions`, `kind`, `filters` (at most 12; a filter may name a search `term`), `sort`, `offset` and `limit` (1 to 200, inside the first 10,000), `facet`, `columns` (at most 8). |
 | `POST /api/v1/delivery/explorer/fields` | operate | The properties the records of a `kind` hold. |
 | `POST /api/v1/delivery/explorer/read` | operate | One record from storage by `targetId`, at its latest or at `version`, with its version list. |
-| `POST /api/v1/delivery/explorer/validate` | operate | One record checked against its kind's schema (`schema`: `osdu` or `saved`), and against the assertions of the synced mapping `mapping` names. |
-| `POST /api/v1/delivery/explorer/validate-list` | operate | The records a search finds checked (`max` 1 to 1,000), with `mapping` as above. |
+| `POST /api/v1/delivery/explorer/validate` | operate | One record checked against its kind's schema (`schema`: `osdu` or `template`, with `templateVersion` among those the repositories hold), and against the assertions of the synced mapping `mapping` names. |
+| `POST /api/v1/delivery/explorer/validate-list` | operate | The records a `search` finds checked (`max` 1 to 1,000), with `schema` and `mapping` as above. |
 | `POST /api/v1/delivery/flows/{pipelineId}/osdu/validate` | operate | The same check of one record through a flow's own route, judging the flow's own mapping's assertions unless `mapping` names another; 409 for a `dspdm` or `etp` flow. |
 | `POST /api/v1/delivery/explorer/referenced-by` | operate | The types whose schemas name records of a `type`; `refresh` reads the schemas again. |
 | `POST /api/v1/delivery/explorer/element-queries` | operate | The query that finds an element of a record, from the templates the synced repositories hold alone. |
@@ -493,6 +508,7 @@ the workbench's partition, else the registry's default, is read.
 
 A request the read would refuse (a kind that is not one, more than 12 conditions, a page past the window, an id that is
 not one) answers 400 before anything is read, with the reason, for example `The search service pages through the first
-10,000 records a query matches; narrow the search to reach the others.` A partition no flow reaches answers 409. When
-OSDU refuses or cannot be reached the answer is 502, and with no answer within the timeout 504, each with the reason
-redacted.
+10,000 records a query matches; narrow the search to reach the others.` A partition the explorer has no connection to
+(not registered, or a value of its connection unset) answers 409, **No connection to the partition**. A read that
+cannot be completed as asked answers 422 with why. When OSDU refuses or cannot be reached the answer is 502, and with no
+answer within the timeout 504, each with the reason redacted.

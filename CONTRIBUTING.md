@@ -56,8 +56,10 @@ any terminal that has it):
   cancel, a retried request, a replica that dies mid-fire), through the API as a GitHub job calls it; with
   `SQLFLOW_TEST_GITHUB_OIDC_REPOSITORY` set, it also checks a token a real GitHub Actions job mints against GitHub's keys
   ([External triggers](sqlflow/docs/reference/concepts/external-triggers.md)). Run it after a change to triggers,
-  requests or the sync they wait for. A new suite is named in `on_demand_suites` in `tools/test.sh` and left out in CI's two test
-  steps.
+  requests or the sync they wait for. `Enrichment` holds every rule of a mapping's `enrich:` steps
+  ([Enrichments](osdu/docs/reference/flow/enrich.md)): how the documents and fragments load and what they refuse, how a
+  fragment adds to the record, the chain's preflight, and one write for any change to the chain. Run it after a change
+  to enrichment. A new suite is named in `on_demand_suites` in `tools/test.sh` and left out in CI's two test steps.
 
 A test that needs SQL Server, a host or another process carries `[Trait("Category", "Integration")]`, which puts it in
 the full tier. The OSDU module's SQL Server tests are the classes in `[Collection(SqlServerSuite.Name)]`, and a guard

@@ -42,7 +42,7 @@ keeps no copy of a flow that left.
 | `Id` | `uniqueidentifier` | no | Stable id, derived from the repository and the flow's name. |
 | `RepoId` | `uniqueidentifier` | no | The SQLFlow repository the sync found it in, by id. |
 | `FlowName` | `nvarchar(400)` | no | The flow's name: its pipeline in the repository, and the name its ledgers are kept under. |
-| `Kind` | `nvarchar(16)` | no | `retrieval`, `assertion`, `dimension` or `inventory`: the flow's kind, which is the kind of ledger it keeps. |
+| `Kind` | `nvarchar(16)` | no | `retrieval`, `assertion`, `dimension`, `inventory` or `download`: the flow's kind, which is the kind of ledger it keeps. |
 | `Partitioned` | `bit` | no | Set for a flow that keeps a ledger of its own in each partition it works in (`name@partition`: one that names its partitions or follows the registry); clear for one that keeps one ledger, under its name, in the partition its header names. A retrieval flow is never partitioned. |
 | `DocumentHash` | `nvarchar(64)` | no | SHA-256, in lowercase hex, of the flow document as its YAML reads, with its top-level `name` left out and the keys of every mapping taken in order, so comments, layout and key order play no part: one flow under two names has one hash, so the repository sync moves the ledgers of each name to the one it found last. |
 | `RelativePath` | `nvarchar(1000)` | no | The flow document's file, relative to the repository root. |

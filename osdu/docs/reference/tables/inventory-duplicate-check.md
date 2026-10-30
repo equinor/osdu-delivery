@@ -38,8 +38,8 @@ operator groups it again by another key; the inventory flow's `duplicates` run d
 ([The check's table](../flow/inventory-duplicates.md#the-checks-table)) and picks, its groups in
 [`osdu.InventoryDuplicateGroup`](inventory-duplicate-group.md) and their copies in
 [`osdu.InventoryDuplicateMember`](inventory-duplicate-member.md). A check is kept a week, as a selection is: the next check
-of the partition deletes those older, or keeps one `expired` (its groups deleted) when a removal took the picks of a
-selection made of it.
+of the partition, or the control plane's hourly sweep, deletes those older with their groups and tables, or keeps one
+`expired` (its groups deleted) when a removal took the picks of a selection made of it.
 
 ## Columns
 

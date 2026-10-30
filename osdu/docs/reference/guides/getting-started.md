@@ -106,7 +106,7 @@ always wins ([SQLFlow's environment variables](../../../../sqlflow/docs/referenc
 
 ```text
 # .sqlflow/env (git-ignored)
-SQLFLOW_CATALOG_DB=Server=localhost;Database=SqlFlowCatalog;Integrated Security=True;TrustServerCertificate=True
+SQLFLOW_CATALOG_DB=Server=localhost;Database=OsduDelivery;Integrated Security=True;TrustServerCertificate=True
 OSDU_DATA_DB=Server=localhost;Database=OsduData;Integrated Security=True;TrustServerCertificate=True
 OSDU_URL=https://osdu.example.com
 OSDU_TOKEN_URL=https://login.example.com/oauth2/token
@@ -118,8 +118,8 @@ OSDU_ACL_VIEWER=data.default.viewers@dev.example.com
 OSDU_LEGAL_TAG=dev-welldb-public
 ```
 
-`SQLFLOW_CATALOG_DB` is the database every OSDU verb reads (templates, caches and the ledger live in its `osdu`
-schema); `--db <reference>` on a command overrides it.
+`SQLFLOW_CATALOG_DB` is the database every OSDU verb reads (the caches, the partitions and the ledger live in its `osdu`
+schema; templates are files of the repository, step 4); `--db <reference>` on a command overrides it.
 The last three are what the four parameters every OSDU record needs default to when a flow supplies no value:
 `aclOwner`, `aclViewer` and `legalTag` take `${env:OSDU_ACL_OWNER}`, `${env:OSDU_ACL_VIEWER}` and `${env:OSDU_LEGAL_TAG}`,
 and `dataPartition` takes the partition the run delivers to.
@@ -581,7 +581,7 @@ catalog's database, which holds the `osdu` schema, through `SQLFLOW_CATALOG_DB` 
 | --- | --- | --- |
 | `mapping Wellbore@1.0.0 cannot render: no template folder on the path of ... holds template osdu:wks:master-data--Wellbore:1.3.0 version ...` | No template folder on the mapping's path holds that version. | Write it into the folder (step 4), and name the version it prints in the mapping, or leave the version out. |
 | `Mapping 'Wellbore@1.0.0' was not found under '...mappings'. Expected one of: Wellbore@1.0.0.yaml, ...` | The mapping file is not in the nearest `mappings/` folder, or is named differently. | Move or rename it, or set `render.mappings`. |
-| `... caches live in the module's database, which this host was started without.` | No module database: no `SQLFLOW_CATALOG_DB` and no `--db`. | Set one (step 1). |
+| `The osdu schema is read through the catalog's connection, which did not resolve: ...` | No `SQLFLOW_CATALOG_DB` and no `--db`. | Set one (step 1). |
 | `Environment variable 'OSDU_ACL_OWNER' is not set.` | A reference the flow or a default parameter names has no value here. | Add it to `.sqlflow/env` or the environment; on a control plane, to the partition's values in its configuration (`Osdu:Partitions:dev:Properties:OSDU_ACL_OWNER`) or to the central configuration (`sqlflow config set`). |
 | `source.record.key is [...] but mapping '...' keys its records by [...]` | The flow and the mapping name different key columns. | Name the same columns, in the same order. |
 | `... the source database does not allow snapshot isolation ...` | `OsduData` does not allow snapshot isolation. | Run the `ALTER DATABASE` above, or set `source.incremental.isolation: readCommitted`. |

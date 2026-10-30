@@ -27,11 +27,13 @@ sourceRefs:
 
 One row per value a record is findable by: a value of the columns its mapping declares in `dataset.identity` (a wellbore
 name, a UWI), its source key whole and each key value, up to 8 words of its label, its OSDU id and the part after the
-last colon, and the ingestion file its current version came from. The token is folded to upper case, so one index answers
+last colon, the ingestion file its current version came from, and the OSDU id of each record an enrichment of its
+mapping adds to it, with the part after the last colon. The token is folded to upper case, so one index answers
 "starts with" for every identifier an operator may hold, across every flow of a partition and in one flow's listing
 ([The delivery ledger](../concepts/ledger.md#finding-records)).
 
-A record contributes at most 24 values, each at most 200 characters; values shorter than 3 characters are not stored. Rows
+A record contributes at most 24 values of its own and at most 64 more for the records its enrichments add, each at most
+200 characters; values shorter than 3 characters are not stored. Rows
 belong to their record: they are rewritten as a set whenever it is staged, and deleted with it. Not pruned, and the table
 does not grow with activity.
 
@@ -44,7 +46,7 @@ does not grow with activity.
 | `FlowId` | `uniqueidentifier` | no | The ledger identity of the record's flow. |
 | `DeliveryKey` | `uniqueidentifier` | no | The record's delivery key ([`osdu.Record`](record.md)). |
 | `Display` | `nvarchar(200)` | no | The value as it was read, for showing beside a hit. |
-| `Kind` | `nvarchar(16)` | no | Where the value came from: `identity`, `key`, `label`, `osdu` or `file`. |
+| `Kind` | `nvarchar(16)` | no | Where the value came from: `identity`, `key`, `label`, `osdu`, `file` or `added` (a record an enrichment adds). |
 
 ## Keys and indexes
 

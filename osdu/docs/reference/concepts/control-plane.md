@@ -42,6 +42,7 @@ sourceRefs:
   - osdu/src/SqlFlow.Delivery.ControlPlane/Background/RecordIdentityBackfillService.cs
   - osdu/src/SqlFlow.Delivery.ControlPlane/Background/RecordProblemBackfillService.cs
   - osdu/src/SqlFlow.Delivery.ControlPlane/Background/LedgerMoveService.cs
+  - osdu/src/SqlFlow.Delivery.ControlPlane/Background/InventoryDuplicateSweepService.cs
   - osdu/src/SqlFlow.Delivery.ControlPlane/Background/ConfiguredRunDispatcher.cs
   - osdu/src/SqlFlow.Delivery.ControlPlane/Background/CentralConfigurationStep.cs
   - osdu/src/SqlFlow.Delivery.ControlPlane/Background/PartitionReadiness.cs
@@ -76,7 +77,7 @@ themselves are listed in [the delivery API](api.md).
 
 | Addition | What it does |
 | --- | --- |
-| The `osdu` module database | The ledger, mappings, templates, caches, partitions and the central configuration, in schema `osdu` with its own migrations and version. Bootstrap migrates it after SQLFlow's catalog, and readiness stays red until it verifies against this build. |
+| The `osdu` module database | The ledger, mappings, the index of the repositories' templates (never a copy of one), caches, partitions and the central configuration, in schema `osdu` with its own migrations and version. Bootstrap migrates it after SQLFlow's catalog, and readiness stays red until it verifies against this build. |
 | The configured partitions | The OSDU partitions the deployment's configuration names (`Osdu:Partitions`), registered with the values their runs resolve once the module database verifies, and changed only in the configuration ([configured partitions](partitions.md#configured-partitions)). |
 | The `osdu-partitions` check | Reported at `/health/startup`, beside the start-up pass, not by readiness: unhealthy until the configured partitions are written, and then while the registry holds no partition, since OSDU Delivery works in partitions and does nothing without one, while the API keeps serving so a person can read why and register one. The control plane logs why. A partition registered by hand completes it without a restart. |
 | The OSDU flow kinds | The delivery, retrieval, cache, assertion, dimension, inventory, removal and download kinds, their executors and their compute operations, so the repository sync projects them as pipelines and the dispatcher hands their runs to nodes. |
@@ -93,7 +94,7 @@ themselves are listed in [the delivery API](api.md).
 The module database is the catalog's: the control plane opens the `osdu` schema on the catalog's own connection
 (`ControlPlane:Catalog:ConnectionReference`, by default `${env:SQLFLOW_CATALOG_DB}`), one metadata database with the
 `osdu` schema beside SQLFlow's catalog schema. The control plane owns both: it migrates and verifies the catalog and then
-the module at startup, and reads and writes the ledger, the mappings, the templates and the caches there.
+the module at startup, and reads and writes the ledger, the mappings, the template index and the caches there.
 
 The module has no connection of its own. `Osdu:Database:Connection` and `SQLFLOW_OSDU_DB`, which once gave it one, are
 no longer read: a control plane still given either starts as it would without it.
@@ -112,9 +113,10 @@ tables and waits on runs in the control plane instead, as the request:
 - a record's rows read from the ingestion tables, a preview, the values a scope parameter can take;
 - every explorer read (types, search, fields, read, validate, referenced-by, dimension keys).
 
-Each is given exactly what a node would be given (the flow file where the repository was synced, the interface, the
-partition, who asked) and the central configuration of the flow's partition, so it reaches the same target with the same
-credentials. That is why the control plane is given the flows' `${env:...}` references and
+Each read of a flow is given exactly what a node would be given (the flow file where the repository was synced, the
+interface, the partition, who asked) and the central configuration of the flow's partition, so it reaches the same target
+with the same credentials. An explorer read needs no flow: it goes through the partition's own connection, the platform
+and client its configuration names ([how it reaches OSDU](explorer.md#how-it-reaches-osdu)). That is why the control plane is given the flows' `${env:...}` references and
 `SQLFLOW_DELIVERY_PRIVATE_NETWORKS` as a node is ([environment variables](environment-variables.md)).
 
 The connection to a target is kept between reads: one per target (the flow and partition, endpoint, credentials,
@@ -163,6 +165,7 @@ configuration (`Osdu:Partitions:<partition>:Properties`, below), and any propert
 | Search term refresh | Once at start | Writes the search terms of every repository with delivery flows again, keeping what people made of them; a repository with no delivery flow left loses its terms. Retried every 30 seconds until a pass completes. |
 | Record identity backfill | At start, then every 6 hours | Fills the identity index for records the ledger held before the index existed, 500 records a page with a 250 ms pause between pages. |
 | Record issue backfill | At start, then every 10 minutes | Sorts blocked records the ledger holds no issue for into their issues, 500 a page with a 250 ms pause. |
+| Duplicate check sweep | Five minutes after start, then every hour | Retires the inventory duplicate checks of every partition, so a check's table goes when its week is up even where nobody asks for another check: a check whose run ended without finishing it is closed, and one older than a week is deleted with its groups and its table, or kept expired when a removal took the picks of a selection made of it ([the check's table](../flow/inventory-duplicates.md#the-checks-table)). A failed pass is tried again a minute later. |
 | Ledger move | Every 15 seconds | Finishes the ledger moves left running: a repository sync's or a takeover's that waited for work in flight on either ledger, and one stopped half way, 1,000 rows a statement, under a lock on the ledger it moves into; another replica's is taken up on a later pass. The sync and a takeover make theirs at once ([Renaming a pipeline](renaming-a-pipeline.md)). |
 
 Every service runs on each replica that starts. The rollout and the backfills are written so two replicas at once cost

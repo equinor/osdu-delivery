@@ -6,7 +6,7 @@ using Xunit;
 namespace SqlFlow.Delivery.Tests;
 
 /// <summary>
-/// How a fragment is added to a record (osdu/docs/reference/flow/enrich.md, How a fragment adds to the record): a value is
+/// How a fragment is added to a record (osdu/docs/reference/flow/mapping-enrichment.md, How an enrichment adds to the record): a value is
 /// set where the record holds none, items are added to a list after the items it holds and each only once, objects are gone
 /// into property by property, and anything that would take back what the record holds is a conflict that changes nothing.
 /// Adding the same fragment again changes nothing, which is what lets a whole chain render again on every change.

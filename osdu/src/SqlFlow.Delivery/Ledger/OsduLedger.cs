@@ -1829,7 +1829,7 @@ public sealed partial class OsduLedger : ILedger
 
         if (query.Mode != SearchMode.Contains)
         {
-            // A column's start finds a label written out (`NO 16/2-10 / STAT`); the identity tokens find the values a row
+            // A column's start finds a label written out (`Wellbore B-1 / COMP`); the identity tokens find the values a row
             // shows inside one (its key values, the words of its label, the OSDU id's own part), as the lookup across flows does.
             var matches = PrefixCandidates(flow, term, candidates)
                 .Concat(IdentityCandidates(db, term, candidates, flowId, [partition]).Select(i => i.DeliveryKey));

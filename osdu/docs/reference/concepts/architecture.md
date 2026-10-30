@@ -30,11 +30,13 @@ sourceRefs:
   - osdu/hosts/SqlFlow.Delivery.ControlPlane.Host/Program.cs
   - osdu/hosts/SqlFlow.Delivery.Worker.Host/Program.cs
   - osdu/hosts/SqlFlow.Delivery.Cli.Host/Program.cs
+  - osdu/hosts/SqlFlow.Delivery.Setup.Host/Program.cs
   - osdu/hosts/osdu-delivery-mcp/src/lib.rs
   - osdu/hosts/osdu-delivery-mcp/Cargo.toml
   - osdu/src/SqlFlow.Delivery/Hosting/OsduDeliveryBranding.cs
   - osdu/src/SqlFlow.Delivery/Hosting/OsduModuleDatabase.cs
   - osdu/src/SqlFlow.Delivery/Engine/DeliveryServices.cs
+  - osdu/src/SqlFlow.Delivery/Documents/RepositoryDocumentKind.cs
   - osdu/src/SqlFlow.Delivery/Catalog/DeliveryCatalogSync.cs
   - osdu/src/SqlFlow.Delivery.Cli/DeliveryCliModule.cs
   - osdu/src/SqlFlow.Delivery.ControlPlane/DeliveryControlPlaneModule.cs
@@ -70,9 +72,9 @@ flow runs the same way on the control plane, on a node and from the command line
 | Registered | What it is |
 | --- | --- |
 | The flow kinds | `delivery`, `retrieval`, `cache`, `assertion`, `dimension`, `inventory`, `removal`, `download`, each an `IFlowDocumentKind` |
-| The companion documents | `mapping` (owned by the delivery kind) and `dictionary`, each an `ICompanionDocumentKind` |
+| The companion documents | `mapping` (owned by the delivery kind), `dictionary` and the repository document (`osdu-delivery.yaml`, [repository](../flow/repository.md)), each an `ICompanionDocumentKind` |
 | The executors | One `IFlowDocumentExecutor` per flow kind, behind SQLFlow's `DocumentExecutor` |
-| The node tasks | Two `IComputeOperation`s a node runs for the control plane: a value check across a scope, and a removal |
+| The node tasks | One `IComputeOperation` a node runs for the control plane: a value check across a scope. A removal writes to OSDU and the ledger, so it is a run of the flow, listed with its runs |
 | The direct operations | What a person asks and waits for, run in the process asked: a target probe, a record read back, a record's source rows, a preview, a scope's values, the explorer's reads |
 | The repository sync extension | Mapping documents, cache definitions and delivery interfaces projected as rows of the `osdu` schema on every sync |
 | The engine's services | The ingestion table reader, the payload file stores, the route implementations, the record search on the platform |
@@ -100,6 +102,10 @@ Each host is a short program in `osdu/hosts` that passes SQLFlow's entry point t
 | `SqlFlow.Delivery.Cli.Host` | The `sqlflow` command line (`CliHost.RunAsync` with `DeliveryCliModule`): every SQLFlow verb plus the OSDU verbs | (the binary) |
 | `osdu-delivery-mcp` | SQLFlow's MCP server library (`sqlflow-mcp`) composed with the delivery module: its `delivery_*` tools, its documentation and its key census | `osdu-delivery-mcp` |
 
+One more host is not a tier: `SqlFlow.Delivery.Setup.Host` (`osdu-delivery-setup`), the setup and the check of a local
+machine, which `dev.bat` and `./dev.sh` build from the checkout at every start. It carries only `SqlFlow.Delivery.Setup`,
+so it builds in seconds, and the command line carries the same code as `sqlflow dev` ([dev](../cli/dev.md)).
+
 The GUI is SQLFlow's workbench built with the module's pages registered through the GUI module contract, shipped as
 `osdu-delivery-gui`. The deployment page has the images and how they fit together
 ([deployment](../guides/deployment.md)).
@@ -110,9 +116,10 @@ The worker host implies its verb. Passing `worker` yourself is refused:
 ERROR  this host is the OSDU Delivery worker; pass the node's options only (the 'worker' verb is implied).
 ```
 
-The MCP host leaves out SQLFlow's tools that read rows or reach a datasource (`run_query`, `prepare_query`,
-`detect_unique_key`, `discover_source` and the rest), because the product's assistant answers from metadata alone
-([MCP server](../guides/mcp.md)).
+The MCP host leaves out SQLFlow's tools that profile a table's rows or read a source to generate a flow from it
+(`detect_unique_key`, `check_duplicate_keys`, `compare_baseline`, `discover_source` and the rest), because the product's
+assistant answers from metadata, and from data only for a `!` question, through SQLFlow's query tools (`prepare_query`,
+`run_query`) over approved AI contexts ([MCP server](../guides/mcp.md)).
 
 ## The extension points it registers through
 
@@ -122,27 +129,28 @@ Nothing in the vendored `sqlflow/` names OSDU. Each point below is generic, and 
 | SQLFlow extension point | What the module registers there |
 | --- | --- |
 | Host modules (`IControlPlaneModule`, `ICliModule`, `McpModule`) and branding (`ProductBranding`) | The module itself in each host, and the product's name |
-| Flow kinds, companion documents and executors | The eight document kinds and six executors above |
+| Flow kinds, companion documents and executors | The eight flow kinds, three companion documents and eight executors above |
 | Run parameters (operation, values, payload, requester) | Each kind's operations and payload, carried by a run or a schedule fire |
 | Fan-out (`IRunFanOut`) | A large delivery split into parts, each a run of the same flow on a node of its own (`wholeNode`) |
-| Compute operations (`IComputeOperation`) | The value check and the removal a node runs |
+| Compute operations (`IComputeOperation`) | The value check a node runs |
 | Module database (`ModuleDatabase`, `IsReachableOn`) | `OsduDbContext` over the `osdu` schema, migrated, reported and verified with the catalog |
 | Catalog sync extension (`ICatalogSyncExtension`) | Mappings, cache definitions and interfaces as rows, and the question whether lineage must be computed again |
 | Lineage descriptions (`DescribeLineage`, `DeclaredDataset`, `DeclaredDerivation`, the estate) | OSDU types, cache types, mappings and dimensions as lineage nodes ([lineage](lineage.md)) |
 | Search contributor (`ISearchContributor`) | The delivery records category of the control plane's search |
-| GUI module contract | Routes, the OSDU navigation group and its sections, per-kind tabs, run panels and trigger fields, the partition picker in the title bar and the `X-Osdu-Partition` header it adds to every call, the key census for the YAML editor |
+| GUI module contract | Routes, the whole menu (SQLFlow's pages and the module's side by side, grouped by task: [the menu](menu.md)), per-kind tabs, run panels and trigger fields, the partition picker in the title bar and the `X-Osdu-Partition` header it adds to every call, the key census for the YAML editor |
 
 ## What runs where
 
 **The control plane** holds the delivery API under `/api/v1/delivery` on SQLFlow's authorization groups: reads in
-`read`, running something (a redelivery, a removal) in `operate`, refining a search term in `author`. All three admit any signed-in user; only the `admin` routes (partitions, central configuration, the ledger's
-retention pass, removing a dimension) check a scope ([authentication and identity](authentication-and-identity.md)).
+`read`, running something (a redelivery, a removal) in `operate`, refining a search term in `author`. All three admit any signed-in user; only the `admin` routes (partitions, central configuration, pruning a
+cache's history, removing a dimension or a dimension view) check a scope ([authentication and identity](authentication-and-identity.md)).
 It runs the module's background services: the cache update rollout
-(`Osdu:CacheRollout`, on by default), the scheduled target probe (`Osdu:TargetProbe`, off by default), the OSDU data
-definitions copy the Templates page browses (`Osdu:SchemaRepository`), and, at start, backfills of the interface and
-search term read models and of the ledger's record identity and problem indexes. It also
-answers the direct operations above while the request waits. Every delivery, retrieval, cache, assertion, dimension
-and inventory run it queues carries the central configuration (`sqlflow config`) when one is set, so a flow's
+(`Osdu:CacheRollout`, on by default), the cache warm-up (`Osdu:CacheWarmup`, on by default), the scheduled target probe
+(`Osdu:TargetProbe`, off by default), the OSDU data definitions copy the Templates page browses
+(`Osdu:SchemaRepository`), the sweep that retires duplicate checks, the ledger moves of renamed flows, and, at start,
+backfills of the interface and search term read models and of the ledger's record identity and problem indexes. It also
+answers the direct operations above while the request waits. Every delivery, retrieval, cache, assertion, dimension,
+inventory, removal and download run it queues carries the central configuration (`sqlflow config`) when one is set, so a flow's
 `${env:NAME}` resolves from one place before it falls back to the node ([control plane](control-plane.md)).
 
 **A node** pulls runs and node tasks over SQLFlow's node protocol, and SQLFlow gives it no catalog connection. The

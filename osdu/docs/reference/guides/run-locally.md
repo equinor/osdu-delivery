@@ -78,6 +78,9 @@ the partition.
 **Every start after that** checks the machine and the settings, prints what is set and what is missing with the fix for
 each, and stops only when a start would fail.
 
+In a git checkout with no hooks path set, a start also points git at `tools/git-hooks` once, so the unit tier runs
+before every push (`git push --no-verify` skips it once; [CONTRIBUTING.md](../../../../CONTRIBUTING.md#tests)).
+
 **Then sign in.** The GUI opens at `http://localhost:5173` (the API is `http://localhost:5000`). Sign in as `admin` with
 the password the setup put in `.sqlflow/env` as `SQLFLOW_ADMIN_PASSWORD`.
 
@@ -89,7 +92,8 @@ the password the setup put in `.sqlflow/env` as `SQLFLOW_ADMIN_PASSWORD`.
 | `dev.bat check`, `./dev.sh check` | The check alone, with a test sign-in to OSDU; nothing is started or stopped. |
 | `dev.bat setup`, `./dev.sh setup` | The setup questions again, offering the current values; the file it replaces is kept beside it. |
 | `dev.bat api`, `./dev.sh api` | The control plane and its workers without the GUI. |
-| `dev.bat single`, `./dev.sh single` | One process: the control plane runs runs on its own node and starts no workers, as F5 does. |
+| `dev.bat single`, `./dev.sh single` | One process: the control plane runs runs on its own node and starts no workers, as F5 does. Combine with `api` for neither workers nor the GUI. |
+| `dev.bat managed`, `./dev.sh managed` | The default, named; refused together with `single`. |
 
 ## Setting it up by hand
 

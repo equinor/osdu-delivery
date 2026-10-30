@@ -44,6 +44,7 @@ sourceRefs:
   - osdu/src/SqlFlow.Delivery/Ledger/OsduLedger.Leases.cs
   - osdu/src/SqlFlow.Delivery/Ledger/OsduLedger.Waits.cs
   - osdu/src/SqlFlow.Delivery/Ledger/OsduLedger.Parents.cs
+  - osdu/src/SqlFlow.Delivery/Engine/Snapshots/CacheImpact.cs
   - osdu/src/SqlFlow.Delivery/Ledger/OsduLedger.Problems.cs
   - osdu/src/SqlFlow.Delivery/Ledger/OsduLedger.Adoptions.cs
   - osdu/src/SqlFlow.Delivery/Ledger/SqlServerLedgerBulk.Adoptions.cs
@@ -112,8 +113,8 @@ A held, failed or reverted record whose row renders the document OSDU already ho
 delivered before it was held) is delivered again: nothing is sent, the record is unblocked with its error gone, and its
 history gains an attempt (`skipped`, `identical`) marked as delivering it again. Not while what an earlier unfinished
 delivery left in OSDU is still to be undone: until then OSDU holds more than the ledger says, so the record is blocked at
-that row, with an attempt (`held`, `undo-wait`) saying `the held record renders what OSDU holds, but what an earlier
-delivery of it left in OSDU is not undone yet; release it once the undo is done`.
+that row, with an attempt (`held`, `undo-wait`) saying `the <status> record renders what OSDU holds, but what an earlier
+delivery of it left in OSDU is not undone yet; release it once the undo is done (the record's artifacts say what is left)`.
 
 **A run and an operator at the same time.** A plan decides each record against the ledger row it read, and writes its
 decision only while the row is still that one. A record released, redelivered, stepped back, reversed or delivered after
@@ -318,6 +319,11 @@ parent with `$parent`) is held at its render, keeping no document, and its paren
 release: when the parent lands through the ledger, delivered by any flow of the partition, the record is released under
 a `release` activity whose actor is `parent`, and its flow's next run renders it from the parent
 ([mapping $parent](../flow/mapping-parent.md#when-the-parent-changes)).
+
+**A record held because an id it built names nothing the partition cache holds** needs no release either: when a later
+cache version holds that record, the held record is released under a `release` activity whose actor is
+`cache:<partition>@<version>`, and its flow's next run renders it against the new version
+([A record held for a reference waits for it](partition-cache.md#a-record-held-for-a-reference-waits-for-it)).
 
 A child is never a reason to hold its parent: a record linking its children with `$child` goes out without the link to a
 child OSDU does not hold yet, and when the child lands through the ledger the record is asked to be planned again, with

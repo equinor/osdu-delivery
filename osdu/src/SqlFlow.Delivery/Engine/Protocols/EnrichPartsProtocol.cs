@@ -24,11 +24,41 @@ namespace SqlFlow.Delivery.Engine.Protocols;
 /// </summary>
 public sealed class EnrichPartsProtocol : IDeliveryProtocol
 {
-    /// <summary>The artifact slot of a dataset an enrichment registers with its files, which this route undoes and the flow's own route does not.</summary>
+    /// <summary>The artifact slots of the datasets an enrichment registers with their files, which this route undoes and the flow's own route does not.</summary>
     public const string DatasetSlot = "enrich-dataset";
 
-    /// <summary>The artifact slot of a record an enrichment writes through storage, which this route undoes and the flow's own route does not.</summary>
+    /// <summary>The artifact slots of the records an enrichment writes through storage, which this route undoes and the flow's own route does not.</summary>
     public const string RecordSlot = "enrich-record";
+
+    /// <summary>
+    /// The slot of the record <paramref name="id"/> an enrichment adds, in <paramref name="slots"/> (<see cref="DatasetSlot"/>
+    /// or <see cref="RecordSlot"/>): a digest of its id, which may be longer than a slot, so each record a delivery adds keeps
+    /// an artifact of its own and an undo reaches every one.
+    /// </summary>
+    public static string SlotOf(string slots, string id) => slots + ":" + ContentHash.Of(id)[..24];
+
+    /// <summary>The value of an intent step naming the slot its intent was declared in.</summary>
+    public const string SlotValue = "slot";
+
+    /// <summary>
+    /// The slot <paramref name="staged"/>'s registration is declared in: its record's own, or the one every record of a delivery
+    /// shared when an earlier try of the unit declared it there (a build before each had its own, which named no slot in the
+    /// intent step), so the resumed try completes that intent rather than leaving it open to be undone once the unit delivers.
+    /// </summary>
+    private static string SlotFor(StagedPart staged)
+    {
+        var slots = staged.Part.RegistersFiles ? DatasetSlot : RecordSlot;
+        return staged.Plan.Work.Completed(IntentStep(staged.Index)) is { } declared && !declared.ContainsKey(SlotValue)
+            ? slots
+            : SlotOf(slots, staged.Part.RecordId);
+    }
+
+    /// <summary>
+    /// True when <paramref name="slot"/> is one of <paramref name="slots"/>: a record's own, or the one slot every record of a
+    /// delivery shared before each had its own, which a ledger may still hold open.
+    /// </summary>
+    private static bool IsIn(string slot, string slots)
+        => string.Equals(slot, slots, StringComparison.Ordinal) || (slot.StartsWith(slots, StringComparison.Ordinal) && slot.Length > slots.Length && slot[slots.Length] == ':');
 
     private readonly IDeliveryProtocol _inner;
     private readonly OsduHttpClient _client;
@@ -329,7 +359,7 @@ public sealed class EnrichPartsProtocol : IDeliveryProtocol
     private async Task RegisterChunkAsync(IReadOnlyList<StagedPart> chunk, CancellationToken ct)
     {
         var intents = await RegistrationIntents.DeclareAsync(
-            _records, chunk.Select(c => new Registration(c.Part.RegistersFiles ? DatasetSlot : RecordSlot, c.Part.RecordId)).ToList(), ct).ConfigureAwait(false);
+            _records, chunk.Select(c => new Registration(SlotFor(c), c.Part.RecordId)).ToList(), ct).ConfigureAwait(false);
         var ready = new List<(StagedPart Part, TargetArtifact Declared)>(chunk.Count);
         for (var i = 0; i < chunk.Count; i++)
         {
@@ -345,7 +375,10 @@ public sealed class EnrichPartsProtocol : IDeliveryProtocol
                 continue;
             }
 
-            var values = new Dictionary<string, string>(StringComparer.Ordinal) { ["recordId"] = item.Part.RecordId, ["step"] = item.Part.Step };
+            var values = new Dictionary<string, string>(StringComparer.Ordinal)
+            {
+                ["recordId"] = item.Part.RecordId, ["step"] = item.Part.Step, [SlotValue] = declared.Slot,
+            };
             if (declared.PriorVersion is { } prior)
             {
                 values["priorVersion"] = prior.ToString(CultureInfo.InvariantCulture);
@@ -544,13 +577,13 @@ public sealed class EnrichPartsProtocol : IDeliveryProtocol
         {
             // A newer try writes the same id again from rows and files that may differ, so what this unit wrote is undone whatever
             // the newer work is, as the dataset route undoes the dataset a record keeps its files in.
-            var datasets = work.Items.Where(i => string.Equals(i.Artifact.Slot, DatasetSlot, StringComparison.Ordinal)).ToList();
+            var datasets = work.Items.Where(i => IsIn(i.Artifact.Slot, DatasetSlot)).ToList();
             if (datasets.Count > 0)
             {
                 results.AddRange(await ArtifactUndo.RecordItselfAsync(work with { KeepRecord = false }, datasets, datasetSide, ct).ConfigureAwait(false));
             }
 
-            var records = work.Items.Where(i => string.Equals(i.Artifact.Slot, RecordSlot, StringComparison.Ordinal)).ToList();
+            var records = work.Items.Where(i => IsIn(i.Artifact.Slot, RecordSlot)).ToList();
             if (records.Count > 0)
             {
                 results.AddRange(await ArtifactUndo.RecordItselfAsync(work with { KeepRecord = false }, records, recordSide, ct).ConfigureAwait(false));

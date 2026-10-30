@@ -51,7 +51,7 @@ sourceRefs:
   - osdu/src/SqlFlow.Delivery/Documents/AssertionDocumentMapper.cs
 related:
   - delivery-wiki-0006-work-batches
-updated: 2026-10-24
+updated: 2026-10-30
 ---
 # 0025: What runs at once is a flow's parallelism, and a delivery fans out by default
 
@@ -89,7 +89,8 @@ balancing, and filed under reliability it went unnoticed.
   ignore it.
 - **A delivery fans out by default, up to eight members.** The human chose the default over keeping fan-out opt-in: the
   pool and its autoscaler exist to spread work, and a delivery that never asks for it never scales. Eight was proposed
-  and accepted. `fanOutMinRecords` (1,000) keeps a small delivery on one run, and 0 turns fan-out off.
+  and accepted. `fanOutMinRecords` (1,000) keeps a small delivery on one run, and 0 turns fan-out off (since renamed:
+  `minRowsPerNode`, and `nodes: 1` keeps a delivery on one node, below).
 - **A fan-out is the flow queued again once per share, each run delivering its share.** The fan-out first split a
   delivery into two stages of member runs: intake members planned key slices into work batches, and drain members claimed
   whatever batch came next and sent it. A batch file is written to `source.work`, which is a folder next to the flow file,
@@ -113,7 +114,8 @@ balancing, and filed under reliability it went unnoticed.
   start of the location is refused, since the rest is a path under it; a payload root still refuses one.
 - **Slice runs are bounded by the work.** A read is cut into about a work batch of records a slice, at most 1,024, and the
   slices are dealt into at most `fanOut` shares beside the coordinating run's own, so a small submission queues few runs
-  however high `fanOut` is. Fanning out needs the record table's identity primary key, the only thing slices are cut on.
+  however high `fanOut` is (since replaced: a part per `minRowsPerNode` rows, at most `nodes`, below). Fanning out needs
+  the record table's identity primary key, the only thing slices are cut on.
 - **A coordinating run never waits for ever on slice runs no node starts, and takes over the share of one that failed.**
   A coordinating run holds a slot while it waits, and on a pool that cannot grow (the development host's built-in node, a
   pool of a fixed size, an autoscaled pool at its ceiling) every slot can hold a coordinating run whose slice runs queue
@@ -125,7 +127,8 @@ balancing, and filed under reliability it went unnoticed.
   SQLFlow cancels a fan-out by group and gives a run executed again its members back by operation
   (`sqlflow/src/SqlFlow.Catalog/RunQueueStore.cs`), so it would have changed SQLFlow's node protocol, dispatcher and
   catalog, where the grace keeps the change in the module.
-- **Slice runs are queued before the coordinating run delivers its own share,** so the nodes deliver beside it.
+- **Slice runs are queued before the coordinating run delivers its own share,** so the nodes deliver beside it (since
+  replaced: the first run of a split delivery delivers no range of its own, below).
 - **A flow says how many nodes; a run works out the rest, and each part has a node to itself.** With slice runs a
   delivery of 5,000 records spread over nine runs, the coordinating run and eight members, but the pool's workers took
   four runs each, so the nine shared three workers. `fanOut` counted runs, a worker's slots were fixed inside SQLFlow's
@@ -175,8 +178,8 @@ balancing, and filed under reliability it went unnoticed.
 
 - An estate's documents that write a moved key are refused until they are moved, each refusal naming its key; the
   documents move in one change with the upgrade, since the old version does not know `parallelism`.
-- A large delivery whose `source.work` is on storage is split into up to eight parts, each on a node of its own, and an
-  autoscaled pool brings up a node for each; a flow wanting one node sets `parallelism.nodes: 1`. A flow with a relative `source.work` is unchanged: one run. Each part keeps its own `parallelism.recordsAtOnce`, so the records in flight against OSDU
+- A large delivery is split into up to eight parts, each on a node of its own and wherever its `source.work` is, and an
+  autoscaled pool brings up a node for each; a flow wanting one node sets `parallelism.nodes: 1`. Each part keeps its own `parallelism.recordsAtOnce`, so the records in flight against OSDU
   multiply by the runs; the rate limit is what bounds them as a whole.
 - Every run's trace says why it did not fan out, which is the first thing to read when a pool does not scale.
 - On a pool with no place free, a fanned-out intake takes up to three minutes longer than one run planning alone; a

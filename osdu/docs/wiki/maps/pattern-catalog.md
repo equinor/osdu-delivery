@@ -18,6 +18,9 @@ keywords:
   - orphans
   - redeliver
   - partitions
+  - enrichment
+  - renamed flow
+  - correlation id
 sourceRefs:
   - osdu/src/SqlFlow.Delivery/Documents/CacheDocumentMapper.cs
   - osdu/src/SqlFlow.Delivery/Documents/MappingMapper.cs
@@ -44,6 +47,10 @@ sourceRefs:
   - osdu/docs/census/keys.download.json
   - osdu/src/SqlFlow.Delivery/Documents/DownloadFlowKind.cs
   - osdu/src/SqlFlow.Delivery/Documents/RemovalFlowKind.cs
+  - osdu/src/SqlFlow.Delivery/Documents/MappingMapper.Enrich.cs
+  - osdu/src/SqlFlow.Delivery/Catalog/LedgerOwnership.cs
+  - osdu/src/SqlFlow.Delivery/Http/OsduCorrelation.cs
+  - osdu/src/SqlFlow.Delivery.ControlPlane/Maintenance/OsduStorageContributor.cs
   - osdu/gui/src/module.tsx
 referenceRefs:
   - delivery-flow-overview
@@ -55,13 +62,19 @@ referenceRefs:
   - delivery-guide-getting-started
   - delivery-concept-overview
   - delivery-concept-templates
+  - delivery-flow-enrich
+  - delivery-concept-request-correlation
+  - delivery-concept-renaming-a-pipeline
 related:
   - wiki-pattern-catalog
   - delivery-wiki-0018-template-folders
   - delivery-wiki-linked-canonical-and-custom-records
   - delivery-wiki-0022-removal-flows
   - delivery-wiki-0038-download-flow
-updated: 2026-10-29
+  - delivery-wiki-0028-renamed-pipelines-move-their-ledger
+  - delivery-wiki-0036-enrich-in-the-mapping
+  - delivery-wiki-0037-request-correlation
+updated: 2026-10-30
 ---
 
 # Pattern catalog: which delivery problem maps to which OSDU Delivery shape
@@ -110,6 +123,7 @@ it is.
 | Several properties need the same looked-up record (a log's wellbore and its access groups) | A `lookups` entry, matched once per row and read with `$lookup` | [lookups](../../reference/flow/mapping-lookups.md) |
 | A changed cached value must be reviewed before it reaches records | `onChange: approve` on the cache flow or the type: affected records wait for approval on the Cache page | [partition cache](../../reference/concepts/partition-cache.md), [cache flow](../../reference/flow/cache.md) |
 | A delivery must render against a fixed cache, not the newest | `render.cacheVersion: <version label>` (a flow of one partition only) | [delivery flow](../../reference/flow/delivery.md) |
+| A delivery must render against records delivered just before it (units, then the logs naming them) | `cache.before` on the pipeline that needs them current, or `cache.after` on the one delivering them (`auto` works the types out); no refresh between the two | [delivery flow](../../reference/flow/delivery.md#cache), [partition cache](../../reference/concepts/partition-cache.md#pipelines-bring-the-cache-up-to-date), [0017](../decisions/0017-pipelines-update-the-cache.md) |
 
 ## Shaping the record
 
@@ -120,6 +134,8 @@ it is.
 | A kind of one's own, or one extended for a project | `sqlflow template import <file> --kind <kind> --out <folder>/<file>.json`, committed with the mappings; the next sync uses it | [templates](../../reference/concepts/templates.md#templates-of-ones-own), [sqlflow template](../../reference/cli/template.md) |
 | A custom copy of a canonical kind that also needs what only the canonical record holds (a log's DDMS curve files) | Link the custom template to the canonical kind (`x-osdu-inheriting-from-kind`), key both mappings alike, and take the sections with `$parent`; a storage flow delivers the custom records after the canonical flow | [linked records](../patterns/linked-canonical-and-custom-records.md), [the guide](../../reference/guides/linked-records.md), [mapping $parent](../../reference/flow/mapping-parent.md), [0019](../decisions/0019-linked-templates.md) |
 | The canonical record should point at the custom record beside it, as the custom one points at its parent | `$child: <custom kind>` in the canonical mapping, on a property of `ExtensionProperties` or a tag (the canonical schema stays as OSDU publishes it); the first delivery goes out without the link, and the custom record landing makes the canonical flow's next run add it | [linked records](../patterns/linked-canonical-and-custom-records.md), [the guide](../../reference/guides/linked-records.md), [mapping $child](../../reference/flow/mapping-child.md), [0023](../decisions/0023-child-links.md) |
+| One record is built from several sources, each changing at its own time (a log's header, its LAS file, a grade) | An enrichment: the mapping's `enrich:` says what each adds, the flow binds its rows (`source.datasets.<name>`), and the record with everything added goes out once per change | [enrichments](../../reference/flow/enrich.md), [enrichment mappings](../../reference/flow/mapping-enrichment.md), [0036](../decisions/0036-enrich-in-the-mapping.md) |
+| A record must list files or records of another kind its rows name (a dataset per LAS file) | An enrichment whose mapping fills that kind adds one per row, under an id kept for good, and the record links it with `$link: <name>` | [records an enrichment adds](../../reference/flow/enrich-records.md), [0036](../decisions/0036-enrich-in-the-mapping.md) |
 | A property only applies to some rows | `$when: <condition>` on the node | [mapping values](../../reference/flow/mapping-values.md), [expressions](../../reference/flow/mapping-expressions.md) |
 | An empty value should leave the property out rather than hold the record | `$required: false` | [mapping values](../../reference/flow/mapping-values.md) |
 | A value needs computing (concatenation, arithmetic, a choice) | `$expr` | [expressions](../../reference/flow/mapping-expressions.md) |
@@ -182,6 +198,8 @@ The route is `target.protocol` (or, in a source with interfaces, follows from wh
 | Records the source deleted must leave OSDU, and the ingestion loads incrementally | A removal flow on its own schedule: `keys` reads the source's complete key set whole (its files or its table), and what the ledger holds that it lacks is taken out once, through the delivery flow's removal path | [removal flow](../../reference/flow/removal.md), [0022](../decisions/0022-removal-flows.md) |
 | The source keeps a list of the keys it deleted | The same removal flow with `removed:` (a table or files, each key with `removedAt`); a key whose row came back after that moment stays | [removal flow](../../reference/flow/removal.md#what-a-run-finds) |
 | What OSDU holds may have drifted from what was sent | `--operation verify`; `verify.reconcile: true` has the next deliver run send drifted or missing records again | [running an OSDU flow](../../reference/cli/run.md), [delivery flow](../../reference/flow/delivery.md#verify) |
+| OSDU already holds records at the ids a new deployment makes from their keys (its ledger is gone, or another instance delivers) | The first run holds them; an adoption asked of them all (the flow's Delivery tab, or `sqlflow records adopt`) has the next run take each over at the version OSDU holds | [record lifecycle](../../reference/concepts/record-lifecycle.md#adopting-a-record-osdu-already-holds), [0021](../decisions/0021-adopting-occupied-records.md) |
+| A flow, or its file, is renamed | Nothing to add: the sync moves its ledger when only the name changed; a flow renamed and edited at once waits on the Orphaned ledgers page for a person to hand its ledger over | [renaming a flow](../../reference/concepts/renaming-a-pipeline.md), [0028](../decisions/0028-renamed-pipelines-move-their-ledger.md) |
 | A run's legal tag is no longer valid | The deliver run checks it first and stops; fix the tag or the configuration | [protocols](../../reference/concepts/protocols.md) |
 | The target answers a status that retrying will not fix | `reliability.skipStatusCodes`: hold instead of retrying (400, 403, 404, 405, 409, 413, 415 and 422 already hold) | [delivery flow](../../reference/flow/delivery.md), [record lifecycle](../../reference/concepts/record-lifecycle.md) |
 
@@ -208,6 +226,9 @@ The route is `target.protocol` (or, in a source with interfaces, follows from wh
 | Nodes inside a customer network | A worker with `SQLFLOW_CATALOG_DB` (a login on the `osdu` schema alone) and the flows' references in its own environment | [worker](../../reference/cli/worker.md), [deployment](../../reference/guides/deployment.md) |
 | Ask an assistant about the estate, or a `!` question about the data an approved AI context opens | `osdu-delivery-mcp`: metadata, and a `!` question's read-only query | [MCP server](../../reference/guides/mcp.md) |
 | See why a flow runs after another | `sqlflow lineage <folder> --explain <flow>`, or the lineage graph | [lineage](../../reference/concepts/lineage.md) |
+| Schedules deliver records that refer to each other's | Nothing waits across schedules: the Order page shows which runs best before which; chain them with `after:` (one repository's) or move a clock | [the OSDU order](../../reference/concepts/osdu-order.md#which-schedules-run-before-which), [0016](../decisions/0016-osdu-order.md) |
+| Find a run's requests in the platform's logs | Nothing to add: every request of a run carries `correlation-id: osdu-delivery-<operation>-<run id>`, with the repository's code after `osdu-delivery` once an `osdu-delivery.yaml` at its root names one; `telemetry.operation` gives the flow's operation | [request correlation](../../reference/concepts/request-correlation.md), [repository document](../../reference/flow/repository.md), [0037](../decisions/0037-request-correlation.md) |
+| See what fills the database and what may be removed | SQLFlow's Maintenance page: every area of the `osdu` schema kept, safe to remove or optional; work in progress and staging clean themselves, and the optional areas (attempts, activity logs, assertion runs) are removed only once an admin sets a limit or cleans up | [what the osdu schema stores](../../reference/concepts/storage-and-retention.md), [0029](../decisions/0029-storage-maintenance.md) |
 
 ## Traps worth reading before authoring
 

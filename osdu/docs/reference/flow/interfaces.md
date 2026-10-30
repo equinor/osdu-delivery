@@ -150,8 +150,8 @@ an `after:`. [One source, several kinds](../guides/multi-kind-source.md) builds 
 
 ## What the source declares for every interface
 
-Everything outside `interfaces` is the source's, shared by every interface: `name`, `batch`, `parameters`, `partitions`,
-`keepLedger`, `schedule`, `source.connection`, `source.work`, `render.mappings`, `target` (the endpoint, auth, headers and
+Everything outside `interfaces` is the source's, shared by every interface: `name`, `batch`, `telemetry`, `parameters`,
+`partitions`, `keepLedger`, `schedule`, `source.connection`, `source.work`, `render.mappings`, `target` (the endpoint, auth, headers and
 the services under it), and the defaults an interface may override: `source.lastModified`, `source.systemColumns`,
 `source.incremental`, `render.cacheVersion`, `render.parameters`, `change`, `reliability`, `parallelism`, `verify`, `failWhen`, `cache`,
 `target.protocolOptions` and `target.validation`. The keys are the single form's ([delivery flow](delivery.md)); as
@@ -164,19 +164,21 @@ What belongs to one interface is refused at the source level, each by name:
 the document declares interfaces, so these belong to an interface rather than the source: source.record (each interface's record table is interfaces.<name>.record).
 ```
 
-The same message names `source.datasets`, `source.payloads`, `render.mapping`, `target.protocol`,
-`target.protocolOptions.payload` and `target.workflow` when any of them is written at the source level.
+The same message names `ledger`, `workflows`, `source.datasets`, `source.payloads`, `render.mapping`, `target.protocol`,
+`target.protocolOptions.payload` and `target.workflow` when any of them is written at the source level, and `enrich`,
+which a flow declares nowhere: what is added to an interface's records is its mapping's `enrich:` ([enrichments](enrich.md)).
 
 ## What an interface declares
 
 | Key | Meaning |
 | --- | --- |
-| `record` | The interface's record table, as `source.record` in the single form: `object`, `key`, `primaryKey`, `scope`. Required. |
-| `datasets` | Its child tables, as `source.datasets`. |
+| `record` | The interface's record table, as `source.record` in the single form: `object`, `key`, `primaryKey`, `scope`, `maxRecords`. Required. |
+| `datasets` | Its child tables, as `source.datasets`, including the rows (and their `files`) the enrichments of its mapping read. |
 | `mapping` | The pinned mapping, `Name@version`, as `render.mapping`. Required. |
-| `files` | The files each record carries (a payload set: `root`, `locationColumn`, `pattern`, `hashColumn`, `chunkCountColumn`), uploaded and registered before the record, or on the dataset route stored as the record. A `${...}` reference in `root` is refused, as in `source.work`: vary a location with a `{parameter}` token. |
+| `files` | The files each record carries (a payload set: `root`, `locationColumn`, `pattern`, `hashColumn`, `chunkCountColumn`), uploaded and registered before the record, or on the dataset route stored as the record. A `${...}` reference in `root` is refused, as in a payload `root`: vary a location with a `{parameter}` token. |
 | `bulk` | The bulk data a DDMS keeps for each record, a payload set of the same shape, written after the record. |
 | `workflow` | The workflow each record starts ([routes](routes.md)). |
+| `workflows` | The OSDU workflows run over the records of its mapping's enrichments, by the enrichment's name, as the single form's top-level `workflows` ([an enrichment's workflow](enrich-workflow.md)). |
 | `route` | Names the route instead of letting what the interface declares decide it ([routes](routes.md)). |
 | `ledger` | The name of an existing ledger the interface keeps: a flow's, or `<old name>/<interface>` of a renamed source. See [Ledger identity](#ledger-identity). |
 | `after` | Interfaces of this document it waits for, beside the ones its references imply. See [Order](#order). |

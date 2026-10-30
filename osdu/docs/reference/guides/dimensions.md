@@ -63,8 +63,9 @@ dimension writes then finds logs. The kind is the one your search will read.
 
 A dimension reading a `data` path learns how the index stores it from the template of every kind its pattern matches in
 the partition, as the template folders on the flow's path hold it. Put the template of each in a folder on the flow's
-path ([template folders](../concepts/templates.md#template-folders)). The commands in this guide read and write the
-module's database, which is the catalog's (`SQLFLOW_CATALOG_DB`, or `--db <conn-ref>`):
+path ([template folders](../concepts/templates.md#template-folders)). `template capture` writes a kind's schema from the
+OSDU data definitions as a template file and reads no database; the `run` and `dimensions` commands later in this guide
+read and write the module's database, which is the catalog's (`SQLFLOW_CATALOG_DB`, or `--db <conn-ref>`):
 
 ```bash
 sqlflow template capture --kind osdu:wks:work-product-component--WellLog:1.4.0 --out welldb/templates/osdu_wks_work-product-component--WellLog_1.4.0.json
@@ -123,8 +124,8 @@ OK  'welldb-welllog-05-dimensions' is valid (dimension: ${env:OSDU_URL} -> dimen
 ```
 
 `validate` checks the document: every path is one a query can name, the table's column names work, every clean step
-and pattern can run, and every dictionary a `map` step names is found and reads. It does not reach OSDU or the
-templates.
+and pattern can run, and every dictionary a `map` step names, and the repository document above the flow when there is
+one, is found and reads. It does not reach OSDU or the templates.
 
 ## 4. Plan, then build
 
@@ -296,7 +297,7 @@ incremental:
 
 A dimension taken out of the YAML is built no more and keeps what it held; declaring it
 again brings its ids back. To delete one for good (here `CurveUnit`), take it out of the flow's file first, and make
-sure no cache flow captures it:
+sure no cache flow captures it and no view reads it:
 
 ```bash
 sqlflow dimensions remove flows/welldb-welllog-05-dimensions.yaml --dimension CurveUnit --partition dev

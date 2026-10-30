@@ -82,6 +82,11 @@ sourceRefs:
   - osdu/gui/src/features/delivery/DeliveryCachePage.tsx
   - osdu/gui/src/features/delivery/DeliveryCacheApprovals.tsx
   - osdu/gui/src/features/delivery/DeliveryPartitionsPage.tsx
+  - osdu/gui/src/features/delivery/DeliveryHomeSection.tsx
+  - osdu/gui/src/features/delivery/dimensions/DimensionViewWorkspace.tsx
+  - osdu/gui/src/features/delivery/inventories/InventoryRecordsGrid.tsx
+  - osdu/gui/src/features/delivery/inventories/duplicates/InventoryDuplicates.tsx
+  - osdu/gui/src/features/delivery/downloads/DownloadFlowPanels.tsx
   - osdu/src/SqlFlow.Delivery.ControlPlane/DeliveryControlPlaneModule.cs
   - osdu/src/SqlFlow.Delivery.ControlPlane/Api/DeliveryEndpoints.cs
   - osdu/src/SqlFlow.Delivery.ControlPlane/Api/DeliveryTemplateEndpoints.cs
@@ -104,7 +109,9 @@ scopes](../../../../sqlflow/docs/reference/concepts/authentication-and-identity.
 
 - the product name, "OSDU Delivery, powered by SQLFlow", on the login page and the title bar;
 - the whole menu, laid out by what a person does there, SQLFlow's pages and the ones below side by side, with the side
-  bar closed and the menu folded the first time the workbench opens ([the menu](menu.md));
+  bar closed and the menu folded the first time the workbench opens ([the menu](menu.md)), each entry of its own pages
+  saying what the page is for, which a page's
+  [Explain](../../../../sqlflow/docs/reference/guides/chat-assistant.md#explain) gives the assistant;
 - a **Partition** picker in the title bar, which every OSDU page reads in;
 - tabs and header actions on the pipeline and run pages of the eight kinds it adds (delivery, retrieval, cache, assertion,
   dimension, inventory, removal, download), and their fields in the trigger dialog;
@@ -125,8 +132,8 @@ The control plane puts every OSDU endpoint in one of SQLFlow's authorization gro
 | --- | --- |
 | read | every page's reads: the ledger, records, submissions, the audit trail, mappings, templates, caches, partitions, search terms, boards and reports |
 | operate | anything that runs or reaches OSDU: the trigger dialog, release, redeliver, verify, sync, probe, read back, render, preview, value checks, removals, Delete ledger, reversals, cache approvals, inventory removals, every explorer read, syncing the data definitions |
-| author | saving and deleting templates, refining, deleting and restoring search terms, proposing a mapping from the builder (SQLFlow's proposal endpoint) |
-| admin | describing, making default and removing the partitions the control plane's configuration does not name (registering is the configuration's, or the API's and `sqlflow partition add`'s, never a page's); setting and removing central configuration; removing a dimension its flow no longer declares; pruning the ledger |
+| author | refining, deleting and restoring search terms, proposing a mapping from the builder (SQLFlow's proposal endpoint) |
+| admin | describing, making default and removing the partitions the control plane's configuration does not name (registering is the configuration's, or the API's and `sqlflow partition add`'s, never a page's); setting and removing central configuration; removing a dimension or a view its flow no longer declares; purging a partition cache's history |
 
 SQLFlow resolves `read`, `operate` and `author` to "signed in", and only `admin` consults the token's scopes, in the
 control plane and in the GUI alike. So **any signed-in user can use every page and action here except the admin ones**,
@@ -144,15 +151,15 @@ and a link that names a partition (`?partition=`) makes it the title bar's. See 
 
 ## The home page
 
-The workbench opens on **Home**: SQLFlow's home page, with what this product adds to it. At the top, on the brand's
-navy, a greeting, the product's line and **Ask the assistant**: a question typed there, or one of the three offered,
+The workbench opens on **Home**: SQLFlow's home page, with what this product adds to it. Under SQLFlow's headline
+counts, on the brand's navy, a greeting, the product's line and **Ask the assistant**: a question typed there, or one of the three offered,
 opens the **Assistant** asking it in a fresh conversation
 ([the chat assistant](../../../../sqlflow/docs/reference/guides/chat-assistant.md#asking-from-the-home-page)). The questions
 offered are about deliveries, and the assistant's delivery tools answer them: which delivery flows have held or failed
 records and why, what changed in the partition's cache since yesterday, and which mappings deliver well logs and what
 they read from the source. When the assistant is not configured, the box says so.
 
-Under SQLFlow's headline counts, **Delivery** says what the delivery flows hold in the title bar's partition: how much of
+Under the question box, **Delivery** says what the delivery flows hold in the title bar's partition: how much of
 it is delivered, a bar of the records by where they stand, and their counts (delivered, pending, held, failed, drifted,
 delivered in the last 24 hours), added up exactly as the [Delivery](#delivery) page adds them. **Find a record** looks a
 record up by any of its keys, and **Open Delivery** opens the page. The newest runs and the runs by state follow.
@@ -177,7 +184,7 @@ records the delivery system took in or sent, newest first, refreshing every ten 
 of whose values start with the term, across every flow: an identity the mapping declares (`dataset.identity`), the
 source key or one of its key columns, a word of the label, the OSDU id, the delivery key (which lands on one record),
 or the ingestion file. **Match anywhere** finds the term inside the source key, the label, the OSDU id or the ingestion
-file instead (`6/2-1` finds `NO 16/2-10`); it reads every record the other filters leave, so with more than 100,000 of
+file instead (`-0002` finds `LOG-0002/1`); it reads every record the other filters leave, so with more than 100,000 of
 them it asks for a flow or a status first ([finding records](ledger.md#finding-records)). Each hit says which value
 matched. The filters a flow's Records tab has narrow both the listing and a lookup: a status picker (`pending`,
 `waiting`, `delivering`, `delivered`, `held`, `failed`, `deleted`, `reverted`), **Drifted only** (the records whose last
@@ -207,8 +214,8 @@ lists the removal's runs with what each read, found, took out and left. See [rem
 
 ### Audit trail
 
-Every run and intervention across flows, newest first: when, **Took** (how long it ran, counting up while it runs), flow,
-partition, **Action**, **By** (a schedule, a person, the command line), **Result** and **Target** (the record, else the
+Every run and intervention across flows, newest first: when, **Took** (how long it ran, counting up while it runs), flow
+(with its partition when none is picked in the title bar), **Action**, **By** (a schedule, a person, the command line), **Result** and **Target** (the record, else the
 submission, else the run). It narrows by actor, flow,
 action (`deliver`, `intake`, `drain`, `verify`, `probe`, `sync`, `release`, `adopt`, `redeliver`, `rerender`, `delete`,
 `restore-previous`, `purge`, `reverse`, `undo`, `delete-ledger`, `remove-dimension`, `inventory-remove`, `inventory-repair`,
@@ -354,7 +361,7 @@ interface picker whose choice is in the address; a flow that names its partition
   flow's newest run as the Delivery page does: its counts and submissions move with a run, and every view of the flow is
   read again within seconds of a run ending.
 - **Records**: the ledger's records, searched by delivery key, or by the start of the label, source key, OSDU id or
-  ingestion file, or of a word or key value a row shows inside them (`50372` finds `NO 16/2-10 / STAT_COMP / 50372/1`),
+  ingestion file, or of a word or key value a row shows inside them (`LOG-0002` finds `Wellbore B-1 / COMPOSITE / LOG-0002/1`),
   with a status picker,
   **Drifted only**, **Step held** (while an enrichment is set aside on any record,
   [an enrichment set aside on its hold](../flow/enrich-holds.md)) and **Match anywhere**; links from elsewhere narrow it to one run (`?run=`), what a submission last
@@ -407,8 +414,8 @@ the list closes. The run reads the rows holding any of the values
 
 The title bar decides which partition every page is about, so a flow's own tabs never show another partition's ledger
 under the picked one's name. When the flow does not deliver to the partition picked, the **Delivery**, **Records**,
-**Issues**, **Submissions** and **Preview** tabs read nothing (no counts, records, issues, submissions or preview) and
-show a notice in their place:
+**Issues**, **Deletions**, **Submissions** and **Preview** tabs read nothing (no counts, records, issues, deletions,
+submissions or preview) and show a notice in their place:
 
 | The flow | The title bar | The notice |
 | --- | --- | --- |
@@ -441,8 +448,8 @@ A run page gains, by kind:
 | --- | --- | --- |
 | delivery | **Records of this run**; **Reverse this run** once a `deliver`, `replan`, `drain` or `intake` run has ended | Planned, Delivered, Held, Failed, Unchanged, Waiting; the submission as a chip. A `remove` run: Selected, Removed (Restored for a step back), Already gone, Skipped, Failed, and Deleted from the ledger when it was asked to, with what it was asked to take and its summary line |
 | cache | **Open the cache** | |
-| assertion | **Open the report** | Tests, Passed, Failed, Warned, Errored, Skipped |
-| dimension | **Open dimensions** | Built, Failed, Skipped, Values, Keys |
+| assertion | **Open the report** | Assertions, Passed, Failed, Warned, Errored, Skipped |
+| dimension | **Open dimensions** | Built, Failed, Skipped, Values, Keys, and Views when the run reported any |
 | inventory | **Open inventories** | Inventories, Would read, Completed, Failed, Listed, Raised |
 | removal | **Open removals** | Found removed, Removed, Held, Left (a plan: Would find, Would hold) |
 
@@ -480,7 +487,8 @@ picked records, and the removal runs that wrote to its ledger.
 - **Inventories**: every inventory flow's inventories in the partition (kind, findings raised, when reconciled). One
   opens its report: the findings (Orphan, Foreign, Stale, Forgotten and the rest), tabs **Ids**, **Runs** and
   **Removals**, **Run pipeline**, **Export the ids as CSV**, and **Remove** for picked ids where the flow allows it,
-  through the removal dialog. An id opens as OSDU holds it in the workbench's bottom panel. **Filter** selects the ids
+  through the removal dialog; picked missing ids offer **Deliver again** instead, through the flows that delivered them,
+  under their own ids or new ones ([inventory removals](../flow/inventory-removals.md)). An id opens as OSDU holds it in the workbench's bottom panel. **Filter** selects the ids
   by what OSDU holds, as the explorer's conditions: the tabs then count the matching ids of each finding, the grid lists
   them with the values the conditions ask, and every matching id of a removable finding can be removed at once. The
   **Duplicates** tab finds the records OSDU holds more than once: a key of the properties their copies hold equal, picked
@@ -494,7 +502,10 @@ picked records, and the removal runs that wrote to its ledger.
   dimensions as cards, with **Run pipeline** per flow and **Build a search**. One dimension opens on the page's width
   with **Export** (the table, values or keys as CSV or JSON Lines), **Run pipeline**, and tabs **Table**, **Values**,
   **Keys**, **Changes**, **Builds** and **Definition**. A dimension its flow no longer declares can be removed for good
-  by an admin with **Remove**. See [dimension flows](../flow/dimension.md).
+  by an admin with **Remove**. A dimension flow's views are listed on its pipeline page's Dimensions tab, with
+  **Suggest joins**; a view opens on this page, with tabs **Columns**, **Joins**, **Checks**, **SQL** and **Definition**,
+  and one no flow declares any more can be removed by an admin. See [dimension flows](../flow/dimension.md) and
+  [dimension views](../flow/dimension-views.md).
 - **Partitions**: the registry, as the control plane's configuration names it. Each partition with its description,
   whether it is the default, its cache, the flows that serve it, and when and by whom it was registered. The page
   registers nothing: the configuration names the partitions, and the control plane registers them when it starts. A

@@ -36,6 +36,7 @@ sourceRefs:
   - osdu/samples/welldb/flows/welldb-wellbore-04-retrieval.yaml
   - osdu/samples/welldb/flows/welldb-wellbore-05-removal.yaml
   - osdu/samples/welldb/flows/welldb-osdu-06-inventory.yaml
+  - osdu/samples/welldb/flows/welldb-osdu-07-download.yaml
   - osdu/samples/welldb/cache/osdu-reference-00-cache.yaml
   - osdu/samples/welldb/cache/welldb-lookups-00-cache.yaml
   - osdu/samples/welldb/dictionaries/curve-aliases.yaml
@@ -49,6 +50,10 @@ OSDU partition. It holds everything the delivery needs: the source files and the
 its mappings fill, the lookup tables and reference data its mappings read, and the schedules that run it all. Every
 reference a record makes names a record the package delivers, and the suites check that it does. It shows each of
 [the three places and the mapping](../../../../README.md) at work, and every flow kind OSDU Delivery has.
+
+The other pages of this corpus write their examples for the same well database, each showing what its page is
+about, so an example is not always a file of this package, even where it takes a name the package uses: the files this
+page lists are the ones that run.
 
 ## What it delivers
 
@@ -79,7 +84,7 @@ The mappings are in `mappings/`, one file per kind, named `<Name>@<version>.yaml
 
 Once the records land, the package reads OSDU back:
 
-- **Tests.** `welldb-well-04-assertion` checks the wells against their mapping's rules and the values the well database
+- **Assertions.** `welldb-well-04-assertion` checks the wells against their mapping's rules and the values the well database
   gives, and `welldb-welllog-04-header-assertion` checks the logs as delivered
   ([data quality tests](data-quality-tests.md)).
 - **Dimensions.** `welldb-welllog-05-dimensions` keeps the distinct logs, wellbores and curve mnemonics delivered, the
@@ -92,19 +97,23 @@ Once the records land, the package reads OSDU back:
 - **Retrieval.** `welldb-wellbore-04-retrieval` reads the wellbores back from OSDU into a lake as JSON Lines files. Its
   target is the well database's own lake, so it joins no schedule and runs on demand until its lake is yours
   ([retrieving records](retrieving-records.md)).
+- **Download.** `welldb-osdu-07-download` writes every well and wellbore record OSDU holds in the partition to a lake, a
+  JSON file per record named after its id, rewriting only the records that are new or changed. Like the retrieval, its
+  target is the well database's own lake, so it joins no schedule and runs when asked
+  ([the download flow](../flow/download.md)).
 
 ## Its schedules
 
-Every flow but the retrieval joins one of the schedules in `schedules.yaml`, and a schedule fires its flows as one group
-in lineage order:
+Every flow but the retrieval and the download joins one of the schedules in `schedules.yaml`, and a schedule fires its
+flows as one group in lineage order:
 
 | Schedule | When | What it runs |
 | --- | --- | --- |
 | `welldb-cache` | Nightly | The lookup tables, and a full refresh of the partition's reference data |
 | `welldb-reference` | Nightly | The reference values |
-| `welldb-master` | After `welldb-reference` | The wells, the wellbores, the wells' tests, then the surveys and tops |
+| `welldb-master` | After `welldb-reference` | The wells, the wellbores, the wells' assertions, then the surveys and tops |
 | `welldb-removal` | After `welldb-master` | The wellbores the well database no longer holds |
-| `welldb-welllog` | Hourly | The well logs, with the log source `COMPOSITE` |
+| `welldb-welllog` | Hourly | The well logs, with the log source `COMPOSITE`, and their assertions |
 | `welldb-dimensions` | After `welldb-welllog` | The dimensions over the logs |
 | `welldb-inventory` | Weekly | The inventory of what OSDU holds |
 

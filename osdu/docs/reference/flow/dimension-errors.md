@@ -20,6 +20,8 @@ sourceRefs:
   - osdu/src/SqlFlow.Delivery/Documents/DimensionViewMapper.cs
   - osdu/src/SqlFlow.Delivery/Engine/Dimensions/DimensionRunner.cs
   - osdu/src/SqlFlow.Delivery/Ledger/SqlServerDimensionStore.cs
+  - osdu/src/SqlFlow.Delivery/Ledger/DimensionStage.cs
+  - osdu/src/SqlFlow.Delivery/Ledger/OsduLedger.Dimensions.cs
 ---
 
 # Dimension flow errors: what is refused when the document is read, and when a dimension builds
@@ -81,4 +83,6 @@ What a [dimension flow](dimension.md) is refused for when it is read, and what f
 | `incremental.dateColumns of dimension flow '<flow>' names <path>, which the index holds as text, not a date, so no window can be read on it. ...` | Name dates, such as `modifyTime` and `createTime`. |
 | `Dimension flow '<flow>' declares no incremental block, so every build loads its dimensions in full and a backfill window has nothing to bound. ...` | Declare `incremental`, or run without `--from` and `--to`. |
 | `The records of dimension <name> hold more than 20,000,000 keys between them, more than a load keeps by record for incremental loads. ...` | Narrow its query, split it, or take out `incremental`. |
-| `The staging of dimension build <id> holds <n> of the <n> key(s) and <n> of the <n> value(s) it staged: another build of the dimension deleted it, taking this build, running for more than 48 hours, for one its process left. Nothing was written; build the dimension again.` | The build ran for more than 48 hours, and a later build of the dimension took it for one whose worker stopped ([What a build holds](dimension-build.md#what-a-build-holds)). Build the dimension again. |
+| `Dimension <name> of <flow> is kept twice in this partition (dimensions <id> and <id>, under two ledgers of the flow), and both would write the table osdu.dim_<name>. Remove the one the flow no longer builds, then run the flow again.` | Two ledgers of one flow keep the same dimension in the partition. Remove the one the flow no longer builds. |
+| `The staging tables of dimension build <id> are gone: another build of the dimension dropped them, taking this build, running for more than 48 hours, for one its process left, or the dimension was removed while it ran. Nothing was written; build the dimension again.` | The build ran for more than 48 hours and a later build of the dimension took it for one whose worker stopped ([What a build holds](dimension-build.md#what-a-build-holds)), or the dimension was removed. Build the dimension again. |
+| `The staging of dimension build <id> holds <n> of the <n> key(s) and <n> of the <n> value(s) it staged, so it is not what the build read. Nothing was written; build the dimension again.` | The build's staging no longer holds what it staged. Build the dimension again. |

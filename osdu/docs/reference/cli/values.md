@@ -94,7 +94,7 @@ mapping does not reach with
 
 ## What it needs
 
-Like `sqlflow preview`, it needs the module database (the template, the cache version), the flow's ingestion tables
+Like `sqlflow preview`, it needs the template folders on the mapping's path, the module database (the cache version), the flow's ingestion tables
 through its own `source.connection` on this machine, and the platform's search when the mapping searches. A flow whose
 mapping fails the preflight, or whose tables lack a column the mapping reads, fails the check as a run of it would.
 

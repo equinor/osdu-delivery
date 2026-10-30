@@ -185,13 +185,12 @@ first one listed):
 | retrieval | `retrieve`, `plan` |
 | assertion | `test`, `plan` |
 | dimension | `build`, `plan` |
-| inventory | `build`, `reconcile`, `plan`, `remove` |
+| inventory | `build`, `reconcile`, `plan`, `remove`, `match`, `duplicates` |
 | removal | `remove`, `plan` |
 | download | `download`, `plan` |
 
 `plan` writes nothing to OSDU on every kind. Each kind also accepts a JSON payload (`--payload`) of its own and refuses
-what does not belong to it: a cache run takes only the configuration the control plane supplies, a retrieval run only
-`force`, an assertion run names `tests` or `tags`, a dimension run `dimensions`, an inventory run `inventories`, a removal
+what does not belong to it: a cache run names `types`, a retrieval run takes only `force`, an assertion run names `tests` or `tags`, a dimension run `dimensions`, an inventory run `inventories`, a removal
 run `entries`, a download run `downloads` and `force`. What each
 operation and payload does is on [running an OSDU flow](../cli/run.md).
 

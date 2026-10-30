@@ -185,7 +185,7 @@ jobs:
 
       # The on-demand suites (tools/test.sh, on_demand_suites) are run by hand, never by CI.
       - name: Unit tests
-        run: dotnet test OsduDelivery.sln --no-build -c Release --filter "Category!=Integration&Suite!=DimensionEdgeCases&Suite!=RunParameters&Suite!=ExternalTriggers"
+        run: dotnet test OsduDelivery.sln --no-build -c Release --filter "Category!=Integration&Suite!=DimensionEdgeCases&Suite!=RunParameters&Suite!=ExternalTriggers&Suite!=Enrichment"
 
       - name: Install OSDU GUI dependencies
         working-directory: osdu/gui
@@ -313,7 +313,7 @@ jobs:
           SQLFLOW_TEST_GITHUB_APP_ID: ${{ vars.SQLFLOW_TEST_GITHUB_APP_ID }}
           SQLFLOW_TEST_GITHUB_APP_PRIVATE_KEY: ${{ secrets.SQLFLOW_TEST_GITHUB_APP_PRIVATE_KEY }}
           SQLFLOW_TEST_GITHUB_REPOSITORY: ${{ vars.SQLFLOW_TEST_GITHUB_REPOSITORY }}
-        run: dotnet test OsduDelivery.sln --no-build -c Release -m:1 --verbosity normal --filter "Suite!=DimensionEdgeCases&Suite!=RunParameters&Suite!=ExternalTriggers"
+        run: dotnet test OsduDelivery.sln --no-build -c Release -m:1 --verbosity normal --filter "Suite!=DimensionEdgeCases&Suite!=RunParameters&Suite!=ExternalTriggers&Suite!=Enrichment"
 
       # The MCP server is Rust: SQLFlow's server as a library, and the product's host that composes it with the
       # delivery module. Their suites call control planes of their own, so they need nothing this job started. Zero

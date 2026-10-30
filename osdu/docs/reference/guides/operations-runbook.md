@@ -64,19 +64,19 @@ none is needed.
 
 The examples use the flow `flows/welldb-wellbore-03-delivery.yaml`, delivering wellbores to the partitions `dev` and
 `test`. `sqlflow` is SQLFlow's command line with the OSDU verbs added; the `records` verbs read the module database, so
-give them `--db <conn-ref>` or set the catalog variable, `--partition` for a flow that serves several partitions, and
+give them `--db <conn-ref>` or set `SQLFLOW_CATALOG_DB`, `--partition` for a flow that serves several partitions, and
 `--interface` for a source of several interfaces.
 
 ## Where to look
 
 | Place | What it shows |
 | --- | --- |
-| A delivery flow's **Delivery** tab | Counts by status, the last submission, **Probe target**, **Sync timelines**, **Redeliver**, **Delete ledger**, **Unfinished deliveries to undo**. |
-| The flow's **Records** tab | The records, filtered by status, search, **Drifted only**, issue, submission or run; the selection bar's **Release**, **Redeliver**, **Remove**; **Export**, the filtered records as an Excel workbook. |
-| The flow's **Issues** tab | Blocked records grouped by the problem that keeps them blocked. |
+| A delivery flow's **Delivery** tab | Counts by status, the last submission, **Probe target**, **Release blocked**, **Adopt** (when OSDU holds records at ids the flow's keys make), **Redeliver**, **Sync timelines**, **Delete ledger**, **Unfinished deliveries to undo**. |
+| The flow's **Records** tab | The records, filtered by status, search, **Drifted only**, issue, submission or run; the selection bar's **Redeliver**, **Adopt**, **Sync timelines**, **Remove**; **Export**, the filtered records as an Excel workbook. |
+| The flow's **Issues** tab | Blocked records grouped by the problem that keeps them blocked, each released as one. |
 | The flow's **Submissions** tab, a submission's page | Each plan, its counts, its batches, its attempts. |
-| A record's page | **Timeline** (every attempt and activity), **Source**, **Render** (renders it now, sends nothing), **OSDU**, **Artifacts**. |
-| OSDU, Ledger: **Records** and **Audit trail** | The lookup across flows by any value a record is known by; every run and intervention. |
+| A record's page | **Timeline** (every attempt and activity), **Source**, **Render** (renders it now, sends nothing), **OSDU**, **Enrichments** (when its mapping enriches it), **Artifacts**; **Release** for a blocked record. |
+| The menu's Ledger group: **Records** and **Audit trail** | The lookup across flows by any value a record is known by; every run and intervention. |
 | The run's trace | What a run is doing, live ([Run trace and metrics](../concepts/run-trace-and-metrics.md)). |
 
 ```bash

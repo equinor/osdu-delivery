@@ -105,6 +105,7 @@ Unknown keys are refused when the document is read.
 | `name` | text | required | The flow's name: its pipeline identity, and the name its downloads are kept under (`name@partition` for a flow that works in partitions). |
 | `description` | text | none | What the downloads are for. |
 | `batch` | text | none | The grouping label the pipeline is filed under. |
+| `telemetry.operation` | text | `dwn` | The flow's operation code in the correlation id every OSDU request of its runs carries ([request correlation](../concepts/request-correlation.md)). |
 | `parameters` | map | none | Parameters a download's `query` and `target.location` use as `{name}` tokens. `partition` cannot be declared: `{partition}` is always the partition the run reads ([parameters](parameters.md)). |
 | `partitions` | list | none | The partitions the flow downloads from, settled as an [inventory flow's](inventory.md#top-level-keys) are: listed, hard-coded by `source.headers.data-partition-id`, or every registered partition. A run reads one partition; `*` is refused. |
 | `source` | map | required | The OSDU platform, and how its ids are listed. See [source](#source). |

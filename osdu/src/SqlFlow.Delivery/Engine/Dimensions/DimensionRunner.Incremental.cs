@@ -9,7 +9,7 @@ using SqlFlow.Delivery.Search;
 namespace SqlFlow.Delivery.Engine.Dimensions;
 
 /// <summary>
-/// A dimension's incremental load (osdu/docs/reference/flow/dimension-incremental.md, Full and incremental loads). The flow's
+/// A dimension's incremental load (osdu/docs/reference/flow/dimension-incremental.md). The flow's
 /// <c>incremental</c> block names a record's unique key (<c>keyColumns</c>) and when a record last changed
 /// (<c>dateColumns</c>, by default OSDU's own <c>modifyTime</c> and, for a record never modified, its
 /// <c>createTime</c>); a nested object changes only with its record. A full load keeps, by each record's unique key,

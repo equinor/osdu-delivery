@@ -86,8 +86,8 @@ sqlflow run welldb-welllog-04-assertion.yaml --set partition=dev --payload '{"te
 | `--json` | `list`, `status` | off | Print one JSON document instead of text. |
 | `--db <conn-ref>` | all | `${env:SQLFLOW_CATALOG_DB}` | The catalog database, which holds the `osdu` schema the module's tables are read from. See [The module database](db.md). |
 
-Without a module database every form fails with
-`Assertion reports live in the module's database. Run 'sqlflow assertions' with --db <conn-ref>, or set the catalog variable.`
+Without `--db` and `SQLFLOW_CATALOG_DB` every form fails with
+`The osdu schema is read through the catalog's connection, which did not resolve: Environment variable 'SQLFLOW_CATALOG_DB' is not set. Give the command the catalog's connection with --db <conn-ref>, or set SQLFLOW_CATALOG_DB.`
 
 ### Which partition is read
 

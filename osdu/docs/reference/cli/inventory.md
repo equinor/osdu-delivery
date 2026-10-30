@@ -228,7 +228,7 @@ failure prints `ERROR  <message>` and exits 1. Ctrl+C exits 130.
 
 | Message | Cause |
 | --- | --- |
-| `Inventories live in the module's database. Run 'sqlflow inventory' with --db <conn-ref>, or set the catalog variable.` | No module database. |
+| `The osdu schema is read through the catalog's connection, which did not resolve: Environment variable 'SQLFLOW_CATALOG_DB' is not set. Give the command the catalog's connection with --db <conn-ref>, or set SQLFLOW_CATALOG_DB.` | No `--db` and no `SQLFLOW_CATALOG_DB`. |
 | `name the inventory by its number, as 'sqlflow inventory list' shows it: sqlflow inventory show <partition> <id>.` | The number is missing. |
 | `No inventory 7 in partition 'dev'; 'sqlflow inventory list --partition dev' shows its inventories.` | No such inventory in the partition. |
 | `--finding 'orphans' is not a finding; an inventory finds orphan, missing, undoing, forgotten, stale, unconfirmed, drifted, unlisted, foreign, superseded, tracked, gone, unreconciled.` | An unknown finding. |

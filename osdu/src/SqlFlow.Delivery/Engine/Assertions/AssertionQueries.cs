@@ -6,7 +6,7 @@ using SqlFlow.Delivery.Search;
 namespace SqlFlow.Delivery.Engine.Assertions;
 
 /// <summary>
-/// The query a test's searches ask (osdu/docs/reference/flow/assertion.md, Disabling a test, and dating its proof values):
+/// The query a test's searches ask (osdu/docs/reference/flow/assertion.md, Disabling a test, and the day its values hold until):
 /// its own, narrowed by <c>asOfField</c> to the records whose date there is on or before its <c>asOf</c>, so what it counts
 /// and reads is what OSDU held of the records on the day its values were stated. Every search of the test asks it: the
 /// count, the groups, the pages of records, a plan, and the searches of known values.

@@ -4,8 +4,8 @@ namespace SqlFlow.Delivery.Documents;
 
 /// <summary>
 /// Where a flow's mappings live. A flow repository keeps them next to its flows (osdu/docs/reference/flow/mapping.md,
-/// Where a mapping lives and how a flow finds it) in <c>mappings/</c>. Templates and caches live in the module
-/// database. A flow may name the directory explicitly under <c>render.mappings</c> (relative to the flow file);
+/// Where a mapping lives and how a flow finds it) in <c>mappings/</c>. Templates live in the template folders on a
+/// document's path, and caches in the module's database. A flow may name the directory explicitly under <c>render.mappings</c> (relative to the flow file);
 /// otherwise the nearest directory of that name walking up from the flow file is used, so a flow three folders deep in
 /// a repository still finds the repository's shared mappings.
 /// </summary>

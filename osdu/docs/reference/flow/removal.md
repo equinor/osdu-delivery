@@ -218,12 +218,13 @@ A removal flow runs as a platform run, from its schedule, the Trigger run dialog
 | Operation | What it does |
 | --- | --- |
 | `remove` (the default) | Reads, compares and writes what it finds, then takes out of OSDU the ledger's pending deletions. |
-| `plan` | Reads and compares the same way, reports what it would find and whether the guard would hold it, and writes nothing to OSDU or a ledger. |
+| `plan` | Reads and compares the same way and reports what it would find and whether the guard would hold it. It asks nothing of OSDU and writes no deletion; it keeps only its removal run, with what it found. |
 
 The run's partition is the `partition` run value, settled as every run of the module settles it. Its payload takes
 `entries` (the removals to carry out, every one when it names none) and, for an approval, `approve` with `confirm`
 ([The guard](#the-guard)); the built-in run overrides (a full load, a backfill window, a file pattern, a source filter) are
-refused, since a removal reads every key its sources hold.
+refused, since a removal reads every key its sources hold. The partition and each of the flow's own parameters take one
+value a run; a list of values is refused.
 
 For each removal, in document order, the run:
 
@@ -349,7 +350,7 @@ the record.
 
 ## In the GUI
 
-- The **Removals** page (OSDU, Ledger) lists every removal of the partition picked in the title bar, with its delivery
+- The **Removals** page (Ledger) lists every removal of the partition picked in the title bar, with its delivery
   flow, its ledger's deletions by state and its last run. A removal opens under a compact heading: what it reads and
   compares under, its last run, and a line saying what waits for approval with **Review** and **Approve**; under it, the
   ledger's deletions as a grid that fills the window and reads more as it is scrolled, by state, or the removal's runs.

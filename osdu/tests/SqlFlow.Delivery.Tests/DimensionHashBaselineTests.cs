@@ -15,7 +15,9 @@ public class DimensionHashBaselineTests
     private static readonly Dictionary<string, string> Pinned = new(StringComparer.Ordinal)
     {
         ["plain"] = "2203a2197ad599ce",
-        ["labelled"] = "168775cf1cfc8de3",
+        // Pinned as 168775cf1cfc8de3 over the real estate's log names; the build that still hashed that text so hashes the
+        // sample's names to this.
+        ["labelled"] = "1ebda644afdd52f2",
         ["attributes"] = "6e93ef6057917276",
         ["settings"] = "160886a98ebafb22",
         ["elements"] = "8073a0d12685ee94",

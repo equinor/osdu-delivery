@@ -115,8 +115,9 @@ welldb-welllog-05-dimensions@dev: 4 dimension(s)
 ```
 
 With `--json`: `flow`, `ledger`, and `dimensions`, each with `dimension`, `dimensionId`, `kind`, `path`, `label`,
-`attributes` (each `name` with `steps` or `collect`, and `keep`; one read through `steps` also `many` and `decode`), `aggregateBy`, `table`, `keyColumn`, `valueColumn`, `values`,
-`keys`, `lastBuiltUtc` and `latestBuild`.
+`attributes` (each `name` with `steps` or `collect`, and `keep`; one read through `steps` also `many`, `decode`,
+`maxReferences` and `trim`), `aggregateBy`, `table`, `keyColumn`, `valueColumn`, `values`, `keys`, `lastBuiltUtc`,
+`lastFullLoadUtc` and `latestBuild`.
 
 ## table
 
@@ -274,17 +275,19 @@ dimension(s), 5 clause(s)` and one line per dimension with its values and keys, 
 
 ## history
 
-The dimension's builds, newest first: status, what each found and changed, how it read the index and the labels, who
-ran it, its error and its first 5 notes.
+The dimension's builds, newest first: status, whether it loaded in full or incrementally (an incremental one with its
+window, the records that changed and the keys it read again), what each found and changed, how it read the index and the
+labels, who ran it, its error and its first 5 notes.
 
 ```text
 Wellbore: 1 build(s)
-        57  completed  2026-10-08 03:00:02Z  1184 value(s) from 1203 key(s), 0 of none; 6 arrived, 1 left, 2 moved, 0 came back; 3 aggregation(s), 1 split(s), 0 scan page(s), 1203 labelled in 7 search(es)  by cli:analyst@workstation
+        57  completed  2026-10-08 03:00:02Z  full;  1184 value(s) from 1203 key(s), 0 of none; 6 arrived, 1 left, 2 moved, 0 came back; 3 aggregation(s), 1 split(s), 0 scan page(s), 1203 labelled in 7 search(es)  by cli:analyst@workstation
 ```
 
 With `--json`: `dimension` and `builds`, each with `build`, `runId`, `status`, `values`, `keys`, `leftOut`,
 `unfilterable`, `keysAdded`, `keysRemoved`, `keysMoved`, `keysRestored`, `labelled`, `unlabelled`, `labelQueries`,
-`records`, `withValue`, `aggregations`, `splits`, `scanPages`, `actor`, `startedUtc`, `completedUtc` and `error`.
+`records`, `withValue`, `aggregations`, `splits`, `scanPages`, `load` (`full` or `incremental`), `windowFromUtc`,
+`windowToUtc`, `changedRecords`, `touchedKeys`, `actor`, `startedUtc`, `completedUtc` and `error`.
 
 ## changes
 
@@ -320,8 +323,8 @@ Removes a dimension the flow file no longer declares, and everything kept of it 
 values, keys, attribute values, collected texts, change log and its rows in its table, which is dropped when no
 partition writes it any more. It is refused for a dimension the file declares
 (`welldb-welllog-05-dimensions declares dimension CurveUnit, so it is not removed. Take it out of the flow's file first:
-only a dimension the flow no longer declares is removed.`) and for one a cache flow of the partition captures, naming
-the cache flow and its type. It is recorded as a `remove-dimension` activity of the flow under `cli:<user>@<machine>`.
+only a dimension the flow no longer declares is removed.`), for one a cache flow of the partition captures, naming
+the cache flow and its type, and for one a view reads, naming the view. It is recorded as a `remove-dimension` activity of the flow under `cli:<user>@<machine>`.
 
 ```text
 Removed dimension CurveUnit of welldb-welllog-05-dimensions in dev: 38 value(s), 38 key(s), 0 attribute value(s), 0 collected text(s), 2 change(s) and 6 build(s); dropped the table osdu.dim_CurveUnit.
@@ -381,8 +384,8 @@ failure prints `ERROR  <message>` and exits 1; `filter` also exits 1 when no sea
 | Message | Cause |
 | --- | --- |
 | `name the dimension flow document whose dimensions these are.` | No `<flow.yaml>` after the form (with the usage). |
-| `say what to do: list, table, values, keys, attributes, filter, search, history, changes, export or remove.` | An unknown form (with the usage). |
-| `Dimensions live in the module's database. Run 'sqlflow dimensions' with --db <conn-ref>, or set the catalog variable.` | No module database. |
+| `say what to do: list, table, values, keys, attributes, filter, search, history, changes, export, remove, views or remove-view.` | An unknown form (with the usage). |
+| `The osdu schema is read through the catalog's connection, which did not resolve: Environment variable 'SQLFLOW_CATALOG_DB' is not set. Give the command the catalog's connection with --db <conn-ref>, or set SQLFLOW_CATALOG_DB.` | No `--db` and no `SQLFLOW_CATALOG_DB`. |
 | `Name the dimension with --dimension <name>; welldb-welllog-05-dimensions declares Wellbore, CurveMnemonic, CurveUnit, LegalTag.` | `--dimension` missing. |
 | `Dimension Wellbore has not been built in welldb-welllog-05-dimensions@dev yet. Build it with: sqlflow run <flow.yaml> --payload '{"dimensions":["Wellbore"]}'` | No build in the partition. |
 | `Dimension Wellbore has no value 'wellbore a-1'. Values are named exactly as the dimension holds them.` | A `--value` that is no value (compared exactly, case included). |

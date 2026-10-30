@@ -16,7 +16,7 @@ namespace SqlFlow.Delivery.Catalog;
 /// <item>A delivery flow is hashed as parsed, with its name and path left out, together with the mapping document each
 /// interface pins, by the content hash the repository sync recorded of it, since what renders a delivery is part of what
 /// it is.</item>
-/// <item>A flow of another kind (retrieval, assertion, dimension, inventory) is hashed as its YAML document reads, its
+/// <item>A flow of another kind (retrieval, assertion, dimension, inventory, download) is hashed as its YAML document reads, its
 /// top-level <c>name</c> left out and every mapping's keys taken in order: what such a flow derives from its name as it is
 /// parsed (a dimension view's SQL names the flow that writes it) would otherwise make two names two documents.</item>
 /// </list>

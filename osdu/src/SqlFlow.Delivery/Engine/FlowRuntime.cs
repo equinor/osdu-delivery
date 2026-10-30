@@ -1325,9 +1325,9 @@ public sealed partial class FlowRuntime : IDisposable
     }
 
     /// <summary>
-    /// Marks records for redelivery (osdu/docs/reference/concepts/removal-and-reversal.md, Redelivering records: forget
-    /// what OSDU holds so the next plan re-sends), and asks the flow's next run to plan them again. Null keys means every
-    /// record the flow has delivered.
+    /// Marks records for redelivery (osdu/docs/reference/concepts/removal-and-reversal.md, Redelivering records): the
+    /// ledger forgets what OSDU holds of them so the next plan re-sends them, and the flow's next run is asked to plan them
+    /// again. Null keys means every record the flow has delivered.
     /// </summary>
     public Task<int> RedeliverAsync(IReadOnlyList<DeliveryKey>? keys, RedeliverScope scope, CancellationToken ct = default)
         => RedeliverAsync(keys, new RedeliverSelection(scope, []), ct);

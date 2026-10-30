@@ -78,8 +78,8 @@ types inside it.
 - A reference to the record's own type (a parent wellbore) adds nothing: records of one flow are ordered against each
   other by [record waits](../flow/interfaces.md#records-that-wait-for-records).
 - A kind whose template no [template folder](templates.md#template-folders) on its mapping's path holds is read from a
-  [built release of OSDU's lineage](#osdus-lineage-by-release); so is one whose template's copy the sync kept cannot be read,
-  where the catalog orders a repository. When neither knows it, the delivery orders nothing and waits for nothing, and
+  [built release of OSDU's lineage](#osdus-lineage-by-release); so is one whose template's file, the one the repository's
+  last sync settled the mapping to, cannot be read where the catalog orders a repository. When neither knows it, the delivery orders nothing and waits for nothing, and
   lineage warns on its flow.
 
 ## Cycles, and how they are cut
@@ -168,7 +168,7 @@ file is in a folder on its path.
 
 ## In the GUI and the API
 
-The Order page (OSDU, Build) has three tabs ([the GUI](gui.md)):
+The Order page (Build, Delivery) has three tabs ([the GUI](gui.md)):
 
 - **Schedules** draws every schedule running a delivery, with an arrow from a schedule to the ones that run best after it,
   dashed where the timing does not keep the order, and a warning mark on schedules out of order or in a circle. A click

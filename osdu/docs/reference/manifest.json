@@ -81,6 +81,7 @@
         "osdu/src/SqlFlow.Delivery/Storage/FileStore.cs",
         "osdu/src/SqlFlow.Delivery/Engine/DeliveryServices.cs",
         "osdu/src/SqlFlow.Delivery/Engine/Retrieval/RetrievalRunner.cs",
+        "osdu/src/SqlFlow.Delivery/Engine/Downloads/DownloadRunner.cs",
         "sqlflow/src/SqlFlow.Core/Secrets/SuppliedReferences.cs",
         "osdu/src/SqlFlow.Delivery/Model/FlowDefinition.cs",
         "osdu/src/SqlFlow.Delivery/Hosting/OsduModuleDatabase.cs",
@@ -176,6 +177,7 @@
         "osdu/src/SqlFlow.Delivery/Engine/FlowRuntime.cs",
         "osdu/src/SqlFlow.Delivery/Engine/RenderResolver.cs",
         "osdu/src/SqlFlow.Delivery/Engine/RouteChecks.cs",
+        "osdu/src/SqlFlow.Delivery/Engine/ScopeReads.cs",
         "osdu/src/SqlFlow.Delivery/Validation/Preflight.cs",
         "osdu/src/SqlFlow.Delivery/Validation/PayloadRoots.cs",
         "osdu/src/SqlFlow.Delivery/Model/SourceDefinition.cs",
@@ -277,6 +279,7 @@
         "osdu/src/SqlFlow.Delivery.ControlPlane/DeliveryControlPlaneModule.cs",
         "osdu/src/SqlFlow.Delivery.ControlPlane/Background/ConfiguredRunDispatcher.cs",
         "osdu/src/SqlFlow.Delivery.ControlPlane/Background/PartitionReadiness.cs",
+        "osdu/src/SqlFlow.Delivery.ControlPlane/Background/DeliveryRunOutcomeDescriber.cs",
         "osdu/src/SqlFlow.Delivery.ControlPlane/Api/RecordSearchContributor.cs",
         "osdu/src/SqlFlow.Delivery.Cli/DeliveryCliModule.cs",
         "osdu/src/SqlFlow.Delivery/Engine/DeliveryRunPayload.cs",
@@ -755,12 +758,16 @@
         "osdu/src/SqlFlow.Delivery/Engine/AssertionExecutor.cs",
         "osdu/src/SqlFlow.Delivery/Engine/DimensionExecutor.cs",
         "osdu/src/SqlFlow.Delivery/Engine/InventoryExecutor.cs",
+        "osdu/src/SqlFlow.Delivery/Engine/RemovalExecutor.cs",
+        "osdu/src/SqlFlow.Delivery/Engine/DownloadExecutor.cs",
         "osdu/src/SqlFlow.Delivery/Documents/DeliveryFlowKind.cs",
         "osdu/src/SqlFlow.Delivery/Documents/CacheFlowKind.cs",
         "osdu/src/SqlFlow.Delivery/Documents/RetrievalFlowKind.cs",
         "osdu/src/SqlFlow.Delivery/Documents/AssertionFlowKind.cs",
         "osdu/src/SqlFlow.Delivery/Documents/DimensionFlowKind.cs",
         "osdu/src/SqlFlow.Delivery/Documents/InventoryFlowKind.cs",
+        "osdu/src/SqlFlow.Delivery/Documents/RemovalFlowKind.cs",
+        "osdu/src/SqlFlow.Delivery/Documents/DownloadFlowKind.cs",
         "osdu/src/SqlFlow.Delivery/Model/DeclaredPartition.cs",
         "osdu/src/SqlFlow.Delivery/Model/SourceDefinition.cs",
         "osdu/src/SqlFlow.Delivery/Model/CacheDefinition.cs",
@@ -818,7 +825,7 @@
       "path": "cli/validate.md",
       "title": "sqlflow validate for OSDU documents: what each delivery, cache, mapping and other document checks offline",
       "type": "cli-command",
-      "summary": "What sqlflow validate checks in each of the eight documents OSDU Delivery adds, offline and with no database, and what it leaves to sqlflow check and the run.",
+      "summary": "What sqlflow validate checks in each document OSDU Delivery adds, its flows, mapping, dictionary and repository document, offline, and what it leaves to check.",
       "keywords": [
         "validate",
         "offline validation",
@@ -862,15 +869,22 @@
         "osdu/src/SqlFlow.Delivery/Documents/AssertionFlowKind.cs",
         "osdu/src/SqlFlow.Delivery/Documents/DimensionFlowKind.cs",
         "osdu/src/SqlFlow.Delivery/Documents/InventoryFlowKind.cs",
+        "osdu/src/SqlFlow.Delivery/Documents/RemovalFlowKind.cs",
+        "osdu/src/SqlFlow.Delivery/Documents/DownloadFlowKind.cs",
         "osdu/src/SqlFlow.Delivery/Documents/DictionaryDocumentKind.cs",
+        "osdu/src/SqlFlow.Delivery/Documents/CompanionFiles.cs",
+        "osdu/src/SqlFlow.Delivery/Documents/EnrichBinding.cs",
         "osdu/src/SqlFlow.Delivery/Documents/MappingMapper.cs",
         "osdu/src/SqlFlow.Delivery/Documents/MappingMapper.Record.cs",
+        "osdu/src/SqlFlow.Delivery/Documents/MappingMapper.Enrich.cs",
         "osdu/src/SqlFlow.Delivery/Documents/CacheDocumentMapper.cs",
         "osdu/src/SqlFlow.Delivery/Documents/DictionaryMapper.cs",
         "osdu/src/SqlFlow.Delivery/Documents/RetrievalDocumentMapper.cs",
         "osdu/src/SqlFlow.Delivery/Documents/AssertionDocumentMapper.cs",
         "osdu/src/SqlFlow.Delivery/Documents/DimensionDocumentMapper.cs",
         "osdu/src/SqlFlow.Delivery/Documents/InventoryDocumentMapper.cs",
+        "osdu/src/SqlFlow.Delivery/Documents/RemovalDocumentMapper.cs",
+        "osdu/src/SqlFlow.Delivery/Documents/DownloadDocumentMapper.cs",
         "osdu/src/SqlFlow.Delivery/Model/DeclaredPartition.cs",
         "osdu/src/SqlFlow.Delivery/Model/FlowDefinition.cs",
         "osdu/docs/census/README.md"
@@ -955,6 +969,7 @@
       ],
       "sourceRefs": [
         "osdu/hosts/SqlFlow.Delivery.Worker.Host/Program.cs",
+        "osdu/src/SqlFlow.Delivery.Cli/WorkerHostArguments.cs",
         "osdu/src/SqlFlow.Delivery.Cli/DeliveryCliModule.cs",
         "osdu/src/SqlFlow.Delivery/Hosting/OsduModuleDatabase.cs",
         "osdu/src/SqlFlow.Delivery/Engine/DeliveryServices.cs",
@@ -1037,7 +1052,11 @@
         "osdu/src/SqlFlow.Delivery.ControlPlane/Api/RecordSearchContributor.cs",
         "sqlflow/src/SqlFlow.ControlPlane/Hosting/ControlPlanePolicies.cs",
         "sqlflow/src/SqlFlow.ControlPlane/Api/Contracts.cs",
-        "osdu/src/SqlFlow.Delivery.ControlPlane/Api/DeliveryOrderEndpoints.cs"
+        "osdu/src/SqlFlow.Delivery.ControlPlane/Api/DeliveryOrderEndpoints.cs",
+        "osdu/src/SqlFlow.Delivery.ControlPlane/Api/DeliveryCachePruneEndpoints.cs",
+        "osdu/src/SqlFlow.Delivery.ControlPlane/Api/DeliveryDimensionViewEndpoints.cs",
+        "osdu/src/SqlFlow.Delivery.ControlPlane/Api/DeliveryOrphanedLedgerEndpoints.cs",
+        "osdu/src/SqlFlow.Delivery.ControlPlane/Api/DeliveryRemovalEndpoints.cs"
       ]
     },
     {
@@ -1076,11 +1095,13 @@
         "osdu/hosts/SqlFlow.Delivery.ControlPlane.Host/Program.cs",
         "osdu/hosts/SqlFlow.Delivery.Worker.Host/Program.cs",
         "osdu/hosts/SqlFlow.Delivery.Cli.Host/Program.cs",
+        "osdu/hosts/SqlFlow.Delivery.Setup.Host/Program.cs",
         "osdu/hosts/osdu-delivery-mcp/src/lib.rs",
         "osdu/hosts/osdu-delivery-mcp/Cargo.toml",
         "osdu/src/SqlFlow.Delivery/Hosting/OsduDeliveryBranding.cs",
         "osdu/src/SqlFlow.Delivery/Hosting/OsduModuleDatabase.cs",
         "osdu/src/SqlFlow.Delivery/Engine/DeliveryServices.cs",
+        "osdu/src/SqlFlow.Delivery/Documents/RepositoryDocumentKind.cs",
         "osdu/src/SqlFlow.Delivery/Catalog/DeliveryCatalogSync.cs",
         "osdu/src/SqlFlow.Delivery.Cli/DeliveryCliModule.cs",
         "osdu/src/SqlFlow.Delivery.ControlPlane/DeliveryControlPlaneModule.cs",
@@ -1162,6 +1183,7 @@
         "osdu/src/SqlFlow.Delivery/Engine/Protocols/OsduManifestAndDdmsProtocol.cs",
         "osdu/src/SqlFlow.Delivery/Engine/Protocols/OsduDspdmProtocol.cs",
         "osdu/src/SqlFlow.Delivery/Engine/Protocols/OsduEtpProtocol.cs",
+        "osdu/src/SqlFlow.Delivery/Engine/Protocols/EnrichPartsProtocol.cs",
         "osdu/src/SqlFlow.Delivery/Engine/Protocols/Ddms/IDdmsShape.cs",
         "osdu/src/SqlFlow.Delivery/Engine/Protocols/Ddms/WellboreDdmsV3Shape.cs",
         "osdu/src/SqlFlow.Delivery/Engine/Protocols/Ddms/WellDeliveryShape.cs",
@@ -1211,6 +1233,8 @@
         "osdu/src/SqlFlow.Delivery.ControlPlane/Api/DeliveryConfigEndpoints.cs",
         "osdu/src/SqlFlow.Delivery.ControlPlane/Api/DeliveryPartitionEndpoints.cs",
         "osdu/src/SqlFlow.Delivery.ControlPlane/Api/DeliveryDimensionEndpoints.cs",
+        "osdu/src/SqlFlow.Delivery.ControlPlane/Api/DeliveryDimensionViewEndpoints.cs",
+        "osdu/src/SqlFlow.Delivery.ControlPlane/Api/DeliveryCachePruneEndpoints.cs",
         "osdu/src/SqlFlow.Delivery.ControlPlane/Api/DeliveryTemplateEndpoints.cs",
         "osdu/src/SqlFlow.Delivery.ControlPlane/Api/DeliverySearchTermEndpoints.cs",
         "osdu/src/SqlFlow.Delivery.ControlPlane/Api/DirectOperationRunner.cs",
@@ -1399,6 +1423,7 @@
         "osdu/src/SqlFlow.Delivery.ControlPlane/Background/RecordIdentityBackfillService.cs",
         "osdu/src/SqlFlow.Delivery.ControlPlane/Background/RecordProblemBackfillService.cs",
         "osdu/src/SqlFlow.Delivery.ControlPlane/Background/LedgerMoveService.cs",
+        "osdu/src/SqlFlow.Delivery.ControlPlane/Background/InventoryDuplicateSweepService.cs",
         "osdu/src/SqlFlow.Delivery.ControlPlane/Background/ConfiguredRunDispatcher.cs",
         "osdu/src/SqlFlow.Delivery.ControlPlane/Background/CentralConfigurationStep.cs",
         "osdu/src/SqlFlow.Delivery.ControlPlane/Background/PartitionReadiness.cs",
@@ -1516,6 +1541,7 @@
         "osdu/src/SqlFlow.Delivery/Ledger/SqlServerDimensionStore.cs",
         "osdu/src/SqlFlow.Delivery/Ledger/OsduLedger.Dimensions.cs",
         "osdu/src/SqlFlow.Delivery/Ledger/DimensionTables.cs",
+        "osdu/src/SqlFlow.Delivery/Ledger/DimensionStage.cs",
         "osdu/src/SqlFlow.Delivery/Ledger/SqlServerDimensionViewStore.cs",
         "osdu/src/SqlFlow.Delivery/Engine/Dimensions/DimensionRemoval.cs",
         "osdu/src/SqlFlow.Delivery.Data/Migrations/20260930103543_DimensionFlows.cs",
@@ -1575,6 +1601,7 @@
         "osdu/src/SqlFlow.Delivery/Catalog/ConfiguredPartitions.cs",
         "osdu/src/SqlFlow.Delivery.Telemetry/TelemetryOptions.cs",
         "osdu/src/SqlFlow.Delivery/Catalog/CacheWarmupService.cs",
+        "osdu/src/SqlFlow.Delivery.ControlPlane/ManagedWorkers/RadixWorkerLauncher.cs",
         "osdu/deploy/compose/docker-compose.yml",
         "osdu/deploy/k8s/worker-pool.yaml",
         "osdu/deploy/k8s/controlplane.yaml",
@@ -1650,6 +1677,8 @@
         "osdu/src/SqlFlow.Delivery/Engine/Search/ExplorerFieldCatalog.cs",
         "osdu/src/SqlFlow.Delivery.Search/OsduQuery.cs",
         "osdu/src/SqlFlow.Delivery/Engine/Protocols/OsduRecordProtocol.cs",
+        "osdu/src/SqlFlow.Delivery/Http/OsduCorrelation.cs",
+        "osdu/hosts/osdu-delivery-mcp/src/links.rs",
         "osdu/gui/src/module.tsx",
         "osdu/gui/src/features/delivery/explorer/ExplorerPage.tsx",
         "osdu/gui/src/features/delivery/useLinkedPartition.ts",
@@ -1761,6 +1790,11 @@
         "osdu/gui/src/features/delivery/DeliveryCachePage.tsx",
         "osdu/gui/src/features/delivery/DeliveryCacheApprovals.tsx",
         "osdu/gui/src/features/delivery/DeliveryPartitionsPage.tsx",
+        "osdu/gui/src/features/delivery/DeliveryHomeSection.tsx",
+        "osdu/gui/src/features/delivery/dimensions/DimensionViewWorkspace.tsx",
+        "osdu/gui/src/features/delivery/inventories/InventoryRecordsGrid.tsx",
+        "osdu/gui/src/features/delivery/inventories/duplicates/InventoryDuplicates.tsx",
+        "osdu/gui/src/features/delivery/downloads/DownloadFlowPanels.tsx",
         "osdu/src/SqlFlow.Delivery.ControlPlane/DeliveryControlPlaneModule.cs",
         "osdu/src/SqlFlow.Delivery.ControlPlane/Api/DeliveryEndpoints.cs",
         "osdu/src/SqlFlow.Delivery.ControlPlane/Api/DeliveryTemplateEndpoints.cs",
@@ -1878,6 +1912,7 @@
         "osdu/src/SqlFlow.Delivery/Documents/DimensionLineage.cs",
         "osdu/src/SqlFlow.Delivery/Documents/InventoryFlowKind.cs",
         "osdu/src/SqlFlow.Delivery/Documents/RemovalFlowKind.cs",
+        "osdu/src/SqlFlow.Delivery/Documents/DownloadFlowKind.cs",
         "osdu/src/SqlFlow.Delivery/Documents/DeliveryFlowKind.cs",
         "osdu/src/SqlFlow.Delivery/Model/SourceDefinition.cs",
         "osdu/src/SqlFlow.Delivery/Model/FlowDefinition.cs",
@@ -2161,6 +2196,8 @@
         "osdu/src/SqlFlow.Delivery/Model/AssertionFlowDefinition.cs",
         "osdu/src/SqlFlow.Delivery/Model/DimensionFlowDefinition.cs",
         "osdu/src/SqlFlow.Delivery/Model/InventoryFlowDefinition.cs",
+        "osdu/src/SqlFlow.Delivery/Model/RemovalFlowDefinition.cs",
+        "osdu/src/SqlFlow.Delivery/Model/DownloadFlowDefinition.cs",
         "osdu/src/SqlFlow.Delivery/Model/DeliveryDestination.cs",
         "osdu/src/SqlFlow.Delivery/Snapshots/CacheScope.cs",
         "osdu/src/SqlFlow.Delivery/Documents/DeliveryDocumentLoader.cs",
@@ -2373,6 +2410,7 @@
         "osdu/src/SqlFlow.Delivery/Ledger/OsduLedger.Leases.cs",
         "osdu/src/SqlFlow.Delivery/Ledger/OsduLedger.Waits.cs",
         "osdu/src/SqlFlow.Delivery/Ledger/OsduLedger.Parents.cs",
+        "osdu/src/SqlFlow.Delivery/Engine/Snapshots/CacheImpact.cs",
         "osdu/src/SqlFlow.Delivery/Ledger/OsduLedger.Problems.cs",
         "osdu/src/SqlFlow.Delivery/Ledger/OsduLedger.Adoptions.cs",
         "osdu/src/SqlFlow.Delivery/Ledger/SqlServerLedgerBulk.Adoptions.cs",
@@ -2630,6 +2668,7 @@
         "osdu/src/SqlFlow.Delivery/Engine/RunHttpTrace.cs",
         "osdu/src/SqlFlow.Delivery/Engine/RunArtifacts.cs",
         "osdu/src/SqlFlow.Delivery/Engine/RunLogLoggerFactory.cs",
+        "osdu/src/SqlFlow.Delivery/Engine/RunCorrelation.cs",
         "osdu/src/SqlFlow.Delivery/Engine/FlowRuntime.cs",
         "osdu/src/SqlFlow.Delivery/Engine/DeliveryExecutor.cs",
         "osdu/src/SqlFlow.Delivery/Engine/Worker/DeliveryWorker.cs",
@@ -2678,6 +2717,7 @@
         "delivery-flow-dimension",
         "delivery-flow-assertion",
         "delivery-flow-cache",
+        "delivery-flow-download",
         "delivery-guide-retrieving-records",
         "delivery-concept-partition-cache"
       ],
@@ -2691,6 +2731,7 @@
         "osdu/src/SqlFlow.Delivery/Documents/DimensionDocumentMapper.cs",
         "osdu/src/SqlFlow.Delivery/Documents/AssertionDocumentMapper.cs",
         "osdu/src/SqlFlow.Delivery/Documents/CacheDocumentMapper.cs",
+        "osdu/src/SqlFlow.Delivery/Documents/DownloadDocumentMapper.cs",
         "osdu/src/SqlFlow.Delivery/Engine/Snapshots/SnapshotBuilder.cs"
       ]
     },
@@ -3124,6 +3165,8 @@
         "parquet chunk",
         "maxchunkcolumns",
         "maxchunkvalues",
+        "sessiondatapath",
+        "sessioncommitpath",
         "ddms registration",
         "wellboreddmsv3"
       ],
@@ -3269,14 +3312,17 @@
         "osdu/src/SqlFlow.Delivery/Documents/DeliveryFlowKind.cs",
         "osdu/src/SqlFlow.Delivery/Documents/DeliveryDocumentLoader.cs",
         "osdu/src/SqlFlow.Delivery/Documents/WorkflowMapper.cs",
+        "osdu/src/SqlFlow.Delivery/Documents/EnrichBinding.cs",
         "osdu/src/SqlFlow.Delivery/Documents/YamlModels.cs",
         "osdu/src/SqlFlow.Delivery/Documents/DeliveryLayout.cs",
         "osdu/src/SqlFlow.Delivery/Documents/MappingCatalog.cs",
         "osdu/src/SqlFlow.Delivery/Model/FlowDefinition.cs",
+        "osdu/src/SqlFlow.Delivery/Model/FlowTelemetry.cs",
         "osdu/src/SqlFlow.Delivery/Model/FlowCacheSteps.cs",
         "osdu/src/SqlFlow.Delivery/Engine/Snapshots/CacheSteps.cs",
         "osdu/src/SqlFlow.Delivery/Engine/Snapshots/CacheKeeper.cs",
         "osdu/src/SqlFlow.Delivery/Engine/FlowRuntime.cs",
+        "osdu/src/SqlFlow.Delivery/Engine/FlowRuntime.FanOut.cs",
         "osdu/src/SqlFlow.Delivery/Model/SourceDefinition.cs",
         "osdu/src/SqlFlow.Delivery/Model/DeliveryDestination.cs",
         "osdu/src/SqlFlow.Delivery/Source/SqlServerIngestionSource.cs",
@@ -3545,7 +3591,8 @@
         "osdu/src/SqlFlow.Delivery/Engine/Dimensions/DimensionRunner.cs",
         "osdu/src/SqlFlow.Delivery/Engine/Dimensions/DistinctValues.cs",
         "osdu/src/SqlFlow.Delivery/Engine/Dimensions/DimensionFilters.cs",
-        "osdu/src/SqlFlow.Delivery/Ledger/DimensionStage.cs"
+        "osdu/src/SqlFlow.Delivery/Ledger/DimensionStage.cs",
+        "osdu/src/SqlFlow.Delivery/Documents/DimensionFlowKind.cs"
       ]
     },
     {
@@ -3629,7 +3676,9 @@
         "osdu/src/SqlFlow.Delivery/Documents/DimensionDocumentMapper.cs",
         "osdu/src/SqlFlow.Delivery/Documents/DimensionViewMapper.cs",
         "osdu/src/SqlFlow.Delivery/Engine/Dimensions/DimensionRunner.cs",
-        "osdu/src/SqlFlow.Delivery/Ledger/SqlServerDimensionStore.cs"
+        "osdu/src/SqlFlow.Delivery/Ledger/SqlServerDimensionStore.cs",
+        "osdu/src/SqlFlow.Delivery/Ledger/DimensionStage.cs",
+        "osdu/src/SqlFlow.Delivery/Ledger/OsduLedger.Dimensions.cs"
       ]
     },
     {
@@ -5781,6 +5830,7 @@
         "osdu/hosts/osdu-delivery-mcp/src/docs.rs",
         "osdu/hosts/osdu-delivery-mcp/src/instructions.rs",
         "osdu/hosts/osdu-delivery-mcp/src/links.rs",
+        "osdu/hosts/osdu-delivery-mcp/src/tools/mod.rs",
         "osdu/hosts/osdu-delivery-mcp/src/tools/records.rs",
         "osdu/hosts/osdu-delivery-mcp/src/tools/flows.rs",
         "osdu/hosts/osdu-delivery-mcp/src/tools/documents.rs",
@@ -5795,7 +5845,10 @@
         "osdu/deploy/docker/mcp.Dockerfile",
         "osdu/deploy/k8s/mcp.yaml",
         "osdu/deploy/compose/docker-compose.yml",
+        "osdu/deploy/bicep/main.bicep",
+        "osdu/deploy/terraform/main.tf",
         "sqlflow/tools/sqlflow-mcp/src/host.rs",
+        "sqlflow/tools/sqlflow-mcp/src/modes.rs",
         "sqlflow/tools/sqlflow-mcp/src/links.rs",
         "sqlflow/src/SqlFlow.Assistant/AssistantInstructions.cs",
         "sqlflow/tools/sqlflow-mcp/src/control_plane.rs",
@@ -6208,6 +6261,7 @@
         "osdu/samples/welldb/flows/welldb-wellbore-04-retrieval.yaml",
         "osdu/samples/welldb/flows/welldb-wellbore-05-removal.yaml",
         "osdu/samples/welldb/flows/welldb-osdu-06-inventory.yaml",
+        "osdu/samples/welldb/flows/welldb-osdu-07-download.yaml",
         "osdu/samples/welldb/cache/osdu-reference-00-cache.yaml",
         "osdu/samples/welldb/cache/welldb-lookups-00-cache.yaml",
         "osdu/samples/welldb/dictionaries/curve-aliases.yaml",
@@ -6329,6 +6383,8 @@
         "osdu/src/SqlFlow.Delivery/Ledger/SqlServerLedgerBulk.Problems.cs",
         "osdu/src/SqlFlow.Delivery/Ledger/SqlServerLedgerBulk.Reversals.cs",
         "osdu/src/SqlFlow.Delivery/Ledger/SqlServerLedgerBulk.Purges.cs",
+        "osdu/src/SqlFlow.Delivery/Ledger/SqlServerLedgerBulk.Adoptions.cs",
+        "osdu/src/SqlFlow.Delivery/Ledger/OsduLedger.Removal.cs",
         "osdu/src/SqlFlow.Delivery/Ledger/OsduLedger.cs"
       ]
     },
@@ -6458,7 +6514,8 @@
         "osdu/src/SqlFlow.Delivery/Ledger/OsduLedger.cs",
         "osdu/src/SqlFlow.Delivery/Ledger/SqlServerLedgerBulk.cs",
         "osdu/src/SqlFlow.Delivery/Ledger/SqlServerLedgerBulk.Purges.cs",
-        "osdu/src/SqlFlow.Delivery.Data/Migrations/20260928064320_LedgerPartitions.cs"
+        "osdu/src/SqlFlow.Delivery.Data/Migrations/20260928064320_LedgerPartitions.cs",
+        "osdu/src/SqlFlow.Delivery/Ledger/RecordEnrichments.cs"
       ]
     },
     {
@@ -6488,7 +6545,8 @@
       "sourceRefs": [
         "osdu/src/SqlFlow.Delivery.Data/DeliveryEntities.cs",
         "osdu/src/SqlFlow.Delivery/Catalog/DeliveryCatalogSync.cs",
-        "osdu/src/SqlFlow.Delivery/Catalog/OsduCacheStore.cs"
+        "osdu/src/SqlFlow.Delivery/Catalog/OsduCacheStore.cs",
+        "osdu/src/SqlFlow.Delivery/Snapshots/CacheOrigin.cs"
       ]
     },
     {
@@ -6660,7 +6718,9 @@
       "sourceRefs": [
         "osdu/src/SqlFlow.Delivery.Data/DeliveryEntities.cs",
         "osdu/src/SqlFlow.Delivery/Catalog/DeliveryConfigStore.cs",
-        "osdu/src/SqlFlow.Delivery/Catalog/ConfiguredPartitions.cs"
+        "osdu/src/SqlFlow.Delivery/Catalog/ConfiguredPartitions.cs",
+        "osdu/src/SqlFlow.Delivery.ControlPlane/Background/CentralConfigurationReferences.cs",
+        "osdu/src/SqlFlow.Delivery.ControlPlane/Background/ConfiguredRunDispatcher.cs"
       ]
     },
     {
@@ -7170,7 +7230,8 @@
         "osdu/src/SqlFlow.Delivery/Catalog/DeliveryInterfaceCatalog.cs",
         "osdu/src/SqlFlow.Delivery/Ordering/OrderCatalog.cs",
         "osdu/src/SqlFlow.Delivery.ControlPlane/Background/InterfaceCatalogBackfillService.cs",
-        "osdu/src/SqlFlow.Delivery/Ledger/SqlServerLedgerBulk.cs"
+        "osdu/src/SqlFlow.Delivery/Ledger/SqlServerLedgerBulk.cs",
+        "osdu/src/SqlFlow.Delivery/Protocols/DeliveryProtocol.cs"
       ]
     },
     {
@@ -7783,7 +7844,8 @@
         "osdu/src/SqlFlow.Delivery/Ledger/SqlServerLedgerBulk.cs",
         "osdu/src/SqlFlow.Delivery/Identity/DeliveryKey.cs",
         "osdu/src/SqlFlow.Delivery/Snapshots/RenderContext.cs",
-        "osdu/src/SqlFlow.Delivery/Engine/Intake/SubmissionIntake.cs"
+        "osdu/src/SqlFlow.Delivery/Engine/Intake/SubmissionIntake.cs",
+        "osdu/src/SqlFlow.Delivery/Ledger/RecordEnrichments.cs"
       ]
     },
     {
@@ -8513,7 +8575,8 @@
         "template check"
       ],
       "related": [
-        "delivery-wiki-0018-template-folders"
+        "delivery-wiki-0018-template-folders",
+        "delivery-wiki-0029-storage-maintenance"
       ],
       "sourceRefs": []
     },
@@ -9056,7 +9119,8 @@
       ],
       "related": [
         "delivery-wiki-0021-adopting-occupied-records",
-        "delivery-wiki-0005-ledger-retention"
+        "delivery-wiki-0005-ledger-retention",
+        "delivery-wiki-0038-download-flow"
       ],
       "sourceRefs": [
         "osdu/src/SqlFlow.Delivery/Catalog/DeliveryDocumentHash.cs",
@@ -9457,14 +9521,20 @@
         "assertion tests",
         "orphans",
         "redeliver",
-        "partitions"
+        "partitions",
+        "enrichment",
+        "renamed flow",
+        "correlation id"
       ],
       "related": [
         "wiki-pattern-catalog",
         "delivery-wiki-0018-template-folders",
         "delivery-wiki-linked-canonical-and-custom-records",
         "delivery-wiki-0022-removal-flows",
-        "delivery-wiki-0038-download-flow"
+        "delivery-wiki-0038-download-flow",
+        "delivery-wiki-0028-renamed-pipelines-move-their-ledger",
+        "delivery-wiki-0036-enrich-in-the-mapping",
+        "delivery-wiki-0037-request-correlation"
       ],
       "sourceRefs": [
         "osdu/src/SqlFlow.Delivery/Documents/CacheDocumentMapper.cs",
@@ -9492,6 +9562,10 @@
         "osdu/docs/census/keys.download.json",
         "osdu/src/SqlFlow.Delivery/Documents/DownloadFlowKind.cs",
         "osdu/src/SqlFlow.Delivery/Documents/RemovalFlowKind.cs",
+        "osdu/src/SqlFlow.Delivery/Documents/MappingMapper.Enrich.cs",
+        "osdu/src/SqlFlow.Delivery/Catalog/LedgerOwnership.cs",
+        "osdu/src/SqlFlow.Delivery/Http/OsduCorrelation.cs",
+        "osdu/src/SqlFlow.Delivery.ControlPlane/Maintenance/OsduStorageContributor.cs",
         "osdu/gui/src/module.tsx"
       ]
     }

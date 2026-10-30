@@ -786,11 +786,11 @@ run "the_repositories_are_synced_as_the_configuration_names_them" {
 
   variables {
     repositories = {
-      recall = {
-        remote_url             = "https://github.com/example/recall-metadata.git"
+      welldb = {
+        remote_url             = "https://github.com/example/welldb-metadata.git"
         branch                 = "release"
         sync_interval_seconds  = 120
-        credential_secret_name = "github-recall-token"
+        credential_secret_name = "github-welldb-token"
         credential_username    = "x-access-token"
         excluded_flow_paths    = ["flows/legacy/old.yaml", "flows/scratch/draft.yaml"]
       }
@@ -802,13 +802,13 @@ run "the_repositories_are_synced_as_the_configuration_names_them" {
 
   assert {
     condition = (
-      local.control_plane_settings["ControlPlane__Bootstrap__Repositories__recall__RemoteUrl"] == "https://github.com/example/recall-metadata.git" &&
-      local.control_plane_settings["ControlPlane__Bootstrap__Repositories__recall__Branch"] == "release" &&
-      local.control_plane_settings["ControlPlane__Bootstrap__Repositories__recall__SyncIntervalSeconds"] == "120" &&
-      local.control_plane_settings["ControlPlane__Bootstrap__Repositories__recall__CredentialReference"] == "$${keyvault:${azurerm_key_vault.this.name}/github-recall-token}" &&
-      local.control_plane_settings["ControlPlane__Bootstrap__Repositories__recall__CredentialUsername"] == "x-access-token" &&
-      local.control_plane_settings["ControlPlane__Bootstrap__Repositories__recall__ExcludedFlowPaths__0"] == "flows/legacy/old.yaml" &&
-      local.control_plane_settings["ControlPlane__Bootstrap__Repositories__recall__ExcludedFlowPaths__1"] == "flows/scratch/draft.yaml"
+      local.control_plane_settings["ControlPlane__Bootstrap__Repositories__welldb__RemoteUrl"] == "https://github.com/example/welldb-metadata.git" &&
+      local.control_plane_settings["ControlPlane__Bootstrap__Repositories__welldb__Branch"] == "release" &&
+      local.control_plane_settings["ControlPlane__Bootstrap__Repositories__welldb__SyncIntervalSeconds"] == "120" &&
+      local.control_plane_settings["ControlPlane__Bootstrap__Repositories__welldb__CredentialReference"] == "$${keyvault:${azurerm_key_vault.this.name}/github-welldb-token}" &&
+      local.control_plane_settings["ControlPlane__Bootstrap__Repositories__welldb__CredentialUsername"] == "x-access-token" &&
+      local.control_plane_settings["ControlPlane__Bootstrap__Repositories__welldb__ExcludedFlowPaths__0"] == "flows/legacy/old.yaml" &&
+      local.control_plane_settings["ControlPlane__Bootstrap__Repositories__welldb__ExcludedFlowPaths__1"] == "flows/scratch/draft.yaml"
     )
     error_message = "A private repository is synced from its branch with its token read from the vault, never written here."
   }
@@ -832,8 +832,8 @@ run "a_github_app_reads_the_estates_github_repositories_that_name_no_token" {
       private_key_secret_name = "github-app-private-key"
     }
     repositories = {
-      recall = {
-        remote_url = "https://github.com/example/recall-metadata.git"
+      welldb = {
+        remote_url = "https://github.com/example/welldb-metadata.git"
       }
       tokened = {
         remote_url             = "https://github.com/example/other-metadata.git"
@@ -850,7 +850,7 @@ run "a_github_app_reads_the_estates_github_repositories_that_name_no_token" {
   }
 
   assert {
-    condition     = local.control_plane_settings["ControlPlane__Bootstrap__Repositories__recall__CredentialReference"] == "$${githubapp:app=Iv23liEstateApp;key=keyvault:${azurerm_key_vault.this.name}/github-app-private-key}"
+    condition     = local.control_plane_settings["ControlPlane__Bootstrap__Repositories__welldb__CredentialReference"] == "$${githubapp:app=Iv23liEstateApp;key=keyvault:${azurerm_key_vault.this.name}/github-app-private-key}"
     error_message = "A GitHub repository naming no token is read with the estate's App, its key read from the vault: no token is stored."
   }
 
@@ -883,8 +883,8 @@ run "external_triggers_are_trusted_as_the_configuration_names_them" {
 
   variables {
     repositories = {
-      recall = {
-        remote_url = "https://github.com/example/recall-metadata.git"
+      welldb = {
+        remote_url = "https://github.com/example/welldb-metadata.git"
         branch     = "release"
       }
       samples = {
@@ -893,10 +893,10 @@ run "external_triggers_are_trusted_as_the_configuration_names_them" {
     }
     external_triggers = {
       deliver = {
-        repository = "recall"
+        repository = "welldb"
         schedules  = ["nightly", "hourly"]
         github = {
-          repository  = "example/recall-metadata"
+          repository  = "example/welldb-metadata"
           workflow    = ".github/workflows/sqlflow.yml"
           environment = "production"
         }
@@ -920,11 +920,11 @@ run "external_triggers_are_trusted_as_the_configuration_names_them" {
 
   assert {
     condition = (
-      local.control_plane_settings["ControlPlane__Bootstrap__ExternalTriggers__deliver__RepoSource"] == "recall" &&
+      local.control_plane_settings["ControlPlane__Bootstrap__ExternalTriggers__deliver__RepoSource"] == "welldb" &&
       local.control_plane_settings["ControlPlane__Bootstrap__ExternalTriggers__deliver__AllSchedules"] == "false" &&
       local.control_plane_settings["ControlPlane__Bootstrap__ExternalTriggers__deliver__Schedules__0"] == "nightly" &&
       local.control_plane_settings["ControlPlane__Bootstrap__ExternalTriggers__deliver__Schedules__1"] == "hourly" &&
-      local.control_plane_settings["ControlPlane__Bootstrap__ExternalTriggers__deliver__GitHub__Repository"] == "example/recall-metadata" &&
+      local.control_plane_settings["ControlPlane__Bootstrap__ExternalTriggers__deliver__GitHub__Repository"] == "example/welldb-metadata" &&
       local.control_plane_settings["ControlPlane__Bootstrap__ExternalTriggers__deliver__GitHub__Ref"] == "refs/heads/release" &&
       local.control_plane_settings["ControlPlane__Bootstrap__ExternalTriggers__deliver__GitHub__Workflow"] == ".github/workflows/sqlflow.yml" &&
       local.control_plane_settings["ControlPlane__Bootstrap__ExternalTriggers__deliver__GitHub__Environment"] == "production" &&
@@ -965,8 +965,8 @@ run "an_external_trigger_of_a_repository_not_configured_is_refused" {
   variables {
     external_triggers = {
       deliver = {
-        repository = "recall"
-        github     = { repository = "example/recall-metadata" }
+        repository = "welldb"
+        github     = { repository = "example/welldb-metadata" }
       }
     }
   }
@@ -979,13 +979,13 @@ run "an_external_trigger_names_one_proof" {
 
   variables {
     repositories = {
-      recall = { remote_url = "https://github.com/example/recall-metadata.git" }
+      welldb = { remote_url = "https://github.com/example/welldb-metadata.git" }
     }
     external_triggers = {
       both = {
-        repository      = "recall"
-        github          = { repository = "example/recall-metadata" }
-        key_secret_name = "recall-trigger-key"
+        repository      = "welldb"
+        github          = { repository = "example/welldb-metadata" }
+        key_secret_name = "welldb-trigger-key"
       }
     }
   }
@@ -1053,7 +1053,7 @@ run "a_repository_over_plain_http_is_refused" {
   command = plan
 
   variables {
-    repositories = { recall = { remote_url = "http://git.example.com/recall.git" } }
+    repositories = { welldb = { remote_url = "http://git.example.com/welldb.git" } }
   }
 
   expect_failures = [var.repositories]

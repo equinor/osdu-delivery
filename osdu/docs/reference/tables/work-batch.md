@@ -50,7 +50,7 @@ Not pruned by retention: an attempt names its batch. Deleting a delivery flow's 
 | `RunId` | `uniqueidentifier` | yes | The platform run of the worker that claimed it. |
 | `CreatedUtc` | `datetime2` | no | When the intake wrote it. |
 | `StartedUtc` | `datetime2` | yes | When a worker first claimed it. |
-| `CompletedUtc` | `datetime2` | yes | When its drain ended. |
+| `CompletedUtc` | `datetime2` | yes | When its drain ended. The submission's Batches tab shows the Duration from `StartedUtc` to it, counting up only for a batch that is running. |
 | `Delivered` | `bigint` | no | Records of the batch its drain delivered. |
 | `Held` | `bigint` | no | Records of the batch its drain held. |
 | `Failed` | `bigint` | no | Records of the batch whose tries failed for good. |

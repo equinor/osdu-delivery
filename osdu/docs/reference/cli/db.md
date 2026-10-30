@@ -85,13 +85,22 @@ the catalog's one connection:
 
 | Host | The module database is |
 | --- | --- |
-| The CLI (`sqlflow db`, `config`, `partition`, `template`, `check`, `run` and the other commands) | The catalog database: `--db`, else `${env:SQLFLOW_CATALOG_DB}`. |
+| The CLI (`sqlflow db`, `config`, `partition`, `records`, `check`, `run` and the other commands) | The catalog database: `--db`, else `${env:SQLFLOW_CATALOG_DB}`. |
 | The control plane | The catalog database, on the connection it opens the catalog on (`ControlPlane:Catalog:ConnectionReference`, by default `${env:SQLFLOW_CATALOG_DB}`). |
 | A worker node | `${env:SQLFLOW_CATALOG_DB}`: SQLFlow gives a node no catalog connection, so the module opens the catalog's database through that variable itself (see [sqlflow worker](worker.md)). |
 
+A command resolves the catalog's connection when it first reads the module's database, whichever command it is, and
+one that does not resolve stops it there:
+
+```text
+ERROR  The osdu schema is read through the catalog's connection, which did not resolve: Environment variable 'SQLFLOW_CATALOG_DB' is not set. Give the command the catalog's connection with --db <conn-ref>, or set SQLFLOW_CATALOG_DB.
+```
+
 At run time a node's login needs to reach the `osdu` schema only. The module has no connection of its own:
 `SQLFLOW_OSDU_DB` and the control plane's `Osdu:Database:Connection` are no longer read, and a host still given either ignores it, so a
-deployment whose settings cannot change starts as before. An estate that kept the `osdu` schema in a database of its own
+deployment whose settings cannot change starts as before. The one exception is a worker node given `SQLFLOW_OSDU_DB` and
+not `SQLFLOW_CATALOG_DB`: every such deployment set it to the catalog's connection, so the node reads the catalog's
+database through it and warns as it starts ([sqlflow worker](worker.md)). An estate that kept the `osdu` schema in a database of its own
 brings that schema into the catalog's database before it upgrades: the hosts read the ledger in the catalog's database
 alone.
 
@@ -171,8 +180,8 @@ are extracted from the same documents. The summary line gains one fragment:
 OK   synced '<dir>': pipelines ...; lineage ...; documents +A added, U updated, N unchanged, D removed, I invalid.
 ```
 
-The module's rows commit with the catalog's when the `osdu` schema is in the catalog's database, and on their own
-connection otherwise. `sync` migrates the catalog only: run `migrate` first so the `osdu` tables exist. The sync
+The module's rows are written on the catalog's connection, inside the sync's transaction, so they commit or roll back
+with the catalog's. `sync` migrates the catalog only: run `migrate` first so the `osdu` tables exist. The sync
 records which file of the repository's template folders holds which template, and keeps none of them: a template is read
 from its file ([templates](../concepts/templates.md#what-the-sync-records)). Cache contents are not in a repository, so
 the sync writes none: a partition's cache versions are written by the runs of its cache flows.

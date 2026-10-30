@@ -129,7 +129,7 @@ ledger, record and artifact that claim it. Every column: [`osdu.InventoryRecord`
 2. **Stage.** The read appends what it lists to `osdu.InventoryScan` under the run's id, 10,000 rows a bulk copy, each in
    its own transaction. Nothing of `osdu.InventoryRecord` changes while the read runs, so a read that fails part way
    leaves the inventory as the last complete build left it.
-3. **Merge**, in one transaction holding the inventory's lock (`osdu-inventory-<partition>-<inventory>`, the lock a
+3. **Merge**, in one transaction holding the inventory's lock (`osdu-inventory-<PartitionId>-<InventoryId>`, the lock a
    removal of gone ids takes too). The run's staged rows are cut to one per id: the highest version a repeat listed, and
    of equal versions the last listed. Then, in this order, each counted:
 
@@ -161,3 +161,4 @@ ids ([Removing gone ids](inventory-removals.md#removing-gone-ids)); a removal fr
 | --- | --- |
 | `Inventory 'WellLogs' has never been built in 'dev', so there is nothing to reconcile yet; build it first.` | `reconcile` before a build. |
 | `Storage no longer knows the cursor of its listing of <kind> part way through, so the listing cannot be read whole; the next build reads it again from the start.` | A storage listing lost its cursor. |
+| `Storage handed back a cursor of its listing of <kind> it had handed back before, so the listing goes in circles and cannot be read whole.` | A storage listing repeated a cursor. |

@@ -155,7 +155,7 @@ sqlflow cache list dev
 ```
 
 lists the versions, newest first, with the types each one moved, and the partition's system properties (the indexer
-and search feature flags). On the Cache page (OSDU, Build, Cache), the Records tab browses a type's records and
+and search feature flags). On the Cache page (Build, Delivery, Cache), the Records tab browses a type's records and
 searches every value they hold; a record shows how a mapping reads it (`$cache: UnitOfMeasure.id` and a `$findBy` line to
 copy). The Setup tab lists the cache flows and the partition's OSDU feature flags.
 

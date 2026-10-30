@@ -79,6 +79,7 @@ enrich:
   lasfile:
     rows: one
     mapping: WellLogLasDataset@1.0.0
+# parameters, record.acl and record.legal as the mapping page shows them
 record:
   data:
     Datasets:

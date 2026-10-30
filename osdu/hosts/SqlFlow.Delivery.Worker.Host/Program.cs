@@ -6,8 +6,8 @@ namespace SqlFlow.Delivery.Worker.Host;
 
 /// <summary>
 /// An OSDU Delivery compute node: SQLFlow's node runtime, with the OSDU module installed so the node can execute the
-/// delivery, retrieval, cache, assertion, dimension and inventory flows (and the mapping and dictionary documents they
-/// read). It is the CLI's <c>worker</c> verb with nothing else on the command line, which keeps one drain loop, one set
+/// delivery, retrieval, cache, assertion, dimension, inventory, removal and download flows (and the mapping, dictionary
+/// and repository documents they read). It is the CLI's <c>worker</c> verb with nothing else on the command line, which keeps one drain loop, one set
 /// of node options and one place where a run is executed, however the node was started.
 /// </summary>
 /// <remarks>

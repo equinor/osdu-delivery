@@ -34,6 +34,7 @@ sourceRefs:
   - osdu/src/SqlFlow.Delivery/Engine/FlowRuntime.cs
   - osdu/src/SqlFlow.Delivery/Engine/RenderResolver.cs
   - osdu/src/SqlFlow.Delivery/Engine/RouteChecks.cs
+  - osdu/src/SqlFlow.Delivery/Engine/ScopeReads.cs
   - osdu/src/SqlFlow.Delivery/Validation/Preflight.cs
   - osdu/src/SqlFlow.Delivery/Validation/PayloadRoots.cs
   - osdu/src/SqlFlow.Delivery/Model/SourceDefinition.cs
@@ -55,7 +56,8 @@ writes nothing anywhere. Use it after editing a flow, a mapping or a template fo
 database.
 
 The command line is `sqlflow`: OSDU Delivery's CLI is SQLFlow's CLI with the OSDU verbs added (`check`, `preview`,
-`values`, `records`, `config`, `partition`, `cache`, `template`, `assertions`, `dimensions`, `inventory`). The options
+`values`, `records`, `config`, `partition`, `cache`, `template`, `assertions`, `dimensions`, `inventory`, `removal`,
+`dev`). The options
 every command shares (`--db`, `--json`, `-v`, the git-ignored `.sqlflow/env` file, where an option may sit on the line)
 are SQLFlow's, described in [CLI conventions](../../../../sqlflow/docs/reference/concepts/cli-conventions.md).
 
@@ -78,7 +80,7 @@ sqlflow check <flow.yaml> [--interface <name>] [--partition <id>] [--set name=va
 | --- | --- | --- | --- |
 | `--interface <name>` | string | every interface | Check one interface of a source (names compare ignoring case). A name the document does not declare fails with `Flow '<name>' has no interface '<x>'; it declares <names>.` On a flow in the single form any name fails with `Flow '<name>' declares no interfaces, so it has no interface '<x>'.` |
 | `--partition <id>` | string | as a run settles it | The partition to check a flow that works in partitions in. Without it: the registry's default when the flow serves it, else the flow's only listed partition. A flow whose partition is its `target.headers.data-partition-id` takes none. |
-| `--set name=value` | repeatable | the declared defaults | A value for one of the flow's own `parameters`; a name set more than once is given the list of its values, which a parameter `source.record.scope` binds reads as one scope. A required parameter with no value fails with `<file>: parameter '<name>' is required. Supply it with --set <name>=value or the run's values.`; a name the flow does not declare fails with `<file>: parameter '<name>' is not declared under parameters.` The partition is not a parameter here: name it with `--partition`. |
+| `--set name=value` | repeatable | the declared defaults | A value for one of the flow's own `parameters`; a name set more than once is given the list of its values, which a parameter `source.record.scope` binds reads as one scope, and any other parameter refuses (`<file>: parameter '<name>' is given <n> values, and takes one`, naming the parameters that take several when the flow has any). A required parameter with no value fails with `<file>: parameter '<name>' is required. Supply it with --set <name>=value or the run's values.`; a name the flow does not declare fails with `<file>: parameter '<name>' is not declared under parameters.` The partition is not a parameter here: name it with `--partition`. |
 | `--connect` | switch | off | Also open the flow's ingestion tables on this machine, through the flow's own `source.connection`, and report what a run would read now (see below). Needs that reference to resolve here. |
 | `--db <conn-ref>` | string | `${env:SQLFLOW_CATALOG_DB}` | The catalog database, which holds the `osdu` schema. See [The osdu module database in sqlflow db](db.md). |
 | `--json` | switch | off | Print the facts as one JSON document on stdout instead of the text form. |
@@ -134,10 +136,10 @@ names by its registration is read from the Register service when the flow runs, 
 The templates are read from the repository's files. Caches and the partition registry live in the module database, so
 `check` needs it for a mapping that reads a cache and for a flow that leaves its partitions to the registry:
 `--db <conn-ref>` (or `SQLFLOW_CATALOG_DB`), the catalog's database, which holds the `osdu` schema.
-Without either it stops at the first thing it has to read from there:
+Without either it stops at the first thing it has to read from there, naming the connection:
 
 ```text
-ERROR  <file>: mapping WellLog@1.4.0 reads the cache of partition 'dev', and caches live in the module's database, which this host was started without. The osdu schema lives in the catalog's database: start the host with the catalog's connection (SQLFLOW_CATALOG_DB, or --db on the command line).
+ERROR  The osdu schema is read through the catalog's connection, which did not resolve: Environment variable 'SQLFLOW_CATALOG_DB' is not set. Give the command the catalog's connection with --db <conn-ref>, or set SQLFLOW_CATALOG_DB.
 ```
 
 The check that needs no database is [`sqlflow validate`](validate.md).
@@ -165,6 +167,7 @@ OK  welldb-wellbore-03-delivery (<flow id>)
 | `OK  <flow> (<flow id>)` | The flow and its ledger identity in the partition checked. |
 | `ddms` | On a route that reaches a DDMS only: which collection of which DDMS the records go to, or why no DDMS the flow reaches takes them. |
 | `mapping`, `template` | The pinned mapping, and the template it fills with the template folder file it was read from; `, the version its folder holds` follows when the mapping names the kind alone. |
+| `enrich` | One line per enrichment the mapping declares, in the order they render, under the `mapping` line: its name, what it renders (its enrichment mapping, the records it adds and whether they are registered with their files through the Dataset service or written through storage, the record's bulk data, the workflows it runs), `one row` or `many rows` of the table it reads (or `no rows of its own`), and the enrichments it comes `after` ([enrichments](../flow/enrich.md)). |
 | `cache` | `partition <id> version <version> (<n> type(s))`, or `none (the mapping reads nothing from a cache)`. |
 | `searches` | Only for a mapping that searches the platform: `exact, then regardless of case where one record answers (...)` or `exact only (...)`, with the partition's system properties that decide it (`<service> <name> <state>`). |
 | `context` | The render context hash: the mapping, the template, the cache version and the parameters a record renders with. |
@@ -195,7 +198,9 @@ The `reads` line says why the next run reads what it reads: `no ledger keeps a w
 in scope`, `no whole-scope plan of scope <scope> has completed yet, so
 the next run reads every row in scope`, `scope <scope> was last planned with other rules than <mapping> renders with
 now (its mapping, template or parameters changed), so the next run reads every row in scope`, or `scope <scope> was
-planned through <time>; the next run reads the rows changed after <time> (an overlap of <n>s)`. Each `issue` line is a
+planned through <time>; the next run reads the rows changed after <time> (an overlap of <n>s)`, or, for a flow whose
+`source.record.maxRecords` is set, `<setting> limits every run of scope <scope> to its first <n> record(s), read by key, so
+the scope's watermark stays where it is while it is set`. Each `issue` line is a
 warning the preflight raises against the tables, as a run logs it. Nothing is planned, rendered or delivered.
 
 ### A source with interfaces
@@ -239,6 +244,7 @@ stdout carries one JSON document; keys are sorted and properties without a value
 | `mappings` | The mappings directory. |
 | `cache` | `partition`, `version` and `types` of the cache version read; absent when the mapping reads no cache. |
 | `ddms` | Where a DDMS route's records go; absent on other routes. |
+| `enrich` | The mapping's enrichments, in the order they render, each with `name`, `mapping`, `records` (`kind`, `mapping`, `through`: `dataset` or `storage`, `key`), `bulk` (`root`, `locationColumn`, `pattern`), `workflow` (`runWhen`, `stages`), `dataset` and `rows` (`one` or `many`) for one that reads rows, `after` and `reads`; absent when the mapping declares none. |
 | `read` | With `--connect`: `scope`, `selection` (what the next run reads, a full read when the rules moved included), `why`, `watermark`, `window` (`from`, `to`), `candidates`, `hasChanges`, `keyColumns` (each `name`, `type`), `systemColumns`, `columns` per dataset and `issues` (the preflight's warnings against the tables). |
 | `interface`, `ledger`, `route`, `after` | For an interface: its name, its ledger name, `route` (`name`, `reason`) and the names its `after:` lists. |
 

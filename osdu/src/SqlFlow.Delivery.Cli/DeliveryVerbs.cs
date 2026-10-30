@@ -23,8 +23,8 @@ namespace SqlFlow.Delivery.Cli;
 /// The OSDU module's own verbs: <c>check</c> (everything checkable for one flow: its documents, the mapping against its
 /// pinned template, the version of the partition cache it reads, the roots its payload files may sit under, and, with
 /// <c>--connect</c>, the ingestion tables themselves), <c>cache</c> (list the versions of a partition's cache, or import a
-/// cache flow's type files into it for offline work), and <c>template</c> (capture, import, list, show and delete the
-/// templates in the module's database, osdu/docs/reference/concepts/templates.md). A cache is captured from OSDU by
+/// cache flow's type files into it for offline work), and <c>template</c> (read a working copy's template folders, and write a
+/// template file into one, osdu/docs/reference/cli/template.md). A cache is captured from OSDU by
 /// running a cache flow (<c>sqlflow run &lt;cache.yaml&gt;</c>), the same run the platform schedules.
 /// </summary>
 internal static class DeliveryVerbs

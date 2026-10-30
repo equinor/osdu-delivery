@@ -56,7 +56,9 @@ Every OSDU flow kind is an ordinary SQLFlow flow, so its runs alert like any oth
 | --- | --- |
 | `delivery` | Something stops the run: the target, the ledger, the source or the flow document refuses or fails as a whole; or, for a source with several interfaces, an interface does not complete (the run ends failed and still reports what each interface did). |
 | `cache` | The refresh cannot capture what it declares, or, for a flow over several partitions, one partition does not complete. |
-| `assertion` | Its tests come out as `failRunOn` says: a failed or errored test (`error`, the default), a warned one as well (`warning`), or never (`never`). The error names the tests. |
+| `assertion` | Its assertions (the `tests:` entries) come out as `failRunOn` says: a failed or errored one (`error`, the default), a warned one as well (`warning`), or never (`never`). The error names them. |
+| `removal` | A removal fails, or holds what it found for an operator's approval (its guard); the run ends failed with every other removal done, and still reports how each came out. |
+| `download` | A download fails; the run ends failed with every other download done. |
 | `retrieval`, `dimension`, `inventory` | Something stops the run. |
 
 **A delivery run that held or failed records still succeeds.** A held record (a value the mapping could not resolve, a

@@ -159,7 +159,8 @@ any of its keys. Values picked across several dimensions compose one search.
 ## Example
 
 A dimension flow over the well logs the welldb flows deliver, built in the `dev` and `test` partitions,
-`flows/welldb-welllog-05-dimensions.yaml`:
+`flows/welldb-welllog-05-dimensions.yaml` (the [welldb sample](../guides/welldb-sample.md)'s file of that name builds
+dimensions and a view of its own):
 
 ```yaml
 flowType: dimension
@@ -257,7 +258,7 @@ type ...`).
 | --- | --- | --- | --- |
 | `endpoint` | text | required | The platform's base URL, usually `${env:OSDU_URL}`. |
 | `auth` | map | `type: none` | How requests authenticate, written as a delivery flow's `target.auth` is. Secrets are `${env:NAME}` or `${keyvault:NAME}` references only; a literal is refused when the flow is read. |
-| `headers` | map | none | Headers sent with every request. `data-partition-id` here hard-codes the one partition the flow builds in; a flow that names `partitions` may not set it. A header that carries a credential holds a reference; a literal is refused when the flow is read. |
+| `headers` | map | none | Headers sent with every request. `data-partition-id` here hard-codes the one partition the flow builds in; a flow that names `partitions` may not set it. A header that carries a credential holds a reference; a literal is refused when the flow is read. `correlation-id` is refused: every run sets it ([request correlation](../concepts/request-correlation.md)). |
 | `queryPath` | text | `/api/search/v2/query` | The search service's offset search: aggregations, counts, and the searches that read labels by id. |
 | `searchPath` | text | `/api/search/v2/query_with_cursor` | The cursor search a build scans records through where an aggregation cannot answer. |
 | `paging` | `cursor` or `createTime` | `cursor` | How a build's scans page: through `searchPath`, or through `queryPath` in the order each record was created, which holds nothing on the service between pages. See [Search paging](../concepts/search-paging.md). |

@@ -424,6 +424,7 @@ public sealed class DeliveryCliModule : ICliModule
         else
         {
             services.AddDatabase(OsduModuleDatabase.Create());
+            CommandModuleConnections.Register(services.Services);
         }
 
         services.Services.AddDeliveryKind();

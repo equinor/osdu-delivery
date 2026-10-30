@@ -46,7 +46,7 @@ no declared flow keeps, whose ledger holds anything, is an orphaned ledger, whic
 | --- | --- | --- | --- |
 | `PartitionId` | `smallint` | no | The partition the ledger belongs to ([`osdu.LedgerPartition`](ledger-partition.md)), or `0` for a ledger the upgrade to partition keys could not place, which its next run adopts. |
 | `FlowId` | `uniqueidentifier` | no | The ledger identity. A flow in the single form derives it from its name, an interface of a source from `<flow>/<interface>`, either from the ledger its `ledger:` names instead, and a flow that works in partitions from that name and the partition (except in the partition marked `keepLedger`). |
-| `Kind` | `nvarchar(16)` | no | The kind of flow whose ledger it is: `delivery`, `retrieval`, `assertion`, `dimension` or `inventory`. |
+| `Kind` | `nvarchar(16)` | no | The kind of flow whose ledger it is: `delivery`, `retrieval`, `assertion`, `dimension`, `inventory` or `download`. |
 | `FlowName` | `nvarchar(200)` | no | The flow, or for a source with interfaces the source, the ledger belongs to. |
 | `Interface` | `nvarchar(64)` | no | The interface of a source, or empty for a flow in the single form. |
 | `LedgerName` | `nvarchar(200)` | no | The ledger's name as pages show it; `<ledger>@<partition>` for a partition keeping a ledger of its own. |
@@ -61,8 +61,8 @@ no declared flow keeps, whose ledger holds anything, is an orphaned ledger, whic
 
 ## Written and read by
 
-- **Written** by the ledger directory (`OsduLedger.Directory.cs`) when a delivery, retrieval, assertion, dimension or
-  inventory run binds its flow and registers its ledger; by a ledger move asked by the repository sync or a takeover
+- **Written** by the ledger directory (`OsduLedger.Directory.cs`) when a delivery, retrieval, assertion, dimension,
+  inventory or download run binds its flow and registers its ledger; by a ledger move asked by the repository sync or a takeover
   (`LedgerMoves.cs`), which registers the ledger of the flow it moves to in the old one's partition; and by the move
   (`OsduLedger.Moves.cs`), which deletes the old ledger's row.
 - **Read** by the Orphaned ledgers page and a takeover (`LedgerBindings.cs`), which find the ledgers no declared flow

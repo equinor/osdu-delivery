@@ -61,7 +61,7 @@ public sealed class LedgerMoveTests : IDisposable
         await ledger.RegisterAsync(New, "dev", NewName);
         var submission = Guid.NewGuid();
         Assert.Equal(2, (await ledger.UpsertPendingAsync(Old, [Work(Old, "a", submission), Work(Old, "b", submission)])).Staged);
-        await ledger.SetWatermarkAsync(new SourceWatermark(Old, "logSource=STAT_COMP", Now.AddDays(-1), submission, Now.AddDays(-1), null));
+        await ledger.SetWatermarkAsync(new SourceWatermark(Old, "logSource=COMPOSITE", Now.AddDays(-1), submission, Now.AddDays(-1), null));
         return submission;
     }
 
@@ -115,8 +115,8 @@ public sealed class LedgerMoveTests : IDisposable
         // a reason of its own, and wrote watermarks of the same scope and of another.
         var held = Guid.NewGuid();
         await ledger.MarkHeldAsync(New, [Held(New, "a", held), Held(New, "c", held) with { LastError = "no wellbore" }]);
-        await ledger.SetWatermarkAsync(new SourceWatermark(New, "logSource=STAT_COMP", Now, held, Now, null));
-        await ledger.SetWatermarkAsync(new SourceWatermark(New, "logSource=STAT_CPI", Now, held, Now, null));
+        await ledger.SetWatermarkAsync(new SourceWatermark(New, "logSource=COMPOSITE", Now, held, Now, null));
+        await ledger.SetWatermarkAsync(new SourceWatermark(New, "logSource=CPI", Now, held, Now, null));
         await RequestAsync();
 
         var moved = Assert.Single(await ledger.CompleteLedgerMovesAsync(null));
@@ -135,8 +135,8 @@ public sealed class LedgerMoveTests : IDisposable
 
         // The old watermark of a scope both read is kept, so the next run reads what changed since the old name read; the
         // new pipeline's other scope is kept too.
-        Assert.Equal(Now.AddDays(-1), (await ledger.GetWatermarkAsync(New, "logSource=STAT_COMP"))!.UpdatedThroughUtc);
-        Assert.NotNull(await ledger.GetWatermarkAsync(New, "logSource=STAT_CPI"));
+        Assert.Equal(Now.AddDays(-1), (await ledger.GetWatermarkAsync(New, "logSource=COMPOSITE"))!.UpdatedThroughUtc);
+        Assert.NotNull(await ledger.GetWatermarkAsync(New, "logSource=CPI"));
 
         // Nothing is left under the old identity, and the directory no longer names it.
         foreach (var table in LedgerMoves.KeyedTables)

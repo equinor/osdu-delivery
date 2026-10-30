@@ -107,8 +107,9 @@ manifest build ([osdu/docs/reference/README.md](../reference/README.md#maintenan
 
 The design left these decisions open, and the implementation had to choose for each of them to ship working
 code. Each record carries its status so the owning teams can confirm or overturn it, and the code isolates each
-choice so overturning it is a contained change. Every record is proposed; 0002 also needs confirmation that the
-data partition accepts client-supplied ids for the kinds in scope. Not decided here, and still open: storage
+choice so overturning it is a contained change. A record is proposed or accepted (0022, 0026 and every record from 0029
+on are accepted); 0002 also needs confirmation that the data partition accepts client-supplied ids for the kinds in
+scope. Not decided here, and still open: storage
 access grants, Change Data Feed, library ownership between osdu-client and osdu-csharp-client, and whether the
 other packages adopt the same contract.
 
@@ -134,7 +135,8 @@ other packages adopt the same contract.
 - [0009: references to business data are searched for, not cached](decisions/0009-searched-references.md) - why
   wellbores and other business data are found by a search per record while closed vocabularies stay in the cache.
 - [0010: assertion flows read OSDU, check against templates, and keep whole reports](decisions/0010-assertion-flows-read-only.md) -
-  why data quality tests read what OSDU serves, never write, and keep every report whole.
+  why data quality tests read what OSDU serves, never write, and keep every report whole; amended by 0029, which makes
+  the removal of superseded runs an optional area of the Maintenance page.
 - [0011: dimension flows read every distinct value by ranges and keep each key](decisions/0011-dimension-flows.md) -
   why dimensions page through every distinct value of a field by ranges instead of the search aggregation.
 - [0012: every delivery completes or is undone, and the ledger names every id it minted](decisions/0012-atomic-delivery.md) -
@@ -179,9 +181,10 @@ other packages adopt the same contract.
   one scope with one watermark, why a removal compares a record whose values all lie in its own, and why `--set`
   repeated gives a list.
 - [0025: what runs at once is a flow's parallelism, and a delivery fans out by default](decisions/0025-parallelism-and-default-fan-out.md) -
-  why the settings that say how much runs at once left `reliability`, why a large delivery fans out by default and is
-  bounded by its work batches, how a coordinating run stops members no node starts and does their part, why a rate limit
-  holds for the fan-out as a whole, and why a share planned again writes its batches after the ones it wrote.
+  why the settings that say how much runs at once left `reliability`, why a large delivery fans out by default, a part per
+  `minRowsPerNode` rows on a node of its own and at most `parallelism.nodes`, how a coordinating run stops members no node
+  starts and does their part, why a rate limit holds for the fan-out as a whole, and why a share planned again writes its
+  batches after the ones it wrote.
 - [0026: the osdu schema lives in the catalog's database, reached through its one connection](decisions/0026-one-database-connection.md) -
   why the module has no database connection of its own, why a node reads the ledger through `SQLFLOW_CATALOG_DB`, why
   a host ignores the retired `SQLFLOW_OSDU_DB` rather than refusing it, and why the control plane owns the `osdu` schema.

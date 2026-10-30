@@ -117,7 +117,7 @@ Unknown keys are refused when the document is read.
 | Key | Type | Default | Meaning |
 | --- | --- | --- | --- |
 | `flowType` | text | required | `inventory`. |
-| `name` | text | required | The flow's name: its pipeline identity, and the name its inventories are kept under (`name@partition` for a flow that works in partitions). |
+| `name` | text | required | The flow's name: its pipeline identity, and the name its inventories are kept under (`name@partition` for a flow that works in partitions). A pure rename keeps them: the repository sync moves them to the new name ([Renaming a pipeline](../concepts/renaming-a-pipeline.md)). |
 | `description` | text | none | What the inventories are for. |
 | `batch` | text | none | The grouping label the pipeline is filed under. |
 | `telemetry.operation` | text | `inv` | The flow's operation code in the correlation id every OSDU request of its runs carries, `osdu-delivery-<repository>-<operation>-<run id>`: a lower-case letter, then lower-case letters and digits, at most 16, no hyphen. See [request correlation](../concepts/request-correlation.md). |
@@ -129,7 +129,7 @@ Unknown keys are refused when the document is read.
 | `inventories` | list | required | The inventories, at least 1 and at most 100, names unique ignoring case. |
 | `removal` | map | none | What an operator may remove from OSDU of what the inventories found. Left out, the flow only reads OSDU. Gone ids are removed from the inventory whatever it declares. See [Removal](#removal). |
 | `reliability` | map | delivery defaults | The HTTP settings a [delivery flow](delivery.md) takes: timeout, retry, rate limit, TLS, URL allowlist and response size. |
-| `parallelism` | map | defaults | `recordsAtOnce` (default 8, at least 1): how many version lists a build reads at once for `versions: all`. Inventories are read one after another. It is written as on a [delivery flow](delivery.md#parallelism), so a flow's settings read alike whatever its kind. An inventory flow takes no other parallelism key. It was `parallelism.concurrency`, and `reliability.concurrency` before that: a document that still writes either is refused, naming `parallelism.recordsAtOnce`, and a delivery flow's setting written under `reliability` (`fanOut`, `batchRecords`) is refused as one to remove. |
+| `parallelism` | map | defaults | `recordsAtOnce` (default 8, at least 1): how many version lists a build reads at once for `versions: all`, and how many storage reads a duplicate check's pick has in flight. Inventories are read one after another. It is written as on a [delivery flow](delivery.md#parallelism), so a flow's settings read alike whatever its kind. An inventory flow takes no other parallelism key. It was `parallelism.concurrency`, and `reliability.concurrency` before that: a document that still writes either is refused, naming `parallelism.recordsAtOnce`, and a delivery flow's setting written under `reliability` (`fanOut`, `batchRecords`) is refused as one to remove. |
 | `schedule`, `mode`, `lifecycle` | | none | SQLFlow's envelope keys ([schedule](../../../../sqlflow/docs/reference/flow/schedule.md), [flow overview](../../../../sqlflow/docs/reference/flow/overview.md)). A schedule's `values` may name the partition (`partition: dev`) and the flow's parameters. |
 
 ### source
@@ -138,7 +138,7 @@ Unknown keys are refused when the document is read.
 | --- | --- | --- | --- |
 | `endpoint` | text | required | The platform's base URL, usually `${env:OSDU_URL}`. |
 | `auth` | map | `type: none` | How requests authenticate, written as a delivery flow's `target.auth` is; secrets are references only, and a literal is refused when the flow is read. |
-| `headers` | map | none | Headers sent with every request; `data-partition-id` only for a flow that names no `partitions`. A header that carries a credential holds a reference; a literal is refused when the flow is read. |
+| `headers` | map | none | Headers sent with every request; `data-partition-id` only for a flow that names no `partitions`. A header that carries a credential holds a reference; a literal is refused when the flow is read. `correlation-id` is refused: every run sets it ([request correlation](../concepts/request-correlation.md)). |
 | `read` | `search` or `storage` | `search` | How the inventories read OSDU. See [Reading OSDU](#reading-osdu). |
 | `queryPath` | text | `/api/search/v2/query` | The offset search a plan counts through. |
 | `searchPath` | text | `/api/search/v2/query_with_cursor` | The cursor search a search read pages through. |
@@ -283,8 +283,9 @@ changed since its build, the search requests it sent, its notes, and why it stop
 An inventory flow reads each inventory's kind on its platform and partition and writes nothing another flow reads, so
 lineage orders it after the delivery flows writing those kinds ([lineage](../concepts/lineage.md)). An inventory flow's
 pipeline has an **Inventories** tab. **OSDU**, **Inventories** lists every inventory with what its last
-reconcile raised; an inventory's report has its counts by finding over a grid of ids, the tabs Ids, Runs and (for a flow
-that allows removal, or one that has removed anything) Removals, a lookup by OSDU id, and a CSV export. The **gone** tab
+reconcile raised; an inventory's report has its counts by finding over a grid of ids, the tabs Ids, Duplicates
+([In the GUI](inventory-duplicates.md#in-the-gui)), Runs and (for a flow that allows removal, or one that has removed
+anything) Removals, a lookup by OSDU id, and a CSV export. The **gone** tab
 picks ids, or every one, to remove from the inventory, and the **missing** tab picks ids to deliver again. **Filter**
 selects the ids by what OSDU holds ([In the GUI](inventory-selections.md#in-the-gui)).
 

@@ -460,7 +460,9 @@ checks are on [DDMS shapes and services](ddms-services.md#production-ddms-core-s
 whose kind has the source `etp`; the object is its XML (the `files` part, or `data.Xml`) with the arrays it names (the
 `bulk` part, or values in the document). `target.etp` is on [DDMS shapes and services](ddms-services.md#reservoir-ddms-etp).
 
-Neither route has an OSDU version or a soft delete: their records are not storage records.
+Neither route has an OSDU version or a soft delete: their records are not storage records. Neither takes a mapping that
+declares `enrich:` ([enrichments](enrich.md)), since an enrichment adds to an OSDU record; the flow is refused when it is
+bound to its mapping, and what an enrichment would add is mapped in the mapping itself.
 
 ## What a removal does
 

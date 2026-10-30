@@ -67,8 +67,8 @@ public sealed class CacheRefresher
 
     /// <summary>
     /// The records of each captured OSDU type that the cache holds, the capture did not find, and a delivery holds, which
-    /// OSDU's storage service no longer holds either (osdu/docs/reference/concepts/partition-cache.md, Deliveries keep a type
-    /// current). A record a delivery landed stays in the cache while the search index has not caught up with it, so the
+    /// OSDU's storage service no longer holds either (osdu/docs/reference/concepts/partition-cache.md, Pipelines
+    /// bring the cache up to date). A record a delivery landed stays in the cache while the search index has not caught up with it, so the
     /// refresh asks storage, which a write reaches at once, about those alone: a record storage still holds stays, one it
     /// does not (deleted, or not readable with the cache flow's credentials) loses the deliveries' hold.
     /// </summary>

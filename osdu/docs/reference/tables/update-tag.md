@@ -52,7 +52,7 @@ Never deleted: a record's render context names the cache version it was rendered
 | `FromVersion` | `nvarchar(64)` | yes | The cache version the change was found against. |
 | `ToVersion` | `nvarchar(64)` | no | The cache version that holds the change ([`osdu.CacheVersion`](cache-version.md)). |
 | `Mode` | `nvarchar(16)` | no | `auto` or `approve`, as the cache declared for this type when the tag was written. |
-| `Status` | `nvarchar(16)` | no | `pending`, `approved`, `rejected`, `rolling` or `applied`. |
+| `Status` | `nvarchar(16)` | no | `pending`, `approved`, `rejected`, `rolling` (the rollout is marking records), `delivering` (every record is marked, and the change waits for the flows that build them to render them again) or `applied` (no record is still built from the old value). |
 | `SetIds` | `nvarchar(max)` | no | The cache sets holding the changed value, comma separated; the records are found through them. |
 | `AffectedRecords` | `bigint` | no | How many delivered records were built from the old value when the change was found. |
 | `Processed` | `bigint` | no | How many of them the rollout has marked for redelivery so far. |

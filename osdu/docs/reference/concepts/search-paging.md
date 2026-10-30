@@ -30,6 +30,7 @@ related:
   - delivery-flow-dimension
   - delivery-flow-assertion
   - delivery-flow-cache
+  - delivery-flow-download
   - delivery-guide-retrieving-records
   - delivery-concept-partition-cache
 sourceRefs:
@@ -42,6 +43,7 @@ sourceRefs:
   - osdu/src/SqlFlow.Delivery/Documents/DimensionDocumentMapper.cs
   - osdu/src/SqlFlow.Delivery/Documents/AssertionDocumentMapper.cs
   - osdu/src/SqlFlow.Delivery/Documents/CacheDocumentMapper.cs
+  - osdu/src/SqlFlow.Delivery/Documents/DownloadDocumentMapper.cs
   - osdu/src/SqlFlow.Delivery/Engine/Snapshots/SnapshotBuilder.cs
 ---
 
@@ -49,9 +51,9 @@ sourceRefs:
 
 Several flows read every record an OSDU search matches: a [retrieval](../flow/retrieval.md) its kinds, an
 [inventory](../flow/inventory.md) its search reads, a [dimension flow](../flow/dimension.md) the scans an aggregation
-cannot answer, a [cache flow](../flow/cache.md) its OSDU types, and an [assertion flow](../flow/assertion.md) the records
-its tests read. They all go through one reader, which hands each record out once and either hands out every record the
-search matches or fails the run. `source.paging` says how that reader pages:
+cannot answer, a [cache flow](../flow/cache.md) its OSDU types, an [assertion flow](../flow/assertion.md) the records
+its tests read, and a [download flow](../flow/download.md) its kinds. They all go through one reader, which hands each
+record out once and either hands out every record the search matches or fails the run. `source.paging` says how that reader pages:
 
 ```yaml
 source:
@@ -59,7 +61,7 @@ source:
   paging: createTime   # cursor (the default) or createTime
 ```
 
-The key is the same in all five flow kinds, and its values are matched without regard to case. Anything else is refused
+The key is the same in all six flow kinds, and its values are matched without regard to case. Anything else is refused
 when the flow is read: `'source.paging' value 'scroll' is not one of cursor, createTime.`
 
 ## The two ways
@@ -91,7 +93,7 @@ twice and fail the run: `The search of kind <kind> could not be read whole in 2 
 
 A retrieval may name search-after mode in its path (`searchPath: /api/search/v2/query_with_cursor?search_after=true`);
 the reader releases the context with the same query, so the service closes the point in time rather than look for a
-scroll. Inventory, dimension and assertion flows refuse a query in a path, and a cache flow's paths are fixed.
+scroll. Inventory, dimension, assertion and download flows refuse a query in a path, and a cache flow's paths are fixed.
 
 ## Reading in createTime order
 

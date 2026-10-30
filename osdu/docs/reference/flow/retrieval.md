@@ -64,7 +64,8 @@ Use a retrieval flow when you want OSDU's records back as data: to analyse them 
 source, or to feed a SQLFlow file flow that loads them into a table ([Retrieving OSDU records into tables](../guides/retrieving-records.md)).
 Nothing is rendered and no mapping is involved: each line is the record as OSDU holds it (the search hit, or with
 `fetchRecords: true` the record as storage keeps it). A retrieval writes nothing to OSDU. It is not how mappings read
-reference data either; that is a [cache flow](cache.md).
+reference data either; that is a [cache flow](cache.md). To keep one JSON file per record instead, named after its id and
+rewritten only when the record changes, use a [download flow](download.md).
 
 ## Minimal example
 
@@ -190,7 +191,7 @@ There is no `partitions` key: a retrieval reads the one partition its `source.he
 | --- | --- | --- | --- |
 | `endpoint` | string | required | The platform's base URL, usually `${env:OSDU_URL}`. |
 | `auth` | map | `type: none` | How requests authenticate, written exactly as `target.auth` on a delivery flow (`type: oauth2ClientCredentials` with `secretRef`, `secondarySecretRef` and `token`, or `bearer`, `apiKeyHeader`, `basic`). Secrets are references only: `${env:NAME}` or `${keyvault:NAME}`; a literal is refused when the flow is read. |
-| `headers` | map | required | Headers sent with every request. `data-partition-id` is required and names the partition the flow reads and keeps its ledger in. A value may be a reference, resolved on the node; a header that carries a credential holds one, and a literal there is refused when the flow is read. |
+| `headers` | map | required | Headers sent with every request. `data-partition-id` is required and names the partition the flow reads and keeps its ledger in. A value may be a reference, resolved on the node; a header that carries a credential holds one, and a literal there is refused when the flow is read. `correlation-id` is refused: every run sets it ([request correlation](../concepts/request-correlation.md)). |
 | `kind` | string | | One kind to retrieve. |
 | `kinds` | list | | Several kinds. Give `kind`, `kinds` or both (they are combined); at least one kind in all, none twice. |
 | `query` | string | none | A Lucene query narrowing every kind, with `{parameter}` tokens. Left out, every record of the kinds. |
@@ -346,6 +347,8 @@ sqlflow run welldb-retrieval-02-logs.yaml --payload '{"force":true}'   # start a
 The payload takes `force` and nothing else; anything more is refused before the run starts, for example
 `payload submissionId does not apply to a retrieval flow: only a delivery flow's runs name a submission; a retrieval flow's payload names only force.`
 SQLFlow's own backfill options are refused: `fullLoad do(es) not apply to 'retrieval' flows; force in the payload restarts an incremental retrieval at its declared start.`
+A parameter takes one value a run; a list is refused:
+`Parameter '<name>' is given <n> values; a parameter of 'retrieval' flows takes one, since it fills a query or a location.`
 Any other operation fails with `A retrieval flow runs the retrieve and plan operations; '<name>' is not one of them.`
 
 A run that names a partition (`--set partition=test`, or a schedule whose `values` name one) is refused:

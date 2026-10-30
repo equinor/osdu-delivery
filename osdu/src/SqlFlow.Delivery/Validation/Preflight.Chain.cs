@@ -76,7 +76,7 @@ public static partial class Preflight
                 if (written.FirstOrDefault(w => Overlaps(w.Write, write)) is { Writer: not null } earlier)
                 {
                     issues.Add(ValidationIssue.Error(
-                        $"{at}: {Writer(step)} writes {write.Text}, {Conflict(earlier.Write, write)} {earlier.Writer} writes; an enrichment adds to the record without taking back what the mapping or another enrichment wrote, so two writers share a path only when both add items to one list (osdu/docs/reference/flow/enrich.md, How an enrichment adds to the record).",
+                        $"{at}: {Writer(step)} writes {write.Text}, {Conflict(earlier.Write, write)} {earlier.Writer} writes; an enrichment adds to the record without taking back what the mapping or another enrichment wrote, so two writers share a path only when both add items to one list (osdu/docs/reference/flow/mapping-enrichment.md, How an enrichment adds to the record).",
                         write.Text));
                 }
             }

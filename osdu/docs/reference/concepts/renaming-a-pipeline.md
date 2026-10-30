@@ -63,6 +63,7 @@ repository sync does with it, and how a person hands it to the flow of their cho
 | assertion | Its runs and every result | `name@partition` for a flow that names its partitions or follows the registry; the name in the header's partition otherwise |
 | dimension | Its dimensions (keys, values, attributes, change log), its builds, and the views it wrote | As an assertion flow's |
 | inventory | Its inventories and what each one found | As an assertion flow's |
+| download | Its downloads, their runs, and each record they wrote with the file it is written to | As an assertion flow's |
 
 Every kind's ledger also keeps the flow's audit trail. SQLFlow's run history of the old pipeline stays under the old name
 whatever happens to the ledger.

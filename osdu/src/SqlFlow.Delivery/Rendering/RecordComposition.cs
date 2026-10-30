@@ -30,7 +30,7 @@ public sealed record FragmentRender
     public Validation.AssertionFindings? Assertions { get; init; }
 }
 
-/// <summary>What a step's fragment did at one path of the record (osdu/docs/reference/flow/enrich.md, How a fragment adds to the record).</summary>
+/// <summary>What a step's fragment did at one path of the record (osdu/docs/reference/flow/mapping-enrichment.md, How an enrichment adds to the record).</summary>
 public enum CompositionEffectKind
 {
     /// <summary>The step wrote a value where the record held none: a single value, or an object with everything in it.</summary>
@@ -120,7 +120,7 @@ public sealed record ResolvedRecords(EnrichRecords Records, string EntityType, M
 }
 
 /// <summary>
-/// How a fragment is added to the record (osdu/docs/reference/flow/enrich.md, How a fragment adds to the record). Two things
+/// How a fragment is added to the record (osdu/docs/reference/flow/mapping-enrichment.md, How an enrichment adds to the record). Two things
 /// only, both of which give the same record however many times they are done: a value is set where the record holds none,
 /// and items are added to a list, each one the list does not hold already (compared as canonical JSON), after the items it
 /// holds. An object is gone into, property by property. Anything else would change what the flow's mapping or a step before

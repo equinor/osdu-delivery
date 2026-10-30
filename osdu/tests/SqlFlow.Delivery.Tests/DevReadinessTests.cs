@@ -372,12 +372,12 @@ public sealed class DevReadinessTests : IDisposable
     [Fact]
     public void A_repository_whose_folder_is_gone_or_whose_sync_failed_is_warned_and_none_at_all_too()
     {
-        var gone = Evaluate(new Spec { Repositories = [new RepositoryScan("recall", "C:\\elsewhere", "C:\\elsewhere", false, true, string.Empty, false, true)] });
-        var failing = Evaluate(new Spec { Repositories = [new RepositoryScan("recall", _scope.Root, _scope.Root, true, true, "fatal: not a git repository\nmore", false, true)] });
+        var gone = Evaluate(new Spec { Repositories = [new RepositoryScan("welldb", "C:\\elsewhere", "C:\\elsewhere", false, true, string.Empty, false, true)] });
+        var failing = Evaluate(new Spec { Repositories = [new RepositoryScan("welldb", _scope.Root, _scope.Root, true, true, "fatal: not a git repository\nmore", false, true)] });
         var none = Evaluate(new Spec { Repositories = [] });
 
-        Assert.Contains("does not exist on this machine", Single(gone, "Repository recall").Detail, StringComparison.Ordinal);
-        Assert.Contains("its last sync failed: fatal: not a git repository", Single(failing, "Repository recall").Detail, StringComparison.Ordinal);
+        Assert.Contains("does not exist on this machine", Single(gone, "Repository welldb").Detail, StringComparison.Ordinal);
+        Assert.Contains("its last sync failed: fatal: not a git repository", Single(failing, "Repository welldb").Detail, StringComparison.Ordinal);
         Assert.Equal(FindingStatus.Warning, Single(none, "Flow repositories").Status);
     }
 

@@ -55,7 +55,7 @@ Not pruned by retention.
 | `Files` | `int` | no | The files it wrote. |
 | `Bytes` | `bigint` | no | The bytes it wrote, uncompressed. |
 | `StartedUtc` | `datetime2` | no | When it started. |
-| `CompletedUtc` | `datetime2` | yes | When it ended. |
+| `CompletedUtc` | `datetime2` | yes | When it ended. The Retrievals tab's Took column is the time from `StartedUtc` to it. |
 | `Error` | `nvarchar(4000)` | yes | The redacted error of a failed run. |
 
 ## Keys and indexes

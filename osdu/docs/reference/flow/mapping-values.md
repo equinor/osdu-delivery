@@ -136,15 +136,15 @@ and takes its settings beside it:
 
 | Setting | Meaning | Taken by |
 | --- | --- | --- |
-| `$modifiers` | Changes to an incoming dataset value, top to bottom. See [mapping modifiers](mapping-modifiers.md). | `$from`, `$expr`, `$cache`, `$search`, and `$parent` on a single value |
+| `$modifiers` | Changes to an incoming dataset value, top to bottom. See [mapping modifiers](mapping-modifiers.md). | `$from`, `$expr`, `$cache`, `$search`, and `$parent` and `$base` on a single value |
 | `$when` | A condition: when the property applies to the row. See [$when](#when-when-a-property-applies). | every node |
-| `$required` | What an empty value does: `true` (the default) holds the record, `false` leaves the property out. See [$required](#required-what-an-empty-value-does). | every node but `$value`; only `false` on `$child`, its default |
+| `$required` | What an empty value does: `true` (the default) holds the record, `false` leaves the property out. See [$required](#required-what-an-empty-value-does). | every node but `$value` and `$link`; only `false` on `$child`, its default |
 | `$description` | Free text. | every node |
 | `$findBy` | Which record to read: one line or a list, tried in order. | `$cache`, `$search` |
 | `$findAll` | Every cached row that matches, read as a list. | `$cache` |
 | `$ignoreSeparators` | A last attempt at matching with punctuation and spacing folded away. | `$cache` |
-| `$unverified` | Write an id an `id` or `ref` modifier builds even when the cache does not hold its record. See [mapping modifiers](mapping-modifiers.md). | `$from`, `$expr` with `id` or `ref` |
-| `$assert` | Business rules the value must meet, each holding, reporting or leaving out a record that breaks it. See [mapping assertions](mapping-assertions.md). | every node but `$value`, an alternative of `$coalesce` and an item of a list of values |
+| `$unverified` | Write an id an `id` or `ref` modifier builds even when the cache does not hold its record. See [mapping modifiers](mapping-modifiers.md). | `$from`, `$expr`, `$parent` and `$base` with `id` or `ref` |
+| `$assert` | Business rules the value must meet, each holding, reporting or leaving out a record that breaks it. See [mapping assertions](mapping-assertions.md). | every node but `$value`, `$link`, an alternative of `$coalesce` and an item of a list of values |
 
 A `$value` takes only `$when` and `$description`; a `$lookup` takes only `$when`, `$required`, `$assert` and
 `$description`; a `$coalesce` takes `$when`, `$required`, `$assert` and `$description` beside its list; a `$forEach`
@@ -495,8 +495,8 @@ Each message starts with the file. The loader refuses, when the mapping is read:
 | --- | --- |
 | A word mixed with properties | `record.data.Name holds '$from', words of the mapping language, beside the property 'Description'; a node's keys all start with '$'. ...` |
 | A misspelled word | `record.data.Name: '$form' is not a word of the mapping language. Did you mean '$from'? A property whose name starts with '$' is written $$form.` |
-| Two sources | `record.data.Description reads its value with $from and $expr; a node reads one of $from, $expr, $value, $cache, $search, $lookup or $coalesce.` |
-| No source | `record.data.Description reads no value: a node reads one with $from, $expr, $value, $cache, $search, $lookup or $coalesce, or repeats the rows of a child dataset with $forEach, and takes its settings ($when) beside it.` |
+| Two sources | `record.data.Description reads its value with $from and $expr; a node reads one of $from, $expr, $value, $cache, $search, $lookup, $parent, $child, $base, $link or $coalesce.` |
+| No source | `record.data.Description reads no value: a node reads one with $from, $expr, $value, $cache, $search, $lookup, $parent, $child, $base, $link or $coalesce, or repeats the rows of a child dataset with $forEach, and takes its settings ($when) beside it.` |
 | A property with no value | `record.data.Description has no value; give it one, or remove it.` |
 | An empty object | `record.data.VerticalMeasurement is an empty object; name the properties it holds, or write { $value: {} } for an empty object.` |
 | `$required: yes` | `record.data.LogRun: $required is true or false.` |

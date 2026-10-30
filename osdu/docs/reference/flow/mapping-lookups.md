@@ -225,7 +225,7 @@ record:
 | `$description` | Free text. |
 
 `$lookup: <name>.<field>` reads a field of the found record, or its `id` in the reference form, anywhere in the tree,
-inside a `$forEach` item included. It takes only `$when`, `$required` and `$description` beside it; how the record is
+inside a `$forEach` item included. It takes only `$when`, `$required`, `$assert` and `$description` beside it; how the record is
 found is the lookup's to say, so `$findBy`, `$findAll`, `$modifiers` and `$ignoreSeparators` on the node are refused
 (`... a $lookup node reads the record its lookup finds; write $findBy on the lookup under lookups.`). A `$lookup` node
 renders exactly as the `$cache` node it stands for, with the same holds and dependencies. Every lookup must be read by a

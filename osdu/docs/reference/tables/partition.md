@@ -60,6 +60,8 @@ partition deletes nothing kept under it.
 
 ## Written and read by
 
-- **Written** by the control plane's start from its configuration (`ConfiguredPartitions.cs`), by `sqlflow partition` and
-  `POST /api/v1/delivery/partitions` (`DeliveryPartitionRegistry.cs`, `DeliveryPartitionEndpoints.cs`).
+- **Written** by the control plane's start from its configuration (`ConfiguredPartitions.cs`), by `sqlflow partition`, and
+  by the Partitions page through the partition API (`POST /api/v1/delivery/partitions`, `PUT` and `DELETE
+  /api/v1/delivery/partitions/{name}`, `POST /api/v1/delivery/partitions/{name}/default`) (`DeliveryPartitionRegistry.cs`,
+  `DeliveryPartitionEndpoints.cs`).
 - **Read** by every run that resolves its partition, the repository sync, the Partitions page and the partition API.

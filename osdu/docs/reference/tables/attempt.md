@@ -28,6 +28,7 @@ sourceRefs:
   - osdu/src/SqlFlow.Delivery/Ledger/SqlServerLedgerBulk.cs
   - osdu/src/SqlFlow.Delivery/Ledger/SqlServerLedgerBulk.Purges.cs
   - osdu/src/SqlFlow.Delivery.Data/Migrations/20260928064320_LedgerPartitions.cs
+  - osdu/src/SqlFlow.Delivery/Ledger/RecordEnrichments.cs
 ---
 
 # osdu.Attempt: every try of a record, and every decision written as one, append-only
@@ -85,8 +86,9 @@ the server has it (SQL Server 2019 and later, Azure SQL), since every drain appe
 - **Written** by the lease applying a worker's completions, by the intake for the decisions a plan makes, by syncs,
   removals, restores, reversals and undos, always in the transaction that changes the record it explains
   (`OsduLedger.cs`, `SqlServerLedgerBulk.cs`).
-- **Read** by a record's Timeline, `sqlflow records show --attempts`, the delivery API's `/attempts` route, a
-  submission's counts when it closes, a run's record listing, a reversal (what OSDU held before), and the Maintenance page's count and cleanup of the
+- **Read** by a record's Timeline, `sqlflow records show --attempts`, the delivery API's `/attempts` route, a record's
+  Enrichments tab, `sqlflow records enrichments` and the `/enrichments` route (every write made of a record an enrichment
+  added, from the record's newest 1,000 attempts), a submission's counts when it closes, a run's record listing, a reversal (what OSDU held before), and the Maintenance page's count and cleanup of the
   delivery attempts (`OsduLedger.CountPrunableAttemptsAsync`, `PruneAttemptsAsync`).
 - **Rewritten** by a ledger move (`OsduLedger.Moves.cs`), which puts the rows of an old ledger under the
   identity of the flow that replaced it or took it over, a slice at a time ([Renaming a pipeline](../concepts/renaming-a-pipeline.md)).

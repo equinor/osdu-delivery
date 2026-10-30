@@ -16,6 +16,8 @@ keywords:
   - parquet chunk
   - maxchunkcolumns
   - maxchunkvalues
+  - sessiondatapath
+  - sessioncommitpath
   - ddms registration
   - wellboreddmsv3
 yamlPath: "target.ddms"
@@ -85,6 +87,19 @@ A flow that names its own paths (`recordPath`, `dataPath`, `sessionPath` and the
 Wellbore DDMS) has them used as written, and the collection serving its records' entity type supplies the paths it leaves
 out. Paths of its own are refused for records that go to a DDMS of any other shape, which says every call it takes.
 
+| `target.protocolOptions` key | The call | Default on a Wellbore DDMS collection |
+| --- | --- | --- |
+| `recordPath` | The record write. Naming it makes the flow's paths its own: a type no DDMS the flow reaches serves then needs every path below it uses. | `{collection}` (`{root}/ddms/v3/welllogs`) |
+| `verifyPath`, `deletePath` | Reads one record back; removes it at the reversible scope. | `{collection}/{id}` |
+| `dataPath` | The bulk data in one request (and, with `describe=true`, its description). | `{collection}/{id}/data` |
+| `sessionPath` | Opens a bulk session, and lists a record's sessions for an undo. | `{collection}/{id}/sessions` |
+| `sessionDataPath` | Sends one chunk of a session; `{sessionId}` is the session. | `{collection}/{id}/sessions/{sessionId}/data` |
+| `sessionCommitPath` | Commits or abandons a session (`PATCH`), and reads its state (`GET`). | `{collection}/{id}/sessions/{sessionId}` |
+
+A record with bulk data whose type no DDMS the flow reaches serves, under paths of the flow's own, is refused naming the
+bulk paths it leaves out: `... so there is nowhere to send its bulk data. Name dataPath, sessionPath, sessionDataPath,
+sessionCommitPath under target.protocolOptions as well.`
+
 ## The endpoint: the platform root, or the DDMS itself
 
 Normally `target.endpoint` is the OSDU platform root and each DDMS sits under it: `ddmsRoot` for the Wellbore DDMS, or
@@ -111,7 +126,9 @@ target:
 
 Without `legalValidatePath` its runs log that the legal tags were not checked; without the purge paths its `history`
 scope, and the `everything` scope of a records-only collection, are refused. A reversal cannot write its records back,
-since the storage service that keeps their versions is not under the endpoint.
+since the storage service that keeps their versions is not under the endpoint. Nor can such a flow pin a mapping whose
+[enrichments](enrich.md) add records of their own: those go through the platform's Dataset and storage services, so the
+flow is refused until its endpoint is the platform and `ddmsRoot` names the DDMS under it.
 
 ## target.ddms
 

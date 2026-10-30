@@ -37,7 +37,8 @@ a run of the inventory flow, and a removal may take its ids
 
 The control plane opens a selection `queued`; the `match` run starts it against the inventory's last build, adds to its
 counts with every page and closes it `completed` or `failed`; a read of it closes one whose run ended without finishing
-it; and the next match of the partition retires those older than a week.
+it; and the next match of the partition, or the next selection made of a duplicate check's picks, retires those older
+than a week: each is deleted with its ids, or kept `expired` without them when a removal took its ids.
 
 ## Columns
 

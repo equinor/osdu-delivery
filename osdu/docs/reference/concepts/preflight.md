@@ -119,7 +119,7 @@ the flow's parameters. Resolving the render inputs first refuses a missing input
 | The template the mapping fills | `flows/welldb-welllog-03-header-delivery.yaml: mapping WellLog@1.4.0 cannot render: no template folder on the path of mappings/WellLog@1.4.0.yaml holds template osdu:wks:work-product-component--WellLog:1.4.0 version 26a3c3441882db4f. ...`, the rest saying which folders it read and how to put the file in one ([template folders](templates.md#template-folders)) |
 | A cache for a mapping that reads one | `mapping WellLog@1.0.0 reads the cache of partition 'dev', which holds no version yet. Refresh a cache flow that builds it (...) to capture one.` |
 | A pinned cache version | `render.cacheVersion pins version <v> of the cache of partition 'dev', which the catalog does not hold.` |
-| The module's database, for a mapping that reads the cache | `... reads the cache of partition 'dev', and caches live in the module's database, which this host was started without. ...` |
+| The module's database, for a mapping that reads the cache | `The osdu schema is read through the catalog's connection, which did not resolve: Environment variable 'SQLFLOW_CATALOG_DB' is not set. Give the command the catalog's connection with --db <conn-ref>, or set SQLFLOW_CATALOG_DB.`, from a command given no `--db` and no `SQLFLOW_CATALOG_DB` |
 
 Then the gate checks, collecting every finding:
 
@@ -167,6 +167,10 @@ Then the gate checks, collecting every finding:
     whose condition suits it:
     `<file>: record.data.SamplingStart.$assert[0]: 'data.SamplingStart' is a number in osdu:wks:work-product-component--WellLog:1.4.0 (template 26a3c3441882db4f); matches compares text.`
     See [mapping assertions](../flow/mapping-assertions.md#the-preflight).
+13. **Enrichments.** For a mapping with `enrich:`, each enrichment mapping is judged against the template it fills as the
+    mapping is, and the chain as a whole: what each enrichment writes and reads, the datasets, files and workflows the
+    flow binds, and that `render.parameters` supplies no value no mapping of the chain declares
+    ([enrichments](../flow/enrich.md#what-the-preflight-checks)).
 
 When the tables are open a run also checks the flow against them: `source.record.key` names the mapping's `dataset.key`
 columns in the same order, the scope, `lastModified` and payload columns exist, and the mapping writes nothing under a

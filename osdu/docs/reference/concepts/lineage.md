@@ -42,6 +42,7 @@ sourceRefs:
   - osdu/src/SqlFlow.Delivery/Documents/DimensionLineage.cs
   - osdu/src/SqlFlow.Delivery/Documents/InventoryFlowKind.cs
   - osdu/src/SqlFlow.Delivery/Documents/RemovalFlowKind.cs
+  - osdu/src/SqlFlow.Delivery/Documents/DownloadFlowKind.cs
   - osdu/src/SqlFlow.Delivery/Documents/DeliveryFlowKind.cs
   - osdu/src/SqlFlow.Delivery/Model/SourceDefinition.cs
   - osdu/src/SqlFlow.Delivery/Model/FlowDefinition.cs
@@ -96,7 +97,9 @@ A few rules follow from the identity:
 - **A flow's partitions multiply its nodes.** A flow that lists `partitions: [dev, test]` contributes its nodes in each
   partition, so the same mapping pinned for both is two mapping nodes, each reading its own partition's cache. A flow that
   leaves its partitions to the registry (no `partitions` and no `data-partition-id` header) is described once, under the
-  partition `*`. A flow whose `data-partition-id` header cannot name a partition gets a warning instead of OSDU nodes.
+  partition `*`; since it reads every registered partition, each OSDU type it reads is also read in every partition the
+  repository's delivery flows name, so it runs after the flows delivering that type there. A flow whose
+  `data-partition-id` header cannot name a partition gets a warning instead of OSDU nodes.
 
 ## What each kind reads and writes
 
@@ -104,12 +107,12 @@ A few rules follow from the identity:
 | --- | --- | --- |
 | File flow (SQLFlow) | Its source files, at their repository-relative location | Its `pre` table and typed view |
 | `ing` (SQLFlow) | The typed view | Its keyed ingestion table |
-| `delivery` | Its record table and every `source.datasets` table, on the server `source.connection` names; the payload files under the root of each payload set its route sends; the mapping it pins, as a node of its own | The OSDU type its mapping fills (`template.kind`); for the routes that register datasets (`file`, `manifest`, `dataset`, `fileAndDdms`, `manifestAndDdms`, and `workflow` when it writes the record to storage with files) also `protocolOptions.datasetKind`; for the workflow route each input's dataset kind; every cache type of its partition its `cache` steps name, and the kinds its before step searches as reads |
+| `delivery` | Its record table and every `source.datasets` table, on the server `source.connection` names; the payload files under the root of each payload set its route sends, and the files under the root of each `source.datasets` entry's `files`; the mapping it pins, as a node of its own, and each enrichment mapping its mapping's [`enrich:`](../flow/enrich.md) renders, as a mapping node of its own reading what it reads | The OSDU type its mapping fills (`template.kind`), and the kind of the records each enrichment adds; for the routes that register datasets (`file`, `manifest`, `dataset`, `fileAndDdms`, `manifestAndDdms`, and `workflow` when it writes the record to storage with files) also `protocolOptions.datasetKind`; for the workflow route each input's dataset kind; every cache type of its partition its `cache` steps name, and the kinds its before step searches as reads |
 | Mapping (a node read by the flow, not a flow) | Every cache type it names; every cache type of the partition holding records of an entity type its ids are checked against; every kind its searches look in | Nothing: the flow reading it writes the OSDU type |
 | `cache` | Each OSDU type's kind (wildcards allowed); each table type's ingestion table, on `source.connection`; each dictionary type's file; each dimension type's dimension | Each declared type, as a cache type of its partition |
 | `retrieval` | Each of `source.kinds` (wildcards allowed) | The record files (`part-*.jsonl`, `.gz` when compressed) and the manifest under `target.location`, as a file drop |
-| `assertion` | Each test's kind, one type in one version, in every partition the flow tests | Nothing: its reports stay in the module database |
-| `dimension` | Each dimension's kind (wildcards allowed); the dictionary file each cleaning `map` step names | Each dimension, as a dimension node of its partition |
+| `assertion` | Each assertion's kind (a `tests:` entry), one type in one version, in every partition the flow checks | Nothing: its reports stay in the module database |
+| `dimension` | Each dimension's kind (wildcards allowed); the dictionary file each cleaning `map` step names | Each dimension, as a dimension node of its partition; with `target.connection`, each dimension's table (`osdu.dim_<dimension>`) and each view (`osdu.v_dim_<view>`) on that connection, so a pipeline reading them runs after it |
 | `inventory` | Each inventory's kind (wildcards allowed) | Nothing another flow reads |
 | `removal` | Each key source: a reader's files at their repository-relative location, a table on its connection; and the OSDU types each delivery flow it names writes | Nothing another flow reads: what it takes out is the delivery flow's records, in the delivery flow's ledger |
 | `download` | Each download's kind (wildcards allowed), in every partition the flow reads | The record files (`*.json`) in each download's folder under `target.location`, as a file drop |
@@ -217,7 +220,8 @@ writes (or what a flow rendering through a mapping writes) are never bound to it
 
 Reads and writes of OSDU types, cache types and dimensions order flows exactly as table reads and writes do:
 
-- A delivery flow runs after the `ing` flows writing its tables, after the cache flows writing what its mapping reads,
+- A delivery flow runs after the `ing` flows writing its tables, after the cache flows writing what its mapping (and
+  each of its enrichment mappings) reads,
   after the delivery flows writing the kinds its mapping searches or reads its records' parents from, and after the
   delivery flows writing the entity types
   its records refer to, however its mapping writes the reference ([the OSDU order](osdu-order.md)).
@@ -306,10 +310,12 @@ never costs other flows their lineage. The common ones:
 | `delivery flow '<flow>' shows no OSDU type in lineage: render.mappings '<dir>' lies outside the repository, so mapping '<ref>' is not read.` | Lineage reads only inside the checkout it scans. |
 | `<flow> shows no OSDU node in lineage: <why>` | The flow's `data-partition-id` header names no partition lineage can key its nodes by. |
 | `... shows fewer cache types in lineage than its mapping reads ...` | The template the mapping pins could not be read; see above. |
+| `delivery flow '<flow>' shows no enrichment of mapping '<ref>' in lineage: <why>` | The flow cannot be bound to the enrichments its mapping declares (an enrichment mapping that cannot be read, say); the flow keeps what its own mapping reads and writes. |
+| `delivery flow '<flow>' shows fewer reads in lineage than it makes: fragment '<ref>' of enrich.<name> could not be read (<reason>).` | That enrichment mapping is missing or invalid, so its node and what it reads are left out. |
 | `cache flow '<flow>': type '<type>' holds dictionary <name>, which was not found in a dictionaries/ directory above the flow, so its lineage leaves the file out.` | The dictionary file is not where a refresh would look for it. |
 | `retrieval flow '<flow>': target.location '<path>' is a relative path; a retrieval run resolves it against the working directory of the process running it, not the flow file, ...` | Use an absolute path or a storage URI, so the node is where the files land. |
 | `<flow> shows no OSDU type for <what>: '<kind>' is not an exact kind.` | A write needs an exact kind, version included. |
-| `delivery flow '<flow>' is not ordered by what its records refer to: mapping '<ref>' fills <kind>, whose template ...` | The OSDU order cannot read what the kind refers to; put the template's file in a template folder on the mapping's path, or build a release of OSDU's lineage holding the kind ([the OSDU order](osdu-order.md)). |
+| `delivery flow '<flow>' is not ordered by what its records refer to: mapping '<ref>' fills <template>, and without that template the OSDU order cannot tell which of the partition's deliveries it waits for. ...` | The OSDU order cannot read what the kind refers to; put the template's file in a template folder on the mapping's path, or build a release of OSDU's lineage holding the kind ([the OSDU order](osdu-order.md)). |
 | `delivery flow '<flow>' is not ordered against every delivery it refers to: ...` | Its type and another refer to each other in a circle the order leaves unordered ([cycles](osdu-order.md#cycles-and-how-they-are-cut)). |
 
 ## Known limits

@@ -61,6 +61,13 @@ public static class EnrichBinding
                 $"{where}: target.protocolOptions.payload names '{PayloadParts.Bulk}', and the flow declares no payload set of that name, nor does any enrichment of the mapping {mapping.Reference} name the record's bulk data (bulk: true); declare one, or remove target.protocolOptions.payload.");
         }
 
+        // The loader lets such a flow take the payload watermark from files' modified times, for the files of that bulk data.
+        if (flow.Change.PayloadDetect == ChangeDetection.LastModified && flow.Source.Payloads.Count == 0 && !mapping.Enrich.Any(e => e.Bulk))
+        {
+            throw new FlowValidationException(
+                $"{where}: {paths.Shared("change.payloadDetect")} is lastModified, and the flow declares no payload set, nor does any enrichment of the mapping {mapping.Reference} name the record's bulk data (bulk: true), so there are no payload files to take the watermark from.");
+        }
+
         if (mapping.Enrich.Count == 0)
         {
             return flow;
@@ -170,6 +177,13 @@ public static class EnrichBinding
                 Step = enrichment.Name,
                 ContentType = null,
             };
+
+            // The loader leaves this payload set to the binding, so the hash a plan compares is required here, as for the record's own.
+            if (bulk.HashColumn is null && flow.Change.PayloadDetect != ChangeDetection.LastModified)
+            {
+                throw new FlowValidationException(
+                    $"{at} names the record's bulk data by its row (bulk: true), and the flow decides payload changes by content hash, so {paths.Datasets}.{enrichment.Name}.files.hashColumn must name the column holding it; or take the files' modified times instead with {paths.Shared("change.payloadDetect")}: lastModified.");
+            }
         }
 
         if (rows?.Files is not null && records is not { RegistersFiles: true } && bulk is null)

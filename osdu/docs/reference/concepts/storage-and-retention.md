@@ -43,7 +43,8 @@ sourceRefs:
 
 # What the osdu schema stores, what is kept, and what may be removed
 
-OSDU Delivery's own data lives in the `osdu` schema of the catalog's database, and **Settings > Maintenance** describes
+OSDU Delivery's own data lives in the `osdu` schema of the catalog's database, and **Maintenance** (the menu's Operate
+group, under Health, `/settings/maintenance`) describes
 it beside SQLFlow's catalog: every table of the schema belongs to one storage area with a verdict (keep, safe to remove,
 optional), its size, and how its data leaves the database. The page itself, the verdicts, limits, previews, cleanups and
 the API are SQLFlow's ([Maintenance](../../../../sqlflow/docs/reference/concepts/maintenance.md)); this page says what

@@ -21,7 +21,7 @@ namespace SqlFlow.Delivery.ControlPlane.Background;
 /// rows of a repository the catalog holds no delivery pipeline of any more become inactive, as a sync leaves an interface
 /// its repository stops declaring, so nothing waits on a flow no repository declares. A repository the read model
 /// describes completely is its sync's to keep current. The flows of the other kinds that keep a ledger (retrieval,
-/// assertion, dimension, inventory; <see cref="LedgerFlowCatalog"/>) of a repository the read model holds none of are
+/// assertion, dimension, inventory, download; <see cref="LedgerFlowCatalog"/>) of a repository the read model holds none of are
 /// described the same way, so the ledgers they keep are not taken for orphans before the repository's next sync. A pass
 /// that fails (the module database not migrated yet, a lost connection) is tried again until one completes.
 /// </summary>

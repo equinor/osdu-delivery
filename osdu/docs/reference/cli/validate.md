@@ -2,7 +2,7 @@
 id: delivery-cli-validate
 title: "sqlflow validate for OSDU documents: what each delivery, cache, mapping and other document checks offline"
 type: cli-command
-summary: "What sqlflow validate checks in each of the eight documents OSDU Delivery adds, offline and with no database, and what it leaves to sqlflow check and the run."
+summary: "What sqlflow validate checks in each document OSDU Delivery adds, its flows, mapping, dictionary and repository document, offline, and what it leaves to check."
 keywords:
   - validate
   - offline validation
@@ -44,15 +44,22 @@ sourceRefs:
   - osdu/src/SqlFlow.Delivery/Documents/AssertionFlowKind.cs
   - osdu/src/SqlFlow.Delivery/Documents/DimensionFlowKind.cs
   - osdu/src/SqlFlow.Delivery/Documents/InventoryFlowKind.cs
+  - osdu/src/SqlFlow.Delivery/Documents/RemovalFlowKind.cs
+  - osdu/src/SqlFlow.Delivery/Documents/DownloadFlowKind.cs
   - osdu/src/SqlFlow.Delivery/Documents/DictionaryDocumentKind.cs
+  - osdu/src/SqlFlow.Delivery/Documents/CompanionFiles.cs
+  - osdu/src/SqlFlow.Delivery/Documents/EnrichBinding.cs
   - osdu/src/SqlFlow.Delivery/Documents/MappingMapper.cs
   - osdu/src/SqlFlow.Delivery/Documents/MappingMapper.Record.cs
+  - osdu/src/SqlFlow.Delivery/Documents/MappingMapper.Enrich.cs
   - osdu/src/SqlFlow.Delivery/Documents/CacheDocumentMapper.cs
   - osdu/src/SqlFlow.Delivery/Documents/DictionaryMapper.cs
   - osdu/src/SqlFlow.Delivery/Documents/RetrievalDocumentMapper.cs
   - osdu/src/SqlFlow.Delivery/Documents/AssertionDocumentMapper.cs
   - osdu/src/SqlFlow.Delivery/Documents/DimensionDocumentMapper.cs
   - osdu/src/SqlFlow.Delivery/Documents/InventoryDocumentMapper.cs
+  - osdu/src/SqlFlow.Delivery/Documents/RemovalDocumentMapper.cs
+  - osdu/src/SqlFlow.Delivery/Documents/DownloadDocumentMapper.cs
   - osdu/src/SqlFlow.Delivery/Model/DeclaredPartition.cs
   - osdu/src/SqlFlow.Delivery/Model/FlowDefinition.cs
   - osdu/docs/census/README.md
@@ -84,6 +91,8 @@ is [`sqlflow check`](check.md); what needs OSDU or the ingestion tables is the r
 | Assertion flow | `flowType: assertion` | `OK  '<name>' is valid (assertion: <source.endpoint> -> report).` |
 | Dimension flow | `flowType: dimension` | `OK  '<name>' is valid (dimension: <source.endpoint> -> dimensions).` |
 | Inventory flow | `flowType: inventory` | `OK  '<name>' is valid (inventory: <source.endpoint> -> inventories).` |
+| Removal flow | `flowType: removal` | `OK  '<name>' is valid (removal: <key sources> -> <delivery flows>).` |
+| Download flow | `flowType: download` | `OK  '<name>' is valid (download: <source.endpoint> -> <target.location>).` |
 | Mapping | `documentType: mapping` | `OK  '<Name>@<version> -> <template.kind>' is valid (mapping).` |
 | Dictionary | `documentType: dictionary` | `OK  '<name> (<n> entries, key <key>)' is valid (dictionary).` |
 | Repository document | `documentType: repository` | `OK  '<code>' is valid (repository).` |
@@ -145,7 +154,7 @@ In the folder mode each document is one line, and `--json` reports each document
   ERROR  <file>: source.connection carries a literal password. A flow document holds references only: put the connection string, or its password, behind ${keyvault:vault/secret} or ${env:NAME}, or connect with Azure AD (Authentication=Active Directory Default).
   ```
 
-- **Locations.** A file location (a delivery flow's payload `root`s, a retrieval flow's `target.location`) holds no
+- **Locations.** A file location (a delivery flow's payload `root`s, a retrieval or download flow's `target.location`) holds no
   `${...}` reference: it is substituted from the run's parameters and read as written.
   `<file>: source.payloads.las.root '<location>' holds a ${...} reference, and a location is not resolved from one: write the path or storage URI itself, and vary it per run or environment with a {parameter} token declared under parameters.`
   A delivery flow's `source.work` may open with one (`${env:LANDING_URL}/.work/welllog/{logSource}`), which the run
@@ -184,6 +193,12 @@ In the folder mode each document is one line, and `--json` reports each document
   In the interface form the key is the interface's: `interfaces.<name>.mapping: Mapping ...`. Only `validate` refuses a
   flow for this; parsing alone (the estate scan, the repository sync, a node) keeps the flow and reports the missing
   mapping in its own terms.
+- The enrichment mappings the pinned mapping's `enrich:` names are found and read the same way, and the flow is bound to
+  its mapping's enrichments: a `workflows.<name>` or a `source.datasets.<name>.files` that no enrichment of the mapping
+  reads is refused, and so is an enrichment on the `dspdm` or `etp` route ([Enrichments](../flow/enrich.md)).
+- What is added to each record is the mapping's to say, so a flow that still declares `enrich:` (or an interface's
+  `enrich`) is refused, saying where each part goes:
+  `<file>: enrich declares what is added to each record, which the mapping says now: move each enrichment to the enrich: block of render.mapping's mapping, with its rows, mapping, key, after and onHold; bind its rows here under source.datasets.<name> (their files under source.datasets.<name>.files), and its workflow under workflows.<name>.`
 
 Waits that come from the relationships a mapping fills, which need the templates, are worked out by `check`.
 
@@ -208,6 +223,10 @@ Waits that come from the relationships a mapping fills, which need the templates
   the schema of the kind it searches; a declared search or lookup that nothing reads is refused.
 - `acl.owners`, `acl.viewers`, `legal.legaltags` and `legal.otherRelevantDataCountries` are literal lists of at least
   one text value.
+- An `enrich:` block names each enrichment once (letters, digits and `_`), and each pins its enrichment `mapping` as
+  `Name@version` or declares `bulk: true`; `rows` is `one` or `many`, `onHold` is `record` or `step`, `key` only with
+  `rows: many`, and `after:` names other enrichments of the mapping without any two waiting for each other. A `$link`
+  names an enrichment the mapping declares ([Enrichments](../flow/enrich.md)).
 - A mapping holds no `fixtures` block: `a mapping holds no fixtures; delete its fixtures block. ...`
 
 The mapping's vocabulary is on [The mapping document](../flow/mapping.md) and the pages it links.
@@ -298,6 +317,30 @@ hold when the tests run, or with
 - A `removal` block names the findings an operator may remove, of `orphan`, `stale` and `forgotten` only:
   `removal.findings[0] is 'missing'; the ids an inventory may remove are those of orphan, stale, forgotten: what OSDU serves that no ledger holds live. ...`
 
+## Removal flow
+
+- `name` and 1 to 50 `removals` are required. Each removal names the delivery `flow` whose records it takes out (and its
+  `interface` for a source of several), is named once in the flow (ignoring case; left out, the name is the delivery
+  flow's, with its interface), and reads `keys` (the
+  keys the source holds now), `removed` (the keys it lists as removed), or both:
+  `<file>: removals[0] declares neither keys (the keys the source holds now) nor removed (the keys it lists as removed); a removal reads at least one.`
+- A key source is a SQLFlow source reader (`type`, `location`, `options`) or a table or view of a source database
+  (`connection`, `object`, `filter`), not both. A `connection` is a `${keyvault:vault/secret}` or `${env:NAME}`
+  reference, a `filter` carries its own leading `AND`, and a table of removed keys names its `removedAt` column. A reader
+  of `keys` takes no date window option, since every key outside the window would look removed.
+- `guard.maxPercent` is 0 to 100 and `guard.maxRecords` 0 or more. `partition` is the run's: neither a declared
+  parameter nor a value a removal gives its delivery flow ([Removal flow](../flow/removal.md)).
+
+## Download flow
+
+- `name`, `source.endpoint`, `target.location` and 1 to 100 `downloads` are required; each has a `kind` (wildcards
+  allowed per segment) and a name no other download has, which names its folder and so has to be one Windows can make.
+- `target.location` is an absolute path or a storage URI, holds no `${...}` reference (see Locations above), and takes
+  `{partition}` and declared parameters only: a run token is refused, since every run writes to the same folder.
+  `<file>: target.location '<location>' is a relative path, and a run reads its flow from a checkout of its own, so the files would land inside that checkout. Write an absolute path or a storage URI (abfss://... or https://<account>.blob.core.windows.net/...).`
+- `source.read` is `search` or `storage`; a `query` is refused on a storage read, and its `{token}`s are `{partition}`
+  or declared parameters. `partition` is not a declared parameter ([Download flow](../flow/download.md)).
+
 ## Examples
 
 Validate the delivery flow and the mapping it pins:
@@ -358,5 +401,6 @@ SQLFlow's: 0 when the document (or every document of the folder) is valid, 1 oth
 - [sqlflow check](check.md): the mapping against the template its template folders hold and the cache, which needs the module database.
 - [The documents OSDU Delivery adds](../flow/overview.md): the eight flow kinds, the mapping, the dictionary and the repository document.
 - [Delivery flow](../flow/delivery.md), [The mapping document](../flow/mapping.md), [Cache flow](../flow/cache.md),
-  [Dictionary](../flow/dictionary.md): every key each document takes.
+  [Dictionary](../flow/dictionary.md), [Removal flow](../flow/removal.md), [Download flow](../flow/download.md): every key
+  each document takes.
 - [CLI conventions](../../../../sqlflow/docs/reference/concepts/cli-conventions.md): options, streams and exit codes shared by every command.

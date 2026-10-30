@@ -212,10 +212,10 @@ public sealed class DevSetupWizardTests : IDisposable
         Assert.Equal(folder, _scope.ReadEnv()["ControlPlane__Bootstrap__Repositories__my_flows__LocalPath"]);
 
         File.Delete(_scope.Checkout.EnvFile);
-        _scope.Sql.Catalogs["OsduDelivery"] = _scope.Sql.Catalogs["OsduDelivery"] with { Repositories = [new RepositoryFact("recall", string.Empty, folder, "main", true, string.Empty)] };
+        _scope.Sql.Catalogs["OsduDelivery"] = _scope.Sql.Catalogs["OsduDelivery"] with { Repositories = [new RepositoryFact("welldb", string.Empty, folder, "main", true, string.Empty)] };
         var (sameWritten, same) = await RunAsync(DevPlatform.Windows, ["", "", "", "", "", "n", folder, "", "", ""]);
         Assert.True(sameWritten);
-        Assert.Contains("registers it already, as recall", same.Transcript, StringComparison.Ordinal);
+        Assert.Contains("registers it already, as welldb", same.Transcript, StringComparison.Ordinal);
         Assert.DoesNotContain(_scope.ReadEnv().Keys, k => k.StartsWith("ControlPlane__Bootstrap__Repositories__", StringComparison.Ordinal));
 
         File.Delete(_scope.Checkout.EnvFile);

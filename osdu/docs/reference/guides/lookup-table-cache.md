@@ -316,7 +316,7 @@ each other; `sqlflow lineage` shows whether they are.
 - **The run's result** lists the type with its origin `table`, its row count and `change` (`added` on the first
   refresh).
 - **`sqlflow cache list dev`** prints the new version, `types moved: UnitAlias (added)` under it.
-- **The Cache page** (OSDU, Build, Cache, with `dev` picked in the title bar): the Records tab lists `UnitAlias` among
+- **The Cache page** (Build, Delivery, Cache, with `dev` picked in the title bar): the Records tab lists `UnitAlias` among
   the types, its rows with `source_unit` and `osdu_unit`, and, on a row, how a mapping reads it. The Setup tab shows the
   cache flow and the table it declares.
 - **`sqlflow check`** on the delivery flow checks the mapping against the current cache version. A table the cache does

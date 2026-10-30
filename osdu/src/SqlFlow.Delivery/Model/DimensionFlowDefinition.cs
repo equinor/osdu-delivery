@@ -72,8 +72,8 @@ public sealed record DimensionFlowDefinition
     public RunParallelism Parallelism { get; init; } = new();
 
     /// <summary>
-    /// How a build loads the flow's dimensions after their first full load (osdu/docs/reference/flow/dimension-incremental.md, Full
-    /// and incremental loads): null for a flow that loads every dimension in full on every build.
+    /// How a build loads the flow's dimensions after their first full load (osdu/docs/reference/flow/dimension-incremental.md):
+    /// null for a flow that loads every dimension in full on every build.
     /// </summary>
     public DimensionIncremental? Incremental { get; init; }
 

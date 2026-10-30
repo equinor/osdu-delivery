@@ -91,7 +91,8 @@ refuses to take them until the conditions are matched again. The same conditions
 the same build answer with the match already made of them (200); `refresh` reads OSDU again (202). Each id of a selection
 is counted under the finding the inventory gives it now, so its counts follow a reconcile or a removal.
 
-A selection is kept a week. The next match of the partition retires those older: deleted whole, or, when a removal took
+A selection is kept a week. The next selection opened in the partition (by conditions, or of a duplicate check's picks)
+retires those older: deleted whole, or, when a removal took
 their ids, kept `expired` with their ids deleted, so the removal still says what it removed by.
 
 ## Removing what a selection holds

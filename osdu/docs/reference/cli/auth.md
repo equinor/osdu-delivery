@@ -28,6 +28,7 @@ sourceRefs:
   - osdu/src/SqlFlow.Delivery/Storage/FileStore.cs
   - osdu/src/SqlFlow.Delivery/Engine/DeliveryServices.cs
   - osdu/src/SqlFlow.Delivery/Engine/Retrieval/RetrievalRunner.cs
+  - osdu/src/SqlFlow.Delivery/Engine/Downloads/DownloadRunner.cs
   - sqlflow/src/SqlFlow.Core/Secrets/SuppliedReferences.cs
   - osdu/src/SqlFlow.Delivery/Model/FlowDefinition.cs
   - osdu/src/SqlFlow.Delivery/Hosting/OsduModuleDatabase.cs
@@ -57,7 +58,7 @@ sqlflow auth [--scope storage|keyvault|arm|<uri>]
 | Resolving a `${keyvault:vault/secret}` reference anywhere OSDU Delivery reads one: a flow's `target.auth` secrets, its source connection, a central configuration value that is itself a reference, and the telemetry header and connection references. | The process that resolves it: a node for a run, the control plane for what it runs while a person waits. | `keyvault` |
 | Reading the payload files a record points at (`source.payloads`, an interface's `files` and `bulk`). | The process running the flow: a node, or the CLI for a local `sqlflow run`. | `storage` |
 | Writing and reading a run's work batches (`source.work`). | The process running the flow. | `storage` |
-| Writing a retrieval flow's output (`target.location`). | The process running the flow. | `storage` |
+| Writing a retrieval or download flow's output (`target.location`). | The process running the flow. | `storage` |
 
 The storage paths use the credential for a location on Azure Storage: an `abfss://`, `abfs://`, `wasbs://` or `wasb://`
 URI, or an `https://` URL whose host is a blob or dfs endpoint (`<account>.blob.core.windows.net`,

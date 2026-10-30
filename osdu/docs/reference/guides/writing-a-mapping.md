@@ -120,8 +120,9 @@ partition's cache to prefill and check. Then, under Setup:
    repository.
 3. Under **Dataset**, add the key columns, choose how the OSDU id is made, and write the label.
 4. Every template variable is listed. Open one to choose its input (Dataset column, Repeat child rows, Cache, Lookup,
-   Platform search, Static value, Expression, First value of, List of values or List of objects), with its modifiers,
-   condition and required flag. A variable pointing to a type the cache holds offers **Use cache**. Lookups have a card
+   Platform search, Static value, Expression, First value of, List of values or List of objects, and Parent record or
+   Child record when the template is linked to a canonical kind or has linked children), with its modifiers, condition
+   and required flag. A variable pointing to a type the cache holds offers **Use cache**. Lookups have a card
    of their own.
 5. The right side shows the check (`loads and passes`, or the errors and warnings, each opening the variable it is
    about) and the YAML, checked again as you edit. **Copy YAML**, or, once the check finds no error, **Propose to

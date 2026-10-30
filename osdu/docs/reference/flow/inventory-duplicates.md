@@ -247,8 +247,8 @@ choice. **Edit the key** opens the record to pick other properties, **Download a
 lists the inventory's checks. The status line says how far a download or a pick got and its run, or what the check found
 (the whole of it behind the mark): its groups and ids, by size, a size too broad to pick from marked; the groups to pick;
 those for review; its notes. **Pick the copies to keep** asks for a pick, its storage requests and searches said on hover;
-**Pick the rest** continues one that stopped. **Select the copies to remove** makes the selection and opens it on the Ids
-tab, where a removal takes it; **Download** writes every copy of every group as CSV.
+**Pick the rest** continues one that stopped. **Select the 37 copies to remove** (its count) makes the selection and opens
+it on the Ids tab, where a removal takes it (**Open selection 33** once it is made and no choice was written since); **Download** writes every copy of every group as CSV.
 
 The outcomes are tabs over the groups, those for review first once a pick has read them. Each group is a node of the grid:
 how it came out (why on hover), what its copies share, how many there are, the copy it keeps and who chose it. Under it,

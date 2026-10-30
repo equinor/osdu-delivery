@@ -1912,8 +1912,8 @@ public sealed class DeliveryMapping
 }
 
 /// <summary>
-/// One flow of a repository that keeps a ledger and is no delivery flow (a retrieval, assertion, dimension or inventory
-/// flow), as the repository sync found it (osdu/docs/reference/concepts/renaming-a-pipeline.md): the hash of its document,
+/// One flow of a repository that keeps a ledger and is no delivery flow (a retrieval, assertion, dimension, inventory or
+/// download flow), as the repository sync found it (osdu/docs/reference/concepts/renaming-a-pipeline.md): the hash of its document,
 /// by which the sync pairs a renamed flow with the one it replaced, and whether it keeps a ledger in each partition it works
 /// in, which says the ledger identity it keeps in a partition. A flow keeps its ledger under its name, so the ledgers of a
 /// flow are found by its kind and name in the directory (<see cref="DeliveryLedger"/>). The row of a flow the repository no
@@ -2479,7 +2479,7 @@ public sealed class DeliveryUpdateTag
     /// <summary>auto or approve, as the cache declared for this type when the tag was written.</summary>
     public string Mode { get; set; } = "approve";
 
-    /// <summary>pending, approved, rejected, rolling or applied.</summary>
+    /// <summary>pending, approved, rejected, rolling, delivering or applied.</summary>
     public string Status { get; set; } = "pending";
 
     /// <summary>The cache sets holding the changed value, comma separated; the records are found through them.</summary>
@@ -2885,7 +2885,7 @@ public sealed class DeliveryDimensionRun
 
     public long Originals { get; set; }
 
-    /// <summary>Originals under no member: cleaned to nothing, to a clean value too long, or dropped by a map.</summary>
+    /// <summary>Originals under no member: cleaned to nothing, to a clean value too long, dropped by a map, or failed by a step.</summary>
     public long LeftOut { get; set; }
 
     /// <summary>Originals no query can carry, which their members' filters leave out.</summary>
@@ -3473,7 +3473,7 @@ public sealed class DeliveryLedger
     /// <summary>The ledger identity every row of the ledger carries.</summary>
     public Guid FlowId { get; set; }
 
-    /// <summary>delivery, retrieval, assertion, dimension or inventory: the kind of flow whose ledger this is.</summary>
+    /// <summary>delivery, retrieval, assertion, dimension, inventory or download: the kind of flow whose ledger this is.</summary>
     public string Kind { get; set; } = string.Empty;
 
     /// <summary>The flow (for a source with interfaces, the source) the ledger belongs to.</summary>

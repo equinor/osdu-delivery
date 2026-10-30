@@ -27,6 +27,7 @@ sourceRefs:
   - osdu/src/SqlFlow.Delivery/Engine/Dimensions/DistinctValues.cs
   - osdu/src/SqlFlow.Delivery/Engine/Dimensions/DimensionFilters.cs
   - osdu/src/SqlFlow.Delivery/Ledger/DimensionStage.cs
+  - osdu/src/SqlFlow.Delivery/Documents/DimensionFlowKind.cs
 ---
 
 # Dimension builds: the operations a run takes, what a build does, and what a run returns
@@ -53,7 +54,10 @@ sqlflow run flows/welldb-welllog-05-dimensions.yaml --set partition=dev --operat
 ```
 
 Both operations read the templates from the template folders on the flow's path, and a build keeps the version of each
-it read. See [running an OSDU flow](../cli/run.md) for the run options.
+it read. A node runs them from a checkout of the flow's repository at the run's commit, never from a snapshot of the
+flow's one file, so the template folders and dictionaries are as they were at that commit
+([which kinds need the repository](overview.md#which-kinds-need-the-repository)). See
+[running an OSDU flow](../cli/run.md) for the run options.
 
 ## What a build does
 

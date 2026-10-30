@@ -38,7 +38,7 @@ related:
   - delivery-wiki-0013-inventory-flows
   - delivery-wiki-0014-inventory-removals
   - delivery-wiki-0002-client-supplied-ids
-updated: 2026-10-24
+updated: 2026-10-30
 ---
 # 0027: An inventory finds the records OSDU holds more than once, keeps the most complete copy, and removes the rest through a selection
 
@@ -137,7 +137,8 @@ of what was downloaded is flexible and live reads of OSDU come after it, for the
   check's notes, and ids the index does not hold are not checked.
 - Each download keeps a table in the module's database until a later download of the inventory completes, the download
   fails, or the sweep retires the check a week on; the module's user needs `CREATE TABLE` and `ALTER` on the schema. It is
-  the second kind of table no migration makes, beside a dimension's, and the project's instructions name both.
+  one of the tables no migration makes, beside a dimension's own and, since [0033](0033-dimension-builds-at-scale.md), a
+  dimension build's staging, and the project's instructions name each.
 - A check is a snapshot of the inventory's build: a later build makes it, and a selection made of it, stale, and both
   are refused for removal until the key is downloaded again.
 - A removal by a check's selection removes only the findings the flow's `removal.findings` allows, as any removal does;

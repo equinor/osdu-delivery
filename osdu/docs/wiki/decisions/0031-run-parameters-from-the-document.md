@@ -32,7 +32,7 @@ sourceRefs:
   - osdu/src/SqlFlow.Delivery/Engine/ScopeReads.cs
   - osdu/src/SqlFlow.Delivery.ControlPlane/Api/DeliveryRunParameterLookup.cs
   - osdu/tests/SqlFlow.Delivery.Tests/RunInputsTests.cs
-updated: 2026-10-26
+updated: 2026-10-30
 ---
 # 0031: A run shows and may change what its document declares, by one rule, and maxRecords is a default
 
@@ -63,7 +63,8 @@ replace the parallel ones; and that existing documents keep working as they do.
   value outside the choices. The run, the run form's check, a schedule's preview, the Preview tab, the data check and a
   mapping's parameters all take it, so what the form shows is what the run takes. The rule is SQLFlow's, since any
   module's kinds have parameters; the OSDU kinds only describe theirs (`KindRunInputs`).
-- **Every kind reads a declaration the same way.** The seven kinds convert `parameters` through one mapping
+- **Every kind reads a declaration the same way.** The seven kinds (eight since the download flow of
+  [0038](0038-download-flow.md)) convert `parameters` through one mapping
   (`FlowParameterDeclarations`), so `choices` and its checks are the same in each. A delivery flow alone names a
   `lookup`.
 - **A lookup reads a column of a record table the flow already reads, never a query.** `lookup.column` names a column of

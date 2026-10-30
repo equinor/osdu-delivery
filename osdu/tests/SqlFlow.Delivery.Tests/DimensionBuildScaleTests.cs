@@ -267,7 +267,7 @@ public sealed class DimensionBuildScaleTests : IDisposable
         dimensions:
           - name: WellLog
             kind: osdu:wks:work-product-component--WellLog:1.4.0
-            query: 'data.Name:("STAT_COMP" OR "STAT_CPI")'
+            query: 'data.Name:("COMPOSITE" OR "CPI")'
             path: id
             label: data.Name
             columns: { key: WellLogID, value: WellLogName }
@@ -292,7 +292,7 @@ public sealed class DimensionBuildScaleTests : IDisposable
             maxValues: 5000000
           - name: LogCurve
             kind: osdu:wks:work-product-component--WellLog:1.4.0
-            query: 'data.Name:("STAT_COMP" OR "STAT_CPI")'
+            query: 'data.Name:("COMPOSITE" OR "CPI")'
             path: id
             label: data.Name
             columns: { key: WellLogID, value: WellLogName }
@@ -320,7 +320,7 @@ public sealed class DimensionBuildScaleTests : IDisposable
             maxValues: 5000000
           - name: WellLogRecord
             kind: osdu:wks:work-product-component--WellLog:1.4.0
-            query: 'data.Name:("STAT_COMP" OR "STAT_CPI")'
+            query: 'data.Name:("COMPOSITE" OR "CPI")'
             path: id
             columns: { key: WellLogID, value: WellLogCode }
             attributes:
@@ -342,7 +342,7 @@ public sealed class DimensionBuildScaleTests : IDisposable
             maxValues: 5000000
           - name: WellLogAcl
             kind: osdu:wks:work-product-component--WellLog:1.4.0
-            query: 'data.Name:("STAT_COMP" OR "STAT_CPI")'
+            query: 'data.Name:("COMPOSITE" OR "CPI")'
             path: id
             columns: { key: WellLogID, value: WellLogCode }
             elements:
@@ -590,7 +590,7 @@ public sealed class DimensionBuildScaleTests : IDisposable
         """;
 
     /// <summary>
-    /// The curve estate: <paramref name="logs"/> STAT_COMP and STAT_CPI well logs of about ten curves each, on a sixth as many
+    /// The curve estate: <paramref name="logs"/> COMPOSITE and CPI well logs of about ten curves each, on a sixth as many
     /// wellbores among four and a half times as many SMDA wellbores, with their wells, fields, basins and countries, and the
     /// reference data the curves and logs name. A curve in a hundred names a unit the reference data does not hold, and a log
     /// in a thousand a wellbore SMDA does not, as the estate's do.
@@ -647,7 +647,7 @@ public sealed class DimensionBuildScaleTests : IDisposable
             var wellbore = i % 1_000 == 999 ? "NOT-IN-SMDA" : Guid(i % logWellbores, 6);
             var record = _platform.Add($"dev:work-product-component--WellLog:{Guid(i, 9)}", WellLog, new JsonObject
             {
-                ["Name"] = i % 3 == 0 ? "STAT_CPI" : "STAT_COMP",
+                ["Name"] = i % 3 == 0 ? "CPI" : "COMPOSITE",
                 ["WellboreID"] = $"dev:master-data--Wellbore:{wellbore}:",
                 ["LogVersion"] = "1",
                 ["Source"] = i % 2 == 0 ? "SMDA" : "WL",

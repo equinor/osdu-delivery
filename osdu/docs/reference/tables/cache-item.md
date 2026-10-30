@@ -40,7 +40,7 @@ The retention removes the closed ranges of versions it prunes ([Retention](../co
 | `ItemId` | `bigint` identity | no | The row's id. |
 | `Scope` | `nvarchar(200)` | no | The partition whose cache holds the record. |
 | `TypeName` | `nvarchar(200)` | no | The cached type's short name (`UnitOfMeasure`). |
-| `EntityType` | `nvarchar(200)` | no | The cached type's OSDU entity type, or `lookup--<Name>` for a table or dictionary type ([`osdu.CacheDefinition`](cache-definition.md)). |
+| `EntityType` | `nvarchar(200)` | no | The cached type's OSDU entity type, or `lookup--<Name>` for a table, dictionary or dimension type ([`osdu.CacheDefinition`](cache-definition.md)). |
 | `RecordId` | `nvarchar(512)` | no | Collation `Latin1_General_100_BIN2`. The OSDU record id, without a version. |
 | `FieldsJson` | `nvarchar(max)` | no | The captured values as JSON, in whatever shape the paths yielded, names in ordinal order. |
 | `Terms` | `nvarchar(max)` | no | Every scalar the item holds, newline separated: what a search over cached values matches on. |

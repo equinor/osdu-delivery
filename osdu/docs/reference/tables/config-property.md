@@ -21,6 +21,8 @@ sourceRefs:
   - osdu/src/SqlFlow.Delivery.Data/DeliveryEntities.cs
   - osdu/src/SqlFlow.Delivery/Catalog/DeliveryConfigStore.cs
   - osdu/src/SqlFlow.Delivery/Catalog/ConfiguredPartitions.cs
+  - osdu/src/SqlFlow.Delivery.ControlPlane/Background/CentralConfigurationReferences.cs
+  - osdu/src/SqlFlow.Delivery.ControlPlane/Background/ConfiguredRunDispatcher.cs
 ---
 
 # osdu.ConfigProperty: the central configuration the control plane supplies to the runs it queues
@@ -60,7 +62,8 @@ is carried in are ordinary catalog content, so a literal secret here is a defect
 
 ## Written and read by
 
-- **Written** by `sqlflow config set` and the control plane's start from its configuration (`DeliveryConfigStore.cs`,
-  `ConfiguredPartitions.cs`).
-- **Read** by the control plane, which supplies the values to every delivery, retrieval, cache, assertion, dimension and
-  inventory run it queues, and by `sqlflow config`.
+- **Written** by `sqlflow config set` and `remove`, `PUT` and `DELETE /api/v1/delivery/config/{name}`, and the control
+  plane's start from its configuration (`DeliveryConfigStore.cs`, `ConfiguredPartitions.cs`).
+- **Read** by the control plane, which supplies the values set for no partition to every run it queues, of every kind
+  (a pre-ingestion or ingestion flow's as much as a delivery's), and lays a partition's own values over them for the
+  module's kinds (`CentralConfigurationReferences.cs`, `ConfiguredRunDispatcher.cs`), and by `sqlflow config`.

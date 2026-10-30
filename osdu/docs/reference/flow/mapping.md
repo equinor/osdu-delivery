@@ -379,7 +379,7 @@ A property is one of these nodes ([mapping values](mapping-values.md) has each i
 | --- | --- | --- |
 | A literal | `ReferenceCurveID: MD`, `otherRelevantDataCountries: [US]` | The value as written. Its text reads a parameter as `{$param.<name>}` and nothing else. |
 | An object | `VerticalMeasurement:` and the properties it holds | Each property it holds, as that property's node writes it. |
-| A value node | `Name: { $from: log_name, $modifiers: [trim] }` | One value, read with `$from`, `$expr`, `$value`, `$cache`, `$search` or `$lookup`, and the settings beside it. |
+| A value node | `Name: { $from: log_name, $modifiers: [trim] }` | One value, read with `$from`, `$expr`, `$value`, `$cache`, `$search`, `$lookup`, `$parent`, `$child`, `$base` or `$link`, and the settings beside it. |
 | A `$coalesce` node | `Name: { $coalesce: [ { $from: log_name }, { $from: log_source } ] }` | The value of the first alternative that gives one. |
 | A `$forEach` node | `Curves: { $forEach: curves, $item: { CurveID: { $from: curve_id } } }` | An array with one item per row of a child dataset. |
 | A list of values | `viewers: ["{$param.aclViewer}", { $cache: ..., $findAll: ... }]` | What each item gives, in order. |
@@ -431,8 +431,9 @@ The engine starts from nothing, writes `id` and `kind` (the template's), then wr
 - **What is not written is left out.** A property the mapping does not write, a node whose `$when` does not hold, and an
   optional node with no value are left out, never written as null, as an empty text, a zero, `false` or `{}`. An object
   left with nothing in it is left out too.
-- **A list the mapping defines is written empty when it gives nothing** (`"Curves": []`), at any depth: a `$forEach`, a
-  list of values, a list of objects, or a node whose variable is a list. A list the mapping does not define is left out.
+- **A list the mapping defines is written empty when it gives nothing** (`"Curves": []`), at any depth: a `$forEach`
+  with `$required: false` (a required one, the default, holds the record), a list of values, a list of objects, or a node
+  whose variable is a list. A list the mapping does not define is left out.
 - **`meta` is always written.** A list of the record's own outside `data` (`meta` in OSDU's schemas) is a field Storage
   reads back as null when it is left out, so the record carries it empty (`"meta": []`) whenever nothing fills it.
 - **No null where the template takes none.** A null item is dropped from a list whose items take no null (a list read

@@ -36,7 +36,7 @@ migration creates it.
 
 | Column | Holds |
 | --- | --- |
-| `id` | The row's number: an identity, the clustered primary key, and what a table of facts joins on. It stays the same for as long as the dimension holds the row. |
+| `id` | The row's number: an identity, the primary key (nonclustered, see below), and what a table of facts joins on. It stays the same for as long as the dimension holds the row. |
 | `partition` | The partition the row was read in. A flow building in several partitions writes them all to this table. |
 | `key_id` | The key's number, the same in every row of the key. |
 | the key's column | The key exactly as the index holds it. |

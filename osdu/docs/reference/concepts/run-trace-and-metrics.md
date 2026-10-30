@@ -34,6 +34,7 @@ sourceRefs:
   - osdu/src/SqlFlow.Delivery/Engine/RunHttpTrace.cs
   - osdu/src/SqlFlow.Delivery/Engine/RunArtifacts.cs
   - osdu/src/SqlFlow.Delivery/Engine/RunLogLoggerFactory.cs
+  - osdu/src/SqlFlow.Delivery/Engine/RunCorrelation.cs
   - osdu/src/SqlFlow.Delivery/Engine/FlowRuntime.cs
   - osdu/src/SqlFlow.Delivery/Engine/DeliveryExecutor.cs
   - osdu/src/SqlFlow.Delivery/Engine/Worker/DeliveryWorker.cs
@@ -66,7 +67,7 @@ Each line is filed under the step that said it, which is what the engine was doi
 
 | Step | What it says |
 | --- | --- |
-| `run` | The run and who asked (`delivery flow '<name>': <operation> (parameters: ...) requested by <actor>, run <id>`); the render context (`Rendering with mapping <name@version> (template <version>) and <cache>; ids are minted in partition <partition>.`); the route (`<operation> by the <route> route`); whether the legal service accepts the mapping's legal tags; where each `${env:NAME}` the run resolves takes its value, once per reference when it is first resolved (stage `run.reference`: `Reference OSDU_URL takes its value from the configuration the control plane supplied with this run.`, `... from this node's environment.`, or `... from this node's environment: the supplied configuration hands it there.`), names and origins only, never a value; each interface of a source starting; recovered leases, fan-out members, undos; how the run ended. |
+| `run` | The run and who asked (`delivery flow '<name>': <operation> (parameters: ...) requested by <actor>, run <id>`); the correlation id every OSDU request of the run carries (`OSDU requests of this run carry correlation-id <value>, the repository's code from <file>`, [request correlation](request-correlation.md)); the render context (`Rendering with mapping <name@version> (template <version>) and <cache>; ids are minted in partition <partition>.`); the route (`<operation> by the <route> route`); whether the legal service accepts the mapping's legal tags; where each `${env:NAME}` the run resolves takes its value, once per reference when it is first resolved (stage `run.reference`: `Reference OSDU_URL takes its value from the configuration the control plane supplied with this run.`, `... from this node's environment.`, or `... from this node's environment: the supplied configuration hands it there.`), names and origins only, never a value; each interface of a source starting; recovered leases, fan-out members, undos; how the run ended. |
 | `source` | The ingestion table opened, the window fixed and the candidate records in it. |
 | `plan`, `intake` | The submission being planned, the preflight's warnings, records held with their reason, the submission's counts. |
 | `deliver` | Batches claimed and finished, and the progress line: `Delivering: <settled> of <planned> planned record(s) settled after <time> (<rate> a second): <n> delivered, <n> already in OSDU, <n> to try again, <n> held, <n> failed; working on <batch>.` |
@@ -91,7 +92,7 @@ run writes is bounded by these allowances:
 | 100 lines per step | Outside the described records, each step writes at most 100 lines of its own. |
 | 100 problems | The run names at most 100 warnings about records (held, failed, retried, drift). The run's own warnings (`run` step) take from that step's lines instead, so record problems never crowd them out. |
 | 50 retries | At most 50 retried calls are named. |
-| 100 references | Each `${env:NAME}` the run resolves is named once with where its value came from; past 100 the trace says so once (`This run resolves more than 100 references; the trace says where the ones named above take their values, and names no other.`). These lines do not take from the `run` step's 100. |
+| 100 references | Each `${env:NAME}` the run resolves is named once with where its value came from; past 100 the trace says so once (`More than 100 references were resolved; the rest are not named.`). These lines do not take from the `run` step's 100. |
 | Paced progress | Progress lines come every 15 seconds for the first two minutes, every minute up to an hour, then every five minutes, from run-level totals rather than per batch. |
 
 Errors are always written. When an allowance runs out the trace says so once, so it shows where its lines of that sort

@@ -16,7 +16,7 @@ referenceRefs:
 related:
   - delivery-wiki-0003-rendering-location
   - delivery-wiki-0018-template-folders
-updated: 2026-10-21
+updated: 2026-10-30
 ---
 # 0009: References to business data are searched for, not cached
 
@@ -38,7 +38,8 @@ capture.
 ## Decision
 
 - A mapping declares a search (`searches:`) for a kind whose records it refers to by value, pinning the saved template
-  whose schema says how that kind is indexed. An entry reads `search.<name>.id`, found by `findBy` lines tried in order.
+  whose schema says how that kind is indexed. A property reads the id with `$search: <name>`, found by `$findBy` lines
+  tried in order.
 - A lookup asks the platform's search service for the one record whose property is exactly the value, one value at a
   time. Values are never batched into one query with the matching record picked out of the answer afterwards.
 - The query follows how the schema has the platform index the property: the `keyword` sub-field of text, the property

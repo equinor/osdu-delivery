@@ -62,7 +62,7 @@ through the search cursor) is in [the dimension flow](../flow/dimension.md).
 | `Unreadable` | `bigint` | no | Values the index holds that are not of the field's type. |
 | `Members` | `bigint` | no | The members the dimension held when the build closed. |
 | `Originals` | `bigint` | no | The originals the dimension held when the build closed. |
-| `LeftOut` | `bigint` | no | Originals under no member: cleaned to nothing, to a clean value too long, or dropped by a map. |
+| `LeftOut` | `bigint` | no | Originals under no member: cleaned to nothing, to a clean value too long, dropped by a map, or on which a clean step could not run. |
 | `Unfilterable` | `bigint` | no | Originals no query can carry, which their members' filters leave out. |
 | `MembersAdded` | `bigint` | no | Members the build found that the dimension did not hold. |
 | `MembersRemoved` | `bigint` | no | Members the build no longer found. |

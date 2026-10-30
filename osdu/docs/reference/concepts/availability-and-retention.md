@@ -124,7 +124,8 @@ is what keeps a delivered record reconstructible.
 ## Retention
 
 What may be removed from the `osdu` schema, and what never is, is set out area by area in
-[What the osdu schema stores](storage-and-retention.md), and done from **Settings > Maintenance**, the page SQLFlow
+[What the osdu schema stores](storage-and-retention.md), and done from **Maintenance** (the menu's Operate group, under
+Health, `/settings/maintenance`), the page SQLFlow
 keeps for the whole catalog database ([Maintenance](../../../../sqlflow/docs/reference/concepts/maintenance.md)). The
 rule is the product's: every delivered record stays reconstructible from the ledger alone. So the records, their
 submissions, their render context and every audit row are kept; work in progress and working sets clean themselves; and
@@ -182,7 +183,7 @@ never stored cut short where it would mislead:
 | Origin file name (`FileName_DW`) | 800 characters | A file name column wider than that is refused when the source is opened, naming `source.systemColumns.fileName`. |
 | OSDU id | 500 characters | A render that gives a longer id holds the record, naming the limit. |
 | Last error, attempt error | 2,000 characters | Stored to that length, redacted. |
-| Identity index | 24 values per record, each at most 200 characters; values under 3 characters are not stored | A record with more identifying values keeps the first. |
+| Identity index | 24 values per record, and 64 more for the records its enrichments add, each at most 200 characters; values under 3 characters are not stored | A record with more identifying values keeps the first. |
 | Activity run log | 200,000 characters per run | Stored to that length; cleared once a limit is set for the activity logs on the Maintenance page. |
 
 A mapping that declares many `dataset.identity` columns pays more of the identity index; one that declares none still

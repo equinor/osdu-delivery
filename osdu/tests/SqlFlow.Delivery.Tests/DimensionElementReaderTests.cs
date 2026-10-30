@@ -51,7 +51,7 @@ public class DimensionElementReaderTests
             {
               "id": "dev:work-product-component--WellLog:1",
               "data": {
-                "Name": "STAT_COMP",
+                "Name": "COMPOSITE",
                 "Curves": [
                   { "Mnemonic": "MD", "CurveType": "Scalar", "Columns": [ "a" ] },
                   { "Mnemonic": "IMG", "CurveType": "ArrayCurve", "Columns": [ "c1", "c2", null, "" , 3, true ] },
@@ -66,7 +66,7 @@ public class DimensionElementReaderTests
         // Plain values are elements read by @; a null is passed over, an empty text is an element holding nothing.
         Assert.Equal(["c1", "c2", null, "3", "true", "w1"], found.Select(e => Read(e, new DimensionElementField("C", "@"))));
         Assert.Equal(["IMG", "IMG", "IMG", "IMG", "IMG", "WF"], found.Select(e => Read(e, new DimensionElementField("M", "Mnemonic", Up: 1))));
-        Assert.All(found, e => Assert.Equal("STAT_COMP", Read(e, new DimensionElementField("L", "data.Name", Up: 3))));
+        Assert.All(found, e => Assert.Equal("COMPOSITE", Read(e, new DimensionElementField("L", "data.Name", Up: 3))));
         Assert.All(found, e => Assert.Equal("1", Read(e, new DimensionElementField("I", "id", Up: 3))));
         Assert.All(found, e => Assert.Equal("dev:work-product-component--WellLog:1", Read(e, new DimensionElementField("I", "id", DimensionValueKeep.Key, Up: 3))));
     }

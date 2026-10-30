@@ -2119,7 +2119,9 @@ internal static partial class FlowMapper
                 $"{source}: {paths.Shared("change.payloadDetect")} is renderedHash, which is how a document is compared. A payload is compared by its content hash: write contentHash, lastModified or always.");
         }
 
-        if (flow.Change.PayloadDetect == ChangeDetection.LastModified && !SendsFiles(flow))
+        // A ddms flow with no payload set of its own may send the bulk data an enrichment of its mapping names, and take the
+        // watermark from those files; binding the flow to its mapping refuses it when no enrichment names any.
+        if (flow.Change.PayloadDetect == ChangeDetection.LastModified && !SendsFiles(flow) && !MayTakeEnrichmentBulk(flow))
         {
             throw new FlowValidationException(
                 $"{source}: {paths.Shared("change.payloadDetect")} is lastModified, but the {flow.Target.Protocol} protocol delivers no payload files to take the watermark from.");

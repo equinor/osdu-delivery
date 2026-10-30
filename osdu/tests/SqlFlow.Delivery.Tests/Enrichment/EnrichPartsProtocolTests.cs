@@ -181,7 +181,7 @@ public sealed class EnrichPartsProtocolTests
         Assert.Equal(
             [DatasetUploads.StorageStep(EnrichPartsProtocol.PayloadName(0)), EnrichPartsProtocol.IntentStep(0), EnrichPartsProtocol.RegisterStep(0)],
             ledger.Reports.Select(r => r.Step).Take(3));
-        var landed = ledger.Slot(EnrichPartsProtocol.DatasetSlot);
+        var landed = ledger.Slot(EnrichPartsProtocol.SlotOf(EnrichPartsProtocol.DatasetSlot, id));
         Assert.Equal((id, ArtifactRoles.Record), (landed.TargetId, landed.Role));
 
         Assert.Equal(Part().Hash, outcome.Returned[EnrichParts.StateKey(id)]);
@@ -501,7 +501,7 @@ public sealed class EnrichPartsProtocolTests
         Assert.Equal(2, rig.Count(HttpMethod.Put, StorageRecords));
         Assert.True(rig.Writes(NoteId()) == 1 && rig.Platform.Calls.FindIndex(c => c.Body?.Contains('"' + NoteId() + '"', StringComparison.Ordinal) == true)
             < rig.Platform.Calls.FindIndex(c => c.Method == HttpMethod.Put && c.Body?.Contains('"' + OwnerId + '"', StringComparison.Ordinal) == true));
-        var landed = ledger.Slot(EnrichPartsProtocol.RecordSlot);
+        var landed = ledger.Slot(EnrichPartsProtocol.SlotOf(EnrichPartsProtocol.RecordSlot, NoteId()));
         Assert.Equal((NoteId(), ArtifactRoles.Record), (landed.TargetId, landed.Role));
         Assert.Equal([NoteId()], EnrichParts.Records(outcome.Returned));
         Assert.False(outcome.Returned.ContainsKey(EnrichParts.FilesStateKey(NoteId())));
@@ -546,6 +546,62 @@ public sealed class EnrichPartsProtocolTests
         Assert.Contains(NoteId(), rig.Platform.Removed);
         Assert.Equal(1, rig.Count(HttpMethod.Post, StorageRecords + "/" + NoteId() + ":delete"));
         Assert.Equal(0, rig.Count(HttpMethod.Post, "/api/dataset/v1/metadataRecord/" + NoteId() + "/softDelete"));
+    }
+
+    [Fact]
+    public async Task An_unfinished_delivery_removes_every_record_its_enrichment_added_each_kept_in_a_slot_of_its_own()
+    {
+        using var rig = new Rig(registersFiles: false);
+        var ledger = rig.Ledger();
+        var second = NoteId() + "-2";
+        var work = ledger.Track(Work(NoteOwner(), [Note(), Note("second note of log 7", second)], forced: true));
+        rig.Faults.Refuse(FileFamilyFaults.Nth(HttpMethod.Put, StorageRecords, 3), HttpStatusCode.InternalServerError);
+        Assert.False((await rig.DeliverAsync(work)).Succeeded);
+        Assert.Equal(second, ledger.Slot(EnrichPartsProtocol.SlotOf(EnrichPartsProtocol.RecordSlot, second)).TargetId);
+
+        var results = await rig.Protocol.UndoAsync([ledger.Undo(work)]);
+
+        Assert.Equal([ArtifactStatus.Removed, ArtifactStatus.Removed], results.Select(r => r.Outcome));
+        Assert.Contains(NoteId(), rig.Platform.Removed);
+        Assert.Contains(second, rig.Platform.Removed);
+    }
+
+    [Fact]
+    public async Task A_record_a_ledger_holds_in_the_slot_every_added_record_once_shared_is_still_undone()
+    {
+        using var rig = new Rig(registersFiles: false);
+        var ledger = rig.Ledger();
+        var work = ledger.Track(Work(NoteOwner(), [Note()], forced: true));
+        rig.Faults.Refuse(FileFamilyFaults.Nth(HttpMethod.Put, StorageRecords, 2), HttpStatusCode.InternalServerError);
+        Assert.False((await rig.DeliverAsync(work)).Succeeded);
+        var undo = ledger.Undo(work);
+        var shared = undo with { Items = undo.Items.Select(i => i with { Artifact = i.Artifact with { Slot = EnrichPartsProtocol.RecordSlot } }).ToList() };
+
+        var result = Assert.Single(await rig.Protocol.UndoAsync([shared]));
+
+        Assert.Equal(ArtifactStatus.Removed, result.Outcome);
+        Assert.Contains(NoteId(), rig.Platform.Removed);
+    }
+
+    [Fact]
+    public async Task A_try_resumed_after_a_build_that_declared_its_intent_in_the_shared_slot_completes_that_intent()
+    {
+        using var rig = new Rig(registersFiles: false);
+        var ledger = rig.Ledger();
+        var work = Work(NoteOwner(), [Note()], forced: true);
+
+        // What a build before each added record had a slot of its own reported, before its try stopped short of the write.
+        var shared = new TargetArtifact { Slot = EnrichPartsProtocol.RecordSlot, Role = ArtifactRoles.Record, TargetId = NoteId(), Status = ArtifactStatus.Intent };
+        await ledger.Track(work).ReportStepAsync(
+            EnrichPartsProtocol.IntentStep(0), new Dictionary<string, string>(StringComparer.Ordinal) { ["recordId"] = NoteId(), ["step"] = "note" }, [shared], CancellationToken.None);
+
+        var outcome = await rig.DeliverAsync(ledger.Resume(work));
+        Assert.True(outcome.Succeeded, outcome.Failure?.Message);
+        ledger.Commit();
+
+        // The intent is completed in its slot, so nothing the delivery wrote is left for an undo to remove.
+        Assert.Contains(NoteId(), rig.Platform.Records.Keys);
+        Assert.Empty(ledger.Undo(work).Items);
     }
 
     [Fact]

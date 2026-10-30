@@ -283,8 +283,8 @@ attribute of a dimension keyed by `id` read in one step. An attribute read throu
 Put the template in a template folder on the flow's path to check it.`
 
 The view's page shows the verdicts in three places: the **Joins** tab's **Template** column, a glyph beside each join on
-the **Definition** tab (the sentence, `names` and `reads` on hover), and, when any join differs, `<n> join(s) differ
-from the template` in the view's summary, which opens the Joins tab.
+the **Definition** tab (the sentence, `names` and `reads` on hover), and, when any join differs, `<n> joins differ
+from the template` (`1 join differs`) in the view's summary, which opens the Joins tab.
 
 The same reading offers joins a view could make: **Suggest joins** on the views list,
 `GET /api/v1/delivery/flows/{pipelineId}/dimensions/views/suggest?from=<dimension>`, and

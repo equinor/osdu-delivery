@@ -236,7 +236,7 @@ The document is read strictly: an unknown key fails validation naming it.
 | --- | --- | --- |
 | `endpoint` | required | The platform's base URL, usually `${env:OSDU_URL}`: the one the delivery flows deliver to. |
 | `auth` | `type: none` | Written as `target.auth` on a delivery flow. Secrets are references only (`${env:NAME}`, `${keyvault:NAME}`): a literal is refused when the flow is read. |
-| `headers` | none | Headers sent with every request; `data-partition-id` only for a flow tested in one fixed partition. A header that carries a credential holds a reference; a literal is refused when the flow is read. |
+| `headers` | none | Headers sent with every request; `data-partition-id` only for a flow tested in one fixed partition. A header that carries a credential holds a reference; a literal is refused when the flow is read. `correlation-id` is refused: every run sets it ([request correlation](../concepts/request-correlation.md)). |
 | `queryPath` | `/api/search/v2/query` | The search that counts, groups and finds index errors. |
 | `searchPath` | `/api/search/v2/query_with_cursor` | The cursor search records are paged through. |
 | `paging` | `cursor` | How a test's records are paged: `cursor` through `searchPath`, or `createTime` through `queryPath` in the order each record was created, which holds nothing on the service between pages. A test that declares its own `sort` is read through the cursor either way. See [Search paging](../concepts/search-paging.md). |
@@ -525,7 +525,8 @@ storage holds it by the code a delivery judges the documents it renders with.
 
 - **Which mapping.** `mapping` is `Name@version`, as a delivery flow's `render.mapping` names it, without `/`, `\`, `..`
   or whitespace. A run reads it once, when it starts, from the mappings the repository sync keeps in the module's
-  database. Two repositories that declare the reference with the same document are read as one.
+  database. Two repositories that declare the reference with the same document, filling the same template, are read as
+  one.
 - **What it needs.** Records as storage holds them, so `read: index` is refused. The test's `kind` is the kind the
   mapping renders, the mapping states at least one record-stage assertion, and each of those fits the template the test
   is checked against: its property is one of the kind's, and its condition suits the property's type. The incoming
@@ -542,7 +543,7 @@ Left without a `name`, the assertion is called `meets what mapping <Name@version
 
 ```text
 'meets what mapping WellLog@1.4.0 asserts': no mapping WellLog@1.4.0 is synced; sync the repository that declares it, then run again.
-'meets what mapping WellLog@1.4.0 asserts': mapping WellLog@1.4.0 is synced from 2 repositories whose documents differ (mappings/WellLog@1.4.0.yaml, mappings/WellLog@1.4.0.yaml), so there is no one mapping to read; give each its own version.
+'meets what mapping WellLog@1.4.0 asserts': mapping WellLog@1.4.0 is synced from 2 repositories whose documents differ (mappings/WellLog@1.4.0.yaml (template 2f8a99cb38d32480), mappings/WellLog@1.4.0.yaml (template 2f8a99cb38d32480)), so there is no one mapping to read; give each its own version.
 'meets what mapping WellLog@1.4.0 asserts': mapping WellLog@1.4.0 renders osdu:wks:work-product-component--WellLog:1.4.0, and the test reads osdu:wks:work-product-component--WellLog:1.5.0; a test holds the records of the kind a mapping renders to its assertions.
 'meets what mapping WellLog@1.4.0 asserts': mapping WellLog@1.4.0 asserts nothing of the values a record carries (stage: record), so there is nothing to hold the records to; its incoming assertions judge the rows records were rendered from, which OSDU does not hold.
 ```
@@ -626,7 +627,7 @@ A test that does not fit is reported `errored` with each problem, and is not eva
 - `'<label>': '<path>' is not a property of <kind> (template <version>); did you mean '<nearest>'?`
 - `'<label>': '<path>' is a list in <kind> (template <version>); equals compares one value, so test each item with '<path>[*]', or ask what the list contains.`
 - `'<label>': '<path>' refers to master-data--Wellbore in <kind> (template <version>), never to master-data--Well.`
-- `The test's fields are checked against the template of <kind>, and no template folder on the path of flows/<flow>.yaml holds template <kind>. ...` (the rest says which folders it read and how to put the template's file in one)
+- `The test's fields are checked against the template of <kind>, and no template folder on the path of flows/<flow>.yaml holds a template of <kind>. ...` (the rest says which folders it read and how to put the template's file in one)
 - `The test is checked against template <kind> version <version>, the one mapping <Name@version> fills, and ...`
 - `The test is checked against the template mapping <Name@version> fills, and no mapping <Name@version> is synced; sync the repository that declares it, then run again.`
 - `Mapping <Name@version> fills a template of <kind>, and the test reads <other kind>; name the mapping of <other kind>, or a template version of it.`
@@ -665,7 +666,12 @@ Notifications fire on it as on any failed run.
 | Operation | What it does |
 | --- | --- |
 | `test` (default) | Selects the tests, checks them against their templates, runs them (up to `parallelism.recordsAtOnce` at once) and keeps the report. Needs the module's database. |
-| `plan` | Selects and checks the same tests and counts what each matches and would read, evaluating nothing and recording nothing. It needs the module's database only for the templates. |
+| `plan` | Selects and checks the same tests and counts what each matches and would read, evaluating nothing and recording nothing. It needs the module's database only for a mapping a test names (a `mapping` assertion, or `template: Name@version`); templates are read from their files. |
+
+A node runs the flow from a checkout of its repository at the run's commit, never from a snapshot of its one file: the
+templates its tests are checked against are in the template folders on the flow's path, and the
+[repository document](repository.md) above it names the code its requests carry
+([which kinds need the repository](overview.md#which-kinds-need-the-repository)).
 
 The payload takes `tests` (names) and `tags` and nothing else; a test runs when it is named or carries one of the tags,
 and with neither every test runs. Each list holds at most 500 names, each once.
@@ -679,6 +685,10 @@ sqlflow run welldb-welllog-04-assertion.yaml --set partition=dev --payload '{"ta
 A name that is not a test fails the run: `Assertion flow '<name>' has no test named '<x>'; its tests are <names>.`, and so
 does a tag no test carries. Any other payload property is refused before the run starts, for example
 `payload recordKeys does not apply to an assertion flow: only a delivery flow's runs are scoped to records; an assertion flow's payload names only tests and tags.`
+SQLFlow's own backfill options are refused: `fullLoad do(es) not apply to 'assertion' flows; a test reads what OSDU holds now; name the tests to run in the payload.`
+The partition and each parameter take one value a run; a list is refused:
+`Parameter '<name>' is given <n> values; a parameter of 'assertion' flows takes one, since it fills a query or a location.`
+(for the partition, `partition is given <n> values; a run acts in one partition.`)
 A schedule's `values` can name the partition and the parameters; a scheduled run runs every test. The values of a
 schedule several flows join reach every one of them, so an assertion flow sharing its delivery flow's schedule declares
 the delivery's parameters too, or fails with `parameter '<name>' is not declared under parameters.` On the control plane,
@@ -687,8 +697,8 @@ environment. See [Running OSDU flows](../cli/run.md).
 
 The run's `result` names the report (`assertionRunId`), `partition`, `status`, the counts (`tests`, `passed`, `failed`,
 `warned`, `errored`, `skipped`) and the tests that did not pass first (`results`, at most 50, each with `test`, `kind`,
-`outcome`, `matched` and the first failed assertions); a plan's lists each test with its `query`, `matched`, `wouldRead`,
-`template`, `problems` and `error`.
+`outcome`, `matched` and the first failed assertions); a plan's lists each test with its `query`, `ids`, `matched`,
+`wouldRead`, `template`, `problems`, `skipped` (why it is not judged in the partition) and `error`.
 
 ## The report
 

@@ -173,7 +173,7 @@ values the same way at start.
 
 | Flag | Type | Default | Description |
 | --- | --- | --- | --- |
-| `--repo <id>` | repository id | none (the control plane's own) | The repository the property is set for, or read for, by its id (a GUID), not its name. `sqlflow repos show <name>` prints it. Anything that is not a GUID is refused. `set` refuses an id the catalog does not hold, reading the catalog through `--db`, else `${env:SQLFLOW_CATALOG_DB}`, even when `SQLFLOW_OSDU_DB` gives the module a database of its own; `list` and `remove` do not look it up, so a deleted repository's properties can still be found and removed. |
+| `--repo <id>` | repository id | none (the control plane's own) | The repository the property is set for, or read for, by its id (a GUID), not its name. `sqlflow repos show <name>` prints it. Anything that is not a GUID is refused. `set` refuses an id the catalog does not hold, reading the catalog through `--db`, else `${env:SQLFLOW_CATALOG_DB}`; `list` and `remove` do not look it up, so a deleted repository's properties can still be found and removed. |
 | `--partition <id>` | data-partition-id | none (no particular partition) | The partition the property is set for, or read for. |
 | `--value <value>` | string | none | `set` only, required: the value or reference. |
 | `--description <text>` | string | none | `set` only: what the property is for, trimmed. Replaced by every `set`, and cleared when left out. |
@@ -235,7 +235,7 @@ state. A value the control plane's configuration sets is refused, and stays.
 | `--repo '<text>' is not a repository id (a GUID; 'sqlflow repos show <name>' prints it).` | `--repo` is not a GUID. |
 | `No repository <id> is registered with the catalog, so a configuration property set for it would never be read by a run. 'sqlflow repos list' and the Repositories page show the registered repositories and their ids.` | `set --repo` names a repository the catalog does not hold. |
 | `--repo is checked against the catalog's repositories, and the catalog connection <ref> did not resolve: ... Name it with --db <conn-ref>, or set SQLFLOW_CATALOG_DB.` | `set --repo` with no catalog connection to check it in. |
-| `'<name>' in partition '<partition>' is set by the control plane's configuration (Osdu:Partitions:<partition>:Properties:<name>); change it there, and the control plane writes it when it next starts.` | `set` or `remove` of a value the configuration sets. |
+| `'<name>' in partition '<partition>' is set by the control plane's configuration (Osdu:Partitions:<partition>:Properties:<name>); change it there, and the control plane writes it when it next starts.` | `set` or `remove` of a value the configuration sets. For a value set for no partition, the message names `Osdu:Properties:<name>` instead. |
 | `name the property to set.` / `give the value with --value <value>.` / `name the property to remove.` | A required argument is missing; the verb's usage follows. |
 | `use 'config list', 'config effective --repo <id>', ...` | No subcommand, or one that is not listed; the verb's usage follows. |
 

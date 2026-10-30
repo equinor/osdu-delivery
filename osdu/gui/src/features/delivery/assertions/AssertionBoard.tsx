@@ -162,7 +162,7 @@ function FlowHeading({ flow, picked, onLaunch }: {
 }
 
 /**
- * The board of assertion flows in the workbench's partition (osdu/docs/reference/concepts/gui.md, In OSDU): how the data
+ * The board of assertion flows in the workbench's partition (osdu/docs/reference/concepts/gui.md, OSDU): how the data
  * stands now. Every flow is one line that opens on its tests, what needs a look first, in a grid that stays as tall as the
  * window leaves, so a hundred flows read as a hundred lines and the page never grows with them. The status strip's counts,
  * the search and the type and tag pickers narrow the board to the tests they find and open their flows on them; a search

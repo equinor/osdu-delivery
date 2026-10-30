@@ -20,7 +20,7 @@
 #                                       ends, through the API as a GitHub job calls it, and a real GitHub Actions token
 #                                       checked against GitHub's keys when SQLFLOW_TEST_GITHUB_OIDC_REPOSITORY names a
 #                                       repository to mint one in (sqlflow/docs/reference/concepts/external-triggers.md).
-#                                       Enrichment, every rule of a delivery flow's enrich: steps: the documents and fragments, how a
+#                                       Enrichment, every rule of a mapping's enrich: enrichments: the documents and fragments, how a
 #                                       fragment adds to the record, the chain's preflight, and one write for any change to the chain
 #                                       (osdu/docs/reference/flow/enrich.md).
 #

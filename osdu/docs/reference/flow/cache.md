@@ -185,7 +185,7 @@ must stay on an earlier version pins it with `render.cacheVersion`.
 | --- | --- |
 | `source.endpoint` | The OSDU platform the `kind` types are searched on, usually `${env:OSDU_URL}`. Required when the flow declares a `kind` type (`source.endpoint is required: the flow declares a type searched on OSDU, by its kind.`). Refused, with `source.auth`, when every type is a lookup table (`source.endpoint and source.auth reach the OSDU platform, and the flow declares no type searched there; every type it declares is a lookup table. Remove them.`). |
 | `source.auth` | How the searches authenticate, with the same auth types and keys as a delivery flow's `target.auth`; every secret is a `${env:...}` or `${keyvault:...}` reference, and a literal is refused when the flow is read. |
-| `source.headers` | Headers every search carries. `data-partition-id` here hard-codes the one partition the flow fills; it is refused beside `partitions`. A header that carries a credential holds a reference; a literal is refused when the flow is read. |
+| `source.headers` | Headers every search carries. `data-partition-id` here hard-codes the one partition the flow fills; it is refused beside `partitions`. A header that carries a credential holds a reference; a literal is refused when the flow is read. `correlation-id` is refused: every run sets it ([request correlation](../concepts/request-correlation.md)). |
 | `source.paging` | How an OSDU type's search is paged: `cursor` (the default) through the search cursor, or `createTime` through the plain search in the order each record was created, which holds nothing on the service between pages and picks a failed read up where it stopped. See [Search paging](../concepts/search-paging.md). |
 | `source.connection` | The ingestion database the `table` types are read from: a whole `${env:NAME}` or `${keyvault:vault/secret}` reference, or a SQL Server connection string whose password is a reference (or none, with Azure AD). Required when the flow declares a `table` type, refused when it declares none. A literal password fails: `source.connection carries a literal password. A flow document holds references only: ...`. It is resolved on the node that runs the flow. |
 
@@ -212,12 +212,14 @@ fail with `types[<n>] names more than one origin; a type has one: ...`.
 
 ### OSDU records (`kind`)
 
-A refresh searches the kind through the search service's cursor (`POST /api/search/v2/query_with_cursor`) and keeps,
+A refresh searches the kind through the search service's cursor (`POST /api/search/v2/query_with_cursor`), or with
+`source.paging: createTime` through `POST /api/search/v2/query` in the order the records were created, and keeps,
 for every record, its id and the declared paths. A path crosses arrays, so `data.NameAliases.AliasName` keeps the set of
 aliases a record holds; whatever a path yields (a scalar, a set, an object) is kept as it is. A path is stored without
 its `data.` root, so a mapping reads `data.Code` as `Code`. Two paths kept under one name, or a path kept as `id`, are
 refused. A type is read whole or the refresh fails: a sweep that fails part way or comes back short is read once more
-from the start, and when that fails too nothing is written and the cache keeps the version it had.
+(through the cursor from the start, or in `createTime` order from where it stopped, reading again only what came back
+short), and when that fails too nothing is written and the cache keeps the version it had.
 
 The capture warns rather than fails when a search matches no record (`the search matched no record of kind ... Check
 the kind and the query.`) or when no record carries a path (`no item carried '<path>' ... Check the path against the
@@ -257,9 +259,9 @@ takes no `entityType` or `query`. Only one cache flow of a partition may declare
 A dictionary type holds the entries of a [dictionary document](dictionary.md): a small lookup table reviewed in the
 repository. It names only the dictionary (and optionally `name`); the document names its key and fields, so `kind`,
 `entityType`, `query`, `fields` and `key` are refused. The file is found in the nearest `dictionaries/` folder walking up
-from the flow's folder, so a flow holding a dictionary needs the repository's tree when it runs, and reads the file at
-the run's commit. `sqlflow validate` on the flow finds and reads the file the same way, and refuses a flow whose
-dictionary is missing or does not load
+from the flow's folder, and read at the run's commit: every cache flow runs from a checkout of its repository, since a
+refresh also reads the [repository document](repository.md) above it. `sqlflow validate` on the flow finds and reads
+the file the same way, and refuses a flow whose dictionary is missing or does not load
 (`<file>: type 'SamplingDomain': Dictionary 'sampling-domain' was not found under '../dictionaries'. Expected sampling-domain.yaml or sampling-domain.yml.`).
 The repository sync reads it too, and leaves a type whose dictionary is missing or invalid out of the cache with a
 warning naming the file.

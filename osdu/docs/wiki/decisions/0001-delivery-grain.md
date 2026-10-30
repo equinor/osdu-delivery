@@ -13,7 +13,7 @@ keywords:
 referenceRefs:
   - delivery-concept-ledger
   - delivery-flow-mapping
-updated: 2026-10-16
+updated: 2026-10-30
 ---
 # 0001: Delivery grain is (source project, log id)
 
@@ -28,8 +28,8 @@ ledger keys on the grain, so it has to be settled before anything is delivered.
 
 ## Decision
 
-The sample mapping's dataset key is `[dataset.source_project, dataset.log_id]`: one OSDU WellLog per source log. The
-sample mapping also writes both values into the document (`LogSource` and `LogRun`) as provenance.
+The sample mapping's dataset key is `[source_project, log_id]`: one OSDU WellLog per source log. The sample mapping
+also writes the project into the record's tags (`SourceProject`) as provenance.
 
 ## Consequences
 
@@ -37,7 +37,7 @@ sample mapping also writes both values into the document (`LogSource` and `LogRu
 - Wellbores with several runs of the same type get several WellLog records in OSDU, each referencing the
   wellbore.
 - If the domain decides the coarser grain is right after all, the change is confined to the mapping's
-  `dataset.key` and to the prepare step's grouping. Because identity is immutable once a mapping
+  `dataset.key` and to the ingestion flow's key columns (`keyColumns`). Because identity is immutable once a mapping
   version has delivered, that is a new mapping version and a re-key of the estate, which is why this must be
   confirmed before production delivery.
 

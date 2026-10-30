@@ -25,6 +25,7 @@ sourceRefs:
   - osdu/src/SqlFlow.Delivery/Ledger/SqlServerDimensionStore.cs
   - osdu/src/SqlFlow.Delivery/Ledger/OsduLedger.Dimensions.cs
   - osdu/src/SqlFlow.Delivery/Ledger/DimensionTables.cs
+  - osdu/src/SqlFlow.Delivery/Ledger/DimensionStage.cs
   - osdu/src/SqlFlow.Delivery/Ledger/SqlServerDimensionViewStore.cs
   - osdu/src/SqlFlow.Delivery/Engine/Dimensions/DimensionRemoval.cs
   - osdu/src/SqlFlow.Delivery.Data/Migrations/20260930103543_DimensionFlows.cs
@@ -38,10 +39,13 @@ A dimension flow's build keeps what it read in tables of the module's `osdu` sch
 created by its migrations, and from them makes the two kinds of object no migration creates: each dimension's own table,
 `[osdu].[dim_<dimension>]` ([The dimension's table](../flow/dimension-table.md)), and each view, `[osdu].[v_dim_<view>]`
 ([Views](../flow/dimension.md#views)). The model's tables are the ledger of the dimension; the `dim_` tables and `v_dim_` views are what a
-report, a pipeline or a person reads.
+report, a pipeline or a person reads. A build also stages what it reads in tables of its own,
+`[osdu].[dimstage_<dimension id>_<build>_<table>]`, which no migration creates either and which the build drops when it
+ends ([A dimension build's staging](../flow/dimension-staging.md)).
 
 Every table but the views' record belongs to a ledger of kind `dimension`, one per flow and partition, and is keyed by
-the ledger partition's number (`PartitionId`) and an identity of its own, which is how the others name its rows: they
+the ledger partition's number (`PartitionId`), the dimension's (`DimensionId`) where the row is a dimension's, and an
+identity of its own, which is how the others name its rows: they
 are joined on numbers, never on text, with no foreign keys. Text a filter or a key compares (a value, a key, an attribute
 value, a collected text) is held in a binary collation and compared exactly. The tables keep the names they were made
 with: a **member** (`DimensionMember`) is a dimension's value, and an **original** (`DimensionValue`) is a key.
@@ -64,17 +68,18 @@ with: a **member** (`DimensionMember`) is a dimension's value, and an **original
 
 What every column holds, and what each index serves, is on each table's page.
 
-**What writes them.** A build registers its dimension and its build when it starts, and writes the rest when it has read
-everything: in one transaction, under an application lock per dimension (`osdu-dimension:<partition number>:<dimension
-id>`), its keys and values are staged and merged by set-based statements that add, rewrite, mark removed and bring back,
+**What writes them.** A build registers its dimension and its build when it starts, stages what it reads in its own
+`dimstage_` tables as it reads, holding one batch in memory, and writes the rest when it has read everything: in one
+transaction, under an application lock per dimension (`osdu-dimension:<partition number>:<dimension id>`), its staged
+keys and values are copied into the write's own tables in the database and merged by set-based statements that add, rewrite, mark removed and bring back,
 give each attribute its number, rewrite the attributes, elements and records read through of the keys it found, log every
 change, and bring the dimension's own table to the same rows, then close the build with its counts. The tables keep each
 dimension's rows together ([How the tables are keyed](database.md#how-the-tables-are-keyed)), so every statement of the
 write reads and locks its own dimension's rows alone, and a build of another dimension writes beside it. Nothing is deleted:
 a value or key no build finds is marked removed and keeps its number should it come back. A failed build writes nothing
-but its build row. The views and their checks are written after the dimensions, each view in a transaction of its own.
+but its build row, and drops its staging as every build does. The views and their checks are written after the dimensions, each view in a transaction of its own.
 [Removing a dimension](../flow/dimension.md#removing-a-dimension) deletes every row of it in its partition, in batches under the same lock,
-and drops its table with the last partition writing it; removing a view deletes its record and its checks.
+drops the staging tables of its builds, and drops its table with the last partition writing it; removing a view deletes its record and its checks.
 
 **What reads them.** The dimension's pages, [`sqlflow dimensions`](../cli/dimensions.md) and the API read the values,
 keys, attributes, changes and builds; a [composed search](../cli/dimensions.md#search) reads values, keys and collected
@@ -82,7 +87,7 @@ texts; a [cache flow](../flow/cache.md) capturing a dimension reads its values, 
 records read through and records; [the blueprint](dimension-blueprint.md) reads the last build's kinds and the attributes' coverage.
 
 **How the `dim_` table is laid out from them.** A row of `[osdu].[dim_<dimension>]` is a key the dimension holds now
-(`DimensionValue`, not removed) under its value (`DimensionMember`): `key_id` is the key's `ValueId`, the key's column
+(`DimensionValue`, not removed) under its value (`DimensionMember`): `partition` is the partition's name, `key_id` the key's `ValueId`, the key's column
 its text, the value's column its value's text, `records` its records (or the collected value's, or 1 for an element),
 `filter` its filter, and each attribute's column the value of the attribute in that place (`DimensionAttributeName`
 ordering `DimensionAttribute`). A collected attribute makes a row for each value of the key, and elements a row for each

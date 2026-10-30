@@ -45,7 +45,7 @@ id, with no foreign key into SQLFlow's catalog.
 | `RelativePath` | `nvarchar(1000)` | no | The mapping's file, relative to the repository root. |
 | `ContentHash` | `nvarchar(64)` | no | The hash of the document as synced. |
 | `Yaml` | `nvarchar(max)` | no | The document text, secret-redacted, as it was when synced. |
-| `SummaryJson` | `nvarchar(max)` | no | A parsed summary for listings: the template, the dataset system, key and label, child datasets, entry and fixture counts, the envelope. |
+| `SummaryJson` | `nvarchar(max)` | no | A parsed summary for listings: the template, the dataset system, key and label, child datasets, the parameters, entry and assertion counts, the envelope. |
 | `Status` | `nvarchar(16)` | no | `valid` or `invalid`. |
 | `Message` | `nvarchar(4000)` | yes | Why the document does not load, for an invalid one: a template no folder on its path holds is one such reason. |
 | `FirstSeenUtc` | `datetime2` | no | When a sync first found it. |
@@ -63,5 +63,5 @@ id, with no foreign key into SQLFlow's catalog.
 
 - **Written** by the repository sync (`DeliveryCatalogSync.cs`), which settles each mapping's template from the template
   folders it has just found, and writes the row again when what its folders hold changes while the document does not.
-- **Read** by the mappings page, a template's page and its delete, the mapping builder, lineage, the search terms, and
-  the delivery API (`OsduLedger.Mappings.cs`, `DeliveryEndpoints.cs`).
+- **Read** by the mappings page, the mapping builder, lineage, the OSDU order (`OrderCatalog.cs`), a
+  flow's value check, the search terms, and the delivery API (`OsduLedger.Mappings.cs`, `DeliveryEndpoints.cs`).

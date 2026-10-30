@@ -21,6 +21,8 @@ sourceRefs:
   - osdu/src/SqlFlow.Delivery/Ledger/SqlServerLedgerBulk.Problems.cs
   - osdu/src/SqlFlow.Delivery/Ledger/SqlServerLedgerBulk.Reversals.cs
   - osdu/src/SqlFlow.Delivery/Ledger/SqlServerLedgerBulk.Purges.cs
+  - osdu/src/SqlFlow.Delivery/Ledger/SqlServerLedgerBulk.Adoptions.cs
+  - osdu/src/SqlFlow.Delivery/Ledger/OsduLedger.Removal.cs
   - osdu/src/SqlFlow.Delivery/Ledger/OsduLedger.cs
 ---
 
@@ -29,7 +31,8 @@ sourceRefs:
 One record an intervention changed, written in the statement that changed it. An intervention made for one record names
 it on its [`osdu.Activity`](activity.md) row; one made for many (a release of a whole flow or of every record a problem
 keeps blocked, a redelivery of every delivered record, a reversal, a verify run that marks drifted or missing records for
-redelivery, the deletion of removed records from the ledger) names each record here. A record's activities are the ones
+redelivery, the deletion of removed records from the ledger, an adoption, a removal flow's run taking out what its source
+no longer holds, and the lift of such a removal) names each record here. A record's activities are the ones
 naming it on their row and the ones naming it here, so its history shows every request that reached it, with who asked
 and when, however many records the request reached ([The delivery ledger](../concepts/ledger.md)).
 
@@ -52,8 +55,9 @@ Never pruned: these rows are records' histories.
 
 ## Written and read by
 
-- **Written** by the ledger's bulk statements that release, redeliver, reverse, reconcile or delete records
-  (`SqlServerLedgerBulk.Problems.cs`, `SqlServerLedgerBulk.Reversals.cs`, `SqlServerLedgerBulk.Purges.cs`).
+- **Written** by the ledger's bulk statements that release, redeliver, reverse, reconcile, adopt or delete records
+  (`SqlServerLedgerBulk.Problems.cs`, `SqlServerLedgerBulk.Reversals.cs`, `SqlServerLedgerBulk.Purges.cs`,
+  `SqlServerLedgerBulk.Adoptions.cs`), and by a removal flow's run and a lift of its removals (`OsduLedger.Removal.cs`).
 - **Read** by a record's Timeline and `GET /records/{flowId}/{key}/activities`.
 - **Rewritten** by a ledger move (`OsduLedger.Moves.cs`), which puts the rows of an old ledger under the
   identity of the flow that replaced it or took it over, a slice at a time ([Renaming a pipeline](../concepts/renaming-a-pipeline.md)).

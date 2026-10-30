@@ -30,6 +30,7 @@ sourceRefs:
   - osdu/src/SqlFlow.Delivery.ControlPlane/DeliveryControlPlaneModule.cs
   - osdu/src/SqlFlow.Delivery.ControlPlane/Background/ConfiguredRunDispatcher.cs
   - osdu/src/SqlFlow.Delivery.ControlPlane/Background/PartitionReadiness.cs
+  - osdu/src/SqlFlow.Delivery.ControlPlane/Background/DeliveryRunOutcomeDescriber.cs
   - osdu/src/SqlFlow.Delivery.ControlPlane/Api/RecordSearchContributor.cs
   - osdu/src/SqlFlow.Delivery.Cli/DeliveryCliModule.cs
   - osdu/src/SqlFlow.Delivery/Engine/DeliveryRunPayload.cs
@@ -59,7 +60,7 @@ verbs work against it unchanged. This page covers what is different when they ar
 | Verbs | Talk to | Need |
 | --- | --- | --- |
 | SQLFlow's control-plane verbs (`trigger`, `runs`, `schedules`, ...) | The control plane's `/api/v1` | `--url` or `SQLFLOW_URL`, and a token (`sqlflow login`, `--token` or `SQLFLOW_TOKEN`). |
-| The OSDU verbs (`check`, `preview`, `values`, `records`, `config`, `partition`, `cache`, `template`, `assertions`, `dimensions`, `inventory`) | The module's database directly | `--db` or `SQLFLOW_CATALOG_DB`, the catalog database, which holds the `osdu` schema. None of them calls the control plane. |
+| The OSDU verbs (`check`, `preview`, `values`, `records`, `config`, `partition`, `cache`, `assertions`, `dimensions`, `inventory`, `removal`; `template` reads and writes files and needs neither) | The module's database directly | `--db` or `SQLFLOW_CATALOG_DB`, the catalog database, which holds the `osdu` schema. None of them calls the control plane. |
 
 So a terminal that can reach the control plane but not the database can trigger and follow OSDU runs, but cannot read a
 ledger with `sqlflow records`; it reads records through the GUI or the delivery API instead
@@ -72,7 +73,7 @@ ledger with `sqlflow records`; it reads records through the GUI or the delivery 
 | Flag | Meaning |
 | --- | --- |
 | `--operation <name>` | Which of the kind's operations the run performs (`deliver`, `plan`, `verify`, ... for a delivery flow; `refresh` for a cache flow). Omitted takes the kind's default. |
-| `--set name=value` | A run value, repeatable: a flow parameter, or `partition`, which names the OSDU partition the run targets. |
+| `--set name=value` | A run value, repeatable: a flow parameter, or `partition`, which names the OSDU partition the run targets. Repeating a name gives a delivery flow's parameter that `source.record.scope` binds several values, read as one scope; any other parameter, and `partition`, takes one. |
 | `--payload <json>` or `--payload @<file>` | One JSON object whose shape the flow kind owns. |
 
 ```bash
@@ -91,8 +92,8 @@ What each operation does and what a delivery payload carries is in [Running an O
 its partition is in [Partitions](../concepts/partitions.md). The partition is taken off the run's values before the
 flow's parameters are read, so it never moves a watermark or a submission's scope.
 
-The control plane attaches the central configuration to every delivery, cache, retrieval, assertion, dimension and
-inventory run it queues, from a trigger, a schedule or a run group alike, so the node resolves `${env:NAME}` from it first
+The control plane attaches the central configuration to every delivery, cache, retrieval, assertion, dimension,
+inventory, removal and download run it queues, from a trigger, a schedule or a run group alike, so the node resolves `${env:NAME}` from it first
 ([sqlflow config](config.md)). A local `sqlflow run` gets none of it.
 
 ## Schedules
@@ -110,6 +111,11 @@ sqlflow schedules create --repo welldb --flow welldb-welllog-03-delivery --cron 
 
 A flow's YAML `schedule:` block takes the same as `operation:` and `values:`.
 
+An external trigger (a GitHub Actions job, or a system holding a key) fires the schedules it picks as their cron would,
+with their operation and values, and its trace and the job's summary say what each delivery run delivered. It has no
+verb here: the GUI's External triggers page keeps it
+([External triggers](../../../../sqlflow/docs/reference/concepts/external-triggers.md)).
+
 ## Following runs
 
 ```bash
@@ -120,7 +126,7 @@ sqlflow pipelines list --repo welldb --kind cache
 ```
 
 - `--kind` filters by flow kind. The kinds OSDU Delivery adds are `delivery`, `retrieval`, `cache`, `assertion`,
-  `dimension` and `inventory`, beside the `pre` and `ing` flows that feed them.
+  `dimension`, `inventory`, `removal` and `download`, beside the `pre` and `ing` flows that feed them.
 - `runs show` prints SQLFlow's run header. The kind's own part of a run is in the `--json` form: `operation`,
   `requestedBy`, `values`, `payload` (including the central configuration the control plane attached, as `references` and
   `partitionReferences`) and `resultJson`, the result the kind recorded (for a delivery run, what it planned and

@@ -63,7 +63,7 @@ Every form also takes `--db <conn-ref>`, `--json` and `-v`.
 | `--removal <name>` | One removal of the flow, by name, ignoring case; without it, every removal's runs. A name the flow does not declare is refused, naming the ones it does. |
 | `--max <n>` | How many runs, from 1 to 200; 20 without it. |
 | `<partition> <number>` | One run, by its partition and its number, as `runs` prints it. |
-| `--db <conn-ref>` | The catalog database, which holds the `osdu` schema. Without it: `Removal runs live in the module's database. Run 'sqlflow removal' with --db <conn-ref>, or set the catalog variable.` |
+| `--db <conn-ref>` | The catalog database, which holds the `osdu` schema. Without it and without `SQLFLOW_CATALOG_DB`: `The osdu schema is read through the catalog's connection, which did not resolve: Environment variable 'SQLFLOW_CATALOG_DB' is not set. Give the command the catalog's connection with --db <conn-ref>, or set SQLFLOW_CATALOG_DB.` |
 | `--json` | One JSON document on stdout instead of the text form. Keys are sorted and properties without a value are left out. |
 
 ## removal runs

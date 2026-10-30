@@ -39,13 +39,18 @@ referenceRefs:
 related:
   - delivery-wiki-0021-adopting-occupied-records
   - delivery-wiki-0005-ledger-retention
-updated: 2026-10-24
+  - delivery-wiki-0038-download-flow
+updated: 2026-10-30
 ---
 # 0028: The sync moves a renamed flow's ledger when only the name changed, and a person takes over every other orphan
 
 Status: proposed. Documented in [Renaming, copying or deleting a flow](../../reference/concepts/renaming-a-pipeline.md).
 Leaves [0021](0021-adopting-occupied-records.md) as it is: that adopts records another system wrote, this carries a flow's
 own ledger to its new name.
+
+> **Amended by [0038](0038-download-flow.md).** A download flow keeps a ledger too. The sync records its hash in
+> `osdu.LedgerFlow` beside the retrieval, assertion, dimension and inventory flows', and its ledger moves, or is taken
+> over, by the rules below, as a dimension's or an inventory's is: a flow holds one download of each name.
 
 ## Context
 

@@ -157,7 +157,8 @@ abfss://lake@welldbstorage.dfs.core.windows.net/osdu/wellbores/
 kind the ids storage could not return (deleted since they were indexed, or not readable by the flow's identity).
 
 The runs are also in the ledger's `osdu.Retrieval` table: the pipeline's **Retrievals** tab in the GUI lists them with
-their status, kinds, window, counts, location, who ran them and any error, and so does `GET /api/v1/delivery/flows/{pipelineId}/retrievals`.
+their status, when they started and how long they took, kinds, window, counts, location, who ran them and any error, and
+so does `GET /api/v1/delivery/flows/{pipelineId}/retrievals`.
 
 ## 6. Load the files into a table
 
@@ -232,5 +233,7 @@ Lineage over 2 flow(s), 3 object(s), 4 edge(s) (declared)
 ## See also
 
 - [Retrieval flow](../flow/retrieval.md): every key, the window, the manifest and the ledger row.
+- [Download flow](../flow/download.md): the records of OSDU kinds kept in a folder instead, a JSON file each named after
+  its id.
 - [Running OSDU flows](../cli/run.md): operations, values and payloads.
 - [schedule](../../../../sqlflow/docs/reference/flow/schedule.md): named schedules and their member sets.

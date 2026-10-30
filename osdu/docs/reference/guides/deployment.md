@@ -113,10 +113,11 @@ The worker host is the `sqlflow worker` verb with the OSDU module installed and 
 the node's options (`--pool` from `SQLFLOW_WORKER_POOL`, `--poll-seconds`, `--drain-seconds`), and it refuses to be told to
 run another verb.
 
-What brings the workers up is queued runs, and a delivery queues more than one: a submission of 1,000 records or more fans
-is split into parts, a part per 1,000 rows up to the flow's `parallelism.nodes` (8 by default), each a run of the same
-flow that asks for a worker to itself. The replica target counts each such part as a worker of its own, so a large
-delivery scales the pool out to one worker per part, and an idle pool goes back
+What brings the workers up is queued runs, and a delivery queues more than one: a run that reads at least twice
+`parallelism.minRowsPerNode` rows (2,000 by default) is split into parts, a part per `minRowsPerNode` rows (1,000) up to
+the flow's `parallelism.nodes` (8 by default), each a run of the same flow that asks for a worker to itself. The
+replica target counts each such part as a worker of its own, so a large delivery scales the pool out to one worker per
+part, and an idle pool goes back
 ([submissions](../concepts/submissions.md#many-nodes), `parallelism` on the [delivery flow](../flow/delivery.md#parallelism)).
 Each part writes and reads its own work batches in its worker's own copy of the repository, so the workers need no storage
 in common for it. Other runs share a worker, as many at once as a worker's run slots (4).
@@ -126,7 +127,7 @@ The pool never grows past its ceiling (`worker_max_replicas` in Terraform, `work
 
 | Database (shipped names) | Holds | Reached as |
 | --- | --- | --- |
-| `OsduDelivery` | The metadata: SQLFlow's catalog schema and the module's `osdu` schema beside it (the ledger, mappings, templates, caches, partitions, central configuration, and the dimension tables and views). | `SQLFLOW_CATALOG_DB`: the control plane's catalog connection, which owns both schemas; on a node the same variable with a login on the `osdu` schema alone, for the ledger and for the flows that read the dimension views. |
+| `OsduDelivery` | The metadata: SQLFlow's catalog schema and the module's `osdu` schema beside it (the ledger, mappings, the index of the repositories' templates, caches, partitions, central configuration, and the dimension tables and views). | `SQLFLOW_CATALOG_DB`: the control plane's catalog connection, which owns both schemas; on a node the same variable with a login on the `osdu` schema alone, for the ledger and for the flows that read the dimension views. |
 | `OsduData` | The data the flows work in: what the pre flows land from the source files, the keyed tables the ingestion flows load, and what the delivery flows read, each in a schema of its own. | `${env:OSDU_DATA_DB}`, on the control plane and the nodes alike. |
 
 The flows name both databases in three-part names (`OsduData.silver.Wellbore`, `OsduDelivery.osdu.v_dim_<view>`), so
@@ -258,8 +259,8 @@ SQLFlow's: one host with `/api` to the control plane and `/` to the GUI, so no C
 
 `osdu/deploy/bicep/main.bicep` and its Terraform mirror `osdu/deploy/terraform` deploy the whole estate, ready to use
 when the deployment ends: Log Analytics, the environment, a Key Vault holding every secret, a setup identity, the Azure
-SQL databases, a landing storage account, and the control plane, a worker pool, the GUI and, given `mcpImage`, the MCP
-server. Three layers make it so (`osdu/deploy/README.md` explains each):
+SQL databases, a landing storage account, and the control plane, a worker pool, the GUI and, with `mcpEnabled` or an `mcpImage`, the
+MCP server. Three layers make it so (`osdu/deploy/README.md` explains each):
 
 1. **The configuration** describes the estate: its SQL connections, partitions, landing storage, repositories, further
    values and database owners. It names secrets and never holds one.
@@ -292,6 +293,7 @@ OSDU Delivery's Bicep parameters beyond SQLFlow's:
 | `landingStorage` | The storage account the flows read their files from, created or adopted, granted to the apps, and given to every run as `LANDING_URL` (`abfss://<container>@<account>.dfs.core.windows.net`). |
 | `repositories` | The flow repositories the control plane syncs, registered at its start and kept as configured; a private one is read with the estate's GitHub App (`githubApp`, unless it sets `useGitHubApp` to false) or names the vault secret holding its own token (`credentialSecretName`, which wins). |
 | `githubApp` | The GitHub App the estate's GitHub repositories are read with: `appId` (its client ID), `privateKeySecretName` (the vault secret a person puts its `.pem` in), and for GitHub Enterprise `apiUrl`. Each repository on the App's GitHub that names no token gets `${githubapp:app=<appId>;key=keyvault:<vault>/<privateKeySecretName>}` as its credential reference, which the control plane and each worker resolve with their own identity; the output `githubAppPrivateKeySecret` names the secret. |
+| `externalTriggers` | The callers that sync one of `repositories` (`repository`) and fire the schedules they name (`schedules`) ([SQLFlow's external triggers](../../../../sqlflow/docs/reference/concepts/external-triggers.md)): a GitHub workflow (`gitHub`: `repository`, `workflow`, `ref`, `environment`, `repositoryId`), proved by the token GitHub mints for its job, or a system holding a key (`keySecretName`, the vault secret a person puts it in, listed by the `externalTriggerKeySecrets` output). The control plane writes them at start and disables one the configuration no longer names. |
 | `properties` | Further values every run resolves with, as a setting or a `${keyvault:...}` reference. |
 | `privateNetworks` | `SQLFLOW_DELIVERY_PRIVATE_NETWORKS` for the apps. |
 | `provisionEntraApp`, `azureAdAllowedGroupObjectId` | The Entra registration with the `SqlFlow.User` app role and assignment required ([authentication and identity](../concepts/authentication-and-identity.md)). |
@@ -301,7 +303,7 @@ The Terraform takes the same choices under snake-case names:
 | Variable | Meaning |
 | --- | --- |
 | `osdu_partitions` | The partitions, a map by data-partition-id of `{ default, description, url, token_url, scope, client_id, client_secret_name, acl_owner, acl_viewer, legal_tag, properties }`. At least one; with several, exactly one `default = true`; property names as a flow spells them, and a property whose name says it is a secret only as a `${keyvault:...}` or `${env:...}` reference. `url`, `token_url`, `scope` and `client_id` become `OSDU_URL`, `OSDU_TOKEN_URL`, `OSDU_SCOPE` and `OSDU_CLIENT_ID`, the three optional ones `OSDU_ACL_OWNER`, `OSDU_ACL_VIEWER` and `OSDU_LEGAL_TAG`. The client secret is never a variable: it is read from `osdu-<partition>-client-secret` (or `client_secret_name`) in the vault. |
-| `sql_connections`, `sql_admins`, `landing_storage`, `repositories`, `github_app`, `properties` | As the Bicep's `sqlConnections`, `sqlAdmins`, `landingStorage`, `repositories` (with `use_github_app`), `githubApp` (`app_id`, `private_key_secret_name`, `api_url`) and `properties`. The output `github_app_private_key_secret` names the vault secret the App's key goes in, and `deploy.ps1 -Infrastructure` says when it is not there yet. |
+| `sql_connections`, `sql_admins`, `landing_storage`, `repositories`, `github_app`, `external_triggers`, `properties` | As the Bicep's `sqlConnections`, `sqlAdmins`, `landingStorage`, `repositories` (with `use_github_app`), `githubApp` (`app_id`, `private_key_secret_name`, `api_url`), `externalTriggers` (`github` with `repository_id`, `key_secret_name`, `all_schedules`; the output `external_trigger_key_secrets`) and `properties`. The output `github_app_private_key_secret` names the vault secret the App's key goes in, and `deploy.ps1 -Infrastructure` says when it is not there yet. |
 | `catalog_database_name` | `OsduDelivery` by default. |
 | `osdu_database_name` | No longer read: a value is ignored, since the `osdu` schema lives in the catalog's database. |
 | `image_tag`, `mcp_enabled` | The images are the repository's, `<registry>/osdu-delivery-<app>:<image_tag>`, unless an app's image variable names one; `mcp_enabled` deploys the MCP server. An image is set when its app is created, and later applies leave it: the deploy scripts roll the apps forward. |
@@ -375,6 +377,11 @@ for a flow that names its partitions, `partition`; `payload` carries the kind's 
 [running an OSDU flow](../cli/run.md). A delivery run that held records still succeeds: held records are an outcome in the
 ledger, not a failure of the run, so a pipeline that must stop on them reads the held and failed counts in the run
 detail's `resultJson`.
+
+A GitHub workflow after a merge, or a system holding a key, can instead sync a repository and fire the schedules it
+names through an external trigger, which the deployment's configuration declares (`externalTriggers`,
+`external_triggers`, above) or an admin creates on the External triggers page
+([SQLFlow's external triggers](../../../../sqlflow/docs/reference/concepts/external-triggers.md)).
 
 ## See also
 

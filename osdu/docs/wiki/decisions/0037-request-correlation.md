@@ -12,7 +12,7 @@ keywords:
   - operation code
   - run id
   - azure logs
-updated: 2026-10-29
+updated: 2026-10-30
 sourceRefs:
   - osdu/src/SqlFlow.Delivery/Http/OsduCorrelation.cs
   - osdu/src/SqlFlow.Delivery/Engine/RunCorrelation.cs
@@ -58,7 +58,7 @@ execution, and the product's own calls flagged `osdu-delivery`.
   and `code`, found walking up from the flow's file as its `mappings/` are, never above the folder holding `.git`. It is
   versioned and reviewed with the flows, and a folder may hold its own for the flows under it.
 - **The operation code is the flow's `telemetry.operation`**, any kind, or its kind's code (`dlv`, `cache`, `ret`, `ast`,
-  `dim`, `inv`, `rmv`).
+  `dim`, `inv`, `rmv`, and `dwn` for the download flow of [0038](0038-download-flow.md)).
 - **Every kind's executor opens the run's value before it does anything else** and says it in the run log; a repository
   document a run cannot read fails the run before it sends anything, and `sqlflow validate` refuses the flow for it.
 - **The product's own operations carry `osdu-delivery-<operation>-<id>`**, a new id each time: the target probe

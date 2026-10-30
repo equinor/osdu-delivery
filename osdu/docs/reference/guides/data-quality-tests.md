@@ -60,7 +60,8 @@ write to OSDU.
   `osdu:wks:work-product-component--WellLog:1.4.0` (its mapping's `template.kind`) to the partitions `dev` and `test`.
   See [the delivery flow](../flow/delivery.md).
 - The template of that kind in a template folder on the assertion flow's path: the one the mapping fills. A test that
-  reads fields is checked against it. See [template folders](../concepts/templates.md#template-folders).
+  reads fields is checked against it. A node runs the flow from a checkout of the repository at the run's commit, so
+  commit the template with the flow. See [template folders](../concepts/templates.md#template-folders).
 - The module's database for `sqlflow` commands (`--db <conn-ref>` or `SQLFLOW_CATALOG_DB`), and the OSDU references the
   flow uses (`OSDU_URL`, `OSDU_TOKEN_URL`, `OSDU_CLIENT_ID`, `OSDU_CLIENT_SECRET`, `OSDU_SCOPE`).
 
@@ -411,7 +412,7 @@ warned passes with its warnings in its output. See [sqlflow assertions](../cli/a
 | --- | --- |
 | `failed` | An `error` assertion did not hold: the data is not as the test expects. Open the assertion's examples. |
 | `warned` | Only `warning` assertions did not hold. The run passes unless `failRunOn: warning`. |
-| `errored`, `The test's fields are checked against the template of <kind>, and no template folder on the path of ... holds template <kind>. ...` | The test reads fields and no template folder on the flow's path holds the kind's template. Write it into one (`sqlflow template capture --kind <kind> --out <folder>/<file>.json`, or download it on the Templates page) and run again. |
+| `errored`, `The test's fields are checked against the template of <kind>, and no template folder on the path of ... holds a template of <kind>. ...` | The test reads fields and no template folder on the flow's path holds the kind's template. Write it into one (`sqlflow template capture --kind <kind> --out <folder>/<file>.json`, or download it on the Templates page) and run again. |
 | `errored`, `'<label>': '<path>' is not a property of <kind> (template <version>); did you mean '<nearest>'?` | A path the schema does not have. Fix the path; nothing was read. |
 | `errored`, `The query matches <n> records, more than the <m> this test reads, ...` | Narrow the query, raise `maxRecords`, or set `sample: true`. |
 | `errored`, `Delivery flow '<flow>' keeps no ledger in partition '<p>': it has not delivered there, or is named differently.` | `delivered` names a flow that has no ledger in the partition. Check the name and the partition. |

@@ -223,7 +223,7 @@ could not be read (one of them may be the one meant), where else the repository 
 ```text
 no template folder on the path of welldb/mappings/WellLog@1.4.0.yaml holds template
 osdu:wks:work-product-component--WellLog:1.4.0 version 26a3c3441882db4f. On its path welldb/templates/
-osdu_wks_work-product-component--WellLog_1.4.0.json holds version 0f21b6a0c3d89e14. It reads welldb/templates.
+osdu_wks_work-product-component--WellLog_1.4.0.json holds version 0f21b6a0c3d89e14. It reads welldb/templates, templates.
 The repository holds version 26a3c3441882db4f of osdu:wks:work-product-component--WellLog:1.4.0 at
 archive/templates/WellLog.json, which is not on its path. Put the file holding version 26a3c3441882db4f in one of them:
 copy it from where the repository holds it, or, for a version a release of the OSDU data definitions publishes, download
@@ -246,10 +246,10 @@ one version of the kind in the folder.
   and a folder that no longer holds it leaves the mapping unable to load until it does ([mapping](../flow/mapping.md)).
 - **A search** names the schema of the kind it searches the same way, `schema.kind` and an optional `schema.version`,
   settled from the folders on the mapping's path ([mapping lookups](../flow/mapping-lookups.md)).
-- **An assertion test** reads the template of its `kind` from the folders on its flow's path: the version its `template`
-  names, the version the mapping it names fills (`template: WellLog@1.5.0`), or, naming neither, the one version its
-  nearest folder holds. The records its known values reach are described by the newest version of their type the flow's
-  folders give ([assertion](../flow/assertion.md#checked-against-the-template)).
+- **An assertion** (a `tests:` entry) reads the template of its `kind` from the folders on its flow's path: the version
+  its `template` names, the version the mapping it names fills (`template: WellLog@1.5.0`), or, naming neither, the one
+  version its nearest folder holds. The records its known values reach are described by the newest version of their type
+  the flow's folders give ([assertion](../flow/assertion.md#checked-against-the-template)).
 - **A dimension** reads, for each kind its pattern matches among the templates its flow's folders hold, the one version
   of that kind they settle to, and describes the records it reaches by id by the newest version of their type
   ([dimension](../flow/dimension.md)).
@@ -288,8 +288,8 @@ where it lives; any other repository is read in the folder its last sync read wh
 that synced it, or a node on the same machine), and otherwise the commit its last sync pulled is checked out from its
 remote, with its source's credential, into the cache a run's commit is checked out into. A file read this way must
 still hold what the sync recorded: one that changed since is refused, saying to sync the repository again, and one whose
-repository cannot be had on this host says why. A host with no catalog, such as the command line without `--db`, reads
-templates only from a working copy.
+repository cannot be had on this host says why. A host that names no catalog in `SQLFLOW_CATALOG_DB` reads templates
+only from a working copy.
 
 ## Where templates come from
 

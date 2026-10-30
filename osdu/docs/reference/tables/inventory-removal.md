@@ -43,7 +43,7 @@ every chunk or round, and closes it `completed` or `failed`
 | `RunId` | `uniqueidentifier` | yes | The platform run the removal ran as. |
 | `Actor` | `nvarchar(200)` | no | Who asked for it. |
 | `Finding` | `nvarchar(16)` | no | The finding whose ids it removes. |
-| `Scope` | `nvarchar(16)` | no | `record` (a soft delete) or `everything` (a purge). |
+| `Scope` | `nvarchar(16)` | no | `record` (a soft delete), `everything` (a purge) or `inventory` (the inventory's own rows of gone ids, nothing asked of OSDU; [Removing gone ids](../flow/inventory-removals.md#removing-gone-ids)). |
 | `NamesIds` | `bit` | no | Set when the removal named its ids; clear when it took every id of the finding. |
 | `Requested` | `bigint` | no | How many ids the operator was shown, which the removal held the inventory to before it removed anything. |
 | `Status` | `nvarchar(16)` | no | `running`, `completed` or `failed`. |

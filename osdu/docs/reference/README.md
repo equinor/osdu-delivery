@@ -17,9 +17,9 @@ osdu/docs/reference/
   manifest.json          machine index over every page (MCP search surface), written by build_manifest.py
   cli/<verb>.md          one page per OSDU verb of `sqlflow`, plus what OSDU adds to SQLFlow's run, validate, db, worker,
                          control-plane and auth
-  flow/<document>.md     one page per document the extension adds (delivery, retrieval, cache, assertion, dimension and
-                         inventory flows, the mapping and its parts, the dictionary), plus the delivery flow's interfaces,
-                         routes, DDMSs and the other DDMS shapes and services
+  flow/<document>.md     one page per document the extension adds (delivery, retrieval, cache, assertion, dimension,
+                         inventory, removal and download flows, the mapping and its parts, the dictionary, the repository
+                         document), plus the delivery flow's interfaces, routes, DDMSs and the other DDMS shapes and services
   concepts/<slug>.md     how the extension works: the ledger, record lifecycle, submissions, change detection, templates,
                          the partition cache, partitions, protocols, removal and reversal, lineage, the GUI, the API, ...
   guides/<slug>.md       task-oriented walkthroughs
@@ -62,7 +62,7 @@ and a one-sentence summary.
 
 Writing rules: one topic per page; never repeat what a SQLFlow page says, link it; examples use one generic estate (a
 well database called `welldb`, the `dev` and `test` partitions) and are validated with `sqlflow validate`; secrets are
-references only (`${env:NAME}`, `${keyvault:NAME}`); no em dash.
+references only (`${env:NAME}`, `${keyvault:vault/secret}`); no em dash.
 
 ## Maintenance
 

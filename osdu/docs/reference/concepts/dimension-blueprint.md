@@ -144,7 +144,7 @@ fails where [What a build does](../flow/dimension-build.md#what-a-build-does) sa
 | `The template does not declare <path> a reference to another record, so the next step reads records only where it holds a record id.` | A step before the last. |
 | `<path> holds an object, not a value; a build keeps only text it finds there, so name one of its properties.` | The last step of a label or an attribute. |
 | `The flow reads no template of <entity types>, so the paths read from these records are read as written, unchecked. Put one in a template folder on the flow's path to check them.` (for a draft: `No synced repository holds a template of <entity types>, ...`) | Records of a type no template it reads describes; the Definition tab repeats it under the diagram. |
-| `The template does not say which records <path> names: a build reads whatever records its ids name.` | A read whose template names no entity type. |
+| `The template does not say which records <path> names: a build reads whatever records its ids name.` (or `No template describes the records <path> is read from, ...` where no template describes the read at all) | A read whose template names no entity type. |
 | `The last build read template <kind> version <version>, which the flow no longer reads, ...` and `The last build read <path> without a template of <kinds>.` | The template the dimension's own records were read against is no longer in a folder on its path, or never was. |
 
 ## The columns and what was read for them

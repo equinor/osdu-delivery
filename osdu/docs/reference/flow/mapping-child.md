@@ -82,6 +82,7 @@ template:
 dataset:
   system: welldb
   key: [source_project, log_id]
+# parameters, record.acl and record.legal as the mapping page shows them
 record:
   data:
     Name: { $from: log_source }

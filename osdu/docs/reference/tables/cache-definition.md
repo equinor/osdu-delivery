@@ -22,6 +22,7 @@ sourceRefs:
   - osdu/src/SqlFlow.Delivery.Data/DeliveryEntities.cs
   - osdu/src/SqlFlow.Delivery/Catalog/DeliveryCatalogSync.cs
   - osdu/src/SqlFlow.Delivery/Catalog/OsduCacheStore.cs
+  - osdu/src/SqlFlow.Delivery/Snapshots/CacheOrigin.cs
 ---
 
 # osdu.CacheDefinition: each cached type a cache flow declares, copied from the repository by the sync
@@ -42,15 +43,15 @@ the partition.
 | `FlowName` | `nvarchar(200)` | no | The cache flow that declares the type. |
 | `Scope` | `nvarchar(200)` | no | The partition whose cache the flow fills: one of the partitions it names, or for a flow that names none, its `source.headers.data-partition-id` resolved. |
 | `DeclaresPartitions` | `bit` | no | Set when the flow works in partitions: it names the partitions it builds a cache for, or leaves them to the registry, and has a row per type and partition it serves. |
-| `Origin` | `nvarchar(16)` | no | Default `N'osdu'`. Where the type's records come from: `osdu` (searched on the platform), `table` (an ingestion table) or `dictionary` (a dictionary document in the repository). |
+| `Origin` | `nvarchar(16)` | no | Default `N'osdu'`. Where the type's records come from: `osdu` (searched on the platform), `table` (an ingestion table), `dictionary` (a dictionary document in the repository) or `dimension` (the members a dimension flow's dimension holds in the partition). |
 | `Endpoint` | `nvarchar(1000)` | yes | For an OSDU type: the endpoint the flow searches, as declared (a reference, never a resolved value). |
 | `Connection` | `nvarchar(1000)` | yes | For a table type: the flow's source connection, as declared (a reference, never a resolved value). |
-| `SourceObject` | `nvarchar(400)` | yes | For a table type: the three-part name of the ingestion table read. |
-| `KeyField` | `nvarchar(128)` | yes | For a table or dictionary type: the name each row's key is kept under. |
+| `SourceObject` | `nvarchar(400)` | yes | For a table type: the three-part name of the ingestion table read; for a dimension type, `<dimensionFlow>/<dimension>`. |
+| `KeyField` | `nvarchar(128)` | yes | For a table, dictionary or dimension type: the name each row's key is kept under. |
 | `DictionaryPath` | `nvarchar(1000)` | yes | For a dictionary type: the dictionary document's file, relative to the repository root. |
 | `RelativePath` | `nvarchar(1000)` | no | The cache flow's file, relative to the repository root. |
 | `Name` | `nvarchar(200)` | no | The short name mappings use (`UnitOfMeasure`). |
-| `EntityType` | `nvarchar(200)` | no | The OSDU entity type (`reference-data--UnitOfMeasure`), or `lookup--<Name>` for a table or dictionary type. |
+| `EntityType` | `nvarchar(200)` | no | The OSDU entity type (`reference-data--UnitOfMeasure`), or `lookup--<Name>` for a table, dictionary or dimension type. |
 | `Kind` | `nvarchar(400)` | yes | For an OSDU type: the search kind the capture sweeps. |
 | `Query` | `nvarchar(4000)` | yes | For an OSDU type: the search query narrowing the capture. |
 | `FieldsJson` | `nvarchar(max)` | no | What the cache keeps of each record, as JSON (`[{ "path": "data.Code", "as": "Code" }]`); the path a column for a table type, and for a dictionary type the fields its document names. |
@@ -71,5 +72,5 @@ the partition.
 ## Written and read by
 
 - **Written** by the repository sync (`DeliveryCatalogSync.cs`).
-- **Read** by every cache refresh (`OsduCacheStore.cs`), the Cache page, the mapping builder, dimensions that capture into
-  the cache, and the search terms.
+- **Read** by every cache refresh (`OsduCacheStore.cs`), the Cache page, the mapping builder, the removal of a dimension (which
+  refuses one a cached type captures), and the search terms.

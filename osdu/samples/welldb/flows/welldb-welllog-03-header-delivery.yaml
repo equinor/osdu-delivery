@@ -3,9 +3,9 @@
 # Delivers the well database's well logs to the wellbore DDMS as WellLog 1.4.0 records with their curve grids as bulk
 # data (POST /welllogs, then the parquet chunk, or a session of chunks), run from the ingestion tables SQLFlow's own pre
 # and ing flows load (welldb-welllog-01-*-pre, welldb-welllog-02-*-ing). This flow reads what changed there, renders it
-# with the mapping beside it (../mappings) and delivers it. The template it fills lives in the module's database, and so
-# does the cache it reads, the one of the partition a run delivers to (partitions): the lookup tables
-# ../cache/welldb-lookups-00-cache.yaml keeps there, which every reference the mapping writes is generated from, and the
+# with the mapping beside it (../mappings) and delivers it. The template it fills is the file in ../templates, and the
+# cache it reads lives in the module's database, the one of the partition a run delivers to (partitions): the lookup
+# tables ../cache/welldb-lookups-00-cache.yaml keeps there, which every reference the mapping writes is generated from, and the
 # partition's reference data ../cache/osdu-reference-00-cache.yaml captures from OSDU, which every generated reference is
 # checked against (the mapping's $coalesce and $unverified say where one may go out as an unverified reference instead).
 # One flow with a parameter serves every log source of the well database.

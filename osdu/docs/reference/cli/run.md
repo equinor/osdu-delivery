@@ -46,12 +46,16 @@ sourceRefs:
   - osdu/src/SqlFlow.Delivery/Engine/AssertionExecutor.cs
   - osdu/src/SqlFlow.Delivery/Engine/DimensionExecutor.cs
   - osdu/src/SqlFlow.Delivery/Engine/InventoryExecutor.cs
+  - osdu/src/SqlFlow.Delivery/Engine/RemovalExecutor.cs
+  - osdu/src/SqlFlow.Delivery/Engine/DownloadExecutor.cs
   - osdu/src/SqlFlow.Delivery/Documents/DeliveryFlowKind.cs
   - osdu/src/SqlFlow.Delivery/Documents/CacheFlowKind.cs
   - osdu/src/SqlFlow.Delivery/Documents/RetrievalFlowKind.cs
   - osdu/src/SqlFlow.Delivery/Documents/AssertionFlowKind.cs
   - osdu/src/SqlFlow.Delivery/Documents/DimensionFlowKind.cs
   - osdu/src/SqlFlow.Delivery/Documents/InventoryFlowKind.cs
+  - osdu/src/SqlFlow.Delivery/Documents/RemovalFlowKind.cs
+  - osdu/src/SqlFlow.Delivery/Documents/DownloadFlowKind.cs
   - osdu/src/SqlFlow.Delivery/Model/DeclaredPartition.cs
   - osdu/src/SqlFlow.Delivery/Model/SourceDefinition.cs
   - osdu/src/SqlFlow.Delivery/Model/CacheDefinition.cs
@@ -120,8 +124,9 @@ window is anchored on an OSDU flow. `--assertions-only` is refused for every kin
 | `cache` | `refresh`: it writes the version into the partition's cache. |
 | `assertion` | `test`: it keeps the report there. |
 | `dimension` | `build`: it keeps the builds there, and reads the templates of the kinds the dimensions read. |
-| `inventory` | `build`, `reconcile` and `remove`: it keeps the inventories there. |
+| `inventory` | `build`, `reconcile`, `remove`, `match` and `duplicates`: it keeps the inventories, their selections and their duplicate checks there. |
 | `removal` | Every operation: it compares with the delivery ledgers kept there, and keeps its runs and the deletions it finds in them. |
+| `download` | `download`: it keeps each download's ledger there, the files written and the version each holds. |
 | `retrieval` | Nothing; when it has one, each `retrieve` is recorded in the flow's ledger. |
 
 The module database is the catalog's: on a workstation `--db`, else `${env:SQLFLOW_CATALOG_DB}`, and on a node
@@ -144,7 +149,7 @@ partition's ([Partitions](../concepts/partitions.md)).
 | --- | --- | --- |
 | `delivery` | The registry's default when the flow serves it, else the flow's only listed partition; otherwise refused (`Flow '<name>' serves dev, test and no partition is the default; name the one this run or request targets, or make one the default.`) | Refused: `A run or request of delivery flow '<name>' acts in one partition; name it rather than '*'.` |
 | `cache` | As for a delivery flow. | Refreshes every partition the flow serves, one after another. One that fails fails the run, naming it; the others stay refreshed. |
-| `assertion`, `dimension`, `inventory`, `download` | As for a delivery flow. | Refused: one partition per run (a report, a build, an inventory, a download describes one partition). |
+| `assertion`, `dimension`, `inventory`, `removal`, `download` | As for a delivery flow. | Refused: one partition per run (a report, a build, an inventory, a removal's ledgers, a download describes one partition). |
 | `retrieval` | It reads the partition its `source.headers` name. | Any partition is refused: `Retrieval flow '<name>' names no partitions: it retrieves from the partition its source.headers name, so a run cannot target '<id>'. Leave the partition out of its run.` |
 
 A flow whose partition is its `data-partition-id` header refuses a partition too. A delivery, cache or retrieval flow of
@@ -158,7 +163,7 @@ parameter instead. A partition named for a flow that follows the registry has to
 | --- | --- | --- | --- |
 | `delivery` | `deliver` (default) | Plan the rows the ingestion tables changed and deliver what renders differently. | yes |
 | | `plan` | Plan the changed rows and report what a delivery would send, changing nothing. | no |
-| | `intake` | Plan the rows into work batches without delivering them: a fan-out member's share of a plan. The flow's next deliver run sends what it planned unless a drain of it comes first. | no |
+| | `intake` | Plan the rows into work batches without delivering them: a plan to drain later, or the key slices of a submission it names. The flow's next deliver run sends what it planned unless a drain of it comes first. | no |
 | | `drain` | Deliver the work batches a submission already planned. | yes |
 | | `verify` | Compare what OSDU holds with what the ledger recorded (5,000 records a run, passing over records verified in the last 24 hours unless forced). With the flow's `verify.reconcile`, mark each drifted or missing record for redelivery, named under the verify's activity; the flow's next deliver run sends it again, whatever its incremental window reads. | no |
 | | `replan` | Read every row of the scope again and deliver what renders differently now. | yes |
@@ -179,6 +184,10 @@ parameter instead. A partition named for a flow that follows the registry has to
 | | `reconcile` | Compare each inventory, as its last build left it, with the ledgers as they stand now. | no |
 | | `plan` | Count the records each inventory would read, and say what would stop it. | no |
 | | `remove` | Remove from OSDU the ids of one finding (`orphan`, `stale` or `forgotten`), for a flow whose document allows it. | yes |
+| | `match` | Find through the search which ids of one inventory hold what an operator's conditions ask, and keep them as the selection the inventory's page opened ([selecting ids](../flow/inventory-selections.md)). | no |
+| | `duplicates` | Find which ids of one inventory are copies of one another by the key the inventory's page opened a check with, and pick the copy each group keeps ([duplicate records](../flow/inventory-duplicates.md)). | no |
+| `download` | `download` (default) | List every id each download's kind holds, and write each record that is new or changed to its file; with `force`, every one again ([download flow](../flow/download.md#operations)). | no |
+| | `plan` | Count the records each download would list, and say where it would write and what would stop it, writing nothing. | no |
 | `removal` | `remove` (default) | Read every removal's key sources whole, compare them with its delivery flow's ledger, and take out of OSDU (reversibly) the records whose keys the source no longer holds and no run took out before, unless the guard holds what it found for an approval ([Removal flow](../flow/removal.md#a-run)). | yes |
 | | `plan` | Read and compare the same way and say what a remove run would find and whether the guard would hold it, writing nothing. | no |
 
@@ -199,7 +208,7 @@ no engine path could honour is refused before anything is queued.
 | Field | Type | Meaning |
 | --- | --- | --- |
 | `force` | `true`/`false` | Look at every record past the whole-run gates (the tier 0 skip and an already completed submission). Each record's own hashes still decide what is sent; to send records again, use `redeliver`. A `verify` with `force` checks records verified in the last 24 hours too; an `undo` with `force` also takes the undos that failed as often as the sweep tries. |
-| `submissionId` | UUID | The submission the run works on: a re-run, a fan-out member's share, or the submission a `reverse` run reverses. |
+| `submissionId` | UUID | The submission the run works on: a re-run, a part of a split delivery, or the submission a `reverse` run reverses. |
 | `runId` | UUID | The run a `reverse` run reverses. Only `reverse` takes it. |
 | `recordKeys` | array of UUIDs | The delivery keys the run is scoped to: at most 1,000, each once, or the 25,000 one removal takes on a `remove` run. A `deliver` run sends the named records again (everything of them, unless `redeliver` names a part); a `remove` run removes them. |
 | `maxRecords` | whole number | How many records a `deliver`, `plan`, `intake` or `replan` run reads: the first 1 to 1,000 of its scope, or 0 for the scope whole, in the order a read of the scope pages in (the identity primary key, or the record key without one), each planned as a run of every row would plan it. A smoke test of a flow, or of a new mapping or template, on a few records before the whole scope goes. The records need not be in the ledger yet. The run reads them by key, as a run scoped to records does ([submissions](../concepts/submissions.md#what-a-run-reads)): it leaves the scope's watermark where it is, and the records the ledger asked to plan again for a run of the whole scope, so the next run of the scope still reads every row. A source's interfaces each read the first of their own scope. A flow's `source.record.maxRecords` is the default every run of its scope takes ([the first records of the scope](../flow/delivery.md#the-first-records-of-the-scope)): a payload's stands in for it on that run, asking for more, for fewer, or with 0 for the scope whole. |
@@ -234,7 +243,7 @@ Which fields each operation takes:
 Across every operation: `submissionId` and `recordKeys` never together; a `maxRecords` above 0 never with `recordKeys`,
 `submissionId` or `slices`; `interface` and `interfaces` never together;
 `interfaces` never with `submissionId`, `recordKeys` or `slices`; `runId` only on `reverse`; `confirm` only on
-`delete-ledger`; `scope`, `filter` and `purgeLedger` only on `remove`; and `tests`, `tags`, `dimensions`, `inventories`, `removal`, `entries` and `approve`, which belong to the other kinds, never.
+`delete-ledger`; `scope`, `filter` and `purgeLedger` only on `remove`; and `tests`, `tags`, `dimensions`, `inventories`, `removal`, `selection`, `duplicateCheck`, `types`, `entries`, `approve` and `downloads`, which belong to the other kinds, never.
 A refusal names the field and why, for example
 `payload redeliver does not apply to the plan operation: a plan sends nothing.`, and a property of another kind is
 refused in the shape every kind uses (below):
@@ -256,7 +265,7 @@ A property counts when it asks for something (`force` set to `true`, a list that
 | `retrieval` | `force`: restart an incremental retrieval at its declared start. | `payload submissionId does not apply to a retrieval flow: only a delivery flow's runs name a submission; a retrieval flow's payload names only force.` |
 | `assertion` | `tests` (test names) and `tags` (every test carrying one of them), each at most 500 names, each once. With neither, every test runs. | `payload recordKeys does not apply to an assertion flow: only a delivery flow's runs are scoped to records; an assertion flow's payload names only tests and tags.` |
 | `dimension` | `dimensions`: the dimensions to build; every one when left out. | `payload tests does not apply to a dimension flow: only an assertion flow's runs select tests; a dimension flow's payload names only dimensions.` |
-| `inventory` | `inventories`: the inventories to build or reconcile. A `remove` run names exactly one inventory, `removal` (`finding`, `scope` `record` or `everything`, `expected`, and optionally `ids`) and `confirm`, the partition. | `payload runId does not apply to an inventory flow: only a delivery flow's reverse run names the run it reverses; an inventory flow's payload names only inventories, removal and confirm.` |
+| `inventory` | `inventories`: the inventories to build or reconcile. A `remove` run names exactly one inventory, `removal` (`finding`, `scope` `record` or `everything`, `expected`, and optionally `ids` or a `selection`) and `confirm`, the partition. A `match` run names exactly one inventory and the `selection` it fills, a `duplicates` run exactly one inventory and the `duplicateCheck` it fills; the inventory's page opens both and queues the run. | `payload runId does not apply to an inventory flow: only a delivery flow's reverse run names the run it reverses; an inventory flow's payload names only inventories, removal, confirm, selection and duplicateCheck.` |
 | `removal` | `entries`: the removals to carry out; every one when left out. An approval of what a guard held is `approve` (`expected`, the count the operator was shown waiting) with `confirm`, the partition, on a `remove` run naming exactly one removal; the Removals page sends it ([The guard](../flow/removal.md#the-guard)). | `payload tests does not apply to a removal flow: only an assertion flow's runs select tests; a removal flow's payload names only entries, approve and confirm.` |
 | `download` | `downloads`: the downloads to write or plan; every one when left out. `force`: a `download` run writes every record OSDU serves again, not only what is new or changed ([download flow](../flow/download.md#operations)). | `payload inventories does not apply to a download flow: only an inventory flow's runs select inventories; a download flow's payload names only downloads and force.` |
 
@@ -272,7 +281,8 @@ OK  delivery 'welldb-wellbore-03-delivery' completed in <seconds>s
   run log: <flow folder>/.sqlflow/runs/welldb-wellbore-03-delivery/<yyyyMMdd-HHmmss>_<run id prefix>
 ```
 
-or `FAILED  <error>` in place of the `OK` line. The run log says what the run did, step by step. With `--json`, stdout
+or `FAILED  <error>` in place of the `OK` line. The run log says what the run did, step by step, and its first lines
+name the `correlation-id` every OSDU request of the run carries ([Request correlation](../concepts/request-correlation.md)). With `--json`, stdout
 carries the run's result object (camelCase, enum values as names, `operation` first), which is also the `result` of its
 `run.json` and what the run page and the run list show. A delivery's records (planned, then delivered, unchanged,
 retrying, held, failed and waiting, added up over a source's interfaces) are also what a trigger request's trace and the
@@ -299,6 +309,8 @@ summary a GitHub job writes say the run did ([External triggers](../../../../sql
 | `build` (dimension) | `flow`, `partition`, `built`, `failed`, `skipped`, `dimensions`. |
 | `build`, `reconcile` (inventory) | `flow`, `partition`, `completed`, `failed`, `inventories`. |
 | `remove` (inventory) | `inventoryRemovalId`, `inventory`, `finding`, `scope`, `requested`, `removed`, `gone`, `skipped`, `failed`, `error`. |
+| `match` (inventory) | `operation`, `flow`, `partition`, `inventory`, `selectionId`, `status`, `direction`, `query`, `candidates`, `matched`, `outside`, `changed`, `requests`, `notes`, `error`. |
+| `duplicates` (inventory) | `operation`, `flow`, `partition`, `inventory`, `checkId`, `status`, `candidates`, `keyed`, `unkeyed`, `outside`, `groups`, `copies`, `decided`, `review`, `toRemove`, `requests`, `notes`, `error`. |
 | `download` | `flow`, `partition`, `completed`, `failed`, `downloads`, each with its `downloadRunId`, `location`, `rewrite`, `listed`, `added`, `changed`, `gone`, `returned`, `written`, `bytes`, `missing`, `pages`, `requests` and `error`. |
 | `remove`, `plan` (removal) | `operation`, `partition`, `removed` (across its removals) and `removals`, each with its `entry`, `deliveryFlow`, `removalRunId`, `status` (`completed`, `guarded` or `failed`), `tally` (the counts of [`osdu.RemovalRun`](../tables/removal-run.md)), `pending` and `awaitingApproval` after the run, `wouldHold` (a plan), `undone`, `cacheAfter` and `error`. |
 | A run that failed before it produced an outcome | `operation` and `error`. |
@@ -333,6 +345,13 @@ A flow whose document limits its runs (`source.record.maxRecords`) reads the who
 sqlflow run flows/welldb-welllog-03-header-delivery.yaml --set partition=dev --set logSource=COMPOSITE --payload '{"maxRecords":0}'
 ```
 
+Deliver the well logs of two log sources in one run: `logSource` is a parameter the flow's `source.record.scope` binds, so
+naming it twice gives it both values:
+
+```bash
+sqlflow run flows/welldb-welllog-03-header-delivery.yaml --set partition=dev --set logSource=COMPOSITE --set logSource=CPI
+```
+
 Run only the well log interface of a source:
 
 ```bash
@@ -355,8 +374,8 @@ sqlflow run flows/welldb-wellbore-03-delivery.yaml --set partition=dev --operati
 Refresh the lookup cache of every partition the cache flow serves, and run the smoke tests of an assertion flow:
 
 ```bash
-sqlflow run flows/welldb-lookups-00-cache.yaml --set 'partition=*'
-sqlflow run flows/welldb-welllog-04-assertion.yaml --set partition=dev --payload '{"tags":["smoke"]}'
+sqlflow run cache/welldb-lookups-00-cache.yaml --set 'partition=*'
+sqlflow run flows/welldb-welllog-04-header-assertion.yaml --set partition=dev --payload '{"tags":["smoke"]}'
 ```
 
 Read a long payload from a file:
@@ -370,7 +389,7 @@ sqlflow run flows/welldb-wellbore-03-delivery.yaml --set partition=dev --payload
 | Exit code | Condition |
 | --- | --- |
 | 0 | The run succeeded. |
-| 1 | The run failed: its operation failed; an interface of a source stopped or was skipped; a cache partition of a run over several failed; a dimension build or an inventory failed; a removal stopped part way; a removal flow's removal failed or its guard held what it found for an approval; or an assertion flow's tests came out as its `failRunOn` says fails the run (a failed or errored test by default). The result still says what was done. Also exit 1, with one `ERROR  <message>` line and no run, for kind arguments refused before the run starts. |
+| 1 | The run failed: its operation failed; an interface of a source stopped or was skipped; a cache partition of a run over several failed; a dimension build, an inventory or a download failed; a removal, a match or a duplicate check stopped part way; a removal flow's removal failed or its guard held what it found for an approval; or an assertion flow's tests came out as its `failRunOn` says fails the run (a failed or errored test by default). The result still says what was done. Also exit 1, with one `ERROR  <message>` line and no run, for kind arguments refused before the run starts. |
 | 130 | Interrupted with Ctrl+C. |
 
 A catalog write-back failure never changes the exit code (SQLFlow's rule). `sqlflow trigger` exits as SQLFlow's

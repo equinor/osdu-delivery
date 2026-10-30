@@ -97,11 +97,11 @@ every form: [--interface <name>] [--partition <id>] [--db <conn-ref>] [--json] [
 
 | Argument or option | Description |
 | --- | --- |
-| subcommand | `list`, `export`, `show`, `issues`, `release`, `adopt`, `reverse`, `reversals`, `artifacts`, `undos`, `removed` or `lift-removal`. Anything else prints `ERROR  say what to do with the records: list, export, show, issues, release, adopt, reverse, reversals, artifacts, undos, removed or lift-removal.` and the usage, exit 1. |
+| subcommand | `list`, `export`, `show`, `issues`, `release`, `adopt`, `reverse`, `reversals`, `artifacts`, `enrichments`, `undos`, `removed` or `lift-removal`. Anything else prints `ERROR  say what to do with the records: list, export, show, issues, release, adopt, reverse, reversals, artifacts, enrichments, undos, removed or lift-removal.` and the usage, exit 1. |
 | `<flow.yaml>` | The delivery flow whose ledger is read. Without it: `ERROR  name the flow document whose records these are.` |
 | `--interface <name>` | The interface whose ledger is read. A source with several interfaces has to name one: `Flow '<name>' delivers <n> interfaces (<names>); name the one this operation is for.` |
 | `--partition <id>` | The partition whose ledger is read, for a flow that works in partitions (each partition keeps a ledger of its own). A partition named here is read as it is, even one taken out of the registry, since its records stay readable. Without it, the partition a run would take. |
-| `--db <conn-ref>` | The catalog database, which holds the `osdu` schema. Without it every form fails with `Records live in the module's database. Run 'sqlflow records' with --db <conn-ref>, or set the catalog variable.` See [The osdu module database in sqlflow db](db.md). |
+| `--db <conn-ref>` | The catalog database, which holds the `osdu` schema. Without it and without `SQLFLOW_CATALOG_DB`, every form fails with `The osdu schema is read through the catalog's connection, which did not resolve: Environment variable 'SQLFLOW_CATALOG_DB' is not set. Give the command the catalog's connection with --db <conn-ref>, or set SQLFLOW_CATALOG_DB.` See [The osdu module database in sqlflow db](db.md). |
 | `--json` | One JSON document on stdout instead of the text form. Keys are sorted and properties without a value are left out. |
 
 Records are named the way the product shows them: a **delivery key** (a UUID, which `records list` prints as 32
@@ -115,7 +115,7 @@ The interface's records, the most recently changed first, 50 unless `--max` says
 
 | Option | Description |
 | --- | --- |
-| `--search <term>` | A delivery key (exact), or a prefix of the source key, the label, the OSDU id or the name of the file the row was landed from, or of one of the record's key values or a word of its label (`50372` finds `NO 16/2-10 / STAT_COMP / 50372/1`). A prefix search is indexed. |
+| `--search <term>` | A delivery key (exact), or a prefix of the source key, the label, the OSDU id or the name of the file the row was landed from, or of one of the record's key values or a word of its label (`LOG-0002` finds `Wellbore B-1 / COMPOSITE / LOG-0002/1`). A prefix search is indexed. |
 | `--contains` | Match `--search` anywhere in the source key, the label, the OSDU id or the ingestion file instead. It has no index, so it is refused when the rest of the filter leaves more than 100,000 records: `A contains search reads every record the rest of the filter leaves, and this filter leaves more than 100000. Use a prefix search, which is indexed, or narrow by status, submission or run first.` |
 | `--status <status>` | One status, any case: `pending`, `delivering`, `delivered`, `held`, `failed`, `deleted`, `reverted` or `waiting` ([Record lifecycle](../concepts/record-lifecycle.md)). Anything else fails naming them. |
 | `--issue <id>` | Only the records one issue keeps blocked: the 16 characters `records issues` prints for it. |
@@ -138,11 +138,11 @@ once a submission has staged them: an intake or a deliver run does that, while a
 stages nothing.`
 
 `--json`: `flow`, `flowId` and `records`, each with `deliveryKey`, `sourceKey`, `label`, `status`, `blocked`,
-`planRequestedUtc` (when it was asked to be planned again, or null), `targetId`,
+`planRequestedUtc` (when it was asked to be planned again; left out otherwise), `targetId`,
 `targetVersion`, `waitingFor`, `mapping`, `attemptCount`, `lastDeliveredUtc`, `lastVerifiedUtc`,
 `lastVerifyOutcome`, `lastError`, `sourceFileName`, `sourceRowNumber`, `issue`, and what the last check before sending
 found: `validationOutcome`, `validatedUtc` and `assertionFailures` (how many judgements of the mapping's assertions
-failed; null when the mapping states none).
+failed; left out when the mapping states none).
 
 ## records export
 
@@ -389,7 +389,7 @@ A record its mapping enriches with nothing says `none. The record was rendered b
 `--json`: `flow`, `flowId`, `deliveryKey`, `record` and `enrichments`, each with `name`, `adds`, `mapping`,
 `mappingFingerprint`, `recordKind`, `writtenThrough`, `setAside`, `rows` (`count`, `files`, `filesCounted`, `row`) and
 `records`, each with `id`, `linked`, `version`, `hash`, `filesHash`, `source` and `writes`, each with `attemptId`, `atUtc`,
-`runId`, `outcome` (how the record's try ended), `version` and `priorVersion` (null for the write that created it).
+`runId`, `outcome` (how the record's try ended), `version` and `priorVersion` (left out for the write that created it).
 
 ## records undos
 
@@ -415,7 +415,7 @@ With nothing left it says `no record holds anything an undo may still take.`
 ## records removed
 
 The ledger's deletions: the keys a [removal flow](../flow/removal.md) found the flow's source no longer holds, whichever
-removal flow found them, in delivery key order, 50 unless `--max` says otherwise (at most 1,000). `--state` shows one state,
+removal flow found them, in delivery key order, 50 unless `--max` says otherwise (1 to 1,000; any other count is refused). `--state` shows one state,
 `pending`, `awaiting-approval` or `removed`; a value that is none of them is refused, naming them. The line under a page
 names the `--after` of the next one.
 
@@ -478,7 +478,7 @@ Every name record of a source an earlier deployment wrote to OSDU, adopted at on
 
 ```bash
 sqlflow records adopt flows/welldb-namespaces-03-delivery.yaml --partition dev --confirm dev
-sqlflow run flows/welldb-namespaces-03-delivery.yaml --partition dev
+sqlflow run flows/welldb-namespaces-03-delivery.yaml --set partition=dev
 ```
 
 What blocks the well logs of a source, then release one issue after fixing its cause:

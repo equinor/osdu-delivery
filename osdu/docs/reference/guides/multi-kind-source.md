@@ -227,11 +227,12 @@ record:
 
 A log of wellbore `WB-0001` renders `"WellboreID": "dev:master-data--Wellbore:WB-0001:"`. Without its trailing `:`
 (the version separator) that is the id the wellbore interface delivers to, which is what lets the run line the two up.
-Save both templates in the module's database first ([templates](../concepts/templates.md)):
+Write both templates into the template folder first, and commit them with the mappings
+([templates](../concepts/templates.md)):
 
 ```bash
-sqlflow template capture --kind osdu:wks:master-data--Wellbore:1.3.0
-sqlflow template capture --kind osdu:wks:work-product-component--WellLog:1.4.0
+sqlflow template capture --kind osdu:wks:master-data--Wellbore:1.3.0 --out welldb/templates/osdu_wks_master-data--Wellbore_1.3.0.json
+sqlflow template capture --kind osdu:wks:work-product-component--WellLog:1.4.0 --out welldb/templates/osdu_wks_work-product-component--WellLog_1.4.0.json
 ```
 
 The mapping also reads two lookup tables from the partition's cache, `UnitAlias` for the curves' units and the

@@ -88,7 +88,7 @@ elsewhere ([the control plane verbs](../../../../sqlflow/docs/reference/cli/cont
 ## Synopsis
 
 ```bash
-osdu-delivery-setup setup [--env-file <path>]
+osdu-delivery-setup setup [--env-file <path>] [--api]
 osdu-delivery-setup check [--env-file <path>] [--api] [--test-osdu] [--prepare] [--json]
 osdu-delivery-setup env   [--env-file <path>]
 osdu-delivery-setup --help
@@ -101,6 +101,7 @@ dev.bat setup        # the setup questions again, offering the current values
 dev.bat check        # the check alone, with a test sign-in to OSDU; nothing is stopped or started
 dev.bat api          # the control plane and its workers without the GUI
 dev.bat single       # one process: the control plane runs runs on its own node and starts no workers (as F5 does)
+dev.bat single api   # one process, without the GUI ('managed' names the default; 'single' and 'managed' together are refused)
 ./dev.sh             # the same on macOS and Linux (./dev.sh setup, ./dev.sh check, ./dev.sh api, ./dev.sh single)
 ```
 
@@ -145,7 +146,7 @@ PATH or the one an installer just put in its usual place; by the time the plan i
 3. **Signing in.** The first admin's user name, and its password (12 characters at least; Enter generates one). A user
    that already exists keeps its password, so none is asked for. The session signing key is generated, or the current
    valid one kept.
-4. **OSDU.** The platform's base URL, the data partition, the tenant (from which the token URL is built) or the token URL
+4. **OSDU**, or left for later (the launchers start without it, and runs that reach OSDU fail). The platform's base URL, the data partition, the tenant (from which the token URL is built) or the token URL
    itself, the scope, the client id and secret, the owners and viewers groups, and the legal tag. On Azure Data Manager
    for Energy (`*.energy.azure.com`) the scope and the groups default to its conventions. On request it signs in with the
    client and reads the legal tag from the partition (`GET /api/legal/v1/legaltags/{name}`), writing nothing, and offers
@@ -196,7 +197,7 @@ reach it only that way.
 | Flag | Type | Default | Description |
 | --- | --- | --- | --- |
 | `--env-file <path>` | path | `<checkout>/.sqlflow/env` | The env file to set up, check or print. |
-| `--api` | flag | off | `check`: the GUI does not start, so Node.js is not needed and the GUI's origin is not checked. |
+| `--api` | flag | off | `check`, and the check `setup` ends with: the GUI does not start, so Node.js is not needed and the GUI's origin is not checked. |
 | `--test-osdu` | flag | off | `check`: sign in with the OSDU client and read the legal tag. Writes nothing to OSDU. |
 | `--prepare` | flag | off | `check`: first replace a copied template's `<generated>` values with generated ones, and run `az login` when the file reads Azure through the Azure CLI and nobody is signed in. The launchers pass it at every start. |
 | `--json` | flag | off | `check` only: one JSON document (`ready`, `errors`, `warnings`, and each section's findings) instead of text. |

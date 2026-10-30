@@ -40,6 +40,7 @@ sourceRefs:
   - osdu/hosts/osdu-delivery-mcp/src/docs.rs
   - osdu/hosts/osdu-delivery-mcp/src/instructions.rs
   - osdu/hosts/osdu-delivery-mcp/src/links.rs
+  - osdu/hosts/osdu-delivery-mcp/src/tools/mod.rs
   - osdu/hosts/osdu-delivery-mcp/src/tools/records.rs
   - osdu/hosts/osdu-delivery-mcp/src/tools/flows.rs
   - osdu/hosts/osdu-delivery-mcp/src/tools/documents.rs
@@ -54,7 +55,10 @@ sourceRefs:
   - osdu/deploy/docker/mcp.Dockerfile
   - osdu/deploy/k8s/mcp.yaml
   - osdu/deploy/compose/docker-compose.yml
+  - osdu/deploy/bicep/main.bicep
+  - osdu/deploy/terraform/main.tf
   - sqlflow/tools/sqlflow-mcp/src/host.rs
+  - sqlflow/tools/sqlflow-mcp/src/modes.rs
   - sqlflow/tools/sqlflow-mcp/src/links.rs
   - sqlflow/src/SqlFlow.Assistant/AssistantInstructions.cs
   - sqlflow/tools/sqlflow-mcp/src/control_plane.rs
@@ -117,8 +121,8 @@ Seven of SQLFlow's tools are withheld, so they are neither listed nor callable: 
 `check_duplicate_keys`, `compare_baseline`, `dataops_capabilities`, `analyze_warehouse_health`, `discover_source` and
 `scaffold_ingestion_flow`. Each profiles, samples or probes a datasource or a source's content. The list is `WITHHELD`
 in `osdu/hosts/osdu-delivery-mcp/src/lib.rs`;
-the server's tests fail when SQLFlow adds a tool this product has not decided to offer or withhold. No tool removes
-records from OSDU or reads what OSDU holds: removal is an operator's decision made in the GUI.
+the server's tests fail when SQLFlow adds a tool this product has not decided to offer or withhold. No `delivery_*` tool
+removes records from OSDU or reads what OSDU holds: removal is an operator's decision made in the GUI.
 
 ## The delivery tools
 
@@ -163,7 +167,9 @@ caller's name.
 | Approve or reject pending cache changes. | `delivery_decide_cache_changes` |
 
 An OSDU flow is run with SQLFlow's `trigger_run`, which carries the kind's `operation`, `values` and `payload`
-([running an OSDU flow](../cli/run.md)).
+([running an OSDU flow](../cli/run.md)). The server's instructions tell the assistant to run an operation that changes
+or removes what OSDU holds (`reverse`, `undo`, `remove`, `delete-ledger`, an inventory's or a removal flow's `remove`)
+only when the person asked for that exact operation; nothing in the server enforces it.
 
 ### Links into the GUI
 
@@ -264,7 +270,7 @@ holds none. `GET /healthz` answers without a token for the platform's probe.
 | `SQLFLOW_CONTROL_PLANE_URL` | The control plane the tools call. |
 | `SQLFLOW_GUI_URL` | The GUI's public address, for absolute links; unset, links are root-relative. |
 | `SQLFLOW_MCP_HTTP_BIND` | The listen address; `127.0.0.1:8787` unless set (the image sets `0.0.0.0:8080`). `--bind` wins. |
-| `SQLFLOW_MCP_HTTP_ALLOWED_HOSTS` | A `Host` header allowlist, comma separated; unset disables the check, since every request needs a bearer token. |
+| `SQLFLOW_MCP_HTTP_ALLOWED_HOSTS` | A `Host` header allowlist, comma separated; `--allowed-hosts` wins. Unset, a loopback bind keeps a loopback-only check and any other bind disables it, since every request needs a bearer token. |
 | `SQLFLOW_MCP_LOG` | The log filter (default `info`); logs go to stderr. |
 
 ```bash
@@ -273,7 +279,8 @@ docker run -p 8787:8080 -e SQLFLOW_CONTROL_PLANE_URL=http://controlplane:8080 os
 ```
 
 The compose stack has it behind the `mcp` profile, and `osdu/deploy/k8s/mcp.yaml` adds it as `/mcp` on the estate's host.
-The Bicep templates do not deploy it ([deployment](deployment.md)).
+The Container Apps templates deploy it when asked (Bicep `mcpEnabled` or `mcpImage`, Terraform `mcp_enabled` or
+`mcp_image`), and with an AI Foundry model the GUI chat assistant on it too ([deployment](deployment.md#azure-container-apps)).
 
 ## The GUI chat assistant
 

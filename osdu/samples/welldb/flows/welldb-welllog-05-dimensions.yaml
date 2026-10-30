@@ -34,8 +34,7 @@ parallelism:
   recordsAtOnce: 4
 
 # The module's database, where the dimensions' tables and the view are, named as the pipelines reading the view name it.
-# The sample's local setup keeps the module in the catalog's database; a deployment with a module database of its own
-# names that one here.
+# The module lives in the catalog's database, reached through its one connection.
 target:
   connection: ${env:SQLFLOW_CATALOG_DB}
 

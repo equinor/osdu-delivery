@@ -57,6 +57,7 @@ sourceRefs:
   - osdu/src/SqlFlow.Delivery/Engine/Protocols/OsduManifestAndDdmsProtocol.cs
   - osdu/src/SqlFlow.Delivery/Engine/Protocols/OsduDspdmProtocol.cs
   - osdu/src/SqlFlow.Delivery/Engine/Protocols/OsduEtpProtocol.cs
+  - osdu/src/SqlFlow.Delivery/Engine/Protocols/EnrichPartsProtocol.cs
   - osdu/src/SqlFlow.Delivery/Engine/Protocols/Ddms/IDdmsShape.cs
   - osdu/src/SqlFlow.Delivery/Engine/Protocols/Ddms/WellboreDdmsV3Shape.cs
   - osdu/src/SqlFlow.Delivery/Engine/Protocols/Ddms/WellDeliveryShape.cs
@@ -439,6 +440,23 @@ and would be held. An update leaves nothing to undo, since DSPDM keeps no versio
 | `dataspace` | `dataspace` (its OSDU record id, locator the path) | On the first record that needed a dataspace the delivery created. Live once the unit commits. | `kept`: a dataspace is never deleted; the Reservoir DDMS purges its OSDU record when it is, and other records' objects may live in it. |
 
 The undo deletes objects the unit created whether or not newer work follows.
+
+## Records a mapping's enrichments add
+
+A flow whose mapping's enrichments add records ([records an enrichment adds](../flow/enrich-records.md)) wraps its route,
+whichever it is, `storage` included, and writes each added record before the record itself:
+
+| Slot | Role | Declared | Undo |
+| --- | --- | --- | --- |
+| `enrich-dataset:<hash of id>` (a dataset an enrichment registers with its files) | `record` or `version` | [Registrations under ids the route chooses](#registrations-under-ids-the-route-chooses), before the Dataset service registration. | [The record itself](#the-record-itself), removed through the Dataset service's `softDelete`, even when newer work follows. |
+| `enrich-record:<hash of id>` (any other record an enrichment adds) | `record` or `version` | The same, before its storage write. | [The record itself](#the-record-itself), removed through storage's soft delete, even when newer work follows. |
+| `enrich.<name>.` followed by the workflow route's slot | as the [workflow](#workflow) route's | Before each trigger of an [enrichment's workflow](../flow/enrich-workflow.md). | The workflow route's undo. |
+
+Each record an enrichment adds has a slot of its own, so an undo reaches every one. A ledger an earlier release wrote may
+hold them under the bare `enrich-dataset` or `enrich-record`, one row for every record a delivery added, naming the last one
+written; an undo still takes such a row, and a try resuming a unit an earlier release began declares a record that
+release declared there in the same slot, so its intent is completed rather than undone. Everything else the unit
+declared is handed to the flow's own route. The files a registration staged stay in the platform's storage.
 
 ## What no undo removes
 

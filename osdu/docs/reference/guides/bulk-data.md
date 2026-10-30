@@ -214,8 +214,9 @@ partition's cache; see [Modifiers](../flow/mapping-modifiers.md) and
 
 ## 4. The delivery flow
 
-The well logs go by the `ddms` route, so this guide's flow is one of its own, `flows/welldb-welllog-03-ddms-delivery.yaml`
-(the estate's `welldb-welllog-03-delivery` writes the same records through the storage service alone):
+The well logs go by the `ddms` route. This guide's flow is a smaller one of its own, `flows/welldb-welllog-03-ddms-delivery.yaml`
+(the sample estate's `welldb-welllog-03-header-delivery` delivers its logs by the same route, keyed by `source_project`
+and `log_id`):
 
 ```yaml
 flowType: delivery
@@ -283,8 +284,9 @@ OK  'welldb-welllog-03-ddms-delivery' is valid (delivery: OsduData.silver.WellLo
 
 ## 5. Check, preview, deliver
 
-Check the flow against the template, the cache and the route before anything is sent. These commands read the templates
-and the cache from the module's database, the catalog's: the one `--db` names, else `SQLFLOW_CATALOG_DB`:
+Check the flow against the template, the cache and the route before anything is sent. These commands read the template
+from the template folders on the mapping's path, and the cache from the module's database, the catalog's: the one `--db`
+names, else `SQLFLOW_CATALOG_DB`:
 
 ```bash
 sqlflow check flows/welldb-welllog-03-ddms-delivery.yaml --partition dev

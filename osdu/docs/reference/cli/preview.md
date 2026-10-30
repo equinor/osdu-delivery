@@ -84,8 +84,8 @@ sqlflow preview <flow.yaml> [--interface <name>] [--partition <id>] [--key <key>
 
 ## What it needs
 
-The template, the cache version and the ledger live in the module database, so `preview` needs it, as `check` does.
-It also opens the flow's ingestion tables on this machine through the flow's own `source.connection`, reads the
+The template is read from the template folders on the mapping's path; the cache version and the ledger live in the
+module database, so `preview` needs it, as `check` does. It also opens the flow's ingestion tables on this machine through the flow's own `source.connection`, reads the
 record's payload files where the flow streams any, and asks the platform's search what the mapping's searches ask, so
 those references have to resolve here (the `.sqlflow/env` file supplies them on a workstation).
 
@@ -185,6 +185,7 @@ OK  welldb-wellbore-03-delivery: welldb:WB-0001 [<label>]
 | `asserted` | What the mapping's assertions found of the document (`<n> of <m> assertion judgement(s) of <mapping> failed (...)`, or that every one was met), with `; the check before sending would hold the record, its document kept` when a failure holds it; then each failure, at most ten, as `<where> fails "<assertion>" (<stage>, <onFail>): <why>`. The document shown is already without what `omit` left out ([mapping assertions](../flow/mapping-assertions.md)). |
 | `coalesce` | Which alternative of each `$coalesce` node gave the value written. |
 | `unverified` | A reference the mapping writes with `$unverified` that names no record the cache holds. |
+| `enrich` | Each enrichment of the mapping, in the order they render, with its enrichment mapping (or `its records`) and what it came to: how many of its rows the record had and how many changes it made, `adds nothing`, `holds the record: <why>`, held and set aside (`onHold: step`), or not rendered because an enrichment before it held the record; then each path it set or added to, each record it `adds <id> (<kind>) from row <n>`, and for one set aside the records it `keeps linking` ([enrichments](../flow/enrich.md)). |
 | `refers to` | Each OSDU id the document refers to, the property it is in, and the ledger record holding it. |
 | `payload` | Each payload part: its files, count and size, and per parquet file its rows and columns. |
 | `step <n>` | Each request of the route, in order, with what it carries on the next line. |
@@ -201,7 +202,8 @@ The JSON is the preview record, camelCase, properties without a value left out: 
 `originUpdatedUtc`, `fingerprint`, `deletedUtc`, `hold`, `row`, `datasets`, `omitted`), `decision` (`action`,
 `skipTier`, `reason`, `deliverMetadata`, `deliverPayload`, `ledger`), `document` (`targetId`, `kind`, `metadataHash`,
 `characters`, `held`, `holds`, `rendered`, `sent`, `placeholders`, `omitted`, `searches`, `cacheValues`, `choices`,
-`unverified`, `assertions`: the findings a verdict carries), `noDocument`, `references`, `referenceCount`, `payload`, `steps` (`order`, `service`, `request`, `what`,
+`unverified`, `assertions`: the findings a verdict carries, `enrichment`: each enrichment's `step`, `mapping`, `rows`,
+`effects`, `records`, `holds`, `notRendered`, `setAside`, `keptRecords` and `supplies`), `noDocument`, `references`, `referenceCount`, `payload`, `steps` (`order`, `service`, `request`, `what`,
 `returns`, `repeats`, `body`), `notes`, `issues` and `previewedUtc`. A source previewed one interface at a time gives
 an array of these.
 

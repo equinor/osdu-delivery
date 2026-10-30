@@ -97,6 +97,7 @@ enrich:
     mapping: WellLogGrade@1.0.0          # of the log's own kind: adds paths to the log
     onHold: step
 
+# parameters (dataPartition among them), record.acl and record.legal as the mapping page shows them
 record:
   data:
     Name: { $from: log_name }

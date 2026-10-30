@@ -80,7 +80,7 @@ A run of a delivery flow performs one operation, the one it names (`sqlflow run 
 | --- | --- |
 | `deliver` | Plan the selection into a submission, then drain it; send what submissions no run works on any more still hold (released records of settled submissions, and submissions a stopped run left open, which it then closes; see [Recovering a stopped submission](#recovering-a-stopped-submission)); undo what unfinished deliveries left. |
 | `plan` | Plan and report what would be sent, with a sample of the records it would send. Stages nothing in the ledger and sends nothing. |
-| `intake` | Plan into work batches without sending: a fan-out member's share, or a plan to drain later. |
+| `intake` | Plan into work batches without sending: a plan to drain later, or the key slices of a submission it names. |
 | `drain` | Send the work batches already planned, of the flow or of one submission. |
 | `replan` | Read every row of the scope again and deliver what renders differently. |
 | `verify` | Read back delivered records from OSDU and record `match`, `drifted` or `missing`: up to 5,000 records a run, those not verified in the last 24 hours unless forced. |

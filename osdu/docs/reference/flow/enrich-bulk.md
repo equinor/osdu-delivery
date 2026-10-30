@@ -71,11 +71,12 @@ source:
 | `source.datasets.<name>.files.root` | required | The folder the rows' bulk data folders are under, as a payload set's root is. |
 | `source.datasets.<name>.files.locationColumn` | required | The enrichment's table's column naming each row's folder under `root`. |
 | `source.datasets.<name>.files.pattern` | `*` | The files of a row's folder that are its bulk data. |
-| `source.datasets.<name>.files.hashColumn` | required unless `change.payloadDetect: lastModified` | The column holding the content hash of the row's bulk data. |
+| `source.datasets.<name>.files.hashColumn` | required unless `change.payloadDetect: lastModified` | The column holding the content hash of the row's bulk data. Under `change.payloadDetect: lastModified` the files' names, sizes and modified times stand for it. |
 | `source.datasets.<name>.files.chunkCountColumn` | none | The column holding how many files the row's bulk data has. |
 
-The enrichment may render a mapping of the record's own kind beside it (`mapping`), adding paths from the same row; one
-rendering records of another kind registers files of its own, so it cannot name bulk data too. The flow's route is `ddms`, it
+The enrichment may render a mapping beside it (`mapping`): of the record's own kind, adding paths from the same row, or of
+another kind, adding a record written through storage. One rendering datasets of a kind the Dataset service registers
+would register the row's files with them, so it cannot name bulk data too. The flow's route is `ddms`, it
 declares no payload set of the record's own, and one enrichment of the mapping names the bulk data. An enrichment's bulk data
 on any other route is refused: a route that sends files and bulk data as parts (`fileAndDdms`, `manifestAndDdms`) reads both
 from the record's row under `source.payloads`.

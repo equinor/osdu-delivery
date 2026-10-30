@@ -43,7 +43,7 @@ Not pruned by retention: a record names its submission. Deleting a delivery flow
 | `FlowId` | `uniqueidentifier` | no | The ledger identity of the flow (or interface) that planned it ([`osdu.Ledger`](ledger.md)). |
 | `FlowName` | `nvarchar(200)` | no | The flow's name. |
 | `MappingReference` | `nvarchar(200)` | no | The mapping that rendered the plan, as `<name>@<version>`. |
-| `RenderContext` | `nvarchar(max)` | no | The render context, as canonical JSON: the mapping reference and fingerprint, the template version, the parameter values, the cache partition and version, and for a mapping that searches the system properties its searches were written under. |
+| `RenderContext` | `nvarchar(max)` | no | The render context, as canonical JSON: the mapping reference and fingerprint, the template version, the parameter values, the cache partition and version, for a mapping that searches the system properties its searches were written under, and for a mapping that declares `enrich:` each enrichment (`enrich`): its name, its enrichment mapping and template version, and what decides the records it adds. |
 | `ParametersJson` | `nvarchar(max)` | no | The parameter values the run supplied, as a JSON object: each a string, or an array of strings for a parameter given several values. A removal reads it to find the records planned under its scope. |
 | `RecordCount` | `bigint` | no | How many candidate records the plan estimated when it opened the source. |
 | `WorkLocation` | `nvarchar(2000)` | yes | The work location the intake wrote its batches under; null for a plan that wrote none. |
@@ -52,7 +52,7 @@ Not pruned by retention: a record names its submission. Deleting a delivery flow
 | `Status` | `nvarchar(16)` | no | `received` while it plans; `planned` once the planning finished with records to send; `running` while records of it are still pending when its drain ends; `completed` or `failed` when it closes ([Submissions](../concepts/submissions.md#the-submission)). |
 | `ReceivedUtc` | `datetime2` | no | When the submission was registered, in UTC. |
 | `StartedUtc` | `datetime2` | yes | When its planning first started; a resumed plan keeps it. |
-| `CompletedUtc` | `datetime2` | yes | When it closed. |
+| `CompletedUtc` | `datetime2` | yes | When it closed. The submission page's Duration runs from `StartedUtc` to it, counting up while the submission is planned or running. |
 | `Planned` | `bigint` | no | Records the latest planning pass queued to send. |
 | `SkippedUnchanged` | `bigint` | no | Records the latest planning pass found rendering as OSDU already holds them. |
 | `AwaitingApproval` | `bigint` | no | Records a cache change waiting for approval held back: rendered and ready, not sent until the change is decided. |

@@ -30,7 +30,7 @@ public sealed record DeliveryFlowDocument : RegisteredFlowDocument
 
     /// <summary>
     /// What lineage reads the catalog's other repositories and built releases of OSDU's lineage with, on a host that has the
-    /// module database; null on one that reads none (osdu/docs/reference/concepts/osdu-order.md, Across repositories).
+    /// module database; null on one that reads none (osdu/docs/reference/concepts/osdu-order.md, Which schedules run before which, and OSDU's lineage by release).
     /// </summary>
     internal Func<Ordering.IOrderCatalog?>? Order { get; init; }
 

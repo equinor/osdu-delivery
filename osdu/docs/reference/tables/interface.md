@@ -23,6 +23,7 @@ sourceRefs:
   - osdu/src/SqlFlow.Delivery/Ordering/OrderCatalog.cs
   - osdu/src/SqlFlow.Delivery.ControlPlane/Background/InterfaceCatalogBackfillService.cs
   - osdu/src/SqlFlow.Delivery/Ledger/SqlServerLedgerBulk.cs
+  - osdu/src/SqlFlow.Delivery/Protocols/DeliveryProtocol.cs
 ---
 
 # osdu.Interface: each interface of a delivery flow as the repository sync found it, and the ledger it keeps
@@ -48,7 +49,7 @@ Rows are kept: an interface the repository no longer declares is marked inactive
 | `Ordinal` | `int` | no | Where the interface is in its document, from 0. |
 | `LedgerFlowId` | `uniqueidentifier` | no | The ledger identity: the flow id every ledger row of the interface carries ([`osdu.Ledger`](ledger.md)). |
 | `LedgerName` | `nvarchar(200)` | no | The name the ledger identity is derived from: the flow, `flow/interface`, or the ledger it adopts. |
-| `Route` | `nvarchar(32)` | no | The route the interface is delivered by: `storage`, `file`, `dataset`, `manifest`, `ddms`, `fileAndDdms`, `manifestAndDdms` or `workflow`. |
+| `Route` | `nvarchar(32)` | no | The route the interface is delivered by: `storage`, `file`, `dataset`, `manifest`, `ddms`, `fileAndDdms`, `manifestAndDdms`, `workflow`, `dspdm` or `etp` ([DDMS shapes and services](../flow/ddms-services.md)). |
 | `RouteReason` | `nvarchar(1000)` | yes | Why it goes by that route; null for the single form, whose document names its protocol. |
 | `MappingReference` | `nvarchar(200)` | no | The mapping it pins, `<name>@<version>` ([`osdu.Mapping`](mapping.md)). |
 | `CacheVersion` | `nvarchar(64)` | yes | The version of the partition's cache it renders against, as its `render.cacheVersion` says: `current`, or the label of the version it pins. The cache's retention keeps the records of every version an active interface pins. |

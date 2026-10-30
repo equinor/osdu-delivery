@@ -32,6 +32,8 @@ sourceRefs:
   - osdu/src/SqlFlow.Delivery.ControlPlane/Api/DeliveryConfigEndpoints.cs
   - osdu/src/SqlFlow.Delivery.ControlPlane/Api/DeliveryPartitionEndpoints.cs
   - osdu/src/SqlFlow.Delivery.ControlPlane/Api/DeliveryDimensionEndpoints.cs
+  - osdu/src/SqlFlow.Delivery.ControlPlane/Api/DeliveryDimensionViewEndpoints.cs
+  - osdu/src/SqlFlow.Delivery.ControlPlane/Api/DeliveryCachePruneEndpoints.cs
   - osdu/src/SqlFlow.Delivery.ControlPlane/Api/DeliveryTemplateEndpoints.cs
   - osdu/src/SqlFlow.Delivery.ControlPlane/Api/DeliverySearchTermEndpoints.cs
   - osdu/src/SqlFlow.Delivery.ControlPlane/Api/DirectOperationRunner.cs
@@ -67,7 +69,7 @@ remove records from OSDU, delete a flow's ledger, approve cache changes, probe a
 
 | Policy | Delivery routes behind it |
 | --- | --- |
-| `admin` (the `admin` scope) | Setting and removing central configuration properties (`PUT`, `DELETE /config/{name}`); registering, describing, defaulting and removing partitions; removing a dimension (`DELETE /dimensions/{id}`). |
+| `admin` (the `admin` scope) | Setting and removing central configuration properties (`PUT`, `DELETE /config/{name}`); registering, describing, defaulting and removing partitions; removing a dimension (`DELETE /dimensions/{id}`) or a view (`DELETE /dimensions/views/{name}`); purging a partition cache's history (`POST /cache/prune`). |
 | `author` (any signed-in user) | Refining, resetting, deleting and restoring search terms. |
 | `operate` (any signed-in user) | Every intervention, every removal, every in-process read of OSDU or the source, the explorer, value checks, reversals, ledger deletion, the data definitions sync. |
 | `read` (any signed-in user) | Every listing and detail of the ledger, mappings, templates, caches, partitions, configuration, assertions, dimensions and inventories. |
@@ -108,7 +110,7 @@ or renaming an account later does not rewrite what it did.
 | `user:<subject>` | What the control plane does itself on a person's request: a release, the records a redelivery or a rerender names, a purge from the ledger, an issue released, a dimension removed, a probe of a flow's target; and the removals and value checks it queues for a node. `<subject>` is the token's `sub` claim. |
 | `<subject>` | A run a person queued through the API (the GUI, `sqlflow trigger`, an MCP tool, an external scheduler): the run's requester, which the delivery run records its activities under. |
 | `schedule:<name>` | A run a SQLFlow schedule fired. |
-| `cli:<user>@<machine>` | Every change a command line verb records: a run executed directly with `sqlflow run` on a workstation, and a release, reversal, dimension removal, cache import, template, configuration property or partition set from the command line. |
+| `cli:<user>@<machine>` | Every change a command line verb records: a run executed directly with `sqlflow run` on a workstation, and a release, reversal, dimension removal, cache import, configuration property or partition set from the command line. |
 | `service:schedule` | A probe made by the scheduled target probe. |
 | `unknown` | A run with no requester recorded. |
 

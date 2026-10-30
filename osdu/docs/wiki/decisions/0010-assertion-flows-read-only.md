@@ -14,7 +14,8 @@ referenceRefs:
   - delivery-guide-data-quality-tests
 related:
   - delivery-wiki-0018-template-folders
-updated: 2026-10-21
+  - delivery-wiki-0029-storage-maintenance
+updated: 2026-10-30
 ---
 # 0010: Assertion flows read OSDU, check themselves against templates, and keep whole reports
 
@@ -22,6 +23,10 @@ Status: proposed. Documented in [assertion flow](../../reference/flow/assertion.
 
 > **Amended by [0018](0018-template-folders.md).** A test is checked against the template the template folders on the
 > flow's path hold, not the saved template of its kind.
+
+> **Amended by [0029](0029-storage-maintenance.md).** The retention pass below is the Maintenance page's optional area
+> `osdu.assertion-runs`, which removes nothing until an admin sets how long runs stay or cleans it up; what it removes is
+> unchanged.
 
 ## Context
 

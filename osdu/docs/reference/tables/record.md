@@ -33,6 +33,7 @@ sourceRefs:
   - osdu/src/SqlFlow.Delivery/Identity/DeliveryKey.cs
   - osdu/src/SqlFlow.Delivery/Snapshots/RenderContext.cs
   - osdu/src/SqlFlow.Delivery/Engine/Intake/SubmissionIntake.cs
+  - osdu/src/SqlFlow.Delivery/Ledger/RecordEnrichments.cs
 ---
 
 # osdu.Record: the current state of one deliverable of one flow, and the work waiting to be sent
@@ -88,7 +89,7 @@ this table through its status indexes on every call; nothing keeps a running tot
 | `LastError` | `nvarchar(2000)` | yes | The redacted message of the last failure or the hold reason, at most 2,000 characters. |
 | `PendingDocumentRef` | `nvarchar(64)` | yes | Where the pending rendered document sits in the submission's work batches, as `batch:offset:length`. |
 | `WorkBatch` | `int` | yes | The work batch the pending document was written in ([`osdu.WorkBatch`](work-batch.md)). |
-| `TargetStateJson` | `nvarchar(max)` | yes | Every identifier the target returned for what it holds now (record id and version, dataset ids, file sources, a workflow run id), as a JSON object merged step by step. |
+| `TargetStateJson` | `nvarchar(max)` | yes | Every identifier the target returned for what it holds now (record id and version, dataset ids, file sources, a workflow run id), as a JSON object merged step by step; for an enrichment of its mapping, where its rows came from and each record it added, with its row, hash and the version that landed ([What the ledger keeps](../flow/enrich.md#what-the-ledger-keeps)). |
 | `PendingStepJson` | `nvarchar(max)` | yes | The steps of the pending delivery that already completed and what they returned, keyed by step, so a retry resumes after them. |
 | `CacheSetId` | `bigint` | yes | The cached values the delivered document was built from, as the id of the set it shares with every record that read the same values ([`osdu.CacheSet`](cache-set.md)). |
 | `HeldCacheSetId` | `bigint` | yes | While the record is held: what its held render read out of the cache and did not find, as a set id. A cache version that brings in one of those ids releases the record to be planned again ([The partition cache](../concepts/partition-cache.md)). |

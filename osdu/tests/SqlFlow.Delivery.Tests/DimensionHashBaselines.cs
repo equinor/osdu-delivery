@@ -29,7 +29,7 @@ internal static class DimensionHashBaselines
             dimensions:
               - name: Wellbore
                 kind: "osdu:wks:work-product-component--WellLog:1.4.0"
-                query: 'data.Name:("STAT_COMP" OR "STAT_CPI")'
+                query: 'data.Name:("COMPOSITE" OR "CPI")'
                 path: data.WellboreID
                 label: data.FacilityName
                 unlabelled: Not specified

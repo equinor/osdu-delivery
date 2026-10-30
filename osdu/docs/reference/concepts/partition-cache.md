@@ -381,7 +381,7 @@ table is never imported: it is captured from its table, dictionary or dimension 
 
 ## Where to see it
 
-- **The Cache page** (OSDU, Build, Cache) shows the cache of the partition picked in the title bar: the cache flow files
+- **The Cache page** (Build, Delivery, Cache) shows the cache of the partition picked in the title bar: the cache flow files
   that fill it, with **Cache files** and **Refresh now** (a **Refresh** menu naming the flows when several fill the
   partition, since a refresh captures what one flow declares); and four tabs. **Records** browses what a version holds, a type
   at a time, with how a mapping reads each row. **History** lists the versions and which types each changed, a pruned

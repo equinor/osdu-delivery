@@ -289,10 +289,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   group and section folded to its name; from then on each starts as it was left
   ([The menu](osdu/docs/reference/concepts/menu.md)).
 - **The Records page searches as a flow's Records tab does, across every flow.** **Match anywhere** finds a term inside
-  the source key, the label, the OSDU id or the ingestion file (`6/2-1` finds `NO 16/2-10`), and **Drifted only** and
+  the source key, the label, the OSDU id or the ingestion file (`-0002` finds `LOG-0002/1`), and **Drifted only** and
   **Step held** narrow the page beside its status and flow pickers; each is in the address, the export takes them, and
   `GET /api/v1/delivery/records` takes `mode=contains`, `drifted` and `stepHeld`
   ([Records](osdu/docs/reference/concepts/gui.md#records), [finding records](osdu/docs/reference/concepts/ledger.md#finding-records)).
+- **Proof values of records found by what they hold.** An assertion flow's `knownValues` finds each record a sheet
+  describes by full paths in the OSDU record and values, including lists of paths up to the record a reference names
+  (`'[data.WellboreID, data.FacilityName]'`, as a dimension's label reads) and down to the records naming one, then
+  holds it to the sheet's proof values,
+  saying row by row which hold, which differ, which are not found and which are found twice
+  ([Known values](osdu/docs/reference/flow/known-values.md)).
+- **Tests switched off, and proof values that hold for a while.** A test, an assertion, a row of known values or a proof
+  value takes `disabled: <why>` and is reported as skipped with its reason. A test or an assertion says when its values
+  were stated (`asOf`) and how long they hold (`validFor: 90d`, or `validUntil`); past that it is not judged and is
+  flagged as needing new proof values, a warning on the board. `asOfField: createTime` compares only the records OSDU had
+  created by that day
+  ([Disabling a test](osdu/docs/reference/flow/assertion.md#disabling-a-test-and-the-day-its-values-hold-until)).
+- **Numbers a little off warn rather than fail.** A `count`, an `aggregate` or a known value's proof value takes
+  `warnWithin: 10%` (or a distance, `warnWithin: 5`): a number that misses by no more is a warning, so its test is warned
+  rather than failed, and the result says by how much it missed
+  ([A warning band](osdu/docs/reference/flow/assertion.md#a-warning-band)).
+- **A test names its template by the mapping.** `template: WellLog@1.5.0` checks a test against the template that
+  mapping fills, so a test reads as the delivery does and follows the mapping when it moves to another version; a
+  template version (`template: 2f8a99cb38d32480`) is taken as before ([Tests](osdu/docs/reference/flow/assertion.md#tests)).
+- **Aggregates that leave values out.** An aggregate's `except` lists values it does not count, such as a log's index
+  curve `MD` among its curves ([Assertions](osdu/docs/reference/flow/assertion.md#assertions)).
 
 ### Changed
 - **A run's requests carry the run's correlation id, and so do its attempts.** The `correlation-id` an OSDU request
@@ -506,30 +527,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   rather than starting, and Spawn and Always on say they only record a target
   ([The control plane](sqlflow/docs/reference/concepts/control-plane.md)).
 
-### Added
-
-- **Proof values of records found by what they hold.** An assertion flow's `knownValues` finds each record a sheet
-  describes by full paths in the OSDU record and values, including lists of paths up to the record a reference names
-  (`'[data.WellboreID, data.FacilityName]'`, as a dimension's label reads) and down to the records naming one, then
-  holds it to the sheet's proof values,
-  saying row by row which hold, which differ, which are not found and which are found twice
-  ([Known values](osdu/docs/reference/flow/known-values.md)).
-- **Tests switched off, and proof values that hold for a while.** A test, an assertion, a row of known values or a proof
-  value takes `disabled: <why>` and is reported as skipped with its reason. A test or an assertion says when its values
-  were stated (`asOf`) and how long they hold (`validFor: 90d`, or `validUntil`); past that it is not judged and is
-  flagged as needing new proof values, a warning on the board. `asOfField: createTime` compares only the records OSDU had
-  created by that day
-  ([Disabling a test](osdu/docs/reference/flow/assertion.md#disabling-a-test-and-the-day-its-values-hold-until)).
-- **Numbers a little off warn rather than fail.** A `count`, an `aggregate` or a known value's proof value takes
-  `warnWithin: 10%` (or a distance, `warnWithin: 5`): a number that misses by no more is a warning, so its test is warned
-  rather than failed, and the result says by how much it missed
-  ([A warning band](osdu/docs/reference/flow/assertion.md#a-warning-band)).
-- **A test names its template by the mapping.** `template: WellLog@1.5.0` checks a test against the template that
-  mapping fills, so a test reads as the delivery does and follows the mapping when it moves to another version; a
-  template version (`template: 2f8a99cb38d32480`) is taken as before ([Tests](osdu/docs/reference/flow/assertion.md#tests)).
-- **Aggregates that leave values out.** An aggregate's `except` lists values it does not count, such as a log's index
-  curve `MD` among its curves ([Assertions](osdu/docs/reference/flow/assertion.md#assertions)).
-
 ### Removed
 - `POST /api/v1/delivery/ledger/prune` is gone: set a limit for, or clean up, the areas `osdu.attempts`,
   `osdu.activity-logs` and `osdu.assertion-runs` on the Maintenance page or through `/api/v1/maintenance/areas/{areaId}`,
@@ -555,6 +552,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   says ([Upgrading an estate](osdu/docs/reference/concepts/templates.md#upgrading-an-estate-that-saved-templates-in-the-database)).
 
 ### Fixed
+- A delivery whose mapping's enrichment names the record's bulk data (`bulk: true`) without the column holding its hash
+  passed its checks and failed when it was planned; it is now refused when the flow is bound to its mapping, naming
+  `source.datasets.<name>.files.hashColumn`, and `change.payloadDetect: lastModified`, which the loader refused for such
+  a flow, now takes the bulk data's files as its watermark instead ([an enrichment's bulk data](osdu/docs/reference/flow/enrich-bulk.md)).
+- An unfinished delivery whose mapping's enrichment added several records undid only the last one written, leaving the
+  others in OSDU: the ledger kept them all in one artifact. Each record an enrichment adds now has an artifact of its own,
+  so the undo removes every one; an artifact a ledger already holds under the shared slot is still undone
+  ([records a mapping's enrichments add](osdu/docs/reference/concepts/artifacts-and-undo.md#records-a-mappings-enrichments-add)).
+- A command that reads the module's database, given no `--db` and no `SQLFLOW_CATALOG_DB`, failed with
+  `Environment variable 'SQLFLOW_CATALOG_DB' is not set.` alone, from wherever it first read it. It now says the osdu
+  schema is read through the catalog's connection and how to give it, from every command
+  ([the module database](osdu/docs/reference/cli/db.md#where-it-lives)).
 - After a redeploy, a flow's preview, a record's Render tab, a run form's value list and the explorer failed with "The
   flow file ... was not found where its repository was synced" until the repository synced again: the new container
   held none of the checkouts the old one made, and an operation read its flow's file only in the folder the last sync
@@ -573,7 +582,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   held 200 however many matched; it now answers every record the lookup reaches, up to 1,000
   ([finding records](osdu/docs/reference/concepts/ledger.md#finding-records)).
 - A flow's Records tab (and `sqlflow records list --search`) found nothing for a value its rows show inside the label or
-  the source key, such as the log number `50372` in `NO 16/2-10 / STAT_COMP / 50372/1`, because it matched only the start
+  the source key, such as the log number `LOG-0002` in `Wellbore B-1 / COMPOSITE / LOG-0002/1`, because it matched only the start
   of each whole value. It now also matches the start of any word or key value, as the Records page does
   ([finding records](osdu/docs/reference/concepts/ledger.md#finding-records)).
 - A delivery flow's document hash, which pairs a renamed flow with its ledger, took in the render threads of the machine

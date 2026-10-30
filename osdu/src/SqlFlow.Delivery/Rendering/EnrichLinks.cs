@@ -4,7 +4,7 @@ using SqlFlow.Delivery.Model;
 namespace SqlFlow.Delivery.Rendering;
 
 /// <summary>
-/// The ids a record's <c>$link</c> nodes write (osdu/docs/reference/flow/enrich-files.md): for each enrichment that registers
+/// The ids a record's <c>$link</c> nodes write (osdu/docs/reference/flow/enrich-records.md, The ids): for each enrichment that registers
 /// datasets, the id of the dataset each of its rows registers, made from the record's own id, the enrichment's name and, for
 /// one taking many rows, the row's key, so the record links them before anything is sent and on every render alike. An
 /// enrichment set aside on its hold links what its last delivery registered instead, which the chain hands over as

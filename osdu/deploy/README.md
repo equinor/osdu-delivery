@@ -49,12 +49,12 @@ when the estate has it.
   minted with the `node` scope. A node opens **no catalog connection**: the run's definition, its YAML, its
   lineage context and its live trace all travel over that protocol.
 - **The databases of an estate.** Two: all of the metadata is one database, and the data the flows work in, which is
-  where the volume is, is the other. The flows name both in three-part names (`OsduData.arc.*`,
+  where the volume is, is the other. The flows name both in three-part names (`OsduData.silver.*`,
   `OsduDelivery.osdu.v_dim_*`), so every layout keeps these names:
 
   | Database | Holds | Reached as | Grows with |
   | --- | --- | --- | --- |
-  | `OsduDelivery` | the metadata: SQLFlow's catalog schema (pipelines, runs, schedules, lineage, sources, users) and the delivery module's `osdu` schema beside it (the record ledger, mappings, templates, OSDU caches, dimension tables and views) | `SQLFLOW_CATALOG_DB`: the control plane's catalog connection, and on a node the same variable for the ledger and the flows that read the dimension views | the estate's activity, and every record ever delivered |
+  | `OsduDelivery` | the metadata: SQLFlow's catalog schema (pipelines, runs, schedules, lineage, sources, users) and the delivery module's `osdu` schema beside it (the record ledger, mappings, the index of the repositories' templates, OSDU caches, dimension tables and views) | `SQLFLOW_CATALOG_DB`: the control plane's catalog connection, and on a node the same variable for the ledger and the flows that read the dimension views | the estate's activity, and every record ever delivered |
   | `OsduData` | the data: what pre-ingestion lands from the source systems, and the keyed ingestion tables the OSDU flows read, each in a schema of its own | `${env:OSDU_DATA_DB}`, on the control plane and on every node | the source data |
 
   The two schemas of the metadata database stay separate things: their own EF contexts, their own migration
@@ -548,8 +548,8 @@ environment (identities, Azure SQL, Key Vault, sign-in, AI Foundry, network) is 
   path split of the other layouts does not exist here.
 - **`mcp`** is the MCP server, public because the chat assistant's model calls it from AI Foundry; it calls the
   control plane inside the application (`http://controlplane:8080`) with each request's own token.
-- **`worker`** is the job component. Its variables and Key Vault references (the node token, the `osdu` schema
-  connection, `SQLFLOW_CATALOG_DB` and `OSDU_DATA_DB`) are every worker's, and it holds no OSDU value of its own:
+- **`worker`** is the job component. Its variables and Key Vault references (the node token, `SQLFLOW_CATALOG_DB`,
+  through which it reaches the `osdu` schema, and `OSDU_DATA_DB`) are every worker's, and it holds no OSDU value of its own:
   those come with each run, from its partition. The control plane adds only each job's name, pool, drain window, time
   limit and resources when it starts it. The component's `safeToRestart: false` keeps the cluster autoscaler from
   moving a worker, and `backoffLimit: 0` leaves replacing a worker that ends to the control plane.

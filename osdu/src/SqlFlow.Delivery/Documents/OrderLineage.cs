@@ -66,8 +66,8 @@ internal sealed class OrderLineage
 
     /// <summary>
     /// <paramref name="lineage"/> with every OSDU type a flow described under the partition standing for every registered one
-    /// reads also read in each partition the estate's deliveries name (osdu/docs/reference/concepts/lineage.md, Flows that
-    /// serve every partition). Such a flow reads every registered partition, the named ones among them, so the flows
+    /// reads also read in each partition the estate's deliveries name (osdu/docs/reference/concepts/lineage.md, The nodes
+    /// the module adds). Such a flow reads every registered partition, the named ones among them, so the flows
     /// delivering those kinds to a named partition are ordered before it, as the flows delivering them to every partition
     /// are. Reads of other systems, writes, and flows of a named partition are left as they are.
     /// </summary>

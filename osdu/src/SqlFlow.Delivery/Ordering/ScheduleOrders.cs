@@ -80,7 +80,7 @@ public sealed record ScheduleFirst(ScheduleName Schedule, bool SameRepository, S
 }
 
 /// <summary>
-/// What the OSDU order says of one schedule (osdu/docs/reference/concepts/osdu-order.md, Schedules): the schedules whose
+/// What the OSDU order says of one schedule (osdu/docs/reference/concepts/osdu-order.md, Which schedules run before which): the schedules whose
 /// flows deliver records its flows' records refer to, which run best before it, and the deliveries it refers to that no
 /// schedule runs.
 /// </summary>

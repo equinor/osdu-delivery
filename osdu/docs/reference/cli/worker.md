@@ -27,6 +27,7 @@ related:
   - delivery-concept-run-trace-and-metrics
 sourceRefs:
   - osdu/hosts/SqlFlow.Delivery.Worker.Host/Program.cs
+  - osdu/src/SqlFlow.Delivery.Cli/WorkerHostArguments.cs
   - osdu/src/SqlFlow.Delivery.Cli/DeliveryCliModule.cs
   - osdu/src/SqlFlow.Delivery/Hosting/OsduModuleDatabase.cs
   - osdu/src/SqlFlow.Delivery/Engine/DeliveryServices.cs
@@ -52,15 +53,15 @@ sourceRefs:
 
 OSDU Delivery's command line is `sqlflow`: SQLFlow's CLI with the OSDU verbs added. `worker` is SQLFlow's verb. The
 node runtime (the poll, leases and the attempt budget, version pinning and git materialization, the live trace, failure
-handling, the drain on shutdown) and every option (`--url`, `--token`, `--pool`, `--poll-seconds`, `--drain-seconds`)
-are documented in [sqlflow worker](../../../../sqlflow/docs/reference/cli/worker.md). This page covers what an OSDU
+handling, the drain on shutdown) and every option (`--url`, `--token`, `--pool`, `--poll-seconds`, `--drain-seconds`,
+`--node-name`) are documented in [sqlflow worker](../../../../sqlflow/docs/reference/cli/worker.md). This page covers what an OSDU
 Delivery node needs that a plain SQLFlow node does not.
 
 ## Synopsis
 
 ```bash
-sqlflow worker --url <control-plane> [--token <ref>] [--pool a,b] [--poll-seconds N] [--drain-seconds N] [-v]
-SqlFlow.Delivery.Worker.Host [--url <control-plane>] [--token <ref>] [--pool a,b] [--poll-seconds N] [--drain-seconds N] [-v]
+sqlflow worker --url <control-plane> [--token <ref>] [--pool a,b] [--poll-seconds N] [--drain-seconds N] [--node-name <name>] [-v]
+SqlFlow.Delivery.Worker.Host [--url <control-plane>] [--token <ref>] [--pool a,b] [--poll-seconds N] [--drain-seconds N] [--node-name <name>] [-v]
 ```
 
 ## The worker host
@@ -72,7 +73,7 @@ ignore an argument silently. An option's value is never taken for one: `--pool w
 
 ```text
 ERROR  this host is the OSDU Delivery worker; pass the node's options only (the 'worker' verb is implied).
-ERROR  this host is the OSDU Delivery worker and takes the node's options only (--url, --token, --pool, --poll-seconds, --drain-seconds, -v); 'run' is not one of them.
+ERROR  this host is the OSDU Delivery worker and takes the node's options only (--url, --token, --pool, --poll-seconds, --drain-seconds, --node-name, -v); 'run' is not one of them.
 ```
 
 `sqlflow worker` run from the OSDU Delivery CLI is the same node. Either way the module registers on the node's
@@ -126,9 +127,9 @@ partition's values from the control plane's configuration
 | --- | --- | --- |
 | The data database | `${env:OSDU_DATA_DB}` | Reading the keyed ingestion tables the OSDU flow delivers from, and a cache flow's lookup tables. As the OSDU flow's `source.connection` it takes the values set for no partition, never a partition's own ([a flow's source connection](../concepts/environment-variables.md#a-flows-source-connection)). |
 | The metadata database | `${env:SQLFLOW_CATALOG_DB}` | A flow that reads the `osdu` schema's dimension views. It is the node's own variable too, which the module reads the ledger through ([the module database](#the-module-database-sqlflow_catalog_db)). |
-| The OSDU endpoint and its credentials | `${env:OSDU_URL}`, `${env:OSDU_TOKEN_URL}`, `${env:OSDU_CLIENT_ID}`, `${env:OSDU_CLIENT_SECRET}`, `${env:OSDU_SCOPE}` | The flow's `target` (or a cache, retrieval or assertion flow's `source`) and its token request. |
+| The OSDU endpoint and its credentials | `${env:OSDU_URL}`, `${env:OSDU_TOKEN_URL}`, `${env:OSDU_CLIENT_ID}`, `${env:OSDU_CLIENT_SECRET}`, `${env:OSDU_SCOPE}` | The flow's `target` (or the `source` of a flow of another kind that reads OSDU) and its token request. |
 | The destination parameters | `${env:OSDU_DATA_PARTITION}`, `${env:OSDU_ACL_OWNER}`, `${env:OSDU_ACL_VIEWER}`, `${env:OSDU_LEGAL_TAG}` | The mapping parameters the OSDU flow kind supplies when a flow does not set them. A flow bound to a partition takes `dataPartition` from its partition, or from its `data-partition-id` header, instead. |
-| Azure storage | `SQLFLOW_AZURE_AUTH` and the `AZURE_*` family | Reading payload files and writing work batches and retrieval output on `abfss://`, `wasbs://` or blob and dfs `https://` locations, and resolving `${keyvault:...}` references. See [sqlflow auth](auth.md). |
+| Azure storage | `SQLFLOW_AZURE_AUTH` and the `AZURE_*` family | Reading payload files and writing work batches and retrieval and download output on `abfss://`, `wasbs://` or blob and dfs `https://` locations, and resolving `${keyvault:...}` references. See [sqlflow auth](auth.md). |
 
 The names in the middle column are the generic estate's; a flow can name any variable. A `${keyvault:...}` reference is
 resolved with the node's own Azure identity.

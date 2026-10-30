@@ -41,7 +41,7 @@ related:
   - delivery-wiki-0004-preserved-keys
   - delivery-wiki-0019-linked-templates
   - delivery-wiki-0023-child-links
-updated: 2026-10-28
+updated: 2026-10-30
 ---
 # 0035: A record built in steps is rendered as one chain by its own flow, and sent once for any change
 
@@ -147,7 +147,8 @@ What OSDU and the module already have shaped the choice:
 - A flow without steps keeps its render context, its document hash and its records exactly, which the guard tests pin in
   the tiers on every pull request (`EnrichmentGuardTests`, the document hash taken from the code before steps existed).
 - Steps share the flow's source connection, its key, its runs and its schedule; a step owned elsewhere is added by editing
-  the flow's document.
+  the flow's document (since [0036](0036-enrich-in-the-mapping.md), by declaring it in the record's mapping, the flow's
+  document binding its rows).
 - A step adds paths, registers files, supplies the record's DDMS bulk data and runs a workflow, each as part of the record's
   one delivery, so the rule of one write per change holds for them (2026-10-28). A step's bulk data is the record's payload
   read from the step's row, not a part of its own, so the ddms route sends it as it always sent bulk data and only that
@@ -157,4 +158,5 @@ What OSDU and the module already have shaped the choice:
   no route derives the same id for something else. A dataset the record stops linking stays live and is marked superseded,
   since the record's earlier versions name it; removing everything purges it with the record.
 - Adding steps to a flow moves its rules, so its scope is read whole once; records the steps add nothing to render the
-  same and are not sent.
+  same and are not sent. Since [0036](0036-enrich-in-the-mapping.md) it is adding enrichments to the mapping that does so,
+  as any change of a mapping does.

@@ -6,9 +6,8 @@ namespace SqlFlow.Delivery.Setup.Host;
 
 /// <summary>
 /// <c>osdu-delivery-setup</c>: sets a checkout of OSDU Delivery up for a local run and checks it
-/// (osdu/docs/reference/cli/dev.md). dev.bat and dev.sh build it where .NET is installed, which takes seconds since it
-/// carries only the setup, and where it is not they run the self-contained binary each release publishes, which can
-/// install .NET. For what only the command line does (creating the catalog, registering the partition) it builds the
+/// (osdu/docs/reference/cli/dev.md). dev.bat and dev.sh build it from the checkout, which takes seconds since it carries
+/// only the setup, once they have offered to install .NET on a machine without it. For what only the command line does (creating the catalog, registering the partition) it builds the
 /// checkout's command line, in the background while the questions are asked.
 /// </summary>
 public sealed class Program

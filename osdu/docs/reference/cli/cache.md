@@ -70,7 +70,7 @@ captured from its origin by a refresh, and `cache import` refuses it ([lookup ta
 
 Every subcommand needs the module's database, which is the catalog's database, named by `--db` (default
 `${env:SQLFLOW_CATALOG_DB}`). Without it, the command fails before it reads anything
-(`Environment variable 'SQLFLOW_CATALOG_DB' is not set.`).
+(`The osdu schema is read through the catalog's connection, which did not resolve: Environment variable 'SQLFLOW_CATALOG_DB' is not set. Give the command the catalog's connection with --db <conn-ref>, or set SQLFLOW_CATALOG_DB.`).
 
 ## Arguments
 
@@ -197,7 +197,7 @@ and `deferred`. The Cache page's History tab offers the same purge to an admin.
 | --- | --- |
 | `name the partition or the cache document.` | No target after `list` or `import`. |
 | `'<verb>' is not a cache subcommand.` | A subcommand other than `list` or `import`. |
-| `Environment variable 'SQLFLOW_CATALOG_DB' is not set.` | No `--db` and no `SQLFLOW_CATALOG_DB`. |
+| `The osdu schema is read through the catalog's connection, which did not resolve: Environment variable 'SQLFLOW_CATALOG_DB' is not set. Give the command the catalog's connection with --db <conn-ref>, or set SQLFLOW_CATALOG_DB.` | No `--db` and no `SQLFLOW_CATALOG_DB`. |
 | `The directory '<dir>' to import cached types from does not exist.` | A wrong `--from-dir`. |
 | `The directory '<dir>' holds no cached type files ({Name}.json), so there is nothing to import.` | An empty directory. |
 | `the cache flow builds a cache for dev, test; name the one the files belong to with --partition.` | `import` with `--partition '*'`. |

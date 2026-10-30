@@ -413,7 +413,7 @@ export const osduDeliveryModule: GuiModule = {
     { path: "/delivery/dimensions", component: DeliveryDimensionsPage },
     { path: "/delivery/inventories", component: DeliveryInventoriesPage },
     { path: "/delivery/removals", component: DeliveryRemovalsPage },
-    // What OSDU holds, read live from it through a flow's credentials, under the operate policy, which every signed-in
+    // What OSDU holds, read live from it through the partition's own connection, under the operate policy, which every signed-in
     // user holds (only admin checks a scope).
     { path: "/delivery/explorer", component: ExplorerPage, requiredScope: "operate" },
     { path: "/delivery/search-terms", component: SearchTermsPage },

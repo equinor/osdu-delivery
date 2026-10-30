@@ -46,7 +46,7 @@ sourceRefs:
 Every OSDU flow kind may declare `parameters`: named values a run is given with `--set name=value` on the CLI, a
 trigger's `values` on the API, the fields of the run form in the GUI, or a schedule's `values`. A kind uses them where it
 allows a `{name}` token (a delivery flow's work location and payload roots, a retrieval's query and location, a cache's,
-dimension's and inventory's queries, an assertion's queries and texts, a removal's values and key locations), and a
+dimension's and inventory's queries, an assertion's queries and texts, a removal's values and key locations, a download's queries and location), and a
 delivery flow's `source.record.scope` binds them to columns of its record table. Every kind reads the declaration the
 same way, and a run resolves its values by one rule, the one the run form and a schedule's preview explain them with,
 so what they show is what the run takes ([run inputs](../../../../sqlflow/docs/reference/concepts/run-inputs.md)).
@@ -113,7 +113,7 @@ The values are the distinct values the column holds in rows not marked deleted, 
 first, at most 500. When the column holds more, what the operator types is looked up too: the values whose text holds
 it, ignoring case, its `%`, `_` and `[` taken as written. They are read in the control plane's process through the
 flow's own connection reference, in the partition the run form is on, by the module's read of a scope's values
-(`delivery-scope-values`, which `POST /delivery/flows/{id}/scope-values` answers too); nothing is written. Looked-up values are offered, not enforced: the table may hold another by the time the run
+(`delivery-scope-values`, which `POST /api/v1/delivery/flows/{pipelineId}/scope-values` answers too); nothing is written. Looked-up values are offered, not enforced: the table may hold another by the time the run
 reads it, so a value the list does not hold is marked as a warning, never refused. A column the table does not hold is
 named when the values are read: `<file>: parameters.<name>.lookup names column '<column>', which the table <table> does
 not hold. Columns: ...`, answered as `502 Lookup failed` with what the database said, any secret it quoted redacted.

@@ -1639,7 +1639,7 @@ internal static partial class AssertionMapper
     /// <summary>
     /// A full path of known values. A path in the OSDU record, from its root (<c>data.Name</c>, <c>tags.SourceProject</c>), as
     /// the assertion's field, a mapping's assertions and a dimension read a record; or a list of paths, read step by step as
-    /// a dimension's label and attributes are (osdu/docs/reference/flow/dimension-attributes.md, Labels and attributes): each path but
+    /// a dimension's label and attributes are (osdu/docs/reference/flow/dimension-attributes.md): each path but
     /// the last reads the reference the next records are found by, and the last reads the value
     /// (<c>[data.WellboreID, data.FacilityName]</c>, the name of the wellbore a log belongs to). An entry
     /// <c>group--Entity[reference]</c> steps the other way, to the records of that type whose reference names the record
