@@ -142,6 +142,7 @@ public sealed class MappingAssertionReportTests : IDisposable
             Assert.Equal("curves", occurrence.Child);
             var rows = occurrence.Source!.ScopeRows("curves");
             Assert.Equal(occurrence.Value, rows[occurrence.Record.Item!.Value - 1].GetString("curve_id"));
+            Assert.Equal(["dataset.curves.curve_id"], occurrence.Record.Columns);
         });
     }
 

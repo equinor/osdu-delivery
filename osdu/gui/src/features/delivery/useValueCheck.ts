@@ -75,10 +75,11 @@ export interface NestedFinding {
   from: VariableCheck;
 }
 
-/** The record the Document tab shows by the reader's choice, with the scope's values its row is read with. */
+/** The record the Failing records tab shows by the reader's choice: of which attribute, and of which reason it fails it. */
 export interface PickedRecord {
+  path: string;
   key: string;
-  values: Record<string, RunValue>;
+  finding: string;
 }
 
 /** A check queued on a node and not yet taken in. */
@@ -259,7 +260,7 @@ export interface ValueCheckSession {
   requestFocus: (path: string) => void;
   /** The scope's values as a read of the flow's rows is given them now. */
   sentValues: Record<string, RunValue>;
-  /** The record the Document tab shows by the reader's choice; none shows the one the attribute leads to. */
+  /** The record the Failing records tab shows by the reader's choice; none shows the first its attribute lists. */
   pickedRecord: PickedRecord | null;
   pickRecord: (record: PickedRecord | null) => void;
   /** Runs the check of one attribute again on a node, over the rows it read, and answers with the workbook of the rows that fail it. */

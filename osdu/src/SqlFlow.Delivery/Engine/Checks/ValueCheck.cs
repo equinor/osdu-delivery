@@ -298,7 +298,7 @@ public sealed record ValueCheckSample
     /// <summary>The delivery key the mapping derives, or null when a key part is empty.</summary>
     public Guid? DeliveryKey { get; init; }
 
-    /// <summary>The file the row was landed from.</summary>
+    /// <summary>The file the row was landed from: for an item of a repeated array, the file of its child row.</summary>
     public string? File { get; init; }
 
     /// <summary>The row's number in that file.</summary>
@@ -306,6 +306,13 @@ public sealed record ValueCheckSample
 
     /// <summary>For an item of a repeated array: the child row it was written from, counting from 1.</summary>
     public int? Item { get; init; }
+
+    /// <summary>
+    /// The source columns to fix, as the mapping names them (<c>dataset.curves.curve_unit</c>): the ones the reason names, else
+    /// the ones holding the value behind it, else the column the variable reads when it reads one, else the ones it reads
+    /// that are empty in this row. Null when none of these says which.
+    /// </summary>
+    public IReadOnlyList<string>? Columns { get; init; }
 
     /// <summary>The value written, or the value that caused the reason, clipped.</summary>
     public string? Value { get; init; }

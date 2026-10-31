@@ -45,11 +45,14 @@ internal sealed partial class ValueTally
     private long _withEmpty;
     private long _withFailedAssertion;
     private long _heldByAssertion;
+    private readonly FlowSystemColumns _system;
     private SourceRecord? _row;
 
     public ValueTally(
-        MappingDefinition mapping, SchemaSnapshot schema, EntrySelection selection, ValueCheckRequest request, ValueCheckLimits limits, Action<ValueCheckOccurrence>? each)
+        MappingDefinition mapping, SchemaSnapshot schema, EntrySelection selection, ValueCheckRequest request, ValueCheckLimits limits, Action<ValueCheckOccurrence>? each,
+        FlowSystemColumns? system = null)
     {
+        _system = system ?? new FlowSystemColumns();
         _schema = schema;
         _request = request;
         _limits = limits;
@@ -260,7 +263,19 @@ internal sealed partial class ValueTally
     private void Note(
         VariableTally variable, string outcome, string at, string? rule, string message, string? value, long row, ValueCheckSample sample, string? said = null, string? onFail = null)
     {
-        var record = sample with { Value = value, Message = said ?? message };
+        var child = variable.Repeater is { } repeater ? _childDatasets.GetValueOrDefault(repeater) : null;
+        var reason = said ?? message;
+        var childRow = ChildRow(_row, child, sample.Item);
+        var record = sample with
+        {
+            Value = value,
+            Message = reason,
+            File = _system.FileName is { } fileColumn ? childRow?.GetString(fileColumn) ?? sample.File : sample.File,
+            Row = _system.RowNumber is { } rowColumn && long.TryParse(childRow?.GetString(rowColumn), System.Globalization.NumberStyles.None, System.Globalization.CultureInfo.InvariantCulture, out var number)
+                ? number
+                : sample.Row,
+            Columns = ColumnsToFix(variable.Reads, reason, value, sample.Item, child),
+        };
         variable.Note(outcome, at, rule, message, value, row, record, _request, onFail);
 
         // What the mapping means no value for is no failure, so a listing of the failing rows leaves it out.
@@ -276,9 +291,84 @@ internal sealed partial class ValueTally
                 Value = value,
                 Record = record,
                 Source = _row,
-                Child = variable.Repeater is { } repeater ? _childDatasets.GetValueOrDefault(repeater) : null,
+                Child = child,
             });
         }
+    }
+
+    /// <summary>What a row holds in a source column: for an item of <paramref name="child"/>, the child row it was written from, counting from 1.</summary>
+    internal static string? CellOf(DatasetColumn column, SourceRecord? source, int? item, string? child)
+    {
+        if (source is null)
+        {
+            return null;
+        }
+
+        return column.Child is null
+            ? source.Row.GetString(column.Column)
+            : string.Equals(column.Child, child, StringComparison.OrdinalIgnoreCase) ? ChildRow(source, child, item)?.GetString(column.Column) : null;
+    }
+
+    private static SourceRow? ChildRow(SourceRecord? source, string? child, int? item)
+    {
+        if (source is null || child is null || item is not { } number)
+        {
+            return null;
+        }
+
+        var rows = source.ScopeRows(child);
+        return number >= 1 && number <= rows.Count ? rows[number - 1] : null;
+    }
+
+    /// <summary>
+    /// The source columns behind a value that went wrong, what connects the reason to the file: the ones the reason names,
+    /// else the ones holding the value, else the only column the variable reads, else those it reads that are empty in this
+    /// row. Null when none of these says which, rather than a guess.
+    /// </summary>
+    private IReadOnlyList<string>? ColumnsToFix(IReadOnlyList<DatasetColumn> reads, string reason, string? value, int? item, string? child)
+    {
+        if (reads.Count == 0)
+        {
+            return null;
+        }
+
+        var named = reads.Where(column => Names(reason, column.ToString())).ToList();
+        if (named.Count > 0)
+        {
+            return named.ConvertAll(column => column.ToString());
+        }
+
+        if (!string.IsNullOrWhiteSpace(value))
+        {
+            var holding = reads.Where(column => string.Equals(CellOf(column, _row, item, child)?.Trim(), value.Trim(), StringComparison.OrdinalIgnoreCase)).ToList();
+            if (holding.Count > 0)
+            {
+                return holding.ConvertAll(column => column.ToString());
+            }
+        }
+
+        if (reads.Count == 1)
+        {
+            return [reads[0].ToString()];
+        }
+
+        var blank = reads.Where(column => column.Child is null || item is not null).Where(column => string.IsNullOrWhiteSpace(CellOf(column, _row, item, child))).ToList();
+        return blank.Count > 0 ? blank.ConvertAll(column => column.ToString()) : null;
+    }
+
+    /// <summary>Whether <paramref name="reason"/> names a column: its whole name, not the start of a longer one.</summary>
+    private static bool Names(string reason, string column)
+    {
+        for (var at = reason.IndexOf(column, StringComparison.OrdinalIgnoreCase); at >= 0; at = reason.IndexOf(column, at + 1, StringComparison.OrdinalIgnoreCase))
+        {
+            var end = at + column.Length;
+            if (end == reason.Length || !(char.IsLetterOrDigit(reason[end]) || reason[end] == '_'))
+            {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     /// <summary>
@@ -410,6 +500,9 @@ internal sealed partial class ValueTally
 
         public string? Repeater => repeater;
 
+        /// <summary>The source columns the entry filling the variable reads.</summary>
+        public IReadOnlyList<DatasetColumn> Reads { get; } = entry?.Columns.Distinct().ToList() ?? [];
+
         public void CountRow(Standing standing) => _rows[standing] = _rows.GetValueOrDefault(standing) + 1;
 
         public void CountItem(Standing standing) => _items[standing] = _items.GetValueOrDefault(standing) + 1;
@@ -472,7 +565,7 @@ internal sealed partial class ValueTally
         {
             Target = target,
             Entry = entry?.Where,
-            Columns = entry?.Columns.Select(c => c.ToString()).Distinct(StringComparer.Ordinal).ToList() ?? [],
+            Columns = Reads.Select(c => c.ToString()).ToList(),
             Required = entry?.Required ?? true,
             Repeater = repeater,
             Rows = Counts(_rows) with { Asserted = _asserted },

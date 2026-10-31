@@ -26,13 +26,9 @@ public sealed class ValueIssuesWorkbookTests
 
     private static readonly Guid Delivery = Guid.Parse("11111111-2222-3333-4444-555555555555");
 
-    private static readonly IReadOnlyList<DatasetColumn> Base =
-    [
-        new(null, "curve"),
-        new(null, "project"),
-        new("aliases", "alias_name"),
-        new("aliases", "alias_type"),
-    ];
+    private static readonly ValueIssuesBaseData Base = new(
+        [new(null, "curve")],
+        [new(null, "project"), new("aliases", "alias_name"), new("aliases", "alias_type")]);
 
     private static readonly ValueCheckFinding Left = new()
     {
@@ -95,7 +91,8 @@ public sealed class ValueIssuesWorkbookTests
 
     private static ValueCheckOccurrence Issue(
         string at = Attribute, string outcome = "asserted", string? rule = "alias-name-type-in-osdu", string message = "'NoSuchType' names no record the partition holds",
-        string? value = "DEPTH", string key = "recall:GR", string? label = "Gamma ray", int? item = 2, string? child = "aliases", SourceRecord? source = null) => new()
+        string? value = "DEPTH", string key = "recall:GR", string? label = "Gamma ray", int? item = 2, string? child = "aliases", SourceRecord? source = null,
+        IReadOnlyList<string>? toFix = null) => new()
         {
             Target = Attribute,
             At = at,
@@ -103,7 +100,7 @@ public sealed class ValueIssuesWorkbookTests
             Rule = rule,
             Message = message,
             Value = value,
-            Record = new ValueCheckSample { SourceKey = key, Label = label, DeliveryKey = Delivery, File = "aliases.csv", Row = 12, Item = item },
+            Record = new ValueCheckSample { SourceKey = key, Label = label, DeliveryKey = Delivery, File = "aliases.csv", Row = 12, Item = item, Columns = toFix ?? ["dataset.aliases.alias_type"] },
             Source = source ?? Row(),
             Child = child,
         };
@@ -132,11 +129,11 @@ public sealed class ValueIssuesWorkbookTests
         using var read = new WorkbookReading(Write(Check(), Issue(), Issue(label: null, at: "osdu.data.NameAlias[].AliasName.Inner")));
         Assert.Equal([ValueIssuesWorkbook.IssuesSheet, ValueIssuesWorkbook.SummarySheet, ValueIssuesWorkbook.AboutSheet], read.SheetNames);
 
-        // What says where the row is and what is wrong with it leads, the base data follows, and the rest comes last.
+        // What is wrong and where to fix it lead, the base data follows, and the rest comes last.
         Assert.Equal(
-            ["Record", "Source key", "Source file", "Source row", "Item", "Outcome", "Reason", "Value",
+            ["Record", "Item", "Outcome", "Reason", "Source file", "Source row", "Source column", "Source value", "Value written",
                 "dataset.curve", "dataset.project", "dataset.aliases.alias_name", "dataset.aliases.alias_type",
-                "Rule", "Attribute", "Inside", "Delivery key"],
+                "Rule", "Attribute", "Inside", "Source key", "Delivery key"],
             read.Headers(ValueIssuesWorkbook.IssuesSheet));
 
         var rows = read.Rows(ValueIssuesWorkbook.IssuesSheet);
@@ -149,7 +146,9 @@ public sealed class ValueIssuesWorkbookTests
         Assert.Equal(2, first["Item"].GetNumber());
         Assert.Equal("Assertion failed", first["Outcome"].GetText());
         Assert.Equal("'NoSuchType' names no record the partition holds", first["Reason"].GetText());
-        Assert.Equal("DEPTH", first["Value"].GetText());
+        Assert.Equal("DEPTH", first["Value written"].GetText());
+        Assert.Equal("dataset.aliases.alias_type", first["Source column"].GetText());
+        Assert.Equal("NoSuchType", first["Source value"].GetText());
         Assert.Equal("alias-name-type-in-osdu", first["Rule"].GetText());
         Assert.Equal(Attribute, first["Attribute"].GetText());
         Assert.True(first["Inside"].IsBlank, "An issue at the attribute itself leaves Inside empty.");
@@ -169,6 +168,47 @@ public sealed class ValueIssuesWorkbookTests
         var sheet = read.Sheet(ValueIssuesWorkbook.IssuesSheet);
         Assert.Equal(1, sheet.SheetView.SplitRow);
         Assert.Equal(3, sheet.AutoFilter.Range.LastRow()!.RowNumber());
+    }
+
+    [Fact]
+    public void Amber_connects_the_reason_to_the_cell_to_fix_and_the_columns_are_told_apart_by_colour()
+    {
+        using var read = new WorkbookReading(Write(Check(), Issue(), Issue(toFix: [])));
+        var sheet = read.Sheet(ValueIssuesWorkbook.IssuesSheet);
+        var headers = read.Headers(ValueIssuesWorkbook.IssuesSheet).ToList();
+        XLColor Fill(int row, string header) => sheet.Cell(row, headers.IndexOf(header) + 1).Style.Fill.BackgroundColor;
+        var amber = XLColor.FromArgb(unchecked((int)0xFFFFD966));
+
+        // The columns to read first, and the cell in the row that is at fault.
+        Assert.Equal(amber, Fill(1, "Source file"));
+        Assert.Equal(amber, Fill(1, "Source column"));
+        Assert.Equal(amber, Fill(2, "dataset.aliases.alias_type"));
+
+        // The rest of the row is not, and a key and what the attribute reads have headers of their own.
+        Assert.NotEqual(amber, Fill(2, "dataset.aliases.alias_name"));
+        Assert.Equal(XLColor.FromArgb(unchecked((int)0xFFD9D9D9)), Fill(1, "dataset.curve"));
+        Assert.Equal(XLColor.FromArgb(unchecked((int)0xFFBDD7EE)), Fill(1, "dataset.project"));
+        Assert.True(sheet.Cell(1, 1).Style.Font.Bold, "A header stays in bold.");
+
+        // A row that cannot say which column has nothing amber: colour is never a guess.
+        Assert.NotEqual(amber, Fill(3, "dataset.aliases.alias_type"));
+        Assert.True(read.Rows(ValueIssuesWorkbook.IssuesSheet)[1]["Source column"].IsBlank);
+
+        Assert.Equal(["Amber", "Blue", "Grey"], read.Notes().Keys.Take(3));
+    }
+
+    [Fact]
+    public void A_cell_to_fix_with_nothing_in_it_says_so_and_stays_amber()
+    {
+        var source = Row();
+        var rows = new WorkbookReading(Write(Check(), Issue(item: 2, toFix: ["dataset.aliases.no_such_column"], source: source), Issue(toFix: ["dataset.project"], source: new SourceRecord
+        {
+            Row = SourceRow.FromStrings(new Dictionary<string, string?> { ["curve"] = "GR", ["project"] = "   " }),
+        }))).Rows(ValueIssuesWorkbook.IssuesSheet);
+
+        Assert.Equal("(empty)", rows[0]["Source value"].GetText());
+        Assert.Equal("(blank)", rows[1]["Source value"].GetText());
+        Assert.Equal("(blank)", rows[1]["dataset.project"].GetText());
     }
 
     [Fact]
@@ -303,11 +343,9 @@ public sealed class ValueIssuesWorkbookTests
         Assert.True(TemplatePath.TryParse("osdu.data.When", out var when, out _));
         var one = EntrySelection.Of([when!]);
 
-        var columns = ValueIssuesWorkbook.BaseData(flow, mapping, one).Select(c => c.ToString()).ToList();
+        var columns = ValueIssuesBaseData.Of(flow, mapping, one);
 
-        Assert.Contains("dataset.when", columns);
-        Assert.DoesNotContain("dataset.depth", columns);
-        Assert.Equal(flow.Source.Record.Key.Select(k => $"dataset.{k}"), columns.Take(flow.Source.Record.Key.Count));
-        Assert.Equal(columns.Count, columns.Distinct(StringComparer.OrdinalIgnoreCase).Count());
+        Assert.Equal(["dataset.when"], columns.Reads.Select(c => c.ToString()));
+        Assert.Equal(flow.Source.Record.Key.Select(k => $"dataset.{k}"), columns.Keys.Select(c => c.ToString()));
     }
 }

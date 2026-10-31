@@ -8,10 +8,12 @@ namespace SqlFlow.Delivery.Engine.Checks;
 /// <summary>
 /// The rows a value check found wrong with an attribute, as an Excel workbook (osdu/docs/reference/concepts/gui.md#mappings):
 /// a list to fix them from, with nothing left to look up. The <c>Issues</c> sheet is a row for each issue as the check meets
-/// it: the record, the file and row it came from, what it came to and why, the value, and the base data behind it, the
-/// source columns the attribute reads with what this row holds in them (for an item of a repeated array, its child row),
-/// beside the record's key. <c>Summary</c> adds the issues up by reason, the largest first, and <c>About</c> says what was
-/// checked, with what, and what each column holds. Give <see cref="Add"/> to the check as its <c>each</c>.
+/// it: the record, what it came to and why, then where to fix it (the file, the row and the column, and what the column holds
+/// there), then the base data behind it, the record's key and the source columns the attribute reads with what this row holds
+/// in them (for an item of a repeated array, its child row). Colour connects the two: amber is what to fix, on the columns
+/// that say where and on the cell itself among the base data. <c>Summary</c> adds the issues up by reason, the largest first,
+/// and <c>About</c> says what was checked, with what, and what each column and colour means. Give <see cref="Add"/> to the
+/// check as its <c>each</c>.
 /// </summary>
 /// <remarks>
 /// The sheet streams into the output as the check runs, so the most it holds is the file itself, and that is bounded: once
@@ -38,13 +40,14 @@ public sealed class ValueIssuesWorkbook : IDisposable
 
     private static readonly IReadOnlyList<XlsxColumn> LeadingColumns =
     [
-        new("Record", 36), new("Source key", 36), new("Source file", 40), new("Source row", 11), new("Item", 7), new("Outcome", 16),
-        new("Reason", 80), new("Value", 40),
+        new("Record", 36), new("Item", 7), new("Outcome", 16), new("Reason", 70),
+        new("Source file", 40, XlsxTint.Amber), new("Source row", 11, XlsxTint.Amber), new("Source column", 34, XlsxTint.Amber), new("Source value", 34, XlsxTint.Amber),
+        new("Value written", 34),
     ];
 
     private static readonly IReadOnlyList<XlsxColumn> TrailingColumns =
     [
-        new("Rule", 26), new("Attribute", 46), new("Inside", 30), new("Delivery key", 38),
+        new("Rule", 26), new("Attribute", 46), new("Inside", 30), new("Source key", 36), new("Delivery key", 38),
     ];
 
     private static readonly IReadOnlyList<XlsxColumn> SummaryColumns =
@@ -53,26 +56,30 @@ public sealed class ValueIssuesWorkbook : IDisposable
         new("Issues", 9), new("Rows", 9), new("Values", 60),
     ];
 
-    private static readonly IReadOnlyList<(string Column, string Holds)> Notes =
+    private static readonly IReadOnlyList<(string Column, string Holds, XlsxTint Tint)> Notes =
     [
-        ("Record", "The record's label from its mapping, or its source key when the mapping gives none."),
-        ("Source file, Source row", "The file the row was landed from, and its row in that file: where to fix it."),
-        ("Item", "For an item of a repeated array, the child row it was written from, counting from 1."),
-        ("Outcome", "Held: the record is not delivered. Invalid: a value breaking a rule of the template is sent. Left out: the record is sent without the attribute. Assertion failed: a value fails an assertion of the mapping, and On failure on the Summary sheet says what that does."),
-        ("Reason", "Why, as this record states it."),
-        ("Value", "The value written, or the value that caused the reason, cut at 300 characters."),
-        ("dataset.<column>", "The base data: what this row holds in the record's key columns and in each source column the attribute reads, named as the mapping names them. A column of a child dataset (dataset.<child>.<column>) is read from the item's child row."),
-        ("Rule", "For an invalid value, the template rule it breaks; for an assertion failed, the assertion."),
-        ("Attribute", "The attribute checked, as a template path."),
-        ("Inside", "Where the reason is, when it is a property inside the value written to the attribute."),
-        ("Delivery key", "The record's key in the ledger, when every part of its key has a value."),
-        ("On failure", "On the Summary sheet, what a failure of the assertion does: hold, report or omit."),
-        ("Values", "On the Summary sheet, the values behind the reason, the most frequent first."),
+        ("Amber", "What to fix: the columns saying where, and the cell itself among the base data. An amber cell can be filtered on by its colour.", XlsxTint.Amber),
+        ("Blue", "The source columns the attribute reads: what this row holds in them.", XlsxTint.Blue),
+        ("Grey", "The record's key columns, which find the row in the source.", XlsxTint.Grey),
+        ("Record", "The record's label from its mapping, or its source key when the mapping gives none.", XlsxTint.None),
+        ("Item", "For an item of a repeated array, the child row it was written from, counting from 1.", XlsxTint.None),
+        ("Outcome", "Held: the record is not delivered. Invalid: a value breaking a rule of the template is sent. Left out: the record is sent without the attribute. Assertion failed: a value fails an assertion of the mapping, and On failure on the Summary sheet says what that does.", XlsxTint.None),
+        ("Reason", "Why, as this record states it.", XlsxTint.None),
+        ("Source file, Source row", "The file the row was landed from and its row there: for an item of a repeated array, those of its child row.", XlsxTint.None),
+        ("Source column, Source value", "The column to fix, named as the mapping names it, and what the row holds in it: the column the reason names, else the one holding the value, else the attribute's only column, else those it reads that are empty. Empty when none of these says which.", XlsxTint.None),
+        ("Value written", "The value written to the attribute, or the value that caused the reason, cut at 300 characters.", XlsxTint.None),
+        ("dataset.<column>", "The base data, named as the mapping names it. A column of a child dataset (dataset.<child>.<column>) is read from the item's child row.", XlsxTint.None),
+        ("Rule", "For an invalid value, the template rule it breaks; for an assertion failed, the assertion.", XlsxTint.None),
+        ("Attribute", "The attribute checked, as a template path.", XlsxTint.None),
+        ("Inside", "Where the reason is, when it is a property inside the value written to the attribute.", XlsxTint.None),
+        ("Source key, Delivery key", "The record's key in the source, and in the ledger when every part of its key has a value.", XlsxTint.None),
+        ("On failure", "On the Summary sheet, what a failure of the assertion does: hold, report or omit.", XlsxTint.None),
+        ("Values", "On the Summary sheet, the values behind the reason, the most frequent first.", XlsxTint.None),
     ];
 
     private readonly MemoryStream output;
     private readonly long maxBytes;
-    private readonly IReadOnlyList<DatasetColumn> baseData;
+    private readonly ValueIssuesBaseData baseData;
     private readonly XlsxWorkbook workbook;
     private readonly XlsxSheet issues;
     private long found;
@@ -81,7 +88,7 @@ public sealed class ValueIssuesWorkbook : IDisposable
     /// A workbook written to <paramref name="output"/>, which is left open, listing issues with the source columns of
     /// <paramref name="baseData"/> until the file reaches <paramref name="maxBytes"/>.
     /// </summary>
-    public ValueIssuesWorkbook(MemoryStream output, long maxBytes, IReadOnlyList<DatasetColumn> baseData)
+    public ValueIssuesWorkbook(MemoryStream output, long maxBytes, ValueIssuesBaseData baseData)
     {
         ArgumentNullException.ThrowIfNull(output);
         ArgumentNullException.ThrowIfNull(baseData);
@@ -92,7 +99,12 @@ public sealed class ValueIssuesWorkbook : IDisposable
         workbook = new XlsxWorkbook(output);
         issues = workbook.AddSheet(
             IssuesSheet,
-            [.. LeadingColumns, .. baseData.Select(c => new XlsxColumn(c.ToString(), Math.Clamp(c.ToString().Length + 4, 14, 40))), .. TrailingColumns]);
+            [
+                .. LeadingColumns,
+                .. baseData.Keys.Select(c => BaseColumn(c, XlsxTint.Grey)),
+                .. baseData.Reads.Select(c => BaseColumn(c, XlsxTint.Blue)),
+                .. TrailingColumns,
+            ]);
     }
 
     /// <summary>Every issue met so far.</summary>
@@ -100,21 +112,6 @@ public sealed class ValueIssuesWorkbook : IDisposable
 
     /// <summary>The issues the Issues sheet holds.</summary>
     public long Listed => issues.Rows;
-
-    /// <summary>
-    /// The source columns a workbook of the attributes <paramref name="selection"/> names lists: the record's key, which finds
-    /// the row, then each column the entries it evaluates read.
-    /// </summary>
-    public static IReadOnlyList<DatasetColumn> BaseData(FlowDefinition flow, MappingDefinition mapping, EntrySelection selection)
-    {
-        ArgumentNullException.ThrowIfNull(flow);
-        ArgumentNullException.ThrowIfNull(mapping);
-        ArgumentNullException.ThrowIfNull(selection);
-        return flow.Source.Record.Key.Select(key => new DatasetColumn(null, key))
-            .Concat(mapping.Entries.Where(e => e.IsRepeater ? selection.Covers(e.Target.Text) : selection.Includes(e.Target.Text)).SelectMany(e => e.Columns))
-            .DistinctBy(column => column.ToString(), StringComparer.OrdinalIgnoreCase)
-            .ToList();
-    }
 
     /// <summary>Counts one issue, and lists it while the file has room.</summary>
     public void Add(ValueCheckOccurrence occurrence)
@@ -127,20 +124,27 @@ public sealed class ValueIssuesWorkbook : IDisposable
         }
 
         var record = occurrence.Record;
+        var toFix = record.Columns ?? [];
+        var fixValues = toFix.Select(name => Shown(CellNamed(name, occurrence))).ToList();
         issues.AddRow(
         [
             XlsxCell.Text(string.IsNullOrEmpty(record.Label) ? record.SourceKey : record.Label),
-            XlsxCell.Text(record.SourceKey),
-            XlsxCell.Text(record.File),
-            XlsxCell.Number(record.Row),
             XlsxCell.Number(record.Item),
             XlsxCell.Text(OutcomeWord(occurrence.Outcome)),
             XlsxCell.Text(occurrence.Message),
+            XlsxCell.Text(record.File),
+            XlsxCell.Number(record.Row),
+            XlsxCell.Text(string.Join(", ", toFix)),
+            XlsxCell.Text(string.Join("; ", fixValues)),
             XlsxCell.Text(occurrence.Value),
-            .. baseData.Select(column => XlsxCell.Text(BaseValue(column, occurrence))),
+            .. baseData.Keys.Select(column => XlsxCell.Text(BaseValue(column, occurrence))),
+            .. baseData.Reads.Select(column => toFix.Contains(column.ToString(), StringComparer.OrdinalIgnoreCase)
+                ? XlsxCell.Text(Shown(BaseValue(column, occurrence)), tint: XlsxTint.Amber)
+                : XlsxCell.Text(BaseValue(column, occurrence))),
             XlsxCell.Text(occurrence.Rule),
             XlsxCell.Text(occurrence.Target),
             XlsxCell.Text(occurrence.At == occurrence.Target ? null : occurrence.At),
+            XlsxCell.Text(record.SourceKey),
             XlsxCell.Text(record.DeliveryKey?.ToString("D")),
         ]);
     }
@@ -167,6 +171,16 @@ public sealed class ValueIssuesWorkbook : IDisposable
         _ => outcome,
     };
 
+    private static XlsxColumn BaseColumn(DatasetColumn column, XlsxTint tint)
+        => new(column.ToString(), Math.Clamp(column.ToString().Length + 4, 14, 40), tint);
+
+    /// <summary>A value as a cell to fix says it: one with nothing in it still has to read as the cell it is.</summary>
+    private static string Shown(string? value)
+        => value is null ? "(empty)" : value.Trim().Length == 0 ? "(blank)" : value;
+
+    private string? CellNamed(string name, ValueCheckOccurrence occurrence)
+        => baseData.Reads.FirstOrDefault(column => string.Equals(column.ToString(), name, StringComparison.OrdinalIgnoreCase)) is { } column ? BaseValue(column, occurrence) : null;
+
     /// <summary>
     /// What the row holds in a source column: for an item, the child row it was written from; for a value of the record that
     /// reads a child dataset, what the dataset's rows hold, since it reads them all.
@@ -183,13 +197,12 @@ public sealed class ValueIssuesWorkbook : IDisposable
             return source.Row.GetString(column.Column);
         }
 
-        var rows = source.ScopeRows(child);
-        if (occurrence.Record.Item is { } item && string.Equals(occurrence.Child, child, StringComparison.OrdinalIgnoreCase))
+        if (occurrence.Record.Item is not null && string.Equals(occurrence.Child, child, StringComparison.OrdinalIgnoreCase))
         {
-            return item >= 1 && item <= rows.Count ? rows[item - 1].GetString(column.Column) : null;
+            return ValueTally.CellOf(column, source, occurrence.Record.Item, child);
         }
 
-        var held = rows.Select(row => row.GetString(column.Column)).OfType<string>().Distinct(StringComparer.Ordinal).ToList();
+        var held = source.ScopeRows(child).Select(row => row.GetString(column.Column)).OfType<string>().Distinct(StringComparer.Ordinal).ToList();
         return held.Count == 0
             ? null
             : string.Join("; ", held.Take(MaxChildValues)) + (held.Count > MaxChildValues ? string.Create(CultureInfo.InvariantCulture, $"; and {held.Count - MaxChildValues} more") : string.Empty);
@@ -245,6 +258,8 @@ public sealed class ValueIssuesWorkbook : IDisposable
             ("Template version", XlsxCell.Text(check.Inputs.TemplateVersion)),
             ("Cache version", XlsxCell.Text(check.Inputs.CacheVersion)),
             ("Record table", XlsxCell.Text(flow.Source.Record.Object)),
+            .. baseData.Reads.Select(column => column.Child).OfType<string>().Distinct(StringComparer.OrdinalIgnoreCase)
+                .Select(child => ($"Table of {child}", XlsxCell.Text(flow.Source.Datasets.TryGetValue(child, out var dataset) ? dataset.Object : null))),
             ("Scope", XlsxCell.Text(scope)),
             ("Rows checked", XlsxCell.Number(rows.Checked)),
             ("Rows read", XlsxCell.Text(read)),
@@ -262,9 +277,9 @@ public sealed class ValueIssuesWorkbook : IDisposable
 
         about.AddRow();
         about.AddRow(XlsxCell.Text("Column", bold: true), XlsxCell.Text("What it holds", bold: true));
-        foreach (var (column, holds) in Notes)
+        foreach (var (column, holds, tint) in Notes)
         {
-            about.AddRow(XlsxCell.Text(column), XlsxCell.Text(holds));
+            about.AddRow(XlsxCell.Text(column, tint: tint), XlsxCell.Text(holds));
         }
     }
 
@@ -281,4 +296,29 @@ public sealed class ValueIssuesWorkbook : IDisposable
     }
 
     private sealed record SummaryLine(string? Attribute, string? Inside, string Outcome, string? Rule, string? OnFail, string Reason, long Issues, long? Rows, string? Values);
+}
+
+/// <summary>
+/// The source columns a workbook lists for the attributes it is of: the record's key, which finds the row, and each column the
+/// entries it evaluates read. A key column an entry reads is listed among what it reads.
+/// </summary>
+public sealed record ValueIssuesBaseData(IReadOnlyList<DatasetColumn> Keys, IReadOnlyList<DatasetColumn> Reads)
+{
+    /// <summary>The columns of the entries <paramref name="selection"/> evaluates, as a check evaluates them.</summary>
+    public static ValueIssuesBaseData Of(FlowDefinition flow, MappingDefinition mapping, EntrySelection selection)
+    {
+        ArgumentNullException.ThrowIfNull(flow);
+        ArgumentNullException.ThrowIfNull(mapping);
+        ArgumentNullException.ThrowIfNull(selection);
+        var reads = mapping.Entries
+            .Where(e => e.IsRepeater ? selection.Covers(e.Target.Text) : selection.Includes(e.Target.Text))
+            .SelectMany(e => e.Columns)
+            .DistinctBy(column => column.ToString(), StringComparer.OrdinalIgnoreCase)
+            .ToList();
+        var keys = flow.Source.Record.Key
+            .Select(key => new DatasetColumn(null, key))
+            .Where(key => !reads.Exists(column => string.Equals(column.ToString(), key.ToString(), StringComparison.OrdinalIgnoreCase)))
+            .ToList();
+        return new ValueIssuesBaseData(keys, reads);
+    }
 }

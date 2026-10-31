@@ -38,7 +38,7 @@ sourceRefs:
   - osdu/gui/src/features/delivery/PartitionSwitcher.tsx
   - osdu/gui/src/features/delivery/DeliveryOverviewPage.tsx
   - osdu/gui/src/features/delivery/RepositorySyncControl.tsx
-  - osdu/gui/src/features/delivery/ValueCheckDocument.tsx
+  - osdu/gui/src/features/delivery/ValueCheckRecords.tsx
   - osdu/src/SqlFlow.Delivery/Engine/Checks/ValueIssuesWorkbook.cs
   - osdu/gui/src/features/delivery/DeliveryRecordsPage.tsx
   - osdu/gui/src/features/delivery/DeliveryActivityPage.tsx
@@ -540,27 +540,31 @@ builder**, and three tabs:
 
 - **Properties**: the template the mapping fills as the record's tree, beside the selected attribute. The views
   **Filled**, **Missing**, **Unfilled**, **Failing** (after a data check) and **All** each carry a count; **View** adds
-  **Required**, **Minted** and **Nested**. The selected attribute reads in **Filled by**, **Data**, **Document**,
-  **Source** and **Schema**. The data check line picks a flow that renders with the mapping, its scope's values and how
-  many rows, and **Check all attributes**; an attribute's **Check values** checks it alone. See
+  **Required**, **Minted** and **Nested**. The selected attribute reads in **Filled by**, **Data**, **Failing records**
+  and **Schema**. The data check line picks a flow that renders with the mapping, its scope's values and how many rows, and
+  **Check all attributes**; an attribute's **Check values** checks it alone. See
   [writing a mapping](../guides/writing-a-mapping.md).
-  - **Document** and **Source** show one record two ways. The record is the one a row in **Data** opens (its eye for the
-    document, its database glyph for the source), the one a key names, or the first the check lists for the attribute
-    (the first of the scope with no check). The arrows step through the records the check lists, and the record stays as
-    the reader moves down the tree.
-  - **Document** is the record rendered as a delivery would render it, sent nowhere, with the attribute marked where it
-    landed (each item of a repeated array) and scrolled to. It says when the attribute is not in the document, and shows
-    what the mapping's assertions said of it for that record: a value a failure leaves out is already out of the document,
-    so its value and reason are given above it. The arrow in the corner opens the record in the flow's **Preview**.
-  - **Source** is the base data behind the attribute in that record: the record table, the file and row, the key, the
-    source columns the attribute reads, and what the row holds in them. For a repeated array it is the child dataset's rows,
-    the ones the check found wrong marked. A value's being null, empty or blank is said, since that is often the problem.
-    **The rest of the row** shows its other columns.
+  - **Failing records** goes through the rows a check found wrong with the attribute, one record at a time, on one page
+    read top to bottom. At the top, and staying in view, the reason (picked from a list when there are several) and
+    **Record n of m**, m being the rows that reason holds for; past the records listed so far, the next are read from a
+    node. Then the record, with its source key, file and row; **What is wrong in this record**, each value with its item,
+    its reason and where to fix it (**Fix at**: the file, the row and the column); **In the source**, the columns the
+    attribute reads and what the row holds in them, a child dataset's rows with the ones found wrong marked and the cell to
+    fix picked out, null, empty and blank told apart, and **The rest of the row** for its other columns;
+    and **In the rendered record**, the document as a delivery would render it, sent nowhere, folded down to the attribute,
+    each value of it marked and each place it is left out said where it would have been. A row of **Data** opens its record
+    here, and the arrow beside a record opens it in the flow's **Preview**. An attribute no row fails shows the first record
+    of the scope, and says so.
   - **Export rows**, in **Data**, saves the rows failing that attribute as an Excel workbook, reading them again on a node
-    as the check read them. **Issues** is a row for each issue, with the record, the file and row, what it came to, the
-    reason, the value, and the base data: the record's key and the columns the attribute reads with what this row holds in
-    them, named as the mapping names them (`dataset.aliases.alias_name`), read from the item's child row for a repeated
-    array. **Summary** adds them up by reason, and **About** says what was checked, with what, and what each column holds.
+    as the check read them. **Issues** is a row for each issue: the record, what it came to and why; where to fix it
+    (**Source file**, **Source row**, **Source column** and what it holds, **Source value**), an item of a repeated array
+    naming its child row's file and row; then the base data, the record's key and the columns the attribute reads with what
+    this row holds in them, named as the mapping names them (`dataset.aliases.alias_name`). Colour connects them: amber is
+    what to fix, on the headers saying where and on the cell itself among the base data, which can be filtered on; blue
+    heads the columns the attribute reads, and grey the key. The column to fix is the one the reason names, else the one
+    holding the value, else the attribute's only column, else those it reads that are empty; a row none of these settles
+    has no amber cell. **Summary** adds them up by reason, and **About** says what was checked, with what, and what each
+    column and colour means.
     A workbook holds up to what a node task's result does, about 5 MB; one with more issues than that lists the first of
     them, says so in **About** and on the screen, and keeps every count. `sqlflow values --rows` lists every one, however
     many.

@@ -1,6 +1,5 @@
 import { useState } from "react";
-import { ChevronRight, CircleCheck, Database, Download, Eye, Info, ListPlus, Loader2, ScanSearch } from "lucide-react";
-import type { RunValue } from "@/api/types";
+import { ChevronRight, CircleCheck, Download, Eye, Info, ListPlus, Loader2, ScanSearch } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { downloadFileName } from "@/lib/download";
@@ -20,7 +19,7 @@ import {
 import { AssertionActionBadge } from "./AssertionFindingsView";
 import { ExportRecordsButton } from "./ExportRecordsButton";
 import { splitPath } from "./templateFormat";
-import { useValueCheckContext, type CheckMeta, type ValueCheckSession, type VariableCheck } from "./useValueCheck";
+import { useValueCheckContext, type ValueCheckSession, type VariableCheck } from "./useValueCheck";
 import {
   ASSERTED,
   FINDING_OUTCOMES,
@@ -29,6 +28,7 @@ import {
   compactCount,
   countOf,
   failingOf,
+  findingLabel,
   flowLabel,
   formatCount,
   needsLook,
@@ -353,7 +353,7 @@ export function DataTabBadge({ path }: { path: string }) {
 /**
  * A variable's Data tab: what the checks found of it, or, before any check reached it, what a check would tell and
  * what stands in its way. The check itself is the button at the top of the properties, the one place it is started.
- * `onRecord` opens a record the check lists in the Document or the Source tab.
+ * `onRecord` opens a record the check lists in the Failing records tab.
  */
 export function VariableDataTab({ path, checkable, onRecord }: { path: string; checkable: boolean; onRecord: OpenRecord }) {
   const session = useValueCheckContext();
@@ -383,8 +383,8 @@ export function VariableDataTab({ path, checkable, onRecord }: { path: string; c
   );
 }
 
-/** Opens a record a check names, with the scope's values its row was read with, in the view named. */
-export type OpenRecord = (key: string, values: Record<string, RunValue>, view: "document" | "source") => void;
+/** Opens a record a check lists for a reason in the Failing records tab. */
+export type OpenRecord = (key: string, finding: DeliveryValueCheckFinding) => void;
 
 /**
  * What the checks found of one variable, in its properties: the rows of it by outcome, then the rows that will not give
@@ -420,7 +420,6 @@ export function VariableValueCheck({ path, onRecord }: { path: string; onRecord:
               finding={finding}
               total={from.variable.rows.total}
               unit="values"
-              meta={from.meta}
               session={session}
               onRecord={onRecord}
             />
@@ -530,7 +529,6 @@ function VariableResult({ check, session, onRecord }: { check: VariableCheck; se
                 finding={finding}
                 total={variable.repeater ? (variable.items?.total ?? variable.rows.total) : variable.rows.total}
                 unit={variable.repeater ? "items" : "rows"}
-                meta={meta}
                 session={session}
                 onRecord={onRecord}
               />
@@ -563,7 +561,6 @@ function VariableResult({ check, session, onRecord }: { check: VariableCheck; se
               finding={finding}
               total={variable.rows.total}
               unit="rows"
-              meta={meta}
               session={session}
               onRecord={onRecord}
             />
@@ -610,20 +607,19 @@ function VariableResult({ check, session, onRecord }: { check: VariableCheck; se
  * as far as they go.
  */
 function FindingCard({
-  target, finding, total, unit, meta, session, onRecord,
+  target, finding, total, unit, session, onRecord,
 }: {
   /** The variable checked, whose check pages the finding. */
   target: string;
   finding: DeliveryValueCheckFinding;
   total: number;
   unit: string;
-  meta: CheckMeta;
   session: ValueCheckSession;
   onRecord: OpenRecord;
 }) {
   const [open, setOpen] = useState(false);
   const visual = outcomeVisual(finding.outcome);
-  const label = (finding.outcome === "invalid" || finding.outcome === "asserted") && finding.rule ? `${visual.label}: ${finding.rule}` : visual.label;
+  const label = findingLabel(finding);
   const shownValues = finding.values.slice(0, 8);
   const moreValues = finding.values.length - shownValues.length;
   const leaf = finding.at === target ? null : finding.at;
@@ -674,7 +670,7 @@ function FindingCard({
         </div>
       )}
 
-      {open && <FindingRecords target={target} finding={finding} unit={unit} meta={meta} session={session} onRecord={onRecord} />}
+      {open && <FindingRecords target={target} finding={finding} unit={unit} session={session} onRecord={onRecord} />}
     </div>
   );
 }
@@ -686,17 +682,15 @@ interface SampleRow {
 
 /**
  * The records a finding holds for, as far as they have been listed: the record's key and label, the file and row it came
- * from, the item, the value behind the reason and the reason as that record states it, each opening here beside the tree:
- * its rendered document in the Document tab, or what its source row holds in the Source tab. The next page is read from the
- * node on request; the loaded ones copy as keys or save as CSV.
+ * from, the item, the value behind the reason and the reason as that record states it, each opening in the Failing records
+ * tab, here beside the tree. The next page is read from the node on request; the loaded ones copy as keys or save as CSV.
  */
 function FindingRecords({
-  target, finding, unit, meta, session, onRecord,
+  target, finding, unit, session, onRecord,
 }: {
   target: string;
   finding: DeliveryValueCheckFinding;
   unit: string;
-  meta: CheckMeta;
   session: ValueCheckSession;
   onRecord: OpenRecord;
 }) {
@@ -753,29 +747,14 @@ function FindingRecords({
                 type="button"
                 size="icon-xs"
                 variant="ghost"
-                aria-label="Show the rendered document"
-                onClick={() => onRecord(sample.sourceKey, meta.values, "document")}
-                data-testid="value-check-sample-preview"
+                aria-label="Open the record"
+                onClick={() => onRecord(sample.sourceKey, finding)}
+                data-testid="value-check-sample-open"
               >
                 <Eye />
               </Button>
             </TooltipTrigger>
-            <TooltipContent>Show the rendered document: as a delivery would render it, and sent nowhere</TooltipContent>
-          </Tooltip>
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <Button
-                type="button"
-                size="icon-xs"
-                variant="ghost"
-                aria-label="Show the source row"
-                onClick={() => onRecord(sample.sourceKey, meta.values, "source")}
-                data-testid="value-check-sample-source"
-              >
-                <Database />
-              </Button>
-            </TooltipTrigger>
-            <TooltipContent>Show the source row: what it holds in the columns this attribute reads</TooltipContent>
+            <TooltipContent>Open the record: what is wrong, what the source holds, and what it rendered to</TooltipContent>
           </Tooltip>
           <CopyButton label="Copy the source key" text={sample.sourceKey} testId="value-check-sample-copy" iconOnly />
         </span>

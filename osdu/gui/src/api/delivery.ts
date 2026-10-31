@@ -1599,6 +1599,8 @@ export interface DeliveryValueCheckSample {
   item?: number | null;
   value?: string | null;
   message?: string | null;
+  /** The source columns to fix, as the mapping names them (`dataset.curves.curve_unit`); absent when the check cannot say which. */
+  columns?: string[] | null;
 }
 
 /** A value and how many times it was met. */

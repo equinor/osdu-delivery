@@ -801,15 +801,18 @@ const PUNCTUATION = "text-muted-foreground";
  * A branch of the record as JSON that can be worked with, not only read: every object and list folds at its caret, a
  * key that holds a branch steps into it (and the brace of a list's item into that item), and a value that names another
  * OSDU record opens it. Lists show their first hundred items and the rest on a click; the search term is marked. Without
- * `onSelect` a key only reads: a document that is not a stored record has nowhere to step to. A marked line says so
- * (`data-hit`), so a page can bring it into view.
+ * `onSelect` a key only reads: a document that is not a stored record has nowhere to step to. `collapsed` names the branches
+ * that start folded, and `absent` what an object lacks, which it says at the end of the object, marked like a hit. A marked
+ * line says so (`data-hit`).
  */
-export function JsonView({ node, term, hits, ownId, onOpenLink, opening, onSelect, actions }: {
+export function JsonView({ node, term, hits, ownId, onOpenLink, opening, onSelect, actions, collapsed, absent }: {
   node: RecordNode; term: string; hits: ReadonlySet<string>; ownId: string | null; onOpenLink?: OpenLink; opening?: string | null; onSelect?: (path: string) => void;
   /** What a page shows beside a value or a section, after the line it starts on. */
   actions?: (node: RecordNode) => ReactNode;
+  collapsed?: ReadonlySet<string>;
+  absent?: ReadonlyMap<string, string>;
 }) {
-  const [folded, setFolded] = useState<ReadonlySet<string>>(() => new Set());
+  const [folded, setFolded] = useState<ReadonlySet<string>>(() => new Set(collapsed));
   const [shownItems, setShownItems] = useState<ReadonlyMap<string, number>>(() => new Map());
   const fold = (path: string) => setFolded((current) => {
     const next = new Set(current);
@@ -898,7 +901,7 @@ export function JsonView({ node, term, hits, ownId, onOpenLink, opening, onSelec
     const opener = keyOf === null && depth > 0 && onSelect !== undefined
       ? <button type="button" className={cn(PUNCTUATION, "cursor-pointer hover:text-primary")} onClick={() => onSelect(current.path)} title={`Go to ${current.path}`}>{open}</button>
       : <span className={PUNCTUATION}>{open}</span>;
-    if (current.children.length === 0) {
+    if (current.children.length === 0 && !absent?.has(current.path)) {
       line(current.path, depth, <>{label}<span className={PUNCTUATION}>{open}{close}</span>{comma}</>, undefined, hit);
       return;
     }
@@ -936,6 +939,17 @@ export function JsonView({ node, term, hits, ownId, onOpenLink, opening, onSelec
             {`${current.children.length - limit} more items`}
           </button>
         </div>,
+      );
+    }
+
+    const lacking = absent?.get(current.path);
+    if (lacking !== undefined) {
+      line(
+        `${current.path}:absent`,
+        depth + 1,
+        <span className="text-muted-foreground italic" data-testid="osdu-json-absent">{`"${lacking}" left out`}</span>,
+        undefined,
+        true,
       );
     }
 

@@ -8,15 +8,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
-- **A mapping's data check shows the record behind a count.** An attribute's new **Document** tab renders a record as a delivery
-  would, sent nowhere, with the attribute marked where it landed and what the mapping's assertions said of it, a value left out
-  of the document included. Its new **Source** tab shows where the row is and what it holds in the columns the attribute reads,
-  a child dataset's failing rows marked. A row in **Data** opens either beside the tree rather than leaving the sheet, and the
-  arrows step through the records the check lists ([the Mappings page](osdu/docs/reference/concepts/gui.md#mappings)).
+- **A mapping's data check goes through the rows behind a count.** An attribute's new **Failing records** tab takes the rows a
+  check found wrong one record at a time, on one page: why they fail, what is wrong in this record, what its source row holds
+  in the columns the attribute reads, and the document it rendered to, folded down to the attribute with each value marked and
+  each place it is left out said. Each value says where to fix it: the file, the row and the column. A row in **Data** opens its
+  record there rather than leaving the sheet ([the Mappings page](osdu/docs/reference/concepts/gui.md#mappings)).
 
 - **The rows failing an attribute can be saved as an Excel workbook, with the base data behind them.** **Export rows** in an
-  attribute's **Data** tab saves a row for each issue with the file and row it came from, the reason, the value, and what the
-  row holds in the record's key and the source columns the attribute reads, added up by reason on a second sheet.
+  attribute's **Data** tab saves a row for each issue with the reason, the file, row and column to fix and what it holds, and
+  what the row holds in the record's key and the source columns the attribute reads. Amber marks the cell to fix, among columns
+  told apart by colour, and a second sheet adds the issues up by reason.
   `POST /flows/{id}/check-values/export` asks for the same ([the Mappings page](osdu/docs/reference/concepts/gui.md#mappings)).
 
 - **The VS Code extension.** `osdu-delivery-vscode` makes the editor the place a pipeline is developed: a repository's plain `*.yaml`
@@ -363,6 +364,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   curve `MD` among its curves ([Assertions](osdu/docs/reference/flow/assertion.md#assertions)).
 
 ### Changed
+- **A value check names a repeated item's own file and row.** `sqlflow values` and a mapping's data check give the file and row
+  of an item's child row rather than its record's, fill `item` for a failed assertion, and say which source columns to fix
+  (`columns`), so a reason connects to the cell ([sqlflow values](osdu/docs/reference/cli/values.md#the---rows-file)).
+
 - `sqlflow login` with no `--username` opens the browser to sign in, where it used to ask for a username and a password;
   `--username` keeps the password sign-in, and `--device` prints the link rather than opening a browser
   ([signing in](sqlflow/docs/reference/cli/control-plane.md#signing-in)).

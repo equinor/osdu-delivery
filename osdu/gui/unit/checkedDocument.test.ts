@@ -3,7 +3,15 @@
 
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { columnsOfRow, pathsOfVariable, recordsOfFindings, sourceColumn, workbookBlob } from "../src/features/delivery/checkedDocument.ts";
+import {
+  branchesToFold,
+  columnsOfRow,
+  missingFromDocument,
+  pathsOfVariable,
+  recordsOfFinding,
+  sourceColumn,
+  workbookBlob,
+} from "../src/features/delivery/checkedDocument.ts";
 import { documentNode } from "../src/features/delivery/osduRecordModel.ts";
 
 const document = {
@@ -44,20 +52,59 @@ describe("where an attribute landed in a document", () => {
   });
 });
 
-describe("the records a check lists for an attribute", () => {
-  it("are each listed once, in the order of its findings, with what names them and the child rows found wrong", () => {
+describe("where an attribute is left out of a document", () => {
+  const root = documentNode(document);
+
+  it("is each item of a repeated array without it, and only those", () => {
+    assert.deepEqual([...missingFromDocument(root, "osdu.data.NameAlias[].AliasName")], [["data.NameAlias[1]", "AliasName"]]);
     assert.deepEqual(
-      recordsOfFindings([
-        { outcome: "asserted", samples: [{ sourceKey: "a", label: "Log A", item: 2 }, { sourceKey: "a", item: 5 }, { sourceKey: "b" }] },
-        { outcome: "empty", samples: [{ sourceKey: "b", label: "Log B", item: 1 }, { sourceKey: "a", item: 2 }, { sourceKey: "c", label: null }] },
-      ]),
-      [{ sourceKey: "a", label: "Log A", items: [2, 5] }, { sourceKey: "b", label: null, items: [1] }, { sourceKey: "c", label: null, items: [] }],
+      [...missingFromDocument(root, "osdu.data.NameAlias[].AliasNameTypeID")],
+      [["data.NameAlias[0]", "AliasNameTypeID"], ["data.NameAlias[1]", "AliasNameTypeID"]],
     );
   });
 
-  it("leave out a row the mapping means no value for, which has nothing wrong with it", () => {
-    assert.deepEqual(recordsOfFindings([{ outcome: "notApplicable", samples: [{ sourceKey: "a" }] }]), []);
-    assert.deepEqual(recordsOfFindings([]), []);
+  it("is the object that should hold it, naming what it lacks from there", () => {
+    assert.deepEqual([...missingFromDocument(root, "osdu.data.Description")], [["data", "Description"]]);
+    assert.deepEqual([...missingFromDocument(root, "osdu.data.Extra[].Name")], [["data", "Extra[].Name"]]);
+  });
+
+  it("is nowhere for a value every place holds, or a list with no items", () => {
+    assert.deepEqual([...missingFromDocument(root, "osdu.data.Name")], []);
+    assert.deepEqual([...missingFromDocument(documentNode({ data: { NameAlias: [] } }), "osdu.data.NameAlias[].AliasName")], []);
+  });
+});
+
+describe("a document folded down to an attribute", () => {
+  const root = documentNode(document);
+
+  it("keeps open the way down to each place and folds the rest", () => {
+    const fold = branchesToFold(root, ["data.NameAlias[0].AliasName", "data.NameAlias[2].AliasName"]);
+    assert.equal(fold.has("data"), false);
+    assert.equal(fold.has("data.NameAlias"), false);
+    assert.equal(fold.has("data.NameAlias[0]"), false);
+    assert.equal(fold.has("data.NameAlias[1]"), true);
+    assert.equal(fold.has("data.NameAlias[2]"), false);
+    assert.equal(fold.has("acl"), true);
+    assert.equal(fold.has("data.Curves"), true);
+  });
+
+  it("keeps open what a place names itself, and never folds a leaf", () => {
+    const fold = branchesToFold(root, ["data.NameAlias[1]"]);
+    assert.equal(fold.has("data.NameAlias[1]"), false);
+    assert.equal(fold.has("data.Name"), false);
+  });
+});
+
+describe("the records a reason lists", () => {
+  it("are each listed once, in the order they were met, with every example of them", () => {
+    const first = { sourceKey: "a", label: "Log A", item: 2 };
+    const second = { sourceKey: "b" };
+    const third = { sourceKey: "a", item: 5 };
+    assert.deepEqual(recordsOfFinding([first, second, third]), [
+      { sourceKey: "a", samples: [first, third] },
+      { sourceKey: "b", samples: [second] },
+    ]);
+    assert.deepEqual(recordsOfFinding([]), []);
   });
 });
 

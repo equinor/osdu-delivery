@@ -36,7 +36,7 @@ public sealed class ExportValueIssuesOperation : DeliveryOperation
         var request = CheckValuesOperation.Request(payload) with { Samples = 0, SkipSamples = 0 };
         using var runtime = await FlowRuntime.CreateAsync(flow.Interface is null ? context : context.ForInterface(flow.Interface), flow, Values(payload), ct).ConfigureAwait(false);
         var resolved = runtime.Mapping;
-        var baseData = ValueIssuesWorkbook.BaseData(flow, resolved.Mapping, ValueChecker.Select(request.Targets, resolved.Mapping, resolved.Schema));
+        var baseData = ValueIssuesBaseData.Of(flow, resolved.Mapping, ValueChecker.Select(request.Targets, resolved.Mapping, resolved.Schema));
         using var file = new MemoryStream();
         using var workbook = new ValueIssuesWorkbook(file, MaxWorkbookBytes, baseData);
         var check = await new ValueChecker(runtime).CheckAsync(request, workbook.Add, ct).ConfigureAwait(false);

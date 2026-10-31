@@ -350,10 +350,62 @@ public sealed class ValueCheckTests : IDisposable
         Assert.Equal(SourceKeyOf(logs[1]), row["Source key"].GetText());
         Assert.Equal(SampleEstate.FileName, row["Source file"].GetText());
         Assert.Equal("NOWHERE 1", row["dataset.wellbore_uwi"].GetText());
+        Assert.Equal("dataset.wellbore_uwi", row["Source column"].GetText());
+        Assert.Equal("NOWHERE 1", row["Source value"].GetText());
         Assert.DoesNotContain("dataset.log_run", read.Headers(ValueIssuesWorkbook.IssuesSheet));
         Assert.Equal("osdu.data.WellboreID", read.About()["Attribute"].GetText());
 
         Assert.False(Directory.Exists(Path.Combine(_root, "work")) && Directory.EnumerateFileSystemEntries(Path.Combine(_root, "work")).Any());
+    }
+
+    [Fact]
+    public async Task A_failing_value_names_the_source_column_to_fix()
+    {
+        var (_, runtime, _) = await RuntimeAsync(tables =>
+        {
+            tables.Records[0].Row["log_run"] = "   ";
+            tables.Records[1].Row["wellbore_uwi"] = "NOWHERE 1";
+        });
+        using (runtime)
+        {
+            var check = await new ValueChecker(runtime).CheckAsync(new ValueCheckRequest());
+
+            // The reason names the column.
+            Assert.Equal(["dataset.log_run"], Assert.Single(Assert.Single(Variable(check, "osdu.data.LogRun").Findings).Samples).Columns);
+
+            // The reason quotes the value, which is what the column holds.
+            Assert.Equal(["dataset.wellbore_uwi"], Assert.Single(Assert.Single(Variable(check, "osdu.data.WellboreID").Findings).Samples).Columns);
+        }
+    }
+
+    [Fact]
+    public async Task A_failing_item_names_the_file_and_row_of_its_own_child_row()
+    {
+        var (_, runtime, _) = await RuntimeAsync(tables =>
+        {
+            foreach (var record in tables.Records)
+            {
+                var curves = record.Datasets["curves"];
+                for (var i = 0; i < curves.Count; i++)
+                {
+                    curves[i][FlowSystemColumns.DefaultFileName] = "curves.csv";
+                    curves[i][FlowSystemColumns.DefaultRowNumber] = 5000L + i;
+                }
+            }
+        });
+        using (runtime)
+        {
+            var check = await new ValueChecker(runtime).CheckAsync(new ValueCheckRequest { Targets = ["osdu.data.Curves[].CurveVersion"] });
+
+            var empty = Assert.Single(Variable(check, "osdu.data.Curves[].CurveVersion").Findings, f => f.Outcome == "empty");
+            Assert.NotEmpty(empty.Samples);
+            Assert.All(empty.Samples, sample =>
+            {
+                Assert.Equal("curves.csv", sample.File);
+                Assert.Equal(5000L + sample.Item!.Value - 1, sample.Row);
+                Assert.Equal(["dataset.curves.curve_version"], sample.Columns);
+            });
+        }
     }
 
     [Fact]

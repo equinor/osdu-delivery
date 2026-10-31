@@ -9,8 +9,9 @@ namespace SqlFlow.Delivery.Storage;
 /// An Excel workbook (Office Open XML, <c>.xlsx</c>) written as it is filled, so a sheet of tens of thousands of rows is
 /// never held whole: each sheet streams into its own part of the archive as its rows are added, and the parts that list
 /// the sheets are written by <see cref="Complete"/>. It writes what a working list needs: text, whole numbers and UTC
-/// times in typed cells, a bold header row that stays in view and carries a filter, and fixed column widths. Strings are
-/// written inline, so no table of them is kept.
+/// times in typed cells, a bold header row that stays in view and carries a filter, fixed column widths, and a tint for
+/// the cells and columns a reader is to look at (<see cref="XlsxTint"/>). Strings are written inline, so no table of them
+/// is kept.
 /// </summary>
 /// <remarks>
 /// A text cell never runs as a formula: only a formula element runs, and none is written. A value a cell cannot hold as
@@ -37,6 +38,12 @@ public sealed class XlsxWorkbook : IDisposable
     internal const int PlainStyle = 0;
     internal const int BoldStyle = 1;
     internal const int InstantStyle = 2;
+
+    /// <summary>The first of the tinted styles: each tint plain, then each tint in bold.</summary>
+    private const int FirstTintedStyle = 3;
+
+    /// <summary>The fill each tint is, as ARGB, in the order of <see cref="XlsxTint"/>.</summary>
+    private static readonly string[] TintColors = ["FFFFD966", "FFBDD7EE", "FFD9D9D9"];
 
     internal static readonly XmlWriterSettings Settings = new()
     {
@@ -317,9 +324,14 @@ public sealed class XlsxWorkbook : IDisposable
         w.WriteEndElement();
 
         w.WriteStartElement("fills", Main);
-        w.WriteAttributeString("count", "2");
+        w.WriteAttributeString("count", (2 + TintColors.Length).ToString(CultureInfo.InvariantCulture));
         Fill(w, "none");
         Fill(w, "gray125");
+        foreach (var color in TintColors)
+        {
+            Tint(w, color);
+        }
+
         w.WriteEndElement();
 
         w.WriteStartElement("borders", Main);
@@ -338,12 +350,20 @@ public sealed class XlsxWorkbook : IDisposable
         Format(w, numberFormat: 0, font: 0, inStyle: false);
         w.WriteEndElement();
 
-        // In the order of PlainStyle, BoldStyle and InstantStyle.
+        // In the order of PlainStyle, BoldStyle and InstantStyle, then each tint plain and each tint in bold (TintedStyle).
         w.WriteStartElement("cellXfs", Main);
-        w.WriteAttributeString("count", "3");
+        w.WriteAttributeString("count", (FirstTintedStyle + (TintColors.Length * 2)).ToString(CultureInfo.InvariantCulture));
         Format(w, numberFormat: 0, font: 0, inStyle: true);
         Format(w, numberFormat: 0, font: 1, inStyle: true);
         Format(w, numberFormat: 164, font: 0, inStyle: true);
+        foreach (var font in new[] { 0, 1 })
+        {
+            for (var tint = 0; tint < TintColors.Length; tint++)
+            {
+                Format(w, numberFormat: 0, font, inStyle: true, fill: 2 + tint);
+            }
+        }
+
         w.WriteEndElement();
 
         w.WriteStartElement("cellStyles", Main);
@@ -385,12 +405,27 @@ public sealed class XlsxWorkbook : IDisposable
             w.WriteEndElement();
         }
 
-        static void Format(XmlWriter w, int numberFormat, int font, bool inStyle)
+        static void Tint(XmlWriter w, string color)
+        {
+            w.WriteStartElement("fill", Main);
+            w.WriteStartElement("patternFill", Main);
+            w.WriteAttributeString("patternType", "solid");
+            w.WriteStartElement("fgColor", Main);
+            w.WriteAttributeString("rgb", color);
+            w.WriteEndElement();
+            w.WriteStartElement("bgColor", Main);
+            w.WriteAttributeString("indexed", "64");
+            w.WriteEndElement();
+            w.WriteEndElement();
+            w.WriteEndElement();
+        }
+
+        static void Format(XmlWriter w, int numberFormat, int font, bool inStyle, int fill = 0)
         {
             w.WriteStartElement("xf", Main);
             w.WriteAttributeString("numFmtId", numberFormat.ToString(CultureInfo.InvariantCulture));
             w.WriteAttributeString("fontId", font.ToString(CultureInfo.InvariantCulture));
-            w.WriteAttributeString("fillId", "0");
+            w.WriteAttributeString("fillId", fill.ToString(CultureInfo.InvariantCulture));
             w.WriteAttributeString("borderId", "0");
             if (inStyle)
             {
@@ -404,11 +439,22 @@ public sealed class XlsxWorkbook : IDisposable
                 {
                     w.WriteAttributeString("applyNumberFormat", "1");
                 }
+
+                if (fill != 0)
+                {
+                    w.WriteAttributeString("applyFill", "1");
+                }
             }
 
             w.WriteEndElement();
         }
     }
+
+    /// <summary>The style of text in <paramref name="tint"/>, in bold when asked.</summary>
+    internal static int TintedStyle(XlsxTint tint, bool bold)
+        => tint == XlsxTint.None
+            ? (bold ? BoldStyle : PlainStyle)
+            : FirstTintedStyle + (int)tint - 1 + (bold ? TintColors.Length : 0);
 
     private static void Relationship(XmlWriter w, string id, string type, string target)
     {
@@ -477,7 +523,7 @@ public sealed class XlsxSheet
         writer.WriteStartElement("sheetData", XlsxWorkbook.Main);
         if (header)
         {
-            Write(columns.Select(c => XlsxCell.Text(c.Header, bold: true)).ToList());
+            Write(columns.Select(c => XlsxCell.Text(c.Header, bold: true, tint: c.Tint)).ToList());
         }
     }
 
@@ -595,8 +641,17 @@ public sealed class XlsxSheet
     }
 }
 
-/// <summary>A column of a sheet: its header, and its width in characters of the default font.</summary>
-public sealed record XlsxColumn(string Header, double Width);
+/// <summary>A fill that makes a cell or a column stand out from the rest of a sheet.</summary>
+public enum XlsxTint
+{
+    None,
+    Amber,
+    Blue,
+    Grey,
+}
+
+/// <summary>A column of a sheet: its header, its width in characters of the default font, and the tint of its header.</summary>
+public sealed record XlsxColumn(string Header, double Width, XlsxTint Tint = XlsxTint.None);
 
 /// <summary>What a cell holds.</summary>
 public enum XlsxCellKind
@@ -634,9 +689,9 @@ public readonly record struct XlsxCell
 
     internal int Style { get; }
 
-    /// <summary>Text, in bold when asked; empty for null or an empty string.</summary>
-    public static XlsxCell Text(string? value, bool bold = false)
-        => string.IsNullOrEmpty(value) ? Empty : new(XlsxCellKind.Text, value, 0, bold ? XlsxWorkbook.BoldStyle : XlsxWorkbook.PlainStyle, empty: false);
+    /// <summary>Text, in bold and in a tint when asked; empty for null or an empty string.</summary>
+    public static XlsxCell Text(string? value, bool bold = false, XlsxTint tint = XlsxTint.None)
+        => string.IsNullOrEmpty(value) ? Empty : new(XlsxCellKind.Text, value, 0, XlsxWorkbook.TintedStyle(tint, bold), empty: false);
 
     /// <summary>A whole number; empty for null. Excel holds 15 significant digits, so a larger identifier is written as text.</summary>
     public static XlsxCell Number(long? value) => value switch

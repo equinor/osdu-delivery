@@ -1752,7 +1752,7 @@
         "osdu/gui/src/features/delivery/PartitionSwitcher.tsx",
         "osdu/gui/src/features/delivery/DeliveryOverviewPage.tsx",
         "osdu/gui/src/features/delivery/RepositorySyncControl.tsx",
-        "osdu/gui/src/features/delivery/ValueCheckDocument.tsx",
+        "osdu/gui/src/features/delivery/ValueCheckRecords.tsx",
         "osdu/src/SqlFlow.Delivery/Engine/Checks/ValueIssuesWorkbook.cs",
         "osdu/gui/src/features/delivery/DeliveryRecordsPage.tsx",
         "osdu/gui/src/features/delivery/DeliveryActivityPage.tsx",

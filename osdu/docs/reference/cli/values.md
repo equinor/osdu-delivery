@@ -183,7 +183,9 @@ and `total` leaves it out, since those rows and items count under another outcom
 values together, `values: any`, counts its row and no item), `values`, `distinctValues`, `moreValues`, `findings` and
 `unlisted`; each finding has `outcome`, `at`, `rule`, `onFail` (for an `asserted` finding, what a failure of the
 assertion does: `hold`, `report` or `omit`), `message`, `count`, `rows`, `values`, `otherValues`,
-`samples` (`sourceKey`, `label`, `deliveryKey`, `file`, `row`, `item`, `value`, `message`) and `samplesFrom`. A source
+`samples` (`sourceKey`, `label`, `deliveryKey`, `file`, `row`, `item`, `value`, `message`, and `columns`, the source
+columns to fix: the ones the reason names, else the ones holding the value, else the property's only column, else those it
+reads that are empty) and `samplesFrom`. A source
 checked one interface at a time gives an array of these.
 
 ### Bounds
@@ -208,7 +210,7 @@ held, invalid or empty for, or whose value fails an assertion of the mapping, wr
 | `reason` | The reason, as this row states it: for an asserted value, why it fails the assertion. |
 | `value` | The value written or the value that caused the reason, clipped. |
 | `source_key`, `label`, `delivery_key` | The record. |
-| `file`, `row` | The file the row was landed from, and its row in that file. |
+| `file`, `row` | The file the row was landed from, and its row in that file: for an item of a repeated array, those of its child row. |
 | `item` | For an item of a repeated array, the child row it was written from, counting from 1. |
 
 It is the full list the answer's example records are the first of. The GUI's **Export rows** on a mapping's attribute

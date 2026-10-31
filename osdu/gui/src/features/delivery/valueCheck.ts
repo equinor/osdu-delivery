@@ -60,7 +60,7 @@ const INVALID: OutcomeVisual = {
 
 const EMPTY: OutcomeVisual = {
   key: "empty",
-  label: "Empty",
+  label: "Left out",
   icon: CircleDashed,
   tone: "info",
   textClass: "text-info",
@@ -229,6 +229,12 @@ export const SAMPLES_PAGE = 100;
 /** A finding told apart from the others of its variable, across the pages of it a check answers with. */
 export function findingKey(finding: Pick<DeliveryValueCheckFinding, "outcome" | "at" | "message">): string {
   return `${finding.outcome}\u001f${finding.at}\u001f${finding.message}`;
+}
+
+/** A reason as a heading names it: its outcome, with the template's rule or the assertion it breaks. */
+export function findingLabel(finding: Pick<DeliveryValueCheckFinding, "outcome" | "rule">): string {
+  const { label } = outcomeVisual(finding.outcome);
+  return (finding.outcome === "invalid" || finding.outcome === "asserted") && finding.rule ? `${label}: ${finding.rule}` : label;
 }
 
 /** A flow interface told apart from every other, in every partition. */
