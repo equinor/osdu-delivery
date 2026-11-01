@@ -353,7 +353,7 @@ internal static partial class EntryValues
     }
 
     /// <summary>Where one value node reads its value, as a placeholder names it; a literal alternative is its text.</summary>
-    private static string Origin(MappingEntry node)
+    internal static string Origin(MappingEntry node)
     {
         if (node.Static is { } literal)
         {

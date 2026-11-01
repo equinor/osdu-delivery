@@ -244,7 +244,7 @@ public static class DimensionYamlSource
     /// The document's lines, which settle where a node's text ends: the parser marks the end of a block where the next token
     /// starts, which can be lines further down, and the end of a flow collection (<c>[a, b]</c>) at its opening bracket.
     /// </summary>
-    private sealed class Text(IReadOnlyList<string> lines)
+    internal sealed class Text(IReadOnlyList<string> lines)
     {
         public IReadOnlyList<string> Lines { get; } = lines;
 

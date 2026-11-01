@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { Link as RouterLink, useParams } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { ArrowLeft, FileCode, LayoutTemplate, OctagonAlert, PencilRuler } from "lucide-react";
@@ -15,6 +16,7 @@ import { MappingLineage } from "./MappingLineage";
 import { MappingPicker } from "./MappingPicker";
 import { MappingShapeView } from "./MappingShapeView";
 import { MappingStatus } from "./MappingStatus";
+import { MappingOverview } from "./overview/MappingOverview";
 import { StagedRecordsTab } from "./StagedRecordsTab";
 import { ProblemView } from "./TemplateSheet";
 import { useStagedView } from "./useStagedView";
@@ -87,20 +89,23 @@ function MappingHeader({ detail, id, loading }: { detail: DeliveryMappingDetail 
 
 /**
  * Everything a mapping is worked on with, in one window that does not scroll: one toolbar saying which rows are read and running
- * a dry run over them, one line saying what came of it, and under them the two ways to read the mapping. Staged records is the
- * records beside what they render to; Properties is the template the mapping fills, attribute by attribute. A dry run is one
- * session of the page, so what it found reads in either, and neither loses it when the reader moves between them.
+ * a dry run over them, one line saying what came of it, and under them the three ways to read the mapping. Overview is what the
+ * mapping does, from the tables it reads to the record it fills; Staged records is the records beside what they render to;
+ * Properties is the template the mapping fills, attribute by attribute. A dry run is one session of the page, so what it found
+ * reads in any of them, and none loses it when the reader moves between them.
  */
 function MappingWorkspace({ detail }: { detail: DeliveryMappingDetail }) {
   const { mapping, yaml } = detail;
   const session = useValueCheckSession(mapping.id, mapping.reference);
   const staged = useStagedView(session);
+  const [tab, setTab] = useState("overview");
   return (
     <ValueCheckContext.Provider value={session}>
       <WindowFrame testId="delivery-mapping-detail">
-        <Tabs defaultValue="staged" className="min-h-0 flex-1">
+        <Tabs value={tab} onValueChange={setTab} className="min-h-0 flex-1">
           <div className="flex shrink-0 flex-wrap items-center gap-2" data-testid="value-check-controls">
             <TabsList className="h-8" data-testid="delivery-mapping-tabs">
+              <TabsTrigger value="overview" className="text-[13px]" data-testid="delivery-mapping-tab-overview">Overview</TabsTrigger>
               <TabsTrigger value="staged" className="text-[13px]" data-testid="delivery-mapping-tab-staged">Staged records</TabsTrigger>
               <TabsTrigger value="coverage" className="text-[13px]" data-testid="delivery-mapping-tab-coverage">Properties</TabsTrigger>
             </TabsList>
@@ -108,6 +113,9 @@ function MappingWorkspace({ detail }: { detail: DeliveryMappingDetail }) {
             <DryRunButton session={session} />
           </div>
           <MappingStatus session={session} />
+          <TabsContent value="overview" className="flex min-h-0 flex-col">
+            <MappingOverview detail={detail} session={session} onProperties={() => setTab("coverage")} />
+          </TabsContent>
           <TabsContent value="staged" className="flex min-h-0 flex-col">
             <StagedRecordsTab
               session={session}

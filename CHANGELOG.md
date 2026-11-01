@@ -8,6 +8,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **See what a mapping does, on one canvas.** A mapping now opens on **Overview**: its tables on the left, the record on the right, one
+  line per property between them with what is done to its value on the way, and the cache tables, searches and parameters it looks
+  values up in on a shelf above. Sections open with a click, pointing at anything traces it, **YAML** ties each line of the document
+  to the canvas, and **Show a record** follows a staged row through the mapping. `POST /mapping-builder/outline` and
+  `GET /flows/{id}/source-tables` answer the same ([a mapping's overview](osdu/docs/reference/concepts/mapping-overview.md)).
+
 - **Try OSDU Delivery on a laptop from one command.** `bootstrap.ps1` or `bootstrap.sh`, or `dev.bat demo` and `./dev.sh demo` in a
   checkout, fetch, build and start everything with nothing to ask, deliver the two public sample estates to a stand-in for OSDU on the
   machine, and say whether every run succeeded and every assertion was evaluated and passed. `demo reset` starts over, and the demo

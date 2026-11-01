@@ -38,6 +38,17 @@ namespace SqlFlow.Delivery.ControlPlane.Api;
 public sealed record DeliveryMappingFlowDto(
     Guid PipelineId, string Flow, string? Interface, string? Partition, Guid LedgerFlowId, string RecordObject, string Route);
 
+/// <summary>A column of a source table, as the catalog last described it.</summary>
+public sealed record DeliverySourceColumnDto(string Name, string? DataType, bool Nullable);
+
+/// <summary>
+/// A table a flow reads: the record table, or the child dataset <c>Dataset</c> names, its name, how a child row joins its record
+/// (child column to record column), and the columns the catalog holds of it, without SQLFlow's system columns; none when the
+/// catalog has not described it.
+/// </summary>
+public sealed record DeliverySourceTableDto(
+    string? Dataset, string Table, IReadOnlyList<string> Key, IReadOnlyDictionary<string, string>? Join, IReadOnlyList<DeliverySourceColumnDto> Columns);
+
 /// <summary>
 /// A value check of a flow's rows: the variables to check (template paths; none for every entry of the mapping), the flow
 /// parameter values its scope is read with, how many rows to read (0 for the whole scope), how many example records each
@@ -87,6 +98,9 @@ public static class DeliveryValueCheckEndpoints
     /// <summary>The most flows listed for one mapping.</summary>
     private const int MaxFlows = 500;
 
+    /// <summary>The most columns listed of one table, however wide.</summary>
+    private const int MaxSourceColumns = 2000;
+
     /// <summary>The longest mapping reference a check names.</summary>
     private const int MaxMappingLength = 200;
 
@@ -94,6 +108,7 @@ public static class DeliveryValueCheckEndpoints
     {
         ArgumentNullException.ThrowIfNull(delivery);
         delivery.MapGet("/mappings/{mappingId:guid}/flows", ListMappingFlowsAsync).WithName("ListDeliveryMappingFlows");
+        delivery.MapGet("/flows/{pipelineId:guid}/source-tables", ListSourceTablesAsync).WithName("ListDeliveryFlowSourceTables");
     }
 
     public static void MapWrites(RouteGroupBuilder delivery)
@@ -150,6 +165,65 @@ public static class DeliveryValueCheckEndpoints
                 i.RecordObject,
                 i.Route))
             .ToList());
+    }
+
+    /// <summary>
+    /// The tables an interface reads, record table first: what its flow declares, with the columns the catalog holds of each. A
+    /// table the catalog has not described lists no columns. No table is read.
+    /// </summary>
+    private static async Task<Results<Ok<IReadOnlyList<DeliverySourceTableDto>>, ProblemHttpResult>> ListSourceTablesAsync(
+        Guid pipelineId, [FromQuery(Name = "interface")] string? interfaceName, [FromQuery] string? partition, CatalogDbContext db,
+        DeliveryDocumentLoader documents, IPartitionRegistry partitions, CancellationToken ct)
+    {
+        var (flow, problem) = await DeliveryEndpoints.ResolveAsync(db, documents, partitions, pipelineId, interfaceName, partition, ct).ConfigureAwait(false);
+        if (flow is null)
+        {
+            return problem!;
+        }
+
+        var source = flow.Flow.Source;
+        var tables = new List<DeliverySourceTableDto>
+        {
+            new(null, source.Record.Object, source.Record.Key, null, await CatalogColumnsAsync(db, source.Record.Object, source.SystemColumns, ct).ConfigureAwait(false)),
+        };
+
+        foreach (var (name, dataset) in source.Datasets)
+        {
+            var columns = await CatalogColumnsAsync(db, dataset.Object, source.SystemColumns, ct).ConfigureAwait(false);
+            tables.Add(new DeliverySourceTableDto(name, dataset.Object, [.. dataset.Join.Keys], dataset.Join, columns));
+        }
+
+        return TypedResults.Ok<IReadOnlyList<DeliverySourceTableDto>>(tables);
+    }
+
+    /// <summary>
+    /// The columns the catalog holds of a table, in their order. One table can be catalogued once per connection it was reached
+    /// through, so the columns are the first such object's.
+    /// </summary>
+    private static async Task<IReadOnlyList<DeliverySourceColumnDto>> CatalogColumnsAsync(
+        CatalogDbContext db, string table, FlowSystemColumns system, CancellationToken ct)
+    {
+        var name = SourceObjectName.Parse(table);
+        var keys = await db.Objects.AsNoTracking()
+            .Where(o => o.Database == name.Database && o.Schema == name.Schema && o.Name == name.Name)
+            .Select(o => o.Key)
+            .ToListAsync(ct).ConfigureAwait(false);
+        if (keys.Count == 0)
+        {
+            return [];
+        }
+
+        var rows = await db.ObjectColumns.AsNoTracking()
+            .Where(c => keys.Contains(c.ObjectKey))
+            .OrderBy(c => c.ObjectKey).ThenBy(c => c.Ordinal).ThenBy(c => c.Name)
+            .Take(MaxSourceColumns)
+            .Select(c => new { c.ObjectKey, c.Name, c.DataType, c.Nullable })
+            .ToListAsync(ct).ConfigureAwait(false);
+        var hidden = system.Names();
+        return rows
+            .Where(c => c.ObjectKey == rows[0].ObjectKey && !hidden.Contains(c.Name))
+            .Select(c => new DeliverySourceColumnDto(c.Name, c.DataType, c.Nullable))
+            .ToList();
     }
 
     /// <summary>

@@ -1992,6 +1992,44 @@
       ]
     },
     {
+      "id": "delivery-concept-mapping-overview",
+      "corpus": "reference",
+      "path": "concepts/mapping-overview.md",
+      "title": "A mapping's overview: what a mapping does, on one canvas, from its tables to the record",
+      "type": "concept",
+      "summary": "The Overview tab of a mapping: the tables it reads, what each value goes through, the record it fills, and one staged record followed through it.",
+      "keywords": [
+        "overview",
+        "mapping overview",
+        "mapping canvas",
+        "what a mapping does",
+        "how a mapping is populated",
+        "mapping outline",
+        "show a record",
+        "cache table",
+        "source table",
+        "found by"
+      ],
+      "related": [
+        "delivery-flow-mapping",
+        "delivery-flow-mapping-lookups",
+        "delivery-flow-mapping-modifiers",
+        "delivery-flow-mapping-values",
+        "delivery-concept-gui",
+        "delivery-concept-api",
+        "delivery-concept-dry-run"
+      ],
+      "sourceRefs": [
+        "osdu/src/SqlFlow.Delivery/Documents/MappingOutline.cs",
+        "osdu/src/SqlFlow.Delivery.ControlPlane/Api/DeliveryTemplateEndpoints.cs",
+        "osdu/src/SqlFlow.Delivery.ControlPlane/Api/DeliveryValueCheckEndpoints.cs",
+        "osdu/gui/src/features/delivery/overview/MappingOverview.tsx",
+        "osdu/gui/src/features/delivery/overview/OverviewCanvas.ts",
+        "osdu/gui/src/features/delivery/overview/outlineLayout.ts",
+        "osdu/gui/src/features/delivery/overview/outlineModel.ts"
+      ]
+    },
+    {
       "id": "delivery-concept-menu",
       "corpus": "reference",
       "path": "concepts/menu.md",

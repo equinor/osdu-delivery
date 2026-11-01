@@ -546,14 +546,16 @@ searchable list of every mapping; the kind it renders; its path and its jump to 
 to Templates, its tooltip naming the template folder file the version was read from, or saying no folder on the mapping's
 path holds it); and **Open in builder**.
 
-Under the heading is one toolbar: the two views, **Staged records** and **Properties**, then which rows are read, and **Dry
-run**. It picks a flow that renders with the mapping (each names its record table), its scope's values and how many rows. A
+Under the heading is one toolbar: the three views, **Overview**, **Staged records** and **Properties**, then which rows are
+read, and **Dry run**. It picks a flow that renders with the mapping (each names its record table), its scope's values and how many rows. A
 required parameter with no default starts on its first option, the value its record table holds most, so the page opens on rows
 rather than on a refusal: the field shows the value taken, another is a pick away, and a field emptied stays empty. Nothing is
 read of the rows until the values are known to do. A run's own form never fills a value in this way. Under the toolbar, when
 there is something to say, one line says the dry run is under way, why it failed, why the rows cannot be read, or whether the
 rows can be delivered.
 
+- **Overview**, which the page opens on: what the mapping does, on one canvas: the tables it reads, what happens to each value on
+  its way, and the record it fills, read from the document alone ([a mapping's overview](mapping-overview.md)).
 - **Staged records**: the rows staged for the mapping, before anything is delivered, beside what they render to, with a handle
   between them that gives either more room and remembers the width. The list reads the table a page at a time and asks it for a
   search, by key, label or file; each line says what became of the row, or how many rows its child tables hold of it, and Up and

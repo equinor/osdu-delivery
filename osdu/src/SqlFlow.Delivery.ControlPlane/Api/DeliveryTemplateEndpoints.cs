@@ -237,6 +237,16 @@ public sealed record DeliveryMappingShapeParameterDto(string Name, bool Required
 public sealed record DeliveryMappingShapeResult(
     JsonObject? Record, IReadOnlyList<DeliveryMappingShapeParameterDto> Parameters, IReadOnlyList<string> Notes, IReadOnlyList<MappingDraftIssue> Issues);
 
+/// <summary>A mapping document to lay out for a person to read.</summary>
+public sealed record DeliveryMappingOutlineRequest(string Yaml, string? Path, Guid? RepoId = null);
+
+/// <summary>
+/// What a mapping does (<see cref="MappingOutline"/>), how many of its template's properties it writes nothing to, and what is
+/// wrong with it. <c>Outline</c> is null when the document does not load; <c>Unfilled</c> is null when its template cannot be
+/// read, and <c>Issues</c> says which.
+/// </summary>
+public sealed record DeliveryMappingOutlineResult(MappingOutline? Outline, int? Unfilled, IReadOnlyList<MappingDraftIssue> Issues);
+
 /// <summary>
 /// Templates and the mapping builder (osdu/docs/reference/concepts/templates.md; the builder:
 /// osdu/docs/reference/concepts/gui.md, Mapping builder). A template is a file of a synced repository's template folder,
@@ -270,6 +280,7 @@ public static class DeliveryTemplateEndpoints
         delivery.MapPost("/mapping-builder/parse", ParseMappingAsync).WithName("ParseDeliveryMapping");
         delivery.MapPost("/mapping-builder/shape", ShapeMappingAsync).WithName("ShapeDeliveryMapping");
         delivery.MapPost("/mapping-builder/coverage", CoverMappingAsync).WithName("CoverDeliveryMapping");
+        delivery.MapPost("/mapping-builder/outline", OutlineMappingAsync).WithName("OutlineDeliveryMapping");
         return group;
     }
 
@@ -1030,6 +1041,64 @@ public static class DeliveryTemplateEndpoints
             .ToList();
         return TypedResults.Ok(new DeliveryMappingCoverageResult(schema.Kind, schema.Version, coverage.Variables, issues));
     }
+
+    /// <summary>
+    /// What a mapping document does, laid out for a person to read (<see cref="MappingOutline.Of"/>), with what it leaves of its
+    /// template: the template its repository's folders settle it to for a document of a synced repository, else the version it
+    /// names as a synced repository holds it, read from the file. A template that cannot be read costs the outline its types and
+    /// no more; a document that does not load answers with the issue and no outline. Neither is an HTTP error, because the
+    /// document is what the caller is looking at. Nothing is rendered and no data is read.
+    /// </summary>
+    private static async Task<Ok<DeliveryMappingOutlineResult>> OutlineMappingAsync(
+        DeliveryMappingOutlineRequest request, OsduDbContext osdu, IRepositoryFolders folders, DeliveryDocumentLoader documents, CancellationToken ct)
+    {
+        if (request is null || string.IsNullOrWhiteSpace(request.Yaml))
+        {
+            return OutlineIssue("There is no mapping document to lay out.");
+        }
+
+        MappingDefinition mapping;
+        var path = PathOf(request.Path);
+        var (source, pins) = await TemplatesForAsync(request.RepoId, path, osdu, folders, ct).ConfigureAwait(false);
+        try
+        {
+            mapping = documents.ParseMapping(request.Yaml, path, pins);
+        }
+        catch (FlowValidationException ex)
+        {
+            return OutlineIssue(ex.Message);
+        }
+
+        var resolved = await source.ResolveAsync(mapping.TemplateDocument, mapping.Template.Kind, mapping.Template.Version, ct).ConfigureAwait(false);
+        if (resolved.Schema is not { } schema)
+        {
+            return TypedResults.Ok(new DeliveryMappingOutlineResult(
+                MappingOutline.Of(mapping, yaml: request.Yaml),
+                null,
+                [new MappingDraftIssue(MappingDraftIssue.WarningSeverity, $"The mapping's template cannot be read: {resolved.Problem}")]));
+        }
+
+        var report = MappingCoverage.Of(mapping, OsduTemplate.From(schema));
+        var issues = report.Issues
+            .Select(issue => new MappingDraftIssue(
+                issue.Severity == IssueSeverity.Error ? MappingDraftIssue.ErrorSeverity : MappingDraftIssue.WarningSeverity, issue.Message, issue.Target))
+            .ToList();
+        return TypedResults.Ok(new DeliveryMappingOutlineResult(MappingOutline.Of(mapping, schema, request.Yaml), UnfilledOf(report), issues));
+    }
+
+    /// <summary>How many properties a report leaves empty, an object counted through what it holds.</summary>
+    private static int UnfilledOf(CoverageReport report)
+    {
+        var parents = report.Variables
+            .Select(variable => variable.Target)
+            .Where(target => target.LastIndexOf('.') > 0)
+            .Select(target => target[..target.LastIndexOf('.')].Replace("[]", string.Empty, StringComparison.Ordinal))
+            .ToHashSet(StringComparer.Ordinal);
+        return report.Variables.Count(variable => variable.State == CoverageState.Empty && !parents.Contains(variable.Target));
+    }
+
+    private static Ok<DeliveryMappingOutlineResult> OutlineIssue(string message)
+        => TypedResults.Ok(new DeliveryMappingOutlineResult(null, null, [new MappingDraftIssue(MappingDraftIssue.ErrorSeverity, message)]));
 
     /// <summary>The path a page names a mapping document by, or the name a document without one is given.</summary>
     private static string PathOf(string? path) => string.IsNullOrWhiteSpace(path) ? "mapping.yaml" : path.Trim();

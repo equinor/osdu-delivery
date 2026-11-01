@@ -419,6 +419,21 @@ public sealed class DeliveryTemplateApiTests
             Assert.Equal("<string from dataset.curves.curve_id>", shape.Record["data"]!["Curves"]![0]!["CurveID"]!.GetValue<string>());
             Assert.Equal("dev", Assert.Single(shape.Parameters, p => p.Name == "dataPartition").Value);
 
+            // The same document laid out for a person to read: what it reads, and how each property of the record is filled,
+            // with what it leaves of its template. A document that does not load says why, rather than failing the request.
+            var outlined = await ReadAsync<DeliveryMappingOutlineResult>(
+                await SendAsync(client, author, HttpMethod.Post, "/api/v1/delivery/mapping-builder/outline", new { yaml = sample, path = "mappings/WellLog@1.4.0.yaml" }));
+            Assert.DoesNotContain(outlined.Issues, i => i.Severity == "error");
+            Assert.NotNull(outlined.Outline);
+            Assert.Equal(WellLogKind, outlined.Outline.Kind);
+            Assert.Contains(outlined.Outline.Sources, s => s.Id == "search.Wellbore");
+            Assert.Contains(outlined.Outline.Record, n => n.Path == "data" && n.Children.Any(c => c.Path == "data.Name" && c.Type == "string"));
+            Assert.True(outlined.Unfilled > 0);
+            var unread = await ReadAsync<DeliveryMappingOutlineResult>(
+                await SendAsync(client, author, HttpMethod.Post, "/api/v1/delivery/mapping-builder/outline", new { yaml = "documentType: mapping", path = "mappings/Broken.yaml" }));
+            Assert.Null(unread.Outline);
+            Assert.Contains(unread.Issues, i => i.Severity == "error");
+
             // The same document measured against its template: every variable a mapping may fill, with how the document
             // reaches it, and nothing required left empty. Nothing is rendered and no cache is read.
             var coverage = await ReadAsync<DeliveryMappingCoverageResult>(

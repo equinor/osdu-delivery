@@ -440,6 +440,26 @@ test.describe.serial("templates and the mapping builder", () => {
     const detail = adminPage.getByTestId("delivery-mapping-detail");
     await expect(adminPage.getByTestId("delivery-mapping-template")).toContainText(WELLLOG_VERSION, { timeout: 15_000 });
 
+    // The page opens on what the mapping does: a sentence, then the tables it reads and the record it fills, its sections
+    // folded. Opening one shows what it holds, a property says how it is filled, and the document stands beside the canvas.
+    const overview = detail.getByTestId("mapping-overview");
+    await expect(overview.getByTestId("mapping-overview-lead")).toContainText("becomes one WellLog record", { timeout: 30_000 });
+    await expect(overview.getByTestId("mapping-overview-card-dataset")).toBeVisible();
+    await expect(overview.getByTestId("mapping-overview-card-cache.UnitOfMeasure")).toBeVisible();
+    await expect(overview.getByTestId("mapping-overview-row-data.Name")).toBeVisible();
+    await expect(overview.getByTestId("mapping-overview-row-data.Curves[].CurveID")).toHaveCount(0);
+
+    // A search opens what holds what it finds and brings it into view, however far down the mapping it is.
+    await overview.getByTestId("mapping-overview-search").fill("CurveUnit");
+    const curveUnit = overview.getByTestId("mapping-overview-row-data.Curves[].CurveUnit");
+    await expect(curveUnit).toBeInViewport();
+    await curveUnit.click();
+    await expect(overview.getByTestId("mapping-overview-alternative")).toHaveCount(3);
+    await overview.getByTestId("mapping-overview-inspector-close").click();
+    await overview.getByTestId("mapping-overview-toggle-yaml").click();
+    await expect(overview.getByTestId("mapping-overview-yaml")).toContainText("documentType: mapping");
+    await expect(overview.getByTestId("mapping-overview-row-data.Name")).toBeVisible();
+
     // The properties: the template as the record's tree, with what this mapping fills of it. Every row says
     // how the mapping reaches its variable (drawn only where it asks for attention), and the tree opens on the Filled
     // view: what is filled and what a check names.

@@ -7,6 +7,9 @@ import { del, get, getBlob, getText, post, put, type QueryParams } from "@/api/c
 import type { ComputeTaskAccepted, PagedResult, RunStatus, RunValue } from "@/api/types";
 import type { PageQuery } from "@/api/endpoints";
 import type { AssertionAction, AssertionFindings, AssertionStage } from "./validation";
+import type { DeliverySourceTable, MappingOutline } from "./mappingOutline";
+
+export type * from "./mappingOutline";
 
 /**
  * A record's custody state. `waiting` holds a rendered document that refers to a record another record of the ledger
@@ -2868,6 +2871,15 @@ export interface DeliveryMappingShapeParameter {
   value: string | null;
 }
 
+/** A mapping's outline, how many of its template's properties it writes nothing to, and what is wrong with it. */
+export interface DeliveryMappingOutlineResult {
+  /** Null when the document does not load. */
+  outline: MappingOutline | null;
+  /** Null when its template cannot be read. */
+  unfilled: number | null;
+  issues: MappingDraftIssue[];
+}
+
 /**
  * The shape of the records a mapping renders, drawn by the renderer delivery uses: a placeholder naming the template's
  * type and the source wherever a value comes from a row or the cache. `record` is null when an issue stopped it.
@@ -4286,6 +4298,9 @@ export const deliveryApi = {
   /** The shape of the records a mapping document renders, drawn with `parameters`; nothing is read or stored. */
   mappingShape: (yaml: string, path: string | null, parameters: Record<string, string>, repoId?: string | null) =>
     post<DeliveryMappingShapeResult>("/api/v1/delivery/mapping-builder/shape", { yaml, path, parameters, repoId: repoId ?? null }),
+  /** What a mapping document does, laid out for a person to read, and what is wrong with it; nothing is rendered and no data is read. */
+  mappingOutline: (yaml: string, path: string | null, repoId?: string | null) =>
+    post<DeliveryMappingOutlineResult>("/api/v1/delivery/mapping-builder/outline", { yaml, path, repoId: repoId ?? null }),
   /** What a template a document of a synced repository names settles to, from the template folders on its path. */
   resolveTemplate: (repoId: string, path: string, kind: string, version?: string | null) =>
     get<DeliveryTemplateResolution>("/api/v1/delivery/templates/resolve", { repoId, path, kind, version: version ?? undefined }),
@@ -4410,6 +4425,9 @@ export const deliveryApi = {
   ) => post<DeliveryStagedRows>(flowPath(pipelineId, "/staged-rows", scope), request),
   /** Previews this record, rendered from its current source row as a delivery would render it now. Answered at once. */
   previewRecord: (record: DeliveryRecordRef) => post<DeliveryRecordPreview>(`${recordApiPath(record)}/preview`),
+  /** The tables an interface of a delivery flow reads, record table first, with the columns the catalog holds of each. */
+  sourceTables: (pipelineId: string, scope?: DeliveryFlowScope) =>
+    get<DeliverySourceTable[]>(flowPath(pipelineId, "/source-tables", scope)),
   /** The interfaces of the delivery flows that render with a mapping, in every partition: what its values are checked against. */
   mappingFlows: (mappingId: string) => get<DeliveryMappingFlow[]>(`/api/v1/delivery/mappings/${mappingId}/flows`),
   /**

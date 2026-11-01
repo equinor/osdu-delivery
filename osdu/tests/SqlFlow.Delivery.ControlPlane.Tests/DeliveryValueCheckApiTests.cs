@@ -39,6 +39,7 @@ public sealed class DeliveryValueCheckApiTests
         await SampleEstate.MigrateModuleAsync(cs);
 
         var suffix = Guid.NewGuid().ToString("N")[..10];
+        var catalogued = "cp-values-table-" + suffix;
         var flowName = "api-values-" + suffix;
         var retiredName = "api-values-retired-" + suffix;
         var repoId = FlowIdentity.FromName("repo/cp-values-" + suffix);
@@ -64,7 +65,7 @@ public sealed class DeliveryValueCheckApiTests
               protocolOptions: { ddmsRoot: /api/os-wellbore-ddms }
             interfaces:
               wellbores:
-                record: { object: OsduData.silver.Wellbore, key: [facility_name] }
+                record: { object: OsduData.silver.Wellbore{{suffix}}, key: [facility_name] }
                 mapping: Wellbore@1.0.0
               welllogs:
                 record: { object: OsduData.silver.WellLog, key: [source_project, log_id], scope: { log_source: logSource } }
@@ -94,6 +95,13 @@ public sealed class DeliveryValueCheckApiTests
                 FirstSeenUtc = now,
                 LastSeenUtc = now,
             });
+
+            // The columns the catalog holds of one table the flow reads; the other it has not described.
+            db.Objects.Add(new CatalogObject { Key = catalogued, ServerRef = "test", Database = "OsduData", Schema = "silver", Name = "Wellbore" + suffix, Kind = "Table" });
+            db.ObjectColumns.AddRange(
+                new CatalogObjectColumn { ObjectKey = catalogued, Ordinal = 1, Name = "facility_name", DataType = "nvarchar(100)", Nullable = false, Tier = "Derived" },
+                new CatalogObjectColumn { ObjectKey = catalogued, Ordinal = 2, Name = "UpdatedDate_DW", DataType = "datetime2", Nullable = true, Tier = "Derived" },
+                new CatalogObjectColumn { ObjectKey = catalogued, Ordinal = 3, Name = "spud_date", DataType = "date", Nullable = true, Tier = "Derived" });
             await db.SaveChangesAsync();
         }
 
@@ -153,6 +161,29 @@ public sealed class DeliveryValueCheckApiTests
             using (var unknown = await SendAsync(client, token, HttpMethod.Get, $"/api/v1/delivery/mappings/{Guid.NewGuid():D}/flows"))
             {
                 Assert.Equal(HttpStatusCode.NotFound, unknown.StatusCode);
+            }
+
+            // The tables an interface reads, with what the catalog holds of them, without the columns that are SQLFlow's own.
+            using (var tables = await SendAsync(client, token, HttpMethod.Get, $"/api/v1/delivery/flows/{pipelineId:D}/source-tables?interface=wellbores"))
+            {
+                var text = await tables.Content.ReadAsStringAsync();
+                Assert.True(tables.StatusCode == HttpStatusCode.OK, text);
+                var record = Assert.Single(JsonDocument.Parse(text).RootElement.EnumerateArray().ToList());
+                Assert.Equal(JsonValueKind.Null, record.GetProperty("dataset").ValueKind);
+                Assert.Equal("OsduData.silver.Wellbore" + suffix, record.GetProperty("table").GetString());
+                Assert.Equal("facility_name", Assert.Single(record.GetProperty("key").EnumerateArray().ToList()).GetString());
+                Assert.Equal(
+                    ["facility_name", "spud_date"],
+                    record.GetProperty("columns").EnumerateArray().Select(column => column.GetProperty("name").GetString()!).ToList());
+            }
+
+            // A table the catalog has not described lists no columns; it is still the table the flow reads.
+            using (var tables = await SendAsync(client, token, HttpMethod.Get, $"/api/v1/delivery/flows/{pipelineId:D}/source-tables?interface=welllogs"))
+            {
+                var text = await tables.Content.ReadAsStringAsync();
+                Assert.True(tables.StatusCode == HttpStatusCode.OK, text);
+                var record = JsonDocument.Parse(text).RootElement.EnumerateArray().First();
+                Assert.Equal("OsduData.silver.WellLog", record.GetProperty("table").GetString());
             }
 
             // The flow's parameters say which column of the record table each scopes by, so a page offers that column's
@@ -293,6 +324,8 @@ public sealed class DeliveryValueCheckApiTests
             await using (var db = CatalogDatabase.Create(cs))
             {
                 await db.ComputeTasks.Where(t => t.SourceRef == flowName).ExecuteDeleteAsync();
+                await db.ObjectColumns.Where(c => c.ObjectKey == catalogued).ExecuteDeleteAsync();
+                await db.Objects.Where(o => o.Key == catalogued).ExecuteDeleteAsync();
                 await db.Pipelines.Where(p => p.RepoId == repoId).ExecuteDeleteAsync();
                 await db.Repos.Where(r => r.Id == repoId).ExecuteDeleteAsync();
             }

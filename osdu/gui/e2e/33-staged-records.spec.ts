@@ -61,7 +61,8 @@ test.describe.serial("a mapping's staged records and a dry run", () => {
     const sheet = adminPage.getByTestId("delivery-mapping-detail");
 
     // The flow's scope needs its log source, which it declares required. The page starts on the value the table holds most,
-    // so it opens on the rows and the first one's document, with no refusal on the way there.
+    // so the tab opens on the rows and the first one's document, with no refusal on the way there.
+    await sheet.getByTestId("delivery-mapping-tab-staged").click();
     await expect(sheet.getByTestId("staged-records")).toBeVisible({ timeout: 30_000 });
     await expect(sheet.getByTestId("value-check-parameter-logSource-picked")).toHaveAttribute("data-value", /\S/, { timeout: 60_000 });
     const lines = sheet.getByTestId("staged-line");

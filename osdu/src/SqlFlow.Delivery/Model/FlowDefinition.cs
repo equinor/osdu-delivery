@@ -649,6 +649,10 @@ public sealed record FlowSystemColumns
 
     /// <summary>Whether the flow named <see cref="Inserted"/> itself, so a table without it is refused rather than read without one.</summary>
     public bool InsertedDeclared { get; init; }
+
+    /// <summary>The columns these name: what a table holds for SQLFlow rather than for a mapping.</summary>
+    public IReadOnlySet<string> Names()
+        => new[] { Updated, Inserted, FileName, RowNumber, Deleted }.OfType<string>().ToHashSet(StringComparer.OrdinalIgnoreCase);
 }
 
 /// <summary>How the source is read incrementally.</summary>
