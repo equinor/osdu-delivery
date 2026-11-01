@@ -30,9 +30,14 @@ keywords:
   - osdu-delivery-setup
   - no .net installed
   - install .net
+  - demo
+  - tour
+  - stand-in
+  - start over
 cliCommand: dev
 related:
   - delivery-guide-getting-started
+  - delivery-guide-local-demo
   - delivery-concept-environment-variables
   - delivery-concept-partitions
   - delivery-cli-partition
@@ -44,6 +49,8 @@ sourceRefs:
   - osdu/src/SqlFlow.Delivery.Setup/DevCommand.cs
   - osdu/src/SqlFlow.Delivery.Setup/DevCommandLine.cs
   - osdu/src/SqlFlow.Delivery.Setup/DevSetupWizard.cs
+  - osdu/src/SqlFlow.Delivery.Setup/DevSetupWizard.Demo.cs
+  - osdu/src/SqlFlow.Delivery.Setup/DevTour.cs
   - osdu/src/SqlFlow.Delivery.Setup/DevReadiness.cs
   - osdu/src/SqlFlow.Delivery.Setup/DevFacts.cs
   - osdu/src/SqlFlow.Delivery.Setup/DevEnvFile.cs
@@ -89,10 +96,12 @@ elsewhere ([the control plane verbs](../../../../sqlflow/docs/reference/cli/cont
 
 ```bash
 osdu-delivery-setup setup [--env-file <path>] [--api]
+osdu-delivery-setup demo  [--reset] [--env-file <path>] [--api]
 osdu-delivery-setup check [--env-file <path>] [--api] [--test-osdu] [--prepare] [--json]
+osdu-delivery-setup tour  [--env-file <path>] [--url <control plane>]
 osdu-delivery-setup env   [--env-file <path>]
 osdu-delivery-setup --help
-sqlflow dev setup | check | env ...     # the same, from the command line
+sqlflow dev setup | demo | check | tour | env ...     # the same, from the command line
 ```
 
 ```bash
@@ -100,6 +109,8 @@ dev.bat              # Windows: the setup on a first start, then the check, then
 dev.bat setup        # the setup questions again, offering the current values
 dev.bat check        # the check alone, with a test sign-in to OSDU; nothing is stopped or started
 dev.bat api          # the control plane and its workers without the GUI
+dev.bat demo         # a local environment with nothing to ask, then the tour (the local demo)
+dev.bat demo reset   # the same from nothing: removes what an earlier demo made first
 dev.bat single       # one process: the control plane runs runs on its own node and starts no workers (as F5 does)
 dev.bat single api   # one process, without the GUI ('managed' names the default; 'single' and 'managed' together are refused)
 ./dev.sh             # the same on macOS and Linux (./dev.sh setup, ./dev.sh check, ./dev.sh api, ./dev.sh single)
@@ -164,6 +175,31 @@ registers the partition with the command line's `partition add` (as the default 
 the catalog's pending migrations first. On macOS and Linux the file is readable by its owner only. It waits for the
 command line's build to finish, which the start needs next, and then runs the check.
 
+### The demo
+
+`demo` is the setup with nothing to ask, for a clean machine: [the local demo](../guides/local-demo.md) says what it gives you. It
+uses the first SQL Server running here, or starts one in Docker; creates `OsduDelivery`, `OsduData` and `SqlFlowDemo`; generates the
+secrets; points OSDU at the stand-in on `127.0.0.1:5301`; and registers the two public sample estates. A value a demo's own file
+already holds stays, so a second run keeps its secrets and server, and a file can name a fork of an estate.
+
+It stops, having changed nothing, on a `.sqlflow/env` that is not a demo's and on a catalog or another application's tables in
+`OsduDelivery` that this checkout did not make. With `--reset` (`dev.bat demo reset`), which only a demo's own file allows, it first
+drops the three databases and deletes what the stand-in holds and its checkouts. A demo keeps its checkouts in `.sqlflow/node-cache`
+(`SQLFLOW_NODE_CACHE`), because a run's history sits in them and an incremental flow takes its watermark from it: a history that
+outlived the databases would skip a load whose table is gone. It also raises the control plane's rate limit to 6,000 requests a minute,
+because one person clicking from page to page uses up the 120 a deployment allows.
+
+The launchers start the stand-in whenever the file sets `OSDU_STANDIN_WRITES=true`, so a plain `dev.bat` brings a demo back up.
+
+### The tour
+
+`tour` proves a running environment. It waits for the control plane to come up and the estates to sync, fires each schedule of
+both estates in the order their records refer to each other (each with `chain=false`, so the order is the tour's), waits out the
+assertions' index settle window, and runs the assertions. It exits 0 only when every run succeeded and every assertion was
+evaluated and passed: a test skipped counts against it. Tests skipped because something wrote to their records during the assertions
+get the index's window again and one more run; a failed test never does. A step that fails is named with its error and the tour goes
+on, so one failure does not hide another. `dev.bat demo` runs it in a window of its own.
+
 ### What the check reports
 
 `check` prints a line per finding, with the fix under each that has one:
@@ -198,6 +234,8 @@ reach it only that way.
 | --- | --- | --- | --- |
 | `--env-file <path>` | path | `<checkout>/.sqlflow/env` | The env file to set up, check or print. |
 | `--api` | flag | off | `check`, and the check `setup` ends with: the GUI does not start, so Node.js is not needed and the GUI's origin is not checked. |
+| `--reset` | flag | off | `demo`: first remove what an earlier demo made. Refused without a demo's own file. |
+| `--url <address>` | URL | `http://localhost:5000` | `tour`: the control plane to run against. |
 | `--test-osdu` | flag | off | `check`: sign in with the OSDU client and read the legal tag. Writes nothing to OSDU. |
 | `--prepare` | flag | off | `check`: first replace a copied template's `<generated>` values with generated ones, and run `az login` when the file reads Azure through the Azure CLI and nobody is signed in. The launchers pass it at every start. |
 | `--json` | flag | off | `check` only: one JSON document (`ready`, `errors`, `warnings`, and each section's findings) instead of text. |
@@ -235,9 +273,12 @@ Not ready to start: 1 ERROR line(s) above. Fix them (dev.bat setup asks the setu
 | `No dev.env.example was found in <folder> or above it. Run the setup from an OSDU Delivery checkout ...` | It ran outside a checkout. |
 | `The template <path> is missing; it ships with the repository. Restore it with: git checkout -- dev.env.example` | The checkout lost its template. |
 | `<path>(<line>): the section '<title>' is none of 'Needed to start', 'Needed to run flows' and 'Optional'.` | An edited template renamed a section. |
-| `name what to do: setup, check or env.` | No subcommand, or (`'<word>' is none of setup, check and env.`) an unknown one; the usage follows, as it does for each error of this kind. |
+| `name what to do: setup, demo, check, tour or env.` | No subcommand, or (`'<word>' is none of setup, demo, check, tour and env.`) an unknown one; the usage follows, as it does for each error of this kind. |
 | `'<word>' follows the subcommand '<subcommand>', which takes no other word.` | A second word after the subcommand. |
-| `'<option>' is not an option of this command; it takes --env-file <path>, --api, --test-osdu, --prepare and --json.` | An option it does not read. |
+| `'<option>' is not an option of this command; it takes --env-file <path>, --url <address>, --api, --test-osdu, --prepare, --reset and --json.` | An option it does not read. |
+| `--url needs the control plane's address.` | `--url` with no address after it. |
+| `reset applies to 'demo' alone.` | `--reset` with another subcommand. |
+| `<env file> names no first admin to sign in with; run the demo first.` | `tour` with no env file to sign in from; exit 2. |
 | `--env-file needs the path of the env file.` | `--env-file` with no path after it. |
 | `--json applies to 'check' alone.` | `--json` with `setup` or `env`. |
 | `The input ended before the setup was done; nothing was written.` | `setup` ran with no one to answer (its input ended); exit 1. |

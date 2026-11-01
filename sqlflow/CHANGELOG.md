@@ -47,6 +47,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   baseline comparison; queries no longer need it. The chat capability `dataOpsRunQuery` is `runQuery`.
 
 ### Added
+- `SQLFLOW_NODE_CACHE` names where a node keeps its checkouts and staged flow versions. Each flow's run history sits there, and an
+  incremental flow reads its watermark from it, so two environments on one machine that share the default folder share that history
+  ([environment variables](docs/reference/concepts/environment-variables.md)).
 - A repo's page shows a file's code. A click on a flow or any other file opens it in a code window that slides in from
   the left over the page, coloured by its kind (YAML, JSON, SQL, Markdown, scripts and configuration), resized by
   dragging its edge and maximized to read the code alone; a flow's file offers Open pipeline. It reads
@@ -160,6 +163,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   limit set for the SQL statements carries over ([Maintenance](docs/reference/concepts/maintenance.md)).
 
 ### Fixed
+- The Schema changes page lists its databases. `GET /api/v1/schema-changes/databases` answered 500 on every catalog, because its
+  ordering could not be translated to SQL.
+- Flows running side by side on a fresh database no longer fail on the schema they share. Each found it missing and created it, and
+  all but the first failed with "There is already an object named ...", so a first run depended on timing.
+- A copy flow with a relative location runs from the repository on a node, as a file flow does. It ran from a snapshot of its YAML
+  alone, where the files it names are not there ([cpy](docs/reference/flow/cpy.md)).
+- An unquoted decimal in a flow keeps what the document wrote. Where a document holds a value of any shape (a stored
+  procedure or invoke parameter, a translate template's constant) it was read in single precision, so 0.1 reached the run as
+  0.100000001 and a value past about seven significant digits moved.- A copy flow's relative locations resolve against the flow file's own folder, as every other kind's do. They resolved
+  against the working directory, so a copy flow in a repository failed on a node
+  ([cpy](docs/reference/flow/cpy.md)).
+- A node whose run slots were all full sat out its long poll when a run ended, up to 30 seconds, whenever it had a free
+  compute slot, so short flows ran in bursts. The poll it already has parked now takes the next run the moment one is
+  reported finished ([worker](docs/reference/cli/worker.md#the-poll)).
 - A repo's folders stay shut until they are opened. Opening a project on a repo's page or the Pipelines page unfolded
   every folder that held a flow, with every file beside it, so a repository keeping thousands of files beside its
   flows listed them all; a project now opens onto its top-level folders, each opening one level at a time. A search

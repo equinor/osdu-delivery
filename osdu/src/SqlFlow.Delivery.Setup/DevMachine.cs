@@ -114,6 +114,9 @@ internal interface ISqlServerProbe
 
     /// <summary>Allows snapshot isolation in <paramref name="database"/>.</summary>
     Task AllowSnapshotIsolationAsync(SqlTarget target, string database, CancellationToken ct);
+
+    /// <summary>Removes a database, closing what holds it open; nothing when there is none.</summary>
+    Task DropDatabaseAsync(SqlTarget target, string database, CancellationToken ct);
 }
 
 /// <summary>What an OSDU sign-in test found.</summary>

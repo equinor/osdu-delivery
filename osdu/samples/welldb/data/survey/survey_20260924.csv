@@ -1,5 +1,5 @@
 source_project,survey_id,survey_name,survey_type,survey_version,wellbore_uwi,top_md,base_md,elev_meas_ref,update_date,station_folder,payload_hash,chunk_count
-PROJECT_A,SRV-0001/1,Definitive survey,Definitive,1,Wellbore A-1,0,3030,42.8 M,2026-08-18 10:39:50,PROJECT_A/SRV-0001_1,c203674fe521761054386bfabbaf285f319b25e1157705f2e08ad0a97130103b,1
+PROJECT_A,SRV-0001/1,Definitive survey,Definitive,1,Wellbore A-1,0,2190,42.8 M,2026-08-18 10:39:50,PROJECT_A/SRV-0001_1,c0979399fd6327f7c94782805d9d8cb53e6a0446605f65ad5a85b1cb133f1100,1
 PROJECT_A,SRV-0002/1,Definitive survey,Definitive,1,Wellbore B-1,0,1950,27.7 M,2026-08-18 11:05:14,PROJECT_A/SRV-0002_1,a938f1494735483323c6b8629ef92abebf4ac307ae749f023092b7a05f592fd0,1
 PROJECT_A,SRV-0003/1,Definitive survey,Definitive,1,Wellbore B-2 A,0,1830,27.7 M,2026-08-18 11:05:14,PROJECT_A/SRV-0003_1,405580001cb235129a88904e7867ff6ac5b1180c741833421ae3ddc38e37eecc,1
 PROJECT_A,SRV-0004/1,Definitive survey,Definitive,1,Wellbore B-2 B,0,1980,27.7 M,2026-08-18 11:05:14,PROJECT_A/SRV-0004_1,14d1dcd6dfe0dfbff12d050b76d9cd33c9d7459db6de42dba94eee4affb224ed,1

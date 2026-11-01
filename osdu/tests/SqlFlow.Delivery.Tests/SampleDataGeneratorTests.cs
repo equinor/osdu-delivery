@@ -261,10 +261,9 @@ public sealed class SampleDataGeneratorTests
         Assert.Equal(["Wellbore A-1", "Wellbore B-1", "Wellbore B-2 A", "Wellbore B-2 B", "Wellbore C-1"], logs.Select(l => l.WellboreUwi));
         Assert.All(logs, l => Assert.Equal((SyntheticEstate.Project, SampleWellLogs.LogSource), (l.SourceProject, l.LogSource)));
 
-        // The first log is logged from the surface, so its index starts at depth 0 (the case that made an inferred depth
-        // column a bit), and its curves cover only the interval its tools were run over.
-        Assert.Equal(0, logs[0].IndexMin);
-        Assert.True(logs[0].Depths[0] > 0);
+        // A log's header and its index curve state exactly what its chunk holds.
+        Assert.All(logs, l => Assert.Equal((l.Depths[0], l.Depths[^1]), (l.IndexMin, l.IndexMax)));
+        Assert.All(logs, l => Assert.Equal((l.Depths[0], l.Depths[^1]), (l.Curves[0].TopDepth, l.Curves[0].BaseDepth)));
         Assert.Equal(["MD", "BS", "CALI", "DRHO", "DT", "DTS", "GR", "NPHI", "RD", "RHOB"], logs[0].Curves.Select(c => c.CurveId));
         Assert.Equal(["MD", "DRHO", "GR", "NPHI", "PEF", "RD", "RHOB"], logs[1].Curves.Select(c => c.CurveId));
         Assert.All(logs.Skip(2), l => Assert.Equal(["MD", "GR", "RD"], l.Curves.Select(c => c.CurveId)));

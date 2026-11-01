@@ -227,6 +227,16 @@ internal sealed class SqlServerProbe : ISqlServerProbe
             """, database, ct).ConfigureAwait(false);
     }
 
+    public async Task DropDatabaseAsync(SqlTarget target, string database, CancellationToken ct)
+    {
+        ArgumentNullException.ThrowIfNull(target);
+        ArgumentException.ThrowIfNullOrWhiteSpace(database);
+        await ExecuteOnMasterAsync(target, """
+            DECLARE @drop nvarchar(600) = N'ALTER DATABASE ' + QUOTENAME(@name) + N' SET SINGLE_USER WITH ROLLBACK IMMEDIATE; DROP DATABASE ' + QUOTENAME(@name);
+            IF DB_ID(@name) IS NOT NULL EXEC (@drop);
+            """, database, ct).ConfigureAwait(false);
+    }
+
     public async Task AllowSnapshotIsolationAsync(SqlTarget target, string database, CancellationToken ct)
     {
         ArgumentNullException.ThrowIfNull(target);

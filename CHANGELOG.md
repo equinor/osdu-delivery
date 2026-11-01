@@ -8,6 +8,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Try OSDU Delivery on a laptop from one command.** `bootstrap.ps1` or `bootstrap.sh`, or `dev.bat demo` and `./dev.sh demo` in a
+  checkout, fetch, build and start everything with nothing to ask, deliver the two public sample estates to a stand-in for OSDU on the
+  machine, and say whether every run succeeded and every assertion was evaluated and passed. `demo reset` starts over, and the demo
+  refuses an environment it did not make ([the local demo](osdu/docs/reference/guides/local-demo.md)).
+
 - **See what an attribute reads in the source, in SSMS.** An attribute's new **SQL** tab, under a mapping's **Properties**, writes the
   T-SQL to copy into SSMS: the source columns it reads with each row's key, file and row, over the rows a delivery reads, a child
   table left joined so a record with no child rows shows. After a check, **Failing rows** narrows it to the records the check listed.
@@ -634,6 +639,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   says ([Upgrading an estate](osdu/docs/reference/concepts/templates.md#upgrading-an-estate-that-saved-templates-in-the-database)).
 
 ### Fixed
+- The Assertions page no longer marks a test unfit because it holds records to a mapping. The page never read the mapping its
+  run reads, so each such test showed "was not read" beside its passing result ([assertion flows](osdu/docs/reference/flow/assertion.md)).
+- A number with more than about seven significant digits in a flow is compared as the document writes it. An unquoted decimal was
+  read in single precision, so a right depth such as 2128.7232 failed an `equals`
+  ([assertion](osdu/docs/reference/flow/assertion.md)).
+- The sample's reference data lands on SQL Server: two of its landing flows failed on a value longer than their columns and on a row
+  longer than the reader's buffer, which stopped `welldb-reference`. Its first log's header and MD row state what its curve file
+  holds, 2127.504 to 2183.5872 m rather than 0 to 3003.5872 m, and its survey and tops follow
+  ([the sample estate](osdu/docs/reference/guides/welldb-sample.md)).
 - A delivery whose mapping's enrichment names the record's bulk data (`bulk: true`) without the column holding its hash
   passed its checks and failed when it was planned; it is now refused when the flow is bound to its mapping, naming
   `source.datasets.<name>.files.hashColumn`, and `change.payloadDetect: lastModified`, which the loader refused for such

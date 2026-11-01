@@ -18,15 +18,22 @@
 // than reach a real OSDU.
 //
 // Started by playwright.config.ts beside the control plane, on SQLFLOW_E2E_OSDU_PORT (5301 by default).
+//
+// With OSDU_STANDIN_WRITES=true it is the local environment's OSDU instead (osdu/docs/reference/cli/dev.md, demo): it starts
+// empty, holds no wellbore of its own, and takes what a delivery sends (osdu-writes.mjs), keeping it in OSDU_STANDIN_STATE
+// across restarts. A request it does not answer is written to its log, so a route a flow needs and it lacks is found at once.
 import { createServer } from "node:http";
 
 const port = Number(process.env.SQLFLOW_E2E_OSDU_PORT ?? 5301);
+
+/** Whether this is a local environment's OSDU, which takes writes, rather than the e2e suite's, which refuses them. */
+const acceptsWrites = process.env.OSDU_STANDIN_WRITES === "true";
 
 /**
  * The wellbores the platform holds, by the name a search asks for: the wellbores of the sample well database logs
  * (osdu/samples/welldb/data/welllog) and the two the fixture documents name.
  */
-const WELLBORES = new Set([
+const WELLBORES = new Set(acceptsWrites ? [] : [
   "Wellbore A-1",
   "Wellbore B-1",
   "Wellbore B-2 A",
@@ -57,14 +64,19 @@ function send(response, status, body) {
   response.end(text);
 }
 
-/** The request's body as text. */
-function read(request) {
+/** The request's body as bytes. */
+function readBytes(request) {
   return new Promise((resolve, reject) => {
     const chunks = [];
     request.on("data", (chunk) => chunks.push(chunk));
-    request.on("end", () => resolve(Buffer.concat(chunks).toString("utf8")));
+    request.on("end", () => resolve(Buffer.concat(chunks)));
     request.on("error", reject);
   });
+}
+
+/** The request's body as text. */
+async function read(request) {
+  return (await readBytes(request)).toString("utf8");
 }
 
 /** The records a search finds: the sample wellbore the query names, in the partition that asked, or none. */
@@ -121,6 +133,10 @@ function readRecord(id) {
 /** Every version of the record `id` names, oldest first: those a spec held, or the one a wellbore of the platform has. */
 function recordVersions(id) {
   const key = withoutVersion(id);
+  if (writes?.isRemoved(key)) {
+    return [];
+  }
+
   const own = held.get(key);
   if (own !== undefined) {
     return own;
@@ -133,7 +149,10 @@ function recordVersions(id) {
 /** Every record of a partition the stand-in holds, at its latest: the platform's wellbores and what specs hold. */
 function partitionRecords(partition) {
   const wellbores = [...WELLBORES].map((name) => wellboreRecord(`${partition}:master-data--Wellbore:${wellboreId(name)}`));
-  const own = [...held.values()].map((versions) => versions[versions.length - 1]).filter((record) => record.id.startsWith(`${partition}:`));
+  const own = [...held.entries()]
+    .filter(([key]) => !writes?.isRemoved(key))
+    .map(([, versions]) => versions[versions.length - 1])
+    .filter((record) => record.id.startsWith(`${partition}:`));
   return [...wellbores, ...own].sort((a, b) => a.id.localeCompare(b.id));
 }
 
@@ -240,6 +259,21 @@ function matches(record, query) {
     return exists[1] === "id" ? record.id !== "" : texts(valueAt(record, exists[1])).length > 0;
   }
 
+  // Whether the indexer failed to map a record, which here it never does: the assertion that asks finds none.
+  if (/^index\.statusCode:/.test(text)) {
+    return false;
+  }
+
+  // A clause on the items of a nested array, each read apart: nested(data.Curves, (Mnemonic.keyword:"GR")).
+  const nested = /^nested\(\s*([\w.]+)\s*,\s*\((.+)\)\s*\)$/.exec(text);
+  if (nested !== null && balanced(nested[2])) {
+    return [valueAt(record, nested[1])].flat().some((item) => item !== null && typeof item === "object" && matches(item, nested[2]));
+  }
+
+  if (acceptsWrites) {
+    console.warn(`The OSDU stand-in does not read the query clause: ${text}`);
+  }
+
   return false;
 }
 
@@ -290,9 +324,21 @@ function splitTop(text, joint) {
   return parts.map((part) => part.trim());
 }
 
-/** The value a record holds at a dotted path, for grouping (a `.keyword` sub-field read as its property). */
+/**
+ * The value a record holds at a dotted path, for grouping (a `.keyword` sub-field read as its property). A path runs through an
+ * array to every element's value, as the index flattens one: `data.Curves.Mnemonic` is the mnemonic of each curve, and
+ * `nested(data.Curves, Mnemonic.keyword)` is how aggregateBy names the same values of a nested array.
+ */
 function valueAt(record, path) {
-  return path.replace(/\.keyword$/, "").split(".").reduce((node, key) => (node !== null && typeof node === "object" ? node[key] : undefined), record);
+  const step = (node, key) => {
+    if (Array.isArray(node)) {
+      return node.flatMap((element) => step(element, key) ?? []);
+    }
+
+    return node !== null && typeof node === "object" ? node[key] : undefined;
+  };
+
+  return path.replace(/^nested\(\s*([\w.]+)\s*,\s*([\w.]+)\s*\)$/, "$1.$2").replace(/\.keyword$/, "").split(".").reduce(step, record);
 }
 
 /**
@@ -421,10 +467,28 @@ function decodeId(encoded) {
   }
 }
 
+/** What the stand-in adds when it takes writes; never loaded for the e2e suite. */
+const writes = acceptsWrites
+  ? (await import("./osdu-writes.mjs")).createWrites(
+    { held, withoutVersion, partitionRecords, explore, send, read, readBytes },
+    process.env.OSDU_STANDIN_STATE ?? "",
+    process.env.SQLFLOW_NODE_CACHE ?? "")
+  : null;
+
 const server = createServer((request, response) => {
-  const path = new URL(request.url ?? "/", "http://stand-in").pathname;
+  const url = new URL(request.url ?? "/", "http://stand-in");
+  const path = url.pathname;
   if (request.method === "GET" && path === "/health") {
     send(response, 200, { status: "up" });
+    return;
+  }
+
+  try {
+    if (writes?.handle(request, response, path, url)) {
+      return;
+    }
+  } catch (error) {
+    send(response, 400, { message: `The OSDU stand-in could not read ${request.method} ${path}: ${error instanceof Error ? error.message : String(error)}` });
     return;
   }
 
@@ -451,7 +515,7 @@ const server = createServer((request, response) => {
           held.set(key, [...versions, { ...record, version }]);
           send(response, 200, { id: record.id, version, held: held.size });
         })
-        .catch((error) => send(response, 400, { message: `The e2e OSDU stand-in could not read the record: ${error instanceof Error ? error.message : String(error)}` }));
+        .catch((error) => send(response, 400, { message: `The OSDU stand-in could not read the record: ${error instanceof Error ? error.message : String(error)}` }));
       return;
     }
   }
@@ -486,7 +550,7 @@ const server = createServer((request, response) => {
           });
           send(response, 200, { id: body.id, held: schemas.size });
         })
-        .catch((error) => send(response, 400, { message: `The e2e OSDU stand-in could not read the schema: ${error instanceof Error ? error.message : String(error)}` }));
+        .catch((error) => send(response, 400, { message: `The OSDU stand-in could not read the schema: ${error instanceof Error ? error.message : String(error)}` }));
       return;
     }
   }
@@ -511,7 +575,7 @@ const server = createServer((request, response) => {
           examples.set(body.path, body.record);
           send(response, 200, { path: body.path, held: examples.size });
         })
-        .catch((error) => send(response, 400, { message: `The e2e OSDU stand-in could not read the example: ${error instanceof Error ? error.message : String(error)}` }));
+        .catch((error) => send(response, 400, { message: `The OSDU stand-in could not read the example: ${error instanceof Error ? error.message : String(error)}` }));
       return;
     }
   }
@@ -537,16 +601,18 @@ const server = createServer((request, response) => {
   }
 
   if (request.method === "GET" && path === SCHEMA_LIST) {
+    writes?.holdPublishedSchemas(schemas);
     send(response, 200, listSchemas(new URL(request.url ?? "/", "http://stand-in").searchParams));
     return;
   }
 
   const schemaRead = request.method === "GET" ? SCHEMA_READ.exec(path) : null;
   if (schemaRead !== null) {
+    writes?.holdPublishedSchemas(schemas);
     const id = decodeId(schemaRead[1]);
     const schema = id === null ? undefined : schemas.get(id);
     if (schema === undefined) {
-      send(response, 404, { code: 404, reason: "Schema not found", message: `The e2e OSDU stand-in holds no schema ${id ?? path}.` });
+      send(response, 404, { code: 404, reason: "Schema not found", message: `The OSDU stand-in holds no schema ${id ?? path}.` });
     } else {
       send(response, 200, schema);
     }
@@ -557,7 +623,7 @@ const server = createServer((request, response) => {
   if (request.method === "POST" && path === "/api/storage/v2/query/records") {
     read(request)
       .then((text) => send(response, 200, readMany(JSON.parse(text))))
-      .catch((error) => send(response, 400, { message: `The e2e OSDU stand-in could not read the batch: ${error instanceof Error ? error.message : String(error)}` }));
+      .catch((error) => send(response, 400, { message: `The OSDU stand-in could not read the batch: ${error instanceof Error ? error.message : String(error)}` }));
     return;
   }
 
@@ -566,7 +632,7 @@ const server = createServer((request, response) => {
     const id = decodeId(versions[1]);
     const kept = id === null ? [] : recordVersions(id);
     if (kept.length === 0) {
-      send(response, 404, { code: 404, reason: "Record not found", message: `The e2e OSDU stand-in holds no record ${id ?? path}.` });
+      send(response, 404, { code: 404, reason: "Record not found", message: `The OSDU stand-in holds no record ${id ?? path}.` });
     } else {
       send(response, 200, { recordId: withoutVersion(id), versions: kept.map((record) => record.version) });
     }
@@ -579,7 +645,7 @@ const server = createServer((request, response) => {
     const id = decodeId(atVersion[1]);
     const record = id === null ? null : recordVersions(id).find((kept) => String(kept.version) === atVersion[2]) ?? null;
     if (record === null) {
-      send(response, 404, { code: 404, reason: "Record version not found", message: `The e2e OSDU stand-in holds no version ${atVersion[2]} of ${id ?? path}.` });
+      send(response, 404, { code: 404, reason: "Record version not found", message: `The OSDU stand-in holds no version ${atVersion[2]} of ${id ?? path}.` });
     } else {
       send(response, 200, record);
     }
@@ -593,13 +659,13 @@ const server = createServer((request, response) => {
     try {
       id = decodeURIComponent(reading[1]);
     } catch {
-      send(response, 400, { message: `The e2e OSDU stand-in cannot read the id in ${path}.` });
+      send(response, 400, { message: `The OSDU stand-in cannot read the id in ${path}.` });
       return;
     }
 
     const record = readRecord(id);
     if (record === null) {
-      send(response, 404, { code: 404, reason: "Record not found", message: `The e2e OSDU stand-in holds no record ${id}.` });
+      send(response, 404, { code: 404, reason: "Record not found", message: `The OSDU stand-in holds no record ${id}.` });
     } else {
       send(response, 200, record);
     }
@@ -618,16 +684,29 @@ const server = createServer((request, response) => {
       .then((text) => {
         const body = JSON.parse(text);
         const partition = request.headers["data-partition-id"];
-        // The explorer asks for the exact count; a render's lookup asks for a handful of ids by a wellbore's name.
-        send(response, 200, body.trackTotalCount === true && typeof partition === "string" && partition !== "" ? explore(body, partition) : search(body, partition));
+        // The explorer asks for the exact count; a render's lookup asks for a handful of ids by a wellbore's name, which
+        // on a platform that holds what was delivered is a search like any other.
+        const explores = (acceptsWrites || body.trackTotalCount === true) && typeof partition === "string" && partition !== "";
+        send(response, 200, explores ? explore(body, partition) : search(body, partition));
       })
-      .catch((error) => send(response, 400, { message: `The e2e OSDU stand-in could not read the search: ${error instanceof Error ? error.message : String(error)}` }));
+      .catch((error) => send(response, 400, { message: `The OSDU stand-in could not read the search: ${error instanceof Error ? error.message : String(error)}` }));
     return;
   }
 
-  send(response, 404, { message: `The e2e OSDU stand-in answers a token, the search service, record reads and the schemas it holds, not ${request.method} ${path}.` });
+  if (acceptsWrites) {
+    console.warn(`The OSDU stand-in answered 404 to ${request.method} ${path}.`);
+  }
+
+  send(response, 404, { message: `The OSDU stand-in answers a token, the search service, record reads and the schemas it holds, not ${request.method} ${path}.` });
+});
+
+server.on("error", (error) => {
+  console.error(error.code === "EADDRINUSE"
+    ? `Port ${port} is taken, so the OSDU stand-in cannot start. Stop what holds it, then start again.`
+    : `The OSDU stand-in could not start: ${error.message}`);
+  process.exit(1);
 });
 
 server.listen(port, "127.0.0.1", () => {
-  console.log(`e2e OSDU stand-in listening on http://127.0.0.1:${port}`);
+  console.log(`OSDU stand-in ${acceptsWrites ? "taking writes" : "for the e2e suite"} listening on http://127.0.0.1:${port}`);
 });

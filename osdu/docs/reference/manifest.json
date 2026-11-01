@@ -380,11 +380,16 @@
         "sql login",
         "osdu-delivery-setup",
         "no .net installed",
-        "install .net"
+        "install .net",
+        "demo",
+        "tour",
+        "stand-in",
+        "start over"
       ],
       "cliCommand": "dev",
       "related": [
         "delivery-guide-getting-started",
+        "delivery-guide-local-demo",
         "delivery-concept-environment-variables",
         "delivery-concept-partitions",
         "delivery-cli-partition",
@@ -397,6 +402,8 @@
         "osdu/src/SqlFlow.Delivery.Setup/DevCommand.cs",
         "osdu/src/SqlFlow.Delivery.Setup/DevCommandLine.cs",
         "osdu/src/SqlFlow.Delivery.Setup/DevSetupWizard.cs",
+        "osdu/src/SqlFlow.Delivery.Setup/DevSetupWizard.Demo.cs",
+        "osdu/src/SqlFlow.Delivery.Setup/DevTour.cs",
         "osdu/src/SqlFlow.Delivery.Setup/DevReadiness.cs",
         "osdu/src/SqlFlow.Delivery.Setup/DevFacts.cs",
         "osdu/src/SqlFlow.Delivery.Setup/DevEnvFile.cs",
@@ -5859,6 +5866,48 @@
       ]
     },
     {
+      "id": "delivery-guide-local-demo",
+      "corpus": "reference",
+      "path": "guides/local-demo.md",
+      "title": "The local demo: OSDU Delivery on a laptop from one command, with no OSDU to connect to",
+      "type": "guide",
+      "summary": "One command builds and starts OSDU Delivery on a clean machine, delivers two sample estates to a local stand-in for OSDU, and proves them.",
+      "keywords": [
+        "demo",
+        "try it",
+        "bootstrap",
+        "one command",
+        "laptop",
+        "clean machine",
+        "no osdu",
+        "local osdu",
+        "stand-in",
+        "tour",
+        "sample estates",
+        "sqlflow estate",
+        "start over",
+        "reset",
+        "dev.bat demo",
+        "dev.sh demo"
+      ],
+      "related": [
+        "delivery-cli-dev",
+        "delivery-guide-run-locally",
+        "delivery-guide-welldb-sample",
+        "delivery-guide-getting-started"
+      ],
+      "sourceRefs": [
+        "bootstrap.ps1",
+        "bootstrap.sh",
+        "dev.bat",
+        "dev.sh",
+        "osdu/src/SqlFlow.Delivery.Setup/DevSetupWizard.Demo.cs",
+        "osdu/src/SqlFlow.Delivery.Setup/DevTour.cs",
+        "osdu/gui/standin/osdu-standin.mjs",
+        "osdu/gui/standin/osdu-writes.mjs"
+      ]
+    },
+    {
       "id": "delivery-guide-lookup-table-cache",
       "corpus": "reference",
       "path": "guides/lookup-table-cache.md",
@@ -6372,6 +6421,7 @@
       ],
       "related": [
         "delivery-cli-dev",
+        "delivery-guide-local-demo",
         "delivery-guide-welldb-sample",
         "delivery-guide-getting-started",
         "delivery-guide-deployment",
@@ -9761,6 +9811,34 @@
         "osdu/gui/src/features/delivery/StagedRecordList.tsx",
         "osdu/gui/src/features/delivery/DeliveryMappingPage.tsx",
         "osdu/gui/src/features/delivery/scopeDefaults.ts"
+      ]
+    },
+    {
+      "id": "delivery-wiki-0041-local-demo-against-a-stand-in",
+      "corpus": "wiki",
+      "path": "decisions/0041-local-demo-against-a-stand-in.md",
+      "title": "Decision 0041: the local demo delivers to a stand-in for OSDU, and its verdict counts only what was evaluated",
+      "type": "decision",
+      "summary": "Why the demo delivers to the e2e stand-in extended to take writes, not a live platform or a plan, and why a passed run is not a pass.",
+      "keywords": [
+        "local demo",
+        "bootstrap",
+        "stand-in",
+        "osdu stand-in",
+        "tour",
+        "hermetic",
+        "skipped assertion",
+        "index settle",
+        "clean machine"
+      ],
+      "related": [],
+      "sourceRefs": [
+        "osdu/gui/standin/osdu-standin.mjs",
+        "osdu/gui/standin/osdu-writes.mjs",
+        "osdu/src/SqlFlow.Delivery.Setup/DevSetupWizard.Demo.cs",
+        "osdu/src/SqlFlow.Delivery.Setup/DevTour.cs",
+        "bootstrap.ps1",
+        "bootstrap.sh"
       ]
     },
     {

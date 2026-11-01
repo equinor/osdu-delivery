@@ -72,6 +72,10 @@ public sealed class DeliveryAssertionApiTests
                 assert:
                   - field: data.Name
                     exists: true
+              - name: to-a-mapping
+                kind: {{WellLog}}
+                assert:
+                  - mapping: Unsynced@9.9.9
             """;
         var flow = new DeliveryDocumentLoader().ParseAssertion(yaml, "flows/" + flowName + ".yaml").ForRun(partition, RegisteredPartitions.None);
         var now = new DateTime(DateTime.UtcNow.Ticks / TimeSpan.TicksPerSecond * TimeSpan.TicksPerSecond, DateTimeKind.Utc);
@@ -141,7 +145,7 @@ public sealed class DeliveryAssertionApiTests
             Assert.Equal(second, listed.GetProperty("lastRun").GetProperty("assertionRunId").GetInt64());
 
             var tests = listed.GetProperty("tests").EnumerateArray().ToDictionary(t => t.GetProperty("name").GetString()!);
-            Assert.Equal(["log-headers", "log-count", "unsaved-kind"], tests.Keys);
+            Assert.Equal(["log-headers", "log-count", "unsaved-kind", "to-a-mapping"], tests.Keys);
 
             // A test's latest result is its newest, and its history strip holds every run that ran it, newest first.
             var headers = tests["log-headers"];
@@ -161,6 +165,10 @@ public sealed class DeliveryAssertionApiTests
             var problem = Assert.Single(tests["unsaved-kind"].GetProperty("problems").EnumerateArray()).GetString();
             Assert.Contains("sqlflow template capture", problem, StringComparison.Ordinal);
 
+            // A test held to a mapping's rules is read as its run reads it: the board says what is wrong with the mapping, and
+            // never that nothing read it.
+            Assert.Contains("no mapping Unsynced@9.9.9 is synced", Assert.Single(tests["to-a-mapping"].GetProperty("problems").EnumerateArray()).GetString(), StringComparison.Ordinal);
+
             // A flow whose document does not parse says why, and that it does not parse, which needs a fix.
             var broken = board.GetProperty("flows").EnumerateArray().Single(f => f.GetProperty("name").GetString() == flowName + "-broken");
             Assert.False(broken.GetProperty("parses").GetBoolean());
@@ -179,7 +187,7 @@ public sealed class DeliveryAssertionApiTests
             // One flow's board is the same flow, alone.
             var own = await JsonAsync(client, token, $"/api/v1/delivery/flows/{pipelineId}/assertions?partition={partition}");
             Assert.Equal(flowName, Assert.Single(own.GetProperty("flows").EnumerateArray()).GetProperty("name").GetString());
-            Assert.Equal(3, own.GetProperty("totals").GetProperty("tests").GetInt32());
+            Assert.Equal(4, own.GetProperty("totals").GetProperty("tests").GetInt32());
             Assert.Equal(2, own.GetProperty("totals").GetProperty("passed").GetInt32());
             Assert.Equal(1, own.GetProperty("totals").GetProperty("errored").GetInt32());
 

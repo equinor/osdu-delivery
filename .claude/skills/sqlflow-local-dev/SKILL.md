@@ -16,6 +16,7 @@ change is a Vite hot-reload (instant).
 | Control plane | http://localhost:5000 (API + scheduler + dispatcher; its own node only with `single` or F5) |
 | Workers | `SqlFlow.Delivery.Worker.Host` processes the control plane starts and stops (managed workers, the `process` launcher), named `worker-<pool>-<id>`, 1 to 4 (`ControlPlane__ManagedWorkers__MaxWorkers`), ended with it; their output is in the control plane's log under their names |
 | Settings | `.sqlflow/env` (git-ignored), written from `dev.env.example` at the checkout's root |
+| Local demo | `dev.bat demo` (`osdu/docs/reference/guides/local-demo.md`): stand-in OSDU on 127.0.0.1:5301, started when `.sqlflow/env` sets `OSDU_STANDIN_WRITES=true`. It refuses a catalog it did not make, so it does not run against this machine's dev estate |
 | Setup and check | `osdu-delivery-setup` (`osdu/docs/reference/cli/dev.md`): host `osdu/hosts/SqlFlow.Delivery.Setup.Host`, code in `osdu/src/SqlFlow.Delivery.Setup/`; the command line's `sqlflow dev` runs the same code |
 
 ## Start it
@@ -24,6 +25,8 @@ change is a Vite hot-reload (instant).
 dev.bat / ./dev.sh                 setup on a first start, then the check, then GUI + control plane + managed workers
 dev.bat check / ./dev.sh check     the check alone, with an OSDU sign-in test; starts and stops nothing
 dev.bat setup / ./dev.sh setup     the setup questions again (current values offered, old file kept as env.<time>.bak)
+dev.bat demo / ./dev.sh demo       a clean machine, nothing asked: the sample estates against a stand-in for OSDU, then the tour
+dev.bat demo reset                 the same from nothing; removes what an earlier demo made, and only that
 dev.bat api                        control plane and workers only, no GUI
 dev.bat single                     one process: the control plane runs runs on its own node, no workers (combine: single api)
 ```

@@ -156,7 +156,7 @@ public sealed class AssertionRunner
             ct).ConfigureAwait(false);
 
         var now = _context.Time.GetUtcNow();
-        var runnable = await BindMappingsAsync(selected.Where(t => t.RunsIn(partition) && AssertionActivity.Disabled(t) is null && !AssertionActivity.Stale(t, now)).Select(t => AssertionBinding.Bind(t, Values(partition))).ToList(), ct).ConfigureAwait(false);
+        var runnable = await AssertionTemplates.BindMappingsAsync(selected.Where(t => t.RunsIn(partition) && AssertionActivity.Disabled(t) is null && !AssertionActivity.Stale(t, now)).Select(t => AssertionBinding.Bind(t, Values(partition))).ToList(), Mappings, ct).ConfigureAwait(false);
         var skipped = selected.Where(t => !t.RunsIn(partition) || AssertionActivity.Disabled(t) is not null).ToList();
         var flagged = selected.Where(t => t.RunsIn(partition) && AssertionActivity.Disabled(t) is null && AssertionActivity.Stale(t, now)).ToList();
         var fits = await AssertionTemplates.FitAsync(runnable, _context.DocumentTemplates, _flow.SourcePath, Mappings, ct).ConfigureAwait(false);
@@ -308,35 +308,6 @@ public sealed class AssertionRunner
             }).ConfigureAwait(false);
     }
 
-    /// <summary>
-    /// The tests with every <c>mapping</c> assertion bound to the mapping it names, read once per run from the mappings the
-    /// repository sync keeps (osdu/docs/reference/flow/mapping-assertions.md); one that cannot be read keeps why, and its
-    /// test is reported as not fitting, with that reason.
-    /// </summary>
-    private async Task<List<AssertionTest>> BindMappingsAsync(List<AssertionTest> tests, CancellationToken ct)
-    {
-        var references = tests.SelectMany(t => t.Assertions).OfType<MappingRulesAssertion>().Select(a => a.Mapping).Distinct(StringComparer.Ordinal).ToList();
-        if (references.Count == 0)
-        {
-            return tests;
-        }
-
-        var read = new Dictionary<string, (MappingDefinition? Mapping, string? Problem)>(StringComparer.Ordinal);
-        foreach (var reference in references)
-        {
-            read[reference] = await SyncedMappings.ByReferenceAsync(_context, reference, ct).ConfigureAwait(false);
-        }
-
-        return tests
-            .Select(t => t with
-            {
-                Assertions = t.Assertions
-                    .Select(a => a is MappingRulesAssertion rules ? rules with { Definition = read[rules.Mapping].Mapping, Unread = read[rules.Mapping].Problem } : a)
-                    .ToList(),
-            })
-            .ToList();
-    }
-
     /// <summary>A mapping a test names for its template, read from the mappings the repository sync keeps.</summary>
     private Task<(MappingDefinition? Mapping, string? Problem)> Mappings(string reference, CancellationToken ct)
         => SyncedMappings.ByReferenceAsync(_context, reference, ct);
@@ -347,7 +318,7 @@ public sealed class AssertionRunner
         var partition = await PartitionAsync(ct).ConfigureAwait(false);
         var selected = _flow.Select(tests, tags);
         var now = _context.Time.GetUtcNow();
-        var runnable = await BindMappingsAsync(selected.Where(t => t.RunsIn(partition) && AssertionActivity.Disabled(t) is null && !AssertionActivity.Stale(t, now)).Select(t => AssertionBinding.Bind(t, Values(partition))).ToList(), ct).ConfigureAwait(false);
+        var runnable = await AssertionTemplates.BindMappingsAsync(selected.Where(t => t.RunsIn(partition) && AssertionActivity.Disabled(t) is null && !AssertionActivity.Stale(t, now)).Select(t => AssertionBinding.Bind(t, Values(partition))).ToList(), Mappings, ct).ConfigureAwait(false);
         var fits = await AssertionTemplates.FitAsync(runnable, _context.DocumentTemplates, _flow.SourcePath, Mappings, ct).ConfigureAwait(false);
         using var http = new HttpRuntime(_flow.Reliability, _context.Secrets, _context.Time, _transport, _allowLoopback, observer: _context.HttpObserver);
         var client = await ProtocolFactory.ClientAsync(http, _flow.Source.Endpoint, _flow.Source.Auth, _flow.Source.Headers, _context.Secrets, ct).ConfigureAwait(false);

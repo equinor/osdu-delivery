@@ -13,69 +13,61 @@ schema, its own codes and its own services, so most teams end up writing and mai
 OSDU Delivery replaces those loaders with configuration, for data teams that have to load data into OSDU, keep it
 current, and answer for it.
 
-## Videos
+## Try it
+
+One command takes a laptop from nothing to a running OSDU Delivery that has delivered a sample estate and proved it. No OSDU
+to connect to, no configuration: a stand-in for OSDU runs on the machine, and everything else is the real product.
+
+```powershell
+# Windows
+irm https://raw.githubusercontent.com/TahirRiaz/osdu-delivery/main/bootstrap.ps1 | iex
+```
+
+```bash
+# macOS and Linux
+curl -fsSL https://raw.githubusercontent.com/TahirRiaz/osdu-delivery/main/bootstrap.sh | bash
+```
+
+You need a SQL Server, or Docker Desktop running to start one ([the local demo](osdu/docs/reference/guides/local-demo.md)).
+
+## Introduction and architecture
 
 <table>
 <tr>
 <td width="50%" valign="top">
-<a href="https://www.youtube.com/watch?v=yffQyPOpJcA"><img src="https://img.youtube.com/vi/yffQyPOpJcA/maxresdefault.jpg" width="100%" alt="Stop building OSDU ingestion pipelines. Configure them instead."></a>
-<br><strong><a href="https://www.youtube.com/watch?v=yffQyPOpJcA">Stop building OSDU ingestion pipelines. Configure them instead.</a></strong> (3:42)
-<br>Start here: why hand-written pipelines stop scaling, and what configuring a delivery changes.
+<h3>Why it exists</h3>
+<a href="https://www.youtube.com/watch?v=yffQyPOpJcA"><img src="https://img.youtube.com/vi/yffQyPOpJcA/maxresdefault.jpg" width="100%" alt="Stop building OSDU ingestion pipelines"></a>
+<br><strong><a href="https://www.youtube.com/watch?v=yffQyPOpJcA">Stop building OSDU ingestion pipelines</a></strong> (3:42). Start here.
 </td>
 <td width="50%" valign="top">
-<a href="https://www.youtube.com/watch?v=vxYiGkvaSLs"><img src="https://img.youtube.com/vi/vxYiGkvaSLs/maxresdefault.jpg" width="100%" alt="How OSDU Delivery works"></a>
-<br><strong><a href="https://www.youtube.com/watch?v=vxYiGkvaSLs">How OSDU Delivery works</a></strong> (6:18)
-<br>The whole system, following one well log from file to OSDU. No coding or OSDU knowledge needed.
-</td>
-</tr>
-<tr>
-<td width="50%" valign="top">
-<a href="https://www.youtube.com/watch?v=k8XU0Boqh4w"><img src="https://img.youtube.com/vi/k8XU0Boqh4w/maxresdefault.jpg" width="100%" alt="Map curated data to OSDU with YAML"></a>
-<br><strong><a href="https://www.youtube.com/watch?v=k8XU0Boqh4w">Map curated data to OSDU with YAML</a></strong> (17:30)
-<br>Hands-on tutorial of the mapping language: lookups, expressions, business rules, and proving a mapping before anything is sent.
-</td>
-<td width="50%" valign="top">
-<a href="https://www.youtube.com/watch?v=QnOzD6ycfV8"><img src="https://img.youtube.com/vi/QnOzD6ycfV8/maxresdefault.jpg" width="100%" alt="Codebase walkthrough"></a>
-<br><strong><a href="https://www.youtube.com/watch?v=QnOzD6ycfV8">Codebase walkthrough</a></strong> (12:58)
-<br>For developers: one CSV row through the C# classes, the ledger's rules, and where a change belongs.
+<h3>How it works</h3>
+<a href="https://www.youtube.com/watch?v=vxYiGkvaSLs"><img src="https://img.youtube.com/vi/vxYiGkvaSLs/maxresdefault.jpg" width="100%" alt="Architecture and data flow"></a>
+<br><strong><a href="https://www.youtube.com/watch?v=vxYiGkvaSLs">Architecture and data flow</a></strong> (6:18). No coding or OSDU knowledge needed.
 </td>
 </tr>
 </table>
 
-## How it works
+## Technical deep dive
 
-Everything a loader would otherwise read, look up or hard-code lives in three places, each known and versioned, and a
-mapping connects them:
+<table>
+<tr>
+<td width="50%" valign="top">
+<h3>How to write a mapping</h3>
+<a href="https://www.youtube.com/watch?v=k8XU0Boqh4w"><img src="https://img.youtube.com/vi/k8XU0Boqh4w/maxresdefault.jpg" width="100%" alt="Map curated data to OSDU with YAML"></a>
+<br><strong><a href="https://www.youtube.com/watch?v=k8XU0Boqh4w">Map curated data to OSDU with YAML</a></strong> (17:30). A hands-on tutorial.
+</td>
+<td width="50%" valign="top">
+<h3>How the code is organized</h3>
+<a href="https://www.youtube.com/watch?v=QnOzD6ycfV8"><img src="https://img.youtube.com/vi/QnOzD6ycfV8/maxresdefault.jpg" width="100%" alt="Codebase walkthrough"></a>
+<br><strong><a href="https://www.youtube.com/watch?v=QnOzD6ycfV8">Codebase walkthrough</a></strong> (12:58). For developers.
+</td>
+</tr>
+</table>
 
-```text
-     drop-off zone              template                 cache
-    your source data         the OSDU schema       lookups from OSDU,
-    files and tables         you deliver to       files and databases
-            |                       |                       |
-            +-----------------------+-----------------------+
-                                    |
-                                 mapping
-                          (connects the three)
-                                    |
-                     OSDU records, files, bulk data
-                                    |
-                                    +--> ledger: every record, every attempt, every change
-```
+### What a mapping looks like
 
-With those three in place, a new type of data needs only a mapping: this column, translated through that lookup, fills
-that property of the schema.
-
-1. **Drop your data.** Put source files (CSV, JSON, Parquet) in the drop-off zone, or point a flow at a source database.
-2. **Keep the template.** Pick the OSDU schema of the type you deliver, in the GUI or from the command line, and commit
-   it beside your mappings. Nothing to write.
-3. **Fill the cache.** A cache flow captures what your mappings look up, into one versioned cache per OSDU data
-   partition, and refreshes it on a schedule.
-4. **Write the mapping.** A YAML file says how one row becomes one record. Write it by hand, build it in the GUI's
-   mapping builder, or let an AI assistant draft it.
-5. **Deliver.** A delivery flow names the table, the mapping and the OSDU target. `plan` shows what would be sent,
-   `run` sends it, and a schedule keeps OSDU in sync from then on.
-
-A mapping, simplified from the sample's well logs:
+One YAML file connects three places: the drop-off zone that holds your source data, the template that fixes the OSDU
+schema, and the cache that holds the lookups. This one is simplified from the sample's well logs:
 
 ```yaml
 name: WellLog
@@ -98,30 +90,25 @@ record:
 ```
 
 This mapping is the only part that knows about well logs. Nothing in the engine does: given another template and
-mapping, it delivers wellbores, seismic, samples, production volumes or any other OSDU type.
-
-A mapping can also clean, translate, convert and compute. The
-[tutorial](https://www.youtube.com/watch?v=k8XU0Boqh4w) shows how on one row, and
-[mapping transformations](osdu/docs/reference/flow/mapping-transformations.md) lists every function and modifier with
-its result.
+mapping, it delivers wellbores, seismic, samples, production volumes or any other OSDU type. A mapping can also clean,
+translate, convert and compute: [mapping transformations](osdu/docs/reference/flow/mapping-transformations.md) lists
+every function and modifier with its result.
 
 ## What you get
 
 - **Every OSDU write path.** The storage, file and dataset services; manifest and workflow ingestion; and the domain
   data stores (DDMSs) for wellbores, seismic, rock and fluid samples, well delivery, production and reservoir models
   ([coverage plan](docs/osdu-coverage-plan.md)).
-- **Safe to rerun.** The same source row always becomes the same OSDU record, so reruns never create duplicates, and
-  only what changed is sent, including after a mapping or reference data change. Retries, resume and undo are built in.
+- **Safe to rerun.** The same row always becomes the same record, and only what changed is sent. Retries, resume and
+  undo are built in.
 - **Checked before sending.** Mappings are checked against their schema, legal tags are confirmed with OSDU, and each
   record can be validated before it goes out.
-- **Every record accounted for.** The [ledger](osdu/docs/reference/concepts/ledger.md) holds each record's source file
-  and row, what shaped it, every attempt, the id and version it landed as, and who did what to it and when. Nothing
-  reaches OSDU without going through it, and any record is found by its key, OSDU id or source file.
+- **Every record accounted for.** Nothing reaches OSDU without going through the
+  [ledger](osdu/docs/reference/concepts/ledger.md), and any record is found by its key, OSDU id or source file.
 - **After delivery.** Verify delivered records against OSDU, explore what OSDU holds live in the GUI, test it with data
   quality checks, reconcile records no one accounts for, retrieve records back into your own storage, and correct with
   removals, reversals and redeliveries, every action recorded.
-- **Runs near your data.** Work spreads over as many workers as you run, and workers fetch their work instead of
-  accepting connections, so they can run inside the network that holds your data.
+- **Runs near your data.** Workers fetch their work, so they can run inside the network that holds your data.
 - **One configuration, every environment.** The same flows run in dev, test and prod; a new environment is a setting.
 
 ## An AI assistant that builds it with you
@@ -133,13 +120,6 @@ delivered, why it failed, or what a reference data change will resend. It works 
 metadata, never from the records' content, with the signed-in person's own permissions; only data mode, which a
 message starting with `!` turns on, reads data, with a read-only query over what an approved AI context opens
 ([MCP guide](osdu/docs/reference/guides/mcp.md)).
-
-## Develop in your editor
-
-The VS Code extension makes the editor the place a pipeline is developed. Sign in through the browser with your Microsoft
-account, open a repository, and every flow and mapping in it is understood: completion and checks on every key, a mapping
-checked against its template as you type, how a flow last ran, what keeps its records blocked, and the assistant above
-built in, with nothing to install ([the VS Code extension](osdu/docs/reference/guides/vscode.md)).
 
 ## Try it
 

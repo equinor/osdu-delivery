@@ -301,6 +301,19 @@ public sealed class AssertionDocumentTests
         Assert.Equal([ExpectedValueKind.Number, ExpectedValueKind.Text, ExpectedValueKind.Boolean], kinds);
     }
 
+    [Fact]
+    public void A_decimal_is_compared_as_the_document_writes_it()
+    {
+        var flow = Parse(OneTest("""
+            - field: data.TopMeasuredDepth
+              equals: 2128.7232
+            """));
+
+        var expected = flow.Tests[0].Assertions.Cast<ValueAssertion>().Single().Condition.Operands[0];
+
+        Assert.Equal(ExpectedValue.OfNumber(2128.7232), expected);
+    }
+
     [Theory]
     [InlineData("- field: data.A\n  equals: 1\n  count: 1", "is a count assertion, which does not take field, equals")]
     [InlineData("- severity: error", "names no subject")]

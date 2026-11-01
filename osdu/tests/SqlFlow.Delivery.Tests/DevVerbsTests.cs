@@ -110,7 +110,7 @@ public sealed class DevVerbsTests : IDisposable
 
     [Theory]
     [InlineData(new[] { "dev" }, "name what to do")]
-    [InlineData(new[] { "dev", "start" }, "'start' is none of setup, check and env")]
+    [InlineData(new[] { "dev", "start" }, "'start' is none of setup, demo, check, tour and env")]
     [InlineData(new[] { "dev", "setup", "--json" }, "--json applies to 'check' alone")]
     [InlineData(new[] { "dev", "check", "--bogus" }, "'--bogus' is not an option of this command")]
     [InlineData(new[] { "dev", "check", "--env-file" }, "--env-file needs the path of the env file")]

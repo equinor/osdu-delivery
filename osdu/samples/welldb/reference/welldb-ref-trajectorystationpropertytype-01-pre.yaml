@@ -17,6 +17,8 @@ source:
     delimiter: ","
     header: true
     srcFile: "*.csv"
+    # OSDU's longest descriptions run to some thousand characters, past the parser's default of 1024 bytes.
+    maxBufferSize: 65536
 
 target:
   connection: ${env:OSDU_DATA_DB}
@@ -25,6 +27,8 @@ target:
 
 schema:
   evolve: widen
+  # Unicode raw columns wide enough for those descriptions: a raw column is varchar(255) otherwise.
+  defaultColumnType: nvarchar(4000)
 
 transform:
   inferTypes: false

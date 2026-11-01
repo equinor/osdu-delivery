@@ -11,6 +11,11 @@
 #      ./dev.sh managed  the default, accepted as before
 #      ./dev.sh setup    ask the setup questions again (the SQL Server, OSDU, a repository), then start
 #      ./dev.sh check    say what this machine has and what it is missing, test the OSDU sign-in, and start nothing
+#      ./dev.sh demo     a local environment with nothing to ask: the sample estates, synthetic data and a stand-in for
+#                        OSDU on this machine; it starts everything, then runs the tour, which says whether it all held.
+#                        For a clean machine: it refuses an environment it did not make, and it reaches no real OSDU
+#      ./dev.sh demo reset  the same from nothing: first removes the databases and records an earlier demo made, which
+#                        only a demo's own file allows
 #
 #  First start: with no .sqlflow/env yet, the setup asks for what it cannot know, offers to create the databases and to
 #  start SQL Server 2022 in Docker (which is how SQL Server runs on a Mac), writes .sqlflow/env from dev.env.example, and
@@ -40,6 +45,8 @@ single=""
 named_managed=""
 asksetup=""
 check=""
+demo=""
+reset=""
 for argument in "$@"; do
     case "$(printf '%s' "$argument" | tr '[:upper:]' '[:lower:]')" in
         api) api=1 ;;
@@ -47,12 +54,18 @@ for argument in "$@"; do
         managed) named_managed=1 ;;
         setup) asksetup=1 ;;
         check) check=1 ;;
+        demo) demo=1 ;;
+        reset) reset=1 ;;
         *)
-            echo "[X] '$argument' is none of api, single, managed, setup and check." >&2
+            echo "[X] '$argument' is none of api, single, managed, setup, check, demo and reset." >&2
             exit 1
             ;;
     esac
 done
+if [ -n "$reset" ] && [ -z "$demo" ]; then
+    echo "[X] 'reset' goes with 'demo': ./dev.sh demo reset." >&2
+    exit 1
+fi
 if [ -n "$single" ] && [ -n "$named_managed" ]; then
     echo "[X] 'single' runs no worker processes and 'managed' starts them: name one of the two." >&2
     exit 1
@@ -175,9 +188,27 @@ if command -v git > /dev/null 2>&1 && git rev-parse --is-inside-work-tree > /dev
     fi
 fi
 
+stop_port() {
+    local pids
+    pids="$(lsof -ti "tcp:$1" -sTCP:LISTEN 2>/dev/null || true)"
+    if [ -n "$pids" ]; then
+        echo "Stopping previous $2 (pid $(echo "$pids" | tr '\n' ' ')) on port $1 ..."
+        echo "$pids" | xargs kill 2>/dev/null || true
+    fi
+}
+
 # --- The setup when there is no env file (or it was asked for), else the check ---
 # Exit codes: 0 ready, 2 something a start needs is missing (the report says what), 1 stopped.
-if [ -n "$asksetup" ] || [ ! -f .sqlflow/env ]; then
+if [ -n "$demo" ]; then
+    reset_flag=""
+    if [ -n "$reset" ]; then
+        # What the last demo left running holds its databases open, and would write to them again.
+        stop_port 5000 "control plane"
+        stop_port 5301 "OSDU stand-in"
+        reset_flag="--reset"
+    fi
+    "$setup" demo $reset_flag $api_flag || exit 1
+elif [ -n "$asksetup" ] || [ ! -f .sqlflow/env ]; then
     if [ ! -f .sqlflow/env ]; then
         echo ".sqlflow/env is missing, so this is a first start: a few questions set this machine up."
     fi
@@ -198,16 +229,9 @@ cli="$root/osdu/hosts/SqlFlow.Delivery.Cli.Host/bin/Debug/net9.0/SqlFlow.Deliver
 # --- Stop whatever the last run left behind ---
 # A control plane from an earlier run holds its port and keeps taking runs; a managed worker of one keeps polling. This
 # waits until the check passed, so a start that would fail never takes down one that works.
-stop_port() {
-    local pids
-    pids="$(lsof -ti "tcp:$1" -sTCP:LISTEN 2>/dev/null || true)"
-    if [ -n "$pids" ]; then
-        echo "Stopping previous $2 (pid $(echo "$pids" | tr '\n' ' ')) on port $1 ..."
-        echo "$pids" | xargs kill 2>/dev/null || true
-    fi
-}
 stop_port 5000 "control plane"
-stop_port 5173 "GUI"
+if [ -z "$api" ]; then stop_port 5173 "GUI"; fi
+stop_port 5301 "OSDU stand-in"
 pkill -f 'SqlFlow.Delivery.ControlPlane.Host' 2>/dev/null || true
 pkill -f 'SqlFlow.Delivery.Worker.Host' 2>/dev/null || true
 
@@ -217,6 +241,8 @@ pkill -f 'SqlFlow.Delivery.Worker.Host' 2>/dev/null || true
 # exported as it stands, never evaluated, so no value is ever run as shell.
 settings="$("$setup" env)" || { echo "[X] .sqlflow/env could not be read; ./dev.sh check says why." >&2; exit 1; }
 while IFS= read -r line; do
+    # Under Git Bash the setup is a Windows program, whose lines end with a carriage return.
+    line="${line%$'\r'}"
     [ -z "$line" ] && continue
     name="${line%%=*}"
     value="${line#*=}"
@@ -252,26 +278,45 @@ if [ -n "$managed" ]; then
     export ControlPlane__Worker__Enabled=false
     export ControlPlane__ManagedWorkers__Enabled=true
     export ControlPlane__ManagedWorkers__Launcher=process
-    export ControlPlane__ManagedWorkers__Process__Command="$root/osdu/hosts/SqlFlow.Delivery.Worker.Host/bin/Debug/net9.0/SqlFlow.Delivery.Worker.Host"
+    # Git Bash on Windows runs this script too, where the built host carries its extension.
+    worker="$root/osdu/hosts/SqlFlow.Delivery.Worker.Host/bin/Debug/net9.0/SqlFlow.Delivery.Worker.Host"
+    if [ -f "$worker.exe" ]; then worker="$worker.exe"; fi
+    export ControlPlane__ManagedWorkers__Process__Command="$worker"
     export ControlPlane__ManagedWorkers__Process__ControlPlaneUrl=http://localhost:5000
     export ControlPlane__ManagedWorkers__MaxWorkers="${ControlPlane__ManagedWorkers__MaxWorkers:-4}"
 fi
 
-# --- The GUI, in the background of this terminal: Ctrl+C (or the control plane ending) stops it too ---
+# --- The GUI and the stand-in for OSDU, in the background of this terminal: Ctrl+C (or the control plane ending) stops them ---
 gui_pid=""
+standin_pid=""
+tour_pid=""
 stop_gui() {
+    if [ -n "$tour_pid" ]; then
+        kill "$tour_pid" 2>/dev/null || true
+    fi
     if [ -n "$gui_pid" ]; then
         kill "$gui_pid" 2>/dev/null || true
         pkill -P "$gui_pid" 2>/dev/null || true
     fi
+    if [ -n "$standin_pid" ]; then
+        kill "$standin_pid" 2>/dev/null || true
+    fi
 }
-if [ -z "$api" ]; then
+if [ -z "$api" ] || [ "${OSDU_STANDIN_WRITES:-}" = "true" ]; then
     # npm writes node_modules/.package-lock.json on every install; a package-lock.json newer than it means a pulled or
     # added dependency, and Vite would fail at the first missing import, so the tree is installed again.
     if [ ! -f osdu/gui/node_modules/.package-lock.json ] || [ osdu/gui/package-lock.json -nt osdu/gui/node_modules/.package-lock.json ]; then
         echo "Installing GUI dependencies ..."
         (cd osdu/gui && npm ci)
     fi
+fi
+if [ "${OSDU_STANDIN_WRITES:-}" = "true" ]; then
+    echo "Starting the stand-in for OSDU on http://127.0.0.1:5301 ..."
+    (cd osdu/gui && OSDU_STANDIN_STATE="$root/.sqlflow/osdu-standin.json" exec node standin/osdu-standin.mjs) &
+    standin_pid=$!
+    trap stop_gui EXIT INT TERM
+fi
+if [ -z "$api" ]; then
     echo "Starting the GUI on http://localhost:5173 ..."
     (cd osdu/gui && exec npm run dev -- --open) &
     gui_pid=$!
@@ -288,6 +333,11 @@ echo "  Ctrl+C    stops the control plane and the GUI."
 echo
 # 'dotnet run' takes the project directory as its content root, where there is no appsettings.json, so every request
 # and every EF Core command would log at Information without these two. Their names hold a '.', which a shell variable
-# cannot, so env passes them.
+# cannot, so env passes them. The tour waits for this control plane to come up, and writes to this terminal beside it.
+if [ -n "$demo" ]; then
+    "$setup" tour &
+    tour_pid=$!
+    trap stop_gui EXIT INT TERM
+fi
 env "Logging__LogLevel__Microsoft.AspNetCore=Warning" "Logging__LogLevel__Microsoft.EntityFrameworkCore=Warning" \
     dotnet run --project osdu/hosts/SqlFlow.Delivery.ControlPlane.Host --urls http://localhost:5000

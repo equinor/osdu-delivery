@@ -17,6 +17,9 @@ internal static partial class DevValues
     /// <summary>The GUI's origin: Vite's port, where dev.bat and dev.sh start it.</summary>
     public const string GuiOrigin = "http://localhost:5173";
 
+    /// <summary>The control plane's address, where dev.bat and dev.sh start it.</summary>
+    public const string ControlPlaneUrl = "http://localhost:5000";
+
     /// <summary>The password reference the template's first admin names.</summary>
     public const string AdminPasswordReference = "${env:SQLFLOW_ADMIN_PASSWORD}";
 
@@ -51,6 +54,10 @@ internal static partial class DevValues
     /// <summary>An absolute https:// URL.</summary>
     public static bool IsHttpsUrl(string? value)
         => Uri.TryCreate(value, UriKind.Absolute, out var uri) && uri.Scheme == Uri.UriSchemeHttps;
+
+    /// <summary>An http:// URL on this machine, which is where the demo's stand-in for OSDU listens.</summary>
+    public static bool IsLoopbackUrl(string? value)
+        => Uri.TryCreate(value, UriKind.Absolute, out var uri) && uri.Scheme == Uri.UriSchemeHttp && uri.IsLoopback;
 
     /// <summary>A data-partition-id as runs name it.</summary>
     public static bool IsPartitionId(string? value) => value is not null && PartitionId().IsMatch(value);
@@ -92,7 +99,7 @@ internal static partial class DevValues
                 return $"not a reference: write {AdminPasswordReference} and put the password in SQLFLOW_ADMIN_PASSWORD";
             case "ControlPlane__Cors__AllowedOrigins__0" when gui && !string.Equals(value.TrimEnd('/'), GuiOrigin, StringComparison.OrdinalIgnoreCase):
                 return $"not {GuiOrigin}, where the GUI starts: its calls fail with a CORS error";
-            case "OSDU_URL" or "OSDU_TOKEN_URL" when !IsReference(value) && !IsHttpsUrl(value):
+            case "OSDU_URL" or "OSDU_TOKEN_URL" when !IsReference(value) && !IsHttpsUrl(value) && !IsLoopbackUrl(value):
                 return "not an https:// URL";
             case "OSDU_DATA_PARTITION" when !IsReference(value) && !IsPartitionId(value):
                 return "not a data-partition-id: letters, digits, _, - and . only";

@@ -384,8 +384,9 @@ public static class DeliveryAssertionEndpoints
             // Each test's template as the flow reads it: from the template folders its repository's last sync recorded on the
             // flow's path, as its run reads them from the files.
             var folders = await SyncedTemplates.ReadAsync(ledger, repositories, pipeline.RepoId, ct).ConfigureAwait(false);
-            var fits = await AssertionTemplates.FitAsync(
-                bound.Tests, folders, pipeline.RelativePath, (reference, token) => SyncedMappings.ByReferenceAsync(ledger, repositories, documents, reference, token), ct).ConfigureAwait(false);
+            MappingReader mappings = (reference, token) => SyncedMappings.ByReferenceAsync(ledger, repositories, documents, reference, token);
+            var bindings = await AssertionTemplates.BindMappingsAsync(bound.Tests, mappings, ct).ConfigureAwait(false);
+            var fits = await AssertionTemplates.FitAsync(bindings, folders, pipeline.RelativePath, mappings, ct).ConfigureAwait(false);
             var runs = await ledger.ListAssertionRunsAsync(bound.LedgerId, 1, ct).ConfigureAwait(false);
             var lastRun = runs.Count > 0 ? runs[0] : null;
             var ofFlow = latest.TryGetValue(bound.LedgerId, out var found) ? found : new Dictionary<string, AssertionResultState>(StringComparer.OrdinalIgnoreCase);

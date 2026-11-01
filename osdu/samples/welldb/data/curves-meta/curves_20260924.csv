@@ -1,5 +1,5 @@
 source_project,log_id,curve_ordinal,curve_id,curve_unit,index_unit,index_min,index_max,curve_description,curve_version,business_value,update_date
-PROJECT_A,LOG-0001/1,0,MD,M,M,0,3003.5872,Measured depth,,HIGH,
+PROJECT_A,LOG-0001/1,0,MD,M,M,2127.504,2183.5872,Measured depth,,HIGH,
 PROJECT_A,LOG-0001/1,1,BS,IN,M,2127.504,2183.5872,Bit Size,1,HIGH,2021-11-10T17:12:02Z
 PROJECT_A,LOG-0001/1,2,CALI,IN,M,2129.1804,2183.5872,Caliper [hole diameter],1,HIGH,2021-11-10T17:12:02Z
 PROJECT_A,LOG-0001/1,3,DRHO,G/CC,M,2127.6564,2183.13,Density correction,1,HIGH,2021-11-10T17:12:03Z

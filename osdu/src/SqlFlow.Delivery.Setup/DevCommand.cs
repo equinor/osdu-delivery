@@ -37,6 +37,15 @@ public static class DevCommand
             "                                   plan; then writes .sqlflow/env from dev.env.example (keeping the file it",
             "                                   replaces), creates the databases, registers the partition, and checks.",
             "                                   dev.bat and dev.sh run it when .sqlflow/env is missing, and 'setup' again",
+            $"{program} demo [--reset] [--env-file <path>] [--api]",
+            "                                   The setup with nothing to ask, for a clean machine: the sample estates, synthetic",
+            "                                   data, and a stand-in for OSDU on this machine. It reaches no real OSDU, and it",
+            "                                   refuses a file or a catalog it did not make. dev.bat demo runs it, then 'tour'.",
+            "                                   --reset: first remove the databases and what the stand-in holds, all of which an",
+            "                                   earlier demo made, for a start from nothing",
+            $"{program} tour [--env-file <path>] [--url <control plane>]",
+            "                                   Fires both estates' schedules through the control plane in order, and says whether",
+            "                                   every run succeeded and every assertion was evaluated and passed. Exits 1 when not",
             $"{program} check [--env-file <path>] [--api] [--test-osdu] [--prepare] [--json]",
             "                                   What a local run has and what it is missing, each with its fix: the tools,",
             "                                   every setting, the SQL Server and both databases, sign-in, partitions,",
@@ -51,10 +60,10 @@ public static class DevCommand
     }
 
     /// <summary>The options that take a value.</summary>
-    public static IReadOnlyList<string> ValueOptions { get; } = ["--env-file"];
+    public static IReadOnlyList<string> ValueOptions { get; } = ["--env-file", "--url"];
 
     /// <summary>The plain flags.</summary>
-    public static IReadOnlyList<string> Flags { get; } = ["--api", "--test-osdu", "--prepare"];
+    public static IReadOnlyList<string> Flags { get; } = ["--api", "--test-osdu", "--prepare", "--reset"];
 
     /// <summary>Runs the command on this machine; <paramref name="args"/> start with the subcommand.</summary>
     /// <param name="args">The subcommand and its options.</param>
@@ -102,13 +111,24 @@ public static class DevCommand
             return Env(checkout, output, error, machine.Platform);
         }
 
+        if (parsed.Subcommand == "tour")
+        {
+            return await TourAsync(checkout, parsed.Url, machine, error, ct).ConfigureAwait(false);
+        }
+
         var template = await DevEnvTemplate.LoadAsync(checkout.TemplatePath, ct).ConfigureAwait(false);
-        if (parsed.Subcommand == "setup")
+        if (parsed.Reset && parsed.Subcommand != "demo")
+        {
+            return UsageError(error, program, "reset applies to 'demo' alone.");
+        }
+
+        if (parsed.Subcommand is "setup" or "demo")
         {
             var commandLine = machine.CommandLineFor(checkout, machine);
             try
             {
-                if (!await new DevSetupWizard(checkout, template, machine, commandLine).RunAsync(ct).ConfigureAwait(false))
+                var wizard = new DevSetupWizard(checkout, template, machine, commandLine);
+                if (!await (parsed.Subcommand == "demo" ? wizard.RunDemoAsync(parsed.Reset, ct) : wizard.RunAsync(ct)).ConfigureAwait(false))
                 {
                     machine.Prompter.Say("Stopped; nothing was written.", Tone.Caution);
                     return 1;
@@ -165,6 +185,41 @@ public static class DevCommand
         }
 
         return report.Ready ? 0 : 2;
+    }
+
+    /// <summary>Signs in as the file's first admin and runs the tour against the control plane at <paramref name="url"/>.</summary>
+    private static async Task<int> TourAsync(DevCheckout checkout, string? url, DevMachine machine, TextWriter error, CancellationToken ct)
+    {
+        var settings = File.Exists(checkout.EnvFile) ? LocalEnvFile.Read(checkout.EnvFile).Entries : [];
+        var user = settings.FirstOrDefault(e => e.Name == "ControlPlane__Bootstrap__AdminUsername")?.Value;
+        var password = settings.FirstOrDefault(e => e.Name == "SQLFLOW_ADMIN_PASSWORD")?.Value;
+        if (string.IsNullOrEmpty(user) || string.IsNullOrEmpty(password))
+        {
+            error.WriteLine($"ERROR  {checkout.Show(checkout.EnvFile)} names no first admin to sign in with; run the demo first.");
+            return 2;
+        }
+
+        if (!Uri.TryCreate(url ?? DevValues.ControlPlaneUrl, UriKind.Absolute, out var address))
+        {
+            error.WriteLine($"ERROR  '{url}' is not a URL.");
+            return 1;
+        }
+
+        using var http = new HttpClient { BaseAddress = address, Timeout = TimeSpan.FromMinutes(2) };
+        var standIn = settings.FirstOrDefault(e => e.Name == DevSetupWizard.StandInSwitch)?.Value == "true"
+            ? settings.FirstOrDefault(e => e.Name == "OSDU_URL")?.Value
+            : null;
+        var tour = new DevTour(http, machine.Prompter, machine.Now, static (time, token) => Task.Delay(time, token), standIn);
+        try
+        {
+            return await tour.RunAsync(user, password, DevValues.GuiOrigin, ct).ConfigureAwait(false) ? 0 : 1;
+        }
+        catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or JsonException && !ct.IsCancellationRequested)
+        {
+            machine.Prompter.Say($"The tour lost the control plane at {address}: {SecretHygiene.RedactedMessage(ex)}", Tone.Bad);
+            machine.Prompter.Say("-> Its window says why. The estates and what they delivered are kept: dev.bat demo (./dev.sh demo) runs the tour again.");
+            return 1;
+        }
     }
 
     /// <summary>
@@ -240,13 +295,13 @@ public static class DevCommand
 }
 
 /// <summary>The command's arguments: the subcommand, the env file, the flags, or what is wrong with them.</summary>
-internal sealed record DevArguments(string? Subcommand, string? EnvFile, bool Api, bool TestOsdu, bool Prepare, bool Json, bool Help, string? Problem)
+internal sealed record DevArguments(string? Subcommand, string? EnvFile, string? Url, bool Api, bool TestOsdu, bool Prepare, bool Json, bool Help, string? Problem, bool Reset = false)
 {
     /// <summary>True when the GUI starts too.</summary>
     public bool Gui => !Api;
 
     /// <summary>
-    /// Reads <paramref name="args"/>: one subcommand (setup, check or env), <c>--env-file &lt;path&gt;</c>, the flags, and
+    /// Reads <paramref name="args"/>: one subcommand (setup, demo, check, tour or env), <c>--env-file &lt;path&gt;</c>, the flags, and
     /// <c>--json</c>; <c>-v</c> and <c>--verbose</c> are taken and ignored, as every verb of the command line takes them.
     /// </summary>
     public static DevArguments Parse(IReadOnlyList<string> args)
@@ -254,7 +309,8 @@ internal sealed record DevArguments(string? Subcommand, string? EnvFile, bool Ap
         ArgumentNullException.ThrowIfNull(args);
         string? subcommand = null;
         string? envFile = null;
-        bool api = false, testOsdu = false, prepare = false, json = false, help = false;
+        string? url = null;
+        bool api = false, testOsdu = false, prepare = false, json = false, help = false, reset = false;
         for (var i = 0; i < args.Count; i++)
         {
             var arg = args[i] ?? string.Empty;
@@ -277,6 +333,9 @@ internal sealed record DevArguments(string? Subcommand, string? EnvFile, bool Ap
                 case "--json":
                     json = true;
                     continue;
+                case "--reset":
+                    reset = true;
+                    continue;
                 case "--env-file":
                     if (i + 1 >= args.Count || args[i + 1].StartsWith("--", StringComparison.Ordinal))
                     {
@@ -285,11 +344,19 @@ internal sealed record DevArguments(string? Subcommand, string? EnvFile, bool Ap
 
                     envFile = args[++i];
                     continue;
+                case "--url":
+                    if (i + 1 >= args.Count || args[i + 1].StartsWith("--", StringComparison.Ordinal))
+                    {
+                        return Fail("--url needs the control plane's address.");
+                    }
+
+                    url = args[++i];
+                    continue;
             }
 
             if (arg.StartsWith('-'))
             {
-                return Fail($"'{arg}' is not an option of this command; it takes --env-file <path>, --api, --test-osdu, --prepare and --json.");
+                return Fail($"'{arg}' is not an option of this command; it takes --env-file <path>, --url <address>, --api, --test-osdu, --prepare, --reset and --json.");
             }
 
             if (subcommand is not null)
@@ -302,16 +369,16 @@ internal sealed record DevArguments(string? Subcommand, string? EnvFile, bool Ap
 
         if (help)
         {
-            return new DevArguments(subcommand, envFile, api, testOsdu, prepare, json, true, null);
+            return new DevArguments(subcommand, envFile, url, api, testOsdu, prepare, json, true, null, reset);
         }
 
-        if (subcommand is not ("setup" or "check" or "env"))
+        if (subcommand is not ("setup" or "demo" or "check" or "tour" or "env"))
         {
-            return Fail(subcommand is null ? "name what to do: setup, check or env." : $"'{subcommand}' is none of setup, check and env.");
+            return Fail(subcommand is null ? "name what to do: setup, demo, check, tour or env." : $"'{subcommand}' is none of setup, demo, check, tour and env.");
         }
 
-        return new DevArguments(subcommand, envFile, api, testOsdu, prepare, json, false, null);
+        return new DevArguments(subcommand, envFile, url, api, testOsdu, prepare, json, false, null, reset);
 
-        static DevArguments Fail(string problem) => new(null, null, false, false, false, false, false, problem);
+        static DevArguments Fail(string problem) => new(null, null, null, false, false, false, false, false, problem);
     }
 }

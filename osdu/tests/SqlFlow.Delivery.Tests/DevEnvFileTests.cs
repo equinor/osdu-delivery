@@ -50,7 +50,7 @@ public sealed class DevEnvFileTests : IDisposable
     {
         var lines = DevEnvFile.Render(
             _scope.Template,
-            Values(("ControlPlane__Bootstrap__Repositories__flows__LocalPath", "C:\\flows"), ("OSDU_LOGTYPE_ACL_OWNER", "data.logs.owners@dev.dataservices.energy")),
+            Values(("ControlPlane__Bootstrap__Repositories__flows__LocalPath", "C:\\flows"), ("OSDU_WELLS_ACL_OWNER", "data.logs.owners@dev.dataservices.energy")),
             ["# OSDU_DATA_PARTITION=test", "# SQLFLOW_AZURE_AUTH=cli"], _scope.Now).ToList();
 
         var member = lines.IndexOf("ControlPlane__Bootstrap__Repositories__flows__LocalPath=C:\\flows");
@@ -58,7 +58,7 @@ public sealed class DevEnvFileTests : IDisposable
         Assert.True(member >= 0 && member < pattern);
         var kept = lines.IndexOf(DevEnvFile.KeptTitle);
         Assert.True(kept > pattern);
-        Assert.Contains("OSDU_LOGTYPE_ACL_OWNER=data.logs.owners@dev.dataservices.energy", lines.Skip(kept));
+        Assert.Contains("OSDU_WELLS_ACL_OWNER=data.logs.owners@dev.dataservices.energy", lines.Skip(kept));
         Assert.Contains("# OSDU_DATA_PARTITION=test", lines.Skip(kept));
 
         // A parked line the template writes itself is not repeated.

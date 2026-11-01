@@ -35,6 +35,38 @@ public delegate Task<(MappingDefinition? Mapping, string? Problem)> MappingReade
 public static partial class AssertionTemplates
 {
     /// <summary>
+    /// The tests with every <c>mapping</c> assertion bound to the mapping it names, each read once through
+    /// <paramref name="mappings"/> (osdu/docs/reference/flow/mapping-assertions.md); one that cannot be read keeps why, and its
+    /// test is reported as not fitting, with that reason. A run and the Assertions page both bind here, so what the page says
+    /// of a test is what its run finds.
+    /// </summary>
+    public static async Task<IReadOnlyList<AssertionTest>> BindMappingsAsync(IReadOnlyList<AssertionTest> tests, MappingReader mappings, CancellationToken ct)
+    {
+        ArgumentNullException.ThrowIfNull(tests);
+        ArgumentNullException.ThrowIfNull(mappings);
+        var references = tests.SelectMany(t => t.Assertions).OfType<MappingRulesAssertion>().Select(a => a.Mapping).Distinct(StringComparer.Ordinal).ToList();
+        if (references.Count == 0)
+        {
+            return tests;
+        }
+
+        var read = new Dictionary<string, (MappingDefinition? Mapping, string? Problem)>(StringComparer.Ordinal);
+        foreach (var reference in references)
+        {
+            read[reference] = await mappings(reference, ct).ConfigureAwait(false);
+        }
+
+        return tests
+            .Select(t => t with
+            {
+                Assertions = t.Assertions
+                    .Select(a => a is MappingRulesAssertion rules ? rules with { Definition = read[rules.Mapping].Mapping, Unread = read[rules.Mapping].Problem } : a)
+                    .ToList(),
+            })
+            .ToList();
+    }
+
+    /// <summary>
     /// The template each test's fields are checked against, as the overload with a document reads it for a flow that names
     /// none: what the templates of every synced repository give.
     /// </summary>

@@ -6,6 +6,7 @@ using SqlFlow.Delivery.Model;
 using SqlFlow.Delivery.Protocols;
 using SqlFlow.Delivery.Source;
 using SqlFlow.Delivery.Templates;
+using SqlFlow.Yaml;
 using YamlDotNet.Core;
 using YamlDotNet.Serialization;
 using YamlDotNet.Serialization.NamingConventions;
@@ -34,6 +35,7 @@ public sealed class DeliveryDocumentLoader
         // Where a document holds a value of any shape (a literal in a mapping's record, a modifier's settings), an unquoted
         // scalar keeps the type YAML reads it as, so Count: 5 is a number and Count: "5" is text.
         .WithAttemptingUnquotedStringTypeDeserialization()
+        .WithExactDecimals()
         .WithDuplicateKeyChecking()
         // A run value keeps the text its scalar is written with, and a sequence of them is a list (RunValueYaml).
         .WithTypeConverter(new RunValueYamlConverter())

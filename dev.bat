@@ -12,6 +12,12 @@ REM      dev.bat managed  the default, accepted as before
 REM      dev.bat setup    ask the setup questions again (the SQL Server, OSDU, a repository), then start
 REM      dev.bat check    say what this machine has and what it is missing, test the OSDU sign-in,
 REM                       and start nothing
+REM      dev.bat demo     a local environment with nothing to ask: the sample estates, synthetic data
+REM                       and a stand-in for OSDU on this machine; it starts everything, then runs the
+REM                       tour, which says whether it all held. For a clean machine: it refuses an
+REM                       environment it did not make, and it reaches no real OSDU
+REM      dev.bat demo reset  the same from nothing: first removes the databases and records an earlier
+REM                       demo made, which only a demo's own file allows
 REM
 REM  First start: with no .sqlflow\env yet, the setup asks for what it cannot know, offers to create the
 REM  databases and to start SQL Server in Docker, writes .sqlflow\env from dev.env.example, and registers
@@ -52,12 +58,20 @@ set "_single="
 set "_namedmanaged="
 set "_asksetup="
 set "_check="
+set "_demo="
+set "_reset="
 for %%a in (%*) do (
     if /i "%%~a"=="api" set "_api=1"
     if /i "%%~a"=="single" set "_single=1"
     if /i "%%~a"=="managed" set "_namedmanaged=1"
     if /i "%%~a"=="setup" set "_asksetup=1"
     if /i "%%~a"=="check" set "_check=1"
+    if /i "%%~a"=="demo" set "_demo=1"
+    if /i "%%~a"=="reset" set "_reset=1"
+)
+if defined _reset if not defined _demo (
+    echo [X] 'reset' goes with 'demo': dev.bat demo reset.
+    exit /b 1
 )
 if defined _single if defined _namedmanaged (
     echo [X] 'single' runs no worker processes and 'managed' starts them: name one of the two.
@@ -113,6 +127,20 @@ call :installhook
 
 REM --- The setup when there is no env file (or it was asked for), else the check ---
 REM Exit codes: 0 ready, 2 something a start needs is missing (the report says what), 1 stopped.
+if not defined _demo goto :notdemo
+set "_resetflag="
+if not defined _reset goto :demo
+set "_resetflag=--reset"
+REM What the last demo left running holds its databases open, and would write to them again.
+call :stopport 5000 "control plane"
+call :stopport 5301 "OSDU stand-in"
+
+:demo
+"%_setup%" demo %_resetflag%
+if errorlevel 1 exit /b 1
+goto :checked
+
+:notdemo
 if defined _asksetup goto :setup
 if not exist ".sqlflow\env" goto :setup
 "%_setup%" check --prepare %_apiflag%
@@ -142,7 +170,7 @@ REM plane that crashed off its port but still holds the bin\ lock (F5 sessions i
 REM the GUI window a previous dev.bat spawned. This waits until the check passed, so a start that
 REM would fail never takes down one that works.
 call :stopport 5000 "control plane"
-call :stopport 5173 "GUI"
+if not defined _api call :stopport 5173 "GUI"
 powershell -NoProfile -Command "Get-CimInstance Win32_Process | Where-Object { $_.Name -in 'dotnet.exe','SqlFlow.Delivery.ControlPlane.Host.exe' -and $_.CommandLine -like '*SqlFlow.Delivery.ControlPlane.Host*' } | ForEach-Object { Write-Host ('Stopping previous control plane (pid ' + $_.ProcessId + ') ...'); Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }"
 REM Workers a managed control plane started end with it when it stops cleanly, but a killed one leaves them
 REM polling; they would hold the worker host's bin\ open and take runs for a control plane that is gone.
@@ -191,9 +219,9 @@ if defined _managed (
     if not defined ControlPlane__ManagedWorkers__MaxWorkers set "ControlPlane__ManagedWorkers__MaxWorkers=4"
 )
 
-if defined _api goto :api
-
 REM --- GUI deps: install on first run AND whenever the lock file moved on ---
+REM The stand-in for OSDU runs from the same install, so 'api' takes them too when the file names it.
+if defined _api if /i not "%OSDU_STANDIN_WRITES%"=="true" goto :api
 REM npm writes node_modules\.package-lock.json on every install; when the repo's package-lock.json
 REM is newer than that stamp (a pulled or newly added dependency), the tree is stale and Vite would
 REM fail at the first missing import. xcopy /L /D lists files newer than the target without copying:
@@ -211,6 +239,14 @@ if defined _gui_install (
     popd
 )
 
+if /i not "%OSDU_STANDIN_WRITES%"=="true" goto :nostandin
+call :stopport 5301 "OSDU stand-in"
+echo Starting the stand-in for OSDU on http://127.0.0.1:5301 ...
+set "OSDU_STANDIN_STATE=%_root%.sqlflow\osdu-standin.json"
+start "OSDU Delivery stand-in" /min cmd /k "cd /d %_root%osdu\gui && node standin\osdu-standin.mjs"
+
+:nostandin
+if defined _api goto :api
 echo Starting the GUI on http://localhost:5173 ...
 start "OSDU Delivery GUI" cmd /k "cd /d %_root%osdu\gui && npm run dev -- --open"
 
@@ -231,6 +267,8 @@ REM that would replace the platform's file in the output and change what the dep
 REM with.
 set "Logging__LogLevel__Microsoft.AspNetCore=Warning"
 set "Logging__LogLevel__Microsoft.EntityFrameworkCore=Warning"
+REM The tour has a window of its own: it waits for this control plane to come up, and what it says stays on screen.
+if defined _demo start "OSDU Delivery tour" cmd /k ""%_setup%" tour"
 dotnet run --project osdu\hosts\SqlFlow.Delivery.ControlPlane.Host --urls http://localhost:5000
 
 endlocal

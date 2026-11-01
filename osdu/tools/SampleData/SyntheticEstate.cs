@@ -530,9 +530,7 @@ public static class SyntheticEstate
             .AddDays(index * 2)
             .AddSeconds(Math.Floor(random.Between(0, 43200)));
 
-        // The log's interval: a whole number of increments below the surface, a few hundred samples long. The first log
-        // of every round is logged from the surface, so its index curve starts at depth 0 while its other curves cover
-        // only the interval its tools were run over.
+        // The log's interval: a whole number of increments below the surface, a few hundred samples long.
         var rows = (int)random.Between(120, 460);
         var startStep = (long)random.Between(9_000, 21_000);
         var curves = new List<SampleCurve>(suite.Length + 1);
@@ -546,9 +544,16 @@ public static class SyntheticEstate
         }
 
         var depths = Enumerable.Range(0, rows).Select(i => Depth((startStep + i) * Increment)).ToList();
-        var surface = index % Suites.Length == 0;
-        var indexMin = surface ? 0 : depths[0];
-        var indexMax = surface ? Depth(depths[^1] + Math.Round(random.Between(250, 1800), 0)) : depths[^1];
+
+        // The header states what the chunk holds. The first log of every round keeps a draw it no longer uses, so its curve
+        // values stay the ones its seed has always named.
+        if (index % Suites.Length == 0)
+        {
+            random.Next();
+        }
+
+        var indexMin = depths[0];
+        var indexMax = depths[^1];
 
         curves.Add(new SampleCurve(SampleWellLogs.IndexCurveId, "M", "Measured depth", "HIGH", indexMin, indexMax, null, null));
         var values = new Dictionary<string, IReadOnlyList<double?>>(StringComparer.Ordinal);

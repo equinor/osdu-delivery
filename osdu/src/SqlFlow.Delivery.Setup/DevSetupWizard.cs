@@ -774,7 +774,7 @@ internal sealed partial class DevSetupWizard(DevCheckout checkout, DevEnvTemplat
     // ------------------------------------------------------------------------------------------------------------------
 
     private async Task<bool> WriteAsync(
-        OrderedDictionary<string, string> values, IReadOnlyList<string> parked, SqlChoice sql, DatabaseChoice databases, AdminChoice admin, string? partition, CancellationToken ct)
+        OrderedDictionary<string, string> values, IReadOnlyList<string> parked, SqlChoice sql, DatabaseChoice databases, AdminChoice admin, string? partition, CancellationToken ct, bool confirm = true)
     {
         _ask.Heading("Writing");
         var registerPartition = partition is not null && !(databases.Contents?.Partitions.Any(p => string.Equals(p.Name, partition, StringComparison.OrdinalIgnoreCase)) ?? false);
@@ -819,7 +819,7 @@ internal sealed partial class DevSetupWizard(DevCheckout checkout, DevEnvTemplat
             machine.Prompter.Say($"  - {line}");
         }
 
-        if (!_ask.YesNo("Go ahead?", true))
+        if (confirm && !_ask.YesNo("Go ahead?", true))
         {
             return false;
         }

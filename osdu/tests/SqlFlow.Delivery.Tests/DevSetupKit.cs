@@ -137,6 +137,16 @@ internal sealed class FakeSqlProbe : ISqlServerProbe
         return Task.CompletedTask;
     }
 
+    public List<string> Dropped { get; } = [];
+
+    public Task DropDatabaseAsync(SqlTarget target, string database, CancellationToken ct)
+    {
+        Dropped.Add(database);
+        Databases.Remove(database);
+        Catalogs.Remove(database);
+        return Task.CompletedTask;
+    }
+
     public Task AllowSnapshotIsolationAsync(SqlTarget target, string database, CancellationToken ct)
     {
         SnapshotAllowed.Add(database);

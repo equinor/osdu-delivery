@@ -11,7 +11,7 @@ import { defineConfig, devices } from "@playwright/test";
 //     e2e admin the tests sign in with. The chain's source and ingestion tables are in the same database, in schemas
 //     of their own;
 //  2. the GUI dev server, pointed at that control plane via VITE_API_BASE_URL (which wins in dev mode);
-//  3. a stand-in for the OSDU platform the sample flows deliver to (e2e/osdu-standin.mjs), which answers the wellbore
+//  3. a stand-in for the OSDU platform the sample flows deliver to (standin/osdu-standin.mjs), which answers the wellbore
 //     searches a WellLog or a trajectory makes when it renders, and nothing else, so no run reaches a real OSDU.
 // Requirements on the machine: a SQL Server the suite may create a database on, sqlcmd, and the .NET SDK, same as the
 // DB-backed xUnit suites. The default connection uses integrated security on a local server; SQLFLOW_E2E_CATALOG_DB
@@ -136,7 +136,7 @@ export default defineConfig({
   webServer: [
     {
       // First, so a plan the control plane runs as soon as it is up finds the platform its flows search.
-      command: "node e2e/osdu-standin.mjs",
+      command: "node standin/osdu-standin.mjs",
       url: `${E2E.osdu.OSDU_URL}/health`,
       timeout: 30_000,
       reuseExistingServer: !process.env.CI,

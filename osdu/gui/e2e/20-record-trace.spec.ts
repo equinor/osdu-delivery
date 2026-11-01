@@ -55,7 +55,7 @@ test.describe.serial("record trace", () => {
     await adminPage.getByTestId("delivery-lookup-status").click();
     await adminPage.getByRole("option", { name: "deleted" }).click();
     await expect(adminPage).toHaveURL(/status=deleted/);
-    await expect(table.getByText(/No record starts with that/)).toBeVisible({ timeout: 30_000 });
+    await expect(table.getByText(/No record the filters leave starts with that/)).toBeVisible({ timeout: 30_000 });
     await adminPage.getByTestId("delivery-lookup-status").click();
     await adminPage.getByRole("option", { name: "pending" }).click();
     // The empty answer to the last state stays on screen until this one arrives, so the row is waited for by what it holds.
