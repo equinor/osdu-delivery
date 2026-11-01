@@ -12,6 +12,24 @@ public interface IPayloadSource
     Task<IReadOnlyList<PayloadFile>> ListChunksAsync(CancellationToken ct = default);
 
     Task<Stream> OpenAsync(PayloadFile file, CancellationToken ct = default);
+
+    /// <summary>
+    /// Where another Azure storage account can read <paramref name="file"/> from itself, signed until
+    /// <paramref name="until"/> or for a while when it is null. Null when no store can be pointed at it (a local file); a
+    /// file that could not be signed for fails with <see cref="DeliveryException"/>, saying why.
+    /// </summary>
+    Task<PayloadCopySource?> CopySourceAsync(PayloadFile file, DateTimeOffset? until, CancellationToken ct = default) => Task.FromResult<PayloadCopySource?>(null);
+}
+
+/// <summary>A payload file as another Azure storage account reads it.</summary>
+/// <param name="Url">The file's URL with a read signature for that one file: a credential, never logged, stored or returned.</param>
+/// <param name="Length">The bytes the file holds now.</param>
+/// <param name="ETag">The file's version now.</param>
+/// <param name="ContentMd5">The MD5 the store keeps for the file, when it keeps one.</param>
+public sealed record PayloadCopySource(Uri Url, long Length, string? ETag, byte[]? ContentMd5)
+{
+    /// <summary>A signed URL never shows in a log or an attempt.</summary>
+    public override string ToString() => "(a signed read of a payload file)";
 }
 
 /// <summary>What one delivery attempt must do for one record.</summary>

@@ -134,8 +134,8 @@ public sealed class OsduManifestProtocol : IDeliveryProtocol
                 {
                     // Every file is registered through the file service before the manifest names it: registration is
                     // what makes it retrievable, and the register steps resume on a retry, so a file is registered once.
-                    var chunks = await FileUploads.ListChunksAsync(work, _requestBodyCeiling, ct).ConfigureAwait(false);
-                    var uploaded = await FileUploads.UploadAsync(_client, _options, work, chunks, steps, ct).ConfigureAwait(false);
+                    var chunks = await FileUploads.ListChunksAsync(work, ct).ConfigureAwait(false);
+                    var uploaded = await FileUploads.UploadAsync(_client, _options, work, chunks, _requestBodyCeiling, steps, ct).ConfigureAwait(false);
                     foreach (var file in uploaded)
                     {
                         ids.Add(await FileUploads.RegisterAsync(_client, _options, work, file, steps, _time, ct).ConfigureAwait(false));

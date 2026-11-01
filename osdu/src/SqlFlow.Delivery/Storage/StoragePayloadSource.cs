@@ -29,4 +29,10 @@ public sealed class StoragePayloadSource : IPayloadSource
         ArgumentNullException.ThrowIfNull(file);
         return _files.OpenAsync(file, ct);
     }
+
+    public Task<PayloadCopySource?> CopySourceAsync(PayloadFile file, DateTimeOffset? until, CancellationToken ct = default)
+    {
+        ArgumentNullException.ThrowIfNull(file);
+        return _files.CopySourceAsync(file, until, ct);
+    }
 }

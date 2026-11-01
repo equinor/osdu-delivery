@@ -182,6 +182,7 @@ internal static class RouteRehearsal
         var each = count == 1 ? "once" : string.Create(CultureInfo.InvariantCulture, $"once per file ({count} files)");
         steps.Add("File", $"GET {options.UploadUrlPath ?? FileUploads.DefaultUploadUrlPath}", "asks for a signed landing-zone location for the file", "a signed upload URL, used once and never stored, and the file's FileSource path", each);
         steps.Add("Landing zone", "PUT <signed URL>", $"streams the file as {filesType}", null, each);
+        NoteBlocks(options, files, notes);
         var first = files.Files.Count > 0 ? files.Files[0] : null;
         JsonObject? body = null;
         if (first is not null)
@@ -222,6 +223,15 @@ internal static class RouteRehearsal
         return (sent, placeholders);
     }
 
+    /// <summary>What a file above one block does at an Azure location instead of the one request a rehearsal lists.</summary>
+    private static void NoteBlocks(ProtocolOptions options, PreviewPayloadPart files, List<string> notes)
+    {
+        if (files.Files.Any(f => f.Size > options.UploadBlockMiB * 1024L * 1024))
+        {
+            notes.Add(string.Create(CultureInfo.InvariantCulture, $"A file above {options.UploadBlockMiB} MiB goes to an Azure location in blocks, copied by the store from the file's own account when it may read it."));
+        }
+    }
+
     /// <summary>
     /// The dataset route: a record of a dataset kind is the dataset, registered under its own id with its files staged where
     /// the Dataset service says; any other record keeps its files in one dataset whose id derives from its own, and is written
@@ -237,6 +247,7 @@ internal static class RouteRehearsal
             var each = count == 1 ? "once" : string.Create(CultureInfo.InvariantCulture, $"once per file ({count} files)");
             steps.Add("Dataset", $"POST {options.DatasetInstructionsPath ?? DatasetService.DefaultInstructionsPath}?kindSubType={stagedType}", "asks where files of this type are staged", "a signed staging location", each);
             steps.Add("Staging area", "PUT <signed location>", "streams the file", null, each);
+            NoteBlocks(options, files!, notes);
         }
 
         if (isDataset)

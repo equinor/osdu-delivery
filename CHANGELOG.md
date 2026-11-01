@@ -5,9 +5,24 @@ All notable changes to OSDU Delivery are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+### Changed
+- `reliability.maxRequestBodyBytes` bounds each block of a file going to an Azure location, rather than holding a file that can be split. It still
+  holds a file that has to go in one request ([large files](osdu/docs/reference/flow/large-files.md#a-request-body-ceiling)).
+
+### Fixed
+- A file collection's file on Azure is read once however many parts it goes in, where a file in Azure Storage was read from its start for
+  every part, and each part is sent again by itself when the store fails it ([large files](osdu/docs/reference/flow/large-files.md)).
+- An upload to an Azure account in a DNS zone (`*.blob.storage.azure.net`) carries the blob type Azure requires, as one to `*.blob.core.*` always did.
+
 ## [Unreleased]
 
 ### Added
+- **Large files reach OSDU on Azure.** A file above 32 MiB now goes to a signed Azure location in blocks and a commit, on every route
+  that uploads files and for the files an enrichment adds, so a 16 GB LAS file arrives where one `PUT` could not take it. A file in
+  Azure Storage is copied by the store from its own account, with no byte through the node, and is sent from the node when the store
+  may not read it, with the reason on the record's steps. `uploadBlockMiB`, `uploadConcurrency` and `uploadServerCopy` tune it, and
+  `uploadBlockMiB: 1` sends a small file down the same path to try it ([large files](osdu/docs/reference/flow/large-files.md)).
+
 - **See what a mapping does, on one canvas.** A mapping now opens on **Overview**: its tables on the left, the record on the right, one
   line per property between them with what is done to its value on the way, and the cache tables, searches and parameters it looks
   values up in on a shelf above. Sections open with a click, pointing at anything traces it, **YAML** ties each line of the document

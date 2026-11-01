@@ -168,7 +168,9 @@ What is not in the database and has to be restored beside it:
 **Request bodies on the way to OSDU.** Set the request body ceiling of everything between the nodes and OSDU (the service,
 the ingress, an API gateway) to one deliberate number and declare it on the flows as `reliability.maxRequestBodyBytes`
 (0, the default, means not declared). On the routes that send payloads, a file or request above it then holds its record
-before anything is sent, rather than failing after the record was written. A 413 from the service holds the record too.
+before anything is sent, rather than failing after the record was written. A 413 from the service holds the record too. A file
+that goes to a signed Azure location in blocks is not held: each block stays within the ceiling
+([large files](../flow/large-files.md)).
 `reliability.maxResponseBytes` (64 MiB by default) bounds what a node reads back; a bigger response fails the call with
 `Response from <url> exceeds the <n> MB limit. Raise reliability.maxResponseBytes.`, the URL named without its query,
 and a limit below 1 MiB stated in bytes (`exceeds the 500000 byte limit`).

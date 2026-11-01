@@ -393,7 +393,7 @@ public sealed class SeismicStoreRouteTests
         var reported = new Dictionary<string, IReadOnlyDictionary<string, string>>(StringComparer.Ordinal);
 
         // The block of object 17 fails: seventeen objects landed, and the progress recorded after the sixteenth says so.
-        platform.SeismicStoreFailing.Add(35);
+        platform.FailBlock(35);
         var failed = await Assert.ThrowsAsync<OsduStatusException>(() => rig.Protocol.DeliverAsync(Work(Line(), Files(("line-001.sgy", file)), reported: reported)));
         Assert.Equal(500, failed.StatusCode);
         Assert.Equal("16", reported[SeismicStoreShape.UploadStep]["objects"]);

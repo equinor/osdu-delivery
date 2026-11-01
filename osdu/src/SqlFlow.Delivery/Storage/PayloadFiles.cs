@@ -34,6 +34,9 @@ public interface IPayloadFiles
 
     /// <summary>A fresh forward stream over one file.</summary>
     Task<Stream> OpenAsync(PayloadFile file, CancellationToken ct = default);
+
+    /// <summary>Where another storage account can read one file from itself; null when none can (<see cref="IPayloadSource.CopySourceAsync"/>).</summary>
+    Task<PayloadCopySource?> CopySourceAsync(PayloadFile file, DateTimeOffset? until, CancellationToken ct = default) => Task.FromResult<PayloadCopySource?>(null);
 }
 
 /// <summary>The payload files over the host's file stores: local and UNC paths, and Azure Storage.</summary>
@@ -62,5 +65,11 @@ public sealed class StoragePayloadFiles : IPayloadFiles
     {
         ArgumentNullException.ThrowIfNull(file);
         return _stores.For(file.Path).OpenReadAsync(new FileRef { Path = file.Path, Name = System.IO.Path.GetFileName(file.Path), Size = file.Size }, ct);
+    }
+
+    public Task<PayloadCopySource?> CopySourceAsync(PayloadFile file, DateTimeOffset? until, CancellationToken ct = default)
+    {
+        ArgumentNullException.ThrowIfNull(file);
+        return _stores.SignReadAsync(file.Path, until, ct);
     }
 }

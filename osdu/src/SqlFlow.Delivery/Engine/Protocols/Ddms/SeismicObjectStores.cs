@@ -8,6 +8,7 @@ using System.Xml.Linq;
 using SqlFlow.Delivery.Hashing;
 using SqlFlow.Delivery.Http;
 using SqlFlow.Delivery.Protocols;
+using static SqlFlow.Delivery.Engine.Protocols.ObjectBody;
 
 namespace SqlFlow.Delivery.Engine.Protocols.Ddms;
 
@@ -63,17 +64,23 @@ internal sealed class PartReader : IAsyncDisposable
             _buffer = new byte[count];
         }
 
-        var read = await _stream.ReadAtLeastAsync(_buffer.AsMemory(0, count), count, throwOnEndOfStream: false, ct).ConfigureAwait(false);
-        if (read < count)
+        await ReadIntoAsync(_buffer.AsMemory(0, count), ct).ConfigureAwait(false);
+        return _buffer.AsMemory(0, count);
+    }
+
+    /// <summary>Fills <paramref name="target"/> with the next bytes, which the file must still hold.</summary>
+    public async Task ReadIntoAsync(Memory<byte> target, CancellationToken ct)
+    {
+        var read = await _stream.ReadAtLeastAsync(target, target.Length, throwOnEndOfStream: false, ct).ConfigureAwait(false);
+        if (read < target.Length)
         {
             throw new DeliveryException(string.Create(
                 CultureInfo.InvariantCulture,
                 $"The payload file {_name} ended after {Position + read} bytes, and it was listed with {Length}; it changed while it was being sent."));
         }
 
-        _md5.AppendData(_buffer, 0, count);
-        Position += count;
-        return _buffer.AsMemory(0, count);
+        _md5.AppendData(target.Span);
+        Position += target.Length;
     }
 
     /// <summary>Reads past <paramref name="count"/> bytes an earlier try sent, hashing them as if they were sent again.</summary>
@@ -181,28 +188,6 @@ internal abstract class SeismicObjectStore(OsduHttpClient client, Func<Cancellat
     /// <summary>An object key as a path below the location: each segment escaped.</summary>
     protected static string EscapeKey(string key) => string.Join('/', key.Split('/').Select(AwsSigV4.Encode));
 
-    [SuppressMessage("Security", "CA5351:Do Not Use Broken Cryptographic Algorithms", Justification = "Content-MD5 is the integrity checksum the object store checks each part against; no security rests on it.")]
-    protected static byte[] Md5Of(ReadOnlySpan<byte> part) => MD5.HashData(part);
-
-    protected static ReadOnlyMemoryContent Bytes(ReadOnlyMemory<byte> part, byte[]? md5)
-    {
-        var content = new ReadOnlyMemoryContent(part);
-        content.Headers.ContentType = new MediaTypeHeaderValue("application/octet-stream");
-        if (md5 is not null)
-        {
-            content.Headers.ContentMD5 = md5;
-        }
-
-        return content;
-    }
-
-    protected static ByteArrayContent Xml(byte[] body)
-    {
-        var content = new ByteArrayContent(body);
-        content.Headers.ContentType = new MediaTypeHeaderValue("application/xml");
-        return content;
-    }
-
     /// <summary>Whether a refusal says the credential no longer holds: 401, 403, or S3's 400 for an expired session.</summary>
     private static bool Expired(OsduStatusException ex)
         => ex.StatusCode is 401 or 403
@@ -212,16 +197,12 @@ internal abstract class SeismicObjectStore(OsduHttpClient client, Func<Cancellat
 /// <summary>
 /// Azure Blob Storage under the SAS Seismic Store signs for a dataset's container (and folder, on a uniform subproject):
 /// each object a block blob of blocks of at most the part size, committed with the running MD5 as its content MD5, as
-/// sdutil writes them (osdu/specs/seismic-ddms/INTEGRATION.md section 4.4). Every request states the service version
-/// the SAS was signed with. Staged blocks outlive a renewed SAS, so a renewal resumes at the block it failed on.
+/// sdutil writes them (osdu/specs/seismic-ddms/INTEGRATION.md section 4.4), through <see cref="BlockBlob"/>. Every request
+/// states the service version the SAS was signed with. Staged blocks outlive a renewed SAS, so a renewal resumes at the
+/// block it failed on; the blocks go one at a time, so a renewal never races another block.
 /// </summary>
 internal sealed class AzureBlobStore : SeismicObjectStore
 {
-    /// <summary>The most blocks one block blob is committed from (Put Block List).</summary>
-    public const int MaxBlocks = 50_000;
-
-    private const string DefaultVersion = "2021-06-08";
-
     private readonly string _location;
     private string _sas;
     private string _version;
@@ -246,22 +227,11 @@ internal sealed class AzureBlobStore : SeismicObjectStore
             return;
         }
 
-        var ids = new List<string>();
-        for (long sent = 0; sent < length;)
-        {
-            var count = (int)Math.Min(partBytes, length - sent);
-            var part = await reader.ReadAsync(count, ct).ConfigureAwait(false);
-            var id = Convert.ToBase64String(Encoding.ASCII.GetBytes(ids.Count.ToString("D6", CultureInfo.InvariantCulture)));
-            var checksum = Md5Of(part.Span);
-            await SendAsync(() => Request(HttpMethod.Put, key, "comp=block&blockid=" + Uri.EscapeDataString(id), Bytes(part, checksum)), null, idempotent: true, ct).ConfigureAwait(false);
-            ids.Add(id);
-            sent += count;
-        }
-
-        var list = new XElement("BlockList", ids.Select(id => new XElement("Latest", id)));
-        var body = Encoding.UTF8.GetBytes(new XDeclaration("1.0", "utf-8", null) + list.ToString(SaveOptions.DisableFormatting));
-        var whole = Convert.ToBase64String(md5());
-        await SendAsync(() => Request(HttpMethod.Put, key, "comp=blocklist", Xml(body), ("x-ms-blob-content-md5", whole)), null, idempotent: true, ct).ConfigureAwait(false);
+        var blob = new BlockBlob(
+            (query, content, headers) => Request(HttpMethod.Put, key, query, content, [.. headers]),
+            (build, token) => SendAsync(build, null, idempotent: true, token));
+        var blocks = await blob.SendAsync(length, reader, partBytes, concurrency: 1, ct).ConfigureAwait(false);
+        await blob.CommitAsync(blocks, [("x-ms-blob-content-md5", Convert.ToBase64String(md5()))], ct).ConfigureAwait(false);
     }
 
     public override async Task DeleteAsync(string key, CancellationToken ct)
@@ -286,7 +256,7 @@ internal sealed class AzureBlobStore : SeismicObjectStore
         }
 
         var sas = url.Query.TrimStart('?');
-        return (url.GetLeftPart(UriPartial.Path).TrimEnd('/'), sas, System.Web.HttpUtility.ParseQueryString(sas)["sv"] ?? DefaultVersion);
+        return (url.GetLeftPart(UriPartial.Path).TrimEnd('/'), sas, System.Web.HttpUtility.ParseQueryString(sas)["sv"] ?? BlockBlob.DefaultVersion);
     }
 
     private HttpRequestMessage Request(HttpMethod method, string key, string? query, HttpContent? content, params (string Name, string Value)[] headers)

@@ -1096,6 +1096,33 @@ public sealed record ProtocolOptions
     /// <summary>Extra headers on the signed-URL upload itself (the Azure landing zone needs x-ms-blob-type: BlockBlob).</summary>
     public IReadOnlyDictionary<string, string> UploadHeaders { get; init; } = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
 
+    /// <summary>The block a file goes to an Azure signed location in by default, sdutil's chunk size; a file no larger goes in one request.</summary>
+    public const int DefaultUploadBlockMiB = 32;
+
+    /// <summary>The largest block a flow may name: every block sent from this process is held in memory while it goes.</summary>
+    public const int MaxUploadBlockMiB = 1024;
+
+    /// <summary>The blocks of one file that go at once by default.</summary>
+    public const int DefaultUploadConcurrency = 4;
+
+    /// <summary>The most blocks of one file a flow may send at once.</summary>
+    public const int MaxUploadConcurrency = 32;
+
+    /// <summary>
+    /// The size in MiB of the blocks a file goes to an Azure signed location in. A file no larger goes in one request, so a
+    /// small value sends small files down the path large ones take.
+    /// </summary>
+    public int UploadBlockMiB { get; init; } = DefaultUploadBlockMiB;
+
+    /// <summary>The blocks of one file sent at once; a file sent from this process holds this many blocks in memory.</summary>
+    public int UploadConcurrency { get; init; } = DefaultUploadConcurrency;
+
+    /// <summary>
+    /// Whether a file above one block that sits in Azure Storage is copied by the store from where it sits, under a read
+    /// signature this process signs, rather than read here and sent. A store that may not read it falls back to sending.
+    /// </summary>
+    public bool UploadServerCopy { get; init; } = true;
+
     /// <summary>The data property of the record that lists the dataset ids of its files. Default Datasets.</summary>
     public string DatasetsProperty { get; init; } = "Datasets";
 
@@ -1136,7 +1163,8 @@ public sealed record ProtocolOptions
 
     /// <summary>
     /// File and manifest protocols: how long the signed upload URL stays valid (openapi file v2 expiryTime: 30M,
-    /// 12H, 2D). Null takes the service default of one hour; a large file over a slow link needs more.
+    /// 12H, 2D). Null takes the service default of one hour; a large file over a slow link needs more. The Dataset
+    /// service's locations do not take this: they last an hour (osdu/specs/core/INTEGRATION.md section 2.5).
     /// </summary>
     public string? UploadUrlExpiry { get; init; }
 

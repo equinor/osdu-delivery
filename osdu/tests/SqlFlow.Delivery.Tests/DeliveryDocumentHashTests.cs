@@ -73,6 +73,26 @@ public sealed class DeliveryDocumentHashTests
         Assert.NotEqual(SampleFlowHash, DeliveryDocumentHash.Of(documents.ParseSource(yaml + "\ntelemetry: { operation: whdr }\n", Samples.Flow), mappings));
     }
 
+    [Theory]
+    [InlineData("uploadBlockMiB: 32", true)]
+    [InlineData("uploadConcurrency: 4", true)]
+    [InlineData("uploadServerCopy: true", true)]
+    [InlineData("uploadBlockMiB: 8", false)]
+    [InlineData("uploadConcurrency: 16", false)]
+    [InlineData("uploadServerCopy: false", false)]
+    public void A_flow_that_leaves_how_a_large_file_goes_at_its_defaults_hashes_as_before_and_one_that_sets_it_is_another_document(string key, bool same)
+    {
+        var yaml = File.ReadAllText(Samples.Flow).ReplaceLineEndings("\n");
+        const string options = "  protocolOptions:\n";
+        Assert.Contains(options, yaml, StringComparison.Ordinal);
+        var mappings = new Dictionary<string, string>(StringComparer.Ordinal) { ["WellLog@1.4.0"] = "mapping-hash" };
+        var documents = new DeliveryDocumentLoader();
+
+        var hash = DeliveryDocumentHash.Of(documents.ParseSource(yaml.Replace(options, options + "    " + key + "\n", StringComparison.Ordinal), Samples.Flow), mappings);
+
+        Assert.Equal(same, hash == SampleFlowHash);
+    }
+
     /// <summary>The document hash of the sample well log flow, read with LF line endings.</summary>
     internal const string SampleFlowHash = "a8c30f716110ea2279665928dedddcc9818ba9b34d0dd386819369e37f25b07a";
 }

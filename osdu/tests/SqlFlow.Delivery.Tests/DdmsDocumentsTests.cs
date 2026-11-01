@@ -472,7 +472,21 @@ public sealed class DdmsDocumentsTests
         { "  ddms:\n    r: { root: /r, shape: reservoirManagement, collections: { work-product-component--ReservoirEstimatedVolumes: { bulk: false } } }", "ddms", "", "target.ddms.r.collections.work-product-component--ReservoirEstimatedVolumes says what the collection keeps, and the Reservoir Management DDMS's tables decide that (estimated-volumes keeps rows in estimated-volumes-det); remove bulk, columns and typedContent." },
         { "  ddms:\n    r: { root: /r, shape: reservoirManagement, collections: { master-data--FluidSystem: { columns: curveIds } } }", "ddms", "", "(pvt-properties keeps no rows); remove bulk, columns and typedContent." },
         { "  ddms:\n    h: { root: /h, shape: productionTimeSeriesV1 }\n    r: { root: /r, shape: reservoirManagement }", "ddms", "", "target.ddms serves work-product-component--ProductionValues from both 'h' and 'r'" },
+        { string.Empty, "storage", ", uploadBlockMiB: 0", "target.protocolOptions.uploadBlockMiB must be 1 to 1024." },
+        { string.Empty, "storage", ", uploadBlockMiB: 1025", "target.protocolOptions.uploadBlockMiB must be 1 to 1024." },
+        { string.Empty, "storage", ", uploadConcurrency: 0", "target.protocolOptions.uploadConcurrency must be 1 to 32." },
+        { string.Empty, "storage", ", uploadConcurrency: 33", "target.protocolOptions.uploadConcurrency must be 1 to 32." },
     };
+
+    [Fact]
+    public void A_flow_says_how_a_large_file_goes_and_needs_to_say_nothing()
+    {
+        var declared = _loader.ParseFlow(Single(string.Empty, "storage", ", uploadBlockMiB: 1, uploadConcurrency: 8, uploadServerCopy: false"), "logs.yaml").Target.ProtocolOptions;
+        Assert.Equal((1, 8, false), (declared.UploadBlockMiB, declared.UploadConcurrency, declared.UploadServerCopy));
+
+        var defaults = _loader.ParseFlow(Single(string.Empty, "storage"), "logs.yaml").Target.ProtocolOptions;
+        Assert.Equal((32, 4, true), (defaults.UploadBlockMiB, defaults.UploadConcurrency, defaults.UploadServerCopy));
+    }
 
     [Theory]
     [MemberData(nameof(RefusedDeclarations))]

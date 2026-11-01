@@ -6,7 +6,7 @@
   "includeEnvelope": true,
   "generatedFrom": "osdu/docs/reference/flow/delivery.md and osdu/src/SqlFlow.Delivery/Documents/YamlModels.cs",
   "naming": "The loader deserializes with YamlDotNet's CamelCaseNamingConvention and refuses any key it does not know.",
-  "keyCount": 645,
+  "keyCount": 651,
   "keys": [
     {
       "path": "batch",
@@ -1200,16 +1200,37 @@
       "default": "the source's value, else false"
     },
     {
+      "path": "interfaces.<name>.protocolOptions.uploadBlockMiB",
+      "type": "integer",
+      "required": false,
+      "description": "The size in MiB of the blocks a file goes to an Azure signed location in, 1 to 1024. A file no larger goes in one request, so a small value sends small files down the path large ones take. Set here, it overrides the source's value for this interface.",
+      "default": "the source's value, else 32"
+    },
+    {
+      "path": "interfaces.<name>.protocolOptions.uploadConcurrency",
+      "type": "integer",
+      "required": false,
+      "description": "The blocks of one file sent at once, 1 to 32. A file sent from the node holds this many blocks in memory; a copy between accounts holds none. Set here, it overrides the source's value for this interface.",
+      "default": "the source's value, else 4"
+    },
+    {
       "path": "interfaces.<name>.protocolOptions.uploadHeaders",
       "type": "map",
       "required": false,
-      "description": "Extra headers on the signed-URL upload. The Azure blob type (`x-ms-blob-type: BlockBlob`) is added for a `*.blob.core.*` URL anyway. Set here, it is merged key by key over the source's for this interface. Sent to the signed URL as written, never resolved, so a header that carries a credential is refused outright, reference or not: the signed URL carries its own credential."
+      "description": "Extra headers on the signed-URL upload. The Azure blob type (`x-ms-blob-type: BlockBlob`) is added for an Azure blob anyway. Set here, it is merged key by key over the source's for this interface. Sent to the signed URL as written, never resolved, so a header that carries a credential is refused outright, reference or not: the signed URL carries its own credential."
     },
     {
       "path": "interfaces.<name>.protocolOptions.uploadHeaders.<name>",
       "type": "string",
       "required": false,
       "description": "One header of the upload: the key is its name, the value its value."
+    },
+    {
+      "path": "interfaces.<name>.protocolOptions.uploadServerCopy",
+      "type": "boolean",
+      "required": false,
+      "description": "Whether a file above one block that sits in Azure Storage is copied by the store from the file's own account. A store that may not read it answers on the first block, and the file is sent from the node. Set here, it overrides the source's value for this interface.",
+      "default": "the source's value, else true"
     },
     {
       "path": "interfaces.<name>.protocolOptions.uploadUrlExpiry",
@@ -3930,16 +3951,37 @@
       "default": "false"
     },
     {
+      "path": "target.protocolOptions.uploadBlockMiB",
+      "type": "integer",
+      "required": false,
+      "description": "The size in MiB of the blocks a file goes to an Azure signed location in, 1 to 1024. A file no larger goes in one request, so a small value sends small files down the path large ones take.",
+      "default": "32"
+    },
+    {
+      "path": "target.protocolOptions.uploadConcurrency",
+      "type": "integer",
+      "required": false,
+      "description": "The blocks of one file sent at once, 1 to 32. A file sent from the node holds this many blocks in memory; a copy between accounts holds none.",
+      "default": "4"
+    },
+    {
       "path": "target.protocolOptions.uploadHeaders",
       "type": "map",
       "required": false,
-      "description": "Extra headers on the signed-URL upload. The Azure blob type (`x-ms-blob-type: BlockBlob`) is added for a `*.blob.core.*` URL anyway. Sent to the signed URL as written, never resolved, so a header that carries a credential is refused outright, reference or not: the signed URL carries its own credential."
+      "description": "Extra headers on the signed-URL upload. The Azure blob type (`x-ms-blob-type: BlockBlob`) is added for an Azure blob anyway. Sent to the signed URL as written, never resolved, so a header that carries a credential is refused outright, reference or not: the signed URL carries its own credential."
     },
     {
       "path": "target.protocolOptions.uploadHeaders.<name>",
       "type": "string",
       "required": false,
       "description": "One header of the upload: the key is its name, the value its value."
+    },
+    {
+      "path": "target.protocolOptions.uploadServerCopy",
+      "type": "boolean",
+      "required": false,
+      "description": "Whether a file above one block that sits in Azure Storage is copied by the store from the file's own account. A store that may not read it answers on the first block, and the file is sent from the node.",
+      "default": "true"
     },
     {
       "path": "target.protocolOptions.uploadUrlExpiry",

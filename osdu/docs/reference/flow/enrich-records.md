@@ -31,6 +31,7 @@ related:
   - delivery-concept-artifacts-and-undo
   - delivery-concept-change-detection
   - delivery-concept-protocols
+  - delivery-flow-large-files
 sourceRefs:
   - osdu/src/SqlFlow.Delivery/Model/FlowDefinition.cs
   - osdu/src/SqlFlow.Delivery/Documents/EnrichBinding.cs
@@ -203,7 +204,8 @@ The flow's own route is wrapped (`EnrichPartsProtocol`): for each record, each a
 record.
 
 1. A dataset's files go where the Dataset service says for its kind (`storage-enrich-<n>`, `upload-enrich-<n>-<i>` in the
-   record's steps).
+   record's steps). A file above one block, a LAS file of many GB among them, goes in blocks, copied by the store from its own
+   account when it may read it ([large files](large-files.md)).
 2. Each write is declared before it is sent (`enrich-register-intent-<n>`), with whether storage holds the id, so an answer
    lost after it landed is found again or undone, never written twice blind.
 3. The records are written, twenty at a time: datasets registered through the Dataset service in one request, each checked

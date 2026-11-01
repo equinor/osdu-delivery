@@ -31,7 +31,7 @@ public static class DeliveryDocumentHash
         PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
         DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,
         Converters = { new JsonStringEnumConverter() },
-        TypeInfoResolver = new DefaultJsonTypeInfoResolver { Modifiers = { LeaveOutNoWorkflows, LeaveOutTheKindsOperation } },
+        TypeInfoResolver = new DefaultJsonTypeInfoResolver { Modifiers = { LeaveOutNoWorkflows, LeaveOutTheKindsOperation, LeaveOutDefaultUploads } },
     };
 
     /// <summary>
@@ -67,6 +67,35 @@ public static class DeliveryDocumentHash
         foreach (var property in info.Properties.Where(p => p.Name == "enrichWorkflows"))
         {
             property.ShouldSerialize = (_, value) => value is IReadOnlyDictionary<string, WorkflowRoute> { Count: > 0 };
+        }
+    }
+
+    /// <summary>
+    /// A flow that leaves how a large file goes at its defaults (<see cref="ProtocolOptions.UploadBlockMiB"/>,
+    /// <see cref="ProtocolOptions.UploadConcurrency"/>, <see cref="ProtocolOptions.UploadServerCopy"/>) hashes as one written
+    /// before those keys existed, so the hash every such flow was synced with stays what it was; a flow that sets one to
+    /// something else is another document.
+    /// </summary>
+    private static void LeaveOutDefaultUploads(JsonTypeInfo info)
+    {
+        if (info.Type != typeof(ProtocolOptions))
+        {
+            return;
+        }
+
+        foreach (var property in info.Properties)
+        {
+            object? standing = property.Name switch
+            {
+                "uploadBlockMiB" => ProtocolOptions.DefaultUploadBlockMiB,
+                "uploadConcurrency" => ProtocolOptions.DefaultUploadConcurrency,
+                "uploadServerCopy" => true,
+                _ => null,
+            };
+            if (standing is not null)
+            {
+                property.ShouldSerialize = (_, value) => !standing.Equals(value);
+            }
         }
     }
 

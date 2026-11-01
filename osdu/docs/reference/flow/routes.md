@@ -187,7 +187,9 @@ under `target.endpoint`.
 | `validateLegalTags`, `legalValidatePath` | true, `/api/legal/v1/legaltags:validate` | The legal tag check before a run ([concepts](../concepts/protocols.md#before-a-run-the-legal-tag-check)). |
 
 On the `file`, `dataset`, `manifest` and `workflow` routes the files go as `filesContentType`, or else as
-`payloadContentType`, whose default is parquet: a flow uploading LAS, CSV or XML files sets one of them.
+`payloadContentType`, whose default is parquet: a flow uploading LAS, CSV or XML files sets one of them. A file above one
+block goes to an Azure location in blocks ([large files](large-files.md): `uploadBlockMiB`, `uploadConcurrency`,
+`uploadServerCopy`).
 
 ## storage
 
@@ -233,8 +235,9 @@ target:
 The files go first, then the record that refers to them (file v2, storage v2):
 
 1. For each payload file, `GET /api/file/v2/files/uploadURL` hands out a signed URL and a `FileSource`; the file streams to
-   the signed URL with `PUT`. An Azure blob host (`*.blob.core.*`) gets `x-ms-blob-type: BlockBlob` unless the flow
-   declares it; other landing zones get only the flow's `uploadHeaders`. The signed URL is never logged or stored.
+   the signed URL with `PUT`, or in blocks when it is an Azure blob and the file is larger than one
+   ([large files](large-files.md)). An Azure blob gets `x-ms-blob-type: BlockBlob` unless the flow declares it; other landing
+   zones get only the flow's `uploadHeaders`. The signed URL is never logged or stored.
 2. Each uploaded file is registered as a dataset record (`POST /api/file/v2/files/metadata`): `datasetKind` (default
    `osdu:wks:dataset--File.Generic:1.0.0`), the record's own `acl` and `legal`, and `FileSourceInfo`. The step is marked
    before the request goes, because the service mints a dataset per accepted registration: a try that stops between the
@@ -246,8 +249,8 @@ The files go first, then the record that refers to them (file v2, storage v2):
 
 A change to the record alone rewrites it with the datasets of its earlier delivery. A payload change registers new
 datasets and points the record at them; the earlier datasets stay live, since earlier versions of the record name them,
-and the ledger marks them superseded. An empty file, or one above `reliability.maxRequestBodyBytes`, holds the record
-before anything is sent.
+and the ledger marks them superseded. An empty file holds the record before anything is sent, and so does one above
+`reliability.maxRequestBodyBytes` that has to go in one request.
 
 | Key | Default | Meaning |
 | --- | --- | --- |
@@ -267,7 +270,8 @@ The files and the record go through the Dataset service (dataset v1, storage v2)
 1. `POST /api/dataset/v1/storageInstructions?kindSubType=<entity type>` hands out a staging location for the record's
    entity type, or `datasetKind`'s for a record of another kind. A 400 (no DMS serves the type) or 405 (the DMS stores no
    files) holds the record.
-2. The files go where the location says, as the provider that signed it takes them: one file with `PUT` to its signed URL,
+2. The files go where the location says, as the provider that signed it takes them: one file with `PUT` to its signed URL
+   or, on Azure, in blocks when it is larger than one ([large files](large-files.md)),
    a file collection created, appended and flushed under an Azure Data Lake directory, posted with the POST policy of MinIO
    or S3, or uploaded under a Google Cloud Storage folder. A location with temporary credentials for an endpoint it does
    not name (IBM) holds the record. A dataset kind other than `dataset--FileCollection.*` takes exactly one file, and a

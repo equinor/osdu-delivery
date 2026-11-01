@@ -1,9 +1,12 @@
 using Azure;
+using Azure.Storage.Blobs;
+using Azure.Storage.Sas;
 using SqlFlow.Azure;
 using SqlFlow.Azure.Storage;
 using SqlFlow.Core;
 using SqlFlow.Core.Abstractions;
 using SqlFlow.Core.Model;
+using SqlFlow.Delivery.Protocols;
 using SqlFlow.Sources;
 
 namespace SqlFlow.Delivery.Storage;
@@ -28,9 +31,10 @@ public interface IFileWriter
 }
 
 /// <summary>
-/// The two reads a streaming engine needs beyond the platform's forward-only <see cref="IFileStore.OpenReadAsync"/>:
+/// The reads a streaming engine needs beyond the platform's forward-only <see cref="IFileStore.OpenReadAsync"/>:
 /// a seekable stream (parquet reads its footer first and then row groups on demand, so a seekable blob stream
-/// avoids buffering the whole file) and a byte range (one document out of a work batch, without the rest).
+/// avoids buffering the whole file), a byte range (one document out of a work batch, without the rest), and a read
+/// another storage account makes itself (a large file copied between accounts without passing through a node).
 /// </summary>
 public interface IFileReader
 {
@@ -39,6 +43,9 @@ public interface IFileReader
     Task<Stream> OpenSeekableAsync(FileRef file, CancellationToken ct = default);
 
     Task<Stream> OpenRangeAsync(string path, long offset, long length, CancellationToken ct = default);
+
+    /// <summary>A read of one file another storage account can make itself; null when this store has none to give.</summary>
+    Task<PayloadCopySource?> SignReadAsync(string path, DateTimeOffset? until, CancellationToken ct = default) => Task.FromResult<PayloadCopySource?>(null);
 }
 
 /// <summary>
@@ -126,6 +133,13 @@ public sealed class FileStoreRegistry
             await forward.DisposeAsync().ConfigureAwait(false);
             throw;
         }
+    }
+
+    /// <summary>A read of a file another storage account can make itself; null when the file's store has none to give.</summary>
+    public Task<PayloadCopySource?> SignReadAsync(string path, DateTimeOffset? until, CancellationToken ct = default)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(path);
+        return _readers.FirstOrDefault(r => r.CanHandle(path)) is { } reader ? reader.SignReadAsync(path, until, ct) : Task.FromResult<PayloadCopySource?>(null);
     }
 
     private static async Task SkipAsync(Stream stream, long count, CancellationToken ct)
@@ -419,18 +433,35 @@ public sealed class AzureBlobFileWriter : IFileWriter
 /// <summary>
 /// Seekable and range reads over Azure Storage: a seekable stream fetches ranges on demand (parquet footers and row
 /// groups without the rest of the file), and a range read fetches one slice of a work batch. Both go through SQLFlow's
-/// <see cref="AzureStorageAccess"/>, over the account's Blob or Data Lake endpoint, whichever this host can reach.
+/// <see cref="AzureStorageAccess"/>, over the account's Blob or Data Lake endpoint, whichever this host can reach. A signed
+/// read lets another storage account fetch a file itself: a user delegation SAS the node signs with its own identity,
+/// which needs no shared tenant with that account, where a bearer token sent along would.
 /// </summary>
 public sealed class AzureBlobFileReader : IFileReader
 {
     private const int BufferSize = 4 * 1024 * 1024;
 
-    private readonly AzureStorageAccess _storage;
+    /// <summary>How long a signed read lasts when the caller names no end.</summary>
+    private static readonly TimeSpan DefaultSignedRead = TimeSpan.FromHours(2);
 
-    public AzureBlobFileReader(AzureStorageAccess storage)
+    /// <summary>What a signed read outlasts its caller's end by, so a block sent just before it is not refused.</summary>
+    private static readonly TimeSpan SignedReadMargin = TimeSpan.FromMinutes(10);
+
+    /// <summary>The longest a user delegation key may last.</summary>
+    private static readonly TimeSpan LongestSignedRead = TimeSpan.FromDays(7);
+
+    /// <summary>How far back a signature starts, for a clock a little ahead of the store's.</summary>
+    private static readonly TimeSpan ClockSkew = TimeSpan.FromMinutes(5);
+
+    private readonly AzureStorageAccess _storage;
+    private readonly IAzureCredentialFactory _credentials;
+
+    public AzureBlobFileReader(AzureStorageAccess storage, IAzureCredentialFactory credentials)
     {
         ArgumentNullException.ThrowIfNull(storage);
+        ArgumentNullException.ThrowIfNull(credentials);
         _storage = storage;
+        _credentials = credentials;
     }
 
     public bool CanHandle(string location) => AzureBlobLocation.IsAzureStorageUri(location);
@@ -459,6 +490,57 @@ public sealed class AzureBlobFileReader : IFileReader
         catch (RequestFailedException ex)
         {
             throw new DeliveryException($"Could not read '{path}' at {offset}{AzureBlobFileWriter.Over(ex)} (status {ex.Status}): {ex.Message}", ex);
+        }
+    }
+
+    /// <summary>
+    /// A read-only user delegation SAS for one blob. Its failures say why it could not be signed, in a
+    /// <see cref="DeliveryException"/>: a node without the role, or that reaches the account only over its Data Lake
+    /// endpoint, where no key is handed out.
+    /// </summary>
+    public async Task<PayloadCopySource?> SignReadAsync(string path, DateTimeOffset? until, CancellationToken ct = default)
+    {
+        var parsed = AzureBlobLocation.Parse(path);
+        try
+        {
+            var properties = await _storage.Container(parsed).GetPropertiesAsync(parsed.BlobPath, ct).ConfigureAwait(false);
+            if (properties is null)
+            {
+                return null;
+            }
+
+            var now = DateTimeOffset.UtcNow;
+            var ends = (until ?? now + DefaultSignedRead) + SignedReadMargin;
+            var starts = now - ClockSkew;
+            if (ends > starts + LongestSignedRead)
+            {
+                ends = starts + LongestSignedRead;
+            }
+
+            var options = new BlobClientOptions();
+            options.Retry.MaxRetries = 1;
+            options.Retry.NetworkTimeout = TimeSpan.FromSeconds(30);
+            var service = new BlobServiceClient(parsed.BlobServiceEndpoint, _credentials.Create(), options);
+            var key = await service.GetUserDelegationKeyAsync(starts, ends, ct).ConfigureAwait(false);
+            var signature = new BlobSasBuilder(BlobSasPermissions.Read, ends)
+            {
+                BlobContainerName = parsed.Container,
+                BlobName = parsed.BlobPath,
+                Resource = "b",
+                StartsOn = starts,
+                Protocol = SasProtocol.Https,
+            };
+            var url = new BlobUriBuilder(parsed.BlobServiceEndpoint)
+            {
+                BlobContainerName = parsed.Container,
+                BlobName = parsed.BlobPath,
+                Sas = signature.ToSasQueryParameters(key.Value, parsed.Account),
+            };
+            return new PayloadCopySource(url.ToUri(), properties.Length, properties.ETag, properties.ContentHash);
+        }
+        catch (Exception ex) when (ex is not DeliveryException and not OperationCanceledException)
+        {
+            throw new DeliveryException($"Could not sign a read of '{path}' for another storage account{AzureBlobFileWriter.Over(ex)}: {ex.Message}", ex);
         }
     }
 }

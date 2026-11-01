@@ -538,11 +538,38 @@ kind check [90 FC/service/FileMetadataService.java:74, 160-208; FC/service/FileD
 Inference: the download works once the registration has copied the file, since the copy keeps the relative key; a
 `.segy` file is served as `application/octet-stream` [90 FC/service/FileDeliveryService.java:119-133].
 
-How OSDU Delivery uploads [OD DatasetUploads.cs, DatasetCollections.cs]: a single file with `PUT <signedUrl>` and the
-flow's upload headers (a blob type on an Azure blob host); a collection by the provider's protocol above, the Data Lake
-appends in parts of at most 100 MiB, each request stating the service version the SAS was signed with; a location with
-temporary credentials and no endpoint (IBM) holds the record and says why. A signed location is never logged, stored or
-returned, so a retry asks for a new one unless every upload of the earlier try completed.
+A file above what one `PUT` holds, on Azure. Put Blob holds 5000 MiB, and Microsoft's guidance for Azure Data Manager for Energy
+sends larger files with azcopy because "a single PUT blob call can't be greater than 5 GB" [MS how-to-upload-large-files-using-file-service;
+MS put-block-list]. OSDU has no route for it: the location is a SAS for one blob, so the client stages blocks and commits them.
+The Azure provider left the File repository at `b23f00c` (2026-10-22); `fd355c86` (2026-10-21) is the last commit holding it.
+What this rests on, from that commit and from real storage under a signature of the same shape (`sp=cw`, `sr=b`, a user delegation
+key) on 2026-11-01 [90 FAZ/repository/StorageRepository.java, getSignedObjectBasedOnParams; OD live, LargeFileLiveTests]:
+
+- The service creates the blob empty and then signs it, with write and create and nothing else. Put Block, Put Block List and Put
+  Block From URL all work under that signature. `HEAD` and Get Block List answer 403, so nothing about the blob can be read back.
+- The empty blob carries the MD5 of no content. A commit without `x-ms-blob-content-md5` clears it, and a commit with one sets it.
+  A repeated commit finds the same blocks.
+- Copy Blob to the location answers `202 pending`, and its status cannot be read under the signature, so `az storage blob copy
+  start` cannot be followed. Put Block From URL answers once the block is staged.
+- Put Block From URL reads a Data Lake account through its Blob endpoint under a user delegation SAS for the one file, and
+  under a bad signature, a source firewall (default action Deny) or public network access off it answers
+  `403 CannotVerifyCopySource`. With the caller's own address on the source's allowed list the copy went through.
+- A location past its end answers `403 AuthenticationFailed`, "Signed expiry time ... must be after signed start time".
+- `registerDataset`'s copy (`BlobStore.copyFile`: `beginCopy`, then an unbounded wait) of 16 GiB between the two containers of
+  one account answered `success` in 1.3 seconds, keeping the content type and MD5 [77 BlobStore.java:414-420]. Inference: a
+  registration's request does not grow with the file.
+- `POST /files/metadata` takes the blob's content MD5 as the checksum and, when it has none, reads the whole blob within the
+  request, up to `CHECKSUM_CALCULATION_LIMIT`, 5 GiB by default; above that the dataset has no checksum
+  [90 FAZ/service/StorageUtilServiceImpl.java, getChecksum, calculateChecksum; provider/file-azure/src/main/resources/application.properties:112].
+- A Data Lake append repeated at the same position answers 202 again, and the flush holds the bytes once.
+
+How OSDU Delivery uploads [OD SignedUploads.cs, BlockBlob.cs, UploadParts.cs, DatasetCollections.cs]: a file no larger than
+`uploadBlockMiB` with `PUT <signedUrl>` and the flow's upload headers (a blob type on an Azure blob); a larger one on an Azure blob
+in blocks and a commit, copied by the store from the file's own account under a read signature the node signs, or read once by
+the node and sent when the store may not read it; a collection by the provider's protocol above, the Data Lake appends in order
+in parts of `uploadBlockMiB`, each request stating the service version the SAS was signed with; a location with temporary
+credentials and no endpoint (IBM) holds the record and says why. A signed location is never logged, stored or returned, so a
+retry asks for a new one unless every upload of the earlier try completed.
 
 ### 2.6 Manifest route: the core calls around the workflow
 

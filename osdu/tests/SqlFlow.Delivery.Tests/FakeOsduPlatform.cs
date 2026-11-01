@@ -453,7 +453,7 @@ public sealed partial class FakeOsduPlatform : HttpMessageHandler
             var collection = type.StartsWith("dataset--FileCollection.", StringComparison.Ordinal);
             var location = (Provider, collection) switch
             {
-                (Staging.Azure, false) => new JsonObject { ["signedUrl"] = $"{Endpoint}/staging/blob/f-{n}?sv=2021-06-08&sr=b&sp=cw&sig=secret", ["fileSource"] = $"/staging/blob/f-{n}", ["createdBy"] = "delivery" },
+                (Staging.Azure, false) => new JsonObject { ["signedUrl"] = $"{Endpoint}/staging/blob/f-{n}?{BlobSas}", ["fileSource"] = $"/staging/blob/f-{n}", ["createdBy"] = "delivery" },
                 (Staging.Azure, true) => new JsonObject { ["signedUrl"] = $"{Endpoint}/staging/dfs/d-{n}?sv=2021-06-08&sr=d&sp=racwl&sdd=1&sig=secret", ["fileCollectionSource"] = $"/d-{n}", ["createdBy"] = "delivery" },
                 (Staging.Minio or Staging.S3 or Staging.Google, false) => new JsonObject { ["signedUrl"] = $"{Endpoint}/staging/obm/u-{n}/f-{n}?X-Amz-Signature=secret", ["fileSource"] = $"/u-{n}/f-{n}", ["createdBy"] = "delivery" },
                 (Staging.Minio, true) => new JsonObject
@@ -709,6 +709,11 @@ public sealed partial class FakeOsduPlatform : HttpMessageHandler
     private HttpResponseMessage StagingArea(string method, string path, Uri uri, byte[] bytes, HttpRequestMessage request)
     {
         var query = HttpUtility.ParseQueryString(uri.Query);
+        if (BlobOperation(method, path, query, bytes, request) is { } answered)
+        {
+            return answered;
+        }
+
         if (path.StartsWith("/staging/dfs/", StringComparison.Ordinal))
         {
             // The Data Lake create, append and flush of a file under a directory SAS.
@@ -724,6 +729,11 @@ public sealed partial class FakeOsduPlatform : HttpMessageHandler
                     return new HttpResponseMessage(HttpStatusCode.Created);
                 case ("PATCH", null, "append"):
                     var position = long.Parse(query["position"]!, CultureInfo.InvariantCulture);
+                    if (AppendFailure(position) is { } failed)
+                    {
+                        return failed;
+                    }
+
                     if (!Staged.TryGetValue(path, out var sofar) || sofar.LongLength != position)
                     {
                         return Error(HttpStatusCode.BadRequest, "InvalidFlushPosition");
@@ -779,7 +789,7 @@ public sealed partial class FakeOsduPlatform : HttpMessageHandler
             return Json(HttpStatusCode.OK, new JsonObject
             {
                 ["FileID"] = "file-" + n,
-                ["Location"] = new JsonObject { ["SignedURL"] = $"{Endpoint}/staging/landing/l-{n}?sig=secret", ["FileSource"] = $"/staging/landing/l-{n}" },
+                ["Location"] = new JsonObject { ["SignedURL"] = $"{Endpoint}/staging/landing/l-{n}?{(LandingIsAzureBlob ? BlobSas : "sig=secret")}", ["FileSource"] = $"/staging/landing/l-{n}" },
             });
         }
 

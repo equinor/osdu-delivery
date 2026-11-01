@@ -1131,5 +1131,8 @@ public sealed class OsduWorkflowProtocol : IDeliveryProtocol
 
         public Task<Stream> OpenAsync(PayloadFile chunk, CancellationToken ct = default)
             => source.OpenAsync(file, ct);
+
+        public Task<PayloadCopySource?> CopySourceAsync(PayloadFile chunk, DateTimeOffset? until, CancellationToken ct = default)
+            => source.CopySourceAsync(file, until, ct);
     }
 }

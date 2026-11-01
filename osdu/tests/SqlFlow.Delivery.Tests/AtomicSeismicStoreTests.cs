@@ -248,7 +248,7 @@ public sealed class AtomicSeismicStoreTests
     public async Task A_failed_upload_leaves_the_lock_held_and_the_undo_deletes_the_dataset_with_its_objects_and_removes_the_record()
     {
         var platform = new FakeOsduPlatform();
-        platform.SeismicStoreFailing.Add(3);
+        platform.FailBlock(3);
         using var rig = new Rig(platform);
 
         var failed = await Assert.ThrowsAsync<OsduStatusException>(() => rig.Protocol.DeliverAsync(Work(Line(), rig.Ledger, File(3 * MiB))));
@@ -286,7 +286,7 @@ public sealed class AtomicSeismicStoreTests
     public async Task A_resumed_try_reopens_the_dataset_under_the_same_slot_and_the_ledger_keeps_one_row_for_its_lock()
     {
         var platform = new FakeOsduPlatform();
-        platform.SeismicStoreFailing.Add(3);
+        platform.FailBlock(3);
         using var rig = new Rig(platform);
         await Assert.ThrowsAsync<OsduStatusException>(() => rig.Protocol.DeliverAsync(Work(Line(), rig.Ledger, File(3 * MiB))));
 
@@ -452,7 +452,7 @@ public sealed class AtomicSeismicStoreTests
     public async Task Newer_work_takes_the_dataset_over_so_the_undo_leaves_it_and_the_record_and_releases_the_lock()
     {
         var platform = new FakeOsduPlatform();
-        platform.SeismicStoreFailing.Add(3);
+        platform.FailBlock(3);
         using var rig = new Rig(platform);
         await Assert.ThrowsAsync<OsduStatusException>(() => rig.Protocol.DeliverAsync(Work(Line(), rig.Ledger, File(3 * MiB))));
 
@@ -473,7 +473,7 @@ public sealed class AtomicSeismicStoreTests
     public async Task A_second_undo_does_no_harm_and_never_throws()
     {
         var platform = new FakeOsduPlatform();
-        platform.SeismicStoreFailing.Add(3);
+        platform.FailBlock(3);
         using var rig = new Rig(platform);
         await Assert.ThrowsAsync<OsduStatusException>(() => rig.Protocol.DeliverAsync(Work(Line(), rig.Ledger, File(3 * MiB))));
         var work = Undo(rig.Ledger);
@@ -662,7 +662,7 @@ public sealed class AtomicSeismicStoreTests
         // A create whose upload failed: the dataset's delete is refused once, the lock is released instead, and the record that
         // names the dataset waits with it.
         var created = new FakeOsduPlatform();
-        created.SeismicStoreFailing.Add(3);
+        created.FailBlock(3);
         using var second = new Rig(created);
         await Assert.ThrowsAsync<OsduStatusException>(() => second.Protocol.DeliverAsync(Work(Line(), second.Ledger, File(3 * MiB))));
         second.Hook.Answer(ShapeCallHook.Call(HttpMethod.Delete, "/dataset/tenant/"), HttpStatusCode.InternalServerError);

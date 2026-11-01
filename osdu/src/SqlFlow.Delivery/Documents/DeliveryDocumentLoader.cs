@@ -2295,6 +2295,16 @@ internal static partial class FlowMapper
             throw new FlowValidationException($"{source}: {paths.Shared("target.protocolOptions.uploadUrlExpiry")} '{expiry}' must be a whole number of minutes, hours or days, such as 30M, 12H or 2D.");
         }
 
+        if (flow.Target.ProtocolOptions.UploadBlockMiB is < 1 or > ProtocolOptions.MaxUploadBlockMiB)
+        {
+            throw new FlowValidationException($"{source}: {paths.Shared("target.protocolOptions.uploadBlockMiB")} must be 1 to {ProtocolOptions.MaxUploadBlockMiB}.");
+        }
+
+        if (flow.Target.ProtocolOptions.UploadConcurrency is < 1 or > ProtocolOptions.MaxUploadConcurrency)
+        {
+            throw new FlowValidationException($"{source}: {paths.Shared("target.protocolOptions.uploadConcurrency")} must be 1 to {ProtocolOptions.MaxUploadConcurrency}.");
+        }
+
         // Both are written onto records the target stores (a dataset record per file, the manifest the workflow
         // ingests), so they answer to the same pattern as a mapping's kind, and are checked while the flow is read
         // rather than on the first delivery that needs them.
@@ -3003,6 +3013,9 @@ internal static partial class FlowMapper
             DatasetIndexWaitSeconds = o.DatasetIndexWaitSeconds ?? 120,
             ManifestKind = string.IsNullOrWhiteSpace(o.ManifestKind) ? "osdu:wks:Manifest:1.0.0" : o.ManifestKind!.Trim(),
             UploadUrlExpiry = string.IsNullOrWhiteSpace(o.UploadUrlExpiry) ? null : o.UploadUrlExpiry!.Trim(),
+            UploadBlockMiB = o.UploadBlockMiB ?? ProtocolOptions.DefaultUploadBlockMiB,
+            UploadConcurrency = o.UploadConcurrency ?? ProtocolOptions.DefaultUploadConcurrency,
+            UploadServerCopy = o.UploadServerCopy ?? true,
             FileDeletePath = o.FileDeletePath,
             ManifestSection = string.IsNullOrWhiteSpace(o.ManifestSection) ? null : o.ManifestSection!.Trim(),
             WorkflowAppKey = string.IsNullOrWhiteSpace(o.WorkflowAppKey) ? "osdu-delivery" : o.WorkflowAppKey!.Trim(),

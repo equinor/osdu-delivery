@@ -15,8 +15,8 @@ public sealed record StagedDataset(string? FileSource, string? CollectionPath, I
 /// <summary>
 /// The upload half of the Dataset service routes (osdu/specs/core/INTEGRATION.md section 2.5): a record's files put where
 /// <c>storageInstructions</c> says, and the dataset record given the <c>DatasetProperties</c> that point at them. A single
-/// file goes to the location's signed URL; a file collection's files go under the staged directory, the way the
-/// provider that signed it takes them. Each upload is a resumable step, as the file route's are.
+/// file goes to the location's signed URL (<see cref="SignedUploads"/>); a file collection's files go under the staged
+/// directory, the way the provider that signed it takes them. Each upload is a resumable step, as the file route's are.
 /// </summary>
 internal static class DatasetUploads
 {
@@ -37,7 +37,7 @@ internal static class DatasetUploads
         ArgumentNullException.ThrowIfNull(datasets);
         ArgumentNullException.ThrowIfNull(work);
         ArgumentNullException.ThrowIfNull(source);
-        var chunks = await FileUploads.ListChunksAsync(work with { Payload = source }, requestBodyCeiling, ct).ConfigureAwait(false);
+        var chunks = await FileUploads.ListChunksAsync(work with { Payload = source }, ct).ConfigureAwait(false);
         var collection = DatasetService.IsCollectionType(entityType);
         if (!collection && chunks.Count != 1)
         {
@@ -65,9 +65,10 @@ internal static class DatasetUploads
         var started = steps.Now;
         var storage = await datasets.StorageAsync(entityType, ct).ConfigureAwait(false);
         StagedDataset staged;
+        SignedTransfer? sent = null;
         if (collection)
         {
-            staged = await DatasetCollections.UploadAsync(client, options, storage, source, chunks, names, ct).ConfigureAwait(false);
+            staged = await DatasetCollections.UploadAsync(client, options, storage, source, chunks, names, ct, requestBodyCeiling: requestBodyCeiling).ConfigureAwait(false);
         }
         else
         {
@@ -82,14 +83,7 @@ internal static class DatasetUploads
             var fileSource = storage.Text("fileSource")
                 ?? throw new DeliveryException($"the dataset service's storage location for {entityType} names no fileSource to register the file under.");
             var chunk = chunks[0];
-            await client.SendToSignedUrlAsync(
-                HttpMethod.Put,
-                signed,
-                () => OsduDdmsProtocol.OpenSync(source, chunk),
-                options.PayloadContentType,
-                chunk.Size,
-                FileUploads.SignedUploadHeaders(signed, options.UploadHeaders),
-                ct).ConfigureAwait(false);
+            sent = await SignedUploads.PutAsync(client, options, signed, source, chunk, requestBodyCeiling, wantsMd5: false, ct).ConfigureAwait(false);
             staged = new StagedDataset(fileSource, null, [(names[0], chunk.Size)]);
         }
 
@@ -113,6 +107,7 @@ internal static class DatasetUploads
             returned["providerKey"] = provider;
         }
 
+        sent?.AddTo(returned);
         steps.Add(storageStep, started, null, returned);
         await work.ReportStepAsync(storageStep, returned, ct).ConfigureAwait(false);
         return staged;

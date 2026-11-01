@@ -837,6 +837,12 @@ internal sealed class ProtocolOptionsYaml
 
     public string? UploadUrlExpiry { get; set; }
 
+    public int? UploadBlockMiB { get; set; }
+
+    public int? UploadConcurrency { get; set; }
+
+    public bool? UploadServerCopy { get; set; }
+
     public string? FileDeletePath { get; set; }
 
     public string? ManifestSection { get; set; }

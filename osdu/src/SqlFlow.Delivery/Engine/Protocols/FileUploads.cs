@@ -56,11 +56,10 @@ internal static class FileUploads
     }
 
     /// <summary>
-    /// Lists the payload chunks and checks each against the declared request body ceiling before anything is sent,
-    /// so an oversized or empty file holds the record instead of failing after some uploads
-    /// (osdu/docs/reference/flow/routes.md, file).
+    /// Lists the payload chunks and checks each has something in it before anything is sent, so an empty file holds the
+    /// record instead of failing after some uploads (osdu/docs/reference/flow/routes.md, file).
     /// </summary>
-    public static async Task<IReadOnlyList<PayloadFile>> ListChunksAsync(DeliveryWork work, long requestBodyCeiling, CancellationToken ct)
+    public static async Task<IReadOnlyList<PayloadFile>> ListChunksAsync(DeliveryWork work, CancellationToken ct)
     {
         var payload = work.Payload ?? throw new RecordHeldException("the record needs a payload but none is attached");
         var chunks = await payload.ListChunksAsync(ct).ConfigureAwait(false);
@@ -75,19 +74,27 @@ internal static class FileUploads
             {
                 throw new RecordHeldException($"payload chunk {chunk.Index} ({FileName(chunk.Path)}) is empty; an empty file cannot be registered as a dataset");
             }
-
-            if (requestBodyCeiling > 0 && chunk.Size > requestBodyCeiling)
-            {
-                throw new RecordHeldException(
-                    $"payload chunk {chunk.Index} is {chunk.Size.ToString(CultureInfo.InvariantCulture)} bytes, above the target's declared request body ceiling of {requestBodyCeiling.ToString(CultureInfo.InvariantCulture)} bytes (reliability.maxRequestBodyBytes); re-chunk in prepare");
-            }
         }
 
         return chunks;
     }
 
+    /// <summary>
+    /// Holds a file that has to go in one request and is above the declared request body ceiling. It is read once the
+    /// location is known, since a location that takes blocks never carries more than the ceiling in a request.
+    /// </summary>
+    public static void CheckCeiling(PayloadFile chunk, long requestBodyCeiling)
+    {
+        ArgumentNullException.ThrowIfNull(chunk);
+        if (requestBodyCeiling > 0 && chunk.Size > requestBodyCeiling)
+        {
+            throw new RecordHeldException(
+                $"payload chunk {chunk.Index} is {chunk.Size.ToString(CultureInfo.InvariantCulture)} bytes, above the target's declared request body ceiling of {requestBodyCeiling.ToString(CultureInfo.InvariantCulture)} bytes (reliability.maxRequestBodyBytes); re-chunk in prepare");
+        }
+    }
+
     /// <summary>Uploads the chunks an earlier try did not, reporting each as a step, and returns where every chunk landed.</summary>
-    public static async Task<List<UploadedFile>> UploadAsync(OsduHttpClient client, ProtocolOptions options, DeliveryWork work, IReadOnlyList<PayloadFile> chunks, DeliverySteps steps, CancellationToken ct)
+    public static async Task<List<UploadedFile>> UploadAsync(OsduHttpClient client, ProtocolOptions options, DeliveryWork work, IReadOnlyList<PayloadFile> chunks, long requestBodyCeiling, DeliverySteps steps, CancellationToken ct)
     {
         var payload = work.Payload ?? throw new RecordHeldException("the record needs a payload but none is attached");
         var files = new List<UploadedFile>(chunks.Count);
@@ -104,14 +111,7 @@ internal static class FileUploads
 
             var started = steps.Now;
             var location = await UploadLocationAsync(client, options, ct).ConfigureAwait(false);
-            var result = await client.SendToSignedUrlAsync(
-                HttpMethod.Put,
-                location.SignedUrl,
-                () => OsduDdmsProtocol.OpenSync(payload, chunk),
-                options.PayloadContentType,
-                chunk.Size,
-                SignedUploadHeaders(location.SignedUrl, options.UploadHeaders),
-                ct).ConfigureAwait(false);
+            var sent = await SignedUploads.PutAsync(client, options, location.SignedUrl, payload, chunk, requestBodyCeiling, wantsMd5: true, ct).ConfigureAwait(false);
             var returned = new Dictionary<string, string>(StringComparer.Ordinal)
             {
                 ["fileSource"] = location.FileSource,
@@ -123,7 +123,8 @@ internal static class FileUploads
                 returned["fileId"] = location.FileId;
             }
 
-            steps.Add(step, started, (int)result.Status, returned);
+            sent.AddTo(returned);
+            steps.Add(step, started, sent.Status, returned);
             await work.ReportStepAsync(step, returned, ct).ConfigureAwait(false);
             files.Add(new UploadedFile(chunk.Index, name, chunk.Size, location.FileSource, location.FileId));
         }
@@ -451,8 +452,8 @@ internal static class FileUploads
         ArgumentNullException.ThrowIfNull(work);
         ArgumentNullException.ThrowIfNull(files);
         var view = work with { Payload = files };
-        var chunks = await ListChunksAsync(view, requestBodyCeiling, ct).ConfigureAwait(false);
-        var uploaded = await UploadAsync(client, options, view, chunks, steps, ct).ConfigureAwait(false);
+        var chunks = await ListChunksAsync(view, ct).ConfigureAwait(false);
+        var uploaded = await UploadAsync(client, options, view, chunks, requestBodyCeiling, steps, ct).ConfigureAwait(false);
         var ids = new List<string>(uploaded.Count);
         foreach (var file in uploaded)
         {
@@ -472,14 +473,14 @@ internal static class FileUploads
     /// A PUT that creates a blob must say which kind of blob it is, and Azure answers one without the header with
     /// 400 <c>MissingRequiredHeader</c>, after the file service has already handed out the location. OSDU on Azure
     /// hands out exactly such a URL, and the platform's own upload scripts send <c>x-ms-blob-type: BlockBlob</c> with
-    /// it. Adding it only for an Azure host keeps other landing zones (S3, Google Cloud Storage) receiving nothing
+    /// it. Adding it only for an Azure blob keeps other landing zones (S3, Google Cloud Storage) receiving nothing
     /// they did not sign for; a value the flow declares always wins.
     /// </summary>
     public static IReadOnlyDictionary<string, string> SignedUploadHeaders(Uri signedUrl, IReadOnlyDictionary<string, string> declared)
     {
         ArgumentNullException.ThrowIfNull(signedUrl);
         ArgumentNullException.ThrowIfNull(declared);
-        if (!IsAzureBlobHost(signedUrl.Host) || declared.Keys.Any(k => string.Equals(k, AzureBlobTypeHeader, StringComparison.OrdinalIgnoreCase)))
+        if (!SignedUploads.IsAzureBlob(signedUrl) || declared.Keys.Any(k => string.Equals(k, AzureBlobTypeHeader, StringComparison.OrdinalIgnoreCase)))
         {
             return declared;
         }
@@ -490,14 +491,6 @@ internal static class FileUploads
         };
         return headers;
     }
-
-    /// <summary>
-    /// An Azure Blob Storage account host in any Azure cloud: <c>{account}.blob.core.windows.net</c>, and the
-    /// sovereign equivalents (<c>blob.core.usgovcloudapi.net</c>, <c>blob.core.chinacloudapi.cn</c>), which all share
-    /// the <c>.blob.core.</c> label pair.
-    /// </summary>
-    private static bool IsAzureBlobHost(string host)
-        => host.Contains(".blob.core.", StringComparison.OrdinalIgnoreCase);
 
     /// <summary>The last path segment, the name the dataset record carries.</summary>
     public static string FileName(string path)

@@ -4213,7 +4213,8 @@
         "delivery-flow-routes",
         "delivery-concept-artifacts-and-undo",
         "delivery-concept-change-detection",
-        "delivery-concept-protocols"
+        "delivery-concept-protocols",
+        "delivery-flow-large-files"
       ],
       "sourceRefs": [
         "osdu/src/SqlFlow.Delivery/Model/FlowDefinition.cs",
@@ -4615,6 +4616,51 @@
         "osdu/src/SqlFlow.Delivery/Engine/Assertions/KnownValuesEvaluator.cs",
         "osdu/src/SqlFlow.Delivery/Engine/Assertions/TestEvaluator.cs",
         "osdu/src/SqlFlow.Delivery.Search/OsduQuery.cs"
+      ]
+    },
+    {
+      "id": "delivery-flow-large-files",
+      "corpus": "reference",
+      "path": "flow/large-files.md",
+      "title": "Large files (uploadBlockMiB): a file above one block goes to Azure in blocks, copied by the store when it may read the file",
+      "type": "flow-reference",
+      "summary": "How a 16 GB LAS file reaches Azure: in blocks and a commit, copied between accounts by the store, or sent from the node when the store may not read it.",
+      "keywords": [
+        "large file",
+        "16 GB LAS file",
+        "big file upload",
+        "file over 5 GB",
+        "RequestBodyTooLarge",
+        "block blob",
+        "Put Block",
+        "Put Block From URL",
+        "server side copy",
+        "copy between storage accounts",
+        "azcopy",
+        "SAS token",
+        "signed URL expired",
+        "CannotVerifyCopySource",
+        "uploadBlockMiB",
+        "uploadConcurrency",
+        "uploadServerCopy"
+      ],
+      "yamlPath": "target.protocolOptions.uploadBlockMiB, target.protocolOptions.uploadConcurrency, target.protocolOptions.uploadServerCopy (flowType: delivery)",
+      "related": [
+        "delivery-flow-routes",
+        "delivery-flow-enrich-records",
+        "delivery-concept-availability-and-retention"
+      ],
+      "sourceRefs": [
+        "osdu/src/SqlFlow.Delivery/Engine/Protocols/SignedUploads.cs",
+        "osdu/src/SqlFlow.Delivery/Engine/Protocols/BlockBlob.cs",
+        "osdu/src/SqlFlow.Delivery/Engine/Protocols/UploadParts.cs",
+        "osdu/src/SqlFlow.Delivery/Engine/Protocols/DatasetUploads.cs",
+        "osdu/src/SqlFlow.Delivery/Engine/Protocols/DatasetCollections.cs",
+        "osdu/src/SqlFlow.Delivery/Engine/Protocols/FileUploads.cs",
+        "osdu/src/SqlFlow.Delivery/Storage/FileStore.cs",
+        "osdu/src/SqlFlow.Delivery/Model/FlowDefinition.cs",
+        "osdu/docs/census/keys.delivery.json",
+        "osdu/specs/core/INTEGRATION.md"
       ]
     },
     {
@@ -9877,6 +9923,33 @@
         "osdu/src/SqlFlow.Delivery.Setup/DevTour.cs",
         "bootstrap.ps1",
         "bootstrap.sh"
+      ]
+    },
+    {
+      "id": "delivery-wiki-0042-large-files-go-in-blocks",
+      "corpus": "wiki",
+      "path": "decisions/0042-large-files-go-in-blocks.md",
+      "title": "Decision 0042: a large file goes to Azure in blocks, and the store copies it when it may read it",
+      "type": "decision",
+      "summary": "Why a file above one block goes in blocks, why the node makes the calls azcopy makes rather than running it, and why a refused copy falls back to sending.",
+      "keywords": [
+        "large file",
+        "block blob",
+        "Put Block From URL",
+        "azcopy",
+        "az storage blob copy start",
+        "user delegation SAS",
+        "server side copy",
+        "CannotVerifyCopySource"
+      ],
+      "related": [],
+      "sourceRefs": [
+        "osdu/src/SqlFlow.Delivery/Engine/Protocols/SignedUploads.cs",
+        "osdu/src/SqlFlow.Delivery/Engine/Protocols/BlockBlob.cs",
+        "osdu/src/SqlFlow.Delivery/Engine/Protocols/UploadParts.cs",
+        "osdu/src/SqlFlow.Delivery/Storage/FileStore.cs",
+        "osdu/specs/core/INTEGRATION.md",
+        "osdu/tests/SqlFlow.Delivery.Tests/LargeFileLiveTests.cs"
       ]
     },
     {

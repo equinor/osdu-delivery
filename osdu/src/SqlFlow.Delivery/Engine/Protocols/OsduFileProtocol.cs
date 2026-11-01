@@ -76,8 +76,8 @@ public sealed class OsduFileProtocol : IDeliveryProtocol
                 var files = 0;
                 if (work.DeliverPayload)
                 {
-                    var chunks = await FileUploads.ListChunksAsync(work, _requestBodyCeiling, ct).ConfigureAwait(false);
-                    var uploaded = await FileUploads.UploadAsync(_client, _options, work, chunks, steps, ct).ConfigureAwait(false);
+                    var chunks = await FileUploads.ListChunksAsync(work, ct).ConfigureAwait(false);
+                    var uploaded = await FileUploads.UploadAsync(_client, _options, work, chunks, _requestBodyCeiling, steps, ct).ConfigureAwait(false);
                     var ids = new List<string>(uploaded.Count);
                     foreach (var file in uploaded)
                     {

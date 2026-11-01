@@ -570,7 +570,7 @@ flow that names them, at the top level for one that serves the registry). A flow
 | `verifyTls` | boolean | `true` | `false` accepts any certificate, and only on a node that sets `SQLFLOW_DELIVERY_ALLOW_INSECURE_TLS=true`; elsewhere the run is refused. |
 | `urlAllowlist` | list | none | Hosts requests may reach; `*.example.com` matches the domain and its subdomains. Checked on every redirect, and a redirect from https to http is refused. |
 | `maxResponseBytes` | integer | 67108864 | The largest response read. |
-| `maxRequestBodyBytes` | integer | 0 | The target's request body ceiling; a bigger chunk holds the record before anything is sent. 0 declares none ([DDMSs](ddms.md)). |
+| `maxRequestBodyBytes` | integer | 0 | The target's request body ceiling: a chunk that has to go in one request and is bigger holds the record before it is sent, and an Azure block is never bigger ([large files](large-files.md)). 0 declares none ([DDMSs](ddms.md)). |
 | `leaseSeconds` | integer | 300 | How long a worker's lease on a record lasts (at least 30 is used) before another node may take it. |
 
 What happens to a record that fails, is held or waits is on [record lifecycle](../concepts/record-lifecycle.md).

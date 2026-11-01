@@ -112,6 +112,10 @@ public sealed partial class FakeOsduPlatform
         return null;
     }
 
+    /// <summary>Fails the store's request numbered <paramref name="request"/> and every repeat of it: a block that stays failed.</summary>
+    public void FailBlock(int request)
+        => SeismicStoreFailing.UnionWith(Enumerable.Range(request, SqlFlow.Delivery.Engine.Protocols.UploadParts.PartFailures));
+
     private HttpResponseMessage? StoreFails()
         => SeismicStoreFailing.Contains(++_storeRequests) ? new HttpResponseMessage(HttpStatusCode.InternalServerError) : null;
 

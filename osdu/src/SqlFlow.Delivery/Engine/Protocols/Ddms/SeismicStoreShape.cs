@@ -1270,9 +1270,9 @@ internal sealed class SeismicStoreShape(DdmsShapeContext context) : IDdmsShape
             done = int.TryParse(progress.GetValueOrDefault("objects"), NumberStyles.None, CultureInfo.InvariantCulture, out var landed) ? Math.Clamp(landed, 0, layout.Count) : 0;
         }
 
-        if (provider == DdmsProvider.Azure && layout.FirstOrDefault(o => (o.Length + partBytes - 1) / partBytes > AzureBlobStore.MaxBlocks) is { } oversized)
+        if (provider == DdmsProvider.Azure && layout.FirstOrDefault(o => (o.Length + partBytes - 1) / partBytes > BlockBlob.MaxBlocks) is { } oversized)
         {
-            var limit = string.Create(CultureInfo.InvariantCulture, $"{oversized.Length} bytes, more than an Azure blob of {AzureBlobStore.MaxBlocks} blocks of {partBytes / MiB} MiB holds");
+            var limit = string.Create(CultureInfo.InvariantCulture, $"{oversized.Length} bytes, more than an Azure blob of {BlockBlob.MaxBlocks} blocks of {partBytes / MiB} MiB holds");
             throw new RecordHeldException(
                 $"the object {oversized.Key} of {plan.Dataset.SdPath} is {limit}; set chunkMiB, the size of each block and of each blob a single file is cut into, higher");
         }

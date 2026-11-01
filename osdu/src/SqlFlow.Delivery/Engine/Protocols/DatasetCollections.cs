@@ -3,8 +3,10 @@ using System.Net.Http.Headers;
 using System.Text.Json.Nodes;
 using System.Web;
 using SqlFlow.Core;
+using SqlFlow.Delivery.Engine.Protocols.Ddms;
 using SqlFlow.Delivery.Model;
 using SqlFlow.Delivery.Protocols;
+using static SqlFlow.Delivery.Engine.Protocols.ObjectBody;
 
 namespace SqlFlow.Delivery.Engine.Protocols;
 
@@ -29,24 +31,17 @@ namespace SqlFlow.Delivery.Engine.Protocols;
 /// </summary>
 internal static class DatasetCollections
 {
-    /// <summary>The largest part of a file one Data Lake append carries; a larger file goes in several.</summary>
-    public const long AppendBytes = 100L * 1024 * 1024;
-
-    /// <summary>The Data Lake service version a request states when its SAS names none.</summary>
-    public const string DefaultAzureVersion = "2021-06-08";
-
     /// <summary>The Google Cloud Storage media upload endpoint the OSDU driver tests upload a collection's files to.</summary>
     public const string GcsUploadEndpoint = "https://storage.googleapis.com/upload/storage/v1/b/";
 
     public static async Task<StagedDataset> UploadAsync(
-        OsduHttpClient client, ProtocolOptions options, DatasetStorage storage, IPayloadSource source, IReadOnlyList<PayloadFile> chunks, IReadOnlyList<string> names, CancellationToken ct, long appendBytes = AppendBytes)
+        OsduHttpClient client, ProtocolOptions options, DatasetStorage storage, IPayloadSource source, IReadOnlyList<PayloadFile> chunks, IReadOnlyList<string> names, CancellationToken ct, int? appendBytes = null, long requestBodyCeiling = 0)
     {
         ArgumentNullException.ThrowIfNull(client);
         ArgumentNullException.ThrowIfNull(options);
         ArgumentNullException.ThrowIfNull(storage);
         ArgumentNullException.ThrowIfNull(chunks);
         ArgumentNullException.ThrowIfNull(names);
-        ArgumentOutOfRangeException.ThrowIfLessThan(appendBytes, 1);
         if (names.Count != chunks.Count)
         {
             throw new ArgumentException("every payload file needs its name", nameof(names));
@@ -71,12 +66,15 @@ internal static class DatasetCollections
             switch (uploader)
             {
                 case Uploader.DataLake:
-                    await AzureAsync(client, DatasetUploads.SignedUrl(storage, "signedUrl"), name, source, chunk, appendBytes, ct).ConfigureAwait(false);
+                    var part = appendBytes ?? (int)SignedUploads.BlockBytes(chunk, options.UploadBlockMiB, requestBodyCeiling);
+                    await AzureAsync(client, DatasetUploads.SignedUrl(storage, "signedUrl"), name, source, chunk, part, ct).ConfigureAwait(false);
                     break;
                 case Uploader.PostPolicy:
+                    FileUploads.CheckCeiling(chunk, requestBodyCeiling);
                     await PostPolicyAsync(client, storage, signing!, directory, name, source, chunk, options.PayloadContentType, ct).ConfigureAwait(false);
                     break;
                 default:
+                    FileUploads.CheckCeiling(chunk, requestBodyCeiling);
                     await GoogleAsync(client, signing!, name, source, chunk, options.PayloadContentType, ct).ConfigureAwait(false);
                     break;
             }
@@ -94,33 +92,36 @@ internal static class DatasetCollections
     /// One file under an Azure Data Lake directory SAS: created (<c>PUT ?resource=file</c>), appended in parts
     /// (<c>PATCH ?action=append&amp;position=</c>) and flushed (<c>PATCH ?action=flush&amp;position=</c>), as the Data Lake
     /// client the File service's test uses sends them (Azure Data Lake SDK 12.27.0, <c>PathsImpl.java:100-133, 750-875</c>).
-    /// The request states the service version the SAS was signed with. The file is created over whatever a failed try
-    /// left, since the directory is new for every try.
+    /// The file is read front to back once and its parts go in order, each repeated by itself, since an append's position
+    /// says where it lands. The request states the service version the SAS was signed with. The file is created over
+    /// whatever a failed try left, since the directory is new for every try.
     /// </summary>
-    private static async Task AzureAsync(OsduHttpClient client, Uri directory, string name, IPayloadSource source, PayloadFile chunk, long appendBytes, CancellationToken ct)
+    private static async Task AzureAsync(OsduHttpClient client, Uri directory, string name, IPayloadSource source, PayloadFile chunk, int appendBytes, CancellationToken ct)
     {
         var query = HttpUtility.ParseQueryString(directory.Query);
-        var version = query["sv"] ?? DefaultAzureVersion;
+        var version = query["sv"] ?? BlockBlob.DefaultVersion;
         var file = FileUrl(directory, name);
         var headers = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase) { ["x-ms-version"] = version };
         await client.SendToSignedUrlAsync(HttpMethod.Put, WithQuery(file, "resource=file"), () => new MemoryStream([], writable: false), "application/octet-stream", 0, headers, ct).ConfigureAwait(false);
 
-        var position = 0L;
-        while (position < chunk.Size)
-        {
-            var length = Math.Min(appendBytes, chunk.Size - position);
-            var offset = position;
-            await client.SendToSignedUrlAsync(
-                new HttpMethod("PATCH"),
-                WithQuery(file, "action=append&position=" + offset.ToString(CultureInfo.InvariantCulture)),
-                () => SegmentStream.Open(source, chunk, offset, length),
-                "application/octet-stream",
-                length,
-                headers,
-                ct).ConfigureAwait(false);
-            position += length;
-        }
-
+        await using var reader = await PartReader.OpenAsync(source, chunk, ct).ConfigureAwait(false);
+        await UploadParts.SendAsync(
+            reader,
+            chunk.Size,
+            appendBytes,
+            concurrency: 1,
+            (_, offset, part, token) => client.SendAsIsAsync(
+                () =>
+                {
+                    var request = new HttpRequestMessage(new HttpMethod("PATCH"), WithQuery(file, "action=append&position=" + offset.ToString(CultureInfo.InvariantCulture))) { Content = Bytes(part, null) };
+                    request.Headers.TryAddWithoutValidation("x-ms-version", version);
+                    return request;
+                },
+                null,
+                idempotent: true,
+                token),
+            ct).ConfigureAwait(false);
+        await reader.EndAsync(ct).ConfigureAwait(false);
         await client.SendToSignedUrlAsync(
             new HttpMethod("PATCH"),
             WithQuery(file, "action=flush&position=" + chunk.Size.ToString(CultureInfo.InvariantCulture)),
@@ -205,123 +206,5 @@ internal static class DatasetCollections
 
         /// <summary>A token scoped to a Google Cloud Storage folder.</summary>
         Google,
-    }
-}
-
-/// <summary>
-/// A read-only view of one part of a payload file, opened fresh for every attempt: a seekable file is positioned at the
-/// part, any other is read up to it. At most the part's length is read.
-/// </summary>
-internal sealed class SegmentStream : Stream
-{
-    private readonly Stream _inner;
-    private long _remaining;
-
-    private SegmentStream(Stream inner, long length)
-    {
-        _inner = inner;
-        _remaining = length;
-    }
-
-    public static Stream Open(IPayloadSource source, PayloadFile chunk, long offset, long length)
-    {
-        var inner = OsduDdmsProtocol.OpenSync(source, chunk);
-        try
-        {
-            if (offset > 0)
-            {
-                if (inner.CanSeek)
-                {
-                    inner.Seek(offset, SeekOrigin.Begin);
-                }
-                else
-                {
-                    Skip(inner, offset);
-                }
-            }
-
-            return new SegmentStream(inner, length);
-        }
-        catch
-        {
-            inner.Dispose();
-            throw;
-        }
-    }
-
-    private static void Skip(Stream stream, long count)
-    {
-        var buffer = new byte[81920];
-        while (count > 0)
-        {
-            var read = stream.Read(buffer, 0, (int)Math.Min(buffer.Length, count));
-            if (read == 0)
-            {
-                throw new DeliveryException("a payload file ended before the part an upload was sending");
-            }
-
-            count -= read;
-        }
-    }
-
-    public override bool CanRead => true;
-
-    public override bool CanSeek => false;
-
-    public override bool CanWrite => false;
-
-    public override long Length => throw new NotSupportedException();
-
-    public override long Position
-    {
-        get => throw new NotSupportedException();
-        set => throw new NotSupportedException();
-    }
-
-    public override int Read(byte[] buffer, int offset, int count)
-    {
-        if (_remaining <= 0)
-        {
-            return 0;
-        }
-
-        var read = _inner.Read(buffer, offset, (int)Math.Min(count, _remaining));
-        _remaining -= read;
-        return read;
-    }
-
-    public override async ValueTask<int> ReadAsync(Memory<byte> buffer, CancellationToken cancellationToken = default)
-    {
-        if (_remaining <= 0)
-        {
-            return 0;
-        }
-
-        var read = await _inner.ReadAsync(buffer[..(int)Math.Min(buffer.Length, _remaining)], cancellationToken).ConfigureAwait(false);
-        _remaining -= read;
-        return read;
-    }
-
-    public override Task<int> ReadAsync(byte[] buffer, int offset, int count, CancellationToken cancellationToken)
-        => ReadAsync(buffer.AsMemory(offset, count), cancellationToken).AsTask();
-
-    public override void Flush()
-    {
-    }
-
-    public override long Seek(long offset, SeekOrigin origin) => throw new NotSupportedException();
-
-    public override void SetLength(long value) => throw new NotSupportedException();
-
-    public override void Write(byte[] buffer, int offset, int count) => throw new NotSupportedException();
-
-    protected override void Dispose(bool disposing)
-    {
-        if (disposing)
-        {
-            _inner.Dispose();
-        }
-
-        base.Dispose(disposing);
     }
 }
