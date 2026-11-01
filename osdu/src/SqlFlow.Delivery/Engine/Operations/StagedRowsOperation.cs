@@ -3,6 +3,7 @@ using SqlFlow.Core;
 using SqlFlow.Core.Compute;
 using SqlFlow.Delivery.Documents;
 using SqlFlow.Delivery.Identity;
+using SqlFlow.Delivery.Ledger;
 using SqlFlow.Delivery.Model;
 using SqlFlow.Delivery.Source;
 
@@ -11,9 +12,9 @@ namespace SqlFlow.Delivery.Engine.Operations;
 /// <summary>
 /// <c>delivery-staged-rows</c>: a page of the rows staged in a flow's scope, for a mapping's Staged records tab
 /// (osdu/docs/reference/concepts/dry-run.md). The operation reads the record table with the flow's own connection reference, a
-/// page at a time, each row named as the ledger would name it, with its file and row and how many rows each child dataset
-/// holds of it. It renders nothing and needs nothing of the mapping but its key and label, so a mapping that does not pass
-/// its preflight still shows the rows it was written for. Nothing is written.
+/// page at a time, each row named as the ledger would name it, with its file and row, how many rows each child dataset
+/// holds of it, and where the ledger stands on it. It renders nothing and needs nothing of the mapping but its key and label,
+/// so a mapping that does not pass its preflight still shows the rows it was written for. Nothing is written.
 /// </summary>
 public sealed class StagedRowsOperation : DeliveryOperation
 {
@@ -45,17 +46,31 @@ public sealed class StagedRowsOperation : DeliveryOperation
 
     protected override async Task<object> RunAsync(EngineContext context, FlowDefinition flow, ComputeTaskPayload payload, CancellationToken ct)
     {
-        var dataset = DatasetOf(context, flow, out var unread);
         var source = context.Sources.Open(flow, FlowParameters.Resolve(flow, Values(payload)), context.Loggers);
-        var page = await source.ReadStagedAsync(
-            new StagedRowsQuery
-            {
-                Limit = Limit(payload),
-                After = payload.Argument(AfterArgument) is { } after ? KeyTuple.FromJson(after) : null,
-                Search = payload.Argument(SearchArgument),
-                Columns = dataset?.ReadColumns() ?? [],
-            },
-            ct).ConfigureAwait(false);
+        var query = new StagedRowsQuery
+        {
+            Limit = Limit(payload),
+            After = payload.Argument(AfterArgument) is { } after ? KeyTuple.FromJson(after) : null,
+            Search = payload.Argument(SearchArgument),
+        };
+
+        return await ReadAsync(context, flow, source, query, ct).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// A page of the rows <paramref name="query"/> asks of <paramref name="source"/>, each with the status of its record. A host
+    /// without the ledger still lists the rows and says it did not read it, rather than have them taken for rows no run has seen.
+    /// </summary>
+    internal static async Task<StagedRows> ReadAsync(EngineContext context, FlowDefinition flow, IIngestionSource source, StagedRowsQuery query, CancellationToken ct)
+    {
+        var dataset = DatasetOf(context, flow, out var unread);
+        var page = await source.ReadStagedAsync(query with { Columns = dataset?.ReadColumns() ?? [] }, ct).ConfigureAwait(false);
+        var rows = page.Rows.Select(row => View(row, dataset)).ToList();
+
+        // One read of the whole page: the key of a row with an incomplete key names no record.
+        var held = context.Ledger is { } ledger
+            ? await ledger.GetRecordsAsync(flow.Id, rows.Where(row => row.DeliveryKey is not null).Select(row => new DeliveryKey(row.DeliveryKey!.Value)), ct).ConfigureAwait(false)
+            : null;
 
         return new StagedRows(
             flow.Label,
@@ -64,11 +79,17 @@ public sealed class StagedRowsOperation : DeliveryOperation
             flow.Source.Record.Key,
             flow.Source.Datasets.ToDictionary(d => d.Key, d => d.Value.Object, StringComparer.Ordinal),
             page.Total,
-            page.Rows.Select(row => View(row, dataset, flow)).ToList(),
+            rows.Select(row => row with { LedgerStatus = StatusOf(row, held) }).ToList(),
             page.Next?.Json,
             unread,
-            context.Time.GetUtcNow().UtcDateTime);
+            context.Time.GetUtcNow().UtcDateTime,
+            held is not null);
     }
+
+    private static string? StatusOf(StagedRowView row, IReadOnlyDictionary<DeliveryKey, RecordState>? held)
+        => row.DeliveryKey is { } key && held is not null && held.TryGetValue(new DeliveryKey(key), out var state)
+            ? state.Status.ToString().ToLowerInvariant()
+            : null;
 
     /// <summary>
     /// The key and label of the mapping the flow pins, read from its file alone: what a row's name and delivery key are made from.
@@ -88,7 +109,7 @@ public sealed class StagedRowsOperation : DeliveryOperation
         }
     }
 
-    private static StagedRowView View(StagedRow row, MappingDataset? dataset, FlowDefinition flow)
+    private static StagedRowView View(StagedRow row, MappingDataset? dataset)
     {
         var parts = row.Key.Values;
         var complete = !parts.Any(string.IsNullOrWhiteSpace);
@@ -129,9 +150,10 @@ public sealed class StagedRowsOperation : DeliveryOperation
 /// <param name="DeletedUtc">When the ingestion table marked it deleted.</param>
 /// <param name="Complete">False when a part of its key is empty, so it has no record.</param>
 /// <param name="Children">How many rows each child dataset holds of it.</param>
+/// <param name="LedgerStatus">The status of its record, in lower case; null while the ledger holds no record of it, so it is only staged.</param>
 public sealed record StagedRowView(
     string SourceKey, string KeyJson, Guid? DeliveryKey, string? Label, string? File, long? Row, DateTime? UpdatedUtc, DateTime? DeletedUtc, bool Complete,
-    IReadOnlyDictionary<string, long> Children);
+    IReadOnlyDictionary<string, long> Children, string? LedgerStatus = null);
 
 /// <summary>What <see cref="StagedRowsOperation"/> answers.</summary>
 /// <param name="Flow">The flow's label.</param>
@@ -144,6 +166,9 @@ public sealed record StagedRowView(
 /// <param name="Next">Where the next page starts; null on the last.</param>
 /// <param name="MappingUnread">Why the rows are named by their key alone, when the mapping could not be read.</param>
 /// <param name="ReadUtc">When it was read.</param>
+/// <param name="LedgerRead">
+/// True when the ledger was read: a row with no status is then only staged. False on a host without it, which says nothing of where a row stands.
+/// </param>
 public sealed record StagedRows(
     string Flow, string? Interface, string RecordObject, IReadOnlyList<string> KeyColumns, IReadOnlyDictionary<string, string> Datasets, long? Total,
-    IReadOnlyList<StagedRowView> Rows, string? Next, string? MappingUnread, DateTime ReadUtc);
+    IReadOnlyList<StagedRowView> Rows, string? Next, string? MappingUnread, DateTime ReadUtc, bool LedgerRead = false);

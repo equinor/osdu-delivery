@@ -1690,6 +1690,8 @@ export interface DeliveryStagedRow {
   /** False when a part of its key is empty, so it has no record to name. */
   complete: boolean;
   children: Record<string, number>;
+  /** The status of its record; null while the ledger holds none, so it is only staged. */
+  ledgerStatus?: DeliveryRecordStatus | null;
 }
 
 /** A page of the rows staged in a flow's scope. */
@@ -1706,6 +1708,8 @@ export interface DeliveryStagedRows {
   next?: string | null;
   mappingUnread?: string | null;
   readUtc: string;
+  /** True when the ledger was read, so a row with no status is only staged. */
+  ledgerRead?: boolean;
 }
 
 /**

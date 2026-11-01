@@ -299,6 +299,20 @@ public sealed class DryRunTests : IDisposable
     }
 
     [Fact]
+    public async Task A_host_without_the_ledger_lists_the_rows_and_does_not_say_they_are_only_staged()
+    {
+        var (_, runtime) = await RuntimeAsync();
+        using (runtime)
+        {
+            var page = await StagedRowsOperation.ReadAsync(runtime.Context, runtime.Flow, runtime.Source, new StagedRowsQuery { Limit = 500 }, default);
+
+            Assert.False(page.LedgerRead);
+            Assert.NotEmpty(page.Rows);
+            Assert.All(page.Rows, row => Assert.Null(row.LedgerStatus));
+        }
+    }
+
+    [Fact]
     public async Task The_list_and_a_dry_run_name_a_row_alike_so_what_became_of_it_finds_its_line()
     {
         var (_, runtime) = await RuntimeAsync();

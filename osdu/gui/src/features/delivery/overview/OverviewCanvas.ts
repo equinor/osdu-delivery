@@ -119,15 +119,32 @@ const TEXT = {
 };
 
 /** How a part of the canvas takes the light, as classes: lit, or faded while something else is lit. */
-const WIRE = "fill-none transition-[stroke,opacity,stroke-width] duration-[120ms] data-[lit=on]:stroke-primary data-[lit=off]:opacity-25";
+const WIRE = "fill-none transition-[stroke,opacity,stroke-width] duration-[120ms] data-[lit=on]:stroke-primary data-[lit=on]:[stroke-opacity:1] data-[lit=on]:stroke-[1.75] data-[lit=off]:opacity-25";
 const LIT_GROUP = "transition-opacity duration-[120ms] data-[lit=off]:opacity-45";
+
+/** How long the pointer rests on a line before it counts: the shelf's lines cross every row, and passing over one lights nothing. */
+const SETTLE_MS = 70;
+
+/** How long a part stays lit after the pointer leaves it, so moving from one part to the next does not blink. */
+const LEAVE_MS = 40;
+
+/** The width a line takes the pointer in, wider than it is drawn. */
+const EDGE_HIT = 9;
+
+/** A line a reader can point at, and what pointing at it means. */
+interface PlacedEdge {
+  id: string;
+  d: string;
+  part: OverviewPart;
+  tip: { title: string; body: string } | null;
+}
 
 export class OverviewCanvas {
   private readonly svg: Selection<SVGSVGElement, unknown, null, undefined>;
 
   private readonly viewport: Selection<SVGGElement, unknown, null, undefined>;
 
-  private readonly layers: Record<"drops" | "wires" | "tracks" | "cards" | "record" | "rows" | "dots", Selection<SVGGElement, unknown, null, undefined>>;
+  private readonly layers: Record<"drops" | "wires" | "tracks" | "cards" | "record" | "rows" | "edges" | "dots", Selection<SVGGElement, unknown, null, undefined>>;
 
   private readonly zoomer: ZoomBehavior<SVGSVGElement, unknown>;
 
@@ -149,6 +166,9 @@ export class OverviewCanvas {
   /** The room a panel over the canvas takes, which `fit` and `reveal` keep clear. */
   private inset = { left: 0, right: 0 };
 
+  /** What pointing is waiting to do. */
+  private settling: ReturnType<typeof setTimeout> | undefined;
+
   constructor(private readonly element: SVGSVGElement, private readonly handlers: OverviewHandlers) {
     this.svg = select(element);
     this.svg.selectAll("*").remove();
@@ -165,6 +185,7 @@ export class OverviewCanvas {
       tracks: this.viewport.append("g"),
       cards: this.viewport.append("g"),
       rows: this.viewport.append("g"),
+      edges: this.viewport.append("g"),
       dots: this.viewport.append("g"),
     };
 
@@ -208,6 +229,7 @@ export class OverviewCanvas {
   }
 
   destroy(): void {
+    clearTimeout(this.settling);
     this.resize.disconnect();
     this.svg.on(".zoom", null).on("wheel.pan", null).on("click.clear", null);
     this.svg.selectAll("*").remove();
@@ -224,6 +246,7 @@ export class OverviewCanvas {
     this.drawRecord(layout, dress, moves);
     this.drawCards(layout.cards, dress, moves);
     this.drawRows(layout, dress, moves);
+    this.drawEdges(layout);
     this.drawDots(layout.dots, moves);
     if (first || this.fitted) {
       this.fit(!first);
@@ -367,8 +390,20 @@ export class OverviewCanvas {
       .attr("data-picked", (row) => (row.row.path === pickedRow ? "true" : null));
     this.layers.dots.selectAll<SVGGElement, PlacedDot>("g.dot")
       .attr("data-lit", (dot) => state(light?.dots.has(dot.id) === true));
-    this.layers.drops.selectAll<SVGGElement, PlacedDrop>("g.drop")
+    // A table's line is lit down to the last row lit on it, so it says how far the value goes rather than where the column ends.
+    const deepest = new Map<string, number>();
+    for (const dot of this.layout?.dots ?? []) {
+      if (light?.dots.has(dot.id) === true) {
+        deepest.set(dot.source, Math.max(deepest.get(dot.source) ?? 0, dot.y));
+      }
+    }
+
+    const drops = this.layers.drops.selectAll<SVGGElement, PlacedDrop>("g.drop")
       .attr("data-lit", (drop) => state(light?.cards.has(drop.source) === true));
+    drops.select("path.curve-lit").attr("display", (drop) => (deepest.has(drop.source) ? null : "none"));
+    drops.select("line.column-lit")
+      .attr("display", (drop) => (deepest.has(drop.source) ? null : "none"))
+      .attr("y2", (drop) => deepest.get(drop.source) ?? drop.from);
     this.layers.cards.selectAll<SVGGElement, PlacedCard>("g.card")
       .attr("data-lit", (card) => state(light?.cards.has(card.card.id) === true));
     this.layers.cards.selectAll<SVGGElement, PlacedField>("g.field")
@@ -379,14 +414,24 @@ export class OverviewCanvas {
   /** The handlers every part takes: pointing lights it, a click or Enter picks it. */
   private wire<E extends SVGElement, D>(parts: Selection<E, D, BaseType, unknown>, part: (datum: D) => OverviewPart): void {
     parts
-      .on("mouseenter", (_event, datum) => this.handlers.point(part(datum)))
-      .on("mouseleave", () => this.handlers.point(null))
+      .on("mouseenter", (_event, datum) => this.settle(() => this.handlers.point(part(datum)), 0))
+      .on("mouseleave", () => this.settle(() => this.handlers.point(null), LEAVE_MS))
       .on("focus", (_event, datum) => this.handlers.point(part(datum)))
       .on("blur", () => this.handlers.point(null))
       .on("click", (event: Event, datum) => {
         event.stopPropagation();
         this.handlers.pick(part(datum));
       });
+  }
+
+  /** Does what pointing means after `wait` ms, in place of whatever was waiting. */
+  private settle(act: () => void, wait: number): void {
+    clearTimeout(this.settling);
+    if (wait === 0) {
+      act();
+    } else {
+      this.settling = setTimeout(act, wait);
+    }
   }
 
   /** A tooltip on a part of the canvas, while the pointer is on it. */
@@ -407,9 +452,16 @@ export class OverviewCanvas {
     const entered = joined.enter().append("g").attr("class", `drop ${LIT_GROUP}`);
     entered.append("path").attr("class", "curve fill-none");
     entered.append("line").attr("class", "column");
+    entered.append("path").attr("class", "curve-lit fill-none stroke-primary").attr("stroke-width", 1.75).attr("display", "none");
+    entered.append("line").attr("class", "column-lit stroke-primary").attr("stroke-width", 1.75).attr("display", "none");
     joined.exit().remove();
     const all = entered.merge(joined);
     const kind = (drop: PlacedDrop) => this.kindOf(drop.source);
+    all.select<SVGPathElement>("path.curve-lit").attr("d", (drop) => drop.curve);
+    all.select<SVGLineElement>("line.column-lit")
+      .attr("x1", (drop) => drop.x)
+      .attr("x2", (drop) => drop.x)
+      .attr("y1", (drop) => drop.from);
     all.select<SVGPathElement>("path.curve")
       .attr("class", (drop) => `curve fill-none ${toneOf(kind(drop)).stroke}`)
       .attr("stroke-opacity", 0.4)
@@ -424,6 +476,62 @@ export class OverviewCanvas {
       .attr("y1", (drop) => drop.from)
       .transition().duration(moves)
       .attr("y2", (drop) => drop.to);
+  }
+
+  /**
+   * Every line a reader can point at, drawn again over everything but the dots, wider than it shows and with nothing to see: what
+   * lights a line is what lights the part it comes from, and a click picks that part, so a line works as its table or its field.
+   */
+  private drawEdges(layout: OutlineLayout): void {
+    const edges: PlacedEdge[] = [
+      ...layout.drops.flatMap((drop) => {
+        const card = layout.cards.find((candidate) => candidate.card.id === drop.source);
+        const tip = card === undefined
+          ? null
+          : { title: card.card.title, body: `${card.card.role}. Reaches ${card.card.readers} ${card.card.readers === 1 ? "property" : "properties"}.` };
+        const part: OverviewPart = { type: "card", source: drop.source };
+        return [
+          { id: `${drop.source}-curve`, d: drop.curve, part, tip },
+          { id: `${drop.source}-column`, d: `M${drop.x},${drop.from}V${drop.to}`, part, tip },
+        ];
+      }),
+      ...layout.wires.map((wire): PlacedEdge => ({
+        id: wire.id.replaceAll("\u0000", "-"),
+        d: wire.d,
+        part: wire.heavy || wire.field === ""
+          ? { type: "card", source: wire.source }
+          : { type: "field", source: wire.source, field: wire.field.slice(wire.field.indexOf("\u0000") + 1) },
+        tip: null,
+      })),
+    ];
+
+    const joined = this.layers.edges.selectAll<SVGPathElement, PlacedEdge>("path").data(edges, (edge) => edge.id);
+    joined.exit().remove();
+    const all = joined.enter().append("path")
+      .attr("fill", "none")
+      .attr("stroke", "transparent")
+      .attr("stroke-width", EDGE_HIT)
+      .attr("pointer-events", "stroke")
+      .attr("class", "cursor-pointer")
+      .attr("data-testid", (edge) => `mapping-overview-edge-${edge.id}`)
+      .merge(joined)
+      .attr("d", (edge) => edge.d);
+    all
+      .on("mouseenter", (event: MouseEvent, edge) => {
+        const { clientX: x, clientY: y } = event;
+        this.settle(() => {
+          this.handlers.point(edge.part);
+          this.handlers.tip(edge.tip === null ? null : { x, y, ...edge.tip });
+        }, SETTLE_MS);
+      })
+      .on("mouseleave", () => {
+        this.handlers.tip(null);
+        this.settle(() => this.handlers.point(null), LEAVE_MS);
+      })
+      .on("click", (event: MouseEvent, edge) => {
+        event.stopPropagation();
+        this.handlers.pick(edge.part);
+      });
   }
 
   private kindOf(source: string): string {

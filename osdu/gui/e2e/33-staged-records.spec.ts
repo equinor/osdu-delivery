@@ -67,6 +67,10 @@ test.describe.serial("a mapping's staged records and a dry run", () => {
     await expect(sheet.getByTestId("value-check-parameter-logSource-picked")).toHaveAttribute("data-value", /\S/, { timeout: 60_000 });
     const lines = sheet.getByTestId("staged-line");
     await expect(lines.first()).toBeVisible({ timeout: 60_000 });
+
+    // Each row and the record picked say whether it is only staged or the ledger already holds it.
+    await expect(lines.first().getByTestId("staged-line-ledger")).toBeVisible();
+    await expect(sheet.getByTestId("preview-ledger")).toBeVisible({ timeout: 60_000 });
     await expect(lines.first()).toHaveAttribute("data-outcome", "none");
     await expect(lines.first()).toHaveAttribute("aria-selected", "true");
     await expect(sheet.getByTestId("preview-document")).toContainText("work-product-component--WellLog", { timeout: 60_000 });

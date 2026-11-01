@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { deliveryApi, type DeliveryRecordPreview, type MappingOutline } from "../../../api/delivery";
+import { deliveryApi, type DeliveryPreviewLedgerRecord, type DeliveryRecordPreview, type MappingOutline } from "../../../api/delivery";
 import { flowScope, type ValueCheckSession } from "../useValueCheck";
 import { lineOfRow, type StagedLine } from "../dryRun";
 import { fieldId, valueAt } from "./outlineModel.ts";
@@ -77,6 +77,8 @@ export interface RecordValues {
   loading: boolean;
   problem: unknown;
   values: Map<string, string>;
+  /** The ledger's record of the row, null when it is only staged, undefined until it has been read. */
+  ledger: DeliveryPreviewLedgerRecord | null | undefined;
   /** Why a record cannot be shown; null when it can. */
   blocked: string | null;
 }
@@ -124,6 +126,7 @@ export function useRecordValues(outline: MappingOutline, session: ValueCheckSess
     loading: reading && (rows.isFetching || preview.isFetching),
     problem: rows.error ?? preview.error,
     values,
+    ledger: on && preview.data?.decision !== null && preview.data?.decision !== undefined ? preview.data.decision.ledger ?? null : undefined,
     blocked,
   };
 }

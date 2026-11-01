@@ -361,7 +361,7 @@ export function StagedRecordsTab({ session, view, yaml, shape }: {
         .filter((line) => text === "" || [line.sourceKey, line.label, line.file, line.result?.reason].some((value) => value?.toLowerCase().includes(text)));
     }
 
-    return (pages ?? []).flatMap((page) => page.rows).map((row) => lineOfRow(row, results));
+    return (pages ?? []).flatMap((page) => page.rows.map((row) => lineOfRow(row, results, page.ledgerRead === true)));
   }, [narrowing, run, view.typed, pages, results]);
 
   const total = narrowing !== null && run !== null ? run.outcomes[narrowing] : first?.total ?? null;

@@ -77,12 +77,12 @@ for them.
 | --- | --- |
 | Open or close a section | Click it. Up, Down, Left, Right and Enter do the same from the keyboard. **Open all** opens everything, and **Fold** goes back to where the page started. |
 | See the alternatives of a `$coalesce` as lines of their own | Click its chevron. Closed, its line says `first of 3` and passes through every table they read. |
-| Trace something | Point at it. Pointing at a property lights what enters it and the tables on its way, pointing at a column lights everywhere it goes, and pointing at a table lights everything that reads it. |
-| See how a property is filled | Click it. A panel slides in from the left with each step in plain words, its alternatives, its rules and the lines of the document that write it. A column or a table lists what it reaches. Escape or a click on the canvas closes it. |
+| Trace something | Point at it. Pointing at a property lights what enters it and the tables on its way, pointing at a column lights everywhere it goes, and pointing at a table lights everything that reads it, from the columns looked up in it to the properties they fill. A line counts as what it comes from, a line off the shelf as its table, and is lit down to the last row lit on it. |
+| See how a property is filled | Click it. A panel slides in from the left with each step in plain words, its alternatives, its rules and the lines of the document that write it. A column or a table, or a line from one, lists what it reaches. Escape or a click on the canvas closes it. |
 | Find a property or a column | Type in **Property or column**, which opens what holds the matches and lights them. |
 | See every property filled one way | Click **copied**, **changed**, **looked up**, **fixed** or **linked**, each with its count. |
 | Read the document beside the canvas | **YAML** opens the mapping as written, each line tied to the canvas: pointing at a line lights the property it writes, and a click picks it. |
-| Follow a real row through the mapping | **Show a record** previews a staged row of the flow picked in the toolbar and shows each column's value and each property's, a repeated property's from its first item. The arrows step through the rows. A `$coalesce`'s alternatives say which gave the value. Nothing is sent. |
+| Follow a real row through the mapping | **Show a record** previews a staged row of the flow picked in the toolbar and shows each column's value and each property's, a repeated property's from its first item. The arrows step through the rows. Beside the row, **staged** says no run has taken it into the ledger yet, or the status of its record says where it stands. A `$coalesce`'s alternatives say which gave the value. Nothing is sent. |
 | Move around | Drag to pan, scroll to move up and down, and hold Ctrl and scroll to zoom. |
 
 After a [dry run](dry-run.md), the properties it found broken carry a warning, on the section holding them while that is

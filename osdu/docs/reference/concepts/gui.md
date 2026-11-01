@@ -547,8 +547,8 @@ to Templates, its tooltip naming the template folder file the version was read f
 path holds it); and **Open in builder**.
 
 Under the heading is one toolbar: the three views, **Overview**, **Staged records** and **Properties**, then which rows are
-read, and **Dry run**. It picks a flow that renders with the mapping (each names its record table), its scope's values and how many rows. A
-required parameter with no default starts on its first option, the value its record table holds most, so the page opens on rows
+read, and **Dry run**. It picks its scope's values and how many rows, and which flow's rows are read only when several flows render
+with the mapping (each names its record table). A required parameter with no default starts on its first option, the value its record table holds most, so the page opens on rows
 rather than on a refusal: the field shows the value taken, another is a pick away, and a field emptied stays empty. Nothing is
 read of the rows until the values are known to do. A run's own form never fills a value in this way. Under the toolbar, when
 there is something to say, one line says the dry run is under way, why it failed, why the rows cannot be read, or whether the
@@ -562,7 +562,8 @@ rows can be delivered.
   Down step through them. After a [dry run](dry-run.md), **Ready**, **Worth a look**, **Held** and **Passed over** carry a count
   and narrow the list, each opening its first record. Its foot says how many rows are listed and of which table. Beside the list
   is one section, with one page at a time:
-  - **Render**: the record picked, the first the list holds until one is: what the next run would do with it and why, then its
+  - **Render**: the record picked, the first the list holds until one is: whether it is only staged or in the ledger, what the next
+    run would do with it and why, then its
     **Document**, what the **Schema service** says of it, **How it rendered**, how a **Delivery** would send it and its **Source
     rows**, as the flow's **Preview** shows them. Picking a row shows this page, from whichever page was open.
   - **Source YAML**: the mapping as written. With no flow to read rows from, the section opens here.

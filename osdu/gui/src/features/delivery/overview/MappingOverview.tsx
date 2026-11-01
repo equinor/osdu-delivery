@@ -11,6 +11,7 @@ import { usePersistentLayout } from "@/layout/workbench/usePersistentLayout";
 import { cn } from "@/lib/utils";
 import { deliveryApi, type DeliveryMappingDetail, type MappingDraftIssue, type MappingOutline, type MappingOutlineHow } from "../../../api/delivery";
 import { useActivePartition } from "../activePartition";
+import { LedgerStanding } from "../LedgerStanding";
 import { ProblemView } from "../TemplateSheet";
 import { flowScope, type ValueCheckSession } from "../useValueCheck";
 import { formatCount } from "../valueCheck";
@@ -348,8 +349,9 @@ function OverviewBody({ detail, outline, unfilled, issues, session, onProperties
           {record.on && record.lines !== null && record.lines.length > 0 && (
             <span className="flex items-center gap-0.5" data-testid="mapping-overview-record">
               <Button variant="ghost" size="icon-xs" aria-label="The record before" disabled={record.at === 0} onClick={() => record.step(-1)}><ChevronLeft /></Button>
-              <span className="max-w-52 truncate font-mono text-[12px]" title={record.line?.sourceKey}>{record.line?.label ?? record.line?.sourceKey}</span>
+              <span className="max-w-36 truncate font-mono text-[12px]" title={record.line?.label ?? record.line?.sourceKey}>{record.line?.label ?? record.line?.sourceKey}</span>
               <Button variant="ghost" size="icon-xs" aria-label="The record after" disabled={record.at >= record.lines.length - 1} onClick={() => record.step(1)}><ChevronRight /></Button>
+              {record.ledger !== undefined && <LedgerStanding ledger={record.ledger} compact />}
             </span>
           )}
           {record.loading && <Loader2 className="size-3.5 animate-spin text-muted-foreground" aria-label="Reading the record" />}

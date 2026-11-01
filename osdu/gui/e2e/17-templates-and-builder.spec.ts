@@ -456,6 +456,14 @@ test.describe.serial("templates and the mapping builder", () => {
     await curveUnit.click();
     await expect(overview.getByTestId("mapping-overview-alternative")).toHaveCount(3);
     await overview.getByTestId("mapping-overview-inspector-close").click();
+
+    // A line from a table on the shelf is that table: clicking it says what the table reaches. The search moved the view down
+    // to what it found, so the view goes back up to the shelf first.
+    await overview.getByTestId("mapping-overview-fit").click();
+    await overview.getByTestId("mapping-overview-edge-cache.UnitOfMeasure-curve").click();
+    await expect(overview.getByTestId("mapping-overview-readers")).toContainText("data.Curves[].CurveUnit");
+    await overview.getByTestId("mapping-overview-inspector-close").click();
+
     await overview.getByTestId("mapping-overview-toggle-yaml").click();
     await expect(overview.getByTestId("mapping-overview-yaml")).toContainText("documentType: mapping");
     await expect(overview.getByTestId("mapping-overview-row-data.Name")).toBeVisible();

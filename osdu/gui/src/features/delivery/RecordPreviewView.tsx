@@ -38,6 +38,7 @@ import { verdictIn } from "../../api/validation";
 import { AssertionFindingsView } from "./AssertionFindingsView";
 import { effectValueText, enrichOutcomeText, suppliesText } from "./enrichSteps";
 import { RecordStatusBadge } from "./DeliveryBadges";
+import { LedgerStanding } from "./LedgerStanding";
 import { Fact, FactGrid, NoFact } from "./Facts";
 import { IssueMessage } from "./IssueMessage";
 import { assertionHoldText, heldByAssertion, wouldHold } from "./previewHolds";
@@ -511,24 +512,7 @@ function PreviewVerdict({ preview, onShow, flat }: {
         {document?.targetId && (
           <IdChip label="osdu" value={document.targetId} display={<RecordName id={document.targetId} className="max-w-[260px]" />} testId="preview-target" copyTestId="copy-preview-target" />
         )}
-        <span className={cn("inline-flex items-center gap-1.5 text-[12px] text-muted-foreground", flat && ledger === null && "hidden")} data-testid="preview-ledger">
-          {ledger === null
-            ? "not in the ledger yet"
-            : (
-              <>
-                <RecordStatusBadge status={ledger.status} testId="preview-ledger-status" />
-                {/* Its version in OSDU is on the record's page; here, when it was delivered and whether it is this document. */}
-                {(ledger.lastDeliveredUtc || (ledger.sameDocument !== null && ledger.sameDocument !== undefined)) && (
-                  <span>
-                    {ledger.lastDeliveredUtc && <RelativeTime value={ledger.lastDeliveredUtc} />}
-                    {ledger.lastDeliveredUtc && ledger.sameDocument !== null && ledger.sameDocument !== undefined && ", "}
-                    {ledger.sameDocument === true && <span data-testid="preview-same">same as this render</span>}
-                    {ledger.sameDocument === false && <span data-testid="preview-differs">differs from this render</span>}
-                  </span>
-                )}
-              </>
-            )}
-        </span>
+        <LedgerStanding ledger={ledger} />
         {source.originFile && (
           <span className="inline-flex min-w-0 items-baseline gap-1 text-[12px] text-muted-foreground">
             from

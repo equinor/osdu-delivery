@@ -78,6 +78,16 @@ function pillsOf(flow: MappingOutlineFlow): { before: Pill[]; after: Pill[] } {
   return first < 0 ? { before: [], after: marked(0, flow.steps.length) } : { before: marked(0, first), after: marked(first, flow.steps.length) };
 }
 
+/** The properties a table reaches, or one field of it, in the order the document writes them. */
+export function readersOf(outline: MappingOutline, source: string, field: string | null): MappingOutlineNode[] {
+  return propertiesOf(outline.record).filter((node) => {
+    const flows = [...leavesOf(node).map((leaf) => leaf.flow)];
+    return flows.some((flow) => flow?.reads.some((read) => read.source === source && (field === null || read.field === field)) === true
+      || flow?.steps.some((step) => step.lookups.some((lookup) => lookup.source === source
+        && (field === null || lookup.field === field || lookup.matches.some((match) => match.field === field)))) === true);
+  });
+}
+
 /** The value nodes under a node, it included. */
 export function leavesOf(node: MappingOutlineNode): MappingOutlineNode[] {
   return node.children.length === 0 ? [node] : node.children.flatMap(leavesOf);
@@ -264,6 +274,8 @@ export interface OutlineCard {
   unread: { name: string; dataType: string | null }[];
   /** The repeater it feeds, for a child table. */
   repeater: string | null;
+  /** How many properties it reaches. */
+  readers: number;
 }
 
 export function fieldId(source: string, field: string): string {
@@ -379,6 +391,7 @@ export function cardsOf(
       folded: repeater !== undefined && !open.has(repeater.path),
       unread: (table?.columns ?? []).filter((column) => !known.has(column.name.toLowerCase())).map((column) => ({ name: column.name, dataType: column.dataType })),
       repeater: repeater?.path ?? null,
+      readers: readersOf(outline, source.id, null).length,
     };
   });
 }
@@ -502,6 +515,14 @@ export function ancestorsOf(rows: readonly OutlineRow[]): Map<string, string> {
   return parents;
 }
 
+/** What enters a row: the columns a value on its line starts from. */
+function lightReads(light: OutlineLight, row: OutlineRow): void {
+  for (const read of row.reads) {
+    light.fields.add(fieldId(read.source, read.field));
+    light.cards.add(read.source);
+  }
+}
+
 /** What makes the rows `paths` names: each with what enters it and the rows it opens under. */
 export function lightOfRows(rows: readonly OutlineRow[], paths: ReadonlySet<string>): OutlineLight {
   const ancestors = ancestorsOf(rows);
@@ -515,7 +536,10 @@ export function lightOfRows(rows: readonly OutlineRow[], paths: ReadonlySet<stri
   return light;
 }
 
-/** What a field reaches: every row it enters or is looked up for, with the tables its value is looked up in on the way. */
+/**
+ * What a field reaches: every row it enters or is looked up for. A column goes on through the tables its value is looked up in,
+ * and a field of one of those tables comes from the columns looked up in it, so either lights the whole way.
+ */
 export function lightOfField(rows: readonly OutlineRow[], source: string, field: string): OutlineLight {
   const ancestors = ancestorsOf(rows);
   const light = newLight();
@@ -534,6 +558,10 @@ export function lightOfField(rows: readonly OutlineRow[], source: string, field:
       light.rows.add(parent);
     }
 
+    if (looked.length > 0) {
+      lightReads(light, row);
+    }
+
     // A value entering a line goes through every table on it; a field read of one table goes on from there.
     for (const lookup of reads ? row.lookups : looked) {
       light.dots.add(dotId(row.path, lookup.source));
@@ -544,7 +572,7 @@ export function lightOfField(rows: readonly OutlineRow[], source: string, field:
   return light;
 }
 
-/** What a table reaches: every row reading anything of it. */
+/** What a table reaches: every row reading anything of it, the whole way, from the columns a value starts at to the property. */
 export function lightOfCard(rows: readonly OutlineRow[], source: string): OutlineLight {
   const ancestors = ancestorsOf(rows);
   const light = newLight();
@@ -565,8 +593,11 @@ export function lightOfCard(rows: readonly OutlineRow[], source: string): Outlin
       light.fields.add(fieldId(read.source, read.field));
     }
 
+    if (looked.length > 0) {
+      lightReads(light, row);
+    }
+
     for (const lookup of looked) {
-      light.dots.add(dotId(row.path, lookup.source));
       if (lookup.field !== null && lookup.field !== undefined) {
         light.fields.add(fieldId(lookup.source, lookup.field));
       }
@@ -574,6 +605,11 @@ export function lightOfCard(rows: readonly OutlineRow[], source: string): Outlin
       for (const match of lookup.matches) {
         light.fields.add(fieldId(lookup.source, match.field));
       }
+    }
+
+    for (const lookup of reads.length > 0 ? row.lookups : looked) {
+      light.dots.add(dotId(row.path, lookup.source));
+      light.cards.add(lookup.source);
     }
   }
 

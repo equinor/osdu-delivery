@@ -4,6 +4,7 @@ import type {
   DeliveryDryRunOutcome,
   DeliveryDryRunRecord,
   DeliverySchemaCrossMatch,
+  DeliveryRecordStatus,
   DeliveryStagedRow,
 } from "../../api/delivery";
 import { formatCount } from "./valueCheck";
@@ -63,10 +64,12 @@ export interface StagedLine {
   deletedUtc: string | null;
   children: Record<string, number>;
   result: DeliveryDryRunRecord | null;
+  /** The status of its record, null when it is only staged, and left out when the ledger was not read for it. */
+  ledger?: DeliveryRecordStatus | null;
 }
 
 /** The line of a row a page of staged rows listed, with what the dry run made of it. */
-export function lineOfRow(row: DeliveryStagedRow, results: ReadonlyMap<string, DeliveryDryRunRecord> | null): StagedLine {
+export function lineOfRow(row: DeliveryStagedRow, results: ReadonlyMap<string, DeliveryDryRunRecord> | null, ledgerRead = false): StagedLine {
   return {
     sourceKey: row.sourceKey,
     keyJson: row.complete ? row.keyJson : null,
@@ -76,6 +79,7 @@ export function lineOfRow(row: DeliveryStagedRow, results: ReadonlyMap<string, D
     deletedUtc: row.deletedUtc ?? null,
     children: row.children ?? {},
     result: results?.get(row.sourceKey) ?? null,
+    ...(ledgerRead ? { ledger: row.ledgerStatus ?? null } : {}),
   };
 }
 

@@ -4,6 +4,7 @@ using SqlFlow.Delivery.Engine.Checks;
 using SqlFlow.Delivery.Engine.Operations;
 using SqlFlow.Delivery.Engine.Worker;
 using SqlFlow.Delivery.Ledger;
+using SqlFlow.Delivery.Source;
 using Xunit;
 
 namespace SqlFlow.Delivery.Tests;
@@ -86,6 +87,25 @@ public sealed class DryRunLedgerTests : IDisposable
             Assert.NotNull(first.TargetId);
 
             Assert.Equal(before, await ledger.GetRecordAsync(runtime.Flow.Id, SampleEstate.Key(0)));
+        }
+    }
+
+    [Fact]
+    public async Task The_staged_rows_say_which_the_ledger_holds_and_which_are_only_staged()
+    {
+        var (runtime, _, tables) = await DeliveredAsync();
+        using (runtime)
+        {
+            // A row landed since the run: the table holds it, and no run has taken it into the ledger.
+            var landed = new Dictionary<string, object?>(tables.Records[0].Row, StringComparer.OrdinalIgnoreCase) { [runtime.Flow.Source.Record.Key[^1]] = "LOG-LANDED" };
+            tables.Add(new MemoryRecord { Row = landed, UpdatedUtc = Now });
+
+            var page = await StagedRowsOperation.ReadAsync(runtime.Context, runtime.Flow, runtime.Source, new StagedRowsQuery { Limit = 500 }, default);
+
+            Assert.True(page.LedgerRead);
+            Assert.Equal(SampleEstate.Logs().Count, page.Rows.Count(row => row.LedgerStatus == "delivered"));
+            Assert.Null(Assert.Single(page.Rows, row => row.KeyJson.Contains("LOG-LANDED", StringComparison.Ordinal)).LedgerStatus);
+            Assert.Equal(SampleEstate.Logs().Count + 1, page.Rows.Count);
         }
     }
 

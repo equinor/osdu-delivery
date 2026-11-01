@@ -5,7 +5,7 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import type { DeliverySourceTable, MappingOutline, MappingOutlineFlow, MappingOutlineNode } from "../src/api/mappingOutline.ts";
 import {
-  cardsOf, countsOf, defaultOpen, dotId, everyFolding, fieldId, lightOfField, lightOfRows, marksFor, nodeAtLine, opensTo, pathsOfHow, pathsOfSearch, propertiesOf, rowShowing, rowsOf,
+  cardsOf, countsOf, defaultOpen, dotId, everyFolding, fieldId, lightOfCard, lightOfField, lightOfRows, marksFor, nodeAtLine, opensTo, pathsOfHow, pathsOfSearch, propertiesOf, rowShowing, rowsOf,
   tableName, valueAt,
 } from "../src/features/delivery/overview/outlineModel.ts";
 import { fitText, fitValue, layoutOf, MEASURE } from "../src/features/delivery/overview/outlineLayout.ts";
@@ -151,6 +151,14 @@ describe("the tables", () => {
     assert.deepEqual(record.unread.map((column) => column.name), ["unused"]);
   });
 
+  it("say how many properties they reach, a $coalesce's alternatives counted as the one property", () => {
+    const [record, curves, parameters, units] = cards(new Set());
+    assert.equal(record.readers, 3);
+    assert.equal(curves.readers, 2);
+    assert.equal(parameters.readers, 1);
+    assert.equal(units.readers, 1);
+  });
+
   it("fold a child table with its repeater", () => {
     assert.equal(cards(new Set())[1].folded, true);
     assert.equal(cards(new Set(["data", "data.Curves"]))[1].folded, false);
@@ -188,6 +196,28 @@ describe("what lights", () => {
     assert.equal(light.dots.has(dotId("data.Unit", "cache.Units")), true);
     assert.equal(light.cards.has("cache.Units"), true);
     assert.equal(light.rows.has("data.Name"), false);
+  });
+
+  it("a table on the shelf lights the whole way: the columns looked up in it, the dot, and the property", () => {
+    const light = lightOfCard(rows, "cache.Units");
+    assert.equal(light.rows.has("data.Unit"), true);
+    assert.equal(light.dots.has(dotId("data.Unit", "cache.Units")), true);
+    assert.equal(light.fields.has(fieldId("dataset", "elev")), true);
+    assert.equal(light.cards.has("dataset"), true);
+    assert.equal(light.rows.has("data.Name"), false);
+  });
+
+  it("a field of a table on the shelf lights the columns looked up for it", () => {
+    const light = lightOfField(rows, "cache.Units", "code");
+    assert.equal(light.rows.has("data.Unit"), true);
+    assert.equal(light.fields.has(fieldId("dataset", "elev")), true);
+  });
+
+  it("a table on the left lights the tables its values are looked up in", () => {
+    const light = lightOfCard(rows, "dataset");
+    assert.equal(light.rows.has("data.Name"), true);
+    assert.equal(light.cards.has("cache.Units"), true);
+    assert.equal(light.dots.has(dotId("data.Unit", "cache.Units")), true);
   });
 
   it("a way of filling lights its properties and opens what holds them", () => {

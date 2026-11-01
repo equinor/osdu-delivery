@@ -48,25 +48,28 @@ export function ValueCheckControls({ session, rowsLabel = "How many rows to read
 
   return (
     <>
-      <Select value={session.flow === null ? undefined : flowKey(session.flow)} onValueChange={session.chooseFlow}>
-        <SelectTrigger
-          size="sm"
-          className="h-8 max-w-64 min-w-0 flex-[1_1_9rem] font-mono text-[12px]"
-          aria-label="The flow whose rows are read"
-          title={session.flow === null ? undefined : `Rows of ${flowLabel(session.flow)} (${session.flow.recordObject})`}
-          data-testid="value-check-flow"
-        >
-          <SelectValue placeholder="Pick a flow" />
-        </SelectTrigger>
-        <SelectContent>
-          {session.flows.map((flow) => (
-            <SelectItem key={flowKey(flow)} value={flowKey(flow)} className="font-mono text-[12px]">
-              {flowLabel(flow)}
-              <span className="ml-2 font-sans text-[11px] text-muted-foreground">{flow.recordObject}</span>
-            </SelectItem>
-          ))}
-        </SelectContent>
-      </Select>
+      {/* A mapping is read from the one table its flow names, so there is something to pick only when several flows render with it. */}
+      {session.flows.length > 1 && (
+        <Select value={session.flow === null ? undefined : flowKey(session.flow)} onValueChange={session.chooseFlow}>
+          <SelectTrigger
+            size="sm"
+            className="h-8 max-w-64 min-w-0 flex-[1_1_9rem] font-mono text-[12px]"
+            aria-label="The flow whose rows are read"
+            title={session.flow === null ? undefined : `Rows of ${flowLabel(session.flow)} (${session.flow.recordObject})`}
+            data-testid="value-check-flow"
+          >
+            <SelectValue placeholder="Pick a flow" />
+          </SelectTrigger>
+          <SelectContent>
+            {session.flows.map((flow) => (
+              <SelectItem key={flowKey(flow)} value={flowKey(flow)} className="font-mono text-[12px]">
+                {flowLabel(flow)}
+                <span className="ml-2 font-sans text-[11px] text-muted-foreground">{flow.recordObject}</span>
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      )}
       <RunParameterFields
         pipelineId={session.flow?.pipelineId ?? null}
         parameters={session.parameters}

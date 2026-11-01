@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import type { MappingOutline, MappingOutlineFlow, MappingOutlineNode, MappingOutlineStep } from "../../../api/delivery";
 import type { OverviewPart } from "./OverviewCanvas";
-import { cardsOf, fieldId, nodeAt, propertiesOf, type OutlineCard } from "./outlineModel.ts";
+import { cardsOf, fieldId, nodeAt, readersOf, type OutlineCard } from "./outlineModel.ts";
 
 /** A section of the panel: a quiet heading over what it holds. */
 function Section({ title, children }: { title: string; children: ReactNode }) {
@@ -166,15 +166,6 @@ function PropertyLink({ node, onPick }: { node: MappingOutlineNode; onPick: (par
   );
 }
 
-/** The properties a field reaches, in the order the document writes them. */
-function readersOf(outline: MappingOutline, source: string, field: string): MappingOutlineNode[] {
-  return propertiesOf(outline.record).filter((node) => {
-    const flows = [node.flow, ...node.children.map((child) => child.flow)];
-    return flows.some((flow) => flow?.reads.some((read) => read.source === source && read.field === field) === true
-      || flow?.steps.some((step) => step.lookups.some((lookup) => lookup.source === source && (lookup.field === field || lookup.matches.some((match) => match.field === field)))) === true);
-  });
-}
-
 function FieldPanel({ card, name, outline, value, onPick }: { card: OutlineCard; name: string; outline: MappingOutline; value: string | undefined; onPick: (part: OverviewPart) => void }) {
   const field = card.fields.find((candidate) => candidate.name === name);
   const readers = readersOf(outline, card.id, name);
@@ -200,10 +191,16 @@ function FieldPanel({ card, name, outline, value, onPick }: { card: OutlineCard;
   );
 }
 
-function CardPanel({ card, onPick }: { card: OutlineCard; onPick: (part: OverviewPart) => void }) {
+function CardPanel({ card, outline, onPick }: { card: OutlineCard; outline: MappingOutline; onPick: (part: OverviewPart) => void }) {
+  const readers = readersOf(outline, card.id, null);
   return (
     <>
       <p className="text-[12.5px] text-muted-foreground">{card.source.detail ?? card.role}</p>
+      {readers.length > 0 && (
+        <Section title={`Reaches ${readers.length} ${readers.length === 1 ? "property" : "properties"}`}>
+          <ul className="flex min-w-0 flex-col" data-testid="mapping-overview-readers">{readers.map((node) => <PropertyLink key={node.path} node={node} onPick={onPick} />)}</ul>
+        </Section>
+      )}
       <Section title={`Read by the mapping, ${card.fields.length}`}>
         <ul className="flex min-w-0 flex-col">
           {card.fields.map((field) => (
@@ -290,7 +287,7 @@ export function OverviewInspector({ part, outline, tables, cached, yaml, values,
           <div className="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto p-3">
             {node !== null && <RowPanel node={node} cards={cards} lines={lines} values={values} onPick={onPick} />}
             {part.type === "field" && card !== null && <FieldPanel card={card} name={part.field} outline={outline} value={values.get(fieldId(part.source, part.field))} onPick={onPick} />}
-            {part.type === "card" && card !== null && <CardPanel card={card} onPick={onPick} />}
+            {part.type === "card" && card !== null && <CardPanel card={card} outline={outline} onPick={onPick} />}
           </div>
         </>
       )}

@@ -3,6 +3,7 @@ import { Loader2 } from "lucide-react";
 import { SearchInput } from "@/components/SearchInput";
 import { cn } from "@/lib/utils";
 import { DRY_RUN_OUTCOMES, NOT_RUN, lineDetail, type StagedLine } from "./dryRun";
+import { RowStanding } from "./LedgerStanding";
 import { formatCount } from "./valueCheck";
 
 /** The height of a line: the list draws only the lines in view, so every one is the same. */
@@ -44,7 +45,10 @@ function Line({ line, top, picked, onPick }: { line: StagedLine; top: number; pi
           <span className="min-w-0 truncate font-mono text-[12px]">{name}</span>
           {line.row !== null && <span className="shrink-0 font-mono text-[10.5px] text-muted-foreground tabular-nums">{formatCount(line.row)}</span>}
         </span>
-        <span className="min-w-0 truncate text-[11.5px] text-muted-foreground">{detail}</span>
+        <span className="flex min-w-0 items-center justify-between gap-2">
+          <span className="min-w-0 truncate text-[11.5px] text-muted-foreground">{detail}</span>
+          <span className="shrink-0"><RowStanding status={line.ledger} /></span>
+        </span>
       </span>
     </button>
   );

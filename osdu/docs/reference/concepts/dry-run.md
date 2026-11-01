@@ -55,7 +55,8 @@ picks which on the page's toolbar.
 
 The list reads the record table a page at a time, 200 rows to a page, in the order a run reads them, and renders nothing. A
 row is named as the ledger would name its record, with the label the mapping gives it, the file and row it was landed from,
-and how many rows each child table holds of it. The flow's scope parameters narrow it as they narrow a run. A required
+how many rows each child table holds of it, and where it stands: **staged** while no run has taken it into the ledger, else
+the status of its record. The flow's scope parameters narrow it as they narrow a run. A required
 parameter with no default starts on its first option, the value the record table holds most, since a list only looks; the
 toolbar shows the value taken, and a run's own form never fills one in this way.
 
