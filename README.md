@@ -8,13 +8,44 @@
 
 Wells, logs, seismic, production data and more: delivered, kept in sync, and traceable record by record.
 
-[OSDU](https://osduforum.org/) is the open data platform of the energy industry: one place for wells, logs, seismic,
-production data and more, each stored as typed records behind a set of services. Getting data into it is hard. Every
-type of data has its own schema, its own codes and its own services, so most teams end up writing and maintaining a
-custom loader for each one.
+[OSDU](https://osduforum.org/) is the open data platform of the energy industry. Every type of data it holds has its own
+schema, its own codes and its own services, so most teams end up writing and maintaining a custom loader for each one.
+OSDU Delivery replaces those loaders with configuration, for data teams that have to load data into OSDU, keep it
+current, and answer for it.
 
-OSDU Delivery replaces those loaders with configuration. Everything a loader would otherwise read, look up or hard-code
-lives in three places, each known and versioned, and a mapping connects them:
+## Videos
+
+<table>
+<tr>
+<td width="50%" valign="top">
+<a href="https://www.youtube.com/watch?v=yffQyPOpJcA"><img src="https://img.youtube.com/vi/yffQyPOpJcA/maxresdefault.jpg" width="100%" alt="Stop building OSDU ingestion pipelines. Configure them instead."></a>
+<br><strong><a href="https://www.youtube.com/watch?v=yffQyPOpJcA">Stop building OSDU ingestion pipelines. Configure them instead.</a></strong> (3:42)
+<br>Start here: why hand-written pipelines stop scaling, and what configuring a delivery changes.
+</td>
+<td width="50%" valign="top">
+<a href="https://www.youtube.com/watch?v=vxYiGkvaSLs"><img src="https://img.youtube.com/vi/vxYiGkvaSLs/maxresdefault.jpg" width="100%" alt="How OSDU Delivery works"></a>
+<br><strong><a href="https://www.youtube.com/watch?v=vxYiGkvaSLs">How OSDU Delivery works</a></strong> (6:18)
+<br>The whole system, following one well log from file to OSDU. No coding or OSDU knowledge needed.
+</td>
+</tr>
+<tr>
+<td width="50%" valign="top">
+<a href="https://www.youtube.com/watch?v=k8XU0Boqh4w"><img src="https://img.youtube.com/vi/k8XU0Boqh4w/maxresdefault.jpg" width="100%" alt="Map curated data to OSDU with YAML"></a>
+<br><strong><a href="https://www.youtube.com/watch?v=k8XU0Boqh4w">Map curated data to OSDU with YAML</a></strong> (17:30)
+<br>Hands-on tutorial of the mapping language: lookups, expressions, business rules, and proving a mapping before anything is sent.
+</td>
+<td width="50%" valign="top">
+<a href="https://www.youtube.com/watch?v=QnOzD6ycfV8"><img src="https://img.youtube.com/vi/QnOzD6ycfV8/maxresdefault.jpg" width="100%" alt="Codebase walkthrough"></a>
+<br><strong><a href="https://www.youtube.com/watch?v=QnOzD6ycfV8">Codebase walkthrough</a></strong> (12:58)
+<br>For developers: one CSV row through the C# classes, the ledger's rules, and where a change belongs.
+</td>
+</tr>
+</table>
+
+## How it works
+
+Everything a loader would otherwise read, look up or hard-code lives in three places, each known and versioned, and a
+mapping connects them:
 
 ```text
      drop-off zone              template                 cache
@@ -31,34 +62,14 @@ lives in three places, each known and versioned, and a mapping connects them:
                                     +--> ledger: every record, every attempt, every change
 ```
 
-| | What it is | Why it makes configuration enough |
-| --- | --- | --- |
-| **Drop-off zone** | Where your source data arrives: files (CSV, JSON, Parquet) in a folder or storage location, or the tables of a source database, loaded into a table keyed by record. | Whatever system the data came from, the mapping reads it in one shape: columns of a row. |
-| **Template** | The OSDU schema of the type you deliver, kept as a file beside your mappings. | The mapping fills a known shape, and is checked against it before anything runs. |
-| **Cache** | What mappings look values up in: reference data captured from OSDU, lookup tables from files or databases, and small dictionaries. One per OSDU data partition, kept as versions. | Codes and units are translated, and references checked against what OSDU holds, without a line of lookup code. |
-
 With those three in place, a new type of data needs only a mapping: this column, translated through that lookup, fills
-that property of the schema. It is built for data teams that have to load data into OSDU, keep it current, and answer
-for it.
+that property of the schema.
 
-## Why it matters
-
-| Without OSDU Delivery | With OSDU Delivery |
-| --- | --- |
-| A custom loader for each type of data | A mapping for each type of data |
-| Source-specific reading code in every loader | One drop-off zone, one shape: rows of a table |
-| Lookup code against OSDU and other systems in every loader | One versioned cache that every mapping reads |
-| Code for each OSDU service: storage, files, the domain data stores | Every OSDU write path built in |
-| Retry and clean-up logic written by hand | Retries, resume and undo built in |
-| Full reloads, or home-made change tracking | Only what changed is sent, including after a mapping or reference data change |
-| "What did we send?" answered from logs, if at all | Every record traceable in a ledger |
-
-## How it works
-
-1. **Drop your data.** Put source files in the drop-off zone, or point a flow at a source database.
+1. **Drop your data.** Put source files (CSV, JSON, Parquet) in the drop-off zone, or point a flow at a source database.
 2. **Keep the template.** Pick the OSDU schema of the type you deliver, in the GUI or from the command line, and commit
    it beside your mappings. Nothing to write.
-3. **Fill the cache.** A cache flow captures what your mappings look up, and refreshes it on a schedule.
+3. **Fill the cache.** A cache flow captures what your mappings look up, into one versioned cache per OSDU data
+   partition, and refreshes it on a schedule.
 4. **Write the mapping.** A YAML file says how one row becomes one record. Write it by hand, build it in the GUI's
    mapping builder, or let an AI assistant draft it.
 5. **Deliver.** A delivery flow names the table, the mapping and the OSDU target. `plan` shows what would be sent,
@@ -89,22 +100,23 @@ record:
 This mapping is the only part that knows about well logs. Nothing in the engine does: given another template and
 mapping, it delivers wellbores, seismic, samples, production volumes or any other OSDU type.
 
-Between the source row and the record, a mapping can clean, translate, convert and compute.
-[Mapping transformations](osdu/docs/reference/flow/mapping-transformations.md) lists every function and modifier it
-supports, each with its result.
+A mapping can also clean, translate, convert and compute. The
+[tutorial](https://www.youtube.com/watch?v=k8XU0Boqh4w) shows how on one row, and
+[mapping transformations](osdu/docs/reference/flow/mapping-transformations.md) lists every function and modifier with
+its result.
 
 ## What you get
 
 - **Every OSDU write path.** The storage, file and dataset services; manifest and workflow ingestion; and the domain
   data stores (DDMSs) for wellbores, seismic, rock and fluid samples, well delivery, production and reservoir models
   ([coverage plan](docs/osdu-coverage-plan.md)).
-- **Stable ids.** The same source row always becomes the same OSDU record, so reruns never create duplicates.
+- **Safe to rerun.** The same source row always becomes the same OSDU record, so reruns never create duplicates, and
+  only what changed is sent, including after a mapping or reference data change. Retries, resume and undo are built in.
 - **Checked before sending.** Mappings are checked against their schema, legal tags are confirmed with OSDU, and each
   record can be validated before it goes out.
-- **Every record accounted for.** The ledger holds where each record came from (the source file and row), what shaped
-  it (the mapping, schema and reference data versions), every attempt with what OSDU answered, the id and version it
-  landed as, and every release, redelivery, removal and reversal with who did it and when. Nothing reaches OSDU without
-  going through it, and any record is found by its key, OSDU id or source file.
+- **Every record accounted for.** The [ledger](osdu/docs/reference/concepts/ledger.md) holds each record's source file
+  and row, what shaped it, every attempt, the id and version it landed as, and who did what to it and when. Nothing
+  reaches OSDU without going through it, and any record is found by its key, OSDU id or source file.
 - **After delivery.** Verify delivered records against OSDU, explore what OSDU holds live in the GUI, test it with data
   quality checks, reconcile records no one accounts for, retrieve records back into your own storage, and correct with
   removals, reversals and redeliveries, every action recorded.
@@ -169,8 +181,10 @@ in [osdu/specs](osdu/specs). Recent changes are in the [changelog](CHANGELOG.md)
 
 ## Contributing
 
-[CONTRIBUTING.md](CONTRIBUTING.md) sets up a development machine and runs the tests, [CLAUDE.md](CLAUDE.md) holds the
-project's working rules, and [osdu/README.md](osdu/README.md) is a map of the module's code. OSDU Delivery is built on
+[CONTRIBUTING.md](CONTRIBUTING.md) sets up a development machine and runs the tests, the
+[codebase walkthrough](https://www.youtube.com/watch?v=QnOzD6ycfV8) shows how the code is organized,
+[CLAUDE.md](CLAUDE.md) holds the project's working rules, and [osdu/README.md](osdu/README.md) is a map of the module's
+code. OSDU Delivery is built on
 [SQLFlow](https://github.com/TahirRiaz/SQLFlow), a metadata-driven pipeline engine kept in [sqlflow/](sqlflow/), which
 is why its command line is `sqlflow`.
 

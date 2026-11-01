@@ -2,6 +2,9 @@
 
 Thanks for your interest in contributing! This guide gets you productive quickly.
 
+New to the code? The [codebase walkthrough](https://www.youtube.com/watch?v=QnOzD6ycfV8) (12:58) follows one CSV row
+through the real classes, sets out the ledger's rules and the tables behind them, and shows where a change belongs.
+
 ## Prerequisites
 
 - [.NET 9 SDK](https://dotnet.microsoft.com/download)

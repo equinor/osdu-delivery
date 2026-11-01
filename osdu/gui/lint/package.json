@@ -6,11 +6,11 @@
   "description": "The OSDU Delivery GUI's lint toolchain and configuration. typescript-eslint parses through TypeScript's compiler API, which TypeScript 7 no longer publishes, so the linter runs on the latest TypeScript typescript-eslint supports, installed here apart from the TypeScript 7 the GUI is built and type-checked with.",
   "devDependencies": {
     "@eslint/js": "^10.0.1",
-    "eslint": "^10.12.0",
+    "eslint": "^10.13.0",
     "eslint-plugin-react-hooks": "^7.1.1",
     "eslint-plugin-react-refresh": "^0.5.7",
     "globals": "^17.13.0",
     "typescript": "~6.0.3",
-    "typescript-eslint": "^8.71.2"
+    "typescript-eslint": "^8.72.1"
   }
 }
