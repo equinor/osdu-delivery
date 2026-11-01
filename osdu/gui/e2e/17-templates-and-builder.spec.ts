@@ -450,7 +450,7 @@ test.describe.serial("templates and the mapping builder", () => {
     await expect(overview.getByTestId("mapping-overview-row-data.Curves[].CurveID")).toHaveCount(0);
 
     // A search opens what holds what it finds and brings it into view, however far down the mapping it is.
-    await overview.getByTestId("mapping-overview-search").fill("CurveUnit");
+    await detail.getByTestId("mapping-overview-search").fill("CurveUnit");
     const curveUnit = overview.getByTestId("mapping-overview-row-data.Curves[].CurveUnit");
     await expect(curveUnit).toBeInViewport();
     await curveUnit.click();
@@ -464,7 +464,7 @@ test.describe.serial("templates and the mapping builder", () => {
     await expect(overview.getByTestId("mapping-overview-readers")).toContainText("data.Curves[].CurveUnit");
     await overview.getByTestId("mapping-overview-inspector-close").click();
 
-    await overview.getByTestId("mapping-overview-toggle-yaml").click();
+    await detail.getByTestId("mapping-overview-toggle-yaml").click();
     await expect(overview.getByTestId("mapping-overview-yaml")).toContainText("documentType: mapping");
     await expect(overview.getByTestId("mapping-overview-row-data.Name")).toBeVisible();
 

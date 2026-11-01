@@ -60,6 +60,16 @@ test.describe.serial("a mapping's staged records and a dry run", () => {
     await expect(adminPage.getByTestId("nav-delivery-documents")).toHaveAttribute("aria-current", "page");
     const sheet = adminPage.getByTestId("delivery-mapping-detail");
 
+    // The overview reads the document, so which rows are read stays out of its toolbar until a record is shown: then the scope
+    // stands beside the record, which says where it stands.
+    await expect(sheet.getByTestId("value-check-rows")).toHaveCount(0);
+    await expect(sheet.getByTestId("value-check-parameter-logSource")).toHaveCount(0);
+    await sheet.getByTestId("mapping-overview-show-record").click();
+    const followed = sheet.getByTestId("mapping-overview-record");
+    await expect(followed.getByTestId("value-check-parameter-logSource-picked")).toHaveAttribute("data-value", /\S/, { timeout: 60_000 });
+    await expect(followed.getByTestId("preview-ledger")).toBeVisible({ timeout: 60_000 });
+    await sheet.getByTestId("mapping-overview-show-record").click();
+
     // The flow's scope needs its log source, which it declares required. The page starts on the value the table holds most,
     // so the tab opens on the rows and the first one's document, with no refusal on the way there.
     await sheet.getByTestId("delivery-mapping-tab-staged").click();

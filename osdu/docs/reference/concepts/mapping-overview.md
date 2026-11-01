@@ -82,8 +82,8 @@ for them.
 | Find a property or a column | Type in **Property or column**, which opens what holds the matches and lights them. |
 | See every property filled one way | Click **copied**, **changed**, **looked up**, **fixed** or **linked**, each with its count. |
 | Read the document beside the canvas | **YAML** opens the mapping as written, each line tied to the canvas: pointing at a line lights the property it writes, and a click picks it. |
-| Follow a real row through the mapping | **Show a record** previews a staged row of the flow picked in the toolbar and shows each column's value and each property's, a repeated property's from its first item. The arrows step through the rows. Beside the row, **staged** says no run has taken it into the ledger yet, or the status of its record says where it stands. A `$coalesce`'s alternatives say which gave the value. Nothing is sent. |
-| Move around | Drag to pan, scroll to move up and down, and hold Ctrl and scroll to zoom. |
+| Follow a real row through the mapping | **Show a record** previews a staged row of the flow picked in the toolbar and shows each column's value and each property's, a repeated property's from its first item. The sentence over the canvas gives way to the record, with the flow's scope beside it, and the arrows step through the rows. Beside the row, **staged** says no run has taken it into the ledger yet, or the status of its record says where it stands. A `$coalesce`'s alternatives say which gave the value. Nothing is sent. |
+| Move around | Drag to pan, scroll to move up and down, and hold Ctrl and scroll to zoom. The corner of the canvas holds zoom, fit, and **Open all**. |
 
 After a [dry run](dry-run.md), the properties it found broken carry a warning, on the section holding them while that is
 closed.

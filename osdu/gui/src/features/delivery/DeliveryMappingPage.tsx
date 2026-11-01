@@ -99,6 +99,7 @@ function MappingWorkspace({ detail }: { detail: DeliveryMappingDetail }) {
   const session = useValueCheckSession(mapping.id, mapping.reference);
   const staged = useStagedView(session);
   const [tab, setTab] = useState("overview");
+  const [tools, setTools] = useState<HTMLDivElement | null>(null);
   return (
     <ValueCheckContext.Provider value={session}>
       <WindowFrame testId="delivery-mapping-detail">
@@ -109,12 +110,15 @@ function MappingWorkspace({ detail }: { detail: DeliveryMappingDetail }) {
               <TabsTrigger value="staged" className="text-[13px]" data-testid="delivery-mapping-tab-staged">Staged records</TabsTrigger>
               <TabsTrigger value="coverage" className="text-[13px]" data-testid="delivery-mapping-tab-coverage">Properties</TabsTrigger>
             </TabsList>
-            <ValueCheckControls session={session} rowsLabel="How many rows a dry run reads" />
+            {/* The overview reads the document, so the toolbar is its own there, and which rows are read waits for a record to be shown. */}
+            {tab === "overview"
+              ? <div ref={setTools} className="flex min-w-0 flex-[1_1_20rem] items-center gap-2" data-testid="mapping-overview-tools" />
+              : <ValueCheckControls session={session} rowsLabel="How many rows a dry run reads" />}
             <DryRunButton session={session} />
           </div>
           <MappingStatus session={session} />
           <TabsContent value="overview" className="flex min-h-0 flex-col">
-            <MappingOverview detail={detail} session={session} onProperties={() => setTab("coverage")} />
+            <MappingOverview detail={detail} session={session} tools={tools} onProperties={() => setTab("coverage")} />
           </TabsContent>
           <TabsContent value="staged" className="flex min-h-0 flex-col">
             <StagedRecordsTab

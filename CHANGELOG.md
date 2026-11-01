@@ -645,6 +645,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   says ([Upgrading an estate](osdu/docs/reference/concepts/templates.md#upgrading-an-estate-that-saved-templates-in-the-database)).
 
 ### Fixed
+- A backfill reaches a child file flow dated from its file's name or path, on a schedule and on a flow with its descendants. Only
+  the first flow took the window, and a re-landed file keeps such a date, so the child's watermark skipped the slice and the backfill
+  stopped after the copy ([backfilling a whole source](sqlflow/docs/reference/guides/source-backfill.md)).
 - The Assertions page no longer marks a test unfit because it holds records to a mapping. The page never read the mapping its
   run reads, so each such test showed "was not read" beside its passing result ([assertion flows](osdu/docs/reference/flow/assertion.md)).
 - A number with more than about seven significant digits in a flow is compared as the document writes it. An unquoted decimal was

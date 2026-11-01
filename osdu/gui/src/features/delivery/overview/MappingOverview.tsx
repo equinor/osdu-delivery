@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { useQuery } from "@tanstack/react-query";
 import { ChevronLeft, ChevronRight, ChevronsDownUp, ChevronsUpDown, FileCode, Loader2, Maximize, Minus, OctagonAlert, Plus, Rows3, TriangleAlert } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -13,6 +14,7 @@ import { deliveryApi, type DeliveryMappingDetail, type MappingDraftIssue, type M
 import { useActivePartition } from "../activePartition";
 import { LedgerStanding } from "../LedgerStanding";
 import { ProblemView } from "../TemplateSheet";
+import { ValueCheckScope } from "../ValueCheckBar";
 import { flowScope, type ValueCheckSession } from "../useValueCheck";
 import { formatCount } from "../valueCheck";
 import { OverviewCanvas, type OverviewHandlers, type OverviewPart, type OverviewTip } from "./OverviewCanvas";
@@ -23,7 +25,7 @@ import {
   cardsOf, countsOf, defaultOpen, everyFolding, lightOfCard, lightOfField, lightOfRows, marksFor, nodeAt, nodeAtLine, opensTo, pathsOfHow, pathsOfSearch, rowShowing, rowsOf,
   type OutlineLight,
 } from "./outlineModel.ts";
-import { useRecordValues } from "./useRecordValues";
+import { useRecordValues, type RecordValues } from "./useRecordValues";
 
 const ABOUT = "Each line is one property of the record, read left to right: the table it starts from, what is done to it, and the property it fills. "
   + "A dot is where a line is looked up in a table on the shelf above. A dashed mark is a condition, and a hollow end an optional property. "
@@ -79,13 +81,35 @@ function CanvasTip({ tip }: { tip: OverviewTip }) {
   );
 }
 
+/** The record being followed through the mapping, in place of the sentence: which row, where it stands, and whose rows these are. */
+function RecordLine({ record, session }: { record: RecordValues; session: ValueCheckSession }) {
+  const { lines, line } = record;
+  const name = line?.label ?? line?.sourceKey;
+  return (
+    <div className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1" data-testid="mapping-overview-record">
+      {lines !== null && lines.length > 0 && (
+        <span className="flex min-w-0 items-center gap-0.5">
+          <Button variant="ghost" size="icon-xs" aria-label="The record before" disabled={record.at === 0} onClick={() => record.step(-1)}><ChevronLeft /></Button>
+          <span className="max-w-80 truncate font-mono text-[12px]" title={name}>{name}</span>
+          <Button variant="ghost" size="icon-xs" aria-label="The record after" disabled={record.at >= lines.length - 1} onClick={() => record.step(1)}><ChevronRight /></Button>
+        </span>
+      )}
+      {lines !== null && lines.length === 0 && <span className="text-muted-foreground" data-testid="mapping-overview-no-row">No row is staged in this scope.</span>}
+      {record.ledger !== undefined && <LedgerStanding ledger={record.ledger} />}
+      {record.loading && <Loader2 className="size-3.5 animate-spin text-muted-foreground" aria-label="Reading the record" />}
+      <ValueCheckScope session={session} />
+    </div>
+  );
+}
+
 /** The canvas and what surrounds it, for a mapping whose outline has been read. */
-function OverviewBody({ detail, outline, unfilled, issues, session, onProperties }: {
+function OverviewBody({ detail, outline, unfilled, issues, session, tools, onProperties }: {
   detail: DeliveryMappingDetail;
   outline: MappingOutline;
   unfilled: number | null;
   issues: MappingDraftIssue[];
   session: ValueCheckSession;
+  tools: HTMLElement | null;
   onProperties: () => void;
 }) {
   const { mapping, yaml } = detail;
@@ -316,16 +340,45 @@ function OverviewBody({ detail, outline, unfilled, issues, session, onProperties
         </p>
       ))}
 
-      <p className="flex min-w-0 items-center gap-1 text-[13px]" data-testid="mapping-overview-lead">
-        <span className="min-w-0 truncate"><Lead outline={outline} table={main?.subtitle === null || main === undefined ? null : main.title} repeats={repeats} /></span>
-        <ExplainMark title="How to read this" text={ABOUT} testId="mapping-overview-about" />
-      </p>
+      {tools !== null && createPortal(
+        <>
+          <SearchInput value={search} onChange={onSearch} placeholder="Property or column" label="Find a property or a column" className="w-52" testId="mapping-overview-search" />
+          <div className="ml-auto flex items-center gap-1">
+            <Button
+              size="sm"
+              variant={record.on ? "secondary" : "outline"}
+              aria-pressed={record.on}
+              disabled={flow === null}
+              title={flow === null ? record.blocked ?? undefined : "Follow one staged record through the mapping. Nothing is sent."}
+              onClick={record.toggle}
+              data-testid="mapping-overview-show-record"
+            >
+              <Rows3 />
+              Show a record
+            </Button>
+            <Button size="sm" variant={showYaml ? "secondary" : "outline"} aria-pressed={showYaml} onClick={() => setShowYaml((current) => !current)} data-testid="mapping-overview-toggle-yaml">
+              <FileCode />
+              YAML
+            </Button>
+          </div>
+        </>,
+        tools,
+      )}
 
-      <div className="flex shrink-0 flex-wrap items-center gap-x-3 gap-y-1.5" data-testid="mapping-overview-tools">
-        <SearchInput value={search} onChange={onSearch} placeholder="Property or column" label="Find a property or a column" className="w-44" testId="mapping-overview-search" />
-        <div className="flex flex-wrap items-center gap-1" role="group" aria-label="Light the properties filled one way" data-testid="mapping-overview-hows">
-          <span className="pr-1 font-mono text-[12px] tabular-nums text-muted-foreground" data-testid="mapping-overview-properties">
-            {found === null ? `${formatCount(counts.properties)} properties` : `${formatCount(found)} of ${formatCount(counts.properties)} found`}
+      <div className="flex shrink-0 flex-wrap items-center gap-x-6 gap-y-1 text-[13px]">
+        {record.on
+          ? <RecordLine record={record} session={session} />
+          : (
+            <p className="flex min-w-0 items-center gap-1" data-testid="mapping-overview-lead">
+              <span className="min-w-0 truncate"><Lead outline={outline} table={main?.subtitle === null || main === undefined ? null : main.title} repeats={repeats} /></span>
+              <ExplainMark title="How to read this" text={ABOUT} testId="mapping-overview-about" />
+            </p>
+          )}
+        <div className="ml-auto flex shrink-0 flex-wrap items-center gap-x-3 text-[12px] text-muted-foreground" role="group" aria-label="Light the properties filled one way" data-testid="mapping-overview-hows">
+          <span data-testid="mapping-overview-properties">
+            {found === null
+              ? <><span className="font-mono tabular-nums">{formatCount(counts.properties)}</span> properties</>
+              : <><span className="font-mono tabular-nums">{formatCount(found)}</span> of <span className="font-mono tabular-nums">{formatCount(counts.properties)}</span> found</>}
           </span>
           {HOWS.filter((item) => counts[item.count] > 0 || how === item.how).map((item) => (
             <button
@@ -335,57 +388,15 @@ function OverviewBody({ detail, outline, unfilled, issues, session, onProperties
               title={item.meaning}
               onClick={() => onHow(item.how)}
               className={cn(
-                "inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[11.5px] outline-none transition-colors hover:bg-accent/60 focus-visible:ring-2 focus-visible:ring-ring/50",
-                how === item.how && "border-primary/50 bg-accent",
+                "rounded-sm outline-none transition-colors hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/50",
+                how === item.how && "text-foreground underline decoration-primary decoration-2 underline-offset-4",
               )}
               data-testid={`mapping-overview-how-${item.how}`}
             >
-              {item.label}
               <span className="font-mono tabular-nums">{formatCount(counts[item.count])}</span>
+              {` ${item.label}`}
             </button>
           ))}
-        </div>
-        <div className="ml-auto flex items-center gap-1">
-          {record.on && record.lines !== null && record.lines.length > 0 && (
-            <span className="flex items-center gap-0.5" data-testid="mapping-overview-record">
-              <Button variant="ghost" size="icon-xs" aria-label="The record before" disabled={record.at === 0} onClick={() => record.step(-1)}><ChevronLeft /></Button>
-              <span className="max-w-36 truncate font-mono text-[12px]" title={record.line?.label ?? record.line?.sourceKey}>{record.line?.label ?? record.line?.sourceKey}</span>
-              <Button variant="ghost" size="icon-xs" aria-label="The record after" disabled={record.at >= record.lines.length - 1} onClick={() => record.step(1)}><ChevronRight /></Button>
-              {record.ledger !== undefined && <LedgerStanding ledger={record.ledger} compact />}
-            </span>
-          )}
-          {record.loading && <Loader2 className="size-3.5 animate-spin text-muted-foreground" aria-label="Reading the record" />}
-          <Button
-            size="sm"
-            variant={record.on ? "secondary" : "outline"}
-            aria-pressed={record.on}
-            disabled={record.blocked !== null}
-            title={record.blocked ?? "Follow one staged record through the mapping. Nothing is sent."}
-            onClick={record.toggle}
-            data-testid="mapping-overview-show-record"
-          >
-            <Rows3 />
-            Show a record
-          </Button>
-          <Button
-            size="icon-sm"
-            variant="outline"
-            aria-label={allOpen ? "Fold" : "Open all"}
-            title={allOpen ? "Fold" : "Open all"}
-            onClick={() => setOpen(allOpen ? defaultOpen(outline) : everyFolding(outline))}
-            data-testid="mapping-overview-open-all"
-          >
-            {allOpen ? <ChevronsDownUp /> : <ChevronsUpDown />}
-          </Button>
-          <Button size="sm" variant={showYaml ? "secondary" : "outline"} aria-pressed={showYaml} onClick={() => setShowYaml((current) => !current)} data-testid="mapping-overview-toggle-yaml">
-            <FileCode />
-            YAML
-          </Button>
-          <span className="ml-1 flex items-center gap-0.5" role="group" aria-label="Zoom">
-            <Button variant="ghost" size="icon-sm" aria-label="Zoom out" title="Zoom out" onClick={() => canvas.current?.zoomBy(0.8)} data-testid="mapping-overview-zoom-out"><Minus /></Button>
-            <Button variant="ghost" size="icon-sm" aria-label="Zoom in" title="Zoom in" onClick={() => canvas.current?.zoomBy(1.25)} data-testid="mapping-overview-zoom-in"><Plus /></Button>
-            <Button variant="ghost" size="icon-sm" aria-label="Fit to the window" title="Fit to the window" onClick={() => canvas.current?.fit(true)} data-testid="mapping-overview-fit"><Maximize /></Button>
-          </span>
         </div>
       </div>
       {record.problem !== null && <ProblemView error={record.problem} testId="mapping-overview-record-error" />}
@@ -407,6 +418,22 @@ function OverviewBody({ detail, outline, unfilled, issues, session, onProperties
                 onClose={() => setPicked(null)}
               />
               {tip !== null && <CanvasTip tip={tip} />}
+              <div className="absolute right-4 bottom-3 flex items-center gap-0.5 rounded-md border border-border bg-card p-0.5 shadow-xs" role="group" aria-label="The view">
+                <Button
+                  variant="ghost"
+                  size="icon-xs"
+                  aria-label={allOpen ? "Fold" : "Open all"}
+                  title={allOpen ? "Fold" : "Open all"}
+                  onClick={() => setOpen(allOpen ? defaultOpen(outline) : everyFolding(outline))}
+                  data-testid="mapping-overview-open-all"
+                >
+                  {allOpen ? <ChevronsDownUp /> : <ChevronsUpDown />}
+                </Button>
+                <span className="mx-0.5 h-4 w-px bg-border" aria-hidden />
+                <Button variant="ghost" size="icon-xs" aria-label="Zoom out" title="Zoom out" onClick={() => canvas.current?.zoomBy(0.8)} data-testid="mapping-overview-zoom-out"><Minus /></Button>
+                <Button variant="ghost" size="icon-xs" aria-label="Zoom in" title="Zoom in" onClick={() => canvas.current?.zoomBy(1.25)} data-testid="mapping-overview-zoom-in"><Plus /></Button>
+                <Button variant="ghost" size="icon-xs" aria-label="Fit to the window" title="Fit to the window" onClick={() => canvas.current?.fit(true)} data-testid="mapping-overview-fit"><Maximize /></Button>
+              </div>
             </div>
           </ResizablePanel>
           {showYaml && (
@@ -441,7 +468,13 @@ function OverviewBody({ detail, outline, unfilled, issues, session, onProperties
  * sections of the record, each section a click from what it holds, and is read from the document alone until a reader asks to
  * follow a record through it (osdu/docs/reference/concepts/mapping-overview.md).
  */
-export function MappingOverview({ detail, session, onProperties }: { detail: DeliveryMappingDetail; session: ValueCheckSession; onProperties: () => void }) {
+export function MappingOverview({ detail, session, tools, onProperties }: {
+  detail: DeliveryMappingDetail;
+  session: ValueCheckSession;
+  /** Where in the page's toolbar the overview's own controls go. */
+  tools: HTMLElement | null;
+  onProperties: () => void;
+}) {
   const { mapping, yaml } = detail;
   const outline = useQuery({
     queryKey: ["delivery", "mapping-outline", mapping.repoId, mapping.relativePath, mapping.contentHash],
@@ -470,5 +503,5 @@ export function MappingOverview({ detail, session, onProperties }: { detail: Del
     );
   }
 
-  return <OverviewBody key={mapping.contentHash} detail={detail} outline={read} unfilled={unfilled} issues={issues} session={session} onProperties={onProperties} />;
+  return <OverviewBody key={mapping.contentHash} detail={detail} outline={read} unfilled={unfilled} issues={issues} session={session} tools={tools} onProperties={onProperties} />;
 }

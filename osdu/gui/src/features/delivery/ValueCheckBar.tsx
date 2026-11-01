@@ -40,12 +40,8 @@ const COUNTED: readonly {
   { filter: "asserted", label: "Assertion failed", rows: (last) => assertionRows(last.rows).failed, apart: true },
 ];
 
-/** Which rows a check reads: the flow, the values of its scope, and how many. */
-export function ValueCheckControls({ session, rowsLabel = "How many rows to read" }: { session: ValueCheckSession; rowsLabel?: string }) {
-  if (session.flows.length === 0) {
-    return null;
-  }
-
+/** Whose rows are read: the flow, when there is a choice of one, and the values of its scope. */
+export function ValueCheckScope({ session }: { session: ValueCheckSession }) {
   return (
     <>
       {/* A mapping is read from the one table its flow names, so there is something to pick only when several flows render with it. */}
@@ -81,6 +77,19 @@ export function ValueCheckControls({ session, rowsLabel = "How many rows to read
         problems={session.parameterProblems}
         className="w-56 [&_input]:min-w-2"
       />
+    </>
+  );
+}
+
+/** Which rows a check reads: the flow, the values of its scope, and how many. */
+export function ValueCheckControls({ session, rowsLabel = "How many rows to read" }: { session: ValueCheckSession; rowsLabel?: string }) {
+  if (session.flows.length === 0) {
+    return null;
+  }
+
+  return (
+    <>
+      <ValueCheckScope session={session} />
       <Select value={String(session.maxRows)} onValueChange={(value) => session.setMaxRows(Number(value))}>
         <SelectTrigger size="sm" className="h-8 w-32 text-[12px]" aria-label={rowsLabel} data-testid="value-check-rows">
           <SelectValue />
