@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState, type KeyboardEvent } from "react";
+import { useCallback, useEffect, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
 import { Loader2 } from "lucide-react";
 import { SearchInput } from "@/components/SearchInput";
 import { cn } from "@/lib/utils";
@@ -6,7 +6,7 @@ import { DRY_RUN_OUTCOMES, NOT_RUN, lineDetail, type StagedLine } from "./dryRun
 import { formatCount } from "./valueCheck";
 
 /** The height of a line: the list draws only the lines in view, so every one is the same. */
-const LINE_HEIGHT = 52;
+const LINE_HEIGHT = 46;
 
 /** Lines drawn past the ones in view, so a quick scroll meets no blank. */
 const OVERSCAN = 8;
@@ -32,8 +32,8 @@ function Line({ line, top, picked, onPick }: { line: StagedLine; top: number; pi
       title={[line.label, line.sourceKey, line.file === null ? null : `${line.file}${line.row === null ? "" : `, row ${formatCount(line.row)}`}`].filter((part) => part !== null).join("\n")}
       style={{ top, height: LINE_HEIGHT }}
       className={cn(
-        "absolute inset-x-0 flex w-full min-w-0 items-start gap-2 border-b px-2.5 py-1.5 text-left outline-none transition-colors hover:bg-accent/50",
-        picked && "bg-accent hover:bg-accent",
+        "absolute inset-x-0 flex w-full min-w-0 items-start gap-2 border-b border-border/60 px-2.5 py-1.5 text-left outline-none transition-colors hover:bg-accent/50",
+        picked && "bg-accent shadow-[inset_2px_0_0_var(--primary)] hover:bg-accent",
       )}
       data-testid="staged-line"
       data-outcome={line.result?.outcome ?? "none"}
@@ -53,9 +53,10 @@ function Line({ line, top, picked, onPick }: { line: StagedLine; top: number; pi
 /**
  * The records of a list as a scrolling column, of any length: one fixed-height line for each, only those in view drawn, so a
  * list of thousands scrolls as a list of ten does, and the next page read as the scroll comes near the end of what is loaded.
- * Up and Down step through the records, which is how a reader goes through them.
+ * Up and Down step through the records, which is how a reader goes through them. It takes the height of its panel: the search
+ * and whatever narrows the list on top, the lines between, and at the foot how much is listed and of which table.
  */
-export function StagedRecordList({ lines, picked, onPick, search, onSearch, total, loading, hasMore, onMore, empty }: {
+export function StagedRecordList({ lines, picked, onPick, search, onSearch, total, loading, hasMore, onMore, empty, head, table }: {
   lines: readonly StagedLine[];
   picked: string | null;
   onPick: (line: StagedLine) => void;
@@ -68,6 +69,10 @@ export function StagedRecordList({ lines, picked, onPick, search, onSearch, tota
   onMore: () => void;
   /** What to say when no line is listed. */
   empty: string;
+  /** What sits under the search: what narrows the list, what to know about it. */
+  head?: ReactNode;
+  /** The table the rows are of, and its child tables; null until a page has said. */
+  table: { name: string; children: readonly string[] } | null;
 }) {
   const scroller = useRef<HTMLDivElement>(null);
   const [top, setTop] = useState(0);
@@ -120,9 +125,13 @@ export function StagedRecordList({ lines, picked, onPick, search, onSearch, tota
     reveal(index);
   };
 
+  const children = table === null || table.children.length === 0 ? "" : `, with ${table.children.join(", ")}`;
   return (
-    <div className="flex min-h-0 min-w-0 flex-col gap-1.5" data-testid="staged-list">
-      <SearchInput value={search} onChange={onSearch} placeholder="Search key, label or file" label="Search the staged records" className="sm:w-full" testId="staged-search" />
+    <div className="flex min-h-0 min-w-0 flex-1 flex-col" data-testid="staged-list">
+      <div className="flex shrink-0 flex-col gap-1.5 border-b p-2">
+        <SearchInput value={search} onChange={onSearch} placeholder="Search key, label or file" label="Search the staged records" className="sm:w-full" testId="staged-search" />
+        {head}
+      </div>
       <div
         ref={scroller}
         role="listbox"
@@ -130,7 +139,7 @@ export function StagedRecordList({ lines, picked, onPick, search, onSearch, tota
         tabIndex={0}
         onKeyDown={step}
         onScroll={(event) => setTop(event.currentTarget.scrollTop)}
-        className="relative min-h-0 flex-1 overflow-y-auto rounded-md border outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
+        className="relative min-h-0 flex-1 overflow-y-auto outline-none focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:ring-inset"
         data-testid="staged-lines"
       >
         {lines.length === 0
@@ -149,10 +158,17 @@ export function StagedRecordList({ lines, picked, onPick, search, onSearch, tota
             </div>
           )}
       </div>
-      <p className="flex items-center gap-1.5 text-[11.5px] text-muted-foreground" data-testid="staged-count">
-        {loading && <Loader2 className="size-3 animate-spin" />}
-        {total === null ? `${formatCount(lines.length)} listed` : `${formatCount(lines.length)} of ${formatCount(total)} listed`}
-      </p>
+      {(table !== null || lines.length > 0) && (
+        <p
+          className="flex shrink-0 items-center gap-1.5 border-t px-2.5 py-1 text-[11.5px] text-muted-foreground"
+          title={table === null ? undefined : `${table.name}${children}`}
+          data-testid="staged-count"
+        >
+          {loading && <Loader2 className="size-3.5 shrink-0 animate-spin" aria-hidden />}
+          <span className="shrink-0 font-mono tabular-nums">{total === null ? formatCount(lines.length) : `${formatCount(lines.length)} of ${formatCount(total)}`}</span>
+          {table !== null && <span className="min-w-0 truncate font-mono" data-testid="staged-table">{`${table.name}${children}`}</span>}
+        </p>
+      )}
     </div>
   );
 }

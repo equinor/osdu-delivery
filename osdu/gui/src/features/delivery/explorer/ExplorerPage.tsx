@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Layers, TableProperties, Telescope, Unplug } from "lucide-react";
@@ -14,7 +14,7 @@ import type { DeliveryOsduRead } from "../../../api/delivery";
 import { explorerApi, type ExplorerFieldInfo, type ExplorerFilter, type ExplorerSearchRequest, type ExplorerSort, type ExplorerTypes } from "../../../api/explorer";
 import { useActivePartition } from "../activePartition";
 import { useLinkedPartition } from "../useLinkedPartition";
-import { useWindowFit } from "../useWindowFit";
+import { WindowFrame } from "../WindowFrame";
 import { failureText } from "../answers";
 import { ElementQueryButton } from "./ExplorerElementQuery";
 import { ExplorerProblem } from "./ExplorerProblem";
@@ -39,22 +39,6 @@ import {
 /** The kind a dimension built here reads from the explorer's place: a kind, or every version of a type; null for a group or every type. */
 function buildKind(scope: ExplorerScope): string | null {
   return scope.level === "kind" || scope.level === "type" ? scopeKind(scope) ?? null : null;
-}
-
-/** The least height the explorer keeps, so a short window still shows a few rows. */
-const MIN_HEIGHT = 420;
-
-/** What stays under the explorer: the page's bottom padding and the workbench's status bar. */
-const BELOW = 46;
-
-/**
- * A frame as tall as the window leaves under where it starts, whatever it holds, so what is in it scrolls inside it and the
- * page does not. It fits itself when it mounts, and again when it is shown after being hidden.
- */
-function WindowFrame({ hidden = false, children, testId }: { hidden?: boolean; children: ReactNode; testId: string }) {
-  const frame = useRef<HTMLDivElement>(null);
-  useWindowFit(frame, BELOW, MIN_HEIGHT, undefined, "height");
-  return <div ref={frame} hidden={hidden} className="flex min-h-0 flex-col" data-testid={testId}>{children}</div>;
 }
 
 /**

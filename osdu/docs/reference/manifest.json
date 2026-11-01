@@ -9758,7 +9758,9 @@
         "osdu/src/SqlFlow.Delivery/Engine/Operations/StagedRowsOperation.cs",
         "osdu/src/SqlFlow.Delivery/Validation/ReferenceResolver.cs",
         "osdu/gui/src/features/delivery/StagedRecordsTab.tsx",
-        "osdu/gui/src/features/delivery/StagedRecordList.tsx"
+        "osdu/gui/src/features/delivery/StagedRecordList.tsx",
+        "osdu/gui/src/features/delivery/DeliveryMappingPage.tsx",
+        "osdu/gui/src/features/delivery/scopeDefaults.ts"
       ]
     },
     {

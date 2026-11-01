@@ -39,6 +39,7 @@ const DeliverySubmissionPage = lazyRoute("DeliverySubmissionPage", () => import(
 const DeliveryActivityPage = lazyRoute("DeliveryActivityPage", () => import("./features/delivery/DeliveryActivityPage"));
 const OrphanedLedgersPage = lazyRoute("OrphanedLedgersPage", () => import("./features/delivery/OrphanedLedgersPage"));
 const DeliveryDocumentsPage = lazyRoute("DeliveryDocumentsPage", () => import("./features/delivery/DeliveryDocumentsPage"));
+const DeliveryMappingPage = lazyRoute("DeliveryMappingPage", () => import("./features/delivery/DeliveryMappingPage"));
 const TemplatesPage = lazyRoute("TemplatesPage", () => import("./features/delivery/TemplatesPage"));
 const OrderPage = lazyRoute("OrderPage", () => import("./features/delivery/order/OrderPage"));
 const MappingBuilderPage = lazyRoute("MappingBuilderPage", () => import("./features/delivery/MappingBuilderPage"));
@@ -407,6 +408,7 @@ export const osduDeliveryModule: GuiModule = {
     { path: "/delivery/activity", component: DeliveryActivityPage },
     { path: "/delivery/ledgers/orphaned", component: OrphanedLedgersPage },
     { path: "/delivery/documents", component: DeliveryDocumentsPage },
+    { path: "/delivery/documents/:mappingId", component: DeliveryMappingPage },
     { path: "/delivery/templates", component: TemplatesPage },
     { path: "/delivery/order", component: OrderPage },
     { path: "/delivery/mappings/build", component: MappingBuilderPage },
@@ -497,7 +499,7 @@ export const osduDeliveryModule: GuiModule = {
       to: "/delivery/documents",
       icon: FileCode2,
       testId: "nav-delivery-documents",
-      description: "The mappings that turn source rows into OSDU records, as the last sync found them. Open one for its properties, YAML and record shape, or write a new one in the builder.",
+      description: "The mappings that turn source rows into OSDU records, as the last sync found them. Open one to see its staged records rendered and dry run them, or write a new one in the builder.",
       owns: ["/delivery/mappings/build"],
     },
     { label: "Templates", to: "/delivery/templates", icon: LayoutTemplate, testId: "nav-delivery-templates",
@@ -513,6 +515,7 @@ export const osduDeliveryModule: GuiModule = {
   ],
   detailTitles: [
     { pattern: /^\/delivery\/mappings\/build/, title: () => "Mapping builder" },
+    { pattern: /^\/delivery\/documents\/[^/]+/, title: () => "Mapping" },
     { pattern: /^\/delivery\/records\/[^/]+/, title: () => "Record" },
     { pattern: /^\/delivery\/submissions\/([^/]+)/, title: (match) => `Submission ${shortId(match[1])}` },
     { pattern: /^\/delivery\/assertions\/runs\/(\d+)/, title: (match) => `Report #${match[1]}` },

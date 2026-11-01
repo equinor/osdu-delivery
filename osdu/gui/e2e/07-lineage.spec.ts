@@ -127,7 +127,7 @@ test.describe.serial("lineage", () => {
     await row.getByTestId("search-open-graph").click();
 
     // The picker names the mapping and the file it is read from, and offers the node the partition's flows read. The
-    // jump opens the picker, not the mapping's sheet the row itself opens.
+    // jump opens the picker, not the mapping's page the row itself opens.
     const menu = adminPage.getByTestId("lineage-jump-menu");
     await expect(menu).toContainText(WELL_LOG_MAPPING);
     await expect(menu).toContainText(`${SOURCE}/mappings/`);

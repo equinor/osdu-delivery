@@ -14,6 +14,7 @@ import { CodeView } from "@/components/CodeView";
 import { DataTable, type Column } from "@/components/DataTable";
 import { ExplainMark, ExplainTip } from "@/components/ExplainTip";
 import { IdChip } from "@/components/IdChip";
+import { IconAction } from "@/components/IconAction";
 import { RelativeTime } from "@/components/RelativeTime";
 import { TruncatedText } from "@/components/TruncatedText";
 import { useScrollFit } from "@/hooks/useScrollFit";
@@ -446,7 +447,12 @@ function SchemaNote({ schemaCheck, outcome, problems }: { schemaCheck: NonNullab
  * should know before trusting it (rows passed over, the preflight's warnings, assertions that failed, references nothing
  * verified), each in a line with the whole on hover, and, when a delivery would hold the record, why, in full.
  */
-function PreviewVerdict({ preview, onShow }: { preview: DeliveryRecordPreview; onShow: (tab: PreviewTab) => void }) {
+function PreviewVerdict({ preview, onShow, flat }: {
+  preview: DeliveryRecordPreview;
+  onShow: (tab: PreviewTab) => void;
+  /** A band across the top of its panel, as tight as it can be, rather than a card of its own on a page. */
+  flat: boolean;
+}) {
   const source = preview.source!;
   const decision = preview.decision!;
   const document = preview.document ?? null;
@@ -461,45 +467,51 @@ function PreviewVerdict({ preview, onShow }: { preview: DeliveryRecordPreview; o
   const unverified = document?.unverified.length ?? 0;
   const schemaCheck = preview.schemaCheck ?? null;
   const serviceVerdict = verdictIn(schemaCheck?.verdict);
+  // The preview's flow is the flow's label, which names the interface already (flow/interface).
+  const download = () => downloadJson(fileNameOf("preview", preview.flow, source.sourceKey), preview);
+  const reason = (
+    <span className={cn("min-w-0", flat ? "text-[12px]" : "text-[13px]")} data-testid="preview-reason">
+      <TruncatedText text={decision.reason} maxWidth={flat ? 360 : 4000} title="Next run" className="text-muted-foreground" />
+    </span>
+  );
 
-  return (
-    <Card className="gap-2 rounded-lg px-4 py-3" data-testid="preview-header">
-      <div className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1.5">
+  const body = (
+    <>
+      <div className={cn("flex min-w-0 items-center gap-x-3 gap-y-1.5", !flat && "flex-wrap")}>
         <PreviewActionBadge decision={decision} />
-        <h2 className="min-w-0 truncate text-[15px] font-semibold" title={source.label ?? source.sourceKey} data-testid="preview-title">
+        <h2 className={cn("min-w-0 truncate font-semibold", flat ? "text-[13px]" : "text-[15px]")} title={source.label ?? source.sourceKey} data-testid="preview-title">
           {source.label ?? source.sourceKey}
         </h2>
-        <div className="ml-auto flex shrink-0 items-center gap-2">
+        <div className={cn("ml-auto flex shrink-0 items-center", flat ? "gap-1" : "gap-2")}>
           {recordLink !== null && (
-            <Button variant="outline" size="sm" asChild data-testid="preview-open-record">
+            <Button variant="outline" size={flat ? "xs" : "sm"} asChild data-testid="preview-open-record">
               <RouterLink to={recordLink}>
                 <ExternalLink />
                 Open record
               </RouterLink>
             </Button>
           )}
-          {/* The preview's flow is the flow's label, which names the interface already (flow/interface). */}
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => downloadJson(fileNameOf("preview", preview.flow, source.sourceKey), preview)}
-            data-testid="preview-download"
-          >
-            <Download />
-            Download JSON
-          </Button>
+          {flat
+            ? <IconAction label="Download JSON" icon={<Download />} onClick={download} data-testid="preview-download" />
+            : (
+              <Button variant="outline" size="sm" onClick={download} data-testid="preview-download">
+                <Download />
+                Download JSON
+              </Button>
+            )}
         </div>
       </div>
 
-      <span className="min-w-0 text-[13px]" data-testid="preview-reason">
-        <TruncatedText text={decision.reason} maxWidth={4000} title="Next run" className="text-muted-foreground" />
-      </span>
+      {!flat && reason}
 
-      <div className="flex min-w-0 flex-wrap items-center gap-x-4 gap-y-1.5 text-[12px] text-muted-foreground" data-testid="preview-facts">
+      {/* In a band the facts and the notices share one line: a chip of what would happen already says what a line of its own would. */}
+      <div className={cn(flat ? "flex min-w-0 flex-wrap items-center gap-x-4 gap-y-0.5" : "contents")}>
+      <div className={cn(flat ? "contents" : "flex min-w-0 flex-wrap items-center gap-x-4 gap-y-1.5", "text-[12px] text-muted-foreground")} data-testid="preview-facts">
+        {flat && reason}
         {document?.targetId && (
           <IdChip label="osdu" value={document.targetId} display={<RecordName id={document.targetId} className="max-w-[260px]" />} testId="preview-target" copyTestId="copy-preview-target" />
         )}
-        <span className="inline-flex items-center gap-1.5" data-testid="preview-ledger">
+        <span className={cn("inline-flex items-center gap-1.5 text-[12px] text-muted-foreground", flat && ledger === null && "hidden")} data-testid="preview-ledger">
           {ledger === null
             ? "not in the ledger yet"
             : (
@@ -518,17 +530,18 @@ function PreviewVerdict({ preview, onShow }: { preview: DeliveryRecordPreview; o
             )}
         </span>
         {source.originFile && (
-          <span className="inline-flex min-w-0 items-baseline gap-1">
+          <span className="inline-flex min-w-0 items-baseline gap-1 text-[12px] text-muted-foreground">
             from
             <TruncatedText text={source.originFile} mono maxWidth={260} />
             {source.originRow !== null && source.originRow !== undefined && <span>{`row ${source.originRow}`}</span>}
           </span>
         )}
-        <span data-testid="preview-asked">{pickedText(asked)}</span>
+        {/* A row picked from a list needs no telling how it was picked. */}
+        {!flat && <span data-testid="preview-asked">{pickedText(asked)}</span>}
       </div>
 
       {(asked.passedOver > 0 || preview.issues.length > 0 || quietFailures > 0 || unverified > 0 || schemaCheck !== null || (document === null && preview.noDocument)) && (
-        <div className="flex min-w-0 flex-wrap items-center gap-x-5 gap-y-1" data-testid="preview-notices">
+        <div className={cn(flat ? "contents" : "flex min-w-0 flex-wrap items-center gap-x-5 gap-y-1")} data-testid="preview-notices">
           {schemaCheck !== null && (
             <button type="button" className="inline-flex min-w-0 items-center gap-1.5 text-[12px] hover:underline" onClick={() => onShow("schema")} data-testid="preview-schema-note">
               <SchemaNote schemaCheck={schemaCheck} outcome={serviceVerdict?.outcome ?? null} problems={serviceVerdict?.problemCount ?? 0} />
@@ -569,9 +582,10 @@ function PreviewVerdict({ preview, onShow }: { preview: DeliveryRecordPreview; o
           )}
         </div>
       )}
+      </div>
 
       {document !== null && wouldHold(document) && (
-        <div className="border-t pt-2">
+        <div className={cn("border-t pt-2", flat && "max-h-28 overflow-y-auto pt-1.5")}>
           <FactGrid>
             <Fact label="Held for" wide testId="preview-holds">
               <HoldReasons document={document} testId="preview-hold-reasons" />
@@ -579,51 +593,79 @@ function PreviewVerdict({ preview, onShow }: { preview: DeliveryRecordPreview; o
           </FactGrid>
         </div>
       )}
-    </Card>
+    </>
   );
+
+  return flat
+    ? <div className="flex shrink-0 flex-col gap-1 border-b px-3 py-2" data-testid="preview-header">{body}</div>
+    : <Card className="gap-2 rounded-lg px-4 py-3" data-testid="preview-header">{body}</Card>;
 }
 
 /**
- * The record's document, filling the window under the verdict and scrolling in place: as the route sends it, or as the
- * mapping renders it where the route adds to it, with what the platform fills in when it is sent on hover.
+ * The record's document, scrolling in place: as the route sends it, or as the mapping renders it where the route adds to it,
+ * with what the platform fills in when it is sent on hover. On a page it fills the window under the verdict; in a panel (`fill`)
+ * it fills the panel, and which form is shown and how large it is sit in the code's own toolbar.
  */
-function DocumentPane({ document, form, onForm }: { document: DeliveryPreviewDocument; form: DocumentForm; onForm: (form: DocumentForm) => void }) {
+function DocumentPane({ document, form, onForm, fill }: { document: DeliveryPreviewDocument; form: DocumentForm; onForm: (form: DocumentForm) => void; fill: boolean }) {
   const fitted = useRef<HTMLDivElement>(null);
   useScrollFit(fitted, DOCUMENT_FIT_BELOW, DOCUMENT_FIT_MIN, undefined, "height");
   const shown = form === "sent" && document.sent ? document.sent : document.rendered ?? null;
+  const code = shown === null ? null : JSON.stringify(envelopeFirst(shown), null, 2);
+  const forms = (
+    <>
+      {document.sent
+        ? (
+          <ToggleGroup type="single" size="sm" variant="outline" value={form} onValueChange={(next) => { if (next === "sent" || next === "rendered") { onForm(next); } }} data-testid="preview-form">
+            <ToggleGroupItem value="sent" className={cn(fill && "h-6 text-[11.5px]")} data-testid="preview-form-sent">{fill ? "As sent" : "As the route sends it"}</ToggleGroupItem>
+            <ToggleGroupItem value="rendered" className={cn(fill && "h-6 text-[11.5px]")} data-testid="preview-form-rendered">{fill ? "As rendered" : "As the mapping renders it"}</ToggleGroupItem>
+          </ToggleGroup>
+        )
+        : <span>{fill ? "As rendered" : "As the mapping renders it, which the route sends as it is"}</span>}
+      {form === "sent" && document.sent && document.placeholders.length > 0 && (
+        <Notice
+          icon={Info}
+          tone="text-muted-foreground"
+          title="Values the platform gives when the record is sent"
+          text={document.placeholders.map((placeholder) => `${placeholder.path}: ${placeholder.standsFor}`).join("\n")}
+          testId="preview-placeholders"
+        >
+          {`${document.placeholders.length.toLocaleString()} ${document.placeholders.length === 1 ? "value" : "values"} given when it is sent`}
+        </Notice>
+      )}
+    </>
+  );
+  const size = (
+    <span className={cn("font-mono", !fill && "ml-auto")} title={`The hash of the rendered document, which the ledger compares to decide what is sent: ${document.metadataHash}`}>
+      {`${document.characters.toLocaleString()} characters`}
+      {document.cacheValues > 0 ? `, ${document.cacheValues.toLocaleString()} values from the cache` : ""}
+    </span>
+  );
+
+  if (fill) {
+    return document.omitted
+      ? <Alert data-testid="preview-document-omitted"><Info /><AlertDescription>{document.omitted}</AlertDescription></Alert>
+      : code !== null && (
+        <CodeView
+          value={code}
+          language="json"
+          fill
+          extraActions={<span className="mr-2 flex min-w-0 items-center gap-3 text-[11.5px] text-muted-foreground">{forms}{size}</span>}
+          data-testid="preview-document"
+        />
+      );
+  }
 
   return (
     <div className="flex flex-col gap-2">
       <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-[12px] text-muted-foreground">
-        {document.sent
-          ? (
-            <ToggleGroup type="single" size="sm" variant="outline" value={form} onValueChange={(next) => { if (next === "sent" || next === "rendered") { onForm(next); } }} data-testid="preview-form">
-              <ToggleGroupItem value="sent" data-testid="preview-form-sent">As the route sends it</ToggleGroupItem>
-              <ToggleGroupItem value="rendered" data-testid="preview-form-rendered">As the mapping renders it</ToggleGroupItem>
-            </ToggleGroup>
-          )
-          : <span>As the mapping renders it, which the route sends as it is</span>}
-        {form === "sent" && document.sent && document.placeholders.length > 0 && (
-          <Notice
-            icon={Info}
-            tone="text-muted-foreground"
-            title="Values the platform gives when the record is sent"
-            text={document.placeholders.map((placeholder) => `${placeholder.path}: ${placeholder.standsFor}`).join("\n")}
-            testId="preview-placeholders"
-          >
-            {`${document.placeholders.length.toLocaleString()} ${document.placeholders.length === 1 ? "value" : "values"} given when it is sent`}
-          </Notice>
-        )}
-        <span className="ml-auto font-mono" title={`The hash of the rendered document, which the ledger compares to decide what is sent: ${document.metadataHash}`}>
-          {`${document.characters.toLocaleString()} characters`}
-          {document.cacheValues > 0 ? `, ${document.cacheValues.toLocaleString()} values from the cache` : ""}
-        </span>
+        {forms}
+        {size}
       </div>
       {document.omitted
         ? <Alert data-testid="preview-document-omitted"><Info /><AlertDescription>{document.omitted}</AlertDescription></Alert>
-        : shown !== null && (
+        : code !== null && (
           <div ref={fitted} className="flex min-h-0 flex-col">
-            <CodeView value={JSON.stringify(envelopeFirst(shown), null, 2)} language="json" fill data-testid="preview-document" />
+            <CodeView value={code} language="json" fill data-testid="preview-document" />
           </div>
         )}
     </div>
@@ -766,9 +808,10 @@ function SourcePane({ preview }: { preview: DeliveryRecordPreview }) {
 /**
  * A record preview as the Preview tab shows it: the verdict first (what the next run would do with which record, and why),
  * then the record in its views: the document a delivery would send, what the Schema service says of it when that was asked,
- * how it was rendered, how it would be sent, and the rows it came from. A preview that found no row says why.
+ * how it was rendered, how it would be sent, and the rows it came from. A preview that found no row says why. With `fill` it
+ * takes the height of the panel it is in: the verdict a tight band across the top, and each view scrolling in place under it.
  */
-export function RecordPreviewView({ preview }: { preview: DeliveryRecordPreview }) {
+export function RecordPreviewView({ preview, fill = false }: { preview: DeliveryRecordPreview; fill?: boolean }) {
   const [tab, setTab] = useState<PreviewTab>("document");
   // Kept here rather than in the Document tab, which a switch to another tab unmounts, so the choice outlasts the switch.
   const [form, setForm] = useState<DocumentForm>("sent");
@@ -801,25 +844,33 @@ export function RecordPreviewView({ preview }: { preview: DeliveryRecordPreview 
   // A record that renders no document has nothing for the Document tab to show; its rows say why.
   const shown: PreviewTab = tab === "document" && document === null ? "source" : tab === "schema" && !preview.schemaCheck ? "document" : tab;
 
+  const trigger = fill ? "h-7 flex-none rounded-md px-2 text-[12px] focus-visible:border-transparent focus-visible:ring-0 focus-visible:outline-none" : undefined;
+  const pane = fill ? "min-h-0 overflow-y-auto p-3" : undefined;
   return (
-    <div className="flex flex-col gap-3" data-testid="preview-result">
-      <PreviewVerdict preview={preview} onShow={setTab} />
-      <Tabs value={shown} onValueChange={(next) => { const picked = PREVIEW_TABS.find((value) => value === next); if (picked !== undefined) { setTab(picked); } }}>
-        <TabsList data-testid="preview-tabs">
-          <TabsTrigger value="document" disabled={document === null} data-testid="preview-tab-document">Document</TabsTrigger>
-          {preview.schemaCheck && <TabsTrigger value="schema" data-testid="preview-tab-schema">Schema service</TabsTrigger>}
-          <TabsTrigger value="render" data-testid="preview-tab-render">Render</TabsTrigger>
-          <TabsTrigger value="delivery" data-testid="preview-tab-delivery">Delivery</TabsTrigger>
-          <TabsTrigger value="source" data-testid="preview-tab-source">Source</TabsTrigger>
-        </TabsList>
-        <TabsContent value="document">
+    <div className={cn("flex flex-col", fill ? "min-h-0 flex-1" : "gap-3")} data-testid="preview-result">
+      <PreviewVerdict preview={preview} onShow={setTab} flat={fill} />
+      <Tabs
+        value={shown}
+        onValueChange={(next) => { const picked = PREVIEW_TABS.find((value) => value === next); if (picked !== undefined) { setTab(picked); } }}
+        className={cn(fill && "min-h-0 flex-1 gap-0")}
+      >
+        <div className={cn(fill && "shrink-0 border-b px-2 py-1")}>
+          <TabsList className={cn(fill && "h-7 bg-transparent p-0")} data-testid="preview-tabs">
+            <TabsTrigger value="document" disabled={document === null} className={trigger} data-testid="preview-tab-document">Document</TabsTrigger>
+            {preview.schemaCheck && <TabsTrigger value="schema" className={trigger} data-testid="preview-tab-schema">Schema service</TabsTrigger>}
+            <TabsTrigger value="render" className={trigger} data-testid="preview-tab-render">How it rendered</TabsTrigger>
+            <TabsTrigger value="delivery" className={trigger} data-testid="preview-tab-delivery">Delivery</TabsTrigger>
+            <TabsTrigger value="source" className={trigger} data-testid="preview-tab-source">Source rows</TabsTrigger>
+          </TabsList>
+        </div>
+        <TabsContent value="document" className={cn(fill && "flex min-h-0 flex-col overflow-auto p-2")}>
           {/* Mounted afresh for another document, so it is fitted to the window again whatever the last one showed. */}
-          {document !== null && <DocumentPane key={document.metadataHash} document={document} form={form} onForm={setForm} />}
+          {document !== null && <DocumentPane key={document.metadataHash} document={document} form={form} onForm={setForm} fill={fill} />}
         </TabsContent>
-        {preview.schemaCheck && <TabsContent value="schema"><SchemaCheckPane check={preview.schemaCheck} /></TabsContent>}
-        <TabsContent value="render"><RenderPane preview={preview} /></TabsContent>
-        <TabsContent value="delivery"><DeliveryPane preview={preview} /></TabsContent>
-        <TabsContent value="source"><SourcePane preview={preview} /></TabsContent>
+        {preview.schemaCheck && <TabsContent value="schema" className={pane}><SchemaCheckPane check={preview.schemaCheck} /></TabsContent>}
+        <TabsContent value="render" className={pane}><RenderPane preview={preview} /></TabsContent>
+        <TabsContent value="delivery" className={pane}><DeliveryPane preview={preview} /></TabsContent>
+        <TabsContent value="source" className={pane}><SourcePane preview={preview} /></TabsContent>
       </Tabs>
     </div>
   );

@@ -148,6 +148,20 @@ export function verdictSentence(run: DeliveryDryRun): string {
   return `All ${counted} would be delivered as they are.`;
 }
 
+/** The glyph the first sentence of a dry run leads with: what the worst of the rows came to. */
+export function verdictVisual(run: DeliveryDryRun): DryRunVisual {
+  const { rows, held, attention, passedOver } = run.outcomes;
+  if (held > 0) {
+    return DRY_RUN_OUTCOMES.held;
+  }
+
+  if (attention > 0) {
+    return DRY_RUN_OUTCOMES.attention;
+  }
+
+  return rows === 0 || passedOver === rows ? DRY_RUN_OUTCOMES.passedOver : DRY_RUN_OUTCOMES.ready;
+}
+
 /** What the next run would do with the rows read, in a line; nothing for a count of none. */
 export function nextRunLine(run: DeliveryDryRun): string {
   const { create, update, unchanged, hold } = run.nextRun;

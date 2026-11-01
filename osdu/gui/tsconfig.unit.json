@@ -31,6 +31,8 @@
     "src/features/delivery/recordTarget.ts",
     "src/features/delivery/previewHolds.ts",
     "src/features/delivery/repositorySync.ts",
+    "src/features/delivery/scopeDefaults.ts",
+    "src/features/delivery/mappingSearch.ts",
     "../../sqlflow/gui/src/lib/time.ts"
   ]
 }

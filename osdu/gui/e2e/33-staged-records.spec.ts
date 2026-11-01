@@ -2,9 +2,10 @@ import { E2E } from "../playwright.config";
 import { LOG_SOURCE } from "./global-setup";
 import { expect, test } from "./helpers";
 
-// A mapping's staged records, before anything is delivered. The sheet opens on the rows of a flow that renders with the
-// mapping, any one of them a click from its document, and a dry run takes them through everything a delivery does short of
-// sending them, holding each document to the template and to the partition's Schema service.
+// A mapping's staged records, before anything is delivered. A mapping is found by a search and opens on a page of its own, on
+// the rows of a flow that renders with it and the first one's document, any other a click away, and a dry run takes them
+// through everything a delivery does short of sending them, holding each document to the template and to the partition's
+// Schema service.
 //
 // Nothing here reaches an OSDU, and nothing is delivered: the flows reach the e2e stand-in, which holds a schema of the kind
 // for as long as the spec runs.
@@ -47,26 +48,61 @@ test.describe.serial("a mapping's staged records and a dry run", () => {
     await adminPage.getByTestId("nav-delivery-documents").click();
     const row = adminPage.getByTestId("delivery-mappings-table").getByTestId("table-row").filter({ hasText: "WellLog@1.4.0" }).first();
     await expect(row).toBeVisible({ timeout: 30_000 });
-    await row.click();
+
+    // A search finds it by what its row shows, the field has the cursor, and Enter opens the first row: a page, not a sheet.
+    await expect(adminPage.getByTestId("delivery-documents-search")).toBeFocused();
+    await adminPage.keyboard.type("welllog 1.4");
+    await expect(adminPage.getByTestId("delivery-mappings-table").getByTestId("table-row").first()).toContainText("WellLog@1.4.0");
+    await adminPage.keyboard.press("Enter");
+    await expect(adminPage.getByTestId("page-delivery-mapping")).toBeVisible({ timeout: 30_000 });
+    await expect(adminPage).toHaveURL(/\/delivery\/documents\/[^/]+$/);
+    await expect(adminPage.getByTestId("delivery-mapping-name")).toHaveText("WellLog@1.4.0");
+    await expect(adminPage.getByTestId("nav-delivery-documents")).toHaveAttribute("aria-current", "page");
     const sheet = adminPage.getByTestId("delivery-mapping-detail");
 
-    // The flow's scope needs its log source, which it declares required: without it there are no rows to list.
+    // The flow's scope needs its log source, which it declares required. The page starts on the value the table holds most,
+    // so it opens on the rows and the first one's document, with no refusal on the way there.
     await expect(sheet.getByTestId("staged-records")).toBeVisible({ timeout: 30_000 });
-    await expect(sheet.getByTestId("staged-blocked")).toBeVisible({ timeout: 30_000 });
-    await expect(sheet.getByTestId("value-check-all")).toBeDisabled();
-    await sheet.getByTestId("value-check-parameter-logSource").fill(LOG_SOURCE);
-    await sheet.getByTestId("value-check-parameter-logSource").press("Escape");
-
-    // The rows, with nothing rendered yet.
+    await expect(sheet.getByTestId("value-check-parameter-logSource-picked")).toHaveAttribute("data-value", /\S/, { timeout: 60_000 });
     const lines = sheet.getByTestId("staged-line");
     await expect(lines.first()).toBeVisible({ timeout: 60_000 });
-    await expect(sheet.getByTestId("staged-intro")).toBeVisible();
     await expect(lines.first()).toHaveAttribute("data-outcome", "none");
-
-    // A row is a click from its document, with what the Schema service says of it.
-    await lines.first().click();
+    await expect(lines.first()).toHaveAttribute("aria-selected", "true");
     await expect(sheet.getByTestId("preview-document")).toContainText("work-product-component--WellLog", { timeout: 60_000 });
+    await expect(sheet.getByTestId("staged-rows-error")).toHaveCount(0);
     await expect(sheet.getByTestId("preview-schema-note")).toBeVisible();
+
+    // A field emptied stays empty: the reader is told why there are no rows, and the mapping as written is still there to read.
+    await sheet.getByTestId("value-check-parameter-logSource").press("Backspace");
+    await expect(sheet.getByTestId("staged-blocked")).toBeVisible({ timeout: 30_000 });
+    await expect(sheet.getByTestId("value-check-all")).toBeDisabled();
+    await expect(sheet.getByTestId("staged-rows-error")).toHaveCount(0);
+    await sheet.getByTestId("value-check-parameter-logSource").fill(LOG_SOURCE);
+    await sheet.getByTestId("value-check-parameter-logSource").press("Escape");
+    await expect(lines.first()).toBeVisible({ timeout: 60_000 });
+
+    // The mapping as written and the shape it gives a record are pages of the same section as the record.
+    await sheet.getByTestId("delivery-mapping-tab-yaml").click();
+    // The editor draws only the lines in view, so the check reads the header comment the sample opens on.
+    await expect(sheet.getByTestId("delivery-mapping-yaml")).toContainText("well database logs into the WellLog", { timeout: 30_000 });
+    await sheet.getByTestId("delivery-mapping-tab-shape").click();
+    await expect(sheet.getByTestId("delivery-mapping-shape-json")).toContainText("delivery key", { timeout: 30_000 });
+
+    // Picking a record shows it, from whichever page the reader was on.
+    await lines.nth(1).click();
+    await expect(sheet.getByTestId("preview-document")).toContainText("work-product-component--WellLog", { timeout: 60_000 });
+    await expect(lines.nth(1)).toHaveAttribute("aria-selected", "true");
+
+    // The handle between the records and the code gives either more room, and the width is kept.
+    const handle = sheet.locator("[data-slot=resizable-handle]").first();
+    const before = (await handle.boundingBox())!;
+    await adminPage.mouse.move(before.x + 1, before.y + before.height / 2);
+    await adminPage.mouse.down();
+    await adminPage.mouse.move(before.x - 60, before.y + before.height / 2, { steps: 6 });
+    await adminPage.mouse.up();
+    await expect.poll(async () => Math.round((await handle.boundingBox())!.x)).toBeLessThan(Math.round(before.x) - 30);
+    await expect.poll(() => adminPage.evaluate(() => localStorage.getItem("sqlflow.delivery.mapping.records.layout"))).toContain("staged-list");
+
     await sheet.getByTestId("preview-tab-schema").click();
     await expect(sheet.getByTestId("schema-check")).toBeVisible();
 
@@ -83,7 +119,6 @@ test.describe.serial("a mapping's staged records and a dry run", () => {
     await expect(lines.first()).not.toHaveAttribute("data-outcome", "none");
 
     // The sample's names break the rule only the service's schema states, which the template knows nothing of.
-    await sheet.getByTestId("staged-record-back").click();
     await expect(sheet.getByTestId("dry-run-schema")).toHaveAttribute("data-state-name", "differs");
     await expect(sheet.getByTestId("dry-run-differences")).toBeVisible();
     await expect(sheet.getByTestId("dry-run-rules")).toContainText("data.Name");
@@ -92,6 +127,7 @@ test.describe.serial("a mapping's staged records and a dry run", () => {
     await sheet.getByTestId("dry-run-outcome-attention").click();
     await expect(lines.first()).toHaveAttribute("data-outcome", "attention");
     await sheet.getByTestId("dry-run-outcome-attention").click();
+    await sheet.getByTestId("delivery-mapping-tab-findings").click();
     await sheet.getByTestId("dry-run-rule-example").first().click();
     await expect(sheet.getByTestId("preview-result")).toBeVisible({ timeout: 60_000 });
 
@@ -100,5 +136,14 @@ test.describe.serial("a mapping's staged records and a dry run", () => {
     await expect(sheet.getByTestId("value-check-summary")).toBeVisible({ timeout: 30_000 });
     await sheet.getByTestId("delivery-mapping-tab-staged").click();
     await expect(sheet.getByTestId("dry-run-verdict")).toBeVisible();
+
+    // The page is its address: a reload lands on it again, another mapping is a pick away, and the way back is the list.
+    await adminPage.reload();
+    await expect(adminPage.getByTestId("delivery-mapping-name")).toHaveText("WellLog@1.4.0", { timeout: 30_000 });
+    await adminPage.getByTestId("delivery-mapping-picker").click();
+    await expect(adminPage.getByTestId("delivery-mapping-picker-option").first()).toBeVisible({ timeout: 30_000 });
+    await adminPage.keyboard.press("Escape");
+    await adminPage.getByTestId("delivery-mapping-back").click();
+    await expect(adminPage.getByTestId("page-delivery-documents")).toBeVisible({ timeout: 30_000 });
   });
 });

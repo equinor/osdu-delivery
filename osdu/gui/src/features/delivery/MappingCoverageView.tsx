@@ -25,8 +25,8 @@ interface MappingCoverageViewProps {
 }
 
 /**
- * The template a mapping pins with the mapping laid over it: the data check on one line, then the record's tree beside
- * the selected attribute. The tree opens on what the mapping fills and what a check names, and marks a row only where
+ * The template a mapping pins with the mapping laid over it: what a dry run found by attribute on one line, then the record's
+ * tree beside the selected attribute. The tree opens on what the mapping fills and what a check names, and marks a row only where
  * something asks for attention, so the few that need a look are the ones that stand out. Nothing is rendered and no
  * cache is read; this is the document against the schema alone, until a data check renders the rows of a flow that
  * uses the mapping and says, attribute by attribute, which rows will not give it the value its template expects.
@@ -73,7 +73,7 @@ export function MappingCoverageView({ yaml, path, contentHash, repoId, templateP
           <TriangleAlert className="mt-0.5 size-3.5 shrink-0" />
           <span>
             The tree shows what the mapping fills, but not the entry filling each property:{" "}
-            {parsed.data?.issues.map((issue) => issue.message).join(" ")} The YAML tab has the document as written.
+            {parsed.data?.issues.map((issue) => issue.message).join(" ")} Source YAML, under Staged records, has the document as written.
           </span>
         </p>
       )}

@@ -1,12 +1,10 @@
 import { CircleAlert, Info, Loader2, ScanSearch } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Card } from "@/components/ui/card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { cn } from "@/lib/utils";
 import { GlyphRef } from "@/components/GlyphRef";
 import { RelativeTime } from "@/components/RelativeTime";
 import { RichTooltip } from "@/components/RichTooltip";
-import { ProblemView } from "./TemplateSheet";
 import { RunParameterFields } from "@/features/runs/RunParameterFields";
 import { splitPath } from "./templateFormat";
 import { type FailingFilter, type ValueCheckSession } from "./useValueCheck";
@@ -17,12 +15,12 @@ const HOW_IT_WORKS = [
   "delivery does short of sending them: the same columns, expressions, lookups, cache and searches. Every value written is",
   "held to what the template says of its attribute (type, format, pattern, allowed values, lengths, ranges, what a reference",
   "may point to), every document to the partition's Schema service as well, and where the mapping states assertions",
-  "($assert), each value they judge is held to them. The Staged records tab says what became of each record.",
-  "\n\nThe answer counts the rows held (not delivered), the rows writing a value the template does not accept, and the",
-  "rows leaving an attribute out; apart from them, the rows failing an assertion, and how many of those a failure would",
-  "hold before they are sent. Pick one of them to narrow the tree to the attributes behind it; select an attribute",
-  "and open its Data tab for the reasons and the values behind them, or its Failing records tab to go through the rows",
-  "one at a time: what is wrong, what the source holds, and what it rendered to. Nothing is written anywhere.",
+  "($assert), each value they judge is held to them. Staged records says what became of each record.",
+  "\n\nProperties says the same attribute by attribute: the rows held (not delivered), the rows writing a value the template",
+  "does not accept, and the rows leaving an attribute out; apart from them, the rows failing an assertion, and how many of",
+  "those a failure would hold before they are sent. Pick one of them to narrow the tree to the attributes behind it; select",
+  "an attribute and open its Data tab for the reasons and the values behind them, or its Failing records tab to go through",
+  "the rows one at a time: what is wrong, what the source holds, and what it rendered to. Nothing is written anywhere.",
 ].join(" ");
 
 /**
@@ -53,7 +51,7 @@ export function ValueCheckControls({ session, rowsLabel = "How many rows to read
       <Select value={session.flow === null ? undefined : flowKey(session.flow)} onValueChange={session.chooseFlow}>
         <SelectTrigger
           size="sm"
-          className="h-8 max-w-72 font-mono text-[12px]"
+          className="h-8 max-w-64 min-w-0 flex-[1_1_9rem] font-mono text-[12px]"
           aria-label="The flow whose rows are read"
           title={session.flow === null ? undefined : `Rows of ${flowLabel(session.flow)} (${session.flow.recordObject})`}
           data-testid="value-check-flow"
@@ -78,10 +76,10 @@ export function ValueCheckControls({ session, rowsLabel = "How many rows to read
         prefix="value-check"
         layout="inline"
         problems={session.parameterProblems}
-        className="w-64"
+        className="w-56 [&_input]:min-w-2"
       />
       <Select value={String(session.maxRows)} onValueChange={(value) => session.setMaxRows(Number(value))}>
-        <SelectTrigger size="sm" className="h-8 w-36 text-[12px]" aria-label={rowsLabel} data-testid="value-check-rows">
+        <SelectTrigger size="sm" className="h-8 w-32 text-[12px]" aria-label={rowsLabel} data-testid="value-check-rows">
           <SelectValue />
         </SelectTrigger>
         <SelectContent>
@@ -94,92 +92,43 @@ export function ValueCheckControls({ session, rowsLabel = "How many rows to read
   );
 }
 
-/** The one button that takes the rows picked through everything a delivery does short of sending them; both tabs show what it finds. */
+/** The one button that takes the rows picked through everything a delivery does short of sending them, with what that means on hover beside it. */
 export function DryRunButton({ session }: { session: ValueCheckSession }) {
   return (
-    <RichTooltip body={session.blocked ?? "Take the rows picked through everything a delivery does, short of sending them. Nothing reaches OSDU."} delayDuration={300}>
-      {/* A disabled button takes no hover, so its wrapper carries the reason it cannot run. */}
-      <span className="ml-auto inline-flex">
-        <Button
-          type="button"
-          size="sm"
-          disabled={!session.ready || session.checkingAll}
-          onClick={() => session.check(null)}
-          data-testid="value-check-all"
-        >
-          {session.checkingAll ? <Loader2 className="animate-spin" /> : <ScanSearch />}
-          {session.checkingAll ? "Rendering" : "Dry run"}
-        </Button>
-      </span>
-    </RichTooltip>
+    <span className="ml-auto inline-flex items-center gap-1">
+      <GlyphRef icon={Info} title="What a dry run does" body={HOW_IT_WORKS} />
+      <RichTooltip body={session.blocked ?? "Take the rows picked through everything a delivery does, short of sending them. Nothing reaches OSDU."} delayDuration={300}>
+        {/* A disabled button takes no hover, so its wrapper carries the reason it cannot run. */}
+        <span className="inline-flex">
+          <Button
+            type="button"
+            size="sm"
+            disabled={!session.ready || session.checkingAll}
+            onClick={() => session.check(null)}
+            data-testid="value-check-all"
+          >
+            {session.checkingAll ? <Loader2 className="animate-spin" /> : <ScanSearch />}
+            {session.checkingAll ? "Rendering" : "Dry run"}
+          </Button>
+        </span>
+      </RichTooltip>
+    </span>
   );
 }
 
 /**
- * The dry run on one line: which rows (the flow, its scope's values, how many), and the button. Under it, once one has run,
- * one line sums it up by attribute: how many rows, then how many are held, write an invalid value, leave an attribute out or
- * fail an assertion of the mapping, each a button narrowing the tree to the attributes behind it, and how many are clean.
- * Whatever a check cannot do yet, or failed at, is said in that line's place.
+ * What the latest check found, by attribute, on one line above the tree: how many rows, then how many are held, write an
+ * invalid value, leave an attribute out or fail an assertion of the mapping, each a button narrowing the tree to the attributes
+ * behind it, and how many are clean. Nothing until a check has run: what is under way, or why none can, is said once for the
+ * whole page, over its tabs.
  */
 export function ValueCheckBar({ session }: { session: ValueCheckSession }) {
   const last = session.summary;
-  const narrow = (filter: FailingFilter) => session.setFilter(session.filter === filter ? null : filter);
-
-  return (
-    <Card className="gap-2 rounded-lg px-3 py-2.5" data-testid="value-check-bar">
-      <div className="flex flex-wrap items-center gap-2" data-testid="value-check-controls">
-        <span className="inline-flex items-center gap-1.5 text-[13px] font-medium">
-          <ScanSearch className="size-4 text-primary" />
-          By attribute
-        </span>
-        <GlyphRef icon={Info} title="What a dry run does" body={HOW_IT_WORKS} />
-        <ValueCheckControls session={session} />
-        <DryRunButton session={session} />
-      </div>
-
-      {session.flowsError !== null && <ProblemView error={session.flowsError} testId="value-check-flows-error" />}
-
-      <StatusLine session={session} last={last} narrow={narrow} />
-    </Card>
-  );
-}
-
-/** The one line under the controls: the check under way, why none can run, why the last one failed, or what it found. */
-function StatusLine({ session, last, narrow }: {
-  session: ValueCheckSession;
-  last: ValueCheckSession["summary"];
-  narrow: (filter: FailingFilter) => void;
-}) {
-  if (session.running > 0) {
-    return (
-      <p className="flex items-center gap-2 text-[12px] text-muted-foreground" data-testid="value-check-progress">
-        <Loader2 className="size-3.5 animate-spin" />
-        {`Rendering ${session.maxRows === 0 ? "every row of the scope" : `up to ${formatCount(session.maxRows)} rows`} of ${session.flow === null ? "the flow" : flowLabel(session.flow)} on a node`}
-        {session.running > 1 && <span>{`(${session.running} checks)`}</span>}
-      </p>
-    );
-  }
-
-  if (session.failure !== null) {
-    return (
-      <p className="flex items-start gap-1.5 text-[12px] text-destructive" data-testid="value-check-failed">
-        <CircleAlert className="mt-0.5 size-3.5 shrink-0" />
-        <span className="whitespace-pre-wrap">{`The check could not be made: ${session.failure}`}</span>
-      </p>
-    );
-  }
-
   if (last === null) {
-    return session.blocked !== null && !session.flowsLoading
-      ? (
-        <p className="flex items-start gap-1.5 text-[12px] text-muted-foreground" data-testid="value-check-blocked">
-          <Info className="mt-0.5 size-3.5 shrink-0" />
-          {session.blocked}
-        </p>
-      )
-      : null;
+    return null;
   }
 
+  const narrow = (filter: FailingFilter) => session.setFilter(session.filter === filter ? null : filter);
   const rows = last.rows;
   const assertions = assertionRows(rows);
   return (

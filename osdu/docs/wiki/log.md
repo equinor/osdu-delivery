@@ -607,3 +607,10 @@ Source: the human's request for an easy way to see a mapping's staged records as
 kind and at any size, cross-matched with the Schema service; the Schema service's contract and its source at commit a857439.
 
 Added decision 0040 and the reference page `delivery-concept-dry-run`.
+
+## [2026-11-01] ingest | A mapping is a page of its own, and its render, YAML and shape one section
+
+Source: the human's review of the dry run in the sheet: a search to select a mapping, a full page rather than a slide-in, the
+required parameter defaulting to its first option, a draggable code area, the render, YAML and shape as sub tabs of one section.
+
+Extended decision 0040 with why the page is laid out as it is, and why only this page fills in a first option.

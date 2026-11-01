@@ -23,6 +23,8 @@ sourceRefs:
   - osdu/src/SqlFlow.Delivery/Validation/ReferenceResolver.cs
   - osdu/gui/src/features/delivery/StagedRecordsTab.tsx
   - osdu/gui/src/features/delivery/StagedRecordList.tsx
+  - osdu/gui/src/features/delivery/DeliveryMappingPage.tsx
+  - osdu/gui/src/features/delivery/scopeDefaults.ts
 referenceRefs:
   - delivery-concept-dry-run
   - delivery-concept-gui
@@ -97,3 +99,21 @@ away.
 - **Storing the rendered documents.** A second store of what the ledger's work batches already hold for real runs, for documents
   that go stale when the mapping moves.
 - **A dry run CLI verb for now.** `sqlflow values` and `sqlflow preview` render the same rows, and the ask was the page.
+
+## The page it came to live on (2026-11-01)
+
+The first version sat in a sheet, with the render, the YAML and the record shape as tabs beside Properties, and it opened on a
+refusal: the list asked for rows before the control plane had said the scope's values would do, so a required parameter left
+empty came back as an error that stayed on the page. The human's words: "Mapping document selection should be a selection with a
+search box, once selected the next page should not be a slide in but a full page", "We should default back to auto select first
+option", "render and the source yaml should be sub tabpages of the same section", and "What we are missing is logical coherance
+in the interface".
+
+So a mapping is a page with an address, and the page is laid out in the order the work goes: which mapping, which rows, what
+came of them. The toolbar is one, over both views, because the rows a dry run reads are the same whichever view reads them; before,
+each view drew its own controls. The render, the YAML and the shape are pages of one section beside the records, because all
+three answer "what does this mapping make?" and Properties, which needs the width of the window, answers another question.
+
+A required parameter starts on its first option on this page and nowhere else. A value nobody picked is harmless where the page
+only looks, and would be wrong where it decides what a run writes, so the trigger form stays as it was. A read of the rows waits
+for the answer on the values, which is what removes the refusal; the first option is what makes the wait end in rows.

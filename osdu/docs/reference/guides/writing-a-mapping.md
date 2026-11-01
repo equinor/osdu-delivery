@@ -365,9 +365,9 @@ which `$coalesce` alternative gave each value, the records the document refers t
 make, and then the document itself
 ([sqlflow preview](../cli/preview.md)). Read the document against the template: the names, the units, the references.
 
-On the GUI's Mappings page, a synced mapping opens on its **Staged records**: any row is a click from its document, and **Dry run**
-says what every row comes to, with each document held to the template and to the partition's Schema service, and nothing sent
-([a dry run](../concepts/dry-run.md)).
+On the GUI's Mappings page, a synced mapping opens on a page of its own, on its **Staged records** and the first row's document:
+any other row is a click away, and **Dry run** says what every row comes to, with each document held to the template and to the
+partition's Schema service, and nothing sent ([a dry run](../concepts/dry-run.md)).
 
 ## 9. Fix and repeat
 

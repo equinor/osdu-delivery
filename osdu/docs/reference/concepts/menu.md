@@ -67,7 +67,7 @@ product adds are described in [the GUI](gui.md); the others are SQLFlow's.
 | Build | Flows | Repos | `/repos` |
 | | | Pipelines | `/pipelines` |
 | | | Schedules | `/schedules` |
-| | Delivery | Mappings | `/delivery/documents` (and the mapping builder, `/delivery/mappings/build`) |
+| | Delivery | Mappings | `/delivery/documents`, a mapping's page at `/delivery/documents/{id}` (and the mapping builder, `/delivery/mappings/build`) |
 | | | Templates | `/delivery/templates` |
 | | | Cache | `/delivery/cache` |
 | | | Order | `/delivery/order` |

@@ -43,18 +43,21 @@ sourceRefs:
 
 # A dry run: a mapping's staged records taken through everything a delivery does, short of sending them
 
-A mapping's **Staged records** tab lists the rows staged for it, in the record table of a flow that renders with it, before
-anything is delivered. Picking a row shows its document. **Dry run** takes the rows through everything a delivery does short
-of sending them, and says what each comes to. Nothing is written: not OSDU, not the ledger, not the work location.
+A mapping's page lists the rows staged for it under **Staged records**, in the record table of a flow that renders with it,
+before anything is delivered, beside the first row's document. Picking another row shows its document. **Dry run** takes the
+rows through everything a delivery does short of sending them, and says what each comes to. Nothing is written: not OSDU, not
+the ledger, not the work location.
 
 A record of any kind is taken the same way, whatever its route: the rows are a flow's, and a mapping used by several flows
-picks which on the tab.
+picks which on the page's toolbar.
 
 ## The list of staged rows
 
 The list reads the record table a page at a time, 200 rows to a page, in the order a run reads them, and renders nothing. A
 row is named as the ledger would name its record, with the label the mapping gives it, the file and row it was landed from,
-and how many rows each child table holds of it. The flow's scope parameters narrow it as they narrow a run.
+and how many rows each child table holds of it. The flow's scope parameters narrow it as they narrow a run. A required
+parameter with no default starts on its first option, the value the record table holds most, since a list only looks; the
+toolbar shows the value taken, and a run's own form never fills one in this way.
 
 The search asks the table: it finds a row by its key, its label or its file, ignoring case, wherever the row is in the table.
 Only a page is read, and only the rows in view are drawn, so a table of millions lists as one of thousands does. A row marked

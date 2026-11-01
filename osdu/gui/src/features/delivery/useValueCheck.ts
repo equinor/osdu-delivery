@@ -36,6 +36,8 @@ import {
 } from "./valueCheck";
 import { parametersFor, parameterValuesToSend, type ParameterFieldValues } from "@/features/runs/runInputs";
 import { usePipelineParameters, useRunExplanation } from "@/features/runs/useRunInputs";
+import { withFirstOptions } from "./scopeDefaults";
+import { useFirstOptions } from "./useFirstOptions";
 
 /** Which variables the tree narrows to after a check: any that fails (an assertion included), or those failing one way. */
 export type FailingFilter = "any" | "held" | "invalid" | "empty" | "asserted";
@@ -208,7 +210,7 @@ function taken(store: Store, task: PendingTask, settled: ComputeTask | undefined
   };
 }
 
-/** What the mapping sheet's tabs need to check values, make a dry run and show what either found. */
+/** What a mapping's page needs to check values, make a dry run and show what either found. */
 export interface ValueCheckSession {
   /** The flows that render with the mapping in the title bar's partition, and the partitions others deliver to. */
   flows: DeliveryMappingFlow[];
@@ -218,7 +220,7 @@ export interface ValueCheckSession {
   /** The flow whose rows a check reads, and choosing another. */
   flow: DeliveryMappingFlow | null;
   chooseFlow: (key: string) => void;
-  /** The flow's parameters a plan resolves (as its document declares them), the values given, and giving one. */
+  /** The flow's parameters a plan resolves (as its document declares them), the values given (a required one left alone holds its first option), and giving one. */
   parameters: DeclaredRunParameter[];
   keyColumns: string[];
   values: ParameterFieldValues;
@@ -230,8 +232,9 @@ export interface ValueCheckSession {
   setMaxRows: (rows: number) => void;
   /** Whether the reader may queue node work: a check, and the read of the scope's values. */
   canOperate: boolean;
-  /** Whether a check can be run now, and why not when it cannot. */
+  /** Whether the rows can be read and a check run now: the scope's values are known to do. */
   ready: boolean;
+  /** Why they cannot, when the reason is one to read; null while the values are still being settled. */
   blocked: string | null;
   /** Queues a check of the variables named, or of every variable when null. */
   check: (targets: string[] | null) => void;
@@ -280,7 +283,7 @@ export interface ValueCheckSession {
 
 export const ValueCheckContext = createContext<ValueCheckSession | null>(null);
 
-/** The value check of the mapping sheet being read, or null outside one (the Templates page reads the same tree). */
+/** The value check of the mapping's page being read, or null outside one (the Templates page reads the same tree). */
 export function useValueCheckContext(): ValueCheckSession | null {
   return useContext(ValueCheckContext);
 }
@@ -327,13 +330,20 @@ export function useValueCheckSession(mappingId: string, reference: string): Valu
   const inputs = usePipelineParameters(flow?.pipelineId ?? null);
   const parameters = useMemo(() => parametersFor(inputs.data?.inputs, "plan"), [inputs.data]);
   const [values, setValues] = useState<ParameterFieldValues>({});
-  const sent = useMemo(() => parameterValuesToSend(parameters, values), [parameters, values]);
   const partition = flow?.partition ?? null;
+  const lookupContext = useMemo((): Record<string, RunValue> => (partition ? { partition } : {}), [partition]);
+
+  // This page only looks, so a required parameter nobody has picked yet starts on its first option: the rows are there to read
+  // the moment it opens, and the field says which value was taken.
+  const firstOptions = useFirstOptions(flow?.pipelineId ?? null, parameters, lookupContext);
+  const fields = withFirstOptions(parameters, values, firstOptions.first);
+  const sentText = JSON.stringify(parameterValuesToSend(parameters, fields));
+  const sent = useMemo(() => JSON.parse(sentText) as Record<string, RunValue>, [sentText]);
   const explainedValues = useMemo<Record<string, RunValue>>(
     () => (partition !== null ? { ...sent, partition } : sent),
     [sent, partition],
   );
-  const { parameterProblems, inputProblems, refused, explained } = useRunExplanation(
+  const { parameterProblems, inputProblems, refused, explaining, explained } = useRunExplanation(
     flow?.pipelineId ?? null, "plan", explainedValues, NO_PAYLOAD, flow !== null && parameters.length > 0);
   const [maxRows, setMaxRows] = useState(DEFAULT_ROW_BUDGET);
   const [filter, setFilter] = useState<FailingFilter | null>(null);
@@ -346,6 +356,7 @@ export function useValueCheckSession(mappingId: string, reference: string): Valu
   if (store.flowKey !== currentKey) {
     setStore(emptyStore(currentKey));
     setTasks([]);
+    setValues({});
     setFilter(null);
     pickRecord(null);
   }
@@ -406,6 +417,11 @@ export function useValueCheckSession(mappingId: string, reference: string): Valu
   });
 
   const { mutate } = queue;
+
+  // Nothing may read the rows until the values are known to do: a read asked for before the answer is in is the refusal the
+  // reader would otherwise be shown instead of the rows.
+  const settling = flow !== null && (interfaces.isPending || inputs.isPending || firstOptions.reading || explaining);
+  const unfilled = parameters.find((parameter) => firstOptions.problems[parameter.name] !== undefined && sent[parameter.name] === undefined);
   let blocked: string | null = null;
   if (!canOperate) {
     blocked = "A check runs on a node, which takes a signed-in session.";
@@ -415,14 +431,15 @@ export function useValueCheckSession(mappingId: string, reference: string): Valu
     blocked = otherPartitions.length > 0
       ? `The flows rendering with this mapping deliver to partition ${otherPartitions.join(", ")}; pick it in the title bar to check their rows.`
       : "No flow renders with this mapping yet, so there are no rows to check.";
-  } else if (interfaces.isPending || inputs.isPending) {
-    blocked = "Reading what the flow's scope needs.";
-  } else if (refused) {
+  } else if (!settling && unfilled !== undefined) {
+    blocked = firstOptions.problems[unfilled.name];
+  } else if (!settling && refused) {
     blocked = Object.values(parameterProblems)[0] ?? inputProblems[0] ?? explained.data?.problems[0] ?? null;
   }
 
+  const ready = blocked === null && !settling;
   const check = useCallback((targets: string[] | null) => {
-    if (blocked !== null || flow === null || currentKey === null) {
+    if (!ready || flow === null || currentKey === null) {
       return;
     }
 
@@ -436,7 +453,7 @@ export function useValueCheckSession(mappingId: string, reference: string): Valu
       samples: targets === null ? SAMPLES_ALL : SAMPLES_ONE,
       skipSamples: 0,
     });
-  }, [blocked, flow, currentKey, mutate, sent, maxRows]);
+  }, [ready, flow, currentKey, mutate, sent, maxRows]);
 
   const more = useCallback((target: string, finding: DeliveryValueCheckFinding) => {
     const current = store.variables.get(target);
@@ -508,13 +525,13 @@ export function useValueCheckSession(mappingId: string, reference: string): Valu
     chooseFlow: setPicked,
     parameters,
     keyColumns,
-    values,
+    values: fields,
     setValue: (name, value) => setValues((current) => ({ ...current, [name]: value })),
     parameterProblems,
     maxRows,
     setMaxRows,
     canOperate,
-    ready: blocked === null,
+    ready,
     blocked,
     check,
     more,

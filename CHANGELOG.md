@@ -377,6 +377,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   curve `MD` among its curves ([Assertions](osdu/docs/reference/flow/assertion.md#assertions)).
 
 ### Changed
+- **A mapping is a page of its own.** The Mappings list opens with its search ready, finding a mapping by anything its row shows,
+  and a mapping opens on a full page with an address rather than a sheet, with any other mapping a searchable click away. The page
+  fills the window with one toolbar and a handle between the records and the code that keeps its width. **Render**, **Source YAML**
+  and **Record shape** are pages of one section beside the records, and it opens on the first record's document, a required
+  parameter with no default starting on the value its record table holds most
+  ([the Mappings page](osdu/docs/reference/concepts/gui.md#mappings)).
+
 - **A value check names a repeated item's own file and row.** `sqlflow values` and a mapping's data check give the file and row
   of an item's child row rather than its record's, fill `item` for a failed assertion, and say which source columns to fix
   (`columns`), so a reason connects to the cell ([sqlflow values](osdu/docs/reference/cli/values.md#the---rows-file)).

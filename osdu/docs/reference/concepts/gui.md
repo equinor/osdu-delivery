@@ -535,26 +535,45 @@ The **Delivery** section of Build: what a delivered record is built from, and th
 
 ### Mappings
 
-The mapping documents the repositories hold, as the last sync found them, filtered by repository, with **New mapping**
-(opens the builder). A mapping opens in a sheet with the template version it fills (a link to Templates, its tooltip
-naming the template folder file the version was read from, or saying no folder on the mapping's path holds it), **Open in
-builder**, and four tabs, opening on the first:
+The mapping documents the repositories hold, as the last sync found them, one row each, with **New mapping** (opens the
+builder). The search comes first and has the cursor when the page opens: it finds a mapping by anything its row shows (name,
+kind, source, template version or path), every word typed in any order, and Enter opens the first row listed. **All repos**
+narrows the list to a repository.
 
-- **Staged records**: the rows staged for the mapping, before anything is delivered, and a [dry run](dry-run.md) of them. The
-  line at the top picks a flow that renders with the mapping (each names its record table), its scope's values and how many
-  rows, and **Dry run**. The list reads the table a page at a time and asks it for a search, by key, label or file; each
-  line says what became of the row, or how many rows its child tables hold of it, and Up and Down step through them. A picked
-  row shows its record as the flow's **Preview** does, with a **Schema service** tab beside the document. Before a record is
-  picked, a dry run opens on what it found: what was checked of every record alike, the rules broken most often with an
-  example of each a click away, and what differs between the template and the Schema service. Above the list it says
-  whether the rows can be delivered, and **Ready**, **Worth a look**, **Held** and **Passed over** each carry a count and
-  narrow the list. Everything picked stays when the reader moves to another tab and back.
+A mapping opens on a page of its own, at `/delivery/documents/{id}`, in a workbench tab named after it, so a link, a reload
+and Back land on it. The page fills the window and does not scroll. Its heading is the mapping's name, a click from a
+searchable list of every mapping; the kind it renders; its path and its jump to lineage; the template version it fills (a link
+to Templates, its tooltip naming the template folder file the version was read from, or saying no folder on the mapping's
+path holds it); and **Open in builder**.
+
+Under the heading is one toolbar: the two views, **Staged records** and **Properties**, then which rows are read, and **Dry
+run**. It picks a flow that renders with the mapping (each names its record table), its scope's values and how many rows. A
+required parameter with no default starts on its first option, the value its record table holds most, so the page opens on rows
+rather than on a refusal: the field shows the value taken, another is a pick away, and a field emptied stays empty. Nothing is
+read of the rows until the values are known to do. A run's own form never fills a value in this way. Under the toolbar, when
+there is something to say, one line says the dry run is under way, why it failed, why the rows cannot be read, or whether the
+rows can be delivered.
+
+- **Staged records**: the rows staged for the mapping, before anything is delivered, beside what they render to, with a handle
+  between them that gives either more room and remembers the width. The list reads the table a page at a time and asks it for a
+  search, by key, label or file; each line says what became of the row, or how many rows its child tables hold of it, and Up and
+  Down step through them. After a [dry run](dry-run.md), **Ready**, **Worth a look**, **Held** and **Passed over** carry a count
+  and narrow the list, each opening its first record. Its foot says how many rows are listed and of which table. Beside the list
+  is one section, with one page at a time:
+  - **Render**: the record picked, the first the list holds until one is: what the next run would do with it and why, then its
+    **Document**, what the **Schema service** says of it, **How it rendered**, how a **Delivery** would send it and its **Source
+    rows**, as the flow's **Preview** shows them. Picking a row shows this page, from whichever page was open.
+  - **Source YAML**: the mapping as written. With no flow to read rows from, the section opens here.
+  - **Record shape**: the shape the mapping gives a record, with no data read; the mapping's parameters fill what uses them.
+  - **Dry run**, once one has run, which is where it opens: what was checked of every record alike, the rules broken most often
+    with an example of each a click away, and what differs between the template and the Schema service.
+
+  Everything picked stays when the reader moves to **Properties** and back.
 - **Properties**: the template the mapping fills as the record's tree, beside the selected attribute. The views
   **Filled**, **Missing**, **Unfilled**, **Failing** (after a dry run) and **All** each carry a count; **View** adds
   **Required**, **Minted** and **Nested**. The selected attribute reads in **Filled by**, **Data**, **Failing records**
-  and **Schema**. The line at the top is the same as **Staged records**, and the same **Dry run**: what it found reads here
-  attribute by attribute. An attribute's **Check values** checks it alone. See
-  [writing a mapping](../guides/writing-a-mapping.md).
+  and **Schema**. What the toolbar's **Dry run** found reads here attribute by attribute, on a line over the tree. An attribute's
+  **Check values** checks it alone. See [writing a mapping](../guides/writing-a-mapping.md).
   - **Failing records** goes through the rows a check found wrong with the attribute, one record at a time, on one page
     read top to bottom. At the top, and staying in view, the reason (picked from a list when there are several) and
     **Record n of m**, m being the rows that reason holds for; past the records listed so far, the next are read from a

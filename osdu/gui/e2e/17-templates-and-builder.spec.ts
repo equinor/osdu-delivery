@@ -438,7 +438,7 @@ test.describe.serial("templates and the mapping builder", () => {
     await row.click();
 
     const detail = adminPage.getByTestId("delivery-mapping-detail");
-    await expect(detail.getByTestId("delivery-mapping-template")).toContainText(WELLLOG_VERSION, { timeout: 15_000 });
+    await expect(adminPage.getByTestId("delivery-mapping-template")).toContainText(WELLLOG_VERSION, { timeout: 15_000 });
 
     // The properties: the template as the record's tree, with what this mapping fills of it. Every row says
     // how the mapping reaches its variable (drawn only where it asks for attention), and the tree opens on the Filled
@@ -522,6 +522,7 @@ test.describe.serial("templates and the mapping builder", () => {
     // The sample opens on its header comment and the editor draws only the lines in view, so it is scrolled until the
     // template key sits inside the window: the editor runs past the window's bottom edge, and a line drawn down there
     // takes no hover.
+    await detail.getByTestId("delivery-mapping-tab-staged").click();
     await detail.getByTestId("delivery-mapping-tab-yaml").click();
     const yaml = detail.getByTestId("delivery-mapping-yaml");
     const templateKey = yaml.locator(".view-line").filter({ hasText: /^template:$/ });
@@ -554,7 +555,7 @@ test.describe.serial("templates and the mapping builder", () => {
     await detail.getByTestId("delivery-mapping-shape-parameter-dataPartition").fill("dev");
     await expect(shape).toContainText("dev:work-product-component--WellLog:", { timeout: 15_000 });
 
-    await detail.getByTestId("delivery-mapping-open-builder").click();
+    await adminPage.getByTestId("delivery-mapping-open-builder").click();
 
     await expect(adminPage.getByTestId("page-delivery-mapping-builder")).toBeVisible();
     await expect(adminPage.getByTestId("mapping-builder-opened-from")).toContainText("mappings/WellLog@1.4.0.yaml", { timeout: 30_000 });
