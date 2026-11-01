@@ -305,6 +305,9 @@ public sealed record ValueCheckSample
 {
     public required string SourceKey { get; init; }
 
+    /// <summary>The record's key as the source read it, a JSON array of its parts: what names the row to a query of the source.</summary>
+    public string? KeyJson { get; init; }
+
     public string? Label { get; init; }
 
     /// <summary>The delivery key the mapping derives, or null when a key part is empty.</summary>

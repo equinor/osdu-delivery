@@ -1743,6 +1743,8 @@ export interface DeliveryValueCheckCounts {
 /** One record a check names: its key, where its row came from, and what the variable came to there. */
 export interface DeliveryValueCheckSample {
   sourceKey: string;
+  /** The record's key as the source read it, a JSON array of its parts, which names the row to a query of the source; absent from an older node. */
+  keyJson?: string | null;
   label?: string | null;
   deliveryKey?: string | null;
   file?: string | null;
@@ -1779,6 +1781,29 @@ export interface DeliveryValueCheckFinding {
   samples: DeliveryValueCheckSample[];
   /** How many occurrences were passed over before the examples were taken. */
   samplesFrom: number;
+}
+
+/** A source column an attribute reads, as the mapping names it (`dataset.curves.curve_unit`), and the table holding it. */
+export interface DeliverySourceSqlRead {
+  column: string;
+  table: string;
+}
+
+/** The T-SQL a person runs in SSMS to see what an attribute of a mapping reads. */
+export interface DeliverySourceSql {
+  flow: string;
+  interface?: string | null;
+  mapping: string;
+  target?: string | null;
+  /** How many entries of the mapping reach the attribute; none means nothing of the mapping fills it. */
+  entries: number;
+  reads: DeliverySourceSqlRead[];
+  /** The columns the entries read that the tables do not hold, which the script leaves out. */
+  missing: string[];
+  /** The script; absent when the entries read no source column. */
+  sql?: string | null;
+  /** How many records the script is narrowed to; 0 for every row of the scope. */
+  keys: number;
 }
 
 /** One variable checked: its rows by outcome, the values it was written with, and its findings. */
@@ -4372,6 +4397,12 @@ export const deliveryApi = {
    * A page of the rows staged in an interface's scope, nothing of them rendered, resuming after `after`, narrowed to the rows
    * whose key, label or file hold `search`. Answered at once.
    */
+  /** The T-SQL that shows what an attribute reads, as the flow's source tables hold it now. No row is read, and nothing is run. */
+  sourceSql: (
+    pipelineId: string,
+    request: { target?: string; values?: Record<string, RunValue>; maxRows?: number; keys?: string[] },
+    scope?: DeliveryFlowScope,
+  ) => post<DeliverySourceSql>(flowPath(pipelineId, "/source-sql", scope), request),
   stagedRows: (
     pipelineId: string,
     request: { values?: Record<string, RunValue>; search?: string; after?: string | null; limit?: number },

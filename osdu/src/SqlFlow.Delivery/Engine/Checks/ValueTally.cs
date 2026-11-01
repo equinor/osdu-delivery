@@ -419,6 +419,7 @@ internal sealed partial class ValueTally
         return new ValueCheckSample
         {
             SourceKey = sourceKey,
+            KeyJson = record.SourceKeyJson,
             Label = renderer.Label(record.Row),
             DeliveryKey = deliveryKey,
             File = record.Origin.FileName,

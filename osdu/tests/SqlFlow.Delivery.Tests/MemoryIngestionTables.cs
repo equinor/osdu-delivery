@@ -199,6 +199,44 @@ public sealed class MemoryIngestionTables : IIngestionSourceFactory
             return Task.FromResult(new ScopeParameterValues(parameter, column, values.Take(max).ToList(), values.Count > max));
         }
 
+        public Task<SourceDescription> DescribeAsync(CancellationToken ct = default)
+        {
+            var schema = SourceObjectName.Parse(_flow.Source.Record.Object);
+            var record = _tables.Records.SelectMany(r => r.Row.Keys).Concat(_flow.Source.Record.Key).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
+            var layout = new IngestionLayout
+            {
+                Record = schema,
+                Key = _flow.Source.Record.Key.Select(k => new SourceKeyColumn(k, _tables.KeyTypes.TryGetValue(k, out var type) ? type : "nvarchar(400)")).ToList(),
+                Updated = _flow.Source.SystemColumns.Updated,
+                Scope = _flow.Source.Record.Scope.Select(s => new IngestionScope(s.Key, s.Value)).ToList(),
+                Datasets = _flow.Source.Datasets
+                    .OrderBy(d => d.Key, StringComparer.Ordinal)
+                    .Select(d => new IngestionDataset(
+                        d.Key,
+                        SourceObjectName.Parse(d.Value.Object),
+                        d.Value.Join.ToList(),
+                        d.Value.OrderBy,
+                        null,
+                        null,
+                        d.Value.MaxRowsPerRecord))
+                    .ToList(),
+            };
+            var columns = new Dictionary<string, IReadOnlyList<string>>(StringComparer.OrdinalIgnoreCase) { [SourceDatasets.Record] = record };
+            foreach (var dataset in layout.Datasets)
+            {
+                columns[dataset.Name] = _tables.Records
+                    .SelectMany(r => r.Datasets.GetValueOrDefault(dataset.Name) ?? [])
+                    .SelectMany(row => row.Keys)
+                    .Distinct(StringComparer.OrdinalIgnoreCase)
+                    .ToList();
+            }
+
+            var scope = _flow.Source.Record.Scope
+                .Select(s => new SourceScopeValues(s.Key, s.Value, "nvarchar(400)", RunValueList.Items(_values[s.Value])))
+                .ToList();
+            return Task.FromResult(new SourceDescription(layout, columns, scope, []));
+        }
+
         public Task<IReadOnlyList<SourceKeyColumn>> KeyColumnsAsync(CancellationToken ct = default)
             => Task.FromResult<IReadOnlyList<SourceKeyColumn>>(_flow.Source.Record.Key
                 .Select(k => new SourceKeyColumn(k, _tables.KeyTypes.TryGetValue(k, out var type) ? type : "nvarchar(400)"))

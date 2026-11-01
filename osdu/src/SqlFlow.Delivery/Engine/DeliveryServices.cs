@@ -162,6 +162,7 @@ public static class DeliveryServices
         services.AddSingleton<DeliveryOperation, PreviewRecordOperation>();
         services.AddSingleton<DeliveryOperation, ScopeValuesOperation>();
         services.AddSingleton<DeliveryOperation, StagedRowsOperation>();
+        services.AddSingleton<DeliveryOperation, SourceSqlOperation>();
         services.AddSingleton<DeliveryOperation, ExploreOperation>();
         services.AddSingleton<DirectOperations>();
 

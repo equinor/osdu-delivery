@@ -8,6 +8,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **See what an attribute reads in the source, in SSMS.** An attribute's new **SQL** tab, under a mapping's **Properties**, writes the
+  T-SQL to copy into SSMS: the source columns it reads with each row's key, file and row, over the rows a delivery reads, a child
+  table left joined so a record with no child rows shows. After a check, **Failing rows** narrows it to the records the check listed.
+  `POST /flows/{id}/source-sql` asks for the same, and a check's examples now carry `keyJson`
+  ([the Mappings page](osdu/docs/reference/concepts/gui.md#mappings)).
+
 - **See a mapping's records before they are delivered.** A mapping now opens on **Staged records**: the rows of a flow that renders
   with it, from any record table of any kind, paged and searched in the database so a table of any size lists at once, with
   what each child table holds of a row. Pick one to see its document. **Dry run** takes them through everything a delivery does

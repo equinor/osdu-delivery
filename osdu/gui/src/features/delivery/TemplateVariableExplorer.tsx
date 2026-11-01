@@ -53,6 +53,7 @@ import { EntryDetail } from "./MappingEntryDetail";
 import { holderPath, roleLabel, shapeText, splitPath } from "./templateFormat";
 import { useValueCheckContext } from "./useValueCheck";
 import { VariableRecordsTab } from "./ValueCheckRecords";
+import { VariableSqlTab } from "./VariableSqlTab";
 import { CheckValuesButton, DataTabBadge, ValueCheckChip, VariableDataTab } from "./ValueCheckResult";
 import { findingKey } from "./valueCheck";
 import { outcomeVisual } from "./valueCheck";
@@ -415,12 +416,12 @@ function KindList({ icon, label, values, testId }: { icon: LucideIcon; label: st
 }
 
 /** The tabs of a variable's properties, kept as the reader moves from one variable to the next. */
-type DetailTab = "fill" | "data" | "records" | "schema";
+type DetailTab = "fill" | "data" | "records" | "sql" | "schema";
 
 /**
  * The selected variable: its name, path and the facts that shape it at the top, then, with a mapping laid over the
- * template, four tabs a reader moves between as they go down the tree: what fills it, what a data check found of it, the
- * rows it found wrong one at a time, and what the schema says. Without a mapping (the Templates page) the schema is all
+ * template, the tabs a reader moves between as they go down the tree: what fills it, what a data check found of it, the
+ * rows it found wrong one at a time, the query that shows them in the source, and what the schema says. Without a mapping (the Templates page) the schema is all
  * there is, and it is shown as it is.
  */
 function VariableProperties({ variable, holds, tab, onTab }: {
@@ -495,6 +496,9 @@ function VariableProperties({ variable, holds, tab, onTab }: {
               {valueCheck !== null && (
                 <TabsTrigger value="records" className="flex-none px-0.5 text-[13px]" data-testid="templates-view-properties-tab-records">Failing records</TabsTrigger>
               )}
+              {valueCheck !== null && (
+                <TabsTrigger value="sql" className="flex-none px-0.5 text-[13px]" data-testid="templates-view-properties-tab-sql">SQL</TabsTrigger>
+              )}
               <TabsTrigger value="schema" className="flex-none px-0.5 text-[13px]" data-testid="templates-view-properties-tab-schema">Schema</TabsTrigger>
             </TabsList>
             <TabsContent value="fill">
@@ -515,6 +519,11 @@ function VariableProperties({ variable, holds, tab, onTab }: {
             {valueCheck !== null && (
               <TabsContent value="records">
                 <VariableRecordsTab path={variable.path} />
+              </TabsContent>
+            )}
+            {valueCheck !== null && (
+              <TabsContent value="sql">
+                <VariableSqlTab key={variable.path} path={variable.path} />
               </TabsContent>
             )}
             <TabsContent value="schema">

@@ -5,6 +5,7 @@ using SqlFlow.Core;
 using SqlFlow.Core.Runs;
 using SqlFlow.Delivery.Model;
 using SqlFlow.Delivery.Source;
+using SqlFlow.Delivery.Templates;
 using Xunit;
 
 namespace SqlFlow.Delivery.Tests;
@@ -492,6 +493,106 @@ public sealed class SqlServerIngestionSourceTests
         var inScope = await north.ReadStagedAsync(new StagedRowsQuery { Limit = 5 });
         Assert.Equal(1250, inScope.Total);
         Assert.Equal("item-000002", inScope.Rows[0].Key.Values[0]);
+    }
+
+    [Fact]
+    public async Task The_query_of_an_attribute_runs_as_written_and_returns_the_rows_a_read_reads()
+    {
+        await using var estate = await SqlServerIngestionFixture.StartAsync();
+        var table = await CreateTableAsync(
+            estate,
+            "Queried",
+            "[RecId] bigint IDENTITY(1, 1) NOT NULL CONSTRAINT [PK_Queried] PRIMARY KEY CLUSTERED, [item_key] nvarchar(50) NOT NULL, [depth] nvarchar(20) NULL, "
+                + "[region] nvarchar(20) NULL, [UpdatedDate_DW] datetime NULL, [DeletedDate_DW] datetime NULL, [FileName_DW] nvarchar(400) NULL, [RowNumber_DW] bigint NULL",
+            "CREATE UNIQUE NONCLUSTERED INDEX [NCI_KeyColumn] ON {0} ([item_key]);");
+        var parts = await CreateTableAsync(
+            estate,
+            "QueriedPart",
+            "[item_key] nvarchar(50) NOT NULL, [curve_id] nvarchar(50) NULL, [part_no] int NOT NULL, [UpdatedDate_DW] datetime NULL, [DeletedDate_DW] datetime NULL",
+            string.Empty);
+
+        // Four rows: two in scope with one's key holding a quote, one of them with a deleted part; one out of scope; one deleted.
+        await ExecuteAsync(estate, $"""
+            INSERT INTO {table} ([item_key], [depth], [region], [UpdatedDate_DW], [FileName_DW], [RowNumber_DW]) VALUES
+                (N'item-1', N'10', N'it''s north', @loaded, N'items.csv', 1),
+                (N'O''Brien', N'20', N'it''s north', @loaded, N'items.csv', 2),
+                (N'item-3', N'30', N'south', @loaded, N'items.csv', 3),
+                (N'item-4', N'40', N'it''s north', @loaded, N'items.csv', 4);
+            UPDATE {table} SET [DeletedDate_DW] = @changed WHERE [item_key] = N'item-4';
+            INSERT INTO {parts} ([item_key], [curve_id], [part_no], [DeletedDate_DW]) VALUES
+                (N'item-1', N'GR', 1, NULL), (N'item-1', N'DT', 2, NULL), (N'item-1', N'OLD', 3, @changed);
+            """);
+        var sample = ItemFlow(estate, "Queried");
+        var flow = sample with
+        {
+            Source = sample.Source with
+            {
+                Record = sample.Source.Record with { Scope = new Dictionary<string, string>(StringComparer.Ordinal) { ["region"] = "region" } },
+                Datasets = new Dictionary<string, FlowSourceDataset>(StringComparer.Ordinal)
+                {
+                    ["curves"] = new FlowSourceDataset
+                    {
+                        Object = $"[{estate.DatabaseName}].[{estate.SilverSchema}].[QueriedPart]",
+                        Join = new Dictionary<string, string>(StringComparer.Ordinal) { ["item_key"] = "item_key" },
+                        OrderBy = ["part_no"],
+                    },
+                },
+            },
+        };
+        var source = estate.Engine.Sources.Open(flow, new Dictionary<string, string>(StringComparer.Ordinal) { ["region"] = "it's north" }, NullLoggerFactory.Instance);
+        var described = await source.DescribeAsync();
+        Assert.Equal(["FileName_DW", "RowNumber_DW"], described.Origin);
+        var mapping = TestSchema.Mapping("""
+            Curves:
+              $forEach: curves
+              $item:
+                CurveID: { $from: curve_id }
+            """);
+        TemplatePath Path(string text) => TemplatePath.TryParse(text, out var path, out var error) ? path! : throw new InvalidOperationException(error);
+
+        // The record's own column: the rows in scope that are not deleted, in the order a read pages in.
+        var record = SourceQuery.For(described, mapping, flow.Label, null, Path("osdu.data.Depth"), 1000, []);
+        Assert.Equal([["item-1", "10", "items.csv", "1"], ["O'Brien", "20", "items.csv", "2"]], await RunAsync(estate, record.Sql!));
+
+        // A child's: its rows that are not deleted in their order, and a record with none still there, which is what a held record often is.
+        var child = SourceQuery.For(described, mapping, flow.Label, null, Path("osdu.data.Curves[].CurveID"), 1000, []);
+        Assert.Equal(
+            [["item-1", "GR", "items.csv", "1"], ["item-1", "DT", "items.csv", "1"], ["O'Brien", null, "items.csv", "2"]],
+            await RunAsync(estate, child.Sql!));
+
+        // Narrowed to a record a check named, a key holding a quote included, whatever the row budget.
+        var named = SourceQuery.For(described, mapping, flow.Label, null, Path("osdu.data.Depth"), 1, [KeyTuple.Of("O'Brien")]);
+        Assert.Equal([["O'Brien", "20", "items.csv", "2"]], await RunAsync(estate, named.Sql!));
+
+        // A row budget bounds what comes back.
+        var first = SourceQuery.For(described, mapping, flow.Label, null, Path("osdu.data.Depth"), 1, []);
+        Assert.Equal([["item-1", "10", "items.csv", "1"]], await RunAsync(estate, first.Sql!));
+    }
+
+    /// <summary>Runs a script as a person does, parameters and all declared in it, and answers every row of every statement as text.</summary>
+    private static async Task<List<List<string?>>> RunAsync(SqlServerIngestionFixture estate, string script)
+    {
+        await using var connection = new SqlConnection(estate.ConnectionString);
+        await connection.OpenAsync();
+        await using var command = connection.CreateCommand();
+        command.CommandText = script;
+        await using var reader = await command.ExecuteReaderAsync();
+        var rows = new List<List<string?>>();
+        do
+        {
+            while (await reader.ReadAsync())
+            {
+                var row = new List<string?>(reader.FieldCount);
+                for (var i = 0; i < reader.FieldCount; i++)
+                {
+                    row.Add(reader.IsDBNull(i) ? null : Convert.ToString(reader.GetValue(i), CultureInfo.InvariantCulture));
+                }
+
+                rows.Add(row);
+            }
+        }
+        while (await reader.NextResultAsync());
+        return rows;
     }
 
     private static FlowDefinition ItemFlow(SqlServerIngestionFixture estate, string table, int pageSize = FlowIncremental.DefaultPageSize)

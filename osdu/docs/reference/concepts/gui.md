@@ -571,9 +571,9 @@ rows can be delivered.
   Everything picked stays when the reader moves to **Properties** and back.
 - **Properties**: the template the mapping fills as the record's tree, beside the selected attribute. The views
   **Filled**, **Missing**, **Unfilled**, **Failing** (after a dry run) and **All** each carry a count; **View** adds
-  **Required**, **Minted** and **Nested**. The selected attribute reads in **Filled by**, **Data**, **Failing records**
-  and **Schema**. What the toolbar's **Dry run** found reads here attribute by attribute, on a line over the tree. An attribute's
-  **Check values** checks it alone. See [writing a mapping](../guides/writing-a-mapping.md).
+  **Required**, **Minted** and **Nested**. The selected attribute reads in **Filled by**, **Data**, **Failing records**,
+  **SQL** and **Schema**. What the toolbar's **Dry run** found reads here attribute by attribute, on a line over the tree. An
+  attribute's **Check values** checks it alone. See [writing a mapping](../guides/writing-a-mapping.md).
   - **Failing records** goes through the rows a check found wrong with the attribute, one record at a time, on one page
     read top to bottom. At the top, and staying in view, the reason (picked from a list when there are several) and
     **Record n of m**, m being the rows that reason holds for; past the records listed so far, the next are read from a
@@ -585,6 +585,16 @@ rows can be delivered.
     each value of it marked and each place it is left out said where it would have been. A row of **Data** opens its record
     here, and the arrow beside a record opens it in the flow's **Preview**. An attribute no row fails shows the first record
     of the scope, and says so.
+  - **SQL** writes the T-SQL that shows what the attribute reads, to copy into SSMS: each row's key, the source columns the
+    attribute reads (a group's, those of everything it holds) and the file and row it came from, as the flow's tables hold them
+    now, before the mapping's lookups and expressions. It reads the rows a delivery reads, with the same scope predicate: the
+    toolbar's flow and scope values, in the order a read pages in, as many rows as the toolbar reads, and without rows marked
+    deleted. A child table is left joined, so a record with no child rows shows, with nulls, and its columns are named
+    `curves.curve_unit`; each child table beyond one has a statement of its own, so their rows do not multiply. Once a check has
+    found rows wrong with the attribute, **Failing rows** narrows the query to the records it listed, as many as a request can
+    carry, and says how many of the rows that fail those are. A column the tables do not hold is named and left out, and an
+    attribute that reads no source column says so. The page writes the query from the tables' shape: it reads no row and runs
+    nothing.
   - **Export rows**, in **Data**, saves the rows failing that attribute as an Excel workbook, reading them again on a node
     as the check read them. **Issues** is a row for each issue: the record, what it came to and why; where to fix it
     (**Source file**, **Source row**, **Source column** and what it holds, **Source value**), an item of a repeated array

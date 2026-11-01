@@ -134,6 +134,24 @@ test.describe.serial("a mapping's staged records and a dry run", () => {
     // Properties reads the same run, attribute by attribute, without running it again.
     await sheet.getByTestId("delivery-mapping-tab-coverage").click();
     await expect(sheet.getByTestId("value-check-summary")).toBeVisible({ timeout: 30_000 });
+
+    // An attribute's SQL names the source table, and after a run it narrows to the rows the run found wrong with it.
+    const properties = sheet.getByTestId("delivery-mapping-coverage");
+    await properties.getByTestId("templates-view-variable-osdu.data.Name").click();
+    await properties.getByTestId("templates-view-properties-tab-sql").click();
+    await expect(properties.getByTestId("variable-sql-reads")).toContainText("dataset.", { timeout: 30_000 });
+    await expect(properties.getByTestId("variable-sql")).toContainText("SELECT", { timeout: 30_000 });
+    await expect(properties.getByTestId("variable-sql")).toContainText("FROM", { timeout: 30_000 });
+
+    // Name fails no check here, so it offers no failing rows. An attribute the run found wrong does.
+    await expect(properties.getByTestId("variable-sql-rows-failing")).toHaveCount(0);
+    await properties.getByTestId("templates-view-show-failing").click();
+    await properties.locator('[data-testid^="templates-view-variable-"]').last().click();
+    await properties.getByTestId("templates-view-properties-tab-sql").click();
+    await properties.getByTestId("variable-sql-rows-failing").click();
+    await expect(properties.getByTestId("variable-sql")).toContainText("OPENJSON", { timeout: 30_000 });
+    await properties.getByTestId("variable-sql-rows-all").click();
+    await expect(properties.getByTestId("variable-sql")).not.toContainText("OPENJSON", { timeout: 30_000 });
     await sheet.getByTestId("delivery-mapping-tab-staged").click();
     await expect(sheet.getByTestId("dry-run-verdict")).toBeVisible();
 

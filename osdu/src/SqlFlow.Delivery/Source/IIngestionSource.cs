@@ -285,6 +285,12 @@ public interface IIngestionSource
     Task<ScopeParameterValues> ColumnValuesAsync(string parameter, string column, string? search, int max, CancellationToken ct = default);
 
     /// <summary>
+    /// The source as a query a person runs needs it (<see cref="SourceQuery"/>): the layout a read pages with, the columns the
+    /// tables hold, and the values the scope is given. Reads the tables' shape and no row.
+    /// </summary>
+    Task<SourceDescription> DescribeAsync(CancellationToken ct = default);
+
+    /// <summary>
     /// The record table's key columns, in the record key's order, with the SQL Server type each holds: what a removal converts
     /// the keys its source holds to, so a key read there derives the delivery key a row of the table does
     /// (osdu/docs/reference/flow/removal.md, How a key is read). Reads the table's shape and no row.

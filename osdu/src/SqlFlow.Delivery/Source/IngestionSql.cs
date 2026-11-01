@@ -32,6 +32,12 @@ public sealed record IngestionDataset(
 /// </param>
 public sealed record IngestionScope(string Column, string Parameter, int Values = 1);
 
+/// <summary>What one statement of a person's query reads: columns of the record table and, joined to it, of one child dataset.</summary>
+/// <param name="Columns">The record table's columns.</param>
+/// <param name="Child">The child dataset joined to it; null for the record table alone.</param>
+/// <param name="ChildColumns">The child dataset's columns.</param>
+public sealed record InspectionRead(IReadOnlyList<string> Columns, IngestionDataset? Child, IReadOnlyList<string> ChildColumns);
+
 /// <summary>
 /// A flow's source as the SQL builders see it, once the flow's declarations have been checked against the tables: the record
 /// table with its key columns and their SQL types, the system columns the tables actually carry, the scope predicate and the
@@ -355,6 +361,70 @@ public static class IngestionSql
             sql.Append(" GROUP BY ").Append(keys).AppendLine(";");
         }
 
+        return sql.ToString();
+    }
+
+    /// <summary>
+    /// One statement of a query a person runs (<see cref="SourceQuery"/>): each row's key, the columns <paramref name="read"/>
+    /// names and the columns saying where it came from, over the rows a delivery reads, in the order it reads them: the scope's,
+    /// without the ones marked deleted, every child dataset's deleted rows left out as a read leaves them out. A child dataset
+    /// is left joined, so a record with no child rows shows, with nulls where they would be. The scope's values stay parameters
+    /// the script declares (<see cref="ScopeParameter(int)"/>), and <paramref name="keys"/> narrows to the records
+    /// <see cref="KeysParameter"/> names.
+    /// </summary>
+    public static string Inspection(IngestionLayout layout, InspectionRead read, IReadOnlyList<string> origin, long top, bool keys)
+    {
+        ArgumentNullException.ThrowIfNull(layout);
+        ArgumentNullException.ThrowIfNull(read);
+        ArgumentNullException.ThrowIfNull(origin);
+        var key = layout.Key.Select(k => k.Name).ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var columns = layout.Key.Select(k => $"r.{SourceObjectName.Quote(k.Name)}")
+            .Concat(read.Columns.Where(c => !key.Contains(c)).Select(c => $"r.{SourceObjectName.Quote(c)}"));
+        var sql = new StringBuilder();
+        if (read.Child is { } child)
+        {
+            // Under the dataset's name: a record table and its child tables commonly share column names.
+            columns = columns.Concat(read.ChildColumns.Select(c => $"c.{SourceObjectName.Quote(c)} AS {SourceObjectName.Quote($"{child.Name}.{c}")}"));
+        }
+
+        columns = columns.Concat(origin.Select(c => $"r.{SourceObjectName.Quote(c)}"));
+        sql.Append("SELECT ").Append(top > 0 ? $"TOP ({top.ToString(CultureInfo.InvariantCulture)}) " : string.Empty).AppendLine(string.Join(", ", columns));
+        sql.Append("FROM ").Append(layout.Record.Quoted).AppendLine(" r");
+        if (keys)
+        {
+            sql.Append("INNER JOIN OPENJSON(").Append(KeysParameter).Append(") WITH (").Append(OpenJsonColumns(layout)).Append(") j ON ").AppendLine(JoinOn(layout, "r", "j"));
+        }
+
+        var order = new List<string> { OrderList(layout, "r") };
+        if (read.Child is { } joined)
+        {
+            var on = joined.Join.Select(j => $"c.{SourceObjectName.Quote(j.Key)} = r.{SourceObjectName.Quote(j.Value)}").ToList();
+            if (joined.Deleted is { } deletedChild)
+            {
+                on.Add($"c.{SourceObjectName.Quote(deletedChild)} IS NULL");
+            }
+
+            sql.Append("LEFT JOIN ").Append(joined.Object.Quoted).Append(" c ON ").AppendLine(string.Join(" AND ", on));
+            order.AddRange(joined.OrderBy.Select(o => $"c.{SourceObjectName.Quote(o)}"));
+        }
+
+        var predicates = new List<string>();
+        if (layout.Scope.Count > 0)
+        {
+            predicates.Add(ScopePredicate(layout, "r"));
+        }
+
+        if (layout.Deleted is { } deleted)
+        {
+            predicates.Add($"r.{SourceObjectName.Quote(deleted)} IS NULL");
+        }
+
+        if (predicates.Count > 0)
+        {
+            sql.Append("WHERE ").AppendLine(string.Join(" AND ", predicates));
+        }
+
+        sql.Append("ORDER BY ").Append(string.Join(", ", order)).Append(';');
         return sql.ToString();
     }
 

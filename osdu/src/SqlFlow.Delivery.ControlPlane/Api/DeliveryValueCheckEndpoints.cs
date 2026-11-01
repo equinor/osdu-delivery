@@ -18,6 +18,7 @@ using SqlFlow.Delivery.Engine.Checks;
 using SqlFlow.Delivery.Engine.Operations;
 using SqlFlow.Delivery.Model;
 using SqlFlow.Delivery.Snapshots;
+using SqlFlow.Delivery.Source;
 using SqlFlow.Delivery.Templates;
 
 namespace SqlFlow.Delivery.ControlPlane.Api;
@@ -50,6 +51,17 @@ public sealed record DeliveryValueCheckRequest(
     long? SkipSamples,
     string? Mapping,
     bool? DryRun = null);
+
+/// <summary>
+/// The T-SQL that shows what an attribute of a mapping reads: the attribute (a template path; none for every entry of the
+/// mapping), the flow parameter values its scope is read with, the most rows a statement returns (0 for all of them), and the
+/// records to narrow to, each a key as a JSON array of its parts.
+/// </summary>
+public sealed record DeliverySourceSqlRequest(
+    string? Target,
+    [property: System.Text.Json.Serialization.JsonConverter(typeof(SqlFlow.Core.Runs.RunValuesJsonConverter))] IReadOnlyDictionary<string, string>? Values,
+    long? MaxRows,
+    IReadOnlyList<string>? Keys);
 
 /// <summary>
 /// A page of the rows staged in a flow's scope: the flow parameter values its scope is read with, the text a row must hold, where
@@ -90,6 +102,7 @@ public static class DeliveryValueCheckEndpoints
         delivery.MapPost("/flows/{pipelineId:guid}/check-values", CheckValuesAsync).WithName("CheckDeliveryFlowValues");
         delivery.MapPost("/flows/{pipelineId:guid}/check-values/export", ExportIssuesAsync).WithName("ExportDeliveryFlowValueIssues");
         delivery.MapPost("/flows/{pipelineId:guid}/staged-rows", StagedRowsAsync).WithName("ListDeliveryFlowStagedRows");
+        delivery.MapPost("/flows/{pipelineId:guid}/source-sql", SourceSqlAsync).WithName("WriteDeliveryFlowSourceSql");
     }
 
     /// <summary>
@@ -224,6 +237,114 @@ public static class DeliveryValueCheckEndpoints
     }
 
     /// <summary>
+    /// Keys as they are, a quote or a letter outside ASCII taking one character: they travel as a task's argument and never reach
+    /// a page, and what a page counts of them has to be what an argument's limit counts.
+    /// </summary>
+    private static readonly JsonSerializerOptions PlainJson = new() { Encoder = System.Text.Encodings.Web.JavaScriptEncoder.UnsafeRelaxedJsonEscaping };
+
+    /// <summary>
+    /// The T-SQL showing what an attribute of a mapping reads, written in this process (<see cref="DirectOperationRunner"/>) from
+    /// the shape of the flow's tables. No row is read and nothing is run: the script is for the reader to run. Every part of the
+    /// request is checked here, so one the operation would refuse answers 400.
+    /// </summary>
+    private static async Task<Results<ContentHttpResult, ProblemHttpResult>> SourceSqlAsync(
+        Guid pipelineId, DeliverySourceSqlRequest? request, [FromQuery(Name = "interface")] string? interfaceName, [FromQuery] string? partition, CatalogDbContext db,
+        DeliveryDocumentLoader documents, IPartitionRegistry partitions, DeliveryConfigStore config, DirectOperations direct, ILoggerFactory loggers, ClaimsPrincipal user, CancellationToken ct)
+    {
+        var (flow, problem) = await DeliveryEndpoints.ResolveAsync(db, documents, partitions, pipelineId, interfaceName, partition, ct).ConfigureAwait(false);
+        if (flow is null)
+        {
+            return problem!;
+        }
+
+        var arguments = new Dictionary<string, string>(StringComparer.Ordinal);
+        if (SourceSqlArguments(flow.Flow, request ?? new DeliverySourceSqlRequest(null, null, null, null), arguments) is { } refused)
+        {
+            return DeliveryEndpoints.Invalid(refused);
+        }
+
+        return await DirectOperationRunner.RunAsync(db, config, direct, flow, SourceSqlOperation.OperationName, arguments, user, loggers, ct).ConfigureAwait(false);
+    }
+
+    /// <summary>Fills <paramref name="arguments"/> for <paramref name="request"/>, or says why it cannot be written.</summary>
+    internal static string? SourceSqlArguments(FlowDefinition flow, DeliverySourceSqlRequest request, Dictionary<string, string> arguments)
+    {
+        ArgumentNullException.ThrowIfNull(flow);
+        ArgumentNullException.ThrowIfNull(request);
+        ArgumentNullException.ThrowIfNull(arguments);
+        var values = request.Values ?? new Dictionary<string, string>(StringComparer.Ordinal);
+        if (DeliveryEndpoints.ParameterProblem(flow, values) is { } parameters)
+        {
+            return parameters;
+        }
+
+        if (values.Count > 0 && Json(values, "parameter values", arguments, "values") is { } tooLong)
+        {
+            return tooLong;
+        }
+
+        if (request.Target?.Trim() is { Length: > 0 } target)
+        {
+            if (!TemplatePath.TryParse(target, out _, out var error))
+            {
+                return $"'{target}' is not a variable a query can name: {error}.";
+            }
+
+            arguments[SourceSqlOperation.TargetArgument] = target;
+        }
+
+        if (request.MaxRows is { } rows)
+        {
+            if (rows < 0)
+            {
+                return $"A query returns a number of rows, or 0 for all of them; {rows.ToString(CultureInfo.InvariantCulture)} is neither.";
+            }
+
+            arguments[SourceSqlOperation.MaxRowsArgument] = rows.ToString(CultureInfo.InvariantCulture);
+        }
+
+        if (request.Keys is { Count: > 0 } keys)
+        {
+            var parts = flow.Source.Record.Key.Count;
+            var named = new List<IReadOnlyList<string>>(keys.Count);
+            foreach (var key in keys)
+            {
+                if (KeyParts(key) is not { } held || held.Count != parts)
+                {
+                    return $"A record of this flow is named by a JSON array of its {parts.ToString(CultureInfo.InvariantCulture)} key parts, and '{key}' is not one.";
+                }
+
+                named.Add(held);
+            }
+
+            if (Json(named, "records named", arguments, SourceSqlOperation.KeysArgument, PlainJson) is { } tooMany)
+            {
+                return tooMany;
+            }
+        }
+
+        return null;
+    }
+
+    /// <summary>The parts of a key, or null for text that is not a key.</summary>
+    private static IReadOnlyList<string>? KeyParts(string? key)
+    {
+        if (string.IsNullOrWhiteSpace(key))
+        {
+            return null;
+        }
+
+        try
+        {
+            return KeyTuple.FromJson(key).Values;
+        }
+        catch (DeliveryException)
+        {
+            return null;
+        }
+    }
+
+    /// <summary>
     /// The same check, asked for as one is, queued to write every issue it finds to an Excel workbook
     /// (<see cref="ExportValueIssuesOperation"/>), which the task's result carries.
     /// </summary>
@@ -346,9 +467,9 @@ public static class DeliveryValueCheckEndpoints
     }
 
     /// <summary>Writes <paramref name="value"/> as the JSON argument <paramref name="name"/>, or says it is longer than a task carries.</summary>
-    private static string? Json<T>(T value, string what, Dictionary<string, string> arguments, string name)
+    private static string? Json<T>(T value, string what, Dictionary<string, string> arguments, string name, JsonSerializerOptions? options = null)
     {
-        var json = JsonSerializer.Serialize(value);
+        var json = JsonSerializer.Serialize(value, options);
         if (json.Length > ComputeTaskPayload.MaxArgumentLength)
         {
             return $"The {what} are {json.Length.ToString(CultureInfo.InvariantCulture)} characters as JSON; a check carries at most {ComputeTaskPayload.MaxArgumentLength.ToString(CultureInfo.InvariantCulture)}. Check fewer at a time.";

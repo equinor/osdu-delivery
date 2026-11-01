@@ -304,6 +304,68 @@ public sealed class ValueCheckTests : IDisposable
         Assert.Equal(3, tally.Rows(4, 4, complete: true).WithInvalid);
     }
 
+    [Fact]
+    public async Task The_query_of_an_attribute_is_written_by_the_whole_operation_from_the_sample_mapping_and_its_tables()
+    {
+        var tables = await SampleEstate.BuildAsync(_root, Now.AddMinutes(-5), time: _clock);
+        var engine = Samples.Engine(ledger: null, _clock, sources: tables, searches: FixedRecordSearchFactory.SampleWellbores());
+        var flow = Samples.LocalFlow(_root);
+        var operation = new SourceSqlOperation(engine);
+
+        // A code a request could not carry is refused when an operation begins, which only the real operation meets.
+        Assert.True(SqlFlow.Delivery.Http.OsduCorrelation.IsCode(operation.CorrelationOperation));
+
+        async Task<System.Text.Json.JsonElement> Ask(params (string Name, string Value)[] asked)
+        {
+            var arguments = new Dictionary<string, string>(StringComparer.Ordinal)
+            {
+                ["flowFile"] = Samples.Flow,
+                ["values"] = SqlFlow.Core.Runs.RunParameters.ValuesToJson(SampleEstate.Values)!,
+            };
+            foreach (var (name, value) in asked)
+            {
+                arguments[name] = value;
+            }
+
+            if (flow.Interface is { } named)
+            {
+                arguments["interface"] = named;
+            }
+
+            if (flow.Partition is { } partition)
+            {
+                arguments[DeliveryOperation.PartitionArgument] = partition;
+            }
+
+            var payload = new SqlFlow.Core.Compute.ComputeTaskPayload { Operation = SourceSqlOperation.OperationName, SourceRef = flow.Name, Arguments = arguments };
+            payload.Validate([SourceSqlOperation.OperationName]);
+            return System.Text.Json.JsonDocument.Parse(await operation.ExecuteAsync(payload, CancellationToken.None)).RootElement.Clone();
+        }
+
+        var name = await Ask((SourceSqlOperation.TargetArgument, "osdu.data.Name"), (SourceSqlOperation.MaxRowsArgument, "500"));
+        Assert.Equal("osdu.data.Name", name.GetProperty("target").GetString());
+        Assert.True(name.GetProperty("entries").GetInt32() > 0);
+        Assert.StartsWith("dataset.", name.GetProperty("reads")[0].GetProperty("column").GetString(), StringComparison.Ordinal);
+        var sql = name.GetProperty("sql").GetString()!;
+        Assert.Contains("SELECT TOP (500)", sql, StringComparison.Ordinal);
+        Assert.Contains(SourceObjectName.Parse(flow.Source.Record.Object).Quoted, sql, StringComparison.Ordinal);
+
+        // An attribute of a repeated item joins its child rows, and failing rows narrow to the records named, whatever the budget.
+        var key = System.Text.Json.JsonSerializer.Serialize(new[] { new[] { "PROJECT_A", "LOG-1" } });
+        var item = await Ask(
+            (SourceSqlOperation.TargetArgument, "osdu.data.Curves[].CurveUnit"), (SourceSqlOperation.MaxRowsArgument, "500"), (SourceSqlOperation.KeysArgument, key));
+        Assert.Equal(1, item.GetProperty("keys").GetInt32());
+        var narrowed = item.GetProperty("sql").GetString()!;
+        Assert.Contains("LEFT JOIN", narrowed, StringComparison.Ordinal);
+        Assert.Contains("OPENJSON(@keys)", narrowed, StringComparison.Ordinal);
+        Assert.DoesNotContain("TOP", narrowed, StringComparison.Ordinal);
+
+        // Every attribute at once, when none is named.
+        var whole = await Ask();
+        Assert.False(whole.TryGetProperty("target", out _));
+        Assert.True(whole.GetProperty("reads").GetArrayLength() > name.GetProperty("reads").GetArrayLength());
+    }
+
     /// <summary>How many records a plan of the scope holds, rendering them as a first delivery would.</summary>
     [Fact]
     public async Task An_export_of_an_attribute_hands_back_the_rows_failing_it_with_the_base_data_behind_them_and_nothing_written()

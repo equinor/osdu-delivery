@@ -242,6 +242,30 @@ public sealed class SqlServerIngestionSource : IIngestionSource
         return layout.Key;
     }
 
+    public async Task<SourceDescription> DescribeAsync(CancellationToken ct = default)
+    {
+        await using var connection = await IngestionConnection.OpenAsync(_flow.Source.Connection, _flow.Name, _secrets, ct).ConfigureAwait(false);
+        var layout = await BuildLayoutAsync(connection, ct, guardScope: false).ConfigureAwait(false);
+        var record = _tables[SourceDatasets.Record];
+        var scope = new List<SourceScopeValues>(layout.Scope.Count);
+        foreach (var (column, parameter, _) in layout.Scope)
+        {
+            if (!_values.TryGetValue(parameter, out var value))
+            {
+                throw new DeliveryException(
+                    $"Flow '{_flow.Label}': {_keys.Name("source.record.scope")} binds column '{column}' to parameter '{parameter}', and this read supplies no value for it.");
+            }
+
+            scope.Add(new SourceScopeValues(column, parameter, record[column].SqlType, RunValueList.Items(value)));
+        }
+
+        return new SourceDescription(
+            layout,
+            _tables.ToDictionary(t => t.Key, t => (IReadOnlyList<string>)t.Value.Values.Select(c => c.Name).ToList(), StringComparer.OrdinalIgnoreCase),
+            scope,
+            new[] { _fileNameColumn, _rowNumberColumn }.OfType<string>().ToList());
+    }
+
     public async IAsyncEnumerable<IngestionKey> ReadKeysAsync(int pageSize, [EnumeratorCancellation] CancellationToken ct = default)
     {
         ArgumentOutOfRangeException.ThrowIfLessThan(pageSize, 1);

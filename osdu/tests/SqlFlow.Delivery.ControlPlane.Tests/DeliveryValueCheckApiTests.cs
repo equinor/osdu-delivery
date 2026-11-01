@@ -257,6 +257,27 @@ public sealed class DeliveryValueCheckApiTests
             await RefusedAsync(client, token, staged, new { values, limit = 0 }, "between 1 and 500 rows");
             await RefusedAsync(client, token, staged, new { values, search = new string('x', 201) }, "at most 200 characters");
             await RefusedAsync(client, token, staged, new { values, search = "two\nlines" }, "at most 200 characters");
+
+            // The query of an attribute is written by the control plane as well, from what the request names.
+            var query = $"/api/v1/delivery/flows/{pipelineId:D}/source-sql?interface=welllogs";
+            using (var answered = await SendAsync(client, token, HttpMethod.Post, query, new { target = "osdu.data.Name", values, maxRows = 500, keys = new[] { "[\"PROJECT\",\"7\"]" } }))
+            {
+                Assert.True(answered.StatusCode == HttpStatusCode.OK, await answered.Content.ReadAsStringAsync());
+            }
+
+            var written = operations.Last();
+            Assert.Equal("delivery-source-sql", written.Operation);
+            Assert.Equal("welllogs", written.Argument("interface"));
+            Assert.Equal("osdu.data.Name", written.Argument("target"));
+            Assert.Equal("COMPOSITE", JsonDocument.Parse(written.Argument("values")!).RootElement.GetProperty("logSource").GetString());
+            Assert.Equal("500", written.Argument("maxRows"));
+            Assert.Equal("[[\"PROJECT\",\"7\"]]", written.Argument("keys"));
+            await RefusedAsync(client, token, query, new { }, "needs a value for logSource");
+            await RefusedAsync(client, token, query, new { values, target = "not a path" }, "is not a variable a query can name");
+            await RefusedAsync(client, token, query, new { values, maxRows = -1 }, "or 0 for all of them");
+            await RefusedAsync(client, token, query, new { values, keys = new[] { "[\"only one part\"]" } }, "key parts");
+            await RefusedAsync(client, token, query, new { values, keys = new[] { "not json" } }, "key parts");
+            await RefusedAsync(client, token, query, new { values, keys = Enumerable.Repeat("[\"PROJECT\",\"7\"]", 400).ToArray() }, "at most 4000");
             Assert.Empty(operations.Given);
             await using var catalog = CatalogDatabase.Create(cs);
             Assert.DoesNotContain(await catalog.ComputeTasks.AsNoTracking().Where(t => t.SourceRef == flowName).Select(t => t.Operation).ToListAsync(), o => o == "delivery-scope-values");
