@@ -8,6 +8,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **See a mapping's records before they are delivered.** A mapping now opens on **Staged records**: the rows of a flow that renders
+  with it, from any record table of any kind, paged and searched in the database so a table of any size lists at once, with
+  what each child table holds of a row. Pick one to see its document. **Dry run** takes them through everything a delivery does
+  short of sending them and says what each comes to (**Ready**, **Worth a look**, **Held**, **Passed over**) and what the next run
+  would do with it, and it replaces **Check all attributes**: Properties reads the same run by attribute
+  ([a dry run](osdu/docs/reference/concepts/dry-run.md)).
+
+- **A document is held to the partition's Schema service before it is sent.** A dry run and a record's new **Schema service** tab,
+  in a mapping and in a flow's Preview, hold each document to the schema the partition holds as well as the template the mapping
+  pins, with how to meet each rule, and say where the two differ, whether the kind is registered, and whether its legal tags,
+  references and id stand. The service serves schemas and validates nothing itself, so the check is the one a delivery makes
+  ([the Schema service](osdu/docs/reference/concepts/dry-run.md#the-schema-service)).
+
 - **A mapping's data check goes through the rows behind a count.** An attribute's new **Failing records** tab takes the rows a
   check found wrong one record at a time, on one page: why they fail, what is wrong in this record, what its source row holds
   in the columns the attribute reads, and the document it rendered to, folded down to the attribute with each value marked and

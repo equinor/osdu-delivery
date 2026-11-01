@@ -244,6 +244,8 @@ other packages adopt the same contract.
 - [0039: the VS Code extension is a client of the MCP server, and one browser sign-in serves it and the command line](decisions/0039-vscode-extension-is-an-mcp-client.md) -
   why the extension reads through the server's tools, why a missing tool was filled in the server, why Microsoft sign-in
   reaches a client through a GUI page, and why the extension, the server and `sqlflow` share one credential file.
+- [0040: a dry run is a read of a mapping's staged rows, not a module, and the Schema service is read rather than asked](decisions/0040-dry-run-of-a-mapping.md):
+  why it extends the value check rather than `plan` or a new flow kind, why a document is judged here, and how it stays flat at any size.
 
 ## Coverage
 

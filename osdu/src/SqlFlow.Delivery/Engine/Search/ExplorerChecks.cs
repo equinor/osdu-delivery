@@ -501,18 +501,7 @@ public sealed class ExplorerChecks
             return known;
         }
 
-        (OfficialExample?, string?) found;
-        try
-        {
-            var example = await _examples.ExampleAsync(kind, ct).ConfigureAwait(false);
-            found = (example, example is null ? $"The OSDU data definitions publish no example record of {kind}." : null);
-        }
-        catch (Exception ex) when (ex is DeliveryException or HttpRequestException or IOException or UnauthorizedAccessException or JsonException
-            || (ex is OperationCanceledException && !ct.IsCancellationRequested))
-        {
-            found = (null, $"OSDU's example record of {kind} could not be read: {HeaderRedaction.RedactMessage(ex.Message)}");
-        }
-
+        var found = await OfficialExampleReads.ReadAsync(_examples, kind, ct).ConfigureAwait(false);
         _exampleOf[kind] = found;
         return found;
     }

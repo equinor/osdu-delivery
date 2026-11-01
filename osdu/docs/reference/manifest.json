@@ -1556,6 +1556,53 @@
       ]
     },
     {
+      "id": "delivery-concept-dry-run",
+      "corpus": "reference",
+      "path": "concepts/dry-run.md",
+      "title": "A dry run: a mapping's staged records taken through everything a delivery does, short of sending them",
+      "type": "concept",
+      "summary": "What a dry run does with a mapping's staged rows: what each comes to, how its document is held to the template and the Schema service, and what it costs.",
+      "keywords": [
+        "dry run",
+        "staged records",
+        "staged rows",
+        "see the document before delivery",
+        "schema service",
+        "validate a document",
+        "cross match",
+        "template and schema differ",
+        "unregistered kind",
+        "ready held worth a look",
+        "nothing sent",
+        "large tables",
+        "check-values dryRun",
+        "staged-rows"
+      ],
+      "related": [
+        "delivery-concept-gui",
+        "delivery-concept-preflight",
+        "delivery-cli-values",
+        "delivery-cli-preview",
+        "delivery-concept-templates",
+        "delivery-guide-writing-a-mapping",
+        "delivery-concept-explorer"
+      ],
+      "sourceRefs": [
+        "osdu/src/SqlFlow.Delivery/Engine/Checks/DryRun.cs",
+        "osdu/src/SqlFlow.Delivery/Engine/Checks/DryRunner.cs",
+        "osdu/src/SqlFlow.Delivery/Engine/Checks/SchemaCrossCheck.cs",
+        "osdu/src/SqlFlow.Delivery/Engine/Checks/ValueChecker.cs",
+        "osdu/src/SqlFlow.Delivery/Engine/Operations/StagedRowsOperation.cs",
+        "osdu/src/SqlFlow.Delivery/Engine/Search/SchemaServiceReader.cs",
+        "osdu/src/SqlFlow.Delivery/Source/IngestionSql.cs",
+        "osdu/src/SqlFlow.Delivery/Validation/ReferenceResolver.cs",
+        "osdu/src/SqlFlow.Delivery.ControlPlane/Api/DeliveryValueCheckEndpoints.cs",
+        "osdu/gui/src/features/delivery/StagedRecordsTab.tsx",
+        "osdu/gui/src/features/delivery/StagedRecordList.tsx",
+        "osdu/gui/src/features/delivery/SchemaCheckView.tsx"
+      ]
+    },
+    {
       "id": "delivery-concept-environment-variables",
       "corpus": "reference",
       "path": "concepts/environment-variables.md",
@@ -9682,6 +9729,36 @@
         "sqlflow/src/SqlFlow.ControlPlane/Security/DeviceApprovalPage.cs",
         "osdu/hosts/osdu-delivery-vscode/src/extension.ts",
         "osdu/hosts/osdu-delivery-vscode/src/templates.ts"
+      ]
+    },
+    {
+      "id": "delivery-wiki-0040-dry-run-of-a-mapping",
+      "corpus": "wiki",
+      "path": "decisions/0040-dry-run-of-a-mapping.md",
+      "title": "Decision 0040: a dry run is a read of a mapping's staged rows, not a module, and the Schema service is read rather than asked",
+      "type": "decision",
+      "summary": "Why a mapping's dry run extends the value check rather than plan or a new flow kind, why documents are judged here, and how it stays flat at any table size.",
+      "keywords": [
+        "dry run",
+        "staged records",
+        "schema service validation",
+        "cross match",
+        "dedicated module",
+        "plan operation",
+        "value check",
+        "one render per row",
+        "bounded list",
+        "keyset paging"
+      ],
+      "related": [],
+      "sourceRefs": [
+        "osdu/src/SqlFlow.Delivery/Engine/Checks/DryRunner.cs",
+        "osdu/src/SqlFlow.Delivery/Engine/Checks/SchemaCrossCheck.cs",
+        "osdu/src/SqlFlow.Delivery/Engine/Checks/ValueChecker.cs",
+        "osdu/src/SqlFlow.Delivery/Engine/Operations/StagedRowsOperation.cs",
+        "osdu/src/SqlFlow.Delivery/Validation/ReferenceResolver.cs",
+        "osdu/gui/src/features/delivery/StagedRecordsTab.tsx",
+        "osdu/gui/src/features/delivery/StagedRecordList.tsx"
       ]
     },
     {

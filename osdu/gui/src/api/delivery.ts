@@ -1522,6 +1522,8 @@ export interface DeliveryRecordPreview {
   steps: DeliveryPreviewStep[];
   notes: string[];
   issues: string[];
+  /** The document against the partition's Schema service, when the preview was asked for that. */
+  schemaCheck?: DeliveryPreviewSchemaCheck | null;
   previewedUtc: string;
 }
 
@@ -1551,6 +1553,156 @@ export interface DeliveryValueCheckRequest {
   samples?: number;
   skipSamples?: number;
   mapping?: string | null;
+  /** Also take the rows through everything a delivery does short of sending them; it names no variable, since it reads them all. */
+  dryRun?: boolean;
+}
+
+/** What a dry run says of one row: sent as it is, worth a look first, not sent, or never rendered at all. */
+export type DeliveryDryRunOutcome = "ready" | "attention" | "held" | "passedOver";
+
+/** What the partition's Schema service says of a kind, against the template a mapping pins. */
+export type DeliverySchemaMatchState = "matches" | "differs" | "read" | "unregistered" | "unavailable" | "notApplicable";
+
+/** One thing about a property that differs: its value in the template, and in the Schema service's schema. */
+export interface DeliverySchemaDifferenceField {
+  field: string;
+  template?: string | null;
+  service?: string | null;
+}
+
+/** A property the template and the Schema service's schema do not agree on. */
+export interface DeliverySchemaDifference {
+  path: string;
+  change: "onlyInService" | "onlyInTemplate" | "different";
+  impact: "breaking" | "additive";
+  fields: DeliverySchemaDifferenceField[];
+}
+
+/** What the partition's Schema service holds for a kind, set against the template a mapping pins. */
+export interface DeliverySchemaCrossMatch {
+  kind: string;
+  state: DeliverySchemaMatchState;
+  why?: string | null;
+  status?: string | null;
+  scope?: string | null;
+  templateVersion?: string | null;
+  serviceVersion?: string | null;
+  schemasRead: number;
+  unresolved: string[];
+  differenceCount: number;
+  breakingCount: number;
+  differences: DeliverySchemaDifference[];
+}
+
+/** One staged row as a dry run found it; its document is read on demand. */
+export interface DeliveryDryRunRecord {
+  sourceKey: string;
+  /** The key's parts as a JSON array, which names the row to a preview; absent for a row whose key is incomplete. */
+  keyJson?: string | null;
+  deliveryKey?: string | null;
+  label?: string | null;
+  file?: string | null;
+  row?: number | null;
+  outcome: DeliveryDryRunOutcome;
+  reason?: string | null;
+  nextRun: DeliveryPreviewAction;
+  targetId?: string | null;
+  template?: string | null;
+  schema?: string | null;
+  schemaProblems: number;
+  templateProblems: number;
+  assertionFailures: number;
+  missingReferences: number;
+  occupied: boolean;
+  addedRecords: number;
+  addedProblems: number;
+}
+
+/** A rule the documents of a dry run break, how many records break it, and one example. */
+export interface DeliveryDryRunRule {
+  at: string;
+  rule: string;
+  records: number;
+  exampleKey: string;
+  exampleMessage: string;
+  exampleValue: string;
+}
+
+/** What a schema's own rules said of the documents a dry run held to it; a reference nothing holds is counted apart. */
+export interface DeliveryDryRunVerdicts {
+  valid: number;
+  invalid: number;
+  unverified: number;
+  notChecked: number;
+}
+
+/** A dry run over a flow's staged rows, which travels with the value check of the same rows. */
+export interface DeliveryDryRun {
+  outcomes: { rows: number; ready: number; attention: number; held: number; passedOver: number };
+  nextRun: { create: number; update: number; unchanged: number; hold: number };
+  template: DeliveryDryRunVerdicts;
+  schema: DeliveryDryRunVerdicts;
+  schemaMatch: DeliverySchemaCrossMatch;
+  addedSchemas: DeliverySchemaCrossMatch[];
+  legalTags: { state: "accepted" | "refused" | "notAsked" | "notChecked" | "notApplicable"; tags: string[]; why?: string | null };
+  withMissingReferences: number;
+  occupied: number;
+  rules: DeliveryDryRunRule[];
+  rulesUnlisted: number;
+  records: DeliveryDryRunRecord[];
+  cut: boolean;
+  notes: string[];
+}
+
+/** A record one of a document's enrichments adds, against what the Schema service holds of its kind. */
+export interface DeliveryPreviewAddedSchemaCheck {
+  id: string;
+  kind: string;
+  row: number;
+  schema: DeliverySchemaCrossMatch;
+  verdict?: unknown;
+}
+
+/** One document against the partition's Schema service. */
+export interface DeliveryPreviewSchemaCheck {
+  schema: DeliverySchemaCrossMatch;
+  verdict?: unknown;
+  guidance?: unknown;
+  problem?: string | null;
+  templateOutcome?: string | null;
+  templateProblems: number;
+  added: DeliveryPreviewAddedSchemaCheck[];
+}
+
+/** One row staged in a flow's record table, as a page lists it: nothing of it is rendered. */
+export interface DeliveryStagedRow {
+  sourceKey: string;
+  keyJson: string;
+  deliveryKey?: string | null;
+  label?: string | null;
+  file?: string | null;
+  row?: number | null;
+  updatedUtc?: string | null;
+  deletedUtc?: string | null;
+  /** False when a part of its key is empty, so it has no record to name. */
+  complete: boolean;
+  children: Record<string, number>;
+}
+
+/** A page of the rows staged in a flow's scope. */
+export interface DeliveryStagedRows {
+  flow: string;
+  interface?: string | null;
+  recordObject: string;
+  keyColumns: string[];
+  datasets: Record<string, string>;
+  /** How many rows the scope and the search hold, on the first page. */
+  total?: number | null;
+  rows: DeliveryStagedRow[];
+  /** Where the next page starts; absent on the last. */
+  next?: string | null;
+  mappingUnread?: string | null;
+  readUtc: string;
 }
 
 /**
@@ -1682,6 +1834,8 @@ export interface DeliveryValueCheck {
   variables: DeliveryValueCheckVariable[];
   issues: string[];
   notes: string[];
+  /** What a dry run of the same rows came to; absent when none was asked for. */
+  dryRun?: DeliveryDryRun | null;
   startedUtc: string;
   checkedUtc: string;
 }
@@ -4212,8 +4366,17 @@ export const deliveryApi = {
    * OSDU id the ledger holds, or a JSON array of the key's parts), rendered as a delivery would render it and sent nowhere.
    * `values` fill the flow's parameters; the declared defaults fill the rest. Answered at once.
    */
-  preview: (pipelineId: string, request: { key?: string | null; values?: Record<string, RunValue> }, scope?: DeliveryFlowScope) =>
+  preview: (pipelineId: string, request: { key?: string | null; values?: Record<string, RunValue>; schemaCheck?: boolean }, scope?: DeliveryFlowScope) =>
     post<DeliveryRecordPreview>(flowPath(pipelineId, "/preview", scope), request),
+  /**
+   * A page of the rows staged in an interface's scope, nothing of them rendered, resuming after `after`, narrowed to the rows
+   * whose key, label or file hold `search`. Answered at once.
+   */
+  stagedRows: (
+    pipelineId: string,
+    request: { values?: Record<string, RunValue>; search?: string; after?: string | null; limit?: number },
+    scope?: DeliveryFlowScope,
+  ) => post<DeliveryStagedRows>(flowPath(pipelineId, "/staged-rows", scope), request),
   /** Previews this record, rendered from its current source row as a delivery would render it now. Answered at once. */
   previewRecord: (record: DeliveryRecordRef) => post<DeliveryRecordPreview>(`${recordApiPath(record)}/preview`),
   /** The interfaces of the delivery flows that render with a mapping, in every partition: what its values are checked against. */

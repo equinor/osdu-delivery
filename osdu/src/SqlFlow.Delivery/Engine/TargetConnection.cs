@@ -99,7 +99,9 @@ internal sealed class TargetConnection : IDisposable
     /// <summary>The stack every call to the target goes through, watched by the run's trace when the context serves a run.</summary>
     private HttpRuntime NewHttp()
     {
-        var http = new HttpRuntime(_flow.Reliability, _context.Secrets, _context.Time, allowLoopback: EngineContext.LoopbackAllowed, observer: _context.HttpObserver);
+        var transport = _context.Clients?.Transport;
+        var http = new HttpRuntime(
+            _flow.Reliability, _context.Secrets, _context.Time, transport, allowLoopback: transport is not null || EngineContext.LoopbackAllowed, observer: _context.HttpObserver);
         http.RateLimit.Share(_rateShare);
         return http;
     }

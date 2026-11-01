@@ -403,11 +403,13 @@ interface picker whose choice is in the address; a flow that names its partition
   are on the bar's info mark, and a value the scope still needs is said on the line under it. The answer opens on its
   verdict: what the next run would do with the record and why, its OSDU id, how the ledger holds it (and whether that is
   the document rendered now), the file and row it came from and how it was picked, with **Open record** and
-  **Download JSON**. Under it, a line for each thing to know before trusting it, only when there is one: the preflight's
-  warnings, rows before it passed over, assertions that failed without holding it and references the cache does not
-  hold, each in full on hover with a copy (the last two lead to the Render tab). When a delivery would hold the record,
-  **Held for** says why, as a record's Render tab does. Four tabs follow, the first filling the window: **Document** (as
-  the route sends it, or as the mapping renders it), **Render** (the mapping, kind, cache version and hash, what the
+  **Download JSON**. Under it, a line for each thing to know before trusting it, only when there is one: what the
+  partition's Schema service says of the document, the preflight's warnings, rows before it passed over, assertions that
+  failed without holding it and references the cache does not hold, each in full on hover with a copy (the last two lead to
+  the Render tab). When a delivery would hold the record, **Held for** says why, as a record's Render tab does. Five tabs
+  follow, the first filling the window: **Document** (as the route sends it, or as the mapping renders it), **Schema
+  service** (the document held to the schema the partition holds, [a dry run](dry-run.md#the-schema-service) says how, with
+  how to meet each rule and where the template disagrees), **Render** (the mapping, kind, cache version and hash, what the
   mapping's assertions found, the platform searches, where each `$coalesce` took its value and what each enrichment
   added), **Delivery** (the route, its requests in order with each body on demand, the files it would upload and the
   records it refers to) and **Source** (its keys, where and how it was picked, the record row and its child rows).
@@ -536,13 +538,22 @@ The **Delivery** section of Build: what a delivered record is built from, and th
 The mapping documents the repositories hold, as the last sync found them, filtered by repository, with **New mapping**
 (opens the builder). A mapping opens in a sheet with the template version it fills (a link to Templates, its tooltip
 naming the template folder file the version was read from, or saying no folder on the mapping's path holds it), **Open in
-builder**, and three tabs:
+builder**, and four tabs, opening on the first:
 
+- **Staged records**: the rows staged for the mapping, before anything is delivered, and a [dry run](dry-run.md) of them. The
+  line at the top picks a flow that renders with the mapping (each names its record table), its scope's values and how many
+  rows, and **Dry run**. The list reads the table a page at a time and asks it for a search, by key, label or file; each
+  line says what became of the row, or how many rows its child tables hold of it, and Up and Down step through them. A picked
+  row shows its record as the flow's **Preview** does, with a **Schema service** tab beside the document. Before a record is
+  picked, a dry run opens on what it found: what was checked of every record alike, the rules broken most often with an
+  example of each a click away, and what differs between the template and the Schema service. Above the list it says
+  whether the rows can be delivered, and **Ready**, **Worth a look**, **Held** and **Passed over** each carry a count and
+  narrow the list. Everything picked stays when the reader moves to another tab and back.
 - **Properties**: the template the mapping fills as the record's tree, beside the selected attribute. The views
-  **Filled**, **Missing**, **Unfilled**, **Failing** (after a data check) and **All** each carry a count; **View** adds
+  **Filled**, **Missing**, **Unfilled**, **Failing** (after a dry run) and **All** each carry a count; **View** adds
   **Required**, **Minted** and **Nested**. The selected attribute reads in **Filled by**, **Data**, **Failing records**
-  and **Schema**. The data check line picks a flow that renders with the mapping, its scope's values and how many rows, and
-  **Check all attributes**; an attribute's **Check values** checks it alone. See
+  and **Schema**. The line at the top is the same as **Staged records**, and the same **Dry run**: what it found reads here
+  attribute by attribute. An attribute's **Check values** checks it alone. See
   [writing a mapping](../guides/writing-a-mapping.md).
   - **Failing records** goes through the rows a check found wrong with the attribute, one record at a time, on one page
     read top to bottom. At the top, and staying in view, the reason (picked from a list when there are several) and

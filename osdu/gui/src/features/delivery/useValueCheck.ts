@@ -6,6 +6,7 @@ import type { ComputeTask, DeclaredRunParameter, RunValue } from "@/api/types";
 import { useAuth } from "@/auth/AuthContext";
 import {
   deliveryApi,
+  type DeliveryDryRun,
   type DeliveryFlowScope,
   type DeliveryMappingFlow,
   type DeliveryValueCheck,
@@ -107,6 +108,8 @@ interface Store {
   last: CheckMeta | null;
   /** The latest check of every variable, which the bar's summary is of while there is one. */
   lastAll: CheckMeta | null;
+  /** The latest dry run, with what it read. */
+  dryRun: { run: DeliveryDryRun; meta: CheckMeta } | null;
   /** Why the latest check that failed did; cleared by the next one that answers. */
   failure: string | null;
   /** What finished, for the toasts; the last few only. */
@@ -116,7 +119,7 @@ interface Store {
 }
 
 function emptyStore(key: string | null): Store {
-  return { flowKey: key, variables: new Map(), last: null, lastAll: null, failure: null, completions: [], done: new Set() };
+  return { flowKey: key, variables: new Map(), last: null, lastAll: null, dryRun: null, failure: null, completions: [], done: new Set() };
 }
 
 /** How long the toast line list is kept: long enough that no completion is lost between two renders. */
@@ -137,7 +140,7 @@ function taken(store: Store, task: PendingTask, settled: ComputeTask | undefined
     const why = settled?.error
       ?? (error !== undefined ? (isApiError(error) ? error.detail ?? error.title : String(error)) : null)
       ?? (settled?.status === "cancelled" ? "The check was cancelled before a node finished it." : "The check ended without an answer.");
-    return { ...store, failure: why, completions: completions({ taskId: task.taskId, ok: false, text: `The value check could not be made: ${why}` }) };
+    return { ...store, failure: why, completions: completions({ taskId: task.taskId, ok: false, text: `The dry run could not be made: ${why}` }) };
   }
 
   const check = settled.result as DeliveryValueCheck;
@@ -187,7 +190,10 @@ function taken(store: Store, task: PendingTask, settled: ComputeTask | undefined
   const asked = task.targets === null ? [] : check.variables.filter((variable) => task.targets!.includes(variable.target));
   const asserted = asked.reduce((sum, variable) => sum + assertedOf(variable.rows), 0);
   const assertedRows = assertionRowsLine(rows);
-  const text = task.targets === null
+  const run = check.dryRun ?? null;
+  const text = run !== null
+    ? `Dry run of ${formatCount(run.outcomes.rows)} rows of ${flowLabel(task.flow)}: ${formatCount(run.outcomes.ready)} ready, ${formatCount(run.outcomes.attention)} worth a look, ${formatCount(run.outcomes.held)} held. Nothing was sent.`
+    : task.targets === null
     ? `Checked ${formatCount(rows.checked)} rows of ${flowLabel(task.flow)}: ${formatCount(rows.withHeld)} held, ${formatCount(rows.withInvalid)} with an invalid value, ${formatCount(rows.withEmpty)} leaving an attribute out${assertedRows === null ? "" : `; ${assertedRows}`}.`
     : `Checked ${task.targets.join(", ")} over ${formatCount(rows.checked)} rows: ${formatCount(asked
       .reduce((sum, variable) => sum + failingOf(variable.rows), 0))} rows will not give it an expected value${asserted > 0 ? `, ${formatCount(asserted)} fail an assertion of the mapping` : ""}.`;
@@ -196,12 +202,13 @@ function taken(store: Store, task: PendingTask, settled: ComputeTask | undefined
     variables,
     last: meta,
     lastAll: task.targets === null ? meta : store.lastAll,
+    dryRun: run === null ? store.dryRun : { run, meta },
     failure: null,
     completions: completions({ taskId: task.taskId, ok: true, text }),
   };
 }
 
-/** Everything the mapping sheet's Properties tab needs to check values and show what a check found. */
+/** What the mapping sheet's tabs need to check values, make a dry run and show what either found. */
 export interface ValueCheckSession {
   /** The flows that render with the mapping in the title bar's partition, and the partitions others deliver to. */
   flows: DeliveryMappingFlow[];
@@ -249,6 +256,10 @@ export interface ValueCheckSession {
   last: CheckMeta | null;
   /** What the bar sums up: the latest check of every variable, else the latest check. */
   summary: CheckMeta | null;
+  /** The latest dry run of the flow, with what it read; null before the first. */
+  dryRun: { run: DeliveryDryRun; meta: CheckMeta } | null;
+  /** Whether the scope's values have moved since it, so its rows may not be the ones listed. */
+  dryRunStale: boolean;
   failure: string | null;
   /** Narrowing the tree to the variables that fail. */
   filter: FailingFilter | null;
@@ -378,6 +389,8 @@ export function useValueCheckSession(mappingId: string, reference: string): Valu
         samples: pending.samples,
         skipSamples: pending.skipSamples,
         mapping: reference,
+        // A check of every variable is a dry run: one button, the same rows read once, both views of what they came to.
+        dryRun: pending.targets === null && pending.page === null ? true : undefined,
       },
       { interfaceName: pending.flow.interface, partition: pending.flow.partition }),
     onSuccess: (accepted, pending) => setTasks((current) => [...current, {
@@ -509,6 +522,8 @@ export function useValueCheckSession(mappingId: string, reference: string): Valu
     isPaging,
     checkingAll: tasks.some((task) => task.page === null && task.targets === null) || (queue.isPending && queue.variables?.targets === null),
     running: tasks.length + (queue.isPending ? 1 : 0),
+    dryRun: store.dryRun,
+    dryRunStale: store.dryRun !== null && JSON.stringify(store.dryRun.meta.values) !== JSON.stringify(sent),
     resultFor,
     nestedFor,
     inside,

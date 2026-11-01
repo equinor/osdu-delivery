@@ -292,6 +292,114 @@ public sealed class SqlServerIngestionSource : IIngestionSource
         }
     }
 
+    public async Task<StagedPage> ReadStagedAsync(StagedRowsQuery query, CancellationToken ct = default)
+    {
+        ArgumentNullException.ThrowIfNull(query);
+        ArgumentOutOfRangeException.ThrowIfLessThan(query.Limit, 1);
+        await using var connection = await IngestionConnection.OpenAsync(_flow.Source.Connection, _flow.Name, _secrets, ct).ConfigureAwait(false);
+        var layout = await BuildLayoutAsync(connection, ct).ConfigureAwait(false);
+        var record = _tables[SourceDatasets.Record];
+        var (fileColumn, rowColumn) = (Optional(record, _flow.Source.SystemColumns.FileName)?.Name, Optional(record, _flow.Source.SystemColumns.RowNumber)?.Name);
+        var asked = query.Columns.Select(column => Optional(record, column)?.Name).OfType<string>().Distinct(StringComparer.Ordinal).ToList();
+        var columns = new[] { layout.Deleted, fileColumn, rowColumn }.OfType<string>().Concat(asked).Distinct(StringComparer.Ordinal).ToList();
+        var searched = layout.Key.Select(k => k.Name).Concat(asked).Concat(fileColumn is null ? [] : [fileColumn]).Distinct(StringComparer.Ordinal).ToList();
+        var search = string.IsNullOrWhiteSpace(query.Search) ? null : IngestionSql.ContainsPattern(query.Search.Trim());
+
+        long? total = null;
+        if (query.After is null)
+        {
+            await using var count = Command(connection, IngestionSql.StagedCount(layout, searched, search is not null));
+            BindScope(count, layout);
+            BindSearch(count, search);
+            await using var counted = await ExecuteReaderAsync(count, "count the record table's staged rows", ct).ConfigureAwait(false);
+            total = await counted.ReadAsync(ct).ConfigureAwait(false) ? counted.GetInt64(0) : 0;
+        }
+
+        var keys = layout.Key.Count;
+        var read = new List<(StagedRow Row, KeyTuple Order)>(query.Limit + 1);
+        await using (var page = Command(connection, IngestionSql.StagedPage(layout, columns, searched, search is not null, query.After is not null)))
+        {
+            BindScope(page, layout);
+            BindSearch(page, search);
+            if (query.After is { } after)
+            {
+                BindOrder(page, layout, IngestionSql.AfterPrefix, after);
+            }
+
+            // One row past the page says there is another.
+            page.Parameters.Add(new SqlParameter(IngestionSql.PageParameter, SqlDbType.Int) { Value = query.Limit + 1 });
+            await using var reader = await ExecuteReaderAsync(page, "read a page of the record table's staged rows", ct).ConfigureAwait(false);
+            while (await reader.ReadAsync(ct).ConfigureAwait(false))
+            {
+                var values = new Dictionary<string, object?>(StringComparer.Ordinal);
+                for (var i = 0; i < columns.Count; i++)
+                {
+                    values[columns[i]] = SourceValues.Normalize(reader.GetValue(keys + 1 + i));
+                }
+
+                var order = new string[layout.Order.Count];
+                for (var i = 0; i < order.Length; i++)
+                {
+                    order[i] = SourceRow.Stringify(SourceValues.Normalize(reader.GetValue(keys + 1 + columns.Count + i)))
+                        ?? throw new DeliveryException($"The record table {layout.Record} returned a null in column '{layout.Order[i].Name}', which cannot place a row in the order a read pages in.");
+                }
+
+                read.Add((new StagedRow(
+                    ReadKey(reader, layout),
+                    asked.ToDictionary(column => column, column => SourceRow.Stringify(values[column]), StringComparer.Ordinal),
+                    fileColumn is null ? null : SourceRow.Stringify(values[fileColumn]),
+                    rowColumn is null ? null : RowNumber(values[rowColumn]),
+                    SourceValues.Normalize(reader.GetValue(keys)) is DateTime updated ? DateTime.SpecifyKind(updated, DateTimeKind.Utc) : null,
+                    layout.Deleted is { } deleted && values[deleted] is DateTime gone ? DateTime.SpecifyKind(gone, DateTimeKind.Utc) : null,
+                    new Dictionary<string, long>(StringComparer.Ordinal)), new KeyTuple(order)));
+            }
+        }
+
+        var shown = read.Take(query.Limit).Select(row => row.Row).ToList();
+        shown = await WithChildrenAsync(connection, layout, shown, ct).ConfigureAwait(false);
+        return new StagedPage(shown, total, read.Count > query.Limit ? read[query.Limit - 1].Order : null);
+    }
+
+    /// <summary><paramref name="rows"/> with how many rows each child dataset holds of them, asked of every dataset in one statement for the whole page.</summary>
+    private async Task<List<StagedRow>> WithChildrenAsync(SqlConnection connection, IngestionLayout layout, List<StagedRow> rows, CancellationToken ct)
+    {
+        if (rows.Count == 0 || layout.Datasets.Count == 0)
+        {
+            return rows;
+        }
+
+        var counts = new Dictionary<KeyTuple, Dictionary<string, long>>();
+        await using var command = Command(connection, IngestionSql.StagedChildren(layout));
+        BindKeys(command, rows.Select(row => row.Key).ToList());
+        await using var reader = await ExecuteReaderAsync(command, "count the child rows of a page of staged rows", ct).ConfigureAwait(false);
+        foreach (var dataset in layout.Datasets)
+        {
+            while (await reader.ReadAsync(ct).ConfigureAwait(false))
+            {
+                var key = ReadKey(reader, layout);
+                if (!counts.TryGetValue(key, out var held))
+                {
+                    held = new Dictionary<string, long>(StringComparer.Ordinal);
+                    counts[key] = held;
+                }
+
+                held[dataset.Name] = reader.GetInt64(layout.Key.Count);
+            }
+
+            await reader.NextResultAsync(ct).ConfigureAwait(false);
+        }
+
+        return rows.Select(row => counts.TryGetValue(row.Key, out var held) ? row with { Children = held } : row).ToList();
+    }
+
+    private static void BindSearch(SqlCommand command, string? pattern)
+    {
+        if (pattern is not null)
+        {
+            command.Parameters.Add(new SqlParameter(IngestionSql.SearchParameter, SqlDbType.NVarChar, 4000) { Value = pattern });
+        }
+    }
+
     public async Task<IReadOnlyList<ScopeParameterValues>> ScopeValuesAsync(int max, CancellationToken ct = default)
     {
         ArgumentOutOfRangeException.ThrowIfLessThan(max, 1);

@@ -28,6 +28,11 @@ using SqlFlow.Delivery.Validation;
 
 namespace SqlFlow.Delivery.Engine;
 
+/// <summary>What the legal service says of the legal tags a mapping puts on every record.</summary>
+/// <param name="Tags">The tags, their parameters filled.</param>
+/// <param name="Refused">The tags it refuses, with why; null when the target does not ask it.</param>
+public sealed record LegalTagAnswer(IReadOnlyList<string> Tags, IReadOnlyDictionary<string, string>? Refused);
+
 /// <summary>The shared, flow-independent services the engine is composed from.</summary>
 public sealed record EngineContext(
     DeliveryDocumentLoader Documents,
@@ -71,6 +76,9 @@ public sealed record EngineContext(
     /// reads its file there. A host with no catalog knows none.
     /// </summary>
     public Catalog.IRepositoryFolders RepositoryFolders { get; init; } = Catalog.RepositoryFolders.None;
+
+    /// <summary>The schemas read from a partition's Schema service, kept for a few minutes, so going through a mapping's records asks for each once.</summary>
+    public Checks.SchemaServiceReads SchemaReads { get; init; } = new();
 
     /// <summary>Where a flow's search sources are answered, never null: the platform the flow delivers to, unless composed otherwise.</summary>
     public IRecordSearchFactory RecordSearches => Searches ?? PlatformRecordSearchFactory.Instance;
@@ -2359,6 +2367,46 @@ public sealed partial class FlowRuntime : IDisposable
     /// </summary>
     public Task CheckLegalTagsAsync(CancellationToken ct = default) => EnsureLegalTagsAsync(ct);
 
+    /// <summary>
+    /// What the legal service says of the legal tags the mapping puts on every record, without refusing anything: the tags, and
+    /// those it refuses with why; <see cref="LegalTagAnswer.Refused"/> is null when the target does not ask it, and a mapping
+    /// that names no tags (DSPDM business object rows, which are no OSDU records) has none to ask about.
+    /// </summary>
+    public async Task<LegalTagAnswer> AskLegalTagsAsync(CancellationToken ct = default)
+    {
+        var tags = Mapping.Mapping.Envelope.LegalTags.Select(tag => MappingEntry.ExpandParameters(tag, Mapping.Renderer.ParameterValue)).ToList();
+        if (tags.Count == 0)
+        {
+            return new LegalTagAnswer(tags, new Dictionary<string, string>(StringComparer.Ordinal));
+        }
+
+        var protocol = await ProtocolAsync(ct).ConfigureAwait(false);
+        return new LegalTagAnswer(tags, await protocol.InvalidLegalTagsAsync(tags, ct).ConfigureAwait(false));
+    }
+
+    /// <summary>The connection this runtime reaches the flow's target through, under the flow's credentials and partition.</summary>
+    public Task<OsduHttpClient> TargetClientAsync(CancellationToken ct = default) => _target.ClientAsync(ct);
+
+    /// <summary>
+    /// Whether the records a document refers to exist, asked of the ledger when this host has one, then of the cache the runtime
+    /// renders with, then of OSDU's storage service for what neither holds, whatever <c>target.verifyReferences</c> says: what
+    /// a check made ahead of any delivery wants to know, where the gate before sending asks storage only when the flow says so
+    /// (<see cref="GateAsync"/>). Thousands of records name the same reference data, so what the cache holds is not asked again.
+    /// </summary>
+    public async Task<ReferenceResolver> StorageReferencesAsync(CancellationToken ct = default)
+    {
+        var client = await _target.ClientAsync(ct).ConfigureAwait(false);
+        var batchPath = Flow.Target.ProtocolOptions.VerifyBatchPath ?? OsduRecordProtocol.DefaultVerifyBatchPath;
+        var cache = _mapping?.References;
+        var ledger = _context.Ledger;
+        return new ReferenceResolver(
+            cache,
+            _mapping?.Context is { } context ? (context.CacheScope is null ? $"cache version {context.CacheVersion}" : $"version {context.CacheVersion} of the cache of partition '{context.CacheScope}'") : null,
+            ledger is null ? null : (ids, token) => ledger.HeldIdsAsync(Flow.Id, ids, token),
+            (ids, token) => StoragePresence.PresentAsync(client, batchPath, ids, token),
+            cacheFirst: true);
+    }
+
     /// <summary>The legal tag check, asked once per runtime; see <see cref="CheckLegalTagsAsync"/>.</summary>
     private async Task EnsureLegalTagsAsync(CancellationToken ct)
     {
@@ -2374,9 +2422,7 @@ public sealed partial class FlowRuntime : IDisposable
             return;
         }
 
-        var tags = Mapping.Mapping.Envelope.LegalTags.Select(tag => MappingEntry.ExpandParameters(tag, Mapping.Renderer.ParameterValue)).ToList();
-        var protocol = await ProtocolAsync(ct).ConfigureAwait(false);
-        var invalid = await protocol.InvalidLegalTagsAsync(tags, ct).ConfigureAwait(false);
+        var (tags, invalid) = await AskLegalTagsAsync(ct).ConfigureAwait(false);
         if (invalid is null)
         {
             _log.LogInformation(

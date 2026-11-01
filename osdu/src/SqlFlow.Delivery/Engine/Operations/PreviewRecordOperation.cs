@@ -11,12 +11,16 @@ namespace SqlFlow.Delivery.Engine.Operations;
 /// operation reads the ingestion tables with the flow's own connection reference, renders with the pinned template and the
 /// partition's cache, and asks the platform's search only what the mapping's searches ask a run. The payload names the row by
 /// <c>key</c> (a delivery key, an OSDU id the ledger holds, a source key or a JSON array of the key's parts), or names none
-/// for the scope's first renderable row; <c>values</c> are the flow parameter values the scope is read with. Nothing is
-/// written: not the ledger, not the work location, not OSDU.
+/// for the scope's first renderable row; <c>values</c> are the flow parameter values the scope is read with; and
+/// <c>schemaCheck</c> <c>true</c> holds the document to the partition's Schema service as well. Nothing is written: not the
+/// ledger, not the work location, not OSDU.
 /// </summary>
 public sealed class PreviewRecordOperation : DeliveryOperation
 {
     public const string OperationName = "delivery-preview";
+
+    /// <summary>The argument asking for the document to be held to the partition's Schema service.</summary>
+    public const string SchemaCheckArgument = "schemaCheck";
 
     /// <summary>The most characters the answer carries, so one outsized record cannot swamp the page that asked for it.</summary>
     public const int MaxResultChars = 7_000_000;
@@ -33,7 +37,8 @@ public sealed class PreviewRecordOperation : DeliveryOperation
     protected override async Task<object> RunAsync(EngineContext context, FlowDefinition flow, ComputeTaskPayload payload, CancellationToken ct)
     {
         using var runtime = await FlowRuntime.CreateAsync(flow.Interface is null ? context : context.ForInterface(flow.Interface), flow, Values(payload), ct).ConfigureAwait(false);
-        var preview = await new RecordPreviewer(runtime).PreviewAsync(payload.Argument("key"), ct).ConfigureAwait(false);
+        var schemaCheck = string.Equals(payload.Argument(SchemaCheckArgument), "true", StringComparison.Ordinal);
+        var preview = await new RecordPreviewer(runtime).PreviewAsync(payload.Argument("key"), schemaCheck, ct).ConfigureAwait(false);
 
         // Measured as the answer is written, escapes and all, so what fits here is what the page is sent.
         return RecordPreviewer.Fit(preview, MaxResultChars, p => JsonSerializer.Serialize(p, JsonOptions).Length);

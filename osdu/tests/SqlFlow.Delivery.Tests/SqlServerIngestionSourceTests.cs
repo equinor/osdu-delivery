@@ -375,6 +375,125 @@ public sealed class SqlServerIngestionSourceTests
         }
     }
 
+    [Fact]
+    public async Task Staged_rows_are_paged_by_key_searched_in_the_database_and_counted_across_their_child_tables()
+    {
+        await using var estate = await SqlServerIngestionFixture.StartAsync();
+        var table = await CreateTableAsync(
+            estate,
+            "Staged",
+            "[RecId] bigint IDENTITY(1, 1) NOT NULL CONSTRAINT [PK_Staged] PRIMARY KEY CLUSTERED, [item_key] nvarchar(50) NOT NULL, [item_name] nvarchar(100) NULL, "
+                + "[region] nvarchar(20) NULL, [UpdatedDate_DW] datetime NULL, [DeletedDate_DW] datetime NULL, [FileName_DW] nvarchar(400) NULL, [RowNumber_DW] bigint NULL",
+            "CREATE UNIQUE NONCLUSTERED INDEX [NCI_KeyColumn] ON {0} ([item_key]);");
+        var parts = await CreateTableAsync(
+            estate,
+            "StagedPart",
+            "[item_key] nvarchar(50) NOT NULL, [part_no] int NOT NULL, [UpdatedDate_DW] datetime NULL, [DeletedDate_DW] datetime NULL",
+            string.Empty);
+        var notes = await CreateTableAsync(estate, "StagedNote", "[item_key] nvarchar(50) NOT NULL, [note] nvarchar(100) NULL, [UpdatedDate_DW] datetime NULL", string.Empty);
+
+        // 2,500 rows in two regions, the fifth of them each with three parts (one of them deleted), the tenth with a note.
+        await ExecuteAsync(estate, $"""
+            INSERT INTO {table} ([item_key], [item_name], [region], [UpdatedDate_DW], [FileName_DW], [RowNumber_DW])
+            SELECT CONCAT(N'item-', FORMAT(n.rn, 'D6')), CONCAT(N'Thing ', n.rn), CASE WHEN n.rn % 2 = 0 THEN N'north' ELSE N'south' END, @loaded, N'staged_items.csv', n.rn
+            FROM (SELECT TOP (2500) ROW_NUMBER() OVER (ORDER BY (SELECT NULL)) AS rn FROM sys.all_objects AS a CROSS JOIN sys.all_objects AS b) AS n
+            ORDER BY n.rn;
+            INSERT INTO {parts} ([item_key], [part_no], [DeletedDate_DW])
+            SELECT r.[item_key], p.n, CASE WHEN p.n = 3 THEN @loaded END
+            FROM {table} r CROSS JOIN (VALUES (1), (2), (3)) AS p(n) WHERE r.[RecId] % 5 = 0;
+            INSERT INTO {notes} ([item_key], [note]) SELECT r.[item_key], N'a note' FROM {table} r WHERE r.[RecId] % 10 = 0;
+            UPDATE {table} SET [DeletedDate_DW] = @changed WHERE [RecId] = 7;
+            UPDATE {table} SET [item_name] = N'100% odd_name' WHERE [RecId] = 9;
+            """);
+        var sample = ItemFlow(estate, "Staged");
+        var flow = sample with
+        {
+            Source = sample.Source with
+            {
+                Datasets = new Dictionary<string, FlowSourceDataset>(StringComparer.Ordinal)
+                {
+                    ["parts"] = new FlowSourceDataset
+                    {
+                        Object = $"[{estate.DatabaseName}].[{estate.SilverSchema}].[StagedPart]",
+                        Join = new Dictionary<string, string>(StringComparer.Ordinal) { ["item_key"] = "item_key" },
+                    },
+                    ["notes"] = new FlowSourceDataset
+                    {
+                        Object = $"[{estate.DatabaseName}].[{estate.SilverSchema}].[StagedNote]",
+                        Join = new Dictionary<string, string>(StringComparer.Ordinal) { ["item_key"] = "item_key" },
+                    },
+                },
+            },
+        };
+        var source = estate.Engine.Sources.Open(flow, NoValues, NullLoggerFactory.Instance);
+
+        // Page by page, every row once and in the order a read pages in, the count on the first page alone.
+        var seen = new List<StagedRow>();
+        KeyTuple? after = null;
+        var pages = 0;
+        do
+        {
+            var page = await source.ReadStagedAsync(new StagedRowsQuery { Limit = 400, After = after, Columns = ["item_name", "no_such_column"] });
+            Assert.Equal(after is null ? 2500 : null, page.Total);
+            Assert.True(page.Rows.Count <= 400);
+            seen.AddRange(page.Rows);
+            after = page.Next;
+            pages++;
+        }
+        while (after is not null);
+
+        Assert.Equal(7, pages);
+        Assert.Equal(2500, seen.Count);
+        Assert.Equal(2500, seen.Select(row => row.Key.Values[0]).Distinct().Count());
+        Assert.Equal("item-000001", seen[0].Key.Values[0]);
+        Assert.Equal("item-002500", seen[^1].Key.Values[0]);
+
+        // A row says where it came from, what the columns asked hold, and only those the table has.
+        var first = seen[0];
+        Assert.Equal("staged_items.csv", first.File);
+        Assert.Equal(1, first.Row);
+        Assert.Equal(Loaded, first.UpdatedUtc);
+        Assert.Equal("Thing 1", first.Columns["item_name"]);
+        Assert.False(first.Columns.ContainsKey("no_such_column"));
+        Assert.Null(first.DeletedUtc);
+        Assert.Equal(Changed, seen[6].DeletedUtc);
+
+        // What the child tables hold of a row is counted, a child row marked deleted left out, and a table holding none says nothing.
+        Assert.Empty(first.Children);
+        Assert.Equal(new Dictionary<string, long> { ["parts"] = 2 }, seen[4].Children);
+        Assert.Equal(new Dictionary<string, long> { ["parts"] = 2, ["notes"] = 1 }, seen[9].Children);
+
+        // A search reads the key, the columns asked and the file, ignoring case, and takes wildcards as written.
+        var key = await source.ReadStagedAsync(new StagedRowsQuery { Limit = 10, Search = "ITEM-000123" });
+        Assert.Equal(("item-000123", 1L, (object?)null), (Assert.Single(key.Rows).Key.Values[0], key.Total!.Value, (object?)key.Next));
+        var named = await source.ReadStagedAsync(new StagedRowsQuery { Limit = 10, Search = "thing 25", Columns = ["item_name"] });
+        Assert.Equal(1 + 10 + 1, named.Total);
+        Assert.Equal(10, named.Rows.Count);
+        Assert.NotNull(named.Next);
+        var rest = await source.ReadStagedAsync(new StagedRowsQuery { Limit = 10, Search = "thing 25", Columns = ["item_name"], After = named.Next });
+        Assert.Equal(2, rest.Rows.Count);
+        Assert.Null(rest.Next);
+        Assert.Null(rest.Total);
+        var literal = await source.ReadStagedAsync(new StagedRowsQuery { Limit = 10, Search = "100% odd_name", Columns = ["item_name"] });
+        Assert.Equal("item-000009", Assert.Single(literal.Rows).Key.Values[0]);
+        Assert.Equal(2500, (await source.ReadStagedAsync(new StagedRowsQuery { Limit = 1, Search = "staged_items" })).Total);
+        Assert.Equal(0, (await source.ReadStagedAsync(new StagedRowsQuery { Limit = 10, Search = "no such thing" })).Total);
+
+        // A scope narrows the page, the count and the search alike.
+        var scoped = flow with
+        {
+            Parameters = new Dictionary<string, FlowParameter>(StringComparer.Ordinal) { ["region"] = new FlowParameter { Required = true } },
+            Source = flow.Source with
+            {
+                Record = flow.Source.Record with { Scope = new Dictionary<string, string>(StringComparer.Ordinal) { ["region"] = "region" } },
+            },
+        };
+        var north = estate.Engine.Sources.Open(scoped, new Dictionary<string, string>(StringComparer.Ordinal) { ["region"] = "north" }, NullLoggerFactory.Instance);
+        var inScope = await north.ReadStagedAsync(new StagedRowsQuery { Limit = 5 });
+        Assert.Equal(1250, inScope.Total);
+        Assert.Equal("item-000002", inScope.Rows[0].Key.Values[0]);
+    }
+
     private static FlowDefinition ItemFlow(SqlServerIngestionFixture estate, string table, int pageSize = FlowIncremental.DefaultPageSize)
     {
         var sample = estate.DeliveryFlow();

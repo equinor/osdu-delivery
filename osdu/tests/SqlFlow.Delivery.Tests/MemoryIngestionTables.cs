@@ -218,6 +218,41 @@ public sealed class MemoryIngestionTables : IIngestionSourceFactory
             }
         }
 
+        public Task<StagedPage> ReadStagedAsync(StagedRowsQuery query, CancellationToken ct = default)
+        {
+            ArgumentNullException.ThrowIfNull(query);
+            ArgumentOutOfRangeException.ThrowIfLessThan(query.Limit, 1);
+            var search = string.IsNullOrWhiteSpace(query.Search) ? null : query.Search.Trim();
+            bool Matches(MemoryRecord record) => search is null
+                || KeyOf(record).Values.Any(Holds)
+                || query.Columns.Any(column => Holds(Text(record, column)))
+                || Holds(record.FileName);
+            bool Holds(string? text) => text?.Contains(search!, StringComparison.OrdinalIgnoreCase) == true;
+            static string? Text(MemoryRecord record, string column) => record.Row.TryGetValue(column, out var value) ? value?.ToString() : null;
+
+            var ordered = (PrimaryKey is null
+                ? _tables.Records.Where(InScope).OrderBy(r => KeyOf(r).Json, StringComparer.Ordinal)
+                : _tables.Records.Where(InScope).OrderBy(IdOf)).Where(Matches).ToList();
+            string OrderOf(MemoryRecord record) => PrimaryKey is null ? KeyOf(record).Json : IdOf(record).ToString(CultureInfo.InvariantCulture);
+            var from = query.After is { } after
+                ? ordered.FindIndex(record => OrderOf(record) == (PrimaryKey is null ? after.Json : after.Values[0])) + 1
+                : 0;
+            var page = ordered.Skip(from).Take(query.Limit).ToList();
+            var rows = page
+                .Select(record => new StagedRow(
+                    KeyOf(record),
+                    query.Columns.Where(record.Row.ContainsKey).ToDictionary(column => column, column => Text(record, column), StringComparer.Ordinal),
+                    record.FileName,
+                    record.RowNumber,
+                    record.UpdatedUtc,
+                    record.DeletedUtc,
+                    record.Datasets.Where(d => d.Value.Count > 0).ToDictionary(d => d.Key, d => (long)d.Value.Count, StringComparer.Ordinal)))
+                .ToList();
+            var more = from + query.Limit < ordered.Count;
+            KeyTuple? next = !more ? null : PrimaryKey is null ? KeyOf(page[^1]) : new KeyTuple([IdOf(page[^1]).ToString(CultureInfo.InvariantCulture)]);
+            return Task.FromResult(new StagedPage(rows, query.After is null ? ordered.Count : null, next));
+        }
+
         public Task<IReadOnlyList<KeyRange>> SliceBoundsAsync(SourceHeader header, int slices, CancellationToken ct = default)
         {
             ArgumentNullException.ThrowIfNull(header);

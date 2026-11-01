@@ -440,9 +440,10 @@ test.describe.serial("templates and the mapping builder", () => {
     const detail = adminPage.getByTestId("delivery-mapping-detail");
     await expect(detail.getByTestId("delivery-mapping-template")).toContainText(WELLLOG_VERSION, { timeout: 15_000 });
 
-    // The properties open first: the template as the record's tree, with what this mapping fills of it. Every row says
+    // The properties: the template as the record's tree, with what this mapping fills of it. Every row says
     // how the mapping reaches its variable (drawn only where it asks for attention), and the tree opens on the Filled
     // view: what is filled and what a check names.
+    await detail.getByTestId("delivery-mapping-tab-coverage").click();
     const properties = detail.getByTestId("delivery-mapping-coverage");
     await expect(properties.getByTestId("templates-view-coverage-osdu.acl")).toHaveAttribute("data-coverage", "Always", { timeout: 30_000 });
     await expect(properties.getByTestId("templates-view-coverage-osdu.data.Name")).toHaveAttribute("data-coverage", "Always");

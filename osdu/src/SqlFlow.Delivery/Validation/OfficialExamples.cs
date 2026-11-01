@@ -1,4 +1,7 @@
+using System.Text.Json;
 using System.Text.Json.Nodes;
+using SqlFlow.Delivery.Http;
+using SqlFlow.Delivery.Templates;
 
 namespace SqlFlow.Delivery.Validation;
 
@@ -21,4 +24,33 @@ public interface IOfficialExamples
     /// none for it. A repository that cannot be reached throws, so a caller can say why no example is shown.
     /// </summary>
     Task<OfficialExample?> ExampleAsync(string kind, CancellationToken ct = default);
+}
+
+/// <summary>How a check reads the example its guidance quotes, which never fails the check.</summary>
+public static class OfficialExampleReads
+{
+    /// <summary>
+    /// The example the OSDU data definitions publish for <paramref name="kind"/>, and why none is quoted when one was looked for:
+    /// they publish none for the kind, or could not be reached. A kind not of OSDU's own, or a host keeping no copy of the data
+    /// definitions (null <paramref name="examples"/>), has no example to look for, and says nothing.
+    /// </summary>
+    public static async Task<(OfficialExample? Example, string? Note)> ReadAsync(IOfficialExamples? examples, string kind, CancellationToken ct = default)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(kind);
+        if (examples is null || OsduDataDefinitions.ExamplePath(kind) is null)
+        {
+            return (null, null);
+        }
+
+        try
+        {
+            var example = await examples.ExampleAsync(kind, ct).ConfigureAwait(false);
+            return (example, example is null ? $"The OSDU data definitions publish no example record of {kind}." : null);
+        }
+        catch (Exception ex) when (ex is DeliveryException or HttpRequestException or IOException or UnauthorizedAccessException or JsonException
+            || (ex is OperationCanceledException && !ct.IsCancellationRequested))
+        {
+            return (null, $"OSDU's example record of {kind} could not be read: {HeaderRedaction.RedactMessage(ex.Message)}");
+        }
+    }
 }

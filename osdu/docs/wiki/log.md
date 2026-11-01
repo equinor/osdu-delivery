@@ -600,3 +600,10 @@ Source: the human's request that the editor be the primary tool for YAML, with t
 sign-in through the browser, and the audit of what a developer needs against the server's tools.
 
 Added decision 0039 and the reference guide `delivery-guide-vscode`.
+
+## [2026-11-01] ingest | A dry run of a mapping's staged records, and the Schema service's part in it
+
+Source: the human's request for an easy way to see a mapping's staged records as documents before they are delivered, of any
+kind and at any size, cross-matched with the Schema service; the Schema service's contract and its source at commit a857439.
+
+Added decision 0040 and the reference page `delivery-concept-dry-run`.

@@ -87,6 +87,9 @@ public sealed class TargetClients : IDisposable
         _allowLoopback = allowLoopback;
     }
 
+    /// <summary>What these connections send through instead of the network (the tests), which a runtime's own connection sends through too; null for the network.</summary>
+    internal HttpMessageHandler? Transport => _transport;
+
     /// <summary>
     /// <paramref name="reliability"/> as a person's read uses it: at most two attempts, a backoff of at most two seconds, no
     /// wait on a Retry-After, and at most <see cref="InteractiveTimeoutSeconds"/> for an answer. Everything else (the rate

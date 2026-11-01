@@ -195,6 +195,13 @@ public sealed class DeliveryValueCheckApiTests
             Assert.Equal("0", whole.Argument("maxRows"));
             Assert.Null(whole.Argument("samples"));
 
+            // A dry run is a check of every variable that says so; it names no variable, since it reads them all.
+            var dryRun = await QueuedAsync(client, token, path, new { values, maxRows = 1000, dryRun = true });
+            Assert.Equal("delivery-check-values", dryRun.Operation);
+            Assert.Equal("true", dryRun.Argument("dryRun"));
+            Assert.Null(whole.Argument("dryRun"));
+            await RefusedAsync(client, token, path, new { targets = new[] { "osdu.data.WellboreID" }, values, dryRun = true }, "A dry run reads every attribute");
+
             // An export of an attribute's rows is asked for as a check is, and queued for a node the same way.
             var export = await QueuedAsync(client, token, $"/api/v1/delivery/flows/{pipelineId:D}/check-values/export?interface=welllogs", new { targets = new[] { "osdu.data.WellboreID" }, values, maxRows = 1000, mapping = "WellLog@1.4.0" });
             Assert.Equal("delivery-export-value-issues", export.Operation);
@@ -230,6 +237,26 @@ public sealed class DeliveryValueCheckApiTests
             Assert.Equal("welllogs", scopeValues.Argument("interface"));
             Assert.Null(scopeValues.Argument("values"));
             await RefusedAsync(client, token, $"/api/v1/delivery/flows/{pipelineId:D}/scope-values", new { }, "name the one this request is about with ?interface=");
+
+            // A page of a scope's staged rows is read by the control plane too, with the values the scope needs, and nothing is queued.
+            var staged = $"/api/v1/delivery/flows/{pipelineId:D}/staged-rows?interface=welllogs";
+            using (var answered = await SendAsync(client, token, HttpMethod.Post, staged, new { values, search = " well ", after = "[\"41\"]", limit = 50 }))
+            {
+                Assert.True(answered.StatusCode == HttpStatusCode.OK, await answered.Content.ReadAsStringAsync());
+            }
+
+            var page = operations.Last();
+            Assert.Equal("delivery-staged-rows", page.Operation);
+            Assert.Equal("welllogs", page.Argument("interface"));
+            Assert.Equal("COMPOSITE", JsonDocument.Parse(page.Argument("values")!).RootElement.GetProperty("logSource").GetString());
+            Assert.Equal("well", page.Argument("search"));
+            Assert.Equal("[\"41\"]", page.Argument("after"));
+            Assert.Equal("50", page.Argument("limit"));
+            await RefusedAsync(client, token, staged, new { }, "needs a value for logSource");
+            await RefusedAsync(client, token, staged, new { values, limit = 501 }, "between 1 and 500 rows");
+            await RefusedAsync(client, token, staged, new { values, limit = 0 }, "between 1 and 500 rows");
+            await RefusedAsync(client, token, staged, new { values, search = new string('x', 201) }, "at most 200 characters");
+            await RefusedAsync(client, token, staged, new { values, search = "two\nlines" }, "at most 200 characters");
             Assert.Empty(operations.Given);
             await using var catalog = CatalogDatabase.Create(cs);
             Assert.DoesNotContain(await catalog.ComputeTasks.AsNoTracking().Where(t => t.SourceRef == flowName).Select(t => t.Operation).ToListAsync(), o => o == "delivery-scope-values");

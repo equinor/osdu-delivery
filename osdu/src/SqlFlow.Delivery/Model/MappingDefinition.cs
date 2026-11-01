@@ -298,6 +298,28 @@ public sealed record MappingDataset
     /// <summary>Display text with <c>{column}</c> tokens naming columns of the dataset's own row, for the ledger and the GUI; never part of the record.</summary>
     public string? Label { get; init; }
 
+    /// <summary>The columns of the dataset's own row <see cref="Label"/> reads.</summary>
+    public IReadOnlyList<string> ReadColumns()
+        => string.IsNullOrWhiteSpace(Label)
+            ? []
+            : Documents.MappingMapper.LabelToken().Matches(Label).Select(m => m.Groups["column"].Value).Distinct(StringComparer.Ordinal).ToList();
+
+    /// <summary>
+    /// The display label of a row, its <see cref="Label"/> filled from what <paramref name="column"/> reads of it; null when it
+    /// comes to nothing. Display only: it is stored on the ledger record for search and never enters the record or its hash.
+    /// </summary>
+    public string? LabelOf(Func<string, string?> column)
+    {
+        ArgumentNullException.ThrowIfNull(column);
+        if (string.IsNullOrWhiteSpace(Label))
+        {
+            return null;
+        }
+
+        var label = Documents.MappingMapper.LabelToken().Replace(Label, m => column(m.Groups["column"].Value) ?? string.Empty).Trim();
+        return label.Length == 0 ? null : label.Length <= 400 ? label : label[..400];
+    }
+
     /// <summary>
     /// The dataset's own columns whose values identify the record to a person (a wellbore id, a well name, a survey
     /// name), without the <c>dataset.</c> prefix. The ledger indexes each value so the record is found by it across

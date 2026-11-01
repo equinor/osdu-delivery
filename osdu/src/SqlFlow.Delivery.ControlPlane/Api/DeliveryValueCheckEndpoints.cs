@@ -7,9 +7,11 @@ using Microsoft.AspNetCore.Http.HttpResults;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Routing;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging;
 using SqlFlow.Catalog;
 using SqlFlow.ControlPlane.Background;
 using SqlFlow.Core.Compute;
+using SqlFlow.Delivery.Catalog;
 using SqlFlow.Delivery.Data;
 using SqlFlow.Delivery.Documents;
 using SqlFlow.Delivery.Engine.Checks;
@@ -46,7 +48,18 @@ public sealed record DeliveryValueCheckRequest(
     long? MaxRows,
     int? Samples,
     long? SkipSamples,
-    string? Mapping);
+    string? Mapping,
+    bool? DryRun = null);
+
+/// <summary>
+/// A page of the rows staged in a flow's scope: the flow parameter values its scope is read with, the text a row must hold, where
+/// the last page ended, and how many rows to a page.
+/// </summary>
+public sealed record DeliveryStagedRowsRequest(
+    [property: System.Text.Json.Serialization.JsonConverter(typeof(SqlFlow.Core.Runs.RunValuesJsonConverter))] IReadOnlyDictionary<string, string>? Values,
+    string? Search,
+    string? After,
+    int? Limit);
 
 /// <summary>
 /// The value check: which flows render with a mapping, and the check of a flow's rows queued for a node
@@ -76,6 +89,7 @@ public static class DeliveryValueCheckEndpoints
         ArgumentNullException.ThrowIfNull(delivery);
         delivery.MapPost("/flows/{pipelineId:guid}/check-values", CheckValuesAsync).WithName("CheckDeliveryFlowValues");
         delivery.MapPost("/flows/{pipelineId:guid}/check-values/export", ExportIssuesAsync).WithName("ExportDeliveryFlowValueIssues");
+        delivery.MapPost("/flows/{pipelineId:guid}/staged-rows", StagedRowsAsync).WithName("ListDeliveryFlowStagedRows");
     }
 
     /// <summary>
@@ -136,6 +150,80 @@ public static class DeliveryValueCheckEndpoints
         => QueueAsync(CheckValuesOperation.OperationName, pipelineId, request, interfaceName, partition, db, documents, partitions, dispatcher, user, ct);
 
     /// <summary>
+    /// A page of the rows staged in one interface's scope, read in this process (<see cref="DirectOperationRunner"/>): what a
+    /// mapping's Staged records tab lists, before anything renders. Every part of the request is checked here, so one a read
+    /// would refuse answers 400 rather than a read that fails.
+    /// </summary>
+    private static async Task<Results<ContentHttpResult, ProblemHttpResult>> StagedRowsAsync(
+        Guid pipelineId, DeliveryStagedRowsRequest? request, [FromQuery(Name = "interface")] string? interfaceName, [FromQuery] string? partition, CatalogDbContext db,
+        DeliveryDocumentLoader documents, IPartitionRegistry partitions, DeliveryConfigStore config, DirectOperations direct, ILoggerFactory loggers, ClaimsPrincipal user, CancellationToken ct)
+    {
+        var (flow, problem) = await DeliveryEndpoints.ResolveAsync(db, documents, partitions, pipelineId, interfaceName, partition, ct).ConfigureAwait(false);
+        if (flow is null)
+        {
+            return problem!;
+        }
+
+        var arguments = new Dictionary<string, string>(StringComparer.Ordinal);
+        if (StagedArguments(flow.Flow, request ?? new DeliveryStagedRowsRequest(null, null, null, null), arguments) is { } refused)
+        {
+            return DeliveryEndpoints.Invalid(refused);
+        }
+
+        return await DirectOperationRunner.RunAsync(db, config, direct, flow, StagedRowsOperation.OperationName, arguments, user, loggers, ct).ConfigureAwait(false);
+    }
+
+    /// <summary>Fills <paramref name="arguments"/> for <paramref name="request"/>, or says why a read would refuse it.</summary>
+    internal static string? StagedArguments(FlowDefinition flow, DeliveryStagedRowsRequest request, Dictionary<string, string> arguments)
+    {
+        ArgumentNullException.ThrowIfNull(flow);
+        ArgumentNullException.ThrowIfNull(request);
+        ArgumentNullException.ThrowIfNull(arguments);
+        var values = request.Values ?? new Dictionary<string, string>(StringComparer.Ordinal);
+        if (DeliveryEndpoints.ParameterProblem(flow, values) is { } parameters)
+        {
+            return parameters;
+        }
+
+        if (values.Count > 0 && Json(values, "parameter values", arguments, "values") is { } tooLong)
+        {
+            return tooLong;
+        }
+
+        if (request.Limit is { } limit)
+        {
+            if (limit is < 1 or > StagedRowsOperation.MaxLimit)
+            {
+                return $"A page of staged rows holds between 1 and {StagedRowsOperation.MaxLimit} rows; {limit.ToString(CultureInfo.InvariantCulture)} is outside that.";
+            }
+
+            arguments[StagedRowsOperation.LimitArgument] = limit.ToString(CultureInfo.InvariantCulture);
+        }
+
+        if (request.Search?.Trim() is { Length: > 0 } search)
+        {
+            if (search.Length > StagedRowsOperation.MaxSearch || search.Any(char.IsControl))
+            {
+                return $"A search of staged rows is one line of at most {StagedRowsOperation.MaxSearch} characters.";
+            }
+
+            arguments[StagedRowsOperation.SearchArgument] = search;
+        }
+
+        if (!string.IsNullOrWhiteSpace(request.After))
+        {
+            if (request.After.Length > ComputeTaskPayload.MaxArgumentLength)
+            {
+                return $"Where a page of staged rows starts is at most {ComputeTaskPayload.MaxArgumentLength} characters.";
+            }
+
+            arguments[StagedRowsOperation.AfterArgument] = request.After;
+        }
+
+        return null;
+    }
+
+    /// <summary>
     /// The same check, asked for as one is, queued to write every issue it finds to an Excel workbook
     /// (<see cref="ExportValueIssuesOperation"/>), which the task's result carries.
     /// </summary>
@@ -173,6 +261,16 @@ public static class DeliveryValueCheckEndpoints
         if (targets.Count > MaxTargets)
         {
             return $"A check names at most {MaxTargets} variables, and this one names {targets.Count}; name none to check every variable of the mapping.";
+        }
+
+        if (request.DryRun == true)
+        {
+            if (targets.Count > 0)
+            {
+                return "A dry run reads every attribute of the mapping, so it names none.";
+            }
+
+            arguments["dryRun"] = "true";
         }
 
         foreach (var target in targets)

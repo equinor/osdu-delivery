@@ -238,15 +238,7 @@ public sealed class MappingRenderer
     public string? Label(SourceRow row)
     {
         ArgumentNullException.ThrowIfNull(row);
-        if (string.IsNullOrWhiteSpace(_mapping.Dataset.Label))
-        {
-            return null;
-        }
-
-        var label = MappingMapper.LabelToken().Replace(
-            _mapping.Dataset.Label,
-            m => row.GetString(m.Groups["column"].Value) ?? string.Empty).Trim();
-        return label.Length == 0 ? null : label.Length <= 400 ? label : label[..400];
+        return _mapping.Dataset.LabelOf(row.GetString);
     }
 
     /// <summary>

@@ -7,15 +7,11 @@ import { MappingPropertiesView } from "./MappingPropertiesView";
 import { TemplateVariableExplorer } from "./TemplateVariableExplorer";
 import { ProblemView } from "./TemplateSheet";
 import { useParsedMapping } from "./useParsedMapping";
-import { ValueCheckContext, useValueCheckSession } from "./useValueCheck";
+import { useValueCheckContext } from "./useValueCheck";
 import { ValueCheckBar } from "./ValueCheckBar";
 import { variableRows } from "./variableRows";
 
 interface MappingCoverageViewProps {
-  /** The mapping as the catalog holds it, whose flows a value check reads the rows of. */
-  mappingId: string;
-  /** Its reference (Name@version), which a flow checked must render with. */
-  reference: string;
   /** The mapping document as the catalog holds it. */
   yaml: string;
   /** Its path in the repository, which the messages name. */
@@ -35,8 +31,8 @@ interface MappingCoverageViewProps {
  * cache is read; this is the document against the schema alone, until a data check renders the rows of a flow that
  * uses the mapping and says, attribute by attribute, which rows will not give it the value its template expects.
  */
-export function MappingCoverageView({ mappingId, reference, yaml, path, contentHash, repoId, templatePath }: MappingCoverageViewProps) {
-  const valueCheck = useValueCheckSession(mappingId, reference);
+export function MappingCoverageView({ yaml, path, contentHash, repoId, templatePath }: MappingCoverageViewProps) {
+  const valueCheck = useValueCheckContext();
   const coverage = useQuery({
     queryKey: ["delivery", "mapping-coverage", repoId ?? null, path, contentHash],
     queryFn: () => deliveryApi.mappingCoverage(yaml, path, repoId),
@@ -101,10 +97,10 @@ export function MappingCoverageView({ mappingId, reference, yaml, path, contentH
       ))}
 
       {template.data !== undefined && overlay !== undefined && (
-        <ValueCheckContext.Provider value={valueCheck}>
-          <ValueCheckBar session={valueCheck} />
+        <>
+          {valueCheck !== null && <ValueCheckBar session={valueCheck} />}
           <TemplateVariableExplorer variables={template.data.variables} mapping={overlay} fill />
-        </ValueCheckContext.Provider>
+        </>
       )}
 
       {/*

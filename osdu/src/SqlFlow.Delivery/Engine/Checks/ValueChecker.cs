@@ -70,12 +70,21 @@ public sealed partial class ValueChecker
             throw new DeliveryException($"The example records a finding passes over are a count from 0; {request.SkipSamples} is not one.");
         }
 
+        if (request.DryRun && request.Targets.Count > 0)
+        {
+            throw new DeliveryException("A dry run reads every attribute of the mapping, so it names none.");
+        }
+
         var selection = Select(request.Targets, mapping, resolved.Schema);
         var header = await _runtime.Planner.OpenAsync(flow, resolved, _runtime.Parameters, SourceSelection.Full(), gate: false, stored: null, ct: ct).ConfigureAwait(false);
         var tally = new ValueTally(mapping, resolved.Schema, selection, request, _limits, each, flow.Source.SystemColumns);
         var parallelism = flow.Parallelism.EffectiveRenderThreads;
         var rounds = Planner.SearchRounds(mapping);
         var batch = new List<SourceRecord>(_limits.Batch);
+
+        // A dry run takes every row the check reads, a batch at a time: the rows a check passes over are the ones it says most about.
+        var dryRun = request.DryRun ? await DryRunner.OpenAsync(_runtime, _limits.DryRun, ct).ConfigureAwait(false) : null;
+        var staged = new List<SourceRecord>(request.DryRun ? _limits.Batch : 0);
         var read = 0L;
         var complete = true;
         await foreach (var record in _runtime.Source.ReadAsync(header.Source, null, ct).WithCancellation(ct).ConfigureAwait(false))
@@ -88,6 +97,16 @@ public sealed partial class ValueChecker
             }
 
             read++;
+            if (dryRun is not null)
+            {
+                staged.Add(record);
+                if (staged.Count == _limits.Batch)
+                {
+                    await dryRun.RowsAsync(header, staged, ct).ConfigureAwait(false);
+                    staged.Clear();
+                }
+            }
+
             if (Unfit(record) is { } reason)
             {
                 tally.PassOver(reason, record, resolved.Renderer);
@@ -105,6 +124,11 @@ public sealed partial class ValueChecker
         if (batch.Count > 0)
         {
             await InspectAsync(batch, resolved.Renderer, selection, parallelism, rounds, tally, ct).ConfigureAwait(false);
+        }
+
+        if (dryRun is not null)
+        {
+            await dryRun.RowsAsync(header, staged, ct).ConfigureAwait(false);
         }
 
         return new ValueCheck
@@ -129,6 +153,7 @@ public sealed partial class ValueChecker
             Rows = tally.Rows(header.Source.EstimatedCandidates, read, complete),
             Variables = tally.Variables(),
             Issues = header.Issues.Select(i => i.ToString()).ToList(),
+            DryRun = dryRun?.Result(),
             StartedUtc = started,
             CheckedUtc = _runtime.Context.Time.GetUtcNow().UtcDateTime,
         };
@@ -136,10 +161,11 @@ public sealed partial class ValueChecker
 
     /// <summary>
     /// <paramref name="check"/> made to fit <paramref name="maxChars"/> as <paramref name="measure"/> counts it. Only what is
-    /// listed goes, never a count: first the example records of each finding, halved until one is left and then dropped,
-    /// then the values each finding and variable lists beyond the three most frequent, then the findings of each variable
-    /// beyond its ten most frequent, whose occurrences are then counted as unlisted. Each step leaves a note saying what
-    /// went, and a check of fewer variables or rows answers with more.
+    /// listed goes, never a count: first the records a dry run lists, halved, those with something to say kept longest; then the
+    /// example records of each finding, halved until one is left and then dropped, then the values each finding and variable
+    /// lists beyond the three most frequent, then the findings of each variable beyond its ten most frequent, whose
+    /// occurrences are then counted as unlisted. Each step leaves a note saying what went, and a check of fewer variables or
+    /// rows answers with more.
     /// </summary>
     public static ValueCheck Fit(ValueCheck check, int maxChars, Func<ValueCheck, int> measure)
     {
@@ -153,6 +179,29 @@ public sealed partial class ValueChecker
 
         // Each step is measured with the note it leaves, so what is returned fits as it is written.
         var limit = maxChars.ToString("N0", System.Globalization.CultureInfo.InvariantCulture);
+        if (check.DryRun is { Records.Count: > 0 } run)
+        {
+            var ranked = run.Records.OrderBy(r => r.Outcome == DryRunOutcomes.Held ? 0 : r.Outcome == DryRunOutcomes.Ready ? 2 : 1).ToList();
+            for (var kept = ranked.Count / 2; kept > 0 && size > maxChars; kept /= 2)
+            {
+                check = check with
+                {
+                    DryRun = run with
+                    {
+                        Records = ranked.Take(kept).ToList(),
+                        Cut = true,
+                        Notes = [.. run.Notes, string.Create(System.Globalization.CultureInfo.InvariantCulture, $"The dry run lists {kept:N0} of its records: with more the answer is over the {limit} characters a check may answer with. The counts cover every row.")],
+                    },
+                };
+                size = measure(check);
+            }
+
+            if (size <= maxChars)
+            {
+                return check;
+            }
+        }
+
         var most = check.Variables.SelectMany(v => v.Findings).Select(f => f.Samples.Count).Append(check.Rows.KeylessSamples.Count).Max();
         for (var kept = most / 2; ; kept /= 2)
         {

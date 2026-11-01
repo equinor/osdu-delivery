@@ -1,7 +1,7 @@
 import { useRef, useState, type ReactNode } from "react";
 import { Link as RouterLink } from "react-router-dom";
 import {
-  Ban, CircleMinus, CirclePause, CirclePlus, Download, ExternalLink, FileWarning, Info, RefreshCw, SearchX, TriangleAlert,
+  Ban, CircleCheck, CircleMinus, CirclePause, CirclePlus, Download, ExternalLink, FileWarning, Info, RefreshCw, SearchX, TriangleAlert,
   type LucideIcon,
 } from "lucide-react";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
@@ -33,6 +33,7 @@ import {
   type DeliveryPreviewStep,
   type DeliveryRecordPreview,
 } from "../../api/delivery";
+import { verdictIn } from "../../api/validation";
 import { AssertionFindingsView } from "./AssertionFindingsView";
 import { effectValueText, enrichOutcomeText, suppliesText } from "./enrichSteps";
 import { RecordStatusBadge } from "./DeliveryBadges";
@@ -40,6 +41,8 @@ import { Fact, FactGrid, NoFact } from "./Facts";
 import { IssueMessage } from "./IssueMessage";
 import { assertionHoldText, heldByAssertion, wouldHold } from "./previewHolds";
 import { RecordName } from "./RecordName";
+import { SchemaCheckPane } from "./SchemaCheckView";
+import { schemaMatchVisual } from "./dryRun";
 import { downloadJson, envelopeFirst, fileNameOf, formatBytes } from "./osduDocument";
 
 /**
@@ -65,8 +68,8 @@ const HOW_LABELS: Record<DeliveryRecordPreview["asked"]["how"], string> = {
   "key parts": "the key's parts",
 };
 
-/** What a preview's tabs show: the document, how it was rendered, how a delivery would send it, and the rows it came from. */
-const PREVIEW_TABS = ["document", "render", "delivery", "source"] as const;
+/** What a preview's tabs show: the document, what the Schema service says of it, how it was rendered, how a delivery would send it, and the rows it came from. */
+const PREVIEW_TABS = ["document", "schema", "render", "delivery", "source"] as const;
 type PreviewTab = (typeof PREVIEW_TABS)[number];
 
 /** Which form of the document is shown: as the route sends it, or as the mapping renders it. */
@@ -407,6 +410,36 @@ function Notice({ icon: Icon, tone, title, text, testId, children }: {
   );
 }
 
+/** What the Schema service said of the document, in the few words of a notice: the rules it breaks, that it meets them, or why it was not asked. */
+function SchemaNote({ schemaCheck, outcome, problems }: { schemaCheck: NonNullable<DeliveryRecordPreview["schemaCheck"]>; outcome: string | null; problems: number }) {
+  if (outcome === "invalid") {
+    return (
+      <>
+        <TriangleAlert className="size-3.5 shrink-0 text-warning" aria-hidden />
+        {`Schema service: ${problems.toLocaleString()} ${problems === 1 ? "problem" : "problems"}`}
+      </>
+    );
+  }
+
+  if (outcome === null) {
+    // Nothing was judged, so nothing here may read as a pass, whatever the service holds of the kind.
+    const unjudged = schemaCheck.schema.state === "matches" || schemaCheck.schema.state === "differs" || schemaCheck.schema.state === "read";
+    return (
+      <>
+        <CircleMinus className={cn("size-3.5 shrink-0", unjudged ? "text-muted-foreground" : schemaMatchVisual(schemaCheck.schema).tone)} aria-hidden />
+        <span className="truncate">{`Schema service: not judged${unjudged ? "" : `, ${schemaMatchVisual(schemaCheck.schema).word.toLowerCase()}`}`}</span>
+      </>
+    );
+  }
+
+  return (
+    <>
+      <CircleCheck className="size-3.5 shrink-0 text-success" aria-hidden />
+      {outcome === "valid" ? "Schema service: valid" : "Schema service: valid as far as it could be checked"}
+    </>
+  );
+}
+
 /**
  * The answer of a preview in a few lines: what the next run would do with which record and why, where it would land and
  * how the ledger holds it, where its row came from and how it was picked; then, only when there is one, what a reader
@@ -426,6 +459,8 @@ function PreviewVerdict({ preview, onShow }: { preview: DeliveryRecordPreview; o
   // A failure that holds is said under the verdict with the other holds; one that reports or leaves a value out is a notice.
   const quietFailures = assertions === null ? 0 : assertions.failed - assertions.held;
   const unverified = document?.unverified.length ?? 0;
+  const schemaCheck = preview.schemaCheck ?? null;
+  const serviceVerdict = verdictIn(schemaCheck?.verdict);
 
   return (
     <Card className="gap-2 rounded-lg px-4 py-3" data-testid="preview-header">
@@ -492,8 +527,13 @@ function PreviewVerdict({ preview, onShow }: { preview: DeliveryRecordPreview; o
         <span data-testid="preview-asked">{pickedText(asked)}</span>
       </div>
 
-      {(asked.passedOver > 0 || preview.issues.length > 0 || quietFailures > 0 || unverified > 0 || (document === null && preview.noDocument)) && (
+      {(asked.passedOver > 0 || preview.issues.length > 0 || quietFailures > 0 || unverified > 0 || schemaCheck !== null || (document === null && preview.noDocument)) && (
         <div className="flex min-w-0 flex-wrap items-center gap-x-5 gap-y-1" data-testid="preview-notices">
+          {schemaCheck !== null && (
+            <button type="button" className="inline-flex min-w-0 items-center gap-1.5 text-[12px] hover:underline" onClick={() => onShow("schema")} data-testid="preview-schema-note">
+              <SchemaNote schemaCheck={schemaCheck} outcome={serviceVerdict?.outcome ?? null} problems={serviceVerdict?.problemCount ?? 0} />
+            </button>
+          )}
           {document === null && preview.noDocument && (
             <Notice icon={FileWarning} tone="text-warning" title="The row renders no document" text={preview.noDocument} testId="preview-no-document">
               {`The row renders no document: ${preview.noDocument}`}
@@ -725,8 +765,8 @@ function SourcePane({ preview }: { preview: DeliveryRecordPreview }) {
 
 /**
  * A record preview as the Preview tab shows it: the verdict first (what the next run would do with which record, and why),
- * then the record in four views: the document a delivery would send, how it was rendered, how it would be sent, and the
- * rows it came from. A preview that found no row says why.
+ * then the record in its views: the document a delivery would send, what the Schema service says of it when that was asked,
+ * how it was rendered, how it would be sent, and the rows it came from. A preview that found no row says why.
  */
 export function RecordPreviewView({ preview }: { preview: DeliveryRecordPreview }) {
   const [tab, setTab] = useState<PreviewTab>("document");
@@ -759,7 +799,7 @@ export function RecordPreviewView({ preview }: { preview: DeliveryRecordPreview 
 
   const document = preview.document ?? null;
   // A record that renders no document has nothing for the Document tab to show; its rows say why.
-  const shown: PreviewTab = tab === "document" && document === null ? "source" : tab;
+  const shown: PreviewTab = tab === "document" && document === null ? "source" : tab === "schema" && !preview.schemaCheck ? "document" : tab;
 
   return (
     <div className="flex flex-col gap-3" data-testid="preview-result">
@@ -767,6 +807,7 @@ export function RecordPreviewView({ preview }: { preview: DeliveryRecordPreview 
       <Tabs value={shown} onValueChange={(next) => { const picked = PREVIEW_TABS.find((value) => value === next); if (picked !== undefined) { setTab(picked); } }}>
         <TabsList data-testid="preview-tabs">
           <TabsTrigger value="document" disabled={document === null} data-testid="preview-tab-document">Document</TabsTrigger>
+          {preview.schemaCheck && <TabsTrigger value="schema" data-testid="preview-tab-schema">Schema service</TabsTrigger>}
           <TabsTrigger value="render" data-testid="preview-tab-render">Render</TabsTrigger>
           <TabsTrigger value="delivery" data-testid="preview-tab-delivery">Delivery</TabsTrigger>
           <TabsTrigger value="source" data-testid="preview-tab-source">Source</TabsTrigger>
@@ -775,6 +816,7 @@ export function RecordPreviewView({ preview }: { preview: DeliveryRecordPreview 
           {/* Mounted afresh for another document, so it is fitted to the window again whatever the last one showed. */}
           {document !== null && <DocumentPane key={document.metadataHash} document={document} form={form} onForm={setForm} />}
         </TabsContent>
+        {preview.schemaCheck && <TabsContent value="schema"><SchemaCheckPane check={preview.schemaCheck} /></TabsContent>}
         <TabsContent value="render"><RenderPane preview={preview} /></TabsContent>
         <TabsContent value="delivery"><DeliveryPane preview={preview} /></TabsContent>
         <TabsContent value="source"><SourcePane preview={preview} /></TabsContent>

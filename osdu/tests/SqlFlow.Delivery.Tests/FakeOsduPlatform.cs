@@ -99,6 +99,9 @@ public sealed partial class FakeOsduPlatform : HttpMessageHandler
 
     public Dictionary<string, JsonObject> Records { get; } = new(StringComparer.Ordinal);
 
+    /// <summary>The legal tags the legal service refuses, each with its reason.</summary>
+    public Dictionary<string, string> RefusedLegalTags { get; } = new(StringComparer.Ordinal);
+
     /// <summary>Every version storage keeps of each record, oldest first, as each write stored it: what its version reads answer.</summary>
     public Dictionary<string, List<JsonObject>> History { get; } = new(StringComparer.Ordinal);
 
@@ -352,7 +355,13 @@ public sealed partial class FakeOsduPlatform : HttpMessageHandler
 
         if (path == "/api/legal/v1/legaltags:validate")
         {
-            return Json(HttpStatusCode.OK, new JsonObject { ["invalidLegalTags"] = new JsonArray() });
+            var invalid = new JsonArray();
+            foreach (var (name, reason) in RefusedLegalTags)
+            {
+                invalid.Add(new JsonObject { ["name"] = name, ["reason"] = reason });
+            }
+
+            return Json(HttpStatusCode.OK, new JsonObject { ["invalidLegalTags"] = invalid });
         }
 
         if (path.StartsWith("/staging/", StringComparison.Ordinal))

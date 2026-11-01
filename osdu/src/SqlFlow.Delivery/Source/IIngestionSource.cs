@@ -297,7 +297,48 @@ public interface IIngestionSource
     /// is the text the plan derives the record's delivery key from.
     /// </summary>
     IAsyncEnumerable<IngestionKey> ReadKeysAsync(int pageSize, CancellationToken ct = default);
+
+    /// <summary>
+    /// One page of the rows staged in this source's scope, as a person goes through them: each row's key, the columns asked for,
+    /// where it came from and how many child rows each dataset holds of it, in the order a read pages in, resuming after the
+    /// last page. It reads the record table for the page alone and counts the child rows, so a page costs the same however
+    /// many rows the tables hold and however many child rows a record has. Rendering is what a preview or a dry run does.
+    /// </summary>
+    Task<StagedPage> ReadStagedAsync(StagedRowsQuery query, CancellationToken ct = default);
 }
+
+/// <summary>Which rows of a scope a page of staged rows asks for.</summary>
+public sealed record StagedRowsQuery
+{
+    /// <summary>The most rows on the page.</summary>
+    public required int Limit { get; init; }
+
+    /// <summary>Where the last page ended (<see cref="StagedPage.Next"/>); null for the first page.</summary>
+    public KeyTuple? After { get; init; }
+
+    /// <summary>Text a row's key, one of <see cref="Columns"/> or its file must contain, ignoring case; null for every row.</summary>
+    public string? Search { get; init; }
+
+    /// <summary>The record table's columns to read beside the key: a mapping's label and identity. One the table does not hold is left out.</summary>
+    public IReadOnlyList<string> Columns { get; init; } = [];
+}
+
+/// <summary>One row staged in a record table.</summary>
+/// <param name="Key">Its key, each column as the text the plan derives the delivery key from.</param>
+/// <param name="Columns">What it holds in the columns asked for.</param>
+/// <param name="File">The file it was landed from, when the table records it.</param>
+/// <param name="Row">Its row in that file.</param>
+/// <param name="UpdatedUtc">When the row last changed.</param>
+/// <param name="DeletedUtc">When the ingestion table marked it deleted; null for a live row.</param>
+/// <param name="Children">How many rows each child dataset holds of it, by the dataset's name; a dataset holding none is left out.</param>
+public sealed record StagedRow(
+    KeyTuple Key, IReadOnlyDictionary<string, string?> Columns, string? File, long? Row, DateTime? UpdatedUtc, DateTime? DeletedUtc, IReadOnlyDictionary<string, long> Children);
+
+/// <summary>One page of staged rows.</summary>
+/// <param name="Rows">The rows.</param>
+/// <param name="Total">How many rows the scope and the search hold, read for the first page only; null for a later one.</param>
+/// <param name="Next">Where the next page starts; null when this page is the last.</param>
+public sealed record StagedPage(IReadOnlyList<StagedRow> Rows, long? Total, KeyTuple? Next);
 
 /// <summary>One key of the record table, as a removal reads it: the key tuple, and when its row last changed.</summary>
 /// <param name="Key">The key, each column as the text the plan derives the delivery key from.</param>

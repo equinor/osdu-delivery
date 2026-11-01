@@ -65,6 +65,9 @@ public sealed record RecordPreview
     /// <summary>The preflight's warnings about the mapping against its template and cache, which do not stop a run.</summary>
     public IReadOnlyList<string> Issues { get; init; } = [];
 
+    /// <summary>The document against the partition's Schema service, when the preview was asked for that.</summary>
+    public Checks.PreviewSchemaCheck? SchemaCheck { get; init; }
+
     public required DateTime PreviewedUtc { get; init; }
 }
 

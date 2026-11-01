@@ -9,7 +9,7 @@ import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useLocalStorageState } from "@/hooks/useLocalStorageState";
 import { isApiError } from "@/api/client";
-import { deliveryApi, type DeliveryMapping } from "../../api/delivery";
+import { deliveryApi, type DeliveryMapping, type DeliveryMappingDetail } from "../../api/delivery";
 import { repoApi } from "@/api/endpoints";
 import { CodeView } from "@/components/CodeView";
 import { CorrelationError } from "@/components/CorrelationError";
@@ -26,6 +26,9 @@ import { KindText } from "./KindText";
 import { mappingLineageTarget } from "./lineageTargets";
 import { MappingCoverageView } from "./MappingCoverageView";
 import { MappingShapeView } from "./MappingShapeView";
+import { StagedRecordsTab } from "./StagedRecordsTab";
+import { useStagedView } from "./useStagedView";
+import { ValueCheckContext, useValueCheckSession } from "./useValueCheck";
 
 const ALL = "all";
 
@@ -99,6 +102,71 @@ const mappingColumns: Column<DeliveryMapping>[] = [
   { id: "seen", header: "Last seen", render: (row) => <RelativeTime value={row.lastSeenUtc} /> },
   { id: "lineage", header: "", align: "right", width: 56, render: (row) => <MappingLineage mapping={row} /> },
 ];
+
+/**
+ * A mapping's tabs, opening on the records staged for it. A dry run is one session of the sheet, so what it found reads record
+ * by record on Staged records and attribute by attribute on Properties, and neither loses it when the reader moves between them.
+ */
+function MappingTabs({ detail, templateVersion, templateTitle }: { detail: DeliveryMappingDetail; templateVersion: string; templateTitle: string | undefined }) {
+  const valueCheck = useValueCheckSession(detail.mapping.id, detail.mapping.reference);
+  const staged = useStagedView(valueCheck);
+  return (
+    <ValueCheckContext.Provider value={valueCheck}>
+      <Tabs defaultValue="staged" className="min-h-0 flex-1">
+        <div className="flex flex-wrap items-center gap-2">
+          <TabsList data-testid="delivery-mapping-tabs">
+            <TabsTrigger value="staged" data-testid="delivery-mapping-tab-staged">Staged records</TabsTrigger>
+            <TabsTrigger value="coverage" data-testid="delivery-mapping-tab-coverage">Properties</TabsTrigger>
+            <TabsTrigger value="yaml" data-testid="delivery-mapping-tab-yaml">YAML</TabsTrigger>
+            <TabsTrigger value="shape" data-testid="delivery-mapping-tab-shape">Record shape</TabsTrigger>
+          </TabsList>
+          <div className="ml-auto flex items-center gap-1">
+            {templateVersion !== "-" && detail.mapping.templatePath !== "" && (
+              <Button
+                asChild
+                size="sm"
+                variant="ghost"
+                title={templateTitle}
+                data-testid="delivery-mapping-template"
+              >
+                <RouterLink
+                  to={`/delivery/templates?${new URLSearchParams({ repoId: detail.mapping.repoId, path: detail.mapping.templatePath }).toString()}`}
+                >
+                  <LayoutTemplate />
+                  <span className="font-mono text-[12px]">{templateVersion}</span>
+                </RouterLink>
+              </Button>
+            )}
+            <Button asChild size="sm" variant="outline" data-testid="delivery-mapping-open-builder">
+              <RouterLink to={`/delivery/mappings/build?mappingId=${encodeURIComponent(detail.mapping.id)}`}>
+                <PencilRuler />
+                Open in builder
+              </RouterLink>
+            </Button>
+          </div>
+        </div>
+        <TabsContent value="staged" className="flex min-h-0 flex-col">
+          <StagedRecordsTab session={valueCheck} view={staged} />
+        </TabsContent>
+        <TabsContent value="coverage" className="flex min-h-0 flex-col">
+          <MappingCoverageView
+            yaml={detail.yaml}
+            path={detail.mapping.relativePath}
+            contentHash={detail.mapping.contentHash}
+            repoId={detail.mapping.repoId}
+            templatePath={detail.mapping.templatePath === "" ? null : detail.mapping.templatePath}
+          />
+        </TabsContent>
+        <TabsContent value="yaml" className="flex min-h-0 flex-col">
+          <CodeView value={detail.yaml} language="yaml" fill data-testid="delivery-mapping-yaml" />
+        </TabsContent>
+        <TabsContent value="shape" className="flex min-h-0 flex-col">
+          <MappingShapeView yaml={detail.yaml} path={detail.mapping.relativePath} contentHash={detail.mapping.contentHash} repoId={detail.mapping.repoId} />
+        </TabsContent>
+      </Tabs>
+    </ValueCheckContext.Provider>
+  );
+}
 
 /** The mapping documents the synced repositories hold: what every delivery flow renders with. The caches they read are on the OSDU cache page. */
 export default function DeliveryDocumentsPage() {
@@ -189,56 +257,8 @@ export default function DeliveryDocumentsPage() {
             {detail !== undefined && (
               <>
                 {detail.mapping.message && <p className="text-[13px] text-destructive">{detail.mapping.message}</p>}
-                <Tabs defaultValue="coverage" className="min-h-0 flex-1">
-                  <div className="flex flex-wrap items-center gap-2">
-                    <TabsList data-testid="delivery-mapping-tabs">
-                      <TabsTrigger value="coverage" data-testid="delivery-mapping-tab-coverage">Properties</TabsTrigger>
-                      <TabsTrigger value="yaml" data-testid="delivery-mapping-tab-yaml">YAML</TabsTrigger>
-                      <TabsTrigger value="shape" data-testid="delivery-mapping-tab-shape">Record shape</TabsTrigger>
-                    </TabsList>
-                    <div className="ml-auto flex items-center gap-1">
-                      {templateVersion !== "-" && detail.mapping.templatePath !== "" && (
-                        <Button
-                          asChild
-                          size="sm"
-                          variant="ghost"
-                          title={templateTitle}
-                          data-testid="delivery-mapping-template"
-                        >
-                          <RouterLink
-                            to={`/delivery/templates?${new URLSearchParams({ repoId: detail.mapping.repoId, path: detail.mapping.templatePath }).toString()}`}
-                          >
-                            <LayoutTemplate />
-                            <span className="font-mono text-[12px]">{templateVersion}</span>
-                          </RouterLink>
-                        </Button>
-                      )}
-                      <Button asChild size="sm" variant="outline" data-testid="delivery-mapping-open-builder">
-                        <RouterLink to={`/delivery/mappings/build?mappingId=${encodeURIComponent(detail.mapping.id)}`}>
-                          <PencilRuler />
-                          Open in builder
-                        </RouterLink>
-                      </Button>
-                    </div>
-                  </div>
-                  <TabsContent value="coverage" className="flex min-h-0 flex-col">
-                    <MappingCoverageView
-                      mappingId={detail.mapping.id}
-                      reference={detail.mapping.reference}
-                      yaml={detail.yaml}
-                      path={detail.mapping.relativePath}
-                      contentHash={detail.mapping.contentHash}
-                      repoId={detail.mapping.repoId}
-                      templatePath={detail.mapping.templatePath === "" ? null : detail.mapping.templatePath}
-                    />
-                  </TabsContent>
-                  <TabsContent value="yaml" className="flex min-h-0 flex-col">
-                    <CodeView value={detail.yaml} language="yaml" fill data-testid="delivery-mapping-yaml" />
-                  </TabsContent>
-                  <TabsContent value="shape" className="flex min-h-0 flex-col">
-                    <MappingShapeView yaml={detail.yaml} path={detail.mapping.relativePath} contentHash={detail.mapping.contentHash} repoId={detail.mapping.repoId} />
-                  </TabsContent>
-                </Tabs>
+                {/* Another mapping, or this one synced with new content, is other rows and other documents: it starts afresh. */}
+                <MappingTabs key={`${detail.mapping.id}|${detail.mapping.contentHash}`} detail={detail} templateVersion={templateVersion} templateTitle={templateTitle} />
               </>
             )}
           </div>

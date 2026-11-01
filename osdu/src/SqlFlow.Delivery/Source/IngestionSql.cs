@@ -297,6 +297,90 @@ public static class IngestionSql
             """;
     }
 
+    /// <summary>
+    /// One page of the rows staged in the scope, for a person to go through: each row's key, its change moment, the columns
+    /// named, and its value in the order the read pages in (the last columns), narrowed to the rows whose
+    /// <paramref name="searched"/> columns hold <see cref="SearchParameter"/> when there is one. The record table alone: what
+    /// a row holds in its child datasets is counted apart (<see cref="StagedChildren"/>).
+    /// </summary>
+    public static string StagedPage(IngestionLayout layout, IReadOnlyList<string> columns, IReadOnlyList<string> searched, bool search, bool after)
+    {
+        ArgumentNullException.ThrowIfNull(layout);
+        ArgumentNullException.ThrowIfNull(columns);
+        ArgumentNullException.ThrowIfNull(searched);
+        var named = string.Concat(columns.Select(c => $", r.{SourceObjectName.Quote(c)}"));
+        return $"""
+            SELECT TOP ({PageParameter}) {KeyList(layout, "r")}, r.{SourceObjectName.Quote(layout.Updated)}{named}, {OrderList(layout, "r")}
+            FROM {layout.Record.Quoted} r
+            {StagedWhere(layout, searched, search, after)}
+            ORDER BY {OrderList(layout, "r")};
+            """;
+    }
+
+    /// <summary>How many rows are staged in the scope, narrowed as <see cref="StagedPage"/> narrows them.</summary>
+    public static string StagedCount(IngestionLayout layout, IReadOnlyList<string> searched, bool search)
+    {
+        ArgumentNullException.ThrowIfNull(layout);
+        ArgumentNullException.ThrowIfNull(searched);
+        return $"""
+            SELECT COUNT_BIG(*)
+            FROM {layout.Record.Quoted} r
+            {StagedWhere(layout, searched, search, after: false)};
+            """;
+    }
+
+    /// <summary>
+    /// How many rows each child dataset holds of the records <see cref="KeysParameter"/> names: one result set per dataset, in
+    /// the layout's order, each a record's key and its count, a record the dataset holds nothing of left out.
+    /// </summary>
+    public static string StagedChildren(IngestionLayout layout)
+    {
+        ArgumentNullException.ThrowIfNull(layout);
+        var columns = string.Join(", ", layout.Key.Select(k => $"{SourceObjectName.Quote(k.Name)} {k.SqlType} NOT NULL"));
+        var names = string.Join(", ", layout.Key.Select(k => SourceObjectName.Quote(k.Name)));
+        var keys = string.Join(", ", layout.Key.Select(k => $"k.{SourceObjectName.Quote(k.Name)}"));
+        var sql = new StringBuilder();
+        sql.Append("DECLARE @page_keys TABLE (").Append(columns).AppendLine(");");
+        sql.Append("INSERT INTO @page_keys (").Append(names).Append(") SELECT ").Append(names)
+            .Append(" FROM OPENJSON(").Append(KeysParameter).Append(") WITH (").Append(OpenJsonColumns(layout.Key)).AppendLine(");");
+        foreach (var dataset in layout.Datasets)
+        {
+            var on = string.Join(" AND ", dataset.Join.Select(j => $"c.{SourceObjectName.Quote(j.Key)} = k.{SourceObjectName.Quote(j.Value)}"));
+            sql.Append("SELECT ").Append(keys).Append(", COUNT_BIG(*) FROM ").Append(dataset.Object.Quoted).Append(" c INNER JOIN @page_keys k ON ").Append(on);
+            if (dataset.Deleted is { } deleted)
+            {
+                sql.Append(" WHERE c.").Append(SourceObjectName.Quote(deleted)).Append(" IS NULL");
+            }
+
+            sql.Append(" GROUP BY ").Append(keys).AppendLine(";");
+        }
+
+        return sql.ToString();
+    }
+
+    private static string StagedWhere(IngestionLayout layout, IReadOnlyList<string> searched, bool search, bool after)
+    {
+        var predicates = new List<string>();
+        if (layout.Scope.Count > 0)
+        {
+            predicates.Add(ScopePredicate(layout, "r"));
+        }
+
+        if (after)
+        {
+            predicates.Add(Above(layout, "r", AfterPrefix));
+        }
+
+        if (search)
+        {
+            predicates.Add("(" + string.Join(
+                " OR ",
+                searched.Select(c => $"UPPER(CAST(r.{SourceObjectName.Quote(c)} AS nvarchar(4000))) LIKE {SearchParameter} ESCAPE N'\\'")) + ")");
+        }
+
+        return predicates.Count == 0 ? string.Empty : "WHERE " + string.Join(" AND ", predicates);
+    }
+
     /// <summary>How many records this selection is expected to meet.</summary>
     public static string CandidateCount(IngestionLayout layout, SourceSelectionKind kind, bool hasLower)
         => $"SELECT COUNT_BIG(*) FROM ({CandidateSet(layout, kind, hasLower, KeyBounds.None)}) q;";

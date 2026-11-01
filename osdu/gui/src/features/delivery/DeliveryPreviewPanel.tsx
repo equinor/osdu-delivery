@@ -99,7 +99,7 @@ export function DeliveryPreviewPanel({ pipelineId, flowName }: { pipelineId: str
   // A parameter left empty takes its declared default on the node.
   const sent = useMemo(() => parameterValuesToSend(parameters, values), [parameters, values]);
   const preview = useMutation({
-    mutationFn: () => deliveryApi.preview(pipelineId, { key: key.trim() === "" ? null : key.trim(), values: sent }, scope),
+    mutationFn: () => deliveryApi.preview(pipelineId, { key: key.trim() === "" ? null : key.trim(), values: sent, schemaCheck: true }, scope),
     onSuccess: setResult,
     onError: () => setResult(null),
   });

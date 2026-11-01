@@ -86,7 +86,14 @@ public sealed class RecordPreviewer
     /// not a failure; a flow that cannot render at all (a template no folder on the mapping's path holds, a cache that is not saved, a table without the columns
     /// the mapping reads) fails as a run of it would.
     /// </summary>
-    public async Task<RecordPreview> PreviewAsync(string? key, CancellationToken ct = default)
+    public Task<RecordPreview> PreviewAsync(string? key, CancellationToken ct = default) => PreviewAsync(key, schemaCheck: false, ct);
+
+    /// <summary>
+    /// The same preview, with the document held to the partition's Schema service when <paramref name="schemaCheck"/> asks
+    /// (<see cref="Checks.SchemaCrossCheck"/>), which reads the kind's schema and the records the document refers to; a service
+    /// that cannot be asked says so in the answer and takes nothing else from it.
+    /// </summary>
+    public async Task<RecordPreview> PreviewAsync(string? key, bool schemaCheck, CancellationToken ct = default)
     {
         var flow = _runtime.Flow;
         var resolved = _runtime.Mapping;
@@ -186,6 +193,9 @@ public sealed class RecordPreviewer
             Steps = rehearsal?.Steps ?? [],
             Notes = rehearsal?.Notes ?? [],
             Issues = issues,
+            SchemaCheck = schemaCheck
+                ? await (await Checks.SchemaCrossCheck.OpenAsync(_runtime, ct).ConfigureAwait(false)).OfRecordAsync(render, ct).ConfigureAwait(false)
+                : null,
             PreviewedUtc = context.Time.GetUtcNow().UtcDateTime,
         };
 
@@ -465,20 +475,23 @@ public sealed class RecordPreviewer
         };
     }
 
+    /// <summary>How a preview and a dry run name what the next run would do with a record.</summary>
+    internal static string ActionName(PlannedAction action) => action switch
+    {
+        PlannedAction.Create => "create",
+        PlannedAction.UpdateMetadata => "updateMetadata",
+        PlannedAction.UpdatePayload => "updatePayload",
+        PlannedAction.UpdateBoth => "updateBoth",
+        PlannedAction.Skip => "skip",
+        PlannedAction.Hold => "hold",
+        PlannedAction.Blocked => "blocked",
+        _ => action.ToString(),
+    };
+
     private static PreviewDecision Decision(PlanEntry decided, RenderResult? render)
         => new()
         {
-            Action = decided.Action switch
-            {
-                PlannedAction.Create => "create",
-                PlannedAction.UpdateMetadata => "updateMetadata",
-                PlannedAction.UpdatePayload => "updatePayload",
-                PlannedAction.UpdateBoth => "updateBoth",
-                PlannedAction.Skip => "skip",
-                PlannedAction.Hold => "hold",
-                PlannedAction.Blocked => "blocked",
-                _ => decided.Action.ToString(),
-            },
+            Action = ActionName(decided.Action),
             SkipTier = decided.Action == PlannedAction.Skip
                 ? decided.SkipTier switch
                 {

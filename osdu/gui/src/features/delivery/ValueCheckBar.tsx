@@ -13,10 +13,11 @@ import { type FailingFilter, type ValueCheckSession } from "./useValueCheck";
 import { ROW_BUDGETS, assertionRows, assertionRowsLine, flowKey, flowLabel, formatCount, outcomeVisual, percent } from "./valueCheck";
 
 const HOW_IT_WORKS = [
-  "A data check reads the rows of a flow that renders with this mapping, on a node, and renders each of them as a",
-  "delivery would: the same columns, expressions, lookups, cache and searches. Every value written is then held to what the",
-  "template says of its attribute (type, format, pattern, allowed values, lengths, ranges, what a reference may point to).",
-  "Where the mapping states assertions ($assert), each value they judge is held to them as well.",
+  "A dry run reads the rows of a flow that renders with this mapping, on a node, and takes them through everything a",
+  "delivery does short of sending them: the same columns, expressions, lookups, cache and searches. Every value written is",
+  "held to what the template says of its attribute (type, format, pattern, allowed values, lengths, ranges, what a reference",
+  "may point to), every document to the partition's Schema service as well, and where the mapping states assertions",
+  "($assert), each value they judge is held to them. The Staged records tab says what became of each record.",
   "\n\nThe answer counts the rows held (not delivered), the rows writing a value the template does not accept, and the",
   "rows leaving an attribute out; apart from them, the rows failing an assertion, and how many of those a failure would",
   "hold before they are sent. Pick one of them to narrow the tree to the attributes behind it; select an attribute",
@@ -41,11 +42,84 @@ const COUNTED: readonly {
   { filter: "asserted", label: "Assertion failed", rows: (last) => assertionRows(last.rows).failed, apart: true },
 ];
 
+/** Which rows a check reads: the flow, the values of its scope, and how many. */
+export function ValueCheckControls({ session, rowsLabel = "How many rows to read" }: { session: ValueCheckSession; rowsLabel?: string }) {
+  if (session.flows.length === 0) {
+    return null;
+  }
+
+  return (
+    <>
+      <Select value={session.flow === null ? undefined : flowKey(session.flow)} onValueChange={session.chooseFlow}>
+        <SelectTrigger
+          size="sm"
+          className="h-8 max-w-72 font-mono text-[12px]"
+          aria-label="The flow whose rows are read"
+          title={session.flow === null ? undefined : `Rows of ${flowLabel(session.flow)} (${session.flow.recordObject})`}
+          data-testid="value-check-flow"
+        >
+          <SelectValue placeholder="Pick a flow" />
+        </SelectTrigger>
+        <SelectContent>
+          {session.flows.map((flow) => (
+            <SelectItem key={flowKey(flow)} value={flowKey(flow)} className="font-mono text-[12px]">
+              {flowLabel(flow)}
+              <span className="ml-2 font-sans text-[11px] text-muted-foreground">{flow.recordObject}</span>
+            </SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
+      <RunParameterFields
+        pipelineId={session.flow?.pipelineId ?? null}
+        parameters={session.parameters}
+        values={session.values}
+        onChange={session.setValue}
+        lookupValues={session.flow?.partition ? { partition: session.flow.partition } : undefined}
+        prefix="value-check"
+        layout="inline"
+        problems={session.parameterProblems}
+        className="w-64"
+      />
+      <Select value={String(session.maxRows)} onValueChange={(value) => session.setMaxRows(Number(value))}>
+        <SelectTrigger size="sm" className="h-8 w-36 text-[12px]" aria-label={rowsLabel} data-testid="value-check-rows">
+          <SelectValue />
+        </SelectTrigger>
+        <SelectContent>
+          {ROW_BUDGETS.map((budget) => (
+            <SelectItem key={budget.value} value={String(budget.value)} className="text-[12px]">{budget.label}</SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
+    </>
+  );
+}
+
+/** The one button that takes the rows picked through everything a delivery does short of sending them; both tabs show what it finds. */
+export function DryRunButton({ session }: { session: ValueCheckSession }) {
+  return (
+    <RichTooltip body={session.blocked ?? "Take the rows picked through everything a delivery does, short of sending them. Nothing reaches OSDU."} delayDuration={300}>
+      {/* A disabled button takes no hover, so its wrapper carries the reason it cannot run. */}
+      <span className="ml-auto inline-flex">
+        <Button
+          type="button"
+          size="sm"
+          disabled={!session.ready || session.checkingAll}
+          onClick={() => session.check(null)}
+          data-testid="value-check-all"
+        >
+          {session.checkingAll ? <Loader2 className="animate-spin" /> : <ScanSearch />}
+          {session.checkingAll ? "Rendering" : "Dry run"}
+        </Button>
+      </span>
+    </RichTooltip>
+  );
+}
+
 /**
- * The data check on one line: which rows (the flow, its scope's values, how many), and the check of every attribute. Under
- * it, once a check has run, one line sums it up: how many rows, then how many are held, write an invalid value, leave an
- * attribute out or fail an assertion of the mapping, each a button narrowing the tree to the attributes behind it, and
- * how many are clean. Whatever the check cannot do yet, or failed at, is said in that line's place.
+ * The dry run on one line: which rows (the flow, its scope's values, how many), and the button. Under it, once one has run,
+ * one line sums it up by attribute: how many rows, then how many are held, write an invalid value, leave an attribute out or
+ * fail an assertion of the mapping, each a button narrowing the tree to the attributes behind it, and how many are clean.
+ * Whatever a check cannot do yet, or failed at, is said in that line's place.
  */
 export function ValueCheckBar({ session }: { session: ValueCheckSession }) {
   const last = session.summary;
@@ -56,68 +130,11 @@ export function ValueCheckBar({ session }: { session: ValueCheckSession }) {
       <div className="flex flex-wrap items-center gap-2" data-testid="value-check-controls">
         <span className="inline-flex items-center gap-1.5 text-[13px] font-medium">
           <ScanSearch className="size-4 text-primary" />
-          Data check
+          By attribute
         </span>
-        <GlyphRef icon={Info} title="What a data check does" body={HOW_IT_WORKS} />
-        {session.flows.length > 0 && (
-          <>
-            <Select value={session.flow === null ? undefined : flowKey(session.flow)} onValueChange={session.chooseFlow}>
-              <SelectTrigger
-                size="sm"
-                className="h-8 max-w-72 font-mono text-[12px]"
-                aria-label="The flow whose rows are checked"
-                title={session.flow === null ? undefined : `Rows of ${flowLabel(session.flow)} (${session.flow.recordObject})`}
-                data-testid="value-check-flow"
-              >
-                <SelectValue placeholder="Pick a flow" />
-              </SelectTrigger>
-              <SelectContent>
-                {session.flows.map((flow) => (
-                  <SelectItem key={flowKey(flow)} value={flowKey(flow)} className="font-mono text-[12px]">
-                    {flowLabel(flow)}
-                    <span className="ml-2 font-sans text-[11px] text-muted-foreground">{flow.recordObject}</span>
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-            <RunParameterFields
-              pipelineId={session.flow?.pipelineId ?? null}
-              parameters={session.parameters}
-              values={session.values}
-              onChange={session.setValue}
-              lookupValues={session.flow?.partition ? { partition: session.flow.partition } : undefined}
-              prefix="value-check"
-              layout="inline"
-              problems={session.parameterProblems}
-              className="w-64"
-            />
-            <Select value={String(session.maxRows)} onValueChange={(value) => session.setMaxRows(Number(value))}>
-              <SelectTrigger size="sm" className="h-8 w-36 text-[12px]" aria-label="How many rows to read" data-testid="value-check-rows">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                {ROW_BUDGETS.map((budget) => (
-                  <SelectItem key={budget.value} value={String(budget.value)} className="text-[12px]">{budget.label}</SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </>
-        )}
-        <RichTooltip body={session.blocked ?? "Check every attribute of the mapping over the rows picked."} delayDuration={300}>
-          {/* A disabled button takes no hover, so its wrapper carries the reason it cannot run. */}
-          <span className="ml-auto inline-flex">
-            <Button
-              type="button"
-              size="sm"
-              disabled={!session.ready || session.checkingAll}
-              onClick={() => session.check(null)}
-              data-testid="value-check-all"
-            >
-              {session.checkingAll ? <Loader2 className="animate-spin" /> : <ScanSearch />}
-              {session.checkingAll ? "Checking" : "Check all attributes"}
-            </Button>
-          </span>
-        </RichTooltip>
+        <GlyphRef icon={Info} title="What a dry run does" body={HOW_IT_WORKS} />
+        <ValueCheckControls session={session} />
+        <DryRunButton session={session} />
       </div>
 
       {session.flowsError !== null && <ProblemView error={session.flowsError} testId="value-check-flows-error" />}

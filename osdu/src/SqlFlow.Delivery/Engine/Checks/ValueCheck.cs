@@ -25,6 +25,12 @@ public sealed record ValueCheckRequest
 
     /// <summary>The mapping the check is asked of (<c>Name@version</c>), or null to take the flow's; the flow must render with it.</summary>
     public string? Mapping { get; init; }
+
+    /// <summary>
+    /// Whether to take the same rows through everything a delivery does short of sending them (<see cref="Checks.DryRun"/>), which
+    /// reads every attribute of the mapping, so it takes no <see cref="Targets"/>.
+    /// </summary>
+    public bool DryRun { get; init; }
 }
 
 /// <summary>
@@ -67,6 +73,9 @@ public sealed record ValueCheckLimits
 
     /// <summary>Rows inspected together: one unit of parallelism, and one round of searches asked of the platform.</summary>
     public int Batch { get; init; } = 200;
+
+    /// <summary>What a dry run of the same rows lists.</summary>
+    public DryRunLimits DryRun { get; init; } = DryRunLimits.Default;
 }
 
 /// <summary>
@@ -100,6 +109,9 @@ public sealed record ValueCheck
 
     /// <summary>What the answer left out to stay within bounds, and why.</summary>
     public IReadOnlyList<string> Notes { get; init; } = [];
+
+    /// <summary>What a dry run of the same rows came to, record by record; null when none was asked for.</summary>
+    public DryRun? DryRun { get; init; }
 
     public required DateTime StartedUtc { get; init; }
 

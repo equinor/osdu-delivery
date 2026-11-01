@@ -20,6 +20,7 @@ internal sealed class RecordedOperations
         ReadSourceRowOperation.OperationName,
         PreviewRecordOperation.OperationName,
         ScopeValuesOperation.OperationName,
+        StagedRowsOperation.OperationName,
         ExploreOperation.OperationName,
     ];
 

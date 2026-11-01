@@ -177,6 +177,60 @@ public sealed partial class SchemaServiceReader
         return new SchemaServiceListing(listed, malformed);
     }
 
+    /// <summary>
+    /// What the service's listing says of the schema of <paramref name="kind"/>: its status and scope, or null when no status
+    /// and scope lists it, or <paramref name="kind"/> is not a schema id. A schema's own read (<see cref="ReadAsync"/>) carries
+    /// neither, so the listing is asked, one status and scope at a time and published first, by the kind's identity: a listing
+    /// that names no status and scope answers only what the specification defaults them to (openapi schema_service,
+    /// <c>getSchemaInfoList</c>). A listing the service refuses as asked (400), or answers with 404, lists nothing; any
+    /// other refusal throws.
+    /// </summary>
+    public async Task<SchemaListing?> InfoAsync(string kind, CancellationToken ct = default)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(kind);
+        var id = kind.Trim();
+        if (!SchemaId().IsMatch(id))
+        {
+            return null;
+        }
+
+        var parts = id.Split(':');
+        var version = parts[3].Split('.');
+        foreach (var status in Statuses)
+        {
+            foreach (var scope in Scopes)
+            {
+                ct.ThrowIfCancellationRequested();
+                var url = _client.Url(_path);
+                foreach (var (name, value) in new[]
+                {
+                    ("authority", parts[0]), ("source", parts[1]), ("entityType", parts[2]), ("schemaVersionMajor", version[0]),
+                    ("schemaVersionMinor", version[1]), ("schemaVersionPatch", version[2]), ("status", status), ("scope", scope),
+                    ("limit", ListPage.ToString(CultureInfo.InvariantCulture)),
+                })
+                {
+                    url = OsduHttpClient.WithQuery(url, name, value);
+                }
+
+                var result = await _client.SendJsonAsync(HttpMethod.Get, url, null, new HashSet<int> { 400, 404 }, ct, idempotent: true).ConfigureAwait(false);
+                if ((int)result.Status is 400 or 404)
+                {
+                    continue;
+                }
+
+                foreach (var info in Infos(result.Body))
+                {
+                    if (Info(info, status, scope) is { } listed && string.Equals(listed.Id, id, StringComparison.Ordinal))
+                    {
+                        return listed;
+                    }
+                }
+            }
+        }
+
+        return null;
+    }
+
     /// <summary>The entries of one page of a listing (<c>SchemaInfoResponse.schemaInfos</c>).</summary>
     private static JsonArray Infos(byte[] body)
     {

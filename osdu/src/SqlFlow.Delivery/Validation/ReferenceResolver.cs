@@ -44,21 +44,29 @@ public sealed class ReferenceResolver
     private readonly string _cacheLabel;
     private readonly Func<IReadOnlyCollection<string>, CancellationToken, Task<IReadOnlySet<string>>>? _ledger;
     private readonly Func<IReadOnlyCollection<string>, CancellationToken, Task<IReadOnlySet<string>>>? _osdu;
+    private readonly bool _cacheFirst;
 
     /// <param name="cache">The cache version to look reference data up in, or null for none.</param>
     /// <param name="cacheLabel">How a message names the cache version (<c>cache version 'v12' of dev</c>).</param>
     /// <param name="ledger">The ids, without their version, that a record of the ledger holds; null to not ask the ledger.</param>
     /// <param name="osdu">The ids, without their version, that OSDU's storage service holds; null to not ask OSDU.</param>
+    /// <param name="cacheFirst">
+    /// Whether what the cache version holds is taken as found rather than asked of storage again: for a check that reads
+    /// thousands of records naming the same reference data, which the cache captured from the partition. Storage still decides
+    /// every id the cache does not hold. Off, storage is the authority, as <c>target.verifyReferences</c> has always meant.
+    /// </param>
     public ReferenceResolver(
         ReferenceSnapshot? cache,
         string? cacheLabel,
         Func<IReadOnlyCollection<string>, CancellationToken, Task<IReadOnlySet<string>>>? ledger,
-        Func<IReadOnlyCollection<string>, CancellationToken, Task<IReadOnlySet<string>>>? osdu)
+        Func<IReadOnlyCollection<string>, CancellationToken, Task<IReadOnlySet<string>>>? osdu,
+        bool cacheFirst = false)
     {
         _cache = cache;
         _cacheLabel = string.IsNullOrWhiteSpace(cacheLabel) ? (cache is null ? "the cache" : $"cache version '{cache.Version}'") : cacheLabel;
         _ledger = ledger;
         _osdu = osdu;
+        _cacheFirst = cacheFirst;
     }
 
     /// <summary>A resolver that asks nothing: every id is not checked.</summary>
@@ -112,6 +120,23 @@ public sealed class ReferenceResolver
 
         if (_osdu is not null)
         {
+            if (_cacheFirst)
+            {
+                foreach (var key in open)
+                {
+                    if (FromCache(byKey[key]) is { State: ReferenceState.InCache } cached)
+                    {
+                        answers[key] = cached;
+                    }
+                }
+
+                open = open.Where(key => !answers.ContainsKey(key)).ToList();
+                if (open.Count == 0)
+                {
+                    return answers;
+                }
+            }
+
             var present = await _osdu(open, ct).ConfigureAwait(false);
             foreach (var key in open)
             {

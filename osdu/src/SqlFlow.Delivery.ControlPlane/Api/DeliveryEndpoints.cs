@@ -81,10 +81,14 @@ public sealed record DeliveryInterfaceDto(
 public sealed record DeliveryParameterDto(string Name, bool Required, string? Default, string? Description, string? ScopeColumn = null);
 
 /// <summary>
-/// A preview of one record of a flow: the record's key, or none for the scope's first record, and the flow parameter values
-/// the scope is read with (the declared defaults fill what is not given).
+/// A preview of one record of a flow: the record's key, or none for the scope's first record, the flow parameter values the
+/// scope is read with (the declared defaults fill what is not given), and whether to hold the document to the partition's
+/// Schema service as well.
 /// </summary>
-public sealed record DeliveryPreviewRequest(string? Key, [property: System.Text.Json.Serialization.JsonConverter(typeof(SqlFlow.Core.Runs.RunValuesJsonConverter))] IReadOnlyDictionary<string, string>? Values);
+public sealed record DeliveryPreviewRequest(
+    string? Key,
+    [property: System.Text.Json.Serialization.JsonConverter(typeof(SqlFlow.Core.Runs.RunValuesJsonConverter))] IReadOnlyDictionary<string, string>? Values,
+    bool? SchemaCheck = null);
 
 /// <summary>
 /// A read of one OSDU record through a flow's route and credentials, by its id (a version or a trailing colon is dropped),
@@ -2940,6 +2944,11 @@ public static class DeliveryEndpoints
             }
 
             arguments["values"] = json;
+        }
+
+        if (request?.SchemaCheck == true)
+        {
+            arguments[PreviewRecordOperation.SchemaCheckArgument] = "true";
         }
 
         return await DirectOperationRunner.RunAsync(db, config, direct, flow, PreviewRecordOperation.OperationName, arguments, user, loggers, ct).ConfigureAwait(false);

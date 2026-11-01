@@ -15,7 +15,8 @@ namespace SqlFlow.Delivery.Engine.Operations;
 /// (a JSON array of template paths, none for every entry), how many rows to read in <c>maxRows</c> (0 for the whole scope),
 /// how many example records each finding names in <c>samples</c> and how many it passes over first in <c>skipSamples</c>,
 /// and the mapping it is asked of in <c>mapping</c>; <c>values</c> are the flow parameter values the scope is read with.
-/// Nothing is written: not the ledger, not the work location, not OSDU.
+/// With <c>dryRun</c> <c>true</c> the same rows are also taken through everything a delivery does short of sending them
+/// (<see cref="DryRun"/>). Nothing is written: not the ledger, not the work location, not OSDU.
 /// </summary>
 public sealed class CheckValuesOperation : DeliveryOperation
 {
@@ -72,6 +73,7 @@ public sealed class CheckValuesOperation : DeliveryOperation
             Samples = (int)Math.Min(Whole(payload, "samples") ?? ValueCheckLimits.DefaultSamples, int.MaxValue),
             SkipSamples = Whole(payload, "skipSamples") ?? 0,
             Mapping = payload.Argument("mapping"),
+            DryRun = string.Equals(payload.Argument("dryRun"), "true", StringComparison.Ordinal),
         };
     }
 
