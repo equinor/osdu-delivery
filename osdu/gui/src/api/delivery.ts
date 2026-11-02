@@ -7,7 +7,7 @@ import { del, get, getBlob, getText, post, put, type QueryParams } from "@/api/c
 import type { ComputeTaskAccepted, PagedResult, RunStatus, RunValue } from "@/api/types";
 import type { PageQuery } from "@/api/endpoints";
 import type { AssertionAction, AssertionFindings, AssertionStage } from "./validation";
-import type { DeliverySourceTable, MappingOutline } from "./mappingOutline";
+import type { DeliverySourceTable, DeliveryTableRows, MappingOutline } from "./mappingOutline";
 
 export type * from "./mappingOutline";
 
@@ -4427,6 +4427,12 @@ export const deliveryApi = {
     request: { values?: Record<string, RunValue>; search?: string; after?: string | null; limit?: number },
     scope?: DeliveryFlowScope,
   ) => post<DeliveryStagedRows>(flowPath(pipelineId, "/staged-rows", scope), request),
+  /** The first rows of the record table, or of the child dataset named, every column of it, in the scope `values` name. Answered at once. */
+  tableRows: (
+    pipelineId: string,
+    request: { values?: Record<string, RunValue>; dataset?: string; limit?: number },
+    scope?: DeliveryFlowScope,
+  ) => post<DeliveryTableRows>(flowPath(pipelineId, "/table-rows", scope), request),
   /** Previews this record, rendered from its current source row as a delivery would render it now. Answered at once. */
   previewRecord: (record: DeliveryRecordRef) => post<DeliveryRecordPreview>(`${recordApiPath(record)}/preview`),
   /** The tables an interface of a delivery flow reads, record table first, with the columns the catalog holds of each. */

@@ -291,6 +291,43 @@ public sealed class MemoryIngestionTables : IIngestionSourceFactory
             return Task.FromResult(new StagedPage(rows, query.After is null ? ordered.Count : null, next));
         }
 
+        public Task<TableRows> ReadTableAsync(TableRowsQuery query, CancellationToken ct = default)
+        {
+            ArgumentNullException.ThrowIfNull(query);
+            ArgumentOutOfRangeException.ThrowIfLessThan(query.Limit, 1);
+            if (query.Dataset is { } name && !_flow.Source.Datasets.ContainsKey(name))
+            {
+                throw new DeliveryException($"Flow '{_flow.Label}' reads no child dataset '{name}'; it reads {(_flow.Source.Datasets.Count == 0 ? "none" : string.Join(", ", _flow.Source.Datasets.Keys))}.");
+            }
+
+            var records = (PrimaryKey is null
+                ? _tables.Records.Where(InScope).OrderBy(r => KeyOf(r).Json, StringComparer.Ordinal)
+                : _tables.Records.Where(InScope).OrderBy(IdOf)).Where(r => r.DeletedUtc is null);
+            var all = (query.Dataset is { } dataset
+                ? records.SelectMany(r => r.Datasets.GetValueOrDefault(dataset) ?? [])
+                : records.Select(r => r.Row)).ToList();
+            var hidden = _flow.Source.SystemColumns.Names();
+            var columns = all.SelectMany(row => row.Keys).Where(c => !hidden.Contains(c)).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
+            var cut = new bool[columns.Count];
+            var rows = all.Take(query.Limit).Select(row => (IReadOnlyList<string?>)columns.Select((column, i) =>
+            {
+                var value = SourceRow.Stringify(row.TryGetValue(column, out var held) ? held : null);
+                if (value is not null && value.Length > query.MaxCharacters)
+                {
+                    cut[i] = true;
+                    return value[..query.MaxCharacters];
+                }
+
+                return value;
+            }).ToList()).ToList();
+            return Task.FromResult(new TableRows(
+                query.Dataset is { } child ? _flow.Source.Datasets[child].Object : _flow.Source.Record.Object,
+                columns.Select((c, i) => new TableColumn(c, "nvarchar(400)", cut[i])).ToList(),
+                rows,
+                Math.Min(all.Count, query.CountUpTo),
+                all.Count > query.CountUpTo));
+        }
+
         public Task<IReadOnlyList<KeyRange>> SliceBoundsAsync(SourceHeader header, int slices, CancellationToken ct = default)
         {
             ArgumentNullException.ThrowIfNull(header);

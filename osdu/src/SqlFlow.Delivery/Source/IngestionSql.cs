@@ -428,6 +428,53 @@ public static class IngestionSql
         return sql.ToString();
     }
 
+    /// <summary>
+    /// The first rows of the record table, or of the child dataset <paramref name="dataset"/>, that a delivery reads
+    /// (<see cref="IIngestionSource.ReadTableAsync"/>): <paramref name="select"/>, written over the table read as <c>t</c>, of at
+    /// most <see cref="PageParameter"/> rows of the scope's records not marked deleted, in the order a read pages in; then how
+    /// many such rows there are, counted up to <see cref="TopParameter"/>. A child row is read when its own row is not marked
+    /// deleted either, as a delivery reads it.
+    /// </summary>
+    internal static string TableRows(IngestionLayout layout, IngestionDataset? dataset, IReadOnlyList<string> select)
+    {
+        ArgumentNullException.ThrowIfNull(layout);
+        ArgumentNullException.ThrowIfNull(select);
+        var record = dataset is null ? "t" : "r";
+        var predicates = new List<string>();
+        if (layout.Scope.Count > 0)
+        {
+            predicates.Add(ScopePredicate(layout, record));
+        }
+
+        if (layout.Deleted is { } deleted)
+        {
+            predicates.Add($"{record}.{SourceObjectName.Quote(deleted)} IS NULL");
+        }
+
+        var from = $"{layout.Record.Quoted} t";
+        var order = OrderList(layout, record);
+        if (dataset is not null)
+        {
+            from = $"{dataset.Object.Quoted} t INNER JOIN {layout.Record.Quoted} r ON "
+                + string.Join(" AND ", dataset.Join.Select(j => $"t.{SourceObjectName.Quote(j.Key)} = r.{SourceObjectName.Quote(j.Value)}"));
+            if (dataset.Deleted is { } deletedChild)
+            {
+                predicates.Add($"t.{SourceObjectName.Quote(deletedChild)} IS NULL");
+            }
+
+            order = string.Join(", ", new[] { order }.Concat(dataset.OrderBy.Select(o => $"t.{SourceObjectName.Quote(o)}")));
+        }
+
+        var where = predicates.Count == 0 ? string.Empty : "WHERE " + string.Join(" AND ", predicates);
+        return $"""
+            SELECT TOP ({PageParameter}) {string.Join(", ", select)}
+            FROM {from}
+            {where}
+            ORDER BY {order};
+            SELECT COUNT_BIG(*) FROM (SELECT TOP ({TopParameter}) 1 AS one FROM {from} {where}) q;
+            """;
+    }
+
     private static string StagedWhere(IngestionLayout layout, IReadOnlyList<string> searched, bool search, bool after)
     {
         var predicates = new List<string>();

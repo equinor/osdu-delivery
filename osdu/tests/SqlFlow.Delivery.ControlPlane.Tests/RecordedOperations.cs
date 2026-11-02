@@ -21,6 +21,7 @@ internal sealed class RecordedOperations
         PreviewRecordOperation.OperationName,
         ScopeValuesOperation.OperationName,
         StagedRowsOperation.OperationName,
+        TableRowsOperation.OperationName,
         SourceSqlOperation.OperationName,
         ExploreOperation.OperationName,
     ];

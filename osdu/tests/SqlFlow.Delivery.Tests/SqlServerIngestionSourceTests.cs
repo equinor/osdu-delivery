@@ -496,6 +496,99 @@ public sealed class SqlServerIngestionSourceTests
     }
 
     [Fact]
+    public async Task A_tables_first_rows_are_read_in_the_scope_without_deleted_rows_cut_by_the_database_and_counted_to_a_cap()
+    {
+        await using var estate = await SqlServerIngestionFixture.StartAsync();
+        var table = await CreateTableAsync(
+            estate,
+            "Looked",
+            "[RecId] bigint IDENTITY(1, 1) NOT NULL CONSTRAINT [PK_Looked] PRIMARY KEY CLUSTERED, [item_key] nvarchar(50) NOT NULL, [item_name] nvarchar(100) NULL, [notes] nvarchar(max) NULL, "
+                + "[region] nvarchar(20) NULL, [UpdatedDate_DW] datetime NULL, [DeletedDate_DW] datetime NULL, [FileName_DW] nvarchar(400) NULL, [RowNumber_DW] bigint NULL",
+            "CREATE UNIQUE NONCLUSTERED INDEX [NCI_KeyColumn] ON {0} ([item_key]);");
+        var parts = await CreateTableAsync(
+            estate,
+            "LookedPart",
+            "[item_key] nvarchar(50) NOT NULL, [part_no] int NOT NULL, [weight] decimal(9,3) NULL, [UpdatedDate_DW] datetime NULL, [DeletedDate_DW] datetime NULL",
+            string.Empty);
+
+        // 300 rows in two regions, the third marked deleted and the fifth holding a long note; the first ten with three parts, one marked deleted.
+        await ExecuteAsync(estate, $"""
+            INSERT INTO {table} ([item_key], [item_name], [notes], [region], [UpdatedDate_DW], [FileName_DW], [RowNumber_DW])
+            SELECT CONCAT(N'item-', FORMAT(n.rn, 'D6')), CONCAT(N'Thing ', n.rn), CASE WHEN n.rn = 5 THEN REPLICATE(CAST(N'x' AS nvarchar(max)), 5000) END,
+                CASE WHEN n.rn % 2 = 0 THEN N'north' ELSE N'south' END, @loaded, N'looked.csv', n.rn
+            FROM (SELECT TOP (300) ROW_NUMBER() OVER (ORDER BY (SELECT NULL)) AS rn FROM sys.all_objects AS a CROSS JOIN sys.all_objects AS b) AS n
+            ORDER BY n.rn;
+            UPDATE {table} SET [DeletedDate_DW] = @changed WHERE [RecId] = 3;
+            INSERT INTO {parts} ([item_key], [part_no], [weight], [DeletedDate_DW])
+            SELECT r.[item_key], p.n, p.n * 1.5, CASE WHEN p.n = 3 THEN @loaded END
+            FROM {table} r CROSS JOIN (VALUES (3), (2), (1)) AS p(n) WHERE r.[RecId] <= 10;
+            """);
+        var sample = ItemFlow(estate, "Looked");
+        var flow = sample with
+        {
+            Source = sample.Source with
+            {
+                Datasets = new Dictionary<string, FlowSourceDataset>(StringComparer.Ordinal)
+                {
+                    ["parts"] = new FlowSourceDataset
+                    {
+                        Object = $"[{estate.DatabaseName}].[{estate.SilverSchema}].[LookedPart]",
+                        Join = new Dictionary<string, string>(StringComparer.Ordinal) { ["item_key"] = "item_key" },
+                        OrderBy = ["part_no"],
+                    },
+                },
+            },
+        };
+        var source = estate.Engine.Sources.Open(flow, NoValues, NullLoggerFactory.Instance);
+
+        // The record table: every column but SQLFlow's, in the table's order, the row marked deleted left out, in the order a read pages in.
+        var record = await source.ReadTableAsync(new TableRowsQuery { Limit = 100, MaxCharacters = 1000 });
+        Assert.Equal(flow.Source.Record.Object, record.Table);
+        Assert.Equal(["RecId", "item_key", "item_name", "notes", "region"], record.Columns.Select(c => c.Name));
+        Assert.Equal("nvarchar(100)", record.Columns[2].SqlType);
+        Assert.Equal(100, record.Rows.Count);
+        Assert.Equal(["1", "item-000001", "Thing 1", null, "south"], record.Rows[0]);
+        Assert.Equal("item-000004", record.Rows[2][1]);
+        Assert.Equal((299L, false), (record.Counted, record.CountCapped));
+
+        // A long value is cut to what the query keeps, and its column says so; the others say nothing.
+        Assert.Equal(new string('x', 1000), record.Rows[3][3]);
+        Assert.Equal([false, false, false, true, false], record.Columns.Select(c => c.Cut));
+
+        // A count stops where the query asks, and says there are more.
+        var capped = await source.ReadTableAsync(new TableRowsQuery { Limit = 5, CountUpTo = 250 });
+        Assert.Equal((5, 250L, true), (capped.Rows.Count, capped.Counted, capped.CountCapped));
+
+        // A child dataset: its rows of the records read, its own deleted rows and those of a deleted record left out, in its order.
+        var child = await source.ReadTableAsync(new TableRowsQuery { Dataset = "parts", Limit = 100 });
+        Assert.Equal(["item_key", "part_no", "weight"], child.Columns.Select(c => c.Name));
+        Assert.Equal(18, child.Rows.Count);
+        // A number reads as the text a delivery derives from it, in its shortest form.
+        Assert.Equal(["item-000001", "1", "1.5"], child.Rows[0]);
+        Assert.Equal(["item-000001", "2", "3"], child.Rows[1]);
+        Assert.Equal("item-000002", child.Rows[2][0]);
+        Assert.DoesNotContain(child.Rows, row => row[0] == "item-000003");
+        Assert.Equal((18L, false), (child.Counted, child.CountCapped));
+
+        // A scope narrows the record table and the child dataset alike.
+        var scoped = flow with
+        {
+            Parameters = new Dictionary<string, FlowParameter>(StringComparer.Ordinal) { ["region"] = new FlowParameter { Required = true } },
+            Source = flow.Source with
+            {
+                Record = flow.Source.Record with { Scope = new Dictionary<string, string>(StringComparer.Ordinal) { ["region"] = "region" } },
+            },
+        };
+        var north = estate.Engine.Sources.Open(scoped, new Dictionary<string, string>(StringComparer.Ordinal) { ["region"] = "north" }, NullLoggerFactory.Instance);
+        Assert.Equal(150, (await north.ReadTableAsync(new TableRowsQuery { Limit = 1 })).Counted);
+        Assert.Equal(10, (await north.ReadTableAsync(new TableRowsQuery { Dataset = "parts", Limit = 100 })).Rows.Count);
+
+        // A dataset the flow does not read is refused by name.
+        var refused = await Assert.ThrowsAsync<DeliveryException>(() => source.ReadTableAsync(new TableRowsQuery { Dataset = "notes", Limit = 1 }));
+        Assert.Contains("reads no child dataset 'notes'; it reads parts", refused.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public async Task The_query_of_an_attribute_runs_as_written_and_returns_the_rows_a_read_reads()
     {
         await using var estate = await SqlServerIngestionFixture.StartAsync();

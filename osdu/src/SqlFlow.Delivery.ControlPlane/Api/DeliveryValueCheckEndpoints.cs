@@ -85,6 +85,15 @@ public sealed record DeliveryStagedRowsRequest(
     int? Limit);
 
 /// <summary>
+/// A look at the first rows of a table a flow reads: the flow parameter values its scope is read with, the child dataset to read
+/// (none for the record table), and how many rows.
+/// </summary>
+public sealed record DeliveryTableRowsRequest(
+    [property: System.Text.Json.Serialization.JsonConverter(typeof(SqlFlow.Core.Runs.RunValuesJsonConverter))] IReadOnlyDictionary<string, string>? Values,
+    string? Dataset,
+    int? Limit);
+
+/// <summary>
 /// The value check: which flows render with a mapping, and the check of a flow's rows queued for a node
 /// (<see cref="CheckValuesOperation"/>), which finds the rows that will not give the mapping's variables the values their
 /// template expects. A request a node would refuse is a 400 here; whether a variable names something the mapping fills is
@@ -117,6 +126,7 @@ public static class DeliveryValueCheckEndpoints
         delivery.MapPost("/flows/{pipelineId:guid}/check-values", CheckValuesAsync).WithName("CheckDeliveryFlowValues");
         delivery.MapPost("/flows/{pipelineId:guid}/check-values/export", ExportIssuesAsync).WithName("ExportDeliveryFlowValueIssues");
         delivery.MapPost("/flows/{pipelineId:guid}/staged-rows", StagedRowsAsync).WithName("ListDeliveryFlowStagedRows");
+        delivery.MapPost("/flows/{pipelineId:guid}/table-rows", TableRowsAsync).WithName("ReadDeliveryFlowTableRows");
         delivery.MapPost("/flows/{pipelineId:guid}/source-sql", SourceSqlAsync).WithName("WriteDeliveryFlowSourceSql");
     }
 
@@ -305,6 +315,70 @@ public static class DeliveryValueCheckEndpoints
             }
 
             arguments[StagedRowsOperation.AfterArgument] = request.After;
+        }
+
+        return null;
+    }
+
+    /// <summary>
+    /// The first rows of one table an interface reads, every column of it, read in this process (<see cref="DirectOperationRunner"/>):
+    /// what a mapping overview shows of a table it is asked to look into. Every part of the request is checked here, so one the
+    /// read would refuse answers 400 rather than a read that fails.
+    /// </summary>
+    private static async Task<Results<ContentHttpResult, ProblemHttpResult>> TableRowsAsync(
+        Guid pipelineId, DeliveryTableRowsRequest? request, [FromQuery(Name = "interface")] string? interfaceName, [FromQuery] string? partition, CatalogDbContext db,
+        DeliveryDocumentLoader documents, IPartitionRegistry partitions, DeliveryConfigStore config, DirectOperations direct, ILoggerFactory loggers, ClaimsPrincipal user, CancellationToken ct)
+    {
+        var (flow, problem) = await DeliveryEndpoints.ResolveAsync(db, documents, partitions, pipelineId, interfaceName, partition, ct).ConfigureAwait(false);
+        if (flow is null)
+        {
+            return problem!;
+        }
+
+        var arguments = new Dictionary<string, string>(StringComparer.Ordinal);
+        if (TableArguments(flow.Flow, request ?? new DeliveryTableRowsRequest(null, null, null), arguments) is { } refused)
+        {
+            return DeliveryEndpoints.Invalid(refused);
+        }
+
+        return await DirectOperationRunner.RunAsync(db, config, direct, flow, TableRowsOperation.OperationName, arguments, user, loggers, ct).ConfigureAwait(false);
+    }
+
+    /// <summary>Fills <paramref name="arguments"/> for <paramref name="request"/>, or says why the read would refuse it.</summary>
+    internal static string? TableArguments(FlowDefinition flow, DeliveryTableRowsRequest request, Dictionary<string, string> arguments)
+    {
+        ArgumentNullException.ThrowIfNull(flow);
+        ArgumentNullException.ThrowIfNull(request);
+        ArgumentNullException.ThrowIfNull(arguments);
+        var values = request.Values ?? new Dictionary<string, string>(StringComparer.Ordinal);
+        if (DeliveryEndpoints.ParameterProblem(flow, values) is { } parameters)
+        {
+            return parameters;
+        }
+
+        if (values.Count > 0 && Json(values, "parameter values", arguments, "values") is { } tooLong)
+        {
+            return tooLong;
+        }
+
+        if (request.Dataset is { } dataset)
+        {
+            if (!flow.Source.Datasets.ContainsKey(dataset))
+            {
+                return $"Flow '{flow.Label}' reads no child dataset '{dataset}'; it reads {(flow.Source.Datasets.Count == 0 ? "none" : string.Join(", ", flow.Source.Datasets.Keys.Order(StringComparer.Ordinal)))}.";
+            }
+
+            arguments[TableRowsOperation.DatasetArgument] = dataset;
+        }
+
+        if (request.Limit is { } limit)
+        {
+            if (limit is < 1 or > TableRowsOperation.MaxLimit)
+            {
+                return $"A look at a table reads between 1 and {TableRowsOperation.MaxLimit} rows; {limit.ToString(CultureInfo.InvariantCulture)} is outside that.";
+            }
+
+            arguments[TableRowsOperation.LimitArgument] = limit.ToString(CultureInfo.InvariantCulture);
         }
 
         return null;

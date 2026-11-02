@@ -416,6 +416,84 @@ public sealed class SqlServerIngestionSource : IIngestionSource
         return rows.Select(row => counts.TryGetValue(row.Key, out var held) ? row with { Children = held } : row).ToList();
     }
 
+    public async Task<TableRows> ReadTableAsync(TableRowsQuery query, CancellationToken ct = default)
+    {
+        ArgumentNullException.ThrowIfNull(query);
+        ArgumentOutOfRangeException.ThrowIfLessThan(query.Limit, 1);
+        ArgumentOutOfRangeException.ThrowIfLessThan(query.MaxCharacters, 1);
+        ArgumentOutOfRangeException.ThrowIfLessThan(query.CountUpTo, 1);
+        await using var connection = await IngestionConnection.OpenAsync(_flow.Source.Connection, _flow.Name, _secrets, ct).ConfigureAwait(false);
+        var layout = await BuildLayoutAsync(connection, ct).ConfigureAwait(false);
+        IngestionDataset? dataset = null;
+        if (query.Dataset is { } name)
+        {
+            dataset = layout.Datasets.FirstOrDefault(d => string.Equals(d.Name, name, StringComparison.Ordinal))
+                ?? throw new DeliveryException(
+                    $"Flow '{_flow.Label}' reads no child dataset '{name}'; it reads {(layout.Datasets.Count == 0 ? "none" : string.Join(", ", layout.Datasets.Select(d => d.Name)))}.");
+        }
+
+        var hidden = _flow.Source.SystemColumns.Names();
+        var columns = _tables[dataset?.Name ?? SourceDatasets.Record].Values.Where(c => !hidden.Contains(c.Name)).ToList();
+        var table = dataset?.Object ?? layout.Record;
+
+        // A table holding nothing but SQLFlow's columns still has its rows counted.
+        var select = columns.Count == 0 ? ["1 AS one"] : columns.Select(c => Shown(c, query.MaxCharacters)).ToList();
+        await using var command = Command(connection, IngestionSql.TableRows(layout, dataset, select));
+        BindScope(command, layout);
+        command.Parameters.Add(new SqlParameter(IngestionSql.PageParameter, SqlDbType.Int) { Value = query.Limit });
+        command.Parameters.Add(new SqlParameter(IngestionSql.TopParameter, SqlDbType.BigInt) { Value = query.CountUpTo + 1 });
+
+        var rows = new List<IReadOnlyList<string?>>(Math.Min(query.Limit, 1000));
+        var cut = new bool[columns.Count];
+        await using var reader = await ExecuteReaderAsync(command, $"read the first rows of {table}", ct).ConfigureAwait(false);
+        while (await reader.ReadAsync(ct).ConfigureAwait(false))
+        {
+            var values = new string?[columns.Count];
+            for (var i = 0; i < values.Length; i++)
+            {
+                var value = SourceRow.Stringify(SourceValues.Normalize(reader.GetValue(i)));
+                if (value is not null && value.Length > query.MaxCharacters)
+                {
+                    value = value[..query.MaxCharacters];
+                    cut[i] = true;
+                }
+
+                values[i] = value;
+            }
+
+            rows.Add(values);
+        }
+
+        await reader.NextResultAsync(ct).ConfigureAwait(false);
+        var counted = await reader.ReadAsync(ct).ConfigureAwait(false) ? reader.GetInt64(0) : 0;
+        return new TableRows(
+            dataset is null ? _flow.Source.Record.Object : _flow.Source.Datasets[dataset.Name].Object,
+            columns.Select((c, i) => new TableColumn(c.Name, c.SqlType, cut[i])).ToList(),
+            rows,
+            Math.Min(counted, query.CountUpTo),
+            counted > query.CountUpTo);
+    }
+
+    /// <summary>
+    /// A column as a look at a table reads it, from the table read as <c>t</c>: text and binary cut by the database one past
+    /// <paramref name="max"/>, so a value longer than that says so without all of it being read, and a spatial or hierarchy value
+    /// as its text, since the client reads no such type.
+    /// </summary>
+    private static string Shown(SourceColumn column, int max)
+    {
+        var name = SourceObjectName.Quote(column.Name);
+        var read = (max + 1).ToString(CultureInfo.InvariantCulture);
+        return column.TypeName.ToLowerInvariant() switch
+        {
+            "char" or "varchar" or "nchar" or "nvarchar" => $"LEFT(t.{name}, {read}) AS {name}",
+            "text" or "ntext" => $"CAST(SUBSTRING(t.{name}, 1, {read}) AS nvarchar(max)) AS {name}",
+            "xml" => $"LEFT(CAST(t.{name} AS nvarchar(max)), {read}) AS {name}",
+            "binary" or "varbinary" or "image" => $"CAST(SUBSTRING(t.{name}, 1, {read}) AS varbinary(max)) AS {name}",
+            "geography" or "geometry" or "hierarchyid" => $"LEFT(t.{name}.ToString(), {read}) AS {name}",
+            _ => $"t.{name}",
+        };
+    }
+
     private static void BindSearch(SqlCommand command, string? pattern)
     {
         if (pattern is not null)

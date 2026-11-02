@@ -114,3 +114,25 @@ export interface DeliverySourceTable {
   /** Without SQLFlow's system columns; empty when the catalog has not described the table. */
   columns: { name: string; dataType: string | null; nullable: boolean }[];
 }
+
+/**
+ * The first rows of a table a flow reads, every column of it, over the rows a delivery reads in the scope asked: what the overview
+ * shows of a table it is asked to look into. Null fields are left out of the answer, as every operation's are.
+ */
+export interface DeliveryTableRows {
+  flow: string;
+  interface?: string | null;
+  /** The child dataset read; absent for the record table. */
+  dataset?: string | null;
+  table: string;
+  /** In the table's order, without SQLFlow's system columns; `cut` when a value of the column was longer than `maxCharacters`. */
+  columns: { name: string; sqlType: string; cut: boolean }[];
+  /** Each row's values in the order of `columns`, as text; null where the row holds none. */
+  rows: (string | null)[][];
+  /** How many rows a delivery reads there, counted up to a cap. */
+  counted: number;
+  /** True when there are more rows than `counted`. */
+  countCapped: boolean;
+  maxCharacters: number;
+  readUtc: string;
+}

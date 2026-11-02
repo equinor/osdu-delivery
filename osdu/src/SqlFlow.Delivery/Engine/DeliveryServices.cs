@@ -155,13 +155,15 @@ public static class DeliveryServices
         services.AddSingleton<IComputeOperation, ExportValueIssuesOperation>();
 
         // What a person asks and waits on runs in the process asked (DirectOperations): a probe, a record read back, a
-        // record's source rows, a preview, a scope's values, a page of its staged rows and the explorer's reads.
+        // record's source rows, a preview, a scope's values, a page of its staged rows, a table's first rows and the explorer's
+        // reads.
         services.AddSingleton<DeliveryOperation, ProbeTargetOperation>();
         services.AddSingleton<DeliveryOperation, ReadRecordOperation>();
         services.AddSingleton<DeliveryOperation, ReadSourceRowOperation>();
         services.AddSingleton<DeliveryOperation, PreviewRecordOperation>();
         services.AddSingleton<DeliveryOperation, ScopeValuesOperation>();
         services.AddSingleton<DeliveryOperation, StagedRowsOperation>();
+        services.AddSingleton<DeliveryOperation, TableRowsOperation>();
         services.AddSingleton<DeliveryOperation, SourceSqlOperation>();
         services.AddSingleton<DeliveryOperation, ExploreOperation>();
         services.AddSingleton<DirectOperations>();

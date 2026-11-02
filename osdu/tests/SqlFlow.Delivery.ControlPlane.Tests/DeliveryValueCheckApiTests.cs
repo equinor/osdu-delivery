@@ -289,6 +289,24 @@ public sealed class DeliveryValueCheckApiTests
             await RefusedAsync(client, token, staged, new { values, search = new string('x', 201) }, "at most 200 characters");
             await RefusedAsync(client, token, staged, new { values, search = "two\nlines" }, "at most 200 characters");
 
+            // So is a look at a table's first rows, in the scope's values, of a dataset the flow reads.
+            var rows = $"/api/v1/delivery/flows/{pipelineId:D}/table-rows?interface=welllogs";
+            using (var answered = await SendAsync(client, token, HttpMethod.Post, rows, new { values, limit = 100 }))
+            {
+                Assert.True(answered.StatusCode == HttpStatusCode.OK, await answered.Content.ReadAsStringAsync());
+            }
+
+            var looked = operations.Last();
+            Assert.Equal("delivery-table-rows", looked.Operation);
+            Assert.Equal("welllogs", looked.Argument("interface"));
+            Assert.Equal("COMPOSITE", JsonDocument.Parse(looked.Argument("values")!).RootElement.GetProperty("logSource").GetString());
+            Assert.Null(looked.Argument("dataset"));
+            Assert.Equal("100", looked.Argument("limit"));
+            await RefusedAsync(client, token, rows, new { }, "needs a value for logSource");
+            await RefusedAsync(client, token, rows, new { values, dataset = "curves" }, "reads no child dataset 'curves'; it reads none");
+            await RefusedAsync(client, token, rows, new { values, limit = 201 }, "between 1 and 200 rows");
+            await RefusedAsync(client, token, rows, new { values, limit = 0 }, "between 1 and 200 rows");
+
             // The query of an attribute is written by the control plane as well, from what the request names.
             var query = $"/api/v1/delivery/flows/{pipelineId:D}/source-sql?interface=welllogs";
             using (var answered = await SendAsync(client, token, HttpMethod.Post, query, new { target = "osdu.data.Name", values, maxRows = 500, keys = new[] { "[\"PROJECT\",\"7\"]" } }))

@@ -35,6 +35,8 @@ export interface OverviewHandlers {
   clear: () => void;
   /** The reader asked to see what the template holds that the mapping leaves out. */
   leftOut: () => void;
+  /** The reader asked for a table's or a field's menu, at a place on the page. */
+  menu: (part: OverviewPart, at: { x: number; y: number }) => void;
 }
 
 /** What is drawn besides the layout. */
@@ -268,7 +270,7 @@ export class OverviewCanvas {
 
     const length = Math.max(24, (height / whole) * (height - 8));
     const moved = Math.min(1, Math.max(0, (16 - y) / (whole - height)));
-    this.rail.attr("display", null).attr("x", width - 7).attr("y", 4 + moved * (height - 8 - length)).attr("height", length);
+    this.rail.attr("display", null).attr("x", width - this.inset.right - 7).attr("y", 4 + moved * (height - 8 - length)).attr("height", length);
   }
 
   private extent(): void {
@@ -291,6 +293,8 @@ export class OverviewCanvas {
     this.inset = { left, right };
     if (this.fitted) {
       this.fit(true);
+    } else {
+      this.drawRail(this.target.y, this.target.k);
     }
   }
 
@@ -424,6 +428,43 @@ export class OverviewCanvas {
       });
   }
 
+  /**
+   * A right click on a part opens its menu at the pointer. With `keys`, so does the context menu key or Shift+F10 on it, under
+   * it, and Enter or Space does what a click does, since a group taking the focus is no button the browser presses.
+   */
+  private menued<E extends SVGElement, D>(parts: Selection<E, D, BaseType, unknown>, part: (datum: D) => OverviewPart, keys: boolean): void {
+    parts.on("contextmenu", (event: Event, datum) => {
+      const { clientX: x, clientY: y } = event as MouseEvent;
+      event.preventDefault();
+      event.stopPropagation();
+      this.handlers.tip(null);
+      this.handlers.menu(part(datum), { x, y });
+    });
+    if (!keys) {
+      return;
+    }
+
+    parts.on("keydown.menu", (said: Event, datum) => {
+      const event = said as KeyboardEvent;
+      const target = event.currentTarget as Element;
+      if (event.key === "ContextMenu" || (event.key === "F10" && event.shiftKey)) {
+        event.preventDefault();
+        event.stopPropagation();
+        const box = target.getBoundingClientRect();
+        this.handlers.menu(part(datum), { x: box.left + 12, y: box.bottom });
+      } else if (event.key === "Enter" || event.key === " ") {
+        event.preventDefault();
+        event.stopPropagation();
+        target.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+      }
+    });
+  }
+
+  /** Drops what pointing at the canvas was waiting to do, for a reader now pointing at something beside it. */
+  stopPointing(): void {
+    clearTimeout(this.settling);
+  }
+
   /** Does what pointing means after `wait` ms, in place of whatever was waiting. */
   private settle(act: () => void, wait: number): void {
     clearTimeout(this.settling);
@@ -532,6 +573,7 @@ export class OverviewCanvas {
         event.stopPropagation();
         this.handlers.pick(edge.part);
       });
+    this.menued(all, (edge) => edge.part, false);
   }
 
   private kindOf(source: string): string {
@@ -632,6 +674,9 @@ export class OverviewCanvas {
         this.handlers.pick({ type: "card", source: card.card.id });
       }
     });
+    // Anywhere on a table opens its menu, a field its own; the heading answers the keys.
+    this.menued(all, (card) => ({ type: "card", source: card.card.id }), false);
+    this.menued(all.select<SVGGElement>("g.head"), (card) => ({ type: "card", source: card.card.id }), true);
 
     all.each((card, index, nodes) => {
       this.drawFields(select<SVGGElement, PlacedCard>(nodes[index]).select<SVGGElement>("g.fields"), card, dress, moves);
@@ -679,6 +724,7 @@ export class OverviewCanvas {
       .attr("class", (field) => `end ${dress.values.has(field.field.id) ? TEXT.value : TEXT.faint}`)
       .text((field) => this.endOf(card, field.field, dress));
     this.wire(all, (field) => ({ type: "field", source: card.card.id, field: field.field.name }));
+    this.menued(all, (field) => ({ type: "field", source: card.card.id, field: field.field.name }), true);
     this.tipped(all, (field) => {
       const value = dress.values.get(field.field.id);
       const shown = fitText(shownName(card, field.field), this.nameRoom(card, field.field, dress), 12);

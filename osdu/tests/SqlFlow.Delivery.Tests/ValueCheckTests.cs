@@ -366,6 +366,73 @@ public sealed class ValueCheckTests : IDisposable
         Assert.True(whole.GetProperty("reads").GetArrayLength() > name.GetProperty("reads").GetArrayLength());
     }
 
+    [Fact]
+    public async Task A_tables_first_rows_are_read_by_the_whole_operation_from_the_record_table_or_a_child_dataset()
+    {
+        var tables = await SampleEstate.BuildAsync(_root, Now.AddMinutes(-5), time: _clock);
+        var engine = Samples.Engine(ledger: null, _clock, sources: tables, searches: FixedRecordSearchFactory.SampleWellbores());
+        var flow = Samples.LocalFlow(_root);
+        var operation = new TableRowsOperation(engine);
+
+        // A code a request could not carry is refused when an operation begins, which only the real operation meets.
+        Assert.True(SqlFlow.Delivery.Http.OsduCorrelation.IsCode(operation.CorrelationOperation));
+
+        Task<string> Run(params (string Name, string Value)[] asked)
+        {
+            var arguments = new Dictionary<string, string>(StringComparer.Ordinal)
+            {
+                ["flowFile"] = Samples.Flow,
+                ["values"] = SqlFlow.Core.Runs.RunParameters.ValuesToJson(SampleEstate.Values)!,
+            };
+            foreach (var (name, value) in asked)
+            {
+                arguments[name] = value;
+            }
+
+            if (flow.Interface is { } named)
+            {
+                arguments["interface"] = named;
+            }
+
+            if (flow.Partition is { } partition)
+            {
+                arguments[DeliveryOperation.PartitionArgument] = partition;
+            }
+
+            var payload = new SqlFlow.Core.Compute.ComputeTaskPayload { Operation = TableRowsOperation.OperationName, SourceRef = flow.Name, Arguments = arguments };
+            payload.Validate([TableRowsOperation.OperationName]);
+            return operation.ExecuteAsync(payload, CancellationToken.None);
+        }
+
+        async Task<System.Text.Json.JsonElement> Ask(params (string Name, string Value)[] asked)
+            => System.Text.Json.JsonDocument.Parse(await Run(asked)).RootElement.Clone();
+
+        // The record table: every row of the scope, each value in the order of the columns, none of SQLFlow's own.
+        var logs = SampleEstate.Logs().Count;
+        var record = await Ask();
+        Assert.False(record.TryGetProperty("dataset", out _));
+        Assert.Equal(flow.Source.Record.Object, record.GetProperty("table").GetString());
+        Assert.Equal(logs, record.GetProperty("rows").GetArrayLength());
+        Assert.Equal(logs, record.GetProperty("counted").GetInt64());
+        Assert.False(record.GetProperty("countCapped").GetBoolean());
+        Assert.Equal(TableRowsOperation.MaxCharacters, record.GetProperty("maxCharacters").GetInt32());
+        var columns = record.GetProperty("columns").EnumerateArray().Select(c => c.GetProperty("name").GetString()!).ToList();
+        Assert.Contains("log_id", columns);
+        Assert.DoesNotContain(flow.Source.SystemColumns.Updated, columns);
+        Assert.All(record.GetProperty("rows").EnumerateArray(), row => Assert.Equal(columns.Count, row.GetArrayLength()));
+
+        // A child dataset, and a page asked smaller.
+        var curves = await Ask((TableRowsOperation.DatasetArgument, "curves"), (TableRowsOperation.LimitArgument, "3"));
+        Assert.Equal("curves", curves.GetProperty("dataset").GetString());
+        Assert.Equal(3, curves.GetProperty("rows").GetArrayLength());
+        Assert.True(curves.GetProperty("counted").GetInt64() > 3);
+
+        // A dataset the flow does not read, and a page out of bounds, are refused by name.
+        var refused = await Assert.ThrowsAsync<SqlFlow.Core.SqlFlowException>(() => Run((TableRowsOperation.DatasetArgument, "notes")));
+        Assert.Contains("reads no child dataset 'notes'; it reads curves", refused.Message, StringComparison.Ordinal);
+        await Assert.ThrowsAsync<SqlFlow.Core.SqlFlowException>(() => Run((TableRowsOperation.LimitArgument, "201")));
+    }
+
     /// <summary>How many records a plan of the scope holds, rendering them as a first delivery would.</summary>
     [Fact]
     public async Task An_export_of_an_attribute_hands_back_the_rows_failing_it_with_the_base_data_behind_them_and_nothing_written()

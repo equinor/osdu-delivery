@@ -68,6 +68,17 @@ test.describe.serial("a mapping's staged records and a dry run", () => {
     const followed = sheet.getByTestId("mapping-overview-record");
     await expect(followed.getByTestId("value-check-parameter-logSource-picked")).toHaveAttribute("data-value", /\S/, { timeout: 60_000 });
     await expect(followed.getByTestId("preview-ledger")).toBeVisible({ timeout: 60_000 });
+
+    // A right click on the record table looks at its first rows, read in the flow's scope, with the record shown marked.
+    await sheet.getByTestId("mapping-overview-card-dataset").click({ button: "right" });
+    await adminPage.getByTestId("mapping-overview-menu-preview").click();
+    const looked = sheet.getByTestId("mapping-overview-rows");
+    await expect(looked.getByTestId("mapping-overview-rows-row").first()).toBeVisible({ timeout: 60_000 });
+    await expect(looked.getByTestId("mapping-overview-rows-said")).toContainText("a delivery reads in this scope");
+    await expect(looked.locator('[data-marked="true"]')).toHaveCount(1);
+    await expect(looked.getByTestId("mapping-overview-rows-error")).toHaveCount(0);
+    await looked.getByTestId("mapping-overview-rows-close").click();
+    await expect(looked).toHaveCount(0);
     await sheet.getByTestId("mapping-overview-show-record").click();
 
     // The flow's scope needs its log source, which it declares required. The page starts on the value the table holds most,

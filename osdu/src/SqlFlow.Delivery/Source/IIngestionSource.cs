@@ -311,7 +311,43 @@ public interface IIngestionSource
     /// many rows the tables hold and however many child rows a record has. Rendering is what a preview or a dry run does.
     /// </summary>
     Task<StagedPage> ReadStagedAsync(StagedRowsQuery query, CancellationToken ct = default);
+
+    /// <summary>
+    /// The first rows of one table this source reads, as a person looks it over: the record table, or a child dataset, every
+    /// column but SQLFlow's system columns, over the rows a delivery reads (the scope's, those marked deleted left out, and for a
+    /// child dataset the rows of those records), in the order a read pages in. A value longer than
+    /// <see cref="TableRowsQuery.MaxCharacters"/> is cut, by the database, so a page costs the same however wide a value is; the
+    /// rows are counted up to <see cref="TableRowsQuery.CountUpTo"/>, so a count costs the same however many rows there are.
+    /// </summary>
+    Task<TableRows> ReadTableAsync(TableRowsQuery query, CancellationToken ct = default);
 }
+
+/// <summary>Which table a look at a table's first rows reads, and how much of it.</summary>
+public sealed record TableRowsQuery
+{
+    /// <summary>The child dataset to read, by its name under <c>source.datasets</c>; null for the record table.</summary>
+    public string? Dataset { get; init; }
+
+    /// <summary>The most rows read.</summary>
+    public required int Limit { get; init; }
+
+    /// <summary>The most characters a value keeps; a longer one is cut and its column says so.</summary>
+    public int MaxCharacters { get; init; } = 1000;
+
+    /// <summary>How far the rows are counted.</summary>
+    public long CountUpTo { get; init; } = 100_000;
+}
+
+/// <summary>A column of a table looked over: its name, the SQL type it holds, and whether a value of it was cut.</summary>
+public sealed record TableColumn(string Name, string SqlType, bool Cut);
+
+/// <summary>The first rows of a table, as <see cref="IIngestionSource.ReadTableAsync"/> reads them.</summary>
+/// <param name="Table">The table, as the flow names it.</param>
+/// <param name="Columns">Its columns, in the table's order, without SQLFlow's system columns.</param>
+/// <param name="Rows">Each row's values, in the order of <paramref name="Columns"/>, as invariant text.</param>
+/// <param name="Counted">How many rows the table holds there, counted up to the query's <see cref="TableRowsQuery.CountUpTo"/>.</param>
+/// <param name="CountCapped">True when it holds more than that.</param>
+public sealed record TableRows(string Table, IReadOnlyList<TableColumn> Columns, IReadOnlyList<IReadOnlyList<string?>> Rows, long Counted, bool CountCapped);
 
 /// <summary>Which rows of a scope a page of staged rows asks for.</summary>
 public sealed record StagedRowsQuery

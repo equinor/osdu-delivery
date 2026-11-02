@@ -37,6 +37,7 @@
     "src/api/mappingOutline.ts",
     "src/features/delivery/overview/outlineModel.ts",
     "src/features/delivery/overview/outlineLayout.ts",
+    "src/features/delivery/overview/tableRows.ts",
     "../../sqlflow/gui/src/lib/time.ts"
   ]
 }

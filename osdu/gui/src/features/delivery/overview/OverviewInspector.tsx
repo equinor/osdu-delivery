@@ -6,6 +6,7 @@ import { cn } from "@/lib/utils";
 import type { MappingOutline, MappingOutlineFlow, MappingOutlineNode, MappingOutlineStep } from "../../../api/delivery";
 import type { OverviewPart } from "./OverviewCanvas";
 import { cardsOf, fieldId, nodeAt, readersOf, type OutlineCard } from "./outlineModel.ts";
+import { previewLabel, rowsSourceOf } from "./tableRows.ts";
 
 /** A section of the panel: a quiet heading over what it holds. */
 function Section({ title, children }: { title: string; children: ReactNode }) {
@@ -236,10 +237,10 @@ function CardPanel({ card, outline, onPick }: { card: OutlineCard; outline: Mapp
 export const INSPECTOR_WIDTH = 380;
 
 /**
- * What was picked on the canvas, sliding in from the left without taking the canvas over: the way a value goes to a property, a
+ * What was picked on the canvas, sliding in from the right without taking the canvas over: the way a value goes to a property, a
  * field and what it reaches, or a table and what is read of it.
  */
-export function OverviewInspector({ part, outline, tables, cached, yaml, values, onPick, onClose }: {
+export function OverviewInspector({ part, outline, tables, cached, yaml, values, onPick, onPreview, onClose }: {
   part: OverviewPart | null;
   outline: MappingOutline;
   tables: Parameters<typeof cardsOf>[2];
@@ -247,20 +248,23 @@ export function OverviewInspector({ part, outline, tables, cached, yaml, values,
   yaml: string;
   values: ReadonlyMap<string, string>;
   onPick: (part: OverviewPart) => void;
+  /** Shows the rows of the table picked, or of the table holding the field picked. */
+  onPreview: (part: OverviewPart) => void;
   onClose: () => void;
 }) {
   const cards = cardsOf(outline, new Set(), tables, cached);
   const lines = yaml.replace(/\r\n/g, "\n").split("\n");
   const node = part?.type === "row" ? nodeAt(outline, part.path) : null;
   const card = part !== null && part.type !== "row" ? cards.find((candidate) => candidate.id === part.source) ?? null : null;
+  const rows = card === null ? null : rowsSourceOf(card);
   const title = node !== null ? node.path.split("|")[0] : part?.type === "field" ? part.field : card?.title ?? "";
   const leaf = title.lastIndexOf(".");
 
   return (
     <aside
       className={cn(
-        "absolute inset-y-0 left-0 z-10 flex max-w-[85%] flex-col border-r border-border bg-card shadow-md transition-transform duration-200 ease-out motion-reduce:transition-none",
-        part === null ? "-translate-x-full" : "translate-x-0",
+        "absolute inset-y-0 right-0 z-10 flex max-w-[85%] flex-col border-l border-border bg-card shadow-md transition-transform duration-200 ease-out motion-reduce:transition-none",
+        part === null ? "translate-x-full" : "translate-x-0",
       )}
       style={{ width: INSPECTOR_WIDTH }}
       aria-hidden={part === null}
@@ -282,6 +286,11 @@ export function OverviewInspector({ part, outline, tables, cached, yaml, values,
                 </span>
               )}
             </div>
+            {rows !== null && (
+              <Button variant="ghost" size="icon-xs" aria-label={previewLabel(rows)} title={previewLabel(rows)} onClick={() => onPreview(part)} data-testid="mapping-overview-inspector-preview">
+                <Table2 />
+              </Button>
+            )}
             <Button variant="ghost" size="icon-xs" aria-label="Close" onClick={onClose} data-testid="mapping-overview-inspector-close"><X /></Button>
           </header>
           <div className="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto p-3">
