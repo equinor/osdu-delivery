@@ -30,13 +30,14 @@ sourceRefs:
 # osdu.RemovedKey: a delivery ledger's deletions, the keys its source no longer holds, and how far taking each out has come
 
 A delivery ledger's deletions ([The ledger's deletions](../flow/removal.md#the-ledgers-deletions)): one row per key a
-[removal flow](../flow/removal.md) found its source no longer holds, under the delivery flow's own ledger identity, whichever
+[removal flow](../flow/removal.md) found its source no longer holds, or its record table marks deleted, under the delivery flow's own ledger identity, whichever
 removal flow found it. A removal run adds the row once, `pending`, or `awaiting-approval` when the run's
 [guard](../flow/removal.md#the-guard) held what it found; taking deletions out of OSDU works through the `pending` rows
 alone and makes each `removed` once its try finishes it, so a key taken out is never asked of OSDU again. While the row is
 `pending` or `removed`, the delivery flow's plan delivers no row of the key that is not newer than `RemovedUtc` (it skips
 it as removed by its source); a row `awaiting-approval` keeps nothing out. The row goes when the source holds the key again,
-when the record is delivered again from a newer row, or when an operator lifts it
+when its record table row is loaded again or unmarked, when the record is delivered again from a newer row, or when an
+operator lifts it
 ([Delivering a record again](../flow/removal.md#delivering-a-record-again)), and the record is then delivered as any other.
 
 ## Columns
@@ -47,9 +48,9 @@ when the record is delivered again from a newer row, or when an operator lifts i
 | `FlowId` | `uniqueidentifier` | no | The ledger identity of the delivery flow (or interface) the key's records belong to ([`osdu.Ledger`](ledger.md)). |
 | `DeliveryKey` | `uniqueidentifier` | no | The key's delivery key: the record's, when the ledger holds one ([`osdu.Record`](record.md)). |
 | `SourceKeyJson` | `nvarchar(2000)` | yes | The key tuple, a JSON array of the key columns' values as text, in the record key's order. |
-| `Reason` | `nvarchar(16)` | no | `absent` (the source's current keys, read whole, no longer held it) or `listed` (the source listed it as removed). |
-| `RemovedUtc` | `datetime2` | no | The moment the removal stands for: when the read that lacked the key began, or the moment the source's list gives. A row of the key not newer than it is not delivered while the deletion stands. |
-| `FileName` | `nvarchar(800)` | yes | The file (or table) of the row that listed the key as removed. |
+| `Reason` | `nvarchar(16)` | no | `absent` (the source's current keys, read whole, no longer held it), `listed` (the source listed it as removed) or `marked` (the delivery flow's record table marks its row deleted, [the ingestion table's marks](../flow/removal-marks.md)). |
+| `RemovedUtc` | `datetime2` | no | The moment the removal stands for: when the read that lacked the key began, the moment the source's list gives, or when the record table marked the row. A row of the key not newer than it is not delivered while the deletion stands. |
+| `FileName` | `nvarchar(800)` | yes | The file (or table) of the row that listed the key as removed, or the record table that marks it. |
 | `RowNumber` | `bigint` | yes | That row's number in its file, or its position in the table's read. |
 | `State` | `nvarchar(24)` | no | `awaiting-approval` (the guard held it), `pending` (to be taken out) or `removed` (taken out, settled or kept out). |
 | `Outcome` | `nvarchar(24)` | yes | What the last try came to: `removed`, `already-gone`, `settled` or `kept-out`, which finish it, or `referenced`, `shared`, `busy` or `failed`, which leave it pending; null before the first try. |

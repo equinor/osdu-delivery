@@ -11,6 +11,7 @@ namespace SqlFlow.Delivery.Source;
 /// <param name="Updated">The dataset table's update column, when it carries one.</param>
 /// <param name="Deleted">The dataset table's soft-delete column, when it carries one.</param>
 /// <param name="MaxRowsPerRecord">The most rows one record may carry.</param>
+/// <param name="Filter">The predicate narrowing the dataset's rows (<c>source.datasets.&lt;name&gt;.filter</c>), appended as written; null for none.</param>
 [System.Diagnostics.CodeAnalysis.SuppressMessage(
     "Naming", "CA1720:Identifier contains type name",
     Justification = "The flow document's key is 'object'; the layout mirrors the document so a message about it names what the author wrote.")]
@@ -21,7 +22,8 @@ public sealed record IngestionDataset(
     IReadOnlyList<string> OrderBy,
     string? Updated,
     string? Deleted,
-    int MaxRowsPerRecord);
+    int MaxRowsPerRecord,
+    string? Filter = null);
 
 /// <summary>One column of the scope predicate as the SQL builders see it.</summary>
 /// <param name="Column">The record table's column.</param>
@@ -62,6 +64,12 @@ public sealed record IngestionLayout
 
     /// <summary>The record table's soft-delete column, when it carries one.</summary>
     public string? Deleted { get; init; }
+
+    /// <summary>
+    /// The predicate narrowing the record table's rows every read takes (<c>source.record.filter</c>), appended as written; null
+    /// for none. A row it leaves out is read as a row of another scope is: never planned, and out of scope to a probe by key.
+    /// </summary>
+    public string? Filter { get; init; }
 
     /// <summary>The scope predicate: each record column with the run parameter that fills it, in declaration order.</summary>
     public IReadOnlyList<IngestionScope> Scope { get; init; } = [];
@@ -218,12 +226,20 @@ public static class IngestionSql
 
     /// <summary>
     /// Which of the named keys the record table holds, and whether each is in this run's scope. A key the query does not
-    /// return is missing; one it returns with <c>in_scope</c> 0 belongs to another scope's run.
+    /// return is missing; one it returns with <c>in_scope</c> 0 belongs to another scope's run, or is a row the flow's filter
+    /// leaves out.
     /// </summary>
     public static string KeyProbe(IngestionLayout layout)
     {
         ArgumentNullException.ThrowIfNull(layout);
         var scope = ScopePredicate(layout, "r");
+        if (layout.Filter is not null)
+        {
+            // The filter's columns resolve against the record table alone, in a read of its own, never against the keys joined here.
+            var kept = $"EXISTS (SELECT 1 FROM {RecordRows(layout)} f WHERE {JoinOn(layout, "f", "r")})";
+            scope = scope.Length == 0 ? kept : $"{scope} AND {kept}";
+        }
+
         return $"""
             SELECT {KeyList(layout, "r")}, CAST(CASE WHEN {(scope.Length == 0 ? "1 = 1" : scope)} THEN 1 ELSE 0 END AS int) AS in_scope
             FROM {layout.Record.Quoted} r
@@ -250,7 +266,7 @@ public static class IngestionSql
         var unknown = string.Join(" OR ", nullableKeys.Select(k => $"r.{SourceObjectName.Quote(k)} IS NULL"));
         return $"""
             SELECT TOP (1) {string.Join(", ", nullableKeys.Select(k => $"CAST(CASE WHEN r.{SourceObjectName.Quote(k)} IS NULL THEN 1 ELSE 0 END AS int) AS {SourceObjectName.Quote(k)}"))}
-            FROM {layout.Record.Quoted} r
+            FROM {RecordRows(layout)} r
             WHERE {(scope.Length == 0 ? "1 = 1" : scope)} AND ({unknown});
             """;
     }
@@ -269,7 +285,7 @@ public static class IngestionSql
         var matching = search ? $" AND UPPER(CAST({value} AS nvarchar(4000))) LIKE {SearchParameter} ESCAPE N'\\'" : string.Empty;
         return $"""
             SELECT TOP ({TopParameter}) {value} AS scope_value, COUNT_BIG(*) AS scope_rows
-            FROM {layout.Record.Quoted} r
+            FROM {RecordRows(layout)} r
             WHERE {value} IS NOT NULL{live}{matching}
             GROUP BY {value}
             ORDER BY COUNT_BIG(*) DESC, {value};
@@ -277,10 +293,12 @@ public static class IngestionSql
     }
 
     /// <summary>
-    /// One page of the record table's keys in the scope, with each row's change moment and its value in the order the read
-    /// pages in (the last columns), resuming after the previous page's last value: every row, whatever its moment.
+    /// One page of the record table's keys in the scope, with each row's change moment, its value in the order the read pages
+    /// in, and, when the table carries the soft-delete column, when it was marked deleted (the last columns), resuming after the
+    /// previous page's last value: every row, whatever its moment. The rows the flow's filter keeps (<see cref="SourceKeyRead.Read"/>),
+    /// or every row of the scope (<see cref="SourceKeyRead.Whole"/>), which is how a removal flow reads the table it tags.
     /// </summary>
-    public static string KeyPage(IngestionLayout layout, bool after)
+    public static string KeyPage(IngestionLayout layout, bool after, SourceKeyRead read = SourceKeyRead.Read)
     {
         ArgumentNullException.ThrowIfNull(layout);
         var predicates = new List<string>();
@@ -295,11 +313,38 @@ public static class IngestionSql
         }
 
         var where = predicates.Count == 0 ? string.Empty : "WHERE " + string.Join(" AND ", predicates);
+        var deleted = layout.Deleted is { } column ? $", r.{SourceObjectName.Quote(column)}" : string.Empty;
         return $"""
-            SELECT TOP ({PageParameter}) {KeyList(layout, "r")}, r.{SourceObjectName.Quote(layout.Updated)}, {OrderList(layout, "r")}
-            FROM {layout.Record.Quoted} r
+            SELECT TOP ({PageParameter}) {KeyList(layout, "r")}, r.{SourceObjectName.Quote(layout.Updated)}, {OrderList(layout, "r")}{deleted}
+            FROM {(read == SourceKeyRead.Whole ? layout.Record.Quoted : RecordRows(layout))} r
             {where}
             ORDER BY {OrderList(layout, "r")};
+            """;
+    }
+
+    /// <summary>
+    /// Marks the record table's rows of the keys <see cref="KeysParameter"/> names deleted, as SQLFlow's key match does (the
+    /// soft-delete column stamped with the database's UTC clock), or takes the mark off them, stamping the update column so an
+    /// incremental read meets the row again (osdu/docs/reference/flow/removal-marks.md). Only rows of
+    /// the scope, and only rows not already so, are written; the statement answers how many it wrote.
+    /// </summary>
+    public static string MarkDeleted(IngestionLayout layout, bool deleted)
+    {
+        ArgumentNullException.ThrowIfNull(layout);
+        var column = layout.Deleted
+            ?? throw new InvalidOperationException("A row is marked deleted in the record table's soft-delete column, and the layout names none.");
+        var mark = SourceObjectName.Quote(column);
+        var set = deleted
+            ? $"r.{mark} = SYSUTCDATETIME()"
+            : $"r.{mark} = NULL, r.{SourceObjectName.Quote(layout.Updated)} = SYSUTCDATETIME()";
+        var scope = ScopePredicate(layout, "r");
+        return $"""
+            SET NOCOUNT ON;
+            UPDATE r SET {set}
+            FROM {layout.Record.Quoted} r
+            INNER JOIN OPENJSON({KeysParameter}) WITH ({OpenJsonColumns(layout)}) j ON {JoinOn(layout, "r", "j")}
+            WHERE r.{mark} IS {(deleted ? string.Empty : "NOT ")}NULL{(scope.Length == 0 ? string.Empty : " AND " + scope)};
+            SELECT @@ROWCOUNT;
             """;
     }
 
@@ -317,7 +362,7 @@ public static class IngestionSql
         var named = string.Concat(columns.Select(c => $", r.{SourceObjectName.Quote(c)}"));
         return $"""
             SELECT TOP ({PageParameter}) {KeyList(layout, "r")}, r.{SourceObjectName.Quote(layout.Updated)}{named}, {OrderList(layout, "r")}
-            FROM {layout.Record.Quoted} r
+            FROM {RecordRows(layout)} r
             {StagedWhere(layout, searched, search, after)}
             ORDER BY {OrderList(layout, "r")};
             """;
@@ -330,7 +375,7 @@ public static class IngestionSql
         ArgumentNullException.ThrowIfNull(searched);
         return $"""
             SELECT COUNT_BIG(*)
-            FROM {layout.Record.Quoted} r
+            FROM {RecordRows(layout)} r
             {StagedWhere(layout, searched, search, after: false)};
             """;
     }
@@ -352,7 +397,7 @@ public static class IngestionSql
         foreach (var dataset in layout.Datasets)
         {
             var on = string.Join(" AND ", dataset.Join.Select(j => $"c.{SourceObjectName.Quote(j.Key)} = k.{SourceObjectName.Quote(j.Value)}"));
-            sql.Append("SELECT ").Append(keys).Append(", COUNT_BIG(*) FROM ").Append(dataset.Object.Quoted).Append(" c INNER JOIN @page_keys k ON ").Append(on);
+            sql.Append("SELECT ").Append(keys).Append(", COUNT_BIG(*) FROM ").Append(DatasetRows(dataset)).Append(" c INNER JOIN @page_keys k ON ").Append(on);
             if (dataset.Deleted is { } deleted)
             {
                 sql.Append(" WHERE c.").Append(SourceObjectName.Quote(deleted)).Append(" IS NULL");
@@ -389,7 +434,7 @@ public static class IngestionSql
 
         columns = columns.Concat(origin.Select(c => $"r.{SourceObjectName.Quote(c)}"));
         sql.Append("SELECT ").Append(top > 0 ? $"TOP ({top.ToString(CultureInfo.InvariantCulture)}) " : string.Empty).AppendLine(string.Join(", ", columns));
-        sql.Append("FROM ").Append(layout.Record.Quoted).AppendLine(" r");
+        sql.Append("FROM ").Append(RecordRows(layout)).AppendLine(" r");
         if (keys)
         {
             sql.Append("INNER JOIN OPENJSON(").Append(KeysParameter).Append(") WITH (").Append(OpenJsonColumns(layout)).Append(") j ON ").AppendLine(JoinOn(layout, "r", "j"));
@@ -404,7 +449,7 @@ public static class IngestionSql
                 on.Add($"c.{SourceObjectName.Quote(deletedChild)} IS NULL");
             }
 
-            sql.Append("LEFT JOIN ").Append(joined.Object.Quoted).Append(" c ON ").AppendLine(string.Join(" AND ", on));
+            sql.Append("LEFT JOIN ").Append(DatasetRows(joined)).Append(" c ON ").AppendLine(string.Join(" AND ", on));
             order.AddRange(joined.OrderBy.Select(o => $"c.{SourceObjectName.Quote(o)}"));
         }
 
@@ -561,15 +606,15 @@ public static class IngestionSql
             sql.Append("INSERT INTO @page_ids (").Append(id).Append(") SELECT ").Append(id)
                 .Append(" FROM OPENJSON(").Append(KeysParameter).Append(") WITH (").Append(OpenJsonColumns(layout.Order)).AppendLine(");");
             sql.Append("INSERT INTO @page_keys (").Append(names).Append(") SELECT ").Append(KeyList(layout, "r")).Append(" FROM ")
-                .Append(layout.Record.Quoted).Append(" r INNER JOIN @page_ids p ON r.").Append(id).Append(" = p.").Append(id).AppendLine(";");
-            sql.Append("SELECT r.* FROM ").Append(layout.Record.Quoted).Append(" r INNER JOIN @page_ids p ON r.").Append(id).Append(" = p.").Append(id)
+                .Append(RecordRows(layout)).Append(" r INNER JOIN @page_ids p ON r.").Append(id).Append(" = p.").Append(id).AppendLine(";");
+            sql.Append("SELECT r.* FROM ").Append(RecordRows(layout)).Append(" r INNER JOIN @page_ids p ON r.").Append(id).Append(" = p.").Append(id)
                 .Append(" ORDER BY r.").Append(id).AppendLine(";");
         }
         else
         {
             sql.Append("INSERT INTO @page_keys (").Append(names).Append(") SELECT ").Append(names)
                 .Append(" FROM OPENJSON(").Append(KeysParameter).Append(") WITH (").Append(OpenJsonColumns(layout.Key)).AppendLine(");");
-            sql.Append("SELECT r.* FROM ").Append(layout.Record.Quoted).Append(" r INNER JOIN @page_keys k ON ").Append(JoinOn(layout, "r", "k"))
+            sql.Append("SELECT r.* FROM ").Append(RecordRows(layout)).Append(" r INNER JOIN @page_keys k ON ").Append(JoinOn(layout, "r", "k"))
                 .Append(" ORDER BY ").Append(KeyList(layout, "r")).AppendLine(";");
         }
 
@@ -578,7 +623,7 @@ public static class IngestionSql
             var on = string.Join(" AND ", dataset.Join.Select(j => $"c.{SourceObjectName.Quote(j.Key)} = k.{SourceObjectName.Quote(j.Value)}"));
             var order = dataset.Join.Select(j => $"c.{SourceObjectName.Quote(j.Key)}")
                 .Concat(dataset.OrderBy.Select(o => $"c.{SourceObjectName.Quote(o)}"));
-            sql.Append("SELECT c.* FROM ").Append(dataset.Object.Quoted).Append(" c INNER JOIN @page_keys k ON ").Append(on);
+            sql.Append("SELECT c.* FROM ").Append(DatasetRows(dataset)).Append(" c INNER JOIN @page_keys k ON ").Append(on);
             if (dataset.Deleted is { } deleted)
             {
                 sql.Append(" WHERE c.").Append(SourceObjectName.Quote(deleted)).Append(" IS NULL");
@@ -601,7 +646,7 @@ public static class IngestionSql
         {
             return $"""
                 SELECT DISTINCT {OrderList(layout, "r")}
-                FROM {layout.Record.Quoted} r
+                FROM {RecordRows(layout)} r
                 INNER JOIN OPENJSON({KeysParameter}) WITH ({OpenJsonColumns(layout)}) j ON {JoinOn(layout, "r", "j")}
                 {Where(layout, "r", null, bounds)}
                 """;
@@ -610,7 +655,7 @@ public static class IngestionSql
         var window = kind == SourceSelectionKind.Incremental;
         var records = $"""
             SELECT DISTINCT {OrderList(layout, "r")}
-            FROM {layout.Record.Quoted} r
+            FROM {RecordRows(layout)} r
             {Where(layout, "r", window ? WindowPredicate("r", layout.Updated, hasLower) : null, bounds)}
             """;
         if (!window)
@@ -626,7 +671,7 @@ public static class IngestionSql
         {
             parts.Add($"""
                 SELECT DISTINCT {OrderList(layout, "r")}
-                FROM {layout.Record.Quoted} r
+                FROM {RecordRows(layout)} r
                 {Where(layout, "r", WindowPredicate("r", deletedRecord, hasLower), bounds)}
                 """);
         }
@@ -649,8 +694,8 @@ public static class IngestionSql
             var on = string.Join(" AND ", dataset.Join.Select(j => $"c.{SourceObjectName.Quote(j.Key)} = r.{SourceObjectName.Quote(j.Value)}"));
             parts.Add($"""
                 SELECT DISTINCT {OrderList(layout, "r")}
-                FROM {layout.Record.Quoted} r
-                INNER JOIN {dataset.Object.Quoted} c ON {on}
+                FROM {RecordRows(layout)} r
+                INNER JOIN {DatasetRows(dataset)} c ON {on}
                 {Where(layout, "r", "(" + string.Join(" OR ", changed.Select(c => "(" + c + ")")) + ")", bounds)}
                 """);
         }
@@ -743,6 +788,19 @@ public static class IngestionSql
         text.Append(')');
         return text.ToString();
     }
+
+    /// <summary>
+    /// The record table as a read's FROM names it: the table itself, or under <c>source.record.filter</c> the rows the filter
+    /// keeps, as a derived table, so the filter's columns resolve against the record table alone whatever the read joins to
+    /// it. The optimizer folds it into the read, which still seeks the table's indexes.
+    /// </summary>
+    private static string RecordRows(IngestionLayout layout) => Rows(layout.Record, layout.Filter);
+
+    /// <summary>A child dataset as a read's FROM names it, under its own filter as <see cref="RecordRows"/> does.</summary>
+    private static string DatasetRows(IngestionDataset dataset) => Rows(dataset.Object, dataset.Filter);
+
+    private static string Rows(SourceObjectName table, string? filter)
+        => filter is null ? table.Quoted : $"(SELECT * FROM {table.Quoted} WHERE 1 = 1 {filter})";
 
     private static string KeyList(IngestionLayout layout, string alias)
         => string.Join(", ", layout.Key.Select(k => $"{alias}.{SourceObjectName.Quote(k.Name)}"));

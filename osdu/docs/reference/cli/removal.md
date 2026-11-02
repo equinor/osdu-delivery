@@ -74,7 +74,7 @@ delivery flow, when it started and who ran it; what it read and found; and what 
 ```text
 welldb-wellbore-05-removal in dev: 2 run(s)
       14  guarded     remove  welldb-wellbore-03-delivery -> welldb-wellbore-03-delivery  2026-10-23T02:00:00Z  by schedule:welldb-removal
-          2210 source key(s), 0 listed, 2480 in the table, 2450 compared; 640 found removed (640 held), 0 came back, 0 lifted
+          2210 source key(s), 0 listed, 2480 in the table, 2450 compared; 640 found removed (640 held), 0 came back, 0 lifted; 0 row(s) marked deleted, 0 unmarked
           0 removed from OSDU, 0 already gone, 0 settled, 0 kept out; 2 referenced, 0 shared, 1 busy, 0 failed
           640 key(s) found removed wait for an operator's approval, since the guard allows at most 20% of the 2450 compared; nothing of them was taken out or kept out. Approve them on the removal flow's page, or correct the source.
       13  completed   remove  welldb-wellbore-03-delivery -> welldb-wellbore-03-delivery  2026-10-22T02:00:00Z  by tahir
@@ -89,7 +89,7 @@ why on the fourth line. With no run yet it says
 `runId`, `operation`, `status`, `actor`, `startedUtc`, `completedUtc`, `sourceReadUtc`, the counts of
 [`osdu.RemovalRun`](../tables/removal-run.md) (`rowsRead`, `sourceKeys`, `listedKeys`, `ingestionKeys`, `compared`,
 `detected`, `awaitingApproval`, `approved`, `removed`, `alreadyGone`, `settled`, `keptOut`, `referenced`, `shared`,
-`busy`, `failed`, `cameBack`, `lifted`), `guardPercent`, `guardRecords`, `approvedBy` and `error`.
+`busy`, `failed`, `cameBack`, `lifted`, `marked`, `unmarked`), `guardPercent`, `guardRecords`, `approvedBy` and `error`.
 
 ## removal run
 

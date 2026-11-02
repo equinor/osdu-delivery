@@ -35,6 +35,16 @@ export function rowsSourceOf(card: OutlineCard): RowsSource | null {
   }
 }
 
+/** The words for a look at what a table holds, as a menu offers it: its rows, or the values the flow's parameters render with. */
+export function cardPreviewLabel(card: OutlineCard): string | null {
+  if (card.source.kind === "parameters") {
+    return "Preview the values";
+  }
+
+  const source = rowsSourceOf(card);
+  return source === null ? null : previewLabel(source);
+}
+
 /** The words for what a preview reads, as a menu offers it. */
 export function previewLabel(source: RowsSource): string {
   switch (source.from) {

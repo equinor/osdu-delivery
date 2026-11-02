@@ -99,7 +99,7 @@ watermark: the upper bound of the last whole-scope read that completed.
 
 | Read | When |
 | --- | --- |
-| The whole scope | The scope has no watermark yet (its first run), the rules moved since the watermark was written (the mapping, its content, the template or the parameter values: everything in the context but the cache version), a `replan` run, or a `plan` run with `rerender` |
+| The whole scope | The scope has no watermark yet (its first run), the rules moved since the watermark was written (the mapping, its content, the template or the parameter values: everything in the context but the cache version; and a [filter](../flow/delivery-filter.md) of the record table or a child dataset), a `replan` run, or a `plan` run with `rerender` |
 | The window `(watermark - overlapSeconds, now]` | Every other run. `now` is the source database's clock when the read opens, fixed for the whole read |
 | The records named | A run scoped to `recordKeys`, read by the key tuple the ledger stored, or a run of the first records of its scope (`maxRecords`), read by the keys of the scope's first rows. Neither moves the watermark |
 | A submission's own window | A run that names a submission: a fan-out member, a re-run, a drain |
@@ -110,6 +110,8 @@ In a window the candidates are:
 - record rows the ingestion flow marked deleted in it (`DeletedDate_DW`), which it does without touching the update
   column;
 - records whose child rows were updated, or marked deleted, in it, since the document is built from them too.
+
+Every read takes only the rows the flow's [filter](../flow/delivery-filter.md) keeps, when it declares one.
 
 `source.incremental.overlapSeconds` (900 by default, 0 to 86400) reads a little below the watermark again, so a row
 whose transaction committed after the previous read fixed its upper bound is still picked up. A run under moved rules
@@ -134,7 +136,7 @@ The plan takes each record read through these steps in order; the first that app
 | A key column is empty | Held: `dataset key incomplete: every key column must be non-empty` |
 | A child dataset holds more rows than `maxRowsPerRecord` | Held, naming the dataset and the ceiling |
 | A [removal flow](../flow/removal.md) found the source no longer holds the key (its deletion is pending or removed), and the row is not newer than the removal (its `UpdatedDate_DW` at or before the moment, or none) | Skipped as **removed by the source**: kept out, nothing sent. A newer row is decided as any other, and the next removal run lifts the deletion |
-| The row is marked deleted | Held: a deleted row is never delivered. Removing the record from OSDU is a deliberate operation ([removal and reversal](removal-and-reversal.md)) |
+| The row is marked deleted, and was not loaded again after its mark | Held: a deleted row is never delivered. Removing the record from OSDU is a deliberate operation, which a [removal flow](../flow/removal-marks.md) makes of the marks ([removal and reversal](removal-and-reversal.md)). A row loaded after its mark is back, and is decided as any other; a flow whose [filter](../flow/delivery-filter.md) leaves marked rows out never reads one |
 | A cache change tagged against the record waits for approval | Skipped as awaiting approval; OSDU keeps the document it has |
 | The record is held, failed, deleted or reverted, the source has not moved past the version it was left at, and the ledger did not ask for it to be planned again (a redelivery, a sync, a cache change) | Blocked until it is released or the source changes ([record lifecycle](record-lifecycle.md)) |
 | `source.lastModified` is empty or unreadable | Held, naming the column and the value |

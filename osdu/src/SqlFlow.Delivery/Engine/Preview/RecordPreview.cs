@@ -143,9 +143,14 @@ public static class PreviewKeyForms
     public const string KeyParts = "key parts";
 }
 
-/// <summary>The render inputs: the mapping, the template it pins, the cache version it reads and the render context's hash.</summary>
+/// <summary>
+/// The render inputs: the mapping, the template it pins, the cache version it reads, the render context's hash, and the values
+/// its parameters render with (the mapping's defaults under what the flow supplies, every reference resolved, as they reach the
+/// record).
+/// </summary>
 public sealed record PreviewInputs(
-    string Mapping, string Kind, string TemplateVersion, string? CachePartition, string? CacheVersion, string ContextHash);
+    string Mapping, string Kind, string TemplateVersion, string? CachePartition, string? CacheVersion, string ContextHash,
+    IReadOnlyDictionary<string, string>? Parameters = null);
 
 /// <summary>The route the flow delivers by, why, and for a route that reaches a DDMS, where the record goes.</summary>
 public sealed record PreviewRoute(string Protocol, string? Reason, string? Ddms);

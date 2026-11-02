@@ -19,6 +19,7 @@ referenceRefs:
   - flow-ing-load
 related:
   - delivery-wiki-0013-inventory-flows
+  - delivery-wiki-0043-removal-marks-the-ingestion-table
   - delivery-wiki-0014-inventory-removals
   - delivery-wiki-0002-client-supplied-ids
   - delivery-wiki-0024-scope-value-lists
@@ -30,11 +31,16 @@ sourceRefs:
   - osdu/src/SqlFlow.Delivery/Ledger/SqlServerLedgerBulk.Removal.cs
   - osdu/src/SqlFlow.Delivery/Engine/Planning/Planner.cs
   - osdu/src/SqlFlow.Delivery.Data/DeliveryEntities.cs
-updated: 2026-10-23
+updated: 2026-11-02
 ---
 # 0022: A removal flow reads the source's keys whole and keeps its deletions in the delivery ledger
 
 Status: accepted. Documented in [removal flow](../../reference/flow/removal.md).
+
+> **Amended by [0043](0043-removal-marks-the-ingestion-table.md).** The decision stands, and a removal now also reads the
+> rows the delivery flow's record table marks deleted (SQLFlow's key match) as removed keys, marks the rows it removes and
+> unmarks a row whose key comes back; `keys` and `removed` are optional. `matchKeys` in the ingestion flow is still not how
+> a removal is found when the load is incremental, but its marks, where it can make them, are read.
 
 ## Context
 

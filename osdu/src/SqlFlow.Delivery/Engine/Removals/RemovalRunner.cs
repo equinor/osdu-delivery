@@ -114,15 +114,20 @@ public sealed class RemovalRunFailedException : DeliveryException
 /// <summary>
 /// Runs a removal flow's removals in one partition (osdu/docs/reference/flow/removal.md, A run): for each, the delivery flow it
 /// names is found and opened for its target; the source's current keys are read whole (a full load, every run), its removed keys
-/// with them, and the delivery flow's record table in the removal's scope; each is converted and derived to the delivery key the
-/// ledger keys the record by, and staged; the staged keys are compared with the ledger's records and its deletions, which gain
-/// what the source removed; and then the ledger's pending deletions are taken out of OSDU through the delivery flow's own
-/// removal path, a deletion already taken out never asked of OSDU again. A plan does all but write and take out.
+/// with them, and the delivery flow's record table in the removal's scope with each row's deleted mark; each is converted and
+/// derived to the delivery key the ledger keys the record by, and staged; the staged keys are compared with the ledger's records
+/// and its deletions, which gain what the source removed and what the record table marks deleted; the record table's marks are
+/// brought in step with the deletions, as SQLFlow's key match keeps them; and then the ledger's pending deletions are taken out
+/// of OSDU through the delivery flow's own removal path, a deletion already taken out never asked of OSDU again. A plan does all
+/// but write, mark and take out.
 /// </summary>
 public sealed class RemovalRunner
 {
     /// <summary>How many keys of the record table one statement reads.</summary>
     private const int IngestionPage = 5000;
+
+    /// <summary>How many rows' marks one page of the comparison names, to write to the record table.</summary>
+    private const int MarkPage = 5000;
 
     private readonly EngineContext _context;
     private readonly RemovalKeySources _sources;
@@ -249,6 +254,14 @@ public sealed class RemovalRunner
             var system = mapping.Dataset.System;
             var ingestion = _context.Sources.Open(delivery, deliveryValues, _context.Loggers);
             var recordKey = await ingestion.KeyColumnsAsync(ct).ConfigureAwait(false);
+            var markColumn = (await ingestion.DescribeAsync(ct).ConfigureAwait(false)).Layout.Deleted;
+            if (entry.Keys is null && entry.Removed is null && markColumn is null)
+            {
+                throw new DeliveryException(
+                    $"{entry.Path} declares neither keys nor removed, so the record table's deleted marks are its only source of removed keys, and {delivery.Source.Record.Object} "
+                    + $"carries no soft-delete column ({KeyPaths.Of(delivery).Name("source.systemColumns.deleted")} of '{delivery.Label}'). Declare the keys the source holds now (keys), "
+                    + "the keys it lists as removed (removed), or mark the table's rows deleted with SQLFlow's key match (matchKeys in its ingestion flow).");
+            }
 
             await runtime.EnsureLedgerAsync(ct).ConfigureAwait(false);
             run = await ledger.StartRemovalRunAsync(delivery.Id, new RemovalRunStart
@@ -290,8 +303,12 @@ public sealed class RemovalRunner
                 _log.LogInformation("removal '{Entry}': the source's removed keys: {Rows} row(s), {Keys} distinct key(s)", entry.Name, rows, staged);
             }
 
-            var ingestionKeys = await StageIngestionAsync(ledger, delivery, run.Value, ingestion, system, ct).ConfigureAwait(false);
+            var (ingestionKeys, marked) = await StageIngestionAsync(ledger, delivery, run.Value, ingestion, system, ct).ConfigureAwait(false);
             tally = tally.Add(new RemovalTally { IngestionKeys = ingestionKeys });
+            if (markColumn is not null)
+            {
+                _log.LogInformation("removal '{Entry}': the record table: {Keys} key(s), {Marked} marked deleted", entry.Name, ingestionKeys, marked);
+            }
 
             var detection = await ledger.DetectRemovalsAsync(delivery.Id, run.Value, new RemovalComparison
             {
@@ -335,6 +352,17 @@ public sealed class RemovalRunner
                     WouldHold = detection.Guarded,
                     Error = held,
                 };
+            }
+
+            // The record table's rows are marked as the deletions say before anything is taken out, so a delivery whose filter
+            // leaves marked rows out stops reading them first; and rows that came back lose their mark, for it to read them again.
+            if (markColumn is not null)
+            {
+                var (set, cleared) = await MarkAsync(ledger, delivery, run.Value, ingestion, sourceRead, ct).ConfigureAwait(false);
+                tally = tally.Add(new RemovalTally { Marked = set, Unmarked = cleared });
+                _log.LogInformation(
+                    "removal '{Entry}': {Marked} row(s) of {Table} marked deleted, {Unmarked} unmarked as back in the source",
+                    entry.Name, set, delivery.Source.Record.Object, cleared);
             }
 
             // The pending deletions are taken out whatever the guard held: they were found within it, or approved, before.
@@ -571,14 +599,18 @@ public sealed class RemovalRunner
     }
 
     /// <summary>
-    /// Stages the delivery flow's record table keys in the removal's scope, derived as the plan derives a row's delivery key: what
-    /// the comparison covers besides the ledger's records, so a row of a removed key that no run delivered yet is kept out too.
+    /// Stages the delivery flow's record table keys in the removal's scope, every row whatever the flow's filter keeps, derived as
+    /// the plan derives a row's delivery key, each with when it last changed and when it was marked deleted: what the comparison
+    /// covers besides the ledger's records, so a row of a removed key that no run delivered yet is kept out too, and the marks it
+    /// reads as removed keys and keeps in step. Returns the keys staged and how many of them are marked.
     /// </summary>
-    private static async Task<long> StageIngestionAsync(ILedger ledger, FlowDefinition delivery, long run, IIngestionSource ingestion, string system, CancellationToken ct)
+    private static async Task<(long Keys, long Marked)> StageIngestionAsync(
+        ILedger ledger, FlowDefinition delivery, long run, IIngestionSource ingestion, string system, CancellationToken ct)
     {
         long keys = 0;
+        long marked = 0;
         var batch = new List<StagedRemovalKey>(SourceRemovals.StageBatch);
-        await foreach (var row in ingestion.ReadKeysAsync(IngestionPage, ct).ConfigureAwait(false))
+        await foreach (var row in ingestion.ReadKeysAsync(IngestionPage, SourceKeyRead.Whole, ct).ConfigureAwait(false))
         {
             // A row with a blank key is never delivered: the plan holds it, so there is nothing of it to compare.
             if (row.Key.Values.Any(string.IsNullOrWhiteSpace))
@@ -586,7 +618,19 @@ public sealed class RemovalRunner
                 continue;
             }
 
-            batch.Add(new StagedRemovalKey { Key = DeliveryKey.Derive(system, row.Key.Values), SourceKeyJson = row.Key.Json, UpdatedUtc = row.UpdatedUtc });
+            if (row.DeletedUtc is not null)
+            {
+                marked++;
+            }
+
+            batch.Add(new StagedRemovalKey
+            {
+                Key = DeliveryKey.Derive(system, row.Key.Values),
+                SourceKeyJson = row.Key.Json,
+                UpdatedUtc = row.UpdatedUtc,
+                RemovedUtc = row.DeletedUtc,
+                FileName = row.DeletedUtc is null ? null : delivery.Source.Record.Object,
+            });
             if (batch.Count == SourceRemovals.StageBatch)
             {
                 keys += await ledger.StageRemovalKeysAsync(delivery.Id, run, SourceRemovals.IngestionSide, batch, ct).ConfigureAwait(false);
@@ -599,7 +643,43 @@ public sealed class RemovalRunner
             keys += await ledger.StageRemovalKeysAsync(delivery.Id, run, SourceRemovals.IngestionSide, batch, ct).ConfigureAwait(false);
         }
 
-        return keys;
+        return (keys, marked);
+    }
+
+    /// <summary>
+    /// Brings the record table's deleted marks in step with the ledger's deletions after the comparison (osdu/docs/reference/flow/
+    /// removal-marks.md), a page of the comparison at a time: a row whose key holds a pending or removed
+    /// deletion is marked deleted, and a marked row the ledger holds no deletion of, that is back in the source, has its mark taken
+    /// off and its update column stamped, so a delivery's next incremental read meets it. Nothing is written for a row already so.
+    /// Returns how many rows were marked and unmarked.
+    /// </summary>
+    private static async Task<(long Marked, long Unmarked)> MarkAsync(
+        ILedger ledger, FlowDefinition delivery, long run, IIngestionSource ingestion, DateTime? sourceRead, CancellationToken ct)
+    {
+        long marked = 0;
+        long unmarked = 0;
+        DeliveryKey? after = null;
+        while (true)
+        {
+            ct.ThrowIfCancellationRequested();
+            var page = await ledger.RemovalMarksAsync(delivery.Id, run, sourceRead, after, MarkPage, ct).ConfigureAwait(false);
+            if (page.Count == 0)
+            {
+                break;
+            }
+
+            after = page[^1].Key;
+            var set = page.Where(m => m.Mark).Select(m => KeyTuple.FromJson(m.SourceKeyJson)).ToList();
+            var cleared = page.Where(m => !m.Mark).Select(m => KeyTuple.FromJson(m.SourceKeyJson)).ToList();
+            marked += await ingestion.MarkDeletedAsync(set, deleted: true, ct).ConfigureAwait(false);
+            unmarked += await ingestion.MarkDeletedAsync(cleared, deleted: false, ct).ConfigureAwait(false);
+            if (page.Count < MarkPage)
+            {
+                break;
+            }
+        }
+
+        return (marked, unmarked);
     }
 
     private async Task CloseAsync(ILedger ledger, FlowDefinition delivery, long run, RemovalTally tally, string status, string? why, long? activity, CancellationToken ct)

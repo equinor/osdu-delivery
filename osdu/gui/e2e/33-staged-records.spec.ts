@@ -79,6 +79,19 @@ test.describe.serial("a mapping's staged records and a dry run", () => {
     await expect(looked.getByTestId("mapping-overview-rows-error")).toHaveCount(0);
     await looked.getByTestId("mapping-overview-rows-close").click();
     await expect(looked).toHaveCount(0);
+
+    // Every part has its menu: the record's heading shows the record rendered as a document, and the parameters their values.
+    await sheet.locator('[data-testid="mapping-overview-canvas"] g.record-card text.title').click({ button: "right" });
+    await adminPage.getByTestId("mapping-overview-menu-document").click();
+    const rendered = sheet.getByTestId("mapping-overview-document-markdown");
+    await expect(rendered).toContainText(LOG_KIND, { timeout: 60_000 });
+    await expect(rendered.locator("h2").first()).toBeVisible();
+    await expect(sheet.getByTestId("mapping-overview-document-error")).toHaveCount(0);
+    await sheet.getByTestId("mapping-overview-document-close").click();
+    await sheet.locator('[data-testid="mapping-overview-card-parameters"] g.head').click({ button: "right" });
+    await adminPage.getByTestId("mapping-overview-menu-preview").click();
+    await expect(sheet.getByTestId("mapping-overview-parameter-dataPartition")).toContainText(/dataPartition\s*\S/, { timeout: 60_000 });
+    await sheet.getByTestId("mapping-overview-parameters-close").click();
     await sheet.getByTestId("mapping-overview-show-record").click();
 
     // The flow's scope needs its log source, which it declares required. The page starts on the value the table holds most,

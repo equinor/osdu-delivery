@@ -614,3 +614,12 @@ Source: the human's review of the dry run in the sheet: a search to select a map
 required parameter defaulting to its first option, a draggable code area, the render, YAML and shape as sub tabs of one section.
 
 Extended decision 0040 with why the page is laid out as it is, and why only this page fills in a first option.
+
+## [2026-11-02] ingest | A removal flow extends the key match, and a delivery takes a filter
+
+Source: the human's direction that rows marked deleted are never pushed, their records are deleted from OSDU with the
+ledger saying so, a row that comes back is delivered as a new record, and a removal flow is SQLFlow's key match extended:
+it uses the marks to remove, marks what it removes, and cross-matches with the ledger so nothing is removed twice.
+
+Added decision 0043 and the reference pages `delivery-flow-removal-marks` and `delivery-flow-delivery-filter`; amended
+decision 0022.

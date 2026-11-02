@@ -44,8 +44,8 @@ Nothing outside a running removal reads this table.
 | `DeliveryKey` | `uniqueidentifier` | no | The delivery key derived from the key, as a delivery derives it. |
 | `SourceKeyJson` | `nvarchar(2000)` | yes | The key tuple, a JSON array of the key columns' values as text, in the record key's order. |
 | `UpdatedUtc` | `datetime2` | yes | For side `3`: when the key's row last changed in the record table (`UpdatedDate_DW`). |
-| `RemovedUtc` | `datetime2` | yes | For side `2`: when the source removed the key, in UTC. |
-| `FileName` | `nvarchar(800)` | yes | The file the key was read from, or the table, for a key a source listed. |
+| `RemovedUtc` | `datetime2` | yes | For side `2`: when the source removed the key, in UTC. For side `3`: when the record table marked the row deleted (`DeletedDate_DW`), null for a row not marked ([the ingestion table's marks](../flow/removal-marks.md)). |
+| `FileName` | `nvarchar(800)` | yes | The file the key was read from, or the table, for a key a source listed; for side `3`, the record table of a row marked deleted. |
 | `RowNumber` | `bigint` | yes | The key's row in that file, or its position in the table's read. |
 
 ## Keys and indexes

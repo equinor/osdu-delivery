@@ -324,7 +324,8 @@ public sealed class RecordPreviewer
             resolved.Mapping.Template.Version,
             resolved.Context.CacheScope,
             resolved.Context.CacheScope is null ? null : resolved.References.Version,
-            resolved.Context.Hash()[..16]);
+            resolved.Context.Hash()[..16],
+            resolved.Context.Parameters);
 
     /// <summary>Why none of the rows a key reads as can be previewed: none is in the table, or every one is outside the scope.</summary>
     private string? Unreadable(PreviewKey named, SourceHeader source, FlowDefinition flow)

@@ -36,6 +36,7 @@ keywords:
 yamlPath: "(root, flowType: delivery)"
 related:
   - delivery-flow-delivery-record-table
+  - delivery-flow-delivery-filter
   - delivery-flow-delivery-errors
   - delivery-flow-interfaces
   - delivery-flow-enrich
@@ -253,11 +254,13 @@ where each record's files are.
 | `record.key` | list | required | The key columns, in order: the ing flow's `load.keyColumns`. They must name the same columns, in the same order, as the mapping's `dataset.key`. With `record.primaryKey` set, the table needs a unique index on them ([the record table](delivery-record-table.md#the-unique-key-index)). |
 | `record.primaryKey` | string | none | The table's identity primary key (the ing flow's `target.identityColumn`, such as `RecId`). A delivery is split over nodes on it ([parallelism](#parallelism)); without it a run is not split, and one node plans and sends it all. See [The identity primary key](#the-identity-primary-key). |
 | `record.scope` | map | none | Column to parameter: each entry becomes a typed `[column] = @parameter` predicate, so a run reads only the rows of its parameter values. A parameter the run gives several values reads the rows holding any of them, `[column] IN (@p0, @p1, ...)` ([Several values of a scope parameter](#several-values-of-a-scope-parameter)). A value is bound, never substituted into SQL. |
+| `record.filter` | string | none | A predicate narrowing the record table's rows every read takes, with its own leading `AND` (`AND DeletedDate_DW IS NULL`): a row it leaves out is never read, planned or sent. See [Narrowing the rows a delivery reads](delivery-filter.md). |
 | `record.maxRecords` | integer | none | The first records of the scope a run reads, 1 to 1000, by key, on every run that gives no `maxRecords` of its own: a smoke test before the whole scope goes; leave it out to read the scope whole. A run's own stands in for it. See [The first records of the scope](#the-first-records-of-the-scope). |
 | `datasets.<name>.object` | string | required | A child table's three-part name. The mapping reads it under `<name>` (a `$forEach` over it, or `$dataset.<column>`). |
 | `datasets.<name>.join` | map | required | Child column to record key column. Every record key column must be joined. |
 | `datasets.<name>.orderBy` | list | none | The order of a record's child rows. |
 | `datasets.<name>.maxRowsPerRecord` | integer | 100000 | The most child rows one record may carry, 1 to 1000000. A record over it is held. |
+| `datasets.<name>.filter` | string | none | A predicate narrowing the child rows every read takes, with its own leading `AND`: a child row it leaves out is in no record's document ([Narrowing the rows a delivery reads](delivery-filter.md)). |
 | `datasets.<name>.files` | map | none | The files each child row names (`root`, `locationColumn`, `pattern`, `hashColumn`, `chunkCountColumn`, `contentType`), for the enrichment of the mapping named like the dataset: registered with the datasets it adds, or sent as the record's bulk data ([records an enrichment adds](enrich-records.md#the-keys), [an enrichment's bulk data](enrich-bulk.md)). Refused on a dataset no enrichment reads. |
 | `payloads.<name>.root` | string | required | The folder or storage prefix a record's files must sit under. Relative to the flow file; `{parameter}` tokens allowed, each taking one value. A `${...}` reference is refused: a location is not resolved from one. |
 | `payloads.<name>.locationColumn` | string | none | The record column holding the record's folder, relative to `root` or absolute under it. Required when the route sends the payload. |
@@ -266,7 +269,7 @@ where each record's files are.
 | `payloads.<name>.chunkCountColumn` | string | none | The record column holding how many files the payload has, which spares a storage listing when planning. |
 | `lastModified` | string | none | A business version column: a `datetime`, or RFC 3339 / ISO 8601 text (read as UTC without an offset). A row older than the version the ledger holds is never sent ([change detection](../concepts/change-detection.md)). |
 | `systemColumns.updated` | string | `UpdatedDate_DW` | The column an incremental read windows on. Cannot be opted out of. |
-| `systemColumns.deleted` | string | `DeletedDate_DW` | The soft-delete stamp, used when the table carries it. A row marked deleted is held, never delivered. |
+| `systemColumns.deleted` | string | `DeletedDate_DW` | The soft-delete stamp, used when the table carries it. A row marked deleted is held, never delivered, unless it was loaded again after its mark; `record.filter: AND DeletedDate_DW IS NULL` leaves such rows out of every read. A [removal flow](removal-marks.md) reads the marks as removed keys and marks the rows it takes out. |
 | `systemColumns.inserted` | string | `InsertedDate_DW` | When the row first reached the table, used when the table carries it; dates the record's arrival on its history. |
 | `systemColumns.fileName` | string | `FileName_DW` | The file the row was landed from, traced on every attempt; a column wider than 800 characters is refused. |
 | `systemColumns.rowNumber` | string | `RowNumber_DW` | The row's position in that file: a whole-number column (an integer type, or `decimal`/`numeric` with scale 0 and at most 18 digits). A column of another type is refused; opt out with `~`. |

@@ -411,6 +411,8 @@ internal sealed class FlowSourceTableYaml
 
     public Dictionary<string, string>? Scope { get; set; }
 
+    public string? Filter { get; set; }
+
     public int? MaxRecords { get; set; }
 }
 
@@ -423,6 +425,8 @@ internal sealed class FlowSourceDatasetYaml
     public List<string>? OrderBy { get; set; }
 
     public int? MaxRowsPerRecord { get; set; }
+
+    public string? Filter { get; set; }
 
     /// <summary>The files each row names, which an enrichment of the flow's mapping reading these rows registers or sends.</summary>
     public DatasetFilesYaml? Files { get; set; }

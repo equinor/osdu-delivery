@@ -112,12 +112,20 @@ public sealed class RemovalFlowTests : IDisposable
 
     /// <summary>
     /// Every sample log delivered once, through the delivery flow a removal names, under the sample's log source or the
-    /// <paramref name="values"/> given, and the clock moved an hour on.
+    /// <paramref name="values"/> given, and the clock moved an hour on. A <paramref name="filtered"/> delivery leaves the rows
+    /// the record table marks deleted out of every read (<c>source.record.filter: AND DeletedDate_DW IS NULL</c>).
     /// </summary>
-    private async Task DeliverEverythingAsync(IReadOnlyDictionary<string, string>? values = null)
+    private async Task DeliverEverythingAsync(IReadOnlyDictionary<string, string>? values = null, bool filtered = false)
     {
         _tables = await SampleEstate.BuildAsync(_root, Now.AddMinutes(-5), time: _clock);
-        _delivery = await FlowRuntime.CreateAsync(Engine(), Samples.LocalFlow(_root), values ?? SampleEstate.Values);
+        var flow = Samples.LocalFlow(_root);
+        if (filtered)
+        {
+            flow = flow with { Source = flow.Source with { Record = flow.Source.Record with { Filter = "AND DeletedDate_DW IS NULL" } } };
+            _tables.Filter = r => r.DeletedUtc is null;
+        }
+
+        _delivery = await FlowRuntime.CreateAsync(Engine(), flow, values ?? SampleEstate.Values);
         _runtimes.Add(_delivery);
         await _ledger.RegisterAsync(_delivery.Flow);
         var run = await DeliverAsync();
@@ -398,17 +406,136 @@ public sealed class RemovalFlowTests : IDisposable
         await RemoveAsync(Removal(Csv("keys", "current"), guard: "guard: { maxPercent: 50 }"));
         Assert.Equal(2, (await DeletionsAsync(SourceRemovals.Done)).Count);
 
+        Assert.All(_tables.Records.Take(2), r => Assert.NotNull(r.DeletedUtc));
+
         _delivery.Actor = "user:tahir";
         var lifted = await _delivery.LiftRemovalsAsync([Key(0), Key(1), Key(2)]);
 
-        Assert.Equal(new HashSet<DeliveryKey> { Key(0), Key(1) }, lifted);
+        Assert.Equal(new HashSet<DeliveryKey> { Key(0), Key(1) }, lifted.Lifted);
+        Assert.Null(lifted.MarksKept);
         Assert.Empty(await DeletionsAsync());
+        Assert.All(_tables.Records.Take(2), r => Assert.Null(r.DeletedUtc));
         var activity = Assert.Single(await _ledger.ListActivitiesAsync(new ActivityQuery { FlowId = LedgerId, DeliveryKey = Key(0).Value, Kind = SourceRemovals.LiftActivityKind }));
         Assert.Equal("user:tahir", activity.Actor);
         await DeliverAsync();
         Assert.Equal((RecordStatus.Delivered, RecordStatus.Delivered), ((await RecordAsync(0)).Status, (await RecordAsync(1)).Status));
-        Assert.Empty(await _delivery.LiftRemovalsAsync([Key(0)]));
+        Assert.Empty((await _delivery.LiftRemovalsAsync([Key(0)])).Lifted);
         Assert.Throws<DeliveryException>(() => _delivery.LiftRemovalsAsync([]).GetAwaiter().GetResult());
+    }
+
+    [Fact]
+    public async Task A_removal_marks_the_rows_it_takes_out_and_a_filtered_delivery_delivers_a_key_that_comes_back_as_a_new_record()
+    {
+        await DeliverEverythingAsync(filtered: true);
+        var target = TargetOf(await RecordAsync(0));
+        KeysFile("current", Enumerable.Range(1, Logs.Count - 1));
+
+        // The removal marks the row before it takes the record out, and the ledger says it is out of OSDU.
+        var removal = Assert.Single((await RemoveAsync(Removal(Csv("keys", "current")))).Removals);
+        Assert.Equal((1L, 1L, 0L), (removal.Tally.Removed, removal.Tally.Marked, removal.Tally.Unmarked));
+        Assert.NotNull(_tables.Records[0].DeletedUtc);
+        Assert.All(_tables.Records.Skip(1), r => Assert.Null(r.DeletedUtc));
+        Assert.Equal(RecordStatus.Deleted, (await RecordAsync(0)).Status);
+        var run = (await _ledger.GetRemovalRunAsync(Samples.SamplePartition, removal.RemovalRunId!.Value))!;
+        Assert.Equal((1L, 0L), (run.Tally.Marked, run.Tally.Unmarked));
+
+        // A delivery never reads the marked row, so nothing is held for it and nothing is sent; a sync finds the record in
+        // agreement with its source; a run that marks nothing new writes nothing.
+        await FullReadAsync();
+        Assert.DoesNotContain(_protocol.Deliveries, d => d.Key == Key(0));
+        Assert.Equal(RecordStatus.Deleted, (await RecordAsync(0)).Status);
+        var sync = await new SourceSync(Engine(), _delivery.Flow, _ledger, SampleEstate.Values, null, NullLogger.Instance).RunAsync([Key(0)], CancellationToken.None);
+        Assert.Equal((1, 1, 0), (sync.Checked, sync.InAgreement, sync.NotFoundRecorded));
+        var again = Assert.Single((await RemoveAsync(Removal(Csv("keys", "current")))).Removals);
+        Assert.Equal((0L, 0L, 0L), (again.Tally.Detected, again.Tally.Marked, again.Tally.Unmarked));
+
+        // The key comes back: the deletion is lifted, the mark taken off, and the next delivery sends the record whole,
+        // as a new one, under the id it had.
+        _clock.Advance(TimeSpan.FromHours(1));
+        KeysFile("current", Enumerable.Range(0, Logs.Count));
+        var back = Assert.Single((await RemoveAsync(Removal(Csv("keys", "current")))).Removals);
+        Assert.Equal((1L, 1L, 0L), (back.Tally.Lifted, back.Tally.Unmarked, back.Tally.Marked));
+        Assert.Null(_tables.Records[0].DeletedUtc);
+        Assert.Empty(await DeletionsAsync());
+
+        await DeliverAsync();
+        var sent = Assert.Single(_protocol.Deliveries, d => d.Key == Key(0));
+        Assert.Equal((target, (long?)null, true), (sent.TargetId, sent.ExistingVersion, sent.DeliverMetadata));
+        Assert.Equal(RecordStatus.Delivered, (await RecordAsync(0)).Status);
+    }
+
+    [Fact]
+    public async Task A_removal_that_reads_no_source_takes_out_what_the_record_table_marks_deleted_once_and_lifts_it_when_the_mark_goes()
+    {
+        await DeliverEverythingAsync(filtered: true);
+
+        // SQLFlow's key match marks log 1's row deleted, without touching its update column.
+        var marked = Now.AddMinutes(-2);
+        _tables.Records[1].DeletedUtc = marked;
+
+        var removal = Assert.Single((await RemoveAsync(Removal(sources: string.Empty))).Removals);
+        Assert.Equal((0L, 0L, 1L, 1L, 0L), (removal.Tally.SourceKeys, removal.Tally.ListedKeys, removal.Tally.Detected, removal.Tally.Removed, removal.Tally.Marked));
+        var deletion = Assert.Single(await DeletionsAsync());
+        Assert.Equal((Key(1), SourceRemovals.Marked, SourceRemovals.Done), (deletion.Key, deletion.Reason, deletion.State));
+        Assert.Equal(marked, deletion.RemovedUtc, TimeSpan.FromSeconds(1));
+        Assert.Equal(_delivery.Flow.Source.Record.Object, deletion.FileName);
+        Assert.Equal(RecordStatus.Deleted, (await RecordAsync(1)).Status);
+
+        // The ledger already holds the deletion: the next run finds nothing and asks OSDU nothing.
+        _protocol.Deletes.Clear();
+        var again = Assert.Single((await RemoveAsync(Removal(sources: string.Empty))).Removals);
+        Assert.Equal((0L, 0L), (again.Tally.Detected, again.Tally.Removed));
+        Assert.Empty(_protocol.Deletes);
+
+        // The key match takes the mark off when the key reappears, and stamps nothing: the deletion goes, the row stays
+        // unmarked, and the record is planned again and delivered.
+        _tables.Records[1].DeletedUtc = null;
+        var back = Assert.Single((await RemoveAsync(Removal(sources: string.Empty))).Removals);
+        Assert.Equal((1L, 0L, 0L), (back.Tally.Lifted, back.Tally.Marked, back.Tally.Detected));
+        Assert.Null(_tables.Records[1].DeletedUtc);
+        await DeliverAsync();
+        Assert.Equal(RecordStatus.Delivered, (await RecordAsync(1)).Status);
+        Assert.Contains(_protocol.Deliveries, d => d.Key == Key(1));
+    }
+
+    [Fact]
+    public async Task A_row_loaded_again_after_the_removal_lifts_its_deletion_and_takes_its_mark_off()
+    {
+        await DeliverEverythingAsync(filtered: true);
+        var loaded = Now.AddHours(-1).AddMinutes(-5);
+        KeysFile("removed", [0], _ => loaded.AddMinutes(30).ToString("yyyy-MM-ddTHH:mm:ss", CultureInfo.InvariantCulture));
+        var removed = Assert.Single((await RemoveAsync(Removal(Csv("removed", "removed", "removed_at")))).Removals);
+        Assert.Equal((1L, 1L), (removed.Tally.Removed, removed.Tally.Marked));
+
+        // The ingestion flow loads the row again, still marked: the filtered delivery does not read it, the removal does.
+        _clock.Advance(TimeSpan.FromMinutes(10));
+        SampleEstate.Change(_tables.Records[0], "log_name", "renamed", Now);
+        await DeliverAsync();
+        Assert.DoesNotContain(_protocol.Deliveries, d => d.Key == Key(0));
+
+        var back = Assert.Single((await RemoveAsync(Removal(Csv("removed", "removed", "removed_at")))).Removals);
+        Assert.Equal((1L, 1L, 0L), (back.Tally.Lifted, back.Tally.Unmarked, back.Tally.Detected));
+        Assert.Null(_tables.Records[0].DeletedUtc);
+        await DeliverAsync();
+        Assert.Equal(RecordStatus.Delivered, (await RecordAsync(0)).Status);
+        Assert.Contains(_protocol.Deliveries, d => d.Key == Key(0));
+    }
+
+    [Fact]
+    public async Task A_removal_that_reads_no_source_is_refused_when_the_record_table_carries_no_soft_delete_column()
+    {
+        await DeliverEverythingAsync();
+        var file = Path.Combine(Estate, "flows", DeliveryFlowName + ".yaml");
+        var yaml = File.ReadAllText(file);
+        Assert.Contains("source:\n", yaml, StringComparison.Ordinal);
+        File.WriteAllText(file, yaml.Replace("source:\n", "source:\n  systemColumns:\n    deleted: ~\n", StringComparison.Ordinal));
+
+        var failed = Assert.Single((await RemoveFailedAsync(Removal(sources: string.Empty))).Removals);
+
+        Assert.Equal(SourceRemovals.Failure, failed.Status);
+        Assert.Contains("declares neither keys nor removed", failed.Error, StringComparison.Ordinal);
+        Assert.Contains("carries no soft-delete column", failed.Error, StringComparison.Ordinal);
+        Assert.Empty(await DeletionsAsync());
     }
 
     [Fact]

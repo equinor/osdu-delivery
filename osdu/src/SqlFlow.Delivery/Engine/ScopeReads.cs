@@ -89,7 +89,7 @@ public static class ScopeReads
             return new ScopeRead(scope, SourceSelection.Full(), null, ScopeReadReason.NoWatermark);
         }
 
-        if (watermark.ContextHash is { } planned && !string.Equals(planned, rendering.RulesHash(), StringComparison.Ordinal))
+        if (watermark.ContextHash is { } planned && !string.Equals(planned, WatermarkRules(flow, rendering.RulesHash()), StringComparison.Ordinal))
         {
             return new ScopeRead(scope, SourceSelection.Full(), watermark, ScopeReadReason.RulesMoved);
         }
@@ -98,6 +98,33 @@ public static class ScopeReads
         // fixed its upper bound: their update time is inside the window that has already been read.
         var lower = watermark.UpdatedThroughUtc.AddSeconds(-flow.Source.Incremental.OverlapSeconds);
         return new ScopeRead(scope, SourceSelection.Incremental(lower), watermark, ScopeReadReason.SinceWatermark);
+    }
+
+    /// <summary>
+    /// What a scope's watermark is kept against: the render context's rules (<paramref name="rulesHash"/>), with the flow's
+    /// filters when it declares any (osdu/docs/reference/flow/delivery-filter.md), so a run after either moved reads the scope
+    /// whole once, and a filter widened since the watermark meets the rows it now keeps. A flow without a filter keeps the
+    /// rules' hash as it is.
+    /// </summary>
+    public static string WatermarkRules(FlowDefinition flow, string rulesHash)
+    {
+        ArgumentNullException.ThrowIfNull(flow);
+        ArgumentException.ThrowIfNullOrWhiteSpace(rulesHash);
+        var filters = new List<string>();
+        if (flow.Source.Record.Filter is { } record)
+        {
+            filters.Add("record\u001e" + record);
+        }
+
+        foreach (var (name, dataset) in flow.Source.Datasets.OrderBy(d => d.Key, StringComparer.Ordinal))
+        {
+            if (dataset.Filter is { } filter)
+            {
+                filters.Add(name + "\u001e" + filter);
+            }
+        }
+
+        return filters.Count == 0 ? rulesHash : Hashing.ContentHash.Of(rulesHash + "\u001f" + string.Join("\u001f", filters));
     }
 
     /// <summary>
@@ -138,7 +165,7 @@ public static class ScopeReads
         ArgumentException.ThrowIfNullOrWhiteSpace(setting);
         ArgumentNullException.ThrowIfNull(log);
         var keys = new List<KeyTuple>(max);
-        await foreach (var key in source.ReadKeysAsync(max, ct).ConfigureAwait(false))
+        await foreach (var key in source.ReadKeysAsync(max, SourceKeyRead.Read, ct).ConfigureAwait(false))
         {
             keys.Add(key.Key);
             if (keys.Count == max)

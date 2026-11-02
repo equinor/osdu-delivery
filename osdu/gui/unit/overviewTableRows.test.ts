@@ -5,7 +5,7 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import type { DeliverySourceTable, MappingOutlineSource } from "../src/api/mappingOutline.ts";
 import type { CardField, OutlineCard } from "../src/features/delivery/overview/outlineModel.ts";
-import { previewColumns, previewLabel, recordColumnsOf, rowsOfRecord, rowsSourceOf } from "../src/features/delivery/overview/tableRows.ts";
+import { cardPreviewLabel, previewColumns, previewLabel, recordColumnsOf, rowsOfRecord, rowsSourceOf } from "../src/features/delivery/overview/tableRows.ts";
 
 function field(name: string, key = false): CardField {
   return { id: `dataset\u0000${name}`, name, key, displayOnly: false, match: false, read: true, type: null };
@@ -43,6 +43,12 @@ describe("which tables hold rows to look at", () => {
     assert.equal(rowsSourceOf(card({ id: "parameters", kind: "parameters" })), null);
     assert.equal(rowsSourceOf(card({ id: "parent", kind: "parent" })), null);
     assert.equal(rowsSourceOf(card({ id: "search.Wellbore", kind: "search", detail: null })), null);
+  });
+
+  it("offers the flow's parameters a look at their values, and another record nothing", () => {
+    assert.equal(cardPreviewLabel(card({ id: "parameters", kind: "parameters" })), "Preview the values");
+    assert.equal(cardPreviewLabel(card({ id: "dataset", kind: "record" })), "Preview the first 100 rows");
+    assert.equal(cardPreviewLabel(card({ id: "parent", kind: "parent" })), null);
   });
 
   it("says what each reads in the menu's words", () => {

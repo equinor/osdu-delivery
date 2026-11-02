@@ -70,7 +70,9 @@ run decides again`), and the keys it staged are deleted.
 | `Busy` | `bigint` | no | Records a worker or another removal held, taken by the next run. |
 | `Failed` | `bigint` | no | Records OSDU refused or failed to remove, or whose reference check or undo could not be done; the next run tries again. |
 | `CameBack` | `bigint` | no | Keys whose row arrived after the moment of their removal: the key came back, and nothing was found removed of it. |
-| `Lifted` | `bigint` | no | Deletions lifted: the source holds the key again, or the record was delivered again since. |
+| `Lifted` | `bigint` | no | Deletions lifted: the source holds the key again, its row was loaded again or unmarked, or the record was delivered again since. |
+| `Marked` | `bigint` | no | Rows of the delivery flow's record table the run marked deleted, as its deletions say ([the ingestion table's marks](../flow/removal-marks.md)). |
+| `Unmarked` | `bigint` | no | Rows of the record table whose deleted mark the run took off, as back in the source, stamping their update column. |
 | `GuardPercent` | `int` | no | The guard's share, 0 to 100, the run was held to. |
 | `GuardRecords` | `bigint` | yes | The guard's count the run was held to; null for none. |
 | `ApprovedBy` | `nvarchar(200)` | yes | Who approved the deletions this run made pending, for a run that carried out an approval. |

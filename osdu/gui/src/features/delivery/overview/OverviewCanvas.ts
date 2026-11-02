@@ -17,6 +17,9 @@ export type OverviewPart =
   | { type: "field"; source: string; field: string }
   | { type: "card"; source: string };
 
+/** What a right click opens a menu for: a part, the record's heading, or the canvas itself. */
+export type OverviewMenuTarget = OverviewPart | { type: "record" } | { type: "canvas" };
+
 /** What a tooltip says, and where it points, in the page's coordinates. */
 export interface OverviewTip {
   x: number;
@@ -35,8 +38,8 @@ export interface OverviewHandlers {
   clear: () => void;
   /** The reader asked to see what the template holds that the mapping leaves out. */
   leftOut: () => void;
-  /** The reader asked for a table's or a field's menu, at a place on the page. */
-  menu: (part: OverviewPart, at: { x: number; y: number }) => void;
+  /** The reader asked for the menu of something on the canvas, or of the canvas, at a place on the page. */
+  menu: (target: OverviewMenuTarget, at: { x: number; y: number }) => void;
 }
 
 /** What is drawn besides the layout. */
@@ -221,6 +224,12 @@ export class OverviewCanvas {
         this.handlers.clear();
       }
     });
+    // Whatever takes a right click of its own stops it; what reaches the canvas is the canvas's.
+    this.svg.on("contextmenu.canvas", (event: MouseEvent) => {
+      event.preventDefault();
+      this.handlers.tip(null);
+      this.handlers.menu({ type: "canvas" }, { x: event.clientX, y: event.clientY });
+    });
 
     this.resize = new ResizeObserver(() => {
       if (this.fitted) {
@@ -233,7 +242,7 @@ export class OverviewCanvas {
   destroy(): void {
     clearTimeout(this.settling);
     this.resize.disconnect();
-    this.svg.on(".zoom", null).on("wheel.pan", null).on("click.clear", null);
+    this.svg.on(".zoom", null).on("wheel.pan", null).on("click.clear", null).on("contextmenu.canvas", null);
     this.svg.selectAll("*").remove();
   }
 
@@ -432,7 +441,7 @@ export class OverviewCanvas {
    * A right click on a part opens its menu at the pointer. With `keys`, so does the context menu key or Shift+F10 on it, under
    * it, and Enter or Space does what a click does, since a group taking the focus is no button the browser presses.
    */
-  private menued<E extends SVGElement, D>(parts: Selection<E, D, BaseType, unknown>, part: (datum: D) => OverviewPart, keys: boolean): void {
+  private menued<E extends SVGElement, D>(parts: Selection<E, D, BaseType, unknown>, part: (datum: D) => OverviewMenuTarget, keys: boolean): void {
     parts.on("contextmenu", (event: Event, datum) => {
       const { clientX: x, clientY: y } = event as MouseEvent;
       event.preventDefault();
@@ -599,7 +608,7 @@ export class OverviewCanvas {
     const layer = this.layers.record;
     let card = layer.select<SVGGElement>("g.record-card");
     if (card.empty()) {
-      card = layer.append("g").attr("class", "record-card");
+      card = layer.append("g").attr("class", "record-card outline-none [&:focus-visible>rect.frame]:stroke-ring [&:focus-visible>rect.frame]:[stroke-width:2]").attr("tabindex", 0).attr("role", "button");
       card.append("rect").attr("class", "frame fill-card stroke-border").attr("rx", 8);
       card.append("line").attr("class", "edge stroke-primary").attr("stroke-width", 2).attr("x1", 8).attr("y1", 0.75);
       card.append("line").attr("class", "rule stroke-border").attr("x1", 0).attr("y1", MEASURE.head).attr("y2", MEASURE.head);
@@ -622,6 +631,8 @@ export class OverviewCanvas {
         event.stopPropagation();
         this.handlers.leftOut();
       });
+    card.attr("aria-label", `${dress.title}: the record. The menu key opens what can be done with it.`);
+    this.menued(card, () => ({ type: "record" }), true);
   }
 
   private drawCards(cards: readonly PlacedCard[], dress: OverviewDress, moves: number): void {
@@ -825,6 +836,7 @@ export class OverviewCanvas {
       }
     });
     all.on("keydown", (event: KeyboardEvent, row) => this.onRowKey(event, row));
+    this.menued(all, (row) => ({ type: "row", path: row.row.path }), false);
   }
 
   private onRowKey(event: KeyboardEvent, row: PlacedRow): void {
@@ -841,6 +853,17 @@ export class OverviewCanvas {
     };
 
     switch (event.key) {
+      case "ContextMenu":
+      case "F10": {
+        if (event.key === "F10" && !event.shiftKey) {
+          break;
+        }
+
+        stop();
+        const box = (event.currentTarget as Element).getBoundingClientRect();
+        this.handlers.menu({ type: "row", path: row.row.path }, { x: box.left + 24, y: box.bottom });
+        break;
+      }
       case "Enter":
       case " ":
         stop();
@@ -992,6 +1015,7 @@ export class OverviewCanvas {
     all.attr("data-testid", (dot) => `mapping-overview-dot-${dot.id.replace("\u0000", "-")}`);
     all.select("circle.spot").attr("class", (dot) => `spot stroke-background ${toneOf(this.kindOf(dot.source)).fill}`);
     this.wire(all, (dot) => ({ type: "row", path: dot.row }));
+    this.menued(all, (dot) => ({ type: "row", path: dot.row }), false);
     this.tipped(all, (dot) => this.dotTip(dot));
   }
 

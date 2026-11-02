@@ -4018,6 +4018,9 @@ namespace SqlFlow.Delivery.Data.Migrations
                     b.Property<long>("ListedKeys")
                         .HasColumnType("bigint");
 
+                    b.Property<long>("Marked")
+                        .HasColumnType("bigint");
+
                     b.Property<string>("Operation")
                         .IsRequired()
                         .HasMaxLength(16)
@@ -4054,6 +4057,9 @@ namespace SqlFlow.Delivery.Data.Migrations
                         .IsRequired()
                         .HasMaxLength(16)
                         .HasColumnType("nvarchar(16)");
+
+                    b.Property<long>("Unmarked")
+                        .HasColumnType("bigint");
 
                     b.HasKey("PartitionId", "RemovalRunId");
 

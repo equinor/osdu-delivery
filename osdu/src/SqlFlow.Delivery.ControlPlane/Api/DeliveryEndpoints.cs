@@ -391,7 +391,7 @@ public sealed record DeliveryReleaseResult(int Released, Guid? RunId = null);
 public sealed record DeliveryLiftRequest(IReadOnlyList<Guid>? Keys, bool Run = false, string? Pool = null);
 
 /// <summary>How many records' removals a lift lifted (their keys no longer kept out), and the deliver run it queued when asked to.</summary>
-public sealed record DeliveryLiftResult(int Lifted, Guid? RunId = null);
+public sealed record DeliveryLiftResult(int Lifted, Guid? RunId = null, string? MarksKept = null);
 
 /// <summary>
 /// A release of one record. <c>Run</c> also queues a deliver run scoped to it, read under the parameter values it was last
@@ -2522,7 +2522,8 @@ public static class DeliveryEndpoints
 
         using var runtime = FlowRuntime.ForTarget(await ConfiguredAsync(engine, config, flow, ct).ConfigureAwait(false), flow.Flow);
         runtime.Actor = RequestActor.Label(user);
-        if ((await runtime.LiftRemovalsAsync([record.DeliveryKey], ct).ConfigureAwait(false)).Count == 0)
+        var lift = await runtime.LiftRemovalsAsync([record.DeliveryKey], ct).ConfigureAwait(false);
+        if (lift.Lifted.Count == 0)
         {
             return TypedResults.Problem(
                 detail: "The ledger keeps this record's key out for no removal: no removal flow found its source no longer holds it.",
@@ -2531,7 +2532,7 @@ public static class DeliveryEndpoints
 
         if (request is not { Run: true })
         {
-            return TypedResults.Ok(new DeliveryLiftResult(1));
+            return TypedResults.Ok(new DeliveryLiftResult(1, null, lift.MarksKept));
         }
 
         var last = record.LastSubmissionId is { } lastId ? await ledger.GetSubmissionAsync(lastId, ct).ConfigureAwait(false) : null;
@@ -2569,15 +2570,15 @@ public static class DeliveryEndpoints
 
         using var runtime = FlowRuntime.ForTarget(await ConfiguredAsync(engine, config, flow, ct).ConfigureAwait(false), flow.Flow);
         runtime.Actor = RequestActor.Label(user);
-        var lifted = await runtime.LiftRemovalsAsync(named.Distinct().Select(g => new DeliveryKey(g)).ToList(), ct).ConfigureAwait(false);
-        if (request is not { Run: true } || lifted.Count == 0)
+        var lift = await runtime.LiftRemovalsAsync(named.Distinct().Select(g => new DeliveryKey(g)).ToList(), ct).ConfigureAwait(false);
+        if (request is not { Run: true } || lift.Lifted.Count == 0)
         {
-            return TypedResults.Ok(new DeliveryLiftResult(lifted.Count));
+            return TypedResults.Ok(new DeliveryLiftResult(lift.Lifted.Count, null, lift.MarksKept));
         }
 
         var latest = await ledger.ListSubmissionsAsync(flow.FlowId, 1, null, ct).ConfigureAwait(false);
         var runId = await EnqueueRunAsync(db, dispatcher, flow, DeliverRun(flow, latest.Count > 0 ? latest[0].ParametersJson : null), request.Pool, user, ct).ConfigureAwait(false);
-        return TypedResults.Accepted($"/api/v1/runs/{runId}", new DeliveryLiftResult(lifted.Count, runId));
+        return TypedResults.Accepted($"/api/v1/runs/{runId}", new DeliveryLiftResult(lift.Lifted.Count, runId, lift.MarksKept));
     }
 
     /// <summary>

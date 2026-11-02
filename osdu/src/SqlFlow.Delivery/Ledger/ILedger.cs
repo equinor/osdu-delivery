@@ -3618,6 +3618,16 @@ public interface ILedger
     Task<RemovalDetection> DetectRemovalsAsync(Guid ledgerFlowId, long removalRunId, RemovalComparison comparison, CancellationToken ct = default);
 
     /// <summary>
+    /// After a run's comparison, the record table's rows whose deleted mark disagrees with the ledger's deletions, <paramref name="take"/>
+    /// at a time in delivery key order after <paramref name="after"/> (osdu/docs/reference/flow/removal-marks.md): rows to mark,
+    /// whose key holds a pending or removed deletion; and rows to take the mark off, whose key holds no deletion and that are
+    /// back, loaded again after the mark or held by the source's current keys read after it (<paramref name="sourceReadUtc"/>,
+    /// null when the removal reads none).
+    /// </summary>
+    Task<IReadOnlyList<RemovalMark>> RemovalMarksAsync(
+        Guid ledgerFlowId, long removalRunId, DateTime? sourceReadUtc, DeliveryKey? after, int take, CancellationToken ct = default);
+
+    /// <summary>
     /// Makes pending, as an operator approved, the deletions of the ledger <paramref name="removalFlow"/>'s removal
     /// <paramref name="entry"/> found that wait for approval, when there are exactly <paramref name="expected"/> of them, as the
     /// operator was shown; each keeps who approved it and when. Returns how many it made pending.
@@ -3679,9 +3689,11 @@ public interface ILedger
     /// Lifts the deletions of <paramref name="keys"/>, as an operator asked: each key is no longer kept out, and a record the
     /// removal took out is asked to be planned again, so the flow's next run reads its row and delivers it under its id; a record
     /// still live is left as it is, its next changed row planned as any other. Every record lifted is named under
-    /// <paramref name="activityId"/>. Returns the keys whose deletion the ledger held; a key it held none of is left out.
+    /// <paramref name="activityId"/>. Returns the keys whose deletion the ledger held, each with its key tuple (the record table's
+    /// row to take a deleted mark off); a key it held none of is left out.
     /// </summary>
-    Task<IReadOnlySet<DeliveryKey>> LiftRemovedKeysAsync(Guid flowId, IReadOnlyCollection<DeliveryKey> keys, long? activityId, DateTime nowUtc, CancellationToken ct = default);
+    Task<IReadOnlyDictionary<DeliveryKey, string?>> LiftRemovedKeysAsync(
+        Guid flowId, IReadOnlyCollection<DeliveryKey> keys, long? activityId, DateTime nowUtc, CancellationToken ct = default);
 
     /// <summary>
     /// The ids among <paramref name="ids"/> a record of another ledger of the flow's partition holds live (claimed or not, and not

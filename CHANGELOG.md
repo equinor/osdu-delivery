@@ -17,6 +17,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Leave rows out of a delivery with a filter.** `source.record.filter` and `source.datasets.<name>.filter` (and an interface's) take
+  one SQL predicate, such as `AND DeletedDate_DW IS NULL`, that every read of the table appends: a row it leaves out is never read,
+  held or sent ([narrowing the rows a delivery reads](osdu/docs/reference/flow/delivery-filter.md)).
+
+- **A removal flow is SQLFlow's key match carried to OSDU.** It reads the rows the delivery flow's record table marks deleted as
+  removed keys, so `keys` and `removed` are optional and a removal can run on the key match's marks alone; it marks the rows of
+  the keys it takes out before taking them out, and unmarks a row whose key comes back, which the delivery then sends again as a new
+  record under its id. The Removals page shows what each run marked and unmarked, and **Deliver again** unmarks the row
+  ([the ingestion table's marks](osdu/docs/reference/flow/removal-marks.md)).
+
 - **Large files reach OSDU on Azure.** A file above 32 MiB now goes to a signed Azure location in blocks and a commit, on every route
   that uploads files and for the files an enrichment adds, so a 16 GB LAS file arrives where one `PUT` could not take it. A file in
   Azure Storage is copied by the store from its own account, with no byte through the node, and is sent from the node when the store
@@ -26,8 +36,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **See what a mapping does, on one canvas.** A mapping now opens on **Overview**: its tables on the left, the record on the right, one
   line per property between them with what is done to its value on the way, and the cache tables, searches and parameters it looks
   values up in on a shelf above. Sections open with a click, pointing at anything traces it, **YAML** ties each line of the document
-  to the canvas, and **Show a record** follows a staged row through the mapping. Right-clicking a table shows its first 100 rows
-  under the canvas, a cache table's records or a search's records in OSDU. `POST /mapping-builder/outline`,
+  to the canvas, and **Show a record** follows a staged row through the mapping. Every part has a right-click menu: a table
+  shows its first 100 rows under the canvas (a cache table's records, a search's records in OSDU), the parameters their values,
+  and the record's heading the record rendered as a document, copied as Markdown or JSON. `POST /mapping-builder/outline`,
   `GET /flows/{id}/source-tables` and `POST /flows/{id}/table-rows` answer the same
   ([a mapping's overview](osdu/docs/reference/concepts/mapping-overview.md)).
 
@@ -411,6 +422,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   curve `MD` among its curves ([Assertions](osdu/docs/reference/flow/assertion.md#assertions)).
 
 ### Changed
+- A removal flow whose delivery flow's record table carries the soft-delete column now writes to it: it needs `UPDATE` on the table
+  through the delivery flow's source connection, and fails before taking anything out when the write is refused. A deletion is also
+  lifted when its row is loaded again, and a row loaded again after its deleted mark is no longer held
+  ([the ingestion table's marks](osdu/docs/reference/flow/removal-marks.md)).
 - **A mapping is a page of its own.** The Mappings list opens with its search ready, finding a mapping by anything its row shows,
   and a mapping opens on a full page with an address rather than a sheet, with any other mapping a searchable click away. The page
   fills the window with one toolbar and a handle between the records and the code that keeps its width. **Render**, **Source YAML**

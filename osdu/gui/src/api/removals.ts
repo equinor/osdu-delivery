@@ -53,6 +53,10 @@ export interface RemovalTally {
   failed: number;
   cameBack: number;
   lifted: number;
+  /** Rows of the delivery flow's record table the run marked deleted, as its deletions say. */
+  marked: number;
+  /** Rows of the record table whose deleted mark the run took off, as back in the source. */
+  unmarked: number;
 }
 
 /** One run of one removal of a removal flow, as the ledger of the delivery flow it wrote to keeps it. */
@@ -210,10 +214,12 @@ export interface RemovalApprovalAccepted {
   expected: number;
 }
 
-/** How many records' removals a lift lifted, and the deliver run it queued when asked to. */
+/** How many records' removals a lift lifted, the deliver run it queued when asked to, and why their rows keep a deleted mark. */
 export interface RemovalLiftResult {
   lifted: number;
   runId?: string | null;
+  /** Why the record table's rows keep their deleted mark, when the lift could not take it off; absent when it did. */
+  marksKept?: string | null;
 }
 
 /** The most records one lift names. */

@@ -445,7 +445,7 @@ public sealed class SubmissionIntake
                 through,
                 submission.SubmissionId,
                 _time.GetUtcNow().UtcDateTime,
-                Delivery.Snapshots.RenderContext.Parse(submission.RenderContext).RulesHash()),
+                ScopeReads.WatermarkRules(flow, Delivery.Snapshots.RenderContext.Parse(submission.RenderContext).RulesHash())),
             ct).ConfigureAwait(false);
     }
 

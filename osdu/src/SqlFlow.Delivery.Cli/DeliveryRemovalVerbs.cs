@@ -153,8 +153,8 @@ internal static class DeliveryRemovalVerbs
         using var runtime = FlowRuntime.ForTarget(flow.Interface is null ? engine : engine.ForInterface(flow.Interface), flow);
         runtime.Actor = RunActors.LocalAccount();
         var done = await runtime.LiftRemovalsAsync(keys, ct).ConfigureAwait(false);
-        var lifted = keys.Where(done.Contains).Select(k => k.ToString()).ToList();
-        var not = keys.Where(k => !done.Contains(k)).Select(k => k.ToString()).ToList();
+        var lifted = keys.Where(done.Lifted.Contains).Select(k => k.ToString()).ToList();
+        var not = keys.Where(k => !done.Lifted.Contains(k)).Select(k => k.ToString()).ToList();
 
         if (context.Json)
         {
@@ -164,12 +164,17 @@ internal static class DeliveryRemovalVerbs
                 ["flowId"] = flow.Id.ToString(),
                 ["lifted"] = new JsonArray(lifted.Select(k => (JsonNode)k).ToArray()),
                 ["notRemoved"] = new JsonArray(not.Select(k => (JsonNode)k).ToArray()),
+                ["marksKept"] = done.MarksKept,
             }));
             return 0;
         }
 
         context.Out.WriteLine(string.Create(CultureInfo.InvariantCulture,
             $"{label}: lifted the removal of {lifted.Count} record(s); the flow's next run delivers them again."));
+        if (done.MarksKept is { } kept)
+        {
+            context.Out.WriteLine("  but " + kept);
+        }
         foreach (var key in not)
         {
             context.Out.WriteLine($"  {key}: the ledger keeps its key out for no removal");
@@ -202,7 +207,7 @@ internal static class DeliveryRemovalVerbs
             context.Out.WriteLine(string.Create(CultureInfo.InvariantCulture,
                 $"  {run.RemovalRunId,6}  {run.Status,-10}  {run.Operation,-6}  {run.Entry} -> {run.DeliveryFlow}  {Stamp(run.StartedUtc)}  by {run.Actor}"));
             context.Out.WriteLine(string.Create(CultureInfo.InvariantCulture,
-                $"          {t.SourceKeys} source key(s), {t.ListedKeys} listed, {t.IngestionKeys} in the table, {t.Compared} compared; {t.Detected} found removed ({t.AwaitingApproval} held), {t.CameBack} came back, {t.Lifted} lifted"));
+                $"          {t.SourceKeys} source key(s), {t.ListedKeys} listed, {t.IngestionKeys} in the table, {t.Compared} compared; {t.Detected} found removed ({t.AwaitingApproval} held), {t.CameBack} came back, {t.Lifted} lifted; {t.Marked} row(s) marked deleted, {t.Unmarked} unmarked"));
             context.Out.WriteLine(string.Create(CultureInfo.InvariantCulture,
                 $"          {t.Removed} removed from OSDU, {t.AlreadyGone} already gone, {t.Settled} settled, {t.KeptOut} kept out; {t.Referenced} referenced, {t.Shared} shared, {t.Busy} busy, {t.Failed} failed"));
             if (run.Error is { Length: > 0 } error)
@@ -245,6 +250,8 @@ internal static class DeliveryRemovalVerbs
         ["failed"] = run.Tally.Failed,
         ["cameBack"] = run.Tally.CameBack,
         ["lifted"] = run.Tally.Lifted,
+        ["marked"] = run.Tally.Marked,
+        ["unmarked"] = run.Tally.Unmarked,
         ["guardPercent"] = run.GuardPercent,
         ["guardRecords"] = run.GuardRecords,
         ["approvedBy"] = run.ApprovedBy,

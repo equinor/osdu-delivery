@@ -212,7 +212,9 @@ public sealed record RemovalGuard
 /// <summary>
 /// One removal of a removal flow (<c>removals[]</c>): the delivery flow (and interface) whose ledger it compares and writes to,
 /// the values of that flow's parameters the comparison is scoped by, and the sources of the keys: the keys the source holds
-/// now (<see cref="Keys"/>), the keys it lists as removed (<see cref="Removed"/>), or both.
+/// now (<see cref="Keys"/>), the keys it lists as removed (<see cref="Removed"/>), both, or neither, when the delivery flow's
+/// record table marking its rows deleted (SQLFlow's key match) is the source of the removed keys. The marks are read whatever
+/// the removal declares.
 /// </summary>
 public sealed record RemovalEntry
 {
@@ -235,7 +237,7 @@ public sealed record RemovalEntry
     /// <summary>Whether a record other records in OSDU still name stays there until they are gone (<c>keepReferenced</c>, the default).</summary>
     public bool KeepReferenced { get; init; } = true;
 
-    /// <summary>The source's current, complete key set; null for a removal that reads only a source of removed keys.</summary>
+    /// <summary>The source's current, complete key set; null for a removal that reads only removed keys, or only the record table's marks.</summary>
     public RemovalKeySource? Keys { get; init; }
 
     /// <summary>A source of keys the source removed, each with the moment it was removed; null for none.</summary>

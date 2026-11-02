@@ -6,7 +6,7 @@
   "includeEnvelope": true,
   "generatedFrom": "osdu/docs/reference/flow/delivery.md and osdu/src/SqlFlow.Delivery/Documents/YamlModels.cs",
   "naming": "The loader deserializes with YamlDotNet's CamelCaseNamingConvention and refuses any key it does not know.",
-  "keyCount": 651,
+  "keyCount": 655,
   "keys": [
     {
       "path": "batch",
@@ -620,6 +620,12 @@
       "required": false,
       "description": "The most child rows one record may carry, 1 to 1000000. A record with more child rows than this is held rather than rendered.",
       "default": "100000"
+    },
+    {
+      "path": "interfaces.<name>.datasets.<name>.filter",
+      "type": "string",
+      "required": false,
+      "description": "A predicate narrowing the child rows every read of the dataset takes, appended as written with its own leading AND (`AND [kept] = 1`); its columns are the child table's. A child row it leaves out is in no record's document. One predicate, as the interface's `record.filter` is."
     },
     {
       "path": "interfaces.<name>.datasets.<name>.object",
@@ -1337,7 +1343,7 @@
       "path": "interfaces.<name>.record",
       "type": "object",
       "required": true,
-      "description": "The interface's record table, as `source.record` declares it: `object`, `key`, `primaryKey`, `scope` and `maxRecords`."
+      "description": "The interface's record table, as `source.record` declares it: `object`, `key`, `primaryKey`, `scope`, `filter` and `maxRecords`."
     },
     {
       "path": "interfaces.<name>.record.key",
@@ -1356,6 +1362,12 @@
       "type": "integer",
       "required": false,
       "description": "The most records a run of the interface's scope reads, 1 to 1000: every deliver, plan, intake and replan run reads only the first records of its scope, in the order a read pages in (`primaryKey`, or the record key without one), by key, and the scope keeps no watermark while it is set. A hard limit for a smoke test before the whole scope goes: a run's payload `maxRecords` may ask for fewer, never more. Leave it out to read the scope whole."
+    },
+    {
+      "path": "interfaces.<name>.record.filter",
+      "type": "string",
+      "required": false,
+      "description": "A predicate narrowing the record table's rows every read of the interface takes, appended to the read's WHERE as written, so it carries its own leading AND (`AND DeletedDate_DW IS NULL`, `AND [status] <> 'draft'`); its columns are the record table's. A row it leaves out is read by no run, as a row of another scope is not, and a read by key finds it outside the run's scope. One predicate: a `;`, a comment, or a parenthesis, string or quoted name it does not close is refused. Leave it out to read every row of the scope."
     },
     {
       "path": "interfaces.<name>.record.object",
@@ -2786,6 +2798,12 @@
       "default": "100000"
     },
     {
+      "path": "source.datasets.<name>.filter",
+      "type": "string",
+      "required": false,
+      "description": "A predicate narrowing the child rows every read of the dataset takes, appended as written with its own leading AND (`AND [kept] = 1`); its columns are the child table's. A child row it leaves out is in no record's document. One predicate, as `source.record.filter` is."
+    },
+    {
       "path": "source.datasets.<name>.object",
       "type": "string",
       "required": true,
@@ -2937,7 +2955,7 @@
       "path": "source.record",
       "type": "object",
       "required": false,
-      "description": "The record table, one row per record: its three-part name (`object`), its key columns (`key`), optionally its identity primary key (`primaryKey`), a `scope` bound to parameters and the most records a run reads (`maxRecords`).",
+      "description": "The record table, one row per record: its three-part name (`object`), its key columns (`key`), optionally its identity primary key (`primaryKey`), a `scope` bound to parameters, a `filter` narrowing its rows and the most records a run reads (`maxRecords`).",
       "appliesWhen": "Required in the single form. Refused at the source level when the document declares interfaces: each interface declares its own `record`."
     },
     {
@@ -2957,6 +2975,12 @@
       "type": "integer",
       "required": false,
       "description": "The most records a run of the scope reads, 1 to 1000: every deliver, plan, intake and replan run reads only the first records of its scope, in the order a read pages in (`primaryKey`, or the record key without one), by key, and the scope keeps no watermark while it is set. A hard limit for a smoke test before the whole scope goes: a run's payload `maxRecords` may ask for fewer, never more. Leave it out to read the scope whole."
+    },
+    {
+      "path": "source.record.filter",
+      "type": "string",
+      "required": false,
+      "description": "A predicate narrowing the record table's rows every read of the flow takes, appended to the read's WHERE as written, so it carries its own leading AND (`AND DeletedDate_DW IS NULL`, `AND [status] <> 'draft'`); its columns are the record table's. A row it leaves out is read by no run, as a row of another scope is not, and a read by key finds it outside the run's scope. One predicate: a `;`, a comment, or a parenthesis, string or quoted name it does not close is refused. Leave it out to read every row of the scope."
     },
     {
       "path": "source.record.object",

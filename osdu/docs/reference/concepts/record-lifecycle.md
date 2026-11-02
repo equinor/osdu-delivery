@@ -158,6 +158,9 @@ that moment; when neither half differs it settles the record with an attempt (`s
 
 A row the ingestion table marks deleted is never delivered and never removed as a side effect: its hold says
 `the ingestion table marked the record row deleted at <time>; a deleted row is never delivered. Remove the record from OSDU deliberately, or restore the row in the source.`
+A row loaded again after its mark is back, and is decided as any other. A [removal flow](../flow/removal-marks.md) makes a
+deliberate removal of the marks: it takes the marked rows' records out of OSDU (`deleted`, attempt `source-removed`), and a
+delivery flow whose [filter](../flow/delivery-filter.md) leaves marked rows out never reads them, so nothing is held.
 
 ## Attempts
 

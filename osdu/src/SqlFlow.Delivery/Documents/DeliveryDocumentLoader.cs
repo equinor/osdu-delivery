@@ -1752,6 +1752,7 @@ internal static partial class FlowMapper
                 Join = Trimmed(declared.Join),
                 OrderBy = (declared.OrderBy ?? []).Select(c => c?.Trim() ?? string.Empty).ToList(),
                 MaxRowsPerRecord = declared.MaxRowsPerRecord ?? FlowSourceDataset.DefaultMaxRowsPerRecord,
+                Filter = Optional(declared.Filter),
                 Files = declared.Files is { } files ? MapDatasetFiles(files, at + ".files", source) : null,
             };
         }
@@ -1780,6 +1781,7 @@ internal static partial class FlowMapper
                 Key = (record.Key ?? []).Select(k => k?.Trim() ?? string.Empty).ToList(),
                 PrimaryKey = Optional(record.PrimaryKey),
                 Scope = Trimmed(record.Scope),
+                Filter = Optional(record.Filter),
                 MaxRecords = record.MaxRecords,
             },
             Datasets = datasets,
@@ -1863,6 +1865,7 @@ internal static partial class FlowMapper
                 $"{source}: {paths.Record}.maxRecords is {src.Record.MaxRecords}; a run reads the first 1 to {FlowSourceTable.MaxRecordsCeiling:N0} records of its scope, or leave it out to read the scope whole."));
         }
 
+        CheckFilter(src.Record.Filter, $"{paths.Record}.filter", source);
         foreach (var (column, parameter) in src.Record.Scope)
         {
             CheckColumn(column, $"{paths.Record}.scope", source);
@@ -1916,6 +1919,8 @@ internal static partial class FlowMapper
                 throw new FlowValidationException(
                     string.Create(CultureInfo.InvariantCulture, $"{source}: {at}.maxRowsPerRecord must be between 1 and {FlowSourceDataset.MaxRowsPerRecordCeiling}."));
             }
+
+            CheckFilter(dataset.Filter, at + ".filter", source);
 
             if (dataset.Files is { } files)
             {
@@ -2055,6 +2060,15 @@ internal static partial class FlowMapper
         {
             throw new FlowValidationException(
                 string.Create(CultureInfo.InvariantCulture, $"{source}: {key} names a column '{column}'; a column name is 1 to {MaxColumnLength} characters, without brackets, control characters or surrounding space."));
+        }
+    }
+
+    /// <summary>A predicate a table's reads append (<see cref="SourceFilter"/>), when the flow declares one.</summary>
+    private static void CheckFilter(string? filter, string key, string source)
+    {
+        if (filter is not null && SourceFilter.Problem(filter) is { } problem)
+        {
+            throw new FlowValidationException($"{source}: {key} is '{SourceFilter.Shown(filter)}'; {problem}.");
         }
     }
 

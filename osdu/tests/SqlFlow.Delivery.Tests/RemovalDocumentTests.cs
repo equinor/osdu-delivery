@@ -158,13 +158,14 @@ public sealed class RemovalDocumentTests
     }
 
     [Fact]
-    public void A_flow_names_at_least_one_and_at_most_fifty_removals_each_reading_at_least_one_source()
+    public void A_flow_names_at_least_one_and_at_most_fifty_removals_each_reading_its_sources_or_the_record_tables_marks()
     {
         Assert.Contains("removals names no removal", Refused(Head), StringComparison.Ordinal);
         Assert.Contains("removals names no removal", Refused(Head + "removals: []\n"), StringComparison.Ordinal);
         var many = Head + "removals:\n" + string.Concat(Enumerable.Range(0, 51).Select(i => $"  - {{ flow: f{i}, keys: {{ type: csv, location: d{i} }} }}\n"));
         Assert.Contains("names 51 removals; a flow names at most 50", Refused(many), StringComparison.Ordinal);
-        Assert.Contains("removals[0] declares neither keys", Refused(Head + "removals:\n  - { flow: a }\n"), StringComparison.Ordinal);
+        var marks = Assert.Single(Parse(Head + "removals:\n  - { flow: a }\n").Entries);
+        Assert.Equal((null, null), (marks.Keys, marks.Removed));
         Assert.Contains("removals[0].flow", Refused(Head + "removals:\n  - { keys: { type: csv, location: a } }\n"), StringComparison.Ordinal);
     }
 

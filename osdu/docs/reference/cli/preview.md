@@ -197,7 +197,8 @@ OK  welldb-wellbore-03-delivery: welldb:WB-0001 [<label>]
 
 The JSON is the preview record, camelCase, properties without a value left out: `flow`, `interface`, `flowId`, `asked`
 (`key`, `how`, `keyParts`, `keyColumns`, `passedOver`, `passedOverWhy`, `scopeRecords`, `values`), `found`, `reason`,
-`inputs` (`mapping`, `kind`, `templateVersion`, `cachePartition`, `cacheVersion`, `contextHash`), `route` (`protocol`,
+`inputs` (`mapping`, `kind`, `templateVersion`, `cachePartition`, `cacheVersion`, `contextHash`, `parameters`: the values the
+mapping's parameters rendered with, references resolved), `route` (`protocol`,
 `reason`, `ddms`), `source` (`sourceKey`, `keyParts`, `deliveryKey`, `label`, `identities`, `originFile`, `originRow`,
 `originUpdatedUtc`, `fingerprint`, `deletedUtc`, `hold`, `row`, `datasets`, `omitted`), `decision` (`action`,
 `skipTier`, `reason`, `deliverMetadata`, `deliverPayload`, `ledger`), `document` (`targetId`, `kind`, `metadataHash`,

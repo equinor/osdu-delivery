@@ -677,8 +677,10 @@ public sealed class Planner
             }
 
             // A soft-deleted record row is not delivered: what OSDU holds is removed deliberately, through a removal
-            // that records itself, never as a side effect of a row disappearing from a table.
-            if (record.DeletedUtc is { } deleted)
+            // that records itself, never as a side effect of a row disappearing from a table. A row loaded again after its
+            // mark is back, as SQLFlow's key match and a removal flow both take a mark off a key that comes back
+            // (osdu/docs/reference/flow/removal-marks.md): it is decided as any other.
+            if (record.DeletedUtc is { } deleted && (record.Origin.UpdatedUtc is not { } loaded || loaded <= deleted))
             {
                 entries.Add(basis with
                 {

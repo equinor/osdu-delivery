@@ -322,6 +322,9 @@ export function RemovedKeysGrid({ ledgerFlowId, state, onState, keyColumns, lift
                 ? "None of them was kept out any more: nothing lifted."
                 : `Lifted the removal of ${result.lifted.toLocaleString("en-US")} record${result.lifted === 1 ? "" : "s"}${result.runId ? "; a deliver run delivers them now." : "; the flow's next run delivers them."}`,
               result.runId ? { action: { label: "Open run", onClick: () => navigate(`/runs/${result.runId}`) } } : undefined);
+            if (result.marksKept) {
+              toast.warning(`Lifted, but ${result.marksKept}`);
+            }
             void queryClient.invalidateQueries({ queryKey: ["delivery"] });
           }}
         />

@@ -22,7 +22,8 @@ function Count({ value, title, body, tone, testId }: { value: number; title: str
 
 /**
  * Removal runs, newest first: how each ended, when and who ran it, what it read, what it found removed (and held for approval),
- * what it finished and what it left for the next run, and what came back. Every count says what it is made of on hover; a
+ * what it finished and what it left for the next run, what came back, and the rows of the record table it marked deleted or
+ * unmarked. Every count says what it is made of on hover; a
  * run opens its platform run, with its log and trace. `showRemoval` names the removal flow and removal of each, for a ledger
  * several removals write to.
  */
@@ -110,6 +111,19 @@ export function RemovalRunsTable({ runs, showRemoval = false, toolbar, emptyMess
           title="Came back"
           body={`${row.tally.cameBack.toLocaleString("en-US")} whose row arrived after their removal, so they were not removed\n${row.tally.lifted.toLocaleString("en-US")} deletions lifted: the source holds the key again, or the record was delivered again`}
           testId={`${testId}-back`}
+        />
+      ),
+    },
+    {
+      id: "marks",
+      header: "Marks",
+      align: "right",
+      render: (row) => (
+        <Count
+          value={row.tally.marked + row.tally.unmarked}
+          title="Rows of the record table"
+          body={`${row.tally.marked.toLocaleString("en-US")} marked deleted, as the ledger's deletions say\n${row.tally.unmarked.toLocaleString("en-US")} unmarked: back in the source, for the delivery to read again`}
+          testId={`${testId}-marks`}
         />
       ),
     },

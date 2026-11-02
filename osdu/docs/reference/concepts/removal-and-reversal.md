@@ -406,6 +406,10 @@ ways:
 - **The record is kept out, not delivered again.** The plan delivers no row of the key that is not newer than its removal,
   and a record's attempt (phase `source-removed`) says which removal flow took it out and why. A newer row, the key coming
   back in the source, or an operator's **Deliver again** lifts the deletion, and the record follows its source again.
+- **The ingestion table says so too.** The removal marks the record table's rows of the keys it removes deleted, as SQLFlow's
+  key match does, reads the rows the key match marked as removed keys, and unmarks a row whose key came back, so a delivery
+  flow that leaves marked rows out with a filter never reads a removed row and reads it again once it is back
+  ([the ingestion table's marks](../flow/removal-marks.md)).
 
 A run that finds more removed than its guard allows takes nothing out and waits for an operator's approval
 ([The guard](../flow/removal.md#the-guard)).
@@ -422,7 +426,7 @@ submission ran with, 1,000 records a page:
 | The row's arrival (`InsertedDate_DW`) is missing from the ledger, or differs | Writes it to the record. |
 | The row changed past both versions the ledger holds, and no plan saw it | Asks for the record to be planned; the next run reads it by key and decides it. |
 | The ingestion table marked the row deleted without the ledger knowing | Asks for it to be planned; the next run holds it as a deleted row. |
-| The row is gone from the table, or outside the record's scope | Writes a `skipped` attempt, phase `source-missing`, once. The record keeps its status: removing it from OSDU stays a removal someone asks for, or a [removal flow](../flow/removal.md) finds. |
+| The row is gone from the table, or outside the record's scope (another scope's, or one the flow's [filter](../flow/delivery-filter.md) leaves out) | Writes a `skipped` attempt, phase `source-missing`, once. The record keeps its status: removing it from OSDU stays a removal someone asks for, or a [removal flow](../flow/removal.md) finds. A record already out of OSDU (`deleted`) that nothing asks to plan agrees, and nothing is written. |
 | A record held because its row was deleted, whose row is no longer deleted | Counts it, for an operator to release. |
 | Everything agrees | Nothing. |
 

@@ -376,6 +376,13 @@ public sealed record FlowSourceTable
     public IReadOnlyDictionary<string, string> Scope { get; init; } = new Dictionary<string, string>(StringComparer.Ordinal);
 
     /// <summary>
+    /// A predicate narrowing the record table's rows every read of the flow takes (<c>filter</c>), appended as written with its
+    /// own leading <c>AND</c> (<see cref="Source.SourceFilter"/>), such as <c>AND DeletedDate_DW IS NULL</c>: a row it leaves out
+    /// is read by no run, as a row of another scope is not. Null reads every row of the scope.
+    /// </summary>
+    public string? Filter { get; init; }
+
+    /// <summary>
     /// The most records a run of the scope reads (<c>maxRecords</c>), 1 to <see cref="MaxRecordsCeiling"/>: every deliver,
     /// plan, intake and replan run reads only the first records of its scope, in the order a read pages in, by key, so the
     /// scope keeps no watermark while it is set. A hard limit for a smoke test of the flow; a run's payload may ask for fewer,
@@ -405,6 +412,12 @@ public sealed record FlowSourceDataset
 
     /// <summary>The most child rows one record may carry; a record above it is held rather than rendered.</summary>
     public int MaxRowsPerRecord { get; init; } = DefaultMaxRowsPerRecord;
+
+    /// <summary>
+    /// A predicate narrowing the child rows every read takes (<c>filter</c>), appended as written with its own leading
+    /// <c>AND</c>: a child row it leaves out is in no record's document. Null reads every child row of a record.
+    /// </summary>
+    public string? Filter { get; init; }
 
     /// <summary>
     /// The files each row names (<c>source.datasets.&lt;name&gt;.files</c>, osdu/docs/reference/flow/enrich-records.md): where

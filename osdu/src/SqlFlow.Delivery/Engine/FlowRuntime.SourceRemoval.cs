@@ -1,5 +1,7 @@
 using System.Collections.Concurrent;
 using System.Globalization;
+using Microsoft.Extensions.Logging;
+using SqlFlow.Core;
 using SqlFlow.Delivery.Engine.Search;
 using SqlFlow.Delivery.Engine.Snapshots;
 using SqlFlow.Delivery.Http;
@@ -7,6 +9,7 @@ using SqlFlow.Delivery.Identity;
 using SqlFlow.Delivery.Ledger;
 using SqlFlow.Delivery.Model;
 using SqlFlow.Delivery.Protocols;
+using SqlFlow.Delivery.Source;
 
 namespace SqlFlow.Delivery.Engine;
 
@@ -25,6 +28,14 @@ public sealed record SourceRemovalWork
     /// <summary>OSDU ids taken out earlier in the same removal run (its removals before this one), which no longer count as naming a record.</summary>
     public IReadOnlySet<string> RemovedBefore { get; init; } = new HashSet<string>(StringComparer.Ordinal);
 }
+
+/// <summary>What an operator's lift of removals came to.</summary>
+/// <param name="Lifted">The keys whose deletion the ledger held, and no longer keeps out.</param>
+/// <param name="MarksKept">
+/// Why the record table's rows of those keys keep their deleted mark, when it could not be taken off from where the lift ran;
+/// null when every row was unmarked or the table carries no mark.
+/// </param>
+public sealed record RemovalLift(IReadOnlySet<DeliveryKey> Lifted, string? MarksKept);
 
 /// <summary>What taking out the pending deletions of one delivery flow's ledger came to.</summary>
 public sealed record SourceRemovalSummary
@@ -92,13 +103,15 @@ public sealed partial class FlowRuntime
 
     /// <summary>
     /// Lifts, as an operator asked, the ledger's deletions of <paramref name="keys"/> (osdu/docs/reference/flow/removal.md,
-    /// Delivering a record again): each key is no longer kept out, and a record the removal took out is asked to be planned
-    /// again, so the flow's next run reads its row and delivers it under its id. Recorded as one <c>lift-removal</c> activity
-    /// naming every record lifted. Returns the keys lifted; a key the ledger keeps out for no removal is left out of it. While the
-    /// source still does not hold a key, the removal flow's next run finds it removed again.
+    /// Delivering a record again): each key is no longer kept out, a record the removal took out is asked to be planned again,
+    /// and its row in the record table loses its deleted mark, so the flow's next run reads its row and delivers it under its
+    /// id. Recorded as one <c>lift-removal</c> activity naming every record lifted, whose summary says when the rows keep their
+    /// mark because the record table could not be reached or written from here. Returns the keys lifted, a key the ledger keeps
+    /// out for no removal left out of them, and why their rows keep their mark when they do. While the source still does not hold a key, the removal flow's next run finds it
+    /// removed again.
     /// </summary>
     /// <exception cref="DeliveryException">No key, or more than <see cref="MaxLift"/>, is named.</exception>
-    public Task<IReadOnlySet<DeliveryKey>> LiftRemovalsAsync(IReadOnlyList<DeliveryKey> keys, CancellationToken ct = default)
+    public Task<RemovalLift> LiftRemovalsAsync(IReadOnlyList<DeliveryKey> keys, CancellationToken ct = default)
     {
         ArgumentNullException.ThrowIfNull(keys);
         if (keys.Count is 0 or > MaxLift)
@@ -111,17 +124,59 @@ public sealed partial class FlowRuntime
         var parameters = new { count = keys.Count, keys = keys.Count <= 20 ? keys.Select(k => k.ToString()).ToList() : null };
         return TrackAsync(SourceRemovals.LiftActivityKind, parameters, keys.Count == 1 ? keys[0] : null, async (long? activity) =>
         {
-            var lifted = await RequireLedger().LiftRemovedKeysAsync(Flow.Id, keys, activity, _context.Time.GetUtcNow().UtcDateTime, ct).ConfigureAwait(false);
+            var held = await RequireLedger().LiftRemovedKeysAsync(Flow.Id, keys, activity, _context.Time.GetUtcNow().UtcDateTime, ct).ConfigureAwait(false);
+            IReadOnlySet<DeliveryKey> lifted = held.Keys.ToHashSet();
+            string? kept = null;
             if (lifted.Count > 0)
             {
+                kept = await UnmarkLiftedAsync(held, ct).ConfigureAwait(false);
                 await EmitAsync("record.removal-lifted", [.. lifted], $"removal lifted by {Actor}: the flow's next run delivers the records again", ct).ConfigureAwait(false);
             }
 
             var summary = lifted.Count == 0
                 ? "the ledger keeps none of the keys out for a removal"
-                : string.Create(CultureInfo.InvariantCulture, $"lifted the removal of {lifted.Count} record(s): the flow's next run delivers them again");
-            return (lifted, summary, (Guid?)null, lifted.Count == 0);
+                : string.Create(CultureInfo.InvariantCulture, $"lifted the removal of {lifted.Count} record(s): the flow's next run delivers them again")
+                    + (kept is null ? string.Empty : "; " + kept);
+            return (new RemovalLift(lifted, kept), summary, (Guid?)null, lifted.Count == 0);
         }, ct);
+    }
+
+    /// <summary>
+    /// Takes the deleted mark off the record table's rows of the deletions a lift took away (osdu/docs/reference/flow/
+    /// removal-marks.md), when the table carries the soft-delete column: a filter that leaves marked rows out would
+    /// otherwise never let the flow read them again, and the removal flow's next run would find the mark and take the record
+    /// out again. The lift stands whatever this comes to, as it did before a removal marked anything: when the table cannot be
+    /// reached or written from where the lift runs, the answer says the rows keep their mark and why, and the log warns.
+    /// </summary>
+    /// <returns>Null when every row is unmarked or the table carries no mark; else why the rows keep their mark.</returns>
+    private async Task<string?> UnmarkLiftedAsync(IReadOnlyDictionary<DeliveryKey, string?> lifted, CancellationToken ct)
+    {
+        var rows = lifted.Values.OfType<string>().Select(KeyTuple.FromJson).ToList();
+        if (rows.Count == 0)
+        {
+            return null;
+        }
+
+        try
+        {
+            if ((await Source.DescribeAsync(ct).ConfigureAwait(false)).Layout.Deleted is null)
+            {
+                return null;
+            }
+
+            var unmarked = await Source.MarkDeletedAsync(rows, deleted: false, ct).ConfigureAwait(false);
+            _log.LogInformation("Lift of {Count} removal(s) of {Flow}: {Unmarked} row(s) of {Table} unmarked.", lifted.Count, Flow.Label, unmarked, Flow.Source.Record.Object);
+            return null;
+        }
+        catch (Exception ex) when (ex is DeliveryException or FlowValidationException)
+        {
+            var kept = string.Create(CultureInfo.InvariantCulture, $"their rows in {Flow.Source.Record.Object} keep any deleted mark, which could not be taken off from here: ")
+                + HeaderRedaction.RedactMessage(ex.Message)
+                + ". The flow does not deliver a row its filter leaves out, and the removal flow's next run finds a mark and takes the record out "
+                + "again: take the mark off the rows in the table, or let the removal flow run where the flow's source connection may update the table.";
+            _log.LogWarning("Lift of {Count} removal(s) of {Flow}: {Kept}", lifted.Count, Flow.Label, kept);
+            return kept;
+        }
     }
 
     /// <summary>

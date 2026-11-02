@@ -113,13 +113,13 @@
       "path": "removals",
       "type": "list",
       "required": true,
-      "description": "The removals, at least one and at most 50, names unique ignoring case. Each names the delivery flow whose records it takes out and where it reads that flow's keys: `keys`, the keys the source holds now, `removed`, the keys it lists as removed, or both."
+      "description": "The removals, at least one and at most 50, names unique ignoring case. Each names the delivery flow whose records it takes out and where it reads that flow's removed keys: `keys`, the keys the source holds now, `removed`, the keys it lists as removed, and always the record table's own deleted marks (SQLFlow's key match, or an earlier removal run)."
     },
     {
       "path": "removals[]",
       "type": "object",
       "required": true,
-      "description": "One removal: the delivery flow (`flow`, and `interface` for a source with interfaces) whose ledger it compares and writes to, the values of that flow's parameters it compares under (`values`), and its key sources (`keys`, `removed`)."
+      "description": "One removal: the delivery flow (`flow`, and `interface` for a source with interfaces) whose ledger it compares and writes to, the values of that flow's parameters it compares under (`values`), and its key sources (`keys`, `removed`). With neither, the rows the record table marks deleted are its removed keys. It marks the record table's rows deleted as its deletions say, and takes the mark off a row whose key comes back."
     },
     {
       "path": "removals[].flow",
@@ -144,7 +144,7 @@
       "path": "removals[].keys",
       "type": "object",
       "required": false,
-      "description": "The keys the source holds now, its complete key set, read whole every run: a key the ledger or the record table holds that this read does not is removed, as of when the read began. A date window (`options.initFromFileDate`, `initToFileDate`, `incrementalAfterDate`) is refused, since a part of the source would make every key outside it look removed. Leave it out for a removal that reads only `removed`. A key source is either a SQLFlow source reader (`type`, `location`, `options`: files of any format SQLFlow reads, their schema found as they are read) or a table or view of a source database (`connection`, `provider`, `object`, `filter`), never both."
+      "description": "The keys the source holds now, its complete key set, read whole every run: a key the ledger or the record table holds that this read does not is removed, as of when the read began. A date window (`options.initFromFileDate`, `initToFileDate`, `incrementalAfterDate`) is refused, since a part of the source would make every key outside it look removed. Leave it out for a removal that reads only `removed`, or only the record table's marks. A key source is either a SQLFlow source reader (`type`, `location`, `options`: files of any format SQLFlow reads, their schema found as they are read) or a table or view of a source database (`connection`, `provider`, `object`, `filter`), never both."
     },
     {
       "path": "removals[].keys.columns",
@@ -268,7 +268,7 @@
       "path": "removals[].removed",
       "type": "object",
       "required": false,
-      "description": "A source listing the keys the source removed, each as of a moment (`removedAt`): a key it lists is removed, unless a row of the key arrived in the record table after that moment. It may be read in part (a date window is taken), since it only ever removes less. Leave it out for a removal that reads only `keys`. A key source is either a SQLFlow source reader (`type`, `location`, `options`: files of any format SQLFlow reads, their schema found as they are read) or a table or view of a source database (`connection`, `provider`, `object`, `filter`), never both."
+      "description": "A source listing the keys the source removed, each as of a moment (`removedAt`): a key it lists is removed, unless a row of the key arrived in the record table after that moment. It may be read in part (a date window is taken), since it only ever removes less. Leave it out for a removal that reads only `keys`, or only the record table's marks. A key source is either a SQLFlow source reader (`type`, `location`, `options`: files of any format SQLFlow reads, their schema found as they are read) or a table or view of a source database (`connection`, `provider`, `object`, `filter`), never both."
     },
     {
       "path": "removals[].removed.columns",

@@ -688,6 +688,126 @@ public sealed class SqlServerIngestionSourceTests
         return rows;
     }
 
+    [Fact]
+    public async Task A_filter_narrows_every_read_to_the_rows_it_keeps_while_a_removal_reads_and_marks_the_whole_scope()
+    {
+        await using var estate = await SqlServerIngestionFixture.StartAsync();
+        var table = await CreateTableAsync(
+            estate,
+            "Filtered",
+            "[RecId] bigint IDENTITY(1, 1) NOT NULL CONSTRAINT [PK_Filtered] PRIMARY KEY CLUSTERED, [item_key] nvarchar(50) NOT NULL, [status] nvarchar(20) NULL, [UpdatedDate_DW] datetime NULL, [DeletedDate_DW] datetime NULL",
+            "CREATE UNIQUE NONCLUSTERED INDEX [NCI_KeyColumn] ON {0} ([item_key]);");
+        var child = await CreateTableAsync(
+            estate,
+            "FilteredChild",
+            "[item_key] nvarchar(50) NOT NULL, [line] int NOT NULL, [UpdatedDate_DW] datetime NULL, [DeletedDate_DW] datetime NULL",
+            string.Empty);
+
+        // A live row, a row marked deleted and a draft; the live row has a child row of each kind too.
+        await ExecuteAsync(estate, $"""
+            INSERT INTO {table} ([item_key], [status], [UpdatedDate_DW], [DeletedDate_DW])
+            VALUES (N'live', N'active', @loaded, NULL), (N'marked', N'active', @loaded, @changed), (N'draft', N'draft', @loaded, NULL);
+            INSERT INTO {child} ([item_key], [line], [UpdatedDate_DW], [DeletedDate_DW])
+            VALUES (N'live', 1, @loaded, NULL), (N'live', 2, @loaded, NULL);
+            """);
+        var item = ItemFlow(estate, "Filtered");
+        var flow = item with
+        {
+            Source = item.Source with
+            {
+                Record = item.Source.Record with { Filter = "AND DeletedDate_DW IS NULL AND [status] <> 'draft'" },
+                Datasets = new Dictionary<string, FlowSourceDataset>(StringComparer.Ordinal)
+                {
+                    ["lines"] = new()
+                    {
+                        Object = $"[{estate.DatabaseName}].[{estate.SilverSchema}].[FilteredChild]",
+                        Join = new Dictionary<string, string>(StringComparer.Ordinal) { ["item_key"] = "item_key" },
+                        OrderBy = ["line"],
+                        Filter = "AND [line] <> 2",
+                    },
+                },
+            },
+        };
+        var source = estate.Engine.Sources.Open(flow, NoValues, NullLoggerFactory.Instance);
+
+        // Every read takes the rows the filter keeps, and the child rows its own filter keeps: a whole read, and a read by key,
+        // which finds the rows the filter leaves out in the table, outside the run's scope.
+        Assert.Equal(["live"], await ReadKeysAsync(source, SourceSelection.Full()));
+        var named = await source.OpenAsync(SourceSelection.ForKeys([KeyTuple.Of("live"), KeyTuple.Of("marked"), KeyTuple.Of("draft")]), null);
+        Assert.Equal(["draft", "marked"], named.OutOfScopeKeys.Select(k => k.Values[0]).Order(StringComparer.Ordinal));
+        await foreach (var record in source.ReadAsync(named, null))
+        {
+            Assert.Equal("live", record.Row.GetString("item_key"));
+            Assert.Equal([1L], record.Scopes["lines"].Select(r => Convert.ToInt64(r.Get("line"), CultureInfo.InvariantCulture)));
+        }
+
+        // The first records of a scope are the ones the filter keeps; a removal reads every row of it, each with its mark.
+        Assert.Equal(["live"], await KeysAsync(source, SourceKeyRead.Read));
+        var whole = new Dictionary<string, DateTime?>(StringComparer.Ordinal);
+        await foreach (var key in source.ReadKeysAsync(10, SourceKeyRead.Whole))
+        {
+            whole[key.Key.Values[0]] = key.DeletedUtc;
+        }
+
+        Assert.Equal(["draft", "live", "marked"], whole.Keys.Order(StringComparer.Ordinal));
+        Assert.Equal((null, Changed), (whole["live"], whole["marked"]));
+
+        // Marking writes only the rows not marked yet, and the filter then leaves them out.
+        Assert.Equal(1L, await source.MarkDeletedAsync([KeyTuple.Of("live"), KeyTuple.Of("marked")], deleted: true));
+        Assert.Empty(await ReadKeysAsync(source, SourceSelection.Full()));
+
+        // Taking the mark off writes only the marked rows, and stamps their update column, so an incremental read meets them.
+        var before = DateTime.UtcNow.AddMinutes(-1);
+        Assert.Equal(2L, await source.MarkDeletedAsync([KeyTuple.Of("live"), KeyTuple.Of("marked"), KeyTuple.Of("draft")], deleted: false));
+        Assert.Equal(["live", "marked"], await ReadKeysAsync(source, SourceSelection.Incremental(Changed)));
+        Assert.All(await KeysWithMomentsAsync(source), k => Assert.True(k.Key.Values[0] == "draft" || k.UpdatedUtc > before));
+
+        // A table without the soft-delete column has no row to mark.
+        _ = await CreateTableAsync(
+            estate,
+            "Unmarkable",
+            "[RecId] bigint IDENTITY(1, 1) NOT NULL CONSTRAINT [PK_Unmarkable] PRIMARY KEY CLUSTERED, [item_key] nvarchar(50) NOT NULL, [UpdatedDate_DW] datetime NULL",
+            "CREATE UNIQUE NONCLUSTERED INDEX [NCI_KeyColumn] ON {0} ([item_key]);");
+        var plain = estate.Engine.Sources.Open(ItemFlow(estate, "Unmarkable"), NoValues, NullLoggerFactory.Instance);
+        var refused = await Assert.ThrowsAsync<DeliveryException>(() => plain.MarkDeletedAsync([KeyTuple.Of("x")], deleted: true));
+        Assert.Contains("carries no soft-delete column", refused.Message, StringComparison.Ordinal);
+    }
+
+    private static async Task<List<string>> ReadKeysAsync(IIngestionSource source, SourceSelection selection)
+    {
+        var header = await source.OpenAsync(selection, null);
+        var keys = new List<string>();
+        await foreach (var record in source.ReadAsync(header, null))
+        {
+            keys.Add(record.Row.GetString("item_key")!);
+        }
+
+        keys.Sort(StringComparer.Ordinal);
+        return keys;
+    }
+
+    private static async Task<List<string>> KeysAsync(IIngestionSource source, SourceKeyRead read)
+    {
+        var keys = new List<string>();
+        await foreach (var key in source.ReadKeysAsync(10, read))
+        {
+            keys.Add(key.Key.Values[0]);
+        }
+
+        return keys;
+    }
+
+    private static async Task<List<IngestionKey>> KeysWithMomentsAsync(IIngestionSource source)
+    {
+        var keys = new List<IngestionKey>();
+        await foreach (var key in source.ReadKeysAsync(10, SourceKeyRead.Whole))
+        {
+            keys.Add(key);
+        }
+
+        return keys;
+    }
+
     private static FlowDefinition ItemFlow(SqlServerIngestionFixture estate, string table, int pageSize = FlowIncremental.DefaultPageSize)
     {
         var sample = estate.DeliveryFlow();

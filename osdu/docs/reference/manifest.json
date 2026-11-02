@@ -2065,7 +2065,10 @@
         "preview rows",
         "first 100 rows",
         "right-click a table",
-        "table-rows"
+        "table-rows",
+        "rendered record",
+        "parameter values",
+        "right-click menu"
       ],
       "related": [
         "delivery-flow-mapping",
@@ -2081,12 +2084,15 @@
         "osdu/src/SqlFlow.Delivery.ControlPlane/Api/DeliveryTemplateEndpoints.cs",
         "osdu/src/SqlFlow.Delivery.ControlPlane/Api/DeliveryValueCheckEndpoints.cs",
         "osdu/src/SqlFlow.Delivery/Engine/Operations/TableRowsOperation.cs",
+        "osdu/src/SqlFlow.Delivery/Engine/Preview/RecordPreviewer.cs",
         "osdu/src/SqlFlow.Delivery/Source/SqlServerIngestionSource.cs",
         "osdu/gui/src/features/delivery/overview/MappingOverview.tsx",
         "osdu/gui/src/features/delivery/overview/OverviewCanvas.ts",
+        "osdu/gui/src/features/delivery/overview/OverviewRendered.tsx",
         "osdu/gui/src/features/delivery/overview/OverviewRows.tsx",
         "osdu/gui/src/features/delivery/overview/outlineLayout.ts",
         "osdu/gui/src/features/delivery/overview/outlineModel.ts",
+        "osdu/gui/src/features/delivery/overview/recordMarkdown.ts",
         "osdu/gui/src/features/delivery/overview/tableRows.ts"
       ]
     },
@@ -3473,6 +3479,7 @@
       "yamlPath": "(root, flowType: delivery)",
       "related": [
         "delivery-flow-delivery-record-table",
+        "delivery-flow-delivery-filter",
         "delivery-flow-delivery-errors",
         "delivery-flow-interfaces",
         "delivery-flow-enrich",
@@ -3548,6 +3555,49 @@
         "osdu/src/SqlFlow.Delivery/Documents/DeliveryFlowKind.cs",
         "osdu/src/SqlFlow.Delivery/Documents/WorkflowMapper.cs",
         "osdu/src/SqlFlow.Delivery/Documents/YamlModels.cs"
+      ]
+    },
+    {
+      "id": "delivery-flow-delivery-filter",
+      "corpus": "reference",
+      "path": "flow/delivery-filter.md",
+      "title": "Narrowing the rows a delivery reads (source.record.filter, source.datasets.<name>.filter): rows marked deleted, drafts",
+      "type": "flow-reference",
+      "summary": "A filter is one SQL predicate a delivery appends to every read of its record table or a child dataset: rows it leaves out are never read, planned or sent.",
+      "keywords": [
+        "filter",
+        "source.record.filter",
+        "source.datasets.filter",
+        "record.filter",
+        "narrow the rows read",
+        "leave out deleted rows",
+        "DeletedDate_DW IS NULL",
+        "rows marked deleted",
+        "never push deleted rows",
+        "skip draft rows",
+        "where clause on the record table",
+        "filter on a child dataset",
+        "a filter is one predicate",
+        "leading AND"
+      ],
+      "yamlPath": "source.record.filter, source.datasets.<name>.filter (flowType: delivery)",
+      "related": [
+        "delivery-flow-delivery",
+        "delivery-flow-delivery-record-table",
+        "delivery-flow-removal",
+        "delivery-flow-removal-marks",
+        "delivery-concept-change-detection",
+        "delivery-concept-removal-and-reversal",
+        "delivery-wiki-0043-removal-marks-the-ingestion-table"
+      ],
+      "sourceRefs": [
+        "osdu/src/SqlFlow.Delivery/Source/SourceFilter.cs",
+        "osdu/src/SqlFlow.Delivery/Source/IngestionSql.cs",
+        "osdu/src/SqlFlow.Delivery/Source/SqlServerIngestionSource.cs",
+        "osdu/src/SqlFlow.Delivery/Documents/DeliveryDocumentLoader.cs",
+        "osdu/src/SqlFlow.Delivery/Engine/ScopeReads.cs",
+        "osdu/src/SqlFlow.Delivery/Engine/SourceSync.cs",
+        "osdu/docs/census/keys.delivery.json"
       ]
     },
     {
@@ -5435,6 +5485,8 @@
         "detect deleted rows",
         "keys the source no longer holds",
         "removed keys list",
+        "rows marked deleted",
+        "matchKeys results",
         "full key read",
         "source key comparison",
         "ledger deletions",
@@ -5453,6 +5505,8 @@
       ],
       "yamlPath": "(root, flowType: removal)",
       "related": [
+        "delivery-flow-removal-marks",
+        "delivery-flow-delivery-filter",
         "delivery-cli-removal",
         "delivery-cli-records",
         "delivery-concept-removal-and-reversal",
@@ -5491,6 +5545,57 @@
         "osdu/gui/src/features/delivery/removals/RemovedKeysGrid.tsx",
         "osdu/docs/census/keys.removal.json",
         "osdu/samples/welldb/flows/welldb-wellbore-05-removal.yaml"
+      ]
+    },
+    {
+      "id": "delivery-flow-removal-marks",
+      "corpus": "reference",
+      "path": "flow/removal-marks.md",
+      "title": "The ingestion table's marks: a removal flow reads the rows marked deleted as removed keys, and marks and unmarks them",
+      "type": "flow-reference",
+      "summary": "How a removal flow extends SQLFlow's matchKeys: rows marked deleted are removed keys, the rows it takes out are marked, and a key that comes back is unmarked.",
+      "keywords": [
+        "DeletedDate_DW",
+        "deleted mark",
+        "soft delete mark",
+        "mark rows deleted",
+        "unmark",
+        "tag deleted rows",
+        "matchKeys results",
+        "key match",
+        "removal from the ingestion table",
+        "marked",
+        "removal reads no source",
+        "row comes back",
+        "data comes back",
+        "re-emerged record",
+        "delivered again as a new record",
+        "Marked",
+        "Unmarked"
+      ],
+      "yamlPath": "removals[] (flowType: removal)",
+      "related": [
+        "delivery-flow-removal",
+        "delivery-flow-delivery-filter",
+        "delivery-flow-delivery",
+        "delivery-concept-removal-and-reversal",
+        "delivery-concept-change-detection",
+        "delivery-table-removed-key",
+        "delivery-table-removal-key",
+        "delivery-table-removal-run",
+        "delivery-wiki-0022-removal-flows",
+        "delivery-wiki-0043-removal-marks-the-ingestion-table",
+        "flow-ing-load"
+      ],
+      "sourceRefs": [
+        "osdu/src/SqlFlow.Delivery/Engine/Removals/RemovalRunner.cs",
+        "osdu/src/SqlFlow.Delivery/Ledger/SqlServerLedgerBulk.Removal.cs",
+        "osdu/src/SqlFlow.Delivery/Ledger/SourceRemovals.cs",
+        "osdu/src/SqlFlow.Delivery/Source/IngestionSql.cs",
+        "osdu/src/SqlFlow.Delivery/Source/SqlServerIngestionSource.cs",
+        "osdu/src/SqlFlow.Delivery/Engine/FlowRuntime.SourceRemoval.cs",
+        "osdu/src/SqlFlow.Delivery/Engine/Planning/Planner.cs",
+        "osdu/src/SqlFlow.Delivery/Documents/RemovalDocumentMapper.cs"
       ]
     },
     {
@@ -6577,6 +6682,55 @@
         "osdu/src/SqlFlow.Delivery.ControlPlane/Api/DeliveryEndpoints.cs",
         "sqlflow/src/SqlFlow.Sources/SourceFormatDetector.cs",
         "sqlflow/src/SqlFlow.ControlPlane/Background/ScheduleFire.cs"
+      ]
+    },
+    {
+      "id": "delivery-guide-rows-deleted-in-the-source",
+      "corpus": "reference",
+      "path": "guides/rows-deleted-in-the-source.md",
+      "title": "Rows deleted in the source: never delivered, taken out of OSDU with the ledger saying so, and delivered again as new when they come back",
+      "type": "guide",
+      "summary": "Set up the ingestion, removal and delivery flows so a row the source deletes is never sent, its record leaves OSDU, and a row that comes back is new.",
+      "keywords": [
+        "deleted rows",
+        "rows deleted in the source",
+        "never push deleted rows",
+        "delete from osdu when the source deletes",
+        "DeletedDate_DW",
+        "matchKeys",
+        "key match",
+        "removal flow",
+        "filter deleted rows",
+        "source.record.filter",
+        "mark deleted",
+        "row comes back",
+        "data comes back",
+        "re-emergence",
+        "deleted then restored",
+        "held as source-deleted"
+      ],
+      "related": [
+        "delivery-flow-removal-marks",
+        "delivery-flow-delivery-filter",
+        "delivery-flow-removal",
+        "delivery-flow-delivery",
+        "delivery-concept-removal-and-reversal",
+        "delivery-concept-record-lifecycle",
+        "delivery-concept-change-detection",
+        "delivery-cli-removal",
+        "delivery-cli-records",
+        "delivery-guide-operations-runbook",
+        "delivery-wiki-0043-removal-marks-the-ingestion-table",
+        "flow-ing-load"
+      ],
+      "sourceRefs": [
+        "osdu/src/SqlFlow.Delivery/Engine/Removals/RemovalRunner.cs",
+        "osdu/src/SqlFlow.Delivery/Ledger/SqlServerLedgerBulk.Removal.cs",
+        "osdu/src/SqlFlow.Delivery/Source/IngestionSql.cs",
+        "osdu/src/SqlFlow.Delivery/Engine/Planning/Planner.cs",
+        "osdu/src/SqlFlow.Delivery/Engine/FlowRuntime.SourceRemoval.cs",
+        "osdu/src/SqlFlow.Delivery/Engine/SourceSync.cs",
+        "sqlflow/src/SqlFlow.SqlServer/Schema/MatchKeyGenerator.cs"
       ]
     },
     {
@@ -9356,6 +9510,7 @@
       ],
       "related": [
         "delivery-wiki-0013-inventory-flows",
+        "delivery-wiki-0043-removal-marks-the-ingestion-table",
         "delivery-wiki-0014-inventory-removals",
         "delivery-wiki-0002-client-supplied-ids",
         "delivery-wiki-0024-scope-value-lists"
@@ -10046,6 +10201,35 @@
         "osdu/src/SqlFlow.Delivery/Storage/FileStore.cs",
         "osdu/specs/core/INTEGRATION.md",
         "osdu/tests/SqlFlow.Delivery.Tests/LargeFileLiveTests.cs"
+      ]
+    },
+    {
+      "id": "delivery-wiki-0043-removal-marks-the-ingestion-table",
+      "corpus": "wiki",
+      "path": "decisions/0043-removal-marks-the-ingestion-table.md",
+      "title": "Decision 0043: a removal flow extends SQLFlow's key match, and a delivery leaves marked rows out with a filter",
+      "type": "decision",
+      "summary": "Why a removal reads the ingestion table's deleted marks as removed keys and marks what it takes out, and why a delivery narrows its reads with a filter.",
+      "keywords": [
+        "removal marks the ingestion table",
+        "DeletedDate_DW",
+        "matchKeys results",
+        "source.record.filter",
+        "never push deleted rows",
+        "deleted row comes back",
+        "re-emergence"
+      ],
+      "related": [
+        "delivery-wiki-0022-removal-flows"
+      ],
+      "sourceRefs": [
+        "osdu/src/SqlFlow.Delivery/Engine/Removals/RemovalRunner.cs",
+        "osdu/src/SqlFlow.Delivery/Ledger/SqlServerLedgerBulk.Removal.cs",
+        "osdu/src/SqlFlow.Delivery/Source/IngestionSql.cs",
+        "osdu/src/SqlFlow.Delivery/Source/SourceFilter.cs",
+        "osdu/src/SqlFlow.Delivery/Engine/Planning/Planner.cs",
+        "osdu/src/SqlFlow.Delivery/Engine/FlowRuntime.SourceRemoval.cs",
+        "sqlflow/src/SqlFlow.SqlServer/Schema/MatchKeyGenerator.cs"
       ]
     },
     {

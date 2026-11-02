@@ -223,6 +223,15 @@ public sealed class SourceSync
     private static SourceSyncFinding? Decide(RecordState record, SourceRecord? row, bool outOfScope, AttemptRecord? latest, Tally tally)
     {
         var reportedNotFound = latest is { Outcome: AttemptOutcome.Skipped, Phase: AttemptPhases.SourceMissing };
+
+        // A record out of OSDU whose row is gone, or left out by the flow's filter (a removal flow marks the rows it takes
+        // out), agrees with its source when nothing asks for it to be planned: there is nothing to report.
+        if (row is null && record.Status == RecordStatus.Deleted && record.PlanRequestedUtc is null)
+        {
+            tally.InAgreement++;
+            return null;
+        }
+
         if (row is null)
         {
             tally.NotFound++;

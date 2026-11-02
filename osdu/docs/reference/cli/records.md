@@ -442,9 +442,11 @@ ledger's record's status, left out when it holds none), `state`, `reason`, `remo
 
 Lifts the deletions of the records `--key` names (at most 1,000), as `cli:<user>@<machine>`
 ([Delivering a record again](../flow/removal.md#delivering-a-record-again)): their keys are no longer kept out, and a
-record the removal took out is asked to be planned again, so the flow's next run reads its row and delivers it under its
-id. Every record lifted is named under one `lift-removal` activity. While the source still does not hold a key, the removal
-flow's next run finds it removed again.
+record the removal took out is asked to be planned again, and its row in the record table is unmarked, so the flow's next
+run reads its row and delivers it under its id. Every record lifted is named under one `lift-removal` activity. While the
+source still does not hold a key, the removal flow's next run finds it removed again. When the record table cannot be
+reached or written from this machine, the lift stands and a line under it, `but their rows in <table> keep any deleted mark
+...`, says why.
 
 ```text
 welldb-wellbore-03-delivery: lifted the removal of 1 record(s); the flow's next run delivers them again.
@@ -452,7 +454,7 @@ welldb-wellbore-03-delivery: lifted the removal of 1 record(s); the flow's next 
 ```
 
 A key the ledger holds no deletion of is named and passed over, and the command exits 1. `--json`: `flow`, `flowId`,
-`lifted` and `notRemoved`, the delivery keys of each.
+`lifted` and `notRemoved`, the delivery keys of each, and `marksKept` when the rows keep their mark.
 
 ## Examples
 

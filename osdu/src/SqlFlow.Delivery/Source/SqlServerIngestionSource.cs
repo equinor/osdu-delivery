@@ -53,6 +53,9 @@ public sealed class SqlServerIngestionSource : IIngestionSource
     /// <summary>The longest origin file name the ledger stores for a record.</summary>
     private const int MaxFileNameLength = 800;
 
+    /// <summary>How many keys one statement marks deleted, or takes the mark off.</summary>
+    private const int MarkChunk = 5000;
+
     private readonly FlowDefinition _flow;
     private readonly IReadOnlyDictionary<string, string> _values;
     private readonly ISecretResolver _secrets;
@@ -266,7 +269,7 @@ public sealed class SqlServerIngestionSource : IIngestionSource
             new[] { _fileNameColumn, _rowNumberColumn }.OfType<string>().ToList());
     }
 
-    public async IAsyncEnumerable<IngestionKey> ReadKeysAsync(int pageSize, [EnumeratorCancellation] CancellationToken ct = default)
+    public async IAsyncEnumerable<IngestionKey> ReadKeysAsync(int pageSize, SourceKeyRead read, [EnumeratorCancellation] CancellationToken ct = default)
     {
         ArgumentOutOfRangeException.ThrowIfLessThan(pageSize, 1);
         await using var connection = await IngestionConnection.OpenAsync(_flow.Source.Connection, _flow.Name, _secrets, ct).ConfigureAwait(false);
@@ -277,7 +280,7 @@ public sealed class SqlServerIngestionSource : IIngestionSource
         {
             ct.ThrowIfCancellationRequested();
             var page = new List<(IngestionKey Key, KeyTuple Order)>(pageSize);
-            await using (var command = Command(connection, IngestionSql.KeyPage(layout, after is not null)))
+            await using (var command = Command(connection, IngestionSql.KeyPage(layout, after is not null, read)))
             {
                 BindScope(command, layout);
                 if (after is not null)
@@ -298,7 +301,10 @@ public sealed class SqlServerIngestionSource : IIngestionSource
                             ?? throw new DeliveryException($"The record table {layout.Record} returned a null in column '{layout.Order[i].Name}', which cannot place a record.");
                     }
 
-                    page.Add((new IngestionKey(key, updated), new KeyTuple(order)));
+                    var deleted = layout.Deleted is not null && SourceValues.Normalize(reader.GetValue(keys + 1 + order.Length)) is DateTime gone
+                        ? DateTime.SpecifyKind(gone, DateTimeKind.Utc)
+                        : (DateTime?)null;
+                    page.Add((new IngestionKey(key, updated, deleted), new KeyTuple(order)));
                 }
             }
 
@@ -713,7 +719,8 @@ public sealed class SqlServerIngestionSource : IIngestionSource
                 dataset.OrderBy,
                 Optional(columns, source.SystemColumns.Updated)?.Name,
                 Optional(columns, source.SystemColumns.Deleted)?.Name,
-                dataset.MaxRowsPerRecord));
+                dataset.MaxRowsPerRecord,
+                dataset.Filter));
         }
 
         _layout = new IngestionLayout
@@ -723,6 +730,7 @@ public sealed class SqlServerIngestionSource : IIngestionSource
             PrimaryKey = primaryKey,
             Updated = updated.Name,
             Deleted = deleted?.Name,
+            Filter = source.Record.Filter,
             Scope = source.Record.Scope
                 .Select(s => new IngestionScope(s.Key, s.Value, _values.TryGetValue(s.Value, out var given) ? RunValueList.Items(given).Count : 1))
                 .ToList(),
@@ -1003,6 +1011,36 @@ public sealed class SqlServerIngestionSource : IIngestionSource
         {
             command.Parameters.Add(record[layout.Order[i].Name].Parameter(prefix + i.ToString(CultureInfo.InvariantCulture), value.Values[i]));
         }
+    }
+
+    public async Task<long> MarkDeletedAsync(IReadOnlyList<KeyTuple> keys, bool deleted, CancellationToken ct = default)
+    {
+        ArgumentNullException.ThrowIfNull(keys);
+        if (keys.Count == 0)
+        {
+            return 0;
+        }
+
+        await using var connection = await IngestionConnection.OpenAsync(_flow.Source.Connection, _flow.Name, _secrets, ct).ConfigureAwait(false);
+        var layout = await BuildLayoutAsync(connection, ct).ConfigureAwait(false);
+        if (layout.Deleted is null)
+        {
+            throw new DeliveryException(
+                $"Flow '{_flow.Label}': the record table {layout.Record} carries no soft-delete column ({_keys.Name("source.systemColumns.deleted")}), so no row of it can be marked deleted.");
+        }
+
+        long written = 0;
+        foreach (var chunk in keys.Chunk(MarkChunk))
+        {
+            await using var command = Command(connection, IngestionSql.MarkDeleted(layout, deleted));
+            BindScope(command, layout);
+            BindKeys(command, chunk);
+            written += Convert.ToInt64(
+                await ExecuteScalarAsync(command, deleted ? "mark rows deleted" : "take the deleted mark off rows", ct).ConfigureAwait(false) ?? 0L,
+                CultureInfo.InvariantCulture);
+        }
+
+        return written;
     }
 
     private static void BindKeys(SqlCommand command, IReadOnlyList<KeyTuple> keys)

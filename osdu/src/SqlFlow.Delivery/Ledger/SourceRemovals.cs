@@ -26,6 +26,12 @@ public static class SourceRemovals
     /// <summary>The source lists the key as removed.</summary>
     public const string Listed = "listed";
 
+    /// <summary>
+    /// The delivery flow's record table marks the key's row deleted (its soft-delete column, which SQLFlow's key match stamps),
+    /// as of the moment of the mark.
+    /// </summary>
+    public const string Marked = "marked";
+
     /// <summary>A removed key the run's guard held: nothing is done with it, and no row of it is kept out, until an operator approves.</summary>
     public const string AwaitingApproval = "awaiting-approval";
 
@@ -228,6 +234,12 @@ public sealed record RemovalTally
 
     public long Lifted { get; init; }
 
+    /// <summary>Rows of the record table marked deleted, as the ledger's deletions say.</summary>
+    public long Marked { get; init; }
+
+    /// <summary>Rows of the record table whose deleted mark was taken off, as back in the source.</summary>
+    public long Unmarked { get; init; }
+
     /// <summary>The counts of both, side by side.</summary>
     public RemovalTally Add(RemovalTally other)
     {
@@ -252,6 +264,8 @@ public sealed record RemovalTally
             Failed = Failed + other.Failed,
             CameBack = CameBack + other.CameBack,
             Lifted = Lifted + other.Lifted,
+            Marked = Marked + other.Marked,
+            Unmarked = Unmarked + other.Unmarked,
         };
     }
 
@@ -281,6 +295,14 @@ public sealed record RemovalTally
         };
     }
 }
+
+/// <summary>
+/// A row of the delivery flow's record table whose deleted mark a removal sets or takes off (<see cref="ILedger.RemovalMarksAsync"/>).
+/// </summary>
+/// <param name="Key">The row's delivery key.</param>
+/// <param name="SourceKeyJson">The row's key tuple, a JSON array of the key columns' values as text, in the record key's order.</param>
+/// <param name="Mark">True to mark the row deleted; false to take the mark off it.</param>
+public sealed record RemovalMark(DeliveryKey Key, string SourceKeyJson, bool Mark);
 
 /// <summary>One key a removal stages (<see cref="ILedger.StageRemovalKeysAsync"/>), already derived to its delivery key.</summary>
 public sealed record StagedRemovalKey

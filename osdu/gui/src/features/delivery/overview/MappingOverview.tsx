@@ -1,7 +1,11 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { useQuery } from "@tanstack/react-query";
-import { ChevronLeft, ChevronRight, ChevronsDownUp, ChevronsUpDown, FileCode, Loader2, Maximize, Minus, OctagonAlert, PanelRight, Plus, Rows3, Table2, TriangleAlert } from "lucide-react";
+import {
+  ChevronLeft, ChevronRight, ChevronsDownUp, ChevronsUpDown, Copy, FileCode, FileText, Loader2, Maximize, Minus, OctagonAlert, PanelRight, Plus, Rows3, SlidersHorizontal, Table2,
+  TriangleAlert,
+} from "lucide-react";
+import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
@@ -18,22 +22,29 @@ import { ProblemView } from "../TemplateSheet";
 import { ValueCheckScope } from "../ValueCheckBar";
 import { flowScope, type ValueCheckSession } from "../useValueCheck";
 import { formatCount } from "../valueCheck";
-import { OverviewCanvas, type OverviewHandlers, type OverviewPart, type OverviewTip } from "./OverviewCanvas";
+import { OverviewCanvas, type OverviewHandlers, type OverviewMenuTarget, type OverviewPart, type OverviewTip } from "./OverviewCanvas";
 import { INSPECTOR_WIDTH, OverviewInspector } from "./OverviewInspector";
+import { OverviewDocument, OverviewParameters } from "./OverviewRendered";
 import { OverviewRows } from "./OverviewRows";
 import { OverviewYaml } from "./OverviewYaml";
 import { layoutOf } from "./outlineLayout.ts";
 import {
   cardsOf, countsOf, defaultOpen, everyFolding, lightOfCard, lightOfField, lightOfRows, marksFor, nodeAt, nodeAtLine, opensTo, pathsOfHow, pathsOfSearch, rowShowing, rowsOf,
-  type OutlineCard, type OutlineLight,
+  type OutlineLight,
 } from "./outlineModel.ts";
-import { previewLabel, rowsSourceOf } from "./tableRows.ts";
+import { cardPreviewLabel, rowsSourceOf } from "./tableRows.ts";
 import { useRecordValues, type RecordValues } from "./useRecordValues";
 
 const ABOUT = "Each line is one property of the record, read left to right: the table it starts from, what is done to it, and the property it fills. "
   + "A dot is where a line is looked up in a table on the shelf above. A dashed mark is a condition, and a hollow end an optional property. "
-  + "Click a section to open it, and a property to see how it is filled. Right-click a table to look at its first rows. Hold Ctrl and scroll to zoom. "
-  + "Nothing is rendered here, unless you ask to show a record.";
+  + "Click a section to open it, and a property to see how it is filled. Right-click anything for what can be done with it: a table's rows, "
+  + "the parameters' values, the rendered record. Hold Ctrl and scroll to zoom. Nothing is rendered here, unless you ask for it.";
+
+/** What the panel under the canvas shows: a table's rows, the values the parameters render with, or the rendered record. */
+type Looking =
+  | { what: "rows"; card: string; field: string | null }
+  | { what: "parameters"; field: string | null }
+  | { what: "document" };
 
 /** The parts of a record's key, from the JSON array a staged row names it by; null for text that is not one. */
 function keyParts(keyJson: string | null | undefined): string[] | null {
@@ -50,35 +61,47 @@ function keyParts(keyJson: string | null | undefined): string[] | null {
   }
 }
 
-/** The menu a right click on a table or a field opens: a look at the table's rows, and the details the click would show. */
-function PartMenu({ menu, card, onPreview, onDetails, onClose }: {
-  menu: { part: OverviewPart; x: number; y: number } | null;
-  card: OutlineCard | null;
-  onPreview: () => void;
-  onDetails: () => void;
+/** One thing a menu offers: what it says, its glyph, and what it does. */
+interface MenuItem {
+  id: string;
+  label: string;
+  glyph: ReactNode;
+  act: () => void;
+}
+
+/** Copies a name for a reader, and says whether the browser let it. */
+function copyName(text: string, what: string): void {
+  navigator.clipboard.writeText(text).then(
+    () => toast.success(`Copied ${what}`),
+    () => toast.error("The browser denied clipboard access."),
+  );
+}
+
+/**
+ * The menu a right click opens, on whatever it is on: a table, a column, a property, the record's heading or the canvas. Each
+ * names what it is on, and offers what can be done with it there.
+ */
+function OverviewMenu({ menu, named, items, onClose }: {
+  menu: { x: number; y: number } | null;
+  named: string;
+  items: MenuItem[];
   onClose: () => void;
 }) {
-  const source = card === null ? null : rowsSourceOf(card);
-  const named = menu?.part.type === "field" ? menu.part.field : card?.title ?? "";
   return (
-    <DropdownMenu open={menu !== null && source !== null} onOpenChange={(open) => !open && onClose()}>
+    <DropdownMenu open={menu !== null} onOpenChange={(open) => !open && onClose()}>
       {/* An anchor at the pointer, so the menu opens where the click was. */}
       <DropdownMenuTrigger asChild>
         <span aria-hidden className="fixed size-px" style={{ top: menu?.y ?? 0, left: menu?.x ?? 0 }} />
       </DropdownMenuTrigger>
-      <DropdownMenuContent align="start" className="w-60" data-testid="mapping-overview-menu">
-        <DropdownMenuLabel className="truncate font-mono text-[12px] font-normal text-muted-foreground">{named}</DropdownMenuLabel>
+      <DropdownMenuContent align="start" className="w-64" data-testid="mapping-overview-menu">
+        <DropdownMenuLabel className="truncate font-mono text-[12px] font-normal text-muted-foreground" title={named}>{named}</DropdownMenuLabel>
         <DropdownMenuSeparator />
-        {source !== null && (
-          <DropdownMenuItem onSelect={onPreview} data-testid="mapping-overview-menu-preview">
-            <Table2 />
-            {previewLabel(source)}
+        {items.map((item) => (
+          <DropdownMenuItem key={item.id} onSelect={item.act} data-testid={`mapping-overview-menu-${item.id}`}>
+            {item.glyph}
+            {item.label}
           </DropdownMenuItem>
-        )}
-        <DropdownMenuItem onSelect={onDetails} data-testid="mapping-overview-menu-details">
-          <PanelRight />
-          Details
-        </DropdownMenuItem>
+        ))}
       </DropdownMenuContent>
     </DropdownMenu>
   );
@@ -175,9 +198,10 @@ function OverviewBody({ detail, outline, unfilled, issues, session, tools, onPro
   const [search, setSearch] = useState("");
   const [showYaml, setShowYaml] = useState(false);
   const [tip, setTip] = useState<OverviewTip | null>(null);
-  const [menu, setMenu] = useState<{ part: OverviewPart; x: number; y: number } | null>(null);
-  // The table whose rows are shown under the canvas, and the field it was asked for from.
-  const [looking, setLooking] = useState<{ card: string; field: string | null } | null>(null);
+  const [menu, setMenu] = useState<{ target: OverviewMenuTarget; x: number; y: number } | null>(null);
+  // Whether a menu is open, from the moment it is asked for until the key that closed it has gone by (see Escape below).
+  const menuOpen = useRef(false);
+  const [looking, setLooking] = useState<Looking | null>(null);
   const layout = usePersistentLayout("sqlflow.delivery.mapping.overview.layout");
   const rowsLayout = usePersistentLayout("sqlflow.delivery.mapping.overview.rows.layout");
 
@@ -213,12 +237,6 @@ function OverviewBody({ detail, outline, unfilled, issues, session, tools, onPro
   // What was just opened, whose rows are brought into view once they are drawn.
   const opened = useRef<string | null>(null);
 
-  // The tables as they stand, for what the canvas's menu asks of them.
-  const shownCards = useRef<OutlineCard[]>(cards);
-  useEffect(() => {
-    shownCards.current = cards;
-  }, [cards]);
-
   const handlers = useRef<OverviewHandlers>({
     point: setPointed,
     pick: setPicked,
@@ -238,14 +256,9 @@ function OverviewBody({ detail, outline, unfilled, issues, session, tools, onPro
     },
     clear: () => setPicked(null),
     leftOut: onProperties,
-    // A table with no rows to look at has nothing to offer but its details, which it shows at once.
-    menu: (part, at) => {
-      const card = part.type === "row" ? undefined : shownCards.current.find((candidate) => candidate.id === part.source);
-      if (card === undefined || rowsSourceOf(card) === null) {
-        setPicked(part);
-      } else {
-        setMenu({ part, ...at });
-      }
+    menu: (target, at) => {
+      menuOpen.current = true;
+      setMenu({ target, ...at });
     },
   });
 
@@ -261,7 +274,7 @@ function OverviewBody({ detail, outline, unfilled, issues, session, tools, onPro
       tip: (said) => handlers.current.tip(said),
       clear: () => handlers.current.clear(),
       leftOut: () => handlers.current.leftOut(),
-      menu: (part, at) => handlers.current.menu(part, at),
+      menu: (target, at) => handlers.current.menu(target, at),
     });
     canvas.current = drawn;
     return () => {
@@ -335,19 +348,28 @@ function OverviewBody({ detail, outline, unfilled, issues, session, tools, onPro
     }
   }, [picked]);
 
-  // Escape closes what was opened last: the details first, then the rows. A menu open takes it for itself.
-  const standing = useRef({ picked: false, menu: false });
+  // Escape closes what was opened last: the details first, then what is shown under the canvas. A menu open takes it for itself:
+  // the menu is counted open from the moment it is asked for until the key that closed it has gone by, which a render after it
+  // would be too late to say.
+  const pickedOpen = useRef(false);
   useEffect(() => {
-    standing.current = { picked: picked !== null, menu: menu !== null };
-  }, [picked, menu]);
+    pickedOpen.current = picked !== null;
+  }, [picked]);
+
+  const closeMenu = useCallback(() => {
+    setMenu(null);
+    setTimeout(() => {
+      menuOpen.current = false;
+    }, 0);
+  }, []);
 
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
-      if (event.key !== "Escape" || standing.current.menu) {
+      if (event.key !== "Escape" || menuOpen.current) {
         return;
       }
 
-      if (standing.current.picked) {
+      if (pickedOpen.current) {
         setPicked(null);
       } else {
         setLooking(null);
@@ -373,12 +395,18 @@ function OverviewBody({ detail, outline, unfilled, issues, session, tools, onPro
     setPicked(part);
   }, [outline, opensFor]);
 
-  // A table's rows are looked at from the table or one of its fields, whose column the rows then bring into view.
+  const fitView = useCallback(() => canvas.current?.fit(true), []);
+
+  // What a table holds is looked at from the table or one of its fields, whose column or line is then brought into view: a
+  // table's rows, or for the flow's parameters the values they render with.
   const lookAt = useCallback((part: OverviewPart) => {
-    if (part.type !== "row") {
-      setLooking({ card: part.source, field: part.type === "field" ? part.field : null });
+    if (part.type === "row") {
+      return;
     }
-  }, []);
+
+    const field = part.type === "field" ? part.field : null;
+    setLooking(part.source === cards.find((card) => card.source.kind === "parameters")?.id ? { what: "parameters", field } : { what: "rows", card: part.source, field });
+  }, [cards]);
 
   const onSearch = (next: string) => {
     setSearch(next);
@@ -422,20 +450,80 @@ function OverviewBody({ detail, outline, unfilled, issues, session, tools, onPro
   const repeats = cards.filter((card) => card.source.kind === "child" && card.repeater !== null)
     .map((card) => ({ name: nodeAt(outline, card.repeater!)?.name ?? card.title, table: card.subtitle === null ? null : card.title }));
   const problems = issues.filter((issue) => issue.target === null);
-  const lookingCard = looking === null ? null : cards.find((card) => card.id === looking.card && rowsSourceOf(card) !== null) ?? null;
-  const menuPart = menu?.part ?? null;
-  const menuSource = menuPart === null || menuPart.type === "row" ? null : menuPart.source;
-  const menuCard = cards.find((card) => card.id === menuSource) ?? null;
+  const lookingCard = looking?.what !== "rows" ? null : cards.find((card) => card.id === looking.card && rowsSourceOf(card) !== null) ?? null;
+  const parametersCard = cards.find((card) => card.source.kind === "parameters") ?? null;
+  const lookingAt = lookingCard !== null || (looking?.what === "parameters" && parametersCard !== null) || looking?.what === "document";
+  const recordKey = record.on ? record.line?.keyJson ?? null : null;
+
+  /** What the menu on `target` names it by, and what it offers there. */
+  function menuFor(target: OverviewMenuTarget | null): { named: string; items: MenuItem[] } {
+    const yaml: MenuItem = { id: "yaml", label: showYaml ? "Hide the YAML" : "Show the YAML", glyph: <FileCode />, act: () => setShowYaml((current) => !current) };
+    if (target === null) {
+      return { named: "", items: [] };
+    }
+
+    if (target.type === "canvas") {
+      return {
+        named: mapping.reference,
+        items: [
+          { id: "fit", label: "Fit to the window", glyph: <Maximize />, act: fitView },
+          { id: "open-all", label: allOpen ? "Fold" : "Open all", glyph: allOpen ? <ChevronsDownUp /> : <ChevronsUpDown />, act: () => setOpen(allOpen ? defaultOpen(outline) : everyFolding(outline)) },
+          yaml,
+        ],
+      };
+    }
+
+    if (target.type === "record") {
+      return {
+        named: outline.kind,
+        items: [
+          { id: "document", label: "Preview the rendered record", glyph: <FileText />, act: () => setLooking({ what: "document" }) },
+          yaml,
+          { id: "copy", label: "Copy the kind", glyph: <Copy />, act: () => copyName(outline.kind, "the kind") },
+        ],
+      };
+    }
+
+    if (target.type === "row") {
+      const path = target.path.split("|")[0];
+      return {
+        named: path,
+        items: [
+          { id: "details", label: "Details", glyph: <PanelRight />, act: () => pickShown(target) },
+          { id: "yaml-line", label: "Show in the YAML", glyph: <FileCode />, act: () => { setShowYaml(true); pickShown(target); } },
+          { id: "copy", label: "Copy the path", glyph: <Copy />, act: () => copyName(path, "the path") },
+        ],
+      };
+    }
+
+    const card = cards.find((candidate) => candidate.id === target.source);
+    const label = card === undefined ? null : cardPreviewLabel(card);
+    const table = card === undefined ? undefined : tables.data?.find((candidate) => (card.source.kind === "record" ? candidate.dataset === null : `dataset.${candidate.dataset}` === card.id));
+    const named = target.type === "field" ? target.field : card?.title ?? target.source;
+    return {
+      named,
+      items: [
+        ...(label === null ? [] : [{ id: "preview", label, glyph: card?.source.kind === "parameters" ? <SlidersHorizontal /> : <Table2 />, act: () => lookAt(target) }]),
+        { id: "details", label: "Details", glyph: <PanelRight />, act: () => pickShown(target) },
+        target.type === "field"
+          ? { id: "copy", label: "Copy the name", glyph: <Copy />, act: () => copyName(target.field, "the name") }
+          : { id: "copy", label: table === undefined ? "Copy the name" : "Copy the table's name", glyph: <Copy />, act: () => copyName(table?.table ?? named, "the name") },
+      ],
+    };
+  }
+
+  const menuOf = menuFor(menu?.target ?? null);
+  const { entity: recordEntity, version: recordVersion } = entityOf(outline.kind);
+
+  // Leaving the canvas for what is shown under it leaves a moment's wait behind, which would put the light out again.
+  const pointFromBelow = (part: OverviewPart | null) => {
+    canvas.current?.stopPointing();
+    setPointed(part);
+  };
 
   return (
     <div className="flex min-h-0 flex-1 flex-col gap-2" data-testid="mapping-overview">
-      <PartMenu
-        menu={menu}
-        card={menuCard}
-        onPreview={() => menu !== null && lookAt(menu.part)}
-        onDetails={() => menu !== null && pickShown(menu.part)}
-        onClose={() => setMenu(null)}
-      />
+      <OverviewMenu menu={menu} named={menuOf.named} items={menuOf.items} onClose={closeMenu} />
       {problems.map((issue, index) => (
         <p key={`${index}-${issue.message}`} className={cn("flex items-start gap-1.5 text-[13px]", issue.severity === "error" ? "text-destructive" : "text-warning")} data-testid="mapping-overview-issue">
           {issue.severity === "error" ? <OctagonAlert className="mt-0.5 size-3.5 shrink-0" /> : <TriangleAlert className="mt-0.5 size-3.5 shrink-0" />}
@@ -508,12 +596,12 @@ function OverviewBody({ detail, outline, unfilled, issues, session, tools, onPro
         {/* The canvas keeps its place in the tree whether or not the YAML is open: D3 owns what is inside its svg. */}
         <ResizablePanelGroup orientation="horizontal" className="min-h-0 flex-1" defaultLayout={showYaml ? layout.defaultLayout : undefined} onLayoutChanged={showYaml ? layout.onLayoutChanged : undefined}>
           <ResizablePanel id="overview-canvas" minSize="40" className="flex min-h-0 min-w-0 flex-col">
-            {/* The same for the rows under it: the canvas's panel stays first, whether or not a table's rows are shown. */}
+            {/* The same for what is shown under it: the canvas's panel stays first, whether or not anything is. */}
             <ResizablePanelGroup
               orientation="vertical"
               className="min-h-0 flex-1"
-              defaultLayout={lookingCard !== null ? rowsLayout.defaultLayout : undefined}
-              onLayoutChanged={lookingCard !== null ? rowsLayout.onLayoutChanged : undefined}
+              defaultLayout={lookingAt ? rowsLayout.defaultLayout : undefined}
+              onLayoutChanged={lookingAt ? rowsLayout.onLayoutChanged : undefined}
             >
               <ResizablePanel id="overview-canvas-frame" minSize="25" className="flex min-h-0 min-w-0 flex-col">
                 <div ref={frame} className="relative h-full min-h-0 min-w-0 overflow-hidden" data-testid="mapping-overview-canvas">
@@ -554,26 +642,38 @@ function OverviewBody({ detail, outline, unfilled, issues, session, tools, onPro
                   </div>
                 </div>
               </ResizablePanel>
-              {lookingCard !== null && (
+              {lookingAt && (
                 <>
                   <ResizableHandle withHandle />
                   <ResizablePanel id="overview-rows" defaultSize="40" minSize={120} maxSize="70" className="flex min-h-0 min-w-0 flex-col">
-                    <OverviewRows
-                      key={lookingCard.id}
-                      card={lookingCard}
-                      focus={looking?.field ?? null}
-                      session={session}
-                      partition={partition}
-                      tables={tables.data ?? null}
-                      shownKey={record.on ? keyParts(record.line?.keyJson) : null}
-                      onPoint={(part) => {
-                        // Leaving the canvas for the rows leaves a moment's wait behind, which would put the light out again.
-                        canvas.current?.stopPointing();
-                        setPointed(part);
-                      }}
-                      onPick={pickShown}
-                      onClose={() => setLooking(null)}
-                    />
+                    {lookingCard !== null && (
+                      <OverviewRows
+                        key={lookingCard.id}
+                        card={lookingCard}
+                        focus={looking?.what === "rows" ? looking.field : null}
+                        session={session}
+                        partition={partition}
+                        tables={tables.data ?? null}
+                        shownKey={record.on ? keyParts(record.line?.keyJson) : null}
+                        onPoint={pointFromBelow}
+                        onPick={pickShown}
+                        onClose={() => setLooking(null)}
+                      />
+                    )}
+                    {looking?.what === "parameters" && parametersCard !== null && (
+                      <OverviewParameters
+                        card={parametersCard}
+                        focus={looking.field}
+                        session={session}
+                        recordKey={recordKey}
+                        onPoint={pointFromBelow}
+                        onPick={pickShown}
+                        onClose={() => setLooking(null)}
+                      />
+                    )}
+                    {looking?.what === "document" && (
+                      <OverviewDocument title={`${recordEntity} ${recordVersion}`} session={session} recordKey={recordKey} onClose={() => setLooking(null)} />
+                    )}
                   </ResizablePanel>
                 </>
               )}

@@ -156,6 +156,35 @@ public sealed class ScopeValueListTests
     };
 
     [Fact]
+    public void A_filter_reads_the_rows_it_keeps_as_a_table_of_their_own_and_a_removal_reads_and_marks_the_whole_scope()
+    {
+        var layout = Layout(1) with
+        {
+            Deleted = "DeletedDate_DW",
+            Filter = "AND DeletedDate_DW IS NULL",
+            Datasets = [new IngestionDataset("curves", SourceObjectName.Parse("OsduData.silver.WellLogCurve"), [new("log_id", "log_id")], [], "UpdatedDate_DW", null, 10, "AND [kept] = 1")],
+        };
+        const string rows = "(SELECT * FROM [OsduData].[silver].[WellLog] WHERE 1 = 1 AND DeletedDate_DW IS NULL) r";
+        const string children = "(SELECT * FROM [OsduData].[silver].[WellLogCurve] WHERE 1 = 1 AND [kept] = 1) c";
+
+        Assert.Contains(rows, IngestionSql.CandidateCount(layout, SourceSelectionKind.Incremental, hasLower: true), StringComparison.Ordinal);
+        Assert.Contains(children, IngestionSql.CandidateCount(layout, SourceSelectionKind.Incremental, hasLower: true), StringComparison.Ordinal);
+        Assert.Contains(rows, IngestionSql.PageRows(layout), StringComparison.Ordinal);
+        Assert.Contains(children, IngestionSql.PageRows(layout), StringComparison.Ordinal);
+        Assert.Contains(rows, IngestionSql.KeyPage(layout, after: false), StringComparison.Ordinal);
+        Assert.Contains("EXISTS (SELECT 1 FROM (SELECT * FROM [OsduData].[silver].[WellLog] WHERE 1 = 1 AND DeletedDate_DW IS NULL) f WHERE f.[log_id] = r.[log_id])", IngestionSql.KeyProbe(layout), StringComparison.Ordinal);
+
+        // A removal's read of the keys takes every row of the scope, with its mark, and marks rows by key in the scope.
+        var whole = IngestionSql.KeyPage(layout, after: false, SourceKeyRead.Whole);
+        Assert.Contains("FROM [OsduData].[silver].[WellLog] r", whole, StringComparison.Ordinal);
+        Assert.Contains(", r.[DeletedDate_DW]", whole, StringComparison.Ordinal);
+        Assert.Contains("SET r.[DeletedDate_DW] = SYSUTCDATETIME()", IngestionSql.MarkDeleted(layout, deleted: true), StringComparison.Ordinal);
+        Assert.Contains("WHERE r.[DeletedDate_DW] IS NULL AND r.[log_source] = @scope0", IngestionSql.MarkDeleted(layout, deleted: true), StringComparison.Ordinal);
+        Assert.Contains("SET r.[DeletedDate_DW] = NULL, r.[UpdatedDate_DW] = SYSUTCDATETIME()", IngestionSql.MarkDeleted(layout, deleted: false), StringComparison.Ordinal);
+        Assert.Contains("WHERE r.[DeletedDate_DW] IS NOT NULL AND", IngestionSql.MarkDeleted(layout, deleted: false), StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void One_value_compares_the_column_with_it_and_several_select_the_rows_holding_any()
     {
         Assert.Contains("WHERE r.[log_source] = @scope0 AND r.[region_id] = @scope1", IngestionSql.KeyPage(Layout(1), after: false), StringComparison.Ordinal);

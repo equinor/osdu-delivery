@@ -139,11 +139,6 @@ internal static partial class RemovalMapper
             var values = MapValues(y.Values, parameters, $"{path}.values", source);
             var keys = y.Keys is null ? null : MapSource(y.Keys, full: true, $"{path}.keys", parameters, source);
             var removed = y.Removed is null ? null : MapSource(y.Removed, full: false, $"{path}.removed", parameters, source);
-            if (keys is null && removed is null)
-            {
-                throw new FlowValidationException(
-                    $"{source}: {path} declares neither keys (the keys the source holds now) nor removed (the keys it lists as removed); a removal reads at least one.");
-            }
 
             entries.Add(new RemovalEntry
             {
@@ -287,10 +282,9 @@ internal static partial class RemovalMapper
         }
 
         var filter = Optional(y.Filter);
-        if (filter is not null && !LeadingAnd().IsMatch(filter))
+        if (filter is not null && SourceFilter.Problem(filter) is { } problem)
         {
-            throw new FlowValidationException(
-                $"{source}: {path}.filter is '{Shown(filter)}'; it is appended to the read's WHERE as written, so it carries its own leading AND (AND status = 'active').");
+            throw new FlowValidationException($"{source}: {path}.filter is '{SourceFilter.Shown(filter)}'; {problem}.");
         }
 
         if (!full && removedAt is null)
@@ -404,9 +398,6 @@ internal static partial class RemovalMapper
     private static string? Optional(string? value) => string.IsNullOrWhiteSpace(value) ? null : value.Trim();
 
     private static string Shown(string value) => value.Length > 60 ? value[..60] + "..." : value;
-
-    [GeneratedRegex(@"^\s*AND\s", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
-    private static partial Regex LeadingAnd();
 
     /// <summary>A word that makes an expression a statement or a query, which a key's expression never is.</summary>
     [GeneratedRegex(@"\b(?:select|insert|update|delete|merge|exec|execute|drop|alter|create|truncate|grant|revoke|deny|declare|openrowset|opendatasource|openquery|waitfor|shutdown|dbcc|backup|restore)\b", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]

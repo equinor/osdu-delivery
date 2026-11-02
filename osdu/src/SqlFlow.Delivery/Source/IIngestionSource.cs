@@ -298,11 +298,21 @@ public interface IIngestionSource
     Task<IReadOnlyList<SourceKeyColumn>> KeyColumnsAsync(CancellationToken ct = default);
 
     /// <summary>
-    /// Every key the record table holds in this source's scope, with when its row last changed, in the order a read pages in,
-    /// <paramref name="pageSize"/> rows a statement: what a removal compares the source's keys with besides the ledger. Each key
-    /// is the text the plan derives the record's delivery key from.
+    /// Every key the record table holds in this source's scope, with when its row last changed and when it was marked deleted,
+    /// in the order a read pages in, <paramref name="pageSize"/> rows a statement: the first records of a scope a run reads by
+    /// key, the rows the flow's filter keeps (<see cref="SourceKeyRead.Read"/>), and what a removal compares the source's keys
+    /// with besides the ledger, every row of the scope (<see cref="SourceKeyRead.Whole"/>). Each key is the text the plan derives
+    /// the record's delivery key from.
     /// </summary>
-    IAsyncEnumerable<IngestionKey> ReadKeysAsync(int pageSize, CancellationToken ct = default);
+    IAsyncEnumerable<IngestionKey> ReadKeysAsync(int pageSize, SourceKeyRead read, CancellationToken ct = default);
+
+    /// <summary>
+    /// Marks the record table's rows of <paramref name="keys"/> deleted, or takes the mark off them, in this source's scope, as a
+    /// removal flow keeps the table's marks in step with the ledger's deletions (osdu/docs/reference/flow/removal-marks.md). A row
+    /// already so is left as it is. Returns how many rows were written.
+    /// </summary>
+    /// <exception cref="DeliveryException">The record table carries no soft-delete column, or the write was refused.</exception>
+    Task<long> MarkDeletedAsync(IReadOnlyList<KeyTuple> keys, bool deleted, CancellationToken ct = default);
 
     /// <summary>
     /// One page of the rows staged in this source's scope, as a person goes through them: each row's key, the columns asked for,
@@ -382,10 +392,21 @@ public sealed record StagedRow(
 /// <param name="Next">Where the next page starts; null when this page is the last.</param>
 public sealed record StagedPage(IReadOnlyList<StagedRow> Rows, long? Total, KeyTuple? Next);
 
-/// <summary>One key of the record table, as a removal reads it: the key tuple, and when its row last changed.</summary>
+/// <summary>One key of the record table, as a removal reads it: the key tuple, when its row last changed, and when it was marked deleted.</summary>
 /// <param name="Key">The key, each column as the text the plan derives the delivery key from.</param>
 /// <param name="UpdatedUtc">The row's <c>systemColumns.updated</c> moment.</param>
-public sealed record IngestionKey(KeyTuple Key, DateTime? UpdatedUtc);
+/// <param name="DeletedUtc">The row's <c>systemColumns.deleted</c> moment: when it was marked deleted; null for a live row, or a table without the column.</param>
+public sealed record IngestionKey(KeyTuple Key, DateTime? UpdatedUtc, DateTime? DeletedUtc = null);
+
+/// <summary>Which rows of the record table's scope a read of its keys takes.</summary>
+public enum SourceKeyRead
+{
+    /// <summary>The rows a delivery reads: those the flow's <c>source.record.filter</c> keeps.</summary>
+    Read,
+
+    /// <summary>Every row of the scope, whatever the filter says: a removal flow's view of the table it marks.</summary>
+    Whole,
+}
 
 /// <summary>One value a scope parameter can take, and how many rows of the record table not marked deleted hold it.</summary>
 /// <param name="Value">The value as the parameter is given it: the column's value as invariant text.</param>

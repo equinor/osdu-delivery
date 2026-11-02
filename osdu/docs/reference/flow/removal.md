@@ -9,6 +9,8 @@ keywords:
   - detect deleted rows
   - keys the source no longer holds
   - removed keys list
+  - rows marked deleted
+  - matchKeys results
   - full key read
   - source key comparison
   - ledger deletions
@@ -25,6 +27,8 @@ keywords:
   - soft delete
   - removedAt
 related:
+  - delivery-flow-removal-marks
+  - delivery-flow-delivery-filter
   - delivery-cli-removal
   - delivery-cli-records
   - delivery-concept-removal-and-reversal
@@ -68,9 +72,10 @@ sourceRefs:
 # Removal flow (flowType: removal): take out of OSDU the records whose keys the source no longer holds
 
 A removal flow finds the records a source no longer holds and takes them out of OSDU. It reads the keys the source holds
-now, whole, every run, and optionally a list the source keeps of the keys it removed; compares them with the ledger of each
-delivery flow it names; and takes out of OSDU, through that delivery flow's own removal path and into that flow's ledger,
-the records whose keys are gone. It keeps no ledger of its own: what it finds is the delivery ledger's **deletions**, one
+now, whole, every run, a list the source keeps of the keys it removed, the rows the delivery flow's record table marks
+deleted, or any of them; compares them with the ledger of each delivery flow it names; marks the record table's rows as
+its deletions say ([the ingestion table's marks](removal-marks.md)); and takes out of OSDU, through that delivery flow's own
+removal path and into that flow's ledger, the records whose keys are gone. It keeps no ledger of its own: what it finds is the delivery ledger's **deletions**, one
 per key ([`osdu.RemovedKey`](../tables/removed-key.md)), worked through incrementally, so a record taken out is never asked
 of OSDU again, and the delivery flow delivers no row of the key that is not newer than its removal. A run that finds more
 removed than its [guard](#the-guard) allows takes nothing out and waits for an operator's approval.
@@ -156,8 +161,11 @@ Each removal:
 | `name` | no | The removal's name, at most 300 characters: what its runs, approvals and deletions are kept under. Left out, the flow's name, with `/<interface>` for an interface. |
 | `values` | no | The delivery flow's parameter values the comparison is scoped by, each a literal or a `{name}` token, or a sequence of them for a parameter its scope reads several values of (`logSource: [COMPOSITE, WIRELINE]`). They bind its `source.record.scope`, so only the records planned under them, and the record table's rows in that scope, are compared; a scoped flow needs a value for every parameter its scope binds. |
 | `keepReferenced` | no | `true` (the default): a record other records in OSDU still name stays there until they are gone. `false` takes it out whatever names it. |
-| `keys` | one of the two | The keys the source holds now, its complete key set, read whole every run. |
-| `removed` | one of the two | A list of the keys the source removed, each with the moment it was removed. |
+| `keys` | no | The keys the source holds now, its complete key set, read whole every run. |
+| `removed` | no | A list of the keys the source removed, each with the moment it was removed. |
+
+With neither, the removal takes its removed keys from the rows the record table marks deleted, which SQLFlow's key match
+writes; the marks are read with `keys` and `removed` too ([the ingestion table's marks](removal-marks.md)).
 
 A key source (`keys` or `removed`) is either a **reader source**, read by one of SQLFlow's file readers, or a **table
 source**, a table or view of a source database, never both:
@@ -233,10 +241,13 @@ For each removal, in document order, the run:
    run of the same removal its process left `running`;
 3. carries out an approval, when the payload gives one;
 4. reads `keys` whole, noting when the read began, then `removed`, then the delivery flow's record table in the removal's
-   scope (each key with when its row last changed), and stages all three;
+   scope, whatever its filter keeps (each key with when its row last changed and when it was marked deleted), and stages
+   all three;
 5. compares them with the ledger ([What a run finds](#what-a-run-finds)) in one transaction;
-6. takes out the ledger's pending deletions ([Taking out what the source removed](#taking-out-what-the-source-removed));
-7. closes the run `completed`, or `guarded` when its guard held what it found, and deletes what it staged.
+6. marks the record table's rows deleted as the deletions say, and unmarks the rows that came back
+   ([the ingestion table's marks](removal-marks.md#marking-and-unmarking));
+7. takes out the ledger's pending deletions ([Taking out what the source removed](#taking-out-what-the-source-removed));
+8. closes the run `completed`, or `guarded` when its guard held what it found, and deletes what it staged.
 
 A removal that fails is closed `failed` with why, and the next removal runs. A run in which a removal failed or was held
 ends `failed`, so the run-failed notification goes out, and its result still says how every removal came out. A run that is
@@ -253,22 +264,26 @@ the removal's values: a removal of `[COMPOSITE, WIRELINE]` compares the records 
 `WIRELINE` and under both, and a removal of `COMPOSITE` alone compares no record planned under both, since such a record may
 hold either value and the removal reads the rows of one. Of those, a key is **found removed** when:
 
-- `keys` is read and does not hold it (`absent`, as of when the read began), or
+- `keys` is read and does not hold it (`absent`, as of when the read began),
 - `removed` lists it with a moment, and `keys`, when read, does not hold it after that moment (`listed`, as of the moment
-  the list gives).
+  the list gives), or
+- the record table marks its row deleted, and `keys`, when read, does not hold it after the mark (`marked`, as of the
+  mark; [the ingestion table's marks](removal-marks.md#a-mark-as-a-removed-key)).
 
 A found key is set aside as **come back** when its row in the record table (or the ledger's record of it) changed after the
 moment: for an absent key, after five minutes before the read began (the margin covers the clocks of the node and the
-database); for a listed key, after the moment it lists. The key's source holds it again, or its row was loaded again.
+database); for a listed or marked key, after the moment it lists or the mark. The key's source holds it again, or its row
+was loaded again.
 
 A key the ledger already holds a deletion of is not found again; a later moment for it moves its deletion's moment. A
 deletion is **lifted**, and its key no longer kept out, when the source holds the key again (`keys` holds it, and its
-deletion is older than the read) or the record was delivered again since the deletion was made (a newer row arrived and the
-delivery flow delivered it). A lifted record the removal took out is asked to be planned again, so the next run of the
-delivery flow delivers it under its id.
+deletion is older than the read), when the record table's row was loaded again after the deletion's moment and not marked
+since, when a deletion found from a mark no longer has one, or when the record was delivered again since the deletion was
+made (a newer row arrived and the delivery flow delivered it). A lifted record the removal took out is asked to be planned
+again, and its row unmarked, so the next run of the delivery flow delivers it under its id.
 
 What the run found becomes the ledger's deletions, `pending`, or `awaiting-approval` when the guard holds it. `Compared`,
-`Detected`, `CameBack` and `Lifted` are kept on the removal run.
+`Detected`, `CameBack` and `Lifted` are kept on the removal run, with `Marked` and `Unmarked`.
 
 ## The guard
 
@@ -339,10 +354,12 @@ flow's **Deletions** tab, through `GET /api/v1/delivery/removals/ledgers/{ledger
 
 ## Delivering a record again
 
-A deletion is lifted on its own when the source holds the key again or a newer row of it was delivered
-([What a run finds](#what-a-run-finds)). An operator lifts one at any time: **Deliver again** on the record's page, a
+A deletion is lifted on its own when the source holds the key again, its row was loaded again, its mark was taken off, or
+a newer row of it was delivered ([What a run finds](#what-a-run-finds)). An operator lifts one at any time: **Deliver again** on the record's page, a
 selection of up to 1,000 on a deletions grid, `POST /api/v1/delivery/flows/{pipelineId}/lift-removal` or
-`sqlflow records lift-removal`. The deletion goes; a record the removal took out is asked to be planned again, so the
+`sqlflow records lift-removal`. The deletion goes and the record table's row is unmarked (when the table cannot be
+reached from where the lift runs, the answer says the row keeps its mark and why); a record the removal took out is asked
+to be planned again, so the
 delivery flow's next run (or the deliver run the lift queues, when asked) reads its row and delivers it under its id; a
 record not taken out yet stays as it is. Every record lifted is named under one `lift-removal` activity. While the source
 still does not hold the key, the removal flow's next run finds it removed again: bring the key back in the source to keep
@@ -353,7 +370,8 @@ the record.
 - The **Removals** page (Ledger) lists every removal of the partition picked in the title bar, with its delivery
   flow, its ledger's deletions by state and its last run. A removal opens under a compact heading: what it reads and
   compares under, its last run, and a line saying what waits for approval with **Review** and **Approve**; under it, the
-  ledger's deletions as a grid that fills the window and reads more as it is scrolled, by state, or the removal's runs.
+  ledger's deletions as a grid that fills the window and reads more as it is scrolled, by state, or the removal's runs,
+  each with what it read, found, took out, saw come back and marked or unmarked in the record table (**Marks**).
 - A removal flow's **Removals** tab lists its removals with an **Approve** button for the held ones and **Open**.
 - A delivery flow's **Deletions** tab shows its ledger's deletions and the removal runs that wrote to it.
 - A record's page says when its key was removed, by which removal flow and why, with **Deliver again**, and its timeline

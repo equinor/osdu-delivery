@@ -301,6 +301,40 @@ public class YamlDocumentLoaderTests
             => yaml.Replace("    scope: { log_source: logSource }\n", $"    scope: {{ log_source: logSource }}\n    maxRecords: {max}\n", StringComparison.Ordinal);
     }
 
+    /// <summary>
+    /// A flow narrows the rows it reads (osdu/docs/reference/flow/delivery-filter.md): <c>filter</c> on the
+    /// record table and on a child dataset is one predicate with its own leading AND, and one that is not is refused by key.
+    /// </summary>
+    [Fact]
+    public void A_flow_document_narrows_its_record_table_and_its_child_datasets_with_a_filter_of_one_predicate()
+    {
+        var loader = new DeliveryDocumentLoader();
+        var flow = Flow.ReplaceLineEndings("\n");
+        var parsed = loader.ParseFlow(Filtered(flow, "AND DeletedDate_DW IS NULL", "AND [curve_ordinal] > 0"), "f");
+        Assert.Equal(("AND DeletedDate_DW IS NULL", "AND [curve_ordinal] > 0"), (parsed.Source.Record.Filter, parsed.Source.Datasets["curves"].Filter));
+        Assert.Null(loader.ParseFlow(flow, "f").Source.Record.Filter);
+
+        // A filter enters what the scope's watermark is kept against, so a run after it changed reads the scope whole once;
+        // a flow without one keeps the rules as they are.
+        const string rules = "sha256:rules";
+        Assert.Equal(rules, SqlFlow.Delivery.Engine.ScopeReads.WatermarkRules(loader.ParseFlow(flow, "f"), rules));
+        var filtered = SqlFlow.Delivery.Engine.ScopeReads.WatermarkRules(parsed, rules);
+        Assert.NotEqual(rules, filtered);
+        Assert.Equal(filtered, SqlFlow.Delivery.Engine.ScopeReads.WatermarkRules(parsed, rules));
+        Assert.NotEqual(filtered, SqlFlow.Delivery.Engine.ScopeReads.WatermarkRules(loader.ParseFlow(Filtered(flow, "AND DeletedDate_DW IS NULL", "AND [curve_ordinal] > 1"), "f"), rules));
+
+        var leading = Assert.Throws<FlowValidationException>(() => loader.ParseFlow(Filtered(flow, "DeletedDate_DW IS NULL", "AND 1 = 1"), "flow.yaml"));
+        Assert.Equal(
+            "flow.yaml: source.record.filter is 'DeletedDate_DW IS NULL'; it is appended to the read's WHERE as written, so it carries its own leading AND (AND status = 'active').",
+            leading.Message);
+        var ended = Assert.Throws<FlowValidationException>(() => loader.ParseFlow(Filtered(flow, "AND 1 = 1", "AND 1 = 1; DROP TABLE x"), "flow.yaml"));
+        Assert.StartsWith("flow.yaml: source.datasets.curves.filter is 'AND 1 = 1; DROP TABLE x'; it holds a ';'", ended.Message, StringComparison.Ordinal);
+
+        static string Filtered(string yaml, string record, string child) => yaml
+            .Replace("    scope: { log_source: logSource }\n", $"    scope: {{ log_source: logSource }}\n    filter: \"{record}\"\n", StringComparison.Ordinal)
+            .Replace("      orderBy: [curve_ordinal]\n", $"      orderBy: [curve_ordinal]\n      filter: \"{child}\"\n", StringComparison.Ordinal);
+    }
+
     [Fact]
     public void Unknown_keys_are_a_parse_error_with_the_path()
     {

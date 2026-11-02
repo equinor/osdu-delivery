@@ -84,6 +84,15 @@ public sealed class MemoryIngestionTables : IIngestionSourceFactory
     /// <summary>The SQL Server type each record key column holds, as the SQL Server source introspects it; a column not named holds nvarchar(400).</summary>
     public Dictionary<string, string> KeyTypes { get; } = new(StringComparer.OrdinalIgnoreCase);
 
+    /// <summary>
+    /// What the flow's <c>source.record.filter</c> keeps, as a predicate, since the memory tables cannot run its SQL: applied
+    /// to every read of a flow that declares a filter; null keeps every row. The SQL Server contract suite runs the SQL itself.
+    /// </summary>
+    public Func<MemoryRecord, bool>? Filter { get; set; }
+
+    /// <summary>Every write that marked rows deleted (true) or took the mark off (false), with the keys it named, in order.</summary>
+    public List<(bool Deleted, IReadOnlyList<KeyTuple> Keys)> Marks { get; } = [];
+
     public MemoryRecord Add(MemoryRecord record)
     {
         ArgumentNullException.ThrowIfNull(record);
@@ -208,6 +217,8 @@ public sealed class MemoryIngestionTables : IIngestionSourceFactory
                 Record = schema,
                 Key = _flow.Source.Record.Key.Select(k => new SourceKeyColumn(k, _tables.KeyTypes.TryGetValue(k, out var type) ? type : "nvarchar(400)")).ToList(),
                 Updated = _flow.Source.SystemColumns.Updated,
+                Deleted = _flow.Source.SystemColumns.Deleted,
+                Filter = _flow.Source.Record.Filter,
                 Scope = _flow.Source.Record.Scope.Select(s => new IngestionScope(s.Key, s.Value)).ToList(),
                 Datasets = _flow.Source.Datasets
                     .OrderBy(d => d.Key, StringComparer.Ordinal)
@@ -242,18 +253,44 @@ public sealed class MemoryIngestionTables : IIngestionSourceFactory
                 .Select(k => new SourceKeyColumn(k, _tables.KeyTypes.TryGetValue(k, out var type) ? type : "nvarchar(400)"))
                 .ToList());
 
-        public async IAsyncEnumerable<IngestionKey> ReadKeysAsync(int pageSize, [EnumeratorCancellation] CancellationToken ct = default)
+        public async IAsyncEnumerable<IngestionKey> ReadKeysAsync(int pageSize, SourceKeyRead read, [EnumeratorCancellation] CancellationToken ct = default)
         {
             ArgumentOutOfRangeException.ThrowIfLessThan(pageSize, 1);
             await Task.CompletedTask.ConfigureAwait(false);
+            Func<MemoryRecord, bool> taken = read == SourceKeyRead.Whole ? InScopeWhole : InScope;
             var ordered = PrimaryKey is null
-                ? _tables.Records.Where(InScope).OrderBy(r => KeyOf(r).Json, StringComparer.Ordinal)
-                : _tables.Records.Where(InScope).OrderBy(IdOf);
-            foreach (var record in ordered)
+                ? _tables.Records.Where(taken).OrderBy(r => KeyOf(r).Json, StringComparer.Ordinal)
+                : _tables.Records.Where(taken).OrderBy(IdOf);
+            foreach (var record in ordered.ToList())
             {
                 ct.ThrowIfCancellationRequested();
-                yield return new IngestionKey(KeyOf(record), record.UpdatedUtc);
+                yield return new IngestionKey(KeyOf(record), record.UpdatedUtc, record.DeletedUtc);
             }
+        }
+
+        public Task<long> MarkDeletedAsync(IReadOnlyList<KeyTuple> keys, bool deleted, CancellationToken ct = default)
+        {
+            ArgumentNullException.ThrowIfNull(keys);
+            _tables.Marks.Add((deleted, keys.ToList()));
+            var named = keys.ToHashSet();
+            var now = _time.GetUtcNow().UtcDateTime;
+            long written = 0;
+            foreach (var record in _tables.Records.Where(r => InScopeWhole(r) && named.Contains(KeyOf(r)) && (r.DeletedUtc is null) == deleted))
+            {
+                if (deleted)
+                {
+                    record.DeletedUtc = now;
+                }
+                else
+                {
+                    record.DeletedUtc = null;
+                    record.UpdatedUtc = now;
+                }
+
+                written++;
+            }
+
+            return Task.FromResult(written);
         }
 
         public Task<StagedPage> ReadStagedAsync(StagedRowsQuery query, CancellationToken ct = default)
@@ -464,7 +501,12 @@ public sealed class MemoryIngestionTables : IIngestionSourceFactory
         private static bool Within(DateTime moment, SourceWindow window)
             => moment <= window.UpperUtc && (window.LowerUtc is not { } lower || moment > lower);
 
+        /// <summary>A row a delivery reads: in the scope, and kept by the flow's filter when it declares one.</summary>
         private bool InScope(MemoryRecord record)
+            => InScopeWhole(record) && (_flow.Source.Record.Filter is null || _tables.Filter?.Invoke(record) != false);
+
+        /// <summary>A row of the scope, whatever the flow's filter says.</summary>
+        private bool InScopeWhole(MemoryRecord record)
         {
             foreach (var (column, parameter) in _flow.Source.Record.Scope)
             {

@@ -112,11 +112,6 @@ public sealed partial class OsduLedger
             throw new DeliveryException("A comparison against the source's current keys needs the moment their read began.");
         }
 
-        if (!comparison.ReadsSource && !comparison.ReadsRemoved)
-        {
-            throw new DeliveryException("A comparison reads the source's current keys, its removed keys, or both.");
-        }
-
         if (comparison.GuardPercent is < 0 or > 100)
         {
             throw new DeliveryException($"A removal's guard is a share from 0 to 100, not {comparison.GuardPercent}.");
@@ -125,6 +120,16 @@ public sealed partial class OsduLedger
         var partition = await WritePartitionAsync(ledgerFlowId, ct).ConfigureAwait(false);
         await using var db = Open();
         return await RetryDeadlockAsync(() => SqlServerLedgerBulk.DetectRemovalsAsync(db, partition, ledgerFlowId, removalRunId, comparison, ct), ct).ConfigureAwait(false);
+    }
+
+    public async Task<IReadOnlyList<RemovalMark>> RemovalMarksAsync(
+        Guid ledgerFlowId, long removalRunId, DateTime? sourceReadUtc, DeliveryKey? after, int take, CancellationToken ct = default)
+    {
+        ArgumentOutOfRangeException.ThrowIfLessThan(take, 1);
+        var partition = await WritePartitionAsync(ledgerFlowId, ct).ConfigureAwait(false);
+        await using var db = Open();
+        return await RetryDeadlockAsync(
+            () => SqlServerLedgerBulk.RemovalMarksAsync(db, partition, ledgerFlowId, removalRunId, sourceReadUtc, after, take, ct), ct).ConfigureAwait(false);
     }
 
     public async Task<long> ApproveRemovalsAsync(Guid ledgerFlowId, string removalFlow, string entry, long expected, string approvedBy, DateTime nowUtc, CancellationToken ct = default)
@@ -224,7 +229,9 @@ public sealed partial class OsduLedger
                     .SetProperty(r => r.Busy, r => r.Busy + tally.Busy)
                     .SetProperty(r => r.Failed, r => r.Failed + tally.Failed)
                     .SetProperty(r => r.CameBack, r => r.CameBack + tally.CameBack)
-                    .SetProperty(r => r.Lifted, r => r.Lifted + tally.Lifted), ct),
+                    .SetProperty(r => r.Lifted, r => r.Lifted + tally.Lifted)
+                    .SetProperty(r => r.Marked, r => r.Marked + tally.Marked)
+                    .SetProperty(r => r.Unmarked, r => r.Unmarked + tally.Unmarked), ct),
             ct).ConfigureAwait(false);
     }
 
@@ -396,11 +403,11 @@ public sealed partial class OsduLedger
         }, ct).ConfigureAwait(false);
     }
 
-    public async Task<IReadOnlySet<DeliveryKey>> LiftRemovedKeysAsync(
+    public async Task<IReadOnlyDictionary<DeliveryKey, string?>> LiftRemovedKeysAsync(
         Guid flowId, IReadOnlyCollection<DeliveryKey> keys, long? activityId, DateTime nowUtc, CancellationToken ct = default)
     {
         ArgumentNullException.ThrowIfNull(keys);
-        var lifted = new HashSet<DeliveryKey>();
+        var lifted = new Dictionary<DeliveryKey, string?>();
         if (keys.Count == 0)
         {
             return lifted;
@@ -417,14 +424,16 @@ public sealed partial class OsduLedger
                 // A retry starts from what the database holds, not from what a failed try left tracked.
                 db.ChangeTracker.Clear();
                 await using var tx = await db.Database.BeginTransactionAsync(ct).ConfigureAwait(false);
-                var named = await db.DeliveryRemovedKeys
+                var found = await db.DeliveryRemovedKeys
                     .Where(k => k.PartitionId == partition && k.FlowId == flowId && chunk.Contains(k.DeliveryKey))
-                    .Select(k => k.DeliveryKey)
+                    .Select(k => new { k.DeliveryKey, k.SourceKeyJson })
                     .ToListAsync(ct).ConfigureAwait(false);
-                if (named.Count == 0)
+                if (found.Count == 0)
                 {
-                    return named;
+                    return found.ToDictionary(k => k.DeliveryKey, k => k.SourceKeyJson);
                 }
+
+                var named = found.Select(k => k.DeliveryKey).ToList();
 
                 await db.DeliveryRemovedKeys
                     .Where(k => k.PartitionId == partition && k.FlowId == flowId && named.Contains(k.DeliveryKey))
@@ -449,9 +458,12 @@ public sealed partial class OsduLedger
                 }
 
                 await tx.CommitAsync(ct).ConfigureAwait(false);
-                return named;
+                return found.ToDictionary(k => k.DeliveryKey, k => k.SourceKeyJson);
             }).ConfigureAwait(false);
-            lifted.UnionWith(held.Select(k => new DeliveryKey(k)));
+            foreach (var (key, json) in held)
+            {
+                lifted[new DeliveryKey(key)] = json;
+            }
         }
 
         return lifted;
@@ -590,6 +602,8 @@ public sealed partial class OsduLedger
             Failed = row.Failed,
             CameBack = row.CameBack,
             Lifted = row.Lifted,
+            Marked = row.Marked,
+            Unmarked = row.Unmarked,
         },
         GuardPercent = row.GuardPercent,
         GuardRecords = row.GuardRecords,

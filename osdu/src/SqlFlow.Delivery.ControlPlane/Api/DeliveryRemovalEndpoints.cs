@@ -25,7 +25,7 @@ namespace SqlFlow.Delivery.ControlPlane.Api;
 /// <summary>What a removal run read, found and came to.</summary>
 public sealed record DeliveryRemovalTallyDto(
     long RowsRead, long SourceKeys, long ListedKeys, long IngestionKeys, long Compared, long Detected, long AwaitingApproval, long Approved,
-    long Removed, long AlreadyGone, long Settled, long KeptOut, long Referenced, long Shared, long Busy, long Failed, long CameBack, long Lifted);
+    long Removed, long AlreadyGone, long Settled, long KeptOut, long Referenced, long Shared, long Busy, long Failed, long CameBack, long Lifted, long Marked, long Unmarked);
 
 /// <summary>One run of one removal of a removal flow, as the ledger of the delivery flow it wrote to keeps it.</summary>
 public sealed record DeliveryRemovalRunDto(
@@ -468,7 +468,7 @@ public static class DeliveryRemovalEndpoints
         new DeliveryRemovalTallyDto(
             run.Tally.RowsRead, run.Tally.SourceKeys, run.Tally.ListedKeys, run.Tally.IngestionKeys, run.Tally.Compared, run.Tally.Detected, run.Tally.AwaitingApproval,
             run.Tally.Approved, run.Tally.Removed, run.Tally.AlreadyGone, run.Tally.Settled, run.Tally.KeptOut, run.Tally.Referenced, run.Tally.Shared, run.Tally.Busy,
-            run.Tally.Failed, run.Tally.CameBack, run.Tally.Lifted),
+            run.Tally.Failed, run.Tally.CameBack, run.Tally.Lifted, run.Tally.Marked, run.Tally.Unmarked),
         run.GuardPercent, run.GuardRecords, run.ApprovedBy, run.ActivityId, run.Error);
 
     internal static DeliveryRemovedKeyDto ToDto(RemovedKeyState key) => new(

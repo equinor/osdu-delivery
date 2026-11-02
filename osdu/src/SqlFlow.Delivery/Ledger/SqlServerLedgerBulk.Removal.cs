@@ -196,10 +196,11 @@ internal static partial class SqlServerLedgerBulk
 
     /// <summary>
     /// The detection (osdu/docs/reference/flow/removal.md, What a run finds), in one transaction: the ledger's records of the
-    /// flow in the scope, and the record table's keys besides, against the source's current keys and its removed keys. A key not
-    /// in the current keys, or listed as removed, is found removed unless its row arrived after the moment its removal stands for
-    /// (it came back). Deletions whose key the source holds again, or whose record was delivered again since they were found, are
-    /// lifted; a deletion found again keeps the later moment; and what the ledger holds no deletion of yet becomes one, pending,
+    /// flow in the scope, and the record table's keys besides, against the source's current keys, its removed keys and the
+    /// record table's own marks. A key not in the current keys, listed as removed, or whose row the record table marks deleted,
+    /// is found removed unless its row arrived after the moment its removal stands for (it came back). Deletions whose key the
+    /// source holds again, whose row was loaded again since, whose mark was taken off, or whose record was delivered again since
+    /// they were found, are lifted; a deletion found again keeps the later moment; and what the ledger holds no deletion of yet becomes one, pending,
     /// or waiting for approval when the guard holds what the run found. A plan counts all of it and writes nothing.
     /// </summary>
     public static Task<RemovalDetection> DetectRemovalsAsync(
@@ -273,23 +274,35 @@ internal static partial class SqlServerLedgerBulk
                 [SourceKeyJson] nvarchar(2000) NULL,
                 [Moved] datetime2 NULL);
 
+            -- A key is found removed when the source's current keys lack it, when the source lists it, or when the record table
+            -- marks its row deleted (side 3 with a moment: SQLFlow's key match, or an earlier removal run); a list or a mark the
+            -- current keys answer, read after its moment, is not a removal. The list's word comes first, then the keys', then the
+            -- mark's.
             INSERT INTO #RemovalFound ([DeliveryKey], [Reason], [RemovedUtc], [FileName], [RowNumber], [SourceKeyJson], [Moved])
-            SELECT k.[DeliveryKey],
-                   CASE WHEN d.[DeliveryKey] IS NOT NULL THEN N'listed' ELSE N'absent' END,
-                   CASE WHEN d.[DeliveryKey] IS NOT NULL THEN d.[RemovedUtc] ELSE @sourceRead END,
-                   d.[FileName], d.[RowNumber], k.[SourceKeyJson], k.[Moved]
+            SELECT k.[DeliveryKey], w.[Reason], w.[RemovedUtc], w.[FileName], w.[RowNumber], k.[SourceKeyJson], k.[Moved]
             FROM #RemovalKnown k
             LEFT JOIN [osdu].[RemovalKey] d
                    ON @readsRemoved = 1 AND d.[PartitionId] = @partitionId AND d.[RemovalRunId] = @run AND d.[Side] = 2 AND d.[DeliveryKey] = k.[DeliveryKey]
             LEFT JOIN [osdu].[RemovalKey] s
                    ON @readsSource = 1 AND s.[PartitionId] = @partitionId AND s.[RemovalRunId] = @run AND s.[Side] = 1 AND s.[DeliveryKey] = k.[DeliveryKey]
-            WHERE (@readsSource = 1 AND s.[DeliveryKey] IS NULL)
-               OR (d.[DeliveryKey] IS NOT NULL AND d.[RemovedUtc] IS NOT NULL
-                   AND NOT (@readsSource = 1 AND s.[DeliveryKey] IS NOT NULL AND @sourceRead >= d.[RemovedUtc]));
+            LEFT JOIN [osdu].[RemovalKey] m
+                   ON m.[PartitionId] = @partitionId AND m.[RemovalRunId] = @run AND m.[Side] = 3 AND m.[RemovedUtc] IS NOT NULL AND m.[DeliveryKey] = k.[DeliveryKey]
+            CROSS APPLY (SELECT
+                   CASE WHEN d.[DeliveryKey] IS NOT NULL AND d.[RemovedUtc] IS NOT NULL
+                             AND NOT (@readsSource = 1 AND s.[DeliveryKey] IS NOT NULL AND @sourceRead >= d.[RemovedUtc]) THEN 1 ELSE 0 END AS [Listed],
+                   CASE WHEN @readsSource = 1 AND s.[DeliveryKey] IS NULL THEN 1 ELSE 0 END AS [Absent],
+                   CASE WHEN m.[DeliveryKey] IS NOT NULL
+                             AND NOT (@readsSource = 1 AND s.[DeliveryKey] IS NOT NULL AND @sourceRead >= m.[RemovedUtc]) THEN 1 ELSE 0 END AS [Marked]) q
+            CROSS APPLY (SELECT
+                   CASE WHEN q.[Listed] = 1 THEN N'listed' WHEN q.[Absent] = 1 THEN N'absent' ELSE N'marked' END AS [Reason],
+                   CASE WHEN q.[Listed] = 1 THEN d.[RemovedUtc] WHEN q.[Absent] = 1 THEN @sourceRead ELSE m.[RemovedUtc] END AS [RemovedUtc],
+                   CASE WHEN q.[Listed] = 1 THEN d.[FileName] WHEN q.[Absent] = 1 THEN NULL ELSE m.[FileName] END AS [FileName],
+                   CASE WHEN q.[Listed] = 1 THEN d.[RowNumber] WHEN q.[Absent] = 1 THEN NULL ELSE m.[RowNumber] END AS [RowNumber]) w
+            WHERE q.[Listed] = 1 OR q.[Absent] = 1 OR q.[Marked] = 1;
 
             DELETE FROM #RemovalFound
             WHERE ([Reason] = N'absent' AND [Moved] > DATEADD(SECOND, -@margin, @sourceRead))
-               OR ([Reason] = N'listed' AND [Moved] > [RemovedUtc]);
+               OR ([Reason] IN (N'listed', N'marked') AND [Moved] > [RemovedUtc]);
             DECLARE @cameBack bigint = @@ROWCOUNT;
 
             CREATE TABLE #RemovalLifted ([DeliveryKey] uniqueidentifier NOT NULL PRIMARY KEY, [State] nvarchar(24) NOT NULL);
@@ -306,6 +319,28 @@ internal static partial class SqlServerLedgerBulk
             FROM [osdu].[RemovedKey] t
             INNER JOIN [osdu].[Record] r ON r.[PartitionId] = t.[PartitionId] AND r.[FlowId] = t.[FlowId] AND r.[DeliveryKey] = t.[DeliveryKey]
             WHERE t.[PartitionId] = @partitionId AND t.[FlowId] = @flowId AND r.[Status] = N'delivered' AND r.[LastDeliveredUtc] > t.[CreatedUtc]
+              AND NOT EXISTS (SELECT 1 FROM #RemovalLifted x WHERE x.[DeliveryKey] = t.[DeliveryKey]);
+
+            -- The record table's row was loaded again after the deletion's moment, and not marked deleted since: its key came
+            -- back. A delivery whose filter leaves marked rows out would never read it to deliver it again, so the deletion goes
+            -- here, and the mark with it (osdu/docs/reference/flow/removal-marks.md).
+            INSERT INTO #RemovalLifted ([DeliveryKey], [State])
+            SELECT t.[DeliveryKey], t.[State]
+            FROM [osdu].[RemovedKey] t
+            INNER JOIN [osdu].[RemovalKey] i
+                    ON i.[PartitionId] = @partitionId AND i.[RemovalRunId] = @run AND i.[Side] = 3 AND i.[DeliveryKey] = t.[DeliveryKey]
+            WHERE t.[PartitionId] = @partitionId AND t.[FlowId] = @flowId AND i.[UpdatedUtc] > t.[RemovedUtc]
+              AND (i.[RemovedUtc] IS NULL OR i.[UpdatedUtc] > i.[RemovedUtc])
+              AND NOT EXISTS (SELECT 1 FROM #RemovalLifted x WHERE x.[DeliveryKey] = t.[DeliveryKey]);
+
+            -- A deletion the record table's mark made goes when the table no longer marks the row: SQLFlow's key match takes the
+            -- mark off a key that reappears in its source without stamping the row.
+            INSERT INTO #RemovalLifted ([DeliveryKey], [State])
+            SELECT t.[DeliveryKey], t.[State]
+            FROM [osdu].[RemovedKey] t
+            INNER JOIN [osdu].[RemovalKey] i
+                    ON i.[PartitionId] = @partitionId AND i.[RemovalRunId] = @run AND i.[Side] = 3 AND i.[DeliveryKey] = t.[DeliveryKey]
+            WHERE t.[PartitionId] = @partitionId AND t.[FlowId] = @flowId AND t.[Reason] = N'marked' AND i.[RemovedUtc] IS NULL
               AND NOT EXISTS (SELECT 1 FROM #RemovalLifted x WHERE x.[DeliveryKey] = t.[DeliveryKey]);
             DECLARE @lifted bigint = (SELECT COUNT_BIG(*) FROM #RemovalLifted);
 
@@ -406,6 +441,62 @@ internal static partial class SqlServerLedgerBulk
                 AwaitingApproval = reader.GetInt64(6),
             };
         }, ct);
+    }
+
+    /// <summary>
+    /// The record table's rows whose deleted mark disagrees with the ledger's deletions once a run has compared
+    /// (osdu/docs/reference/flow/removal-marks.md), <paramref name="take"/> at a time in delivery key order after
+    /// <paramref name="after"/>: a row to mark, whose key holds a pending or removed deletion and whose row carries no mark; and a
+    /// row to take the mark off, whose key holds no deletion at all and that is back, either loaded again after its mark or held
+    /// by the source's current keys read after it. A mark no deletion explains and nothing says is back stays as it is.
+    /// </summary>
+    public static async Task<IReadOnlyList<RemovalMark>> RemovalMarksAsync(
+        OsduDbContext db, short partitionId, Guid flowId, long removalRunId, DateTime? sourceReadUtc, DeliveryKey? after, int take, CancellationToken ct)
+    {
+        const string sql = """
+            SELECT TOP (@take) i.[DeliveryKey], i.[SourceKeyJson], CAST(CASE WHEN i.[RemovedUtc] IS NULL THEN 1 ELSE 0 END AS bit)
+            FROM [osdu].[RemovalKey] i
+            WHERE i.[PartitionId] = @partitionId AND i.[RemovalRunId] = @run AND i.[Side] = 3
+              AND (@after IS NULL OR i.[DeliveryKey] > @after)
+              AND i.[SourceKeyJson] IS NOT NULL
+              AND ((i.[RemovedUtc] IS NULL
+                    AND EXISTS (SELECT 1 FROM [osdu].[RemovedKey] t
+                                WHERE t.[PartitionId] = @partitionId AND t.[FlowId] = @flowId AND t.[DeliveryKey] = i.[DeliveryKey]
+                                  AND t.[State] IN (N'pending', N'removed')))
+                OR (i.[RemovedUtc] IS NOT NULL
+                    AND NOT EXISTS (SELECT 1 FROM [osdu].[RemovedKey] t
+                                    WHERE t.[PartitionId] = @partitionId AND t.[FlowId] = @flowId AND t.[DeliveryKey] = i.[DeliveryKey])
+                    AND (i.[UpdatedUtc] > i.[RemovedUtc]
+                         OR (@sourceRead >= i.[RemovedUtc]
+                             AND EXISTS (SELECT 1 FROM [osdu].[RemovalKey] s
+                                         WHERE s.[PartitionId] = @partitionId AND s.[RemovalRunId] = @run AND s.[Side] = 1
+                                           AND s.[DeliveryKey] = i.[DeliveryKey])))))
+            ORDER BY i.[DeliveryKey];
+            """;
+        await db.Database.OpenConnectionAsync(ct).ConfigureAwait(false);
+        try
+        {
+            var connection = (SqlConnection)db.Database.GetDbConnection();
+            await using var command = Command(connection, null, sql, slice: null);
+            command.Parameters.Add(new SqlParameter("@partitionId", SqlDbType.SmallInt) { Value = partitionId });
+            command.Parameters.Add(new SqlParameter("@flowId", SqlDbType.UniqueIdentifier) { Value = flowId });
+            command.Parameters.Add(new SqlParameter("@run", SqlDbType.BigInt) { Value = removalRunId });
+            command.Parameters.Add(new SqlParameter("@sourceRead", SqlDbType.DateTime2) { Value = sourceReadUtc is { } read ? read : DBNull.Value });
+            command.Parameters.Add(new SqlParameter("@after", SqlDbType.UniqueIdentifier) { Value = after is { } key ? key.Value : DBNull.Value });
+            command.Parameters.Add(new SqlParameter("@take", SqlDbType.Int) { Value = take });
+            var marks = new List<RemovalMark>(take);
+            await using var reader = await command.ExecuteReaderAsync(ct).ConfigureAwait(false);
+            while (await reader.ReadAsync(ct).ConfigureAwait(false))
+            {
+                marks.Add(new RemovalMark(new DeliveryKey(reader.GetGuid(0)), reader.GetString(1), reader.GetBoolean(2)));
+            }
+
+            return marks;
+        }
+        finally
+        {
+            await db.Database.CloseConnectionAsync().ConfigureAwait(false);
+        }
     }
 
     /// <summary>

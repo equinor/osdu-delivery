@@ -3677,6 +3677,12 @@ public sealed class DeliveryRemovalRun
     /// <summary>Removed keys whose key the source holds again, or whose record was delivered again since: no longer kept out.</summary>
     public long Lifted { get; set; }
 
+    /// <summary>Rows of the delivery flow's record table the run marked deleted, as its deletions say.</summary>
+    public long Marked { get; set; }
+
+    /// <summary>Rows of the record table whose deleted mark the run took off, as back in the source.</summary>
+    public long Unmarked { get; set; }
+
     /// <summary>The guard's share, 0 to 100, the run was held to.</summary>
     public int GuardPercent { get; set; }
 

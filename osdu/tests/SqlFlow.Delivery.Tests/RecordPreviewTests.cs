@@ -80,6 +80,11 @@ public sealed class RecordPreviewTests : IDisposable
             Assert.Equal(TargetId.Compose("dev", "work-product-component--WellLog", SampleEstate.Key(0)), document.TargetId);
             Assert.Equal(document.TargetId, document.Rendered!["id"]!.GetValue<string>());
             Assert.StartsWith("osdu:wks:work-product-component--WellLog:", document.Kind, StringComparison.Ordinal);
+
+            // The values the parameters rendered with are said, as they reached the record: the partition is the id's.
+            var parameters = preview.Inputs.Parameters!;
+            Assert.Equal(runtime.Mapping.Context.Parameters, parameters);
+            Assert.Equal("dev", parameters["dataPartition"]);
             Assert.Null(document.Sent);
             Assert.Null(document.Omitted);
             Assert.NotEmpty(document.Searches);

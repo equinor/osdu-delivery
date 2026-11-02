@@ -1284,6 +1284,8 @@ export interface DeliveryPreviewInputs {
   cachePartition?: string | null;
   cacheVersion?: string | null;
   contextHash: string;
+  /** The values the mapping's parameters render with, every reference resolved, as they reach the record. */
+  parameters?: Record<string, string> | null;
 }
 
 /** The route the flow delivers by, why, and where a DDMS route sends the record. */

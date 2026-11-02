@@ -190,6 +190,9 @@ function DeliveryRecordContent({ flowId, deliveryKey }: DeliveryRecordRef) {
       toast.success(
         result.runId ? "Removal lifted: a deliver run delivers the record again now." : "Removal lifted.",
         result.runId ? { action: { label: "Open run", onClick: () => navigate(`/runs/${result.runId}`) } } : undefined);
+      if (result.marksKept) {
+        toast.warning(`Removal lifted, but ${result.marksKept}`);
+      }
       refresh();
     },
     onError: fail,

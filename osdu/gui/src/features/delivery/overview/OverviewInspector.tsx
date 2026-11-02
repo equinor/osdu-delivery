@@ -1,12 +1,12 @@
 import type { ReactNode } from "react";
-import { ArrowRight, Check, CircleDot, Database, KeyRound, Search, ShieldCheck, SquareFunction, Table2, X } from "lucide-react";
+import { ArrowRight, Check, CircleDot, Database, KeyRound, Search, ShieldCheck, SlidersHorizontal, SquareFunction, Table2, X } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import type { MappingOutline, MappingOutlineFlow, MappingOutlineNode, MappingOutlineStep } from "../../../api/delivery";
 import type { OverviewPart } from "./OverviewCanvas";
 import { cardsOf, fieldId, nodeAt, readersOf, type OutlineCard } from "./outlineModel.ts";
-import { previewLabel, rowsSourceOf } from "./tableRows.ts";
+import { cardPreviewLabel } from "./tableRows.ts";
 
 /** A section of the panel: a quiet heading over what it holds. */
 function Section({ title, children }: { title: string; children: ReactNode }) {
@@ -256,7 +256,7 @@ export function OverviewInspector({ part, outline, tables, cached, yaml, values,
   const lines = yaml.replace(/\r\n/g, "\n").split("\n");
   const node = part?.type === "row" ? nodeAt(outline, part.path) : null;
   const card = part !== null && part.type !== "row" ? cards.find((candidate) => candidate.id === part.source) ?? null : null;
-  const rows = card === null ? null : rowsSourceOf(card);
+  const preview = card === null ? null : cardPreviewLabel(card);
   const title = node !== null ? node.path.split("|")[0] : part?.type === "field" ? part.field : card?.title ?? "";
   const leaf = title.lastIndexOf(".");
 
@@ -286,9 +286,9 @@ export function OverviewInspector({ part, outline, tables, cached, yaml, values,
                 </span>
               )}
             </div>
-            {rows !== null && (
-              <Button variant="ghost" size="icon-xs" aria-label={previewLabel(rows)} title={previewLabel(rows)} onClick={() => onPreview(part)} data-testid="mapping-overview-inspector-preview">
-                <Table2 />
+            {preview !== null && (
+              <Button variant="ghost" size="icon-xs" aria-label={preview} title={preview} onClick={() => onPreview(part)} data-testid="mapping-overview-inspector-preview">
+                {card?.source.kind === "parameters" ? <SlidersHorizontal /> : <Table2 />}
               </Button>
             )}
             <Button variant="ghost" size="icon-xs" aria-label="Close" onClick={onClose} data-testid="mapping-overview-inspector-close"><X /></Button>

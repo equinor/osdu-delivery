@@ -18,6 +18,9 @@ keywords:
   - first 100 rows
   - right-click a table
   - table-rows
+  - rendered record
+  - parameter values
+  - right-click menu
 related:
   - delivery-flow-mapping
   - delivery-flow-mapping-lookups
@@ -31,12 +34,15 @@ sourceRefs:
   - osdu/src/SqlFlow.Delivery.ControlPlane/Api/DeliveryTemplateEndpoints.cs
   - osdu/src/SqlFlow.Delivery.ControlPlane/Api/DeliveryValueCheckEndpoints.cs
   - osdu/src/SqlFlow.Delivery/Engine/Operations/TableRowsOperation.cs
+  - osdu/src/SqlFlow.Delivery/Engine/Preview/RecordPreviewer.cs
   - osdu/src/SqlFlow.Delivery/Source/SqlServerIngestionSource.cs
   - osdu/gui/src/features/delivery/overview/MappingOverview.tsx
   - osdu/gui/src/features/delivery/overview/OverviewCanvas.ts
+  - osdu/gui/src/features/delivery/overview/OverviewRendered.tsx
   - osdu/gui/src/features/delivery/overview/OverviewRows.tsx
   - osdu/gui/src/features/delivery/overview/outlineLayout.ts
   - osdu/gui/src/features/delivery/overview/outlineModel.ts
+  - osdu/gui/src/features/delivery/overview/recordMarkdown.ts
   - osdu/gui/src/features/delivery/overview/tableRows.ts
 ---
 
@@ -87,7 +93,10 @@ for them.
 | See the alternatives of a `$coalesce` as lines of their own | Click its chevron. Closed, its line says `first of 3` and passes through every table they read. |
 | Trace something | Point at it. Pointing at a property lights what enters it and the tables on its way, pointing at a column lights everywhere it goes, and pointing at a table lights everything that reads it, from the columns looked up in it to the properties they fill. A line counts as what it comes from, a line off the shelf as its table, and is lit down to the last row lit on it. |
 | See how a property is filled | Click it. A panel slides in from the right with each step in plain words, its alternatives, its rules and the lines of the document that write it. A column or a table, or a line from one, lists what it reaches. Escape or a click on the canvas closes it. |
-| Look at a table's rows | Right-click a table, one of its columns or a line from it, and pick **Preview the first 100 rows** (**Preview 100 cached records** for a cache table, **Preview 100 records in OSDU** for a search). The menu key or Shift+F10 opens the same menu from the keyboard, and the panel of a table or a column has the same button. The rows open under the canvas ([below](#looking-at-a-tables-rows)). Right-clicking the parameters, which hold no rows, opens their panel. |
+| Do something with a part | Right-click it, or press the menu key or Shift+F10 on it. Every part has a menu, named for what it is on ([below](#the-menus)). |
+| Look at a table's rows | **Preview the first 100 rows** on a table, one of its columns or a line from it (**Preview 100 cached records** for a cache table, **Preview 100 records in OSDU** for a search). The panel of a table or a column has the same button. The rows open under the canvas ([below](#looking-at-a-tables-rows)). |
+| See the parameters' values | **Preview the values** on the parameters, or one of them ([below](#the-parameters-values)). |
+| Read the record as it renders | **Preview the rendered record** on the record's heading ([below](#the-rendered-record)). |
 | Find a property or a column | Type in **Property or column**, which opens what holds the matches and lights them. |
 | See every property filled one way | Click **copied**, **changed**, **looked up**, **fixed** or **linked**, each with its count. |
 | Read the document beside the canvas | **YAML** opens the mapping as written, each line tied to the canvas: pointing at a line lights the property it writes, and a click picks it. |
@@ -96,6 +105,40 @@ for them.
 
 After a [dry run](dry-run.md), the properties it found broken carry a warning, on the section holding them while that is
 closed.
+
+## The menus
+
+| Right-click | The menu offers |
+| --- | --- |
+| A table, one of its columns, or a line from it | A look at what it holds (its rows, or the parameters' values), its **Details**, and a copy of its name: a flow's table by the name the flow gives it. |
+| Another record a mapping reads (a parent, a child) | Its **Details** and a copy of its name. |
+| A property, or a dot on its line | Its **Details**, **Show in the YAML**, which opens the document at the lines that write it, and a copy of its path. |
+| The record's heading | **Preview the rendered record**, the YAML, and a copy of the kind. |
+| The canvas | **Fit to the window**, **Open all** or **Fold**, and the YAML. |
+
+Escape closes a menu first, then the details, then what is shown under the canvas.
+
+## The parameters' values
+
+The values the flow's parameters render with, under the canvas: the ones the mapping reads first, in the order the parameters
+list them on the canvas, then any other the mapping declares. They are the values that reach a record, each a mapping's default
+under what the flow supplies, `${env:...}` and `${keyvault:...}` references resolved
+([mapping parameters](../flow/mapping.md)). They are read from one record's render, the record shown or the scope's first, so
+the flow picked and its scope decide them. Pointing at one lights its lines, and a click opens its details.
+
+## The rendered record
+
+One staged record as the mapping renders it, under the canvas: the record shown, or with none shown the scope's first, rendered
+as a delivery would render it now. Nothing is sent. It reads as a document:
+
+- The record's name heads it, then what it holds at its top, its kind and id first.
+- Each part of the record (`acl`, `legal`, `tags`, `data`...) is a section with a line per property, a nested property by its
+  dotted path.
+- A list of objects, such as `data.Curves`, is a table of its own with a row per item, at most 200 of them.
+
+The outline beside it lists the parts with how many properties or items each holds, marks the one being read, and goes to one on
+a click. **JSON** shows the rendered document as it is. **Copy as Markdown** copies the document as Markdown, which reads
+the same pasted into a ticket or a chat. A record the render would hold says why above it.
 
 ## Looking at a table's rows
 

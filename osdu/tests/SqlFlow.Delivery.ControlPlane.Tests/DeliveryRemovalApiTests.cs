@@ -186,8 +186,10 @@ public sealed class DeliveryRemovalApiTests
             await RefusedAsync(client, operate, approve, """{"entry":"wellbores","expected":3,"confirm":"dev"}""", HttpStatusCode.Conflict, "is queued or running");
 
             // A record's deletion lifted: it goes, and the record is asked to be planned again; one never removed answers 409.
+            // This control plane cannot reach the delivery flow's record table, so the lift stands and says the row keeps its mark.
             var lifted = await JsonAsync(client, operate, HttpMethod.Post, $"/api/v1/delivery/records/{flowId:D}/{gone.Value:D}/lift-removal", "{}");
             Assert.Equal(1, lifted.GetProperty("lifted").GetInt32());
+            Assert.Contains("keep any deleted mark, which could not be taken off from here", lifted.GetProperty("marksKept").GetString(), StringComparison.Ordinal);
             Assert.NotNull((await ledger.GetRecordAsync(flowId, gone))!.PlanRequestedUtc);
             Assert.Null(await ledger.GetRemovedKeyAsync(flowId, gone));
             await RefusedAsync(client, operate, $"/api/v1/delivery/records/{flowId:D}/{gone.Value:D}/lift-removal", "{}", HttpStatusCode.Conflict, "Not removed by its source");
