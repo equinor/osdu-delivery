@@ -6,7 +6,7 @@ using SqlFlow.Delivery.Storage;
 namespace SqlFlow.Delivery.Engine.Checks;
 
 /// <summary>
-/// The rows a value check found wrong with an attribute, as an Excel workbook (osdu/docs/reference/concepts/gui.md#mappings):
+/// The rows a value check found wrong with an attribute, as an Excel workbook (osdu/docs/reference/concepts/gui-build.md#mappings):
 /// a list to fix them from, with nothing left to look up. The <c>Issues</c> sheet is a row for each issue as the check meets
 /// it: the record, what it came to and why, then where to fix it (the file, the row and the column, and what the column holds
 /// there), then the base data behind it, the record's key and the source columns the attribute reads with what this row holds

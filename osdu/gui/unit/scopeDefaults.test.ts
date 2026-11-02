@@ -1,4 +1,4 @@
-// What a mapping's page starts a flow's scope on, and how its search finds a mapping (osdu/docs/reference/concepts/gui.md, Mappings).
+// What a mapping's page starts a flow's scope on, and how its search finds a mapping (osdu/docs/reference/concepts/gui-build.md, Mappings).
 
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";

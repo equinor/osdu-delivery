@@ -1,5 +1,5 @@
 // Whether a delivery would hold a previewed record, and what a failed assertion that holds it says beside the render's own
-// holds (osdu/docs/reference/concepts/gui.md, A record's page).
+// holds (osdu/docs/reference/concepts/gui-ledger.md, A record's page).
 
 /** What a preview says of the document it rendered, as far as its holds go (DeliveryPreviewDocument). */
 interface PreviewedDocument {

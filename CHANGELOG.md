@@ -38,7 +38,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   T-SQL to copy into SSMS: the source columns it reads with each row's key, file and row, over the rows a delivery reads, a child
   table left joined so a record with no child rows shows. After a check, **Failing rows** narrows it to the records the check listed.
   `POST /flows/{id}/source-sql` asks for the same, and a check's examples now carry `keyJson`
-  ([the Mappings page](osdu/docs/reference/concepts/gui.md#mappings)).
+  ([the Mappings page](osdu/docs/reference/concepts/gui-build.md#mappings)).
 
 - **See a mapping's records before they are delivered.** A mapping now opens on **Staged records**: the rows of a flow that renders
   with it, from any record table of any kind, paged and searched in the database so a table of any size lists at once, with
@@ -57,13 +57,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   check found wrong one record at a time, on one page: why they fail, what is wrong in this record, what its source row holds
   in the columns the attribute reads, and the document it rendered to, folded down to the attribute with each value marked and
   each place it is left out said. Each value says where to fix it: the file, the row and the column. A row in **Data** opens its
-  record there rather than leaving the sheet ([the Mappings page](osdu/docs/reference/concepts/gui.md#mappings)).
+  record there rather than leaving the sheet ([the Mappings page](osdu/docs/reference/concepts/gui-build.md#mappings)).
 
 - **The rows failing an attribute can be saved as an Excel workbook, with the base data behind them.** **Export rows** in an
   attribute's **Data** tab saves a row for each issue with the reason, the file, row and column to fix and what it holds, and
   what the row holds in the record's key and the source columns the attribute reads. Amber marks the cell to fix, among columns
   told apart by colour, and a second sheet adds the issues up by reason.
-  `POST /flows/{id}/check-values/export` asks for the same ([the Mappings page](osdu/docs/reference/concepts/gui.md#mappings)).
+  `POST /flows/{id}/check-values/export` asks for the same ([the Mappings page](osdu/docs/reference/concepts/gui-build.md#mappings)).
 
 - **The VS Code extension.** `osdu-delivery-vscode` makes the editor the place a pipeline is developed: a repository's plain `*.yaml`
   files open as what they are, every key of every kind has completion, hover and checks, a mapping completes and is checked
@@ -93,7 +93,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Sync a repository from the Delivery page.** **Sync now** syncs the repository picked beside it, with the same message and
   trace as the Repos page, and the page reads its flows and counts again when a sync ends, so a commit reaches the flows
   without leaving the page. The list shows how each repository last synced and remembers the pick
-  ([the Delivery page](osdu/docs/reference/concepts/gui.md#delivery)).
+  ([the Delivery page](osdu/docs/reference/concepts/gui-ledger.md#delivery)).
 
 - **A run is found by the id the platform's logs show.** Paste a correlation id or a run id into the search, and it lists the
   run with every run of its execution, each part of a delivery split over nodes included; paste it into the Runs page's box,
@@ -245,13 +245,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **The Records page and the audit trail open in the partition a link names.** A link with `?partition=` makes it the
   title bar's, as the explorer already did, so a lookup or a flow's trail linked from another partition lands on what it
-  names ([Records](osdu/docs/reference/concepts/gui.md#records), [audit trail](osdu/docs/reference/concepts/gui.md#audit-trail)).
+  names ([Records](osdu/docs/reference/concepts/gui-ledger.md#records), [audit trail](osdu/docs/reference/concepts/gui-ledger.md#audit-trail)).
 
 - **How long things take is shown at every level.** A schedule's last fire, a run group, a pipeline's last and usual
   run, a submission and its work batches, the audit trail and a retrieval flow's runs say how long they took, and
   anything still executing counts up
   ([how long the last fire took](sqlflow/docs/reference/flow/schedule.md#how-long-the-last-fire-took),
-  [a submission's page](osdu/docs/reference/concepts/gui.md#a-submissions-page)).
+  [a submission's page](osdu/docs/reference/concepts/gui-ledger.md#a-submissions-page)).
 
 - **An inventory finds the records OSDU holds more than once.** On an inventory's new **Duplicates** tab, build a key by
   clicking, in one of its records shown as JSON, the values the copies of one record hold equal, and **Find duplicates**:
@@ -385,7 +385,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   the source key, the label, the OSDU id or the ingestion file (`-0002` finds `LOG-0002/1`), and **Drifted only** and
   **Step held** narrow the page beside its status and flow pickers; each is in the address, the export takes them, and
   `GET /api/v1/delivery/records` takes `mode=contains`, `drifted` and `stepHeld`
-  ([Records](osdu/docs/reference/concepts/gui.md#records), [finding records](osdu/docs/reference/concepts/ledger.md#finding-records)).
+  ([Records](osdu/docs/reference/concepts/gui-ledger.md#records), [finding records](osdu/docs/reference/concepts/ledger.md#finding-records)).
 - **Proof values of records found by what they hold.** An assertion flow's `knownValues` finds each record a sheet
   describes by full paths in the OSDU record and values, including lists of paths up to the record a reference names
   (`'[data.WellboreID, data.FacilityName]'`, as a dimension's label reads) and down to the records naming one, then
@@ -414,7 +414,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   fills the window with one toolbar and a handle between the records and the code that keeps its width. **Render**, **Source YAML**
   and **Record shape** are pages of one section beside the records, and it opens on the first record's document, a required
   parameter with no default starting on the value its record table holds most
-  ([the Mappings page](osdu/docs/reference/concepts/gui.md#mappings)).
+  ([the Mappings page](osdu/docs/reference/concepts/gui-build.md#mappings)).
 
 - **A value check names a repeated item's own file and row.** `sqlflow values` and a mapping's data check give the file and row
   of an item's child row rather than its record's, fill `item` for a failed assertion, and say which source columns to fix
@@ -449,7 +449,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   whole on hover with a copy), with blocked said in the same line. The Render tab says the next run's reason on one line
   and why a delivery would hold the record under **Held for**, each reason under its property with a `$coalesce`'s
   alternatives numbered, in place of three red blocks repeating it, so the **Rendered record** follows on screen; the
-  Preview page shows the holds the same way ([a record's page](osdu/docs/reference/concepts/gui.md#a-records-page)).
+  Preview page shows the holds the same way ([a record's page](osdu/docs/reference/concepts/gui-ledger.md#a-records-page)).
 - **The Issues tab is redesigned.** A flow's issues fill a grid that fits the window, each headed by the property its
   error names over what it says, with a filter by words or id; an issue opens in the bottom panel over the grid, as a
   run's trace does, with Up and Down stepping through the issues, in place of the detail beside the list. An issue reads
@@ -458,7 +458,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   ([A delivery flow's page](osdu/docs/reference/concepts/gui.md#a-delivery-flows-page),
   [issues](osdu/docs/reference/concepts/record-lifecycle.md#issues)).
 - A record's tabs no longer carry counts: the Enrichments and Artifacts tabs are named alone, and each tab's own first
-  line still counts what it holds ([A record's page](osdu/docs/reference/concepts/gui.md#a-records-page)). A contains
+  line still counts what it holds ([A record's page](osdu/docs/reference/concepts/gui-ledger.md#a-records-page)). A contains
   search of a flow's records also matches the ingestion file a record came from
   ([finding records](osdu/docs/reference/concepts/ledger.md#finding-records)).
 - The Schedules page marks what a schedule runs its flows with by an icon, tinted when it gives an operation or values,
@@ -578,11 +578,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   every synced repository's template folders, read from the file, in place of the saved versions; a link naming a kind
   and version opens the file holding it. `GET /api/v1/delivery/templates` answers those files, and
   `GET /api/v1/delivery/templates/detail` and `/schema` name one by `repoId` and `path` instead of `kind` and `version`
-  ([The GUI](osdu/docs/reference/concepts/gui.md#templates), [API](osdu/docs/reference/concepts/api.md#mappings-templates-and-the-mapping-builder)).
+  ([The GUI](osdu/docs/reference/concepts/gui-build.md#templates), [API](osdu/docs/reference/concepts/api.md#mappings-templates-and-the-mapping-builder)).
 - **The mapping builder starts from a template a repository holds.** It offers the files of the picked repository's
   template folders and proposes the mapping alone, into the `mappings` folder beside the one holding its template;
   `POST /api/v1/delivery/mapping-builder/draft` takes `repoId` and `templatePath` instead of `kind` and `version`
-  ([The GUI](osdu/docs/reference/concepts/gui.md#mapping-builder)).
+  ([The GUI](osdu/docs/reference/concepts/gui-build.md#mapping-builder)).
 - **The explorer checks a record against a repository's template.** Validation's **Saved template** is now
   **Repository template**: `schema` takes `template` instead of `saved` on the validate routes, and an answer lists the
   versions the repositories hold in `templateVersions` instead of `savedVersions`
@@ -693,7 +693,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   red on its Render tab, and its OSDU tab offered a **Read** that failed: the page read OSDU for any record with an id,
   and the control plane reads back only an id the record's flow wrote to. The record now says whether it claimed its id
   (`claimed`), its Render tab says OSDU holds nothing of it to set it beside, its OSDU tab says **Not sent yet**, and a
-  record held before any try says so rather than "after 0 tries" ([a record's page](osdu/docs/reference/concepts/gui.md#a-records-page)).
+  record held before any try says so rather than "after 0 tries" ([a record's page](osdu/docs/reference/concepts/gui-ledger.md#a-records-page)).
 - A record held for one reason in several items of a `$forEach` array (three curves with no unit) said the reason once an
   item, so its error repeated it, and records held for it fell into as many issues as there were counts of such items. The
   reason is now said once with how many items say it (`in 3 of 12 items`), and they are one issue; a record held before
@@ -792,7 +792,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   soft-deleted as delivered while OSDU served nothing; the route now reads the version, and brings such a record back
   under its id ([routes, storage](osdu/docs/reference/flow/routes.md#storage)).
 - **The audit trail narrows to inventory repairs and new OSDU ids.** Its action filter now offers `inventory-repair` and
-  `reassign-id`, which the trail records, beside the new `adopt` ([Audit trail](osdu/docs/reference/concepts/gui.md#audit-trail)).
+  `reassign-id`, which the trail records, beside the new `adopt` ([Audit trail](osdu/docs/reference/concepts/gui-ledger.md#audit-trail)).
 - **Shift+Tab leaves a tree.** In the catalog, a repository's folders, the AI context tables and a template's
   variables, Shift+Tab from a row sent focus straight back into the tree, so the keyboard could not leave it backwards;
   it now steps out, and the schema changes tree can be reached with Tab at all

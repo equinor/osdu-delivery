@@ -215,7 +215,7 @@ held, invalid or empty for, or whose value fails an assertion of the mapping, wr
 
 It is the full list the answer's example records are the first of. The GUI's **Export rows** on a mapping's attribute
 writes that attribute's part of it as an Excel workbook, with the source columns it reads
-([the Mappings page](../concepts/gui.md#mappings)).
+([the Mappings page](../concepts/gui-build.md#mappings)).
 
 ## Examples
 

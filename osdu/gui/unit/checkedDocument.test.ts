@@ -1,4 +1,4 @@
-// What a data check needs of a record's document (osdu/docs/reference/concepts/gui.md, Mappings): where an attribute landed,
+// What a data check needs of a record's document (osdu/docs/reference/concepts/gui-build.md, Mappings): where an attribute landed,
 // the records a check lists for it, and the workbook a node answers with.
 
 import assert from "node:assert/strict";

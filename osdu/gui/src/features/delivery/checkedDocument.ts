@@ -1,4 +1,4 @@
-// What a data check needs of a record (osdu/docs/reference/concepts/gui.md, Mappings): where an attribute landed in its
+// What a data check needs of a record (osdu/docs/reference/concepts/gui-build.md, Mappings): where an attribute landed in its
 // document or is left out of it, what its source row holds for the attribute, the records a reason of the check lists, and
 // the workbook of its issues as a file to save.
 

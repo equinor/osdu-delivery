@@ -369,7 +369,7 @@ On the GUI's Mappings page, a synced mapping opens on a page of its own, on its 
 any other row is a click away, and **Dry run** says what every row comes to, with each document held to the template and to the
 partition's Schema service, and nothing sent ([a dry run](../concepts/dry-run.md)). Under **Properties**, an attribute's **SQL** tab
 writes the query to run in SSMS to see what it reads in the source, narrowed to the rows that fail once a check has found any
-([the Mappings page](../concepts/gui.md#mappings)).
+([the Mappings page](../concepts/gui-build.md#mappings)).
 
 ## 9. Fix and repeat
 

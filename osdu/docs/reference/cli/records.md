@@ -174,7 +174,7 @@ filter in words, how many records were written, how they are sorted and when, an
 
 The workbench's Records page exports what its lookup reaches the same way, at most the 1,000 records a lookup reaches,
 with the flow, interface and partition of each record and, for a search, the values the term matched
-([The OSDU pages](../concepts/gui.md#records)).
+([The OSDU pages](../concepts/gui-ledger.md#records)).
 
 `--json`: `flow`, `flowId`, `file` (the full path written) and `records`.
 

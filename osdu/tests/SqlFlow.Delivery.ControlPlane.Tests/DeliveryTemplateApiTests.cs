@@ -26,7 +26,7 @@ namespace SqlFlow.ControlPlane.Tests;
 
 /// <summary>
 /// Templates and the mapping builder through the API (osdu/docs/reference/concepts/templates.md; the builder:
-/// osdu/docs/reference/concepts/gui.md, Mapping builder): the templates every synced repository holds, listed as their syncs
+/// osdu/docs/reference/concepts/gui-build.md, Mapping builder): the templates every synced repository holds, listed as their syncs
 /// recorded them and each read from its file where the repository was synced, as variables and as the file; nothing that
 /// saves or deletes one; the builder's repository listing, draft from a repository's template, parse and check against a
 /// repository's cache as the catalog carries it; and browsing and downloading the OSDU data definitions, served here by a

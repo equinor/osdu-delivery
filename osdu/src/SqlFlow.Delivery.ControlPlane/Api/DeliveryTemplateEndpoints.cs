@@ -249,7 +249,7 @@ public sealed record DeliveryMappingOutlineResult(MappingOutline? Outline, int? 
 
 /// <summary>
 /// Templates and the mapping builder (osdu/docs/reference/concepts/templates.md; the builder:
-/// osdu/docs/reference/concepts/gui.md, Mapping builder). A template is a file of a synced repository's template folder,
+/// osdu/docs/reference/concepts/gui-build.md, Mapping builder). A template is a file of a synced repository's template folder,
 /// and every template read here is read from its file; the database only lists which files hold which template. Listing
 /// and laying out templates, browsing and downloading the OSDU data definitions (the public repository of OSDU schemas,
 /// which needs no credential), drafting and checking a mapping are reads; nothing here writes a template.

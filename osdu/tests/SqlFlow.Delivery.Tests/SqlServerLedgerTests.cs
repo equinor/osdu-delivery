@@ -458,10 +458,10 @@ public class SqlServerLedgerTests
         Assert.Equal(3, (await ledger.LookupAsync(_run + "/well-", 3)).Count);
 
         // A record is found by the file its row came from, which is how an operator gets from a landed file to its records.
-        // The origin that answers is the delivered one, which is what the index covers, so it is the completion that puts a
-        // record within reach of the search: a queued version carries its file name, and is found once it is delivered.
+        // A row shows a queued version's file, so the identity index holds it from the staging on, and the delivery leaves
+        // the record findable by it.
         var staged = await ledger.ListAsync(_flow, new RecordQuery { Max = 20 });
-        Assert.Empty(await ledger.ListAsync(_flow, new RecordQuery { Search = "welllog_2026", Max = 20 }));
+        Assert.Equal(12, (await ledger.ListAsync(_flow, new RecordQuery { Search = "welllog_2026", Max = 20 })).Count);
         await ledger.CompleteManyAsync(_flow, staged.Select(r => Completion(r, s1, Now)).ToList());
         Assert.Equal(12, (await ledger.ListAsync(_flow, new RecordQuery { Search = "welllog_2026", Max = 20 })).Count);
     }

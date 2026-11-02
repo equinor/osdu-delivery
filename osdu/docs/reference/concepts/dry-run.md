@@ -159,7 +159,7 @@ longest, and says so.
 
 ## See also
 
-- [The Mappings page](gui.md#mappings): where the tab is.
+- [The Mappings page](gui-build.md#mappings): where the tab is.
 - [Preflight](preflight.md): every check before anything reaches OSDU.
 - [sqlflow values](../cli/values.md) and [sqlflow preview](../cli/preview.md): the same render from the command line.
 - [Writing a mapping](../guides/writing-a-mapping.md): a dry run as a step of getting a mapping right.

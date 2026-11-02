@@ -1,4 +1,4 @@
-// Whether a delivery would hold a previewed record (osdu/docs/reference/concepts/gui.md, A record's page).
+// Whether a delivery would hold a previewed record (osdu/docs/reference/concepts/gui-ledger.md, A record's page).
 
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";

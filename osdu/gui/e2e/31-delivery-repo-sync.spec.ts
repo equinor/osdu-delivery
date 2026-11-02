@@ -1,7 +1,7 @@
 import { REPO_NAME } from "./global-setup";
 import { expect, FIRST_PAGE_MS, test } from "./helpers";
 
-// Syncing a repository from the Delivery page (osdu/docs/reference/concepts/gui.md, Delivery). The first test syncs the
+// Syncing a repository from the Delivery page (osdu/docs/reference/concepts/gui-ledger.md, Delivery). The first test syncs the
 // estate's repository for real; the sync reads the commit the estate already holds, so the specs after this one see it
 // unchanged. The others answer the list themselves, for the standings the estate does not have.
 
@@ -68,6 +68,8 @@ test.describe("Syncing a repository from the Delivery page", () => {
     await adminPage.goto("/delivery");
     await expect(adminPage.getByTestId("delivery-repo-sync-pick")).toHaveText("broken", { timeout: FIRST_PAGE_MS });
 
+    // The header's line arrives with the flows, after this mocked listing, and moves the toolbar out from under a hover.
+    await expect(adminPage.getByTestId("page-delivery").getByText(/\d+ delivery flows? /)).toBeVisible({ timeout: FIRST_PAGE_MS });
     const error = adminPage.getByTestId("delivery-repo-sync-error");
     await error.hover();
     await expect(adminPage.getByRole("tooltip")).toContainText("The remote refused the credential.");

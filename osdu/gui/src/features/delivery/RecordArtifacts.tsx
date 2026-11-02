@@ -160,7 +160,7 @@ export function RecordUndoNotice({ artifacts, onOpen }: { artifacts: DeliveryArt
 }
 
 /**
- * What deliveries of the record created in OSDU (osdu/docs/reference/concepts/gui.md, A record's page), newest first: one
+ * What deliveries of the record created in OSDU (osdu/docs/reference/concepts/gui-ledger.md, A record's page), newest first: one
  * line of counts by state, the ones an undo still has to take called out, then the grid, which fits what the window leaves
  * and scrolls in place. A delivery that completed keeps only the ids that stay in OSDU (datasets, content, outputs,
  * dataspaces), so a record delivered through a DDMS session, or in one call, has none, and the empty grid says why.

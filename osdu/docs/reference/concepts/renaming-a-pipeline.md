@@ -179,7 +179,7 @@ A ledger is **orphaned** when no flow a repository declares keeps it, it holds a
 already. For a delivery ledger, that is no declared interface keeps its identity; for another kind, no repository declares
 a flow of its kind by the name it was kept under. The orphaned ledgers of one flow are one **missing document**.
 
-The **Orphaned ledgers** page (the menu's Ledger group, `/delivery/ledgers/orphaned`; [The GUI](gui.md#orphaned-ledgers))
+The **Orphaned ledgers** page (the menu's Ledger group, `/delivery/ledgers/orphaned`; [The GUI](gui-ledger.md#orphaned-ledgers))
 lists the missing documents in the workbench's partition, those that left the most behind first: the missing flow (its
 kind, when it is no delivery flow) and the file it was last declared in, when a sync last found it, what it left behind,
 and the flow suggested to take it over. The Delivery page says when any exist. **Take over** opens a dialog that lists its
@@ -257,4 +257,4 @@ never queued a document wrote nothing there.
 - [`osdu.LedgerFlow`](../tables/ledger-flow.md): the read model of the other kinds' flows.
 - [Operations runbook](../guides/operations-runbook.md#every-record-is-held-after-a-flow-was-renamed): records held after a rename.
 - [The control plane](control-plane.md#background-services): the pass that finishes a move that waited.
-- [The GUI](gui.md#orphaned-ledgers): the Orphaned ledgers page.
+- [The GUI](gui-ledger.md#orphaned-ledgers): the Orphaned ledgers page.

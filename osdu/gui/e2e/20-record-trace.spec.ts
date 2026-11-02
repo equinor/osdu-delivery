@@ -144,19 +144,18 @@ test.describe.serial("record trace", () => {
     await expect(adminPage.getByTestId("submission-reverse")).toHaveCount(0);
 
     // On its flow's Submissions tab a row opens the submission and carries no id of its own; its icon opens the run that
-    // coordinated it, one of the runs this page names.
+    // coordinated it. The tab lists a flow's newest submissions and every run adds one, so on an estate kept from run to run
+    // this submission can have left the list: the first row's icon is the one followed, not this submission's run.
     const submissionPage = adminPage.url();
-    const runIds = await adminPage.getByTestId(/^submission-run-[0-9a-f-]{36}$/).evaluateAll(
-      (chips) => chips.map((chip) => chip.getAttribute("data-value")).filter((id): id is string => id !== null));
-    expect(runIds.length).toBeGreaterThan(0);
+    await expect(adminPage.getByTestId(/^submission-run-[0-9a-f-]{36}$/).first()).toBeVisible();
     await adminPage.getByTestId("submission-pipeline-link").click();
     await adminPage.getByTestId("pipeline-tabs").getByRole("tab", { name: /submissions/i }).click();
-    const runIcon = adminPage.getByTestId("delivery-submissions-table")
-      .locator(runIds.map((id) => `a[href="/runs/${id}"]`).join(", ")).first();
+    const runIcon = adminPage.getByTestId("delivery-submissions-table").locator('a[href^="/runs/"]').first();
     await expect(runIcon).toBeVisible({ timeout: 30_000 });
+    const runPath = await runIcon.getAttribute("href");
     await runIcon.click();
     await expect(adminPage.getByTestId("page-run-detail")).toBeVisible();
-    expect(runIds).toContain(new URL(adminPage.url()).pathname.replace("/runs/", ""));
+    expect(new URL(adminPage.url()).pathname).toBe(runPath);
     await adminPage.goto(submissionPage);
     await expect(adminPage.getByTestId("page-delivery-submission")).toBeVisible();
 

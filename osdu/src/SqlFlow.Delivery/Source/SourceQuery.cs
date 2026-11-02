@@ -28,7 +28,7 @@ public sealed record SourceQueryRead(string Column, string Table);
 
 /// <summary>
 /// The script a person runs in SSMS to see what an attribute of a mapping reads, as the source tables hold it now
-/// (osdu/docs/reference/concepts/gui.md, Mappings).
+/// (osdu/docs/reference/concepts/gui-build.md, Mappings).
 /// </summary>
 /// <param name="Flow">The flow whose rows it reads.</param>
 /// <param name="Interface">The interface of the flow.</param>

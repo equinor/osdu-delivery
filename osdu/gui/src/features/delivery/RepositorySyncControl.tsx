@@ -46,7 +46,7 @@ function SyncStanding({ source }: { source: RepoSource }) {
 }
 
 /**
- * Syncs a repository from the Delivery page (osdu/docs/reference/concepts/gui.md, Delivery), so a commit reaches the flows
+ * Syncs a repository from the Delivery page (osdu/docs/reference/concepts/gui-ledger.md, Delivery), so a commit reaches the flows
  * without a trip to the Repos page: the same sync, toast and trace as that page's Sync now, for the repository picked here.
  * The pick is remembered. The page reads its flows and counts again whenever a sync ends, which also covers a sync that
  * outlasted the control plane's wait and the background sync. Nothing shows while no repository is registered: the page

@@ -1,4 +1,4 @@
-// Which records a query of an attribute's source narrows to (osdu/docs/reference/concepts/gui.md, Mappings).
+// Which records a query of an attribute's source narrows to (osdu/docs/reference/concepts/gui-build.md, Mappings).
 
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";

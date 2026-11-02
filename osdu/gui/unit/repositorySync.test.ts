@@ -1,4 +1,4 @@
-// What the Delivery page's repository sync offers and follows (osdu/docs/reference/concepts/gui.md, Delivery): which
+// What the Delivery page's repository sync offers and follows (osdu/docs/reference/concepts/gui-ledger.md, Delivery): which
 // repository Sync now is for, and the value that moves when a sync ends, so the page reads its flows again.
 
 import assert from "node:assert/strict";

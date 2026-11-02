@@ -322,7 +322,7 @@ public sealed record MappingDraftIssue(string Severity, string Message, string? 
 public sealed record CachedTypeInfo(string Name, string EntityType, IReadOnlyList<string> Fields, string? Key = null);
 
 /// <summary>
-/// The mapping builder's logic (osdu/docs/reference/concepts/gui.md, Mapping builder): a draft prefilled from the
+/// The mapping builder's logic (osdu/docs/reference/concepts/gui-build.md, Mapping builder): a draft prefilled from the
 /// template and the cache, the checks that say what is still missing, the YAML the draft is written as, and the draft of
 /// an existing mapping. The YAML is the one written form; what it loads to is decided by the document loader alone.
 /// </summary>

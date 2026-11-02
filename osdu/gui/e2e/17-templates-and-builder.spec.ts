@@ -5,7 +5,7 @@ import { REPO_NAME, SOURCE } from "./global-setup";
 import { expect, test } from "./helpers";
 
 // Templates and the mapping builder (osdu/docs/reference/concepts/templates.md; the builder:
-// osdu/docs/reference/concepts/gui.md, Mapping builder). Runs after the seed (03), which syncs the fixture repository: its
+// osdu/docs/reference/concepts/gui-build.md, Mapping builder). Runs after the seed (03), which syncs the fixture repository: its
 // sync records the templates the source's template folder holds, which the Templates page lists and reads from the
 // repository's files, and its cache is in the catalog. Browsing OSDU reads the Open Group's public data definitions
 // repository through the control plane, which the suite cannot reach, so the browse tests stand in for those answers and
