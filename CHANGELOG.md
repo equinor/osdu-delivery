@@ -422,6 +422,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   curve `MD` among its curves ([Assertions](osdu/docs/reference/flow/assertion.md#assertions)).
 
 ### Changed
+- **An operation's trace waits in the title bar instead of taking the page's room.** Sync now, a discovery and a run
+  still running when its page opens no longer open the bottom panel: a trace icon appears at the right of the title bar,
+  with an arc turning around it and rings spreading from it while the work runs, and a check, a warning mark or a cross
+  on its corner when it ends unread. A click opens the trace in the bottom panel, or lists the traces when there are
+  several; a trace someone asked for (a failed sync's mark, a run's **Trace**, an external trigger's request) still
+  opens at once. The bottom panel now drags up to the page's whole height, where it stopped at 70%
+  ([Delivery](osdu/docs/reference/concepts/gui-ledger.md#delivery)).
 - A removal flow whose delivery flow's record table carries the soft-delete column now writes to it: it needs `UPDATE` on the table
   through the delivery flow's source connection, and fails before taking anything out when the write is refused. A deletion is also
   lifted when its row is loaded again, and a row loaded again after its deleted mark is no longer held

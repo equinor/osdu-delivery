@@ -59,8 +59,8 @@ Every delivery flow as a card, counted in the title bar's partition: a delivered
 flow that delivers only to other partitions says where, without counts. The header line totals what the flows hold
 (delivered of total, pending, held, failed, drifted). **Find a record** with **Look up** opens Records looked up for
 what is typed. A card opens the flow's Delivery tab. **Sync now** syncs the repository picked in the list beside it, so a commit reaches the
-flows without a trip to the Repos page: it is the Repos page's own sync, with its message and its trace in the bottom
-panel. The list shows how each repository last synced, a paused one cannot be picked, the pick is remembered, and a mark
+flows without a trip to the Repos page: it is the Repos page's own sync, with its message, and its trace followed by the
+title bar's trace indicator, which opens it in the bottom panel when clicked. The list shows how each repository last synced, a paused one cannot be picked, the pick is remembered, and a mark
 beside a repository whose last sync failed shows the error and opens that trace. When any sync ends, whoever started it,
 the page reads its flows and counts again. A card shows what a flow's run did within seconds of the run
 ending: the page checks each flow's newest run every five seconds (every three while one is queued or running), and reads

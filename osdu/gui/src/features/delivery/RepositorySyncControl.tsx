@@ -11,7 +11,7 @@ import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { announceSyncOutcome, repoSourcesRefetchInterval } from "@/features/repos/syncOutcome";
-import { useSyncTracePanel } from "@/features/repos/useSyncTracePanel";
+import { useFollowSyncTrace, useSyncTracePanel } from "@/features/repos/useSyncTracePanel";
 import { pickedSource, rememberedRepository, rememberRepository, syncsEnded } from "./repositorySync";
 
 /** The page the Repos page reads, under the same key: repositories are a handful per control plane. */
@@ -55,6 +55,7 @@ function SyncStanding({ source }: { source: RepoSource }) {
 export function RepositorySyncControl() {
   const queryClient = useQueryClient();
   const openSyncTrace = useSyncTracePanel();
+  const followSyncTrace = useFollowSyncTrace();
   const { hasScope } = useAuth();
   const canOperate = hasScope("operate");
   const [picked, setPicked] = useState(rememberedRepository);
@@ -159,7 +160,7 @@ export function RepositorySyncControl() {
         onClick={() => {
           if (source !== undefined) {
             syncNow.mutate(source);
-            openSyncTrace(source.id, source.name);
+            followSyncTrace(source.id, source.name);
           }
         }}
         data-testid="delivery-repo-sync-now"

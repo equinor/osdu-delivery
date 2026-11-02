@@ -50,7 +50,11 @@ test.describe("Syncing a repository from the Delivery page", () => {
       { timeout: 120_000 },
     );
     await adminPage.getByTestId("delivery-repo-sync-now").click();
+    // The sync's trace is followed behind the title bar's trace indicator, and the page keeps its room until it is opened.
+    await expect(adminPage.getByTestId("trace-indicator")).toBeVisible();
+    await expect(adminPage.getByTestId("trace-copy")).toHaveCount(0);
     await expect(adminPage.getByText(`${REPO_NAME} synced to`)).toBeVisible({ timeout: 120_000 });
+    await adminPage.getByTestId("trace-indicator").click();
     await expect(adminPage.getByTestId("trace-copy")).toBeVisible();
     await flowsReadAgain;
     await expect(adminPage.getByTestId("delivery-repo-sync-now")).toBeEnabled();
