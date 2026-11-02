@@ -70,21 +70,21 @@ export function OsduTarget({ record, copyTestId = "copy-osdu-id" }: {
   }
 
   const name = <RecordName id={record.targetId} typeOnly className="max-w-[140px] text-[12px]" testId="osdu-target" />;
+  const removed = record.status === "deleted";
   return (
     <span className="inline-flex min-w-0 max-w-full items-center gap-0.5">
-      {record.status === "deleted"
-        ? <span className="inline-flex min-w-0 items-center text-muted-foreground">{name}</span>
-        : (
-          <RouterLink
-            to={`${deliveryRecordRoute(record)}?tab=osdu`}
-            onClick={(event) => event.stopPropagation()}
-            aria-label={`Read ${record.targetId} as OSDU holds it`}
-            className="inline-flex min-w-0 items-center text-primary hover:underline"
-            data-testid="open-in-osdu"
-          >
-            {name}
-          </RouterLink>
-        )}
+      {/* A removed record opens its OSDU tab too, which asks OSDU for the id to check that it holds nothing there. */}
+      <RouterLink
+        to={`${deliveryRecordRoute(record)}?tab=osdu`}
+        onClick={(event) => event.stopPropagation()}
+        aria-label={removed ? `Check that OSDU no longer holds ${record.targetId}` : `Read ${record.targetId} as OSDU holds it`}
+        className={removed
+          ? "inline-flex min-w-0 items-center text-muted-foreground hover:text-foreground hover:underline"
+          : "inline-flex min-w-0 items-center text-primary hover:underline"}
+        data-testid="open-in-osdu"
+      >
+        {name}
+      </RouterLink>
       <CopyButton iconOnly label="Copy the OSDU id" text={record.targetId} testId={copyTestId} />
     </span>
   );

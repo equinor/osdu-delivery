@@ -78,7 +78,7 @@ file instead (`-0002` finds `LOG-0002/1`); it reads every record the other filte
 them it asks for a flow or a status first ([finding records](ledger.md#finding-records)). Each hit says which value
 matched. The filters a flow's Records tab has narrow both the listing and a lookup: a status picker (`pending`,
 `waiting`, `delivering`, `delivered`, `held`, `failed`, `deleted`, `reverted`), **Drifted only** (the records whose last
-verify found OSDU holding something else, or nothing) and **Step held** ([an enrichment set aside on its
+verify found OSDU holding something else, or nothing, and the removed records OSDU still holds) and **Step held** ([an enrichment set aside on its
 hold](../flow/enrich-holds.md)), with a flow picker beside them. A row shows the status, the record (label, source key,
 ingestion file and row), the flow, when it last changed and was last delivered, and its OSDU type, a link to the
 record's OSDU tab; a row opens the record's page. The term (`q`), status (`status`), flow (`flow`, the ledger's flow

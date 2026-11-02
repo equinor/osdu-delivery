@@ -136,6 +136,12 @@ row is delivered again ([removal and reversal](../concepts/removal-and-reversal.
 A delivery flow without a filter reads a marked row and holds it, unless the row was loaded again after its mark: a row
 loaded after its mark is back, and is decided as any other ([change detection](../concepts/change-detection.md#what-is-decided-for-each-record-read)).
 
+## Checking that a record is gone
+
+A verify run of the delivery flow checks each record taken out to be gone from OSDU (`gone`, or **still in OSDU** when OSDU
+holds a record at its id), and a removed record's **OSDU** tab asks OSDU for its id
+([Check that OSDU no longer holds a record](../guides/rows-deleted-in-the-source.md#check-that-osdu-no-longer-holds-a-record)).
+
 ## SQLFlow's key match beside a removal
 
 Both write the same column, and they agree as long as their sources do: a key the ingestion flow's source lacks is one

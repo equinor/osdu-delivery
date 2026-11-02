@@ -19,6 +19,14 @@ export function wroteToOsdu(record: RecordTarget): boolean {
   return record.targetId !== null && record.status !== "deleted" && record.claimed !== false;
 }
 
+/**
+ * Whether there is an id of the flow's to ask OSDU about: one the flow wrote to, removed since or not. A removed record is
+ * read and verified to check that OSDU no longer holds it.
+ */
+export function readableInOsdu(record: RecordTarget): boolean {
+  return record.targetId !== null && record.claimed !== false;
+}
+
 /** What the record's OSDU tab says before a read: what a read would show, or why there is nothing of its flow's to read. */
 export function osduEmptyText(record: RecordTarget): { title: string; description: string } {
   if (wroteToOsdu(record)) {
@@ -29,7 +37,12 @@ export function osduEmptyText(record: RecordTarget): { title: string; descriptio
   }
 
   if (record.status === "deleted") {
-    return { title: "Removed from OSDU", description: "The record was removed, so there is nothing of this flow's to read." };
+    return record.targetId !== null && record.claimed !== false
+      ? {
+        title: "Removed from OSDU",
+        description: "Read asks OSDU for this id now, through its flow's route and credentials: a removal that stands answers that OSDU holds no record under it. Nothing is written.",
+      }
+      : { title: "Removed from OSDU", description: "The record was removed, and its flow never wrote to an id there to read." };
   }
 
   return record.targetId === null

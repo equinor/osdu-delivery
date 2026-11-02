@@ -23,6 +23,7 @@ import type {
 } from "../../api/delivery";
 import { verdictIn, type ValidationVerdict } from "../../api/validation";
 import { UndoOutcomeBadge } from "./ArtifactMarks";
+import { verifyOutcomeAgrees, verifyOutcomeLabel } from "./verifyOutcome";
 import { RunRef, SubmissionRef } from "./DeliveryRefs";
 import { Fact, FactGrid, NoFact } from "./Facts";
 import { prettyJson } from "./prettyJson";
@@ -1438,8 +1439,10 @@ function milestones(record: DeliveryRecord, attempts: DeliveryAttempt[], chain: 
     {
       label: "Verified",
       value: record.lastVerifiedUtc === null ? "never" : <RelativeTime value={record.lastVerifiedUtc} />,
-      caption: record.lastVerifyOutcome ?? undefined,
-      tone: record.lastVerifyOutcome === "drifted" || record.lastVerifyOutcome === "missing" ? "warning" : record.lastVerifyOutcome === "match" ? "success" : undefined,
+      caption: record.lastVerifyOutcome === null ? undefined : verifyOutcomeLabel(record.lastVerifyOutcome),
+      tone: record.lastVerifyOutcome === null || record.lastVerifyOutcome === "error"
+        ? undefined
+        : verifyOutcomeAgrees(record.lastVerifyOutcome) ? "success" : "warning",
       testId: "milestone-verified",
     },
   ];

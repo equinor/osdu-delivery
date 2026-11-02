@@ -282,8 +282,8 @@ disagreed has records whose ids were claimed in the environment's partition, and
 
 ## OSDU holds something other than what was delivered
 
-**You see** drift: a `verify` run reported `drifted` or `missing` records, the Delivery tab counts them, and the Records tab
-lists them with **Drifted only**.
+**You see** drift: a `verify` run reported `drifted` or `missing` records, or removed records OSDU still holds (`served`,
+**still in OSDU**), the Delivery tab counts them, and the Records tab lists them with **Drifted only**.
 
 ```bash
 sqlflow run flows/welldb-wellbore-03-delivery.yaml --operation verify --set partition=dev --payload '{"force":true}'

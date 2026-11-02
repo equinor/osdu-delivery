@@ -1678,14 +1678,14 @@ public sealed partial class OsduLedger : ILedger
     }
 
     /// <summary>
-    /// The records among <paramref name="rows"/> a narrowing keeps: those whose last verify found drift or a missing
-    /// record, and those an enrichment was set aside on. A flow's listing narrows by the same two (<see cref="Narrow"/>).
+    /// The records among <paramref name="rows"/> a narrowing keeps: those whose last verify found drift, a missing record or
+    /// a removed one OSDU still holds, and those an enrichment was set aside on. A flow's listing narrows by the same two (<see cref="Narrow"/>).
     /// </summary>
     private static IQueryable<DeliveryRecord> Narrowed(IQueryable<DeliveryRecord> rows, LookupNarrowing narrowing)
     {
         if (narrowing.Drifted)
         {
-            rows = rows.Where(r => r.LastVerifyOutcome == "drifted" || r.LastVerifyOutcome == "missing");
+            rows = rows.Where(r => r.LastVerifyOutcome == "drifted" || r.LastVerifyOutcome == "missing" || r.LastVerifyOutcome == "served");
         }
 
         if (narrowing.StepHeld)
@@ -2015,7 +2015,7 @@ public sealed partial class OsduLedger : ILedger
             .ToDictionaryAsync(c => c.Status, c => c.Count, StringComparer.Ordinal, ct)
             .ConfigureAwait(false);
         var drifted = await db.DeliveryRecords
-            .LongCountAsync(r => r.PartitionId == partition && r.FlowId == flowId && (r.LastVerifyOutcome == "drifted" || r.LastVerifyOutcome == "missing"), ct)
+            .LongCountAsync(r => r.PartitionId == partition && r.FlowId == flowId && (r.LastVerifyOutcome == "drifted" || r.LastVerifyOutcome == "missing" || r.LastVerifyOutcome == "served"), ct)
             .ConfigureAwait(false);
         var deliveredSince = await db.DeliveryRecords
             .LongCountAsync(r => r.PartitionId == partition && r.FlowId == flowId && r.LastDeliveredUtc != null && r.LastDeliveredUtc >= since, ct)
@@ -2232,10 +2232,12 @@ public sealed partial class OsduLedger : ILedger
         }
 
         var delivered = StatusText.Of(RecordStatus.Delivered);
+        var deleted = StatusText.Of(RecordStatus.Deleted);
         var rows = await ReadAsync(
             db =>
             {
-                var query = db.DeliveryRecords.Where(r => r.PartitionId == partition && r.FlowId == flowId && r.Status == delivered && r.TargetId != null);
+                // Delivered records are compared with what OSDU holds; removed ones are checked to be gone from it.
+                var query = db.DeliveryRecords.Where(r => r.PartitionId == partition && r.FlowId == flowId && (r.Status == delivered || r.Status == deleted) && r.TargetId != null);
                 if (verifiedBeforeUtc is { } before)
                 {
                     query = query.Where(r => r.LastVerifiedUtc == null || r.LastVerifiedUtc < before);

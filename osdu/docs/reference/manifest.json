@@ -1026,6 +1026,7 @@
         "openapi"
       ],
       "related": [
+        "delivery-concept-api-flow-kinds",
         "concept-control-plane",
         "delivery-concept-control-plane",
         "delivery-concept-authentication-and-identity",
@@ -1069,6 +1070,46 @@
         "osdu/src/SqlFlow.Delivery.ControlPlane/Api/DeliveryCachePruneEndpoints.cs",
         "osdu/src/SqlFlow.Delivery.ControlPlane/Api/DeliveryDimensionViewEndpoints.cs",
         "osdu/src/SqlFlow.Delivery.ControlPlane/Api/DeliveryOrphanedLedgerEndpoints.cs",
+        "osdu/src/SqlFlow.Delivery.ControlPlane/Api/DeliveryRemovalEndpoints.cs"
+      ]
+    },
+    {
+      "id": "delivery-concept-api-flow-kinds",
+      "corpus": "reference",
+      "path": "concepts/api-flow-kinds.md",
+      "title": "The delivery API for the other flow kinds: assertions, dimensions, inventories, removal flows, downloads, retention",
+      "type": "concept",
+      "summary": "The /api/v1/delivery routes of the flow kinds beside delivery: assertions, dimensions, inventories, removal flows, downloads, and the retention areas.",
+      "keywords": [
+        "api/v1/delivery",
+        "assertion routes",
+        "dimension routes",
+        "inventory routes",
+        "removal flow routes",
+        "removals api",
+        "lift-removal",
+        "download routes",
+        "retention areas",
+        "maintenance storage"
+      ],
+      "related": [
+        "delivery-concept-api",
+        "delivery-flow-assertion",
+        "delivery-flow-dimension",
+        "delivery-flow-inventory",
+        "delivery-flow-removal",
+        "delivery-flow-download",
+        "delivery-concept-storage-and-retention"
+      ],
+      "sourceRefs": [
+        "osdu/src/SqlFlow.Delivery.ControlPlane/DeliveryControlPlaneModule.cs",
+        "osdu/src/SqlFlow.Delivery.ControlPlane/Api/DeliveryInventoryEndpoints.Duplicates.cs",
+        "osdu/src/SqlFlow.Delivery.ControlPlane/Api/DeliveryAssertionEndpoints.cs",
+        "osdu/src/SqlFlow.Delivery.ControlPlane/Api/DeliveryDimensionEndpoints.cs",
+        "osdu/src/SqlFlow.Delivery.ControlPlane/Api/DeliveryExplorerEndpoints.Dimension.cs",
+        "osdu/src/SqlFlow.Delivery.ControlPlane/Api/DeliveryInventoryEndpoints.cs",
+        "osdu/src/SqlFlow.Delivery.ControlPlane/Api/DeliveryDownloadEndpoints.cs",
+        "osdu/src/SqlFlow.Delivery.ControlPlane/Api/DeliveryDimensionViewEndpoints.cs",
         "osdu/src/SqlFlow.Delivery.ControlPlane/Api/DeliveryRemovalEndpoints.cs"
       ]
     },
@@ -6707,7 +6748,12 @@
         "data comes back",
         "re-emergence",
         "deleted then restored",
-        "held as source-deleted"
+        "held as source-deleted",
+        "validate a removal",
+        "check a removed record is gone from osdu",
+        "verify removed records",
+        "still in osdu",
+        "gone"
       ],
       "related": [
         "delivery-flow-removal-marks",

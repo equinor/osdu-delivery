@@ -35,7 +35,7 @@ sourceRefs:
 The blueprint says how a build makes each column of a dimension's table, from the flow's YAML and the templates of the
 records it reads, before any build and after one. The dimension's **Definition** tab draws it, and
 `GET /api/v1/delivery/flows/{pipelineId}/dimensions/{name}/blueprint?partition=<partition>` answers it
-([API](api.md#assertions-dimensions-and-inventories)). It reads the catalog's copy of the flow, the templates the
+([API](api-flow-kinds.md#assertions-dimensions-and-inventories)). It reads the catalog's copy of the flow, the templates the
 [template folders](templates.md#template-folders) on its path held at the repository's last sync, and the ledger; nothing
 is sent to OSDU and no record is read. A dimension the explorer drafts, which no flow holds yet, is described by the
 templates every synced repository holds. The explorer's

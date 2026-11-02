@@ -20,6 +20,11 @@ keywords:
   - re-emergence
   - deleted then restored
   - held as source-deleted
+  - validate a removal
+  - check a removed record is gone from osdu
+  - verify removed records
+  - still in osdu
+  - gone
 related:
   - delivery-flow-removal-marks
   - delivery-flow-delivery-filter
@@ -197,6 +202,27 @@ flow's source connection: when it cannot reach the record table, the lift still 
 - The delivery flow's **Deletions** tab, and `sqlflow records removed <flow.yaml>` ([records removed](../cli/records.md#records-removed)).
 - A record's page: when its key was removed, by which removal flow and why, its `source-removed` attempt on the timeline,
   and **Deliver again**.
+
+## Check that OSDU no longer holds a record
+
+The ledger marks a record `deleted` from what the removal was answered: its soft delete accepted, or the record already
+gone. Three ways ask OSDU itself, now, through the delivery flow's route and credentials, and write nothing:
+
+- **One record.** Its OSDU id is the `osdu` chip at the top of its page, and on hover over the **OSDU** cell of the Records
+  tab, whose copy button copies it. The cell opens the record's **OSDU** tab, where **Read** asks OSDU for the id: a
+  removal that stands answers **OSDU holds no record under this id**, with the id and the request's correlation id to find
+  it in OSDU's logs. **Verify** on the record's page checks it in a run of its own and records the outcome.
+- **Every removed record of a flow.** A `verify` run (**Trigger run** with the operation `verify`,
+  `sqlflow run <flow.yaml> --operation verify`, or a schedule) checks each removed
+  record beside the delivered ones and records `gone` (the removal stands) or **still in OSDU** (`served`) in the Records
+  tab's **Verify** column; the run's summary counts both ([verify](../flow/delivery.md#verify)). **Drifted only** lists
+  the removed records OSDU still holds.
+- **Any id.** The [OSDU explorer](../concepts/explorer.md) reads an id pasted into it, as **Read** does.
+
+OSDU answers 404 for a soft-deleted record and leaves it out of a batch read (`invalidRecords`), as it does for an id
+it never held, so `gone` says OSDU no longer serves the record, not how it left. A record still in OSDU was written again
+after the removal, or the removal did not take: its **OSDU** tab reads it, with its version and who last wrote it
+(`modifyUser`).
 
 ## When something is off
 

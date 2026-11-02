@@ -106,6 +106,51 @@ public sealed class VerifyReconcileTests : IDisposable
         Assert.Empty(await ledger.ListPlanRequestedAsync(runtime.Flow.Id, null, 10));
     }
 
+    [Fact]
+    public async Task A_verify_checks_that_removed_records_are_gone_from_osdu_and_reports_one_osdu_still_holds_without_writing_to_it()
+    {
+        var tables = await SampleEstate.BuildAsync(_root, Now.AddMinutes(-5), time: _clock);
+        var ledger = _db.Ledger(_clock);
+        var protocol = new FakeProtocol();
+        var engine = Samples.Engine(ledger, _clock, sources: tables) with { Protocols = new FakeProtocolFactory(protocol) };
+        using var runtime = await FlowRuntime.CreateAsync(engine, Samples.LocalFlow(_root), SampleEstate.Values);
+        await ledger.RegisterAsync(runtime.Flow);
+        runtime.RunId = Guid.CreateVersion7();
+        await runtime.RunAsync(force: false);
+
+        // Two records are removed from OSDU. OSDU holds nothing at the first id; the second is there again, written by someone else.
+        var gone = SampleEstate.Key(0);
+        var served = SampleEstate.Key(1);
+        await runtime.RemoveAsync(RemovalSelection.Of([gone, served]), RemovalChoice.Record);
+        var removedServed = (await ledger.GetRecordAsync(runtime.Flow.Id, served))!;
+        protocol.VerifyWith = id => id.EndsWith(gone.Value.ToString("N"), StringComparison.Ordinal)
+            ? new VerifyResult(VerifyOutcome.Missing, null, "record not found")
+            : new VerifyResult(VerifyOutcome.Match, 7, null);
+        protocol.Deliveries.Clear();
+        _clock.Advance(TimeSpan.FromMinutes(1));
+
+        // The pass checks the removed records beside the delivered ones, and reconciles only the delivered.
+        var summary = await runtime.VerifyAsync(100, null, reconcile: true);
+        Assert.Equal((LogCount, LogCount - 2, 1, 1, 0, 0), (summary.Checked, summary.Matched, summary.Gone, summary.Served, summary.Drifted, summary.Missing));
+        Assert.Contains("of those removed from OSDU, 1 gone and 1 still in OSDU", summary.ToString(), StringComparison.Ordinal);
+        var checkedGone = (await ledger.GetRecordAsync(runtime.Flow.Id, gone))!;
+        var checkedServed = (await ledger.GetRecordAsync(runtime.Flow.Id, served))!;
+        Assert.Equal((RecordStatus.Deleted, VerifyOutcome.Gone), (checkedGone.Status, checkedGone.LastVerifyOutcome!.Value));
+        Assert.Equal((RecordStatus.Deleted, VerifyOutcome.Served), (checkedServed.Status, checkedServed.LastVerifyOutcome!.Value));
+
+        // A removed record OSDU still holds is reported, never written to: the ledger keeps what the removal left of it.
+        Assert.Equal((removedServed.LastError, removedServed.PlanRequestedUtc), (checkedServed.LastError, checkedServed.PlanRequestedUtc));
+        Assert.Empty(protocol.Deliveries);
+
+        // The drifted narrowing lists the removed record OSDU still holds, and not the one gone from it.
+        var drifted = await ledger.ListAsync(runtime.Flow.Id, new RecordQuery { Drifted = true, Max = 10 });
+        Assert.Equal([served], drifted.Select(r => r.DeliveryKey));
+
+        // A verify of one removed record, as its page asks for, checks that record alone.
+        var one = await runtime.VerifyAsync(100, null, reconcile: false, [gone]);
+        Assert.Equal((1, 1, 0), (one.Checked, one.Gone, one.Matched));
+    }
+
     public void Dispose()
     {
         _db.Dispose();

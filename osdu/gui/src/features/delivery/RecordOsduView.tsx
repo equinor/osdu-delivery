@@ -9,7 +9,7 @@ import { explorerApi, type ExplorerValidation } from "../../api/explorer";
 import { ExplorerValidationView, ValidationFieldMark } from "./explorer/ExplorerValidation";
 import type { InspectorExtras } from "./OsduRecordInspector";
 import { OsduRecordPanel } from "./OsduRecordView";
-import { osduEmptyText, wroteToOsdu } from "./recordTarget";
+import { osduEmptyText, readableInOsdu, wroteToOsdu } from "./recordTarget";
 import type { RecordOsduRead } from "./useRecordOsduRead";
 
 /**
@@ -42,6 +42,8 @@ export function RecordOsduView({ record, deliveryRef, pipelineId, flowScope, can
   if (flowScope.partition) {
     explorerParams.set("partition", flowScope.partition);
   }
+  // A removed record is read too, to check that OSDU no longer holds it; only one OSDU holds is read at a version.
+  const canRead = readableInOsdu(record);
   const canActOnTarget = wroteToOsdu(record);
   const reading = osdu.pending;
   const rootId = record.targetId ?? record.deliveryKey;
@@ -74,8 +76,12 @@ export function RecordOsduView({ record, deliveryRef, pipelineId, flowScope, can
         size="sm"
         className="h-7"
         onClick={osdu.readAgain}
-        disabled={disabled || reading || !canActOnTarget || !canOperate}
-        title={canOperate ? "Reads the record as OSDU holds it now, through its flow's route and credentials. Nothing is written." : "Reading what OSDU holds takes a signed-in session."}
+        disabled={disabled || reading || !canRead || !canOperate}
+        title={!canOperate
+          ? "Reading what OSDU holds takes a signed-in session."
+          : record.status === "deleted"
+            ? "Asks OSDU for this id now, through its flow's route and credentials, to check that it holds no record there. Nothing is written."
+            : "Reads the record as OSDU holds it now, through its flow's route and credentials. Nothing is written."}
         data-testid="record-osdu-read"
       >
         <BookOpenCheck />

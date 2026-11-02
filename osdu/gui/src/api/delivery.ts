@@ -30,7 +30,11 @@ export type DeliverySubmissionStatus = "received" | "planned" | "running" | "com
  */
 export type DeliverySubmissionKind = "incremental" | "full" | "keys";
 
-export type DeliveryVerifyOutcome = "match" | "drifted" | "missing" | "error";
+/**
+ * What a verify found of a record in OSDU: of a delivered record, `match`, `drifted`, `missing` or `error`; of a record
+ * removed from OSDU, `gone` (the removal stands) or `served` (OSDU still holds a record at its id), or `error`.
+ */
+export type DeliveryVerifyOutcome = "match" | "drifted" | "missing" | "error" | "gone" | "served";
 
 /** A delivery flow's record counts by state, drift, throughput, and its last submission. */
 export interface DeliveryFlowStats {

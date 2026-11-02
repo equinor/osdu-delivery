@@ -591,6 +591,7 @@ const QUESTIONS: &[(&str, &[&str])] = &[
     ("filter the rows a delivery reads", &["delivery-flow-delivery-filter"]),
     ("remove from osdu the rows matchKeys marked deleted", &["delivery-flow-removal-marks", "delivery-guide-rows-deleted-in-the-source"]),
     ("a deleted row comes back in the source", &["delivery-guide-rows-deleted-in-the-source", "delivery-flow-removal-marks"]),
+    ("validate that a removed record is gone from osdu", &["delivery-guide-rows-deleted-in-the-source"]),
     ("well log curves bulk data wellbore ddms", &["delivery-guide-bulk-data", "delivery-flow-ddms"]),
     ("data quality tests", &["delivery-guide-data-quality-tests", "delivery-flow-assertion"]),
     ("distinct values of a field", &["delivery-flow-dimension", "delivery-guide-dimensions"]),

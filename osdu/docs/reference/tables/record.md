@@ -80,8 +80,8 @@ this table through its status indexes on every call; nothing keeps a running tot
 | `TargetVersion` | `bigint` | yes | The last OSDU version the ledger knows of. |
 | `Status` | `nvarchar(16)` | no | The custody state: `pending`, `delivering`, `delivered`, `held`, `failed`, `waiting`, `deleted` or `reverted` ([Record lifecycle](../concepts/record-lifecycle.md#record-states)). |
 | `LastDeliveredUtc` | `datetime2` | yes | When a try last delivered the record. |
-| `LastVerifiedUtc` | `datetime2` | yes | When a verify run last compared the record with what OSDU holds. |
-| `LastVerifyOutcome` | `nvarchar(16)` | yes | That comparison's outcome: `match`, `drifted`, `missing` or `error`. |
+| `LastVerifiedUtc` | `datetime2` | yes | When a verify run last compared the record with what OSDU holds, or checked a removed record to be gone from it. |
+| `LastVerifyOutcome` | `nvarchar(16)` | yes | That comparison's outcome: `match`, `drifted`, `missing` or `error`; for a record removed from OSDU, `gone` (OSDU holds no record at its id) or `served` (it still holds one), or `error`. |
 | `LeaseOwner` | `nvarchar(200)` | yes | The token of the lease the record is being delivered under ([`osdu.Lease`](lease.md)), set when a worker claims it and cleared when the lease applies its outcome or hands it back. The lease holds the expiry. |
 | `LastSubmissionId` | `uniqueidentifier` | yes | The submission that last staged work for the record ([`osdu.Submission`](submission.md)). |
 | `AttemptCount` | `int` | no | The tries made for the pending work; reset when new work is queued. |
@@ -147,7 +147,7 @@ this table through its status indexes on every call; nothing keeps a running tot
 | `IX_Record_PartitionId_FlowId_Status_UpdatedUtc` | `PartitionId`, `FlowId`, `Status`, `UpdatedUtc` | index | none | none | A flow's records of one status, most recently updated first. |
 | `IX_Record_Parked` | `PartitionId`, `FlowId`, `Blocked`, `Status` | index | `[Status] IN (N'held', N'failed', N'deleted', N'reverted')` | `PlanRequestedUtc`, `PendingDocumentRef` | The parked records (held, failed, deleted or reverted) by whether they are blocked: what a flow's statistics count as blocked, and as held with nothing to move them, each a seek of a range that holds the parked records alone. |
 | `IX_Record_PartitionId_FlowId_LastDeliveredUtc` | `PartitionId`, `FlowId`, `LastDeliveredUtc` | index | none | none | A flow's records by when they were last delivered. |
-| `IX_Record_PartitionId_FlowId_LastVerifyOutcome` | `PartitionId`, `FlowId`, `LastVerifyOutcome` | index | none | none | A flow's records by their last verify outcome: the drifted and missing counts, and **Drifted only** on a flow's Records tab and the Records page. |
+| `IX_Record_PartitionId_FlowId_LastVerifyOutcome` | `PartitionId`, `FlowId`, `LastVerifyOutcome` | index | none | none | A flow's records by their last verify outcome: the drifted, missing and still-served counts, and **Drifted only** on a flow's Records tab and the Records page. |
 | `IX_Record_PartitionId_DeliveryKey` | `PartitionId`, `DeliveryKey` | index | none | none | The lookup across the flows of a partition by delivery key: every flow's record of one source row. |
 | `IX_Record_PartitionId_TargetId` | `PartitionId`, `TargetId` | index | none | none | The lookup across the flows of a partition by OSDU id. |
 | `IX_Record_PartitionId_SourceKey` | `PartitionId`, `SourceKey` | index | none | none | The lookup across the flows of a partition by source key. |

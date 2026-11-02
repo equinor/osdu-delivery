@@ -160,12 +160,30 @@ public sealed record TargetIdReassignment(DeliveryKey Key, string Lost, string A
 /// </summary>
 public sealed record RecordAdoption(DeliveryKey Key, string TargetId, long? Version);
 
+/// <summary>
+/// What a verify found of a record in OSDU (osdu/docs/reference/flow/delivery.md, verify). A target answers the first four;
+/// the verify pass records the last two of a record the ledger marks removed from OSDU, whose expected answer is that OSDU
+/// holds nothing at its id.
+/// </summary>
 public enum VerifyOutcome
 {
+    /// <summary>OSDU holds the record at the version the ledger holds.</summary>
     Match,
+
+    /// <summary>OSDU holds the record at another version, or with other content.</summary>
     Drifted,
+
+    /// <summary>OSDU holds no record at the id: never written, removed, or hidden from the flow's credentials.</summary>
     Missing,
+
+    /// <summary>The target could not be read.</summary>
     Error,
+
+    /// <summary>A record the ledger marks removed, and OSDU holds no record at its id: the removal stands.</summary>
+    Gone,
+
+    /// <summary>A record the ledger marks removed, and OSDU still holds a record at its id: the removal did not take, or it was written again.</summary>
+    Served,
 }
 
 /// <summary>What a sync found of one record's row that the ledger has to take in.</summary>
@@ -2876,7 +2894,7 @@ public interface ILedger
     /// per identity however long the trail.</summary>
     Task<IReadOnlySet<Guid>> FlowsWithActivitiesAsync(IReadOnlyCollection<Guid> flowIds, CancellationToken ct = default);
 
-    /// <summary>Delivered records due for the drift pass, oldest verification first.</summary>
+    /// <summary>Delivered records, and records removed from OSDU with an id, due for the drift pass, oldest verification first.</summary>
     Task<IReadOnlyList<RecordState>> ListForVerifyAsync(Guid flowId, DateTime? verifiedBeforeUtc, int max, CancellationToken ct = default);
 
     /// <summary>

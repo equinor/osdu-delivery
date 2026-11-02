@@ -8,18 +8,25 @@ using SqlFlow.Delivery.Protocols;
 
 namespace SqlFlow.Delivery.Engine.Verify;
 
-public sealed record VerifySummary(int Checked, int Matched, int Drifted, int Missing, int Errors)
+/// <summary>
+/// What a verify pass found: of the delivered records, how many OSDU holds as the ledger does, drifted or missing; of the
+/// records removed from OSDU, how many are gone from it and how many it still holds; and how many could not be read.
+/// </summary>
+public sealed record VerifySummary(int Checked, int Matched, int Drifted, int Missing, int Errors, int Gone = 0, int Served = 0)
 {
     /// <summary>Whether the pass changed nothing: it found no record to check.</summary>
     public bool Idle => Checked == 0;
 
-    public override string ToString() => $"{Checked} checked: {Matched} match, {Drifted} drifted, {Missing} missing, {Errors} errors";
+    public override string ToString()
+        => $"{Checked} checked: {Matched} match, {Drifted} drifted, {Missing} missing, {Errors} errors"
+            + (Gone + Served == 0 ? string.Empty : $"; of those removed from OSDU, {Gone} gone and {Served} still in OSDU");
 }
 
 /// <summary>
 /// The drift pass (osdu/docs/reference/flow/delivery.md, verify): compares OSDU's current version of each delivered
-/// record with the ledger's <c>targetVersion</c>. A mismatch is either drift to correct or a signal that this system is
-/// not the authority for the record. With <c>reconcile</c> each drifted or missing record is marked for redelivery as a
+/// record with the ledger's <c>targetVersion</c>, and checks each record the ledger marks removed from OSDU to be gone from
+/// it (<see cref="VerifyOutcome.Gone"/>, or <see cref="VerifyOutcome.Served"/> when OSDU still holds it). A mismatch is
+/// either drift to correct or a signal that this system is not the authority for the record. With <c>reconcile</c> each drifted or missing record is marked for redelivery as a
 /// redelivery marks it (<see cref="ILedger.RecordVerifyAsync"/>), named under the pass's activity, so the flow's next
 /// deliver run sends it again whatever its incremental window reads. Every drifted record and the pass itself go
 /// through the completion callback.
@@ -60,9 +67,11 @@ public sealed class Verifier
         => _protocol.VerifiesWithTargetState ? JsonMerge.ToValues(record.TargetStateJson) : Protocols.OwnedContent.StateOf(record.TargetStateJson);
 
     /// <summary>
-    /// Verifies up to <paramref name="max"/> delivered records (those not verified within <paramref name="notVerifiedWithin"/>,
-    /// or the named <paramref name="keys"/>); with <paramref name="reconcile"/> each one found drifted or missing is marked
-    /// for redelivery and named under <paramref name="activityId"/>, the activity that records the pass, when given.
+    /// Verifies up to <paramref name="max"/> delivered or removed records (those not verified within
+    /// <paramref name="notVerifiedWithin"/>, or the named <paramref name="keys"/>); with <paramref name="reconcile"/> each
+    /// delivered one found drifted or missing is marked for redelivery and named under <paramref name="activityId"/>, the
+    /// activity that records the pass, when given. A removed record is only checked: one OSDU still holds is reported, never
+    /// written to.
     /// </summary>
     public async Task<VerifySummary> RunAsync(
         int max, TimeSpan? notVerifiedWithin, bool reconcile, IReadOnlyList<DeliveryKey>? keys = null, long? activityId = null, CancellationToken ct = default)
@@ -74,12 +83,16 @@ public sealed class Verifier
         {
             // A scoped verify (one record from its detail page, a handful from a listing) reads exactly those.
             var scoped = await _ledger.GetRecordsAsync(_flow.Id, keys, ct).ConfigureAwait(false);
-            records = scoped.Values.Where(r => r.Status == RecordStatus.Delivered && r.TargetId is not null).ToList();
+            records = scoped.Values.Where(r => r.Status is RecordStatus.Delivered or RecordStatus.Deleted && r.TargetId is not null).ToList();
         }
+
         var matched = 0;
         var drifted = 0;
         var missing = 0;
         var errors = 0;
+        var gone = 0;
+        var served = 0;
+        var removedCount = records.Count(r => r.Status == RecordStatus.Deleted);
         var settled = 0;
         var progressGate = new Lock();
         var lastProgress = _time.GetUtcNow();
@@ -91,8 +104,8 @@ public sealed class Verifier
         // that cannot batch reports one and this chunks to one, which is the same walk as before.
         var chunks = records.Chunk(Math.Max(1, _protocol.MaxVerifyBatch)).ToList();
         _logger.LogInformation(
-            "Verifying {Count} delivered record(s) against OSDU in {Reads} read(s) of up to {Batch}, {Concurrency} at a time{Reconcile}.",
-            records.Count, chunks.Count, Math.Max(1, _protocol.MaxVerifyBatch), Math.Max(1, _flow.Parallelism.RecordsAtOnce),
+            "Verifying {Count} record(s) against OSDU, {Removed} of them removed from it, in {Reads} read(s) of up to {Batch}, {Concurrency} at a time{Reconcile}.",
+            records.Count, removedCount, chunks.Count, Math.Max(1, _protocol.MaxVerifyBatch), Math.Max(1, _flow.Parallelism.RecordsAtOnce),
             reconcile ? ", reconciling what drifted" : string.Empty);
         var tasks = chunks.Select(async chunk =>
         {
@@ -130,7 +143,7 @@ public sealed class Verifier
         });
         await Task.WhenAll(tasks).ConfigureAwait(false);
 
-        var summary = new VerifySummary(records.Count, matched, drifted, missing, errors);
+        var summary = new VerifySummary(records.Count, matched, drifted, missing, errors, gone, served);
         _logger.LogInformation("Verify: {Summary}.", summary);
         await _listener.OnEventAsync(new DeliveryEvent
         {
@@ -175,11 +188,30 @@ public sealed class Verifier
                 done, records.Count, Volatile.Read(ref matched), Volatile.Read(ref drifted), Volatile.Read(ref missing), Volatile.Read(ref errors));
         }
 
-        // What one record's result means for the counters, the ledger and the listener.
-        async Task SettleAsync(RecordState record, VerifyResult result, bool reconciling)
+        // What one record's result means for the counters, the ledger and the listener. A removed record is expected to be
+        // gone: OSDU holding nothing at its id is the removal standing, and OSDU holding a record there is the drift; it is
+        // never reconciled, which would write to OSDU what the ledger says is out of it.
+        async Task SettleAsync(RecordState record, VerifyResult answer, bool reconciling)
         {
+            var removed = record.Status == RecordStatus.Deleted;
+            var result = !removed ? answer : answer.Outcome switch
+            {
+                VerifyOutcome.Missing => answer with { Outcome = VerifyOutcome.Gone },
+                VerifyOutcome.Match or VerifyOutcome.Drifted => answer with { Outcome = VerifyOutcome.Served },
+                _ => answer,
+            };
+            reconciling = reconciling && !removed;
             switch (result.Outcome)
             {
+                case VerifyOutcome.Gone:
+                    Interlocked.Increment(ref gone);
+                    break;
+                case VerifyOutcome.Served:
+                    Interlocked.Increment(ref served);
+                    _logger.LogWarning(
+                        "Still in OSDU after its removal: {SourceKey} ({TargetId}), version {Version}",
+                        record.SourceKey, record.TargetId, result.ObservedVersion?.ToString(System.Globalization.CultureInfo.InvariantCulture) ?? "unknown");
+                    break;
                 case VerifyOutcome.Match:
                     Interlocked.Increment(ref matched);
                     break;
@@ -202,7 +234,7 @@ public sealed class Verifier
                     _flow.Id, record.DeliveryKey, result.Outcome, result.ObservedVersion, _time.GetUtcNow().UtcDateTime, reconciling, activityId, CancellationToken.None).ConfigureAwait(false);
             }
 
-            if (result.Outcome is VerifyOutcome.Drifted or VerifyOutcome.Missing)
+            if (result.Outcome is VerifyOutcome.Drifted or VerifyOutcome.Missing or VerifyOutcome.Served)
             {
                 await _listener.OnEventAsync(new DeliveryEvent
                 {
@@ -218,7 +250,12 @@ public sealed class Verifier
                     TargetId = record.TargetId,
                     TargetVersion = result.ObservedVersion,
                     Worker = "verify",
-                    Detail = (result.Outcome == VerifyOutcome.Missing ? "missing in OSDU" : result.Detail) + (reconciling ? "; redelivery requested for the next deliver run" : string.Empty),
+                    Detail = result.Outcome switch
+                    {
+                        VerifyOutcome.Missing => "missing in OSDU",
+                        VerifyOutcome.Served => "still in OSDU after its removal",
+                        _ => result.Detail,
+                    } + (reconciling ? "; redelivery requested for the next deliver run" : string.Empty),
                 }, CancellationToken.None).ConfigureAwait(false);
             }
         }

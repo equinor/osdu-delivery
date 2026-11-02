@@ -29,6 +29,7 @@
     "src/features/delivery/enrichmentText.ts",
     "src/features/delivery/issueText.ts",
     "src/features/delivery/recordTarget.ts",
+    "src/features/delivery/verifyOutcome.ts",
     "src/features/delivery/previewHolds.ts",
     "src/features/delivery/repositorySync.ts",
     "src/features/delivery/scopeDefaults.ts",

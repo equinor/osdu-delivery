@@ -51,12 +51,16 @@ export function runRecordCounts(result: Record<string, unknown> | null): RunReco
     return { planned: null, delivered: null, held: null, failed: null, unchanged: null, waiting: null };
   }
 
+  // A verify counts the removed records it found gone with those that match, and those OSDU still holds with the drift.
   const drifted = count(result, "drifted");
   const missing = count(result, "missing");
+  const served = count(result, "served");
+  const matched = count(result, "matched");
+  const gone = count(result, "gone");
   return {
     planned: count(result, "planned") ?? count(result, "checked"),
-    delivered: count(result, "delivered") ?? count(result, "matched"),
-    held: count(result, "held") ?? (drifted === null && missing === null ? null : (drifted ?? 0) + (missing ?? 0)),
+    delivered: count(result, "delivered") ?? (matched === null && gone === null ? null : (matched ?? 0) + (gone ?? 0)),
+    held: count(result, "held") ?? (drifted === null && missing === null && served === null ? null : (drifted ?? 0) + (missing ?? 0) + (served ?? 0)),
     failed: count(result, "failed") ?? count(result, "errors"),
     unchanged: count(result, "skippedUnchanged"),
     waiting: count(result, "waiting"),

@@ -24,7 +24,7 @@ import { RECORD_ARTIFACTS_SHOWN, RecordArtifacts, RecordUndoNotice } from "./Rec
 import { RecordEnrichments } from "./RecordEnrichments";
 import { RecordOsduView } from "./RecordOsduView";
 import { RecordParentChips } from "./RecordParentChips";
-import { wroteToOsdu } from "./recordTarget";
+import { readableInOsdu, wroteToOsdu } from "./recordTarget";
 import { settle } from "./answers";
 import { RecordRenderTab, type RenderResults } from "./RecordRenderTab";
 import { RecordSituation } from "./RecordSituation";
@@ -199,7 +199,7 @@ function DeliveryRecordContent({ flowId, deliveryKey }: DeliveryRecordRef) {
   });
   // A read of the record from OSDU, shown on the OSDU tab and kept here so it is still there after a look at another
   // tab. A page opened with ?tab=osdu reads it once, as soon as the record is known to have an id its flow wrote to.
-  const readable = query.data !== undefined && wroteToOsdu(query.data.record) && canOperate;
+  const readable = query.data !== undefined && readableInOsdu(query.data.record) && canOperate;
   const osdu = useRecordOsduRead(ref, { readable, readAtOnce: askedTab === "osdu" });
   // Where the record came from: its rows as the ingestion tables hold them now, read with the flow's own connection, with
   // the origin file and row the ledger records against every delivered version. The Source tab shows the answer, or why
@@ -282,7 +282,16 @@ function DeliveryRecordContent({ flowId, deliveryKey }: DeliveryRecordRef) {
               <RefreshCw />
               Sync timeline
             </Button>
-            <Button variant="outline" size="sm" onClick={() => verify.mutate()} disabled={busy || !canActOnTarget} title="Queue a verify run scoped to this record: compares what OSDU holds against the ledger" data-testid="record-verify">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => verify.mutate()}
+              disabled={busy || !readableInOsdu(record)}
+              title={record.status === "deleted"
+                ? "Queue a verify run scoped to this record: checks that OSDU no longer holds it"
+                : "Queue a verify run scoped to this record: compares what OSDU holds against the ledger"}
+              data-testid="record-verify"
+            >
               <ShieldCheck />
               Verify
             </Button>

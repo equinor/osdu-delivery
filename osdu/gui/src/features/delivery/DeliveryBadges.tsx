@@ -4,6 +4,7 @@ import {
 import { Badge } from "@/components/ui/badge";
 import type { DeliveryRecordStatus, DeliverySubmissionStatus, DeliveryVerifyOutcome } from "../../api/delivery";
 import { StatePill } from "@/components/StatusBadge";
+import { verifyOutcomeAgrees, verifyOutcomeLabel } from "./verifyOutcome";
 
 type Tone = "success" | "destructive" | "info" | "warning" | "muted";
 
@@ -38,20 +39,30 @@ export function SubmissionStatusBadge({ status, testId = "submission-status" }: 
 }
 
 /** What the last drift check found, when one ran. */
+/** What each verify outcome means, on the hover of its badge. */
+const VERIFY_OUTCOME_TITLES: Record<DeliveryVerifyOutcome, string> = {
+  match: "OSDU holds the record at the version the ledger holds.",
+  drifted: "OSDU holds the record at another version, or with other content.",
+  missing: "OSDU holds no record at this id, though the ledger says it was delivered.",
+  error: "OSDU could not be read.",
+  gone: "OSDU holds no record at this id: the removal stands.",
+  served: "OSDU still holds a record at this id, though the ledger says it was removed.",
+};
+
 export function VerifyOutcomeBadge({ outcome }: { outcome: DeliveryVerifyOutcome | null }) {
   if (outcome === null) {
     return <span className="text-muted-foreground">-</span>;
   }
 
-  const className = outcome === "match"
+  const className = verifyOutcomeAgrees(outcome)
     ? "bg-success/15 text-success"
     : outcome === "error"
       ? "bg-muted text-muted-foreground"
       : "bg-warning/15 text-warning";
   return (
-    <Badge variant="secondary" className={className} data-testid="verify-outcome">
-      {outcome !== "match" && outcome !== "error" && <AlertTriangle className="size-3" />}
-      {outcome}
+    <Badge variant="secondary" className={className} title={VERIFY_OUTCOME_TITLES[outcome]} data-testid="verify-outcome" data-outcome={outcome}>
+      {!verifyOutcomeAgrees(outcome) && outcome !== "error" && <AlertTriangle className="size-3" />}
+      {verifyOutcomeLabel(outcome)}
     </Badge>
   );
 }

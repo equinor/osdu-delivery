@@ -17,6 +17,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Check that a removed record is gone from OSDU.** A verify run now checks every record removed from OSDU beside the
+  delivered ones, and the Records tab shows `gone` or **still in OSDU** for each; **Drifted only** lists the ones OSDU still
+  holds. A removed record's OSDU tab reads its id, answering that OSDU holds no record under it, and the Records tab's OSDU
+  cell opens it ([check that OSDU no longer holds a record](osdu/docs/reference/guides/rows-deleted-in-the-source.md#check-that-osdu-no-longer-holds-a-record)).
+
 - **Leave rows out of a delivery with a filter.** `source.record.filter` and `source.datasets.<name>.filter` (and an interface's) take
   one SQL predicate, such as `AND DeletedDate_DW IS NULL`, that every read of the table appends: a row it leaves out is never read,
   held or sent ([narrowing the rows a delivery reads](osdu/docs/reference/flow/delivery-filter.md)).

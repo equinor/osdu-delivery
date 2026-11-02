@@ -83,7 +83,7 @@ A run of a delivery flow performs one operation, the one it names (`sqlflow run 
 | `intake` | Plan into work batches without sending: a plan to drain later, or the key slices of a submission it names. |
 | `drain` | Send the work batches already planned, of the flow or of one submission. |
 | `replan` | Read every row of the scope again and deliver what renders differently. |
-| `verify` | Read back delivered records from OSDU and record `match`, `drifted` or `missing`: up to 5,000 records a run, those not verified in the last 24 hours unless forced. |
+| `verify` | Read back delivered records from OSDU and record `match`, `drifted` or `missing`, and check records removed from it to be `gone` (or `served`, still in OSDU): up to 5,000 records a run, those not verified in the last 24 hours unless forced. |
 | `sync` | Consolidate the ledger with the ingestion tables; renders and sends nothing ([Removal and reversal](removal-and-reversal.md#syncing-the-ledger-with-the-source)). |
 | `reverse`, `undo`, `remove`, `delete-ledger` | Put back what a run delivered, undo unfinished deliveries, remove records, delete the ledger ([Removal and reversal](removal-and-reversal.md)). |
 

@@ -638,6 +638,12 @@ flows/welllog.yaml: reliability.concurrency is now parallelism.recordsAtOnce: wh
 | --- | --- | --- | --- |
 | `verify.reconcile` | boolean | `false` | A verify run compares OSDU's version of each delivered record with the ledger's; with `true` it also marks each drifted or missing record for redelivery of all of it, as a redelivery does, named under the verify's activity; the flow's next deliver run reads it by key and sends it again, whatever its incremental window reads. Send again sends it at once. |
 
+A verify run also checks each record removed from OSDU (`deleted`, with an id) to be gone from it: `gone` when OSDU holds no
+record at its id, which is the removal standing, and `served` (**still in OSDU** in the GUI) when it holds one. A removed
+record is only checked, never reconciled: one OSDU still holds is listed by **Drifted only**, counted with the drift, and
+logged, and taking it out again is a removal someone asks for ([removal and reversal](../concepts/removal-and-reversal.md)).
+The run's summary adds `of those removed from OSDU, <n> gone and <m> still in OSDU`.
+
 ## failWhen
 
 A record with a data problem is held and the run goes on. `failWhen` says when the records' failures add up to a failure
