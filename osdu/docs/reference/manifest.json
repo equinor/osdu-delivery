@@ -2110,7 +2110,8 @@
         "table-rows",
         "rendered record",
         "parameter values",
-        "right-click menu"
+        "right-click menu",
+        "zoom to a search"
       ],
       "related": [
         "delivery-flow-mapping",

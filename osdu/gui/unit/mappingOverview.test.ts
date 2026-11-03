@@ -5,10 +5,10 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import type { DeliverySourceTable, MappingOutline, MappingOutlineFlow, MappingOutlineNode } from "../src/api/mappingOutline.ts";
 import {
-  cardsOf, countsOf, defaultOpen, dotId, everyFolding, fieldId, lightOfCard, lightOfField, lightOfRows, marksFor, nodeAtLine, opensTo, pathsOfHow, pathsOfSearch, propertiesOf, rowShowing, rowsOf,
-  tableName, valueAt, wayOf,
+  cardsOf, countsOf, defaultOpen, dotId, everyFolding, fieldId, foundOf, lightOfCard, lightOfField, lightOfRows, marksFor, nodeAtLine, opensTo, pathsOfHow, pathsOfSearch, propertiesOf,
+  rowShowing, rowsOf, tableName, valueAt, wayOf,
 } from "../src/features/delivery/overview/outlineModel.ts";
-import { fitText, fitValue, layoutOf, MEASURE } from "../src/features/delivery/overview/outlineLayout.ts";
+import { boundsOf, fitText, fitValue, framingOf, layoutOf, MEASURE, ZOOM } from "../src/features/delivery/overview/outlineLayout.ts";
 
 function flow(origin: string, reads: [string, string][], steps: { kind: string; lookups?: { source: string; field: string; matches?: { field: string; value: string }[] }[] }[] = []): MappingOutlineFlow {
   return {
@@ -230,6 +230,22 @@ describe("what lights", () => {
     assert.deepEqual([...pathsOfSearch(OUTLINE, "curveid").paths], ["data.Curves[].CurveID"]);
     assert.deepEqual([...pathsOfSearch(OUTLINE, "log_name").paths], ["data.Name"]);
   });
+
+  it("what a search found is its rows, every column they read, and the columns it found by name", () => {
+    const shown = rowsOf(OUTLINE, defaultOpen(OUTLINE));
+    const found = foundOf(shown, pathsOfSearch(OUTLINE, "log_name").paths, "log_name");
+    assert.deepEqual([...found.rows], ["data.Name"]);
+    assert.deepEqual([...found.reads], [fieldId("dataset", "log_name")]);
+    assert.deepEqual([...found.fields], [fieldId("dataset", "log_name")]);
+  });
+
+  it("a property a search found under a closed row is found at that row, and a property found by its name names no column", () => {
+    const shown = rowsOf(OUTLINE, defaultOpen(OUTLINE));
+    const found = foundOf(shown, pathsOfSearch(OUTLINE, "curveid").paths, "curveid");
+    assert.deepEqual([...found.rows], ["data.Curves"]);
+    assert.equal(found.reads.has(fieldId("dataset.curves", "curve_id")), true);
+    assert.equal(found.fields.size, 0);
+  });
 });
 
 describe("what is wrong", () => {
@@ -403,6 +419,65 @@ describe("the layout", () => {
   it("gives a row every mark it has room for, before counting the rest", () => {
     const unit = layout(everyFolding(OUTLINE)).rows.find((row) => row.row.path === "data.Unit")!;
     assert.deepEqual(unit.pills.map((pill) => pill.pill.label).sort(), ["ref", "split"]);
+  });
+
+  it("bounds what a search found from the column it reads to the record's edge, leaving the shelf out", () => {
+    const open = everyFolding(OUTLINE);
+    const placed = layout(open);
+    const found = foundOf(rowsOf(OUTLINE, open), pathsOfSearch(OUTLINE, "elev").paths, "elev");
+    const box = boundsOf(placed, found.rows, found.reads)!;
+    const row = placed.rows.find((candidate) => candidate.row.path === "data.Unit")!;
+    const column = placed.cards.find((card) => card.card.id === "dataset")!.fields.find((field) => field.field.name === "elev")!;
+    assert.equal(box.x, 0);
+    assert.equal(box.x + box.width, placed.record.x + placed.record.width);
+    assert.equal(box.y, Math.min(row.y - MEASURE.row / 2, column.y - MEASURE.field / 2));
+    assert.equal(box.y + box.height, Math.max(row.y + MEASURE.row / 2, column.y + MEASURE.field / 2));
+    // data.Unit is looked up in cache.Units, on the shelf at the top of the canvas, which stays out of the box.
+    const units = placed.cards.find((card) => card.card.id === "cache.Units")!;
+    assert.equal(units.shelf, true);
+    assert.ok(box.y >= units.y + units.height);
+  });
+
+  it("bounds nothing for a search that found nothing drawn", () => {
+    assert.equal(boundsOf(layout(new Set()), new Set(["data.Unit"]), new Set()), null);
+  });
+});
+
+describe("framing what a search found", () => {
+  const view = { width: 1200, height: 800 };
+  const clear = { left: 0, right: 0 };
+  const near = (actual: number, expected: number) => assert.ok(Math.abs(actual - expected) < 1e-9, `${actual} is not ${expected}`);
+
+  it("brings one property close, to the middle of the window, and no closer than it frames at", () => {
+    const box = { x: 400, y: 300, width: 500, height: 24 };
+    const { x, y, k } = framingOf(box, box, view, clear);
+    assert.equal(k, ZOOM.found);
+    near(x + (box.x + box.width / 2) * k, view.width / 2);
+    near(y + (box.y + box.height / 2) * k, view.height / 2);
+  });
+
+  it("takes in the columns the properties read, where they fit at the size it reads at", () => {
+    const rows = { x: 400, y: 300, width: 500, height: 48 };
+    const whole = { x: 0, y: 200, width: 900, height: 148 };
+    const { x, k } = framingOf(rows, whole, view, clear);
+    assert.equal(k, (view.width - 48) / whole.width);
+    near(x, 24);
+  });
+
+  it("frames the properties alone, from the first, where their columns would take it under the size it reads at", () => {
+    const rows = { x: 400, y: 3000, width: 500, height: 2000 };
+    const whole = { x: 0, y: 200, width: 900, height: 4800 };
+    const { x, y, k } = framingOf(rows, whole, view, clear);
+    assert.equal(k, ZOOM.read);
+    near(y + rows.y * k, 24);
+    near(x + (rows.x + rows.width / 2) * k, view.width / 2);
+  });
+
+  it("keeps the record's side clear of a panel when even the properties are wider than the room", () => {
+    const rows = { x: 300, y: 300, width: 1400, height: 24 };
+    const { x, k } = framingOf(rows, rows, view, { left: 0, right: 400 });
+    assert.equal(k, ZOOM.read);
+    near(x + (rows.x + rows.width) * k, view.width - 400 - 24);
   });
 });
 

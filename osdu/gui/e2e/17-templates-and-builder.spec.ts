@@ -449,17 +449,24 @@ test.describe.serial("templates and the mapping builder", () => {
     await expect(overview.getByTestId("mapping-overview-row-data.Name")).toBeVisible();
     await expect(overview.getByTestId("mapping-overview-row-data.Curves[].CurveID")).toHaveCount(0);
 
-    // A search opens what holds what it finds and brings it into view, however far down the mapping it is.
+    // A search opens what holds what it finds and zooms to it, however far down the mapping it is: a row's height is its pitch
+    // at the canvas's scale, so a taller row is a closer view. What it found is shaded.
+    const rowHeight = async (row: Locator) => (await row.boundingBox())?.height ?? 0;
+    const fitted = await rowHeight(overview.getByTestId("mapping-overview-row-data.Name"));
     await detail.getByTestId("mapping-overview-search").fill("CurveUnit");
     const curveUnit = overview.getByTestId("mapping-overview-row-data.Curves[].CurveUnit");
+    await expect(curveUnit).toHaveAttribute("data-found", "true");
+    await expect.poll(() => rowHeight(curveUnit)).toBeGreaterThan(fitted);
     await expect(curveUnit).toBeInViewport();
     await curveUnit.click();
     await expect(overview.getByTestId("mapping-overview-alternative")).toHaveCount(3);
     await overview.getByTestId("mapping-overview-inspector-close").click();
 
-    // A line from a table on the shelf is that table: clicking it says what the table reaches. The search moved the view down
-    // to what it found, so the view goes back up to the shelf first.
-    await overview.getByTestId("mapping-overview-fit").click();
+    // A line from a table on the shelf is that table: clicking it says what the table reaches. Clearing the search takes the
+    // view back to the whole mapping it started from, the shelf at its top.
+    await detail.getByTestId("mapping-overview-search-clear").click();
+    await expect(curveUnit).not.toHaveAttribute("data-found", "true");
+    await expect.poll(() => rowHeight(curveUnit)).toBeLessThanOrEqual(fitted);
     await overview.getByTestId("mapping-overview-edge-cache.UnitOfMeasure-curve").click();
     await expect(overview.getByTestId("mapping-overview-readers")).toContainText("data.Curves[].CurveUnit");
     await overview.getByTestId("mapping-overview-inspector-close").click();

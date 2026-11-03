@@ -441,6 +441,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   curve `MD` among its curves ([Assertions](osdu/docs/reference/flow/assertion.md#assertions)).
 
 ### Changed
+- **A search on a mapping's overview zooms to what it finds.** Once the typing stops in **Property or column**, the canvas
+  frames the properties found and the columns they read, close enough to read (up to 140%, never under 100%), with each
+  property found and each column the search names shaded. Clearing the search takes the view back to where it was, unless it
+  was moved since ([a mapping's overview](osdu/docs/reference/concepts/mapping-overview.md#working-with-it)).
 - **A mapping's property panel shows what a lookup compares.** Clicking a property on a mapping's overview lays out its way as
   **Input**, **Changed**, **Compared in** a table (each line's field beside the column or text it has to equal, with the row's
   value when a record is shown), **Fetched** and **Written to**, with how the lines decide the record

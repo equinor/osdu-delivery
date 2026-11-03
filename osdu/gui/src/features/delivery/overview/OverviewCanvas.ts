@@ -5,10 +5,10 @@
 import { select, type BaseType, type Selection } from "d3-selection";
 import "d3-transition";
 import { zoom, zoomIdentity, zoomTransform, type D3ZoomEvent, type ZoomBehavior, type ZoomTransform } from "d3-zoom";
-import { operandOf, type CardField, type OutlineLight } from "./outlineModel";
+import { operandOf, type CardField, type OutlineFound, type OutlineLight } from "./outlineModel";
 import {
-  fitText, fitValue, MEASURE, pillText, textWidth, type OutlineLayout, type PlacedCard, type PlacedDot, type PlacedDrop, type PlacedField, type PlacedPill,
-  type PlacedRow, type PlacedWire,
+  boundsOf, fitText, fitValue, framingOf, MEASURE, pillText, textWidth, ZOOM, type OutlineLayout, type PlacedCard, type PlacedDot, type PlacedDrop, type PlacedField,
+  type PlacedPill, type PlacedRow, type PlacedWire,
 } from "./outlineLayout";
 
 /** Something on the canvas a reader can point at. */
@@ -171,6 +171,12 @@ export class OverviewCanvas {
   /** The room a panel over the canvas takes, which `fit` and `reveal` keep clear. */
   private inset = { left: 0, right: 0 };
 
+  /**
+   * What a search found, while the view frames it, and the view to go back to when the search ends, null for the fitted one.
+   * The reader moving the view lets it go.
+   */
+  private framed: { found: OutlineFound; back: ZoomTransform | null } | null = null;
+
   /** What pointing is waiting to do. */
   private settling: ReturnType<typeof setTimeout> | undefined;
 
@@ -195,7 +201,7 @@ export class OverviewCanvas {
     };
 
     this.zoomer = zoom<SVGSVGElement, unknown>()
-      .scaleExtent([0.4, 1.6])
+      .scaleExtent([ZOOM.min, ZOOM.max])
       // A wheel moves the page, as it does everywhere else in the workbench; held with Ctrl, or pinched, it zooms.
       .filter((event: Event) => (event.type === "wheel" ? (event as WheelEvent).ctrlKey : (event as MouseEvent).button === 0))
       .on("zoom", (event: D3ZoomEvent<SVGSVGElement, unknown>) => {
@@ -205,6 +211,7 @@ export class OverviewCanvas {
         if (event.sourceEvent !== null && event.sourceEvent !== undefined) {
           this.target = event.transform;
           this.fitted = false;
+          this.framed = null;
           this.handlers.tip(null);
         }
       });
@@ -213,6 +220,7 @@ export class OverviewCanvas {
       if (!event.ctrlKey) {
         event.preventDefault();
         this.fitted = false;
+        this.framed = null;
         this.handlers.tip(null);
         this.zoomer.translateBy(this.svg, -event.deltaX / this.scale, -event.deltaY / this.scale);
         this.target = zoomTransform(element);
@@ -234,6 +242,8 @@ export class OverviewCanvas {
     this.resize = new ResizeObserver(() => {
       if (this.fitted) {
         this.fit(false);
+      } else if (this.framed !== null) {
+        this.frame(false);
       }
     });
     this.resize.observe(element);
@@ -288,8 +298,12 @@ export class OverviewCanvas {
       return;
     }
 
+    // A panel over the canvas takes room the drawing may be moved under, at any scale, or a drag after a move that keeps the
+    // panel's side clear would jump back.
     const margin = 240;
-    this.zoomer.translateExtent([[-margin, -margin], [layout.width + margin, layout.height + margin]]);
+    const left = margin + this.inset.left / ZOOM.min;
+    const right = margin + this.inset.right / ZOOM.min;
+    this.zoomer.translateExtent([[-left, -margin], [layout.width + right, layout.height + margin]]);
   }
 
   private view(): { width: number; height: number } {
@@ -300,8 +314,11 @@ export class OverviewCanvas {
   /** Whatever a panel over the canvas takes, kept clear from now on. */
   setInset(left: number, right: number): void {
     this.inset = { left, right };
+    this.extent();
     if (this.fitted) {
       this.fit(true);
+    } else if (this.framed !== null) {
+      this.frame(true);
     } else {
       this.drawRail(this.target.y, this.target.k);
     }
@@ -315,6 +332,7 @@ export class OverviewCanvas {
     }
 
     this.fitted = true;
+    this.framed = null;
     const { width, height } = this.view();
     if (width === 0 || height === 0) {
       return;
@@ -341,11 +359,58 @@ export class OverviewCanvas {
   /** Zooms about the middle of the view. */
   zoomBy(factor: number): void {
     const { width, height } = this.view();
-    const k = Math.max(0.4, Math.min(1.6, this.target.k * factor));
+    const k = Math.max(ZOOM.min, Math.min(ZOOM.max, this.target.k * factor));
     const x = width / 2 - ((width / 2 - this.target.x) / this.target.k) * k;
     const y = height / 2 - ((height / 2 - this.target.y) / this.target.k) * k;
     this.fitted = false;
+    this.framed = null;
     this.moveTo(zoomIdentity.translate(x, y).scale(k), true);
+  }
+
+  /**
+   * Zooms to what a search found, close enough to read (`framingOf`), and keeps it framed as the window or a panel changes until
+   * the reader moves the view. A search that finds nothing drawn leaves the view where it is.
+   */
+  focus(found: OutlineFound): void {
+    const back = this.framed === null ? (this.fitted ? null : this.target) : this.framed.back;
+    this.framed = { found, back };
+    this.frame(true);
+  }
+
+  /** Goes back to the view the search started from, unless the reader has moved it since. */
+  unfocus(): void {
+    const framed = this.framed;
+    this.framed = null;
+    if (framed === null) {
+      return;
+    }
+
+    if (framed.back === null) {
+      this.fit(true);
+    } else {
+      this.moveTo(framed.back, true);
+    }
+  }
+
+  private frame(animate: boolean): void {
+    const layout = this.layout;
+    const found = this.framed?.found;
+    if (layout === null || found === undefined) {
+      return;
+    }
+
+    const { width, height } = this.view();
+    const rows = boundsOf(layout, found.rows, new Set());
+    const whole = boundsOf(layout, found.rows, found.reads);
+    if (width === 0 || height === 0 || rows === null || whole === null) {
+      return;
+    }
+
+    // Held inside what a drag may reach, so the reader's first drag after it does not jump.
+    const { x, y, k } = framingOf(rows, whole, { width, height }, this.inset);
+    const held = this.zoomer.constrain()(zoomIdentity.translate(x, y).scale(k), [[0, 0], [width, height]], this.zoomer.translateExtent());
+    this.fitted = false;
+    this.moveTo(held, animate);
   }
 
   /** Brings a row of the record clear of any panel, without moving a view that already shows it. */
@@ -389,8 +454,11 @@ export class OverviewCanvas {
     }
   }
 
-  /** Lights what `light` names and fades the rest, or leaves everything as it stands for null. */
-  setLight(light: OutlineLight | null, picked: OverviewPart | null): void {
+  /**
+   * Lights what `light` names and fades the rest, or leaves everything as it stands for null. What a search `found` is shaded
+   * whatever is lit: the properties, and the columns it found by name.
+   */
+  setLight(light: OutlineLight | null, picked: OverviewPart | null, found: OutlineFound | null): void {
     const state = (on: boolean) => (light === null ? null : on ? "on" : "off");
     const pickedRow = picked?.type === "row" ? picked.path : null;
     const pickedField = picked?.type === "field" ? `${picked.source}\u0000${picked.field}` : null;
@@ -400,7 +468,8 @@ export class OverviewCanvas {
       .attr("data-lit", (row) => state(light?.rows.has(row.row.path) === true));
     this.layers.rows.selectAll<SVGGElement, PlacedRow>("g.row")
       .attr("data-lit", (row) => state(light?.rows.has(row.row.path) === true))
-      .attr("data-picked", (row) => (row.row.path === pickedRow ? "true" : null));
+      .attr("data-picked", (row) => (row.row.path === pickedRow ? "true" : null))
+      .attr("data-found", (row) => (found?.rows.has(row.row.path) === true ? "true" : null));
     this.layers.dots.selectAll<SVGGElement, PlacedDot>("g.dot")
       .attr("data-lit", (dot) => state(light?.dots.has(dot.id) === true));
     // A table's line is lit down to the last row lit on it, so it says how far the value goes rather than where the column ends.
@@ -421,7 +490,8 @@ export class OverviewCanvas {
       .attr("data-lit", (card) => state(light?.cards.has(card.card.id) === true));
     this.layers.cards.selectAll<SVGGElement, PlacedField>("g.field")
       .attr("data-lit", (field) => state(light?.fields.has(field.field.id) === true))
-      .attr("data-picked", (field) => (field.field.id === pickedField ? "true" : null));
+      .attr("data-picked", (field) => (field.field.id === pickedField ? "true" : null))
+      .attr("data-found", (field) => (found?.fields.has(field.field.id) === true ? "true" : null));
   }
 
   /** The handlers every part takes: pointing lights it, a click or Enter picks it. */
@@ -706,12 +776,12 @@ export class OverviewCanvas {
     const fields = parent.selectAll<SVGGElement, PlacedField>("g.field").data(card.fields, (field) => field.field.id);
     fields.exit().transition().duration(moves / 2).style("opacity", 0).remove();
     const entered = fields.enter().append("g")
-      .attr("class", `field ${LIT_GROUP} cursor-pointer outline-none`)
+      .attr("class", `field ${LIT_GROUP} group/field cursor-pointer outline-none`)
       .attr("tabindex", 0)
       .attr("role", "button")
       .style("opacity", 0);
     entered.transition().duration(moves).style("opacity", null);
-    entered.append("rect").attr("class", "shade fill-accent opacity-0 transition-opacity duration-[120ms]").attr("x", 1).attr("y", -pitch / 2).attr("height", pitch);
+    entered.append("rect").attr("class", "shade fill-accent opacity-0 transition-opacity duration-[120ms] group-data-[found=true]/field:opacity-100").attr("x", 1).attr("y", -pitch / 2).attr("height", pitch);
     entered.append("g").attr("class", "mark").attr("transform", `translate(12,${-6.5})`);
     entered.append("text").attr("class", `name ${TEXT.name}`).attr("y", 4);
     entered.append("text").attr("class", `end ${TEXT.faint}`).attr("y", 3.5).attr("text-anchor", "end");
@@ -791,7 +861,7 @@ export class OverviewCanvas {
       .style("opacity", 0);
     entered.transition().duration(moves).style("opacity", null);
     entered.append("rect").attr("class", "line-hit cursor-pointer").attr("fill", "transparent").attr("y", -MEASURE.row / 2).attr("height", MEASURE.row);
-    entered.append("rect").attr("class", "shade fill-accent opacity-0 transition-opacity duration-[120ms] group-hover/row:opacity-100 group-focus-visible/row:opacity-100 group-data-[picked=true]/row:opacity-100").attr("y", -MEASURE.row / 2 + 1).attr("height", MEASURE.row - 2).attr("rx", 3);
+    entered.append("rect").attr("class", "shade fill-accent opacity-0 transition-opacity duration-[120ms] group-hover/row:opacity-100 group-focus-visible/row:opacity-100 group-data-[picked=true]/row:opacity-100 group-data-[found=true]/row:opacity-100").attr("y", -MEASURE.row / 2 + 1).attr("height", MEASURE.row - 2).attr("rx", 3);
     entered.append("g").attr("class", "guides");
     entered.append("circle").attr("class", "port").attr("r", 3);
     entered.append("g").attr("class", "chevron cursor-pointer");

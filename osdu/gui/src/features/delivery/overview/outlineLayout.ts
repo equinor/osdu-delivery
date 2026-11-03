@@ -37,6 +37,16 @@ export const MEASURE = {
   marksMax: 216,
 } as const;
 
+/** How far the canvas zooms: as far out and in as a reader can, and the range a search's frame keeps to. */
+export const ZOOM = {
+  min: 0.4,
+  max: 1.6,
+  /** The least a search frames at: the size everything here is set at, and so the size it reads at. */
+  read: 1,
+  /** The most, so a property found alone is brought close rather than blown up. */
+  found: 1.4,
+} as const;
+
 /** The advance of JetBrains Mono, the face everything measured here is set in, as a share of its size. */
 const MONO_ADVANCE = 0.6;
 
@@ -407,6 +417,76 @@ export function layoutOf(rows: readonly OutlineRow[], cards: readonly OutlineCar
     record: { x: recordX, y: top, width: recordWidth, height: recordHeight },
     lanes: { tables: 0, marks: linesFrom, record: recordX, top },
   };
+}
+
+/** A box on the canvas, in its coordinates. */
+export interface CanvasBox {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
+/** A view of the canvas: where its origin lands in the window, and at what scale. */
+export interface CanvasView {
+  x: number;
+  y: number;
+  k: number;
+}
+
+/**
+ * Where `rows` stand, from where their lines start to the record's edge, with the `fields` of the tables on the left that they
+ * read. The shelf is left out: it hangs at the top of the canvas however far down the rows are, and the dots on their lines say
+ * where it is read. Null when none of it is drawn.
+ */
+export function boundsOf(layout: OutlineLayout, rows: ReadonlySet<string>, fields: ReadonlySet<string>): CanvasBox | null {
+  let left = Number.POSITIVE_INFINITY;
+  let top = Number.POSITIVE_INFINITY;
+  let right = Number.NEGATIVE_INFINITY;
+  let bottom = Number.NEGATIVE_INFINITY;
+  const take = (x1: number, y1: number, x2: number, y2: number) => {
+    left = Math.min(left, x1);
+    top = Math.min(top, y1);
+    right = Math.max(right, x2);
+    bottom = Math.max(bottom, y2);
+  };
+
+  const { record } = layout;
+  for (const placed of layout.rows) {
+    if (rows.has(placed.row.path)) {
+      take(placed.lineFrom ?? record.x, placed.y - MEASURE.row / 2, record.x + record.width, placed.y + MEASURE.row / 2);
+    }
+  }
+
+  for (const card of layout.cards) {
+    for (const field of card.shelf ? [] : card.fields) {
+      if (fields.has(field.field.id)) {
+        take(card.x, field.y - MEASURE.field / 2, card.x + card.width, field.y + MEASURE.field / 2);
+      }
+    }
+  }
+
+  return Number.isFinite(left) ? { x: left, y: top, width: right - left, height: bottom - top } : null;
+}
+
+/**
+ * The view that frames what a search found in a window `view` wide and tall, whose sides `inset` panels take: `whole`, the
+ * properties with the columns they read, where that fits at a size it reads at, else `rows`, the properties alone. It zooms in
+ * as far as `ZOOM.found` and never out past `ZOOM.read`. What still does not fit keeps the record's side and the first row in
+ * view, since the properties are what was searched for.
+ */
+export function framingOf(rows: CanvasBox, whole: CanvasBox, view: { width: number; height: number }, inset: { left: number; right: number }): CanvasView {
+  const pad = 24;
+  const roomWidth = view.width - inset.left - inset.right - pad * 2;
+  const roomHeight = view.height - pad * 2;
+  const fitting = (box: CanvasBox) => Math.min(ZOOM.found, roomWidth / box.width, roomHeight / box.height);
+  const box = fitting(whole) >= ZOOM.read ? whole : rows;
+  const k = Math.max(ZOOM.read, fitting(box));
+  const width = box.width * k;
+  const height = box.height * k;
+  const left = inset.left + pad + (width <= roomWidth ? (roomWidth - width) / 2 : roomWidth - width);
+  const top = pad + (height <= roomHeight ? (roomHeight - height) / 2 : 0);
+  return { x: left - box.x * k, y: top - box.y * k, k };
 }
 
 /** A row's marks: those before the tables at the start of its line, those after them against the record, as many as fit. */

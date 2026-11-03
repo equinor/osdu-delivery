@@ -29,8 +29,8 @@ import { OverviewRows } from "./OverviewRows";
 import { OverviewYaml } from "./OverviewYaml";
 import { layoutOf } from "./outlineLayout.ts";
 import {
-  cardsOf, countsOf, defaultOpen, everyFolding, lightOfCard, lightOfField, lightOfRows, marksFor, nodeAt, nodeAtLine, opensTo, pathsOfHow, pathsOfSearch, rowShowing, rowsOf,
-  type OutlineLight,
+  cardsOf, countsOf, defaultOpen, everyFolding, foundOf, lightOfCard, lightOfField, lightOfRows, marksFor, nodeAt, nodeAtLine, opensTo, pathsOfHow, pathsOfSearch, rowShowing,
+  rowsOf, type OutlineLight,
 } from "./outlineModel.ts";
 import { cardPreviewLabel, rowsSourceOf } from "./tableRows.ts";
 import { useRecordValues, type RecordValues } from "./useRecordValues";
@@ -38,7 +38,11 @@ import { useRecordValues, type RecordValues } from "./useRecordValues";
 const ABOUT = "Each line is one property of the record, read left to right: the table it starts from, what is done to it, and the property it fills. "
   + "A dot is where a line is looked up in a table on the shelf above. A dashed mark is a condition, and a hollow end an optional property. "
   + "Click a section to open it, and a property to see how it is filled. Right-click anything for what can be done with it: a table's rows, "
-  + "the parameters' values, the rendered record. Hold Ctrl and scroll to zoom. Nothing is rendered here, unless you ask for it.";
+  + "the parameters' values, the rendered record. A search zooms to what it finds; hold Ctrl and scroll to zoom yourself. Nothing is rendered "
+  + "here, unless you ask for it.";
+
+/** How long the view waits for the typing to stop before it moves to what a search found. */
+const SEARCH_SETTLE_MS = 300;
 
 /** What the panel under the canvas shows: a table's rows, the values the parameters render with, or the rendered record. */
 type Looking =
@@ -324,22 +328,49 @@ function OverviewBody({ detail, outline, unfilled, issues, session, tools, onPro
     return filtered === null ? null : lightOfRows(rows, filtered);
   }, [rows, pointed, linePointed, picked, filtered]);
 
-  useEffect(() => {
-    canvas.current?.setLight(light, picked);
-  }, [light, picked, placed]);
+  const searched = useMemo(() => (search.trim() === "" || filtered === null ? null : foundOf(rows, filtered, search)), [rows, filtered, search]);
 
-  // What a search or a filter finds is brought into view once, when it is asked for: a mapping can be taller than the window.
+  useEffect(() => {
+    canvas.current?.setLight(light, picked, searched);
+  }, [light, picked, searched, placed]);
+
+  // What a search finds is framed once the typing stops, close enough to read: the properties and the columns they read. Clearing
+  // the search goes back to the view it started from. A mapping can be taller than the window.
+  const framedTerm = useRef("");
+  useEffect(() => {
+    const term = search.trim();
+    if (term === framedTerm.current) {
+      return undefined;
+    }
+
+    if (term === "") {
+      framedTerm.current = "";
+      canvas.current?.unfocus();
+      return undefined;
+    }
+
+    const wait = setTimeout(() => {
+      framedTerm.current = term;
+      if (searched !== null) {
+        canvas.current?.focus(searched);
+      }
+    }, SEARCH_SETTLE_MS);
+    return () => clearTimeout(wait);
+  }, [search, searched]);
+
+  // What a filter finds is brought into view once, when it is asked for: it is too many properties to frame.
   const shownFilter = useRef<ReadonlySet<string> | null>(null);
   useEffect(() => {
-    if (filtered !== null && filtered !== shownFilter.current) {
-      const first = placed.rows.find((row) => filtered.has(row.row.path));
+    const shown = how === null ? null : filtered;
+    if (shown !== null && shown !== shownFilter.current) {
+      const first = placed.rows.find((row) => shown.has(row.row.path));
       if (first !== undefined) {
         canvas.current?.reveal(first.row.path);
       }
     }
 
-    shownFilter.current = filtered;
-  }, [filtered, placed]);
+    shownFilter.current = shown;
+  }, [how, filtered, placed]);
 
   useEffect(() => {
     canvas.current?.setInset(0, picked === null ? 0 : Math.min(INSPECTOR_WIDTH, (frame.current?.clientWidth ?? 0) * 0.85));

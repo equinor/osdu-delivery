@@ -21,6 +21,7 @@ keywords:
   - rendered record
   - parameter values
   - right-click menu
+  - zoom to a search
 related:
   - delivery-flow-mapping
   - delivery-flow-mapping-lookups
@@ -98,7 +99,7 @@ for them.
 | Look at a table's rows | **Preview the first 100 rows** on a table, one of its columns or a line from it (**Preview 100 cached records** for a cache table, **Preview 100 records in OSDU** for a search). The panel of a table or a column has the same button. The rows open under the canvas ([below](#looking-at-a-tables-rows)). |
 | See the parameters' values | **Preview the values** on the parameters, or one of them ([below](#the-parameters-values)). |
 | Read the record as it renders | **Preview the rendered record** on the record's heading ([below](#the-rendered-record)). |
-| Find a property or a column | Type in **Property or column**, which opens what holds the matches and lights them. |
+| Find a property or a column | Type in **Property or column**, which opens what holds the matches and lights them. Once the typing stops, the canvas zooms to them, close enough to read: the properties found with the columns they read, up to 140% and never under 100%, each property found and each column named by the search shaded. Where the columns are too far from their properties to fit at 100%, the properties alone are framed, from the first. Clearing the search takes the view back to where it was, unless you moved it since. |
 | See every property filled one way | Click **copied**, **changed**, **looked up**, **fixed** or **linked**, each with its count. |
 | Read the document beside the canvas | **YAML** opens the mapping as written, each line tied to the canvas: pointing at a line lights the property it writes, and a click picks it. |
 | Follow a real row through the mapping | **Show a record** previews a staged row of the flow picked in the toolbar and shows each column's value and each property's, a repeated property's from its first item. The sentence over the canvas gives way to the record, with the flow's scope beside it, and the arrows step through the rows. Beside the row, **staged** says no run has taken it into the ledger yet, or the status of its record says where it stands. A `$coalesce`'s alternatives say which gave the value. Nothing is sent. |

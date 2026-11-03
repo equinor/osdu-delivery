@@ -693,6 +693,39 @@ export function pathsOfSearch(outline: MappingOutline, term: string): { paths: S
   });
 }
 
+/** What a search found, among the rows shown: the properties, every column they read, and the columns it found by name. */
+export interface OutlineFound {
+  /** The rows standing for the properties found: their own, or the rows folding them. */
+  rows: Set<string>;
+  /** Every field those rows read, as `fieldId` names them: what joins them to their tables. */
+  reads: Set<string>;
+  /** The fields among those whose name holds what was searched for. */
+  fields: Set<string>;
+}
+
+/** What `paths`, the properties a search for `term` found, are on the canvas while `rows` stand open as they do. */
+export function foundOf(rows: readonly OutlineRow[], paths: ReadonlySet<string>, term: string): OutlineFound {
+  const text = term.trim().toLowerCase();
+  const found: OutlineFound = { rows: new Set(), reads: new Set(), fields: new Set() };
+  for (const path of paths) {
+    const row = rowShowing(rows, path);
+    if (row === null) {
+      continue;
+    }
+
+    found.rows.add(row.path);
+    for (const read of row.reads) {
+      const id = fieldId(read.source, read.field);
+      found.reads.add(id);
+      if (text !== "" && read.field.toLowerCase().includes(text)) {
+        found.fields.add(id);
+      }
+    }
+  }
+
+  return found;
+}
+
 function pathsWhere(outline: MappingOutline, wanted: (node: MappingOutlineNode) => boolean): { paths: Set<string>; opens: Set<string> } {
   const paths = new Set<string>();
   const opens = new Set<string>();
