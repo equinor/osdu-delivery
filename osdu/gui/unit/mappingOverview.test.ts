@@ -6,7 +6,7 @@ import { describe, it } from "node:test";
 import type { DeliverySourceTable, MappingOutline, MappingOutlineFlow, MappingOutlineNode } from "../src/api/mappingOutline.ts";
 import {
   cardsOf, countsOf, defaultOpen, dotId, everyFolding, fieldId, lightOfCard, lightOfField, lightOfRows, marksFor, nodeAtLine, opensTo, pathsOfHow, pathsOfSearch, propertiesOf, rowShowing, rowsOf,
-  tableName, valueAt,
+  tableName, valueAt, wayOf,
 } from "../src/features/delivery/overview/outlineModel.ts";
 import { fitText, fitValue, layoutOf, MEASURE } from "../src/features/delivery/overview/outlineLayout.ts";
 
@@ -275,6 +275,78 @@ describe("the document and a record", () => {
     assert.equal(valueAt(record, "data.Curves[].CurveID|2"), "GR");
     assert.equal(valueAt(record, "data.Missing.Deep"), undefined);
     assert.equal(valueAt(null, "data.Name"), undefined);
+  });
+});
+
+describe("a value's way", () => {
+  /** A wellbore found by its UWI, else by an alias, its id fetched and made a reference. */
+  const found: MappingOutlineFlow = {
+    origin: "find",
+    summary: "lookup.wellbore.id",
+    reads: [
+      { source: "dataset", field: "wellbore_uwi", role: "match" },
+      { source: "dataset", field: "status", role: "condition" },
+    ],
+    steps: [
+      { kind: "find", label: "cache", detail: "Each line is tried in turn.", text: "lookup.wellbore.id", lookups: [{ source: "cache.Wellbore", field: "id", matches: [
+        { field: "FacilityName", value: "dataset.wellbore_uwi" },
+        { field: "NameAliases.AliasName", value: "dataset.wellbore_uwi" },
+        { field: "Kind", value: "'wellbore'" },
+      ] }] },
+      { kind: "ref", label: "ref", detail: "", text: "ref", lookups: [] },
+    ],
+    unverified: false,
+  };
+
+  it("goes from what enters, through what a lookup compares and fetches, to the property", () => {
+    const stages = wayOf(found);
+    assert.deepEqual(stages.map((stage) => stage.kind), ["input", "compared", "fetched", "changed", "written"]);
+    const input = stages[0];
+    assert.ok(input.kind === "input");
+    assert.deepEqual(input.reads.map((read) => read.field), ["wellbore_uwi"], "a condition decides whether the value is written, and is no input");
+  });
+
+  it("pairs each line's field with the column it compares, or the text the document writes", () => {
+    const compared = wayOf(found)[1];
+    assert.ok(compared.kind === "compared");
+    assert.equal(compared.lookup.source, "cache.Wellbore");
+    assert.deepEqual(compared.lines.map((line) => [line.field, line.operand.text, line.operand.read?.source ?? null]), [
+      ["FacilityName", "wellbore_uwi", "dataset"],
+      ["NameAliases.AliasName", "wellbore_uwi", "dataset"],
+      ["Kind", "'wellbore'", null],
+    ]);
+    assert.equal(compared.changed, false, "nothing changed the column first, so its value in the row is what is compared");
+  });
+
+  it("says a value a step changed is compared as that step leaves it, and finds a child table's column", () => {
+    const stages = wayOf(flow("column", [["dataset.curves", "unit"]], [
+      { kind: "split" },
+      { kind: "trim" },
+      { kind: "replace", lookups: [{ source: "cache.UnitAlias", field: "osdu_unit", matches: [{ field: "source_unit", value: "the value" }] }] },
+    ]));
+    assert.deepEqual(stages.map((stage) => stage.kind), ["input", "changed", "compared", "fetched", "written"]);
+    const changed = stages[1];
+    assert.ok(changed.kind === "changed");
+    assert.deepEqual(changed.steps.map((step) => step.kind), ["split", "trim"], "steps in a row are one stage");
+    const compared = stages[2];
+    assert.ok(compared.kind === "compared");
+    assert.equal(compared.changed, true);
+    assert.deepEqual(compared.lines.map((line) => [line.operand.text, line.operand.read]), [["the value", null]]);
+
+    const child = wayOf(flow("find", [["dataset.curves", "mnemonic"]], [{ kind: "find", lookups: [{ source: "cache.Curves", field: "id", matches: [{ field: "Code", value: "dataset.curves.mnemonic" }] }] }]))[1];
+    assert.ok(child.kind === "compared");
+    assert.deepEqual(child.lines[0].operand.read, { source: "dataset.curves", field: "mnemonic", role: "value" });
+  });
+
+  it("keeps a step that reads a table without comparing anything, an id's template, a change", () => {
+    const stages = wayOf(flow("column", [["dataset", "log_id"]], [{ kind: "id", lookups: [{ source: "cache.Units", field: "code" }] }]));
+    assert.deepEqual(stages.map((stage) => stage.kind), ["input", "changed", "written"]);
+  });
+
+  it("starts a literal at what it writes, and a value with nothing to read at its lookup", () => {
+    assert.deepEqual(wayOf(flow("literal", [])).map((stage) => stage.kind), ["input", "written"]);
+    const fixed = wayOf(flow("find", [], [{ kind: "find", lookups: [{ source: "cache.Units", field: "id", matches: [{ field: "Code", value: "'m'" }] }] }]));
+    assert.deepEqual(fixed.map((stage) => stage.kind), ["compared", "fetched", "written"]);
   });
 });
 

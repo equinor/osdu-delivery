@@ -487,8 +487,9 @@ public sealed class RemovalFlowTests : IDisposable
         Assert.Equal((0L, 0L), (again.Tally.Detected, again.Tally.Removed));
         Assert.Empty(_protocol.Deletes);
 
-        // The key match takes the mark off when the key reappears, and stamps nothing: the deletion goes, the row stays
-        // unmarked, and the record is planned again and delivered.
+        // The mark is taken off without the row being stamped, as by hand (SQLFlow's key match stamps the row as well, which
+        // SqlServerKeyMatchRemovalTests covers): the deletion goes, the row stays unmarked, and the record is planned again
+        // and delivered.
         _tables.Records[1].DeletedUtc = null;
         var back = Assert.Single((await RemoveAsync(Removal(sources: string.Empty))).Removals);
         Assert.Equal((1L, 0L, 0L), (back.Tally.Lifted, back.Tally.Marked, back.Tally.Detected));

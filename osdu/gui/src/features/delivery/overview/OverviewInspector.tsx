@@ -1,11 +1,11 @@
-import type { ReactNode } from "react";
-import { ArrowRight, Check, CircleDot, Database, KeyRound, Search, ShieldCheck, SlidersHorizontal, SquareFunction, Table2, X } from "lucide-react";
+import { Fragment, type ReactNode } from "react";
+import { Check, Database, KeyRound, Search, ShieldCheck, SlidersHorizontal, Table2, X } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
-import type { MappingOutline, MappingOutlineFlow, MappingOutlineNode, MappingOutlineStep } from "../../../api/delivery";
+import type { MappingOutline, MappingOutlineFlow, MappingOutlineNode } from "../../../api/delivery";
 import type { OverviewPart } from "./OverviewCanvas";
-import { cardsOf, fieldId, nodeAt, readersOf, type OutlineCard } from "./outlineModel.ts";
+import { cardsOf, fieldId, nodeAt, readersOf, wayOf, type OutlineCard, type WayStage } from "./outlineModel.ts";
 import { cardPreviewLabel } from "./tableRows.ts";
 
 /** A section of the panel: a quiet heading over what it holds. */
@@ -18,56 +18,207 @@ function Section({ title, children }: { title: string; children: ReactNode }) {
   );
 }
 
-/** One step of a value's way: a mark on a line, what it is, and what it does. */
-function Stage({ glyph, title, children, last = false }: { glyph: ReactNode; title: ReactNode; children?: ReactNode; last?: boolean }) {
-  return (
-    <li className="relative flex min-w-0 gap-2 pb-2.5">
-      {!last && <span className="absolute top-5 bottom-0 left-[7.5px] w-px bg-border" aria-hidden />}
-      <span className="mt-0.5 flex size-4 shrink-0 items-center justify-center text-muted-foreground">{glyph}</span>
-      <span className="flex min-w-0 flex-col gap-0.5">
-        <span className="min-w-0 font-mono text-[12px] [overflow-wrap:anywhere]">{title}</span>
-        {children !== undefined && <span className="text-[12px] text-muted-foreground">{children}</span>}
-      </span>
-    </li>
-  );
-}
-
 function sourceName(cards: readonly OutlineCard[], id: string): string {
   return cards.find((card) => card.id === id)?.title ?? id;
 }
 
-/** What a step reads, as one short phrase. */
-function stepGlyph(step: MappingOutlineStep): ReactNode {
-  if (step.kind === "find" && step.label === "search") {
-    return <Search className="size-3.5" aria-hidden />;
+/** The mark of a source: a table, the flow's parameters, the cache or a search. */
+function sourceGlyph(cards: readonly OutlineCard[], id: string): ReactNode {
+  switch (cards.find((card) => card.id === id)?.source.kind) {
+    case "parameters":
+      return <SlidersHorizontal className="size-3.5" aria-hidden />;
+    case "cache":
+      return <Database className="size-3.5" aria-hidden />;
+    case "search":
+      return <Search className="size-3.5" aria-hidden />;
+    default:
+      return <Table2 className="size-3.5" aria-hidden />;
   }
-
-  if (step.lookups.length > 0) {
-    return <Database className="size-3.5" aria-hidden />;
-  }
-
-  return step.kind === "expr" ? <SquareFunction className="size-3.5" aria-hidden /> : <CircleDot className="size-3.5" aria-hidden />;
 }
 
-/** A value's way to its property, in the order a render takes it. */
-function Way({ flow, node, cards, value }: { flow: MappingOutlineFlow; node: MappingOutlineNode; cards: readonly OutlineCard[]; value: string | undefined }) {
-  const reads = flow.reads.filter((read) => read.role !== "condition");
+/** A value of the record shown, under what holds it. */
+function Shown({ value }: { value: string | undefined }) {
+  return value === undefined ? null : <span className="block min-w-0 font-mono text-[11.5px] text-muted-foreground [overflow-wrap:anywhere]" data-testid="mapping-overview-way-value">{value}</span>;
+}
+
+/** A dotted name that breaks after a dot when it has to, never inside a step: `NameAliases.AliasName`. */
+function dotted(name: string): ReactNode {
+  return name.split(".").map((part, index) => (index === 0 ? part : <Fragment key={index}>.<wbr />{part}</Fragment>));
+}
+
+/** A field of a source, picked as the canvas picks it. */
+function FieldButton({ source, field, cards, onPick }: { source: string; field: string; cards: readonly OutlineCard[]; onPick: (part: OverviewPart) => void }) {
+  return (
+    <button
+      type="button"
+      className="min-w-0 rounded-sm text-left font-mono text-[12px] break-words outline-none hover:underline focus-visible:underline"
+      title={`${field}, of ${sourceName(cards, source)}`}
+      onClick={() => onPick({ type: "field", source, field })}
+    >
+      {dotted(field)}
+    </button>
+  );
+}
+
+/** One stage of a value's way: a mark on the rail, what the stage is, and what it holds. */
+function Stage({ title, aside, last = false, children }: { title: ReactNode; aside?: ReactNode; last?: boolean; children?: ReactNode }) {
+  return (
+    <li className="relative flex min-w-0 gap-2.5 pb-3 last:pb-0" data-testid="mapping-overview-way-stage">
+      {!last && <span className="absolute top-3.5 bottom-0 left-[3.5px] w-px bg-border" aria-hidden />}
+      <span className="mt-[5px] size-2 shrink-0 rounded-full border border-muted-foreground/70 bg-card" aria-hidden />
+      <div className="flex min-w-0 flex-1 flex-col gap-1">
+        <h4 className="flex min-w-0 flex-wrap items-baseline gap-x-1.5 text-[12px] font-medium">
+          {title}
+          {aside !== undefined && <span className="font-normal text-muted-foreground">{aside}</span>}
+        </h4>
+        {children}
+      </div>
+    </li>
+  );
+}
+
+/** What a lookup compares, line by line: the field of the table it looks in, and the column or text that field has to hold. */
+function Compared({ stage, cards, values, onPick }: {
+  stage: Extract<WayStage, { kind: "compared" }>;
+  cards: readonly OutlineCard[];
+  values: ReadonlyMap<string, string>;
+  onPick: (part: OverviewPart) => void;
+}) {
+  const { lookup, lines } = stage;
+  // The other side's heading: the table every line compares a column of, else what it is.
+  const sources = new Set(lines.map((line) => line.operand.read?.source ?? null));
+  const [only] = sources;
+  const against = sources.size === 1 && only !== null && only !== undefined ? sourceName(cards, only) : "Compared with";
+  const numbered = lines.length > 1;
+  // A row's value is shown once, at the first line comparing its column: the lines after it compare the same value.
+  const shownAt = new Map<string, number>();
+  lines.forEach((line, index) => {
+    if (line.operand.read !== null && !shownAt.has(fieldId(line.operand.read.source, line.operand.read.field))) {
+      shownAt.set(fieldId(line.operand.read.source, line.operand.read.field), index);
+    }
+  });
+  return (
+    <div
+      className={cn(
+        "grid min-w-0 items-baseline gap-x-2 gap-y-1 rounded-md border border-border bg-muted/30 px-2.5 py-1.5",
+        numbered ? "grid-cols-[auto_auto_auto_minmax(0,1fr)]" : "grid-cols-[auto_auto_minmax(0,1fr)]",
+      )}
+      data-testid="mapping-overview-compared"
+    >
+      {numbered && <span aria-hidden />}
+      <span className="truncate text-[11px] text-muted-foreground">{sourceName(cards, lookup.source)}</span>
+      <span aria-hidden />
+      <span className="truncate text-[11px] text-muted-foreground">{against}</span>
+      {lines.map((line, index) => {
+        const read = line.operand.read;
+        return (
+          <Fragment key={`${index}-${line.field}`}>
+            {numbered && <span className="text-[11px] text-muted-foreground tabular-nums">{index + 1}</span>}
+            <FieldButton source={lookup.source} field={line.field} cards={cards} onPick={onPick} />
+            <span className="font-mono text-[12px] text-muted-foreground">=</span>
+            <span className="min-w-0" data-testid="mapping-overview-compared-operand">
+              {read === null
+                ? <span className="font-mono text-[12px] [overflow-wrap:anywhere]">{line.operand.text}</span>
+                : <FieldButton source={read.source} field={read.field} cards={cards} onPick={onPick} />}
+              {read !== null && !stage.changed && shownAt.get(fieldId(read.source, read.field)) === index && <Shown value={values.get(fieldId(read.source, read.field))} />}
+            </span>
+          </Fragment>
+        );
+      })}
+    </div>
+  );
+}
+
+/** A value's way to its property, in the order a render takes it: what enters, what changes it, what it is compared in and fetches, and where it is written. */
+function Way({ flow, node, cards, value, values, onPick }: {
+  flow: MappingOutlineFlow;
+  node: MappingOutlineNode;
+  cards: readonly OutlineCard[];
+  /** The property's value in the record shown; undefined for an alternative, or when no record is shown. */
+  value: string | undefined;
+  values: ReadonlyMap<string, string>;
+  onPick: (part: OverviewPart) => void;
+}) {
+  const stages = wayOf(flow);
   return (
     <ol className="flex min-w-0 flex-col" data-testid="mapping-overview-way">
-      {reads.map((read) => (
-        <Stage key={fieldId(read.source, read.field)} glyph={<Table2 className="size-3.5" aria-hidden />} title={read.field}>
-          {`${read.role === "match" ? "Compared, from" : "Read from"} ${sourceName(cards, read.source)}`}
-        </Stage>
-      ))}
-      {flow.origin === "literal" && (
-        <Stage glyph={<CircleDot className="size-3.5" aria-hidden />} title={flow.literal}>Written as it stands, on every record.</Stage>
-      )}
-      {flow.steps.map((step, index) => (
-        <Stage key={`${index}-${step.kind}`} glyph={stepGlyph(step)} title={step.text}>{step.detail}</Stage>
-      ))}
-      <Stage last glyph={<ArrowRight className="size-3.5" aria-hidden />} title={node.path.split("|")[0]}>
-        {value === undefined ? (flow.unverified ? "Written even when the cache holds no such record." : undefined) : <>In this record: <span className="font-mono text-foreground [overflow-wrap:anywhere]">{value}</span></>}
-      </Stage>
+      {stages.map((stage, index) => {
+        const last = index === stages.length - 1;
+        switch (stage.kind) {
+          case "input":
+            return (
+              <Stage key={index} title="Input">
+                <ul className="flex min-w-0 flex-col gap-1">
+                  {stage.reads.map((read) => (
+                    <li key={fieldId(read.source, read.field)} className="flex min-w-0 items-start gap-1.5">
+                      <span className="mt-0.5 shrink-0 text-muted-foreground">{sourceGlyph(cards, read.source)}</span>
+                      <span className="min-w-0 flex-1">
+                        <span className="flex min-w-0 items-baseline gap-2">
+                          <FieldButton source={read.source} field={read.field} cards={cards} onPick={onPick} />
+                          <span className="ml-auto min-w-0 truncate text-[11.5px] text-muted-foreground">{sourceName(cards, read.source)}</span>
+                        </span>
+                        <Shown value={values.get(fieldId(read.source, read.field))} />
+                      </span>
+                    </li>
+                  ))}
+                  {stage.literal !== null && (
+                    <li className="min-w-0">
+                      <span className="block font-mono text-[12px] [overflow-wrap:anywhere]">{stage.literal}</span>
+                      <span className="text-[12px] text-muted-foreground">Written as it stands, on every record.</span>
+                    </li>
+                  )}
+                </ul>
+              </Stage>
+            );
+          case "changed":
+            return (
+              <Stage key={index} title={stage.steps.every((step) => step.kind === "expr") ? "Computed" : "Changed"}>
+                <ul className="flex min-w-0 flex-col gap-1">
+                  {stage.steps.map((step, at) => (
+                    <li key={`${at}-${step.kind}`} className="min-w-0">
+                      <span className="block font-mono text-[12px] [overflow-wrap:anywhere]">{step.text}</span>
+                      <span className="text-[12px] text-muted-foreground">{step.detail}</span>
+                    </li>
+                  ))}
+                </ul>
+              </Stage>
+            );
+          case "compared":
+            return (
+              <Stage
+                key={index}
+                title={<>Compared in <button type="button" className="font-mono outline-none hover:underline focus-visible:underline" onClick={() => onPick({ type: "card", source: stage.lookup.source })}>{sourceName(cards, stage.lookup.source)}</button></>}
+                aside={cards.find((card) => card.id === stage.lookup.source)?.role}
+              >
+                <Compared stage={stage} cards={cards} values={values} onPick={onPick} />
+                {stage.changed && <span className="text-[12px] text-muted-foreground">The value is compared as the steps above leave it.</span>}
+                <span className="text-[12px] text-muted-foreground">{stage.step.detail}</span>
+              </Stage>
+            );
+          case "fetched":
+            return (
+              <Stage key={index} title="Fetched">
+                <span className="flex min-w-0 items-baseline gap-1.5 text-[12px]">
+                  {stage.lookup.field === null || stage.lookup.field === undefined
+                    ? <span className="text-muted-foreground">{`What ${sourceName(cards, stage.lookup.source)} holds for the value.`}</span>
+                    : <>
+                        <FieldButton source={stage.lookup.source} field={stage.lookup.field} cards={cards} onPick={onPick} />
+                        <span className="text-muted-foreground">{`of ${sourceName(cards, stage.lookup.source)}`}</span>
+                      </>}
+                </span>
+              </Stage>
+            );
+          default:
+            return (
+              <Stage key={index} last={last} title="Written to">
+                <span className="block min-w-0 font-mono text-[12px] [overflow-wrap:anywhere]">{node.path.split("|")[0]}</span>
+                {value !== undefined
+                  ? <Shown value={value} />
+                  : flow.unverified && <span className="text-[12px] text-muted-foreground">Written even when the cache holds no such record.</span>}
+              </Stage>
+            );
+        }
+      })}
     </ol>
   );
 }
@@ -107,7 +258,7 @@ function RowPanel({ node, cards, lines, values, onPick }: {
       )}
       {node.flow !== null && node.flow !== undefined && (
         <Section title="How it is filled">
-          <Way flow={node.flow} node={node} cards={cards} value={values.get(node.path)} />
+          <Way flow={node.flow} node={node} cards={cards} value={values.get(node.path)} values={values} onPick={onPick} />
         </Section>
       )}
       {siblings.length > 0 && (
@@ -123,7 +274,7 @@ function RowPanel({ node, cards, lines, values, onPick }: {
                     {said === "gave the value" && <Check className="size-3.5 text-success" aria-label="Gave the value" />}
                     {said !== undefined && said !== "gave the value" && <span className="font-normal text-muted-foreground">{said}</span>}
                   </button>
-                  {alternative.flow !== null && alternative.flow !== undefined && <Way flow={alternative.flow} node={alternative} cards={cards} value={undefined} />}
+                  {alternative.flow !== null && alternative.flow !== undefined && <Way flow={alternative.flow} node={alternative} cards={cards} value={undefined} values={values} onPick={onPick} />}
                 </li>
               );
             })}

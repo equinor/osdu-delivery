@@ -333,8 +333,8 @@ internal static partial class SqlServerLedgerBulk
               AND (i.[RemovedUtc] IS NULL OR i.[UpdatedUtc] > i.[RemovedUtc])
               AND NOT EXISTS (SELECT 1 FROM #RemovalLifted x WHERE x.[DeliveryKey] = t.[DeliveryKey]);
 
-            -- A deletion the record table's mark made goes when the table no longer marks the row: SQLFlow's key match takes the
-            -- mark off a key that reappears in its source without stamping the row.
+            -- A deletion the record table's mark made goes when the table no longer marks the row, stamped or not: SQLFlow's key
+            -- match stamps a row it takes the mark off (the rule above), and a mark taken off by hand may move nothing else.
             INSERT INTO #RemovalLifted ([DeliveryKey], [State])
             SELECT t.[DeliveryKey], t.[State]
             FROM [osdu].[RemovedKey] t

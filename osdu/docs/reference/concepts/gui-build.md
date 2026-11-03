@@ -53,9 +53,10 @@ to Templates, its tooltip naming the template folder file the version was read f
 path holds it); and **Open in builder**.
 
 Under the heading is one toolbar: the three views, **Overview**, **Staged records** and **Properties**, then which rows are
-read, and **Dry run**. Overview reads the document, so it takes that place for its own search and leaves which rows are read until
-a record is shown. Elsewhere the toolbar picks its scope's values and how many rows, and which flow's rows are read only when several flows render
-with the mapping (each names its record table). A required parameter with no default starts on its first option, the value its record table holds most, so the page opens on rows
+read. Overview reads the document, so it takes that place for its own search and leaves which rows are read until a record is
+shown. On Staged records the toolbar picks its scope's values, which narrow the list, and on Properties also how many rows a dry
+run reads and **Dry run**; which flow's rows are read is a pick only when several flows render with the mapping (each names its
+record table). A required parameter with no default starts on its first option, the value its record table holds most, so the page opens on rows
 rather than on a refusal: the field shows the value taken, another is a pick away, and a field emptied stays empty. Nothing is
 read of the rows until the values are known to do. A run's own form never fills a value in this way. Under the toolbar, when
 there is something to say, one line says the dry run is under way, why it failed, why the rows cannot be read, or whether the
@@ -66,7 +67,7 @@ rows can be delivered.
 - **Staged records**: the rows staged for the mapping, before anything is delivered, beside what they render to, with a handle
   between them that gives either more room and remembers the width. The list reads the table a page at a time and asks it for a
   search, by key, label or file; each line says what became of the row, or how many rows its child tables hold of it, and Up and
-  Down step through them. After a [dry run](dry-run.md), **Ready**, **Worth a look**, **Held** and **Passed over** carry a count
+  Down step through them. After a [dry run](dry-run.md), made on **Properties**, **Ready**, **Worth a look**, **Held** and **Passed over** carry a count
   and narrow the list, each opening its first record. Its foot says how many rows are listed and of which table. Beside the list
   is one section, with one page at a time:
   - **Render**: the record picked, the first the list holds until one is: whether it is only staged or in the ledger, what the next
@@ -82,7 +83,7 @@ rows can be delivered.
 - **Properties**: the template the mapping fills as the record's tree, beside the selected attribute. The views
   **Filled**, **Missing**, **Unfilled**, **Failing** (after a dry run) and **All** each carry a count; **View** adds
   **Required**, **Minted** and **Nested**. The selected attribute reads in **Filled by**, **Data**, **Failing records**,
-  **SQL** and **Schema**. What the toolbar's **Dry run** found reads here attribute by attribute, on a line over the tree. An
+  **SQL** and **Schema**. The toolbar's **Dry run** stands here, and what it found reads attribute by attribute, on a line over the tree. An
   attribute's **Check values** checks it alone. See [writing a mapping](../guides/writing-a-mapping.md).
   - **Data** lists what the checks found of the attribute, a finding to a card led by what is wrong in plain words: what was
     looked for and not found, in which cache type or search, at which fields, with which value, read from which source column,
@@ -107,8 +108,8 @@ rows can be delivered.
     toolbar's flow and scope values, in the order a read pages in, as many rows as the toolbar reads, and without rows marked
     deleted. A child table is left joined, so a record with no child rows shows, with nulls, and its columns are named
     `curves.curve_unit`; each child table beyond one has a statement of its own, so their rows do not multiply. Once a check has
-    found rows wrong with the attribute, **Failing rows** narrows the query to the records it listed, as many as a request can
-    carry, and says how many of the rows that fail those are. A column the tables do not hold is named and left out, and an
+    found rows wrong with the attribute, the query opens on **Failing rows**: the records it listed, as many as a request can
+    carry, saying how many of the rows that fail those are. **Every row** reads the whole scope again. A column the tables do not hold is named and left out, and an
     attribute that reads no source column says so. The page writes the query from the tables' shape: it reads no row and runs
     nothing.
   - **Export rows**, in **Data**, saves the rows failing that attribute as an Excel workbook, reading them again on a node

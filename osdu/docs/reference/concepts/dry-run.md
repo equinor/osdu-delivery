@@ -44,8 +44,9 @@ sourceRefs:
 # A dry run: a mapping's staged records taken through everything a delivery does, short of sending them
 
 A mapping's page lists the rows staged for it under **Staged records**, in the record table of a flow that renders with it,
-before anything is delivered, beside the first row's document. Picking another row shows its document. **Dry run** takes the
-rows through everything a delivery does short of sending them, and says what each comes to. Nothing is written: not OSDU, not
+before anything is delivered, beside the first row's document. Picking another row shows its document. **Dry run**, on the
+page's **Properties**, takes the rows through everything a delivery does short of sending them, and says what each comes to:
+Properties reads it attribute by attribute, and Staged records record by record. Nothing is written: not OSDU, not
 the ledger, not the work location.
 
 A record of any kind is taken the same way, whatever its route: the rows are a flow's, and a mapping used by several flows

@@ -775,7 +775,8 @@ public sealed record MappingOutline(
                     reads.Add(Read(column, MatchRole));
                 }
 
-                what = $"Reads {source.CacheField} from every row of {type} where {all}.";
+                var empty = all.Empty.Count == 0 ? string.Empty : $", and nothing under {string.Join(" and ", all.Empty)}";
+                what = $"Every row whose {all.Field} holds the value, or any of its values, ignoring case{empty}, adds its {source.CacheField} to the list.";
             }
             else
             {
@@ -789,12 +790,16 @@ public sealed record MappingOutline(
                     }
                 }
 
-                var lines = node.FindBy.Count > 1 ? " Each line is tried in turn, until one finds exactly one record." : string.Empty;
-                what = searched
-                    ? $"Searches {search?.Kind ?? type} on the platform and reads {source.CacheField}.{lines}"
-                    : source.Lookup is { } lookup
-                        ? $"Reads {source.CacheField} from the record the lookup {lookup} finds in {type}.{lines}"
-                        : $"Reads {source.CacheField} from the record of {type} the partition's cache holds.{lines}";
+                // The lines and the field read are the lookup's own; this says how they decide, as a render does.
+                var order = node.FindBy.Count > 1
+                    ? "Each line is tried in turn, and the first to find exactly one record gives it."
+                    : "The line has to find exactly one record.";
+                var loose = searched
+                    ? ", then ignoring case where the platform's index allows"
+                    : node.IgnoreSeparators ? ", then ignoring case, then ignoring punctuation and spacing" : ", then ignoring case";
+                var where = searched ? $" Searches {search?.Kind ?? type} on the platform." : string.Empty;
+                var none = node.Required ? ", and so does finding none" : "; finding none gives no value";
+                what = $"{order}{where} A value matches as written{loose}. Several matching records hold the record{none}.";
             }
 
             draft.Field(source.CacheField!).Reads++;

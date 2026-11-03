@@ -5,7 +5,7 @@
 import { select, type BaseType, type Selection } from "d3-selection";
 import "d3-transition";
 import { zoom, zoomIdentity, zoomTransform, type D3ZoomEvent, type ZoomBehavior, type ZoomTransform } from "d3-zoom";
-import type { CardField, OutlineLight } from "./outlineModel";
+import { operandOf, type CardField, type OutlineLight } from "./outlineModel";
 import {
   fitText, fitValue, MEASURE, pillText, textWidth, type OutlineLayout, type PlacedCard, type PlacedDot, type PlacedDrop, type PlacedField, type PlacedPill,
   type PlacedRow, type PlacedWire,
@@ -1032,9 +1032,11 @@ export class OverviewCanvas {
     }
 
     const lookup = row.row.lookups.find((candidate) => candidate.source === dot.source);
-    const by = lookup === undefined || lookup.matches.length === 0 ? "the value" : lookup.matches.map((match) => match.field).join(", ");
+    const by = lookup === undefined || lookup.matches.length === 0
+      ? "by the value"
+      : `where ${lookup.matches.map((match) => `${match.field} = ${operandOf(row.row.reads, match.value).text}`).join(", else ")}`;
     const read = lookup?.field ?? "what it holds for it";
-    return { title: card.card.title, body: `Finds the row by ${by}, and reads ${read}.` };
+    return { title: card.card.title, body: `Finds the row ${by}, and reads ${read}.` };
   }
 }
 

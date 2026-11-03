@@ -348,7 +348,8 @@ the removal's records are named under one `source-remove` activity on the delive
 While a deletion is `pending` or `removed`, the delivery flow's plan delivers no row of the key that is not newer than its
 moment (`UpdatedDate_DW` at or before `RemovedUtc`, or no change stamp at all); it skips the row as removed by its source
 ([Change detection](../concepts/change-detection.md)). A row newer than the moment is delivered as any other, and the next
-removal run lifts the deletion. The deletions are read, a page at a time in key order, on the Removals page, on the delivery
+removal run lifts the deletion. SQLFlow's key match stamps `UpdatedDate_DW` on a row whose key it finds back, so such a
+row is newer ([the ingestion table's marks](removal-marks.md#a-key-that-comes-back)). The deletions are read, a page at a time in key order, on the Removals page, on the delivery
 flow's **Deletions** tab, through `GET /api/v1/delivery/removals/ledgers/{ledgerFlowId}/keys` and with
 `sqlflow records removed`; a record's page says when its key is removed, by which flow, and why.
 

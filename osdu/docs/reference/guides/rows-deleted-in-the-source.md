@@ -184,9 +184,10 @@ marks and takes out nothing of them, and waits for an operator to approve the co
 
 | When | The record table | The ledger | OSDU |
 | --- | --- | --- | --- |
-| The key is back in the source | The key match unmarks the row (source loaded whole), or the ingestion flow loads the row again | | |
-| The removal flow runs | Unmarks the row, when still marked, and stamps `UpdatedDate_DW` | The deletion is lifted, and the record asked to be planned again | |
-| The delivery runs | The filter lets the row through | The record is planned by key and delivered: its earlier hashes were forgotten at the removal, so it is sent whole | Written again under the same id, as a record removed at the record scope is when its row is delivered again ([removal and reversal](../concepts/removal-and-reversal.md)) |
+| The key is back in the source | The key match unmarks the row and stamps `UpdatedDate_DW` (source loaded whole), or the ingestion flow loads the row again | | |
+| The delivery runs | The filter lets an unmarked row through | A row the key match unmarked is newer than its removal: the record is delivered, sent whole, since its earlier hashes were forgotten at the removal | Written again under the same id, as a record removed at the record scope is when its row is delivered again ([removal and reversal](../concepts/removal-and-reversal.md)) |
+| The removal flow runs | Unmarks the row, when still marked, and stamps `UpdatedDate_DW` | The deletion is lifted; a record not delivered again yet is asked to be planned again | |
+| The delivery runs again, for a record still out | The filter lets the row through | The record is planned by key and delivered, sent whole | Written again under the same id |
 
 The record keeps its delivery key and its OSDU id, both derived from the business key, so the ledger carries one record
 whose history runs: delivered, `deleted` by the removal flow, delivered again. An operator can bring a record back before

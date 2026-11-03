@@ -21,7 +21,7 @@ import { StagedRecordsTab } from "./StagedRecordsTab";
 import { ProblemView } from "./TemplateSheet";
 import { useStagedView } from "./useStagedView";
 import { ValueCheckContext, useValueCheckSession } from "./useValueCheck";
-import { DryRunButton, ValueCheckControls } from "./ValueCheckBar";
+import { DryRunButton, ValueCheckControls, ValueCheckScope } from "./ValueCheckBar";
 import { WindowFrame } from "./WindowFrame";
 
 /** The way back to the list of mappings. */
@@ -88,11 +88,11 @@ function MappingHeader({ detail, id, loading }: { detail: DeliveryMappingDetail 
 }
 
 /**
- * Everything a mapping is worked on with, in one window that does not scroll: one toolbar saying which rows are read and running
- * a dry run over them, one line saying what came of it, and under them the three ways to read the mapping. Overview is what the
- * mapping does, from the tables it reads to the record it fills; Staged records is the records beside what they render to;
- * Properties is the template the mapping fills, attribute by attribute. A dry run is one session of the page, so what it found
- * reads in any of them, and none loses it when the reader moves between them.
+ * Everything a mapping is worked on with, in one window that does not scroll: one toolbar saying which rows are read, running a
+ * dry run over them on Properties, one line saying what came of it, and under them the three ways to read the mapping. Overview
+ * is what the mapping does, from the tables it reads to the record it fills; Staged records is the records beside what they
+ * render to; Properties is the template the mapping fills, attribute by attribute. A dry run is one session of the page, so
+ * Staged records marks each record with what it found, and neither loses it when the reader moves between them.
  */
 function MappingWorkspace({ detail }: { detail: DeliveryMappingDetail }) {
   const { mapping, yaml } = detail;
@@ -110,11 +110,18 @@ function MappingWorkspace({ detail }: { detail: DeliveryMappingDetail }) {
               <TabsTrigger value="staged" className="text-[13px]" data-testid="delivery-mapping-tab-staged">Staged records</TabsTrigger>
               <TabsTrigger value="coverage" className="text-[13px]" data-testid="delivery-mapping-tab-coverage">Properties</TabsTrigger>
             </TabsList>
-            {/* The overview reads the document, so the toolbar is its own there, and which rows are read waits for a record to be shown. */}
-            {tab === "overview"
-              ? <div ref={setTools} className="flex min-w-0 flex-[1_1_20rem] items-center gap-2" data-testid="mapping-overview-tools" />
-              : <ValueCheckControls session={session} rowsLabel="How many rows a dry run reads" />}
-            <DryRunButton session={session} />
+            {/*
+              The overview reads the document, so the toolbar is its own there, and which rows are read waits for a record to be
+              shown. Staged records pages through the scope's rows itself. The dry run, and how many rows it reads, are Properties'.
+            */}
+            {tab === "overview" && <div ref={setTools} className="flex min-w-0 flex-[1_1_20rem] items-center gap-2" data-testid="mapping-overview-tools" />}
+            {tab === "staged" && session.flows.length > 0 && <ValueCheckScope session={session} />}
+            {tab === "coverage" && (
+              <>
+                <ValueCheckControls session={session} rowsLabel="How many rows a dry run reads" />
+                <DryRunButton session={session} />
+              </>
+            )}
           </div>
           <MappingStatus session={session} />
           <TabsContent value="overview" className="flex min-h-0 flex-col">

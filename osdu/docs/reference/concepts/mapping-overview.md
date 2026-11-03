@@ -38,6 +38,7 @@ sourceRefs:
   - osdu/src/SqlFlow.Delivery/Source/SqlServerIngestionSource.cs
   - osdu/gui/src/features/delivery/overview/MappingOverview.tsx
   - osdu/gui/src/features/delivery/overview/OverviewCanvas.ts
+  - osdu/gui/src/features/delivery/overview/OverviewInspector.tsx
   - osdu/gui/src/features/delivery/overview/OverviewRendered.tsx
   - osdu/gui/src/features/delivery/overview/OverviewRows.tsx
   - osdu/gui/src/features/delivery/overview/outlineLayout.ts
@@ -92,7 +93,7 @@ for them.
 | Open or close a section | Click it. Up, Down, Left, Right and Enter do the same from the keyboard. **Open all** opens everything, and **Fold** goes back to where the page started. |
 | See the alternatives of a `$coalesce` as lines of their own | Click its chevron. Closed, its line says `first of 3` and passes through every table they read. |
 | Trace something | Point at it. Pointing at a property lights what enters it and the tables on its way, pointing at a column lights everywhere it goes, and pointing at a table lights everything that reads it, from the columns looked up in it to the properties they fill. A line counts as what it comes from, a line off the shelf as its table, and is lit down to the last row lit on it. |
-| See how a property is filled | Click it. A panel slides in from the right with each step in plain words, its alternatives, its rules and the lines of the document that write it. A column or a table, or a line from one, lists what it reaches. Escape or a click on the canvas closes it. |
+| See how a property is filled | Click it. A panel slides in from the right with the way its value takes ([below](#the-way-a-value-is-filled)), its alternatives, its rules and the lines of the document that write it. A column or a table, or a line from one, lists what it reaches. Escape or a click on the canvas closes it. |
 | Do something with a part | Right-click it, or press the menu key or Shift+F10 on it. Every part has a menu, named for what it is on ([below](#the-menus)). |
 | Look at a table's rows | **Preview the first 100 rows** on a table, one of its columns or a line from it (**Preview 100 cached records** for a cache table, **Preview 100 records in OSDU** for a search). The panel of a table or a column has the same button. The rows open under the canvas ([below](#looking-at-a-tables-rows)). |
 | See the parameters' values | **Preview the values** on the parameters, or one of them ([below](#the-parameters-values)). |
@@ -105,6 +106,24 @@ for them.
 
 After a [dry run](dry-run.md), the properties it found broken carry a warning, on the section holding them while that is
 closed.
+
+## The way a value is filled
+
+A property's panel lays out how its value comes, in the order a render takes it. Each stage shows only when the value takes
+it, and a column, a field or a table in it opens its own panel on a click.
+
+| Stage | What it shows |
+| --- | --- |
+| **Input** | The columns the value starts from, each with its table, the flow's parameters it reads, or the literal it writes. A column a condition only tests is not an input. |
+| **Changed** | The modifiers that change the value, each as the document writes it and what it does; **Computed** for an expression. |
+| **Compared in** a table | For a lookup: the table it looks in, and each line it finds the record by, the table's field beside the column or text it has to equal (`FacilityName = wellbore_uwi`), numbered in the order they are tried. Under them, how the lines decide: in turn until one finds exactly one record, as written and then ignoring case (and punctuation and spacing with `$ignoreSeparators`), and what several records or none do ([mapping lookups](../flow/mapping-lookups.md)). A value a step changed first is compared as that step leaves it. |
+| **Fetched** | The field read from what the lookup found: `id` of `Wellbore`. |
+| **Written to** | The property. |
+
+With **Show a record** on, each column shows the row's value, under the input and at the first line comparing it, and the
+property shows the value the record holds, so the panel reads as `wellbore_uwi` `WB A-12` compared with
+`FacilityName`, then `NameAliases.AliasName`, giving the `id` written to `data.WellboreID`. A line's value is the row's only
+when no step changed it first.
 
 ## The menus
 

@@ -3,7 +3,7 @@
 // and what lights up when something is pointed at. No drawing here: outlineLayout places these, and OverviewCanvas draws them.
 
 import type {
-  DeliverySourceTable, MappingOutline, MappingOutlineFlow, MappingOutlineHow, MappingOutlineLookup, MappingOutlineNode, MappingOutlineRead, MappingOutlineSource,
+  DeliverySourceTable, MappingOutline, MappingOutlineFlow, MappingOutlineHow, MappingOutlineLookup, MappingOutlineNode, MappingOutlineRead, MappingOutlineSource, MappingOutlineStep,
 } from "../../../api/mappingOutline.ts";
 
 /** What the cache knows of a type, which is what names a table of pairs. */
@@ -405,6 +405,69 @@ function pairFields(source: string, type: CachedTypeFields | null): CardField[] 
   const key = type?.key ?? "key";
   const value = type?.fields.find((name) => name !== key) ?? "value";
   return [field(key, true), field(value, false)];
+}
+
+/** What a lookup's line compares its field with: a column the flow reads, or the text the document writes there. */
+export interface WayOperand {
+  /** The column's name, or the text as written: `'metre'`, `$lookup.wellbore.GeoContexts.FieldID`, `the value`. */
+  text: string;
+  read: MappingOutlineRead | null;
+}
+
+/** One line of a lookup: the field of the table it looks in, and what that field has to hold. */
+export interface WayLine {
+  field: string;
+  operand: WayOperand;
+}
+
+/**
+ * One stage of a value's way to its property, in the order a render takes them: what enters, what changes it, for a lookup
+ * the table it is compared in and what is fetched from the record found, and the property it is written to.
+ */
+export type WayStage =
+  | { kind: "input"; reads: MappingOutlineRead[]; literal: string | null }
+  | { kind: "changed"; steps: MappingOutlineStep[] }
+  /** `changed` when a step before it changed the value, so a column's value in the row is not what is compared. */
+  | { kind: "compared"; step: MappingOutlineStep; lookup: MappingOutlineLookup; lines: WayLine[]; changed: boolean }
+  | { kind: "fetched"; lookup: MappingOutlineLookup }
+  | { kind: "written" };
+
+/** A line's operand: the column of the flow's reads it names (`dataset.wellbore_uwi`, `dataset.curves.mnemonic`), else its text. */
+export function operandOf(reads: readonly MappingOutlineRead[], value: string): WayOperand {
+  const read = reads.find((candidate) => `${candidate.source}.${candidate.field}` === value) ?? null;
+  return { text: read?.field ?? value, read };
+}
+
+/** The lookup a step compares in: a find's, or a table a replace matches the value against. */
+function comparedIn(step: MappingOutlineStep): MappingOutlineLookup | undefined {
+  return step.kind === "find" ? step.lookups[0] : step.lookups.find((lookup) => lookup.matches.length > 0);
+}
+
+/** A value's way as stages: an input, then each change, each lookup as what it compares and what it fetches, then the property. */
+export function wayOf(flow: MappingOutlineFlow): WayStage[] {
+  const reads = flow.reads.filter((read) => read.role !== "condition");
+  const literal = flow.origin === "literal" ? flow.literal ?? null : null;
+  const stages: WayStage[] = reads.length > 0 || literal !== null ? [{ kind: "input", reads, literal }] : [];
+  let changed = false;
+  for (const step of flow.steps) {
+    const lookup = comparedIn(step);
+    if (lookup === undefined) {
+      const last = stages[stages.length - 1];
+      if (last?.kind === "changed") {
+        last.steps.push(step);
+      } else {
+        stages.push({ kind: "changed", steps: [step] });
+      }
+    } else {
+      stages.push({ kind: "compared", step, lookup, lines: lookup.matches.map((match) => ({ field: match.field, operand: operandOf(reads, match.value) })), changed });
+      stages.push({ kind: "fetched", lookup });
+    }
+
+    changed = true;
+  }
+
+  stages.push({ kind: "written" });
+  return stages;
 }
 
 /** How a mapping's properties come to their values, counted: the numbers the page leads with. */

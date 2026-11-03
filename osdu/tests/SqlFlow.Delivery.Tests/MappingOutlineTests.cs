@@ -120,6 +120,28 @@ public class MappingOutlineTests
     }
 
     [Fact]
+    public void A_lookup_names_the_column_each_line_compares_and_says_how_the_lines_decide()
+    {
+        var outline = MappingOutline.Of(TestSchema.Mapping("""
+            Unit:
+              $cache: UnitOfMeasure.id
+              $findBy:
+                - Code = unit
+                - Name = 'metre'
+              $ignoreSeparators: true
+              $required: false
+            """));
+
+        // A line names its column as the flow reads it, source and field, so the overview can show the row's value beside it.
+        var find = At(outline, "data.Unit").Flow!.Steps.Single(step => step.Kind == "find");
+        Assert.Equal([("Code", "dataset.unit"), ("Name", "'metre'")], find.Lookups[0].Matches.Select(match => (match.Field, match.Value)));
+        Assert.Equal(
+            "Each line is tried in turn, and the first to find exactly one record gives it. A value matches as written, then ignoring case, then "
+                + "ignoring punctuation and spacing. Several matching records hold the record; finding none gives no value.",
+            find.Detail);
+    }
+
+    [Fact]
     public void A_replace_from_the_cache_and_an_id_token_read_their_tables()
     {
         var outline = MappingOutline.Of(TestSchema.Mapping("""

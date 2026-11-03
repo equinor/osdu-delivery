@@ -43,13 +43,15 @@ sourceRefs:
   - osdu/src/SqlFlow.Delivery/Engine/FlowRuntime.SourceRemoval.cs
   - osdu/src/SqlFlow.Delivery/Engine/Planning/Planner.cs
   - osdu/src/SqlFlow.Delivery/Documents/RemovalDocumentMapper.cs
+  - sqlflow/src/SqlFlow.SqlServer/Schema/MatchKeyGenerator.cs
 ---
 
 # The ingestion table's marks
 
 SQLFlow's key match marks an ingestion table's row deleted when its key leaves the source: it stamps the soft-delete
 column (`DeletedDate_DW`, and `RowStatus_DW` `'D'` when the table carries it), and takes the mark off when the key
-reappears ([SQLFlow's matchKeys](../../../../sqlflow/docs/reference/flow/ing-load.md)). A removal flow extends it to OSDU.
+reappears, stamping `UpdatedDate_DW` as it stamps a row it updates
+([SQLFlow's matchKeys](../../../../sqlflow/docs/reference/flow/ing-load.md)). A removal flow extends it to OSDU.
 On the delivery flow's record table, when the table carries the soft-delete column (`source.systemColumns.deleted`,
 `DeletedDate_DW` unless the delivery flow names another or opts out with `~`), a removal:
 
@@ -127,9 +129,16 @@ A deletion is lifted, its key no longer kept out and a record taken out of OSDU 
 - an operator lifts it (**Deliver again**), which also unmarks the row ([Delivering a record again](removal.md#delivering-a-record-again)).
   When the record table cannot be reached or written from where the lift runs (the control plane, for **Deliver again**), the lift stands and its answer says the rows keep their mark and why (`marksKept`), as its activity does: the delivery flow's filter then leaves the row out, and the removal flow's next run finds the mark and takes the record out again.
 
-The same run unmarks the row and stamps it, so the delivery flow's filter lets it through, and its next run reads it by
-key. The record keeps its delivery key and its OSDU id, since both come from the business key, and its history runs on:
-delivered, `deleted` by the removal (attempt `source-removed`), then delivered again. The removal forgot what OSDU held
+The same run unmarks a row still marked and stamps it, so the delivery flow's filter lets it through, and its next run
+reads it by key. A row SQLFlow's key match took the mark off is back for the delivery flow before any removal run: the
+key match stamps the row too, so the delivery flow's next run reads it, finds it newer than its deletion's moment and
+delivers it again, and the removal flow's next run lifts the deletion the record outlived. In the order lineage runs
+them (the ingestion flow, the delivery, the removal), a key the key match finds back is delivered again in the same run
+of the chain, and a key the removal finds back (its `keys`, or a row loaded again while still marked) by the delivery's
+run after it.
+
+Either way the record keeps its delivery key and its OSDU id, since both come from the business key, and its history
+runs on: delivered, `deleted` by the removal (attempt `source-removed`), then delivered again. The removal forgot what OSDU held
 of it, so the row is sent whole, as a new record under the same id, as a record removed at the record scope is when its
 row is delivered again ([removal and reversal](../concepts/removal-and-reversal.md)).
 

@@ -366,10 +366,10 @@ make, and then the document itself
 ([sqlflow preview](../cli/preview.md)). Read the document against the template: the names, the units, the references.
 
 On the GUI's Mappings page, a synced mapping opens on a page of its own, on its **Staged records** and the first row's document:
-any other row is a click away, and **Dry run** says what every row comes to, with each document held to the template and to the
-partition's Schema service, and nothing sent ([a dry run](../concepts/dry-run.md)). Under **Properties**, an attribute's **SQL** tab
-writes the query to run in SSMS to see what it reads in the source, narrowed to the rows that fail once a check has found any
-([the Mappings page](../concepts/gui-build.md#mappings)).
+any other row is a click away. Under **Properties**, **Dry run** says what every row comes to, with each document held to the
+template and to the partition's Schema service, and nothing sent ([a dry run](../concepts/dry-run.md)), and an attribute's
+**SQL** tab writes the query to run in SSMS to see what it reads in the source, opening on the rows that fail once a check has
+found any ([the Mappings page](../concepts/gui-build.md#mappings)).
 
 ## 9. Fix and repeat
 

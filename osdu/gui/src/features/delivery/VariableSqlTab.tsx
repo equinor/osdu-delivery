@@ -51,13 +51,14 @@ function SourceQueryView({ answer }: { answer: DeliverySourceSql }) {
 }
 
 /**
- * The T-SQL that shows what an attribute reads, to copy into SSMS: over every row of the scope, or, once a check has found rows
- * wrong with the attribute, over the ones it named. Written by the control plane from the flow's own tables, so it follows
+ * The T-SQL that shows what an attribute reads, to copy into SSMS: once a check has found rows wrong with the attribute, over the
+ * ones it named, else over every row of the scope. Written by the control plane from the flow's own tables, so it follows
  * the page's flow, scope values and row budget, and it is never run here.
  */
 function SqlQuery({ session, path }: { session: ValueCheckSession; path: string }) {
   const { flow, sentValues, maxRows, ready } = session;
-  const [narrowed, setNarrowed] = useState(false);
+  // Null until the reader picks: the query opens on the failing rows once a check has listed any, which is what it is read for.
+  const [picked, setPicked] = useState<"all" | "failing" | null>(null);
   const found = session.resultFor(path);
   const nested = session.nestedFor(path);
   const failing = useMemo(
@@ -65,6 +66,7 @@ function SqlQuery({ session, path }: { session: ValueCheckSession; path: string 
     [found, nested],
   );
   const failingRows = found === undefined ? 0 : failingOf(found.variable.rows);
+  const narrowed = failing.keys.length > 0 && (picked ?? "failing") === "failing";
   const keys = narrowed ? failing.keys : [];
   const query = useQuery({
     queryKey: ["delivery", "source-sql", flow?.pipelineId ?? null, flow?.interface ?? null, flow?.partition ?? null, path, sentValues, maxRows, keys],
@@ -95,7 +97,7 @@ function SqlQuery({ session, path }: { session: ValueCheckSession; path: string 
             size="sm"
             variant="outline"
             value={narrowed ? "failing" : "all"}
-            onValueChange={(next) => { if (next === "all" || next === "failing") { setNarrowed(next === "failing"); } }}
+            onValueChange={(next) => { if (next === "all" || next === "failing") { setPicked(next); } }}
             data-testid="variable-sql-rows"
           >
             <ToggleGroupItem value="all" className="h-7 text-[12px]" data-testid="variable-sql-rows-all">Every row</ToggleGroupItem>
@@ -103,8 +105,8 @@ function SqlQuery({ session, path }: { session: ValueCheckSession; path: string 
           </ToggleGroup>
         )}
         <span className="inline-flex items-center gap-1" data-testid="variable-sql-about">
-          {narrowed && failing.keys.length > 0
-            ? `The ${formatCount(failing.keys.length)} ${failing.keys.length === 1 ? "record" : "records"} the check listed${failingRows > failing.keys.length ? `, of ${formatCount(failingRows)} that fail` : ""}.`
+          {narrowed
+            ?`The ${formatCount(failing.keys.length)} ${failing.keys.length === 1 ? "record" : "records"} the check listed${failingRows > failing.keys.length ? `, of ${formatCount(failingRows)} that fail` : ""}.`
             : maxRows === 0 ? "Every row of the scope." : `The first ${formatCount(maxRows)} rows of the scope.`}
           <ExplainMark title="This query" text={ABOUT_THE_QUERY} testId="variable-sql-explain" />
         </span>
