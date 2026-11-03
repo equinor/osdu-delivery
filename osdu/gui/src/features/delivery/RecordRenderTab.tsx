@@ -158,7 +158,7 @@ function RenderResult({ results }: { results: RenderResults }) {
   // Worked out on each render: a render follows only a click or an answer, and the texts compare by value.
   const holds = readResult?.found === true && readResult.record ? withoutOsduFields(readResult.record) : null;
   const compared = holds !== null && rendered !== null
-    ? { ...differences(holds, rendered), original: canonicalText(holds), modified: canonicalText(rendered) }
+    ? { ...differences(holds, rendered), rendered: canonicalText(rendered), osdu: canonicalText(holds) }
     : null;
   const shown = compared === null ? "document" : view;
   // Nothing to set it beside: the record has no OSDU id a read could follow, or OSDU answered that it holds none.
@@ -282,18 +282,21 @@ function RenderResult({ results }: { results: RenderResults }) {
           </div>
           {/* The comparison stays mounted while the whole document is in view, and is only hidden: Monaco's diff editor
               throws as it unmounts (its models are disposed before the widget lets go of them), and it lays itself out
-              again once shown. */}
+              again once shown. The render is on the left and OSDU on the right, as a delivery carries one into the
+              other; the sides are named, so Explain and Copy name them rather than calling one the earlier. */}
           {compared !== null && (
             <div className={shown === "beside" ? "flex flex-col gap-2" : "hidden"}>
               <DiffView
-                original={compared.original}
-                modified={compared.modified}
+                original={compared.rendered}
+                modified={compared.osdu}
                 language="json"
                 height={520}
                 foldUnchanged
                 sideLabels={{
-                  original: `In OSDU${readResult?.version !== null && readResult?.version !== undefined ? ` (version ${readResult.version})` : ""}`,
-                  modified: "Rendered now",
+                  original: { name: "Rendered now", detail: document?.sent ? "as the route sends it" : "as the mapping renders it" },
+                  modified: readResult?.version !== null && readResult?.version !== undefined
+                    ? { name: "In OSDU", detail: `version ${readResult.version}` }
+                    : "In OSDU",
                 }}
                 data-testid="record-render-diff"
               />

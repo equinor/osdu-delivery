@@ -181,7 +181,8 @@ for a record that was.
   would skip without rendering, though it renders now to another document than the one last delivered because something
   it reads from OSDU changed, says so and that **Redeliver** sends what it renders now), **Held for**:
   why a delivery would hold the record (each reason under the property it names, a `$coalesce`'s alternatives numbered),
-  the preflight's warnings, and the **Rendered record** **Beside OSDU** (the differences) or **Whole document**. A record
+  the preflight's warnings, and the **Rendered record** **Beside OSDU** (the differences: **Rendered now** on the left,
+  **In OSDU** and the version read on the right) or **Whole document**. A record
   its flow never wrote to OSDU is rendered without a read, and the document's line says OSDU holds nothing of it to set
   it beside.
 - **OSDU**: **Read** reads the record as OSDU holds it through the flow's route, in the record inspector the explorer uses

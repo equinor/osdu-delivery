@@ -19,14 +19,12 @@
     // SQLFlow's sources resolve their packages from this build's node_modules through the "*" entry, as vite.config.ts
     // has them do in the bundle. A path mapping reads a package's "types" field and never its "exports" map, so where
     // the two disagree the package is mapped as its "exports" map has it: monaco-editor's "types" field names a file
-    // the package does not ship and its subpaths sit under esm/vs, and MSAL publishes its redirect bridge as a subpath
-    // export alone.
+    // the package does not ship and its subpaths sit under esm/vs.
     "paths": {
       "@/*": ["../../sqlflow/gui/src/*"],
       "@osdu/*": ["./src/*"],
       "monaco-editor": ["./node_modules/monaco-editor/esm/vs/index.d.ts"],
       "monaco-editor/*": ["./node_modules/monaco-editor/esm/vs/*"],
-      "@azure/msal-browser/redirect-bridge": ["./node_modules/@azure/msal-browser/types/redirect_bridge/index.d.ts"],
       "*": ["./node_modules/@types/*", "./node_modules/*"]
     }
   },
