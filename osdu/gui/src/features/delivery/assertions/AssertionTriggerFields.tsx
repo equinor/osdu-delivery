@@ -4,11 +4,11 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Skeleton } from "@/components/ui/skeleton";
 import { SearchInput } from "@/components/SearchInput";
 import type { TriggerBodyContribution, TriggerFieldsProps } from "@/modules/registry";
-import { deliveryApi, type DeliveryAssertionFlow } from "../../../api/delivery";
+import { deliveryApi } from "../../../api/delivery";
 import { useActivePartition } from "../activePartition";
 import type { RunValue } from "@/api/types";
 import { TagChip } from "./AssertionBadges";
-import { counted, disabledWhy, kindEntity, selectionPayload } from "./assertionFormat";
+import { counted, disabledWhy, kindEntity, partitionOf, selectionPayload } from "./assertionFormat";
 
 /** The run value naming the partition a run tests (osdu/docs/reference/flow/assertion.md, Which partition a run tests). */
 const PARTITION = "partition";
@@ -24,37 +24,6 @@ const FILTER_FROM = 8;
 
 function stringsOf(value: unknown): string[] {
   return Array.isArray(value) ? value.filter((item): item is string => typeof item === "string" && item.trim() !== "") : [];
-}
-
-/** The partition a run of the flow tests, and why it cannot run while the title bar is where it is. */
-function partitionOf(flow: DeliveryAssertionFlow | undefined, active: string | null): { partition: string | null; error: string | null } {
-  if (flow === undefined) {
-    return { partition: null, error: "Reading the flow's assertions." };
-  }
-
-  if (flow.partitions.length > 0) {
-    if (active === null) {
-      return { partition: null, error: "Pick a partition in the title bar: a run checks the partition picked there." };
-    }
-
-    return flow.partitions.includes(active)
-      ? { partition: active, error: null }
-      : {
-        partition: null,
-        error: `This flow does not check ${active}, the partition picked in the title bar; it checks ${flow.partitions.join(", ")}. Pick ${flow.partitions.length > 1 ? "one of them" : "it"} in the title bar to run it.`,
-      };
-  }
-
-  if (flow.problem !== null) {
-    return { partition: null, error: flow.problem };
-  }
-
-  return flow.partition !== null && active !== null && flow.partition !== active
-    ? {
-      partition: null,
-      error: `This flow checks ${flow.partition}, the partition its data-partition-id header names, and the title bar is on ${active}. Pick ${flow.partition} in the title bar to run it.`,
-    }
-    : { partition: null, error: null };
 }
 
 /**

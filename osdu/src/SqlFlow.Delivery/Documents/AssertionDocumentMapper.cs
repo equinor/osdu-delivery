@@ -96,6 +96,7 @@ internal static partial class AssertionMapper
             Name = name,
             Description = Optional(y.Description),
             Batch = Optional(y.Batch),
+            Set = MapSet(y.Set, source) ?? Optional(y.Batch),
             TelemetryOperation = FlowMapper.MapTelemetry(y.Telemetry, AssertionFlowDefinition.FlowTypeName, source),
             Parameters = parameters,
             Source = new AssertionSource
@@ -120,6 +121,24 @@ internal static partial class AssertionMapper
         };
 
         return flow;
+    }
+
+    /// <summary>
+    /// The set the flow names (<c>set</c>, osdu/docs/reference/flow/assertion-sets.md), or null when it names none: a set is
+    /// named as a test is, since a link, a route and the command line name it.
+    /// </summary>
+    private static string? MapSet(string? declared, string source)
+    {
+        if (declared is null)
+        {
+            return null;
+        }
+
+        var set = declared.Trim();
+        return SelectableNames.IsName(set)
+            ? set
+            : throw new FlowValidationException(
+                $"{source}: set '{declared}' is not a set name: {SelectableNames.Rule}. Name the set the flow's tests are grouped under, such as set: welllog-proof-values, or take the key out to group them under the flow's batch.");
     }
 
     private static IReadOnlyList<string> MapPartitions(IReadOnlyList<string>? declared, string source)

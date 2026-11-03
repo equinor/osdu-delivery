@@ -132,56 +132,7 @@ public sealed record AssertionReport(AssertionRunState Run, IReadOnlyList<TestRe
             md.AppendLine().Append("## ").AppendLine(group.Key);
             foreach (var result in group)
             {
-                md.AppendLine().Append("### ").Append(result.Test).Append(": ").AppendLine(result.Outcome.ToUpperInvariant());
-                if (result.Description is { } description)
-                {
-                    md.AppendLine().AppendLine(description);
-                }
-
-                md.AppendLine();
-                md.Append(CultureInfo.InvariantCulture, $"Matched {Number(result.Matched)}, read {Number(result.Evaluated)}")
-                    .Append(result.Sampled ? " (a sample)" : string.Empty)
-                    .Append(result.Template is { } template ? $", checked against template {template}" : string.Empty)
-                    .Append(result.Query is { } query ? $", query `{query.Replace("`", "'", StringComparison.Ordinal)}`" : string.Empty)
-                    .Append(CultureInfo.InvariantCulture, $", {result.DurationMs} ms.").AppendLine();
-                if (result.Error is { } testError)
-                {
-                    md.AppendLine().Append("> ").AppendLine(Cell(testError));
-                }
-
-                foreach (var problem in result.Problems)
-                {
-                    md.Append("- ").AppendLine(Cell(problem));
-                }
-
-                foreach (var note in result.Notes)
-                {
-                    md.Append("- ").AppendLine(Cell(note));
-                }
-
-                if (result.Assertions.Count == 0)
-                {
-                    continue;
-                }
-
-                md.AppendLine();
-                md.AppendLine("| Assertion | Severity | Outcome | Expected | Actual |");
-                md.AppendLine("| --- | --- | --- | --- | --- |");
-                foreach (var a in result.Assertions)
-                {
-                    md.Append(CultureInfo.InvariantCulture, $"| {Cell(a.Label)} | {a.Severity} | {a.Outcome} | {Cell(a.Expected)} | {Cell(a.Actual ?? a.Message ?? string.Empty)} |").AppendLine();
-                }
-
-                foreach (var a in result.Assertions.Where(a => a.Examples.Count > 0 && a.Outcome != TestOutcomes.Passed))
-                {
-                    md.AppendLine().Append("Failing examples of ").Append(Cell(a.Label)).AppendLine(":").AppendLine();
-                    md.AppendLine("| Record | Value | Why |");
-                    md.AppendLine("| --- | --- | --- |");
-                    foreach (var example in a.Examples)
-                    {
-                        md.Append(CultureInfo.InvariantCulture, $"| {Cell(example.Id ?? string.Empty)} | {Cell(example.Value ?? string.Empty)} | {Cell(example.Reason)} |").AppendLine();
-                    }
-                }
+                WriteResultMarkdown(md, result, $"{result.Test}: {result.Outcome.ToUpperInvariant()}");
             }
         }
 
@@ -226,42 +177,7 @@ public sealed record AssertionReport(AssertionRunState Run, IReadOnlyList<TestRe
                 xml.WriteEndElement();
                 foreach (var result in group)
                 {
-                    xml.WriteStartElement("testcase");
-                    xml.WriteAttributeString("classname", $"{Run.FlowName}.{group.Key}");
-                    xml.WriteAttributeString("name", result.Test);
-                    xml.WriteAttributeString("time", Seconds(result.DurationMs));
-                    var detail = Detail(result);
-                    switch (result.Outcome)
-                    {
-                        case TestOutcomes.Failed:
-                            xml.WriteStartElement("failure");
-                            xml.WriteAttributeString("message", First(result));
-                            xml.WriteAttributeString("type", "assertion");
-                            xml.WriteString(detail);
-                            xml.WriteEndElement();
-                            break;
-                        case TestOutcomes.Errored:
-                            xml.WriteStartElement("error");
-                            xml.WriteAttributeString("message", result.Error ?? First(result));
-                            xml.WriteAttributeString("type", "evaluation");
-                            xml.WriteString(detail);
-                            xml.WriteEndElement();
-                            break;
-                        case TestOutcomes.Skipped:
-                            xml.WriteStartElement("skipped");
-                            xml.WriteAttributeString("message", result.Error ?? "not run");
-                            xml.WriteEndElement();
-                            break;
-                        default:
-                            if (result.Outcome == TestOutcomes.Warned || result.Notes.Count > 0)
-                            {
-                                xml.WriteElementString("system-out", detail);
-                            }
-
-                            break;
-                    }
-
-                    xml.WriteEndElement();
+                    WriteTestCase(xml, $"{Run.FlowName}.{group.Key}", result);
                 }
 
                 xml.WriteEndElement();
@@ -310,55 +226,7 @@ public sealed record AssertionReport(AssertionRunState Run, IReadOnlyList<TestRe
             html.Append("<section class=\"kind\"><h2>").Append(E(group.Key)).Append("</h2>");
             foreach (var result in group)
             {
-                html.Append(CultureInfo.InvariantCulture, $"<article class=\"test {result.Outcome}\"><div class=\"head\"><h3>{E(result.Test)}</h3><span class=\"badge {result.Outcome}\">{result.Outcome}</span></div>");
-                if (result.Description is { } description)
-                {
-                    html.Append("<p>").Append(E(description)).Append("</p>");
-                }
-
-                html.Append(CultureInfo.InvariantCulture,
-                    $"<p class=\"facts\">matched <b>{Number(result.Matched)}</b> &middot; read <b>{Number(result.Evaluated)}</b>{(result.Sampled ? " (a sample)" : string.Empty)}{(result.Template is { } template ? " &middot; template <code>" + E(template) + "</code>" : string.Empty)} &middot; {result.DurationMs} ms</p>");
-                if (result.Query is { } query)
-                {
-                    html.Append("<p class=\"facts\">query <code>").Append(E(query)).Append("</code></p>");
-                }
-
-                if (result.Error is { } testError)
-                {
-                    html.Append("<p class=\"alert\">").Append(E(testError)).Append("</p>");
-                }
-
-                foreach (var line in result.Problems.Concat(result.Notes))
-                {
-                    html.Append("<p class=\"note\">").Append(E(line)).Append("</p>");
-                }
-
-                if (result.Assertions.Count > 0)
-                {
-                    html.Append("<table><thead><tr><th>Assertion</th><th class=\"fit\">Severity</th><th class=\"fit\">Outcome</th><th>Expected</th><th>Actual</th></tr></thead><tbody>");
-                    foreach (var a in result.Assertions)
-                    {
-                        var standing = Standing(a);
-                        html.Append(CultureInfo.InvariantCulture,
-                            $"<tr><td>{E(a.Label)}</td><td class=\"fit\">{a.Severity}</td><td class=\"fit\"><span class=\"badge {standing}\">{standing}</span></td><td>{E(a.Expected)}</td><td>{E(a.Actual ?? string.Empty)}{(a.Message is { } message && a.Outcome != TestOutcomes.Passed ? "<br><small>" + E(message) + "</small>" : string.Empty)}</td></tr>");
-                        if (a.Examples.Count > 0 && a.Outcome != TestOutcomes.Passed)
-                        {
-                            html.Append(CultureInfo.InvariantCulture,
-                                $"<tr class=\"examples\"><td colspan=\"5\"><details><summary>{a.Examples.Count} failing example(s){(a.ExamplesTrimmed ? ", cut back" : string.Empty)}</summary><table><tbody>");
-                            foreach (var example in a.Examples)
-                            {
-                                html.Append("<tr><td><code>").Append(E(example.Id ?? string.Empty)).Append("</code></td><td>").Append(E(example.Value ?? string.Empty))
-                                    .Append("</td><td>").Append(E(example.Reason)).Append("</td></tr>");
-                            }
-
-                            html.Append("</tbody></table></details></td></tr>");
-                        }
-                    }
-
-                    html.Append("</tbody></table>");
-                }
-
-                html.AppendLine("</article>");
+                WriteResultHtml(html, result, null);
             }
 
             html.AppendLine("</section>");
@@ -367,6 +235,197 @@ public sealed record AssertionReport(AssertionRunState Run, IReadOnlyList<TestRe
         html.Append("<footer>Generated ").Append(E(Stamp(GeneratedUtc))).AppendLine(" by OSDU Delivery, powered by SQLFlow.</footer>");
         html.AppendLine("</main></body></html>");
         return html.ToString();
+    }
+
+    /// <summary>
+    /// One test's result in Markdown, under a heading of its own: what it is for, how many records it matched, why it could
+    /// not be judged, then one line per check with its result, what it expected, what it found and why, and the failing
+    /// records of each check that did not pass. A run's report and a set's write a result through this one method.
+    /// </summary>
+    internal static void WriteResultMarkdown(StringBuilder md, TestResult result, string heading)
+    {
+        md.AppendLine().Append("### ").AppendLine(heading);
+        if (result.Description is { } description)
+        {
+            md.AppendLine().AppendLine(description);
+        }
+
+        md.AppendLine();
+        md.Append(CultureInfo.InvariantCulture, $"Matched {Number(result.Matched)} record(s)")
+            .Append(result.Sampled ? $", a sample of {Number(result.Evaluated)} read" : string.Empty)
+            .Append(result.Query is { } query ? $"; query `{query.Replace("`", "'", StringComparison.Ordinal)}`" : string.Empty)
+            .AppendLine(".");
+        if (result.Error is { } testError)
+        {
+            md.AppendLine().Append("> ").AppendLine(Cell(testError));
+        }
+
+        foreach (var line in result.Problems.Concat(result.Notes))
+        {
+            md.Append("- ").AppendLine(Cell(line));
+        }
+
+        if (result.Assertions.Count == 0)
+        {
+            return;
+        }
+
+        md.AppendLine();
+        md.AppendLine("| Check | Result | Expected | Found | Why |");
+        md.AppendLine("| --- | --- | --- | --- | --- |");
+        foreach (var a in result.Assertions)
+        {
+            var view = CheckView.Of(a);
+            var expected = view.Qualifiers.Count == 0 ? view.Expected : $"{view.Expected} ({string.Join(", ", view.Qualifiers)})";
+            md.Append(CultureInfo.InvariantCulture, $"| {Cell(a.Label)} | {CheckWord(Standing(a))} | {Cell(expected)} | {Cell(view.Found)} | {Cell(view.Why ?? string.Empty)} |").AppendLine();
+        }
+
+        foreach (var a in result.Assertions.Where(a => a.Examples.Count > 0 && a.Outcome != TestOutcomes.Passed))
+        {
+            md.AppendLine().Append("Records failing ").Append(Cell(a.Label)).AppendLine(":").AppendLine();
+            md.AppendLine("| Record | Value | Why |");
+            md.AppendLine("| --- | --- | --- |");
+            foreach (var example in a.Examples)
+            {
+                md.Append(CultureInfo.InvariantCulture, $"| {Cell(example.Id ?? string.Empty)} | {Cell(example.Value ?? string.Empty)} | {Cell(example.Reason)} |").AppendLine();
+            }
+        }
+    }
+
+    /// <summary>
+    /// One test's result as an HTML card: its name and result, what it is for, how many records it matched, why it could not
+    /// be judged, then one line per check with its result, what it expected (the qualifiers under it), what it found and why,
+    /// each fact once, the failing records a click away; the query, the template and the time it took are under "How it was
+    /// checked". <paramref name="facts"/>, when given, is a line of encoded HTML under the heading (a set's report says which
+    /// run the result is from).
+    /// </summary>
+    internal static void WriteResultHtml(StringBuilder html, TestResult result, string? facts)
+    {
+        html.Append(CultureInfo.InvariantCulture,
+            $"<article class=\"test {result.Outcome}\"><div class=\"head\"><h3>{E(result.Test)}</h3><span class=\"badge {result.Outcome}\">{E(CheckWord(result.Outcome))}</span></div>");
+        if (facts is not null)
+        {
+            html.Append("<p class=\"facts\">").Append(facts).Append("</p>");
+        }
+
+        if (result.Description is { } description)
+        {
+            html.Append("<p class=\"desc\">").Append(E(description)).Append("</p>");
+        }
+
+        html.Append(CultureInfo.InvariantCulture,
+            $"<p class=\"facts\"><b>{Number(result.Matched)}</b> record(s) matched{(result.Sampled ? $", a sample of <b>{Number(result.Evaluated)}</b> read" : string.Empty)}</p>");
+        if (result.Error is { } testError)
+        {
+            html.Append("<p class=\"alert\">").Append(E(testError)).Append("</p>");
+        }
+
+        foreach (var line in result.Problems.Concat(result.Notes))
+        {
+            html.Append("<p class=\"note\">").Append(E(line)).Append("</p>");
+        }
+
+        if (result.Assertions.Count > 0)
+        {
+            html.Append("<table class=\"checks\"><thead><tr><th>Check</th><th class=\"fit\">Result</th><th>Expected</th><th>Found</th><th>Why</th></tr></thead><tbody>");
+            foreach (var a in result.Assertions)
+            {
+                var standing = Standing(a);
+                var view = CheckView.Of(a);
+                html.Append(CultureInfo.InvariantCulture,
+                    $"<tr><td>{E(a.Label)}</td><td class=\"fit\"><span class=\"badge {standing}\">{E(CheckWord(standing))}</span></td><td>{E(view.Expected)}");
+                if (view.Qualifiers.Count > 0)
+                {
+                    html.Append("<br><small>").Append(string.Join(" &middot; ", view.Qualifiers.Select(E))).Append("</small>");
+                }
+
+                html.Append("</td><td>").Append(E(view.Found)).Append("</td><td class=\"why\">").Append(E(view.Why ?? string.Empty)).Append("</td></tr>");
+                if (a.Examples.Count > 0 && a.Outcome != TestOutcomes.Passed)
+                {
+                    html.Append(CultureInfo.InvariantCulture,
+                        $"<tr class=\"examples\"><td colspan=\"5\"><details><summary>{a.Examples.Count} record(s) that fail it{(a.ExamplesTrimmed ? ", cut back" : string.Empty)}</summary><table><tbody>");
+                    foreach (var example in a.Examples)
+                    {
+                        html.Append("<tr><td><code>").Append(E(example.Id ?? string.Empty)).Append("</code></td><td>").Append(E(example.Value ?? string.Empty))
+                            .Append("</td><td>").Append(E(example.Reason)).Append("</td></tr>");
+                    }
+
+                    html.Append("</tbody></table></details></td></tr>");
+                }
+            }
+
+            html.Append("</tbody></table>");
+        }
+
+        html.Append("<details class=\"how\"><summary>How it was checked</summary><p class=\"facts\">")
+            .Append(E(result.Kind));
+        if (result.Query is { } query)
+        {
+            html.Append(" &middot; query <code>").Append(E(query)).Append("</code>");
+        }
+
+        if (result.Template is { } template)
+        {
+            html.Append(" &middot; template <code>").Append(E(template)).Append("</code>");
+        }
+
+        html.Append(CultureInfo.InvariantCulture, $" &middot; read {Number(result.Evaluated)} &middot; {result.DurationMs} ms</p></details>");
+        html.AppendLine("</article>");
+    }
+
+    /// <summary>A test's or a check's result as a reader reads it: "Warning" for warned, "Could not be checked" for errored.</summary>
+    internal static string CheckWord(string standing) => standing switch
+    {
+        TestOutcomes.Passed => "Passed",
+        TestOutcomes.Failed => "Failed",
+        TestOutcomes.Warned => "Warning",
+        TestOutcomes.Errored => "Could not be checked",
+        "noted" => "Note",
+        _ => "Not checked",
+    };
+
+    /// <summary>
+    /// One test's result as a JUnit test case: a failed test is a failure, an errored one an error, a skipped one skipped; a
+    /// warned test passes, with its warnings in its output.
+    /// </summary>
+    internal static void WriteTestCase(XmlWriter xml, string className, TestResult result)
+    {
+        xml.WriteStartElement("testcase");
+        xml.WriteAttributeString("classname", className);
+        xml.WriteAttributeString("name", result.Test);
+        xml.WriteAttributeString("time", Seconds(result.DurationMs));
+        var detail = Detail(result);
+        switch (result.Outcome)
+        {
+            case TestOutcomes.Failed:
+                xml.WriteStartElement("failure");
+                xml.WriteAttributeString("message", First(result));
+                xml.WriteAttributeString("type", "assertion");
+                xml.WriteString(detail);
+                xml.WriteEndElement();
+                break;
+            case TestOutcomes.Errored:
+                xml.WriteStartElement("error");
+                xml.WriteAttributeString("message", result.Error ?? First(result));
+                xml.WriteAttributeString("type", "evaluation");
+                xml.WriteString(detail);
+                xml.WriteEndElement();
+                break;
+            case TestOutcomes.Skipped:
+                xml.WriteStartElement("skipped");
+                xml.WriteAttributeString("message", result.Error ?? "not run");
+                xml.WriteEndElement();
+                break;
+            default:
+                if (result.Outcome == TestOutcomes.Warned || result.Notes.Count > 0)
+                {
+                    xml.WriteElementString("system-out", detail);
+                }
+
+                break;
+        }
+
+        xml.WriteEndElement();
     }
 
     /// <summary>How an assertion stands in its test: one that does not hold weighs what its severity says (a warning warns, an info notes).</summary>
@@ -378,7 +437,7 @@ public sealed record AssertionReport(AssertionRunState Run, IReadOnlyList<TestRe
             _ => TestOutcomes.Failed,
         };
 
-    private const string Styles = """
+    internal const string Styles = """
         :root { color-scheme:light dark; --bg:#f7f8fa; --card:#ffffff; --ink:#1b1f24; --muted:#5b6470; --line:#e3e6ea; --passed:#1f8f55; --failed:#c62f3b; --warned:#b7791f; --errored:#7a3fc2; --skipped:#8a929c; --neutral:#2c5fb3; --noted:#2c5fb3; }
         @media (prefers-color-scheme: dark) { :root { --bg:#111418; --card:#191d22; --ink:#e7eaee; --muted:#9aa3ad; --line:#2a3037; } }
         * { box-sizing:border-box; }
@@ -395,21 +454,23 @@ public sealed record AssertionReport(AssertionRunState Run, IReadOnlyList<TestRe
         .tile { background:var(--card); border:1px solid var(--line); border-top:3px solid var(--neutral); border-radius:10px; padding:12px; }
         .tile span { display:block; font-size:24px; font-weight:700; } .tile small { color:var(--muted); }
         .tile.passed { border-top-color:var(--passed); } .tile.failed { border-top-color:var(--failed); } .tile.warned { border-top-color:var(--warned); }
-        .tile.errored { border-top-color:var(--errored); } .tile.skipped { border-top-color:var(--skipped); }
+        .tile.errored { border-top-color:var(--errored); } .tile.skipped, .tile.disabled { border-top-color:var(--skipped); } .tile.notRun { border-top:3px dashed var(--skipped); }
         .test { background:var(--card); border:1px solid var(--line); border-left:4px solid var(--skipped); border-radius:10px; padding:14px 16px; margin:10px 0; break-inside:avoid; }
         .test.passed { border-left-color:var(--passed); } .test.failed { border-left-color:var(--failed); } .test.warned { border-left-color:var(--warned); } .test.errored { border-left-color:var(--errored); }
         .head { display:flex; justify-content:space-between; align-items:center; gap:12px; } .head h3 { min-width:0; overflow-wrap:anywhere; }
         .badge { display:inline-block; white-space:nowrap; font-size:11px; font-weight:600; padding:2px 8px; border-radius:999px; color:#fff; background:var(--skipped); text-transform:uppercase; letter-spacing:.04em; }
         .badge.passed { background:var(--passed); } .badge.failed { background:var(--failed); } .badge.warned { background:var(--warned); } .badge.errored { background:var(--errored); } .badge.noted { background:var(--noted); }
+        .badge.notRun { background:transparent; color:var(--muted); border:1px dashed var(--skipped); } .test.notRun { border-left-style:dashed; }
         table { width:100%; border-collapse:collapse; margin-top:10px; font-size:13px; } th, td { text-align:left; padding:6px 8px; border-top:1px solid var(--line); vertical-align:top; overflow-wrap:anywhere; }
         th { color:var(--muted); font-weight:600; font-size:12px; } th.fit, td.fit { white-space:nowrap; } .examples td { padding:0 8px 8px; border-top:none; } details summary { cursor:pointer; color:var(--muted); }
         .alert { border:1px solid var(--failed); color:var(--failed); border-radius:8px; padding:8px 12px; } .note { color:var(--muted); margin:4px 0; font-size:13px; }
+        .desc { margin:6px 0 0; } .checks td:nth-child(4) { min-width:6rem; } td.why { color:var(--muted); } td small { color:var(--muted); } .how { margin-top:10px; } .how summary { font-size:12px; }
         footer { margin-top:32px; color:var(--muted); font-size:12px; }
         @media print { body { background:#fff; } .test, .tile { break-inside:avoid; } details { display:block; } details > * { display:block; } }
         @media (max-width:640px) { header { flex-direction:column; align-items:flex-start; } table { display:block; overflow-x:auto; } th, td { overflow-wrap:break-word; } }
         """;
 
-    private static int Rank(string outcome) => outcome switch
+    internal static int Rank(string outcome) => outcome switch
     {
         TestOutcomes.Failed => 0,
         TestOutcomes.Errored => 1,
@@ -418,7 +479,7 @@ public sealed record AssertionReport(AssertionRunState Run, IReadOnlyList<TestRe
         _ => 4,
     };
 
-    private static void WriteCounts(XmlWriter xml, IReadOnlyCollection<TestResult> results)
+    internal static void WriteCounts(XmlWriter xml, IReadOnlyCollection<TestResult> results)
     {
         xml.WriteAttributeString("tests", results.Count.ToString(CultureInfo.InvariantCulture));
         xml.WriteAttributeString("failures", results.Count(r => r.Outcome == TestOutcomes.Failed).ToString(CultureInfo.InvariantCulture));
@@ -457,19 +518,19 @@ public sealed record AssertionReport(AssertionRunState Run, IReadOnlyList<TestRe
         return text.ToString();
     }
 
-    private static string Number(long? value) => value?.ToString("N0", CultureInfo.InvariantCulture) ?? "n/a";
+    internal static string Number(long? value) => value?.ToString("N0", CultureInfo.InvariantCulture) ?? "n/a";
 
-    private static string Seconds(long milliseconds) => (milliseconds / 1000.0).ToString("0.###", CultureInfo.InvariantCulture);
+    internal static string Seconds(long milliseconds) => (milliseconds / 1000.0).ToString("0.###", CultureInfo.InvariantCulture);
 
-    private static string Stamp(DateTime utc) => DateTime.SpecifyKind(utc, DateTimeKind.Utc).ToString("yyyy-MM-dd'T'HH:mm:ss'Z'", CultureInfo.InvariantCulture);
+    internal static string Stamp(DateTime utc) => DateTime.SpecifyKind(utc, DateTimeKind.Utc).ToString("yyyy-MM-dd'T'HH:mm:ss'Z'", CultureInfo.InvariantCulture);
 
-    private static string E(string text) => WebUtility.HtmlEncode(text);
+    internal static string E(string text) => WebUtility.HtmlEncode(text);
 
     /// <summary>Text as a Markdown table cell holds it: pipes escaped, one line.</summary>
-    private static string Cell(string text) => text.Replace("|", "\\|", StringComparison.Ordinal).Replace("\r", " ", StringComparison.Ordinal).Replace("\n", " ", StringComparison.Ordinal);
+    internal static string Cell(string text) => text.Replace("|", "\\|", StringComparison.Ordinal).Replace("\r", " ", StringComparison.Ordinal).Replace("\n", " ", StringComparison.Ordinal);
 
     /// <summary>A string writer that says UTF-8, so the XML declaration does.</summary>
-    private sealed class StringWriterUtf8 : StringWriter
+    internal sealed class StringWriterUtf8 : StringWriter
     {
         public StringWriterUtf8()
             : base(CultureInfo.InvariantCulture)

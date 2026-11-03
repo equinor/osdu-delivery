@@ -127,22 +127,27 @@ set for every run that did not pass (how many tests failed or errored and which,
 
 ## status
 
-Where each test of the flow stands, in document order: its latest result that was not skipped, or `not run`; what it
-matched, how many of its assertions failed or errored, the run it came from, and `(changed since)` when the test's
-definition has changed since that result.
+Where each test of the flow stands now, in document order, as the board and a set's report say it
+([assertion sets](../flow/assertion-sets.md#where-an-assertion-stands)): `disabled` when its document disables it, with
+the reason on the next line; its latest result that was not skipped when that result judged the test as it is now, with
+what it matched, how many of its assertions failed or errored, and the run it came from; else `not run`, with why on
+the next line when the test changed since its last result.
 
 ```text
 $ sqlflow assertions status welldb-welllog-04-assertion.yaml --partition dev
-welldb-welllog-04-assertion@dev: 4 test(s)
+welldb-welllog-04-assertion@dev: 4 test(s), set welldb
   passed     logs-delivered  (osdu:wks:work-product-component--WellLog:1.4.0)  matched 1250, 0 of 3 assertion(s) failed, run 418 at 2026-10-09 03:05:20Z
   failed     log-headers  (osdu:wks:work-product-component--WellLog:1.4.0)  matched 1250, 1 of 8 assertion(s) failed, run 418 at 2026-10-09 03:05:41Z
-  passed     log-curves  (osdu:wks:work-product-component--WellLog:1.4.0)  matched 1250, 0 of 4 assertion(s) failed, run 418 at 2026-10-09 03:06:02Z  (changed since)
-  not run    log-names  (osdu:wks:work-product-component--WellLog:1.4.0)
+  not run    log-curves  (osdu:wks:work-product-component--WellLog:1.4.0)
+             Changed since report 418, which checked an earlier version of it; no run has checked this version yet.
+  disabled   log-names  (osdu:wks:work-product-component--WellLog:1.4.0)
+             No flow of this estate delivers named logs yet.
 ```
 
-A test that errored has its reason on the next line. With `--json`: `flow`, `ledger` and `tests[]`, each with `test`,
-`kind`, `outcome`, `assertionRunId`, `matched`, `failedAssertions`, `completedUtc` and `changed`. JSON output sorts keys
-and leaves out fields that have no value, so a test that has not run carries only `test`, `kind` and `changed`.
+A test that errored has its reason on the next line. With `--json`: `flow`, `ledger`, `set` and `tests[]`, each with
+`test`, `kind`, `standing` (`passed`, `failed`, `warned`, `errored`, `disabled` or `notRun`), `why`,
+`assertionRunId`, `matched`, `failedAssertions`, `completedUtc` and `changed`. JSON output sorts keys and leaves out
+fields that have no value, so a test that has not run carries only `test`, `kind`, `standing` and `changed`.
 
 ## report
 

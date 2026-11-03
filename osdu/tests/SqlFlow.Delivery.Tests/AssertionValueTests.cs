@@ -149,7 +149,10 @@ public sealed class AssertionValueTests
         Assert.Equal(4, aggregator.Measure(AggregateFunction.Distinct, 0, numbers).Value!.Value.Number);
         Assert.Equal(5, aggregator.Measure(AggregateFunction.Count, 0, numbers).Value!.Value.Number);
         Assert.Equal(2, aggregator.Measure(AggregateFunction.Missing, 2, numbers).Value!.Value.Number);
-        Assert.Contains("1 of 5 value(s) are neither numbers nor dates", aggregator.Note());
+        Assert.Contains("1 of 5 value(s) are neither numbers nor dates", aggregator.Note(AggregateFunction.Sum));
+        // A count and a distinct count take every value, so they leave nothing out and say nothing of it.
+        Assert.Equal(string.Empty, aggregator.Note(AggregateFunction.Distinct));
+        Assert.Equal(string.Empty, aggregator.Note(AggregateFunction.Count));
 
         var dates = new Aggregator(distinct: false);
         dates.Add(JsonValue.Create("2026-01-01T00:00:00Z"));

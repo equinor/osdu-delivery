@@ -60,18 +60,34 @@ public sealed record DeliveryAssertionRunDto(
 /// board's partition is one, the parameters a run of it takes, its last run, and what keeps the flow from being shown (a
 /// document the catalog cannot parse, a partition it does not test). <c>Parses</c> tells the two apart: false when the
 /// catalog's copy of the document does not parse, which needs a fix, where a flow of another partition needs none.
+/// <c>Set</c> is the set its tests are grouped under: its <c>set</c>, else its batch; null when it names neither.
 /// </summary>
 public sealed record DeliveryAssertionFlowDto(
-    Guid PipelineId, Guid RepoId, string Name, string? Description, string? Batch, string? Partition, bool TestsPartition, bool Parses,
+    Guid PipelineId, Guid RepoId, string Name, string? Description, string? Batch, string? Set, string? Partition, bool TestsPartition, bool Parses,
     IReadOnlyList<string> Partitions, string FailRunOn, IReadOnlyList<DeliveryParameterDto> Parameters, string? Problem, DeliveryAssertionRunDto? LastRun,
     IReadOnlyList<DeliveryAssertionTestDto> Tests);
 
-/// <summary>What a board adds up to, over every test it shows that runs in its partition.</summary>
+/// <summary>
+/// What a board adds up to, over every test it shows that runs in its partition. A test its document disables counts as
+/// <c>Disabled</c> alone, whatever an earlier run found, and the pass rate is a share of the tests a run judged.
+/// </summary>
 public sealed record DeliveryAssertionTotalsDto(
-    int Flows, int Tests, int Passed, int Failed, int Warned, int Errored, int NotRun, int Problems, int Changed, double? PassRate);
+    int Flows, int Tests, int Passed, int Failed, int Warned, int Errored, int NotRun, int Disabled, int Problems, int Changed, double? PassRate);
 
 /// <summary>The board of every assertion flow, or of one, in a partition.</summary>
 public sealed record DeliveryAssertionBoardDto(string? Partition, DeliveryAssertionTotalsDto Totals, IReadOnlyList<DeliveryAssertionFlowDto> Flows);
+
+/// <summary>A test's latest result whole, in a set: the flow it is a test of and the report it is from.</summary>
+public sealed record DeliveryAssertionSetResultDto(Guid PipelineId, long AssertionRunId, TestResult Result);
+
+/// <summary>
+/// An assertion set in a partition (osdu/docs/reference/flow/assertion-sets.md): how it stands as a whole, in one sentence as
+/// its report opens with it, its flows as a board shows them, and each of their tests' latest result whole, what failed and
+/// what is missing included.
+/// </summary>
+public sealed record DeliveryAssertionSetDto(
+    string Set, string? Partition, string Status, string Verdict, DeliveryAssertionTotalsDto Totals, IReadOnlyList<DeliveryAssertionFlowDto> Flows,
+    IReadOnlyList<DeliveryAssertionSetResultDto> Results);
 
 /// <summary>An assertion run with every test's full result.</summary>
 public sealed record DeliveryAssertionRunDetailDto(DeliveryAssertionRunDto Run, Guid? PipelineId, IReadOnlyList<TestResult> Results);
@@ -86,10 +102,11 @@ public sealed record DeliveryAssertionMatrixDto(IReadOnlyList<DeliveryAssertionR
 public sealed record DeliveryAssertionTestHistoryDto(string Test, IReadOnlyList<TestResult> Results);
 
 /// <summary>
-/// The report of assertion flows (osdu/docs/reference/flow/assertion.md, The report): boards across every assertion flow and
-/// for one, a flow's runs, a run with every result, the matrix of tests against runs, one test's trend, and the report of a
-/// run as JSON, Markdown, HTML or JUnit XML. Every read is in a partition: the one the request names, else the workbench's,
-/// else the one a run of the flow would test. Running tests is a run like any other, queued through the platform's trigger.
+/// The report of assertion flows (osdu/docs/reference/flow/assertion.md, The report): boards across every assertion flow, of
+/// one set and of one flow, a flow's runs, a run with every result, the matrix of tests against runs, one test's trend, a
+/// set with every test's latest result, and the report of a run or of a set as JSON, Markdown, HTML or JUnit XML. Every read
+/// is in a partition: the one the request names, else the workbench's, else the one a run of the flow would test. Running
+/// tests is a run like any other, queued through the platform's trigger.
 /// </summary>
 public static class DeliveryAssertionEndpoints
 {
@@ -109,22 +126,131 @@ public static class DeliveryAssertionEndpoints
         delivery.MapGet("/flows/{pipelineId:guid}/assertions/{test}/history", GetTestHistoryAsync).WithName("GetDeliveryAssertionTestHistory");
         delivery.MapGet("/assertion-runs/{assertionRunId:long}", GetRunAsync).WithName("GetDeliveryAssertionRun");
         delivery.MapGet("/assertion-runs/{assertionRunId:long}/report", GetReportAsync).WithName("GetDeliveryAssertionReport");
+        delivery.MapGet("/assertion-sets/{set}", GetSetAsync).WithName("GetDeliveryAssertionSet");
+        delivery.MapGet("/assertion-sets/{set}/report", GetSetReportAsync).WithName("GetDeliveryAssertionSetReport");
     }
 
-    /// <summary>Every active assertion flow of the catalog, each in the partition the request reads.</summary>
-    private static async Task<Ok<DeliveryAssertionBoardDto>> GetBoardAsync(
-        string? partition, HttpRequest request, CatalogDbContext db, DeliveryDocumentLoader documents, ILedger ledger,
+    /// <summary>
+    /// Every active assertion flow of the catalog, each in the partition the request reads; with <paramref name="set"/>, the
+    /// flows of that set alone.
+    /// </summary>
+    private static async Task<Results<Ok<DeliveryAssertionBoardDto>, ProblemHttpResult>> GetBoardAsync(
+        string? partition, string? set, HttpRequest request, CatalogDbContext db, DeliveryDocumentLoader documents, ILedger ledger,
         IPartitionRegistry registry, IRepositoryFolders folders, TimeProvider time, CancellationToken ct)
     {
-        var pipelines = await db.Pipelines.AsNoTracking()
+        if (set is not null && !SelectableNames.IsName(set))
+        {
+            return SetNameProblem(set);
+        }
+
+        var named = WorkbenchPartition.Named(partition, request);
+        var parsed = await ParseAsync(await ActiveFlowsAsync(db, ct).ConfigureAwait(false), named, documents, ledger, registry, ct).ConfigureAwait(false);
+        var flows = await BoardAsync(set is null ? parsed : InSet(parsed, set), named, ledger, registry, folders, documents, time.GetUtcNow(), ct).ConfigureAwait(false);
+        return TypedResults.Ok(new DeliveryAssertionBoardDto(named, Totals(flows), flows));
+    }
+
+    /// <summary>A set in the partition the request reads: its board, how it stands, and each of its tests' latest result whole.</summary>
+    private static async Task<Results<Ok<DeliveryAssertionSetDto>, ProblemHttpResult>> GetSetAsync(
+        string set, string? partition, HttpRequest request, CatalogDbContext db, DeliveryDocumentLoader documents, ILedger ledger,
+        IPartitionRegistry registry, IRepositoryFolders folders, TimeProvider time, CancellationToken ct)
+    {
+        var named = WorkbenchPartition.Named(partition, request);
+        var (members, problem) = await SetMembersAsync(set, named, db, documents, ledger, registry, ct).ConfigureAwait(false);
+        if (members is null)
+        {
+            return problem!;
+        }
+
+        var now = time.GetUtcNow();
+        var flows = await BoardAsync(members, named, ledger, registry, folders, documents, now, ct).ConfigureAwait(false);
+        var report = await ReadSetAsync(set, named, members, ledger, now.UtcDateTime, ct).ConfigureAwait(false);
+        var pipelineOf = members.ToDictionary(m => m.Pipeline.Name, m => m.Pipeline.Id, StringComparer.OrdinalIgnoreCase);
+        var results = report.Flows
+            .SelectMany(f => f.Tests.Where(t => t.Result is not null && t.AssertionRunId is not null)
+                .Select(t => new DeliveryAssertionSetResultDto(pipelineOf[f.Flow], t.AssertionRunId!.Value, t.Result!)))
+            .ToList();
+        return TypedResults.Ok(new DeliveryAssertionSetDto(report.Set, named, report.Status, report.Verdict(), Totals(flows), flows, results));
+    }
+
+    /// <summary>A set's report in the partition the request reads, as JSON, Markdown, HTML or JUnit XML.</summary>
+    private static async Task<Results<FileContentHttpResult, ProblemHttpResult>> GetSetReportAsync(
+        string set, string? partition, string? format, HttpRequest request, CatalogDbContext db, DeliveryDocumentLoader documents, ILedger ledger,
+        IPartitionRegistry registry, TimeProvider time, CancellationToken ct)
+    {
+        if (AssertionReport.FormatOf(format) is not { } chosen)
+        {
+            return TypedResults.Problem(detail: $"format '{format}' is not one of json, md, html, junit.", statusCode: StatusCodes.Status400BadRequest, title: "Unknown report format");
+        }
+
+        var named = WorkbenchPartition.Named(partition, request);
+        var (members, problem) = await SetMembersAsync(set, named, db, documents, ledger, registry, ct).ConfigureAwait(false);
+        if (members is null)
+        {
+            return problem!;
+        }
+
+        var report = await ReadSetAsync(set, named, members, ledger, time.GetUtcNow().UtcDateTime, ct).ConfigureAwait(false);
+        var (mediaType, _) = AssertionReport.Describe(chosen);
+        return TypedResults.File(Encoding.UTF8.GetBytes(report.Render(chosen)), mediaType, report.FileName(chosen));
+    }
+
+    /// <summary>The active assertion flows of the catalog, by name, as many as one board shows.</summary>
+    private static Task<List<CatalogPipeline>> ActiveFlowsAsync(CatalogDbContext db, CancellationToken ct)
+        => db.Pipelines.AsNoTracking()
             .Where(p => p.Kind == AssertionFlowDefinition.FlowTypeName && p.Active)
             .OrderBy(p => p.Name)
             .Take(MaxFlows)
-            .ToListAsync(ct).ConfigureAwait(false);
-        var named = WorkbenchPartition.Named(partition, request);
-        var flows = await BoardAsync(pipelines, named, documents, ledger, registry, folders, time.GetUtcNow(), ct).ConfigureAwait(false);
-        return TypedResults.Ok(new DeliveryAssertionBoardDto(named, Totals(flows), flows));
+            .ToListAsync(ct);
+
+    /// <summary>The flows of a set, by its name as a flow names it (ignoring case); a flow whose document does not parse is in its batch's.</summary>
+    private static List<ParsedFlow> InSet(IReadOnlyList<ParsedFlow> parsed, string set)
+        => parsed.Where(p => string.Equals(SetOf(p), set, StringComparison.OrdinalIgnoreCase)).ToList();
+
+    /// <summary>The set a flow is listed in: its document's, or for a document that does not parse, its pipeline's batch.</summary>
+    private static string? SetOf(ParsedFlow parsed) => parsed.Flow is { } flow ? flow.Set : parsed.Pipeline.Batch;
+
+    /// <summary>The flows of a set in the partition, parsed and bound; null with the problem to answer with when the name is no set's.</summary>
+    private static async Task<(List<ParsedFlow>? Members, ProblemHttpResult? Problem)> SetMembersAsync(
+        string set, string? partition, CatalogDbContext db, DeliveryDocumentLoader documents, ILedger ledger, IPartitionRegistry registry, CancellationToken ct)
+    {
+        if (!SelectableNames.IsName(set))
+        {
+            return (null, SetNameProblem(set));
+        }
+
+        var members = InSet(await ParseAsync(await ActiveFlowsAsync(db, ct).ConfigureAwait(false), partition, documents, ledger, registry, ct).ConfigureAwait(false), set);
+        return members.Count > 0
+            ? (members, null)
+            : (null, TypedResults.Problem(
+                detail: $"No assertion flow is in set '{set}': a flow names its set with set:, and one that names none is in its batch's.",
+                statusCode: StatusCodes.Status404NotFound, title: "Not found"));
     }
+
+    private static ProblemHttpResult SetNameProblem(string set)
+        => TypedResults.Problem(detail: $"'{set}' is not a set name: {SelectableNames.Rule}.", statusCode: StatusCodes.Status400BadRequest, title: "Invalid set name");
+
+    /// <summary>
+    /// A set's report from its flows, under the set's name as its flows write it: each bound flow with the partition its tests
+    /// are judged in, each other with its problem.
+    /// </summary>
+    private static async Task<AssertionSetReport> ReadSetAsync(
+        string set, string? partition, IReadOnlyList<ParsedFlow> members, ILedger ledger, DateTime generatedUtc, CancellationToken ct)
+    {
+        var bound = new List<AssertionSetMember>(members.Count);
+        foreach (var member in members)
+        {
+            bound.Add(member.Bound is null
+                ? new AssertionSetMember(member.Pipeline.Name, null, null, member.Problem)
+                : new AssertionSetMember(member.Pipeline.Name, member.Bound, await TestPartitionAsync(member.Bound, ledger, ct).ConfigureAwait(false), null));
+        }
+
+        var named = members.Select(SetOf).FirstOrDefault(s => s is not null) ?? set;
+        return await AssertionSetReport.ReadAsync(named, partition, bound, ledger, generatedUtc, ct).ConfigureAwait(false);
+    }
+
+    /// <summary>The partition a bound flow's tests are judged in: the one it is bound to, else the one its ledger is kept under.</summary>
+    private static async Task<string?> TestPartitionAsync(AssertionFlowDefinition bound, ILedger ledger, CancellationToken ct)
+        => bound.Partition ?? (await ledger.GetLedgerAsync(bound.LedgerId, ct).ConfigureAwait(false))?.Partition;
 
     /// <summary>One assertion flow's board.</summary>
     private static async Task<Results<Ok<DeliveryAssertionBoardDto>, ProblemHttpResult>> GetFlowBoardAsync(
@@ -138,7 +264,8 @@ public static class DeliveryAssertionEndpoints
         }
 
         var named = WorkbenchPartition.Named(partition, request);
-        var flows = await BoardAsync([pipeline], named, documents, ledger, registry, folders, time.GetUtcNow(), ct).ConfigureAwait(false);
+        var parsed = await ParseAsync([pipeline], named, documents, ledger, registry, ct).ConfigureAwait(false);
+        var flows = await BoardAsync(parsed, named, ledger, registry, folders, documents, time.GetUtcNow(), ct).ConfigureAwait(false);
         return TypedResults.Ok(new DeliveryAssertionBoardDto(flows[0].Partition ?? named, Totals(flows), flows));
     }
 
@@ -342,42 +469,57 @@ public static class DeliveryAssertionEndpoints
             ? last.UtcDateTime.ToString("yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture)
             : null;
 
-    private static async Task<IReadOnlyList<DeliveryAssertionFlowDto>> BoardAsync(
-        IReadOnlyList<CatalogPipeline> pipelines, string? partition, DeliveryDocumentLoader documents, ILedger ledger,
-        IPartitionRegistry registry, IRepositoryFolders repositories, DateTimeOffset now, CancellationToken ct)
+    /// <summary>
+    /// An assertion flow of the catalog as a board reads it: its document parsed, and bound to the board's partition; or the
+    /// problem that keeps it from being shown there (a document that does not parse, with no <c>Flow</c>, or a partition it
+    /// does not test, with no <c>Bound</c>).
+    /// </summary>
+    private sealed record ParsedFlow(CatalogPipeline Pipeline, AssertionFlowDefinition? Flow, AssertionFlowDefinition? Bound, string? Problem);
+
+    private static async Task<List<ParsedFlow>> ParseAsync(
+        IReadOnlyList<CatalogPipeline> pipelines, string? partition, DeliveryDocumentLoader documents, ILedger ledger, IPartitionRegistry registry,
+        CancellationToken ct)
     {
-        var registered = await registry.ReadAsync(ct).ConfigureAwait(false);
-        var parsed = new List<(CatalogPipeline Pipeline, AssertionFlowDefinition? Flow, AssertionFlowDefinition? Bound, string? Problem)>();
+        var parsed = new List<ParsedFlow>(pipelines.Count);
         foreach (var pipeline in pipelines)
         {
             try
             {
                 var flow = documents.ParseAssertion(pipeline.Yaml, pipeline.RelativePath);
                 var (bound, why) = await SettleAsync(flow, partition, ledger, registry, ct).ConfigureAwait(false);
-                parsed.Add((pipeline, flow, bound, why));
+                parsed.Add(new ParsedFlow(pipeline, flow, bound, why));
             }
             catch (FlowValidationException ex)
             {
-                parsed.Add((pipeline, null, null, $"The catalog's copy of the flow does not parse: {ex.Message}"));
+                parsed.Add(new ParsedFlow(pipeline, null, null, $"The catalog's copy of the flow does not parse: {ex.Message}"));
             }
         }
 
+        return parsed;
+    }
+
+    private static async Task<IReadOnlyList<DeliveryAssertionFlowDto>> BoardAsync(
+        IReadOnlyList<ParsedFlow> parsed, string? partition, ILedger ledger, IPartitionRegistry registry, IRepositoryFolders repositories,
+        DeliveryDocumentLoader documents, DateTimeOffset now, CancellationToken ct)
+    {
+        var registered = await registry.ReadAsync(ct).ConfigureAwait(false);
         var ledgerIds = parsed.Where(p => p.Bound is not null).Select(p => p.Bound!.LedgerId).ToList();
-        var latest = (await ledger.LatestAssertionResultsAsync(ledgerIds, ct).ConfigureAwait(false))
+        var latest = (await ledger.LatestAssertionResultsAsync(ledgerIds, ct: ct).ConfigureAwait(false))
             .GroupBy(r => r.FlowId)
             .ToDictionary(g => g.Key, g => g.ToDictionary(r => r.TestName, StringComparer.OrdinalIgnoreCase));
         var flows = new List<DeliveryAssertionFlowDto>(parsed.Count);
-        foreach (var (pipeline, flow, bound, problem) in parsed)
+        foreach (var entry in parsed)
         {
+            var (pipeline, flow, bound, problem) = entry;
             if (flow is null || bound is null)
             {
                 flows.Add(new DeliveryAssertionFlowDto(
-                    pipeline.Id, pipeline.RepoId, pipeline.Name, flow?.Description, flow?.Batch ?? pipeline.Batch, partition, false, flow is not null,
+                    pipeline.Id, pipeline.RepoId, pipeline.Name, flow?.Description, flow?.Batch ?? pipeline.Batch, SetOf(entry), partition, false, flow is not null,
                     flow?.Served(registered) ?? [], FailRunOnText(flow?.FailRunOn ?? FailRunOn.Error), flow is null ? [] : Parameters(flow), problem, null, []));
                 continue;
             }
 
-            var testPartition = bound.Partition ?? (await ledger.GetLedgerAsync(bound.LedgerId, ct).ConfigureAwait(false))?.Partition;
+            var testPartition = await TestPartitionAsync(bound, ledger, ct).ConfigureAwait(false);
             var history = (await ledger.AssertionHistoryAsync(bound.LedgerId, null, BoardHistory, withDetail: false, ct).ConfigureAwait(false))
                 .GroupBy(r => r.TestName, StringComparer.OrdinalIgnoreCase)
                 .ToDictionary(g => g.Key, g => g.Select(Point).ToList(), StringComparer.OrdinalIgnoreCase);
@@ -413,22 +555,35 @@ public static class DeliveryAssertionEndpoints
                     test.Template is not null);
             }).ToList();
             flows.Add(new DeliveryAssertionFlowDto(
-                pipeline.Id, pipeline.RepoId, pipeline.Name, bound.Description, bound.Batch, testPartition, true, true, bound.Served(registered),
+                pipeline.Id, pipeline.RepoId, pipeline.Name, bound.Description, bound.Batch, bound.Set, testPartition, true, true, bound.Served(registered),
                 FailRunOnText(bound.FailRunOn), Parameters(bound), null, lastRun is null ? null : ToDto(lastRun), tests));
         }
 
         return flows;
     }
 
+    /// <summary>
+    /// Whether a test's document switches it off now: the test, or every check of it, is disabled. It is then counted as
+    /// disabled alone, whatever an earlier run found, as a set's report counts it.
+    /// </summary>
+    private static bool IsDisabled(DeliveryAssertionTestDto test)
+        => test.Disabled is not null || (test.Assertions.Count > 0 && test.Assertions.All(a => a.Disabled is not null));
+
+    /// <summary>
+    /// What a board adds up to: each test by where it stands now. A disabled test counts as disabled; a test whose latest
+    /// result judged an earlier version of it counts as not run, since that result says nothing of the test as it is.
+    /// </summary>
     private static DeliveryAssertionTotalsDto Totals(IReadOnlyList<DeliveryAssertionFlowDto> flows)
     {
         var tests = flows.SelectMany(f => f.Tests).Where(t => t.RunsHere).ToList();
-        int Count(string outcome) => tests.Count(t => t.Latest?.Outcome == outcome);
+        var enabled = tests.Where(t => !IsDisabled(t)).ToList();
+        var judged = enabled.Where(t => t.Latest is not null && !t.Changed).ToList();
+        int Count(string outcome) => judged.Count(t => t.Latest!.Outcome == outcome);
         var passed = Count(TestOutcomes.Passed);
-        var evaluated = tests.Count(t => t.Latest is { Outcome: not TestOutcomes.Skipped });
+        var evaluated = judged.Count(t => t.Latest!.Outcome != TestOutcomes.Skipped);
         return new DeliveryAssertionTotalsDto(
             flows.Count, tests.Count, passed, Count(TestOutcomes.Failed), Count(TestOutcomes.Warned), Count(TestOutcomes.Errored),
-            tests.Count(t => t.Latest is null), tests.Count(t => t.Problems.Count > 0), tests.Count(t => t.Changed),
+            enabled.Count - judged.Count, tests.Count - enabled.Count, tests.Count(t => t.Problems.Count > 0), enabled.Count(t => t.Changed),
             evaluated == 0 ? null : Math.Round(100.0 * passed / evaluated, 1));
     }
 

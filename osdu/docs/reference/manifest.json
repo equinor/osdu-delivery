@@ -3298,6 +3298,7 @@
       ],
       "yamlPath": "(root, flowType: assertion)",
       "related": [
+        "delivery-flow-assertion-sets",
         "delivery-concept-search-paging",
         "delivery-guide-data-quality-tests",
         "delivery-cli-assertions",
@@ -3340,6 +3341,53 @@
         "osdu/specs/core/search/openapi.yaml",
         "osdu/specs/core/storage/openapi.yaml",
         "osdu/specs/core/legal/openapi.yaml"
+      ]
+    },
+    {
+      "id": "delivery-flow-assertion-sets",
+      "corpus": "reference",
+      "path": "flow/assertion-sets.md",
+      "title": "Assertion sets (set): where a group of assertion flows stands now, and its report",
+      "type": "flow-reference",
+      "summary": "Assertion flows naming one set read as one: a line on the board, a dashboard of where each assertion stands now, and a report in HTML, Markdown, JSON or JUnit.",
+      "keywords": [
+        "set",
+        "assertion set",
+        "group assertion flows",
+        "set report",
+        "status of a set",
+        "board meeting report",
+        "latest status",
+        "last status of the assertions",
+        "disabled assertions and why",
+        "not yet checked",
+        "changed since its last result",
+        "run a set",
+        "assertion-sets route",
+        "only the latest result is kept",
+        "assertion run retention"
+      ],
+      "yamlPath": "(root, flowType: assertion) set",
+      "related": [
+        "delivery-flow-assertion",
+        "delivery-guide-data-quality-tests",
+        "delivery-cli-assertions",
+        "delivery-concept-gui",
+        "delivery-concept-storage-and-retention",
+        "flow-batch"
+      ],
+      "sourceRefs": [
+        "osdu/src/SqlFlow.Delivery/Documents/AssertionDocumentMapper.cs",
+        "osdu/src/SqlFlow.Delivery/Documents/YamlModels.cs",
+        "osdu/src/SqlFlow.Delivery/Model/AssertionFlowDefinition.cs",
+        "osdu/src/SqlFlow.Delivery/Engine/Assertions/AssertionSetReport.cs",
+        "osdu/src/SqlFlow.Delivery/Engine/Assertions/CheckView.cs",
+        "osdu/src/SqlFlow.Delivery/Engine/Assertions/AssertionRunner.cs",
+        "osdu/src/SqlFlow.Delivery/Ledger/ILedger.cs",
+        "osdu/src/SqlFlow.Delivery/Ledger/OsduLedger.Assertions.cs",
+        "osdu/src/SqlFlow.Delivery.ControlPlane/Api/DeliveryAssertionEndpoints.cs",
+        "osdu/gui/src/features/delivery/assertions/AssertionSetPage.tsx",
+        "osdu/gui/src/features/delivery/assertions/assertionBoardModel.ts"
       ]
     },
     {

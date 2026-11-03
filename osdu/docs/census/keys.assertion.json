@@ -6,13 +6,20 @@
   "includeEnvelope": true,
   "generatedFrom": "osdu/docs/reference/flow/assertion.md and osdu/src/SqlFlow.Delivery/Documents/YamlModels.cs",
   "naming": "The loader deserializes with YamlDotNet's CamelCaseNamingConvention and refuses any key it does not know.",
-  "keyCount": 268,
+  "keyCount": 269,
   "keys": [
     {
       "path": "batch",
       "type": "string",
       "required": false,
       "description": "Optional grouping label (the source system) the platform files the flow's pipeline and runs under. A blank value counts as none."
+    },
+    {
+      "path": "set",
+      "type": "string",
+      "required": false,
+      "description": "The set the flow's tests are grouped under on the Assertions board, the set's page and its report: a letter or digit followed by letters, digits, '.', '_' and '-', at most 100 characters. Left out, the flow's batch.",
+      "default": "the batch"
     },
     {
       "path": "defaults",

@@ -17,6 +17,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Assertion sets, with a dashboard and a report for each.** An assertion flow names its `set` (else it is in its `batch`'s),
+  and the Assertions board lists sets first, each one line with how its assertions stand, when it was last checked, its
+  report and **Run set**. A set's page is a dashboard of where it stands now: its verdict in one sentence, its figures, its
+  flows worst first with each one's first issue, and the flow picked opening on what each check expected and found. Its report
+  opens as a page to present and downloads as HTML, Markdown, JSON or JUnit XML (`GET /assertion-sets/{set}`, `/report`,
+  [assertion sets](osdu/docs/reference/flow/assertion-sets.md)).
+
 - **A value check says why an attribute fails, what to do, and proves it from the data.** Each finding of a check or a dry run
   leads with what is wrong in plain words (the cache type, field, value and source column behind it, such as "the cache holds
   no `reference-data--UnitOfMeasure` record `ft`"), what it does to the records, and what to do. **Prove it from the data**
@@ -445,6 +452,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   frames the properties found and the columns they read, close enough to read (up to 140%, never under 100%), with each
   property found and each column the search names shaded. Clearing the search takes the view back to where it was, unless it
   was moved since ([a mapping's overview](osdu/docs/reference/concepts/mapping-overview.md#working-with-it)).
+- **An assertion stands by its latest result of the assertion as it is now.** A disabled assertion counts as disabled, with its
+  reason, whatever an earlier run found, where it counted as not run; and one whose latest result checked an earlier version of
+  it is not run until a run checks it as it is, where it showed that old outcome. `sqlflow assertions status` says the same, and
+  its JSON carries `standing` and `why` in place of `outcome` ([where an assertion stands](osdu/docs/reference/flow/assertion-sets.md#where-an-assertion-stands)).
+- **Only the latest status of assertions is kept.** A run that completes removes its flow's earlier runs whose results later
+  runs replaced, each whole, so a flow keeps its newest run and the runs holding an assertion's latest result; earlier reports
+  and their links are gone ([only the latest status is kept](osdu/docs/reference/flow/assertion-sets.md#only-the-latest-status-is-kept)).
+- **A report reads each check once.** A run's report and a set's show each check's result, what it expected (its warning band,
+  the values left out and the day the values were stated beside it), what it found and why, in place of the columns that
+  repeated them, with the query and the template under **How it was checked** ([the report](osdu/docs/reference/flow/assertion.md#the-report)).
 - **A mapping's property panel shows what a lookup compares.** Clicking a property on a mapping's overview lays out its way as
   **Input**, **Changed**, **Compared in** a table (each line's field beside the column or text it has to equal, with the row's
   value when a record is shown), **Fetched** and **Written to**, with how the lines decide the record
@@ -723,6 +740,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   says ([Upgrading an estate](osdu/docs/reference/concepts/templates.md#upgrading-an-estate-that-saved-templates-in-the-database)).
 
 ### Fixed
+- A count or a distinct count of an aggregate assertion no longer says its values "are neither numbers nor dates and were left
+  out": it counts every value, and only a sum, an average, a minimum or a maximum leaves such values out and says so
+  ([assertion flow](osdu/docs/reference/flow/assertion.md#assertions)).
 - A record a removal flow took out is delivered again by the delivery flow's next run once SQLFlow's key match finds its key back
   in the source: the key match now stamps `UpdatedDate_DW` on a row it un-tags, as it does a row it updates. It took the mark off
   and stamped nothing, so the delivery never read the row, and the ledger kept the record `deleted` until a removal run lifted it

@@ -34,6 +34,12 @@ public sealed record AssertionFlowDefinition
     public string? Batch { get; init; }
 
     /// <summary>
+    /// The set the flow's tests are grouped under, on the board and in a set's report (osdu/docs/reference/flow/assertion-sets.md):
+    /// its <c>set</c>, else its <see cref="Batch"/>; null when it names neither.
+    /// </summary>
+    public string? Set { get; init; }
+
+    /// <summary>
     /// The flow's operation code (<c>telemetry.operation</c>), which its runs' correlation id says what ran with
     /// (osdu/docs/reference/concepts/request-correlation.md); the kind's own when the flow names none.
     /// </summary>

@@ -153,6 +153,22 @@ public sealed class AssertionDocumentTests
             StringComparison.Ordinal);
     }
 
+    /// <summary>
+    /// A flow's tests are grouped under the set it names (osdu/docs/reference/flow/assertion-sets.md); one that names none
+    /// is in its batch's set, and one that names neither is in none. A set is named as a test is.
+    /// </summary>
+    [Fact]
+    public void A_flow_is_in_the_set_it_names_else_in_its_batch()
+    {
+        Assert.Equal("welldb", Parse(Full).Set);
+        Assert.Equal("welllog-proof-values", Parse(Full.Replace("batch: welldb", "batch: welldb\nset: welllog-proof-values", StringComparison.Ordinal)).Set);
+        Assert.Null(Parse(Full.Replace("batch: welldb\n", string.Empty, StringComparison.Ordinal)).Set);
+
+        Assert.Equal(
+            "flow.yaml: set 'proof values' is not a set name: a letter or digit followed by letters, digits, '.', '_' and '-', at most 100 characters. Name the set the flow's tests are grouped under, such as set: welllog-proof-values, or take the key out to group them under the flow's batch.",
+            Refusal(Full.Replace("batch: welldb", "batch: welldb\nset: proof values", StringComparison.Ordinal)));
+    }
+
     [Fact]
     public void A_full_document_maps_every_subject_with_its_operands()
     {

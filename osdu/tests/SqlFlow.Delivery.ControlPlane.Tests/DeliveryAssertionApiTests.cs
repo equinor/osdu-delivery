@@ -392,6 +392,152 @@ public sealed class DeliveryAssertionApiTests
         }
     }
 
+    /// <summary>
+    /// A set (osdu/docs/reference/flow/assertion-sets.md) is the flows that name it: the board narrows to them, the set says
+    /// how it stands now (a disabled test counted as disabled whatever it found before, one changed since its last result as
+    /// not run), with each test's latest result whole, and its report renders in every format.
+    /// </summary>
+    [Fact]
+    public async Task A_set_is_served_as_it_stands_now_with_its_report()
+    {
+        var cs = OsduTestServer.Require();
+        await CatalogDatabase.MigrateAsync(cs);
+
+        var suffix = Guid.NewGuid().ToString("N")[..10];
+        var set = "set-" + suffix;
+        var partition = "as" + suffix;
+        var repoId = FlowIdentity.FromName("repo/cp-assertion-set-" + suffix);
+        string Yaml(string name, string tests) => $$"""
+            flowType: assertion
+            name: {{name}}
+            set: {{set}}
+            partitions: [{{partition}}]
+            source:
+              endpoint: http://localhost
+            tests:
+            {{tests}}
+            """;
+        var wellbores = Yaml("api-set-wellbores-" + suffix, """
+              - name: names
+                kind: osdu:wks:work-product-component--WellLog:1.4.0
+                assert:
+                  - count: { atLeast: 1 }
+              - name: archive
+                kind: osdu:wks:work-product-component--WellLog:1.4.0
+                disabled: No flow delivers the archive logs yet.
+                assert:
+                  - count: { atLeast: 1 }
+            """);
+        var counts = Yaml("api-set-counts-" + suffix, """
+              - name: curves
+                kind: osdu:wks:work-product-component--WellLog:1.4.0
+                assert:
+                  - count: 7842
+              - name: restated
+                kind: osdu:wks:work-product-component--WellLog:1.4.0
+                assert:
+                  - count: 62
+            """);
+        var flows = new[] { wellbores, counts }
+            .Select(yaml => new DeliveryDocumentLoader().ParseAssertion(yaml, "flows/set.yaml").ForRun(partition, RegisteredPartitions.None))
+            .ToList();
+        var now = new DateTime(DateTime.UtcNow.Ticks / TimeSpan.TicksPerSecond * TimeSpan.TicksPerSecond, DateTimeKind.Utc);
+        await using (var db = CatalogDatabase.Create(cs))
+        {
+            db.Repos.Add(new CatalogRepo
+            {
+                Id = repoId, Name = "cp-assertion-set-" + suffix, RemoteUrl = "https://example/cp-assertion-set.git",
+                RootPath = SampleEstate.TemplateRoot, FirstSeenUtc = now, LastSyncUtc = now,
+            });
+            db.Pipelines.Add(Pipeline(CatalogIdentity.Pipeline(repoId, flows[0].Name), repoId, flows[0].Name, "assertion", wellbores, now));
+            db.Pipelines.Add(Pipeline(CatalogIdentity.Pipeline(repoId, flows[1].Name), repoId, flows[1].Name, "assertion", counts, now));
+            await db.SaveChangesAsync();
+        }
+
+        var ledger = new OsduLedger(() => SampleEstate.Context(cs));
+        try
+        {
+            foreach (var flow in flows)
+            {
+                await ledger.RegisterLedgerAsync(new LedgerEntry
+                {
+                    FlowId = flow.LedgerId, Partition = partition, Kind = LedgerKinds.Assertion, FlowName = flow.Name, LedgerName = flow.LedgerName,
+                });
+            }
+
+            // The disabled test failed before it was disabled; restated failed against an earlier version of itself.
+            await RecordRunAsync(ledger, flows[0], null, now.AddMinutes(-10), [
+                Result(flows[0], "names", TestOutcomes.Passed, now.AddMinutes(-9), 3, Outcome(0, "count", TestOutcomes.Passed, 0)),
+                Result(flows[0], "archive", TestOutcomes.Failed, now.AddMinutes(-9), 0, Outcome(0, "count", TestOutcomes.Failed, 1)),
+            ]);
+            await RecordRunAsync(ledger, flows[1], null, now.AddMinutes(-8), [
+                Result(flows[1], "curves", TestOutcomes.Failed, now.AddMinutes(-7), 7600, Outcome(0, "count", TestOutcomes.Failed, 1)),
+                Result(flows[1], "restated", TestOutcomes.Failed, now.AddMinutes(-7), 61, Outcome(0, "count", TestOutcomes.Failed, 1)) with { DefinitionHash = "an-earlier-version" },
+            ]);
+
+            await using var factory = new ControlPlaneAppFactory()
+                .WithCatalog(cs)
+                .WithModules(new DeliveryControlPlaneModule())
+                .WithSetting("ControlPlane:Worker:Enabled", "false")
+                .WithSetting("Osdu:SchemaRepository:WarmOnStart", "false");
+            using var client = factory.CreateClient();
+            var token = await TokenAsync(client);
+
+            var board = await JsonAsync(client, token, $"/api/v1/delivery/assertions?partition={partition}&set={set}");
+            Assert.Equal(
+                flows.Select(f => f.Name).Order(StringComparer.Ordinal),
+                board.GetProperty("flows").EnumerateArray().Select(f => f.GetProperty("name").GetString()!).Order(StringComparer.Ordinal));
+            Assert.All(board.GetProperty("flows").EnumerateArray(), f => Assert.Equal(set, f.GetProperty("set").GetString()));
+            var totals = board.GetProperty("totals");
+            Assert.Equal((4, 1, 1, 1, 1), (
+                totals.GetProperty("tests").GetInt32(), totals.GetProperty("passed").GetInt32(), totals.GetProperty("failed").GetInt32(),
+                totals.GetProperty("disabled").GetInt32(), totals.GetProperty("notRun").GetInt32()));
+
+            var served = await JsonAsync(client, token, $"/api/v1/delivery/assertion-sets/{set}?partition={partition}");
+            Assert.Equal(set, served.GetProperty("set").GetString());
+            Assert.Equal("failed", served.GetProperty("status").GetString());
+            Assert.Equal("Needs attention: 1 of 4 assertions fail, in 1 of 2 flows; 1 disabled, 1 not yet checked.", served.GetProperty("verdict").GetString());
+            // Each test's latest result whole, for the tests that stand at it: not the disabled one, nor the one changed since.
+            Assert.Equal(["curves", "names"], served.GetProperty("results").EnumerateArray().Select(r => r.GetProperty("result").GetProperty("test").GetString()).Order(StringComparer.Ordinal));
+
+            using var html = await SendAsync(client, token, $"/api/v1/delivery/assertion-sets/{set}/report?format=html&partition={partition}");
+            Assert.Equal(HttpStatusCode.OK, html.StatusCode);
+            Assert.Equal($"{set}-{partition}-assertion-report.html", html.Content.Headers.ContentDisposition?.FileName?.Trim('"'));
+            var page = await html.Content.ReadAsStringAsync();
+            Assert.Contains("Needs attention: 1 of 4 assertions fail", page, StringComparison.Ordinal);
+            Assert.Contains("No flow delivers the archive logs yet.", page, StringComparison.Ordinal);
+
+            using var junit = await SendAsync(client, token, $"/api/v1/delivery/assertion-sets/{set}/report?format=junit&partition={partition}");
+            Assert.Equal("application/xml", junit.Content.Headers.ContentType?.MediaType);
+            Assert.Contains($"<testsuites name=\"{set}@{partition}\" tests=\"4\" failures=\"1\" errors=\"0\" skipped=\"2\"", await junit.Content.ReadAsStringAsync(), StringComparison.Ordinal);
+
+            using var none = await SendAsync(client, token, $"/api/v1/delivery/assertion-sets/no-such-set-{suffix}?partition={partition}");
+            Assert.Equal(HttpStatusCode.NotFound, none.StatusCode);
+            using var invalid = await SendAsync(client, token, $"/api/v1/delivery/assertion-sets/{Uri.EscapeDataString("a set")}?partition={partition}");
+            Assert.Equal(HttpStatusCode.BadRequest, invalid.StatusCode);
+        }
+        finally
+        {
+            await using (var osdu = SampleEstate.Context(cs))
+            {
+                foreach (var flow in flows)
+                {
+                    await osdu.DeliveryAssertionResults.Where(r => r.FlowId == flow.LedgerId).ExecuteDeleteAsync();
+                    await osdu.DeliveryAssertionRuns.Where(r => r.FlowId == flow.LedgerId).ExecuteDeleteAsync();
+                    await osdu.DeliveryLedgers.Where(l => l.FlowId == flow.LedgerId).ExecuteDeleteAsync();
+                }
+
+                await osdu.DeliveryLedgerPartitions.Where(p => p.Name == partition).ExecuteDeleteAsync();
+            }
+
+            await using (var db = CatalogDatabase.Create(cs))
+            {
+                await db.Pipelines.Where(p => p.RepoId == repoId).ExecuteDeleteAsync();
+                await db.Repos.Where(r => r.Id == repoId).ExecuteDeleteAsync();
+            }
+        }
+    }
+
     /// <summary>Writes a run to the ledger as the runner does: opened, each result recorded, then closed with its counts.</summary>
     private static async Task<long> RecordRunAsync(OsduLedger ledger, AssertionFlowDefinition flow, string? selection, DateTime startedUtc, IReadOnlyList<TestResult> results)
     {

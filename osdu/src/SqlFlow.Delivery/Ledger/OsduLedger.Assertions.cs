@@ -146,7 +146,7 @@ public sealed partial class OsduLedger
         return rows.Select(ToState).ToList();
     }
 
-    public async Task<IReadOnlyList<AssertionResultState>> LatestAssertionResultsAsync(IReadOnlyCollection<Guid> flowIds, CancellationToken ct = default)
+    public async Task<IReadOnlyList<AssertionResultState>> LatestAssertionResultsAsync(IReadOnlyCollection<Guid> flowIds, bool withDetail = false, CancellationToken ct = default)
     {
         ArgumentNullException.ThrowIfNull(flowIds);
         var byPartition = new Dictionary<short, List<Guid>>();
@@ -164,14 +164,16 @@ public sealed partial class OsduLedger
             foreach (var chunk in ids.Chunk(500))
             {
                 var rows = await ReadAsync(
-                    db => db.DeliveryAssertionResults.AsNoTracking()
-                        .Where(r => r.PartitionId == partition && chunk.Contains(r.FlowId)
-                            && r.Outcome != TestOutcomes.Skipped
-                            && r.AssertionRunId == db.DeliveryAssertionResults
-                                .Where(x => x.PartitionId == r.PartitionId && x.FlowId == r.FlowId && x.TestName == r.TestName && x.Outcome != TestOutcomes.Skipped)
-                                .Max(x => x.AssertionRunId))
-                        .Select(Summary)
-                        .ToListAsync(ct),
+                    db =>
+                    {
+                        var latest = db.DeliveryAssertionResults.AsNoTracking()
+                            .Where(r => r.PartitionId == partition && chunk.Contains(r.FlowId)
+                                && r.Outcome != TestOutcomes.Skipped
+                                && r.AssertionRunId == db.DeliveryAssertionResults
+                                    .Where(x => x.PartitionId == r.PartitionId && x.FlowId == r.FlowId && x.TestName == r.TestName && x.Outcome != TestOutcomes.Skipped)
+                                    .Max(x => x.AssertionRunId));
+                        return withDetail ? latest.ToListAsync(ct) : latest.Select(Summary).ToListAsync(ct);
+                    },
                     ct).ConfigureAwait(false);
                 results.AddRange(rows.Select(ToState));
             }
@@ -279,6 +281,63 @@ public sealed partial class OsduLedger
                 after = run.AssertionRunId;
             }
         }
+    }
+
+    public async Task<int> PruneReplacedAssertionRunsAsync(Guid flowId, IReadOnlyDictionary<string, string> current, CancellationToken ct = default)
+    {
+        ArgumentNullException.ThrowIfNull(current);
+        if (await PartitionOfAsync(flowId, ct).ConfigureAwait(false) is not { } partition)
+        {
+            return 0;
+        }
+
+        await using var db = Open();
+        var finished = await db.DeliveryAssertionRuns.AsNoTracking()
+            .Where(r => r.PartitionId == partition && r.FlowId == flowId && r.Status != AssertionRunStatus.Running)
+            .Select(r => r.AssertionRunId)
+            .ToListAsync(ct)
+            .ConfigureAwait(false);
+        if (finished.Count < 2)
+        {
+            return 0;
+        }
+
+        // The latest judged result of each test the flow has recorded, one seek per test: a skipped result judged nothing, so
+        // the result before it is still what the test stands at.
+        var latest = await db.DeliveryAssertionResults.AsNoTracking()
+            .Where(r => r.PartitionId == partition && r.FlowId == flowId && r.Outcome != TestOutcomes.Skipped
+                && r.AssertionRunId == db.DeliveryAssertionResults
+                    .Where(x => x.PartitionId == r.PartitionId && x.FlowId == r.FlowId && x.TestName == r.TestName && x.Outcome != TestOutcomes.Skipped)
+                    .Max(x => x.AssertionRunId))
+            .Select(r => new { r.TestName, r.AssertionRunId, r.DefinitionHash })
+            .ToListAsync(ct)
+            .ConfigureAwait(false);
+        var kept = latest
+            .Where(r => current.TryGetValue(r.TestName, out var hash) && string.Equals(hash, r.DefinitionHash, StringComparison.Ordinal))
+            .Select(r => r.AssertionRunId)
+            .ToHashSet();
+        kept.Add(finished.Max());
+        var removed = 0;
+        foreach (var chunk in finished.Where(id => !kept.Contains(id)).Order().Chunk(PruneRunBatch))
+        {
+            var strategy = db.Database.CreateExecutionStrategy();
+            removed += await strategy.ExecuteAsync(async () =>
+            {
+                await using var tx = await db.Database.BeginTransactionAsync(ct).ConfigureAwait(false);
+                await db.DeliveryAssertionResults
+                    .Where(r => r.PartitionId == partition && chunk.Contains(r.AssertionRunId))
+                    .ExecuteDeleteAsync(ct)
+                    .ConfigureAwait(false);
+                var gone = await db.DeliveryAssertionRuns
+                    .Where(r => r.PartitionId == partition && chunk.Contains(r.AssertionRunId))
+                    .ExecuteDeleteAsync(ct)
+                    .ConfigureAwait(false);
+                await tx.CommitAsync(ct).ConfigureAwait(false);
+                return gone;
+            }).ConfigureAwait(false);
+        }
+
+        return removed;
     }
 
     /// <summary>A result without its detail: what listings across tests read.</summary>

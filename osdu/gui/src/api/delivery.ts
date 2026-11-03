@@ -3222,6 +3222,8 @@ export interface DeliveryAssertionFlow {
   name: string;
   description: string | null;
   batch: string | null;
+  /** The set its assertions are grouped under: its `set`, else its batch; null when it names neither. */
+  set: string | null;
   partition: string | null;
   /** False when the flow does not test the board's partition (or its document does not parse: see `problem`). */
   testsPartition: boolean;
@@ -3236,7 +3238,10 @@ export interface DeliveryAssertionFlow {
   tests: DeliveryAssertionTest[];
 }
 
-/** What a board adds up to over every test that runs in its partition. */
+/**
+ * What a board adds up to over every test that runs in its partition, each by where it stands now: a disabled test counts
+ * as disabled alone, and one whose latest result checked an earlier version of it as not run.
+ */
 export interface DeliveryAssertionTotals {
   flows: number;
   tests: number;
@@ -3245,6 +3250,7 @@ export interface DeliveryAssertionTotals {
   warned: number;
   errored: number;
   notRun: number;
+  disabled: number;
   problems: number;
   changed: number;
   passRate: number | null;
@@ -3311,6 +3317,31 @@ export interface DeliveryAssertionRunDetail {
   run: DeliveryAssertionRun;
   pipelineId: string | null;
   results: DeliveryTestResult[];
+}
+
+/** A test's latest result whole, in a set: the flow it is a test of and the report it is from. */
+export interface DeliveryAssertionSetResult {
+  pipelineId: string;
+  assertionRunId: number;
+  result: DeliveryTestResult;
+}
+
+/** How a set stands as a whole: its worst test's outcome, passed when every test checked passed, or not run. */
+export type AssertionSetStatus = "passed" | "failed" | "warned" | "errored" | "notRun";
+
+/**
+ * An assertion set in the workbench's partition: how it stands, its flows as a board shows them, and each of their tests'
+ * latest result whole, when that result checked the test as it is now.
+ */
+export interface DeliveryAssertionSet {
+  set: string;
+  partition: string | null;
+  status: AssertionSetStatus;
+  /** How the set stands in one sentence, as its report opens with it. */
+  verdict: string;
+  totals: DeliveryAssertionTotals;
+  flows: DeliveryAssertionFlow[];
+  results: DeliveryAssertionSetResult[];
 }
 
 /** A flow's recent runs against its tests: each test's outcome in each run, null where the run did not run it. */
@@ -4243,6 +4274,11 @@ export const deliveryApi = {
   /** An assertion run's report as the text of the format asked for. */
   assertionReport: (assertionRunId: number, format: AssertionReportFormat) =>
     getText(`/api/v1/delivery/assertion-runs/${assertionRunId}/report?format=${format}`),
+  /** An assertion set in the workbench's partition, with each of its tests' latest result whole. */
+  assertionSet: (set: string) => get<DeliveryAssertionSet>(`/api/v1/delivery/assertion-sets/${encodeURIComponent(set)}`),
+  /** An assertion set's report as the text of the format asked for. */
+  assertionSetReport: (set: string, format: AssertionReportFormat) =>
+    getText(`/api/v1/delivery/assertion-sets/${encodeURIComponent(set)}/report?format=${format}`),
   /** Every dimension flow's dimensions in the workbench's partition. */
   dimensionBoard: () => get<DeliveryDimensionBoard>("/api/v1/delivery/dimensions"),
   /** One dimension flow's dimensions in the workbench's partition. */

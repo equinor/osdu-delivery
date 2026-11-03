@@ -61,6 +61,7 @@ const SQUARE_CLASSES: Record<TestStanding, string> = {
   warned: "bg-warning/80",
   skipped: "bg-muted-foreground/25",
   notRun: "border border-dashed border-border",
+  disabled: "bg-muted-foreground/40",
   elsewhere: "border border-dashed border-border",
   noted: "bg-info/60",
 };
@@ -99,9 +100,12 @@ export function OutcomeSquare({ outcome, title, onClick, size = "size-2.5", test
   );
 }
 
-/** How a set of tests came out, as a stacked bar: each outcome's share in its fill, the counts on hover and in its label. */
+/**
+ * How a set of tests came out, as a stacked bar: each outcome's share in its fill, the counts on hover and in its label.
+ * `skipped` counts what is not run as it is now (or skipped), `disabled` what the documents switch off.
+ */
 export function OutcomeBar({ counts, className, testId = "outcome-bar" }: {
-  counts: { passed: number; warned: number; failed: number; errored: number; skipped: number };
+  counts: { passed: number; warned: number; failed: number; errored: number; skipped: number; disabled?: number };
   className?: string;
   testId?: string;
 }) {
@@ -111,6 +115,7 @@ export function OutcomeBar({ counts, className, testId = "outcome-bar" }: {
     { outcome: "failed", count: counts.failed },
     { outcome: "errored", count: counts.errored },
     { outcome: "skipped", count: counts.skipped },
+    { outcome: "disabled", count: counts.disabled ?? 0 },
   ];
   const total = parts.reduce((sum, part) => sum + part.count, 0);
   const label = total === 0 ? "no assertion" : parts.filter((p) => p.count > 0).map((p) => `${p.count} ${OUTCOME_VISUALS[p.outcome].label}`).join(", ");
@@ -149,7 +154,7 @@ const STRIP_TEXT: Partial<Record<TestStanding, string>> = {
 export function StatusStrip({ passRate, evaluated, bar, cells, selected, onSelect, testId = "status-strip" }: {
   passRate: number | null;
   evaluated: number;
-  bar: { passed: number; warned: number; failed: number; errored: number; skipped: number };
+  bar: { passed: number; warned: number; failed: number; errored: number; skipped: number; disabled?: number };
   cells: readonly StripCell[];
   selected: string | null;
   onSelect: (key: string | null) => void;

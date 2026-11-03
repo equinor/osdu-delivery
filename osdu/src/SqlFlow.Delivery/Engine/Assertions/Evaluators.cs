@@ -594,7 +594,7 @@ internal sealed class AggregateEvaluator : Evaluator
         }
 
         var passed = ValueComparer.Evaluate(_assertion.Comparison, value, _assertion.Tolerance);
-        var actual = $"{AssertionText.Of(_assertion.Function)}({_assertion.Target}) is {value}" + _aggregator.Note() + LeftOutNote(_assertion, _leftOut);
+        var actual = $"{AssertionText.Of(_assertion.Function)}({_assertion.Target}) is {value}" + _aggregator.Note(_assertion.Function) + LeftOutNote(_assertion, _leftOut);
         var outcome = Result(passed, actual, $"{actual}; expected {_assertion.Expected}.", _aggregator.Count, passed ? 0 : 1, value.Number);
         return Task.FromResult(!passed && _assertion.WarnWithin is { } band && ValueComparer.Within(_assertion.Comparison, value, _assertion.Tolerance, band)
             ? Warned(outcome, WithinBand(band, ValueComparer.Miss(_assertion.Comparison, value, _assertion.Tolerance)))
@@ -706,8 +706,12 @@ public sealed class Aggregator
         }
     }
 
-    /// <summary>What the aggregate left out, as a reader needs to know it.</summary>
-    public string Note() => Others > 0
+    /// <summary>
+    /// What the aggregate left out, as a reader needs to know it: the values a sum, an average, a minimum or a maximum could
+    /// not take, being neither numbers nor dates. A count, a distinct count and a count of missing values take every value,
+    /// so they leave nothing out and say nothing.
+    /// </summary>
+    public string Note(AggregateFunction function) => Others > 0 && function is AggregateFunction.Sum or AggregateFunction.Avg or AggregateFunction.Min or AggregateFunction.Max
         ? string.Create(CultureInfo.InvariantCulture, $" ({Others} of {Count} value(s) are neither numbers nor dates and were left out)")
         : string.Empty;
 }

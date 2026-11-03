@@ -1,18 +1,22 @@
 import {
-  CircleCheck, CircleDashed, CircleX, Info, OctagonAlert, SkipForward, TriangleAlert, type LucideIcon,
+  Ban, CircleCheck, CircleDashed, CircleX, Info, OctagonAlert, SkipForward, TriangleAlert, type LucideIcon,
 } from "lucide-react";
 import type {
-  AssertionReportFormat, AssertionRunStatus, AssertionSeverity, DeliveryAssertionOutcome, DeliveryAssertionTest, TestOutcome,
+  AssertionReportFormat, AssertionRunStatus, AssertionSeverity, DeliveryAssertionFlow, DeliveryAssertionOutcome, DeliveryAssertionTest, TestOutcome,
 } from "../../../api/delivery";
 import { deliveryApi } from "../../../api/delivery";
+
+export { checkReading, sharedPrefix, type CheckReading } from "./assertionReading";
 
 export type OutcomeTone = "success" | "destructive" | "info" | "warning" | "muted";
 
 /**
- * Where a test stands on a board: an outcome of its latest run, or that it has not run in the partition. An assertion also
- * stands as `noted`: an info assertion that does not hold, which its test reports and does not count against it.
+ * Where a test stands on a board, as its document states it now: an outcome of its latest run, `disabled` when its document
+ * switches it off, `notRun` when no run has checked it as it is now, or `elsewhere` when it does not check the partition. An
+ * assertion also stands as `noted`: an info assertion that does not hold, which its test reports and does not count against
+ * it.
  */
-export type TestStanding = TestOutcome | "notRun" | "elsewhere" | "noted";
+export type TestStanding = TestOutcome | "notRun" | "disabled" | "elsewhere" | "noted";
 
 interface OutcomeVisual {
   tone: OutcomeTone;
@@ -32,12 +36,13 @@ export const OUTCOME_VISUALS: Record<TestStanding, OutcomeVisual> = {
   errored: { tone: "destructive", icon: OctagonAlert, label: "errored" },
   skipped: { tone: "muted", icon: SkipForward, label: "skipped" },
   notRun: { tone: "muted", icon: CircleDashed, label: "not run" },
+  disabled: { tone: "muted", icon: Ban, label: "disabled" },
   elsewhere: { tone: "muted", icon: SkipForward, label: "not in partition" },
   noted: { tone: "info", icon: Info, label: "noted" },
 };
 
 /** The order outcomes are listed in: what needs a look first. */
-export const OUTCOME_ORDER: readonly TestStanding[] = ["failed", "errored", "warned", "notRun", "passed", "skipped", "elsewhere"];
+export const OUTCOME_ORDER: readonly TestStanding[] = ["failed", "errored", "warned", "notRun", "passed", "disabled", "skipped", "elsewhere"];
 
 /** The text colour of a standing that asks for a look; none for one that does not. */
 export const STANDING_TEXT: Partial<Record<TestStanding, string>> = {
@@ -65,13 +70,21 @@ export function worstStanding(outcomes: readonly Pick<DeliveryAssertionOutcome, 
   return (["failed", "errored", "warned", "noted"] as const).find((s) => standings.has(s)) ?? null;
 }
 
-/** Where a board's test stands: its latest outcome, or not run, or not in the board's partition at all. */
+/**
+ * Where a board's test stands now: not in the board's partition at all, disabled by its document, its latest outcome when
+ * that result checked the test as it is now, or not run. A result of an earlier version of the test is history, and says
+ * nothing of this one.
+ */
 export function standingOf(test: DeliveryAssertionTest): TestStanding {
   if (!test.runsHere) {
     return "elsewhere";
   }
 
-  return test.latest?.outcome ?? "notRun";
+  if (disabledWhy(test) !== null) {
+    return "disabled";
+  }
+
+  return test.latest === null || test.changed ? "notRun" : test.latest.outcome;
 }
 
 /**
@@ -155,15 +168,19 @@ export function testVerdict(test: DeliveryAssertionTest): Verdict {
   // values are out of date is flagged rather than judged.
   const disabled = disabledWhy(test);
   if (disabled !== null) {
-    return { text: `disabled: ${disabled}`, standing: "skipped" };
+    return { text: `disabled: ${disabled}`, standing: "disabled" };
   }
 
   if (test.needsNewProofValues === true) {
     return { text: `needs new proof values (valid until ${test.validUntil ?? "a day now past"})`, standing: "warned" };
   }
 
-  if (latest === null) {
-    return { text: test.problems.length > 0 ? "does not fit its schema" : "not run yet", standing: test.problems.length > 0 ? "errored" : standing };
+  if (latest === null || test.changed) {
+    if (test.problems.length > 0) {
+      return { text: "does not fit its schema", standing: "errored" };
+    }
+
+    return { text: test.changed ? "changed since its last result; not run as it is now" : "not run yet", standing };
   }
 
   if (standing === "errored") {
@@ -290,11 +307,31 @@ export function reportFileName(flow: string, partition: string | null, assertion
 
 /** Fetches a run's report in a format and offers it as a file to save. */
 export async function downloadReport(flow: string, partition: string | null, assertionRunId: number, format: AssertionReportFormat): Promise<void> {
-  const text = await deliveryApi.assertionReport(assertionRunId, format);
+  saveText(await deliveryApi.assertionReport(assertionRunId, format), format, reportFileName(flow, partition, assertionRunId, format));
+}
+
+/** The file name a set's report downloads as: the set and the partition. */
+export function setReportFileName(set: string, partition: string | null, format: AssertionReportFormat): string {
+  const safe = `${set}-${partition ?? "partition"}-assertion-report`.replace(/[^A-Za-z0-9._-]+/g, "_");
+  return `${safe}.${EXTENSIONS[format].extension}`;
+}
+
+/** Fetches a set's report in a format and offers it as a file to save. */
+export async function downloadSetReport(set: string, partition: string | null, format: AssertionReportFormat): Promise<void> {
+  saveText(await deliveryApi.assertionSetReport(set, format), format, setReportFileName(set, partition, format));
+}
+
+/** Opens a set's HTML report in a tab of its own, to read, present or print. */
+export async function openSetHtmlReport(set: string): Promise<void> {
+  openHtml(await deliveryApi.assertionSetReport(set, "html"));
+}
+
+/** Offers text as a file to save, under a name and the media type of its format. */
+function saveText(text: string, format: AssertionReportFormat, fileName: string) {
   const url = URL.createObjectURL(new Blob([text], { type: EXTENSIONS[format].type }));
   const anchor = document.createElement("a");
   anchor.href = url;
-  anchor.download = reportFileName(flow, partition, assertionRunId, format);
+  anchor.download = fileName;
   document.body.appendChild(anchor);
   anchor.click();
   anchor.remove();
@@ -303,7 +340,11 @@ export async function downloadReport(flow: string, partition: string | null, ass
 
 /** Opens a run's HTML report in a tab of its own, to read or print. */
 export async function openHtmlReport(assertionRunId: number): Promise<void> {
-  const text = await deliveryApi.assertionReport(assertionRunId, "html");
+  openHtml(await deliveryApi.assertionReport(assertionRunId, "html"));
+}
+
+/** Opens an HTML report's text in a tab of its own. */
+function openHtml(text: string) {
   const url = URL.createObjectURL(new Blob([text], { type: EXTENSIONS.html.type }));
   // The report is a page with no script, so the tab it opens in has nothing to do with the workbench that opened it; the
   // URL is released once the tab has had time to load it, and a blocked pop-up saves the file instead.
@@ -328,4 +369,40 @@ export function selectionPayload(tests: readonly string[], tags: readonly string
   }
 
   return payload;
+}
+
+/** The address of a set's page: where it stands now, its report, and what fails and why. */
+export function setRoute(set: string): string {
+  return `/delivery/assertions/sets/${encodeURIComponent(set)}`;
+}
+
+/** The partition a run of the flow tests, and why it cannot run while the title bar is where it is. */
+export function partitionOf(flow: DeliveryAssertionFlow | undefined, active: string | null): { partition: string | null; error: string | null } {
+  if (flow === undefined) {
+    return { partition: null, error: "Reading the flow's assertions." };
+  }
+
+  if (flow.partitions.length > 0) {
+    if (active === null) {
+      return { partition: null, error: "Pick a partition in the title bar: a run checks the partition picked there." };
+    }
+
+    return flow.partitions.includes(active)
+      ? { partition: active, error: null }
+      : {
+        partition: null,
+        error: `This flow does not check ${active}, the partition picked in the title bar; it checks ${flow.partitions.join(", ")}. Pick ${flow.partitions.length > 1 ? "one of them" : "it"} in the title bar to run it.`,
+      };
+  }
+
+  if (flow.problem !== null) {
+    return { partition: null, error: flow.problem };
+  }
+
+  return flow.partition !== null && active !== null && flow.partition !== active
+    ? {
+      partition: null,
+      error: `This flow checks ${flow.partition}, the partition its data-partition-id header names, and the title bar is on ${active}. Pick ${flow.partition} in the title bar to run it.`,
+    }
+    : { partition: null, error: null };
 }

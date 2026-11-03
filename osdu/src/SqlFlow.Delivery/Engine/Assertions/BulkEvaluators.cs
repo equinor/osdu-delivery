@@ -402,7 +402,7 @@ internal sealed class ColumnAggregateEvaluator(int index, AggregateAssertion ass
                 return BulkVerdict.Pass;
             }
 
-            var reason = $"{AssertionText.Of(assertion.Function)}({assertion.Target}) is {value}{_aggregator.Note()}{AggregateEvaluator.LeftOutNote(assertion, _leftOut)}; expected {assertion.Expected}";
+            var reason = $"{AssertionText.Of(assertion.Function)}({assertion.Target}) is {value}{_aggregator.Note(assertion.Function)}{AggregateEvaluator.LeftOutNote(assertion, _leftOut)}; expected {assertion.Expected}";
             return assertion.WarnWithin is { } band && ValueComparer.Within(assertion.Comparison, value, assertion.Tolerance, band)
                 ? BulkVerdict.Warn(value.ToString(), reason + "; " + Evaluator.WithinBand(band, ValueComparer.Miss(assertion.Comparison, value, assertion.Tolerance)))
                 : BulkVerdict.Fail(value.ToString(), reason);

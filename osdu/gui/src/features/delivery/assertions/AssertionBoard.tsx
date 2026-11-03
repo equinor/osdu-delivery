@@ -17,11 +17,13 @@ import { KindText } from "../KindText";
 import { StatusStrip, type StripCell } from "./AssertionBadges";
 import { AssertionBoardGrid, KindName } from "./AssertionBoardGrid";
 import { AssertionRunDialog, ReportDownloads, type AssertionLaunch } from "./AssertionRunDialog";
+import { AssertionSetRunDialog, type AssertionSetLaunch } from "./AssertionSetRunDialog";
 import { AssertionTestSheet } from "./AssertionTestSheet";
 import {
-  boardEntries, boardFilterOf, boardSortOf, facetCounts, narrowing, type BoardCriteria, type BoardEntry, type BoardFilter, type BoardSort,
+  boardEntries, boardFilterOf, boardSets, boardSortOf, facetCounts, narrowing, type BoardCriteria, type BoardEntry, type BoardFilter, type BoardSort,
+  type SetEntry,
 } from "./assertionBoardModel";
-import { STANDING_TEXT, counted, kindEntity, runStatusVisual, type TestStanding } from "./assertionFormat";
+import { counted, kindEntity } from "./assertionFormat";
 
 /** The search parameters the test sheet owns, cleared with it. */
 const SHEET_PARAMS = ["test", "flow", "testTab", "check"];
@@ -106,13 +108,25 @@ function openedTest(flows: readonly DeliveryAssertionFlow[], flowId: string | nu
   return null;
 }
 
-/** Which flows the reader opened or closed against what the criteria open, and under which criteria they did. */
+/** Which sets or flows the reader opened or closed against what the criteria open, and under which criteria they did. */
 interface Expansion {
   criteria: string;
   flipped: ReadonlySet<string>;
 }
 
 const NOTHING_FLIPPED: ReadonlySet<string> = new Set();
+
+/** A reader's opening or closing of one row, kept against the criteria it was made under. */
+function flip(was: Expansion, criteria: string, key: string): Expansion {
+  const next = new Set(was.criteria === criteria ? was.flipped : NOTHING_FLIPPED);
+  if (next.has(key)) {
+    next.delete(key);
+  } else {
+    next.add(key);
+  }
+
+  return { criteria, flipped: next };
+}
 
 /**
  * A board of one flow names it once above its tests: the type it reads, its last run with its report, and its run
@@ -125,15 +139,14 @@ function FlowHeading({ flow, picked, onLaunch }: {
 }) {
   const kinds = new Set(flow.tests.map((t) => t.kind));
   const last = flow.lastRun;
-  const lastVisual = last === null ? null : runStatusVisual(last.status);
   const runnable = flow.testsPartition && flow.problem === null;
   return (
     <>
       <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5 border-b bg-muted/30 px-3 py-2">
         {kinds.size === 1 && <span className="min-w-0 max-w-[26rem] text-muted-foreground"><KindText kind={[...kinds][0]!} /></span>}
-        {last !== null && lastVisual !== null && (
+        {last !== null && (
           <span className="flex items-center gap-1.5 text-[12px] text-muted-foreground" data-testid="board-flow-last-run">
-            <lastVisual.icon className={cn("size-3.5", STANDING_TEXT[last.status as TestStanding] ?? "")} aria-label={lastVisual.label} />
+            last checked
             <Link to={`/delivery/assertions/runs/${last.assertionRunId}`} className="font-mono hover:underline">#{last.assertionRunId}</Link>
             <RelativeTime value={last.completedUtc ?? last.startedUtc} absolute={false} />
           </span>
@@ -162,19 +175,22 @@ function FlowHeading({ flow, picked, onLaunch }: {
 }
 
 /**
- * The board of assertion flows in the workbench's partition (osdu/docs/reference/concepts/gui.md, OSDU): how the data
- * stands now. Every flow is one line that opens on its tests, what needs a look first, in a grid that stays as tall as the
- * window leaves, so a hundred flows read as a hundred lines and the page never grows with them. The status strip's counts,
- * the search and the type and tag pickers narrow the board to the tests they find and open their flows on them; a search
- * that names flows lists them closed. A test opens in a sheet on what it found, and runs again from its line, with others
- * picked, or with every test of its flow. How tests came out over earlier runs is the flow's History and Reports tabs' to
- * show. The board of one flow, on its Tests tab, lists its tests directly under its heading.
+ * The board of assertion sets in the workbench's partition (osdu/docs/reference/concepts/gui.md, OSDU): where the data
+ * stands now, every assertion by its latest result of the assertion as its document states it. Every set is one line that
+ * opens on its flows, every flow one line that opens on its tests, what needs a look first, in a grid that stays as tall as
+ * the window leaves, so a hundred flows read as a handful of sets and the page never grows with them. A set's line opens its
+ * report and runs every flow of it. The status strip's counts, the search and the type and tag pickers narrow the board to
+ * the tests they find and open their sets and flows on them; a search that names sets or flows lists them closed. A test
+ * opens in a sheet on what it found, and runs again from its line, with others picked, or with every test of its flow. The
+ * board of one flow, on its Assertions tab, lists its tests directly under its heading.
  */
 export function AssertionBoard({ board, scope }: { board: DeliveryAssertionBoard; scope: "all" | "flow" }) {
   const [params, setParams] = useSearchParams();
   const [picks, setPicks] = useState<ReadonlyMap<string, ReadonlySet<string>>>(new Map());
-  const [expansion, setExpansion] = useState<Expansion>({ criteria: "", flipped: NOTHING_FLIPPED });
+  const [flows, setFlows] = useState<Expansion>({ criteria: "", flipped: NOTHING_FLIPPED });
+  const [setsOpened, setSetsOpened] = useState<Expansion>({ criteria: "", flipped: NOTHING_FLIPPED });
   const [launch, setLaunch] = useState<AssertionLaunch | null>(null);
+  const [runOfSet, setRunOfSet] = useState<AssertionSetLaunch | null>(null);
 
   // The repositories' names, which the board's flows carry only the ids of: a flow's lineage jump names its graph by it.
   const repos = useQuery({
@@ -200,15 +216,19 @@ export function AssertionBoard({ board, scope }: { board: DeliveryAssertionBoard
   const narrowed = narrowing(criteria);
 
   const entries = useMemo(() => boardEntries(board.flows, criteria, sort), [board.flows, criteria, sort]);
+  const sets = useMemo(() => (scope === "all" ? boardSets(board.flows, criteria, sort) : []), [board.flows, criteria, scope, sort]);
   const allTypes = useMemo(() => facetCounts(board.flows, (test) => [test.kind]), [board.flows]);
   const allTags = useMemo(() => facetCounts(board.flows, (test) => test.tags), [board.flows]);
   const opened = openedTest(board.flows, scope === "all" ? params.get("flow") : null, params.get("test"));
 
-  // A flow opens when the criteria narrowed its tests, and a reader's own opening or closing of it reverses that until the
-  // criteria change, when every flow takes what the new criteria say again.
-  const flipped = expansion.criteria === criteriaKey ? expansion.flipped : NOTHING_FLIPPED;
-  const isOpen = useCallback((entry: BoardEntry) => entry.narrowed !== flipped.has(entry.flow.pipelineId), [flipped]);
-  const allOpen = entries.length > 0 && entries.every(isOpen);
+  // A set or a flow opens when the criteria narrowed what it lists (a lone set opens whatever they are), and a reader's own
+  // opening or closing of it reverses that until the criteria change, when each takes what the new criteria say again.
+  const flowsFlipped = flows.criteria === criteriaKey ? flows.flipped : NOTHING_FLIPPED;
+  const setsFlipped = setsOpened.criteria === criteriaKey ? setsOpened.flipped : NOTHING_FLIPPED;
+  const isOpen = useCallback((entry: BoardEntry) => entry.narrowed !== flowsFlipped.has(entry.flow.pipelineId), [flowsFlipped]);
+  const lone = sets.length === 1;
+  const isSetOpen = useCallback((set: SetEntry) => (set.narrowed || lone) !== setsFlipped.has(set.key), [lone, setsFlipped]);
+  const allOpen = sets.length > 0 && sets.every(isSetOpen);
 
   const update = useCallback((change: (next: URLSearchParams) => void) => setParams((was) => {
     const next = new URLSearchParams(was);
@@ -223,20 +243,12 @@ export function AssertionBoard({ board, scope }: { board: DeliveryAssertionBoard
     }
   });
 
-  const onToggle = useCallback((flowId: string) => setExpansion((was) => {
-    const next = new Set(was.criteria === criteriaKey ? was.flipped : NOTHING_FLIPPED);
-    if (next.has(flowId)) {
-      next.delete(flowId);
-    } else {
-      next.add(flowId);
-    }
+  const onToggle = useCallback((flowId: string) => setFlows((was) => flip(was, criteriaKey, flowId)), [criteriaKey]);
+  const onToggleSet = useCallback((key: string) => setSetsOpened((was) => flip(was, criteriaKey, key)), [criteriaKey]);
 
-    return { criteria: criteriaKey, flipped: next };
-  }), [criteriaKey]);
-
-  const onToggleAll = () => setExpansion({
+  const onToggleAll = () => setSetsOpened({
     criteria: criteriaKey,
-    flipped: new Set(entries.filter((entry) => entry.narrowed === allOpen).map((entry) => entry.flow.pipelineId)),
+    flipped: new Set(sets.filter((set) => (set.narrowed || lone) === allOpen).map((set) => set.key)),
   });
 
   const onSort = useCallback((next: BoardSort) => update((was) => {
@@ -262,17 +274,17 @@ export function AssertionBoard({ board, scope }: { board: DeliveryAssertionBoard
 
   const onPick = useCallback((flowId: string, name: string, on: boolean) => setPicks((was) => {
     const next = new Map(was);
-    const set = new Set(next.get(flowId) ?? []);
+    const picked = new Set(next.get(flowId) ?? []);
     if (on) {
-      set.add(name);
+      picked.add(name);
     } else {
-      set.delete(name);
+      picked.delete(name);
     }
 
-    if (set.size === 0) {
+    if (picked.size === 0) {
       next.delete(flowId);
     } else {
-      next.set(flowId, set);
+      next.set(flowId, picked);
     }
 
     return next;
@@ -282,6 +294,12 @@ export function AssertionBoard({ board, scope }: { board: DeliveryAssertionBoard
     pipelineId: flow.pipelineId, repoId: flow.repoId, flowName: flow.name, tests, tags: [],
   }), []);
 
+  const onLaunchSet = useCallback((set: SetEntry) => {
+    if (set.set !== null) {
+      setRunOfSet({ set: set.set, flows: set.flows });
+    }
+  }, []);
+
   // What is picked counts the tests each flow still declares and runs here, as its run button does.
   const picked = board.flows
     .map((flow) => ({ flow, names: flow.tests.filter((t) => t.runsHere && (picks.get(flow.pipelineId)?.has(t.name) ?? false)).map((t) => t.name) }))
@@ -290,13 +308,13 @@ export function AssertionBoard({ board, scope }: { board: DeliveryAssertionBoard
 
   const totals = board.totals;
   const cells: StripCell[] = [
-    { key: "failed", label: "Failing", count: totals.failed, standing: "failed", hint: "A check of error severity failed." },
+    { key: "failed", label: "Failing", count: totals.failed, standing: "failed", hint: "A check of error severity failed in the assertion's latest run." },
     { key: "errored", label: "Errored", count: totals.errored, standing: "errored", hint: "The assertion could not find out: a query OSDU refused, a service that did not answer." },
     { key: "warned", label: "Warned", count: totals.warned, standing: "warned", hint: "Only checks of warning severity failed." },
-    { key: "notRun", label: "Not run", count: totals.notRun, standing: null, hint: "No result yet in this partition." },
+    { key: "notRun", label: "Not run", count: totals.notRun, standing: null, hint: "No run has checked the assertion as its document states it now in this partition." },
     { key: "passed", label: "Passing", count: totals.passed, standing: "passed", hint: "Every check of error or warning severity passed in the latest run." },
+    { key: "disabled", label: "Disabled", count: totals.disabled, standing: null, hint: "Switched off in the flow's document, each with the reason given there." },
     ...(totals.problems > 0 ? [{ key: "problems", label: "Unfit", count: totals.problems, standing: "errored" as const, hint: "Assertions that do not fit the schema of their type, and so are not evaluated." }] : []),
-    ...(totals.changed > 0 ? [{ key: "changed", label: "Changed", count: totals.changed, standing: "warned" as const, hint: "Assertions changed since their latest result." }] : []),
   ];
 
   if (board.flows.length === 0) {
@@ -304,7 +322,7 @@ export function AssertionBoard({ board, scope }: { board: DeliveryAssertionBoard
       <EmptyState
         icon={<ListChecks />}
         title="No assertion flows synced yet"
-        description="Register a repository holding flowType: assertion documents; each flow's assertions appear here with how they came out."
+        description="Register a repository holding flowType: assertion documents; each set's flows and their assertions appear here with where they stand."
         data-testid="assertion-board-empty"
       />
     );
@@ -317,11 +335,12 @@ export function AssertionBoard({ board, scope }: { board: DeliveryAssertionBoard
   });
 
   const shownTests = entries.reduce((sum, entry) => sum + entry.tests.filter((test) => test.runsHere).length, 0);
+  const allSets = new Set(board.flows.map((flow) => flow.set ?? "")).size;
   const single = scope === "flow" ? board.flows[0] : undefined;
   const none = narrowed
     ? (
       <EmptyState
-        title={scope === "all" ? "No flow or assertion matches" : "No assertion of this flow matches"}
+        title={scope === "all" ? "No set, flow or assertion matches" : "No assertion of this flow matches"}
         description="Clear the filters to see every assertion."
         data-testid="assertion-board-none"
       />
@@ -335,8 +354,8 @@ export function AssertionBoard({ board, scope }: { board: DeliveryAssertionBoard
       <span className="truncate font-mono tabular-nums">
         {scope === "all"
           ? narrowed
-            ? `${entries.length.toLocaleString("en-US")} of ${counted(board.flows.length, "flow")}, ${shownTests.toLocaleString("en-US")} of ${counted(totals.tests, "assertion")}`
-            : `${counted(board.flows.length, "flow")}, ${counted(totals.tests, "assertion")}`
+            ? `${sets.length.toLocaleString("en-US")} of ${counted(allSets, "set")}, ${entries.length.toLocaleString("en-US")} of ${counted(board.flows.length, "flow")}, ${shownTests.toLocaleString("en-US")} of ${counted(totals.tests, "assertion")}`
+            : `${counted(allSets, "set")}, ${counted(board.flows.length, "flow")}, ${counted(totals.tests, "assertion")}`
           : narrowed
             ? `${shownTests.toLocaleString("en-US")} of ${counted(totals.tests, "assertion")}`
             : counted(totals.tests, "assertion")}
@@ -357,7 +376,7 @@ export function AssertionBoard({ board, scope }: { board: DeliveryAssertionBoard
       <StatusStrip
         passRate={totals.passRate}
         evaluated={totals.passed + totals.failed + totals.warned + totals.errored}
-        bar={{ passed: totals.passed, warned: totals.warned, failed: totals.failed, errored: totals.errored, skipped: totals.notRun }}
+        bar={{ passed: totals.passed, warned: totals.warned, failed: totals.failed, errored: totals.errored, skipped: totals.notRun, disabled: totals.disabled }}
         cells={cells}
         selected={filter}
         onSelect={(key) => update((next) => {
@@ -380,8 +399,8 @@ export function AssertionBoard({ board, scope }: { board: DeliveryAssertionBoard
               next.set("q", value);
             }
           })}
-          placeholder={scope === "all" ? "Find a flow, or an assertion by its name, type, tag, query or check" : "Find an assertion by its name, type, tag, query or check"}
-          label={scope === "all" ? "Find a flow or an assertion" : "Find an assertion"}
+          placeholder={scope === "all" ? "Find a set, a flow, or an assertion by its name, type, tag, query or check" : "Find an assertion by its name, type, tag, query or check"}
+          label={scope === "all" ? "Find a set, a flow or an assertion" : "Find an assertion"}
           testId="assertion-board-search"
           className="sm:w-[30rem]"
         />
@@ -417,19 +436,23 @@ export function AssertionBoard({ board, scope }: { board: DeliveryAssertionBoard
 
       <AssertionBoardGrid
         scope={scope}
+        sets={sets}
         entries={entries}
+        isSetOpen={isSetOpen}
         isOpen={isOpen}
         allOpen={allOpen}
         onToggleAll={onToggleAll}
         sort={sort}
         onSort={onSort}
-        listKey={`${criteriaKey} ${sort}`}
+        listKey={`${criteriaKey} ${sort}`}
         repoNames={repoNames}
         picks={picks}
+        onToggleSet={onToggleSet}
         onToggle={onToggle}
         onPick={onPick}
         onOpen={onOpen}
         onLaunch={onLaunch}
+        onLaunchSet={onLaunchSet}
         none={none}
         footer={footer}
         heading={single !== undefined
@@ -446,6 +469,7 @@ export function AssertionBoard({ board, scope }: { board: DeliveryAssertionBoard
         />
       )}
       <AssertionRunDialog launch={launch} onClose={() => setLaunch(null)} />
+      <AssertionSetRunDialog launch={runOfSet} onClose={() => setRunOfSet(null)} />
     </div>
   );
 }

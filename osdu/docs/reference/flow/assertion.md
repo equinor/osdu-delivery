@@ -42,6 +42,7 @@ keywords:
   - validity period of a test
 yamlPath: "(root, flowType: assertion)"
 related:
+  - delivery-flow-assertion-sets
   - delivery-concept-search-paging
   - delivery-guide-data-quality-tests
   - delivery-cli-assertions
@@ -219,6 +220,7 @@ The document is read strictly: an unknown key fails validation naming it.
 | `flowType` | string | yes | none | `assertion`. |
 | `name` | string | yes | none | The flow's name: its pipeline identity, and the name its reports are kept under (`name@partition` for a flow that tests partitions). |
 | `batch`, `description` | string | no | none | The SQLFlow batch, and free text. |
+| `set` | string | no | the `batch` | The set the flow's tests are grouped under on the board, the set's page and its report. See [assertion sets](assertion-sets.md). |
 | `telemetry.operation` | string | no | `ast` | The flow's operation code in the correlation id every OSDU request of its runs carries, `osdu-delivery-<repository>-<operation>-<run id>`: a lower-case letter, then lower-case letters and digits, at most 16, no hyphen. See [request correlation](../concepts/request-correlation.md). |
 | `partitions` | list | no | none | The partitions the flow tests, 1 to 64, each once (see [Which partition a run tests](#which-partition-a-run-tests)). |
 | `parameters` | map | no | none | Named parameters (`required`, `default`, `description`), used as `{name}` tokens in queries, ids and the text a test compares with. `partition` is reserved: `{partition}` is always the partition the run tests. A parameter may list its `choices` ([parameters](parameters.md)). |
@@ -705,13 +707,16 @@ The run's `result` names the report (`assertionRunId`), `partition`, `status`, t
 Each run keeps one `osdu.AssertionRun` row and one `osdu.AssertionResult` row per test, written the moment the test
 finishes, so a long run shows its progress and a stopped one keeps what it found. A result keeps the whole of what each
 assertion found, up to 1,000,000 characters; past that it keeps fewer examples, marked as cut back. Each result carries
-its test's definition hash, so a result that answers an earlier definition of the test shows as changed. See
+its test's definition hash, so a result that answers an earlier definition of the test is history: the test stands as not
+yet checked until a run judges it as it is now. A run that completes removes its flow's earlier runs its latest status no
+longer needs ([only the latest status is kept](assertion-sets.md#only-the-latest-status-is-kept)). See
 [the ledger](../concepts/ledger.md).
 
 Where to read it:
 
-- The GUI: **OSDU**, **Assertions** is the board of every assertion flow in the partition, where each test
-  is an assertion and each of its assertions a check. An assertion flow's pipeline has an **Assertions** tab (its
+- The GUI: **OSDU**, **Assertions** is the board of every assertion set in the partition, each opening on its flows,
+  where each test is an assertion and each of its assertions a check; a set's page is the dashboard of where it stands
+  ([assertion sets](assertion-sets.md)). An assertion flow's pipeline has an **Assertions** tab (its
   board), a **History** tab (its assertions against its runs) and a **Reports** tab (its runs); a report page runs the
   assertions not passing again. A report page shows "The run stopped" only for a run that
   stopped (cancelled, or errored with fewer results than tests); a run whose tests errored shows its reason instead.
@@ -719,13 +724,16 @@ Where to read it:
 - The API, every route a `GET` under `/api/v1/delivery`: `/assertions` (the board of every flow),
   `/flows/{pipelineId}/assertions` (one flow's board), `/flows/{pipelineId}/assertion-runs`,
   `/flows/{pipelineId}/assertion-matrix` (tests against runs), `/flows/{pipelineId}/assertions/{test}/history`,
-  `/assertion-runs/{id}` (a run with every result) and `/assertion-runs/{id}/report?format=json|md|html|junit`. A read is
+  `/assertion-runs/{id}` (a run with every result), `/assertion-runs/{id}/report?format=json|md|html|junit`, and a set's
+  `/assertion-sets/{set}` and `/assertion-sets/{set}/report`. A read is
   in the partition `?partition=` names, else the `X-Osdu-Partition` header's, else the one a run would test.
 
 A report renders as JSON, Markdown, self-contained HTML or JUnit XML (a suite per kind, a case per test: failed is a
-failure, errored an error, skipped skipped, warned passes with its warnings in its output). Runs stay until an admin sets a
-limit for the assertion runs on the Maintenance page; a cleanup then removes a finished run older than its cut-off only
-whole, once a later result of each of its tests superseded it, so every test's latest result stays
+failure, errored an error, skipped skipped, warned passes with its warnings in its output). Each check reads once in a
+report: what it expected (a warning band, values left out and the day the values were stated beside it), what it found,
+and why it came out as it did, with the query and the template under how it was checked. A run keeps only what the latest
+status needs, as above; the Maintenance page's limit for the assertion runs removes, past its cut-off, a finished run
+whose every result a later one superseded, so every test's latest result stays
 ([What the osdu schema stores](../concepts/storage-and-retention.md)).
 
 ## Lineage

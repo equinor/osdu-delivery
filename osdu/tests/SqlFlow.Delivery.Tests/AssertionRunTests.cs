@@ -419,14 +419,16 @@ public sealed class AssertionRunTests : IDisposable
         var html = report.Render(ReportFormat.Html);
         Assert.Contains("<title>welldb-04-assertion test report</title>", html);
         Assert.Contains("dev:master-data--Well:MISSING", html);
-        // A warning that fails is badged as a warning, not as a failure.
-        Assert.Contains("<td class=\"fit\">warning</td><td class=\"fit\"><span class=\"badge warned\">warned</span>", html);
-        Assert.DoesNotContain("<td class=\"fit\">warning</td><td class=\"fit\"><span class=\"badge failed\">", html);
+        // A warning that fails is badged as a warning, not as a failure, and each check reads once: its result, what it
+        // expected, what it found and why, with the query and the template under how it was checked.
+        Assert.Contains("<td class=\"fit\"><span class=\"badge warned\">Warning</span></td>", html);
+        Assert.Contains("<th>Check</th><th class=\"fit\">Result</th><th>Expected</th><th>Found</th><th>Why</th>", html);
+        Assert.Contains("<summary>How it was checked</summary>", html);
         Assert.DoesNotContain("<script", html, StringComparison.OrdinalIgnoreCase);
 
         var markdown = report.Render(ReportFormat.Markdown);
         Assert.Contains("# welldb-04-assertion in dev", markdown);
-        Assert.Contains("| Assertion | Severity | Outcome | Expected | Actual |", markdown);
+        Assert.Contains("| Check | Result | Expected | Found | Why |", markdown);
 
         var json = JsonNode.Parse(report.Render(ReportFormat.Json))!;
         Assert.Equal(3, json["results"]!.AsArray().Count);
@@ -469,13 +471,42 @@ public sealed class AssertionRunTests : IDisposable
         var afterFirst = (await ledger.ListAssertionResultsAsync(first.AssertionRunId)).Select(r => r.TestName).ToList();
         Assert.Contains("names", afterFirst);
         Assert.Contains("wellbores", afterFirst);
+        // A run that completes keeps what the latest status needs and removes the rest itself: the third ran every test, so
+        // the first and the second hold no latest result any more and are gone, each whole, before any cut-off takes them.
         var third = await runner.TestAsync([], [], Guid.NewGuid(), "tests", CancellationToken.None);
-        _clock.Advance(TimeSpan.FromDays(10));
-        // The Maintenance page's count is the prune's own test: it says exactly what the prune then takes.
-        Assert.Equal(2, await ledger.CountPrunableAssertionRunsAsync(_clock.GetUtcNow().UtcDateTime));
-        Assert.Equal(2, await ledger.PruneAssertionRunsAsync(_clock.GetUtcNow().UtcDateTime));
-        Assert.Equal(0, await ledger.CountPrunableAssertionRunsAsync(_clock.GetUtcNow().UtcDateTime));
         Assert.Equal([third.AssertionRunId], (await ledger.ListAssertionRunsAsync(flow.LedgerId, 10)).Select(r => r.AssertionRunId));
+        Assert.Empty(await ledger.ListAssertionResultsAsync(first.AssertionRunId));
+        Assert.Empty(await ledger.ListAssertionResultsAsync(second.AssertionRunId));
+        _clock.Advance(TimeSpan.FromDays(10));
+        Assert.Equal(0, await ledger.CountPrunableAssertionRunsAsync(_clock.GetUtcNow().UtcDateTime));
+    }
+
+    /// <summary>
+    /// A run keeps an earlier run only for a latest result of a test as its document states it now: the latest result of a
+    /// test since disabled, or since changed, says nothing of the test, so the run holding it goes once nothing else of it is
+    /// the latest.
+    /// </summary>
+    [Fact]
+    public async Task A_run_keeps_no_earlier_run_for_a_result_of_a_test_since_disabled()
+    {
+        Estate();
+        var (runner, ledger, flow) = await RunnerAsync();
+        var first = await runner.TestAsync(["names", "wellbores"], [], Guid.NewGuid(), "tests", CancellationToken.None);
+        _clock.Advance(TimeSpan.FromMinutes(5));
+
+        // With wellbores disabled, a run of names replaces the first run's every result the latest status needs.
+        var disabled = Flow.Replace("  - name: wellbores\n", "  - name: wellbores\n    disabled: Not delivered in this estate yet.\n", StringComparison.Ordinal);
+        Assert.NotEqual(Flow, disabled);
+        var (later, _, _) = await RunnerAsync(disabled);
+        var second = await later.TestAsync(["names"], [], Guid.NewGuid(), "tests", CancellationToken.None);
+        Assert.Equal([second.AssertionRunId], (await ledger.ListAssertionRunsAsync(flow.LedgerId, 10)).Select(r => r.AssertionRunId));
+        Assert.Empty(await ledger.ListAssertionResultsAsync(first.AssertionRunId));
+
+        // Run as it was, a run of names alone keeps the run holding the latest result of wellbores.
+        var third = await runner.TestAsync(["names", "wellbores"], [], Guid.NewGuid(), "tests", CancellationToken.None);
+        _clock.Advance(TimeSpan.FromMinutes(5));
+        var fourth = await runner.TestAsync(["names"], [], Guid.NewGuid(), "tests", CancellationToken.None);
+        Assert.Equal([fourth.AssertionRunId, third.AssertionRunId], (await ledger.ListAssertionRunsAsync(flow.LedgerId, 10)).Select(r => r.AssertionRunId));
     }
 
     [Fact]

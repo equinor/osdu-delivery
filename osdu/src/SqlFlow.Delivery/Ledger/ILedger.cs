@@ -3364,9 +3364,18 @@ public interface ILedger
 
     /// <summary>
     /// Each test's most recent result of each flow in <paramref name="flowIds"/>, the latest run that ran it; a test no run
-    /// has run has none. The summary columns alone, without the detail: what a board across flows reads.
+    /// has run has none. The summary columns alone, what a board across flows reads; with <paramref name="withDetail"/>, each
+    /// whole, what a set's report reads.
     /// </summary>
-    Task<IReadOnlyList<AssertionResultState>> LatestAssertionResultsAsync(IReadOnlyCollection<Guid> flowIds, CancellationToken ct = default);
+    Task<IReadOnlyList<AssertionResultState>> LatestAssertionResultsAsync(IReadOnlyCollection<Guid> flowIds, bool withDetail = false, CancellationToken ct = default);
+
+    /// <summary>
+    /// Removes the runs of a flow in its partition that its latest status no longer needs, each whole with its results
+    /// (osdu/docs/reference/flow/assertion.md, The report): every finished run but the latest, unless it holds a test's latest
+    /// judged result of the version <paramref name="current"/> names for that test (test name to definition hash). A run under
+    /// way is left alone. Returns how many runs went.
+    /// </summary>
+    Task<int> PruneReplacedAssertionRunsAsync(Guid flowId, IReadOnlyDictionary<string, string> current, CancellationToken ct = default);
 
     /// <summary>
     /// The results of a flow's <paramref name="runs"/> most recent runs, newest run first, for one test or (null) every test:

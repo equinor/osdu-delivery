@@ -1279,6 +1279,9 @@ internal sealed class AssertionYaml
 
     public string? Batch { get; set; }
 
+    /// <summary>The set the flow's tests are grouped under; left out, its batch.</summary>
+    public string? Set { get; set; }
+
     public object? Schedule { get; set; }
 
     public object? Mode { get; set; }

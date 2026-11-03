@@ -6,17 +6,22 @@ import { CopyButton } from "@/components/CopyButton";
 import { cn } from "@/lib/utils";
 import type { DeliveryAssertionOutcome } from "../../../api/delivery";
 import { SeverityChip, TestOutcomeIcon } from "./AssertionBadges";
-import { STANDING_TEXT, assertionStanding, counted, needsLook } from "./assertionFormat";
+import { STANDING_TEXT, assertionStanding, checkReading, counted, needsLook } from "./assertionFormat";
 
 /** Which checks a list shows: the ones that ask for a look, or every one. */
 type CheckView = "look" | "all";
 
 /**
- * What a check that asks for a look found, in the few words a row has room for: the found text, else why it did not get
- * as far. A check that holds needs no words beside its glyph.
+ * What a check that asks for a look found, in the few words a row has room for: what it expected and what it found, else
+ * why it did not get as far. A check that holds needs no words beside its glyph.
  */
 function finding(outcome: DeliveryAssertionOutcome): string | null {
-  return needsLook(outcome) ? outcome.actual ?? outcome.message ?? null : null;
+  if (!needsLook(outcome)) {
+    return null;
+  }
+
+  const reading = checkReading(outcome);
+  return outcome.actual ? `expected ${reading.expected}, found ${reading.found}` : outcome.message ?? null;
 }
 
 /**
@@ -42,7 +47,7 @@ function CheckRow({ outcome, expanded, onClick }: { outcome: DeliveryAssertionOu
       <TestOutcomeIcon outcome={standing} />
       <span className="flex min-w-0 items-center gap-1.5">
         <span className="truncate text-[12.5px]" title={outcome.label}>{outcome.label}</span>
-        {outcome.severity !== "error" && <SeverityChip severity={outcome.severity} />}
+        {outcome.severity !== "error" && standing !== "warned" && standing !== "noted" && <SeverityChip severity={outcome.severity} />}
       </span>
       <span className={cn("hidden truncate text-right font-mono text-[11.5px] md:block", STANDING_TEXT[standing])} title={found ?? undefined}>
         {found}
@@ -135,12 +140,12 @@ function Examples({ outcome }: { outcome: DeliveryAssertionOutcome }) {
 }
 
 /**
- * Everything one check found now: what it found (and what it expects, when its name does not already say), why, and the
- * records that failed it.
+ * Everything one check found now, each fact once: what it expected (and what qualifies that), what it found, why it came out
+ * as it did when that adds to the two, and the records that failed it.
  */
 export function CheckDetail({ outcome, onBack }: { outcome: DeliveryAssertionOutcome; onBack?: () => void }) {
   const standing = assertionStanding(outcome);
-  const named = !outcome.label.includes(outcome.expected);
+  const reading = checkReading(outcome);
   return (
     <div className="flex flex-col gap-3" data-testid="check-detail">
       {onBack !== undefined && (
@@ -158,19 +163,18 @@ export function CheckDetail({ outcome, onBack }: { outcome: DeliveryAssertionOut
         </div>
       )}
       {outcome.description && <p className="text-[12.5px] text-muted-foreground">{outcome.description}</p>}
-      <dl className={cn("grid grid-cols-1 gap-2", named && "sm:grid-cols-2")}>
-        {named && (
-          <div className="rounded-md border bg-card px-3 py-2">
-            <dt className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground">Expects</dt>
-            <dd className="mt-0.5 break-words font-mono text-[12px]">{outcome.expected}</dd>
-          </div>
-        )}
+      <dl className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+        <div className="rounded-md border bg-card px-3 py-2">
+          <dt className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground">Expected</dt>
+          <dd className="mt-0.5 break-words font-mono text-[12px]">{reading.expected}</dd>
+          {reading.qualifiers.length > 0 && <dd className="mt-0.5 text-[11.5px] text-muted-foreground">{reading.qualifiers.join(" · ")}</dd>}
+        </div>
         <div className="rounded-md border bg-card px-3 py-2">
           <dt className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground">Found</dt>
-          <dd className={cn("mt-0.5 break-words font-mono text-[12px]", needsLook(outcome) && STANDING_TEXT[standing])}>{outcome.actual ?? "-"}</dd>
+          <dd className={cn("mt-0.5 break-words font-mono text-[12px]", needsLook(outcome) && STANDING_TEXT[standing])}>{reading.found}</dd>
         </div>
       </dl>
-      {outcome.message && <p className="text-[12.5px]" data-testid="assertion-message">{outcome.message}</p>}
+      {reading.why !== null && <p className="text-[12.5px]" data-testid="assertion-message">{reading.why}</p>}
       <Examples outcome={outcome} />
     </div>
   );

@@ -271,13 +271,18 @@ picked records, and the removal runs that wrote to its ledger.
 
 - **Explorer**: what the partition holds, read live from OSDU. See [the explorer](explorer.md).
 - **Search terms**: the source columns the explorer searches by. See [search terms](search-terms.md).
-- **Assertions**: every assertion flow's assertions in the partition, one line per flow, what needs a look first. The
-  GUI calls each entry of a flow's `tests:` an assertion, and each item of its `assert:` a check. A strip counts
-  **Failing**, **Errored**, **Warned**, **Not run**, **Passing**, **Unfit** and **Changed**, each a filter; a search and
-  **Types** and **Tags** pickers narrow further. A flow runs every assertion, or **Run N** picked ones, through the
-  trigger dialog, whose operation **Check** runs them. An assertion says on its line what its document says now: a
-  disabled one shows `disabled:` and its reason, and one whose proof values are past their day shows
-  `needs new proof values` and that day. It opens in a sheet with **Latest report** and **Run**, and tabs **Checks**
+- **Assertions**: every assertion set in the partition, one line per set that opens on its flows, each flow one line
+  that opens on its assertions, what needs a look first; every assertion by where it stands now, its latest result of
+  the assertion as its document states it. The GUI calls each entry of a flow's `tests:` an assertion, and each item of
+  its `assert:` a check. A strip counts **Failing**, **Errored**, **Warned**, **Not run**, **Passing**, **Disabled** and
+  **Unfit**, each a filter; a search and **Types** and **Tags** pickers narrow further. A set's line opens its page and
+  runs every flow of it (**Run set**); a flow runs every assertion, or **Run N** picked ones, through the trigger
+  dialog, whose operation **Check** runs them. An assertion says on its line what its document says now: a disabled one
+  shows `disabled:` and its reason, one changed since its last result is not run, and one whose proof values are past
+  their day shows `needs new proof values` and that day. A set's page (`/delivery/assertions/sets/{set}`) is the
+  dashboard of where the set stands: its verdict, its figures, its flows worst first with each one's first issue, and the
+  flow picked beside them on its assertions, what each check expected and found; its report opens as a page of its own
+  and downloads as HTML, Markdown, JSON or JUnit XML. See [assertion sets](../flow/assertion-sets.md). It opens in a sheet with **Latest report** and **Run**, and tabs **Checks**
   and **Definition** (the schema it is checked against and where that comes from: the newest captured from OSDU, the
   version it names, or the version a mapping pins; and when its proof values were stated and how long they hold). A
   check of known values lists its rows that do not hold: the values a row is located by, the record it found (none

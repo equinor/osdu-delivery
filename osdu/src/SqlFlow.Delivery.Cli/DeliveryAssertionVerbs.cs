@@ -82,48 +82,62 @@ internal static class DeliveryAssertionVerbs
         return 0;
     }
 
-    /// <summary>Where each test of the flow stands: its latest result in the partition, or that it has not run.</summary>
+    /// <summary>
+    /// Where each test of the flow stands now, as the board and a set's report say it (<see cref="AssertionSetReport.TestOf"/>):
+    /// disabled, by its latest result of the test as it is now, or not run.
+    /// </summary>
     private static async Task<int> StatusAsync(CliVerbContext context, ILedger ledger, AssertionFlowDefinition flow, CancellationToken ct)
     {
-        var latest = (await ledger.LatestAssertionResultsAsync([flow.LedgerId], ct).ConfigureAwait(false))
+        var latest = (await ledger.LatestAssertionResultsAsync([flow.LedgerId], ct: ct).ConfigureAwait(false))
             .ToDictionary(r => r.TestName, StringComparer.OrdinalIgnoreCase);
+        var tests = flow.Tests
+            .Select(t => (Test: t, Result: latest.TryGetValue(t.Name, out var hit) ? hit : null))
+            .Select(x => (x.Test, x.Result, Standing: AssertionSetReport.TestOf(x.Test, x.Result)))
+            .ToList();
         if (context.Json)
         {
             context.Out.WriteLine(CanonicalJson.Pretty(new JsonObject
             {
                 ["flow"] = flow.Name,
                 ["ledger"] = flow.LedgerName,
-                ["tests"] = new JsonArray(flow.Tests.Select(t =>
+                ["set"] = flow.Set,
+                ["tests"] = new JsonArray(tests.Select(x =>
                 {
-                    var result = latest.TryGetValue(t.Name, out var hit) ? hit : null;
+                    var judged = x.Standing.AssertionRunId is null ? null : x.Result;
                     return (JsonNode)new JsonObject
                     {
-                        ["test"] = t.Name,
-                        ["kind"] = t.Kind,
-                        ["outcome"] = result?.Outcome,
-                        ["assertionRunId"] = result?.AssertionRunId,
-                        ["matched"] = result?.Matched,
-                        ["failedAssertions"] = result?.FailedAssertions,
-                        ["completedUtc"] = result?.CompletedUtc,
-                        ["changed"] = result is not null && !string.Equals(result.DefinitionHash, t.DefinitionHash, StringComparison.Ordinal),
+                        ["test"] = x.Test.Name,
+                        ["kind"] = x.Test.Kind,
+                        ["standing"] = x.Standing.Standing,
+                        ["why"] = x.Standing.Why,
+                        ["assertionRunId"] = judged?.AssertionRunId,
+                        ["matched"] = judged?.Matched,
+                        ["failedAssertions"] = judged?.FailedAssertions,
+                        ["completedUtc"] = judged?.CompletedUtc,
+                        ["changed"] = x.Standing.Changed,
                     };
                 }).ToArray()),
             }));
             return 0;
         }
 
-        context.Out.WriteLine(string.Create(CultureInfo.InvariantCulture, $"{flow.LedgerName}: {flow.Tests.Count} test(s)"));
-        foreach (var test in flow.Tests)
+        context.Out.WriteLine(string.Create(CultureInfo.InvariantCulture, $"{flow.LedgerName}: {flow.Tests.Count} test(s){(flow.Set is { } set ? $", set {set}" : string.Empty)}"));
+        foreach (var (test, result, standing) in tests)
         {
-            if (!latest.TryGetValue(test.Name, out var result))
+            var word = standing.Standing == SetStandings.NotRun ? "not run" : standing.Standing;
+            if (standing.AssertionRunId is null || result is null)
             {
-                context.Out.WriteLine($"  {"not run",-9}  {test.Name}  ({test.Kind})");
+                context.Out.WriteLine($"  {word,-9}  {test.Name}  ({test.Kind})");
+                if (standing.Why is { } why)
+                {
+                    context.Out.WriteLine("             " + why);
+                }
+
                 continue;
             }
 
-            var changed = string.Equals(result.DefinitionHash, test.DefinitionHash, StringComparison.Ordinal) ? string.Empty : "  (changed since)";
             context.Out.WriteLine(string.Create(CultureInfo.InvariantCulture,
-                $"  {result.Outcome,-9}  {test.Name}  ({test.Kind})  matched {result.Matched?.ToString(CultureInfo.InvariantCulture) ?? "n/a"}, {result.FailedAssertions} of {result.Assertions} assertion(s) failed, run {result.AssertionRunId} at {Stamp(result.CompletedUtc)}{changed}"));
+                $"  {word,-9}  {test.Name}  ({test.Kind})  matched {result.Matched?.ToString(CultureInfo.InvariantCulture) ?? "n/a"}, {result.FailedAssertions} of {result.Assertions} assertion(s) failed, run {result.AssertionRunId} at {Stamp(result.CompletedUtc)}"));
             if (result.Error is { Length: > 0 } error)
             {
                 context.Out.WriteLine("             " + error);

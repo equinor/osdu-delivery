@@ -232,7 +232,36 @@ public sealed class AssertionRunner
         // A report its tests did not pass says why on its row: how many failed (on the severity that fails a test) or errored,
         // and which, beside the rest. It records every test it selected, which is what tells it from a run that stopped.
         await CloseAsync(ledger, run.AssertionRunId, status, counts, status == AssertionRunStatus.Passed ? null : outcome.Tally()).ConfigureAwait(false);
+        await PruneAsync(ledger, entry.FlowId, partition).ConfigureAwait(false);
         return outcome;
+    }
+
+    /// <summary>
+    /// Keeps what the flow's latest status needs once a run completes: this run, and each earlier run holding the latest
+    /// result of a test as the document states it now; every other run of the flow in the partition goes. A cleanup that
+    /// fails is logged and leaves the runs to the next run's; the report this run kept is complete either way.
+    /// </summary>
+    private async Task PruneAsync(ILedger ledger, Guid flowId, string partition)
+    {
+        var current = _flow.Tests
+            .Where(t => t.RunsIn(partition) && AssertionActivity.Disabled(t) is null)
+            .ToDictionary(t => t.Name, t => t.DefinitionHash, StringComparer.OrdinalIgnoreCase);
+        try
+        {
+            var removed = await ledger.PruneReplacedAssertionRunsAsync(flowId, current, CancellationToken.None).ConfigureAwait(false);
+            if (removed > 0)
+            {
+                _log.LogInformation(
+                    "assertion flow '{Flow}' in partition '{Partition}': removed {Removed} earlier run(s) whose results later runs replaced",
+                    _flow.Name, partition, removed);
+            }
+        }
+        catch (Exception ex) when (ex is SqlFlowException or InvalidOperationException || ex.GetType().Name.Contains("DbUpdate", StringComparison.Ordinal))
+        {
+            _log.LogWarning(
+                "assertion flow '{Flow}' in partition '{Partition}': could not remove the earlier runs later runs replaced; the next run tries again: {Message}",
+                _flow.Name, partition, HeaderRedaction.RedactMessage(ex.Message));
+        }
     }
 
     /// <summary>
