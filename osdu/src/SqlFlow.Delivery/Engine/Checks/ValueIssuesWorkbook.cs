@@ -40,20 +40,20 @@ public sealed class ValueIssuesWorkbook : IDisposable
 
     private static readonly IReadOnlyList<XlsxColumn> LeadingColumns =
     [
-        new("Record", 36), new("Item", 7), new("Outcome", 16), new("Reason", 70),
+        new("Record", 36), new("Item", 7), new("Outcome", 16), new("What is wrong", 70),
         new("Source file", 40, XlsxTint.Amber), new("Source row", 11, XlsxTint.Amber), new("Source column", 34, XlsxTint.Amber), new("Source value", 34, XlsxTint.Amber),
         new("Value written", 34),
     ];
 
     private static readonly IReadOnlyList<XlsxColumn> TrailingColumns =
     [
-        new("Rule", 26), new("Attribute", 46), new("Inside", 30), new("Source key", 36), new("Delivery key", 38),
+        new("Rule", 26), new("Attribute", 46), new("Inside", 30), new("Reason as rendered", 70), new("Source key", 36), new("Delivery key", 38),
     ];
 
     private static readonly IReadOnlyList<XlsxColumn> SummaryColumns =
     [
-        new("Attribute", 46), new("Inside", 30), new("Outcome", 16), new("Rule", 26), new("On failure", 12), new("Reason", 80),
-        new("Issues", 9), new("Rows", 9), new("Values", 60),
+        new("Attribute", 46), new("Inside", 30), new("Outcome", 16), new("What is wrong", 70), new("What to do", 90),
+        new("Issues", 9), new("Rows", 9), new("Values", 60), new("Rule", 26), new("On failure", 12), new("Reason as rendered", 80),
     ];
 
     private static readonly IReadOnlyList<(string Column, string Holds, XlsxTint Tint)> Notes =
@@ -64,12 +64,14 @@ public sealed class ValueIssuesWorkbook : IDisposable
         ("Record", "The record's label from its mapping, or its source key when the mapping gives none.", XlsxTint.None),
         ("Item", "For an item of a repeated array, the child row it was written from, counting from 1.", XlsxTint.None),
         ("Outcome", "Held: the record is not delivered. Invalid: a value breaking a rule of the template is sent. Left out: the record is sent without the attribute. Assertion failed: a value fails an assertion of the mapping, and On failure on the Summary sheet says what that does.", XlsxTint.None),
-        ("Reason", "Why, as this record states it.", XlsxTint.None),
+        ("What is wrong", "What this record's value comes to, in plain words: what was looked for and not found, and where, or the rule it breaks.", XlsxTint.None),
         ("Source file, Source row", "The file the row was landed from and its row there: for an item of a repeated array, those of its child row.", XlsxTint.None),
         ("Source column, Source value", "The column to fix, named as the mapping names it, and what the row holds in it: the column the reason names, else the one holding the value, else the attribute's only column, else those it reads that are empty. Empty when none of these says which.", XlsxTint.None),
         ("Value written", "The value written to the attribute, or the value that caused the reason, cut at 300 characters.", XlsxTint.None),
         ("dataset.<column>", "The base data, named as the mapping names it. A column of a child dataset (dataset.<child>.<column>) is read from the item's child row.", XlsxTint.None),
         ("Rule", "For an invalid value, the template rule it breaks; for an assertion failed, the assertion.", XlsxTint.None),
+        ("Reason as rendered", "Why, in the words the render holds or leaves the value out with, which the ledger and the run's log use too.", XlsxTint.None),
+        ("What to do", "On the Summary sheet, what can be done about the issue, the likeliest first.", XlsxTint.None),
         ("Attribute", "The attribute checked, as a template path.", XlsxTint.None),
         ("Inside", "Where the reason is, when it is a property inside the value written to the attribute.", XlsxTint.None),
         ("Source key, Delivery key", "The record's key in the source, and in the ledger when every part of its key has a value.", XlsxTint.None),
@@ -131,7 +133,7 @@ public sealed class ValueIssuesWorkbook : IDisposable
             XlsxCell.Text(string.IsNullOrEmpty(record.Label) ? record.SourceKey : record.Label),
             XlsxCell.Number(record.Item),
             XlsxCell.Text(OutcomeWord(occurrence.Outcome)),
-            XlsxCell.Text(occurrence.Message),
+            XlsxCell.Text(Plain(ValueCheckExplainer.Headline(occurrence))),
             XlsxCell.Text(record.File),
             XlsxCell.Number(record.Row),
             XlsxCell.Text(string.Join(", ", toFix)),
@@ -144,6 +146,7 @@ public sealed class ValueIssuesWorkbook : IDisposable
             XlsxCell.Text(occurrence.Rule),
             XlsxCell.Text(occurrence.Target),
             XlsxCell.Text(occurrence.At == occurrence.Target ? null : occurrence.At),
+            XlsxCell.Text(occurrence.Message),
             XlsxCell.Text(record.SourceKey),
             XlsxCell.Text(record.DeliveryKey?.ToString("D")),
         ]);
@@ -213,10 +216,15 @@ public sealed class ValueIssuesWorkbook : IDisposable
         var lines = check.Variables
             .SelectMany(v => v.Findings
                 .Where(f => f.Outcome != "notApplicable")
-                .Select(f => new SummaryLine(v.Target, f.At == v.Target ? null : f.At, OutcomeWord(f.Outcome), f.Rule, f.OnFail, f.Message, f.Count, f.Rows, ValuesText(f))))
+                .Select(f => (Variable: v, Finding: f, Said: f.Explanation ?? ValueCheckExplainer.Explain(f, v, check.Inputs)))
+                .Select(s => new SummaryLine(
+                    s.Variable.Target, s.Finding.At == s.Variable.Target ? null : s.Finding.At, OutcomeWord(s.Finding.Outcome), Plain(s.Said.Headline),
+                    string.Join("\n", s.Said.Fixes.Select(Plain)), s.Finding.Rule, s.Finding.OnFail, s.Finding.Message, s.Finding.Count, s.Finding.Rows, ValuesText(s.Finding))))
             .Concat(check.Variables
                 .Where(v => v.Unlisted > 0)
-                .Select(v => new SummaryLine(v.Target, null, "Not listed", null, null, "More occurrences, under reasons the check does not name one by one", v.Unlisted, null, null)));
+                .Select(v => new SummaryLine(
+                    v.Target, null, "Not listed", "More occurrences, under reasons the check does not name one by one", "Check fewer rows to list them.",
+                    null, null, null, v.Unlisted, null, null)));
 
         var summary = workbook.AddSheet(SummarySheet, SummaryColumns);
         foreach (var line in lines.OrderByDescending(l => l.Issues))
@@ -225,12 +233,14 @@ public sealed class ValueIssuesWorkbook : IDisposable
                 XlsxCell.Text(line.Attribute),
                 XlsxCell.Text(line.Inside),
                 XlsxCell.Text(line.Outcome),
-                XlsxCell.Text(line.Rule),
-                XlsxCell.Text(line.OnFail),
-                XlsxCell.Text(line.Reason),
+                XlsxCell.Text(line.Wrong),
+                XlsxCell.Text(line.ToDo),
                 XlsxCell.Number(line.Issues),
                 XlsxCell.Number(line.Rows),
-                XlsxCell.Text(line.Values));
+                XlsxCell.Text(line.Values),
+                XlsxCell.Text(line.Rule),
+                XlsxCell.Text(line.OnFail),
+                XlsxCell.Text(line.Reason));
         }
     }
 
@@ -295,7 +305,11 @@ public sealed class ValueIssuesWorkbook : IDisposable
         return finding.OtherValues > 0 ? string.Create(CultureInfo.InvariantCulture, $"{shown}, and {finding.OtherValues:N0} others") : shown;
     }
 
-    private sealed record SummaryLine(string? Attribute, string? Inside, string Outcome, string? Rule, string? OnFail, string Reason, long Issues, long? Rows, string? Values);
+    /// <summary>Text the page sets as code, without the backticks that mark it, which a cell has no use for.</summary>
+    private static string Plain(string text) => text.Replace("`", string.Empty, StringComparison.Ordinal);
+
+    private sealed record SummaryLine(
+        string? Attribute, string? Inside, string Outcome, string Wrong, string ToDo, string? Rule, string? OnFail, string? Reason, long Issues, long? Rows, string? Values);
 }
 
 /// <summary>

@@ -1,21 +1,26 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { keepPreviousData, useInfiniteQuery } from "@tanstack/react-query";
-import { CircleCheck, CircleSlash, CircleX, SkipForward, type LucideIcon } from "lucide-react";
+import { useNavigate } from "react-router-dom";
+import { keepPreviousData, useInfiniteQuery, useQueryClient } from "@tanstack/react-query";
+import { CircleCheck, CircleSlash, CircleX, RotateCcw, SkipForward, type LucideIcon } from "lucide-react";
+import { toast } from "sonner";
+import { Button } from "@/components/ui/button";
 import { DataTable, type Column } from "@/components/DataTable";
 import { RelativeTime } from "@/components/RelativeTime";
 import { TruncatedText } from "@/components/TruncatedText";
 import { useOwnedPanel } from "@/layout/workbench/useOwnedPanel";
 import { cn } from "@/lib/utils";
 import {
-  INVENTORY_REMOVAL_OUTCOMES, inventoryApi, type Inventory, type InventoryRemoval, type InventoryRemovalItem, type InventoryRemovalOutcome,
+  GONE_FINDING, INVENTORY_REMOVAL_OUTCOMES, RESTORE_SCOPE, inventoryApi, type Inventory, type InventoryRemoval, type InventoryRemovalItem,
+  type InventoryRemovalOutcome, type InventoryRemovalPolicy,
 } from "../../../api/inventories";
 import { RecordName } from "../RecordName";
 import { RunRef } from "../DeliveryRefs";
+import { RemovalDialog, type InventoryChangeQueued } from "../RemovalDialog";
 import { ProblemView } from "../TemplateSheet";
 import { GridFooter } from "../dimensions/DimensionGrid";
 import { ExplainTip } from "@/components/ExplainTip";
 import { FindingGlyph, RunStatusPill } from "./InventoryBadges";
-import { findingVisual } from "./inventoryFormat";
+import { counted, findingVisual } from "./inventoryFormat";
 import { conditionSentence, useInventoryTerms } from "./inventorySelection";
 import type { SearchTermView } from "../../../api/searchTerms";
 
@@ -31,18 +36,29 @@ const RUNNING_REFRESH_MS = 5000;
 /** How an outcome is drawn: its glyph in its tone and its name. */
 const OUTCOME_VISUALS: Record<InventoryRemovalOutcome, { icon: LucideIcon; tone: string; label: string }> = {
   removed: { icon: CircleCheck, tone: "text-success", label: "Removed" },
+  restored: { icon: RotateCcw, tone: "text-success", label: "Restored" },
   gone: { icon: CircleSlash, tone: "text-muted-foreground", label: "Already gone" },
   skipped: { icon: SkipForward, tone: "text-warning", label: "Skipped" },
   failed: { icon: CircleX, tone: "text-destructive", label: "Failed" },
 };
 
-function outcomeVisual(outcome: string) {
-  return OUTCOME_VISUALS[outcome as InventoryRemovalOutcome] ?? { icon: CircleSlash, tone: "text-muted-foreground", label: outcome };
+/** The outcomes a removal comes to, and those a restore does: a restore removes nothing, and a removal restores nothing. */
+const REMOVAL_OUTCOMES = INVENTORY_REMOVAL_OUTCOMES.filter((outcome) => outcome !== "restored");
+const RESTORE_OUTCOMES = INVENTORY_REMOVAL_OUTCOMES.filter((outcome) => outcome !== "removed");
+
+function isRestore(removal: InventoryRemoval): boolean {
+  return removal.scope === RESTORE_SCOPE;
 }
 
-/** How many ids of a removal came to each outcome. */
+/** How an outcome is drawn; a restore's gone id is one storage holds no record of, purged, so nothing could bring it back. */
+function outcomeVisual(outcome: string, restore = false) {
+  const visual = OUTCOME_VISUALS[outcome as InventoryRemovalOutcome] ?? { icon: CircleSlash, tone: "text-muted-foreground", label: outcome };
+  return restore && outcome === "gone" ? { ...visual, label: "Gone for good" } : visual;
+}
+
+/** How many ids of a removal (or a restore) came to each outcome. */
 function tallyOf(removal: InventoryRemoval): Record<InventoryRemovalOutcome, number> {
-  return { removed: removal.removed, gone: removal.gone, skipped: removal.skipped, failed: removal.failed };
+  return { removed: removal.removed, restored: removal.restored ?? 0, gone: removal.gone, skipped: removal.skipped, failed: removal.failed };
 }
 
 /** A removal's outcomes in a line: each that any id came to, glyph and count, its name on hover; a quiet dash for none yet. */
@@ -56,13 +72,13 @@ function Tally({ removal, testId }: { removal: InventoryRemoval; testId: string 
   return (
     <span className="inline-flex items-center gap-x-2.5 whitespace-nowrap text-[12px]" data-testid={testId}>
       {reached.map((outcome) => {
-        const visual = outcomeVisual(outcome);
+        const visual = outcomeVisual(outcome, isRestore(removal));
         const Icon = visual.icon;
         return (
           <span key={outcome} className="inline-flex items-center gap-1" title={visual.label} data-outcome={outcome}>
             <Icon className={cn("size-3.5", visual.tone)} aria-hidden />
             <span className="font-mono tabular-nums">{tally[outcome].toLocaleString("en-US")}</span>
-            <span className="text-muted-foreground">{outcome}</span>
+            <span className="text-muted-foreground">{visual.label.toLowerCase()}</span>
           </span>
         );
       })}
@@ -71,12 +87,19 @@ function Tally({ removal, testId }: { removal: InventoryRemoval; testId: string 
 }
 
 /**
- * What a removal was asked to do, in a line: how many ids of which finding (picked, every one, or those matching the conditions
- * of a selection, named by their sentence), and how much of each record.
+ * What a removal was asked to do, in a line: how many ids of which finding (picked, every one, those matching the conditions
+ * of a selection, named by their sentence, or, for a restore, those an earlier removal soft deleted), and how much of each
+ * record, or that they were brought back in OSDU.
  */
 function asked(removal: InventoryRemoval, terms: SearchTermView[] | undefined): string {
   const label = findingVisual(removal.finding).label.toLowerCase();
-  const how = removal.scope === "everything" ? "purged" : removal.scope === "inventory" ? "removed from the inventory" : "soft deleted";
+  const how = removal.scope === "everything"
+    ? "purged"
+    : removal.scope === "inventory" ? "removed from the inventory" : isRestore(removal) ? "restored in OSDU" : "soft deleted";
+  if (removal.restoresRemovalId !== undefined) {
+    return `${counted(removal.requested, "id")} that removal ${removal.restoresRemovalId} soft deleted, ${how}`;
+  }
+
   const which = removal.selection !== undefined
     ? ` matching ${conditionSentence(removal.selection.conditions, terms)}`
     : removal.namesIds ? " picked" : ", every one";
@@ -106,12 +129,26 @@ function keepsEveryId(removal: InventoryRemoval): boolean {
 }
 
 /**
- * What one removal did to each id, in the workbench's bottom panel: the removal in a line, its outcomes to pick from with
- * their counts, and its ids of the outcome picked (every one at first), each with the version it found and why, a page at a
- * time. A removal from the inventory alone lists the ids it kept, and says how many it removed.
+ * What one removal (or restore) did to each id, in the workbench's bottom panel: the removal in a line, its outcomes to pick
+ * from with their counts, and its ids of the outcome picked (every one at first), each with the version it found and why, a
+ * page at a time. A removal from the inventory alone lists the ids it kept, and says how many it removed. A soft delete that
+ * removed ids can be undone from here where the flow declares a removal: what it removed is restored in OSDU, as a run of the
+ * flow, and the restores that did so already are named.
  */
-function RemovalItemsPanel({ inventory, removal }: { inventory: Inventory; removal: InventoryRemoval }) {
+function RemovalItemsPanel({ inventory, removal, restore, restoredBy }: {
+  inventory: Inventory;
+  removal: InventoryRemoval;
+  /** What the flow lets an operator remove and restore; absent where it declares no removal, or the reader cannot run it. */
+  restore?: InventoryRemovalPolicy;
+  /** The restores that brought back what this removal removed, newest first. */
+  restoredBy: readonly InventoryRemoval[];
+}) {
   const [outcome, setOutcome] = useState<InventoryRemovalOutcome | null>(null);
+  const [restoring, setRestoring] = useState(false);
+  const navigate = useNavigate();
+  const queryClient = useQueryClient();
+  const restores = isRestore(removal);
+  const undoable = restore !== undefined && removal.scope === "record" && removal.status !== "running" && removal.removed > 0;
   const terms = useInventoryTerms(inventory.kind, removal.selection?.conditions.some((condition) => condition.term !== undefined) ?? false);
   const pages = useInfiniteQuery({
     queryKey: ["delivery", "inventories", "removal-items", inventory.partition, removal.inventoryRemovalId, outcome],
@@ -125,7 +162,7 @@ function RemovalItemsPanel({ inventory, removal }: { inventory: Inventory; remov
   const tally = tallyOf(removal);
   const keeps = keepsEveryId(removal);
   // A removal from the inventory alone keeps only the ids it skipped, so its ids are one list.
-  const listed: readonly InventoryRemovalOutcome[] = keeps ? INVENTORY_REMOVAL_OUTCOMES : ["skipped"];
+  const listed: readonly InventoryRemovalOutcome[] = keeps ? restores ? RESTORE_OUTCOMES : REMOVAL_OUTCOMES : ["skipped"];
   const every = listed.reduce((sum, o) => sum + tally[o], 0);
   const total = outcome === null ? every : tally[outcome];
   const more = () => {
@@ -146,7 +183,7 @@ function RemovalItemsPanel({ inventory, removal }: { inventory: Inventory; remov
       id: "outcome",
       header: "Outcome",
       render: (row) => {
-        const visual = outcomeVisual(row.outcome);
+        const visual = outcomeVisual(row.outcome, restores);
         const Icon = visual.icon;
         return (
           <span className="inline-flex items-center gap-1 whitespace-nowrap text-[12px]" data-testid="inventory-removal-item-outcome" data-outcome={row.outcome}>
@@ -190,7 +227,7 @@ function RemovalItemsPanel({ inventory, removal }: { inventory: Inventory; remov
     <div className="flex h-full min-h-0 flex-col" data-testid="inventory-removal-panel" data-removal={removal.inventoryRemovalId}>
       <div className="flex shrink-0 flex-wrap items-center gap-x-3 gap-y-1 border-b border-border px-3 py-1.5 text-[12.5px]">
         <span className="inline-flex min-w-0 items-center gap-1.5">
-          <FindingGlyph finding={removal.finding} />
+          {restores ? <RotateCcw className="size-3.5 shrink-0 text-success" aria-hidden /> : <FindingGlyph finding={removal.finding} />}
           {selectionText(removal, terms) === null
             ? <span className="font-medium">{asked(removal, terms)}</span>
             : (
@@ -217,10 +254,28 @@ function RemovalItemsPanel({ inventory, removal }: { inventory: Inventory; remov
             {`${removal.removed.toLocaleString("en-US")} removed from the inventory: it keeps how many, not which`}
           </span>
         )}
+        {restoredBy.length > 0 && (
+          <span className="text-muted-foreground" data-testid="inventory-removal-panel-restored-by">
+            {`Restored by ${restoredBy.map((r) => `restore ${r.inventoryRemovalId}`).join(", ")}`}
+          </span>
+        )}
+        {undoable && (
+          <Button
+            variant="outline"
+            size="sm"
+            className="ml-auto h-7"
+            onClick={() => setRestoring(true)}
+            title="Bring back in OSDU every id this removal soft deleted, at the version it had: storage keeps a soft-deleted record and every version"
+            data-testid="inventory-removal-restore"
+          >
+            <RotateCcw />
+            Restore what it removed
+          </Button>
+        )}
       </div>
       <div className="flex shrink-0 items-center gap-0.5 border-b border-border px-1.5" role="toolbar" aria-label="Outcomes">
         {tab(null, keeps ? "Every id" : "Kept", every)}
-        {keeps && listed.map((value) => tab(value, outcomeVisual(value).label, tally[value]))}
+        {keeps && listed.map((value) => tab(value, outcomeVisual(value, restores).label, tally[value]))}
       </div>
       <div className="min-h-0 flex-1 overflow-auto p-2">
         {pages.isError
@@ -242,30 +297,56 @@ function RemovalItemsPanel({ inventory, removal }: { inventory: Inventory; remov
                 />
               )}
               emptyMessage={outcome === null
-                ? keeps ? "The removal has reached no id yet." : "The removal kept no id: every id it reached went from the inventory."
-                : `No id came to ${outcomeVisual(outcome).label.toLowerCase()}.`}
+                ? keeps ? `The ${restores ? "restore" : "removal"} has reached no id yet.` : "The removal kept no id: every id it reached went from the inventory."
+                : `No id came to ${outcomeVisual(outcome, restores).label.toLowerCase()}.`}
               data-testid="inventory-removal-items-table"
             />
           )}
       </div>
+      {undoable && (
+        <RemovalDialog
+          open={restoring}
+          onClose={() => setRestoring(false)}
+          inventory={{ inventory, finding: GONE_FINDING, ids: null, count: removal.removed, policy: restore, restoresRemoval: removal.inventoryRemovalId }}
+          onQueued={(queued: InventoryChangeQueued) => {
+            toast.success(
+              `Restore of ${counted(queued.expected, "id")} removal ${removal.inventoryRemovalId} removed, of ${queued.inventory}, queued as a run.`,
+              { action: { label: "Open run", onClick: () => navigate(`/runs/${queued.runId}`) } });
+            void queryClient.invalidateQueries({ queryKey: ["delivery", "inventories"] });
+          }}
+        />
+      )}
     </div>
   );
 }
 
 /**
- * An inventory's removals, newest first: what each was asked to remove and how much of each record, where it stands and what
- * it came to so far (its tallies grow a chunk at a time while it runs), who asked and when, and its run. A removal opens in the
- * workbench's bottom panel with what it did to each id, and why.
+ * An inventory's removals and restores, newest first: what each was asked to remove (or bring back) and how much of each record,
+ * where it stands and what it came to so far (its tallies grow a chunk at a time while it runs), who asked and when, and its
+ * run. One opens in the workbench's bottom panel with what it did to each id, and why; a soft delete's panel restores what it
+ * removed, where the flow declares a removal (`restore`).
  */
-export function InventoryRemovals({ inventory, removals, error }: { inventory: Inventory; removals: InventoryRemoval[] | undefined; error: unknown }) {
+export function InventoryRemovals({ inventory, removals, error, restore }: {
+  inventory: Inventory;
+  removals: InventoryRemoval[] | undefined;
+  error: unknown;
+  /** What the flow lets an operator remove and restore; absent where it declares no removal, or the reader cannot run it. */
+  restore?: InventoryRemovalPolicy;
+}) {
   const { ownedId, show } = useOwnedPanel(PANEL);
   // The source columns a removal's conditions name, read once for the inventory's kind when any removal names one.
   const terms = useInventoryTerms(inventory.kind, (removals ?? []).some((r) => r.selection?.conditions.some((condition) => condition.term !== undefined) ?? false));
   const open = useCallback((removal: InventoryRemoval) => show(
     String(removal.inventoryRemovalId),
-    `Removal · ${removal.inventoryRemovalId}`,
-    <RemovalItemsPanel key={removal.inventoryRemovalId} inventory={inventory} removal={removal} />,
-  ), [show, inventory]);
+    `${isRestore(removal) ? "Restore" : "Removal"} · ${removal.inventoryRemovalId}`,
+    <RemovalItemsPanel
+      key={removal.inventoryRemovalId}
+      inventory={inventory}
+      removal={removal}
+      restore={restore}
+      restoredBy={(removals ?? []).filter((r) => r.restoresRemovalId === removal.inventoryRemovalId)}
+    />,
+  ), [show, inventory, restore, removals]);
 
   // The removal in the panel is raised again as the list is read again, so a running one's tallies and status keep up.
   const shown = ownedId === null ? undefined : removals?.find((removal) => String(removal.inventoryRemovalId) === ownedId);
@@ -280,15 +361,15 @@ export function InventoryRemovals({ inventory, removals, error }: { inventory: I
   }
 
   const columns: Column<InventoryRemoval>[] = [
-    { id: "removal", header: "Removal", render: (row) => <span className="font-mono text-[12px] tabular-nums">{row.inventoryRemovalId}</span> },
+    { id: "removal", header: "Number", render: (row) => <span className="font-mono text-[12px] tabular-nums">{row.inventoryRemovalId}</span> },
     {
       id: "asked",
       header: "Asked",
       fill: true,
       floor: 220,
       render: (row) => (
-        <span className="inline-flex min-w-0 items-center gap-1.5 text-[12.5px]" data-testid="inventory-removal-asked" data-selection={row.selection?.selectionId}>
-          <FindingGlyph finding={row.finding} />
+        <span className="inline-flex min-w-0 items-center gap-1.5 text-[12.5px]" data-testid="inventory-removal-asked" data-selection={row.selection?.selectionId} data-scope={row.scope}>
+          {isRestore(row) ? <RotateCcw className="size-3.5 shrink-0 text-success" aria-hidden /> : <FindingGlyph finding={row.finding} />}
           {selectionText(row, terms) === null
             ? <TruncatedText text={asked(row, terms)} maxWidth={420} />
             : (
@@ -323,7 +404,7 @@ export function InventoryRemovals({ inventory, removals, error }: { inventory: I
       rowKey={(row) => row.inventoryRemovalId}
       onRowClick={open}
       rowSx={(row) => (ownedId === String(row.inventoryRemovalId) ? { backgroundColor: "var(--accent)" } : undefined)}
-      emptyMessage="Nothing has been removed through this inventory. Pick ids of a removable finding, or gone ids, on the Ids tab to remove them."
+      emptyMessage="Nothing has been removed or restored through this inventory. Pick ids of a removable finding on the Ids tab to remove them from OSDU, or gone ids to restore them there or remove them from the inventory."
       data-testid="inventory-removals-table"
     />
   );

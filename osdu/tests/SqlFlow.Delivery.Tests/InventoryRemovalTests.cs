@@ -23,7 +23,7 @@ namespace SqlFlow.Delivery.Tests;
 /// </summary>
 [Collection(SqlServerSuite.Name)]
 [Trait("Category", "Integration")]
-public sealed class InventoryRemovalTests : IDisposable
+public sealed partial class InventoryRemovalTests : IDisposable
 {
     private const string Partition = "dev";
     private const string Kind = "osdu:wks:work-product-component--WellLog:1.0.0";

@@ -11,6 +11,9 @@ namespace SqlFlow.Delivery.Tests;
 /// a time under a cursor, the headers of up to a thousand ids (or 404 where the route is not deployed), records by id, a
 /// record's versions, and the schema service's listing of the kinds; and its removals, each taking a record out of what it
 /// serves: the soft delete of a list (204, or 207 naming the ids it did not delete), the soft delete of one id, and its purge.
+/// A soft-deleted record is kept, as storage keeps it, and its merge patch of <c>{"deleted": false}</c> serves it again
+/// (osdu/specs/core/INTEGRATION.md, D3): 400 for a record it serves already, 404 for one it holds no record of, 409 for one it
+/// withholds over its legal tags.
 /// </summary>
 internal sealed class StoragePlatform : DelegatingHandler
 {
@@ -63,12 +66,53 @@ internal sealed class StoragePlatform : DelegatingHandler
 
     public List<string> Purged { get; } = [];
 
+    /// <summary>The ids brought back from their soft delete, in the order they were.</summary>
+    public List<string> Restored { get; } = [];
+
+    /// <summary>The ids storage withholds over their legal tags: a restore of one answers 409.</summary>
+    public HashSet<string> Withheld { get; } = new(StringComparer.Ordinal);
+
+    /// <summary>The records soft deleted and not brought back, which storage keeps with every version.</summary>
+    private readonly Dictionary<string, JsonObject> _kept = new(StringComparer.Ordinal);
+
     private int _bulkDeletes;
     private int _singleDeletes;
+    private int _restores;
 
     public int BulkDeletes => Volatile.Read(ref _bulkDeletes);
 
     public int SingleDeletes => Volatile.Read(ref _singleDeletes);
+
+    /// <summary>How many restores (merge patches of a record's state) storage was asked for.</summary>
+    public int Restores => Volatile.Read(ref _restores);
+
+    /// <summary>Soft deletes a record outside the flows, as another tool would: storage keeps it, and stops serving it.</summary>
+    public void SoftDelete(string id)
+    {
+        Assert.True(Take(id, keep: true), $"storage serves no record {id} to soft delete");
+    }
+
+    /// <summary>Brings a soft-deleted record back outside the flows, as another tool would: storage serves it again.</summary>
+    public void Undelete(string id)
+    {
+        lock (Search.Records)
+        {
+            Assert.True(_kept.Remove(id, out var record), $"storage keeps no soft-deleted record {id} to bring back");
+            Search.Records.Add(record);
+        }
+    }
+
+    /// <summary>Purges a record outside the flows: storage keeps nothing of it.</summary>
+    public void Purge(string id)
+    {
+        lock (Search.Records)
+        {
+            if (!_kept.Remove(id))
+            {
+                Assert.True(Take(id, keep: false), $"storage holds no record {id} to purge");
+            }
+        }
+    }
 
     protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
     {
@@ -168,7 +212,7 @@ internal sealed class StoragePlatform : DelegatingHandler
                 {
                     notDeleted.Add(new JsonObject { ["notDeletedRecordId"] = id, ["message"] = $"The user is not authorized to perform delete record with id {id}" });
                 }
-                else if (Take(id))
+                else if (Take(id, keep: true))
                 {
                     SoftDeleted.Add(id);
                 }
@@ -199,13 +243,44 @@ internal sealed class StoragePlatform : DelegatingHandler
                 return Refusal(HttpStatusCode.Forbidden);
             }
 
-            if (!Take(id))
+            if (!Take(id, keep: softDelete))
             {
                 return FakeHttpHandler.Json(HttpStatusCode.NotFound, """{"code":404,"reason":"Not Found","message":"Record not found"}""");
             }
 
             (softDelete ? SoftDeleted : Purged).Add(id);
             return new HttpResponseMessage(HttpStatusCode.NoContent);
+        }
+
+        if (path.StartsWith("/api/storage/v2/records/", StringComparison.Ordinal) && request.Method == HttpMethod.Patch)
+        {
+            Interlocked.Increment(ref _restores);
+            var id = Uri.UnescapeDataString(path["/api/storage/v2/records/".Length..]);
+            Assert.Equal("application/merge-patch+json", request.Content!.Headers.ContentType!.MediaType);
+            Assert.False(JsonNode.Parse(body!)!["deleted"]!.GetValue<bool>());
+            if (RemovalsRefused is { } refused)
+            {
+                return Refusal(refused);
+            }
+
+            if (Withheld.Contains(id))
+            {
+                return FakeHttpHandler.Json(HttpStatusCode.Conflict, """{"code":409,"reason":"Record is legally withheld","message":"Record cannot be undeleted while its legal tags are incompliant"}""");
+            }
+
+            lock (Search.Records)
+            {
+                if (_kept.Remove(id, out var record))
+                {
+                    Search.Records.Add(record);
+                    Restored.Add(id);
+                    return FakeHttpHandler.Json(HttpStatusCode.OK, record.ToJsonString());
+                }
+
+                return Held([id]).Found.Count > 0
+                    ? FakeHttpHandler.Json(HttpStatusCode.BadRequest, """{"code":400,"reason":"Record State already updated","message":"Record State already updated"}""")
+                    : FakeHttpHandler.Json(HttpStatusCode.NotFound, $$"""{"code":404,"reason":"Record not found for patching","message":"The record '{{id}}' was not found for patching"}""");
+            }
         }
 
         if (path == "/api/schema-service/v1/schema" && request.Method == HttpMethod.Get)
@@ -227,18 +302,36 @@ internal sealed class StoragePlatform : DelegatingHandler
     private static HttpResponseMessage Refusal(HttpStatusCode status)
         => FakeHttpHandler.Json(status, new JsonObject { ["code"] = (int)status, ["reason"] = "Forbidden", ["message"] = "The user is not authorized to perform this action" }.ToJsonString());
 
-    /// <summary>Takes a record out of what storage serves; false when it serves no such record.</summary>
-    private bool Take(string id)
+    /// <summary>
+    /// Takes a record out of what storage serves, keeping it for a restore when <paramref name="keep"/> says it was soft deleted;
+    /// false when it serves no such record.
+    /// </summary>
+    private bool Take(string id, bool keep)
     {
         lock (Search.Records)
         {
-            if (StorageOnly.Remove(id))
+            if (StorageOnly.Remove(id, out var only))
             {
+                if (keep)
+                {
+                    _kept[id] = only;
+                }
+
                 return true;
             }
 
             var record = Search.Records.FirstOrDefault(r => r["id"]!.GetValue<string>() == id);
-            return record is not null && !DeletedAfterListing.Contains(id) && Search.Records.Remove(record);
+            if (record is null || DeletedAfterListing.Contains(id) || !Search.Records.Remove(record))
+            {
+                return false;
+            }
+
+            if (keep)
+            {
+                _kept[id] = record;
+            }
+
+            return true;
         }
     }
 

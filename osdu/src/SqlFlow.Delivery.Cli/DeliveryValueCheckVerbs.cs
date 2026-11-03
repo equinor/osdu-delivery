@@ -242,11 +242,30 @@ internal static class DeliveryValueCheckVerbs
                 + (counts.Asserted > 0 ? string.Create(CultureInfo.InvariantCulture, $"; {counts.Asserted:N0} failing an assertion") : string.Empty));
             foreach (var finding in variable.Findings.Where(f => f.Outcome != "notApplicable"))
             {
+                // What is wrong leads, in the words the page and the workbook use; the render's own reason follows it.
+                var said = finding.Explanation ?? ValueCheckExplainer.Explain(finding, variable, check.Inputs);
                 var at = finding.At == variable.Target ? string.Empty : $" at {finding.At}";
-                writer.WriteLine(string.Create(CultureInfo.InvariantCulture, $"      {finding.Outcome,-8} {finding.Count,8:N0}{at}  {finding.Message}"));
+                writer.WriteLine(string.Create(CultureInfo.InvariantCulture, $"      {finding.Outcome,-8} {finding.Count,8:N0}{at}  {said.Headline}"));
+                writer.WriteLine($"               effect  {said.Effect}");
+                if (said.Detail is { } detail)
+                {
+                    writer.WriteLine($"               where   {detail}");
+                }
+
+                writer.WriteLine($"               reason  {finding.Message}");
                 if (finding.Values.Count > 0)
                 {
                     writer.WriteLine($"               values  {string.Join(", ", finding.Values.Take(5).Select(v => string.Create(CultureInfo.InvariantCulture, $"'{v.Value}' x{v.Count:N0}")))}");
+                }
+
+                if (finding.SourceValues.Count > 0)
+                {
+                    writer.WriteLine($"               source  {string.Join(", ", finding.SourceValues.Take(5).Select(v => string.Create(CultureInfo.InvariantCulture, $"{v.Column} '{v.Value}' x{v.Count:N0}")))}");
+                }
+
+                for (var i = 0; i < said.Fixes.Count; i++)
+                {
+                    writer.WriteLine(string.Create(CultureInfo.InvariantCulture, $"               {(i == 0 ? "to fix" : string.Empty),-7} {i + 1}. {said.Fixes[i]}"));
                 }
 
                 foreach (var sample in finding.Samples.Take(3))

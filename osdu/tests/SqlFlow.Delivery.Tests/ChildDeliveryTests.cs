@@ -1,5 +1,6 @@
 using System.Text.Json.Nodes;
 using SqlFlow.Delivery.Engine;
+using SqlFlow.Delivery.Engine.Preview;
 using SqlFlow.Delivery.Engine.Protocols;
 using SqlFlow.Delivery.Identity;
 using SqlFlow.Delivery.Ledger;
@@ -18,8 +19,10 @@ namespace SqlFlow.Delivery.Tests;
 /// template carries it), and the custom mapping reads its parent and names it. The canonical flow delivers first and links
 /// nothing, since no custom record is there yet; the custom records land and ask the canonical ones to render again; the
 /// canonical flow's next run sends each with the link, its document only, its bulk data unchanged; and the custom records,
-/// asked again by their parents' landing, render the same and send nothing. Over the sample estate, the module's database
-/// on SQL Server, a fake protocol, and a platform holding what each flow landed.
+/// asked again by their parents' landing, render the same and send nothing. A custom record taken out of OSDU through the
+/// ledger takes the link away on the canonical flow's next run, and gives it back once delivered again; one taken out by
+/// another system is seen only by a render, which the preview says. Over the sample estate, the module's database on SQL
+/// Server, a fake protocol, and a platform holding what each flow landed.
 /// </summary>
 [Collection(SqlServerSuite.Name)]
 [Trait("Category", "Integration")]
@@ -211,4 +214,109 @@ public sealed class ChildDeliveryTests : IDisposable
             Assert.Null((await ledger.GetRecordAsync(custom.Flow.Id, SampleEstate.Key(i)))!.PlanRequestedUtc);
         }
     }
+
+    /// <summary>
+    /// The state the end-to-end test settles in: every log delivered by both flows, each canonical log linking its custom log,
+    /// and neither flow sending anything more.
+    /// </summary>
+    private async Task<MemoryIngestionTables> LinkedAsync()
+    {
+        var tables = await SampleEstate.BuildAsync(_root, Now.AddMinutes(-5), time: _clock);
+        var logs = SampleEstate.Logs().Count;
+        var (canonical, _, _) = await CanonicalAsync(tables);
+        await DeliverAsync(canonical);
+        for (var i = 0; i < logs; i++)
+        {
+            HoldsParent(i, 1_700_000_000_000_000 + i);
+        }
+
+        var (custom, _, _) = await CustomAsync(tables);
+        await DeliverAsync(custom);
+        for (var i = 0; i < logs; i++)
+        {
+            HoldsChild(i);
+        }
+
+        (canonical, var sent, _) = await CanonicalAsync(tables);
+        await DeliverAsync(canonical);
+        Assert.Equal(logs, sent.Deliveries.Count);
+        for (var i = 0; i < logs; i++)
+        {
+            HoldsParent(i, 1_700_000_000_000_100 + i);
+        }
+
+        (custom, sent, _) = await CustomAsync(tables);
+        await DeliverAsync(custom);
+        Assert.Empty(sent.Deliveries);
+        return tables;
+    }
+
+    [Fact]
+    public async Task A_custom_log_taken_out_of_osdu_takes_the_link_away_and_gives_it_back_once_delivered_again()
+    {
+        var tables = await LinkedAsync();
+
+        // An operator removes the first log's custom record from OSDU.
+        var (custom, customSent, ledger) = await CustomAsync(tables);
+        _children.Remove(CustomId(0));
+        await ledger.MarkRemovedAsync(custom.Flow.Id, [SampleEstate.Key(0)], RemovalScope.Record, "user:operator", Now);
+
+        // The canonical flow's next run sends that log alone, without the link: its document only, its curve values unchanged.
+        var (canonical, canonicalSent, _) = await CanonicalAsync(tables);
+        await DeliverAsync(canonical);
+        var unlinked = Assert.Single(canonicalSent.Deliveries);
+        Assert.Equal(ParentId(0), unlinked.TargetId);
+        Assert.Null(Link(unlinked));
+        Assert.Equal((true, false), (unlinked.DeliverMetadata, unlinked.DeliverPayload));
+        HoldsParent(0, 1_700_000_000_000_200);
+
+        // An operator's removal delivers the record again on its flow's next run, and its landing asks the canonical log again.
+        (custom, customSent, _) = await CustomAsync(tables);
+        await DeliverAsync(custom);
+        Assert.Equal(CustomId(0), Assert.Single(customSent.Deliveries).TargetId);
+        HoldsChild(0);
+        Assert.NotNull((await ledger.GetRecordAsync(canonical.Flow.Id, SampleEstate.Key(0)))!.PlanRequestedUtc);
+
+        // The canonical flow links it again, and both flows have settled.
+        (canonical, canonicalSent, _) = await CanonicalAsync(tables);
+        await DeliverAsync(canonical);
+        var linked = Assert.Single(canonicalSent.Deliveries);
+        Assert.Equal(CustomId(0) + ":", Link(linked)!.GetValue<string>());
+        HoldsParent(0, 1_700_000_000_000_300);
+        (custom, customSent, _) = await CustomAsync(tables);
+        await DeliverAsync(custom);
+        Assert.Empty(customSent.Deliveries);
+        (canonical, canonicalSent, _) = await CanonicalAsync(tables);
+        await DeliverAsync(canonical);
+        Assert.Empty(canonicalSent.Deliveries);
+    }
+
+    [Fact]
+    public async Task A_custom_log_taken_out_by_another_system_is_seen_by_a_render_and_the_preview_says_the_next_run_would_not()
+    {
+        var tables = await LinkedAsync();
+
+        // Another system takes the first log's custom record out of OSDU; nothing tells the ledger.
+        _children.Remove(CustomId(0));
+        var (canonical, canonicalSent, _) = await CanonicalAsync(tables);
+
+        // Rendered now, the log has no link, so it differs from the document delivered; its row is unchanged, so the next run
+        // skips it without rendering it, and the preview says so.
+        var preview = await new RecordPreviewer(canonical).PreviewAsync(PreviewKey(0));
+        Assert.Null(preview.Document!.Rendered!["data"]?["ExtensionProperties"]?["WellDb"]?["CustomLogID"]);
+        Assert.Equal(("skip", "fingerprint", (bool?)false), (preview.Decision!.Action, preview.Decision.SkipTier, preview.Decision.Ledger!.SameDocument));
+        Assert.Contains("redeliver it to send this document", preview.Decision.Reason, StringComparison.Ordinal);
+
+        // A log whose render is the document delivered says nothing more.
+        var same = await new RecordPreviewer(canonical).PreviewAsync(PreviewKey(1));
+        Assert.Equal(("skip", (bool?)true), (same.Decision!.Action, same.Decision.Ledger!.SameDocument));
+        Assert.DoesNotContain("redeliver", same.Decision.Reason, StringComparison.Ordinal);
+
+        await DeliverAsync(canonical);
+        Assert.Empty(canonicalSent.Deliveries);
+    }
+
+    /// <summary>The key a preview names log <paramref name="index"/> by: its key's parts as a JSON array.</summary>
+    private static string PreviewKey(int index)
+        => System.Text.Json.JsonSerializer.Serialize(new[] { SampleEstate.Logs()[index].SourceProject, SampleEstate.Logs()[index].LogId });
 }

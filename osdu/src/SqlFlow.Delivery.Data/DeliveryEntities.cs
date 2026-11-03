@@ -1056,9 +1056,10 @@ public sealed class DeliveryInventoryVersion
 }
 
 /// <summary>
-/// One removal of an inventory's ids an operator asked for (osdu/docs/reference/flow/inventory-removals.md, What a removal does):
-/// the run it was, who asked, the finding and how much of each record it removes, how many ids the operator was shown, and
-/// what it came to. Every id it reached is a <see cref="DeliveryInventoryRemovalItem"/>.
+/// One removal of an inventory's ids an operator asked for (osdu/docs/reference/flow/inventory-removals.md, What a removal does),
+/// or one restore of its gone ids, which undoes a removal (Restoring gone ids): the run it was, who asked, the finding and how
+/// much of each record it removes (or that it restores), how many ids the operator was shown, and what it came to. Every id it
+/// reached is a <see cref="DeliveryInventoryRemovalItem"/>.
 /// </summary>
 public sealed class DeliveryInventoryRemoval
 {
@@ -1073,10 +1074,10 @@ public sealed class DeliveryInventoryRemoval
 
     public string Actor { get; set; } = string.Empty;
 
-    /// <summary>The finding whose ids it removes.</summary>
+    /// <summary>The finding whose ids it removes; gone for a restore.</summary>
     public string Finding { get; set; } = string.Empty;
 
-    /// <summary>record (a soft delete) or everything (a purge).</summary>
+    /// <summary>record (a soft delete), everything (a purge), inventory (a gone id's row), or restore (a restore of gone ids).</summary>
     public string Scope { get; set; } = string.Empty;
 
     /// <summary>True when the removal named its ids; false when it took every id of the finding.</summary>
@@ -1093,6 +1094,9 @@ public sealed class DeliveryInventoryRemoval
     public DateTime? CompletedUtc { get; set; }
 
     public long Removed { get; set; }
+
+    /// <summary>The ids a restore brought back in OSDU; zero for a removal.</summary>
+    public long Restored { get; set; }
 
     public long Gone { get; set; }
 
@@ -1111,6 +1115,12 @@ public sealed class DeliveryInventoryRemoval
     /// what an operator's conditions asked in OSDU. Null for a removal that named its ids or took every id of the finding.
     /// </summary>
     public long? InventorySelectionId { get; set; }
+
+    /// <summary>
+    /// The soft-delete removal of the same inventory whose removed ids this restore brought back (a plain number, as the
+    /// selection is). Null for a removal, and for a restore of the gone ids picked or of every one.
+    /// </summary>
+    public long? RestoresRemovalId { get; set; }
 }
 
 /// <summary>

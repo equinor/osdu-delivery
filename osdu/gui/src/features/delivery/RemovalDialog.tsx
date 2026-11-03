@@ -30,7 +30,7 @@ import {
   type DeliveryTarget,
   type RemovalScope,
 } from "../../api/delivery";
-import { GONE_FINDING, inventoryApi, type Inventory, type InventoryRemovalAccepted, type InventoryRemovalPolicy } from "../../api/inventories";
+import { GONE_FINDING, inventoryApi, type Inventory, type InventoryRemovalPolicy } from "../../api/inventories";
 import { CorrelationError } from "@/components/CorrelationError";
 import { counted, findingVisual } from "./inventories/inventoryFormat";
 
@@ -46,7 +46,8 @@ export type RemovalSelection =
 /**
  * What an inventory's removal acts on (osdu/docs/reference/flow/inventory-removals.md, What a removal does): the ids of one finding,
  * those picked or every one, as many as the operator was shown, through the inventory flow's own source as its policy says;
- * or, gone ids, from the inventory alone, which no policy governs.
+ * or, gone ids, from the inventory alone, which no policy governs, or brought back in OSDU (Restoring gone ids), which takes the
+ * flow's removal policy as a removal does.
  */
 export interface InventoryRemovalTarget {
   inventory: Inventory;
@@ -54,13 +55,26 @@ export interface InventoryRemovalTarget {
   /** The ids picked; null removes every id of the finding (of the selection, when one is named). */
   ids: readonly string[] | null;
   count: number;
-  /** What the flow lets an operator remove from OSDU; absent for gone ids, which go from the inventory alone. */
+  /** What the flow lets an operator remove from OSDU, and restore there; absent where the flow declares no removal. */
   policy?: InventoryRemovalPolicy;
   /**
    * The selection whose ids of the finding are removed, every one of them: those that held what the operator's conditions
    * asked in OSDU, with the conditions as a sentence.
    */
   selection?: { id: number; sentence: string };
+  /** For gone ids, what the dialog opens on: bringing them back in OSDU, or removing them from the inventory (the default). */
+  opensOn?: "restore" | "inventory";
+  /** The soft-delete removal whose removed ids are brought back in OSDU, every one: only a restore, of `count` ids. */
+  restoresRemoval?: number;
+}
+
+/** A removal or a restore of an inventory's ids, queued as a run of its flow. */
+export interface InventoryChangeQueued {
+  runId: string;
+  inventory: string;
+  expected: number;
+  /** True for a restore in OSDU; false for a removal. */
+  restore: boolean;
 }
 
 /** The records of a flow's ledger the dialog removes. */
@@ -84,17 +98,20 @@ interface LedgerRemovalProps {
   onPurged: (result: DeliveryLedgerPurgeResult) => void;
 }
 
-/** The ids of an inventory the dialog removes. */
+/** The ids of an inventory the dialog removes, or restores. */
 interface InventoryRemovalProps {
   inventory: InventoryRemovalTarget;
-  /** The removal was queued as a run of the inventory flow. */
-  onQueued: (accepted: InventoryRemovalAccepted) => void;
+  /** The removal (or the restore) was queued as a run of the inventory flow. */
+  onQueued: (queued: InventoryChangeQueued) => void;
 }
 
 type RemovalDialogProps = { open: boolean; onClose: () => void } & (LedgerRemovalProps | InventoryRemovalProps);
 
-/** What to do in OSDU: one of the removal scopes, or nothing, for records already removed from it. */
-type OsduChoice = RemovalScope | "none";
+/**
+ * What to do in OSDU: one of the removal scopes, nothing, for records already removed from it, or, for an inventory's gone ids,
+ * bring them back.
+ */
+type OsduChoice = RemovalScope | "none" | "restore";
 
 interface ScopeChoice {
   scope: OsduChoice;
@@ -175,6 +192,17 @@ const SCOPES: ScopeChoice[] = [
     refusal: () => null,
     confirmLabel: "Delete from ledger",
   },
+  {
+    // Offered only for an inventory's gone ids, which no ledger holds: a record a ledger holds comes back through its flow.
+    scope: "restore",
+    title: "Restore the record",
+    effect: "Served again at the version it had. No new version.",
+    ledger: "",
+    reversible: true,
+    call: () => null,
+    refusal: () => null,
+    confirmLabel: "Restore in OSDU",
+  },
 ];
 
 /** The choices that leave a record out of OSDU, after which the ledger may delete it. */
@@ -182,17 +210,25 @@ function leavesItOut(scope: OsduChoice): boolean {
   return scope === "record" || scope === "everything" || scope === "none";
 }
 
-/** The call a scope makes for an inventory's removal, through the inventory flow's source; null for one it does not offer. */
+/** The call a scope makes for an inventory's removal or restore, through the inventory flow's source; null for one it does not offer. */
 function inventoryCall(scope: OsduChoice, policy: InventoryRemovalPolicy | undefined): string | null {
   if (policy === undefined) {
     return null;
   }
 
-  return scope === "record" ? `POST ${policy.bulkDeletePath}` : scope === "everything" ? `DELETE ${policy.purgePath}` : null;
+  return scope === "record"
+    ? `POST ${policy.bulkDeletePath}`
+    : scope === "everything"
+      ? `DELETE ${policy.purgePath}`
+      : scope === "restore" ? `PATCH ${policy.restorePath}  {"deleted": false}` : null;
 }
 
-/** Why an inventory's removal cannot take a scope: a purge its flow does not allow. */
+/** Why an inventory's removal cannot take a scope: a purge its flow does not allow, or a restore by a flow that only reads OSDU. */
 function inventoryRefusal(scope: OsduChoice, policy: InventoryRemovalPolicy | undefined): string | null {
+  if (scope === "restore") {
+    return policy === undefined ? "The flow declares no removal, so it only reads OSDU: a removal in its YAML lets it remove and restore." : null;
+  }
+
   return scope === "everything" && policy?.purge !== true ? "The flow allows soft deletes only: removal.purge: true in its YAML lets it purge." : null;
 }
 
@@ -203,8 +239,24 @@ const INVENTORY_KEPT = "Each id's outcome is kept with the removal, with why, an
 /** Why gone ids ask nothing of OSDU, where the ledger dialog says what leaving a record as it is does. */
 const GONE_LEFT = "Nothing is asked of OSDU: the inventory's last build did not list these ids, so there is nothing of them there to remove.";
 
+/** What a restore does with each id, where the ledger dialog says what the ledger does. */
+const RESTORED = "Storage keeps a soft-deleted record and every version, and serves it again at the version it had, one id a request. "
+  + "The ids brought back are served again in the inventory at once, and each id's outcome is kept with the restore, under Removals. "
+  + "A purged record cannot come back.";
+
 /** What is checked again of each id just before it goes, so a removal never takes what moved since the inventory found it. */
-function rechecks(finding: string): string[] {
+function rechecks(finding: string, restoring: boolean, byRemoval: boolean): string[] {
+  if (restoring) {
+    return [
+      byRemoval
+        ? "The inventory still finds it gone, or no longer holds it: one a build listed again is served already."
+        : "The inventory still finds it gone: one a build listed again is served already.",
+      "No ledger knows it. A record a ledger holds comes back through its own flow, which records it.",
+      ...(byRemoval ? [] : ["An identity this estate writes as created it: a restore brings back only what this estate wrote."]),
+      "Storage still holds it soft deleted. One it holds no record of was purged, and is listed as gone for good.",
+    ];
+  }
+
   if (finding === GONE_FINDING) {
     return [
       "The inventory still finds it gone, and OSDU does not serve it again: its last build did not list it.",
@@ -307,9 +359,10 @@ export function ChoiceRow({ active, permanent, unavailable, children }: { active
  * It removes an inventory's ids the same way (`inventory`): the ids of one finding, picked or every one, through the
  * inventory flow's own source, removed or (where the flow allows it) purged; there is no ledger part, since no ledger holds
  * them live, what is checked again of each id before it goes is said under the choices, and the partition is typed back
- * whatever the choice, since one removal may take millions of ids. Gone ids, which OSDU no longer serves, are left as they
- * are in OSDU and removed from the inventory, a part of its own in the ledger part's place, as records already removed from
- * OSDU are deleted from the ledger.
+ * whatever the choice, since one removal may take millions of ids. Gone ids, which OSDU no longer serves, are either brought
+ * back in OSDU (a restore, where the flow declares a removal) or left as they are there and removed from the inventory, a
+ * part of its own in the ledger part's place, as records already removed from OSDU are deleted from the ledger; the dialog
+ * opens on the one the operator asked for. What one removal removed is brought back the same way, the restore alone.
  */
 export function RemovalDialog(props: RemovalDialogProps) {
   const { open, onClose } = props;
@@ -318,30 +371,34 @@ export function RemovalDialog(props: RemovalDialogProps) {
   const ids = props.inventory === undefined ? null : props;
   const of = ids?.inventory ?? null;
   const alreadyRemoved = ledger?.alreadyRemoved ?? false;
-  // Gone ids are out of OSDU already: they are left as they are there and removed from the inventory.
+  // Gone ids are out of OSDU already: they are brought back there, or left as they are there and removed from the inventory.
+  // What one removal removed is only brought back.
+  const byRemoval = of?.restoresRemoval !== undefined;
   const fromInventory = of !== null && of.finding === GONE_FINDING;
   const startsOut = alreadyRemoved || fromInventory;
-  const [scope, setScope] = useState<OsduChoice>(startsOut ? "none" : "record");
+  const opensOn: OsduChoice = byRemoval || of?.opensOn === "restore" ? "restore" : startsOut ? "none" : "record";
+  const [scope, setScope] = useState<OsduChoice>(opensOn);
   // Deleting here: the records from the ledger, or the gone ids from the inventory.
-  const [deleteHere, setDeleteHere] = useState(startsOut);
+  const [deleteHere, setDeleteHere] = useState(startsOut && opensOn !== "restore");
   const [typed, setTyped] = useState("");
   const [wasOpen, setWasOpen] = useState(open);
 
   // Every opening starts afresh: on the reversible removal with the ledger left alone, or, for records already removed (and
-  // gone ids), on deleting them here, which still waits for the partition to be typed. A purge is never one click away from
-  // the last thing the operator did.
+  // gone ids), on deleting them here, which still waits for the partition to be typed; or, gone ids the operator asked to
+  // bring back, on the restore. A purge is never one click away from the last thing the operator did.
   if (open !== wasOpen) {
     setWasOpen(open);
     if (open) {
-      setScope(startsOut ? "none" : "record");
-      setDeleteHere(startsOut);
+      setScope(opensOn);
+      setDeleteHere(startsOut && opensOn !== "restore");
       setTyped("");
     }
   }
 
+  const restoring = scope === "restore";
   const purging = ledger !== null && deleteHere && leavesItOut(scope);
-  const dropping = fromInventory && deleteHere;
-  const removalScope: RemovalScope = scope === "none" ? "record" : scope;
+  const dropping = fromInventory && deleteHere && !restoring;
+  const removalScope: RemovalScope = scope === "none" || scope === "restore" ? "record" : scope;
   const selection = ledger?.selection ?? null;
   const request = useMemo(() => (selection === null ? null : requestFor(selection, removalScope, purging)), [selection, removalScope, purging]);
   const preview = useQuery({
@@ -363,14 +420,26 @@ export function RemovalDialog(props: RemovalDialogProps) {
       }
 
       const asked = ids!.inventory;
-      ids!.onQueued(await inventoryApi.remove(asked.inventory.partition, asked.inventory.inventoryId, {
+      if (restoring) {
+        const accepted = await inventoryApi.restore(asked.inventory.partition, asked.inventory.inventoryId, {
+          expected: asked.count,
+          confirm: typed.trim(),
+          ...(asked.ids === null ? {} : { ids: [...asked.ids] }),
+          ...(asked.restoresRemoval === undefined ? {} : { removal: asked.restoresRemoval }),
+        });
+        ids!.onQueued({ runId: accepted.runId, inventory: accepted.inventory, expected: accepted.expected, restore: true });
+        return;
+      }
+
+      const accepted = await inventoryApi.remove(asked.inventory.partition, asked.inventory.inventoryId, {
         finding: asked.finding,
         scope: fromInventory ? "inventory" : removalScope === "everything" ? "everything" : "record",
         expected: asked.count,
         confirm: typed.trim(),
         ...(asked.ids === null ? {} : { ids: [...asked.ids] }),
         ...(asked.ids === null && asked.selection !== undefined ? { selection: asked.selection.id } : {}),
-      }));
+      });
+      ids!.onQueued({ runId: accepted.runId, inventory: accepted.inventory, expected: accepted.expected, restore: false });
     },
     onSuccess: () => onClose(),
     onError: (error) => toast.error(isApiError(error) ? error.detail ?? error.title : String(error)),
@@ -408,18 +477,24 @@ export function RemovalDialog(props: RemovalDialogProps) {
   const confirmed = !needsTyping || typed.trim() === word;
   // Nothing in OSDU and nothing in the ledger (or the inventory) is no request at all.
   const nothingAsked = scope === "none" && !purging && !dropping;
-  const acting = fromInventory ? records : scope === "none" ? removed : records;
+  const acting = fromInventory || byRemoval ? records : scope === "none" ? removed : records;
   // Every record of the selection is out of OSDU already: only purging what OSDU keeps of it, or leaving it, still acts on it.
   const allRemoved = records > 0 && removed >= records;
+  // Gone ids are brought back or left as they are in OSDU; what one removal removed is only brought back; served ids are
+  // removed or purged. The ledger's records never see the restore, which only an inventory's gone ids take.
   const offered = of !== null
-    ? SCOPES.filter((option) => (fromInventory ? option.scope === "none" : option.scope === "record" || option.scope === "everything"))
-    : SCOPES.filter((option) => option.scope !== "none" || removed > 0 || scope === "none");
+    ? SCOPES.filter((option) => (byRemoval
+      ? option.scope === "restore"
+      : fromInventory ? option.scope === "none" || option.scope === "restore" : option.scope === "record" || option.scope === "everything"))
+    : SCOPES.filter((option) => option.scope !== "restore" && (option.scope !== "none" || removed > 0 || scope === "none"));
   const known = of !== null || target !== undefined;
 
   const label = of === null ? "" : findingVisual(of.finding).label.toLowerCase();
   const bySelection = of !== null && of.ids === null && of.selection !== undefined ? of.selection : null;
   const subject = of !== null
-    ? of.ids === null
+    ? byRemoval
+      ? `${counted(of.count, "id")} of ${of.inventory.name} that removal ${of.restoresRemoval} soft deleted`
+      : of.ids === null
       ? bySelection !== null
         ? `${counted(of.count, `${label} id`)} of ${of.inventory.name} matching the conditions`
         : `${counted(of.count, `${label} id`)} of ${of.inventory.name}, every one`
@@ -435,22 +510,32 @@ export function RemovalDialog(props: RemovalDialogProps) {
     ? null
     : records === 1 ? "removed from OSDU" : `${removed.toLocaleString()} of them removed from OSDU`;
 
-  const confirmLabel = fromInventory
-    ? "Remove from inventory"
-    : scope === "none"
-      ? choice.confirmLabel
-      : purging ? `${choice.confirmLabel} and delete from ledger` : choice.confirmLabel;
+  const confirmLabel = restoring
+    ? choice.confirmLabel
+    : fromInventory
+      ? "Remove from inventory"
+      : scope === "none"
+        ? choice.confirmLabel
+        : purging ? `${choice.confirmLabel} and delete from ledger` : choice.confirmLabel;
 
+  // What the run is held to before it starts: as many ids as the operator was shown, of the inventory, the match or the removal.
+  const holdsNote = of === null || of.ids !== null
+    ? ""
+    : byRemoval
+      ? ` The run starts only while removal ${of.restoresRemoval} holds exactly ${counted(of.count, "removed id")}.`
+      : ` The run starts only while the ${of.selection === undefined ? "inventory" : "match"} holds exactly ${of.count.toLocaleString("en-US")} ${label} id${of.count === 1 ? "" : "s"}.`;
   // What is checked again of each id, said under the part where the removal acts: in OSDU, or, for gone ids, in the inventory.
   const rechecksNote = of === null ? null : (
     <p className="flex items-start gap-2 text-[12px] leading-snug text-muted-foreground" data-testid="removal-rechecks">
       <CircleAlert className="mt-0.5 size-3.5 shrink-0 text-warning" />
       <span className="flex-1">
-        {`Each id is checked again just before it goes; one that moved since the inventory found it is left ${fromInventory ? "in the inventory" : "in OSDU"} and kept with why.${of.ids === null ? ` The run starts only while the ${of.selection === undefined ? "inventory" : "match"} holds exactly ${of.count.toLocaleString("en-US")} ${label} id${of.count === 1 ? "" : "s"}.` : ""}`}
+        {restoring
+          ? `Each id is checked again just before it is brought back; one that moved since, or that a ledger knows, is left as it is and kept with why.${holdsNote}`
+          : `Each id is checked again just before it goes; one that moved since the inventory found it is left ${fromInventory ? "in the inventory" : "in OSDU"} and kept with why.${holdsNote}`}
       </span>
       <InfoTip label="What is checked again" testId="removal-rechecks-info">
         <ul className="flex list-disc flex-col gap-0.5 pl-4">
-          {rechecks(of.finding).map((line) => <li key={line}>{line}</li>)}
+          {rechecks(of.finding, restoring, byRemoval).map((line) => <li key={line}>{line}</li>)}
         </ul>
       </InfoTip>
     </p>
@@ -470,9 +555,11 @@ export function RemovalDialog(props: RemovalDialogProps) {
       <AlertDialogContent data-testid="removal-dialog" className="max-h-[calc(100dvh-2rem)] max-w-lg gap-4 overflow-y-auto">
         <AlertDialogHeader className="gap-1 text-left">
           <div className="flex items-center gap-2">
-            <AlertDialogTitle className="flex min-w-0 flex-1 items-center gap-2">
-              <Trash2 className="size-4 shrink-0 text-destructive" />
-              Remove
+            <AlertDialogTitle className="flex min-w-0 flex-1 items-center gap-2" data-testid="removal-title">
+              {restoring
+                ? <RotateCcw className="size-4 shrink-0 text-primary" />
+                : <Trash2 className="size-4 shrink-0 text-destructive" />}
+              {restoring ? "Restore" : fromInventory ? "Remove from inventory" : "Remove"}
             </AlertDialogTitle>
             {!known
               ? !preview.isError && <Skeleton className="h-5 w-16 rounded-md" />
@@ -488,10 +575,10 @@ export function RemovalDialog(props: RemovalDialogProps) {
                       ? (
                         <div className="flex flex-col gap-1.5">
                           <TargetFact label="Flow" value={flowName} />
-                          {of.policy !== undefined && !fromInventory && <TargetFact label="Endpoint" value={of.policy.endpoint} mono />}
+                          {of.policy !== undefined && (!fromInventory || restoring) && <TargetFact label="Endpoint" value={of.policy.endpoint} mono />}
                           <TargetFact
                             label="Route"
-                            value={fromInventory ? "the inventory in the module's database; nothing is asked of OSDU" : "storage, through the inventory flow's own source and credentials"}
+                            value={fromInventory && !restoring ? "the inventory in the module's database; nothing is asked of OSDU" : "storage, through the inventory flow's own source and credentials"}
                           />
                         </div>
                       )
@@ -543,7 +630,7 @@ export function RemovalDialog(props: RemovalDialogProps) {
               const refusal = !known || option.scope === "none" ? null : refusalFor(option);
               const unavailable: { line: string; why: string } | null = option.scope === "none"
                 ? removed === 0 && !fromInventory ? { line: "None of these is removed yet.", why: "None of these is removed from OSDU yet." } : null
-                : allRemoved && option.scope !== "everything"
+                : allRemoved && option.scope !== "everything" && option.scope !== "restore"
                   ? { line: "Removed from OSDU already.", why: "Every record here is removed from OSDU already, so there is nothing of it for this to act on." }
                   : refusal !== null ? { line: "Not available for this flow.", why: refusal } : null;
               const call = known ? callOf(option) : null;
@@ -566,9 +653,11 @@ export function RemovalDialog(props: RemovalDialogProps) {
                       <span className="text-[12px] leading-snug text-muted-foreground">
                         {unavailable !== null
                           ? unavailable.line
-                          : fromInventory
-                            ? "OSDU no longer serves them."
-                            : option.scope === "none" && records > 1 ? `For the ${removed.toLocaleString()} already removed.` : option.effect}
+                          : option.scope === "restore"
+                            ? option.effect
+                            : fromInventory
+                              ? "OSDU no longer serves them."
+                              : option.scope === "none" && records > 1 ? `For the ${removed.toLocaleString()} already removed.` : option.effect}
                       </span>
                     </span>
                   </label>
@@ -580,7 +669,7 @@ export function RemovalDialog(props: RemovalDialogProps) {
                           ? <span>{unavailable.why}</span>
                           : (
                             <div className="flex flex-col gap-1.5">
-                              <span>{fromInventory ? GONE_LEFT : of !== null ? INVENTORY_KEPT : option.ledger}</span>
+                              <span>{option.scope === "restore" ? RESTORED : fromInventory ? GONE_LEFT : of !== null ? INVENTORY_KEPT : option.ledger}</span>
                               {call !== null && <span className="break-all font-mono text-[11px] text-muted-foreground">{call}</span>}
                             </div>
                           )}
@@ -593,7 +682,7 @@ export function RemovalDialog(props: RemovalDialogProps) {
           </RadioGroup>
         </div>
 
-        {!fromInventory && rechecksNote}
+        {(!fromInventory || restoring) && rechecksNote}
 
         {ledger !== null && (
           <div className="flex flex-col gap-1.5">
@@ -643,11 +732,14 @@ export function RemovalDialog(props: RemovalDialogProps) {
           </div>
         )}
 
-        {fromInventory && (
+        {fromInventory && !byRemoval && (
           <div className="flex flex-col gap-1.5">
             <PartHeading>In the inventory</PartHeading>
-            <ChoiceRow active={dropping} permanent unavailable={false}>
-              <label htmlFor="removal-drop-inventory" className="flex min-w-0 flex-1 cursor-pointer items-start gap-2.5 py-2">
+            <ChoiceRow active={dropping} permanent unavailable={restoring}>
+              <label
+                htmlFor="removal-drop-inventory"
+                className={cn("flex min-w-0 flex-1 items-start gap-2.5 py-2", restoring ? "cursor-not-allowed" : "cursor-pointer")}
+              >
                 <Checkbox
                   id="removal-drop-inventory"
                   checked={dropping}
@@ -655,13 +747,15 @@ export function RemovalDialog(props: RemovalDialogProps) {
                     setDeleteHere(checked === true);
                     setTyped("");
                   }}
-                  disabled={busy}
+                  disabled={busy || restoring}
                   className="mt-0.5"
                   data-testid="removal-drop-inventory"
                 />
                 <span className="flex min-w-0 flex-1 flex-col gap-0.5">
                   <span className="text-[13px] font-medium leading-tight">Remove from the inventory</span>
-                  <span className="text-[12px] leading-snug text-muted-foreground">Their rows here go, with the versions kept of them.</span>
+                  <span className="text-[12px] leading-snug text-muted-foreground">
+                    {restoring ? "Only while they are left as they are in OSDU." : "Their rows here go, with the versions kept of them. Nothing changes in OSDU."}
+                  </span>
                 </span>
               </label>
               <span className="flex items-center gap-1 pt-1.5">
@@ -672,7 +766,10 @@ export function RemovalDialog(props: RemovalDialogProps) {
                       The removal keeps how many ids it removed, who asked and when, not the ids themselves: a lookup by OSDU id no longer
                       finds them in this inventory.
                     </span>
-                    <span>No ledger changes. A later build lists again, as a new id, any id OSDU serves again.</span>
+                    <span>
+                      No ledger changes. A later build lists again, as a new id, any id OSDU serves again. What a removal of this
+                      inventory soft deleted can still be restored from that removal, under Removals.
+                    </span>
                   </div>
                 </InfoTip>
               </span>
@@ -680,7 +777,7 @@ export function RemovalDialog(props: RemovalDialogProps) {
           </div>
         )}
 
-        {fromInventory && rechecksNote}
+        {fromInventory && !restoring && rechecksNote}
 
         {scope !== "none" && preview.data !== undefined && preview.data.neverDelivered > 0 && (
           <p className="flex items-start gap-2 text-[12px] text-muted-foreground" data-testid="removal-never-delivered">
@@ -693,7 +790,9 @@ export function RemovalDialog(props: RemovalDialogProps) {
           <div className="flex flex-col gap-1.5">
             <Label htmlFor="removal-confirm" className="text-[12px] font-normal text-muted-foreground">
               <span>
-                {choice.reversible === false || purging || dropping ? "This cannot be undone." : "OSDU can bring a removed record back."}
+                {choice.reversible === false || purging || dropping
+                  ? "This cannot be undone."
+                  : restoring ? "A removal can take them out of OSDU again." : "OSDU can bring a removed record back."}
                 {" Type "}
                 <span className="font-mono font-medium text-foreground">{word}</span> to confirm.
               </span>
@@ -716,13 +815,13 @@ export function RemovalDialog(props: RemovalDialogProps) {
             Cancel
           </Button>
           <Button
-            variant={scope === "previous" ? "default" : "destructive"}
+            variant={scope === "previous" || restoring ? "default" : "destructive"}
             size="sm"
             onClick={() => (scope === "none" && !fromInventory ? purge.mutate() : remove.mutate())}
             disabled={busy || nothingAsked || !confirmed || acting === 0 || capped || (ledger !== null && preview.isError) || refused !== null}
             data-testid="removal-confirm"
           >
-            {busy ? <Loader2 className="animate-spin" /> : scope === "previous" ? <Undo2 /> : scope === "none" ? <Eraser /> : null}
+            {busy ? <Loader2 className="animate-spin" /> : scope === "previous" ? <Undo2 /> : restoring ? <RotateCcw /> : scope === "none" ? <Eraser /> : null}
             {confirmLabel}
             {acting > 1 ? ` (${acting.toLocaleString()})` : ""}
           </Button>

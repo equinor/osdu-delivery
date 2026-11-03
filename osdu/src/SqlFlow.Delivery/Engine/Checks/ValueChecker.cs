@@ -131,17 +131,18 @@ public sealed partial class ValueChecker
             await dryRun.RowsAsync(header, staged, ct).ConfigureAwait(false);
         }
 
+        var inputs = new ValueCheckInputs(
+            mapping.Reference,
+            mapping.Kind,
+            mapping.Template.Version,
+            resolved.Context.CacheScope,
+            resolved.Context.CacheScope is null ? null : resolved.References.Version);
         return new ValueCheck
         {
             Flow = flow.Label,
             Interface = flow.Interface,
             FlowId = flow.Id,
-            Inputs = new ValueCheckInputs(
-                mapping.Reference,
-                mapping.Kind,
-                mapping.Template.Version,
-                resolved.Context.CacheScope,
-                resolved.Context.CacheScope is null ? null : resolved.References.Version),
+            Inputs = inputs,
             Asked = new ValueCheckAsked
             {
                 Targets = selection.Paths,
@@ -151,7 +152,7 @@ public sealed partial class ValueChecker
                 Values = _runtime.Parameters,
             },
             Rows = tally.Rows(header.Source.EstimatedCandidates, read, complete),
-            Variables = tally.Variables(),
+            Variables = ValueCheckExplainer.Explain(tally.Variables(), inputs),
             Issues = header.Issues.Select(i => i.ToString()).ToList(),
             DryRun = dryRun?.Result(),
             StartedUtc = started,
@@ -224,7 +225,13 @@ public sealed partial class ValueChecker
         {
             check = Map(
                 check,
-                finding => finding with { Values = finding.Values.Take(3).ToList(), OtherValues = finding.OtherValues + finding.Values.Skip(3).Sum(v => v.Count) },
+                finding => finding with
+                {
+                    Values = finding.Values.Take(3).ToList(),
+                    OtherValues = finding.OtherValues + finding.Values.Skip(3).Sum(v => v.Count),
+                    SourceValues = finding.SourceValues.Take(3).ToList(),
+                    OtherSourceValues = finding.OtherSourceValues + finding.SourceValues.Skip(3).Sum(v => v.Count),
+                },
                 variable => variable with { Values = variable.Values.Take(3).ToList() });
             check = check with { Notes = [.. check.Notes, "Each finding and each variable lists its three most frequent values: with more the answer is too large."] };
             size = measure(check);

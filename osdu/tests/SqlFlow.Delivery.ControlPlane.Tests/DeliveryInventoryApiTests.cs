@@ -442,6 +442,47 @@ public sealed class DeliveryInventoryApiTests
                 var payload = global::SqlFlow.Delivery.Engine.DeliveryRunPayload.Parse((await db.Runs.SingleAsync(r => r.RunId == runId)).Payload);
                 Assert.Equal(("gone", "inventory", 1L), (payload.Removal!.Finding, payload.Removal.Scope, payload.Removal.Expected));
             }
+
+            // A flow that declares a removal also brings back in OSDU what the inventory finds gone: the inventory says where the
+            // restore goes, and it is queued as a run of its own, once the flow is idle.
+            Assert.Equal("/api/storage/v2/records/{id}", removal.GetProperty("restorePath").GetString());
+            var restores = inventoryPath + "/restores";
+            await RefusedAsync(client, operate, restores, new { expected = 1, confirm = partition }, HttpStatusCode.Conflict, "a restore waits until the flow is idle");
+            await using (var db = CatalogDatabase.Create(cs))
+            {
+                await db.Runs.Where(r => r.RunId == runId).ExecuteDeleteAsync();
+            }
+
+            await RefusedAsync(client, operate, restores, new { expected = 1 }, HttpStatusCode.BadRequest, "nothing is restored without it");
+            await RefusedAsync(client, operate, restores, new { expected = 2, ids = new[] { Id("vanished") }, confirm = partition }, HttpStatusCode.BadRequest, "as many as expected says");
+            await RefusedAsync(client, operate, restores, new { expected = 1, ids = new[] { Id("vanished") }, removal = 1, confirm = partition }, HttpStatusCode.BadRequest, "not both");
+            await RefusedAsync(client, operate, restores, new { expected = 2, confirm = partition }, HttpStatusCode.Conflict, "holds 1 gone id(s) now");
+            await RefusedAsync(client, operate, restores, new { expected = 1, ids = new[] { Id("ours-1") }, confirm = partition }, HttpStatusCode.Conflict, "not a gone id");
+            await RefusedAsync(client, operate, restores, new { expected = 1, removal = 2147480000, confirm = partition }, HttpStatusCode.NotFound, "holds no removal");
+            using (var accepted = await PostAsync(client, operate, restores, new { expected = 1, ids = new[] { Id("vanished") }, confirm = partition }))
+            {
+                var body = await accepted.Content.ReadAsStringAsync();
+                Assert.True(accepted.StatusCode == HttpStatusCode.Accepted, body);
+                var answer = JsonDocument.Parse(body).RootElement;
+                runId = answer.GetProperty("runId").GetGuid();
+                Assert.Equal((partition, "WellLogs", 1L), (answer.GetProperty("partition").GetString(), answer.GetProperty("inventory").GetString(), answer.GetProperty("expected").GetInt64()));
+            }
+
+            await using (var db = CatalogDatabase.Create(cs))
+            {
+                var run = await db.Runs.SingleAsync(r => r.RunId == runId);
+                Assert.Equal((pipelineId, "restore", "queued"), (run.PipelineId, run.Operation, run.Status));
+                var payload = global::SqlFlow.Delivery.Engine.DeliveryRunPayload.Parse(run.Payload);
+                Assert.Equal((partition, 1L, true, (long?)null), (payload.Confirm, payload.Restore!.Expected, payload.Restore.NamesIds, payload.Restore.Removal));
+                Assert.Equal([Id("vanished")], payload.Restore.Ids);
+                Assert.Null(payload.Removal);
+
+                // A flow that only reads OSDU restores nothing there: a restore writes to OSDU as a removal does.
+                await db.Runs.Where(r => r.RunId == runId).ExecuteDeleteAsync();
+                await db.Pipelines.Where(p => p.Id == pipelineId).ExecuteUpdateAsync(s => s.SetProperty(p => p.Yaml, yaml.Replace("removal: { findings: [orphan] }", string.Empty, StringComparison.Ordinal)));
+            }
+
+            await RefusedAsync(client, operate, restores, new { expected = 1, confirm = partition }, HttpStatusCode.Conflict, "declares no 'removal', so it only reads OSDU");
         }
         finally
         {

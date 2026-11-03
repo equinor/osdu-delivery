@@ -61,7 +61,7 @@ public sealed class InventoryFlowKind : IFlowDocumentKind
 
     public string FlowType => InventoryFlowDefinition.FlowTypeName;
 
-    public string Description => "keep every id and version OSDU kinds hold in a partition, and report where the ledgers disagree with it: orphans, missing records, undos left to do, and ids a ledger forgot; an operator selects its ids by what OSDU holds or finds its duplicate records by a key, and a flow that allows it removes the orphan, stale and forgotten ids an operator picks or selects";
+    public string Description => "keep every id and version OSDU kinds hold in a partition, and report where the ledgers disagree with it: orphans, missing records, undos left to do, and ids a ledger forgot; an operator selects its ids by what OSDU holds or finds its duplicate records by a key, and a flow that allows it removes the orphan, stale and forgotten ids an operator picks or selects, and restores the soft-deleted records behind its gone ids";
 
     public IReadOnlyList<FlowKindOperation> Operations { get; } =
     [
@@ -69,6 +69,7 @@ public sealed class InventoryFlowKind : IFlowDocumentKind
         new(DeliveryOperations.Reconcile, "Reconcile", "Compare each inventory, as its last build left it, with the ledgers as they stand now, reading from storage only the ids a ledger expects.", WritesTarget: true),
         new(DeliveryOperations.Plan, "Plan", "Count the records each inventory would read, and say what would stop it, reading no id and keeping nothing.", WritesTarget: false),
         new(DeliveryOperations.Remove, "Remove", "Remove from OSDU the ids of one finding an inventory found (orphan, stale or forgotten), each checked again first, for a flow whose document allows it; the inventory's page asks for it.", WritesTarget: true),
+        new(DeliveryOperations.Restore, "Restore", "Bring back in OSDU the soft-deleted records behind an inventory's gone ids (those picked, every one, or what one removal removed), each checked again first, for a flow whose document declares removal; the inventory's page asks for it.", WritesTarget: true),
         new(DeliveryOperations.Match, "Match", "Find which ids of an inventory hold what an operator's conditions ask in OSDU, through the search, and keep them as the selection the inventory's page opened; nothing in OSDU changes.", WritesTarget: false),
         new(DeliveryOperations.Duplicates, "Duplicates", "Find which ids of an inventory are copies of one another by the key the inventory's page opened a check with, read each group's copies from storage and pick the most complete to keep; nothing in OSDU changes.", WritesTarget: false),
     ];
@@ -96,14 +97,14 @@ public sealed class InventoryFlowKind : IFlowDocumentKind
         ArgumentNullException.ThrowIfNull(parameters);
         DeliveryOperations.RefuseSeveralValues(parameters, InventoryFlowDefinition.FlowTypeName, scopeTakesSeveral: false);
         DeliveryOperations.RefuseBuiltInOverrides(parameters, InventoryFlowDefinition.FlowTypeName, "a build reads every id the kind holds; name the inventories to build in the payload.");
-        // A run names the inventories it works on, a remove run what it removes and the partition it acts in, a match run the
-        // selection it fills, and a duplicates run the check it fills, beside the central configuration; which operation takes
-        // which is settled below.
+        // A run names the inventories it works on, a remove run what it removes and the partition it acts in, a restore run what
+        // it brings back and the partition, a match run the selection it fills, and a duplicates run the check it fills, beside
+        // the central configuration; which operation takes which is settled below.
         var payload = DeliveryRunPayload.Parse(parameters);
         payload.RefuseOtherThan(
             InventoryFlowDefinition.FlowTypeName,
-            [DeliveryRunPayload.InventoriesProperty, DeliveryRunPayload.RemovalProperty, DeliveryRunPayload.ConfirmProperty, DeliveryRunPayload.SelectionProperty,
-                DeliveryRunPayload.DuplicateCheckProperty]);
+            [DeliveryRunPayload.InventoriesProperty, DeliveryRunPayload.RemovalProperty, DeliveryRunPayload.RestoreProperty, DeliveryRunPayload.ConfirmProperty,
+                DeliveryRunPayload.SelectionProperty, DeliveryRunPayload.DuplicateCheckProperty]);
 
         var operation = Operation(parameters);
         if (operation == DeliveryOperations.Remove)
@@ -114,10 +115,30 @@ public sealed class InventoryFlowKind : IFlowDocumentKind
                     "A remove run names the one inventory it removes from (inventories), what it removes (removal: finding, scope, expected, and ids or a selection when it takes those), and the partition it acts in (confirm); nothing is removed without all three.");
             }
         }
-        else if (payload.Removal is not null || payload.Confirm is not null)
+        else if (payload.Removal is not null)
         {
             throw new SqlFlowException(
-                $"payload {(payload.Removal is not null ? DeliveryRunPayload.RemovalProperty : DeliveryRunPayload.ConfirmProperty)} does not apply to the {operation} operation: only a remove run names what it removes and the partition it acts in.");
+                $"payload {DeliveryRunPayload.RemovalProperty} does not apply to the {operation} operation: only a remove run names what it removes.");
+        }
+
+        if (operation == DeliveryOperations.Restore)
+        {
+            if (payload.Restore is null || payload.Inventories.Count != 1 || string.IsNullOrWhiteSpace(payload.Confirm))
+            {
+                throw new SqlFlowException(
+                    "A restore run names the one inventory it restores in (inventories), what it brings back (restore: expected, and ids or the removal whose removed ids it takes, when it takes those), and the partition it acts in (confirm); nothing is restored without all three.");
+            }
+        }
+        else if (payload.Restore is not null)
+        {
+            throw new SqlFlowException(
+                $"payload {DeliveryRunPayload.RestoreProperty} does not apply to the {operation} operation: only a restore run names what it brings back.");
+        }
+
+        if (operation is not (DeliveryOperations.Remove or DeliveryOperations.Restore) && payload.Confirm is not null)
+        {
+            throw new SqlFlowException(
+                $"payload {DeliveryRunPayload.ConfirmProperty} does not apply to the {operation} operation: only a remove or restore run names the partition it acts in.");
         }
 
         if (operation == DeliveryOperations.Match)
@@ -149,7 +170,7 @@ public sealed class InventoryFlowKind : IFlowDocumentKind
         }
     }
 
-    /// <summary>The operation an inventory flow runs: build (its default), reconcile, plan, remove, match or duplicates.</summary>
+    /// <summary>The operation an inventory flow runs: build (its default), reconcile, plan, remove, restore, match or duplicates.</summary>
     public static string Operation(RunParameters parameters)
     {
         ArgumentNullException.ThrowIfNull(parameters);
@@ -159,10 +180,11 @@ public sealed class InventoryFlowKind : IFlowDocumentKind
             DeliveryOperations.Reconcile => DeliveryOperations.Reconcile,
             DeliveryOperations.Plan => DeliveryOperations.Plan,
             DeliveryOperations.Remove => DeliveryOperations.Remove,
+            DeliveryOperations.Restore => DeliveryOperations.Restore,
             DeliveryOperations.Match => DeliveryOperations.Match,
             DeliveryOperations.Duplicates => DeliveryOperations.Duplicates,
             var other => throw new SqlFlowException(
-                $"An inventory flow runs the {DeliveryOperations.Build}, {DeliveryOperations.Reconcile}, {DeliveryOperations.Plan}, {DeliveryOperations.Remove}, {DeliveryOperations.Match} and {DeliveryOperations.Duplicates} operations; '{other}' is not one of them."),
+                $"An inventory flow runs the {DeliveryOperations.Build}, {DeliveryOperations.Reconcile}, {DeliveryOperations.Plan}, {DeliveryOperations.Remove}, {DeliveryOperations.Restore}, {DeliveryOperations.Match} and {DeliveryOperations.Duplicates} operations; '{other}' is not one of them."),
         };
     }
 }

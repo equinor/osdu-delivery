@@ -5,8 +5,9 @@ namespace SqlFlow.Delivery.Rendering;
 
 /// <summary>
 /// What one render met on its way: the questions it asked of the platform that the run could not answer yet, the answers
-/// it used, the parent it read, the children it looked for, and which alternative each <c>$coalesce</c> node took its value
-/// from. It belongs to one render, never to the renderer, which the plan's parallel workers share.
+/// it used, the parent it read, the children it looked for, which alternative each <c>$coalesce</c> node took its value
+/// from, and what each node looked for and did not find. It belongs to one render, never to the renderer, which the plan's
+/// parallel workers share.
 /// </summary>
 internal sealed class RenderTrail
 {
@@ -14,6 +15,7 @@ internal sealed class RenderTrail
     private List<SearchUsage>? _used;
     private List<ChildUsage>? _children;
     private Dictionary<(string Target, int Alternative), CoalesceChoice>? _chosen;
+    private List<RenderMiss>? _misses;
 
     /// <summary>
     /// Where what the mapping's assertions find of this record is collected (osdu/docs/reference/flow/mapping-assertions.md),
@@ -60,6 +62,31 @@ internal sealed class RenderTrail
     /// render met them, with how many values it gave: an item of a repeated array counts once each.
     /// </summary>
     public IReadOnlyList<CoalesceChoice> Chosen => _chosen is null ? [] : [.. _chosen.Values];
+
+    /// <summary>
+    /// Whether the render notes what each node looked for and did not find (<see cref="Misses"/>): an inspection does, which a
+    /// check explains its findings from. A delivery's render does not, so a value it leaves out costs it nothing more.
+    /// </summary>
+    public bool NotesMisses { get; init; }
+
+    /// <summary>
+    /// What each node looked for and did not find, in the order the render met them, whether the node then held the record or
+    /// left its variable out: what an inspection says a variable came to nothing for. Empty unless <see cref="NotesMisses"/>.
+    /// </summary>
+    public IReadOnlyList<RenderMiss> Misses => _misses ?? (IReadOnlyList<RenderMiss>)[];
+
+    /// <summary>Notes that a node looked for something and did not find it, when the render notes misses.</summary>
+    public void Miss(RenderMiss miss)
+    {
+        ArgumentNullException.ThrowIfNull(miss);
+        if (!NotesMisses)
+        {
+            return;
+        }
+
+        _misses ??= [];
+        _misses.Add(miss);
+    }
 
     public void Ask(PlatformQuestion question)
     {

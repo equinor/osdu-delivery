@@ -139,11 +139,11 @@ public sealed class RunPayloadPerKindTests
         var dimension = new DimensionFlowKind(Loader);
         Assert.StartsWith("payload runId does not apply to a dimension flow", Refusal(dimension, Payloads[DeliveryRunPayload.RunIdProperty]), StringComparison.Ordinal);
         Assert.Equal(
-            "payload confirm does not apply to a dimension flow: only a delivery flow's run deleting the ledger, an inventory flow's remove run and a removal flow's approved run name the partition they act in; a dimension flow's payload names only dimensions.",
+            "payload confirm does not apply to a dimension flow: only a delivery flow's run deleting the ledger, an inventory flow's remove and restore runs and a removal flow's approved run name the partition they act in; a dimension flow's payload names only dimensions.",
             Refusal(dimension, Payloads[DeliveryRunPayload.ConfirmProperty]));
 
         Assert.Equal(
-            "payload runId does not apply to an inventory flow: only a delivery flow's reverse run names the run it reverses; an inventory flow's payload names only inventories, removal, confirm, selection and duplicateCheck.",
+            "payload runId does not apply to an inventory flow: only a delivery flow's reverse run names the run it reverses; an inventory flow's payload names only inventories, removal, restore, confirm, selection and duplicateCheck.",
             Refusal(new InventoryFlowKind(Loader), Payloads[DeliveryRunPayload.RunIdProperty]));
 
         Assert.Equal(

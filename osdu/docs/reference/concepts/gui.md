@@ -98,7 +98,7 @@ The control plane puts every OSDU endpoint in one of SQLFlow's authorization gro
 | Group | What it covers |
 | --- | --- |
 | read | every page's reads: the ledger, records, submissions, the audit trail, mappings, templates, caches, partitions, search terms, boards and reports |
-| operate | anything that runs or reaches OSDU: the trigger dialog, release, redeliver, verify, sync, probe, read back, render, preview, value checks, removals, Delete ledger, reversals, cache approvals, inventory removals, every explorer read, syncing the data definitions |
+| operate | anything that runs or reaches OSDU: the trigger dialog, release, redeliver, verify, sync, probe, read back, render, preview, value checks, removals, Delete ledger, reversals, cache approvals, inventory removals and restores, every explorer read, syncing the data definitions |
 | author | refining, deleting and restoring search terms, proposing a mapping from the builder (SQLFlow's proposal endpoint) |
 | admin | describing, making default and removing the partitions the control plane's configuration does not name (registering is the configuration's, or the API's and `sqlflow partition add`'s, never a page's); setting and removing central configuration; removing a dimension or a view its flow no longer declares; purging a partition cache's history |
 
@@ -286,9 +286,11 @@ picked records, and the removal runs that wrote to its ledger.
   JUnit XML. See [assertion flows](../flow/assertion.md).
 - **Inventories**: every inventory flow's inventories in the partition (kind, findings raised, when reconciled). One
   opens its report: the findings (Orphan, Foreign, Stale, Forgotten and the rest), tabs **Ids**, **Runs** and
-  **Removals**, **Run pipeline**, **Export the ids as CSV**, and **Remove** for picked ids where the flow allows it,
-  through the removal dialog; picked missing ids offer **Deliver again** instead, through the flows that delivered them,
-  under their own ids or new ones ([inventory removals](../flow/inventory-removals.md)). An id opens as OSDU holds it in the workbench's bottom panel. **Filter** selects the ids
+  **Removals**, **Run pipeline**, **Export the ids as CSV**, and **Remove from OSDU** for picked ids where the flow allows
+  it, through the removal dialog; picked gone ids offer **Restore in OSDU** (where the flow declares a removal) and
+  **Remove from inventory** (nothing changes in OSDU) instead, and a soft-delete removal under Removals offers **Restore
+  what it removed**; picked missing ids offer **Deliver again**, through the flows that delivered them, under their own ids
+  or new ones ([inventory removals](../flow/inventory-removals.md)). An id opens as OSDU holds it in the workbench's bottom panel. **Filter** selects the ids
   by what OSDU holds, as the explorer's conditions: the tabs then count the matching ids of each finding, the grid lists
   them with the values the conditions ask, and every matching id of a removable finding can be removed at once. The
   **Duplicates** tab finds the records OSDU holds more than once: a key of the properties their copies hold equal, picked

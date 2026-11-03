@@ -165,6 +165,7 @@ public static class DeliveryServices
         services.AddSingleton<DeliveryOperation, StagedRowsOperation>();
         services.AddSingleton<DeliveryOperation, TableRowsOperation>();
         services.AddSingleton<DeliveryOperation, SourceSqlOperation>();
+        services.AddSingleton<DeliveryOperation, ValueProofOperation>();
         services.AddSingleton<DeliveryOperation, ExploreOperation>();
         services.AddSingleton<DirectOperations>();
 

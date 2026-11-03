@@ -13,7 +13,7 @@ import { useOwnedPanel } from "@/layout/workbench/useOwnedPanel";
 import { cn } from "@/lib/utils";
 import { deliveryRecordRoute } from "../../../api/delivery";
 import {
-  GONE_FINDING, MISSING_FINDING, REMOVABLE_FINDINGS, inventoryApi, type Inventory, type InventoryRecord, type InventoryRemovalAccepted, type InventoryRemovalPolicy,
+  GONE_FINDING, MISSING_FINDING, REMOVABLE_FINDINGS, inventoryApi, type Inventory, type InventoryRecord, type InventoryRemovalPolicy,
 } from "../../../api/inventories";
 import { RecordName } from "../RecordName";
 import { idParts } from "../osduRecordModel";
@@ -24,7 +24,7 @@ import { ExplainTip } from "@/components/ExplainTip";
 import { FindingGlyph } from "./InventoryBadges";
 import { InventoryIdPanel } from "./InventoryIdPanel";
 import { InventoryRepairDialog } from "./InventoryRepairDialog";
-import { RemovalDialog } from "../RemovalDialog";
+import { RemovalDialog, type InventoryChangeQueued } from "../RemovalDialog";
 import { fieldLabel } from "../explorer/explorerModel";
 import { arrowsKeptByTarget, typedInField } from "../panelKeys";
 import { findingVisual, findingWhy } from "./inventoryFormat";
@@ -105,9 +105,10 @@ function LedgerCell({ row }: { row: InventoryRecord }) {
  * id by its row in the workbench's bottom panel, over the page as a run's trace is, and steps through the ids there with
  * Up and Down; Escape or the panel's own close closes it. The id open is the page's, so a link lands on it. Where the flow
  * lets an operator remove the finding in view, its ids can be picked, or every one of them at once, however many, and removed
- * from OSDU through the removal dialog, which queues a run of the flow. Gone ids, which OSDU no longer serves, are picked and
- * removed the same way from the inventory alone, whatever the flow declares; missing ids are picked the same way and their
- * records delivered again through their own flows.
+ * from OSDU through the removal dialog, which queues a run of the flow. Gone ids, which OSDU no longer serves, are picked the
+ * same way and either restored in OSDU, where the flow declares a removal, or removed from the inventory alone, whatever the
+ * flow declares: two actions that say which; missing ids are picked the same way and their records delivered again through
+ * their own flows.
  *
  * While an operator's conditions select ids, the grid lists only the ids their match found, each with what it held at the
  * properties the conditions ask, a column each; every one of them can be picked at once and removed by the selection itself,
@@ -132,7 +133,7 @@ export function InventoryRecordsGrid({ inventory, finding, total, leading, trail
   openId: string | null;
   /** Opens an id in the panel, or closes it with null; absent where the reader cannot read OSDU. */
   onOpen?: (id: string | null) => void;
-  /** What the flow lets an operator remove; absent where it allows nothing, or the reader cannot act on OSDU. */
+  /** What the flow lets an operator remove, and restore; absent where it allows nothing, or the reader cannot act on OSDU. */
   removal?: InventoryRemovalPolicy;
   /** Whether the reader may remove gone ids from the inventory, which asks nothing of OSDU and so no removal of the flow's. */
   removesGone?: boolean;
@@ -166,13 +167,15 @@ export function InventoryRecordsGrid({ inventory, finding, total, leading, trail
     }
   };
 
-  // The ids picked for a removal or a repair, by their row's number, or every id of the finding; a finding's grid offers it
-  // where something can be done of its ids: one the flow lets an operator remove from OSDU, gone ids, which go from the
-  // inventory alone, and missing ids, whose records are delivered again.
+  // The ids picked for a removal, a restore or a repair, by their row's number, or every id of the finding; a finding's grid
+  // offers it where something can be done of its ids: one the flow lets an operator remove from OSDU, gone ids, which go from
+  // the inventory alone or are restored in OSDU where the flow declares a removal, and missing ids, whose records are
+  // delivered again.
   const gone = finding === GONE_FINDING;
   const missing = finding === MISSING_FINDING;
   const removable = removal !== undefined && finding !== null && removal.findings.includes(finding) ? removal : undefined;
-  const removes = gone ? removesGone : missing ? repairsMissing : removable !== undefined;
+  const restores = gone && removal !== undefined;
+  const removes = gone ? removesGone || restores : missing ? repairsMissing : removable !== undefined;
   // Every id of a selection is removed by the selection itself, which only the findings OSDU serves and a removal takes from
   // OSDU allow; the ids of any other finding a selection lists are picked one by one.
   const bySelection = selected !== undefined && finding !== null && REMOVABLE_FINDINGS.some((f) => f === finding);
@@ -180,6 +183,8 @@ export function InventoryRecordsGrid({ inventory, finding, total, leading, trail
   const [picked, setPicked] = useState<ReadonlySet<string>>(() => new Set());
   const [everyOne, setEveryOne] = useState(false);
   const [removing, setRemoving] = useState(false);
+  // What the dialog opens on for gone ids: restoring them in OSDU, or removing them from the inventory.
+  const [goneAction, setGoneAction] = useState<"restore" | "inventory">("inventory");
   // What was picked belongs to the rows it was picked from: conditions added, changed or dropped, or OSDU read again, start
   // with nothing picked, so nothing out of sight is ever removed.
   const [pickedFrom, setPickedFrom] = useState(source);
@@ -458,22 +463,61 @@ export function InventoryRecordsGrid({ inventory, finding, total, leading, trail
                 Deliver again
               </Button>
             )
-            : (
-              <Button
-                variant="destructive-outline"
-                size="sm"
-                className="ml-auto h-7"
-                onClick={() => setRemoving(true)}
-                disabled={tooMany || removalCount === 0 || (everyOne && staleNote !== null)}
-                title={everyOne && staleNote !== null
-                  ? staleNote
-                  : gone ? "Remove the selected ids from the inventory: OSDU no longer serves them, and nothing is asked of it" : "Remove the selected ids from OSDU, each checked again first"}
-                data-testid="inventory-remove-selected"
-              >
-                <Trash2 />
-                Remove
-              </Button>
-            )}
+            : gone
+              ? (
+                // Gone ids: brought back in OSDU, or forgotten by the inventory. Each says where it acts, since only the first
+                // changes OSDU.
+                <span className="ml-auto flex items-center gap-1.5">
+                  {restores && (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="h-7"
+                      onClick={() => {
+                        setGoneAction("restore");
+                        setRemoving(true);
+                      }}
+                      disabled={tooMany || removalCount === 0}
+                      title="Bring the selected records back in OSDU at the version they had: storage keeps a soft-deleted record and every version"
+                      data-testid="inventory-restore-selected"
+                    >
+                      <RotateCcw />
+                      Restore in OSDU
+                    </Button>
+                  )}
+                  {removesGone && (
+                    <Button
+                      variant="destructive-outline"
+                      size="sm"
+                      className="h-7"
+                      onClick={() => {
+                        setGoneAction("inventory");
+                        setRemoving(true);
+                      }}
+                      disabled={tooMany || removalCount === 0}
+                      title="Forget the selected ids here: their rows go from this inventory, and nothing changes in OSDU"
+                      data-testid="inventory-remove-selected"
+                    >
+                      <Trash2 />
+                      Remove from inventory
+                    </Button>
+                  )}
+                </span>
+              )
+              : (
+                <Button
+                  variant="destructive-outline"
+                  size="sm"
+                  className="ml-auto h-7"
+                  onClick={() => setRemoving(true)}
+                  disabled={tooMany || removalCount === 0 || (everyOne && staleNote !== null)}
+                  title={everyOne && staleNote !== null ? staleNote : "Remove the selected records from OSDU, each checked again first"}
+                  data-testid="inventory-remove-selected"
+                >
+                  <Trash2 />
+                  Remove from OSDU
+                </Button>
+              )}
         </div>
       )}
     </div>
@@ -571,14 +615,16 @@ export function InventoryRecordsGrid({ inventory, finding, total, leading, trail
             finding,
             ids: everyOne ? null : pickedIds,
             count: removalCount,
-            policy: removable,
+            // Gone ids are restored through the flow's removal policy, whatever findings it names.
+            policy: gone ? removal : removable,
             selection: everyOne && bySelection && selected !== undefined ? { id: selected.selectionId, sentence: selection?.sentence ?? "" } : undefined,
+            opensOn: gone ? goneAction : undefined,
           }}
-          onQueued={(accepted: InventoryRemovalAccepted) => {
+          onQueued={(queued: InventoryChangeQueued) => {
             clearPicked();
             toast.success(
-              `Removal of ${accepted.expected.toLocaleString("en-US")} ${noun}${accepted.expected === 1 ? "" : "s"} of ${accepted.inventory} queued as a run.`,
-              { action: { label: "Open run", onClick: () => navigate(`/runs/${accepted.runId}`) } });
+              `${queued.restore ? "Restore" : "Removal"} of ${queued.expected.toLocaleString("en-US")} ${noun}${queued.expected === 1 ? "" : "s"} of ${queued.inventory} queued as a run.`,
+              { action: { label: "Open run", onClick: () => navigate(`/runs/${queued.runId}`) } });
             void queryClient.invalidateQueries({ queryKey: ["delivery", "inventories"] });
           }}
         />

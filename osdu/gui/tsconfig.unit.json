@@ -35,6 +35,7 @@
     "src/features/delivery/scopeDefaults.ts",
     "src/features/delivery/mappingSearch.ts",
     "src/features/delivery/sourceQuery.ts",
+    "src/features/delivery/valueProof.ts",
     "src/api/mappingOutline.ts",
     "src/features/delivery/overview/outlineModel.ts",
     "src/features/delivery/overview/outlineLayout.ts",

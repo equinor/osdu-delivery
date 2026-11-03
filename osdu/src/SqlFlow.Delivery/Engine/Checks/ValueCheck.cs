@@ -298,7 +298,103 @@ public sealed record ValueCheckFinding
 
     /// <summary>How many occurrences were passed over before the examples were taken.</summary>
     public long SamplesFrom { get; init; }
+
+    /// <summary>
+    /// What it comes from, as the render met it: what was looked for and where, or the rule broken. Usually one; a
+    /// <c>$coalesce</c> node none of whose alternatives gave a value has one for each alternative that looked for something.
+    /// </summary>
+    public IReadOnlyList<ValueCheckCause> Causes { get; init; } = [];
+
+    /// <summary>What it means, in plain words, and what to do about it.</summary>
+    public ValueCheckExplanation? Explanation { get; init; }
+
+    /// <summary>
+    /// What the source columns behind the first cause hold in the rows it occurs in, as the source holds them, before the
+    /// mapping's modifiers: the values a person looks for in the source. The most frequent first.
+    /// </summary>
+    public IReadOnlyList<ValueCheckSourceValue> SourceValues { get; init; } = [];
+
+    /// <summary>Occurrences whose source value is not among <see cref="SourceValues"/>.</summary>
+    public long OtherSourceValues { get; init; }
 }
+
+/// <summary>
+/// Why a finding's rows are not written with a value the template accepts, in parts a person (and a query) can act on: what the
+/// render looked for and did not find, the cached types and fields it compared, the source columns the value came from, or the
+/// rule a value breaks (osdu/docs/reference/concepts/value-proof.md).
+/// </summary>
+public sealed record ValueCheckCause
+{
+    /// <summary>The source value the attribute reads is empty.</summary>
+    public const string Empty = "empty";
+
+    /// <summary>An id the mapping wrote or built names no record of its entity type the cache holds.</summary>
+    public const string IdNotHeld = "idNotHeld";
+
+    /// <summary>A cache lookup found no record of the type holding the value at the fields it compared.</summary>
+    public const string NoMatch = "noMatch";
+
+    /// <summary>Several records of the type answer to the value once case is ignored, so none is taken.</summary>
+    public const string Ambiguous = "ambiguous";
+
+    /// <summary>The cache version holds no type of the name the mapping reads.</summary>
+    public const string NoType = "noType";
+
+    /// <summary>The cached record found holds nothing at the field the mapping reads.</summary>
+    public const string FieldEmpty = "fieldEmpty";
+
+    /// <summary>A search of the platform found no record holding the value.</summary>
+    public const string NotFound = "notFound";
+
+    /// <summary>A value written breaks a rule of the template.</summary>
+    public const string RuleBroken = "rule";
+
+    /// <summary>A value fails an assertion of the mapping.</summary>
+    public const string Assertion = "assertion";
+
+    /// <summary>Anything else the render holds or leaves a value out for: <see cref="ValueCheckFinding.Message"/> says what.</summary>
+    public const string Other = "other";
+
+    /// <summary>One of the kinds above.</summary>
+    public required string Kind { get; init; }
+
+    /// <summary>The source columns the value came from, as the mapping names them (<c>dataset.curves.curve_unit</c>).</summary>
+    public IReadOnlyList<string> Columns { get; init; } = [];
+
+    /// <summary>
+    /// The cached types looked in, by the short name the cache keeps them under (<c>UnitOfMeasure</c>); for a search, the search the
+    /// mapping declares.
+    /// </summary>
+    public IReadOnlyList<string> Types { get; init; } = [];
+
+    /// <summary>For an id, the entity type it names a record of; for a cache lookup, the type's; for a search, the kind searched.</summary>
+    public string? EntityType { get; init; }
+
+    /// <summary>The fields the value was compared with, in the order they were tried.</summary>
+    public IReadOnlyList<string> Fields { get; init; } = [];
+
+    /// <summary>Whether punctuation and spacing were also folded away when comparing.</summary>
+    public bool IgnoreSeparators { get; init; }
+
+    /// <summary>For several records answering to a value, or a record found that holds nothing at the field read, their ids.</summary>
+    public IReadOnlyList<string> Candidates { get; init; } = [];
+
+    /// <summary>For a rule, the rule of the template; for an assertion, the assertion.</summary>
+    public string? Rule { get; init; }
+}
+
+/// <summary>What a finding means and what to do about it, said the same on the page, in the workbook and on the command line.</summary>
+/// <param name="Headline">What is wrong, in one sentence: what was looked for and not found, or the rule broken. Code in backticks.</param>
+/// <param name="Effect">What it does to the records: held, sent without the attribute, or sent with a value the template refuses.</param>
+/// <param name="Detail">Where it was looked for and what the source holds, when that adds something; null otherwise.</param>
+/// <param name="Fixes">What can be done about it, the likeliest first, each a sentence naming where.</param>
+public sealed record ValueCheckExplanation(string Headline, string Effect, string? Detail, IReadOnlyList<string> Fixes);
+
+/// <summary>A value a source column holds in rows a finding occurs in, as the source holds it, and how many occurrences.</summary>
+/// <param name="Column">The column, as the mapping names it.</param>
+/// <param name="Value">What it holds.</param>
+/// <param name="Count">Occurrences.</param>
+public sealed record ValueCheckSourceValue(string Column, string Value, long Count);
 
 /// <summary>One record a check names: the row it was read from, and what the variable came to there.</summary>
 public sealed record ValueCheckSample
@@ -364,4 +460,7 @@ public sealed record ValueCheckOccurrence
 
     /// <summary>For a repeated item: the child dataset whose rows <see cref="ValueCheckSample.Item"/> counts.</summary>
     public string? Child { get; init; }
+
+    /// <summary>What it comes from (<see cref="ValueCheckFinding.Causes"/>).</summary>
+    public IReadOnlyList<ValueCheckCause> Causes { get; init; } = [];
 }

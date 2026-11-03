@@ -23,6 +23,7 @@ internal static partial class EntryValues
     /// </remarks>
     private static bool TryBuildId(
         IdTemplate template, string? text, MappingEntry entry, SourceRow root, SourceRow? item, MappingRenderer renderer, List<string> holds, List<CacheUsage> usages,
+        RenderTrail searched,
         out object? result)
     {
         result = null;
@@ -73,7 +74,7 @@ internal static partial class EntryValues
 
                         break;
                     default:
-                        if (!TryIdCacheValue(token, value, path, renderer, holds, usages, out part))
+                        if (!TryIdCacheValue(token, value, path, renderer, holds, usages, searched, out part))
                         {
                             return false;
                         }
@@ -98,6 +99,20 @@ internal static partial class EntryValues
 
             if (missing.Count > 0)
             {
+                // A token of the row that is empty leaves nothing to build: the columns behind those tokens are what is empty.
+                var emptyColumns = searched.NotesMisses
+                    ? template.Tokens.Where(t => t.Kind == IdTokenKind.Dataset && missing.Contains(t.Text)).Select(t => t.Column!).Distinct().ToList()
+                    : [];
+                if (emptyColumns.Count > 0)
+                {
+                    searched.Miss(new RenderMiss
+                    {
+                        Kind = RenderMissKind.Empty,
+                        Reason = $"{path}: the id {template} cannot be built, since {string.Join(", ", missing.Distinct(StringComparer.Ordinal))} has no value",
+                        Columns = emptyColumns,
+                    });
+                }
+
                 if (entry.Required)
                 {
                     var tokens = missing.Distinct(StringComparer.Ordinal).ToList();
@@ -121,9 +136,10 @@ internal static partial class EntryValues
         {
             // A reference to a record the partition does not hold would reach OSDU pointing at nothing, so it is never
             // written: a required entry holds the record with the reason, and an optional one leaves the variable out.
+            searched.Miss(unheld!);
             if (entry.Required)
             {
-                holds.Add(unheld!);
+                holds.Add(unheld!.Reason);
                 return false;
             }
 
@@ -148,7 +164,7 @@ internal static partial class EntryValues
     /// template builds is the one written, so the lookup asks for no other. An id whose code itself carries colons and that
     /// ends in a version cannot be told apart from its version by its text, so it is not looked up.
     /// </remarks>
-    private static bool Resolves(string id, IdTemplate template, MappingEntry entry, MappingRenderer renderer, List<CacheUsage> usages, out string? missing)
+    private static bool Resolves(string id, IdTemplate template, MappingEntry entry, MappingRenderer renderer, List<CacheUsage> usages, out RenderMiss? missing)
     {
         missing = null;
         if (CachedReferences.Named(id) is not { } reference)
@@ -188,9 +204,32 @@ internal static partial class EntryValues
             usages.Add(new CacheUsage(type.Name, reference.Id, "id", id, CacheUsageKind.Missing));
         }
 
-        missing =
-            $"{entry.Target.Text}: the id {template} gives {id}, and {CacheLabel(renderer.Context)} holds no such {reference.EntityType} record in {string.Join(", ", holding.Select(t => t.Name))}, so the reference would point at nothing";
+        missing = new RenderMiss
+        {
+            Kind = RenderMissKind.IdNotHeld,
+            Reason = $"{entry.Target.Text}: the id {template} gives {id}, and {CacheLabel(renderer.Context)} holds no such {reference.EntityType} record in {string.Join(", ", holding.Select(t => t.Name))}, so the reference would point at nothing",
+            Columns = IdColumns(template, entry),
+            Types = holding.Select(t => t.Name).ToList(),
+            EntityType = reference.EntityType,
+            Tries = [new RenderMissTry("id", entry.Source?.Column, reference.Id)],
+        };
         return false;
+    }
+
+    /// <summary>
+    /// The source columns an id is built from: the column the node reads, whose value the template's value token takes, and the
+    /// columns its dataset tokens read.
+    /// </summary>
+    private static IReadOnlyList<DatasetColumn> IdColumns(IdTemplate template, MappingEntry entry)
+    {
+        var columns = new List<DatasetColumn>();
+        if (template.ReadsValue && entry.Source?.Column is { } read)
+        {
+            columns.Add(read);
+        }
+
+        columns.AddRange(template.Columns.Where(column => !columns.Contains(column)));
+        return columns;
     }
 
     /// <summary>
@@ -200,13 +239,15 @@ internal static partial class EntryValues
     /// render's cache usages, so a later version of the table tags exactly the records it changes.
     /// </summary>
     private static bool TryIdCacheValue(
-        IdToken token, string value, string path, MappingRenderer renderer, List<string> holds, List<CacheUsage> usages, out string? part)
+        IdToken token, string value, string path, MappingRenderer renderer, List<string> holds, List<CacheUsage> usages, RenderTrail searched, out string? part)
     {
         part = null;
         var version = CacheLabel(renderer.Context);
         if (renderer.References.Type(token.CacheType!) is not { } type)
         {
-            holds.Add($"{path}: the id reads {token}, and {version} holds no type '{token.CacheType}'");
+            var noType = $"{path}: the id reads {token}, and {version} holds no type '{token.CacheType}'";
+            searched.Miss(new RenderMiss { Kind = RenderMissKind.NoType, Reason = noType, Types = [token.CacheType!] });
+            holds.Add(noType);
             return false;
         }
 

@@ -23,6 +23,7 @@ internal sealed class RecordedOperations
         StagedRowsOperation.OperationName,
         TableRowsOperation.OperationName,
         SourceSqlOperation.OperationName,
+        ValueProofOperation.OperationName,
         ExploreOperation.OperationName,
     ];
 

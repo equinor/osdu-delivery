@@ -124,7 +124,7 @@ window is anchored on an OSDU flow. `--assertions-only` is refused for every kin
 | `cache` | `refresh`: it writes the version into the partition's cache. |
 | `assertion` | `test`: it keeps the report there. |
 | `dimension` | `build`: it keeps the builds there, and reads the templates of the kinds the dimensions read. |
-| `inventory` | `build`, `reconcile`, `remove`, `match` and `duplicates`: it keeps the inventories, their selections and their duplicate checks there. |
+| `inventory` | `build`, `reconcile`, `remove`, `restore`, `match` and `duplicates`: it keeps the inventories, their selections and their duplicate checks there. |
 | `removal` | Every operation: it compares with the delivery ledgers kept there, and keeps its runs and the deletions it finds in them. |
 | `download` | `download`: it keeps each download's ledger there, the files written and the version each holds. |
 | `retrieval` | Nothing; when it has one, each `retrieve` is recorded in the flow's ledger. |
@@ -133,7 +133,7 @@ The module database is the catalog's: on a workstation `--db`, else `${env:SQLFL
 `${env:SQLFLOW_CATALOG_DB}` alone ([The osdu module database in sqlflow db](db.md)). The flow's own references (its ingestion connection, the OSDU endpoint and credentials) resolve
 on the machine that runs it, from the central configuration a run carries first ([sqlflow config](config.md)) and the
 environment after. The control plane attaches that configuration to the runs it queues of every OSDU kind (an
-inventory's `remove` run included); a `sqlflow run` on a workstation carries none and resolves from the environment
+inventory's `remove` and `restore` runs included); a `sqlflow run` on a workstation carries none and resolves from the environment
 alone.
 
 ## The partition
@@ -183,7 +183,8 @@ parameter instead. A partition named for a flow that follows the registry has to
 | `inventory` | `build` (default) | Read every id each inventory's kind holds, keep what changed, and compare every id with the ledgers of the partition. | no |
 | | `reconcile` | Compare each inventory, as its last build left it, with the ledgers as they stand now. | no |
 | | `plan` | Count the records each inventory would read, and say what would stop it. | no |
-| | `remove` | Remove from OSDU the ids of one finding (`orphan`, `stale` or `forgotten`), for a flow whose document allows it. | yes |
+| | `remove` | Remove from OSDU the ids of one finding (`orphan`, `stale` or `forgotten`), for a flow whose document allows it; or gone ids from the inventory alone. | yes |
+| | `restore` | Bring back in OSDU the soft-deleted records behind an inventory's gone ids (those picked, every one, or what one removal removed), for a flow whose document declares `removal` ([restoring gone ids](../flow/inventory-removals.md#restoring-gone-ids)). | yes |
 | | `match` | Find through the search which ids of one inventory hold what an operator's conditions ask, and keep them as the selection the inventory's page opened ([selecting ids](../flow/inventory-selections.md)). | no |
 | | `duplicates` | Find which ids of one inventory are copies of one another by the key the inventory's page opened a check with, and pick the copy each group keeps ([duplicate records](../flow/inventory-duplicates.md)). | no |
 | `download` | `download` (default) | List every id each download's kind holds, and write each record that is new or changed to its file; with `force`, every one again ([download flow](../flow/download.md#operations)). | no |
@@ -218,7 +219,7 @@ no engine path could honour is refused before anything is queued.
 | `interfaces` | array of text | The interfaces a run of a source runs, each once (at most 200); every interface when left out. |
 | `slices` | array of whole numbers | The key slices of `submissionId` a part of a split delivery delivers (`deliver`) or an `intake` plans: 0 to 1023, each once, neighbours on a `deliver`. Written by a split delivery, not by hand. |
 | `rateShare` | whole number | How many parts of a split delivery share the flow's `reliability.rateLimitRps`, 2 to 65: a part sends under that share of it ([submissions](../concepts/submissions.md#many-nodes)). Written by a split delivery, not by hand. |
-| `confirm` | text | The partition a `delete-ledger` run acts in, as the person who asked typed it. Required by `delete-ledger` and taken by no other operation of a delivery flow (an inventory flow's `remove` takes its own). |
+| `confirm` | text | The partition a `delete-ledger` run acts in, as the person who asked typed it. Required by `delete-ledger` and taken by no other operation of a delivery flow (an inventory flow's `remove` and `restore` take their own). |
 | `scope` | text | How much of each record a `remove` run takes: `record` (reversibly), `previous` (the version before the latest written back), `history` (the earlier versions) or `everything` ([the scopes](../concepts/removal-and-reversal.md#removing-records-from-osdu)). Required by `remove`, exactly as written. |
 | `filter` | object | The listing a `remove` run empties instead of naming `recordKeys`: `status`, `search` with `mode` (`prefix` or `contains`), `submissionId`, `deliveredBySubmissionId`, `runId`, `drifted` and `issue`, as the records list names them. The run resolves it when it removes the records and refuses a filter that matches more than 25,000. Any other property is refused. |
 | `purgeLedger` | `true`/`false` | With `scope` `record` or `everything`, a `remove` run also deletes from the ledger each record OSDU answered for, keeping one line of it. |
@@ -265,7 +266,7 @@ A property counts when it asks for something (`force` set to `true`, a list that
 | `retrieval` | `force`: restart an incremental retrieval at its declared start. | `payload submissionId does not apply to a retrieval flow: only a delivery flow's runs name a submission; a retrieval flow's payload names only force.` |
 | `assertion` | `tests` (test names) and `tags` (every test carrying one of them), each at most 500 names, each once. With neither, every test runs. | `payload recordKeys does not apply to an assertion flow: only a delivery flow's runs are scoped to records; an assertion flow's payload names only tests and tags.` |
 | `dimension` | `dimensions`: the dimensions to build; every one when left out. | `payload tests does not apply to a dimension flow: only an assertion flow's runs select tests; a dimension flow's payload names only dimensions.` |
-| `inventory` | `inventories`: the inventories to build or reconcile. A `remove` run names exactly one inventory, `removal` (`finding`, `scope` `record` or `everything`, `expected`, and optionally `ids` or a `selection`) and `confirm`, the partition. A `match` run names exactly one inventory and the `selection` it fills, a `duplicates` run exactly one inventory and the `duplicateCheck` it fills; the inventory's page opens both and queues the run. | `payload runId does not apply to an inventory flow: only a delivery flow's reverse run names the run it reverses; an inventory flow's payload names only inventories, removal, confirm, selection and duplicateCheck.` |
+| `inventory` | `inventories`: the inventories to build or reconcile. A `remove` run names exactly one inventory, `removal` (`finding`, `scope` `record` or `everything`, `expected`, and optionally `ids` or a `selection`) and `confirm`, the partition. A `restore` run names exactly one inventory, `restore` (`expected`, and optionally `ids` or the `removal` whose removed ids it brings back) and `confirm`. A `match` run names exactly one inventory and the `selection` it fills, a `duplicates` run exactly one inventory and the `duplicateCheck` it fills; the inventory's page opens both and queues the run. | `payload runId does not apply to an inventory flow: only a delivery flow's reverse run names the run it reverses; an inventory flow's payload names only inventories, removal, restore, confirm, selection and duplicateCheck.` |
 | `removal` | `entries`: the removals to carry out; every one when left out. An approval of what a guard held is `approve` (`expected`, the count the operator was shown waiting) with `confirm`, the partition, on a `remove` run naming exactly one removal; the Removals page sends it ([The guard](../flow/removal.md#the-guard)). | `payload tests does not apply to a removal flow: only an assertion flow's runs select tests; a removal flow's payload names only entries, approve and confirm.` |
 | `download` | `downloads`: the downloads to write or plan; every one when left out. `force`: a `download` run writes every record OSDU serves again, not only what is new or changed ([download flow](../flow/download.md#operations)). | `payload inventories does not apply to a download flow: only an inventory flow's runs select inventories; a download flow's payload names only downloads and force.` |
 

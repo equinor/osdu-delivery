@@ -18,6 +18,7 @@ import {
 } from "../../api/delivery";
 import { AssertionActionBadge } from "./AssertionFindingsView";
 import { ExportRecordsButton } from "./ExportRecordsButton";
+import { CodeText, FindingExplanation, FindingProof } from "./FindingExplanation";
 import { splitPath } from "./templateFormat";
 import { useValueCheckContext, type ValueCheckSession, type VariableCheck } from "./useValueCheck";
 import {
@@ -418,6 +419,7 @@ export function VariableValueCheck({ path, onRecord }: { path: string; onRecord:
               key={`${from.variable.target}:${finding.outcome}:${finding.message}`}
               target={from.variable.target}
               finding={finding}
+              check={from}
               total={from.variable.rows.total}
               unit="values"
               session={session}
@@ -522,11 +524,13 @@ function VariableResult({ check, session, onRecord }: { check: VariableCheck; se
             {failures.length === 0 && (
               <p className="text-[12px] text-muted-foreground">No finding of the outcome picked; pick it again in the legend to show them all.</p>
             )}
-            {failures.map((finding) => (
+            {failures.map((finding, index) => (
               <FindingCard
                 key={`${finding.outcome}:${finding.at}:${finding.message}`}
                 target={variable.target}
                 finding={finding}
+                check={check}
+                defaultOpen={index === 0}
                 total={variable.repeater ? (variable.items?.total ?? variable.rows.total) : variable.rows.total}
                 unit={variable.repeater ? "items" : "rows"}
                 session={session}
@@ -559,6 +563,7 @@ function VariableResult({ check, session, onRecord }: { check: VariableCheck; se
               key={`${finding.outcome}:${finding.at}:${finding.message}`}
               target={variable.target}
               finding={finding}
+              check={check}
               total={variable.rows.total}
               unit="rows"
               session={session}
@@ -602,22 +607,25 @@ function VariableResult({ check, session, onRecord }: { check: VariableCheck; se
 
 /**
  * One reason rows will not give a variable an expected value, or one assertion of the mapping its values fail: the outcome
- * (with the template's rule or the assertion's name), how many and what share, the reason as the first row states it (for
- * an assertion, what its failure does), the values behind it, and, opened, the records it holds for, paged from the node
- * as far as they go.
+ * (with the template's rule or the assertion's name), how many and what share, what is wrong in plain words (what was looked
+ * for and not found, and where, or the rule broken), the values behind it, and, opened, what it does to the records and what
+ * to do about it, the records it holds for, paged from the node as far as they go, and the queries that prove it from the data.
  */
 function FindingCard({
-  target, finding, total, unit, session, onRecord,
+  target, finding, check, total, unit, session, onRecord, defaultOpen = false,
 }: {
   /** The variable checked, whose check pages the finding. */
   target: string;
   finding: DeliveryValueCheckFinding;
+  /** The check that found it: the flow, scope and cache a proof of it reads. */
+  check: VariableCheck;
   total: number;
   unit: string;
   session: ValueCheckSession;
   onRecord: OpenRecord;
+  defaultOpen?: boolean;
 }) {
-  const [open, setOpen] = useState(false);
+  const [open, setOpen] = useState(defaultOpen);
   const visual = outcomeVisual(finding.outcome);
   const label = findingLabel(finding);
   const shownValues = finding.values.slice(0, 8);
@@ -639,7 +647,7 @@ function FindingCard({
             <OutcomePill tone={visual.tone} label={label} icon={visual.icon} testId="value-check-finding-outcome" />
             {finding.onFail != null && <AssertionActionBadge action={finding.onFail} className="text-[11px]" />}
             <span className="font-mono text-[12px] tabular-nums" data-testid="value-check-finding-count">
-              {`${formatCount(finding.count)} ${unit}`}
+              {`${formatCount(finding.count)} ${counted(finding.count, unit)}`}
             </span>
             {/* A share of rows counts each row once, however many of its values the reason holds for. */}
             <span className="text-[11px] text-muted-foreground tabular-nums">{percent(unit === "rows" ? finding.rows : finding.count, total)}</span>
@@ -648,7 +656,11 @@ function FindingCard({
             )}
             {leaf !== null && <span className="truncate font-mono text-[11px] text-muted-foreground">at {splitPath(leaf).leaf}</span>}
           </span>
-          <span className="line-clamp-2 text-[13px] break-words" title={finding.message}>{finding.message}</span>
+          {/* What is wrong, in plain words; the render's own reason is behind the mark once the card is open. */}
+          <CodeText
+            text={finding.explanation?.headline ?? finding.message}
+            className="line-clamp-3 text-[13px] break-words"
+          />
         </span>
       </button>
 
@@ -670,9 +682,24 @@ function FindingCard({
         </div>
       )}
 
-      {open && <FindingRecords target={target} finding={finding} unit={unit} session={session} onRecord={onRecord} />}
+      {open && (
+        <>
+          {finding.explanation && (
+            <div className="border-t px-2.5 py-2 pl-8">
+              <FindingExplanation finding={finding} testId="value-check-finding-explained" />
+            </div>
+          )}
+          <FindingRecords target={target} finding={finding} unit={unit} session={session} onRecord={onRecord} />
+          <FindingProof target={target} finding={finding} check={check} session={session} testId="value-check-proof" />
+        </>
+      )}
     </div>
   );
+}
+
+/** A unit counted (rows, items, values), one of it said as one. */
+function counted(count: number, unit: string): string {
+  return count === 1 && unit.endsWith("s") ? unit.slice(0, -1) : unit;
 }
 
 interface SampleRow {
@@ -791,7 +818,7 @@ function FindingRecords({
         <span className="text-[12px] text-muted-foreground tabular-nums" data-testid="value-check-records-range">
           {rows.length === 0
             ? `${formatCount(finding.count)} ${unit}`
-            : `${formatCount(finding.samplesFrom + 1)}-${formatCount(listed)} of ${formatCount(finding.count)} ${unit}`}
+            : `${formatCount(finding.samplesFrom + 1)}-${formatCount(listed)} of ${formatCount(finding.count)} ${counted(finding.count, unit)}`}
         </span>
         {remaining > 0 && (
           <Button

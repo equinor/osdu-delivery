@@ -108,7 +108,7 @@ Every run and intervention across flows, newest first: when, **Took** (how long 
 (with its partition when none is picked in the title bar), **Action**, **By** (a schedule, a person, the command line), **Result** and **Target** (the record, else the
 submission, else the run). It narrows by actor, flow,
 action (`deliver`, `intake`, `drain`, `verify`, `probe`, `sync`, `release`, `adopt`, `redeliver`, `rerender`, `delete`,
-`restore-previous`, `purge`, `reverse`, `undo`, `delete-ledger`, `remove-dimension`, `inventory-remove`, `inventory-repair`,
+`restore-previous`, `purge`, `reverse`, `undo`, `delete-ledger`, `remove-dimension`, `inventory-remove`, `inventory-restore`, `inventory-repair`,
 `reassign-id`, `source-remove`, `lift-removal`, `ledger-move`) and outcome. Runs
 that changed nothing are left out until **Show idle runs**. An entry opens on its ids, **Parameters**, its captured
 **Log** (downloadable), and for a `deliver`, `replan`, `drain` or `intake` run that has ended, **Reverse this run**; a
@@ -146,7 +146,8 @@ exists, the Delivery page says so and links here. See
 **submission** as chips, and for a record linked to another through a linked template
 ([mapping $parent](../flow/mapping-parent.md)) its **parent** (the record of the canonical kind with the same minted id,
 opening on that record's page, or in the explorer when no flow of the partition delivers it) or the records it is
-**read by**, each named by its type; each try on the timeline gives the **Parent version** its document was rendered
+**read by**, each named by its type, a record taken out of OSDU no longer among them; each try on the timeline gives the
+**Parent version** its document was rendered
 from. Then the one situation its state calls for (held or failed with the error and next try, and blocked in the same
 line, waiting for another record, under a lease, blocked, released and waiting for its run, held with nothing to move it,
 removed, records waiting on this one). An error is said as the Issues tab says one: the property it names and how far
@@ -176,7 +177,9 @@ for a record that was.
   rows as the ingestion tables hold them now, with the flow's own connection.
 - **Render**: **Render** builds the record from its current row with the mapping and the cache as they are now, and reads
   what OSDU holds, at once; nothing is sent. It shows the mapping and cache versions used beside those that rendered what
-  OSDU holds, the route, what the next run would do (its reason on one line, the whole of it on hover), **Held for**:
+  OSDU holds, the route, what the next run would do (its reason on one line, the whole of it on hover; a record the run
+  would skip without rendering, though it renders now to another document than the one last delivered because something
+  it reads from OSDU changed, says so and that **Redeliver** sends what it renders now), **Held for**:
   why a delivery would hold the record (each reason under the property it names, a `$coalesce`'s alternatives numbered),
   the preflight's warnings, and the **Rendered record** **Beside OSDU** (the differences) or **Whole document**. A record
   its flow never wrote to OSDU is rendered without a read, and the document's line says OSDU holds nothing of it to set

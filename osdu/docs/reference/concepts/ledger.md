@@ -182,8 +182,8 @@ One `osdu.Activity` row per run and per operator intervention, never deleted:
   by button, the API, the MCP tool or the schedule);
 - interventions: `release`, `adopt` (a record taking over the OSDU record at the id its key makes), `redeliver`, `rerender` (bring up to date), `delete` (a removal from OSDU),
   `restore-previous`, `purge` (deleting removed records from the ledger), `remove-dimension`, `remove-view` (a
-  dimension view no flow declares any more), `inventory-remove`,
-  `inventory-repair`, `reassign-id`, `source-remove` (a removal flow taking out what the source no longer holds, in the
+  dimension view no flow declares any more), `inventory-remove`, `inventory-restore` (gone ids an inventory brought
+  back in OSDU), `inventory-repair`, `reassign-id`, `source-remove` (a removal flow taking out what the source no longer holds, in the
   delivery flow's ledger), `lift-removal` (an operator delivering such records again) and `ledger-move` (a ledger moved
   to another flow's identity: by the repository sync for a renamed flow, as `service:repository-sync`, or by a person
   taking over an orphaned ledger).

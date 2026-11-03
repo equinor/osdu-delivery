@@ -471,6 +471,8 @@ public sealed class CacheRetentionStoreTests : IDisposable
             IReadOnlyList<SystemPropertyReading>? readings = null, CancellationToken ct = default)
             => inner.MergeAsync(scope, flowName, captured, capture, capturedUtc, readings, ct);
 
+        public Task<Source.ProofRows> ReadProofAsync(CacheProofQuery query, CancellationToken ct = default) => inner.ReadProofAsync(query, ct);
+
         public Task<CacheRetentionOutcome> ApplyRetentionAsync(CacheRetentionRequest request, CancellationToken ct = default)
             => cancel
                 ? throw new OperationCanceledException("The refresh was cancelled.")

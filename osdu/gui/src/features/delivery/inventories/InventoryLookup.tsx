@@ -50,13 +50,14 @@ export function InventoryLookupBox() {
       return <div className="p-3"><Skeleton className="h-10 w-full" /></div>;
     }
 
-    // What removals did to the id, the newest first: it may be gone from OSDU because an operator removed it.
+    // What removals and restores did to the id, the newest first: it may be gone from OSDU because an operator removed it, or
+    // served again because one restored it.
     const removed = lookup.data.removals.length === 0 ? null : (
       <div className="flex flex-col gap-0.5 border-t border-border px-3 py-1.5" data-testid="inventory-lookup-removals">
-        <span className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground">Removals</span>
+        <span className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground">Removals and restores</span>
         {lookup.data.removals.slice(0, 5).map((item) => (
           <span key={item.inventoryRemovalItemId} className="flex min-w-0 items-center gap-1.5 text-[12px]" data-testid="inventory-lookup-removal">
-            <span className="shrink-0 font-medium">{`removal ${item.inventoryRemovalId}: ${item.outcome}`}</span>
+            <span className="shrink-0 font-medium">{`${item.outcome === "restored" ? "restore" : "removal"} ${item.inventoryRemovalId}: ${item.outcome}`}</span>
             <span className="shrink-0 text-muted-foreground"><RelativeTime value={item.recordedUtc} absolute={false} /></span>
             {item.reason !== undefined && <span className="min-w-0 truncate text-muted-foreground" title={item.reason}>{item.reason}</span>}
           </span>

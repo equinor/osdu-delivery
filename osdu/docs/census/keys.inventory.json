@@ -24,7 +24,7 @@
       "path": "flowType",
       "type": "enum(inventory)",
       "required": true,
-      "description": "The document kind: `inventory`, every id and version OSDU kinds hold in a partition, kept in the module database and compared with every ledger of the partition: records no ledger knows (orphans), records a ledger expects that OSDU does not serve (missing), ids an unfinished delivery left (undoing), and records a ledger forgot. A build, a reconcile and a plan only read OSDU; a flow that declares `removal` also lets an operator remove the orphan, stale or forgotten ids it found, and any inventory flow lets an operator remove its gone ids from the inventory alone.",
+      "description": "The document kind: `inventory`, every id and version OSDU kinds hold in a partition, kept in the module database and compared with every ledger of the partition: records no ledger knows (orphans), records a ledger expects that OSDU does not serve (missing), ids an unfinished delivery left (undoing), and records a ledger forgot. A build, a reconcile and a plan only read OSDU; a flow that declares `removal` also lets an operator remove the orphan, stale or forgotten ids it found, and restore in OSDU the soft-deleted records behind its gone ids, and any inventory flow lets an operator remove its gone ids from the inventory alone.",
       "enumValues": [
         "inventory"
       ]
@@ -352,7 +352,7 @@
       "path": "removal",
       "type": "object",
       "required": false,
-      "description": "What an operator may remove from OSDU of what the inventories found: the ids of the findings `findings` names, through the flow's own `source` and credentials, soft deleted (POST /records/delete, 500 ids a request, reversible), or purged (DELETE /records/{id}, every version destroyed) when `purge` allows it. Left out, the flow only reads OSDU and nothing it found can be removed through it. A removal is a run of the flow (operation `remove`) an operator asks for from the inventory's page: it confirms the partition and the number of ids shown, checks every id again just before it goes (its finding, what the ledgers hold of it now, its version, an orphan's creator), and keeps what it did to each id. The source's credentials must be an owner of the records (`users.datalake.editors`, and in each record's owners ACL)."
+      "description": "What an operator may remove from OSDU of what the inventories found: the ids of the findings `findings` names, through the flow's own `source` and credentials, soft deleted (POST /records/delete, 500 ids a request, reversible), or purged (DELETE /records/{id}, every version destroyed) when `purge` allows it. Declared, whatever findings it names, it also lets an operator restore the soft-deleted records behind the inventories' gone ids (PATCH /records/{id} with {\"deleted\": false}, operation `restore`). Left out, the flow only reads OSDU and nothing it found can be removed or restored through it. A removal is a run of the flow (operation `remove`) an operator asks for from the inventory's page: it confirms the partition and the number of ids shown, checks every id again just before it goes (its finding, what the ledgers hold of it now, its version, an orphan's creator), and keeps what it did to each id. The source's credentials must be an owner of the records (`users.datalake.editors`, and in each record's owners ACL)."
     },
     {
       "path": "removal.findings",
@@ -547,7 +547,7 @@
       "path": "source.purgePath",
       "type": "string",
       "required": false,
-      "description": "Storage's purge of one record and every version of it, naming it as `{id}`: what a removal that purges sends, one id at a time.",
+      "description": "Storage's record resource, naming it as `{id}`: a removal that purges deletes it with every version, and a restore of a gone id patches it back from its soft delete, one id at a time.",
       "default": "/api/storage/v2/records/{id}"
     },
     {

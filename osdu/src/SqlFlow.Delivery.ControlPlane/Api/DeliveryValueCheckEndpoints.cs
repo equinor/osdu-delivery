@@ -75,6 +75,23 @@ public sealed record DeliverySourceSqlRequest(
     IReadOnlyList<string>? Keys);
 
 /// <summary>
+/// The proof of one finding of a value check (osdu/docs/reference/concepts/value-proof.md): the attribute, the flow parameter
+/// values its scope is read with, what the finding comes from and the values behind it as the check answered them, the cache
+/// version the check read, the mapping it was asked of, the step to run (<c>values</c>, <c>records</c> or <c>cache</c>; none
+/// writes the steps and runs nothing) and the most rows a run lists.
+/// </summary>
+public sealed record DeliveryValueProofRequest(
+    string? Target,
+    [property: System.Text.Json.Serialization.JsonConverter(typeof(SqlFlow.Core.Runs.RunValuesJsonConverter))] IReadOnlyDictionary<string, string>? Values,
+    ValueCheckCause? Cause,
+    IReadOnlyList<ValueCheckSourceValue>? SourceValues,
+    IReadOnlyList<string>? Looked,
+    string? CacheVersion,
+    string? Mapping,
+    string? Run,
+    int? Limit);
+
+/// <summary>
 /// A page of the rows staged in a flow's scope: the flow parameter values its scope is read with, the text a row must hold, where
 /// the last page ended, and how many rows to a page.
 /// </summary>
@@ -128,6 +145,7 @@ public static class DeliveryValueCheckEndpoints
         delivery.MapPost("/flows/{pipelineId:guid}/staged-rows", StagedRowsAsync).WithName("ListDeliveryFlowStagedRows");
         delivery.MapPost("/flows/{pipelineId:guid}/table-rows", TableRowsAsync).WithName("ReadDeliveryFlowTableRows");
         delivery.MapPost("/flows/{pipelineId:guid}/source-sql", SourceSqlAsync).WithName("WriteDeliveryFlowSourceSql");
+        delivery.MapPost("/flows/{pipelineId:guid}/value-proof", ValueProofAsync).WithName("ProveDeliveryFlowValueFinding");
     }
 
     /// <summary>
@@ -609,6 +627,124 @@ public static class DeliveryValueCheckEndpoints
             }
 
             arguments["mapping"] = mapping;
+        }
+
+        return null;
+    }
+
+    /// <summary>
+    /// The proof of one finding of a value check, written, and run on request, in this process (<see cref="DirectOperationRunner"/>):
+    /// the statements that show it from the flow's source and the partition's cache, each read-only, the one the request names
+    /// run. The statements are written by the operation from the flow and the mapping, never taken from the request. Every part of
+    /// the request is checked here, so one the operation would refuse answers 400.
+    /// </summary>
+    private static async Task<Results<ContentHttpResult, ProblemHttpResult>> ValueProofAsync(
+        Guid pipelineId, DeliveryValueProofRequest? request, [FromQuery(Name = "interface")] string? interfaceName, [FromQuery] string? partition, CatalogDbContext db,
+        DeliveryDocumentLoader documents, IPartitionRegistry partitions, DeliveryConfigStore config, DirectOperations direct, ILoggerFactory loggers, ClaimsPrincipal user, CancellationToken ct)
+    {
+        var (flow, problem) = await DeliveryEndpoints.ResolveAsync(db, documents, partitions, pipelineId, interfaceName, partition, ct).ConfigureAwait(false);
+        if (flow is null)
+        {
+            return problem!;
+        }
+
+        if (request is null)
+        {
+            return DeliveryEndpoints.Invalid("A proof names the attribute and what its finding comes from.");
+        }
+
+        var arguments = new Dictionary<string, string>(StringComparer.Ordinal);
+        if (ValueProofArguments(flow.Flow, request, arguments) is { } refused)
+        {
+            return DeliveryEndpoints.Invalid(refused);
+        }
+
+        return await DirectOperationRunner.RunAsync(db, config, direct, flow, ValueProofOperation.OperationName, arguments, user, loggers, ct).ConfigureAwait(false);
+    }
+
+    /// <summary>Fills <paramref name="arguments"/> for <paramref name="request"/>, or says why a proof cannot be written.</summary>
+    internal static string? ValueProofArguments(FlowDefinition flow, DeliveryValueProofRequest request, Dictionary<string, string> arguments)
+    {
+        ArgumentNullException.ThrowIfNull(flow);
+        ArgumentNullException.ThrowIfNull(request);
+        ArgumentNullException.ThrowIfNull(arguments);
+        if (request.Target?.Trim() is not { Length: > 0 } target || !TemplatePath.TryParse(target, out _, out _))
+        {
+            return request.Target is null ? "A proof names the attribute its finding is of." : $"'{request.Target}' is not an attribute a proof can name.";
+        }
+
+        arguments[ValueProofOperation.TargetArgument] = target;
+        if (request.Cause is not { } cause || cause.Kind.Length == 0)
+        {
+            return "A proof names what its finding comes from: the cause the check answered with.";
+        }
+
+        var values = request.Values ?? new Dictionary<string, string>(StringComparer.Ordinal);
+        if (DeliveryEndpoints.ParameterProblem(flow, values) is { } parameters)
+        {
+            return parameters;
+        }
+
+        if (values.Count > 0 && Json(values, "parameter values", arguments, "values") is { } tooLong)
+        {
+            return tooLong;
+        }
+
+        if (Json(cause, "parts of the cause", arguments, ValueProofOperation.CauseArgument, PlainJson) is { } causeTooLong)
+        {
+            return causeTooLong;
+        }
+
+        if (request.SourceValues is { Count: > 0 } held
+            && Json(held, "source values", arguments, ValueProofOperation.SourceValuesArgument, PlainJson) is { } heldTooLong)
+        {
+            return heldTooLong;
+        }
+
+        if (request.Looked is { Count: > 0 } looked
+            && Json(looked, "values looked for", arguments, ValueProofOperation.LookedArgument, PlainJson) is { } lookedTooLong)
+        {
+            return lookedTooLong;
+        }
+
+        if (request.CacheVersion?.Trim() is { Length: > 0 } version)
+        {
+            if (version.Length > 64 || version.Any(char.IsControl))
+            {
+                return "A cache version is named by its label, of at most 64 characters.";
+            }
+
+            arguments[ValueProofOperation.CacheVersionArgument] = version;
+        }
+
+        if (request.Run is { } run)
+        {
+            if (!ValueProofOperation.Steps.Contains(run, StringComparer.Ordinal))
+            {
+                return $"A proof runs one of {string.Join(", ", ValueProofOperation.Steps)}; '{run}' is none of them.";
+            }
+
+            arguments[ValueProofOperation.RunArgument] = run;
+        }
+
+        if (request.Limit is { } limit)
+        {
+            if (limit is < 1 or > ValueProver.MaxLimit)
+            {
+                return $"A proof lists between 1 and {ValueProver.MaxLimit} rows; {limit.ToString(CultureInfo.InvariantCulture)} is outside that.";
+            }
+
+            arguments[ValueProofOperation.LimitArgument] = limit.ToString(CultureInfo.InvariantCulture);
+        }
+
+        if (request.Mapping?.Trim() is { Length: > 0 } mapping)
+        {
+            if (mapping.Length > MaxMappingLength || mapping.Any(char.IsControl) || !string.Equals(mapping, flow.Render.Mapping, StringComparison.Ordinal))
+            {
+                return $"Flow '{flow.Label}' renders with mapping {flow.Render.Mapping}, not {mapping}.";
+            }
+
+            arguments[ValueProofOperation.MappingArgument] = mapping;
         }
 
         return null;

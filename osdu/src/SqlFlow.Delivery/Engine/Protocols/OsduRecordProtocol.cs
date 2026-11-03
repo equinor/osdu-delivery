@@ -1046,10 +1046,11 @@ internal static class RecordWriter
 
     /// <summary>
     /// Brings a soft-deleted record back under its id (osdu/specs/core/INTEGRATION.md section 5.4, D3): a merge patch of
-    /// <c>{"deleted": false}</c>, after which storage serves the record at the version it had, with no new version (storage
-    /// source, RecordServiceImpl.patchRecord). A 404 is an id storage holds no record of (purged, or never written); a 400
-    /// saying the state is already so is a record storage serves. Every other refusal throws, 403 naming credentials that
-    /// are no owner of the record.
+    /// <c>{"deleted": false}</c>, after which storage serves the record at the version it had, with no new version, and
+    /// publishes it to be indexed again (storage source, RecordServiceImpl.patchRecord). A 404 is an id storage holds no record
+    /// of (purged, or never written); a 400 saying the state is already so is a record storage serves. Every other refusal
+    /// throws: 403 naming credentials that are no owner of the record, 409 a record storage withholds while its legal tags are
+    /// incompliant.
     /// </summary>
     public static async Task<(RecordRestore Outcome, int Status)> RestoreAsync(OsduHttpClient client, string recordPath, string targetId, CancellationToken ct)
     {
@@ -1067,6 +1068,13 @@ internal static class RecordWriter
             throw new OsduStatusException(
                 403,
                 $"OSDU refused to bring {targetId} back from its soft delete (403): the flow's credentials are no owner of the record (its acl.owners), so nothing was written",
+                ex);
+        }
+        catch (OsduStatusException ex) when (ex.StatusCode == 409)
+        {
+            throw new OsduStatusException(
+                409,
+                $"OSDU refused to bring {targetId} back from its soft delete (409): storage withholds it while its legal tags are incompliant or it is suspended, which only its compliance handling lifts, so nothing was written",
                 ex);
         }
 

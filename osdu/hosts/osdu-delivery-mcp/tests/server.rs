@@ -585,6 +585,9 @@ const QUESTIONS: &[(&str, &[&str])] = &[
     ("replace a value from the cache", &["delivery-flow-mapping-modifiers"]),
     ("findBy cached reference data unit of measure", &["delivery-flow-mapping-lookups", "delivery-guide-reference-data-cache"]),
     ("why is my record held", &["delivery-concept-record-lifecycle", "delivery-guide-operations-runbook"]),
+    ("why does an attribute fail the value check", &["delivery-concept-value-proof"]),
+    ("the value is missing in the cache, which records hold it", &["delivery-concept-value-proof"]),
+    ("a proof query I can run to find the records with wrong values", &["delivery-concept-value-proof"]),
     ("redeliver a record", &["delivery-guide-operations-runbook", "delivery-concept-removal-and-reversal", "delivery-cli-run"]),
     ("remove records from osdu", &["delivery-concept-removal-and-reversal"]),
     ("never deliver rows the source deleted", &["delivery-guide-rows-deleted-in-the-source", "delivery-flow-delivery-filter"]),
@@ -1666,7 +1669,7 @@ async fn no_tool_of_the_server_reads_or_removes_what_osdu_holds() {
     let data_routes = [
         "/read\"", "/source\"", "/preview", "/scope-values", "/check-values", "/osdu/read", "/osdu/validate", "/cache/items", "/cache/diff",
         "/cache/gaps", "/values", "/keys\"", "/table\"", "/export", "/dimensions/search", "/filter\"", "records/remove", "/delete\"",
-        "/maintenance/", "/explorer/",
+        "/maintenance/", "/explorer/", "/value-proof",
     ];
     for entry in std::fs::read_dir(&sources).expect("the tools folder") {
         let path = entry.expect("an entry").path();

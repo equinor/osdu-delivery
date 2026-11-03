@@ -152,8 +152,14 @@ The first line starts with `OK` when no row is held, invalid, held by an asserti
     keyless     <n> rows have an empty key part, so their records cannot be tracked
     passed over <n>: the ingestion table marks the row deleted, and a deleted row is never delivered
     osdu.data.FacilityName: <n> held, <n> invalid, <n> empty, <n> valid, <n> not applicable[; <n> failing an assertion]
-      <outcome>  <count>[ at <path inside>]  <reason>
+      <outcome>  <count>[ at <path inside>]  <what is wrong>
+               effect  <what it does to the records>
+               where   <where it was looked for, and what the source holds against what the mapping made of it>
+               reason  <the reason as the render gives it>
                values  '<value>' x<n>, ...
+               source  <column> '<value>' x<n>, ...
+               to fix  1. <the likeliest fix>
+                       2. <the next>
                e.g.    welldb:WB-0001 (<file> row <n>)
     note        <what the answer left out, and why>
     issue       <a preflight warning>
@@ -166,7 +172,7 @@ The first line starts with `OK` when no row is held, invalid, held by an asserti
 | `asserted` | Only when a row fails an assertion of the mapping: those rows, and how many of them an assertion would hold. |
 | `keyless`, `passed over` | Rows with an empty key part; rows a delivery never renders, by reason. |
 | `<property>:` | Only for a property some row fails: its rows by outcome, and the rows failing an assertion. |
-| finding lines | Each reason, with its outcome (`held`, `invalid`, `empty` or `asserted`), count and where inside the property it is; the five most frequent values behind it; the first three example records with their file, row and item. |
+| finding lines | Each reason, with its outcome (`held`, `invalid`, `empty` or `asserted`), count and where inside the property it is, led by what is wrong in plain words ([why an attribute fails](../concepts/value-proof.md)); what it does to the records; where it was looked for, when that adds something; the render's own reason; the five most frequent values behind it, and what the source columns behind it hold; what to do, the likeliest first; the first three example records with their file, row and item. |
 | `... more occurrences under reasons not listed` | Occurrences of findings past the 50 a property lists. |
 
 ### --json and --out
@@ -185,8 +191,10 @@ values together, `values: any`, counts its row and no item), `values`, `distinct
 assertion does: `hold`, `report` or `omit`), `message`, `count`, `rows`, `values`, `otherValues`,
 `samples` (`sourceKey`, `label`, `deliveryKey`, `file`, `row`, `item`, `value`, `message`, and `columns`, the source
 columns to fix: the ones the reason names, else the ones holding the value, else the property's only column, else those it
-reads that are empty) and `samplesFrom`. A source
-checked one interface at a time gives an array of these.
+reads that are empty), `samplesFrom`, `causes` (each `kind`, `columns`, `types`, `entityType`, `fields`,
+`ignoreSeparators`, `candidates` and `rule`: what the finding comes from, [why an attribute fails](../concepts/value-proof.md)),
+`explanation` (`headline`, `effect`, `detail`, `fixes`, code set in backticks), `sourceValues` (`column`, `value`, `count`)
+and `otherSourceValues`. A source checked one interface at a time gives an array of these.
 
 ### Bounds
 

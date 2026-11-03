@@ -444,7 +444,7 @@ public sealed class MappingRenderer
         ArgumentNullException.ThrowIfNull(selection);
         RefuseFragment(nameof(Inspect));
         var holds = new List<string>();
-        var searched = new RenderTrail { Assertions = AssertionsLog() };
+        var searched = new RenderTrail { Assertions = AssertionsLog(), NotesMisses = true };
         var trail = new InspectionTrail(selection);
         var (document, key, sourceKey, _) = Start(record, holds);
         Assemble(document, new RowValues(this, record, holds, [], searched), holds, trail);
@@ -736,6 +736,7 @@ public sealed class MappingRenderer
 
             var held = holds.Count;
             var asked = values.Asked.Count;
+            var missed = values.Misses.Count;
             var value = values.Value(entry, item: null, ordinal: null, out var applied);
             if (value is not null)
             {
@@ -746,7 +747,7 @@ public sealed class MappingRenderer
                 empty.Add(entry.Target.Segments.Select(s => s.Name).ToList());
             }
 
-            trail?.Add(Outcome(entry, null, null, value, applied, holds, held, values, asked));
+            trail?.Add(Outcome(entry, null, null, value, applied, holds, held, values, asked, missed));
         }
 
         foreach (var (repeater, items) in _repeaters)
@@ -812,6 +813,7 @@ public sealed class MappingRenderer
                 {
                     var held = holds.Count;
                     var asked = values.Asked.Count;
+                    var missed = values.Misses.Count;
                     var value = values.Value(entry, row, ordinal, out var applied);
                     if (value is not null)
                     {
@@ -822,7 +824,7 @@ public sealed class MappingRenderer
                         emptyInItem.Add(entry);
                     }
 
-                    trail?.Add(Outcome(entry, ordinal, row, value, applied, holds, held, values, asked));
+                    trail?.Add(Outcome(entry, ordinal, row, value, applied, holds, held, values, asked, missed));
                     itemHolds?.Note(entry, holds, held);
                 }
 
@@ -920,12 +922,14 @@ public sealed class MappingRenderer
 
     /// <summary>
     /// What one entry gave, from what its evaluation left behind: a question it asked makes it wait, a hold it added holds
-    /// it, a condition that did not hold makes it not apply, and no value leaves the variable out, with why.
+    /// it, a condition that did not hold makes it not apply, and no value leaves the variable out, with why. What the entry
+    /// looked for and did not find goes with an outcome that holds or leaves the variable out.
     /// </summary>
     private static EntryOutcome Outcome(
-        MappingEntry entry, int? item, SourceRow? row, JsonNode? value, bool applied, List<string> holds, int held, IRecordValues values, int asked)
+        MappingEntry entry, int? item, SourceRow? row, JsonNode? value, bool applied, List<string> holds, int held, IRecordValues values, int asked, int missed)
     {
         var target = entry.Target.Text;
+        IReadOnlyList<RenderMiss> misses = values.Misses.Count > missed ? values.Misses.Skip(missed).ToList() : [];
         if (values.Asked.Count > asked)
         {
             return new EntryOutcome
@@ -940,7 +944,7 @@ public sealed class MappingRenderer
 
         if (holds.Count > held)
         {
-            return new EntryOutcome { Target = target, Entry = entry, Item = item, Kind = EntryOutcomeKind.Held, Reasons = holds.Skip(held).ToList() };
+            return new EntryOutcome { Target = target, Entry = entry, Item = item, Kind = EntryOutcomeKind.Held, Reasons = holds.Skip(held).ToList(), Misses = misses };
         }
 
         if (!applied)
@@ -949,7 +953,7 @@ public sealed class MappingRenderer
         }
 
         return value is null
-            ? new EntryOutcome { Target = target, Entry = entry, Item = item, Kind = EntryOutcomeKind.Empty, Reasons = [values.WhyEmpty(entry, row)] }
+            ? new EntryOutcome { Target = target, Entry = entry, Item = item, Kind = EntryOutcomeKind.Empty, Reasons = [values.WhyEmpty(entry, row)], Misses = misses }
             : new EntryOutcome { Target = target, Entry = entry, Item = item, Kind = EntryOutcomeKind.Value, Value = value };
     }
 
@@ -1050,6 +1054,9 @@ public sealed class MappingRenderer
         /// <summary>Why an entry that wrote nothing gave no value for the row, as a render holding it for that would say.</summary>
         string WhyEmpty(MappingEntry entry, SourceRow? item);
 
+        /// <summary>What the values met so far looked for and did not find, in the order the render met them.</summary>
+        IReadOnlyList<RenderMiss> Misses { get; }
+
         /// <summary>
         /// Whether what the entries add to the holds is what holds the record, so a reason several items share is said once
         /// (<see cref="ItemHolds"/>); a shape's are notes on each entry, said as they are.
@@ -1077,6 +1084,8 @@ public sealed class MappingRenderer
         public IReadOnlyList<PlatformQuestion> Asked => searched.Unanswered;
 
         public string WhyEmpty(MappingEntry entry, SourceRow? item) => EntryValues.WhyEmpty(entry, record.Row, item, renderer, searched.Base);
+
+        public IReadOnlyList<RenderMiss> Misses => searched.Misses;
 
         public bool HoldsTheRecord => true;
     }
@@ -1106,6 +1115,8 @@ public sealed class MappingRenderer
         public IReadOnlyList<PlatformQuestion> Asked => [];
 
         public string WhyEmpty(MappingEntry entry, SourceRow? item) => "a shape reads no row";
+
+        public IReadOnlyList<RenderMiss> Misses => [];
 
         public bool HoldsTheRecord => false;
     }

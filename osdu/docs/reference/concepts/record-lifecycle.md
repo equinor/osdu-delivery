@@ -330,7 +330,9 @@ cache version holds that record, the held record is released under a `release` a
 
 A child is never a reason to hold its parent: a record linking its children with `$child` goes out without the link to a
 child OSDU does not hold yet, and when the child lands through the ledger the record is asked to be planned again, with
-no activity, so its flow's next run adds the link ([mapping $child](../flow/mapping-child.md#when-a-child-lands)).
+no activity, so its flow's next run adds the link ([mapping $child](../flow/mapping-child.md#when-a-child-lands)). A child
+taken out of OSDU through the ledger asks the same, and the next run takes the link away
+([mapping $child](../flow/mapping-child.md#when-a-child-is-taken-out)).
 
 ## Adopting a record OSDU already holds
 

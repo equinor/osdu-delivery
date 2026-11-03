@@ -131,9 +131,9 @@ public sealed class ValueIssuesWorkbookTests
 
         // What is wrong and where to fix it lead, the base data follows, and the rest comes last.
         Assert.Equal(
-            ["Record", "Item", "Outcome", "Reason", "Source file", "Source row", "Source column", "Source value", "Value written",
+            ["Record", "Item", "Outcome", "What is wrong", "Source file", "Source row", "Source column", "Source value", "Value written",
                 "dataset.curve", "dataset.project", "dataset.aliases.alias_name", "dataset.aliases.alias_type",
-                "Rule", "Attribute", "Inside", "Source key", "Delivery key"],
+                "Rule", "Attribute", "Inside", "Reason as rendered", "Source key", "Delivery key"],
             read.Headers(ValueIssuesWorkbook.IssuesSheet));
 
         var rows = read.Rows(ValueIssuesWorkbook.IssuesSheet);
@@ -145,7 +145,8 @@ public sealed class ValueIssuesWorkbookTests
         Assert.Equal(12, first["Source row"].GetNumber());
         Assert.Equal(2, first["Item"].GetNumber());
         Assert.Equal("Assertion failed", first["Outcome"].GetText());
-        Assert.Equal("'NoSuchType' names no record the partition holds", first["Reason"].GetText());
+        Assert.Equal("'NoSuchType' names no record the partition holds", first["What is wrong"].GetText());
+        Assert.Equal("'NoSuchType' names no record the partition holds", first["Reason as rendered"].GetText());
         Assert.Equal("DEPTH", first["Value written"].GetText());
         Assert.Equal("dataset.aliases.alias_type", first["Source column"].GetText());
         Assert.Equal("NoSuchType", first["Source value"].GetText());
@@ -241,6 +242,11 @@ public sealed class ValueIssuesWorkbookTests
         Assert.Equal("omit", asserted["On failure"].GetText());
         Assert.Equal(1, asserted["Rows"].GetNumber());
         Assert.Equal("DEPTH (1), GR (1), and 3 others", asserted["Values"].GetText());
+
+        // Each line says what is wrong and what to do about it in plain words, beside the reason as the render gave it.
+        Assert.False(asserted["What is wrong"].IsBlank);
+        Assert.False(asserted["What to do"].IsBlank);
+        Assert.Equal(Left.Message, asserted["Reason as rendered"].GetText());
     }
 
     [Fact]

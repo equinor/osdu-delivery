@@ -27,9 +27,12 @@ export const REMOVABLE_FINDINGS: readonly InventoryFinding[] = ["orphan", "stale
 
 /**
  * The finding whose ids are removed from the inventory alone, whatever the flow declares: OSDU no longer serves them, so
- * nothing is asked of it.
+ * nothing is asked of it. A flow that declares a removal also restores them in OSDU.
  */
 export const GONE_FINDING: InventoryFinding = "gone";
+
+/** The scope a restore of gone ids is kept under, with the removals it undoes. */
+export const RESTORE_SCOPE = "restore";
 
 /**
  * How much of each record a removal takes: a soft delete (`record`, reversible) or a purge (`everything`) of an id OSDU
@@ -81,15 +84,16 @@ export interface InventoryRepairResult {
   activityId: number;
 }
 
-/** What a removal came to for one id. */
-export type InventoryRemovalOutcome = "removed" | "gone" | "skipped" | "failed";
+/** What a removal (or a restore) came to for one id. */
+export type InventoryRemovalOutcome = "removed" | "restored" | "gone" | "skipped" | "failed";
 
 /** Every outcome, in the order a page lists them. */
-export const INVENTORY_REMOVAL_OUTCOMES: readonly InventoryRemovalOutcome[] = ["removed", "gone", "skipped", "failed"];
+export const INVENTORY_REMOVAL_OUTCOMES: readonly InventoryRemovalOutcome[] = ["removed", "restored", "gone", "skipped", "failed"];
 
 /**
  * What a flow lets an operator remove of what its inventory found, the platform the removal goes to as the flow writes it, and
- * the storage paths a soft delete (500 ids a request) and a purge (one id at a time) call there.
+ * the storage paths a soft delete (500 ids a request) and a purge (one id at a time) call there, and the one a restore of gone
+ * ids patches (one id at a time). A flow that declares a removal restores too.
  */
 export interface InventoryRemovalPolicy {
   findings: string[];
@@ -97,6 +101,29 @@ export interface InventoryRemovalPolicy {
   endpoint: string;
   bulkDeletePath: string;
   purgePath: string;
+  restorePath: string;
+}
+
+/**
+ * A restore an operator asks for (osdu/docs/reference/flow/inventory-removals.md, Restoring gone ids): the count shown, the gone
+ * ids picked or the soft-delete removal whose removed ids it brings back (neither restores every gone id), and the partition
+ * typed back.
+ */
+export interface InventoryRestoreRequest {
+  expected: number;
+  ids?: string[];
+  removal?: number;
+  confirm: string;
+}
+
+/** A restore queued as a run of the flow. */
+export interface InventoryRestoreAccepted {
+  runId: string;
+  status: string;
+  partition: string;
+  inventory: string;
+  expected: number;
+  removal?: number;
 }
 
 /**
@@ -125,7 +152,10 @@ export interface InventoryRemovalAccepted {
   selection?: number;
 }
 
-/** One removal of an inventory's ids: its run, who asked, what and how much, where it stands, and what it came to. */
+/**
+ * One removal of an inventory's ids, or one restore of its gone ids (scope `restore`): its run, who asked, what and how much,
+ * where it stands, and what it came to.
+ */
 export interface InventoryRemoval {
   inventoryRemovalId: number;
   inventoryId: number;
@@ -139,6 +169,8 @@ export interface InventoryRemoval {
   startedUtc: string;
   completedUtc?: string;
   removed: number;
+  /** The ids a restore brought back in OSDU; zero for a removal. */
+  restored: number;
   gone: number;
   skipped: number;
   failed: number;
@@ -146,6 +178,8 @@ export interface InventoryRemoval {
   activityId?: number;
   /** The selection the removal took its ids from, with the conditions that made it; left out for one that took none. */
   selection?: InventorySelectionSummary;
+  /** The removal whose removed ids a restore brought back; left out otherwise. */
+  restoresRemovalId?: number;
 }
 
 /** What one removal did to one id, and why. */
@@ -629,10 +663,13 @@ export const inventoryApi = {
   /** Queues the run that removes from OSDU the ids of one finding of the inventory, as the caller. */
   remove: (partition: string, inventoryId: number, request: InventoryRemovalRequest) =>
     post<InventoryRemovalAccepted>(`${inventoryPath(partition, inventoryId)}/removals`, request),
+  /** Queues a restore in OSDU of gone ids, or of what one soft-delete removal removed, as a run of the flow. */
+  restore: (partition: string, inventoryId: number, request: InventoryRestoreRequest) =>
+    post<InventoryRestoreAccepted>(`${inventoryPath(partition, inventoryId)}/restores`, request),
   /** Delivers again, through their flows, the records behind missing ids of the inventory, as the caller. */
   repair: (partition: string, inventoryId: number, request: InventoryRepairRequest) =>
     post<InventoryRepairResult>(`${inventoryPath(partition, inventoryId)}/repairs`, request),
-  /** An inventory's removals, newest first. */
+  /** An inventory's removals and restores, newest first. */
   removals: (partition: string, inventoryId: number, limit?: number) =>
     get<InventoryRemoval[]>(`${inventoryPath(partition, inventoryId)}/removals`, limit === undefined ? {} : { limit }),
   /** A page of what one removal did to its ids, of one outcome or every one, after the item `after` names. */

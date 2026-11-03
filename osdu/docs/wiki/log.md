@@ -623,3 +623,19 @@ it uses the marks to remove, marks what it removes, and cross-matches with the l
 
 Added decision 0043 and the reference pages `delivery-flow-removal-marks` and `delivery-flow-delivery-filter`; amended
 decision 0022.
+
+## [2026-11-02] ingest | An inventory's gone ids are restored in OSDU, and each action says where it acts
+
+Source: the human's question about the gone tab's **Remove** (whether it removes from OSDU Delivery, and how a soft-deleted
+record comes back), the storage contract's undelete (D3), and storage's source at the pinned commit and at 26d37685.
+
+Extended decision 0014 with the restore: a run of its own kept with the removals, only for a flow that declares a
+removal, leaving what a ledger knows, and restoring a removal's ids after they left the inventory.
+
+## [2026-11-03] ingest | A finding says why, what to do, and proves it from the data
+
+Source: the human's words on a mapping's dry run: the check's data was hard to understand and its messages vague; they asked
+for "this attribute failed because X value is missing in this cache", a list of the business keys with wrong or missing
+values, what to do, and a built-in proof query they can run to find the records themselves.
+
+Added decision 0044 and the reference page `delivery-concept-value-proof`.

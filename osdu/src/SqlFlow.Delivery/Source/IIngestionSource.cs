@@ -330,7 +330,37 @@ public interface IIngestionSource
     /// rows are counted up to <see cref="TableRowsQuery.CountUpTo"/>, so a count costs the same however many rows there are.
     /// </summary>
     Task<TableRows> ReadTableAsync(TableRowsQuery query, CancellationToken ct = default);
+
+    /// <summary>
+    /// What one statement of a finding's proof reads (osdu/docs/reference/concepts/value-proof.md): the values its columns hold
+    /// with their rows, or the records, over the rows a delivery reads. The statement is the one a person copies
+    /// (<see cref="IngestionSql.ProofValues"/>, <see cref="IngestionSql.ProofRecords"/>), its values bound as parameters; at most
+    /// <see cref="SourceProofQuery.Limit"/> rows are read, and the answer says when there are more.
+    /// </summary>
+    Task<ProofRows> ReadProofAsync(SourceProofQuery query, CancellationToken ct = default);
 }
+
+/// <summary>Which statement of a finding's proof to read, with what, and how much of it.</summary>
+public sealed record SourceProofQuery
+{
+    /// <summary>The rows the proof reads.</summary>
+    public required ProofRead Read { get; init; }
+
+    /// <summary>True for the records; false for the values the columns hold, with their rows.</summary>
+    public required bool Records { get; init; }
+
+    /// <summary>For each column of <see cref="Read"/>, in order, the values looked for; empty lists for a proof of empty columns.</summary>
+    public required IReadOnlyList<IReadOnlyList<string>> Values { get; init; }
+
+    /// <summary>The most rows read.</summary>
+    public required int Limit { get; init; }
+
+    /// <summary>The most characters a value keeps; a longer one is cut.</summary>
+    public int MaxCharacters { get; init; } = 1000;
+}
+
+/// <summary>What one statement of a proof read: its columns, its rows as invariant text, and whether it holds more rows than were read.</summary>
+public sealed record ProofRows(IReadOnlyList<string> Columns, IReadOnlyList<IReadOnlyList<string?>> Rows, bool More);
 
 /// <summary>Which table a look at a table's first rows reads, and how much of it.</summary>
 public sealed record TableRowsQuery

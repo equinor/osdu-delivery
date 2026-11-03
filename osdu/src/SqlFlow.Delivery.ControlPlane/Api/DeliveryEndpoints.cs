@@ -175,12 +175,13 @@ public sealed record DeliveryActivityFlowDto(Guid FlowId, string FlowName, strin
 /// names the record it waits for (<c>WaitsOn</c>), and every record lists the records waiting for it (<c>WaitedOnBy</c>,
 /// the first <see cref="DeliveryEndpoints.MaxWaitersShown"/>). A record reading its parent names the record of the ledger
 /// holding the parent's id (<c>Parent</c>, null when none of the partition's flows delivers it), and every record lists the
-/// records reading it as their parent (<c>ReadBy</c>, the first <see cref="DeliveryEndpoints.MaxWaitersShown"/>): the same
-/// minted id in the other namespace, one click away. <c>KeyColumns</c> names the parts of the record's key
-/// tuple (<c>SourceKeyJson</c>): its interface's <c>source.record.key</c> as the catalog's copy of the flow declares it
-/// now, null when the catalog holds no readable copy of that flow or interface. <c>Partition</c> is the partition a
-/// request about the record's flow names, for a flow that names or follows its partitions; null for one whose partition is
-/// its header's, which takes none. The partition the record's ledger is kept under, either way, is the record's own.
+/// records reading it as their parent (<c>ReadBy</c>, the first <see cref="DeliveryEndpoints.MaxWaitersShown"/>, a record
+/// taken out of OSDU left out): the same minted id in the other namespace, one click away. <c>KeyColumns</c> names the parts
+/// of the record's key tuple (<c>SourceKeyJson</c>): its interface's <c>source.record.key</c> as the catalog's copy of the
+/// flow declares it now, null when the catalog holds no readable copy of that flow or interface. <c>Partition</c> is the
+/// partition a request about the record's flow names, for a flow that names or follows its partitions; null for one whose
+/// partition is its header's, which takes none. The partition the record's ledger is kept under, either way, is the
+/// record's own.
 /// </summary>
 public sealed record DeliveryRecordDetailDto(
     DeliveryRecordDto Record, Guid? PipelineId, Guid? RepoId, string? FlowName, string? Interface = null,

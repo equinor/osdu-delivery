@@ -3,6 +3,7 @@ using Microsoft.Data.SqlClient;
 using Microsoft.Extensions.Logging.Abstractions;
 using SqlFlow.Core;
 using SqlFlow.Core.Runs;
+using SqlFlow.Delivery.Engine.Checks;
 using SqlFlow.Delivery.Model;
 using SqlFlow.Delivery.Source;
 using SqlFlow.Delivery.Templates;
@@ -660,6 +661,109 @@ public sealed class SqlServerIngestionSourceTests
         // A row budget bounds what comes back.
         var first = SourceQuery.For(described, mapping, flow.Label, null, Path("osdu.data.Depth"), 1, []);
         Assert.Equal([["item-1", "10", "items.csv", "1"]], await RunAsync(estate, first.Sql!));
+    }
+
+    [Fact]
+    public async Task A_findings_proof_runs_as_written_and_reads_the_rows_holding_its_values_or_leaving_its_columns_empty()
+    {
+        await using var estate = await SqlServerIngestionFixture.StartAsync();
+        var table = await CreateTableAsync(
+            estate,
+            "Proved",
+            "[RecId] bigint IDENTITY(1, 1) NOT NULL CONSTRAINT [PK_Proved] PRIMARY KEY CLUSTERED, [item_key] nvarchar(50) NOT NULL, [depth] int NULL, [unit] nvarchar(20) NULL, "
+                + "[region] nvarchar(20) NULL, [UpdatedDate_DW] datetime NULL, [DeletedDate_DW] datetime NULL, [FileName_DW] nvarchar(400) NULL, [RowNumber_DW] bigint NULL",
+            "CREATE UNIQUE NONCLUSTERED INDEX [NCI_KeyColumn] ON {0} ([item_key]);");
+        var parts = await CreateTableAsync(
+            estate,
+            "ProvedPart",
+            "[item_key] nvarchar(50) NOT NULL, [curve_unit] nvarchar(20) NULL, [part_no] int NOT NULL, [UpdatedDate_DW] datetime NULL, [DeletedDate_DW] datetime NULL, "
+                + "[FileName_DW] nvarchar(400) NULL, [RowNumber_DW] bigint NULL",
+            string.Empty);
+
+        // In scope: item-1, O'Brien (a key and a value holding a quote) and item-3, whose unit is blank and depth missing. Out of
+        // it: item-4, of another region, and item-5, deleted. One of item-1's parts is deleted.
+        await ExecuteAsync(estate, $"""
+            INSERT INTO {table} ([item_key], [depth], [unit], [region], [UpdatedDate_DW], [FileName_DW], [RowNumber_DW]) VALUES
+                (N'item-1', 10, N'FT', N'north', @loaded, N'items.csv', 1),
+                (N'O''Brien', 20, N'it''s', N'north', @loaded, N'items.csv', 2),
+                (N'item-3', NULL, N'  ', N'north', @loaded, N'items.csv', 3),
+                (N'item-4', 10, N'FT', N'south', @loaded, N'items.csv', 4),
+                (N'item-5', 10, N'FT', N'north', @loaded, N'items.csv', 5);
+            UPDATE {table} SET [DeletedDate_DW] = @changed WHERE [item_key] = N'item-5';
+            INSERT INTO {parts} ([item_key], [curve_unit], [part_no], [DeletedDate_DW], [FileName_DW], [RowNumber_DW]) VALUES
+                (N'item-1', N'FURLONG', 1, NULL, N'curves.csv', 11), (N'item-1', N'm', 2, NULL, N'curves.csv', 12),
+                (N'item-1', N'FURLONG', 3, @changed, N'curves.csv', 13), (N'O''Brien', N'FURLONG', 1, NULL, N'curves.csv', 21);
+            """);
+        var sample = ItemFlow(estate, "Proved");
+        var flow = sample with
+        {
+            Source = sample.Source with
+            {
+                Record = sample.Source.Record with { Scope = new Dictionary<string, string>(StringComparer.Ordinal) { ["region"] = "region" } },
+                Datasets = new Dictionary<string, FlowSourceDataset>(StringComparer.Ordinal)
+                {
+                    ["curves"] = new FlowSourceDataset
+                    {
+                        Object = $"[{estate.DatabaseName}].[{estate.SilverSchema}].[ProvedPart]",
+                        Join = new Dictionary<string, string>(StringComparer.Ordinal) { ["item_key"] = "item_key" },
+                        OrderBy = ["part_no"],
+                    },
+                },
+            },
+        };
+        var source = estate.Engine.Sources.Open(flow, new Dictionary<string, string>(StringComparer.Ordinal) { ["region"] = "north" }, NullLoggerFactory.Instance);
+        var described = await source.DescribeAsync();
+        Assert.Equal("int", described.TypeOf(SourceDatasets.Record, "depth"));
+
+        // Each statement answers the same run here as copied into SSMS, and both read only the scope's rows that are not deleted.
+        async Task<List<List<string?>>> BothAsync(string column, bool empty, params string[] held)
+        {
+            var notes = new List<string>();
+            var named = column.Split('.');
+            var (read, values) = ValueProver.ReadOf(
+                described,
+                [new DatasetColumn(named.Length == 3 ? named[1] : null, named[^1])],
+                held.Select(v => new ValueCheckSourceValue(column, v, 1)).ToList(),
+                empty,
+                notes);
+            Assert.NotNull(read);
+            var answers = new List<List<string?>>();
+            foreach (var records in new[] { false, true })
+            {
+                var statement = records ? IngestionSql.ProofRecords(described.Layout, read) : IngestionSql.ProofValues(described.Layout, read);
+                var script = await RunAsync(estate, ValueProver.SourceScript(flow.Label, "Proof", "What it proves.", described, read, values, statement));
+                var run = await source.ReadProofAsync(new SourceProofQuery { Read = read, Records = records, Values = values, Limit = 100 });
+                Assert.False(run.More);
+                Assert.Equal(script, run.Rows.Select(r => r.ToList()).ToList());
+                answers.AddRange(run.Rows.Select(r => r.ToList()));
+            }
+
+            return answers;
+        }
+
+        // A record's column holding the values the check met: counted by value, then listed with key, value and origin.
+        Assert.Equal(
+            [
+                ["dataset.unit", "FT", "1"], ["dataset.unit", "it's", "1"],
+                ["item-1", "FT", "items.csv", "1"], ["O'Brien", "it's", "items.csv", "2"],
+            ],
+            await BothAsync("dataset.unit", empty: false, "FT", "it's"));
+
+        // A number is compared as a number, whatever text the check met it as.
+        Assert.Equal([["dataset.depth", "10", "1"], ["item-1", "10", "items.csv", "1"]], await BothAsync("dataset.depth", empty: false, "10"));
+
+        // An empty column: blank text and a missing number alike.
+        Assert.Equal([["1"], ["item-3", "  ", "items.csv", "3"]], await BothAsync("dataset.unit", empty: true));
+        Assert.Equal([["1"], ["item-3", null, "items.csv", "3"]], await BothAsync("dataset.depth", empty: true));
+
+        // A child's column: its rows that are not deleted, each with its own file and row beside its record's.
+        Assert.Equal(
+            [
+                ["dataset.curves.curve_unit", "FURLONG", "2"],
+                ["item-1", "FURLONG", "curves.csv", "11", "items.csv", "1"],
+                ["O'Brien", "FURLONG", "curves.csv", "21", "items.csv", "2"],
+            ],
+            await BothAsync("dataset.curves.curve_unit", empty: false, "FURLONG"));
     }
 
     /// <summary>Runs a script as a person does, parameters and all declared in it, and answers every row of every statement as text.</summary>

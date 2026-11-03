@@ -3,31 +3,33 @@ using SqlFlow.Delivery.Identity;
 
 namespace SqlFlow.Delivery.Ledger;
 
-// Records that link their children (osdu/docs/reference/flow/mapping-child.md, When a child lands). A record whose render
-// looked for its children keeps the unique segment their ids share with the id its key gives (ChildLinkKey). When a record of
-// any flow of the partition lands under an id with that segment and another entity type, the records that link it are asked
-// to be planned again, and each is sent only when it renders differently: a child that landed for the first time gives its
-// parent the link, and one delivered again changes nothing. A child never holds its parent, so a blocked record is held for
-// something else and is left to that hold; its next render looks for its children again.
+// Records that link their children (osdu/docs/reference/flow/mapping-child.md, When a child lands; When a child is taken out).
+// A record whose render looked for its children keeps the unique segment their ids share with the id its key gives
+// (ChildLinkKey). When a record of any flow of the partition lands under an id with that segment and another entity type, or
+// is taken out of OSDU through the ledger, the records that link it are asked to be planned again, and each is sent only when
+// it renders differently: a child that landed for the first time gives its parent the link, one taken out takes the link
+// away, and one delivered again changes nothing. A child never holds its parent, so a blocked record is held for something
+// else and is left to that hold; its next render looks for its children again.
 public sealed partial class OsduLedger
 {
-    /// <summary>How many records linking a child one landing reaches; the rest are reached by the child's next landing, or by their own next render.</summary>
+    /// <summary>How many records linking a child one landing or removal reaches; the rest are reached by the child's next landing or removal, or by their own next render.</summary>
     internal const int MaxParentsPlanned = 10_000;
 
     /// <summary>
     /// Asks to plan again the records of partition <paramref name="partition"/> that link one of the records in
-    /// <paramref name="landed"/> as their child: the OSDU ids of records that just landed there, matched by their unique segment
-    /// through the partition's index of what records link, a record landing under its own id left out. Returns how many it asked.
+    /// <paramref name="children"/> as their child: the OSDU ids of records that just landed there or were just taken out of it,
+    /// matched by their unique segment through the partition's index of what records link, a record under its own id left out.
+    /// Returns how many it asked.
     /// </summary>
-    private async Task<int> PlanParentsOfAsync(short partition, IReadOnlyCollection<string> landed, DateTime nowUtc, CancellationToken ct)
+    private async Task<int> PlanParentsOfAsync(short partition, IReadOnlyCollection<string> children, DateTime nowUtc, CancellationToken ct)
     {
-        if (landed.Count == 0)
+        if (children.Count == 0)
         {
             return 0;
         }
 
         var byUnique = new Dictionary<string, List<string>>(StringComparer.Ordinal);
-        foreach (var id in landed.Distinct(StringComparer.Ordinal))
+        foreach (var id in children.Distinct(StringComparer.Ordinal))
         {
             if (TargetId.Unique(id) is not { } unique)
             {
@@ -67,8 +69,8 @@ public sealed partial class OsduLedger
                         .ToListAsync(ct),
                     ct).ConfigureAwait(false);
 
-                // A record landing under the record's own id (its own delivery, or another instance delivering the same record)
-                // shares the segment without being its child.
+                // A record landing or taken out under the record's own id (its own delivery or removal, or another instance
+                // delivering the same record) shares the segment without being its child.
                 parents.AddRange(found
                     .Where(r => byUnique[r.ChildLinkKey].Any(id => !string.Equals(id, r.TargetId, StringComparison.Ordinal)))
                     .Select(r => new RecordKey(partition, r.FlowId, r.DeliveryKey)));
@@ -85,7 +87,7 @@ public sealed partial class OsduLedger
         }
 
         // The request is recorded once, and a request already there stays as it is: the record renders again on its flow's
-        // next run, finds the child, and is sent only if its document changed.
+        // next run, looks for the child, and is sent only if its document changed.
         await using var write = Open();
         return await WriteByKeyAsync(
             write.DeliveryRecords.Where(r => !r.Blocked && r.PlanRequestedUtc == null),

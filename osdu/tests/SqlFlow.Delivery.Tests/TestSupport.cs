@@ -111,6 +111,9 @@ public sealed class FixedCacheStore : ICacheStore
         CancellationToken ct = default)
         => throw new InvalidOperationException("The fixed sample cache is read-only; write versions through the module's cache store.");
 
+    public Task<Source.ProofRows> ReadProofAsync(CacheProofQuery query, CancellationToken ct = default)
+        => throw new InvalidOperationException("The fixed sample cache is held in memory and runs no SQL; read a proof through the module's cache store.");
+
     /// <summary>The one version is the current one, which a retention always keeps, so there is never anything to prune.</summary>
     public Task<CacheRetentionOutcome> ApplyRetentionAsync(CacheRetentionRequest request, CancellationToken ct = default)
     {

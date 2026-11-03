@@ -17,10 +17,10 @@ namespace SqlFlow.Delivery.Cli;
 /// what their last reconcile raised, <c>show</c> one with its counts by finding, owners and last runs, <c>records</c> pages
 /// through its ids of one finding, <c>lookup</c> says what every inventory of a partition holds of one OSDU id, <c>runs</c>
 /// lists its builds and reconciles, and <c>export</c> writes its ids as CSV, by the same code as the API's download;
-/// <c>removals</c> lists the removals an operator asked of it, and <c>removal</c> pages through what one did to each id.
-/// Building is a run like any other: <c>sqlflow run &lt;flow.yaml&gt; --payload '{"inventories":["name"]}'</c>, and so is a
-/// removal, with <c>--operation remove</c> and the payload the inventory's page sends (osdu/docs/reference/flow/inventory-removals.md,
-/// What a removal does).
+/// <c>removals</c> lists the removals and restores an operator asked of it, and <c>removal</c> pages through what one did to each
+/// id. Building is a run like any other: <c>sqlflow run &lt;flow.yaml&gt; --payload '{"inventories":["name"]}'</c>, and so is a
+/// removal, with <c>--operation remove</c>, and a restore, with <c>--operation restore</c>, each with the payload the inventory's
+/// page sends (osdu/docs/reference/flow/inventory-removals.md, What a removal does, Restoring gone ids).
 /// </summary>
 internal static class DeliveryInventoryVerbs
 {
@@ -368,16 +368,16 @@ internal static class DeliveryInventoryVerbs
             return 0;
         }
 
-        context.Out.WriteLine(string.Create(CultureInfo.InvariantCulture, $"{inventory.Name} in {inventory.Partition}: {removals.Count} removal(s)"));
+        context.Out.WriteLine(string.Create(CultureInfo.InvariantCulture, $"{inventory.Name} in {inventory.Partition}: {removals.Count} removal(s) and restore(s)"));
         if (removals.Count == 0)
         {
-            context.Out.WriteLine("  none. The inventory's page removes its gone ids from it, and, for a flow that declares removal, what it found from OSDU.");
+            context.Out.WriteLine("  none. The inventory's page removes its gone ids from it, and, for a flow that declares removal, removes what it found from OSDU and restores its gone ids there.");
         }
 
         foreach (var removal in removals)
         {
             context.Out.WriteLine(string.Create(CultureInfo.InvariantCulture,
-                $"  {removal.InventoryRemovalId,8}  {removal.Status,-9}  {Stamp(removal.StartedUtc)}  {removal.Requested} {removal.Finding} {Which(removal)}, {InventoryRemovals.Describe(removal.Scope)}: {new InventoryRemovalTally(removal.Removed, removal.Gone, removal.Skipped, removal.Failed).Describe()}  by {removal.Actor}"));
+                $"  {removal.InventoryRemovalId,8}  {removal.Status,-9}  {Stamp(removal.StartedUtc)}  {removal.Requested} {removal.Finding} {Which(removal)}, {InventoryRemovals.Describe(removal.Scope)}: {removal.Tally.Describe(removal.Scope)}  by {removal.Actor}"));
             if (removal.Error is { Length: > 0 } error)
             {
                 context.Out.WriteLine("            " + error);
@@ -428,7 +428,7 @@ internal static class DeliveryInventoryVerbs
         }
 
         context.Out.WriteLine(string.Create(CultureInfo.InvariantCulture,
-            $"removal {removal.InventoryRemovalId} in {partition} ({removal.Status}): {removal.Requested} {removal.Finding}, {InventoryRemovals.Describe(removal.Scope)}, by {removal.Actor} at {Stamp(removal.StartedUtc)}"));
+            $"{(removal.Scope == InventoryRemovals.Restore ? "restore" : "removal")} {removal.InventoryRemovalId} in {partition} ({removal.Status}): {removal.Requested} {removal.Finding} {Which(removal)}, {InventoryRemovals.Describe(removal.Scope)}, by {removal.Actor} at {Stamp(removal.StartedUtc)}"));
         if (removal.Scope == InventoryRemovals.InventoryOnly && removal.Removed > 0 && outcome is null or InventoryRemovals.Removed)
         {
             // What a removal from the inventory removes it does not keep, so only the ids it kept are listed.
@@ -667,7 +667,9 @@ internal static class DeliveryInventoryVerbs
     private static string Which(InventoryRemovalState removal)
         => removal.SelectionId is { } selection
             ? string.Create(CultureInfo.InvariantCulture, $"of selection {selection}")
-            : removal.NamesIds ? "picked" : "(every one)";
+            : removal.RestoresRemovalId is { } undone
+                ? string.Create(CultureInfo.InvariantCulture, $"that removal {undone} removed")
+                : removal.NamesIds ? "picked" : "(every one)";
 
     private static JsonObject Described(InventoryRemovalState removal) => new()
     {
@@ -684,11 +686,13 @@ internal static class DeliveryInventoryVerbs
         ["startedUtc"] = removal.StartedUtc,
         ["completedUtc"] = removal.CompletedUtc,
         ["removed"] = removal.Removed,
+        ["restored"] = removal.Restored,
         ["gone"] = removal.Gone,
         ["skipped"] = removal.Skipped,
         ["failed"] = removal.Failed,
         ["error"] = removal.Error,
         ["activityId"] = removal.ActivityId,
+        ["restoresRemoval"] = removal.RestoresRemovalId,
     };
 
     private static JsonObject Described(InventoryRemovalItemState item) => new()

@@ -1794,6 +1794,99 @@ export interface DeliveryValueCheckFinding {
   samples: DeliveryValueCheckSample[];
   /** How many occurrences were passed over before the examples were taken. */
   samplesFrom: number;
+  /** What it comes from: usually one; a `$coalesce` none of whose alternatives gave a value has one per alternative. Absent from an older node. */
+  causes?: DeliveryValueCheckCause[];
+  /** What it means in plain words, and what to do about it; code is set in backticks. Absent from an older node. */
+  explanation?: DeliveryValueCheckExplanation | null;
+  /** What the source columns behind the first cause hold in its rows, as the source holds them, the most frequent first. */
+  sourceValues?: DeliveryValueCheckSourceValue[];
+  /** Occurrences whose source value is not among `sourceValues`. */
+  otherSourceValues?: number;
+}
+
+/** What a finding comes from (osdu/docs/reference/concepts/value-proof.md). */
+export type ValueCheckCauseKind =
+  | "empty" | "idNotHeld" | "noMatch" | "ambiguous" | "noType" | "fieldEmpty" | "notFound" | "rule" | "assertion" | "other";
+
+/** Why a finding's rows are not written with a value the template accepts, in parts a person and a query can act on. */
+export interface DeliveryValueCheckCause {
+  kind: ValueCheckCauseKind;
+  /** The source columns the value came from, as the mapping names them. */
+  columns: string[];
+  /** The cached types looked in; for a search, the search the mapping declares. */
+  types: string[];
+  /** For an id, the entity type it names; for a search, the kind searched. */
+  entityType?: string | null;
+  /** The fields the value was compared with, in the order tried. */
+  fields: string[];
+  ignoreSeparators: boolean;
+  /** For several records answering to a value, or a record found holding nothing at the field read, their ids. */
+  candidates: string[];
+  /** For a rule, the rule of the template; for an assertion, the assertion. */
+  rule?: string | null;
+}
+
+/** What a finding means and what to do about it, the same words the workbook and the command line use. */
+export interface DeliveryValueCheckExplanation {
+  headline: string;
+  effect: string;
+  /** Where it was looked for and what the source holds, when that adds something. */
+  detail?: string | null;
+  /** What can be done about it, the likeliest first. */
+  fixes: string[];
+}
+
+/** A value a source column holds in the rows a finding occurs in, and how many occurrences. */
+export interface DeliveryValueCheckSourceValue {
+  column: string;
+  value: string;
+  count: number;
+}
+
+/** What one statement of a proof read: its columns, its rows as text, and whether there are more. */
+export interface DeliveryProofRows {
+  columns: string[];
+  rows: (string | null)[][];
+  more: boolean;
+}
+
+/** One step of a finding's proof: what it shows, where it runs, the statement, and what it read when run. */
+export interface DeliveryValueProofStep {
+  step: "values" | "records" | "cache" | "search";
+  title: string;
+  /** How to read what it answers. */
+  proves: string;
+  runsOn: "source" | "catalog" | "platform";
+  /** What it reads there, by name. */
+  where: string;
+  language: "sql" | "json";
+  /** The statement as a person copies it: T-SQL with its values declared, or a search request. */
+  statement: string;
+  runnable: boolean;
+  result?: DeliveryProofRows | null;
+}
+
+/** The proof of a finding (osdu/docs/reference/concepts/value-proof.md): the steps that show it from the data. */
+export interface DeliveryValueProof {
+  flow: string;
+  interface?: string | null;
+  mapping: string;
+  target: string;
+  steps: DeliveryValueProofStep[];
+  notes: string[];
+}
+
+/** What a proof is asked for: the finding as the check answered it, and the step to run. */
+export interface DeliveryValueProofRequest {
+  target: string;
+  values?: Record<string, RunValue>;
+  cause: DeliveryValueCheckCause;
+  sourceValues?: { column: string; value: string }[];
+  looked?: string[];
+  cacheVersion?: string | null;
+  mapping?: string;
+  run?: "values" | "records" | "cache";
+  limit?: number;
 }
 
 /** A source column an attribute reads, as the mapping names it (`dataset.curves.curve_unit`), and the table holding it. */
@@ -4428,6 +4521,12 @@ export const deliveryApi = {
     request: { target?: string; values?: Record<string, RunValue>; maxRows?: number; keys?: string[] },
     scope?: DeliveryFlowScope,
   ) => post<DeliverySourceSql>(flowPath(pipelineId, "/source-sql", scope), request),
+  /**
+   * The proof of one finding of a value check: the statements that show it from the flow's source and the partition's cache,
+   * each read-only and written by the control plane, with the step `run` names run. Answered at once.
+   */
+  valueProof: (pipelineId: string, request: DeliveryValueProofRequest, scope?: DeliveryFlowScope) =>
+    post<DeliveryValueProof>(flowPath(pipelineId, "/value-proof", scope), request),
   stagedRows: (
     pipelineId: string,
     request: { values?: Record<string, RunValue>; search?: string; after?: string | null; limit?: number },

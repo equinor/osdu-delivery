@@ -406,6 +406,34 @@ public sealed record InventoryRemovalRequest
 }
 
 /// <summary>
+/// What a restore run brings back in OSDU (the run payload's <c>restore</c>, with the inventory in <c>inventories</c> and the
+/// partition in <c>confirm</c>; osdu/docs/reference/flow/inventory-removals.md, Restoring gone ids): the inventory's gone ids,
+/// every one of them or those it names, or the ids an earlier soft-delete removal of the inventory removed; and how many the
+/// operator was shown, which the run holds the inventory (or the removal) to before it asks anything of OSDU.
+/// </summary>
+public sealed record InventoryRestoreRequest
+{
+    /// <summary>The most ids one restore names; a larger restore takes every gone id, or a removal's.</summary>
+    public const int MaxIds = InventoryRemovalRequest.MaxIds;
+
+    /// <summary>How many ids the operator was shown: every gone id, as many as <see cref="Ids"/> names, or what the removal removed.</summary>
+    public required long Expected { get; init; }
+
+    /// <summary>The gone ids restored, when the operator picked them; empty restores every gone id (or the removal's).</summary>
+    public IReadOnlyList<string> Ids { get; init; } = [];
+
+    /// <summary>
+    /// The soft-delete removal of the inventory whose removed ids are restored, by its number: those ids whether or not the
+    /// inventory still holds a row of them. Null restores every gone id, or those <see cref="Ids"/> names; a restore names ids
+    /// or a removal, not both.
+    /// </summary>
+    public long? Removal { get; init; }
+
+    /// <summary>True when the restore names its ids rather than taking every gone id or a removal's.</summary>
+    public bool NamesIds => Ids.Count > 0;
+}
+
+/// <summary>
 /// One inventory: every id one kind (wildcards allowed) holds, narrowed by a query when the read is a search, with the latest
 /// version of each or every version.
 /// </summary>

@@ -184,7 +184,7 @@ public sealed class RecordPreviewer
             Inputs = inputs,
             Route = route,
             Source = Source(row, rendered, resolved.Mapping.Dataset.System),
-            Decision = Decision(decided, render),
+            Decision = Decision(decided, render, header.Mapping.HasStepWork),
             Document = document,
             NoDocument = render is null ? rendered.Reason : null,
             References = references,
@@ -489,8 +489,20 @@ public sealed class RecordPreviewer
         _ => action.ToString(),
     };
 
-    private static PreviewDecision Decision(PlanEntry decided, RenderResult? render)
-        => new()
+    /// <summary>
+    /// What the next run would do with the record, beside the document rendered now. A record whose row is unchanged is
+    /// skipped without rendering, so where the render shows a document other than the one last delivered, something the
+    /// render reads from OSDU changed since (a search's record, the parent, a child taken out or come back outside the
+    /// ledger), and the reason says the run would not see it. Not said for a flow whose steps keep what they added, whose
+    /// render from the row alone never is the document delivered.
+    /// </summary>
+    private static PreviewDecision Decision(PlanEntry decided, RenderResult? render, bool keepsSteps)
+    {
+        var same = decided.Existing is { MetadataHash: { } delivered } && render is not null
+            ? string.Equals(delivered, render.MetadataHash, StringComparison.Ordinal)
+            : (bool?)null;
+        var unseen = decided is { Action: PlannedAction.Skip, SkipTier: SkipTier.Fingerprint, Existing.HasPendingWork: false } && same == false && !keepsSteps;
+        return new()
         {
             Action = ActionName(decided.Action),
             SkipTier = decided.Action == PlannedAction.Skip
@@ -504,7 +516,9 @@ public sealed class RecordPreviewer
                     _ => decided.SkipTier.ToString(),
                 }
                 : null,
-            Reason = decided.Reason,
+            Reason = unseen
+                ? $"{decided.Reason}, so the next run skips it without rendering it; rendered now, its document differs from the one last delivered, since something it reads from OSDU changed (a record it searches for, its parent, or a child it links): redeliver it to send this document"
+                : decided.Reason,
             DeliverMetadata = decided.DeliverMetadata,
             DeliverPayload = decided.DeliverPayload,
             Ledger = decided.Existing is { } state
@@ -517,10 +531,11 @@ public sealed class RecordPreviewer
                     LastDeliveredUtc = state.LastDeliveredUtc,
                     LastError = state.LastError is null ? null : HeaderRedaction.RedactMessage(state.LastError),
                     MetadataHash = state.MetadataHash,
-                    SameDocument = state.MetadataHash is null || render is null ? null : string.Equals(state.MetadataHash, render.MetadataHash, StringComparison.Ordinal),
+                    SameDocument = same,
                 }
                 : null,
         };
+    }
 
     /// <summary>The record's document whole, as rendered and as the route sends it; <see cref="Bound"/> decides what is shown of it.</summary>
     private static PreviewDocument Document(RenderResult render, string kind, RehearsedRoute rehearsal, IReadOnlyList<EnrichStep> steps)

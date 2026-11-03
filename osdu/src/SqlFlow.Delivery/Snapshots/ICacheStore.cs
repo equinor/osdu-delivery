@@ -190,4 +190,12 @@ public interface ICacheStore
     /// beside another retention of the same partition, and repeatable: a pass cut short is finished by the next.
     /// </summary>
     Task<CacheRetentionOutcome> ApplyRetentionAsync(CacheRetentionRequest request, CancellationToken ct = default);
+
+    /// <summary>
+    /// What one statement of a finding's proof reads of a version of the partition's cache (osdu/docs/reference/concepts/value-proof.md):
+    /// the statement a person copies, its values bound as parameters, at most <see cref="CacheProofQuery.Limit"/> rows of it.
+    /// A version that is gone, or whose records the retention pruned, is refused, so an empty answer is always one about
+    /// records that can be read.
+    /// </summary>
+    Task<Source.ProofRows> ReadProofAsync(CacheProofQuery query, CancellationToken ct = default);
 }

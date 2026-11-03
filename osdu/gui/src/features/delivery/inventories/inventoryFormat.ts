@@ -63,7 +63,7 @@ export const FINDING_VISUALS: Record<InventoryFinding, FindingVisual> = {
   },
   gone: {
     icon: CircleSlash, label: "Gone", tone: "text-muted-foreground",
-    hint: "OSDU no longer serves it and no ledger expects it (removed, as the ledgers say), or a ledger expects it and storage has not been asked for it yet: its reason says which.",
+    hint: "OSDU no longer serves it and no ledger expects it (removed, as the ledgers say), or a ledger expects it and storage has not been asked for it yet: its reason says which. A soft-deleted one can be restored in OSDU, where the flow declares a removal; removing it from the inventory only forgets it here.",
   },
   unreconciled: {
     icon: CircleDashed, label: "Unreconciled", tone: "text-muted-foreground",

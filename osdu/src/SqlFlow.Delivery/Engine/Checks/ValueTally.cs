@@ -146,7 +146,8 @@ internal sealed partial class ValueTally
             if (_variables.TryGetValue($"{TemplatePath.Prefix}.{failure.At}", out var asserted))
             {
                 var sample = ItemOf(failure, inspection) is { } item ? basis with { Item = item + 1 } : basis;
-                Note(asserted, "asserted", asserted.Target, failure.Assertion, Fails(failure), Clip(failure.Value, _limits.MaxValueChars), row, sample, failure.Message, failure.OnFail);
+                Note(
+                    asserted, "asserted", asserted.Target, failure.Assertion, Fails(failure), Clip(failure.Value, _limits.MaxValueChars), row, sample, [], failure.Message, failure.OnFail);
                 asserted.CountAsserted(row, failure.Path);
             }
         }
@@ -213,7 +214,7 @@ internal sealed partial class ValueTally
 
                 foreach (var problem in problems.DistinctBy(p => (p.At, p.Rule, p.Message)))
                 {
-                    Note(variable, "invalid", problem.At, problem.Rule, problem.Message, Clip(problem.Value, _limits.MaxValueChars), row, sample);
+                    Note(variable, "invalid", problem.At, problem.Rule, problem.Message, Clip(problem.Value, _limits.MaxValueChars), row, sample, []);
                 }
 
                 return Standing.Invalid;
@@ -222,17 +223,18 @@ internal sealed partial class ValueTally
                 foreach (var reason in outcome.Reasons.Distinct(StringComparer.Ordinal))
                 {
                     var said = Said(reason, outcome.Target);
-                    Note(variable, "held", outcome.Target, null, said, Cause(said), row, sample);
+                    var misses = MissesOf(reason, outcome);
+                    Note(variable, "held", outcome.Target, null, said, Looked(misses) ?? Cause(said), row, sample, misses);
                 }
 
                 return Standing.Held;
             case EntryOutcomeKind.Empty:
                 var why = outcome.Reasons.Count > 0 ? Said(outcome.Reasons[0], outcome.Target) : "gives no value";
-                Note(variable, "empty", outcome.Target, null, why, Cause(why), row, sample);
+                Note(variable, "empty", outcome.Target, null, why, Looked(outcome.Misses) ?? Cause(why), row, sample, outcome.Misses);
                 return Standing.Empty;
             default:
                 var because = outcome.Reasons.Count > 0 ? Said(outcome.Reasons[0], outcome.Target) : "the mapping means no value for the row";
-                Note(variable, "notApplicable", outcome.Target, null, because, null, row, sample);
+                Note(variable, "notApplicable", outcome.Target, null, because, null, row, sample, []);
                 return Standing.NotApplicable;
         }
     }
@@ -261,11 +263,18 @@ internal sealed partial class ValueTally
     /// of an assertion carries what its failure does, <paramref name="onFail"/>.
     /// </summary>
     private void Note(
-        VariableTally variable, string outcome, string at, string? rule, string message, string? value, long row, ValueCheckSample sample, string? said = null, string? onFail = null)
+        VariableTally variable, string outcome, string at, string? rule, string message, string? value, long row, ValueCheckSample sample, IReadOnlyList<RenderMiss> misses,
+        string? said = null, string? onFail = null)
     {
         var child = variable.Repeater is { } repeater ? _childDatasets.GetValueOrDefault(repeater) : null;
         var reason = said ?? message;
         var childRow = ChildRow(_row, child, sample.Item);
+
+        // What the render looked for names the columns behind the value; without it, they are worked out from the reason.
+        var behind = misses.Count > 0 ? misses[0].Columns : [];
+        var columns = behind.Count > 0
+            ? behind.Select(c => c.ToString()).ToList()
+            : ColumnsToFix(variable.Reads, reason, value, sample.Item, child);
         var record = sample with
         {
             Value = value,
@@ -274,9 +283,15 @@ internal sealed partial class ValueTally
             Row = _system.RowNumber is { } rowColumn && long.TryParse(childRow?.GetString(rowColumn), System.Globalization.NumberStyles.None, System.Globalization.CultureInfo.InvariantCulture, out var number)
                 ? number
                 : sample.Row,
-            Columns = ColumnsToFix(variable.Reads, reason, value, sample.Item, child),
+            Columns = columns,
         };
-        variable.Note(outcome, at, rule, message, value, row, record, _request, onFail);
+        var causes = Causes(outcome, rule, misses, columns);
+        var held = (behind.Count > 0 ? behind : variable.Reads.Where(c => columns?.Contains(c.ToString(), StringComparer.OrdinalIgnoreCase) == true))
+            .Select(c => (Column: c.ToString(), Value: CellOf(c, _row, sample.Item, child)))
+            .Where(c => !string.IsNullOrWhiteSpace(c.Value))
+            .Select(c => (c.Column, Clip(c.Value!, _limits.MaxValueChars)))
+            .ToList();
+        variable.Note(outcome, at, rule, message, value, row, record, _request, onFail, causes, held);
 
         // What the mapping means no value for is no failure, so a listing of the failing rows leaves it out.
         if (_each is not null && outcome != "notApplicable")
@@ -292,9 +307,69 @@ internal sealed partial class ValueTally
                 Record = record,
                 Source = _row,
                 Child = child,
+                Causes = causes,
             });
         }
     }
+
+    /// <summary>
+    /// The misses a hold reason is about: those it states, else every miss of the outcome when it holds for that one reason (a
+    /// <c>$coalesce</c> node's reason sums up every alternative's), else none.
+    /// </summary>
+    private static IReadOnlyList<RenderMiss> MissesOf(string reason, EntryOutcome outcome)
+    {
+        if (outcome.Misses.Count == 0)
+        {
+            return [];
+        }
+
+        var stated = outcome.Misses.Where(m => reason.StartsWith(m.Reason, StringComparison.Ordinal)).ToList();
+        return stated.Count > 0 ? stated : outcome.Reasons.Count == 1 ? outcome.Misses : [];
+    }
+
+    /// <summary>The value the first miss looked for, as it was compared; null when it looked for none (an empty value, a missing type).</summary>
+    private string? Looked(IReadOnlyList<RenderMiss> misses)
+        => misses.Count > 0 && misses[0].Tries.FirstOrDefault(t => t.Value.Length > 0) is { } tried ? Clip(tried.Value, _limits.MaxValueChars) : null;
+
+    /// <summary>
+    /// What a finding comes from: each miss the render met, else the template's rule or the mapping's assertion, else the reason
+    /// alone with the columns behind it.
+    /// </summary>
+    internal static IReadOnlyList<ValueCheckCause> Causes(string outcome, string? rule, IReadOnlyList<RenderMiss> misses, IReadOnlyList<string>? columns)
+    {
+        if (misses.Count > 0)
+        {
+            return misses.Select(Of).DistinctBy(c => (c.Kind, string.Join('|', c.Columns), string.Join('|', c.Types), string.Join('|', c.Fields))).ToList();
+        }
+
+        return outcome switch
+        {
+            "invalid" => [new ValueCheckCause { Kind = ValueCheckCause.RuleBroken, Rule = rule, Columns = columns ?? [] }],
+            "asserted" => [new ValueCheckCause { Kind = ValueCheckCause.Assertion, Rule = rule, Columns = columns ?? [] }],
+            _ => [new ValueCheckCause { Kind = ValueCheckCause.Other, Columns = columns ?? [] }],
+        };
+    }
+
+    private static ValueCheckCause Of(RenderMiss miss) => new()
+    {
+        Kind = miss.Kind switch
+        {
+            RenderMissKind.Empty => ValueCheckCause.Empty,
+            RenderMissKind.IdNotHeld => ValueCheckCause.IdNotHeld,
+            RenderMissKind.NoMatch => ValueCheckCause.NoMatch,
+            RenderMissKind.Ambiguous => ValueCheckCause.Ambiguous,
+            RenderMissKind.NoType => ValueCheckCause.NoType,
+            RenderMissKind.FieldEmpty => ValueCheckCause.FieldEmpty,
+            RenderMissKind.NotFound => ValueCheckCause.NotFound,
+            _ => ValueCheckCause.Other,
+        },
+        Columns = miss.Columns.Select(c => c.ToString()).ToList(),
+        Types = miss.Types,
+        EntityType = miss.EntityType,
+        Fields = miss.Tries.Select(t => t.Field).Distinct(StringComparer.Ordinal).ToList(),
+        IgnoreSeparators = miss.IgnoreSeparators,
+        Candidates = miss.Candidates,
+    };
 
     /// <summary>What a row holds in a source column: for an item of <paramref name="child"/>, the child row it was written from, counting from 1.</summary>
     internal static string? CellOf(DatasetColumn column, SourceRecord? source, int? item, string? child)
@@ -544,7 +619,9 @@ internal sealed partial class ValueTally
             }
         }
 
-        public void Note(string outcome, string at, string? rule, string message, string? value, long row, ValueCheckSample record, ValueCheckRequest request, string? onFail)
+        public void Note(
+            string outcome, string at, string? rule, string message, string? value, long row, ValueCheckSample record, ValueCheckRequest request, string? onFail,
+            IReadOnlyList<ValueCheckCause> causes, IReadOnlyList<(string Column, string Value)> held)
         {
             var key = (outcome, at, Shape(message));
             if (!_findings.TryGetValue(key, out var finding))
@@ -555,11 +632,11 @@ internal sealed partial class ValueTally
                     return;
                 }
 
-                finding = new FindingTally(outcome, at, rule, message, onFail);
+                finding = new FindingTally(outcome, at, rule, message, onFail, causes);
                 _findings[key] = finding;
             }
 
-            finding.Add(value, row, record, request, limits);
+            finding.Add(value, row, record, request, limits, held);
         }
 
         public ValueCheckVariable Build(long skipped) => new()
@@ -598,19 +675,37 @@ internal sealed partial class ValueTally
     }
 
     /// <summary>One finding's occurrences, the rows they are in, the values behind them and the example records kept.</summary>
-    private sealed class FindingTally(string outcome, string at, string? rule, string message, string? onFail)
+    private sealed class FindingTally(string outcome, string at, string? rule, string message, string? onFail, IReadOnlyList<ValueCheckCause> causes)
     {
         private readonly Dictionary<string, long> _values = new(StringComparer.Ordinal);
+        private readonly Dictionary<(string Column, string Value), long> _sourceValues = [];
         private readonly List<ValueCheckSample> _samples = [];
         private long _count;
         private long _rows;
         private long _lastRow = -1;
         private long _otherValues;
+        private long _otherSourceValues;
 
         public long Count => _count;
 
-        public void Add(string? value, long row, ValueCheckSample record, ValueCheckRequest request, ValueCheckLimits limits)
+        public void Add(string? value, long row, ValueCheckSample record, ValueCheckRequest request, ValueCheckLimits limits, IReadOnlyList<(string Column, string Value)> held)
         {
+            foreach (var cell in held)
+            {
+                if (_sourceValues.TryGetValue(cell, out var times))
+                {
+                    _sourceValues[cell] = times + 1;
+                }
+                else if (_sourceValues.Count < limits.TrackedFindingValues)
+                {
+                    _sourceValues[cell] = 1;
+                }
+                else
+                {
+                    _otherSourceValues++;
+                }
+            }
+
             if (_count >= request.SkipSamples && _samples.Count < request.Samples)
             {
                 _samples.Add(record);
@@ -650,6 +745,13 @@ internal sealed partial class ValueTally
                 .Take(limits.MaxFindingValues)
                 .Select(v => new ValueCheckValue(v.Key, v.Value))
                 .ToList();
+            var held = _sourceValues
+                .OrderByDescending(v => v.Value)
+                .ThenBy(v => v.Key.Column, StringComparer.Ordinal)
+                .ThenBy(v => v.Key.Value, StringComparer.Ordinal)
+                .Take(limits.MaxFindingValues)
+                .Select(v => new ValueCheckSourceValue(v.Key.Column, v.Key.Value, v.Value))
+                .ToList();
             return new ValueCheckFinding
             {
                 Outcome = outcome,
@@ -663,6 +765,9 @@ internal sealed partial class ValueTally
                 OtherValues = _otherValues + _values.Values.Sum() - listed.Sum(v => v.Count),
                 Samples = _samples,
                 SamplesFrom = Math.Min(skipped, _count),
+                Causes = causes,
+                SourceValues = held,
+                OtherSourceValues = _otherSourceValues + _sourceValues.Values.Sum() - held.Sum(v => v.Count),
             };
         }
     }

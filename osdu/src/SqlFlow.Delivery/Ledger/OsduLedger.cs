@@ -2556,6 +2556,14 @@ public sealed partial class OsduLedger : ILedger
             }
 
             await db.SaveChangesAsync(ct).ConfigureAwait(false);
+
+            // After the commit, never inside it: the records linking one of these as their child render again and leave the
+            // link out, since OSDU no longer holds the child (osdu/docs/reference/flow/mapping-child.md, When a child is taken
+            // out). A history purge leaves the record live, so its links stand.
+            if (scope != RemovalScope.History)
+            {
+                await PlanParentsOfAsync(partition, [.. entities.Select(e => e.TargetId).OfType<string>()], nowUtc, ct).ConfigureAwait(false);
+            }
         }
     }
 

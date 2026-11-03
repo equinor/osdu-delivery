@@ -164,9 +164,14 @@ it waits for a later build to ask storage. Acting on a finding goes through the
 ledger's own actions; the inventory flow removes from OSDU only the ids no ledger holds live, and only when its document
 allows it.
 
-Gone ids stay in the inventory, each with when OSDU stopped serving it. To drop that history, open the **gone** tab, pick
-ids or **Select all**, and **Remove**: the dialog leaves OSDU as it is and removes the rows from the inventory once the
-partition is typed back. From the command line the payload is
+Gone ids stay in the inventory, each with when OSDU stopped serving it. Where a soft delete took them, they can come back:
+for a flow that declares `removal`, open the **gone** tab, pick ids or **Select all**, and **Restore in OSDU**: each record is
+served again at the version it had, once the partition is typed back, unless a ledger knows it or another identity created
+it ([restoring gone ids](../flow/inventory-removals.md#restoring-gone-ids)). To undo one removal, open it under **Removals**
+and **Restore what it removed**.
+
+To drop that history instead, pick the ids on the **gone** tab and **Remove from inventory**: nothing changes in OSDU, and
+the rows go from the inventory once the partition is typed back. From the command line the payload is
 `{"inventories": ["WellLogs"], "removal": {"finding": "gone", "scope": "inventory", "expected": 60955}, "confirm": "dev"}`.
 It needs no `removal` in the document, asks nothing of OSDU, and keeps a gone id a ledger still expects
 ([removing gone ids](../flow/inventory-removals.md#removing-gone-ids)).

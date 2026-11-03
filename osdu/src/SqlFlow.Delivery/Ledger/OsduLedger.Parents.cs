@@ -28,13 +28,15 @@ public sealed partial class OsduLedger
         }
 
         var take = Math.Clamp(max, 1, 1000);
+        var deleted = StatusText.Of(RecordStatus.Deleted);
         return await ReadAsync(
-            // The column compares exactly (a binary collation), as an OSDU id is compared.
+            // The column compares exactly (a binary collation), as an OSDU id is compared. A record taken out of OSDU keeps the
+            // parent its last render read, and reads it no longer.
             async db => ToStates(
                 await ReadLeasedAsync(
                     db,
                     db.DeliveryRecords
-                        .Where(r => r.PartitionId == partition && r.ParentId != null && r.ParentId == parentId)
+                        .Where(r => r.PartitionId == partition && r.ParentId != null && r.ParentId == parentId && r.Status != deleted)
                         .OrderByDescending(r => r.UpdatedUtc)
                         .Take(take),
                     ct).ConfigureAwait(false)),

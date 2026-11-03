@@ -511,6 +511,7 @@ public sealed partial class OsduLedger
             await using var db = Open();
             var ids = chunk.Select(k => k.Value).Distinct().ToList();
             var entities = await db.DeliveryRecords.Where(r => r.PartitionId == partition && r.FlowId == flowId && ids.Contains(r.DeliveryKey)).ToListAsync(ct).ConfigureAwait(false);
+            var gone = new List<string>();
             foreach (var entity in entities)
             {
                 if (entity.LeaseOwner is not null && !string.Equals(entity.LeaseOwner, holder, StringComparison.Ordinal))
@@ -526,6 +527,12 @@ public sealed partial class OsduLedger
                 db.DeliveryAttempts.Add(SourceRemovalAttempt(entity, worker, AttemptOutcome.Skipped, source, note, correlationId: null, nowUtc));
                 if (!removed)
                 {
+                    // One the ledger last knew in OSDU was taken out by something else: a record may still link it.
+                    if (entity.TargetVersion is not null && entity.TargetId is { } targetId)
+                    {
+                        gone.Add(targetId);
+                    }
+
                     Retire(entity, note, nowUtc, deliverAgain: false);
                 }
                 else
@@ -540,6 +547,10 @@ public sealed partial class OsduLedger
             }
 
             await db.SaveChangesAsync(ct).ConfigureAwait(false);
+
+            // After the commit: the records linking one of these as their child render again and leave the link out
+            // (osdu/docs/reference/flow/mapping-child.md, When a child is taken out).
+            await PlanParentsOfAsync(partition, gone, nowUtc, ct).ConfigureAwait(false);
         }
 
         return passed;

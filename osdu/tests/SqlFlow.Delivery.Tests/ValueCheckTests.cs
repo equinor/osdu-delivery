@@ -550,5 +550,131 @@ public sealed class ValueCheckTests : IDisposable
         }
     }
 
+    [Fact]
+    public async Task A_finding_says_what_it_comes_from_what_the_source_holds_and_what_to_do_in_plain_words()
+    {
+        var (_, runtime, _) = await RuntimeAsync(tables =>
+        {
+            tables.Records[0].Row["log_run"] = "   ";
+            tables.Records[1].Row["wellbore_uwi"] = "NOWHERE 1";
+            tables.Records[2].Row["index_type"] = "TIME2";
+        });
+        using (runtime)
+        {
+            var check = await new ValueChecker(runtime).CheckAsync(new ValueCheckRequest());
+
+            // An empty source value: which column, what it does to the record, and where to fill it.
+            var empty = Assert.Single(Variable(check, "osdu.data.LogRun").Findings);
+            var blank = Assert.Single(empty.Causes);
+            Assert.Equal(ValueCheckCause.Empty, blank.Kind);
+            Assert.Equal(["dataset.log_run"], blank.Columns);
+            Assert.Equal("`dataset.log_run` is empty", empty.Explanation!.Headline);
+            Assert.StartsWith("Held:", empty.Explanation.Effect, StringComparison.Ordinal);
+            Assert.Equal("Fill `dataset.log_run` in the source for the records listed.", empty.Explanation.Fixes[0]);
+
+            // An id the cache holds no record under: the code it names, the cache it was looked up in, and what the source held.
+            var unheld = Assert.Single(Variable(check, "osdu.data.SamplingDomainTypeID").Findings);
+            var id = Assert.Single(unheld.Causes);
+            Assert.Equal(ValueCheckCause.IdNotHeld, id.Kind);
+            Assert.Equal(["WellLogSamplingDomainType"], id.Types);
+            Assert.Equal("reference-data--WellLogSamplingDomainType", id.EntityType);
+            Assert.Equal(["dataset.index_type"], id.Columns);
+            Assert.Equal("The cache holds no `reference-data--WellLogSamplingDomainType` record `TIME2`", unheld.Explanation!.Headline);
+            Assert.Contains($"of the cache of partition `{check.Inputs.CachePartition}`", unheld.Explanation.Detail, StringComparison.Ordinal);
+            Assert.Contains("The source holds `TIME2` in `dataset.index_type`", unheld.Explanation.Detail, StringComparison.Ordinal);
+            Assert.Equal([new ValueCheckSourceValue("dataset.index_type", "TIME2", 1)], unheld.SourceValues);
+            Assert.Equal(3, unheld.Explanation.Fixes.Count);
+
+            // A search that found nothing: the kind and the fields it searched, and the value.
+            var unfound = Assert.Single(Variable(check, "osdu.data.WellboreID").Findings);
+            var search = Assert.Single(unfound.Causes);
+            Assert.Equal((ValueCheckCause.NotFound, "osdu:wks:master-data--Wellbore:*"), (search.Kind, search.EntityType));
+            Assert.Equal(["data.FacilityName", "data.NameAliases.AliasName"], search.Fields);
+            Assert.Equal(
+                "No `master-data--Wellbore` on the platform has `data.FacilityName` or `data.NameAliases.AliasName` equal to `NOWHERE 1`",
+                unfound.Explanation!.Headline);
+        }
+    }
+
+    [Fact]
+    public async Task The_proof_of_a_finding_is_written_and_run_by_the_whole_operation_and_reads_only_what_the_attribute_reads()
+    {
+        var tables = await SampleEstate.BuildAsync(_root, Now.AddMinutes(-5), time: _clock);
+        tables.Records[1].Row["wellbore_uwi"] = "NOWHERE 1";
+        tables.Records[2].Row["index_type"] = "TIME2";
+        var engine = Samples.Engine(ledger: null, _clock, sources: tables, searches: FixedRecordSearchFactory.SampleWellbores());
+        var flow = Samples.LocalFlow(_root);
+        ValueCheck check;
+        using (var runtime = await FlowRuntime.CreateAsync(engine, flow, SampleEstate.Values))
+        {
+            check = await new ValueChecker(runtime).CheckAsync(new ValueCheckRequest());
+        }
+
+        var operation = new ValueProofOperation(engine);
+        Assert.True(SqlFlow.Delivery.Http.OsduCorrelation.IsCode(operation.CorrelationOperation));
+
+        async Task<System.Text.Json.JsonElement> Prove(string target, string? run, ValueCheckCause? cause = null)
+        {
+            var finding = Assert.Single(Variable(check, target).Findings);
+            var arguments = new Dictionary<string, string>(StringComparer.Ordinal)
+            {
+                ["flowFile"] = Samples.Flow,
+                ["values"] = SqlFlow.Core.Runs.RunParameters.ValuesToJson(SampleEstate.Values)!,
+                [ValueProofOperation.TargetArgument] = target,
+                [ValueProofOperation.CauseArgument] = System.Text.Json.JsonSerializer.Serialize(cause ?? finding.Causes[0]),
+                [ValueProofOperation.SourceValuesArgument] = System.Text.Json.JsonSerializer.Serialize(finding.SourceValues),
+                [ValueProofOperation.LookedArgument] = System.Text.Json.JsonSerializer.Serialize(finding.Values.Select(v => v.Value)),
+                [ValueProofOperation.CacheVersionArgument] = check.Inputs.CacheVersion!,
+                [ValueProofOperation.MappingArgument] = check.Inputs.Mapping,
+            };
+            if (run is not null)
+            {
+                arguments[ValueProofOperation.RunArgument] = run;
+            }
+
+            if (flow.Interface is { } named)
+            {
+                arguments["interface"] = named;
+            }
+
+            if (flow.Partition is { } partition)
+            {
+                arguments[DeliveryOperation.PartitionArgument] = partition;
+            }
+
+            var payload = new SqlFlow.Core.Compute.ComputeTaskPayload { Operation = ValueProofOperation.OperationName, SourceRef = flow.Name, Arguments = arguments };
+            payload.Validate([ValueProofOperation.OperationName]);
+            return System.Text.Json.JsonDocument.Parse(await operation.ExecuteAsync(payload, CancellationToken.None)).RootElement.Clone();
+        }
+
+        static System.Text.Json.JsonElement Step(System.Text.Json.JsonElement proof, string name)
+            => proof.GetProperty("steps").EnumerateArray().Single(s => s.GetProperty("step").GetString() == name);
+
+        // An id the cache does not hold: where the source holds the value, the records holding it, and what the cache holds of the id.
+        var written = await Prove("osdu.data.SamplingDomainTypeID", run: null);
+        Assert.Equal(["values", "records", "cache"], written.GetProperty("steps").EnumerateArray().Select(s => s.GetProperty("step").GetString()));
+        Assert.Contains("DECLARE @values0 nvarchar(max) = N'[\"TIME2\"]';", Step(written, "values").GetProperty("statement").GetString(), StringComparison.Ordinal);
+        var cache = Step(written, "cache");
+        Assert.Equal("catalog", cache.GetProperty("runsOn").GetString());
+        Assert.Contains($"DECLARE @version nvarchar(64) = N'{check.Inputs.CacheVersion}';", cache.GetProperty("statement").GetString(), StringComparison.Ordinal);
+        Assert.False(Step(written, "records").TryGetProperty("result", out _));
+
+        var records = Step(await Prove("osdu.data.SamplingDomainTypeID", run: "records"), "records").GetProperty("result");
+        Assert.Equal(["source_project", "log_id", "dataset.index_type"], records.GetProperty("columns").EnumerateArray().Select(c => c.GetString()));
+        Assert.Equal([["PROJECT_A", "LOG-0003/1", "TIME2"]], records.GetProperty("rows").EnumerateArray().Select(r => r.EnumerateArray().Select(c => c.GetString()).ToList()).ToList());
+        var counted = Step(await Prove("osdu.data.SamplingDomainTypeID", run: "values"), "values").GetProperty("result");
+        Assert.Equal("1", counted.GetProperty("rows")[0][2].GetString());
+
+        // A search that found nothing: the search the render asked, which the page does not run.
+        var search = Step(await Prove("osdu.data.WellboreID", run: null), "search");
+        Assert.False(search.GetProperty("runnable").GetBoolean());
+        Assert.Contains("nested(data.NameAliases, (AliasName.keyword:\\\"NOWHERE 1\\\"))", search.GetProperty("statement").GetString(), StringComparison.Ordinal);
+
+        // A column the attribute does not read is refused, so a request cannot steer a proof to other data.
+        var steered = new ValueCheckCause { Kind = ValueCheckCause.NoMatch, Columns = ["dataset.log_id"] };
+        var refused = await Assert.ThrowsAnyAsync<Exception>(() => Prove("osdu.data.SamplingDomainTypeID", run: "records", steered));
+        Assert.Contains("'dataset.log_id' is not a source column osdu.data.SamplingDomainTypeID reads", refused.Message, StringComparison.Ordinal);
+    }
+
     private static async Task<long> HeldByPlanAsync(FlowRuntime runtime) => (await runtime.PlanAsync(force: true)).Holds;
 }

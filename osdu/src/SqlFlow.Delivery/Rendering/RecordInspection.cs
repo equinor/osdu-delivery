@@ -58,6 +58,13 @@ public sealed record EntryOutcome
     /// the condition that does not hold for one that does not apply. Empty for a value.
     /// </summary>
     public IReadOnlyList<string> Reasons { get; init; } = [];
+
+    /// <summary>
+    /// For an outcome that holds or leaves the variable out, what its entry looked for and did not find, in the order the render
+    /// met it: the parts of <see cref="Reasons"/> a check names the cache type, field, value and column from. Empty when the
+    /// entry gave no value for another reason (a mistake in a value, a condition, a modifier) and for every other outcome.
+    /// </summary>
+    public IReadOnlyList<RenderMiss> Misses { get; init; } = [];
 }
 
 /// <summary>

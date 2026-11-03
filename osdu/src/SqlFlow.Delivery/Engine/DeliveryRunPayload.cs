@@ -97,6 +97,14 @@ public static class DeliveryOperations
     public const string Remove = "remove";
 
     /// <summary>
+    /// Bring back in OSDU what an inventory finds gone, as an operator asked (osdu/docs/reference/flow/inventory-removals.md,
+    /// Restoring gone ids): its gone ids, those picked, or the ids one soft-delete removal of it removed, each soft-deleted
+    /// record served again at the version it had. An inventory flow's operation, run only for a flow whose document declares
+    /// <c>removal</c>.
+    /// </summary>
+    public const string Restore = "restore";
+
+    /// <summary>
     /// Find which ids of an inventory hold what an operator's conditions ask in OSDU (osdu/docs/reference/flow/inventory-selections.md,
     /// Selecting ids by what OSDU holds), and keep them as the selection the payload names: an inventory flow's operation,
     /// which reads OSDU's search and changes nothing there.
@@ -353,7 +361,7 @@ public sealed record DeliveryRunPayload
     /// <summary>The central configuration set for one partition, by partition, which a run bound to it resolves with first.</summary>
     public const string PartitionReferencesProperty = "partitionReferences";
 
-    /// <summary>The partition a run deleting the ledger, an inventory flow's remove run, or a removal flow's approved run acts in, named by whoever asked for it as confirmation.</summary>
+    /// <summary>The partition a run deleting the ledger, an inventory flow's remove or restore run, or a removal flow's approved run acts in, named by whoever asked for it as confirmation.</summary>
     public const string ConfirmProperty = "confirm";
 
     /// <summary>How much of each record a delivery flow's remove run takes: record, previous, history or everything.</summary>
@@ -395,6 +403,9 @@ public sealed record DeliveryRunPayload
     /// <summary>What an inventory flow's remove run removes from OSDU (osdu/docs/reference/flow/inventory.md, Operations).</summary>
     public const string RemovalProperty = "removal";
 
+    /// <summary>What an inventory flow's restore run brings back in OSDU (osdu/docs/reference/flow/inventory-removals.md, Restoring gone ids).</summary>
+    public const string RestoreProperty = "restore";
+
     /// <summary>
     /// The selection an inventory flow's match run fills (osdu/docs/reference/flow/inventory-selections.md, Selecting ids by what OSDU
     /// holds), by its number: the control plane opens it with the operator's conditions and queues the run.
@@ -419,7 +430,7 @@ public sealed record DeliveryRunPayload
     private static readonly string[] Properties =
         [ForceProperty, SubmissionIdProperty, RunIdProperty, RecordKeysProperty, MaxRecordsProperty, RedeliverProperty, RerenderProperty, SlicesProperty, RateShareProperty, InterfaceProperty, InterfacesProperty, ReferencesProperty,
             PartitionReferencesProperty, ConfirmProperty, ScopeProperty, FilterProperty, PurgeLedgerProperty, TestsProperty, TagsProperty, DimensionsProperty, InventoriesProperty, RemovalProperty,
-            SelectionProperty, DuplicateCheckProperty, TypesProperty, EntriesProperty, ApproveProperty, DownloadsProperty];
+            RestoreProperty, SelectionProperty, DuplicateCheckProperty, TypesProperty, EntriesProperty, ApproveProperty, DownloadsProperty];
 
     /// <summary>
     /// For every property a run asks something by (all but the central configuration, which every kind takes), the runs that
@@ -438,7 +449,7 @@ public sealed record DeliveryRunPayload
         [RateShareProperty] = "only the parts of a split delivery share its rate limit",
         [InterfaceProperty] = "only a delivery flow's runs name an interface",
         [InterfacesProperty] = "only a delivery flow's runs select interfaces",
-        [ConfirmProperty] = "only a delivery flow's run deleting the ledger, an inventory flow's remove run and a removal flow's approved run name the partition they act in",
+        [ConfirmProperty] = "only a delivery flow's run deleting the ledger, an inventory flow's remove and restore runs and a removal flow's approved run name the partition they act in",
         [ScopeProperty] = "only a delivery flow's remove run names how much of each record it removes",
         [FilterProperty] = "only a delivery flow's remove run names the listing it empties",
         [PurgeLedgerProperty] = "only a delivery flow's remove run deletes what it removes from the ledger",
@@ -447,6 +458,7 @@ public sealed record DeliveryRunPayload
         [DimensionsProperty] = "only a dimension flow's runs select dimensions",
         [InventoriesProperty] = "only an inventory flow's runs select inventories",
         [RemovalProperty] = "only an inventory flow's remove run names what it removes",
+        [RestoreProperty] = "only an inventory flow's restore run names what it brings back",
         [SelectionProperty] = "only an inventory flow's match run names the selection it fills",
         [DuplicateCheckProperty] = "only an inventory flow's duplicates run names the check it fills",
         [TypesProperty] = "only a cache flow's runs select types",
@@ -461,6 +473,8 @@ public sealed record DeliveryRunPayload
             ScopeProperty, FilterProperty, PurgeLedgerProperty];
 
     private static readonly string[] RemovalProperties = ["finding", "scope", "expected", "ids", "selection"];
+
+    private static readonly string[] RestoreProperties = ["expected", "ids", "removal"];
 
     private static readonly string[] ApprovalProperties = ["expected"];
 
@@ -601,6 +615,12 @@ public sealed record DeliveryRunPayload
     public InventoryRemovalRequest? Removal { get; init; }
 
     /// <summary>
+    /// What an inventory flow's restore run brings back in OSDU: gone ids of the inventory <see cref="Inventories"/> names, or what
+    /// one removal of it removed, with <see cref="Confirm"/> naming the partition it acts in. Only that run carries it.
+    /// </summary>
+    public InventoryRestoreRequest? Restore { get; init; }
+
+    /// <summary>
     /// The selection an inventory flow's match run fills, by its number, for the inventory <see cref="Inventories"/> names.
     /// Only that run carries it.
     /// </summary>
@@ -612,8 +632,11 @@ public sealed record DeliveryRunPayload
     /// </summary>
     public long? DuplicateCheckId { get; init; }
 
-    /// <summary>True when the payload selects inventories of an inventory flow, names what one removes, the selection one fills, or the duplicate check one fills.</summary>
-    public bool SelectsInventories => Inventories.Count > 0 || Removal is not null || SelectionId is not null || DuplicateCheckId is not null;
+    /// <summary>
+    /// True when the payload selects inventories of an inventory flow, names what one removes or restores, the selection one fills,
+    /// or the duplicate check one fills.
+    /// </summary>
+    public bool SelectsInventories => Inventories.Count > 0 || Removal is not null || Restore is not null || SelectionId is not null || DuplicateCheckId is not null;
 
     /// <summary>
     /// The types of a cache flow the run refreshes or plans, by name (osdu/docs/reference/flow/cache.md, Operations and the
@@ -670,6 +693,7 @@ public sealed record DeliveryRunPayload
         Add(Dimensions.Count > 0, DimensionsProperty);
         Add(Inventories.Count > 0, InventoriesProperty);
         Add(Removal is not null, RemovalProperty);
+        Add(Restore is not null, RestoreProperty);
         Add(SelectionId is not null, SelectionProperty);
         Add(DuplicateCheckId is not null, DuplicateCheckProperty);
         Add(Types.Count > 0, TypesProperty);
@@ -804,7 +828,8 @@ public sealed record DeliveryRunPayload
             Dimensions = Selection(root[DimensionsProperty], DimensionsProperty, "dimension names"),
             Inventories = Selection(root[InventoriesProperty], InventoriesProperty, "inventory names"),
             Removal = root[RemovalProperty] is null ? null : RemovalRequest(root[RemovalProperty]),
-            SelectionId = root[SelectionProperty] is null ? null : Number(root[SelectionProperty], SelectionProperty),
+            Restore = root[RestoreProperty] is null ? null : RestoreRequest(root[RestoreProperty]),
+            SelectionId =root[SelectionProperty] is null ? null : Number(root[SelectionProperty], SelectionProperty),
             DuplicateCheckId = root[DuplicateCheckProperty] is null ? null : Number(root[DuplicateCheckProperty], DuplicateCheckProperty),
             Types = Selection(root[TypesProperty], TypesProperty, "type names"),
             Entries = RemovalEntries(root[EntriesProperty]),
@@ -1243,6 +1268,22 @@ public sealed record DeliveryRunPayload
             root[RemovalProperty] = written;
         }
 
+        if (Restore is { } restore)
+        {
+            var written = new JsonObject { ["expected"] = restore.Expected };
+            if (restore.NamesIds)
+            {
+                written["ids"] = new JsonArray(restore.Ids.Select(i => (JsonNode?)JsonValue.Create(i)).ToArray());
+            }
+
+            if (restore.Removal is { } undone)
+            {
+                written["removal"] = undone;
+            }
+
+            root[RestoreProperty] = written;
+        }
+
         if (SelectionId is { } selection)
         {
             root[SelectionProperty] = selection;
@@ -1499,42 +1540,7 @@ public sealed record DeliveryRunPayload
             throw new SqlFlowException($"payload {RemovalProperty}.expected must be the number of ids the operator was shown, at least 1.");
         }
 
-        IReadOnlyList<string> ids = [];
-        if (removal["ids"] is { } listed)
-        {
-            if (listed is not JsonArray array || array.Count == 0 || array.Count > InventoryRemovalRequest.MaxIds)
-            {
-                throw new SqlFlowException(
-                    $"payload {RemovalProperty}.ids must be an array of 1 to {InventoryRemovalRequest.MaxIds} OSDU ids; leave it out to remove every id of the finding.");
-            }
-
-            var named = new List<string>(array.Count);
-            foreach (var item in array)
-            {
-                var id = Text(item, $"{RemovalProperty}.ids").Trim();
-                if (id.Length == 0 || id.Length > DeliveryModel.MaxTargetIdLength || id.Any(char.IsWhiteSpace))
-                {
-                    throw new SqlFlowException($"payload {RemovalProperty}.ids holds '{id}', which is not an OSDU id.");
-                }
-
-                if (named.Contains(id, StringComparer.Ordinal))
-                {
-                    throw new SqlFlowException($"payload {RemovalProperty}.ids names '{id}' more than once.");
-                }
-
-                named.Add(id);
-            }
-
-            if (named.Count != expected)
-            {
-                throw new SqlFlowException(string.Create(
-                    System.Globalization.CultureInfo.InvariantCulture,
-                    $"payload {RemovalProperty}.ids names {named.Count} ids and expected says {expected}; a removal that names its ids expects as many."));
-            }
-
-            ids = named;
-        }
-
+        var ids = NamedIds(removal["ids"], expected, RemovalProperty, "remove every id of the finding", "a removal");
         long? selection = null;
         if (removal["selection"] is { } taken)
         {
@@ -1552,6 +1558,89 @@ public sealed record DeliveryRunPayload
         }
 
         return new InventoryRemovalRequest { Finding = finding, Scope = scope, Expected = expected, Ids = ids, Selection = selection };
+    }
+
+    /// <summary>
+    /// The restore a payload names, parsed strictly: the count the operator was shown, and either at most
+    /// <see cref="InventoryRestoreRequest.MaxIds"/> distinct gone ids, each an OSDU id, whose number is that count, or the removal
+    /// whose removed ids it brings back; neither restores every gone id.
+    /// </summary>
+    private static InventoryRestoreRequest RestoreRequest(JsonNode? node)
+    {
+        if (node is not JsonObject restore)
+        {
+            throw new SqlFlowException($"payload {RestoreProperty} must be an object naming expected, and optionally ids or the removal whose removed ids it brings back.");
+        }
+
+        foreach (var (name, _) in restore)
+        {
+            if (!RestoreProperties.Contains(name, StringComparer.Ordinal))
+            {
+                throw new SqlFlowException($"payload {RestoreProperty}.{name} is not one of {string.Join(", ", RestoreProperties)}.");
+            }
+        }
+
+        if (restore["expected"] is not JsonValue expectedValue || !expectedValue.TryGetValue<long>(out var expected) || expected < 1)
+        {
+            throw new SqlFlowException($"payload {RestoreProperty}.expected must be the number of ids the operator was shown, at least 1.");
+        }
+
+        var ids = NamedIds(restore["ids"], expected, RestoreProperty, "restore every gone id", "a restore");
+        long? removal = null;
+        if (restore["removal"] is { } taken)
+        {
+            removal = Number(taken, $"{RestoreProperty}.removal");
+            if (ids.Count > 0)
+            {
+                throw new SqlFlowException($"payload {RestoreProperty} names both ids and a removal; a restore takes the ids it names or what one removal removed, not both.");
+            }
+        }
+
+        return new InventoryRestoreRequest { Expected = expected, Ids = ids, Removal = removal };
+    }
+
+    /// <summary>
+    /// The ids a removal or a restore names (<c>ids</c> under <paramref name="property"/>), parsed strictly: absent for none, else
+    /// 1 to <see cref="InventoryRemovalRequest.MaxIds"/> distinct OSDU ids, as many as <paramref name="expected"/> says.
+    /// </summary>
+    private static IReadOnlyList<string> NamedIds(JsonNode? listed, long expected, string property, string otherwise, string what)
+    {
+        if (listed is null)
+        {
+            return [];
+        }
+
+        if (listed is not JsonArray array || array.Count == 0 || array.Count > InventoryRemovalRequest.MaxIds)
+        {
+            throw new SqlFlowException(
+                $"payload {property}.ids must be an array of 1 to {InventoryRemovalRequest.MaxIds} OSDU ids; leave it out to {otherwise}.");
+        }
+
+        var named = new List<string>(array.Count);
+        foreach (var item in array)
+        {
+            var id = Text(item, $"{property}.ids").Trim();
+            if (id.Length == 0 || id.Length > DeliveryModel.MaxTargetIdLength || id.Any(char.IsWhiteSpace))
+            {
+                throw new SqlFlowException($"payload {property}.ids holds '{id}', which is not an OSDU id.");
+            }
+
+            if (named.Contains(id, StringComparer.Ordinal))
+            {
+                throw new SqlFlowException($"payload {property}.ids names '{id}' more than once.");
+            }
+
+            named.Add(id);
+        }
+
+        if (named.Count != expected)
+        {
+            throw new SqlFlowException(string.Create(
+                System.Globalization.CultureInfo.InvariantCulture,
+                $"payload {property}.ids names {named.Count} ids and expected says {expected}; {what} that names its ids expects as many."));
+        }
+
+        return named;
     }
 
     /// <summary>

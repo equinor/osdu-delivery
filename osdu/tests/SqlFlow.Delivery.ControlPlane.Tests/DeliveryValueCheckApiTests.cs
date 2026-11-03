@@ -327,6 +327,35 @@ public sealed class DeliveryValueCheckApiTests
             await RefusedAsync(client, token, query, new { values, keys = new[] { "[\"only one part\"]" } }, "key parts");
             await RefusedAsync(client, token, query, new { values, keys = new[] { "not json" } }, "key parts");
             await RefusedAsync(client, token, query, new { values, keys = Enumerable.Repeat("[\"PROJECT\",\"7\"]", 400).ToArray() }, "at most 4000");
+
+            // So is the proof of a finding: the finding as the check answered it, and the step to run; never a statement.
+            var proof = $"/api/v1/delivery/flows/{pipelineId:D}/value-proof?interface=welllogs";
+            var cause = new { kind = "idNotHeld", columns = new[] { "dataset.index_type" }, types = new[] { "WellLogSamplingDomainType" }, fields = new[] { "id" } };
+            var held = new[] { new { column = "dataset.index_type", value = "TIME2" } };
+            using (var answered = await SendAsync(
+                client, token, HttpMethod.Post, proof,
+                new { target = "osdu.data.SamplingDomainTypeID", values, cause, sourceValues = held, looked = new[] { "dev:reference-data--X:TIME2" }, cacheVersion = "20260908T212727Z", run = "records", limit = 50 }))
+            {
+                Assert.True(answered.StatusCode == HttpStatusCode.OK, await answered.Content.ReadAsStringAsync());
+            }
+
+            var proved = operations.Last();
+            Assert.Equal("delivery-value-proof", proved.Operation);
+            Assert.Equal("welllogs", proved.Argument("interface"));
+            Assert.Equal("osdu.data.SamplingDomainTypeID", proved.Argument("target"));
+            Assert.Contains("idNotHeld", proved.Argument("cause"), StringComparison.Ordinal);
+            Assert.Contains("TIME2", proved.Argument("sourceValues"), StringComparison.Ordinal);
+            Assert.Equal("[\"dev:reference-data--X:TIME2\"]", proved.Argument("looked"));
+            Assert.Equal("20260908T212727Z", proved.Argument("cacheVersion"));
+            Assert.Equal("records", proved.Argument("run"));
+            Assert.Equal("50", proved.Argument("limit"));
+            await RefusedAsync(client, token, proof, new { values, cause }, "names the attribute its finding is of");
+            await RefusedAsync(client, token, proof, new { values, target = "osdu.data.Name" }, "names what its finding comes from");
+            await RefusedAsync(client, token, proof, new { values, target = "not a path", cause }, "is not an attribute a proof can name");
+            await RefusedAsync(client, token, proof, new { values, target = "osdu.data.Name", cause, run = "everything" }, "runs one of values, records, cache");
+            await RefusedAsync(client, token, proof, new { values, target = "osdu.data.Name", cause, limit = 1001 }, "between 1 and 1000 rows");
+            await RefusedAsync(client, token, proof, new { values, target = "osdu.data.Name", cause, mapping = "Other@1.0.0" }, "not Other@1.0.0");
+            await RefusedAsync(client, token, proof, new { target = "osdu.data.Name", cause }, "needs a value for logSource");
             Assert.Empty(operations.Given);
             await using var catalog = CatalogDatabase.Create(cs);
             Assert.DoesNotContain(await catalog.ComputeTasks.AsNoTracking().Where(t => t.SourceRef == flowName).Select(t => t.Operation).ToListAsync(), o => o == "delivery-scope-values");

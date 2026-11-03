@@ -17,6 +17,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **A value check says why an attribute fails, what to do, and proves it from the data.** Each finding of a check or a dry run
+  leads with what is wrong in plain words (the cache type, field, value and source column behind it, such as "the cache holds
+  no `reference-data--UnitOfMeasure` record `ft`"), what it does to the records, and what to do. **Prove it from the data**
+  runs read-only queries on the page, or copies them for SSMS: where the source holds the values, the records to fix by their
+  keys, and what the cache holds of what was looked for (`POST /flows/{id}/value-proof`,
+  [why an attribute fails](osdu/docs/reference/concepts/value-proof.md)).
+
+- **Restore an inventory's gone ids in OSDU.** On an inventory's **gone** tab, **Restore in OSDU** brings back the soft-deleted
+  records behind the ids picked, or every one, at the version each had, and a soft-delete removal under **Removals** offers
+  **Restore what it removed**, which still works after its ids were removed from the inventory. An id a ledger knows, one another
+  identity created, and one storage purged is left with why; each id's outcome is kept with the removals. A restore is a run of
+  the inventory flow (`--operation restore`, `POST /inventories/{partition}/{inventoryId}/restores`) for a flow that declares
+  `removal` ([restoring gone ids](osdu/docs/reference/flow/inventory-removals.md#restoring-gone-ids)).
+
 - **Check that a removed record is gone from OSDU.** A verify run now checks every record removed from OSDU beside the
   delivered ones, and the Records tab shows `gone` or **still in OSDU** for each; **Drifted only** lists the ones OSDU still
   holds. A removed record's OSDU tab reads its id, answering that OSDU holds no record under it, and the Records tab's OSDU
@@ -427,6 +441,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   curve `MD` among its curves ([Assertions](osdu/docs/reference/flow/assertion.md#assertions)).
 
 ### Changed
+- **The issues workbook and `sqlflow values` lead with what is wrong.** The workbook's Issues column **Reason** is now **What is
+  wrong**, in plain words, with the render's sentence moved to **Reason as rendered**; its Summary adds **What to do**; and
+  `sqlflow values` prints each finding's headline, then `effect`, `where`, `reason`, `values`, `source` and `to fix` lines
+  ([why an attribute fails](osdu/docs/reference/concepts/value-proof.md)).
+- **An inventory's actions say where they act.** The gone tab's **Remove** is now **Remove from inventory**, which forgets the ids
+  here and changes nothing in OSDU, and a removable finding's **Remove** is now **Remove from OSDU**
+  ([removing gone ids](osdu/docs/reference/flow/inventory-removals.md#removing-gone-ids)).
 - **An operation's trace waits in the title bar instead of taking the page's room.** Sync now, a discovery and a run
   still running when its page opens no longer open the bottom panel: a trace icon appears at the right of the title bar,
   with an arc turning around it and rings spreading from it while the work runs, and a check, a warning mark or a cross
@@ -689,6 +710,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   says ([Upgrading an estate](osdu/docs/reference/concepts/templates.md#upgrading-an-estate-that-saved-templates-in-the-database)).
 
 ### Fixed
+- A record that links its child with `$child` drops the link once the child is taken out of OSDU through **Remove**, a removal flow,
+  an inventory or a reversal: the records linking it are planned again and sent without it. The link stayed on a child OSDU no longer
+  held until the record's own row changed, and the record's **Render** tab showed the document without it beside a skip; that tab
+  now says when the next run would skip a record that renders differently, and **read by** leaves out a removed child
+  ([when a child is taken out](osdu/docs/reference/flow/mapping-child.md#when-a-child-is-taken-out)).
 - A backfill reaches a child file flow dated from its file's name or path, on a schedule and on a flow with its descendants. Only
   the first flow took the window, and a re-landed file keeps such a date, so the child's watermark skipped the slice and the backfill
   stopped after the copy ([backfilling a whole source](sqlflow/docs/reference/guides/source-backfill.md)).

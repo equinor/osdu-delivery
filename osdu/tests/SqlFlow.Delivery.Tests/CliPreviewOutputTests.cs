@@ -127,6 +127,11 @@ public sealed class CliPreviewOutputTests : IDisposable
         Assert.Contains($" {flow.Name}/header: ", text.ToString().Split('\n')[0], StringComparison.Ordinal);
         Assert.DoesNotContain("header / header", text.ToString(), StringComparison.Ordinal);
 
+        // A finding leads with what is wrong in plain words, then what it does and what to do, as the page says it.
+        Assert.Contains("  `dataset.curves.curve_version` is empty\n", text.ToString().ReplaceLineEndings("\n"), StringComparison.Ordinal);
+        Assert.Contains("effect  Left out: these records are delivered without `CurveVersion`.", text.ToString(), StringComparison.Ordinal);
+        Assert.Contains("to fix  1. Fill `dataset.curves.curve_version` in the source for the records listed.", text.ToString(), StringComparison.Ordinal);
+
         // Every row the check fails or leaves a variable out of is a line of the file, under the flow's label alone.
         var lines = rows.ToString().Split('\n', StringSplitOptions.RemoveEmptyEntries);
         Assert.NotEmpty(lines);

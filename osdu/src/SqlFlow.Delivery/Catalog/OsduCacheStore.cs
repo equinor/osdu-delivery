@@ -452,6 +452,53 @@ public sealed class OsduCacheStore : ICacheStore
         public long RowsRemoved { get; set; }
     }
 
+    public async Task<Source.ProofRows> ReadProofAsync(CacheProofQuery query, CancellationToken ct = default)
+    {
+        ArgumentNullException.ThrowIfNull(query);
+        ArgumentException.ThrowIfNullOrWhiteSpace(query.Scope);
+        ArgumentException.ThrowIfNullOrWhiteSpace(query.Version);
+        ArgumentOutOfRangeException.ThrowIfLessThan(query.Limit, 1);
+        await using var db = _factory();
+        await db.Database.OpenConnectionAsync(ct).ConfigureAwait(false);
+        await using var command = db.Database.GetDbConnection().CreateCommand();
+        command.CommandText = CacheProofSql.Statement(query.Kind);
+        foreach (var (name, _, value) in CacheProofSql.Parameters(query))
+        {
+            // The statement lists one row past the limit, which says there are more.
+            command.Parameters.Add(name == CacheProofSql.RowsParameter
+                ? new SqlParameter(name, SqlDbType.BigInt) { Value = (long)query.Limit + 1 }
+                : new SqlParameter(name, SqlDbType.NVarChar, -1) { Value = value });
+        }
+
+        try
+        {
+            await using var reader = await command.ExecuteReaderAsync(ct).ConfigureAwait(false);
+            var columns = Enumerable.Range(0, reader.FieldCount).Select(reader.GetName).ToList();
+            var rows = new List<IReadOnlyList<string?>>(Math.Min(query.Limit, 1000));
+            while (await reader.ReadAsync(ct).ConfigureAwait(false))
+            {
+                if (rows.Count == query.Limit)
+                {
+                    return new Source.ProofRows(columns, rows, More: true);
+                }
+
+                var values = new string?[reader.FieldCount];
+                for (var i = 0; i < values.Length; i++)
+                {
+                    values[i] = reader.IsDBNull(i) ? null : Convert.ToString(reader.GetValue(i), CultureInfo.InvariantCulture);
+                }
+
+                rows.Add(values);
+            }
+
+            return new Source.ProofRows(columns, rows, More: false);
+        }
+        catch (SqlException ex) when (ex.Number == CacheProofSql.GoneError)
+        {
+            throw new DeliveryException($"Version {query.Version} of the cache of partition '{query.Scope}': {ex.Message}", ex);
+        }
+    }
+
     /// <summary>
     /// One attempt of a retention, on one connection at a low deadlock priority, restored before the connection goes back to
     /// the pool.

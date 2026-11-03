@@ -2365,9 +2365,10 @@ public interface ILedger
     Task<IReadOnlyList<DownloadRecordState>> ListDownloadRecordsAsync(string partition, int downloadId, string? state, string? search, long? after, int limit, CancellationToken ct = default);
 
     /// <summary>
-    /// Opens a removal of an inventory's ids (osdu/docs/reference/flow/inventory-removals.md, What a removal does): an earlier one
-    /// of the inventory its process left running is closed as failed first, since a removal is a run of the flow and the
-    /// flow runs one at a time. Returns the removal's number.
+    /// Opens a removal of an inventory's ids (osdu/docs/reference/flow/inventory-removals.md, What a removal does), or a restore of
+    /// its gone ids (scope <see cref="InventoryRemovals.Restore"/>, Restoring gone ids): an earlier one of the inventory its process
+    /// left running is closed as failed first, since a removal is a run of the flow and the flow runs one at a time. Returns the
+    /// removal's number.
     /// </summary>
     Task<long> StartInventoryRemovalAsync(Guid flowId, InventoryRemovalStart start, CancellationToken ct = default);
 
@@ -2398,6 +2399,26 @@ public interface ILedger
     /// </summary>
     Task<InventoryRemovalRound> RemoveFromInventoryAsync(
         Guid flowId, int inventoryId, long removalId, IReadOnlyList<string>? ids, long after, int limit, DateTime nowUtc, CancellationToken ct = default);
+
+    /// <summary>
+    /// The next ids a restore may bring back (osdu/docs/reference/flow/inventory-removals.md, Restoring gone ids), at most
+    /// <paramref name="limit"/>, after <paramref name="after"/>: the inventory's gone ids, or with <paramref name="ids"/> those
+    /// ids whatever they are now, or with <paramref name="removalId"/> the ids that soft-delete removal of the inventory removed,
+    /// whether or not the inventory still holds a row of them; each with what the inventory and the ledgers hold of it now, and
+    /// the finding the reconcile's rule gives it against them and <paramref name="owners"/> once OSDU serves it again. A restore
+    /// names its ids or a removal, not both.
+    /// </summary>
+    Task<IReadOnlyList<InventoryRestoreCandidate>> InventoryRestoreCandidatesAsync(
+        Guid flowId, int inventoryId, IReadOnlyList<string>? ids, long? removalId, IReadOnlyList<string> owners, long after, int limit, CancellationToken ct = default);
+
+    /// <summary>
+    /// Keeps what one round of a restore came to, in one transaction: every id's outcome and reason, the ids brought back served
+    /// again in the inventory (<paramref name="restoredDetail"/>) with the finding the reconcile's rule gives them against the
+    /// ledgers and <paramref name="owners"/>, and the restore's tallies.
+    /// </summary>
+    Task RecordInventoryRestoreAsync(
+        Guid flowId, int inventoryId, long restoreId, IReadOnlyList<InventoryRemovalItem> items, IReadOnlyList<string> owners, string restoredDetail, DateTime nowUtc,
+        CancellationToken ct = default);
 
     /// <summary>Closes a removal as completed or failed, with why it stopped (redacted).</summary>
     Task CompleteInventoryRemovalAsync(Guid flowId, long removalId, string status, string? stoppedBy, DateTime nowUtc, CancellationToken ct = default);
@@ -2786,8 +2807,8 @@ public interface ILedger
 
     /// <summary>
     /// The records that read <paramref name="parentId"/> as their parent (osdu/docs/reference/flow/mapping-parent.md), in any
-    /// flow of the partition of <paramref name="flowId"/>'s ledger, compared exactly, most recently updated first. At most
-    /// <paramref name="max"/>.
+    /// flow of the partition of <paramref name="flowId"/>'s ledger, compared exactly, most recently updated first; a record
+    /// taken out of OSDU reads it no longer and is left out. At most <paramref name="max"/>.
     /// </summary>
     Task<IReadOnlyList<RecordState>> ListChildrenOfAsync(Guid flowId, string parentId, int max, CancellationToken ct = default);
 
@@ -2998,13 +3019,15 @@ public interface ILedger
     /// ledger already holds as removed) the removal asks for nothing itself and leaves any request the record carried.
     /// <see cref="RemovalScope.History"/> leaves the record live, so its custody state is untouched and only the attempt is
     /// written. Either way every record gets its own attempt, saying which scope ran and who asked for it, because that
-    /// attempt is how the removal is audited afterwards.
+    /// attempt is how the removal is audited afterwards. A record taken out of OSDU by either of the first two scopes can no
+    /// longer be linked as a child: the records of the partition that link it (<c>$child</c>) are asked to be planned again,
+    /// so they render without the link (osdu/docs/reference/flow/mapping-child.md, When a child is taken out).
     /// </summary>
     /// <remarks>
     /// With <paramref name="sources"/> the records are taken out because their source no longer holds them (a removal flow,
     /// osdu/docs/reference/flow/removal.md): each attempt says so (phase <see cref="AttemptPhases.SourceRemoved"/>, the removal
-    /// flow, run and the file and row that said so), carries the removal's run, and is named under its activity; nothing is
-    /// asked to be planned again, since what keeps the record out is the ledger's deletion of its key
+    /// flow, run and the file and row that said so), carries the removal's run, and is named under its activity; the record
+    /// itself is not asked to be planned again, since what keeps it out is the ledger's deletion of its key
     /// (<see cref="DetectRemovalsAsync"/>).
     /// </remarks>
     Task MarkRemovedAsync(
@@ -3015,8 +3038,10 @@ public interface ILedger
     /// Settles in the ledger records a removal flow found the source no longer holds, which OSDU does not hold either (never
     /// delivered, or taken out already): what is queued for them is dropped and they are marked removed, nothing asked of
     /// OSDU, each with an attempt (outcome skipped, phase <see cref="AttemptPhases.SourceRemoved"/>) saying why, named under the
-    /// removal's activity. A record already marked removed keeps its state and gains the attempt. Records a lease holds other
-    /// than <paramref name="holder"/>'s are passed over and returned.
+    /// removal's activity. A record already marked removed keeps its state and gains the attempt. One the ledger last knew in
+    /// OSDU was taken out by something else, so the records that link it as their child are asked to be planned again, as
+    /// <see cref="MarkRemovedAsync"/> asks them. Records a lease holds other than <paramref name="holder"/>'s are passed over
+    /// and returned.
     /// </summary>
     Task<IReadOnlyList<DeliveryKey>> SettleRemovedBySourceAsync(
         Guid flowId, IReadOnlyDictionary<DeliveryKey, SourceRemovalNote> keys, string worker, string? holder, DateTime nowUtc, CancellationToken ct = default);
@@ -3144,7 +3169,9 @@ public interface ILedger
     /// <summary>
     /// Settles items of a reversal with their records, a slice to a transaction: each record a restore or a removal puts
     /// back becomes reverted or deleted and blocked, while it is still the record the source left; every item gets its
-    /// attempt (phase reverse), is named under <paramref name="activityId"/> when it changed its record, and is settled.
+    /// attempt (phase reverse), is named under <paramref name="activityId"/> when it changed its record, and is settled. The
+    /// records that link one a removal took out of OSDU as their child are asked to be planned again, as
+    /// <see cref="MarkRemovedAsync"/> asks them.
     /// </summary>
     Task<ReversalSettled> SettleReversalAsync(
         long reversalId, IReadOnlyList<ReversalSettlement> settlements, string actor, long? activityId, Guid? runId, DateTime nowUtc, CancellationToken ct = default);

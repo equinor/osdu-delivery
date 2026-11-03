@@ -259,6 +259,9 @@ OSDU holds the child, and keeps the unique segment its children's ids share. Whe
 with that segment in another entity type, through the ledger, every record linking it that is not blocked is asked to be
 planned again, and its flow's next run renders it and sends it only if it renders differently: a child landing for the
 first time adds the link, one delivered again changes nothing ([mapping $child](../flow/mapping-child.md#when-a-child-lands)).
+A child taken out of OSDU through the ledger (a removal, a removal flow, an inventory, a reversal) asks the same records,
+and their next render leaves the link out, which changes their documents, so each is sent once
+([mapping $child](../flow/mapping-child.md#when-a-child-is-taken-out)).
 
 ## A record keeps the OSDU id it claimed
 

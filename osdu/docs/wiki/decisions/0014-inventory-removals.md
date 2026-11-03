@@ -1,6 +1,6 @@
 ---
 id: delivery-wiki-0014-inventory-removals
-title: "Decision 0014: an inventory flow may remove the orphan, stale and forgotten ids it found"
+title: "Decision 0014: an inventory flow may remove the orphan, stale and forgotten ids it found, and restore its gone ids"
 type: decision
 summary: "Why an inventory flow may remove what it found when its document allows it, and how that stays traceable."
 keywords:
@@ -9,6 +9,7 @@ keywords:
   - "orphans"
   - "cleanup"
   - "soft delete"
+  - "restore"
 referenceRefs:
   - delivery-flow-inventory
   - delivery-flow-inventory-removals
@@ -18,7 +19,7 @@ related:
   - delivery-wiki-0013-inventory-flows
   - delivery-wiki-0022-removal-flows
   - delivery-wiki-0027-inventory-duplicate-checks
-updated: 2026-10-24
+updated: 2026-11-02
 ---
 # 0014: An inventory flow may remove the orphan, stale and forgotten ids it found, when its document allows it
 
@@ -77,3 +78,27 @@ listed again by the next build. It asks nothing of OSDU, so it needs no `removal
 the flow's credentials; the document cannot name `gone`. It is asked for, checked and audited as any removal is. An id a
 ledger expects stays (a later build asks storage whether it is missing), as does one OSDU serves again. The removal keeps
 its tallies and the ids it kept, not a row per id it removed, which would keep what it removes; no ledger changes.
+
+## Addendum (2026-11-02): a soft-deleted gone id is restored in OSDU
+
+The gone tab's one **Remove** read as a removal from OSDU, and a gone id a removal soft deleted could not be brought back
+from the inventory, though storage keeps it with every version and undeletes it with `PATCH /records/{id}` and
+`{"deleted": false}` (osdu/specs/core/INTEGRATION.md, D3). So the gone tab now offers **Restore in OSDU** and **Remove from
+inventory**, each saying where it acts, a removable finding's tab **Remove from OSDU**, and a soft-delete removal
+**Restore what it removed**.
+
+- A restore is a run of the flow of its own (operation `restore`), so its runs read as restores; it is kept with the
+  removals (`osdu.InventoryRemoval`, scope `restore`, a `Restored` tally, and `RestoresRemovalId` for one that undoes a
+  removal) rather than in tables of its own, since it is the same thing kept the same way: an operator's change to an
+  inventory's ids, a run of the flow, checked id by id and recorded id by id. A lookup by OSDU id then answers removals and
+  restores in one list.
+- Only a flow that declares `removal` restores: a restore writes to OSDU as a removal does, through the same credentials,
+  and a flow without it only reads OSDU.
+- An id a ledger knows (a record claims it, a delivery recorded it, or its record was purged from a ledger) is left: what
+  a ledger holds comes back through its own flow, which records it, so no restore writes past a ledger. A gone id picked
+  on the tab is restored only when an identity this estate writes as created it, as an orphan's removal checks; a removal's
+  own ids were checked so when it removed them.
+- What one removal removed is restored from the removal's items, whether or not the inventory still holds a row of them,
+  so removing gone ids from the inventory does not lose the way back.
+- The restored rows are served again in the inventory at once with the finding the reconcile's rule gives them, as a
+  removal marks its ids gone at once; storage publishes the undelete to be indexed, so a later build lists them.

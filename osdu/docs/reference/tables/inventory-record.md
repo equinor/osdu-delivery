@@ -24,6 +24,7 @@ sourceRefs:
   - osdu/src/SqlFlow.Delivery.Data/DeliveryEntities.cs
   - osdu/src/SqlFlow.Delivery/Ledger/SqlServerLedgerBulk.Inventory.cs
   - osdu/src/SqlFlow.Delivery/Ledger/SqlServerLedgerBulk.InventoryRemoval.cs
+  - osdu/src/SqlFlow.Delivery/Ledger/SqlServerLedgerBulk.InventoryRestore.cs
   - osdu/src/SqlFlow.Delivery/Ledger/OsduLedger.Inventory.cs
 ---
 
@@ -35,7 +36,8 @@ finding). The reconcile sets every row's finding from the delivery ledgers' [`os
 [`osdu.Artifact`](artifact.md) and [`osdu.PurgedRecord`](purged-record.md), and never writes them
 ([The findings](../flow/inventory-builds.md#the-findings)).
 
-Rows leave the table only through a removal of gone ids; a removal from OSDU marks its ids gone and keeps them.
+Rows leave the table only through a removal of gone ids; a removal from OSDU marks its ids gone and keeps them, and a
+restore serves the ids it brought back again, with the finding the reconcile's rule gives them.
 
 ## Columns
 
@@ -78,9 +80,10 @@ Rows leave the table only through a removal of gone ids; a removal from OSDU mar
 
 ## Written and read by
 
-- **Written** by a build's merge, the reconcile, the storage checks, a removal (which marks ids gone) and a removal of
-  gone ids (which deletes rows) (`SqlServerLedgerBulk.Inventory.cs`, `SqlServerLedgerBulk.InventoryRemoval.cs`).
+- **Written** by a build's merge, the reconcile, the storage checks, a removal (which marks ids gone), a removal of
+  gone ids (which deletes rows) and a restore (which serves the ids it brought back again) (`SqlServerLedgerBulk.Inventory.cs`,
+  `SqlServerLedgerBulk.InventoryRemoval.cs`, `SqlServerLedgerBulk.InventoryRestore.cs`).
 - **Read** by the counts by finding, the **Ids** grid and its tabs, the CSV export, the lookup by OSDU id (`GET /api/v1/delivery/inventories/lookup`), a removal, a
-  selection's match and a repair.
+  restore, a selection's match and a repair.
 - **Rewritten** by a ledger move (`OsduLedger.Moves.cs`), which puts the rows of an old ledger under the
   identity of the flow that replaced it or took it over, a slice at a time ([Renaming a pipeline](../concepts/renaming-a-pipeline.md)).

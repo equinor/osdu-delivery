@@ -23,6 +23,7 @@ keywords:
   - undo unfinished deliveries
   - records the source no longer holds
   - removal flow
+  - restore gone ids
 related:
   - delivery-concept-ledger
   - delivery-concept-artifacts-and-undo
@@ -75,6 +76,7 @@ against the storage service's OpenAPI description; route-specific calls are in [
 | You want to | Use |
 | --- | --- |
 | Take records out of OSDU, reversibly | A removal at the `record` scope. |
+| Bring back what an inventory found gone, or what one of its removals took out of OSDU | An inventory's [restore](../flow/inventory-removals.md#restoring-gone-ids). |
 | Take out of OSDU what the source no longer holds, on a schedule | A [removal flow](../flow/removal.md). |
 | Make the version before the latest current again | A removal at the `previous` scope. |
 | Destroy a record's earlier versions, or the record for good | A removal at the `history` or `everything` scope. |
@@ -106,6 +108,12 @@ stay out of OSDU while its row stays is taken out of the source. `previous` does
 otherwise write the version it took back again. The removal that opens [deleting the ledger](#deleting-the-ledger) asks
 for nothing, since the run after it reads every row, and neither does an inventory's removal of an id the ledger already
 holds as removed ([Inventory flows](../flow/inventory.md)), which only makes OSDU agree with the ledger.
+
+**Records that link a removed one.** A record taken out of OSDU (`record`, `everything`) can no longer be linked as a
+child: the records of the partition that link it with `$child` are asked to be planned again, and their flows' next runs
+send them without the link. The same holds for every way the ledger takes a record out: a removal flow, an inventory and
+a reversal ([mapping $child](../flow/mapping-child.md#when-a-child-is-taken-out)). `previous` and `history` leave the
+record in OSDU and ask nothing.
 
 **Which records.** A removal names its records by key, or by a listing filter that is resolved on the node when the
 removal runs, so "every record this submission delivered" travels as a filter rather than as thousands of keys. The filter

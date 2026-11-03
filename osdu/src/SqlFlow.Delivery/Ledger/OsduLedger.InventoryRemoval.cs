@@ -5,26 +5,47 @@ namespace SqlFlow.Delivery.Ledger;
 
 // Removing what an inventory found (osdu/docs/reference/flow/inventory-removals.md, What a removal does): the removals an
 // operator asked of an inventory's ids, kept under the inventory flow's ledger with what each did to every id it
-// reached.
+// reached; and the restores of its gone ids (Restoring gone ids), kept with them as the undoing of one.
 public sealed partial class OsduLedger
 {
     public async Task<long> StartInventoryRemovalAsync(Guid flowId, InventoryRemovalStart start, CancellationToken ct = default)
     {
         ArgumentNullException.ThrowIfNull(start);
         ArgumentException.ThrowIfNullOrWhiteSpace(start.Actor);
-        if (!InventoryRemovals.IsAskable(start.Finding))
+        if (start.Scope == InventoryRemovals.Restore)
         {
-            throw new DeliveryException($"'{start.Finding}' is not a finding an inventory removes; it removes {string.Join(", ", InventoryRemovals.Askable)}.");
-        }
+            // A restore brings gone ids back in OSDU, those picked, every one, or what one removal removed.
+            if (start.Finding != InventoryFindings.Gone)
+            {
+                throw new DeliveryException($"A restore brings back gone ids, not {start.Finding} ones: an id OSDU serves has nothing to restore.");
+            }
 
-        if (!InventoryRemovals.IsScope(start.Scope))
-        {
-            throw new DeliveryException($"'{start.Scope}' is not how much a removal takes; it is one of {string.Join(", ", InventoryRemovals.Scopes)}.");
+            if (start.RestoresRemovalId is not null && (start.NamesIds || start.SelectionId is not null))
+            {
+                throw new DeliveryException("A restore takes the ids it names, or what one removal removed, not both.");
+            }
         }
-
-        if (InventoryRemovals.Mismatch(start.Finding, start.Scope) is { } mismatch)
+        else
         {
-            throw new DeliveryException($"A removal of {start.Finding} ids cannot take {start.Scope}: {mismatch}");
+            if (!InventoryRemovals.IsAskable(start.Finding))
+            {
+                throw new DeliveryException($"'{start.Finding}' is not a finding an inventory removes; it removes {string.Join(", ", InventoryRemovals.Askable)}.");
+            }
+
+            if (!InventoryRemovals.IsScope(start.Scope))
+            {
+                throw new DeliveryException($"'{start.Scope}' is not how much a removal takes; it is one of {string.Join(", ", InventoryRemovals.Scopes)}.");
+            }
+
+            if (InventoryRemovals.Mismatch(start.Finding, start.Scope) is { } mismatch)
+            {
+                throw new DeliveryException($"A removal of {start.Finding} ids cannot take {start.Scope}: {mismatch}");
+            }
+
+            if (start.RestoresRemovalId is not null)
+            {
+                throw new DeliveryException("Only a restore names the removal whose ids it brings back.");
+            }
         }
 
         var partition = await WritePartitionAsync(flowId, ct).ConfigureAwait(false);
@@ -49,6 +70,7 @@ public sealed partial class OsduLedger
             StartedUtc = start.StartedUtc,
             ActivityId = start.ActivityId,
             InventorySelectionId = start.SelectionId,
+            RestoresRemovalId = start.RestoresRemovalId,
         };
         db.DeliveryInventoryRemovals.Add(removal);
         await db.SaveChangesAsync(ct).ConfigureAwait(false);
@@ -109,6 +131,52 @@ public sealed partial class OsduLedger
         await using var db = Open();
         return await RetryDeadlockAsync(
             () => SqlServerLedgerBulk.RemoveFromInventoryAsync(db, partition, inventoryId, removalId, ids, after, limit, nowUtc, ct),
+            ct).ConfigureAwait(false);
+    }
+
+    public async Task<IReadOnlyList<InventoryRestoreCandidate>> InventoryRestoreCandidatesAsync(
+        Guid flowId, int inventoryId, IReadOnlyList<string>? ids, long? removalId, IReadOnlyList<string> owners, long after, int limit, CancellationToken ct = default)
+    {
+        ArgumentNullException.ThrowIfNull(owners);
+        ArgumentOutOfRangeException.ThrowIfLessThan(limit, 1);
+        ArgumentOutOfRangeException.ThrowIfNegative(after);
+        if (ids is not null && removalId is not null)
+        {
+            throw new DeliveryException("A restore names its ids or takes what one removal removed, not both.");
+        }
+
+        if (ids is { Count: 0 })
+        {
+            throw new DeliveryException("A restore that names its ids names at least one; leave them out to restore every gone id.");
+        }
+
+        var partition = await WritePartitionAsync(flowId, ct).ConfigureAwait(false);
+        await using var db = Open();
+        return await SqlServerLedgerBulk.InventoryRestoreCandidatesAsync(db, partition, inventoryId, ids, removalId, owners, after, limit, ct).ConfigureAwait(false);
+    }
+
+    public async Task RecordInventoryRestoreAsync(
+        Guid flowId, int inventoryId, long restoreId, IReadOnlyList<InventoryRemovalItem> items, IReadOnlyList<string> owners, string restoredDetail, DateTime nowUtc,
+        CancellationToken ct = default)
+    {
+        ArgumentNullException.ThrowIfNull(items);
+        ArgumentNullException.ThrowIfNull(owners);
+        ArgumentException.ThrowIfNullOrWhiteSpace(restoredDetail);
+        if (items.Count == 0)
+        {
+            return;
+        }
+
+        if (items.FirstOrDefault(i => i.Outcome is not (InventoryRemovals.Restored or InventoryRemovals.Gone or InventoryRemovals.Skipped or InventoryRemovals.Failed)) is { } unknown)
+        {
+            throw new DeliveryException(
+                $"'{unknown.Outcome}' is not what a restore comes to for an id; it is one of {InventoryRemovals.Restored}, {InventoryRemovals.Gone}, {InventoryRemovals.Skipped} or {InventoryRemovals.Failed}.");
+        }
+
+        var partition = await WritePartitionAsync(flowId, ct).ConfigureAwait(false);
+        await using var db = Open();
+        await RetryDeadlockAsync(
+            () => SqlServerLedgerBulk.RecordInventoryRestoreAsync(db, partition, inventoryId, restoreId, items, owners, restoredDetail, nowUtc, ct),
             ct).ConfigureAwait(false);
     }
 
@@ -252,12 +320,14 @@ public sealed partial class OsduLedger
         StartedUtc = DateTime.SpecifyKind(r.StartedUtc, DateTimeKind.Utc),
         CompletedUtc = r.CompletedUtc == null ? null : DateTime.SpecifyKind(r.CompletedUtc.Value, DateTimeKind.Utc),
         Removed = r.Removed,
+        Restored = r.Restored,
         Gone = r.Gone,
         Skipped = r.Skipped,
         Failed = r.Failed,
         Error = r.Error,
         ActivityId = r.ActivityId,
         SelectionId = r.InventorySelectionId,
+        RestoresRemovalId = r.RestoresRemovalId,
     };
 
     private static InventoryRemovalItemState ToInventoryRemovalItemState(DeliveryInventoryRemovalItem i) => new()

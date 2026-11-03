@@ -144,8 +144,9 @@ other packages adopt the same contract.
   be undone.
 - [0013: inventory flows compare what OSDU serves with every ledger of the partition](decisions/0013-inventory-flows.md) -
   why finding orphans needs a read of what OSDU serves set against every ledger, and what an inventory compares.
-- [0014: an inventory flow may remove the orphan, stale and forgotten ids it found](decisions/0014-inventory-removals.md) -
-  why an inventory flow may remove what it found when its document allows it, and how that stays traceable.
+- [0014: an inventory flow may remove the orphan, stale and forgotten ids it found, and restore its gone ids](decisions/0014-inventory-removals.md) -
+  why an inventory flow may remove what it found when its document allows it, bring back what a soft delete took, and how
+  that stays traceable.
 - [0015: a record OSDU lost is delivered again under its own id](decisions/0015-lost-records.md) - why it is
   delivered again under the id it claimed, restored first when soft-deleted, and given a new id only when an
   operator asks.
@@ -244,6 +245,9 @@ other packages adopt the same contract.
 - [0039: the VS Code extension is a client of the MCP server, and one browser sign-in serves it and the command line](decisions/0039-vscode-extension-is-an-mcp-client.md) -
   why the extension reads through the server's tools, why a missing tool was filled in the server, why Microsoft sign-in
   reaches a client through a GUI page, and why the extension, the server and `sqlflow` share one credential file.
+- [0044: a finding says why in parts the render noted, and proves it with queries the control plane writes](decisions/0044-findings-say-why-and-prove-it.md):
+  why a value check's finding is explained from what the render noted rather than read back from its sentence, why the
+  words are written once on the server, and why its proof is statements the control plane writes and runs as copied.
 - [0043: a removal flow extends SQLFlow's key match, and a delivery leaves marked rows out with a filter](decisions/0043-removal-marks-the-ingestion-table.md):
   why a removal reads the ingestion table's deleted marks as removed keys, marks the rows it takes out and unmarks a key
   that comes back, why a delivery narrows its reads with a general filter rather than a switch for deleted rows, and why

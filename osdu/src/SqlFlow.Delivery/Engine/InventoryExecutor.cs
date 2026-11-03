@@ -14,9 +14,10 @@ namespace SqlFlow.Delivery.Engine;
 
 /// <summary>
 /// Runs one inventory flow document as one platform run (osdu/docs/reference/flow/inventory.md, Operations). The run's
-/// parameters select the operation: build (the default), reconcile, plan, remove, match or duplicates; the payload names the
-/// inventories, none naming every one (a removal names one, with what it removes and the partition it confirms; a match names
-/// one, with the selection it fills; a duplicates run names one, with the check it fills); the partition run
+/// parameters select the operation: build (the default), reconcile, plan, remove, restore, match or duplicates; the payload names
+/// the inventories, none naming every one (a removal names one, with what it removes and the partition it confirms; a restore
+/// names one, with what it brings back and the partition it confirms; a match names one, with the selection it fills; a
+/// duplicates run names one, with the check it fills); the partition run
 /// value names the partition, settled as every run of the module settles it. The engine's log becomes the run log and
 /// live trace, the outcome becomes <c>run.json</c>, and every build and reconcile is kept with its inventory. A run in
 /// which an inventory failed ends failed, still carrying its outcome, with every other inventory done.
@@ -81,7 +82,7 @@ public sealed class InventoryExecutor : IFlowDocumentExecutor
         }
         catch (InventoryRemovalFailedException stopped)
         {
-            // The removal stopped part way: the run ends failed, and its outcome says what it removed up to there.
+            // The removal (or the restore) stopped part way: the run ends failed, and its outcome says what it did up to there.
             error = stopped.Message;
             log.LogError("{Operation} failed: {Error}", operation, error);
             result = stopped.Outcome;
@@ -150,6 +151,11 @@ public sealed class InventoryExecutor : IFlowDocumentExecutor
                 payload.Inventories.Count == 1 ? payload.Inventories[0] : throw new DeliveryException("A remove run names the one inventory it removes from."),
                 payload.Removal ?? throw new DeliveryException("A remove run names what it removes (removal)."),
                 payload.Confirm ?? throw new DeliveryException("A remove run names the partition it acts in (confirm)."),
+                runId, actor, ct).ConfigureAwait(false),
+            DeliveryOperations.Restore => await runner.RestoreAsync(
+                payload.Inventories.Count == 1 ? payload.Inventories[0] : throw new DeliveryException("A restore run names the one inventory it restores in."),
+                payload.Restore ?? throw new DeliveryException("A restore run names what it brings back (restore)."),
+                payload.Confirm ?? throw new DeliveryException("A restore run names the partition it acts in (confirm)."),
                 runId, actor, ct).ConfigureAwait(false),
             DeliveryOperations.Match => await runner.MatchAsync(
                 payload.Inventories.Count == 1 ? payload.Inventories[0] : throw new DeliveryException("A match run names the one inventory it matches."),

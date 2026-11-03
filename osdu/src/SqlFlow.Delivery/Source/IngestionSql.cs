@@ -40,6 +40,24 @@ public sealed record IngestionScope(string Column, string Parameter, int Values 
 /// <param name="ChildColumns">The child dataset's columns.</param>
 public sealed record InspectionRead(IReadOnlyList<string> Columns, IngestionDataset? Child, IReadOnlyList<string> ChildColumns);
 
+/// <summary>A column a proof judges: its name in its table, the SQL type it holds, and the name the mapping reads it under.</summary>
+/// <param name="Name">The column, in the record table or in the proof's child dataset.</param>
+/// <param name="SqlType">The type it holds, as SQL spells it; null when unknown, which compares it as text.</param>
+/// <param name="Shown">How the mapping names it (<c>dataset.curves.curve_unit</c>), which the proof's result names it by.</param>
+public sealed record ProofColumn(string Name, string? SqlType, string Shown);
+
+/// <summary>
+/// The rows a proof of a finding reads (osdu/docs/reference/concepts/value-proof.md): those of the scope a delivery reads whose
+/// columns behind the finding are all empty, or of which one holds one of the values the check met there.
+/// </summary>
+/// <param name="Columns">The columns, all of the record table or all of <paramref name="Child"/>.</param>
+/// <param name="Child">The child dataset they are columns of; null for the record table.</param>
+/// <param name="Empty">True for rows whose every column is empty; false for rows of which a column holds one of its values.</param>
+/// <param name="Origin">The record table's columns saying which file and row a record came from.</param>
+/// <param name="ChildOrigin">The child dataset's columns saying which file and row its row came from.</param>
+public sealed record ProofRead(
+    IReadOnlyList<ProofColumn> Columns, IngestionDataset? Child, bool Empty, IReadOnlyList<string> Origin, IReadOnlyList<string> ChildOrigin);
+
 /// <summary>
 /// A flow's source as the SQL builders see it, once the flow's declarations have been checked against the tables: the record
 /// table with its key columns and their SQL types, the system columns the tables actually carry, the scope predicate and the
@@ -471,6 +489,142 @@ public static class IngestionSql
 
         sql.Append("ORDER BY ").Append(string.Join(", ", order)).Append(';');
         return sql.ToString();
+    }
+
+    /// <summary>The parameter holding, as a JSON array of text, the values a proof looks for in its <paramref name="column"/>th column.</summary>
+    public static string ProofValuesParameter(int column) => ProofValuesPrefix + column.ToString(CultureInfo.InvariantCulture);
+
+    /// <summary>The prefix of <see cref="ProofValuesParameter"/>.</summary>
+    public const string ProofValuesPrefix = "@values";
+
+    /// <summary>The parameter holding the most rows a statement of a proof lists.</summary>
+    public const string ProofRowsParameter = "@rows";
+
+    /// <summary>
+    /// How many rows of the scope a proof's test holds for: for values, each value a column holds and its rows, the most
+    /// frequent first; for empty columns, the one count. The rows are the ones a delivery reads, as <see cref="ProofRecords"/>
+    /// reads them.
+    /// </summary>
+    public static string ProofValues(IngestionLayout layout, ProofRead read)
+    {
+        ArgumentNullException.ThrowIfNull(layout);
+        ArgumentNullException.ThrowIfNull(read);
+        var alias = read.Child is null ? "r" : "c";
+        if (read.Empty)
+        {
+            return $"SELECT COUNT_BIG(*) AS [rows]\n{ProofFrom(layout, read)}\n{ProofWhere(layout, read)};";
+        }
+
+        var parts = read.Columns.Select((column, i) =>
+        {
+            var quoted = $"{alias}.{SourceObjectName.Quote(column.Name)}";
+            return $"SELECT {Literal(column.Shown)} AS [column], CAST({quoted} AS nvarchar(4000)) AS [value], COUNT_BIG(*) AS [rows]\n"
+                + $"{ProofFrom(layout, read)}\n{ProofWhere(layout, read, only: i)}\nGROUP BY {quoted}";
+        });
+        return $"SELECT TOP ({ProofRowsParameter}) [column], [value], [rows]\nFROM (\n{string.Join("\nUNION ALL\n", parts)}\n) v\nORDER BY [rows] DESC, [column], [value];";
+    }
+
+    /// <summary>
+    /// The rows a proof's test holds for, as a person fixes them: each row's record key, the columns behind the finding under the
+    /// names the mapping reads them by, and the columns saying which file and row the record (and its child row) came from, over
+    /// the rows a delivery reads, in the order it reads them.
+    /// </summary>
+    public static string ProofRecords(IngestionLayout layout, ProofRead read)
+    {
+        ArgumentNullException.ThrowIfNull(layout);
+        ArgumentNullException.ThrowIfNull(read);
+        var alias = read.Child is null ? "r" : "c";
+        var columns = layout.Key.Select(k => $"r.{SourceObjectName.Quote(k.Name)}")
+            .Concat(read.Columns.Select(c => $"{alias}.{SourceObjectName.Quote(c.Name)} AS {SourceObjectName.Quote(c.Shown)}"))
+            .Concat(read.Child is { } child ? read.ChildOrigin.Select(o => $"c.{SourceObjectName.Quote(o)} AS {SourceObjectName.Quote($"{child.Name}.{o}")}") : [])
+            .Concat(read.Origin.Select(o => $"r.{SourceObjectName.Quote(o)}"));
+        var order = new List<string> { OrderList(layout, "r") };
+        if (read.Child is { } ordered)
+        {
+            order.AddRange(ordered.OrderBy.Select(o => $"c.{SourceObjectName.Quote(o)}"));
+        }
+
+        return $"SELECT TOP ({ProofRowsParameter}) {string.Join(", ", columns)}\n{ProofFrom(layout, read)}\n{ProofWhere(layout, read)}\nORDER BY {string.Join(", ", order)};";
+    }
+
+    /// <summary>The rows a proof reads from: the scope's records, and a child dataset's rows of them, joined as a read joins them.</summary>
+    private static string ProofFrom(IngestionLayout layout, ProofRead read)
+    {
+        var from = $"FROM {RecordRows(layout)} r";
+        if (read.Child is not { } child)
+        {
+            return from;
+        }
+
+        var on = child.Join.Select(j => $"c.{SourceObjectName.Quote(j.Key)} = r.{SourceObjectName.Quote(j.Value)}").ToList();
+        if (child.Deleted is { } deleted)
+        {
+            on.Add($"c.{SourceObjectName.Quote(deleted)} IS NULL");
+        }
+
+        return $"{from}\nINNER JOIN {DatasetRows(child)} c ON {string.Join(" AND ", on)}";
+    }
+
+    /// <summary>
+    /// The scope's rows not marked deleted that the proof's test holds for: every column empty, or a column holding one of the
+    /// values its parameter lists (only the <paramref name="only"/>th, when given). A value is compared as the column's own
+    /// type, so a number or a date the check met as text finds the rows holding it.
+    /// </summary>
+    private static string ProofWhere(IngestionLayout layout, ProofRead read, int? only = null)
+    {
+        var alias = read.Child is null ? "r" : "c";
+        var predicates = new List<string>();
+        if (layout.Scope.Count > 0)
+        {
+            predicates.Add(ScopePredicate(layout, "r"));
+        }
+
+        if (layout.Deleted is { } deleted)
+        {
+            predicates.Add($"r.{SourceObjectName.Quote(deleted)} IS NULL");
+        }
+
+        if (read.Empty)
+        {
+            predicates.AddRange(read.Columns.Select(column =>
+            {
+                var quoted = $"{alias}.{SourceObjectName.Quote(column.Name)}";
+                return IsText(column.SqlType)
+                    ? $"({quoted} IS NULL OR TRIM(NCHAR(9) + NCHAR(10) + NCHAR(13) + N' ' FROM {quoted}) = N'')"
+                    : $"{quoted} IS NULL";
+            }));
+        }
+        else
+        {
+            var tests = read.Columns
+                .Select((column, i) => (column, i))
+                .Where(c => only is null || c.i == only)
+                .Select(c =>
+                {
+                    var value = IsText(c.column.SqlType) ? "[value]" : $"TRY_CONVERT({c.column.SqlType}, [value])";
+                    return $"{alias}.{SourceObjectName.Quote(c.column.Name)} IN (SELECT {value} FROM OPENJSON({ProofValuesParameter(c.i)}) WITH ([value] nvarchar(4000) '$'))";
+                })
+                .ToList();
+            predicates.Add(tests.Count == 1 ? tests[0] : $"({string.Join(" OR ", tests)})");
+        }
+
+        return "WHERE " + string.Join("\n  AND ", predicates);
+    }
+
+    /// <summary>Whether a column of <paramref name="sqlType"/> holds text, which a value is compared with as it is; an unknown type counts as text.</summary>
+    private static bool IsText(string? sqlType)
+        => sqlType is null
+            || sqlType.StartsWith("nvarchar", StringComparison.OrdinalIgnoreCase)
+            || sqlType.StartsWith("varchar", StringComparison.OrdinalIgnoreCase)
+            || sqlType.StartsWith("nchar", StringComparison.OrdinalIgnoreCase)
+            || sqlType.StartsWith("char", StringComparison.OrdinalIgnoreCase)
+            || sqlType.Equals("sysname", StringComparison.OrdinalIgnoreCase);
+
+    /// <summary>Text as a T-SQL literal: Unicode, every quote doubled, so no text can end the string it is in.</summary>
+    public static string Literal(string text)
+    {
+        ArgumentNullException.ThrowIfNull(text);
+        return "N'" + text.Replace("'", "''", StringComparison.Ordinal) + "'";
     }
 
     /// <summary>

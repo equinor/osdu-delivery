@@ -340,6 +340,82 @@ public sealed class RecordInspectionTests
         Assert.True(EntrySelection.Of([]).IsAll);
     }
 
+    [Fact]
+    public void What_an_entry_looked_for_and_did_not_find_is_noted_in_parts_with_the_type_the_fields_the_value_and_the_column()
+    {
+        var renderer = Renderer("""
+            Unit:
+              $cache: UnitOfMeasure.id
+              $findBy: [Code = unit, Name = unit]
+              $required: false
+            """);
+
+        // No record answers by either field: the lookup is optional, so the variable is left out, and the miss says where it looked.
+        var furlong = Only(renderer.Inspect(Record(Row(("unit", "furlong"))), EntrySelection.All), "osdu.data.Unit");
+        Assert.Equal(EntryOutcomeKind.Empty, furlong.Kind);
+        var miss = Assert.Single(furlong.Misses);
+        Assert.Equal(RenderMissKind.NoMatch, miss.Kind);
+        Assert.Equal(["UnitOfMeasure"], miss.Types);
+        Assert.Equal("reference-data--UnitOfMeasure", miss.EntityType);
+        Assert.Equal(["dataset.unit"], miss.Columns.Select(c => c.ToString()));
+        Assert.Equal([("Code", "furlong"), ("Name", "furlong")], miss.Tries.Select(t => (t.Field, t.Value)));
+        Assert.StartsWith("osdu.data.Unit: no UnitOfMeasure matches 'furlong' by Code/Name in version refs-1", miss.Reason, StringComparison.Ordinal);
+
+        // Nothing to look for at all is an empty source value, not a missing record.
+        var blank = Only(renderer.Inspect(Record(Row(("unit", " "))), EntrySelection.All), "osdu.data.Unit");
+        Assert.Equal(RenderMissKind.Empty, Assert.Single(blank.Misses).Kind);
+        Assert.Equal(["dataset.unit"], blank.Misses[0].Columns.Select(c => c.ToString()));
+
+        // A value found gives no miss.
+        Assert.Empty(Only(renderer.Inspect(Record(Row(("unit", "ft"))), EntrySelection.All), "osdu.data.Unit").Misses);
+    }
+
+    [Fact]
+    public void A_value_several_records_answer_to_and_an_id_the_cache_does_not_hold_are_noted_with_what_they_name()
+    {
+        var units = new ReferenceType("UnitOfMeasure", "reference-data--UnitOfMeasure",
+        [
+            ReferenceItem.FromText("dev:reference-data--UnitOfMeasure:ft", new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase) { ["Code"] = "ft" }),
+            ReferenceItem.FromText("dev:reference-data--UnitOfMeasure:fT", new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase) { ["Code"] = "fT" }),
+        ]);
+        var references = new ReferenceSnapshot("refs-1", T0, [units]);
+        MappingRenderer With(string data) => new(TestSchema.Mapping(data), TestSchema.Build(), references, TestSchema.Context());
+
+        var lookup = With("""
+            Unit:
+              $cache: UnitOfMeasure.id
+              $findBy: Code = unit
+            """);
+        var ambiguous = Only(lookup.Inspect(Record(Row(("unit", "FT"))), EntrySelection.All), "osdu.data.Unit");
+        Assert.Equal(EntryOutcomeKind.Held, ambiguous.Kind);
+        var several = Assert.Single(ambiguous.Misses);
+        Assert.Equal(RenderMissKind.Ambiguous, several.Kind);
+        Assert.Equal(["dev:reference-data--UnitOfMeasure:fT", "dev:reference-data--UnitOfMeasure:ft"], several.Candidates.Order(StringComparer.Ordinal));
+        Assert.Equal(ambiguous.Reasons[0], several.Reason);
+
+        var built = With("""
+            Unit:
+              $from: unit
+              $modifiers: [ref]
+            """);
+        var unheld = Only(built.Inspect(Record(Row(("unit", "furlong"))), EntrySelection.All), "osdu.data.Unit");
+        Assert.Equal(EntryOutcomeKind.Held, unheld.Kind);
+        var id = Assert.Single(unheld.Misses);
+        Assert.Equal(RenderMissKind.IdNotHeld, id.Kind);
+        Assert.Equal("reference-data--UnitOfMeasure", id.EntityType);
+        Assert.Equal(["UnitOfMeasure"], id.Types);
+        Assert.Equal(["dataset.unit"], id.Columns.Select(c => c.ToString()));
+        Assert.Equal("dev:reference-data--UnitOfMeasure:furlong", Assert.Single(id.Tries).Value);
+        Assert.Equal(unheld.Reasons[0], id.Reason);
+
+        var noType = Only(With("""
+            Unit:
+              $cache: Furlongs.id
+              $findBy: Code = unit
+            """).Inspect(Record(Row(("unit", "ft"))), EntrySelection.All), "osdu.data.Unit");
+        Assert.Equal((RenderMissKind.NoType, "Furlongs"), (Assert.Single(noType.Misses).Kind, noType.Misses[0].Types[0]));
+    }
+
     private static TemplatePath Path(string text)
         => TemplatePath.TryParse(text, out var path, out var error) ? path! : throw new ArgumentException(error, nameof(text));
 }

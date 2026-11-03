@@ -191,6 +191,17 @@ test.describe.serial("a mapping's staged records and a dry run", () => {
     await expect(properties.getByTestId("variable-sql")).toContainText("OPENJSON", { timeout: 30_000 });
     await properties.getByTestId("variable-sql-rows-all").click();
     await expect(properties.getByTestId("variable-sql")).not.toContainText("OPENJSON", { timeout: 30_000 });
+
+    // Its Data tab says what is wrong in plain words and what to do, and proves it from the data: a step run lists its rows.
+    await properties.getByTestId("templates-view-properties-tab-data").click();
+    const finding = properties.getByTestId("value-check-finding").first();
+    await expect(finding.getByTestId("value-check-finding-explained-fixes")).toBeVisible({ timeout: 30_000 });
+    await finding.getByTestId("value-check-proof-toggle").click();
+    const run = finding.locator('[data-testid^="value-check-proof-step-"][data-testid$="-run"]').first();
+    await expect(run).toBeVisible({ timeout: 60_000 });
+    await run.click();
+    await expect(finding.locator('[data-testid$="-result-count"]').first()).toContainText("row", { timeout: 60_000 });
+    await expect(finding.getByTestId("value-check-proof-run-error")).toHaveCount(0);
     await sheet.getByTestId("delivery-mapping-tab-staged").click();
     await expect(sheet.getByTestId("dry-run-verdict")).toBeVisible();
 

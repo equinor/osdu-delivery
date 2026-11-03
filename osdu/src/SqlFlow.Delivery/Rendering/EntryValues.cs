@@ -83,16 +83,29 @@ internal static partial class EntryValues
                 return null;
             }
 
-            if (!TryModify(entry, read, root, item, renderer, holds, usages, out raw))
+            if (!TryModify(entry, read, root, item, renderer, holds, usages, searched, out raw))
             {
                 return null;
             }
 
             if (IsEmpty(raw))
             {
-                if (entry.Required)
+                // Said only where something reads it: an optional value left out costs a delivery's render nothing.
+                if (entry.Required || searched.NotesMisses)
                 {
-                    holds.Add($"{path}: {EmptyRead(entry, read)}, and the entry is required");
+                    var empty = $"{path}: {EmptyRead(entry, read)}";
+
+                    // A value the row held that the modifiers turned into nothing is no empty source value: what it held is the cause.
+                    if (IsEmpty(read))
+                    {
+                        var columns = entry.Source.Expression is { } computed ? computed.Columns.ToList() : [entry.Source.Column!];
+                        searched.Miss(new RenderMiss { Kind = RenderMissKind.Empty, Reason = empty, Columns = columns });
+                    }
+
+                    if (entry.Required)
+                    {
+                        holds.Add($"{empty}, and the entry is required");
+                    }
                 }
 
                 return null;
@@ -141,8 +154,8 @@ internal static partial class EntryValues
         else
         {
             raw = entry.FindAll is not null
-                ? CachedAll(entry, root, item, renderer, holds, usages)
-                : Cached(entry, root, item, renderer, holds, usages);
+                ? CachedAll(entry, root, item, renderer, holds, usages, searched)
+                : Cached(entry, root, item, renderer, holds, usages, searched);
             if (raw is null)
             {
                 return null;
@@ -511,7 +524,7 @@ internal static partial class EntryValues
             return null;
         }
 
-        if (!TryModify(entry, Native(copy), root, item, renderer, holds, usages, out var modified))
+        if (!TryModify(entry, Native(copy), root, item, renderer, holds, usages, searched, out var modified))
         {
             return null;
         }
@@ -600,7 +613,7 @@ internal static partial class EntryValues
             return null;
         }
 
-        if (!TryModify(entry, Native(copy), root, item, renderer, holds, usages, out var modified))
+        if (!TryModify(entry, Native(copy), root, item, renderer, holds, usages, searched, out var modified))
         {
             return null;
         }
@@ -713,7 +726,7 @@ internal static partial class EntryValues
     /// cached table records the rows it read among the render's cache usages.
     /// </summary>
     private static bool TryModify(
-        MappingEntry entry, object? value, SourceRow root, SourceRow? item, MappingRenderer renderer, List<string> holds, List<CacheUsage> usages, out object? result)
+        MappingEntry entry, object? value, SourceRow root, SourceRow? item, MappingRenderer renderer, List<string> holds, List<CacheUsage> usages, RenderTrail searched, out object? result)
     {
         var path = entry.Target.Text;
         result = value;
@@ -740,7 +753,7 @@ internal static partial class EntryValues
                     result = Split(text, modifier.Separator!, modifier.Part!.Value);
                     break;
                 case ModifierKind.Replace:
-                    if (!TryReplace(modifier, text, path, renderer, holds, usages, out result))
+                    if (!TryReplace(modifier, text, path, renderer, holds, usages, searched, out result))
                     {
                         return false;
                     }
@@ -772,7 +785,7 @@ internal static partial class EntryValues
                     result = number;
                     break;
                 case ModifierKind.Id:
-                    if (!TryBuildId(modifier.Id!, text, entry, root, item, renderer, holds, usages, out result))
+                    if (!TryBuildId(modifier.Id!, text, entry, root, item, renderer, holds, usages, searched, out result))
                     {
                         return false;
                     }
@@ -786,7 +799,7 @@ internal static partial class EntryValues
                         return false;
                     }
 
-                    if (!TryBuildId(reference, text, entry, root, item, renderer, holds, usages, out result))
+                    if (!TryBuildId(reference, text, entry, root, item, renderer, holds, usages, searched, out result))
                     {
                         return false;
                     }
@@ -825,7 +838,7 @@ internal static partial class EntryValues
     /// nobody chose. A table read from the cache is looked up the same way (<see cref="TryReplaceFromCache"/>).
     /// </summary>
     private static bool TryReplace(
-        Modifier modifier, string? text, string path, MappingRenderer renderer, List<string> holds, List<CacheUsage> usages, out object? result)
+        Modifier modifier, string? text, string path, MappingRenderer renderer, List<string> holds, List<CacheUsage> usages, RenderTrail searched, out object? result)
     {
         result = null;
         if (text is null)
@@ -842,7 +855,7 @@ internal static partial class EntryValues
 
         if (modifier.Table is { } cached)
         {
-            return TryReplaceFromCache(modifier, cached, value, path, renderer, holds, usages, out result);
+            return TryReplaceFromCache(modifier, cached, value, path, renderer, holds, usages, searched, out result);
         }
 
         var lookup = ReplaceTables.Find(ReplaceTables.Of(modifier.Replacements), ReplaceTables.KeyField, ReplaceTables.ValueField, value);
@@ -876,14 +889,16 @@ internal static partial class EntryValues
     /// holds several values at its field: each of those leaves a value nobody chose.
     /// </remarks>
     private static bool TryReplaceFromCache(
-        Modifier modifier, CachedReplaceTable table, string value, string path, MappingRenderer renderer, List<string> holds, List<CacheUsage> usages, out object? result)
+        Modifier modifier, CachedReplaceTable table, string value, string path, MappingRenderer renderer, List<string> holds, List<CacheUsage> usages, RenderTrail searched, out object? result)
     {
         result = null;
         var version = CacheLabel(renderer.Context);
         var type = renderer.References.Type(table.CacheType);
         if (type is null)
         {
-            holds.Add($"{path}: replace reads $cache.{table.CacheType}, and {version} holds no type '{table.CacheType}'");
+            var noType = $"{path}: replace reads $cache.{table.CacheType}, and {version} holds no type '{table.CacheType}'";
+            searched.Miss(new RenderMiss { Kind = RenderMissKind.NoType, Reason = noType, Types = [table.CacheType] });
+            holds.Add(noType);
             return false;
         }
 
@@ -897,8 +912,17 @@ internal static partial class EntryValues
         if (lookup.Kind == ReplaceLookupKind.Ambiguous)
         {
             var rows = string.Join(", ", lookup.Rows.Select(row => $"'{row.Id}'"));
-            holds.Add(
-                $"{path}: '{value}' matches the {type.Name} rows {rows} by {fields.Match} only once case is ignored in {version}, and they replace it with different values; make the incoming value exact");
+            var ambiguous =
+                $"{path}: '{value}' matches the {type.Name} rows {rows} by {fields.Match} only once case is ignored in {version}, and they replace it with different values; make the incoming value exact";
+            searched.Miss(new RenderMiss
+            {
+                Kind = RenderMissKind.Ambiguous,
+                Reason = ambiguous,
+                Types = [type.Name],
+                Tries = [new RenderMissTry(fields.Match, null, value)],
+                Candidates = lookup.Rows.Select(row => row.Id).ToList(),
+            });
+            holds.Add(ambiguous);
             return false;
         }
 
@@ -977,6 +1001,7 @@ internal static partial class EntryValues
         var path = entry.Target.Text;
         var name = entry.Source!.CacheType!;
         var outcomes = new List<string>();
+        var tries = new List<RenderMissTry>();
         var unaskable = false;
         foreach (var find in entry.FindBy)
         {
@@ -987,7 +1012,7 @@ internal static partial class EntryValues
             }
             else
             {
-                if (!TryModify(entry, Read(find.Column!, root, item), root, item, renderer, holds, usages, out var modified))
+                if (!TryModify(entry, Read(find.Column!, root, item), root, item, renderer, holds, usages, searched, out var modified))
                 {
                     return null;
                 }
@@ -1066,6 +1091,7 @@ internal static partial class EntryValues
             if (Caseless(renderer, field!, value) is not { } loose)
             {
                 outcomes.Add($"{find.Field} '{value}' {answer.Describe()}");
+                tries.Add(new RenderMissTry(find.Field, find.Column, value));
                 continue;
             }
 
@@ -1083,6 +1109,7 @@ internal static partial class EntryValues
                     return WithVersionSeparator(looseAnswer.Id!);
                 case SearchOutcome.NotFound:
                     outcomes.Add($"{find.Field} '{value}' found no record, exactly or once case is ignored");
+                    tries.Add(new RenderMissTry(find.Field, find.Column, value));
                     continue;
                 case SearchOutcome.Refused:
                     holds.Add(
@@ -1095,18 +1122,23 @@ internal static partial class EntryValues
             }
         }
 
+        var searchedKind = renderer.Searches.Searches.TryGetValue(name, out var declared) ? declared.Declaration.Kind : name;
         if (outcomes.Count == 0)
         {
-            if (entry.Required)
+            if (entry.Required || searched.NotesMisses)
             {
                 var operands = string.Join(", ", entry.FindBy.Where(f => f.Column is not null).Select(f => f.Column!.ToString()).Distinct(StringComparer.Ordinal));
-                holds.Add($"{path}: {operands} is empty, so there is nothing to search for, and the entry is required");
+                var nothing = $"{path}: {operands} is empty, so there is nothing to search for";
+                searched.Miss(new RenderMiss { Kind = RenderMissKind.Empty, Reason = nothing, Columns = FindColumns(entry), Types = [name], EntityType = searchedKind });
+                if (entry.Required)
+                {
+                    holds.Add($"{nothing}, and the entry is required");
+                }
             }
 
             return null;
         }
 
-        var searchedKind = renderer.Searches.Searches.TryGetValue(name, out var declared) ? declared.Declaration.Kind : name;
         var reason = $"{path}: no {name} on the platform ({searchedKind}) matches: {string.Join("; ", outcomes)}";
         if (unaskable)
         {
@@ -1114,7 +1146,19 @@ internal static partial class EntryValues
             return null;
         }
 
-        return Missing(entry, reason, holds);
+        return Missing(
+            entry,
+            new RenderMiss
+            {
+                Kind = RenderMissKind.NotFound,
+                Reason = reason,
+                Columns = tries.Select(t => t.Column).OfType<DatasetColumn>().Distinct().ToList(),
+                Types = [name],
+                EntityType = searchedKind,
+                Tries = tries,
+            },
+            holds,
+            searched);
     }
 
     /// <summary>
@@ -1147,19 +1191,21 @@ internal static partial class EntryValues
     /// finds exactly one record wins. The value an entry matched by and the value it read are both recorded as
     /// dependencies of the render, so a later cache version can tell which records it changes.
     /// </summary>
-    private static object? Cached(MappingEntry entry, SourceRow root, SourceRow? item, MappingRenderer renderer, List<string> holds, List<CacheUsage> usages)
+    private static object? Cached(MappingEntry entry, SourceRow root, SourceRow? item, MappingRenderer renderer, List<string> holds, List<CacheUsage> usages, RenderTrail searched)
     {
         var path = entry.Target.Text;
         var typeName = entry.Source!.CacheType!;
         var type = renderer.References.Type(typeName);
         if (type is null)
         {
-            holds.Add($"{path}: the cache holds no type '{typeName}' in {CacheLabel(renderer.Context)}");
+            var reason = $"{path}: the cache holds no type '{typeName}' in {CacheLabel(renderer.Context)}";
+            searched.Miss(new RenderMiss { Kind = RenderMissKind.NoType, Reason = reason, Types = [typeName], Columns = FindColumns(entry) });
+            holds.Add(reason);
             return null;
         }
 
-        var located = Locate(entry, type, root, item, renderer, holds, usages);
-        return located.Item is { } hit ? Select(entry, type, hit, renderer, holds, usages) : located.Written;
+        var located = Locate(entry, type, root, item, renderer, holds, usages, searched);
+        return located.Item is { } hit ? Select(entry, type, hit, renderer, holds, usages, searched) : located.Written;
     }
 
     /// <summary>
@@ -1168,7 +1214,7 @@ internal static partial class EntryValues
     /// as the node's required flag says. Several records answering to a value hold the record whatever the flag says.
     /// </summary>
     private static Located Locate(
-        MappingEntry entry, ReferenceType type, SourceRow root, SourceRow? item, MappingRenderer renderer, List<string> holds, List<CacheUsage> usages)
+        MappingEntry entry, ReferenceType type, SourceRow root, SourceRow? item, MappingRenderer renderer, List<string> holds, List<CacheUsage> usages, RenderTrail searched)
     {
         var path = entry.Target.Text;
         var source = entry.Source!;
@@ -1185,7 +1231,7 @@ internal static partial class EntryValues
             }
             else
             {
-                if (!TryModify(entry, Read(find.Column!, root, item), root, item, renderer, holds, usages, out var modified))
+                if (!TryModify(entry, Read(find.Column!, root, item), root, item, renderer, holds, usages, searched, out var modified))
                 {
                     return Located.Nothing;
                 }
@@ -1217,7 +1263,19 @@ internal static partial class EntryValues
                     return new Located(null, WithVersionSeparator(value));
                 }
 
-                Missing(entry, $"{path}: '{value}' is already an OSDU id that {version} does not hold, so '{source.CacheField}' cannot be read from the cache", holds);
+                Missing(
+                    entry,
+                    new RenderMiss
+                    {
+                        Kind = RenderMissKind.IdNotHeld,
+                        Reason = $"{path}: '{value}' is already an OSDU id that {version} does not hold, so '{source.CacheField}' cannot be read from the cache",
+                        Columns = find.Column is { } idColumn ? [idColumn] : [],
+                        Types = [typeName],
+                        EntityType = CachedReferences.Parse(value)?.EntityType,
+                        Tries = [new RenderMissTry("id", find.Column, value)],
+                    },
+                    holds,
+                    searched);
                 return Located.Nothing;
             }
 
@@ -1239,17 +1297,34 @@ internal static partial class EntryValues
             // Several records answer to the value. Taking the first would deliver the wrong reference without a trace, so
             // the record is held whatever the required flag says, and the reason names every candidate.
             var candidates = string.Join(", ", choice.Found.CaseVariants.Select(c => c.Id));
-            holds.Add(
-                $"{path}: '{choice.Value}' matches {choice.Found.CaseVariants.Count} {typeName} records by {ReferenceField.Normalize(choice.Find.Field)} {choice.Found.Loosening} ({candidates}) in {version}; make the incoming value exact with a replace modifier");
+            var ambiguous =
+                $"{path}: '{choice.Value}' matches {choice.Found.CaseVariants.Count} {typeName} records by {ReferenceField.Normalize(choice.Find.Field)} {choice.Found.Loosening} ({candidates}) in {version}; make the incoming value exact with a replace modifier";
+            searched.Miss(new RenderMiss
+            {
+                Kind = RenderMissKind.Ambiguous,
+                Reason = ambiguous,
+                Columns = choice.Find.Column is { } ambiguousColumn ? [ambiguousColumn] : [],
+                Types = [typeName],
+                EntityType = type.IsLookup ? null : type.EntityType,
+                Tries = [new RenderMissTry(ReferenceField.Normalize(choice.Find.Field), choice.Find.Column, choice.Value)],
+                Candidates = choice.Found.CaseVariants.Select(c => c.Id).ToList(),
+                IgnoreSeparators = entry.IgnoreSeparators,
+            });
+            holds.Add(ambiguous);
             return Located.Nothing;
         }
 
         if (tried.Count == 0)
         {
-            var operands = string.Join(", ", entry.FindBy.Where(f => f.Column is not null).Select(f => f.Column!.ToString()).Distinct(StringComparer.Ordinal));
-            if (entry.Required)
+            if (entry.Required || searched.NotesMisses)
             {
-                holds.Add($"{path}: {operands} is empty, so there is nothing to find in the cache, and the entry is required");
+                var operands = string.Join(", ", entry.FindBy.Where(f => f.Column is not null).Select(f => f.Column!.ToString()).Distinct(StringComparer.Ordinal));
+                var nothing = $"{path}: {operands} is empty, so there is nothing to find in the cache";
+                searched.Miss(new RenderMiss { Kind = RenderMissKind.Empty, Reason = nothing, Columns = FindColumns(entry), Types = [typeName] });
+                if (entry.Required)
+                {
+                    holds.Add($"{nothing}, and the entry is required");
+                }
             }
 
             return Located.Nothing;
@@ -1269,9 +1344,26 @@ internal static partial class EntryValues
         var described = tried.Select(t => t.Value).Distinct(StringComparer.Ordinal).Count() == 1
             ? $"'{tried[0].Value}' by {string.Join("/", tried.Select(t => ReferenceField.Normalize(t.Find.Field)))}"
             : string.Join(" or ", tried.Select(t => $"{ReferenceField.Normalize(t.Find.Field)} '{t.Value}'"));
-        Missing(entry, $"{path}: no {typeName} matches {described}{fold} in {version}", holds);
+        Missing(
+            entry,
+            new RenderMiss
+            {
+                Kind = RenderMissKind.NoMatch,
+                Reason = $"{path}: no {typeName} matches {described}{fold} in {version}",
+                Columns = tried.Select(t => t.Find.Column).OfType<DatasetColumn>().Distinct().ToList(),
+                Types = [typeName],
+                EntityType = type.IsLookup ? null : type.EntityType,
+                Tries = tried.Select(t => new RenderMissTry(ReferenceField.Normalize(t.Find.Field), t.Find.Column, t.Value)).ToList(),
+                IgnoreSeparators = entry.IgnoreSeparators,
+            },
+            holds,
+            searched);
         return Located.Nothing;
     }
+
+    /// <summary>The source columns a cache or search node's findBy lines compare.</summary>
+    private static IReadOnlyList<DatasetColumn> FindColumns(MappingEntry entry)
+        => entry.FindBy.Select(f => f.Column).OfType<DatasetColumn>().Distinct().ToList();
 
     /// <summary>
     /// What a cache node's lines found: the record they name, or an id the node writes without a record the cache holds,
@@ -1363,27 +1455,40 @@ internal static partial class EntryValues
     /// changes what one gives, reaches every record built from it. A key that is an OSDU reference finds the rows that name
     /// the record with or without the version separator, since both name the same record.
     /// </summary>
-    private static object? CachedAll(MappingEntry entry, SourceRow root, SourceRow? item, MappingRenderer renderer, List<string> holds, List<CacheUsage> usages)
+    private static object? CachedAll(MappingEntry entry, SourceRow root, SourceRow? item, MappingRenderer renderer, List<string> holds, List<CacheUsage> usages, RenderTrail searched)
     {
         var path = entry.Target.Text;
         var query = entry.FindAll!;
         var source = entry.Source!;
         var version = CacheLabel(renderer.Context);
         var type = renderer.References.Type(query.Type);
+        var operandColumns = query.Operand.Column is { } operandColumn ? (IReadOnlyList<DatasetColumn>)[operandColumn] : [];
         if (type is null)
         {
-            holds.Add($"{path}: the cache holds no type '{query.Type}' in {version}");
+            var noType = $"{path}: the cache holds no type '{query.Type}' in {version}";
+            searched.Miss(new RenderMiss { Kind = RenderMissKind.NoType, Reason = noType, Types = [query.Type], Columns = operandColumns });
+            holds.Add(noType);
             return null;
         }
 
-        if (!TryKeys(entry, query.Operand, root, item, renderer, holds, usages, out var keys))
+        if (!TryKeys(entry, query.Operand, root, item, renderer, holds, usages, searched, out var keys))
         {
             return null;
         }
 
         if (keys.Count == 0)
         {
-            return Missing(entry, $"{path}: {query.Operand} gives no value, so no {type.Name} row is found by {ReferenceField.Normalize(query.Field)}", holds);
+            return Missing(
+                entry,
+                new RenderMiss
+                {
+                    Kind = RenderMissKind.Empty,
+                    Reason = $"{path}: {query.Operand} gives no value, so no {type.Name} row is found by {ReferenceField.Normalize(query.Field)}",
+                    Columns = operandColumns,
+                    Types = [type.Name],
+                },
+                holds,
+                searched);
         }
 
         var field = ReferenceField.Normalize(query.Field);
@@ -1436,9 +1541,36 @@ internal static partial class EntryValues
 
         var keysText = string.Join(", ", keys.Select(k => $"'{k}'"));
         var narrowed = query.Empty.Count == 0 ? string.Empty : $" with {string.Join(" and ", query.Empty.Select(f => $"{ReferenceField.Normalize(f)} empty"))}";
-        return Missing(entry, rows.Count == 0
-            ? $"{path}: no {type.Name} row{narrowed} holds {keysText} under {field} in {version}"
-            : $"{path}: the {rows.Count} {type.Name} row(s) holding {keysText} under {field} give nothing at '{source.CacheField}' in {version}", holds);
+        if (rows.Count > 0)
+        {
+            // The rows are there and hold nothing at the field read: what is missing is in the cache's own rows, not the source.
+            return Missing(
+                entry,
+                new RenderMiss
+                {
+                    Kind = RenderMissKind.FieldEmpty,
+                    Reason = $"{path}: the {rows.Count} {type.Name} row(s) holding {keysText} under {field} give nothing at '{source.CacheField}' in {version}",
+                    Types = [type.Name],
+                    Tries = [new RenderMissTry(ReferenceField.Normalize(source.CacheField!), null, string.Empty)],
+                    Candidates = rows.Select(row => row.Id).ToList(),
+                },
+                holds,
+                searched);
+        }
+
+        return Missing(
+            entry,
+            new RenderMiss
+            {
+                Kind = RenderMissKind.NoMatch,
+                Reason = $"{path}: no {type.Name} row{narrowed} holds {keysText} under {field} in {version}",
+                Columns = operandColumns,
+                Types = [type.Name],
+                EntityType = type.IsLookup ? null : type.EntityType,
+                Tries = keys.Select(key => new RenderMissTry(field, query.Operand.Column, key)).ToList(),
+            },
+            holds,
+            searched);
 
         void Add(JsonNode value)
         {
@@ -1456,7 +1588,7 @@ internal static partial class EntryValues
     /// a lookup several records answer to, which holds the record whatever the node's required flag says.
     /// </summary>
     private static bool TryKeys(
-        MappingEntry entry, FindAllOperand operand, SourceRow root, SourceRow? item, MappingRenderer renderer, List<string> holds, List<CacheUsage> usages, out List<string> keys)
+        MappingEntry entry, FindAllOperand operand, SourceRow root, SourceRow? item, MappingRenderer renderer, List<string> holds, List<CacheUsage> usages, RenderTrail searched, out List<string> keys)
     {
         keys = [];
         if (operand.Literal is { } literal)
@@ -1467,7 +1599,7 @@ internal static partial class EntryValues
 
         if (operand.Column is { } column)
         {
-            if (!TryModify(entry, Read(column, root, item), root, item, renderer, holds, usages, out var modified))
+            if (!TryModify(entry, Read(column, root, item), root, item, renderer, holds, usages, searched, out var modified))
             {
                 return false;
             }
@@ -1485,7 +1617,9 @@ internal static partial class EntryValues
         var type = renderer.References.Type(lookup.CacheType);
         if (type is null)
         {
-            holds.Add($"{entry.Target.Text}: lookup {lookup.Name} reads {lookup.CacheType}, and the cache holds no type '{lookup.CacheType}' in {CacheLabel(renderer.Context)}");
+            var noType = $"{entry.Target.Text}: lookup {lookup.Name} reads {lookup.CacheType}, and the cache holds no type '{lookup.CacheType}' in {CacheLabel(renderer.Context)}";
+            searched.Miss(new RenderMiss { Kind = RenderMissKind.NoType, Reason = noType, Types = [lookup.CacheType], Columns = lookup.FindBy.Select(f => f.Column).OfType<DatasetColumn>().Distinct().ToList() });
+            holds.Add(noType);
             return false;
         }
 
@@ -1503,7 +1637,7 @@ internal static partial class EntryValues
             Required = false,
         };
         var mistakes = new List<string>();
-        var located = Locate(reader, type, root, item, renderer, mistakes, usages);
+        var located = Locate(reader, type, root, item, renderer, mistakes, usages, searched);
         if (mistakes.Count > 0)
         {
             holds.AddRange(mistakes);
@@ -1593,7 +1727,7 @@ internal static partial class EntryValues
     private static string CacheLabel(RenderContext context)
         => context.CacheScope is null ? $"cache version {context.CacheVersion}" : $"version {context.CacheVersion} of the cache of partition '{context.CacheScope}'";
 
-    private static object? Select(MappingEntry entry, ReferenceType type, ReferenceItem hit, MappingRenderer renderer, List<string> holds, List<CacheUsage> usages)
+    private static object? Select(MappingEntry entry, ReferenceType type, ReferenceItem hit, MappingRenderer renderer, List<string> holds, List<CacheUsage> usages, RenderTrail searched)
     {
         var source = entry.Source!;
         if (source.ReadsRecordId && type.IsLookup)
@@ -1618,14 +1752,22 @@ internal static partial class EntryValues
             usages.Add(new CacheUsage(type.Name, hit.Id, ReferenceField.Normalize(field), string.Empty, CacheUsageKind.Empty));
             return Missing(
                 entry,
-                $"{entry.Target.Text}: {type.Name} '{hit.Id}' caches nothing at '{field}' in {CacheLabel(renderer.Context)}. Cached: {string.Join(", ", type.FieldNames.Prepend("id"))}",
-                holds);
+                new RenderMiss
+                {
+                    Kind = RenderMissKind.FieldEmpty,
+                    Reason = $"{entry.Target.Text}: {type.Name} '{hit.Id}' caches nothing at '{field}' in {CacheLabel(renderer.Context)}. Cached: {string.Join(", ", type.FieldNames.Prepend("id"))}",
+                    Types = [type.Name],
+                    Tries = [new RenderMissTry(ReferenceField.Normalize(field), null, string.Empty)],
+                    Candidates = [hit.Id],
+                },
+                holds,
+                searched);
         }
 
         usages.Add(new CacheUsage(type.Name, hit.Id, ReferenceField.Normalize(field), cached.Text, CacheUsageKind.Value));
         if (TakesReference(renderer, entry))
         {
-            return References(entry, type, hit, field, cached, renderer, holds, usages);
+            return References(entry, type, hit, field, cached, renderer, holds, usages, searched);
         }
 
         return cached.Node.DeepClone();
@@ -1649,7 +1791,7 @@ internal static partial class EntryValues
     /// The gate refuses a mapping whose cached field holds such values; this holds a render that meets one anyway.
     /// </remarks>
     private static object? References(
-        MappingEntry entry, ReferenceType type, ReferenceItem hit, string field, ReferenceValue cached, MappingRenderer renderer, List<string> holds, List<CacheUsage> usages)
+        MappingEntry entry, ReferenceType type, ReferenceItem hit, string field, ReferenceValue cached, MappingRenderer renderer, List<string> holds, List<CacheUsage> usages, RenderTrail searched)
     {
         var path = entry.Target.Text;
         var version = CacheLabel(renderer.Context);
@@ -1669,8 +1811,18 @@ internal static partial class EntryValues
             {
                 if (CachedReferences.Find(holding, reference) is not { } found)
                 {
-                    holds.Add(
-                        $"{path}: {type.Name} '{hit.Id}' names {reference.Id} at '{field}', and {version} holds no such {reference.EntityType} record in {string.Join(", ", holding.Select(t => t.Name))}, so the reference would point at nothing");
+                    var unheld =
+                        $"{path}: {type.Name} '{hit.Id}' names {reference.Id} at '{field}', and {version} holds no such {reference.EntityType} record in {string.Join(", ", holding.Select(t => t.Name))}, so the reference would point at nothing";
+                    searched.Miss(new RenderMiss
+                    {
+                        Kind = RenderMissKind.IdNotHeld,
+                        Reason = unheld,
+                        Types = holding.Select(t => t.Name).ToList(),
+                        EntityType = reference.EntityType,
+                        Tries = [new RenderMissTry("id", null, reference.Id)],
+                        Candidates = [hit.Id],
+                    });
+                    holds.Add(unheld);
                     return null;
                 }
 
@@ -1683,12 +1835,16 @@ internal static partial class EntryValues
         return cached.Node is JsonArray ? new JsonArray(written.ToArray()) : written[0];
     }
 
-    /// <summary>A value the cache does not have: a required entry holds the record, an optional one leaves the variable out.</summary>
-    private static object? Missing(MappingEntry entry, string reason, List<string> holds)
+    /// <summary>
+    /// A value the cache or the platform does not have: noted on the trail, and then a required entry holds the record and an
+    /// optional one leaves the variable out.
+    /// </summary>
+    private static object? Missing(MappingEntry entry, RenderMiss miss, List<string> holds, RenderTrail searched)
     {
+        searched.Miss(miss);
         if (entry.Required)
         {
-            holds.Add(reason);
+            holds.Add(miss.Reason);
         }
 
         return null;

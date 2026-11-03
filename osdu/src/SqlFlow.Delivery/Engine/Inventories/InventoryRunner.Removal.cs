@@ -10,7 +10,10 @@ using SqlFlow.Delivery.Protocols;
 
 namespace SqlFlow.Delivery.Engine.Inventories;
 
-/// <summary>What a removal of an inventory's ids came to.</summary>
+/// <summary>
+/// What a removal of an inventory's ids came to, or a restore of its gone ids (<see cref="InventoryRemovals.Restore"/>): how
+/// many it restored, and the removal whose removed ids it brought back when it took those.
+/// </summary>
 public sealed record InventoryRemovalOutcome(
     string Operation,
     string Flow,
@@ -24,14 +27,20 @@ public sealed record InventoryRemovalOutcome(
     long Gone,
     long Skipped,
     long Failed,
-    string? Error)
+    string? Error,
+    long Restored = 0,
+    long? RestoresRemovalId = null)
 {
-    public string Describe() => string.Create(
-        CultureInfo.InvariantCulture,
-        $"removal {InventoryRemovalId}, {Requested} {Finding} id(s) of '{Inventory}' in '{Partition}', {InventoryRemovals.Describe(Scope)}: {Removed} removed, {Gone} already gone, {Skipped} skipped, {Failed} failed{(Error is null ? "" : $"; stopped: {Error}")}.");
+    public string Describe() => Scope == InventoryRemovals.Restore
+        ? string.Create(
+            CultureInfo.InvariantCulture,
+            $"restore {InventoryRemovalId}, {Requested} gone id(s) of '{Inventory}' in '{Partition}'{(RestoresRemovalId is { } removal ? $" that removal {removal} removed" : "")}, {InventoryRemovals.Describe(Scope)}: {new InventoryRemovalTally(Removed, Gone, Skipped, Failed, Restored).DescribeRestore()}{(Error is null ? "" : $"; stopped: {Error}")}.")
+        : string.Create(
+            CultureInfo.InvariantCulture,
+            $"removal {InventoryRemovalId}, {Requested} {Finding} id(s) of '{Inventory}' in '{Partition}', {InventoryRemovals.Describe(Scope)}: {Removed} removed, {Gone} already gone, {Skipped} skipped, {Failed} failed{(Error is null ? "" : $"; stopped: {Error}")}.");
 }
 
-/// <summary>A removal that stopped part way: the run ends failed, carrying what the removal did up to there.</summary>
+/// <summary>A removal (or a restore) that stopped part way: the run ends failed, carrying what it did up to there.</summary>
 public sealed class InventoryRemovalFailedException : DeliveryException
 {
     public InventoryRemovalFailedException(InventoryRemovalOutcome outcome)
@@ -109,7 +118,6 @@ public sealed partial class InventoryRunner
         var selection = await HoldsWhatWasShownAsync(ledger, state, request, partition, ct).ConfigureAwait(false);
         var duplicates = selection?.DuplicateCheckId is not null;
 
-        var started = Now;
         var parameters = JsonSerializer.Serialize(
             new
             {
@@ -121,50 +129,75 @@ public sealed partial class InventoryRunner
                 selection = request.Selection,
             },
             Json);
+        return await TrackedAsync(
+            ledger,
+            DeliveryOperations.Remove,
+            InventoryRemovals.ActivityKind,
+            spec,
+            partition,
+            new InventoryRemovalStart(state.InventoryId, runId, actor, request.Finding, request.Scope, request.NamesIds, request.Expected, null, Now, request.Selection),
+            parameters,
+            removalId =>
+            {
+                if (policy is null)
+                {
+                    _log.LogInformation(
+                        "inventory '{Inventory}' in '{Partition}', removal {Removal}: {Expected} {Finding} id(s), {Scope}, as {Actor}",
+                        spec.Name, partition, removalId, request.Expected, request.Finding, InventoryRemovals.Describe(request.Scope), actor);
+                }
+                else
+                {
+                    _log.LogInformation(
+                        "inventory '{Inventory}' in '{Partition}', removal {Removal}: {Expected} {Finding} id(s){Selected}, {Scope}, through {Endpoint}, as {Actor}; the flow allows removing {Allowed}",
+                        spec.Name, partition, removalId, request.Expected, request.Finding,
+                        request.Selection is { } selected ? string.Create(CultureInfo.InvariantCulture, $" of selection {selected}") : string.Empty,
+                        InventoryRemovals.Describe(request.Scope), _flow.Source.Endpoint, actor, string.Join(", ", policy.Findings));
+                }
+
+                return inventoryOnly
+                    ? RemoveFromInventoryAsync(ledger, state, request, removalId, ct)
+                    : RemoveChunksAsync(ledger, state, request, owners, duplicates, removalId, runId, actor, ct);
+            },
+            ct).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// Runs one removal or restore of an inventory's ids as the ledger and the audit trail keep it: an activity of
+    /// <paramref name="activityKind"/> opened with what was asked, the removal's row opened under it, <paramref name="body"/> given
+    /// the removal's number, and both closed whatever happened, so the audit trail never shows one still running. A body that
+    /// stops part way leaves the run failed, its outcome carrying what the ledger recorded up to there; a cancelled one is closed
+    /// as cancelled and the cancellation carried on.
+    /// </summary>
+    private async Task<InventoryRemovalOutcome> TrackedAsync(
+        ILedger ledger, string operation, string activityKind, InventorySpec spec, string partition, InventoryRemovalStart start, string parameters,
+        Func<long, Task<InventoryRemovalTally>> body, CancellationToken ct)
+    {
+        var flowId = _flow.LedgerId;
         var activity = await ledger.StartActivityAsync(
             new ActivityRecord
             {
                 FlowId = flowId,
                 FlowName = _flow.Name,
-                Kind = InventoryRemovals.ActivityKind,
-                Actor = actor,
-                StartedUtc = started,
-                RunId = runId,
+                Kind = activityKind,
+                Actor = start.Actor,
+                StartedUtc = start.StartedUtc,
+                RunId = start.RunId,
                 ParametersJson = parameters,
             },
             ct).ConfigureAwait(false);
-        var removalId = await ledger.StartInventoryRemovalAsync(
-            flowId,
-            new InventoryRemovalStart(state.InventoryId, runId, actor, request.Finding, request.Scope, request.NamesIds, request.Expected, activity.ActivityId, started, request.Selection),
-            ct).ConfigureAwait(false);
-        if (policy is null)
-        {
-            _log.LogInformation(
-                "inventory '{Inventory}' in '{Partition}', removal {Removal}: {Expected} {Finding} id(s), {Scope}, as {Actor}",
-                spec.Name, partition, removalId, request.Expected, request.Finding, InventoryRemovals.Describe(request.Scope), actor);
-        }
-        else
-        {
-            _log.LogInformation(
-                "inventory '{Inventory}' in '{Partition}', removal {Removal}: {Expected} {Finding} id(s){Selected}, {Scope}, through {Endpoint}, as {Actor}; the flow allows removing {Allowed}",
-                spec.Name, partition, removalId, request.Expected, request.Finding,
-                request.Selection is { } selected ? string.Create(CultureInfo.InvariantCulture, $" of selection {selected}") : string.Empty,
-                InventoryRemovals.Describe(request.Scope), _flow.Source.Endpoint, actor, string.Join(", ", policy.Findings));
-        }
+        var removalId = await ledger.StartInventoryRemovalAsync(flowId, start with { ActivityId = activity.ActivityId }, ct).ConfigureAwait(false);
 
         var tally = InventoryRemovalTally.None;
         string? error = null;
         var cancelled = false;
         try
         {
-            tally = inventoryOnly
-                ? await RemoveFromInventoryAsync(ledger, state, request, removalId, ct).ConfigureAwait(false)
-                : await RemoveChunksAsync(ledger, state, request, owners, duplicates, removalId, runId, actor, ct).ConfigureAwait(false);
+            tally = await body(removalId).ConfigureAwait(false);
         }
         catch (OperationCanceledException) when (ct.IsCancellationRequested)
         {
             cancelled = true;
-            error = "the run was cancelled; what the removal recorded before it stands";
+            error = $"the run was cancelled; what the {(start.Scope == InventoryRemovals.Restore ? "restore" : "removal")} recorded before it stands";
         }
         catch (RemovalStoppedException stopped)
         {
@@ -182,15 +215,15 @@ public sealed partial class InventoryRunner
             var recorded = await ledger.GetInventoryRemovalAsync(partition, removalId, CancellationToken.None).ConfigureAwait(false);
             if (recorded is not null)
             {
-                tally = new InventoryRemovalTally(recorded.Removed, recorded.Gone, recorded.Skipped, recorded.Failed);
+                tally = recorded.Tally;
             }
         }
 
         var status = error is null ? InventoryRunStatus.Completed : InventoryRunStatus.Failed;
         await ledger.CompleteInventoryRemovalAsync(flowId, removalId, status, error, Now, CancellationToken.None).ConfigureAwait(false);
         var outcome = new InventoryRemovalOutcome(
-            DeliveryOperations.Remove, _flow.Name, partition, spec.Name, removalId, request.Finding, request.Scope, request.Expected,
-            tally.Removed, tally.Gone, tally.Skipped, tally.Failed, error);
+            operation, _flow.Name, partition, spec.Name, removalId, start.Finding, start.Scope, start.Requested,
+            tally.Removed, tally.Gone, tally.Skipped, tally.Failed, error, tally.Restored, start.RestoresRemovalId);
         await ledger.CompleteActivityAsync(activity.ActivityId, cancelled ? "cancelled" : status, outcome.Describe(), null, Now, ct: CancellationToken.None).ConfigureAwait(false);
         _log.LogInformation("{Outcome}", outcome.Describe());
         if (cancelled)

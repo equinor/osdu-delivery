@@ -286,6 +286,23 @@ public sealed partial class OsduLedger
             var settled = await RetryDeadlockAsync(
                 () => SqlServerLedgerBulk.SettleReversalSliceAsync(db, reversal.PartitionId, reversal.FlowId, reversalId, slice, actor, activityId, runId, nowUtc, ct), ct).ConfigureAwait(false);
             total = total.Add(settled);
+
+            // After the slice commits: the records linking one the reversal took out of OSDU as their child render again and
+            // leave the link out (osdu/docs/reference/flow/mapping-child.md, When a child is taken out). A removal settled
+            // failed left its record as it was, so only the records the slice marked deleted are asked about.
+            var removed = slice.Where(r => string.Equals(r.Change, "remove", StringComparison.Ordinal)).Select(r => r.DeliveryKey).ToList();
+            if (settled.Changed > 0 && removed.Count > 0)
+            {
+                var deleted = StatusText.Of(RecordStatus.Deleted);
+                var gone = await ReadAsync(
+                    async read => (IReadOnlyList<string>)await read.DeliveryRecords.AsNoTracking()
+                        .Where(r => r.PartitionId == reversal.PartitionId && r.FlowId == reversal.FlowId && removed.Contains(r.DeliveryKey)
+                            && r.Status == deleted && r.TargetId != null)
+                        .Select(r => r.TargetId!)
+                        .ToListAsync(ct).ConfigureAwait(false),
+                    ct).ConfigureAwait(false);
+                await PlanParentsOfAsync(reversal.PartitionId, gone, nowUtc, ct).ConfigureAwait(false);
+            }
         }
 
         return total;

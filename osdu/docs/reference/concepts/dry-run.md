@@ -87,7 +87,8 @@ reads them:
 Once for the run, it also asks the legal service about the tags the mapping puts on every record.
 
 The same read feeds the [value check](../cli/values.md) of the same rows, so **Properties** says attribute by attribute what
-**Staged records** says record by record, and a dry run is one button on both.
+**Staged records** says record by record, and a dry run is one button on both. There each finding says what is wrong in plain
+words, what to do, and proves it from the data ([why an attribute fails](value-proof.md)).
 
 ## What each row comes to
 
@@ -161,5 +162,6 @@ longest, and says so.
 
 - [The Mappings page](gui-build.md#mappings): where the tab is.
 - [Preflight](preflight.md): every check before anything reaches OSDU.
+- [Why an attribute fails](value-proof.md): what a finding says, and the queries that prove it.
 - [sqlflow values](../cli/values.md) and [sqlflow preview](../cli/preview.md): the same render from the command line.
 - [Writing a mapping](../guides/writing-a-mapping.md): a dry run as a step of getting a mapping right.

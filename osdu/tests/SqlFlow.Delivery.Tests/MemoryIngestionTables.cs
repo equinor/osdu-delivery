@@ -365,6 +365,60 @@ public sealed class MemoryIngestionTables : IIngestionSourceFactory
                 all.Count > query.CountUpTo));
         }
 
+        /// <summary>
+        /// A proof's statement as the SQL Server source runs it: the scope's rows not marked deleted (and a child dataset's rows of
+        /// them), those whose columns are all empty or of which one holds one of its values, compared as text ignoring case as the
+        /// tables' collation compares; counted by value, the most frequent first, or listed in the order a read pages in.
+        /// </summary>
+        public Task<ProofRows> ReadProofAsync(SourceProofQuery query, CancellationToken ct = default)
+        {
+            ArgumentNullException.ThrowIfNull(query);
+            ArgumentOutOfRangeException.ThrowIfLessThan(query.Limit, 1);
+            var read = query.Read;
+            var records = (PrimaryKey is null
+                ? _tables.Records.Where(InScope).OrderBy(r => KeyOf(r).Json, StringComparer.Ordinal)
+                : _tables.Records.Where(InScope).OrderBy(IdOf)).Where(r => r.DeletedUtc is null).ToList();
+            var rows = read.Child is { } child
+                ? records.SelectMany(r => (r.Datasets.GetValueOrDefault(child.Name) ?? []).Select(row => (Record: r, Row: row))).ToList()
+                : records.Select(r => (Record: r, Row: r.Row)).ToList();
+
+            static string? Cell(IDictionary<string, object?> row, string column) => SourceRow.Stringify(row.TryGetValue(column, out var value) ? value : null);
+            bool Holds((MemoryRecord Record, IDictionary<string, object?> Row) row, int column)
+                => Cell(row.Row, read.Columns[column].Name) is { } held && query.Values[column].Contains(held, StringComparer.OrdinalIgnoreCase);
+            var kept = read.Empty
+                ? rows.Where(row => read.Columns.All(c => string.IsNullOrWhiteSpace(Cell(row.Row, c.Name)))).ToList()
+                : rows.Where(row => Enumerable.Range(0, read.Columns.Count).Any(i => Holds(row, i))).ToList();
+
+            if (!query.Records)
+            {
+                if (read.Empty)
+                {
+                    return Task.FromResult(new ProofRows(["rows"], [[kept.Count.ToString(CultureInfo.InvariantCulture)]], More: false));
+                }
+
+                var counted = Enumerable.Range(0, read.Columns.Count)
+                    .SelectMany(i => kept.Where(row => Holds(row, i)).Select(row => (Column: read.Columns[i].Shown, Value: Cell(row.Row, read.Columns[i].Name)!)))
+                    .GroupBy(c => c, (c, group) => (c.Column, c.Value, Rows: group.LongCount()))
+                    .OrderByDescending(c => c.Rows).ThenBy(c => c.Column, StringComparer.Ordinal).ThenBy(c => c.Value, StringComparer.Ordinal)
+                    .Select(c => (IReadOnlyList<string?>)[c.Column, c.Value, c.Rows.ToString(CultureInfo.InvariantCulture)])
+                    .ToList();
+                return Task.FromResult(new ProofRows(["column", "value", "rows"], counted.Take(query.Limit).ToList(), counted.Count > query.Limit));
+            }
+
+            var columns = _flow.Source.Record.Key
+                .Concat(read.Columns.Select(c => c.Shown))
+                .Concat(read.Child is { } named ? read.ChildOrigin.Select(o => $"{named.Name}.{o}") : [])
+                .Concat(read.Origin)
+                .ToList();
+            var listed = kept.Select(row => (IReadOnlyList<string?>)_flow.Source.Record.Key.Select(k => Cell(row.Record.Row, k))
+                    .Concat(read.Columns.Select(c => Cell(row.Row, c.Name)))
+                    .Concat(read.Child is null ? [] : read.ChildOrigin.Select(o => Cell(row.Row, o)))
+                    .Concat(read.Origin.Select(o => Cell(row.Record.Row, o)))
+                    .ToList())
+                .ToList();
+            return Task.FromResult(new ProofRows(columns, listed.Take(query.Limit).ToList(), listed.Count > query.Limit));
+        }
+
         public Task<IReadOnlyList<KeyRange>> SliceBoundsAsync(SourceHeader header, int slices, CancellationToken ct = default)
         {
             ArgumentNullException.ThrowIfNull(header);

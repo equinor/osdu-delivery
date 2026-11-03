@@ -54,7 +54,8 @@ last changed it, keeps the list in the module's database, and compares every id 
 The ledgers say what the delivery flows delivered and minted; the inventory says what OSDU serves; where the two
 disagree is the report. Use it to find records no ledger knows (orphans), records a ledger expects that OSDU no longer
 holds (missing), ids an unfinished delivery left behind, and records a ledger removed or forgot that OSDU still serves.
-The ids OSDU stopped serving stay in the inventory as `gone`, with when they went, until an operator removes them from it.
+The ids OSDU stopped serving stay in the inventory as `gone`, with when they went, until an operator removes them from it
+or, where a soft delete took them, restores them in OSDU.
 An operator can also select its ids by what OSDU holds of them, a property of the records or a column of a source system,
 and remove what the selection holds ([Selecting ids by what OSDU holds](inventory-selections.md)); and find the
 records OSDU holds more than once, by a key of the properties their copies hold alike, keep the most complete copy of each,
@@ -64,7 +65,7 @@ A ledger can fall out of step with OSDU for reasons no delivery controls: a serv
 lost, an ingestion workflow that wrote more than it reported, a record written outside the flows, a ledger deleted or a
 record purged from it, a restore of OSDU or of the database. None of this is visible from the ledger alone. A build, a
 reconcile and a plan only read OSDU and never write a ledger. A flow that declares `removal` also lets an operator
-remove the orphan, stale or forgotten ids it found. The [orphans guide](../guides/finding-orphans.md) walks through it;
+remove the orphan, stale or forgotten ids it found, and restore in OSDU the soft-deleted records behind its gone ids. The [orphans guide](../guides/finding-orphans.md) walks through it;
 [`sqlflow inventory`](../cli/inventory.md) reads the results.
 
 ## Example
@@ -127,7 +128,7 @@ Unknown keys are refused when the document is read.
 | `owners` | list | inferred | The identities this estate's records are written as (OSDU's `createUser`: a user's e-mail, an application's client id), at most 50, each at most 256 characters with no whitespace, unique ignoring case. See [Owners](#owners). |
 | `maxMissingChecks` | integer | 100,000 | How many ids a ledger expects that one build reads from storage, to tell `missing` from `unlisted`: 0 (none) to 1,000,000. Never-asked ids first, then the longest ago asked, so successive builds take turns through all of them. |
 | `inventories` | list | required | The inventories, at least 1 and at most 100, names unique ignoring case. |
-| `removal` | map | none | What an operator may remove from OSDU of what the inventories found. Left out, the flow only reads OSDU. Gone ids are removed from the inventory whatever it declares. See [Removal](#removal). |
+| `removal` | map | none | What an operator may remove from OSDU of what the inventories found; declared, gone ids may also be restored there. Left out, the flow only reads OSDU. Gone ids are removed from the inventory whatever it declares. See [Removal](#removal). |
 | `reliability` | map | delivery defaults | The HTTP settings a [delivery flow](delivery.md) takes: timeout, retry, rate limit, TLS, URL allowlist and response size. |
 | `parallelism` | map | defaults | `recordsAtOnce` (default 8, at least 1): how many version lists a build reads at once for `versions: all`, and how many storage reads a duplicate check's pick has in flight. Inventories are read one after another. It is written as on a [delivery flow](delivery.md#parallelism), so a flow's settings read alike whatever its kind. An inventory flow takes no other parallelism key. It was `parallelism.concurrency`, and `reliability.concurrency` before that: a document that still writes either is refused, naming `parallelism.recordsAtOnce`, and a delivery flow's setting written under `reliability` (`fanOut`, `batchRecords`) is refused as one to remove. |
 | `schedule`, `mode`, `lifecycle` | | none | SQLFlow's envelope keys ([schedule](../../../../sqlflow/docs/reference/flow/schedule.md), [flow overview](../../../../sqlflow/docs/reference/flow/overview.md)). A schedule's `values` may name the partition (`partition: dev`) and the flow's parameters. |
@@ -149,7 +150,7 @@ Unknown keys are refused when the document is read.
 | `schemaPath` | text | `/api/schema-service/v1/schema` | The schema service, which expands a kind with wildcards for a storage read. |
 | `bulkDeletePath` | text | `/api/storage/v2/records/delete` | Storage's soft delete of a list of records, which a removal sends 500 ids at a time. |
 | `deletePath` | text | `/api/storage/v2/records/{id}:delete` | Storage's soft delete of one record, which a removal falls back to; must name `{id}`. |
-| `purgePath` | text | `/api/storage/v2/records/{id}` | Storage's purge of a record and every version, one id at a time; must name `{id}`. |
+| `purgePath` | text | `/api/storage/v2/records/{id}` | Storage's record resource, one id at a time: a purge deletes it with every version, and a restore of a gone id patches it back from its soft delete; must name `{id}`. |
 
 A path must start with `/` and hold no whitespace, query or fragment.
 
@@ -210,6 +211,11 @@ See [What a removal does](inventory-removals.md#what-a-removal-does).
 flow removes them from the inventory alone (scope `inventory`), since nothing is asked of OSDU. See
 [Removing gone ids](inventory-removals.md#removing-gone-ids).
 
+A flow that declares `removal`, whatever findings it names, also restores in OSDU the soft-deleted records behind its gone
+ids, or what one of its soft-delete removals removed (`PATCH {purgePath}` with `{"deleted": false}`, one id at a time),
+through the same credentials, which must be an owner of each record. A flow without it writes nothing to OSDU, so it
+restores nothing. See [Restoring gone ids](inventory-removals.md#restoring-gone-ids).
+
 ## Operations
 
 | Operation | What it does |
@@ -218,12 +224,15 @@ flow removes them from the inventory alone (scope `inventory`), since nothing is
 | `reconcile` | Compares each inventory, as its last build left it, with the ledgers as they stand now, reading from storage only the ids a ledger expects. Refused for an inventory never built. |
 | `plan` | Counts through the search the records each inventory matches (and lists the kinds a storage read expands to), reading no id and keeping nothing. |
 | `remove` | Removes from OSDU the ids of one finding of one inventory, as an operator asked, for a flow that declares `removal`; or removes gone ids from the inventory alone, for any inventory flow. |
+| `restore` | Brings back in OSDU the soft-deleted records behind one inventory's gone ids (those picked, or every one) or behind what one of its soft-delete removals removed, as an operator asked, for a flow that declares `removal`. |
 | `match` | Finds which ids of one inventory hold what an operator's conditions ask in OSDU and keeps them as the selection the payload names ([Selecting ids by what OSDU holds](inventory-selections.md)). Reads OSDU's search; changes nothing there. |
 | `duplicates` | For the check the payload names: downloads the properties of its key for every id of one inventory into the check's table and groups the ids holding equal values there, or, when a pick was asked of it, reads each group's copies and picks the most complete to keep ([Finding duplicate records](inventory-duplicates.md)). Reads OSDU's search and storage; changes nothing there. |
 
 The payload takes `inventories` (names; none takes every inventory). A `match` run names exactly one inventory and the
-`selection` it fills, and a `duplicates` run exactly one inventory and the `duplicateCheck` it fills. A `remove` run also
-takes `removal` and `confirm`, and names exactly one inventory:
+`selection` it fills, and a `duplicates` run exactly one inventory and the `duplicateCheck` it fills. A `restore` run
+names exactly one inventory, `restore` (`expected`, and optionally `ids` or the `removal` whose removed ids it brings back)
+and `confirm` ([Restoring gone ids](inventory-removals.md#restoring-gone-ids)). A `remove` run also takes `removal` and
+`confirm`, and names exactly one inventory:
 
 ```json
 {
@@ -244,17 +253,18 @@ takes `removal` and `confirm`, and names exactly one inventory:
 | `duplicateCheck` | The duplicate check a `duplicates` run fills, by its number. |
 | `confirm` | The partition the run acts in, typed back; it must be the run's partition. |
 
-`removal` and `confirm` are refused on any other operation, `selection` on any but `match`, and `duplicateCheck` on any
-but `duplicates`. Anything else in the payload is refused before the run starts, for example
-`payload runId does not apply to an inventory flow: only a delivery flow's reverse run names the run it reverses; an inventory flow's payload names only inventories, removal, confirm, selection and duplicateCheck.`
+`removal` is refused on any operation but `remove`, `restore` on any but `restore`, `confirm` on any but those two,
+`selection` on any but `match`, and `duplicateCheck` on any but `duplicates`. Anything else in the payload is refused before the run starts, for example
+`payload runId does not apply to an inventory flow: only a delivery flow's reverse run names the run it reverses; an inventory flow's payload names only inventories, removal, restore, confirm, selection and duplicateCheck.`
 
 ```bash
 sqlflow run flows/welldb-06-inventory.yaml --set partition=dev
 sqlflow run flows/welldb-06-inventory.yaml --set partition=dev --operation reconcile --payload '{"inventories":["WellLogs"]}'
 sqlflow run flows/welldb-06-inventory.yaml --set partition=dev --operation remove --payload @removal.json
+sqlflow run flows/welldb-06-inventory.yaml --set partition=dev --operation restore --payload '{"inventories":["WellLogs"],"restore":{"expected":120,"removal":12},"confirm":"dev"}'
 ```
 
-`build`, `reconcile` and `remove` keep what they do in the module's database; a `plan` keeps nothing. See
+`build`, `reconcile`, `remove` and `restore` keep what they do in the module's database; a `plan` keeps nothing. See
 [running an OSDU flow](../cli/run.md).
 
 ## The pages of the inventory flow
@@ -263,7 +273,7 @@ sqlflow run flows/welldb-06-inventory.yaml --set partition=dev --operation remov
 | --- | --- |
 | [Inventory builds](inventory-builds.md) | What a build and a reconcile do, what each finding means, and the tables an inventory keeps. |
 | [Selecting ids by what OSDU holds](inventory-selections.md) | A `match` of conditions on the records, the selection it fills, and removing what it holds. |
-| [Inventory removals](inventory-removals.md) | A `remove` run: what it checks and records, repairing missing ids, and removing gone ids. |
+| [Inventory removals](inventory-removals.md) | A `remove` and a `restore` run: what each checks and records, restoring gone ids in OSDU, repairing missing ids, and removing gone ids from the inventory. |
 | [Finding duplicate records](inventory-duplicates.md) | A `duplicates` run: the key, the download grouped in SQL, the pick, which copy is kept, an operator's choice, and removing the copies picked. |
 
 ## What a run returns
@@ -273,7 +283,8 @@ its kind, status, run number, ids listed, added, changed, gone and served again,
 counts by finding, the owners and how they were known, pages, requests and error. A plan's result is, per inventory, the
 query, how it reads, which versions, the records it would read, the kinds a storage read expands to, and its problems. A
 removal's result is its number, the finding, the scope, how many ids were asked for, and how many were removed, already
-gone, skipped and failed, with why it stopped. A match's result is the selection it filled, its status, how it read OSDU and
+gone, skipped and failed, with why it stopped; a restore's is the same, with scope `restore`, how many were restored, and
+the removal whose ids it brought back when it took those. A match's result is the selection it filled, its status, how it read OSDU and
 the query, the ids the inventory served, how many matched, how many records were outside the inventory and how many ids
 changed since its build, the search requests it sent, its notes, and why it stopped. A duplicate check's result is in
 [Finding duplicate records](inventory-duplicates.md#what-a-run-returns).
@@ -285,8 +296,10 @@ lineage orders it after the delivery flows writing those kinds ([lineage](../con
 pipeline has an **Inventories** tab. **OSDU**, **Inventories** lists every inventory with what its last
 reconcile raised; an inventory's report has its counts by finding over a grid of ids, the tabs Ids, Duplicates
 ([In the GUI](inventory-duplicates.md#in-the-gui)), Runs and (for a flow that allows removal, or one that has removed
-anything) Removals, a lookup by OSDU id, and a CSV export. The **gone** tab
-picks ids, or every one, to remove from the inventory, and the **missing** tab picks ids to deliver again. **Filter**
+anything) Removals, a lookup by OSDU id, and a CSV export. A removable finding's tab picks ids, or every one, to
+**Remove from OSDU**; the **gone** tab picks ids, or every one, to **Restore in OSDU** (for a flow that declares
+`removal`) or **Remove from inventory** (nothing changes in OSDU); and the **missing** tab picks ids to deliver again.
+A soft-delete removal under Removals offers **Restore what it removed**. **Filter**
 selects the ids by what OSDU holds ([In the GUI](inventory-selections.md#in-the-gui)).
 
 ## Errors when the document is read

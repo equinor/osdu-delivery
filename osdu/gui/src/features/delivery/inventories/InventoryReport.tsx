@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { Link } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { ChevronRight, ChevronsUpDown, CircleX, ClipboardList, Download, Info, Loader2, Play, Trash2 } from "lucide-react";
+import { ChevronRight, ChevronsUpDown, CircleX, ClipboardList, Download, Info, Loader2, Play, RotateCcw, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
@@ -25,7 +25,7 @@ import { formatDurationSeconds, parseUtc } from "@/lib/time";
 import { cn } from "@/lib/utils";
 import type { ExplorerFilter } from "../../../api/explorer";
 import {
-  REMOVABLE_FINDINGS, inventoryApi, type DuplicateKeyProperty, type Inventory, type InventoryDetail, type InventoryRun, type InventorySelection,
+  GONE_FINDING, REMOVABLE_FINDINGS, inventoryApi, type DuplicateKeyProperty, type Inventory, type InventoryDetail, type InventoryRun, type InventorySelection,
 } from "../../../api/inventories";
 import { KindText } from "../KindText";
 import { useActivePartition } from "../activePartition";
@@ -294,6 +294,16 @@ function removalOff(detail: InventoryDetail, finding: string | null): string | n
   return detail.removal.findings.includes(finding)
     ? null
     : `${flow} allows removing ${detail.removal.findings.join(", ")} ids, not ${label} ones: add ${finding} to removal.findings in its YAML and sync the repository.`;
+}
+
+/**
+ * Why gone ids in view cannot be restored in OSDU here: the flow declares no removal, so it only reads OSDU, and a restore writes
+ * to OSDU as a removal does. Null where they can be, and for any other finding.
+ */
+function restoreOff(detail: InventoryDetail, finding: string | null): string | null {
+  return finding !== GONE_FINDING || detail.removal !== undefined
+    ? null
+    : `Restoring gone ids is off: ${detail.inventory.flowName} declares no removal, so it only reads OSDU, and a restore writes to OSDU as a removal does. Add removal: { findings: [orphan] } to its YAML and sync the repository; the gone ids can then be picked here and brought back. Removing them from the inventory works either way.`;
 }
 
 /** The inventory's builds and reconciles, newest first: what each read, changed and raised, who ran it and why one failed. */
@@ -608,6 +618,14 @@ export function InventoryReport({
                         </span>
                       </RichTooltip>
                     )}
+                    {canReadOsdu && restoreOff(data, chosen) !== null && (
+                      <RichTooltip title="Restore is off" body={restoreOff(data, chosen)!}>
+                        <span className="inline-flex h-7 cursor-help items-center gap-1 rounded-md px-2 text-[12px] text-muted-foreground" data-testid="inventory-restore-off">
+                          <RotateCcw className="size-3.5" aria-hidden />
+                          Restore off
+                        </span>
+                      </RichTooltip>
+                    )}
                     {canReadOsdu && (
                       <ExplorerAddFilter
                         compact
@@ -656,7 +674,12 @@ export function InventoryReport({
               />
             </TabsContent>
             <TabsContent value="removals">
-              <InventoryRemovals inventory={inventory} removals={removals.data} error={removals.error} />
+              <InventoryRemovals
+                inventory={inventory}
+                removals={removals.data}
+                error={removals.error}
+                restore={canReadOsdu && canRun ? data.removal : undefined}
+              />
             </TabsContent>
             <TabsContent value="runs">
               <InventoryRuns inventory={inventory} />

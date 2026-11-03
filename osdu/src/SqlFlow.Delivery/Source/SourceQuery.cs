@@ -17,11 +17,21 @@ public sealed record SourceScopeValues(string Column, string Parameter, string S
 /// <param name="Columns">The columns each table holds, by the name a mapping reads it under (<see cref="SourceDatasets.Record"/> or a child dataset's).</param>
 /// <param name="Scope">The scope predicate's values, in the order of <see cref="IngestionLayout.Scope"/>.</param>
 /// <param name="Origin">The record table's columns saying which file and row a record came from.</param>
+/// <param name="Types">
+/// The SQL type of each column, by table as <paramref name="Columns"/> names them; null when the source does not say, and a
+/// column it does not list, which a query then compares as text.
+/// </param>
 public sealed record SourceDescription(
     IngestionLayout Layout,
     IReadOnlyDictionary<string, IReadOnlyList<string>> Columns,
     IReadOnlyList<SourceScopeValues> Scope,
-    IReadOnlyList<string> Origin);
+    IReadOnlyList<string> Origin,
+    IReadOnlyDictionary<string, IReadOnlyDictionary<string, string>>? Types = null)
+{
+    /// <summary>The SQL type of <paramref name="column"/> of the table <paramref name="dataset"/> names, or null when the source does not say.</summary>
+    public string? TypeOf(string dataset, string column)
+        => Types?.GetValueOrDefault(dataset) is { } types && types.TryGetValue(column, out var type) ? type : null;
+}
 
 /// <summary>A source column an attribute reads, as the mapping names it, and the table holding it.</summary>
 public sealed record SourceQueryRead(string Column, string Table);
@@ -169,19 +179,7 @@ public static class SourceQuery
             Comment(script, $"The mapping reads columns the tables do not hold, left out here: {string.Join(", ", missing)}");
         }
 
-        for (var i = 0; i < source.Scope.Count; i++)
-        {
-            var scope = source.Scope[i];
-
-            // Over its statement, as formatting the script would leave a comment beside it over the next one.
-            Comment(script, $"The scope: {scope.Parameter}");
-            for (var value = 0; value < scope.Values.Count; value++)
-            {
-                var name = scope.Values.Count == 1 ? IngestionSql.ScopeParameter(i) : IngestionSql.ScopeParameter(i, value);
-                script.Append("DECLARE ").Append(name).Append(' ').Append(scope.SqlType).Append(" = ").Append(Text(scope.Values[value])).AppendLine(";");
-            }
-        }
-
+        DeclareScope(script, source);
         if (keys.Count > 0)
         {
             script.Append("DECLARE ").Append(IngestionSql.KeysParameter).Append(" nvarchar(max) = ")
@@ -195,6 +193,25 @@ public static class SourceQuery
         }
 
         return script.ToString();
+    }
+
+    /// <summary>Declares the scope's values as the parameters a read binds them to, each under a comment naming its parameter.</summary>
+    internal static void DeclareScope(StringBuilder script, SourceDescription source)
+    {
+        ArgumentNullException.ThrowIfNull(script);
+        ArgumentNullException.ThrowIfNull(source);
+        for (var i = 0; i < source.Scope.Count; i++)
+        {
+            var scope = source.Scope[i];
+
+            // Over its statement, as formatting the script would leave a comment beside it over the next one.
+            Comment(script, $"The scope: {scope.Parameter}");
+            for (var value = 0; value < scope.Values.Count; value++)
+            {
+                var name = scope.Values.Count == 1 ? IngestionSql.ScopeParameter(i) : IngestionSql.ScopeParameter(i, value);
+                script.Append("DECLARE ").Append(name).Append(' ').Append(scope.SqlType).Append(" = ").Append(Text(scope.Values[value])).AppendLine(";");
+            }
+        }
     }
 
     private static void Comment(StringBuilder script, string text) => script.Append("-- ").AppendLine(OneLine(text));

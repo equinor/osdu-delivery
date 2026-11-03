@@ -25,6 +25,8 @@ sourceRefs:
   - osdu/gui/src/features/delivery/StagedRecordList.tsx
   - osdu/gui/src/features/delivery/DeliveryMappingPage.tsx
   - osdu/gui/src/features/delivery/scopeDefaults.ts
+related:
+  - delivery-wiki-0044-findings-say-why-and-prove-it
 referenceRefs:
   - delivery-concept-dry-run
   - delivery-concept-gui

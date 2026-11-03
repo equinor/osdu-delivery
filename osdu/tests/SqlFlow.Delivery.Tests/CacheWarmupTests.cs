@@ -274,6 +274,9 @@ public class CacheWarmupTests
         public Task<CacheRetentionOutcome> ApplyRetentionAsync(CacheRetentionRequest request, CancellationToken ct = default)
             => throw new InvalidOperationException("The warm-up reads the cache; it never prunes it.");
 
+        public Task<Source.ProofRows> ReadProofAsync(CacheProofQuery query, CancellationToken ct = default)
+            => throw new InvalidOperationException("The warm-up loads versions; it never reads a proof.");
+
         private static CacheVersionInfo Info(string scope, string version, long items)
             => new(scope, version, 1, DateTime.UnixEpoch, true, null, null, "tests", "tests", "tests-cache", items, [], []);
     }

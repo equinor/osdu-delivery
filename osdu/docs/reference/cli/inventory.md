@@ -1,8 +1,8 @@
 ---
 id: delivery-cli-inventory
-title: "sqlflow inventory: read inventories, their findings, runs and removals from a terminal"
+title: "sqlflow inventory: read inventories, their findings, runs, removals and restores from a terminal"
 type: cli-command
-summary: "sqlflow inventory list, show, records, lookup, runs, export, removals and removal: what inventory flows found of the ids OSDU serves."
+summary: "sqlflow inventory list, show, records, lookup, runs, export, removals and removal: what inventory flows found, removed and restored."
 keywords:
   - sqlflow inventory
   - inventory findings
@@ -12,6 +12,7 @@ keywords:
   - inventory runs
   - inventory export
   - inventory removals
+  - inventory restores
   - removal outcome
   - "--finding"
 cliCommand: inventory
@@ -36,20 +37,21 @@ sourceRefs:
   - sqlflow/src/SqlFlow.Cli/Hosting/CliVerbContext.cs
 ---
 
-# sqlflow inventory: read inventories, their findings, runs and removals from a terminal
+# sqlflow inventory: read inventories, their findings, runs, removals and restores from a terminal
 
 `sqlflow inventory` reads what [inventory flows](../flow/inventory.md) found: the inventories of a partition, one
 inventory's ids by finding, a page of its ids, what every inventory holds of one OSDU id, its builds and reconciles, a
-CSV of its ids, and the removals asked of it with what each did to each id. It is one of the verbs OSDU Delivery adds to
+CSV of its ids, and the removals and restores asked of it with what each did to each id. It is one of the verbs OSDU Delivery adds to
 SQLFlow's command line (`SqlFlow.Delivery.Cli.Host`, published as `sqlflow`). It reads the module's database only: it needs no flow file, no control plane, and
 sends nothing to OSDU.
 
-Building, reconciling and removing are runs of the flow, not this verb:
+Building, reconciling, removing and restoring are runs of the flow, not this verb:
 
 ```bash
 sqlflow run flows/welldb-06-inventory.yaml --set partition=dev --payload '{"inventories":["WellLogs"]}'
 sqlflow run flows/welldb-06-inventory.yaml --set partition=dev --operation reconcile
 sqlflow run flows/welldb-06-inventory.yaml --set partition=dev --operation remove --payload @removal.json
+sqlflow run flows/welldb-06-inventory.yaml --set partition=dev --operation restore --payload @restore.json
 ```
 
 ## Synopsis
@@ -186,9 +188,9 @@ sqlflow inventory export dev 5 --finding orphan --out welllog-orphans.csv
 
 ## removals
 
-The removals asked of the inventory, newest first (20 unless `--limit` says otherwise, at most 200): what each removed
-(the finding, ids picked, those of a selection or every one), soft deleted or purged, where it stands, its tallies, who
-asked and why one stopped. A removal that took the ids of a selection reads `of selection <n>`
+The removals and restores asked of the inventory, newest first (20 unless `--limit` says otherwise, at most 200): what each
+removed (the finding, ids picked, those of a selection or every one), soft deleted or purged, or what it restored in OSDU,
+where it stands, its tallies, who asked and why one stopped. A removal that took the ids of a selection reads `of selection <n>`
 ([Selecting ids by what OSDU holds](../flow/inventory-selections.md)); `GET
 /api/v1/delivery/inventories/{partition}/{inventoryId}/selections/{n}` says which conditions made it.
 
@@ -198,15 +200,22 @@ WellLogs in dev: 1 removal(s)
 ```
 
 A removal of gone ids reads `removed from the inventory alone (nothing asked of OSDU)` in place of soft deleted or
-purged.
+purged. A restore reads `restored in OSDU (the soft delete undone)`, its tallies as `restored`, `gone for good`, `skipped`
+and `failed`, and, when it brought back what one removal removed, `that removal <n> removed`
+([Restoring gone ids](../flow/inventory-removals.md#restoring-gone-ids)):
+
+```text
+        12  completed  2026-11-02 10:41:17Z  120 gone that removal 9 removed, restored in OSDU (the soft delete undone): 118 restored, 2 gone for good, 0 skipped, 0 failed  by analyst@example.com
+```
 
 With `--json`: `partition`, `inventoryId`, `inventory` and `removals`, each with `removal`, `inventoryId`, `runId`,
 `actor`, `finding`, `scope`, `namesIds`, `selection`, `requested`, `status`, `startedUtc`, `completedUtc`, `removed`,
-`gone`, `skipped`, `failed`, `error` and `activityId`.
+`restored`, `gone`, `skipped`, `failed`, `error`, `activityId` and `restoresRemoval`.
 
 ## removal
 
-What one removal did to each id, of the outcome `--outcome` names (`removed`, `gone`, `skipped`, `failed`) or every one:
+What one removal (or restore) did to each id, of the outcome `--outcome` names (`removed`, `restored`, `gone`, `skipped`,
+`failed`) or every one:
 the id, its version and why. `--limit` is 1 to 1,000 (50 when left out); the line under a full page names the `--after`
 of the next.
 

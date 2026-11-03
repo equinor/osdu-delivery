@@ -266,7 +266,11 @@ public sealed class SqlServerIngestionSource : IIngestionSource
             layout,
             _tables.ToDictionary(t => t.Key, t => (IReadOnlyList<string>)t.Value.Values.Select(c => c.Name).ToList(), StringComparer.OrdinalIgnoreCase),
             scope,
-            new[] { _fileNameColumn, _rowNumberColumn }.OfType<string>().ToList());
+            new[] { _fileNameColumn, _rowNumberColumn }.OfType<string>().ToList(),
+            _tables.ToDictionary(
+                t => t.Key,
+                t => (IReadOnlyDictionary<string, string>)t.Value.Values.ToDictionary(c => c.Name, c => c.SqlType, StringComparer.OrdinalIgnoreCase),
+                StringComparer.OrdinalIgnoreCase));
     }
 
     public async IAsyncEnumerable<IngestionKey> ReadKeysAsync(int pageSize, SourceKeyRead read, [EnumeratorCancellation] CancellationToken ct = default)
@@ -478,6 +482,79 @@ public sealed class SqlServerIngestionSource : IIngestionSource
             rows,
             Math.Min(counted, query.CountUpTo),
             counted > query.CountUpTo);
+    }
+
+    public async Task<ProofRows> ReadProofAsync(SourceProofQuery query, CancellationToken ct = default)
+    {
+        ArgumentNullException.ThrowIfNull(query);
+        ArgumentOutOfRangeException.ThrowIfLessThan(query.Limit, 1);
+        ArgumentOutOfRangeException.ThrowIfLessThan(query.MaxCharacters, 1);
+        var read = query.Read;
+        if (read.Columns.Count == 0 || query.Values.Count != read.Columns.Count)
+        {
+            throw new DeliveryException($"Flow '{_flow.Label}': a proof names {read.Columns.Count} columns and gives values for {query.Values.Count}; it gives one list of values for each column.");
+        }
+
+        await using var connection = await IngestionConnection.OpenAsync(_flow.Source.Connection, _flow.Name, _secrets, ct).ConfigureAwait(false);
+        var layout = await BuildLayoutAsync(connection, ct).ConfigureAwait(false);
+
+        // The columns are named as the tables hold them now: a proof written against a description that has since gone stale
+        // is refused naming the column, rather than reading another one.
+        var table = read.Child?.Name ?? SourceDatasets.Record;
+        var reads = read.Columns.Select(c => (Table: table, Column: c.Name))
+            .Concat(read.Origin.Select(o => (Table: SourceDatasets.Record, Column: o)))
+            .Concat(read.Child is null ? [] : read.ChildOrigin.Select(o => (Table: table, Column: o)));
+        foreach (var (held, column) in reads)
+        {
+            if (!_tables.TryGetValue(held, out var columns) || !columns.ContainsKey(column))
+            {
+                throw new DeliveryException($"Flow '{_flow.Label}': the proof reads column '{column}' of the table {held} names, which does not hold it.");
+            }
+        }
+
+        if (read.Child is { } child && !layout.Datasets.Any(d => string.Equals(d.Name, child.Name, StringComparison.Ordinal)))
+        {
+            throw new DeliveryException($"Flow '{_flow.Label}' reads no child dataset '{child.Name}'.");
+        }
+
+        var proof = read with { Child = read.Child is { } named ? layout.Datasets.First(d => string.Equals(d.Name, named.Name, StringComparison.Ordinal)) : null };
+        await using var command = Command(connection, query.Records ? IngestionSql.ProofRecords(layout, proof) : IngestionSql.ProofValues(layout, proof));
+        BindScope(command, layout);
+        command.Parameters.Add(new SqlParameter(IngestionSql.ProofRowsParameter, SqlDbType.BigInt) { Value = (long)query.Limit + 1 });
+        if (!read.Empty)
+        {
+            for (var i = 0; i < query.Values.Count; i++)
+            {
+                command.Parameters.Add(new SqlParameter(IngestionSql.ProofValuesParameter(i), SqlDbType.NVarChar, -1) { Value = JsonSerializer.Serialize(query.Values[i]) });
+            }
+        }
+
+        var rows = new List<IReadOnlyList<string?>>(Math.Min(query.Limit, 1000));
+        var more = false;
+        await using (var reader = await ExecuteReaderAsync(command, "read a proof of a value check's finding", ct).ConfigureAwait(false))
+        {
+            var columns = Enumerable.Range(0, reader.FieldCount).Select(reader.GetName).ToList();
+            while (await reader.ReadAsync(ct).ConfigureAwait(false))
+            {
+                if (rows.Count == query.Limit)
+                {
+                    // The statement lists one row past the limit, which says there are more.
+                    more = true;
+                    break;
+                }
+
+                var values = new string?[reader.FieldCount];
+                for (var i = 0; i < values.Length; i++)
+                {
+                    var value = SourceRow.Stringify(SourceValues.Normalize(reader.GetValue(i)));
+                    values[i] = value is not null && value.Length > query.MaxCharacters ? value[..query.MaxCharacters] : value;
+                }
+
+                rows.Add(values);
+            }
+
+            return new ProofRows(columns, rows, more);
+        }
     }
 
     /// <summary>

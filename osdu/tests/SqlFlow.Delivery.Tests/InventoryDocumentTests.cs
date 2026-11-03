@@ -405,13 +405,50 @@ public class InventoryDocumentTests
         Assert.False(DeliveryRunPayload.Parse("""{ "removal": { "finding": "orphan", "scope": "record", "expected": 1 } }""").CarriesOnlyConfiguration);
     }
 
+    [Fact]
+    public void A_restore_run_names_one_inventory_what_it_brings_back_and_the_partition_it_confirms_and_no_other_run_takes_a_restore()
+    {
+        var picked = DeliveryRunPayload.Parse("""{ "inventories": ["WellLogs"], "confirm": "dev", "restore": { "expected": 2, "ids": ["dev:wpc--WellLog:a", "dev:wpc--WellLog:b"] } }""");
+        Assert.Equal((2L, true, (long?)null), (picked.Restore!.Expected, picked.Restore.NamesIds, picked.Restore.Removal));
+        Assert.Equal(["dev:wpc--WellLog:a", "dev:wpc--WellLog:b"], DeliveryRunPayload.Parse(picked.ToJson()).Restore!.Ids);
+        var every = DeliveryRunPayload.Parse("""{ "inventories": ["WellLogs"], "confirm": "dev", "restore": { "expected": 39425 } }""").Restore!;
+        Assert.Equal((39425L, false, (long?)null), (every.Expected, every.NamesIds, every.Removal));
+        var undoing = DeliveryRunPayload.Parse("""{ "inventories": ["WellLogs"], "confirm": "dev", "restore": { "expected": 120, "removal": 12 } }""");
+        Assert.Equal(12L, DeliveryRunPayload.Parse(undoing.ToJson()).Restore!.Removal);
+        Assert.False(undoing.CarriesOnlyConfiguration);
+
+        Assert.Contains("restore.expected", Assert.Throws<SqlFlowException>(() => DeliveryRunPayload.Parse("""{ "restore": { "expected": 0 } }""")).Message, StringComparison.Ordinal);
+        Assert.Contains("names 1 ids and expected says 2", Assert.Throws<SqlFlowException>(() => DeliveryRunPayload.Parse("""{ "restore": { "expected": 2, "ids": ["a:b:c"] } }""")).Message, StringComparison.Ordinal);
+        Assert.Contains("names both ids and a removal", Assert.Throws<SqlFlowException>(() => DeliveryRunPayload.Parse(
+            """{ "restore": { "expected": 1, "ids": ["a:b:c"], "removal": 12 } }""")).Message, StringComparison.Ordinal);
+        Assert.Contains("restore.finding is not one of expected, ids, removal", Assert.Throws<SqlFlowException>(() => DeliveryRunPayload.Parse(
+            """{ "restore": { "expected": 1, "finding": "gone" } }""")).Message, StringComparison.Ordinal);
+
+        var kind = new InventoryFlowKind(new DeliveryDocumentLoader());
+        kind.ValidateParameters(new RunParameters { Operation = "restore", Payload = undoing.ToJson() });
+        Assert.Contains("nothing is restored without all three", Assert.Throws<SqlFlowException>(() => kind.ValidateParameters(new RunParameters
+        {
+            Operation = "restore", Payload = """{ "inventories": ["WellLogs"], "restore": { "expected": 1 } }""",
+        })).Message, StringComparison.Ordinal);
+        Assert.Contains("payload restore does not apply to the remove operation", Assert.Throws<SqlFlowException>(() => kind.ValidateParameters(new RunParameters
+        {
+            Operation = "remove", Payload = """{ "inventories": ["WellLogs"], "confirm": "dev", "removal": { "finding": "gone", "scope": "inventory", "expected": 1 }, "restore": { "expected": 1 } }""",
+        })).Message, StringComparison.Ordinal);
+        Assert.Contains("payload removal does not apply to the restore operation", Assert.Throws<SqlFlowException>(() => kind.ValidateParameters(new RunParameters
+        {
+            Operation = "restore", Payload = """{ "inventories": ["WellLogs"], "confirm": "dev", "removal": { "finding": "gone", "scope": "inventory", "expected": 1 }, "restore": { "expected": 1 } }""",
+        })).Message, StringComparison.Ordinal);
+        Assert.Contains("payload restore does not apply to a delivery flow", Assert.Throws<SqlFlowException>(() => DeliveryRunPayload.Parse("""{ "restore": { "expected": 1 } }""").Validate(DeliveryOperations.Deliver)).Message, StringComparison.Ordinal);
+    }
+
     [Theory]
     [InlineData(null, "build")]
     [InlineData("build", "build")]
     [InlineData("reconcile", "reconcile")]
     [InlineData("plan", "plan")]
     [InlineData("remove", "remove")]
-    public void An_inventory_flow_builds_by_default_and_reconciles_plans_or_removes_when_asked(string? operation, string expected)
+    [InlineData("restore", "restore")]
+    public void An_inventory_flow_builds_by_default_and_reconciles_plans_removes_or_restores_when_asked(string? operation, string expected)
         => Assert.Equal(expected, InventoryFlowKind.Operation(new RunParameters { Operation = operation }));
 
     [Theory]
@@ -425,13 +462,13 @@ public class InventoryDocumentTests
     }
 
     [Fact]
-    public void The_kind_offers_build_reconcile_plan_remove_match_and_duplicates_and_neither_a_plan_a_match_nor_a_check_writes_the_inventories()
+    public void The_kind_offers_build_reconcile_plan_remove_restore_match_and_duplicates_and_neither_a_plan_a_match_nor_a_check_writes_the_inventories()
     {
         var kind = new InventoryFlowKind(new DeliveryDocumentLoader());
 
         Assert.Equal("inventory", kind.FlowType);
         Assert.Equal(
-            [("build", true), ("reconcile", true), ("plan", false), ("remove", true), ("match", false), ("duplicates", false)],
+            [("build", true), ("reconcile", true), ("plan", false), ("remove", true), ("restore", true), ("match", false), ("duplicates", false)],
             kind.Operations.Select(o => (o.Name, o.WritesTarget)));
         var document = Assert.IsType<InventoryFlowDocument>(kind.Parse(Head + WellLogs, "flows/inventory.yaml"));
         Assert.Equal(("welllog-inventory", "inventory", "reconciliation"), (document.Name, document.Kind, document.Batch));

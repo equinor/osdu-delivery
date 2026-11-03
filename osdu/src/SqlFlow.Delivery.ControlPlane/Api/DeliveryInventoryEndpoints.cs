@@ -58,9 +58,10 @@ public sealed record DeliveryInventoryListDto(string? Partition, IReadOnlyList<D
 /// <summary>
 /// What the flow lets an operator remove of what the inventory found: the findings, whether a removal may purge, the platform
 /// the removal goes to as the flow writes it (a URL, or a reference the node resolves), and the storage paths a soft delete
-/// (500 ids a request) and a purge (one id at a time) call there.
+/// (500 ids a request) and a purge (one id at a time) call there, and the one a restore of gone ids patches (one id at a
+/// time): storage's record resource, which a purge deletes. A flow that declares a removal restores too.
 /// </summary>
-public sealed record DeliveryInventoryRemovalPolicyDto(IReadOnlyList<string> Findings, bool Purge, string Endpoint, string BulkDeletePath, string PurgePath);
+public sealed record DeliveryInventoryRemovalPolicyDto(IReadOnlyList<string> Findings, bool Purge, string Endpoint, string BulkDeletePath, string PurgePath, string RestorePath);
 
 /// <summary>
 /// One inventory with its report: its counts by finding read from its rows now (every finding, zeros included), how many ids it
@@ -111,14 +112,16 @@ public sealed record DeliveryInventoryRemovalAccepted(
     Guid RunId, string Status, string Partition, string Inventory, string Finding, string Scope, long Expected, long? Selection = null);
 
 /// <summary>
-/// One removal of an inventory's ids: its run, who asked, what it removed and how much of each record, how many ids the operator
-/// was shown and whether they picked them, where it stands, what it came to for the ids, why it stopped, its audit activity, and
-/// the selection it took its ids from, with the conditions that made it (<c>Selection</c>, left out for a removal that took none).
+/// One removal of an inventory's ids, or one restore of its gone ids (<c>Scope</c> restore): its run, who asked, what it removed
+/// and how much of each record, how many ids the operator was shown and whether they picked them, where it stands, what it came
+/// to for the ids (a restore counts the ids it brought back as <c>Restored</c>), why it stopped, its audit activity, the selection
+/// it took its ids from, with the conditions that made it (<c>Selection</c>, left out for a removal that took none), and the
+/// removal whose removed ids a restore brought back (<c>RestoresRemovalId</c>, left out otherwise).
 /// </summary>
 public sealed record DeliveryInventoryRemovalDto(
     long InventoryRemovalId, int InventoryId, Guid? RunId, string Actor, string Finding, string Scope, bool NamesIds, long Requested, string Status,
-    DateTime StartedUtc, DateTime? CompletedUtc, long Removed, long Gone, long Skipped, long Failed, string? Error, long? ActivityId,
-    DeliveryInventorySelectionSummaryDto? Selection = null);
+    DateTime StartedUtc, DateTime? CompletedUtc, long Removed, long Restored, long Gone, long Skipped, long Failed, string? Error, long? ActivityId,
+    DeliveryInventorySelectionSummaryDto? Selection = null, long? RestoresRemovalId = null);
 
 /// <summary>What one removal did to one id: the version it found, the finding it had, the outcome and why, and the ledger record it rested on.</summary>
 public sealed record DeliveryInventoryRemovalItemDto(
@@ -225,15 +228,17 @@ public static partial class DeliveryInventoryEndpoints
 
     /// <summary>
     /// The routes that queue work as the caller, under the operate policy, which every signed-in user passes (only admin checks a
-    /// scope): a removal takes records out of OSDU, or gone ids out of the inventory; a repair delivers missing records again; a
-    /// match reads OSDU's search with the flow's own credentials, as the explorer reads it with a flow's; a duplicate check reads
-    /// OSDU's search and storage the same way; and an operator's choice of the copy a group of duplicates keeps, and the selection
-    /// made of a check's picks, decide what a removal by that selection takes.
+    /// scope): a removal takes records out of OSDU, or gone ids out of the inventory; a restore brings soft-deleted records behind
+    /// gone ids back in OSDU; a repair delivers missing records again; a match reads OSDU's search with the flow's own
+    /// credentials, as the explorer reads it with a flow's; a duplicate check reads OSDU's search and storage the same way; and an
+    /// operator's choice of the copy a group of duplicates keeps, and the selection made of a check's picks, decide what a
+    /// removal by that selection takes.
     /// </summary>
     public static void MapWrites(RouteGroupBuilder delivery)
     {
         ArgumentNullException.ThrowIfNull(delivery);
         delivery.MapPost("/inventories/{partition}/{inventoryId:int}/removals", RemoveAsync).WithName("RemoveDeliveryInventoryRecords");
+        delivery.MapPost("/inventories/{partition}/{inventoryId:int}/restores", RestoreAsync).WithName("RestoreDeliveryInventoryRecords");
         delivery.MapPost("/inventories/{partition}/{inventoryId:int}/repairs", RepairAsync).WithName("RepairDeliveryInventoryRecords");
         delivery.MapPost("/inventories/{partition}/{inventoryId:int}/selections", SelectAsync).WithName("SelectDeliveryInventoryRecords");
         delivery.MapPost("/inventories/{partition}/{inventoryId:int}/duplicates", CheckDuplicatesAsync).WithName("CheckDeliveryInventoryDuplicates");
@@ -589,39 +594,19 @@ public static partial class DeliveryInventoryEndpoints
             }
         }
 
-        var busy = await db.Runs.AsNoTracking()
-            .Where(r => r.PipelineId == pipeline.Id && (r.Status == RunStatuses.Queued || r.Status == RunStatuses.Running))
-            .Select(r => (Guid?)r.RunId)
-            .FirstOrDefaultAsync(ct)
-            .ConfigureAwait(false);
-        if (busy is { } running)
-        {
-            return Problem(StatusCodes.Status409Conflict, "Flow busy",
-                $"Run {running:D} of '{pipeline.Name}' is queued or running; a removal waits until the flow is idle, so what it removes is what the inventory holds. Nothing was queued.");
-        }
-
         var removal = new InventoryRemovalRequest { Finding = finding, Scope = scope, Expected = expected, Ids = ids, Selection = request.Selection };
-        var values = new Dictionary<string, string>(StringComparer.Ordinal);
-        if (flow.Partitioned)
+        var (runId, busy) = await QueueChangeAsync(
+            db, dispatcher, pipeline, flow, inventory, DeliveryOperations.Remove,
+            new DeliveryRunPayload { Inventories = [inventory.Name], Removal = removal, Confirm = inventory.Partition }, request.Pool,
+            "a removal waits until the flow is idle, so what it removes is what the inventory holds", user, ct).ConfigureAwait(false);
+        if (busy is not null)
         {
-            values[PartitionNames.RunValue] = inventory.Partition;
+            return busy;
         }
 
-        var parameters = new RunParameters
-        {
-            Operation = DeliveryOperations.Remove,
-            Values = values,
-            Payload = new DeliveryRunPayload { Inventories = [inventory.Name], Removal = removal, Confirm = inventory.Partition }.ToJson(),
-        };
-        var runId = await dispatcher.EnqueueAsync(
-            db,
-            new RunEnqueueRequest(
-                pipeline.RepoId, pipeline.Name, pipeline.Kind, string.IsNullOrWhiteSpace(request.Pool) ? null : request.Pool.Trim(), null, parameters,
-                RequestedBy: RequestActor.Of(user)),
-            ct).ConfigureAwait(false);
         return TypedResults.Accepted(
             $"/api/v1/runs/{runId}",
-            new DeliveryInventoryRemovalAccepted(runId, RunStatuses.Queued, inventory.Partition, inventory.Name, finding, scope, expected, request.Selection));
+            new DeliveryInventoryRemovalAccepted(runId!.Value, RunStatuses.Queued, inventory.Partition, inventory.Name, finding, scope, expected, request.Selection));
     }
 
     /// <summary>What is wrong with a removal request on its face, before the flow and the inventory are read; null when nothing is.</summary>
@@ -656,19 +641,9 @@ public static partial class DeliveryInventoryEndpoints
             return Problem(StatusCodes.Status400BadRequest, "Count required", "Name how many ids you were shown (expected); nothing is removed without it.");
         }
 
-        if (request.Ids is { } ids)
+        if (IdsProblem(request.Ids, request.Expected.Value, "remove every id of the finding") is { } badIds)
         {
-            var named = ids.Select(i => i?.Trim() ?? string.Empty).ToList();
-            if (named.Count == 0 || named.Count > InventoryRemovalRequest.MaxIds || named.Any(i => i.Length == 0 || i.Length > MaxIdLength))
-            {
-                return Problem(StatusCodes.Status400BadRequest, "Invalid ids",
-                    $"ids names 1 to {InventoryRemovalRequest.MaxIds} OSDU ids; leave it out to remove every id of the finding.");
-            }
-
-            if (named.Distinct(StringComparer.Ordinal).Count() != named.Count || named.Count != request.Expected)
-            {
-                return Problem(StatusCodes.Status400BadRequest, "Invalid ids", "ids names each id once, as many as expected says.");
-            }
+            return badIds;
         }
 
         if (request.Selection is { } selection)
@@ -691,20 +666,10 @@ public static partial class DeliveryInventoryEndpoints
             }
         }
 
-        var confirm = request.Confirm?.Trim();
-        if (string.IsNullOrEmpty(confirm))
-        {
-            return Problem(StatusCodes.Status400BadRequest, "Confirmation required",
-                "Name the partition the inventory is kept in as 'confirm'; nothing is removed without it.");
-        }
-
-        return string.Equals(confirm, inventory.Partition, StringComparison.OrdinalIgnoreCase)
-            ? null
-            : Problem(StatusCodes.Status400BadRequest, "Confirmation does not match",
-                $"The confirmation names '{confirm}', and inventory '{inventory.Name}' is kept in partition '{inventory.Partition}'. Nothing was queued.");
+        return ConfirmationProblem(request.Confirm, inventory, "removed");
     }
 
-    /// <summary>An inventory's removals, the newest first.</summary>
+    /// <summary>An inventory's removals and restores, the newest first.</summary>
     private static async Task<Results<JsonHttpResult<IReadOnlyList<DeliveryInventoryRemovalDto>>, ProblemHttpResult>> ListRemovalsAsync(
         string partition, int inventoryId, int? limit, ILedger ledger, CancellationToken ct)
     {
@@ -827,7 +792,9 @@ public static partial class DeliveryInventoryEndpoints
         var (pipeline, flow, declared) = await DeclaringFlowAsync(db, documents, inventory, ct).ConfigureAwait(false);
         var spec = declared == true ? flow?.Inventory(inventory.Name) : null;
         var owners = InventoryReport.Owners(inventory.OwnersJson, inventory.OwnersSource);
-        var removal = declared == true && flow?.Removal is { } policy ? new DeliveryInventoryRemovalPolicyDto(policy.Findings, policy.Purge, flow.Source.Endpoint, flow.Source.BulkDeletePath, flow.Source.PurgePath) : null;
+        var removal = declared == true && flow?.Removal is { } policy
+            ? new DeliveryInventoryRemovalPolicyDto(policy.Findings, policy.Purge, flow.Source.Endpoint, flow.Source.BulkDeletePath, flow.Source.PurgePath, flow.Source.PurgePath)
+            : null;
         return TypedResults.Json(
             new DeliveryInventoryDetailDto(
                 ToDto(inventory, runs), pipeline?.Id, pipeline?.RepoId, spec?.Description, declared, Counts(counts.ByFinding), counts.ByFinding.Values.Sum(), counts.Raised,
@@ -1217,8 +1184,8 @@ public static partial class DeliveryInventoryEndpoints
 
     private static DeliveryInventoryRemovalDto ToDto(InventoryRemovalState r, IReadOnlyDictionary<long, DeliveryInventorySelectionSummaryDto> selections) => new(
         r.InventoryRemovalId, r.InventoryId, r.RunId, r.Actor, r.Finding, r.Scope, r.NamesIds, r.Requested, r.Status, Utc(r.StartedUtc), Utc(r.CompletedUtc),
-        r.Removed, r.Gone, r.Skipped, r.Failed, r.Error, r.ActivityId,
-        r.SelectionId is { } selectionId ? selections.GetValueOrDefault(selectionId) : null);
+        r.Removed, r.Restored, r.Gone, r.Skipped, r.Failed, r.Error, r.ActivityId,
+        r.SelectionId is { } selectionId ? selections.GetValueOrDefault(selectionId) : null, r.RestoresRemovalId);
 
     /// <summary>What a selection's id held at the properties its conditions ask; null when it held nothing there.</summary>
     private static IReadOnlyDictionary<string, IReadOnlyList<string>>? ValuesOf(string? json)

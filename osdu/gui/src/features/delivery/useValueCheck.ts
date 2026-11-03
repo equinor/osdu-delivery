@@ -212,6 +212,8 @@ function taken(store: Store, task: PendingTask, settled: ComputeTask | undefined
 
 /** What a mapping's page needs to check values, make a dry run and show what either found. */
 export interface ValueCheckSession {
+  /** The mapping the page is of, as `Name@version`: what a check and a proof are asked of. */
+  reference: string;
   /** The flows that render with the mapping in the title bar's partition, and the partitions others deliver to. */
   flows: DeliveryMappingFlow[];
   otherPartitions: string[];
@@ -517,6 +519,7 @@ export function useValueCheckSession(mappingId: string, reference: string): Valu
   }, [tasks]);
 
   return {
+    reference,
     flows,
     otherPartitions,
     flowsLoading: flowsQuery.isPending,

@@ -2645,6 +2645,12 @@ namespace SqlFlow.Delivery.Data.Migrations
                     b.Property<long>("Requested")
                         .HasColumnType("bigint");
 
+                    b.Property<long>("Restored")
+                        .HasColumnType("bigint");
+
+                    b.Property<long?>("RestoresRemovalId")
+                        .HasColumnType("bigint");
+
                     b.Property<Guid?>("RunId")
                         .HasColumnType("uniqueidentifier");
 

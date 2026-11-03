@@ -184,8 +184,29 @@ record of the partition keeps, in another entity type than that record's own, re
   child. A deleted or reverted record is not reached, and a record already asked keeps the request it had.
 
 The landings settled together reach at most 10,000 records; the rest follow their child's next landing or their own next
-render. A child written outside the ledger, or taken out of OSDU, does not re-plan the record: it is linked, or its link
-dropped, the next time something else renders the record (its row, its mapping, its template, a redelivery).
+render.
+
+## When a child is taken out
+
+The link follows the child: it is in the record while OSDU holds the child, and out of it once OSDU does not. A record taken
+out of OSDU through the ledger reaches the records that link it the same way a landing does, and they are asked to be
+planned again: an operator's **Remove** ([removing records](../concepts/removal-and-reversal.md#removing-records-from-osdu)), a removal flow taking out a record its source
+no longer holds, or finding one OSDU no longer holds that the ledger last knew there ([removal](removal.md)), an inventory's
+removal, and a reversal removing a record the reversed run created ([removal and
+reversal](../concepts/removal-and-reversal.md)). Each record's flow's next run renders it without the link, which changes
+its document, so it is sent, the document alone. The records reached are the ones a landing reaches: a blocked record is
+left to its own hold, a deleted or reverted one is not reached, and one already asked keeps the request it had. A purge of a
+child's earlier versions leaves the child in OSDU and asks nothing.
+
+A child an operator removed is delivered again by its own flow's next run, and its landing asks the records linking it to
+render again, so the link comes back. Whichever flow runs first, each record ends with the link the child's state calls
+for, and is sent only when its document changed: once without the link and once with it when the record's flow runs
+between the removal and the child's return, not at all when it runs after both.
+
+A child written outside the ledger, or taken out of OSDU by another system, re-plans nothing: it is linked, or its link
+dropped, the next time something else renders the record (its row, its mapping, its template, a redelivery). Until then the
+record's **Render** tab shows the document without the link and says that the next run skips it without rendering it
+([the record page](../concepts/gui-ledger.md)); redeliver it to send what it renders now.
 
 ## What the preflight checks
 

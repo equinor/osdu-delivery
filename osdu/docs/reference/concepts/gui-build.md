@@ -84,6 +84,12 @@ rows can be delivered.
   **Required**, **Minted** and **Nested**. The selected attribute reads in **Filled by**, **Data**, **Failing records**,
   **SQL** and **Schema**. What the toolbar's **Dry run** found reads here attribute by attribute, on a line over the tree. An
   attribute's **Check values** checks it alone. See [writing a mapping](../guides/writing-a-mapping.md).
+  - **Data** lists what the checks found of the attribute, a finding to a card led by what is wrong in plain words: what was
+    looked for and not found, in which cache type or search, at which fields, with which value, read from which source column,
+    or the rule broken ([why an attribute fails](value-proof.md)). Opened (the first opens by itself), a card says what it does
+    to the records, where it was looked for, what to do, the records it holds for, and **Prove it from the data**: the
+    read-only queries showing it from the source and the cache, each with **Run**, which lists its first rows on the card,
+    and the statement to copy into SSMS, which lists them all.
   - **Failing records** goes through the rows a check found wrong with the attribute, one record at a time, on one page
     read top to bottom. At the top, and staying in view, the reason (picked from a list when there are several) and
     **Record n of m**, m being the rows that reason holds for; past the records listed so far, the next are read from a
@@ -106,15 +112,16 @@ rows can be delivered.
     attribute that reads no source column says so. The page writes the query from the tables' shape: it reads no row and runs
     nothing.
   - **Export rows**, in **Data**, saves the rows failing that attribute as an Excel workbook, reading them again on a node
-    as the check read them. **Issues** is a row for each issue: the record, what it came to and why; where to fix it
+    as the check read them. **Issues** is a row for each issue: the record, what it came to and what is wrong, in the words
+    the page uses (the render's own sentence is **Reason as rendered**, near the end); where to fix it
     (**Source file**, **Source row**, **Source column** and what it holds, **Source value**), an item of a repeated array
     naming its child row's file and row; then the base data, the record's key and the columns the attribute reads with what
     this row holds in them, named as the mapping names them (`dataset.aliases.alias_name`). Colour connects them: amber is
     what to fix, on the headers saying where and on the cell itself among the base data, which can be filtered on; blue
     heads the columns the attribute reads, and grey the key. The column to fix is the one the reason names, else the one
     holding the value, else the attribute's only column, else those it reads that are empty; a row none of these settles
-    has no amber cell. **Summary** adds them up by reason, and **About** says what was checked, with what, and what each
-    column and colour means.
+    has no amber cell. **Summary** adds them up by reason, each with **What is wrong** and **What to do**, and **About** says
+    what was checked, with what, and what each column and colour means.
     A workbook holds up to what a node task's result does, about 5 MB; one with more issues than that lists the first of
     them, says so in **About** and on the screen, and keeps every count. `sqlflow values --rows` lists every one, however
     many.

@@ -291,6 +291,7 @@ To see it:
 | The custom record held: `the record's parent <id> (<kind>) is not in OSDU, or the flow's identity may not read it, ...` | The canonical flow has not delivered that log yet, or the custom flow's identity may not read it. It is released and sent once the parent lands. |
 | The canonical record never links its child | The custom record is not in OSDU (look at the custom flow's ledger), or the two mappings do not key the rows alike (step 2), so the ids differ. |
 | The child landed, and the canonical record still has no link | The canonical flow has not run since: run it, or wait for its schedule. A child delivered outside the ledger asks nothing; the link comes the next time something renders the canonical record. |
+| The custom record was taken out of OSDU, and the canonical record still links it | Taken out through OSDU Delivery (**Remove**, a removal flow, an inventory, a reversal), the canonical flow's next run takes the link away, and gives it back once the custom record is delivered again ([mapping $child](../flow/mapping-child.md#when-a-child-is-taken-out)). Taken out by another system, nothing tells the ledger: the canonical record's **Render** tab says its next run would skip it, and **Redeliver** sends it without the link. |
 | The custom records are not found by search | The custom kind is not registered with the schema service (step 1). |
 
 ## See also

@@ -7,10 +7,10 @@ namespace SqlFlow.Delivery.Tests;
 
 /// <summary>
 /// What the ledger keeps of the children a record links (osdu/docs/reference/flow/mapping-child.md, What the ledger keeps;
-/// When a child lands): the unique segment a record and its children share, kept with whatever the render that looked for
-/// them came to (work queued, a hold, a render that sent nothing); and, when a record of any flow lands under an id with that
-/// segment in another entity type, the records linking it asked to render again, a record landing under its own id and one
-/// held for something else left as they are.
+/// When a child lands; When a child is taken out): the unique segment a record and its children share, kept with whatever the
+/// render that looked for them came to (work queued, a hold, a render that sent nothing); and, when a record of any flow lands
+/// under an id with that segment in another entity type, or is taken out of OSDU through the ledger, the records linking it
+/// asked to render again, a record under its own id and one held for something else left as they are.
 /// </summary>
 [Collection(SqlServerSuite.Name)]
 [Trait("Category", "Integration")]
@@ -103,6 +103,8 @@ public class ChildLedgerTests : IAsyncLifetime, IDisposable
             Attempt = new AttemptRecord
             {
                 DeliveryKey = key,
+                SubmissionId = record.LastSubmissionId,
+                TargetVersion = status == RecordStatus.Delivered ? version : null,
                 Worker = "test",
                 StartedUtc = Now,
                 CompletedUtc = Now,
@@ -269,5 +271,116 @@ public class ChildLedgerTests : IAsyncLifetime, IDisposable
         var child = await StageCustomAsync("x");
         await CompleteAsync(_custom, child.DeliveryKey);
         Assert.NotNull((await Ledger.GetRecordAsync(_canonical, parent.DeliveryKey))!.PlanRequestedUtc);
+    }
+
+    /// <summary>
+    /// A canonical record delivered, its custom child landed, and the canonical record delivered again with the link, which
+    /// answered the request the landing made: both delivered, nothing asked.
+    /// </summary>
+    private async Task<(RecordState Parent, RecordState Child)> LinkedAsync(string name)
+    {
+        var parent = await StageCanonicalAsync(name);
+        await CompleteAsync(_canonical, parent.DeliveryKey);
+        var child = await StageCustomAsync(name);
+        await CompleteAsync(_custom, child.DeliveryKey);
+        await StageCanonicalAsync(name, hash: "mh-linked");
+        await CompleteAsync(_canonical, parent.DeliveryKey, version: 2);
+        Assert.Null((await Ledger.GetRecordAsync(_canonical, parent.DeliveryKey))!.PlanRequestedUtc);
+        return (parent, child);
+    }
+
+    private SourceRemovalNote Removal() => new()
+    {
+        RemovalFlow = "custom-things-removal",
+        Entry = "custom-things",
+        RemovalRunId = 1,
+        Reason = SourceRemovals.Listed,
+        RemovedUtc = Now,
+    };
+
+    [Fact]
+    public async Task A_child_taken_out_of_osdu_asks_the_record_linking_it_to_render_again()
+    {
+        var (parent, child) = await LinkedAsync("x");
+        var other = await LinkedAsync("y");
+
+        await Ledger.MarkRemovedAsync(_custom, [child.DeliveryKey], RemovalScope.Record, "user:test", Now);
+
+        // The canonical record renders again on its flow's next run without the link, and is sent because its document changed.
+        Assert.Equal(RecordStatus.Deleted, (await Ledger.GetRecordAsync(_custom, child.DeliveryKey))!.Status);
+        var asked = await Ledger.GetRecordAsync(_canonical, parent.DeliveryKey);
+        Assert.Equal((RecordStatus.Delivered, false), (asked!.Status, asked.Blocked));
+        Assert.NotNull(asked.PlanRequestedUtc);
+
+        // Only the record linking the child taken out is asked.
+        Assert.Null((await Ledger.GetRecordAsync(_canonical, other.Parent.DeliveryKey))!.PlanRequestedUtc);
+    }
+
+    [Fact]
+    public async Task A_child_whose_earlier_versions_are_purged_stays_in_osdu_and_asks_nothing()
+    {
+        var (parent, child) = await LinkedAsync("x");
+
+        await Ledger.MarkRemovedAsync(_custom, [child.DeliveryKey], RemovalScope.History, "user:test", Now);
+
+        Assert.Equal(RecordStatus.Delivered, (await Ledger.GetRecordAsync(_custom, child.DeliveryKey))!.Status);
+        Assert.Null((await Ledger.GetRecordAsync(_canonical, parent.DeliveryKey))!.PlanRequestedUtc);
+    }
+
+    [Fact]
+    public async Task A_child_a_removal_flow_takes_out_asks_the_record_linking_it_to_render_again()
+    {
+        var (parent, child) = await LinkedAsync("x");
+
+        await Ledger.MarkRemovedAsync(
+            _custom, [child.DeliveryKey], RemovalScope.Record, "removal", Now, deliverAgain: false,
+            sources: new Dictionary<DeliveryKey, SourceRemovalNote> { [child.DeliveryKey] = Removal() });
+
+        // The child stays out, kept out by its key's deletion rather than delivered again; the record linking it is asked.
+        Assert.Equal(RecordStatus.Deleted, (await Ledger.GetRecordAsync(_custom, child.DeliveryKey))!.Status);
+        Assert.NotNull((await Ledger.GetRecordAsync(_canonical, parent.DeliveryKey))!.PlanRequestedUtc);
+    }
+
+    [Fact]
+    public async Task A_child_a_removal_flow_finds_gone_from_osdu_asks_the_record_linking_it_once()
+    {
+        // Taken out of OSDU by another system: the ledger still has it delivered when the removal flow settles it.
+        var (parent, child) = await LinkedAsync("x");
+        var notes = new Dictionary<DeliveryKey, SourceRemovalNote> { [child.DeliveryKey] = Removal() };
+
+        await Ledger.SettleRemovedBySourceAsync(_custom, notes, "removal", holder: null, Now);
+        Assert.Equal(RecordStatus.Deleted, (await Ledger.GetRecordAsync(_custom, child.DeliveryKey))!.Status);
+        Assert.NotNull((await Ledger.GetRecordAsync(_canonical, parent.DeliveryKey))!.PlanRequestedUtc);
+
+        // The canonical record rendered again without the link; a later run settling the same child asks nothing more.
+        await StageCanonicalAsync("x", hash: "mh-unlinked-again");
+        await CompleteAsync(_canonical, parent.DeliveryKey, version: 3);
+        await Ledger.SettleRemovedBySourceAsync(_custom, notes, "removal", holder: null, Now);
+        Assert.Null((await Ledger.GetRecordAsync(_canonical, parent.DeliveryKey))!.PlanRequestedUtc);
+    }
+
+    [Fact]
+    public async Task A_reversal_removing_a_child_its_submission_created_asks_the_record_linking_it_to_render_again()
+    {
+        var (parent, child) = await LinkedAsync("x");
+        var reversal = await Ledger.OpenReversalAsync(_custom, "custom-things", ReversalSource.Submission(child.LastSubmissionId!.Value), "user:test", null, Now);
+        await Ledger.CaptureReversalAsync(reversal.ReversalId, null);
+
+        await Ledger.SettleReversalAsync(
+            reversal.ReversalId, [ReversalSettlement.Removed(child.DeliveryKey, alreadyGone: false, "the reversed submission created it", null)], "user:test", null, null, Now);
+
+        Assert.Equal(RecordStatus.Deleted, (await Ledger.GetRecordAsync(_custom, child.DeliveryKey))!.Status);
+        Assert.NotNull((await Ledger.GetRecordAsync(_canonical, parent.DeliveryKey))!.PlanRequestedUtc);
+    }
+
+    [Fact]
+    public async Task A_child_taken_out_of_osdu_no_longer_reads_its_parent()
+    {
+        var (_, child) = await LinkedAsync("x");
+        Assert.Equal(child.DeliveryKey, Assert.Single(await Ledger.ListChildrenOfAsync(_canonical, LinkedTemplates.ParentId("x"), 10)).DeliveryKey);
+
+        await Ledger.MarkRemovedAsync(_custom, [child.DeliveryKey], RemovalScope.Record, "user:test", Now);
+
+        Assert.Empty(await Ledger.ListChildrenOfAsync(_canonical, LinkedTemplates.ParentId("x"), 10));
     }
 }
