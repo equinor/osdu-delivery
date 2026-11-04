@@ -134,21 +134,22 @@ that pass; disabled ones and those not yet checked are counted beside it, never 
 The GUI's **OSDU**, **Assertions** page is one dashboard of every assertion in the workbench's partition, and an
 assertion flow's **Assertions** tab is the same dashboard of its own assertions. It reads from the top:
 
-1. **The sets**: one pill per set with its worst standing and how many of its checked assertions pass; one picked
-   narrows everything below to it, and the address keeps it (`?set=well-logs`), so a link names a set. **Run the set**
-   runs each of its flows that can run in the partition, each with its document's default parameters.
-2. **The verdict**, one sentence that says where most of what fails is:
-   `Needs attention: 5 assertions fail, 2 of them in South · Proof values.`, with what was checked and what is left out
-   under it.
-3. **The figures**: the health figure, then Failing, Could not be checked, Warnings, Not yet checked and Passing, each
-   the filter to what it counts.
-4. **Where the data stands**: a map with a row per value of one dimension and a column per value of another, each square
+1. **The heading**, one row: the title with one pill per set beside it, each with its worst standing and how many of its
+   checked assertions pass, and the controls at the right. A set picked narrows everything below to it, and the address
+   keeps it (`?set=well-logs`), so a link names a set. **Run the set** runs each of its flows that can run in the
+   partition, each with its document's default parameters.
+2. **The verdict**, one sentence that says where most of what fails is
+   (`Needs attention: 5 assertions fail, 2 of them in South · Proof values.`), with the health figure beside it, and
+   under them the count of each standing: Failing, Could not be checked, Warnings, Not yet checked and Passing. A count
+   is the filter to what it counts, and its hover says what the standing means; the counts are the legend of every glyph
+   below them.
+3. **Where the data stands**: a map with a row per value of one dimension and a column per value of another, each square
    how its assertions stand (passing of checked, and the worst that is there). It is drawn along the first dimension the
    documents name and along `Check`, and the reader picks any two. A dimension's values are laid out worst first, at
    most 12 rows and 7 columns, the rest gathered as **Other**. A square lists its assertions.
-5. **The assertions**, grouped by what they need: **Needs attention** (failing, could not be checked, warnings) open,
-   **Not yet checked** and **Passing** closed with their reasons gathered, 10 rows at a time. A row says in one line what
-   it found (its first check that does not hold, with what it expected and found); one opens at a time, on each check
+4. **The assertions**, grouped by what they need: **Needs attention** (failing, could not be checked, warnings) open,
+   **Not yet checked** and **Passing** closed with their reasons gathered, 10 rows at a time. A row says in a line or two
+   what it found (its first check that does not hold, with what it expected and found); one opens at a time, on each check
    read once (what it expected and what qualifies that, what it found, why), the records that fail it, its dimensions,
    and **Run again**, its report and its flow.
 

@@ -273,12 +273,13 @@ picked records, and the removal runs that wrote to its ledger.
 - **Search terms**: the source columns the explorer searches by. See [search terms](search-terms.md).
 - **Assertions**: the dashboard of every assertion in the partition, each by where it stands now, its latest result of
   the assertion as its document states it. The GUI calls each entry of a flow's `tests:` an assertion, and each item of
-  its `assert:` a check. From the top: one pill per set (one picked narrows the page, kept in the address as `?set=`,
-  with **Run the set**); the verdict in one sentence, saying where most of what fails is; the health figure and the
-  counts of **Failing**, **Could not be checked**, **Warnings**, **Not yet checked** and **Passing**, each a filter; a
+  its `assert:` a check. From the top: the title with one pill per set beside it (one picked narrows the page, kept in
+  the address as `?set=`, with **Run the set**); the verdict in one sentence, saying where most of what fails is, with
+  the health figure beside it and under them the counts of **Failing**, **Could not be checked**, **Warnings**, **Not
+  yet checked** and **Passing**, each a filter whose hover says what it means; a
   map of where the data stands, a row per value of one dimension and a column per value of another (the reader picks
   them), each square how its assertions stand and the filter to them; and the assertions grouped by what they need, ten
-  at a time, a search narrowing them. A row says in one line what the assertion found; one opens at a time on its checks
+  at a time, a search narrowing them. A row says in a line or two what the assertion found; one opens at a time on its checks
   (what each expected and found, why, and the records that fail it), its dimensions, its report, its flow and **Run
   again**. Disabled assertions are left out until **Include disabled**, then listed with the reason their document gives;
   one changed since its last result is not yet checked, and one whose proof values are past their day warns. **Present**

@@ -368,9 +368,9 @@ export function along(test: DashTest, dimension: string, axis: AxisValue): boole
 export interface Square {
   tests: DashTest[];
   n: Tally;
-  /** The big figure: passing of judged, or a dash when none was judged. */
+  /** The figure: passing of judged, or a dash when none was judged. */
   main: string;
-  /** The line under it: the worst that is there, or that all pass. */
+  /** The line beside it: the worst that is there, or that all pass. */
   sub: string;
 }
 
@@ -389,10 +389,10 @@ export function square(tests: DashTest[]): Square {
 /**
  * The set's verdict in one sentence: how many assertions fail, could not be checked or warn, and where most of them are on
  * the map (`Needs attention: 4 assertions fail, 3 of them in Norway · Proof values.`), or that every assertion checked
- * passes; with the line under it of what was checked and what is left out.
+ * passes. What was checked, and what is left out, the figures beside it say.
  */
-export function verdictOf(tests: readonly DashTest[], rows: AxisValue[], rowDim: string | null, cols: AxisValue[], colDim: string | null, disabledLeftOut: number):
-  { standing: Standing; text: string; sub: string } {
+export function verdictOf(tests: readonly DashTest[], rows: AxisValue[], rowDim: string | null, cols: AxisValue[], colDim: string | null):
+  { standing: Standing; text: string } {
   const n = tally(tests);
   let hot: { n: Tally; where: string } | null = null;
   for (const row of rows) {
@@ -408,31 +408,26 @@ export function verdictOf(tests: readonly DashTest[], rows: AxisValue[], rowDim:
   }
 
   const count = (value: number, one: string, many: string) => `${value} ${value === 1 ? one : many}`;
-  const sub = [
-    n.judged === 0 ? "nothing checked yet" : `${n.passed} of ${n.judged} checked pass`,
-    n.notRun > 0 ? `${n.notRun} not yet checked` : null,
-    disabledLeftOut > 0 ? `${disabledLeftOut} disabled left out` : n.disabled > 0 ? `${n.disabled} disabled shown` : null,
-  ].filter((part): part is string => part !== null).join(" · ");
   if (n.failed > 0) {
     const share = hot !== null && hot.n.failed > 0 && (rows.length > 1 || cols.length > 1)
       ? `, ${hot.n.failed === n.failed ? "all" : hot.n.failed} of them in ${hot.where}`
       : "";
-    return { standing: "failed", text: `Needs attention: ${count(n.failed, "assertion fails", "assertions fail")}${share}.`, sub };
+    return { standing: "failed", text: `Needs attention: ${count(n.failed, "assertion fails", "assertions fail")}${share}.` };
   }
 
   if (n.errored > 0) {
-    return { standing: "errored", text: `${count(n.errored, "assertion", "assertions")} could not be checked${hot !== null && rows.length > 1 ? `, in ${hot.where}` : ""}.`, sub };
+    return { standing: "errored", text: `${count(n.errored, "assertion", "assertions")} could not be checked${hot !== null && rows.length > 1 ? `, in ${hot.where}` : ""}.` };
   }
 
   if (n.warned > 0) {
-    return { standing: "warned", text: `Holds, with ${count(n.warned, "warning", "warnings")}${hot !== null && rows.length > 1 ? ` in ${hot.where}` : ""}.`, sub };
+    return { standing: "warned", text: `Holds, with ${count(n.warned, "warning", "warnings")}${hot !== null && rows.length > 1 ? ` in ${hot.where}` : ""}.` };
   }
 
   if (n.passed > 0) {
-    return { standing: "passed", text: n.passed === 1 ? "Holds: the one assertion checked passes." : `Holds: all ${n.passed} assertions checked pass.`, sub };
+    return { standing: "passed", text: n.passed === 1 ? "Holds: the one assertion checked passes." : `Holds: all ${n.passed} assertions checked pass.` };
   }
 
-  return { standing: "notRun", text: "Not yet checked: no run has checked these assertions as they are written now.", sub };
+  return { standing: "notRun", text: "Not yet checked: no run has checked these assertions as they are written now." };
 }
 
 /** The groups the list shows its assertions in, in this order. */

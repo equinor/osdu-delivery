@@ -101,19 +101,19 @@ export function DashboardTestActions({ test, flow, onRun, showFlow = false }: {
   return (
     <>
       {test.reportId !== null && (
-        <Button variant="ghost" size="sm" asChild>
+        <Button variant="ghost" size="xs" asChild>
           <Link to={`/delivery/assertions/runs/${test.reportId}`} data-testid="dashboard-test-report">Report #{test.reportId}</Link>
         </Button>
       )}
       {showFlow && (
-        <Button variant="ghost" size="sm" asChild>
+        <Button variant="ghost" size="xs" asChild>
           <Link to={`/pipelines/${test.pipelineId}?tab=tests`} data-testid="dashboard-test-flow">Open the flow</Link>
         </Button>
       )}
       {test.standing !== "disabled" && (
         <Button
           variant="outline"
-          size="sm"
+          size="xs"
           disabled={!runnable}
           title={runnable ? undefined : flow?.problem ?? "Its flow does not check this partition."}
           onClick={() => flow !== undefined && onRun(flow, test)}

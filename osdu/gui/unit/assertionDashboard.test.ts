@@ -166,15 +166,14 @@ describe("the map", () => {
   it("says where most of what fails is", () => {
     const rows = axisValues(tests, "Region", 12);
     const cols = axisValues(tests, "Check", 7);
-    const verdict = verdictOf(tests, rows, "Region", cols, "Check", 1);
+    const verdict = verdictOf(tests, rows, "Region", cols, "Check");
     assert.equal(verdict.standing, "failed");
     assert.equal(verdict.text, "Needs attention: 2 assertions fail, all of them in North · Counts.");
-    assert.equal(verdict.sub, "2 of 5 checked pass · 1 not yet checked · 1 disabled left out");
   });
 
   it("says a set holds when everything checked passes", () => {
     const passing = tests.filter((t) => t.standing === "passed");
-    assert.equal(verdictOf(passing, [], null, [], null, 0).text, "Holds: all 2 assertions checked pass.");
+    assert.equal(verdictOf(passing, [], null, [], null).text, "Holds: all 2 assertions checked pass.");
     assert.equal(tally(passing).worst, "passed");
   });
 });

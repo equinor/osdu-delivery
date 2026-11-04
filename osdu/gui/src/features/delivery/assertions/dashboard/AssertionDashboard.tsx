@@ -5,7 +5,7 @@ import {
 } from "lucide-react";
 import { parseUtc } from "@/lib/time";
 import {
-  GROUPS, STANDINGS, STANDING_MEANINGS, STANDING_WORDS, axisValues, along, checksOf, defaultAxes, dimensionsOf, findingOf, groupOf, inScope, matches,
+  GROUPS, STANDING_MEANINGS, STANDING_WORDS, axisValues, along, checksOf, defaultAxes, dimensionsOf, findingOf, groupOf, inScope, matches,
   passRate, setsOf, square, tally, verdictOf, type AxisValue, type DashCheck, type DashData, type DashTest, type GroupId, type ResultFacts, type Standing,
 } from "./dashboardModel";
 import "./dashboard.css";
@@ -152,7 +152,7 @@ export function AssertionDashboard(props: AssertionDashboardProps) {
   const colDim = axes === null ? (fallback.col !== rowDim ? fallback.col : null) : valid(axes.col) && axes.col !== rowDim ? axes.col : null;
   const rows = useMemo(() => (rowDim === null ? [] : axisValues(scoped, rowDim, MAX_ROWS)), [rowDim, scoped]);
   const cols = useMemo(() => (colDim === null || colDim === rowDim ? [] : axisValues(scoped, colDim, MAX_COLS)), [colDim, rowDim, scoped]);
-  const verdict = useMemo(() => verdictOf(scoped, rows, rowDim, cols, colDim, includeDisabled ? 0 : disabledHere), [cols, colDim, disabledHere, includeDisabled, rowDim, rows, scoped]);
+  const verdict = useMemo(() => verdictOf(scoped, rows, rowDim, cols, colDim), [cols, colDim, rowDim, rows, scoped]);
   const n = useMemo(() => tally(scoped), [scoped]);
 
   const cellRow = cell === null ? undefined : rows.find((r) => r.label === cell.row);
@@ -202,11 +202,7 @@ export function AssertionDashboard(props: AssertionDashboardProps) {
   };
 
   const view: DashView = { set, includeDisabled, tests: scoped };
-  const sub = [
-    plural(n.total, "assertion"),
-    set === undefined && showSets ? `in ${plural(sets.length, "set")}` : null,
-    data.partition === null ? null : `in ${data.partition}`,
-  ].filter((part) => part !== null).join(" ");
+  const pills = showSets && sets.length > 1;
   const problems = data.flows.filter((f) => f.problem !== null && (set === undefined || f.set === set));
 
   if (data.tests.length === 0 && problems.length === 0) {
@@ -222,13 +218,39 @@ export function AssertionDashboard(props: AssertionDashboardProps) {
     <div className={`adb${presenting ? " adb-presenting" : ""}`} ref={root} data-testid="assertion-dashboard">
       <header className="adb-head">
         <div className="adb-titles">
-          {title !== undefined && <h1>{title}{set !== undefined && showSets ? <span className="adb-title-set">{set ?? "No set"}</span> : null}</h1>}
-          <p>
-            {sub}, each by its latest result.
-            {standalone && <> Downloaded {when(data.generatedUtc, true)}.</>}
-          </p>
+          {title !== undefined && <h1>{title}{set !== undefined && !pills ? <span className="adb-title-set">{set ?? "No set"}</span> : null}</h1>}
+          {pills && (
+            <nav className="adb-sets" aria-label="Sets">
+              <button type="button" className="adb-set" aria-pressed={set === undefined} onClick={() => pickSet(undefined)} data-testid="dashboard-set-all">
+                All sets
+              </button>
+              {sets.map((s) => (
+                <button
+                  key={s.label}
+                  type="button"
+                  className="adb-set"
+                  aria-pressed={set === s.set}
+                  onClick={() => {
+                    pickSet(s.set);
+                    setCell(null);
+                  }}
+                  title={`${s.label}: ${s.n.judged === 0 ? "nothing checked yet" : `${s.n.passed} of ${s.n.judged} checked pass`}`}
+                  data-testid={`dashboard-set-${s.label}`}
+                >
+                  <Glyph standing={s.n.total === 0 ? "notRun" : s.n.worst} size={13} />
+                  {s.label}
+                  <span className="adb-set-n">{s.n.judged === 0 ? "-" : `${s.n.passed}/${s.n.judged}`}</span>
+                </button>
+              ))}
+            </nav>
+          )}
         </div>
         <div className="adb-actions">
+          {standalone && (
+            <span className="adb-stamp" data-testid="dashboard-stamp">
+              {data.partition === null ? "" : `${data.partition}, `}downloaded {when(data.generatedUtc, true)}
+            </span>
+          )}
           {disabledHere > 0 && (
             <label className="adb-switch" title="Disabled assertions are left out of the figures, the map and the list until they are included; each then says why it is disabled.">
               <input
@@ -258,32 +280,6 @@ export function AssertionDashboard(props: AssertionDashboardProps) {
         </div>
       </header>
 
-      {showSets && sets.length > 1 && (
-        <nav className="adb-sets" aria-label="Sets">
-          <button type="button" className="adb-set" aria-pressed={set === undefined} onClick={() => pickSet(undefined)} data-testid="dashboard-set-all">
-            All sets
-          </button>
-          {sets.map((s) => (
-            <button
-              key={s.label}
-              type="button"
-              className="adb-set"
-              aria-pressed={set === s.set}
-              onClick={() => {
-                pickSet(s.set);
-                setCell(null);
-              }}
-              title={`${s.label}: ${s.n.judged === 0 ? "nothing checked yet" : `${s.n.passed} of ${s.n.judged} checked pass`}`}
-              data-testid={`dashboard-set-${s.label}`}
-            >
-              <Glyph standing={s.n.total === 0 ? "notRun" : s.n.worst} size={13} />
-              {s.label}
-              <span className="adb-set-n">{s.n.judged === 0 ? "-" : `${s.n.passed}/${s.n.judged}`}</span>
-            </button>
-          ))}
-        </nav>
-      )}
-
       {problems.length > 0 && (
         <div className="adb-problems" role="alert" data-testid="dashboard-problems">
           <OctagonAlert size={15} className="adb-tone-errored" aria-hidden />
@@ -303,21 +299,19 @@ export function AssertionDashboard(props: AssertionDashboardProps) {
         </p>
       ) : (
         <>
-          <section className={`adb-verdict adb-edge-${verdict.standing}`} data-testid="dashboard-verdict">
-            <Glyph standing={verdict.standing} size={26} />
-            <div>
-              <p className="adb-verdict-text">{verdict.text}</p>
-              <p className="adb-verdict-sub">{verdict.sub}</p>
-            </div>
-          </section>
-
-          <Figures n={n} includeDisabled={includeDisabled} only={only} onOnly={(s) => setOnly((was) => (was === s ? null : s))} />
+          <Summary
+            verdict={verdict}
+            n={n}
+            includeDisabled={includeDisabled}
+            only={only}
+            onOnly={(s) => setOnly((was) => (was === s ? null : s))}
+          />
 
           {rowDim !== null && (rows.length > 1 || cols.length > 1) && (
             <section className="adb-panel" data-testid="dashboard-map">
               <div className="adb-panel-head">
                 <h2>Where the data stands</h2>
-                <div className="adb-axes">
+                <div className="adb-axes" title="Set, Type and Check every assertion has; the other dimensions are the ones its flow names.">
                   <AxisPicker
                     label="Rows"
                     value={rowDim}
@@ -399,7 +393,7 @@ export function AssertionDashboard(props: AssertionDashboardProps) {
                     <span className="adb-group-title">{g.title}</span>
                     <span className="adb-group-n">{g.tests.length.toLocaleString("en-US")}</span>
                     {!opened && g.reasons.length > 0 && (
-                      <span className="adb-group-why">
+                      <span className="adb-group-why" title={g.reasons.map((r) => `${g.reasons.length > 1 ? `${r.count}: ` : ""}${r.reason}`).join(" · ")}>
                         {g.reasons.slice(0, 2).map((r) => `${g.reasons.length > 1 ? `${r.count}: ` : ""}${r.reason}`).join("  ·  ")}
                         {g.reasons.length > 2 && `  ·  ${g.reasons.length - 2} more reasons`}
                       </span>
@@ -435,19 +429,21 @@ export function AssertionDashboard(props: AssertionDashboardProps) {
           </section>
         </>
       )}
-
-      <footer className="adb-legend" data-testid="dashboard-legend">
-        {STANDINGS.filter((s) => s !== "disabled" || includeDisabled).map((s) => (
-          <span key={s}><Glyph standing={s} size={13} /><b>{STANDING_WORDS[s]}</b> {STANDING_MEANINGS[s]}</span>
-        ))}
-        <span className="adb-legend-note">Set, Type and Check every assertion has; the other dimensions are the ones its flow names.</span>
-      </footer>
     </div>
   );
 }
 
-/** The headline figures: how much of what was checked passes, then each standing's count, which narrows the list to it. */
-function Figures({ n, includeDisabled, only, onOnly }: { n: ReturnType<typeof tally>; includeDisabled: boolean; only: Standing | null; onOnly: (s: Standing) => void }) {
+/**
+ * The summary: the verdict with the health figure beside it, and under them each standing's count, which narrows the list
+ * to it and says, on a hover, what the standing means: the counts are the legend of every glyph below them.
+ */
+function Summary({ verdict, n, includeDisabled, only, onOnly }: {
+  verdict: { standing: Standing; text: string };
+  n: ReturnType<typeof tally>;
+  includeDisabled: boolean;
+  only: Standing | null;
+  onOnly: (s: Standing) => void;
+}) {
   const rate = passRate(n);
   const parts: Standing[] = ["passed", "warned", "errored", "failed", "notRun", ...(includeDisabled ? ["disabled" as const] : [])];
   const figures: { standing: Standing; label: string }[] = [
@@ -459,33 +455,39 @@ function Figures({ n, includeDisabled, only, onOnly }: { n: ReturnType<typeof ta
     ...(includeDisabled ? [{ standing: "disabled" as const, label: "Disabled" }] : []),
   ];
   return (
-    <section className="adb-figures" data-testid="dashboard-figures">
-      <div className="adb-health" data-testid="dashboard-health">
-        <span className="adb-health-label">Health</span>
-        <span className="adb-health-rate">{rate === null ? "-" : `${rate}%`}</span>
-        <span className="adb-health-of">{n.judged === 0 ? "nothing checked yet" : `of ${plural(n.judged, "assertion")} checked pass`}</span>
-        <span className="adb-bar" role="img" aria-label={parts.map((s) => `${n[s]} ${STANDING_WORDS[s].toLowerCase()}`).join(", ")}>
-          {parts.filter((s) => n[s] > 0).map((s) => <span key={s} className={`adb-fill-${s}`} style={{ flexGrow: n[s] }} title={`${n[s]} ${STANDING_WORDS[s].toLowerCase()}`} />)}
-        </span>
+    <section className={`adb-summary adb-edge-${verdict.standing}`}>
+      <div className="adb-verdict" data-testid="dashboard-verdict">
+        <Glyph standing={verdict.standing} size={20} />
+        <p className="adb-verdict-text">{verdict.text}</p>
+        <div className="adb-health" data-testid="dashboard-health" title="Health: the share of the assertions checked that pass. Those not yet checked, and disabled ones, are counted beside it, never in it.">
+          <span className="adb-health-rate">{rate === null ? "-" : `${rate}%`}</span>
+          <span className="adb-health-of">{n.judged === 0 ? "nothing checked yet" : `of ${n.judged.toLocaleString("en-US")} checked pass`}</span>
+          <span className="adb-bar" role="img" aria-label={parts.map((s) => `${n[s]} ${STANDING_WORDS[s].toLowerCase()}`).join(", ")}>
+            {parts.filter((s) => n[s] > 0).map((s) => <span key={s} className={`adb-fill-${s}`} style={{ flexGrow: n[s] }} title={`${n[s]} ${STANDING_WORDS[s].toLowerCase()}`} />)}
+          </span>
+        </div>
       </div>
-      {figures.map(({ standing, label }) => {
-        const count = n[standing];
-        return (
-          <button
-            key={standing}
-            type="button"
-            className={`adb-figure${count === 0 ? " adb-quiet" : ""}`}
-            aria-pressed={only === standing}
-            disabled={count === 0}
-            onClick={() => onOnly(standing)}
-            title={`${STANDING_WORDS[standing]}: ${STANDING_MEANINGS[standing]}`}
-            data-testid={`dashboard-figure-${standing}`}
-          >
-            <span className="adb-figure-n">{count.toLocaleString("en-US")}</span>
-            <span className="adb-figure-label"><Glyph standing={standing} size={13} />{label}</span>
-          </button>
-        );
-      })}
+      <div className="adb-figures" data-testid="dashboard-figures">
+        {figures.map(({ standing, label }) => {
+          const count = n[standing];
+          return (
+            <button
+              key={standing}
+              type="button"
+              className={`adb-figure${count === 0 ? " adb-quiet" : ""}`}
+              aria-pressed={only === standing}
+              disabled={count === 0}
+              onClick={() => onOnly(standing)}
+              title={`${STANDING_WORDS[standing]}: ${STANDING_MEANINGS[standing]}${count === 0 ? "" : " Click to list them."}`}
+              data-testid={`dashboard-figure-${standing}`}
+            >
+              <Glyph standing={standing} size={14} />
+              <span className="adb-figure-n">{count.toLocaleString("en-US")}</span>
+              <span className="adb-figure-label">{label}</span>
+            </button>
+          );
+        })}
+      </div>
     </section>
   );
 }
@@ -521,7 +523,7 @@ function HeatMap({ tests, rowDim, rows, colDim, cols, picked, onPick }: {
 }) {
   const columns = cols.length > 0 ? cols : [null];
   return (
-    <div className="adb-map" style={{ gridTemplateColumns: `minmax(7rem, 15rem) repeat(${columns.length}, minmax(0, 1fr))` }} role="group" aria-label="Where the data stands">
+    <div className="adb-map" style={{ gridTemplateColumns: `fit-content(12rem) repeat(${columns.length}, minmax(0, 1fr))` }} role="group" aria-label="Where the data stands">
       <div className="adb-map-corner">{colDim === null ? "" : `${rowDim} by ${colDim}`}</div>
       {columns.map((col) => <div key={col?.label ?? "all"} className="adb-map-col" title={col?.label}>{col?.label ?? "All"}</div>)}
       {rows.map((row) => {
@@ -575,15 +577,16 @@ function TestRow({ test, result, failure, loading, open, onToggle, actions }: {
   actions: ((test: DashTest) => ReactNode) | undefined;
 }) {
   const others = test.dimensions.filter((d) => d.name !== "Set" && d.name !== "Check" && d.name !== "Type");
+  const finding = findingOf(test, result);
   return (
     <li className={`adb-row${open ? " adb-row-open" : ""}`} data-testid="dashboard-row">
       <button type="button" className="adb-row-head" aria-expanded={open} onClick={onToggle}>
-        <Glyph standing={test.standing} />
+        <Glyph standing={test.standing} size={14} />
         <span className="adb-row-main">
-          <span className="adb-row-title">{test.title}</span>
+          <span className="adb-row-title" title={test.title}>{test.title}</span>
           <span className="adb-row-where">{[...others.map((d) => d.value), test.dimensions.find((d) => d.name === "Check")?.value].filter(Boolean).join(" · ")}</span>
         </span>
-        <span className="adb-row-finding">{findingOf(test, result)}</span>
+        <span className="adb-row-finding" title={finding}>{finding}</span>
         <span className="adb-row-when">{test.checkedUtc === null ? STANDING_WORDS[test.standing] : when(test.checkedUtc)}</span>
         {open ? <ChevronDown size={14} aria-hidden /> : <ChevronRight size={14} aria-hidden />}
       </button>
