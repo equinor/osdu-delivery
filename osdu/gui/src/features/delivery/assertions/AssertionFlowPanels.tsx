@@ -1,7 +1,9 @@
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { format } from "date-fns";
+import { Play } from "lucide-react";
+import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { DataTable, type Column } from "@/components/DataTable";
@@ -14,9 +16,11 @@ import { deliveryApi, type DeliveryAssertionMatrix, type DeliveryAssertionRun } 
 import { useActivePartition } from "../activePartition";
 import { ProblemView } from "../TemplateSheet";
 import { AssertionRunStatusBadge, OutcomeBar, OutcomeSquare } from "./AssertionBadges";
-import { AssertionBoard } from "./AssertionBoard";
-import { ReportDownloads } from "./AssertionRunDialog";
-import { counted, duration, kindEntity, runStatusVisual, selectionText } from "./assertionFormat";
+import { AssertionRunDialog, ReportDownloads, type AssertionLaunch } from "./AssertionRunDialog";
+import { DashboardDownloads, DashboardTestActions } from "./DashboardHostActions";
+import { counted, duration, kindEntity, readResults, runStatusVisual, selectionText } from "./assertionFormat";
+import { AssertionDashboard } from "./dashboard/AssertionDashboard";
+import { fromBoard } from "./dashboard/dashboardModel";
 
 /** How often a flow's tabs read the ledger again, so a run under way shows its results as they land. */
 const REFRESH_MS = 15000;
@@ -24,22 +28,56 @@ const REFRESH_MS = 15000;
 /** The runs the History tab lays out against the tests. */
 const MATRIX_RUNS = 30;
 
-/** An assertion flow's Assertions tab: its board in the workbench's partition. */
+/**
+ * An assertion flow's Assertions tab: the dashboard of its assertions in the workbench's partition, the same one the
+ * Assertions page shows for every flow, which runs the flow, and each assertion again from its row.
+ */
 export function AssertionTestsPanel({ pipelineId }: { pipelineId: string }) {
   const [active] = useActivePartition();
+  const [launch, setLaunch] = useState<AssertionLaunch | null>(null);
   const board = useQuery({
     queryKey: ["delivery", "assertions", "flow", pipelineId, active],
     queryFn: () => deliveryApi.assertionFlowBoard(pipelineId),
     refetchInterval: REFRESH_MS,
   });
+  const data = useMemo(
+    () => (board.data === undefined ? undefined : fromBoard(board.data, new Date(board.dataUpdatedAt).toISOString())),
+    [board.data, board.dataUpdatedAt],
+  );
 
   if (board.isError) {
     return <ProblemView error={board.error} testId="assertion-tests-error" />;
   }
 
-  return board.data === undefined
-    ? <Skeleton className="h-64 w-full rounded-lg" />
-    : <AssertionBoard board={board.data} scope="flow" />;
+  if (data === undefined) {
+    return <Skeleton className="h-64 w-full rounded-lg" />;
+  }
+
+  const flow = board.data?.flows[0];
+  const run = (tests: readonly string[]) => flow !== undefined && setLaunch({ pipelineId: flow.pipelineId, repoId: flow.repoId, flowName: flow.name, tests, tags: [] });
+  return (
+    <>
+      <AssertionDashboard
+        data={data}
+        set={undefined}
+        loadResults={readResults}
+        actions={(view) => (
+          <>
+            {flow !== undefined && (
+              <Button size="sm" onClick={() => run([])} disabled={!flow.testsPartition || flow.problem !== null} data-testid="dashboard-run-flow">
+                <Play />
+                Run all
+              </Button>
+            )}
+            <DashboardDownloads data={data} view={view} />
+          </>
+        )}
+        testActions={(test) => <DashboardTestActions test={test} flow={flow} onRun={(_, which) => run([which.name])} />}
+        empty={<p className="px-3 py-6 text-center text-[12.5px] text-muted-foreground" data-testid="board-flow-none">The flow declares no assertion that checks this partition.</p>}
+      />
+      <AssertionRunDialog launch={launch} onClose={() => setLaunch(null)} />
+    </>
+  );
 }
 
 /** How often a test's outcome changed from one run to the next, among the runs that ran it and did not skip it. */

@@ -220,7 +220,9 @@ The document is read strictly: an unknown key fails validation naming it.
 | `flowType` | string | yes | none | `assertion`. |
 | `name` | string | yes | none | The flow's name: its pipeline identity, and the name its reports are kept under (`name@partition` for a flow that tests partitions). |
 | `batch`, `description` | string | no | none | The SQLFlow batch, and free text. |
-| `set` | string | no | the `batch` | The set the flow's tests are grouped under on the board, the set's page and its report. See [assertion sets](assertion-sets.md). |
+| `set` | string | no | the `batch` | The set the flow's tests are grouped under on the dashboard and in a set's report. See [assertion sets](assertion-sets.md). |
+| `title` | string | no | the `name` | What people read the flow as on the dashboard: one line, at most 200 characters. |
+| `dimensions` | map | no | none | What the flow's assertions are about, name to value (`Area: South`): the dashboard maps and groups them by these, beside the `Set`, `Type` and `Check` every assertion has. At most 20. See [dimensions](assertion-sets.md). |
 | `telemetry.operation` | string | no | `ast` | The flow's operation code in the correlation id every OSDU request of its runs carries, `osdu-delivery-<repository>-<operation>-<run id>`: a lower-case letter, then lower-case letters and digits, at most 16, no hyphen. See [request correlation](../concepts/request-correlation.md). |
 | `partitions` | list | no | none | The partitions the flow tests, 1 to 64, each once (see [Which partition a run tests](#which-partition-a-run-tests)). |
 | `parameters` | map | no | none | Named parameters (`required`, `default`, `description`), used as `{name}` tokens in queries, ids and the text a test compares with. `partition` is reserved: `{partition}` is always the partition the run tests. A parameter may list its `choices` ([parameters](parameters.md)). |
@@ -277,7 +279,9 @@ flow's partitions; a run in another records it as `skipped`. See [Partitions](..
 | Key | Default | Meaning |
 | --- | --- | --- |
 | `name` | required | Unique in the flow, ignoring case: a letter or digit followed by letters, digits, `.`, `_` and `-`, at most 100 characters. Runs and reports name tests by it. |
-| `description` | none | What the test checks, shown on the board and in reports. |
+| `description` | none | What the test checks, shown on the dashboard and in reports. |
+| `title` | the `name` | What people read the test as on the dashboard: one line, at most 200 characters. Not part of its definition. |
+| `dimensions` | the flow's | The test's own dimensions over its flow's: a name the flow names takes the test's value, a new one adds to them. Not part of its definition. See [dimensions](assertion-sets.md). |
 | `tags` | none | Up to 20 labels, written as names are. A run can select tests by tag. |
 | `partitions` | all | The flow's partitions the test runs in. |
 | `kind` | required | The one type the test reads, in one version: `authority:source:entityType:major.minor.patch`, as the delivering mapping's `template.kind` names it. Wildcards are refused. |
@@ -714,18 +718,19 @@ longer needs ([only the latest status is kept](assertion-sets.md#only-the-latest
 
 Where to read it:
 
-- The GUI: **OSDU**, **Assertions** is the board of every assertion set in the partition, each opening on its flows,
-  where each test is an assertion and each of its assertions a check; a set's page is the dashboard of where it stands
-  ([assertion sets](assertion-sets.md)). An assertion flow's pipeline has an **Assertions** tab (its
-  board), a **History** tab (its assertions against its runs) and a **Reports** tab (its runs); a report page runs the
+- The GUI: **OSDU**, **Assertions** is the dashboard of every assertion in the partition, where each test is an
+  assertion and each of its assertions a check: the verdict, the figures, a map by two dimensions and the assertions by
+  what they need, which downloads as one page to present ([the dashboard](assertion-sets.md#the-dashboard)). An assertion
+  flow's pipeline has an **Assertions** tab (the same dashboard of its assertions), a **History** tab (its assertions
+  against its runs) and a **Reports** tab (its runs); a report page runs the
   assertions not passing again. A report page shows "The run stopped" only for a run that
   stopped (cancelled, or errored with fewer results than tests); a run whose tests errored shows its reason instead.
 - The CLI: [sqlflow assertions](../cli/assertions.md) `list`, `status` and `report`.
 - The API, every route a `GET` under `/api/v1/delivery`: `/assertions` (the board of every flow),
   `/flows/{pipelineId}/assertions` (one flow's board), `/flows/{pipelineId}/assertion-runs`,
   `/flows/{pipelineId}/assertion-matrix` (tests against runs), `/flows/{pipelineId}/assertions/{test}/history`,
-  `/assertion-runs/{id}` (a run with every result), `/assertion-runs/{id}/report?format=json|md|html|junit`, and a set's
-  `/assertion-sets/{set}` and `/assertion-sets/{set}/report`. A read is
+  `/assertion-runs/{id}` (a run with every result), `/assertion-runs/{id}/report?format=json|md|html|junit`,
+  `/assertion-results?ids=` (results whole, by the ids the board gives) and a set's `/assertion-sets/{set}/report`. A read is
   in the partition `?partition=` names, else the `X-Osdu-Partition` header's, else the one a run would test.
 
 A report renders as JSON, Markdown, self-contained HTML or JUnit XML (a suite per kind, a case per test: failed is a

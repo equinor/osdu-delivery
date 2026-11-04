@@ -6,7 +6,7 @@
   "includeEnvelope": true,
   "generatedFrom": "osdu/docs/reference/flow/assertion.md and osdu/src/SqlFlow.Delivery/Documents/YamlModels.cs",
   "naming": "The loader deserializes with YamlDotNet's CamelCaseNamingConvention and refuses any key it does not know.",
-  "keyCount": 269,
+  "keyCount": 275,
   "keys": [
     {
       "path": "batch",
@@ -18,8 +18,26 @@
       "path": "set",
       "type": "string",
       "required": false,
-      "description": "The set the flow's tests are grouped under on the Assertions board, the set's page and its report: a letter or digit followed by letters, digits, '.', '_' and '-', at most 100 characters. Left out, the flow's batch.",
+      "description": "The set the flow's tests are grouped under on the Assertions dashboard and in a set's report: a letter or digit followed by letters, digits, '.', '_' and '-', at most 100 characters. Left out, the flow's batch.",
       "default": "the batch"
+    },
+    {
+      "path": "title",
+      "type": "string",
+      "required": false,
+      "description": "What people read the flow as on the dashboard, in place of its name: one line, at most 200 characters."
+    },
+    {
+      "path": "dimensions",
+      "type": "map",
+      "required": false,
+      "description": "What the flow's assertions are about, name to value, such as `Country: Norway`: every test takes them, and the dashboard maps and groups assertions by them. At most 20. Set, Type and Check every assertion has without them; a name here takes the place of Type or Check, and Set is named with `set`."
+    },
+    {
+      "path": "dimensions.<name>",
+      "type": "string",
+      "required": false,
+      "description": "One dimension's value, on one line, at most 200 characters; `<name>` is a letter followed by letters, digits, spaces, '_' and '-', at most 40 characters."
     },
     {
       "path": "defaults",
@@ -1614,6 +1632,24 @@
       "type": "string",
       "required": false,
       "description": "What the test checks, as reports and the board show it."
+    },
+    {
+      "path": "tests[].title",
+      "type": "string",
+      "required": false,
+      "description": "What people read the test as on the dashboard, in place of its name: one line, at most 200 characters. It is not part of the test's definition, so changing it leaves the test's result standing."
+    },
+    {
+      "path": "tests[].dimensions",
+      "type": "map",
+      "required": false,
+      "description": "What the test is about, over its flow's dimensions: a name the flow names takes the test's value in its place, and a new name adds to them. It is not part of the test's definition."
+    },
+    {
+      "path": "tests[].dimensions.<name>",
+      "type": "string",
+      "required": false,
+      "description": "One dimension's value, written as the flow's are."
     },
     {
       "path": "tests[].ids",

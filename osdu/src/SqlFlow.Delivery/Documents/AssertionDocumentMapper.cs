@@ -90,6 +90,7 @@ internal static partial class AssertionMapper
         }
 
         var defaults = MapDefaults(y.Defaults, source);
+        var dimensions = MapDimensions(y.Dimensions, "dimensions", source);
         var flow = new AssertionFlowDefinition
         {
             SourcePath = source == "<inline>" ? null : source,
@@ -97,6 +98,8 @@ internal static partial class AssertionMapper
             Description = Optional(y.Description),
             Batch = Optional(y.Batch),
             Set = MapSet(y.Set, source) ?? Optional(y.Batch),
+            Title = TitleOf(y.Title, "title", source),
+            Dimensions = dimensions,
             TelemetryOperation = FlowMapper.MapTelemetry(y.Telemetry, AssertionFlowDefinition.FlowTypeName, source),
             Parameters = parameters,
             Source = new AssertionSource
@@ -115,13 +118,93 @@ internal static partial class AssertionMapper
             FollowsRegistry = followsRegistry,
             Defaults = defaults,
             FailRunOn = FlowMapper.ParseEnum(y.FailRunOn, FailRunOn.Error, "failRunOn", source),
-            Tests = MapTests(y.Tests, parameters, partitions, followsRegistry, defaults, source),
+            Tests = MapTests(y.Tests, parameters, partitions, followsRegistry, defaults, dimensions, source),
             Reliability = FlowMapper.MapReliability(y.Reliability, "an assertion flow", takesRecordsAtOnce: true, source),
             Parallelism = FlowMapper.MapRunParallelism(y.Parallelism, "the tests evaluated at once, and the requests one test has in flight", source),
         };
 
         return flow;
     }
+
+    /// <summary>The most dimensions a flow names, and a test names over its flow's.</summary>
+    public const int MaxDimensions = 20;
+
+    /// <summary>The longest value of a dimension, and the longest title.</summary>
+    public const int MaxShownText = 200;
+
+    /// <summary>
+    /// The dimensions a flow or a test names (osdu/docs/reference/flow/assertion-sets.md, Dimensions), in the order written:
+    /// each a name (a letter, then letters, digits, spaces, '_' and '-', at most 40 characters) and a value on one line.
+    /// <c>Set</c> is the flow's set, which <c>set:</c> names, so no document names it here.
+    /// </summary>
+    private static IReadOnlyList<AssertionDimension> MapDimensions(Dictionary<string, string>? declared, string key, string source)
+    {
+        if (declared is null)
+        {
+            return [];
+        }
+
+        if (declared.Count > MaxDimensions)
+        {
+            throw new FlowValidationException($"{source}: {key} names {declared.Count} dimensions; at most {MaxDimensions}.");
+        }
+
+        var dimensions = new List<AssertionDimension>(declared.Count);
+        foreach (var (raw, value) in declared)
+        {
+            var name = raw?.Trim() ?? string.Empty;
+            if (!DimensionName().IsMatch(name))
+            {
+                throw new FlowValidationException(
+                    $"{source}: {key} names '{raw}', which is not a dimension name: a letter followed by letters, digits, spaces, '_' and '-', at most 40 characters, such as Country.");
+            }
+
+            if (string.Equals(name, AssertionDimensions.Set, StringComparison.OrdinalIgnoreCase))
+            {
+                throw new FlowValidationException($"{source}: {key} names {name}, which is the flow's set; name it with set: instead.");
+            }
+
+            if (dimensions.Exists(d => string.Equals(d.Name, name, StringComparison.OrdinalIgnoreCase)))
+            {
+                throw new FlowValidationException($"{source}: {key} names {name} twice, ignoring case; name each dimension once.");
+            }
+
+            var text = value?.Trim() ?? string.Empty;
+            if (text.Length == 0)
+            {
+                throw new FlowValidationException($"{source}: {key}.{name} is empty; give the value the assertions have along it, or take the dimension out.");
+            }
+
+            if (text.Length > MaxShownText || text.Any(char.IsControl))
+            {
+                throw new FlowValidationException($"{source}: {key}.{name} is not a value on one line of at most {MaxShownText} characters.");
+            }
+
+            dimensions.Add(new AssertionDimension(name, text));
+        }
+
+        return dimensions;
+    }
+
+    /// <summary>A test's dimensions: its flow's, each in place, with the test's own value over it, then those only the test names.</summary>
+    private static IReadOnlyList<AssertionDimension> MergeDimensions(IReadOnlyList<AssertionDimension> flow, IReadOnlyList<AssertionDimension> test)
+    {
+        var merged = flow.Select(d => test.FirstOrDefault(t => string.Equals(t.Name, d.Name, StringComparison.OrdinalIgnoreCase)) ?? d).ToList();
+        merged.AddRange(test.Where(t => !flow.Any(d => string.Equals(d.Name, t.Name, StringComparison.OrdinalIgnoreCase))));
+        return merged;
+    }
+
+    /// <summary>A title as a document writes it: on one line, at most <see cref="MaxShownText"/> characters; null when it gives none.</summary>
+    private static string? TitleOf(string? declared, string key, string source)
+    {
+        var title = Optional(declared);
+        return title is not null && (title.Length > MaxShownText || title.Any(char.IsControl))
+            ? throw new FlowValidationException($"{source}: {key} is not a title on one line of at most {MaxShownText} characters.")
+            : title;
+    }
+
+    [GeneratedRegex(@"^[A-Za-z][A-Za-z0-9 _-]{0,39}$", RegexOptions.CultureInvariant)]
+    private static partial Regex DimensionName();
 
     /// <summary>
     /// The set the flow names (<c>set</c>, osdu/docs/reference/flow/assertion-sets.md), or null when it names none: a set is
@@ -213,7 +296,7 @@ internal static partial class AssertionMapper
 
     private static IReadOnlyList<AssertionTest> MapTests(
         List<AssertionTestYaml>? declared, IReadOnlyDictionary<string, FlowParameter> parameters, IReadOnlyList<string> partitions, bool followsRegistry,
-        AssertionDefaults defaults, string source)
+        AssertionDefaults defaults, IReadOnlyList<AssertionDimension> dimensions, string source)
     {
         if (declared is null || declared.Count == 0)
         {
@@ -228,7 +311,7 @@ internal static partial class AssertionMapper
         var tests = new List<AssertionTest>(declared.Count);
         for (var i = 0; i < declared.Count; i++)
         {
-            var test = MapTest(declared[i], i, parameters, partitions, followsRegistry, defaults, source);
+            var test = MapTest(declared[i], i, parameters, partitions, followsRegistry, defaults, dimensions, source);
             if (tests.Any(t => string.Equals(t.Name, test.Name, StringComparison.OrdinalIgnoreCase)))
             {
                 throw new FlowValidationException($"{source}: tests[{i}] is named '{test.Name}', as an earlier test is; a run and a report name each test by its name, so each needs its own.");
@@ -242,7 +325,7 @@ internal static partial class AssertionMapper
 
     private static AssertionTest MapTest(
         AssertionTestYaml? t, int index, IReadOnlyDictionary<string, FlowParameter> parameters, IReadOnlyList<string> partitions, bool followsRegistry,
-        AssertionDefaults defaults, string source)
+        AssertionDefaults defaults, IReadOnlyList<AssertionDimension> flowDimensions, string source)
     {
         var at = string.Create(CultureInfo.InvariantCulture, $"tests[{index}]");
         if (t is null)
@@ -321,6 +404,8 @@ internal static partial class AssertionMapper
         {
             Name = name,
             Description = Optional(t.Description),
+            Title = TitleOf(t.Title, where + ": title", source),
+            Dimensions = MergeDimensions(flowDimensions, MapDimensions(t.Dimensions, where + ": dimensions", source)),
             Tags = MapTags(t.Tags, where, source),
             Partitions = MapTestPartitions(t.Partitions, partitions, followsRegistry, where, source),
             Severity = severity,

@@ -307,28 +307,26 @@ export function reportFileName(flow: string, partition: string | null, assertion
 
 /** Fetches a run's report in a format and offers it as a file to save. */
 export async function downloadReport(flow: string, partition: string | null, assertionRunId: number, format: AssertionReportFormat): Promise<void> {
-  saveText(await deliveryApi.assertionReport(assertionRunId, format), format, reportFileName(flow, partition, assertionRunId, format));
+  saveFile(await deliveryApi.assertionReport(assertionRunId, format), EXTENSIONS[format].type, reportFileName(flow, partition, assertionRunId, format));
 }
 
 /** The file name a set's report downloads as: the set and the partition. */
-export function setReportFileName(set: string, partition: string | null, format: AssertionReportFormat): string {
+export function setReportFileName(set: string, partition: string | null, format: SetReportFormat): string {
   const safe = `${set}-${partition ?? "partition"}-assertion-report`.replace(/[^A-Za-z0-9._-]+/g, "_");
   return `${safe}.${EXTENSIONS[format].extension}`;
 }
 
+/** The formats a set's report downloads in; the page to present is the dashboard, which downloads as a page itself. */
+export type SetReportFormat = Exclude<AssertionReportFormat, "html">;
+
 /** Fetches a set's report in a format and offers it as a file to save. */
-export async function downloadSetReport(set: string, partition: string | null, format: AssertionReportFormat): Promise<void> {
-  saveText(await deliveryApi.assertionSetReport(set, format), format, setReportFileName(set, partition, format));
+export async function downloadSetReport(set: string, partition: string | null, format: SetReportFormat): Promise<void> {
+  saveFile(await deliveryApi.assertionSetReport(set, format), EXTENSIONS[format].type, setReportFileName(set, partition, format));
 }
 
-/** Opens a set's HTML report in a tab of its own, to read, present or print. */
-export async function openSetHtmlReport(set: string): Promise<void> {
-  openHtml(await deliveryApi.assertionSetReport(set, "html"));
-}
-
-/** Offers text as a file to save, under a name and the media type of its format. */
-function saveText(text: string, format: AssertionReportFormat, fileName: string) {
-  const url = URL.createObjectURL(new Blob([text], { type: EXTENSIONS[format].type }));
+/** Offers text as a file to save, under a name and a media type. */
+export function saveFile(text: string, type: string, fileName: string) {
+  const url = URL.createObjectURL(new Blob([text], { type }));
   const anchor = document.createElement("a");
   anchor.href = url;
   anchor.download = fileName;
@@ -371,11 +369,6 @@ export function selectionPayload(tests: readonly string[], tags: readonly string
   return payload;
 }
 
-/** The address of a set's page: where it stands now, its report, and what fails and why. */
-export function setRoute(set: string): string {
-  return `/delivery/assertions/sets/${encodeURIComponent(set)}`;
-}
-
 /** The partition a run of the flow tests, and why it cannot run while the title bar is where it is. */
 export function partitionOf(flow: DeliveryAssertionFlow | undefined, active: string | null): { partition: string | null; error: string | null } {
   if (flow === undefined) {
@@ -405,4 +398,9 @@ export function partitionOf(flow: DeliveryAssertionFlow | undefined, active: str
       error: `This flow checks ${flow.partition}, the partition its data-partition-id header names, and the title bar is on ${active}. Pick ${flow.partition} in the title bar to run it.`,
     }
     : { partition: null, error: null };
+}
+
+/** Reads tests' results whole by the ids the board gave them, as the dashboard asks for them. */
+export function readResults(resultIds: readonly number[]) {
+  return deliveryApi.assertionResults(resultIds);
 }

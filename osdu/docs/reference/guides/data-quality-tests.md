@@ -197,8 +197,10 @@ sqlflow assertions status flows/welldb-welllog-04-assertion.yaml --partition dev
 sqlflow assertions report flows/welldb-welllog-04-assertion.yaml --partition dev --format md
 ```
 
-In the GUI, **OSDU**, **Assertions** is the board of every assertion flow in the partition picked in the
-title bar, where each test is called an assertion and each of its assertions a check; the flow's pipeline has
+In the GUI, **OSDU**, **Assertions** is the dashboard of every assertion flow in the partition picked in the
+title bar, where each test is called an assertion and each of its assertions a check; give a flow a `set`, a `title`
+and `dimensions` (`Area: South`) and the dashboard groups and maps its assertions by them, and downloads as one page to
+present ([assertion sets, titles and dimensions](../flow/assertion-sets.md)). The flow's pipeline has
 **Assertions**, **History** and **Reports** tabs, and a report page runs the assertions that did not pass again.
 
 A failed assertion says what it expected, what it found, how many records it checked and how many failed it, and names

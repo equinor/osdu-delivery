@@ -1,0 +1,1016 @@
+/*
+ * The assertion dashboard's own styles, for the workbench and the file it downloads alike: plain classes over the
+ * workbench's colour tokens, which the downloaded file defines itself (html.adb-standalone). Nothing here scrolls but the
+ * page, and a standing never reads by colour alone: each has a glyph of its own shape and a word.
+ */
+
+html.adb-standalone {
+  color-scheme: light;
+  --radius: 0.375rem;
+  --background: #f6f8fb;
+  --foreground: #1d2733;
+  --card: #ffffff;
+  --muted: #edf1f6;
+  --muted-foreground: #5b6b7f;
+  --accent: #e4ecf6;
+  --border: #d7dee8;
+  --input: #b8c2cf;
+  --primary: #2264c2;
+  --ring: #2264c2;
+  --destructive: #c41b27;
+  --success: #09762f;
+  --warning: #8c5d00;
+  --font-sans: "Inter Variable", Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  --font-mono: "JetBrains Mono Variable", "JetBrains Mono", Consolas, "Courier New", monospace;
+}
+
+html.adb-standalone.dark {
+  color-scheme: dark;
+  --background: #111a28;
+  --foreground: #dce6f2;
+  --card: #16202f;
+  --muted: #1a2536;
+  --muted-foreground: #8b9db3;
+  --accent: #1d2c40;
+  --border: #27364b;
+  --input: #3c4e67;
+  --primary: #4d9dff;
+  --ring: #4d9dff;
+  --destructive: #f87171;
+  --success: #49b861;
+  --warning: #d29922;
+}
+
+html.adb-standalone body {
+  margin: 0;
+  background: var(--background);
+  color: var(--foreground);
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+}
+
+html.adb-standalone #root {
+  max-width: 88rem;
+  margin: 0 auto;
+  padding: 24px 24px 40px;
+}
+
+.adb {
+  --adb-failed: var(--destructive);
+  --adb-errored: color-mix(in oklab, var(--destructive) 55%, var(--warning));
+  --adb-warned: var(--warning);
+  --adb-notRun: var(--muted-foreground);
+  --adb-passed: var(--success);
+  --adb-disabled: color-mix(in oklab, var(--muted-foreground) 70%, transparent);
+  --adb-radius: calc(var(--radius, 0.375rem) + 2px);
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  color: var(--foreground);
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.adb *,
+.adb *::before,
+.adb *::after {
+  box-sizing: border-box;
+}
+
+.adb button {
+  font: inherit;
+  color: inherit;
+}
+
+.adb button:focus-visible,
+.adb select:focus-visible,
+.adb input:focus-visible {
+  outline: 2px solid var(--ring, var(--primary));
+  outline-offset: 2px;
+}
+
+.adb-presenting,
+.adb:fullscreen {
+  overflow-y: auto;
+  background: var(--background);
+  padding: 32px 48px 40px;
+}
+
+.adb-presenting .adb-verdict-text {
+  font-size: 26px;
+}
+
+.adb-presenting .adb-figure-n {
+  font-size: 34px;
+}
+
+/* Tones: what each standing is drawn in, beside its glyph and its word. */
+.adb-glyph {
+  display: inline-block;
+  flex-shrink: 0;
+}
+
+.adb-tone-failed { color: var(--adb-failed); }
+.adb-tone-errored { color: var(--adb-errored); }
+.adb-tone-warned { color: var(--adb-warned); }
+.adb-tone-notRun { color: var(--adb-notRun); }
+.adb-tone-passed { color: var(--adb-passed); }
+.adb-tone-disabled { color: var(--adb-disabled); }
+
+.adb-edge-failed { border-left-color: var(--adb-failed) !important; }
+.adb-edge-errored { border-left-color: var(--adb-errored) !important; }
+.adb-edge-warned { border-left-color: var(--adb-warned) !important; }
+.adb-edge-notRun { border-left-color: var(--adb-notRun) !important; }
+.adb-edge-passed { border-left-color: var(--adb-passed) !important; }
+.adb-edge-disabled { border-left-color: var(--adb-disabled) !important; }
+
+/* The heading: the title, what the page covers, and the controls. */
+.adb-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.adb-titles {
+  min-width: 0;
+  flex: 1 1 18rem;
+}
+
+.adb-titles h1 {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 600;
+  line-height: 28px;
+}
+
+.adb-title-set {
+  margin-left: 10px;
+  padding-left: 10px;
+  border-left: 1px solid var(--border);
+  font-weight: 500;
+  color: var(--muted-foreground);
+}
+
+.adb-titles p {
+  margin: 2px 0 0;
+  color: var(--muted-foreground);
+}
+
+.adb-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.adb-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 32px;
+  padding: 0 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius, 0.375rem);
+  background: var(--card);
+  font-weight: 500;
+  cursor: pointer;
+}
+
+.adb-button:hover {
+  background: var(--accent);
+}
+
+.adb-switch {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  height: 32px;
+  cursor: pointer;
+  user-select: none;
+}
+
+.adb-switch input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+}
+
+.adb-switch-track {
+  position: relative;
+  width: 30px;
+  height: 18px;
+  border-radius: 999px;
+  background: var(--input, var(--border));
+  transition: background 0.15s;
+}
+
+.adb-switch-track > span {
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: var(--card);
+  box-shadow: 0 1px 2px rgb(0 0 0 / 0.25);
+  transition: transform 0.15s;
+}
+
+.adb-switch input:checked + .adb-switch-track {
+  background: var(--primary);
+}
+
+.adb-switch input:checked + .adb-switch-track > span {
+  transform: translateX(12px);
+}
+
+.adb-switch input:focus-visible + .adb-switch-track {
+  outline: 2px solid var(--ring, var(--primary));
+  outline-offset: 2px;
+}
+
+/* The sets to pick from. */
+.adb-sets {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.adb-set {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 28px;
+  padding: 0 11px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--card);
+  font-size: 12.5px;
+  cursor: pointer;
+}
+
+.adb-set:hover {
+  background: var(--accent);
+}
+
+.adb-set[aria-pressed="true"] {
+  border-color: var(--primary);
+  background: color-mix(in oklab, var(--primary) 10%, var(--card));
+  font-weight: 600;
+}
+
+.adb-set-n {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 400;
+  color: var(--muted-foreground);
+  font-variant-numeric: tabular-nums;
+}
+
+.adb-problems {
+  display: flex;
+  gap: 10px;
+  padding: 10px 14px;
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--adb-errored);
+  border-radius: var(--adb-radius);
+  background: var(--card);
+  font-size: 12.5px;
+}
+
+.adb-problems ul {
+  margin: 4px 0 0;
+  padding-left: 16px;
+}
+
+.adb-empty {
+  margin: 0;
+  padding: 28px 16px;
+  color: var(--muted-foreground);
+  text-align: center;
+}
+
+/* The verdict: the one sentence to read first. */
+.adb-verdict {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 16px 20px;
+  border: 1px solid var(--border);
+  border-left: 4px solid var(--border);
+  border-radius: var(--adb-radius);
+  background: var(--card);
+}
+
+.adb-verdict-text {
+  margin: 0;
+  font-size: 20px;
+  font-weight: 600;
+  line-height: 1.3;
+  letter-spacing: -0.01em;
+}
+
+.adb-verdict-sub {
+  margin: 4px 0 0;
+  color: var(--muted-foreground);
+}
+
+/* The figures. */
+.adb-figures {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(7.5rem, 1fr));
+  gap: 10px;
+}
+
+.adb-health,
+.adb-figure {
+  border: 1px solid var(--border);
+  border-radius: var(--adb-radius);
+  background: var(--card);
+  padding: 14px 16px;
+}
+
+.adb-health {
+  grid-column: span 2;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: baseline;
+  column-gap: 10px;
+}
+
+.adb-health-label {
+  grid-column: 1 / -1;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--muted-foreground);
+}
+
+.adb-health-rate {
+  font-size: 32px;
+  font-weight: 700;
+  line-height: 1.1;
+  font-variant-numeric: tabular-nums;
+}
+
+.adb-health-of {
+  color: var(--muted-foreground);
+}
+
+.adb-bar {
+  grid-column: 1 / -1;
+  display: flex;
+  gap: 2px;
+  height: 8px;
+  margin-top: 12px;
+  border-radius: 4px;
+  overflow: hidden;
+  background: var(--muted);
+}
+
+.adb-bar > span {
+  min-width: 3px;
+}
+
+.adb-fill-passed { background: var(--adb-passed); }
+.adb-fill-warned { background: var(--adb-warned); }
+.adb-fill-errored { background: var(--adb-errored); }
+.adb-fill-failed { background: var(--adb-failed); }
+.adb-fill-notRun { background: color-mix(in oklab, var(--muted-foreground) 35%, var(--card)); }
+.adb-fill-disabled { background: color-mix(in oklab, var(--muted-foreground) 18%, var(--card)); }
+
+.adb-figure {
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  gap: 8px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.adb-figure:hover:not(:disabled) {
+  background: color-mix(in oklab, var(--accent) 60%, var(--card));
+}
+
+.adb-figure[aria-pressed="true"] {
+  border-color: var(--primary);
+  box-shadow: inset 0 0 0 1px var(--primary);
+}
+
+.adb-figure-n {
+  font-size: 26px;
+  font-weight: 650;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+}
+
+.adb-figure-label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12.5px;
+  color: var(--muted-foreground);
+}
+
+.adb-quiet {
+  cursor: default;
+}
+
+.adb-quiet .adb-figure-n {
+  color: var(--muted-foreground);
+  font-weight: 500;
+}
+
+.adb-quiet .adb-glyph {
+  color: var(--muted-foreground);
+  opacity: 0.6;
+}
+
+/* A panel: the map, the list. */
+.adb-panel {
+  border: 1px solid var(--border);
+  border-radius: var(--adb-radius);
+  background: var(--card);
+}
+
+.adb-panel-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px 16px;
+  padding: 10px 16px;
+  border-bottom: 1px solid var(--border);
+}
+
+.adb-panel-head h2 {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.adb-axes,
+.adb-find {
+  min-width: 0;
+  max-width: 100%;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+}
+
+.adb-axis {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--muted-foreground);
+}
+
+.adb-axis select {
+  height: 28px;
+  max-width: 12rem;
+  padding: 0 6px;
+  border: 1px solid var(--input, var(--border));
+  border-radius: var(--radius, 0.375rem);
+  background: var(--background);
+  color: var(--foreground);
+  font: inherit;
+  font-size: 12.5px;
+}
+
+/* The map. */
+.adb-map {
+  display: grid;
+  gap: 4px;
+  padding: 12px 16px 16px;
+}
+
+.adb-map-corner,
+.adb-map-col {
+  align-self: end;
+  padding: 0 4px 2px;
+  overflow: hidden;
+  font-size: 11.5px;
+  font-weight: 500;
+  color: var(--muted-foreground);
+  text-align: center;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.adb-map-corner {
+  text-align: left;
+  padding-left: 0;
+}
+
+.adb-map-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-width: 0;
+  padding-right: 8px;
+  font-size: 12.5px;
+  font-weight: 500;
+}
+
+.adb-map-row-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.adb-map-row-n {
+  flex-shrink: 0;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 400;
+  color: var(--muted-foreground);
+  font-variant-numeric: tabular-nums;
+}
+
+.adb-cell {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  min-width: 0;
+  min-height: 52px;
+  padding: 4px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius, 0.375rem);
+  background: var(--muted);
+  cursor: pointer;
+}
+
+.adb-cell:hover {
+  filter: brightness(0.97);
+}
+
+.adb-cell[aria-pressed="true"] {
+  outline: 2px solid var(--primary);
+  outline-offset: 1px;
+}
+
+.adb-cell-main {
+  font-size: 15px;
+  font-weight: 650;
+  font-variant-numeric: tabular-nums;
+}
+
+.adb-cell-sub {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  max-width: 100%;
+  overflow: hidden;
+  font-size: 11px;
+  color: var(--muted-foreground);
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.adb-cell-none {
+  border-style: dashed;
+  background: transparent;
+  cursor: default;
+}
+
+.adb-cell-none:hover {
+  filter: none;
+}
+
+.adb-cell-failed {
+  border-color: color-mix(in oklab, var(--adb-failed) 45%, var(--card));
+  background: color-mix(in oklab, var(--adb-failed) 13%, var(--card));
+}
+
+.adb-cell-errored {
+  border-color: color-mix(in oklab, var(--adb-errored) 45%, var(--card));
+  background: color-mix(in oklab, var(--adb-errored) 13%, var(--card));
+}
+
+.adb-cell-warned {
+  border-color: color-mix(in oklab, var(--adb-warned) 40%, var(--card));
+  background: color-mix(in oklab, var(--adb-warned) 11%, var(--card));
+}
+
+.adb-cell-passed {
+  border-color: color-mix(in oklab, var(--adb-passed) 35%, var(--card));
+  background: color-mix(in oklab, var(--adb-passed) 9%, var(--card));
+}
+
+.adb-cell-disabled {
+  border-style: dashed;
+  background: transparent;
+}
+
+/* The list. */
+.adb-search {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 22rem;
+  max-width: 100%;
+  height: 32px;
+  padding: 0 10px;
+  border: 1px solid var(--input, var(--border));
+  border-radius: var(--radius, 0.375rem);
+  background: var(--background);
+  color: var(--muted-foreground);
+}
+
+.adb-search input {
+  flex: 1;
+  min-width: 0;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  color: var(--foreground);
+  font: inherit;
+}
+
+.adb-search:focus-within {
+  outline: 2px solid var(--ring, var(--primary));
+  outline-offset: 1px;
+}
+
+.adb-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 26px;
+  padding: 0 8px 0 10px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--card);
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.adb-chip-on {
+  border-color: var(--primary);
+  background: color-mix(in oklab, var(--primary) 10%, var(--card));
+}
+
+.adb-count {
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  color: var(--muted-foreground);
+  font-variant-numeric: tabular-nums;
+}
+
+.adb-group + .adb-group {
+  border-top: 1px solid var(--border);
+}
+
+.adb-group-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  min-width: 0;
+  padding: 10px 16px;
+  border: 0;
+  background: transparent;
+  text-align: left;
+  cursor: pointer;
+}
+
+.adb-group-head:hover,
+.adb-row-head:hover {
+  background: color-mix(in oklab, var(--accent) 55%, transparent);
+}
+
+.adb-group-title {
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.adb-group-n {
+  padding: 0 7px;
+  border-radius: 999px;
+  background: var(--muted);
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  color: var(--muted-foreground);
+  font-variant-numeric: tabular-nums;
+}
+
+.adb-group-why {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  font-size: 12.5px;
+  color: var(--muted-foreground);
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.adb-rows {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.adb-row {
+  border-top: 1px solid var(--border);
+}
+
+.adb-row-head {
+  display: grid;
+  grid-template-columns: 16px minmax(10rem, 1.1fr) minmax(0, 2fr) auto 14px;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  padding: 9px 16px 9px 38px;
+  border: 0;
+  background: transparent;
+  text-align: left;
+  cursor: pointer;
+}
+
+.adb-row-open > .adb-row-head {
+  background: color-mix(in oklab, var(--accent) 45%, transparent);
+}
+
+.adb-row-main {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.adb-row-title {
+  overflow: hidden;
+  font-weight: 550;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.adb-row-where {
+  overflow: hidden;
+  font-size: 11.5px;
+  color: var(--muted-foreground);
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.adb-row-finding {
+  display: -webkit-box;
+  min-width: 0;
+  overflow: hidden;
+  font-size: 12.5px;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow-wrap: anywhere;
+}
+
+.adb-row-when {
+  font-size: 11.5px;
+  color: var(--muted-foreground);
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+.adb-more {
+  width: 100%;
+  padding: 8px 16px 8px 38px;
+  border: 0;
+  border-top: 1px solid var(--border);
+  background: transparent;
+  color: var(--primary) !important;
+  font-size: 12.5px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.adb-more:hover {
+  text-decoration: underline;
+}
+
+/* An open assertion. */
+.adb-detail {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 8px 16px 16px 66px;
+  background: color-mix(in oklab, var(--muted) 45%, var(--card));
+}
+
+.adb-detail-text {
+  margin: 0;
+}
+
+.adb-muted {
+  color: var(--muted-foreground);
+}
+
+.adb-dims {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.adb-dim {
+  padding: 1px 7px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--card);
+  font-size: 11.5px;
+}
+
+.adb-dim > span {
+  margin-right: 5px;
+  color: var(--muted-foreground);
+}
+
+.adb-reason {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  margin: 0;
+  padding: 8px 12px;
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--border);
+  border-radius: var(--radius, 0.375rem);
+  background: var(--card);
+  font-size: 12.5px;
+}
+
+.adb-reason .adb-glyph {
+  margin-top: 2px;
+}
+
+.adb-checks {
+  width: 100%;
+  border: 1px solid var(--border);
+  border-collapse: separate;
+  border-spacing: 0;
+  border-radius: var(--radius, 0.375rem);
+  background: var(--card);
+  font-size: 12.5px;
+  overflow: hidden;
+}
+
+.adb-checks th {
+  padding: 6px 10px;
+  border-bottom: 1px solid var(--border);
+  background: var(--muted);
+  font-size: 11.5px;
+  font-weight: 500;
+  color: var(--muted-foreground);
+  text-align: left;
+}
+
+.adb-checks td {
+  padding: 7px 10px;
+  border-top: 1px solid var(--border);
+  vertical-align: top;
+  overflow-wrap: anywhere;
+}
+
+.adb-checks tbody tr:first-child td {
+  border-top: 0;
+}
+
+.adb-check-bad td {
+  background: color-mix(in oklab, var(--adb-failed) 4%, var(--card));
+}
+
+.adb-check-label {
+  font-weight: 550;
+}
+
+.adb-check-result {
+  white-space: nowrap;
+}
+
+.adb-check-result .adb-glyph {
+  margin-right: 5px;
+  vertical-align: -2px;
+}
+
+.adb-check-q {
+  display: block;
+  font-size: 11.5px;
+  color: var(--muted-foreground);
+}
+
+.adb-check-found {
+  font-family: var(--font-mono);
+  font-size: 12px;
+}
+
+.adb-link {
+  display: block;
+  margin-top: 4px;
+  text-align: left;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--primary) !important;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.adb-link:hover {
+  text-decoration: underline;
+}
+
+.adb-examples-row td {
+  background: color-mix(in oklab, var(--muted) 50%, var(--card));
+}
+
+.adb-examples {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-size: 12px;
+}
+
+.adb-examples li {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 12px;
+}
+
+.adb-examples code {
+  padding: 0 4px;
+  border-radius: 3px;
+  background: var(--muted);
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+}
+
+.adb-example-value {
+  font-family: var(--font-mono);
+}
+
+.adb-detail-foot {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 12px;
+  color: var(--muted-foreground);
+}
+
+.adb-detail-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+/* The legend. */
+.adb-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 18px;
+  padding: 2px;
+  font-size: 11.5px;
+  color: var(--muted-foreground);
+}
+
+.adb-legend > span {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.adb-legend b {
+  font-weight: 600;
+  color: var(--foreground);
+}
+
+.adb-legend-note {
+  flex-basis: 100%;
+}
+
+@media (max-width: 900px) {
+  .adb-row-head {
+    grid-template-columns: 16px minmax(0, 1fr) auto 14px;
+  }
+
+  .adb-row-finding {
+    grid-column: 2 / -1;
+    grid-row: 2;
+  }
+
+  .adb-detail {
+    padding-left: 16px;
+  }
+
+  .adb-presenting,
+  .adb:fullscreen {
+    padding: 16px;
+  }
+}

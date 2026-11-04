@@ -1282,6 +1282,12 @@ internal sealed class AssertionYaml
     /// <summary>The set the flow's tests are grouped under; left out, its batch.</summary>
     public string? Set { get; set; }
 
+    /// <summary>What people read the flow as.</summary>
+    public string? Title { get; set; }
+
+    /// <summary>What the flow's assertions are about, name to value; every test takes them.</summary>
+    public Dictionary<string, string>? Dimensions { get; set; }
+
     public object? Schedule { get; set; }
 
     public object? Mode { get; set; }
@@ -1347,6 +1353,12 @@ internal sealed class AssertionTestYaml
     public string? Name { get; set; }
 
     public string? Description { get; set; }
+
+    /// <summary>What people read the test as.</summary>
+    public string? Title { get; set; }
+
+    /// <summary>What the test is about, name to value, over its flow's.</summary>
+    public Dictionary<string, string>? Dimensions { get; set; }
 
     public List<string>? Tags { get; set; }
 

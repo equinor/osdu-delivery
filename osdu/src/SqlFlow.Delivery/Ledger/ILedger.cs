@@ -3370,6 +3370,12 @@ public interface ILedger
     Task<IReadOnlyList<AssertionResultState>> LatestAssertionResultsAsync(IReadOnlyCollection<Guid> flowIds, bool withDetail = false, CancellationToken ct = default);
 
     /// <summary>
+    /// The results <paramref name="resultIds"/> name, each whole with its detail, in no set order; an id no result has is
+    /// left out. What the dashboard opens an assertion on: its latest result, by the id the board gave it.
+    /// </summary>
+    Task<IReadOnlyList<AssertionResultState>> GetAssertionResultsAsync(IReadOnlyCollection<long> resultIds, CancellationToken ct = default);
+
+    /// <summary>
     /// Removes the runs of a flow in its partition that its latest status no longer needs, each whole with its results
     /// (osdu/docs/reference/flow/assertion.md, The report): every finished run but the latest, unless it holds a test's latest
     /// judged result of the version <paramref name="current"/> names for that test (test name to definition hash). A run under

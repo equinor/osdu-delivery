@@ -169,6 +169,39 @@ public sealed class AssertionDocumentTests
             Refusal(Full.Replace("batch: welldb", "batch: welldb\nset: proof values", StringComparison.Ordinal)));
     }
 
+    /// <summary>
+    /// A flow and its tests name what they are about (osdu/docs/reference/flow/assertion-sets.md, Dimensions): a test takes its
+    /// flow's dimensions, its own over them in place and then the ones only it names, and both may give a title. A name, a
+    /// value and a title are refused naming what is wrong with each.
+    /// </summary>
+    [Fact]
+    public void A_flow_and_its_tests_name_their_dimensions_and_titles()
+    {
+        var flow = Parse(Full
+            .Replace("batch: welldb", "batch: welldb\ntitle: Well log quality\ndimensions: { Country: Norway, Source: Archive }", StringComparison.Ordinal)
+            .Replace("  - name: wellbores\n", "  - name: wellbores\n    title: Every wellbore delivered\n    dimensions: { Source: Interpretation, Area: North }\n", StringComparison.Ordinal));
+        Assert.Equal("Well log quality", flow.Title);
+        Assert.Equal([("Country", "Norway"), ("Source", "Archive")], flow.Dimensions.Select(d => (d.Name, d.Value)));
+        var wellbores = flow.Test("wellbores")!;
+        Assert.Equal("Every wellbore delivered", wellbores.Title);
+        Assert.Equal([("Country", "Norway"), ("Source", "Interpretation"), ("Area", "North")], wellbores.Dimensions.Select(d => (d.Name, d.Value)));
+        Assert.Equal([("Country", "Norway"), ("Source", "Archive")], flow.Tests[1].Dimensions.Select(d => (d.Name, d.Value)));
+
+        string Refused(string dimensions) => Refusal(Full.Replace("batch: welldb", "batch: welldb\n" + dimensions, StringComparison.Ordinal));
+        Assert.Equal(
+            "flow.yaml: dimensions names '1st country', which is not a dimension name: a letter followed by letters, digits, spaces, '_' and '-', at most 40 characters, such as Country.",
+            Refused("dimensions: { 1st country: Norway }"));
+        Assert.Equal("flow.yaml: dimensions names Set, which is the flow's set; name it with set: instead.", Refused("dimensions: { Set: welldb }"));
+        Assert.Equal("flow.yaml: dimensions names country twice, ignoring case; name each dimension once.", Refused("dimensions: { Country: Norway, country: Norway }"));
+        Assert.Equal("flow.yaml: dimensions.Country is empty; give the value the assertions have along it, or take the dimension out.", Refused("dimensions: { Country: '' }"));
+        Assert.Equal(
+            "flow.yaml: dimensions.Country is not a value on one line of at most 200 characters.",
+            Refused("dimensions: { Country: '" + new string('x', 201) + "' }"));
+        Assert.Equal(
+            "flow.yaml: title is not a title on one line of at most 200 characters.",
+            Refused("title: '" + new string('x', 201) + "'"));
+    }
+
     [Fact]
     public void A_full_document_maps_every_subject_with_its_operands()
     {

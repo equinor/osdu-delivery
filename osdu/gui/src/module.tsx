@@ -47,7 +47,6 @@ const DeliveryCachePage = lazyRoute("DeliveryCachePage", () => import("./feature
 const DeliveryPartitionsPage = lazyRoute("DeliveryPartitionsPage", () => import("./features/delivery/DeliveryPartitionsPage"));
 const DeliveryAssertionsPage = lazyRoute("DeliveryAssertionsPage", () => import("./features/delivery/assertions/DeliveryAssertionsPage"));
 const AssertionReportPage = lazyRoute("AssertionReportPage", () => import("./features/delivery/assertions/AssertionReportPage"));
-const AssertionSetPage = lazyRoute("AssertionSetPage", () => import("./features/delivery/assertions/AssertionSetPage"));
 const DeliveryDimensionsPage = lazyRoute("DeliveryDimensionsPage", () => import("./features/delivery/dimensions/DeliveryDimensionsPage"));
 const DeliveryInventoriesPage = lazyRoute("DeliveryInventoriesPage", () => import("./features/delivery/inventories/DeliveryInventoriesPage"));
 const DeliveryRemovalsPage = lazyRoute("DeliveryRemovalsPage", () => import("./features/delivery/removals/DeliveryRemovalsPage"));
@@ -417,7 +416,6 @@ export const osduDeliveryModule: GuiModule = {
     { path: "/delivery/partitions", component: DeliveryPartitionsPage },
     { path: "/delivery/assertions", component: DeliveryAssertionsPage },
     { path: "/delivery/assertions/runs/:assertionRunId", component: AssertionReportPage },
-    { path: "/delivery/assertions/sets/:set", component: AssertionSetPage },
     { path: "/delivery/dimensions", component: DeliveryDimensionsPage },
     { path: "/delivery/inventories", component: DeliveryInventoriesPage },
     { path: "/delivery/removals", component: DeliveryRemovalsPage },
@@ -521,7 +519,6 @@ export const osduDeliveryModule: GuiModule = {
     { pattern: /^\/delivery\/records\/[^/]+/, title: () => "Record" },
     { pattern: /^\/delivery\/submissions\/([^/]+)/, title: (match) => `Submission ${shortId(match[1])}` },
     { pattern: /^\/delivery\/assertions\/runs\/(\d+)/, title: (match) => `Report #${match[1]}` },
-    { pattern: /^\/delivery\/assertions\/sets\/([^/]+)/, title: (match) => `Set ${decodeURIComponent(match[1])}` },
   ],
   kinds: [deliveryKind, retrievalKind, cacheKind, assertionKind, dimensionKind, inventoryKind, removalKind, downloadKind],
   searchCategories: [

@@ -1,6 +1,6 @@
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { defineConfig, type Plugin } from "vite";
+import { build, defineConfig, type Plugin } from "vite";
 import react from "@vitejs/plugin-react";
 import tailwindcss from "@tailwindcss/vite";
 
@@ -65,13 +65,76 @@ function vendoredPackagesFromThisBuild(): Plugin {
   };
 }
 
+const aliases = [
+  { find: /^@osdu\//, replacement: `${forwardSlashes(moduleSrc)}/` },
+  { find: /^@\//, replacement: `${forwardSlashes(sqlflowSrc)}/` },
+];
+
+/** The virtual module the assertion dashboard's download imports its script and styles from. */
+const DASHBOARD_EXPORT = "virtual:assertion-dashboard-export";
+
+/**
+ * Bundles the assertion dashboard into one script and its styles, which a downloaded dashboard carries
+ * (osdu/docs/reference/flow/assertion-sets.md, Download the dashboard): the same component the workbench renders, built
+ * from the same sources with React in production, so the file shows what the page shows and needs nothing to load. The
+ * GUI imports the module only when a dashboard is downloaded, so the bundle is a chunk of its own; the dev server builds
+ * it on that first import and again when one of its sources changes.
+ */
+function assertionDashboardExport(): Plugin {
+  const resolvedId = `\0${DASHBOARD_EXPORT}`;
+  const entry = path.resolve(moduleSrc, "features/delivery/assertions/dashboard/exportEntry.tsx");
+  return {
+    name: "osdu-gui:assertion-dashboard-export",
+    resolveId(source) {
+      return source === DASHBOARD_EXPORT ? resolvedId : null;
+    },
+    async load(id) {
+      if (id !== resolvedId) {
+        return null;
+      }
+
+      const built = await build({
+        configFile: false,
+        root: guiRoot,
+        logLevel: "warn",
+        mode: "production",
+        plugins: [react()],
+        resolve: { alias: aliases },
+        define: { "process.env.NODE_ENV": JSON.stringify("production") },
+        build: {
+          write: false,
+          emptyOutDir: false,
+          copyPublicDir: false,
+          sourcemap: false,
+          minify: true,
+          cssCodeSplit: false,
+          lib: { entry, formats: ["iife"], name: "AssertionDashboard", fileName: () => "assertion-dashboard.js" },
+        },
+      });
+      const outputs = (Array.isArray(built) ? built : [built]).flatMap((result) => ("output" in result ? result.output : []));
+      const script = outputs.find((file) => file.type === "chunk");
+      if (script === undefined || script.type !== "chunk") {
+        throw new Error(`Bundling the assertion dashboard from ${entry} produced no script.`);
+      }
+
+      for (const file of script.moduleIds) {
+        if (path.isAbsolute(file)) {
+          this.addWatchFile(file);
+        }
+      }
+
+      const styles = outputs.filter((file) => file.type === "asset" && file.fileName.endsWith(".css"))
+        .map((file) => (file.type !== "asset" ? "" : typeof file.source === "string" ? file.source : new TextDecoder().decode(file.source)))
+        .join("\n");
+      return `export const script = ${JSON.stringify(script.code)};\nexport const style = ${JSON.stringify(styles)};\n`;
+    },
+  };
+}
+
 export default defineConfig({
-  plugins: [vendoredPackagesFromThisBuild(), react(), tailwindcss()],
+  plugins: [vendoredPackagesFromThisBuild(), assertionDashboardExport(), react(), tailwindcss()],
   resolve: {
-    alias: [
-      { find: /^@osdu\//, replacement: `${forwardSlashes(moduleSrc)}/` },
-      { find: /^@\//, replacement: `${forwardSlashes(sqlflowSrc)}/` },
-    ],
+    alias: aliases,
   },
   server: {
     port: 5173,

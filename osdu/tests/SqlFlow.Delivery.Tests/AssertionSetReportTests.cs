@@ -9,8 +9,8 @@ namespace SqlFlow.Delivery.Tests;
 
 /// <summary>
 /// A set's report (osdu/docs/reference/flow/assertion-sets.md): every test by where it stands now (disabled whatever an
-/// earlier run found, not run when its last result judged an earlier version of it), the set's verdict, and the report as
-/// a dashboard in HTML, as Markdown, JSON and JUnit XML. Each check reads once: what it expected, what it found and why.
+/// earlier run found, not run when its last result judged an earlier version of it), the set's verdict, every test's
+/// dimensions, and the report as Markdown, JSON and JUnit XML. Each check reads once: what it expected, what it found and why.
 /// </summary>
 public sealed class AssertionSetReportTests
 {
@@ -18,11 +18,15 @@ public sealed class AssertionSetReportTests
         flowType: assertion
         name: welldb-welllog-assertion-well-a
         description: Proof values of well A.
+        title: Proof values of well A
         set: welldb
+        dimensions: { Country: Norway, Source: Archive }
         partitions: [dev]
         source: { endpoint: http://localhost }
         tests:
           - name: welldb-logs
+            title: Logs of well A
+            dimensions: { Well: A }
             kind: osdu:wks:work-product-component--WellLog:1.4.0
             assert:
               - count: { atLeast: 1 }
@@ -80,6 +84,10 @@ public sealed class AssertionSetReportTests
         Detail = TestResults.Serialize(result ?? Result(test, outcome)),
     };
 
+    /// <summary>A test as a set's report reads it from the ledger: where it stands, with its title and dimensions.</summary>
+    private static AssertionSetTest Of(string test, AssertionResultState latest)
+        => AssertionSetReport.TestOf(TestNamed(test), latest) with { Title = TestNamed(test).Title, Dimensions = AssertionDimensions.Of(Definition, TestNamed(test)) };
+
     private static AssertionSetReport Report() => new(
         "welldb",
         "dev",
@@ -87,9 +95,9 @@ public sealed class AssertionSetReportTests
             new AssertionSetFlow(
                 Definition.Name, Definition.Description, null, null,
                 [
-                    AssertionSetReport.TestOf(TestNamed("welldb-logs"), Latest("welldb-logs", TestOutcomes.Warned, result: Result("welldb-logs", TestOutcomes.Warned, Warning()))),
-                    AssertionSetReport.TestOf(TestNamed("archive-logs"), Latest("archive-logs", TestOutcomes.Failed)),
-                    AssertionSetReport.TestOf(TestNamed("key-numbers"), Latest("key-numbers", TestOutcomes.Failed, hash: "an-earlier-version")),
+                    Of("welldb-logs", Latest("welldb-logs", TestOutcomes.Warned, result: Result("welldb-logs", TestOutcomes.Warned, Warning()))),
+                    Of("archive-logs", Latest("archive-logs", TestOutcomes.Failed)),
+                    Of("key-numbers", Latest("key-numbers", TestOutcomes.Failed, hash: "an-earlier-version")),
                 ]),
             new AssertionSetFlow("welldb-units-04-assertion", null, null, "Assertion flow 'welldb-units-04-assertion' tests prod, not dev.", []),
         ],
@@ -127,22 +135,30 @@ public sealed class AssertionSetReportTests
         Assert.Equal(1, report.Evaluated);
     }
 
+    /// <summary>
+    /// Every assertion has a Set, a Type and a Check without a word of YAML, then the dimensions its flow and the test name,
+    /// the test's over its flow's; a document's own Check takes the place of the one read off the test.
+    /// </summary>
     [Fact]
-    public void The_html_is_a_dashboard_of_the_flows_each_opening_on_its_assertions()
+    public void An_assertion_has_set_type_and_check_then_the_dimensions_its_documents_name()
     {
-        var html = Report().ToHtml();
-        Assert.Contains("<title>welldb assertion report</title>", html);
-        Assert.Contains("Holds, with 1 warning in 1 flow: no assertion fails; 1 disabled, 1 not yet checked.", html);
-        Assert.Contains("<details class=\"flow warned\"><summary>", html);
-        // The flow's first issue says what its worst check expected and found, each once.
-        Assert.Contains("<b>welldb-logs</b> 5191 wellbore(s): expected equals 5191, found 5190", html);
-        // The check reads once: the comparison, its qualifiers, what it found and why.
-        Assert.Contains("<td>equals 5191<br><small>warns within 10% &middot; stated as of 2026-10-27</small></td><td>5190</td><td class=\"why\">1 below 5191 (0.02%), within the warning band of 10%, so it warns.</td>", html);
-        Assert.Contains("No flow of this estate delivers the archive logs to OSDU yet.", html);
-        Assert.Contains("Changed since report 162", html);
-        Assert.Contains("Not checked here", html);
-        Assert.DoesNotContain("<script", html, StringComparison.OrdinalIgnoreCase);
-        Assert.DoesNotContain('\u2014', html);
+        Assert.Equal(
+            [("Set", "welldb"), ("Type", "WellLog 1.4.0"), ("Check", "Counts"), ("Country", "Norway"), ("Source", "Archive"), ("Well", "A")],
+            AssertionDimensions.Of(Definition, TestNamed("welldb-logs")).Select(d => (d.Name, d.Value)));
+        Assert.Equal("Logs of well A", TestNamed("welldb-logs").Title);
+        Assert.Equal("Proof values of well A", Definition.Title);
+
+        var restated = new DeliveryDocumentLoader().ParseAssertion(
+            Flow.Replace("dimensions: { Well: A }", "dimensions: { Well: A, Check: Proof values, Source: Interpretation }", StringComparison.Ordinal), "flow.yaml").ForPartition("dev");
+        Assert.Equal(
+            [("Set", "welldb"), ("Type", "WellLog 1.4.0"), ("Check", "Proof values"), ("Country", "Norway"), ("Source", "Interpretation"), ("Well", "A")],
+            AssertionDimensions.Of(restated, restated.Test("welldb-logs")!).Select(d => (d.Name, d.Value)));
+
+        // A title and dimensions say how a test is shown, never what it checks: they leave its definition hash as it was.
+        var bare = new DeliveryDocumentLoader().ParseAssertion(
+            Flow.Replace("    title: Logs of well A\n", string.Empty, StringComparison.Ordinal).Replace("dimensions: { Well: A }", "dimensions: { Well: B }", StringComparison.Ordinal),
+            "flow.yaml").ForPartition("dev");
+        Assert.Equal(TestNamed("welldb-logs").DefinitionHash, bare.Test("welldb-logs")!.DefinitionHash);
     }
 
     [Fact]
@@ -162,6 +178,11 @@ public sealed class AssertionSetReportTests
         Assert.Equal(1, json["counts"]!["notRun"]!.GetValue<int>());
         var tests = json["flows"]!.AsArray().Single(f => f!["flow"]!.GetValue<string>() == Definition.Name)!["tests"]!.AsArray();
         Assert.Equal(["warned", "notRun", "disabled"], tests.Select(t => t!["standing"]!.GetValue<string>()));
+        Assert.Equal("Logs of well A", tests[0]!["title"]!.GetValue<string>());
+        Assert.Equal("Norway", tests[0]!["dimensions"]!["Country"]!.GetValue<string>());
+        Assert.Equal("Counts", tests[0]!["dimensions"]!["Check"]!.GetValue<string>());
+        // The page to present is the set's dashboard, which the GUI renders: the report renders no HTML of its own.
+        Assert.Throws<ArgumentOutOfRangeException>(() => report.Render(ReportFormat.Html));
 
         var junit = report.ToJUnit();
         Assert.Contains("<testsuites name=\"welldb@dev\" tests=\"3\" failures=\"0\" errors=\"0\" skipped=\"2\"", junit);

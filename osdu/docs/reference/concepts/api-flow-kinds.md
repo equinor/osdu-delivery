@@ -44,13 +44,15 @@ every delivery route does: the scopes, partition and interface parameters and an
 
 | Route | Policy | Parameters | Answers |
 | --- | --- | --- | --- |
-| `GET /assertions` | read | `partition` | The board of every active assertion flow. |
+| `GET /assertions` | read | `partition`, `set` | The board of every active assertion flow, or of the flows of one set: each test with its title, its dimensions and its latest result. |
 | `GET /flows/{pipelineId}/assertions` | read | `partition` | One assertion flow's board; 409 for another kind. |
 | `GET /flows/{pipelineId}/assertion-runs` | read | `partition`, `max` (50, at most 500) | Its runs, newest first. |
 | `GET /flows/{pipelineId}/assertion-matrix` | read | `partition`, `runs` (30, at most 200) | Recent runs against every test. |
 | `GET /flows/{pipelineId}/assertions/{test}/history` | read | `partition`, `runs` (30, at most 200) | One test's results over its recent runs. |
 | `GET /assertion-runs/{assertionRunId}` | read | | One run with every test's result. |
 | `GET /assertion-runs/{assertionRunId}/report` | read | `format` (`json`, `md`, `html`, `junit`) | The run's report as a file; 400 for another format. |
+| `GET /assertion-results` | read | `ids` (1 to 100, comma-separated) | Tests' results whole, by the result ids a board gives; an id that names no result is left out, 400 for one that is not a number. |
+| `GET /assertion-sets/{set}/report` | read | `partition`, `format` (`json`, `md`, `junit`) | A set's report as a file; 404 for a set no flow names, 400 for another format ([assertion sets](../flow/assertion-sets.md#the-routes)). |
 | `GET /dimensions` | read | `partition` | Every active dimension flow's dimensions. |
 | `GET /flows/{pipelineId}/dimensions` | read | `partition` | One dimension flow's dimensions; 409 for another kind. |
 | `GET /flows/{pipelineId}/dimensions/{name}/blueprint` | read | `partition` | How a dimension is built: its YAML beside what each line reads and makes. |

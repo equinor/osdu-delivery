@@ -147,11 +147,11 @@ public sealed class DeliveryAssertionApiTests
             var tests = listed.GetProperty("tests").EnumerateArray().ToDictionary(t => t.GetProperty("name").GetString()!);
             Assert.Equal(["log-headers", "log-count", "unsaved-kind", "to-a-mapping"], tests.Keys);
 
-            // A test's latest result is its newest, and its history strip holds every run that ran it, newest first.
+            // A test's latest result is its newest; the board carries no history of it, which is the flow's History tab's.
             var headers = tests["log-headers"];
             Assert.Equal(TestOutcomes.Passed, headers.GetProperty("latest").GetProperty("outcome").GetString());
             Assert.Equal(second, headers.GetProperty("latest").GetProperty("assertionRunId").GetInt64());
-            Assert.Equal([second, first], headers.GetProperty("history").EnumerateArray().Select(p => p.GetProperty("assertionRunId").GetInt64()));
+            Assert.False(headers.TryGetProperty("history", out _));
             Assert.False(headers.GetProperty("changed").GetBoolean());
             // The version of the saved template its fields were checked against.
             Assert.Matches("^[0-9a-f]{16}$", headers.GetProperty("template").GetString());
@@ -393,9 +393,10 @@ public sealed class DeliveryAssertionApiTests
     }
 
     /// <summary>
-    /// A set (osdu/docs/reference/flow/assertion-sets.md) is the flows that name it: the board narrows to them, the set says
-    /// how it stands now (a disabled test counted as disabled whatever it found before, one changed since its last result as
-    /// not run), with each test's latest result whole, and its report renders in every format.
+    /// A set (osdu/docs/reference/flow/assertion-sets.md) is the flows that name it: the board narrows to them, says how each
+    /// test stands now (a disabled test counted as disabled whatever it found before, one changed since its last result as not
+    /// run) with its title and dimensions, hands each latest result whole by its id, and the set's report renders as Markdown,
+    /// JSON and JUnit XML; the page to present is the dashboard, which the GUI renders.
     /// </summary>
     [Fact]
     public async Task A_set_is_served_as_it_stands_now_with_its_report()
@@ -411,6 +412,7 @@ public sealed class DeliveryAssertionApiTests
             flowType: assertion
             name: {{name}}
             set: {{set}}
+            dimensions: { Country: Norway }
             partitions: [{{partition}}]
             source:
               endpoint: http://localhost
@@ -419,6 +421,8 @@ public sealed class DeliveryAssertionApiTests
             """;
         var wellbores = Yaml("api-set-wellbores-" + suffix, """
               - name: names
+                title: The names of the logs
+                dimensions: { Well: A }
                 kind: osdu:wks:work-product-component--WellLog:1.4.0
                 assert:
                   - count: { atLeast: 1 }
@@ -493,27 +497,41 @@ public sealed class DeliveryAssertionApiTests
                 totals.GetProperty("tests").GetInt32(), totals.GetProperty("passed").GetInt32(), totals.GetProperty("failed").GetInt32(),
                 totals.GetProperty("disabled").GetInt32(), totals.GetProperty("notRun").GetInt32()));
 
-            var served = await JsonAsync(client, token, $"/api/v1/delivery/assertion-sets/{set}?partition={partition}");
-            Assert.Equal(set, served.GetProperty("set").GetString());
-            Assert.Equal("failed", served.GetProperty("status").GetString());
-            Assert.Equal("Needs attention: 1 of 4 assertions fail, in 1 of 2 flows; 1 disabled, 1 not yet checked.", served.GetProperty("verdict").GetString());
-            // Each test's latest result whole, for the tests that stand at it: not the disabled one, nor the one changed since.
-            Assert.Equal(["curves", "names"], served.GetProperty("results").EnumerateArray().Select(r => r.GetProperty("result").GetProperty("test").GetString()).Order(StringComparer.Ordinal));
+            // Each test carries what people read it as and every axis the dashboard maps it by.
+            var names = board.GetProperty("flows").EnumerateArray().SelectMany(f => f.GetProperty("tests").EnumerateArray())
+                .Single(t => t.GetProperty("name").GetString() == "names");
+            Assert.Equal("The names of the logs", names.GetProperty("title").GetString());
+            Assert.Equal(
+                [("Set", set), ("Type", "WellLog 1.4.0"), ("Check", "Counts"), ("Country", "Norway"), ("Well", "A")],
+                names.GetProperty("dimensions").EnumerateArray().Select(d => (d.GetProperty("name").GetString()!, d.GetProperty("value").GetString()!)));
 
+            // A latest result opens whole by the id the board gave it.
+            var curves = board.GetProperty("flows").EnumerateArray().SelectMany(f => f.GetProperty("tests").EnumerateArray())
+                .Single(t => t.GetProperty("name").GetString() == "curves");
+            var resultId = curves.GetProperty("latest").GetProperty("resultId").GetInt64();
+            var results = await JsonAsync(client, token, $"/api/v1/delivery/assertion-results?ids={resultId},{long.MaxValue}");
+            var opened = Assert.Single(results.EnumerateArray());
+            Assert.Equal(resultId, opened.GetProperty("resultId").GetInt64());
+            Assert.Equal("curves", opened.GetProperty("result").GetProperty("test").GetString());
+            using var badIds = await SendAsync(client, token, "/api/v1/delivery/assertion-results?ids=one");
+            Assert.Equal(HttpStatusCode.BadRequest, badIds.StatusCode);
+
+            using var markdown = await SendAsync(client, token, $"/api/v1/delivery/assertion-sets/{set}/report?format=md&partition={partition}");
+            Assert.Equal(HttpStatusCode.OK, markdown.StatusCode);
+            Assert.Equal($"{set}-{partition}-assertion-report.md", markdown.Content.Headers.ContentDisposition?.FileName?.Trim('"'));
+            var text = await markdown.Content.ReadAsStringAsync();
+            Assert.Contains("Needs attention: 1 of 4 assertions fail, in 1 of 2 flows; 1 disabled, 1 not yet checked.", text, StringComparison.Ordinal);
+            Assert.Contains("No flow delivers the archive logs yet.", text, StringComparison.Ordinal);
             using var html = await SendAsync(client, token, $"/api/v1/delivery/assertion-sets/{set}/report?format=html&partition={partition}");
-            Assert.Equal(HttpStatusCode.OK, html.StatusCode);
-            Assert.Equal($"{set}-{partition}-assertion-report.html", html.Content.Headers.ContentDisposition?.FileName?.Trim('"'));
-            var page = await html.Content.ReadAsStringAsync();
-            Assert.Contains("Needs attention: 1 of 4 assertions fail", page, StringComparison.Ordinal);
-            Assert.Contains("No flow delivers the archive logs yet.", page, StringComparison.Ordinal);
+            Assert.Equal(HttpStatusCode.BadRequest, html.StatusCode);
 
             using var junit = await SendAsync(client, token, $"/api/v1/delivery/assertion-sets/{set}/report?format=junit&partition={partition}");
             Assert.Equal("application/xml", junit.Content.Headers.ContentType?.MediaType);
             Assert.Contains($"<testsuites name=\"{set}@{partition}\" tests=\"4\" failures=\"1\" errors=\"0\" skipped=\"2\"", await junit.Content.ReadAsStringAsync(), StringComparison.Ordinal);
 
-            using var none = await SendAsync(client, token, $"/api/v1/delivery/assertion-sets/no-such-set-{suffix}?partition={partition}");
+            using var none = await SendAsync(client, token, $"/api/v1/delivery/assertion-sets/no-such-set-{suffix}/report?format=json&partition={partition}");
             Assert.Equal(HttpStatusCode.NotFound, none.StatusCode);
-            using var invalid = await SendAsync(client, token, $"/api/v1/delivery/assertion-sets/{Uri.EscapeDataString("a set")}?partition={partition}");
+            using var invalid = await SendAsync(client, token, $"/api/v1/delivery/assertion-sets/{Uri.EscapeDataString("a set")}/report?format=json&partition={partition}");
             Assert.Equal(HttpStatusCode.BadRequest, invalid.StatusCode);
         }
         finally

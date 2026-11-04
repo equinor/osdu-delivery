@@ -283,6 +283,22 @@ public sealed partial class OsduLedger
         }
     }
 
+    public async Task<IReadOnlyList<AssertionResultState>> GetAssertionResultsAsync(IReadOnlyCollection<long> resultIds, CancellationToken ct = default)
+    {
+        ArgumentNullException.ThrowIfNull(resultIds);
+        var results = new List<AssertionResultState>(resultIds.Count);
+        // A result is found by its id alone (the unique index on ResultId), whatever partition holds it.
+        foreach (var chunk in resultIds.Distinct().Chunk(500))
+        {
+            var rows = await ReadAsync(
+                db => db.DeliveryAssertionResults.AsNoTracking().Where(r => chunk.Contains(r.ResultId)).ToListAsync(ct),
+                ct).ConfigureAwait(false);
+            results.AddRange(rows.Select(ToState));
+        }
+
+        return results;
+    }
+
     public async Task<int> PruneReplacedAssertionRunsAsync(Guid flowId, IReadOnlyDictionary<string, string> current, CancellationToken ct = default)
     {
         ArgumentNullException.ThrowIfNull(current);

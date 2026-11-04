@@ -17,12 +17,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
-- **Assertion sets, with a dashboard and a report for each.** An assertion flow names its `set` (else it is in its `batch`'s),
-  and the Assertions board lists sets first, each one line with how its assertions stand, when it was last checked, its
-  report and **Run set**. A set's page is a dashboard of where it stands now: its verdict in one sentence, its figures, its
-  flows worst first with each one's first issue, and the flow picked opening on what each check expected and found. Its report
-  opens as a page to present and downloads as HTML, Markdown, JSON or JUnit XML (`GET /assertion-sets/{set}`, `/report`,
-  [assertion sets](osdu/docs/reference/flow/assertion-sets.md)).
+- **One assertion dashboard, grouped by set and by dimensions.** An assertion flow names its `set` (else it is in its
+  `batch`'s), a `title`, and `dimensions` such as `Area: South`, which its tests take and add to, beside the `Set`, `Type` and
+  `Check` every assertion has. The Assertions page and an assertion flow's Assertions tab are one dashboard: a verdict that
+  says where most of what fails is, the figures, a map of where the data stands by any two dimensions, and the assertions
+  grouped by what they need, each opening on what its checks expected and found; disabled ones are left out until included,
+  then listed with their reasons. It presents full screen and downloads as one HTML page that works offline, and a set's
+  report downloads as Markdown, JSON or JUnit XML (`GET /assertion-results`, `GET /assertion-sets/{set}/report`,
+  [assertion sets, titles and dimensions](osdu/docs/reference/flow/assertion-sets.md)).
 
 - **A value check says why an attribute fails, what to do, and proves it from the data.** Each finding of a check or a dry run
   leads with what is wrong in plain words (the cache type, field, value and source column behind it, such as "the cache holds

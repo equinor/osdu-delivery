@@ -3157,8 +3157,16 @@ export interface DeliveryAssertionLatest {
  * One test on a board: what the flow document says of it, whether it fits the template of its kind (`problems`), its
  * latest result, how it came out over the last runs (newest first), and whether it changed since that result.
  */
+/** One dimension of an assertion: what it is about along one axis, such as `Country: Norway`. */
+export interface DeliveryAssertionDimension {
+  name: string;
+  value: string;
+}
+
 export interface DeliveryAssertionTest {
   name: string;
+  /** What people read it as; null when it names none. */
+  title: string | null;
   description: string | null;
   kind: string;
   tags: string[];
@@ -3188,9 +3196,10 @@ export interface DeliveryAssertionTest {
   needsNewProofValues?: boolean;
   problems: string[];
   latest: DeliveryAssertionLatest | null;
-  history: DeliveryAssertionPoint[];
   changed: boolean;
   definitionHash: string;
+  /** Every axis the dashboard maps it by: Set, Type and Check, then the ones its documents name. */
+  dimensions: DeliveryAssertionDimension[];
 }
 
 /** An assertion run as listings show it. */
@@ -3220,6 +3229,8 @@ export interface DeliveryAssertionFlow {
   pipelineId: string;
   repoId: string;
   name: string;
+  /** What people read the flow as; null when it names none. */
+  title: string | null;
   description: string | null;
   batch: string | null;
   /** The set its assertions are grouped under: its `set`, else its batch; null when it names neither. */
@@ -3319,29 +3330,11 @@ export interface DeliveryAssertionRunDetail {
   results: DeliveryTestResult[];
 }
 
-/** A test's latest result whole, in a set: the flow it is a test of and the report it is from. */
-export interface DeliveryAssertionSetResult {
-  pipelineId: string;
+/** A test's result whole, by the id the board gave it, with the report it is from. */
+export interface DeliveryAssertionResult {
+  resultId: number;
   assertionRunId: number;
   result: DeliveryTestResult;
-}
-
-/** How a set stands as a whole: its worst test's outcome, passed when every test checked passed, or not run. */
-export type AssertionSetStatus = "passed" | "failed" | "warned" | "errored" | "notRun";
-
-/**
- * An assertion set in the workbench's partition: how it stands, its flows as a board shows them, and each of their tests'
- * latest result whole, when that result checked the test as it is now.
- */
-export interface DeliveryAssertionSet {
-  set: string;
-  partition: string | null;
-  status: AssertionSetStatus;
-  /** How the set stands in one sentence, as its report opens with it. */
-  verdict: string;
-  totals: DeliveryAssertionTotals;
-  flows: DeliveryAssertionFlow[];
-  results: DeliveryAssertionSetResult[];
 }
 
 /** A flow's recent runs against its tests: each test's outcome in each run, null where the run did not run it. */
@@ -4274,10 +4267,11 @@ export const deliveryApi = {
   /** An assertion run's report as the text of the format asked for. */
   assertionReport: (assertionRunId: number, format: AssertionReportFormat) =>
     getText(`/api/v1/delivery/assertion-runs/${assertionRunId}/report?format=${format}`),
-  /** An assertion set in the workbench's partition, with each of its tests' latest result whole. */
-  assertionSet: (set: string) => get<DeliveryAssertionSet>(`/api/v1/delivery/assertion-sets/${encodeURIComponent(set)}`),
-  /** An assertion set's report as the text of the format asked for. */
-  assertionSetReport: (set: string, format: AssertionReportFormat) =>
+  /** Tests' results whole, by the ids the board gave them (at most 100 a read). */
+  assertionResults: (resultIds: readonly number[]) =>
+    get<DeliveryAssertionResult[]>("/api/v1/delivery/assertion-results", { ids: resultIds.join(",") }),
+  /** An assertion set's report as the text of the format asked for: Markdown, JSON or JUnit XML. */
+  assertionSetReport: (set: string, format: Exclude<AssertionReportFormat, "html">) =>
     getText(`/api/v1/delivery/assertion-sets/${encodeURIComponent(set)}/report?format=${format}`),
   /** Every dimension flow's dimensions in the workbench's partition. */
   dimensionBoard: () => get<DeliveryDimensionBoard>("/api/v1/delivery/dimensions"),

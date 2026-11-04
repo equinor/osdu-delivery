@@ -35,20 +35,25 @@ public sealed record DeliveryAssertionLatestDto(
     long ResultId, long AssertionRunId, string Outcome, string? Severity, long? Matched, long? Evaluated, bool Sampled, int Assertions, int FailedAssertions,
     long DurationMs, string? Error, DateTime CompletedUtc, string DefinitionHash);
 
+/// <summary>One dimension of an assertion: what it is about along one axis, such as <c>Country: Norway</c>.</summary>
+public sealed record DeliveryAssertionDimensionDto(string Name, string Value);
+
 /// <summary>
-/// One test of an assertion flow as a board shows it: what the document says of it, whether it fits the template of its
-/// kind, its latest result, and how it came out over the last runs. <c>Changed</c> is true when the test's definition has
-/// changed since its latest result was recorded. <c>Disabled</c>, <c>AsOf</c> and <c>ValidUntil</c> are the test's own, as a
-/// check's are; <c>NeedsNewProofValues</c> is true when every check it judges is past its day. <c>TemplateMapping</c> names the
-/// mapping (<c>Name@version</c>) whose pinned template the test is checked against, and <c>TemplatePinned</c> is true when the
-/// test names its template version itself rather than taking the newest captured.
+/// One test of an assertion flow as the dashboard shows it: what the document says of it, whether it fits the template of
+/// its kind, and its latest result. <c>Changed</c> is true when the test's definition has changed since its latest result was
+/// recorded. <c>Disabled</c>, <c>AsOf</c> and <c>ValidUntil</c> are the test's own, as a check's are; <c>NeedsNewProofValues</c>
+/// is true when every check it judges is past its day. <c>TemplateMapping</c> names the mapping (<c>Name@version</c>) whose
+/// pinned template the test is checked against, and <c>TemplatePinned</c> is true when the test names its template version
+/// itself rather than taking the newest captured. <c>Title</c> is what people read it as, and <c>Dimensions</c> every axis the
+/// dashboard maps it by: Set, Type and Check, then the ones its documents name
+/// (osdu/docs/reference/flow/assertion-sets.md, Dimensions).
 /// </summary>
 public sealed record DeliveryAssertionTestDto(
-    string Name, string? Description, string Kind, IReadOnlyList<string> Tags, string Severity, string? Query, int Ids, bool Bulk, string Read,
-    int MaxRecords, IReadOnlyList<DeliveryAssertionDefinitionDto> Assertions, bool RunsHere, IReadOnlyList<string> Partitions,
-    string? Template, IReadOnlyList<string> Problems, DeliveryAssertionLatestDto? Latest, IReadOnlyList<DeliveryAssertionPointDto> History, bool Changed,
-    string DefinitionHash, string? Disabled = null, string? AsOf = null, string? ValidUntil = null, bool NeedsNewProofValues = false,
-    string? TemplateMapping = null, bool TemplatePinned = false);
+    string Name, string? Title, string? Description, string Kind, IReadOnlyList<string> Tags, string Severity, string? Query, int Ids, bool Bulk,
+    string Read, int MaxRecords, IReadOnlyList<DeliveryAssertionDefinitionDto> Assertions, bool RunsHere, IReadOnlyList<string> Partitions,
+    string? Template, IReadOnlyList<string> Problems, DeliveryAssertionLatestDto? Latest, bool Changed, string DefinitionHash,
+    IReadOnlyList<DeliveryAssertionDimensionDto> Dimensions, string? Disabled = null, string? AsOf = null, string? ValidUntil = null,
+    bool NeedsNewProofValues = false, string? TemplateMapping = null, bool TemplatePinned = false);
 
 /// <summary>An assertion run as listings show it.</summary>
 public sealed record DeliveryAssertionRunDto(
@@ -60,10 +65,11 @@ public sealed record DeliveryAssertionRunDto(
 /// board's partition is one, the parameters a run of it takes, its last run, and what keeps the flow from being shown (a
 /// document the catalog cannot parse, a partition it does not test). <c>Parses</c> tells the two apart: false when the
 /// catalog's copy of the document does not parse, which needs a fix, where a flow of another partition needs none.
-/// <c>Set</c> is the set its tests are grouped under: its <c>set</c>, else its batch; null when it names neither.
+/// <c>Set</c> is the set its tests are grouped under: its <c>set</c>, else its batch; null when it names neither. <c>Title</c>
+/// is what people read the flow as.
 /// </summary>
 public sealed record DeliveryAssertionFlowDto(
-    Guid PipelineId, Guid RepoId, string Name, string? Description, string? Batch, string? Set, string? Partition, bool TestsPartition, bool Parses,
+    Guid PipelineId, Guid RepoId, string Name, string? Title, string? Description, string? Batch, string? Set, string? Partition, bool TestsPartition, bool Parses,
     IReadOnlyList<string> Partitions, string FailRunOn, IReadOnlyList<DeliveryParameterDto> Parameters, string? Problem, DeliveryAssertionRunDto? LastRun,
     IReadOnlyList<DeliveryAssertionTestDto> Tests);
 
@@ -77,17 +83,8 @@ public sealed record DeliveryAssertionTotalsDto(
 /// <summary>The board of every assertion flow, or of one, in a partition.</summary>
 public sealed record DeliveryAssertionBoardDto(string? Partition, DeliveryAssertionTotalsDto Totals, IReadOnlyList<DeliveryAssertionFlowDto> Flows);
 
-/// <summary>A test's latest result whole, in a set: the flow it is a test of and the report it is from.</summary>
-public sealed record DeliveryAssertionSetResultDto(Guid PipelineId, long AssertionRunId, TestResult Result);
-
-/// <summary>
-/// An assertion set in a partition (osdu/docs/reference/flow/assertion-sets.md): how it stands as a whole, in one sentence as
-/// its report opens with it, its flows as a board shows them, and each of their tests' latest result whole, what failed and
-/// what is missing included.
-/// </summary>
-public sealed record DeliveryAssertionSetDto(
-    string Set, string? Partition, string Status, string Verdict, DeliveryAssertionTotalsDto Totals, IReadOnlyList<DeliveryAssertionFlowDto> Flows,
-    IReadOnlyList<DeliveryAssertionSetResultDto> Results);
+/// <summary>A test's result whole, by the id the board gave it (<c>Latest.ResultId</c>), with the report it is from.</summary>
+public sealed record DeliveryAssertionResultDto(long ResultId, long AssertionRunId, TestResult Result);
 
 /// <summary>An assertion run with every test's full result.</summary>
 public sealed record DeliveryAssertionRunDetailDto(DeliveryAssertionRunDto Run, Guid? PipelineId, IReadOnlyList<TestResult> Results);
@@ -102,19 +99,19 @@ public sealed record DeliveryAssertionMatrixDto(IReadOnlyList<DeliveryAssertionR
 public sealed record DeliveryAssertionTestHistoryDto(string Test, IReadOnlyList<TestResult> Results);
 
 /// <summary>
-/// The report of assertion flows (osdu/docs/reference/flow/assertion.md, The report): boards across every assertion flow, of
-/// one set and of one flow, a flow's runs, a run with every result, the matrix of tests against runs, one test's trend, a
-/// set with every test's latest result, and the report of a run or of a set as JSON, Markdown, HTML or JUnit XML. Every read
-/// is in a partition: the one the request names, else the workbench's, else the one a run of the flow would test. Running
-/// tests is a run like any other, queued through the platform's trigger.
+/// The report of assertion flows (osdu/docs/reference/flow/assertion.md, The report): the dashboard's data across every
+/// assertion flow, of one set and of one flow, tests' latest results whole by id, a flow's runs, a run with every result, the
+/// matrix of tests against runs, one test's trend, the report of a run as JSON, Markdown, HTML or JUnit XML, and a set's as
+/// JSON, Markdown or JUnit XML. Every read is in a partition: the one the request names, else the workbench's, else the one a
+/// run of the flow would test. Running tests is a run like any other, queued through the platform's trigger.
 /// </summary>
 public static class DeliveryAssertionEndpoints
 {
-    /// <summary>The runs a board's history strips cover.</summary>
-    public const int BoardHistory = 12;
-
     /// <summary>The most assertion flows one board shows.</summary>
     private const int MaxFlows = 500;
+
+    /// <summary>The most results one read of results whole names.</summary>
+    private const int MaxResults = 100;
 
     public static void MapReads(RouteGroupBuilder delivery)
     {
@@ -126,7 +123,7 @@ public static class DeliveryAssertionEndpoints
         delivery.MapGet("/flows/{pipelineId:guid}/assertions/{test}/history", GetTestHistoryAsync).WithName("GetDeliveryAssertionTestHistory");
         delivery.MapGet("/assertion-runs/{assertionRunId:long}", GetRunAsync).WithName("GetDeliveryAssertionRun");
         delivery.MapGet("/assertion-runs/{assertionRunId:long}/report", GetReportAsync).WithName("GetDeliveryAssertionReport");
-        delivery.MapGet("/assertion-sets/{set}", GetSetAsync).WithName("GetDeliveryAssertionSet");
+        delivery.MapGet("/assertion-results", GetResultsAsync).WithName("GetDeliveryAssertionResults");
         delivery.MapGet("/assertion-sets/{set}/report", GetSetReportAsync).WithName("GetDeliveryAssertionSetReport");
     }
 
@@ -149,37 +146,51 @@ public static class DeliveryAssertionEndpoints
         return TypedResults.Ok(new DeliveryAssertionBoardDto(named, Totals(flows), flows));
     }
 
-    /// <summary>A set in the partition the request reads: its board, how it stands, and each of its tests' latest result whole.</summary>
-    private static async Task<Results<Ok<DeliveryAssertionSetDto>, ProblemHttpResult>> GetSetAsync(
-        string set, string? partition, HttpRequest request, CatalogDbContext db, DeliveryDocumentLoader documents, ILedger ledger,
-        IPartitionRegistry registry, IRepositoryFolders folders, TimeProvider time, CancellationToken ct)
+    /// <summary>
+    /// The results the comma-separated <paramref name="ids"/> name (at most <see cref="MaxResults"/>), each whole: what the
+    /// dashboard opens an assertion on, and what its download carries of the assertions that need a look.
+    /// </summary>
+    private static async Task<Results<Ok<IReadOnlyList<DeliveryAssertionResultDto>>, ProblemHttpResult>> GetResultsAsync(
+        string? ids, ILedger ledger, CancellationToken ct)
     {
-        var named = WorkbenchPartition.Named(partition, request);
-        var (members, problem) = await SetMembersAsync(set, named, db, documents, ledger, registry, ct).ConfigureAwait(false);
-        if (members is null)
+        var named = new List<long>();
+        foreach (var part in (ids ?? string.Empty).Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
         {
-            return problem!;
+            if (!long.TryParse(part, System.Globalization.NumberStyles.None, System.Globalization.CultureInfo.InvariantCulture, out var id) || id <= 0)
+            {
+                return TypedResults.Problem(detail: $"'{part}' is not a result id.", statusCode: StatusCodes.Status400BadRequest, title: "Invalid result id");
+            }
+
+            named.Add(id);
         }
 
-        var now = time.GetUtcNow();
-        var flows = await BoardAsync(members, named, ledger, registry, folders, documents, now, ct).ConfigureAwait(false);
-        var report = await ReadSetAsync(set, named, members, ledger, now.UtcDateTime, ct).ConfigureAwait(false);
-        var pipelineOf = members.ToDictionary(m => m.Pipeline.Name, m => m.Pipeline.Id, StringComparer.OrdinalIgnoreCase);
-        var results = report.Flows
-            .SelectMany(f => f.Tests.Where(t => t.Result is not null && t.AssertionRunId is not null)
-                .Select(t => new DeliveryAssertionSetResultDto(pipelineOf[f.Flow], t.AssertionRunId!.Value, t.Result!)))
-            .ToList();
-        return TypedResults.Ok(new DeliveryAssertionSetDto(report.Set, named, report.Status, report.Verdict(), Totals(flows), flows, results));
+        if (named.Count == 0 || named.Count > MaxResults)
+        {
+            return TypedResults.Problem(
+                detail: $"ids names {named.Count} results; name between 1 and {MaxResults}, comma-separated.", statusCode: StatusCodes.Status400BadRequest, title: "Invalid result ids");
+        }
+
+        var results = await ledger.GetAssertionResultsAsync(named, ct).ConfigureAwait(false);
+        return TypedResults.Ok<IReadOnlyList<DeliveryAssertionResultDto>>(results
+            .Select(r => (State: r, Result: TestResults.Deserialize(r.Detail)))
+            .Where(r => r.Result is not null)
+            .Select(r => new DeliveryAssertionResultDto(r.State.ResultId, r.State.AssertionRunId, r.Result!))
+            .ToList());
     }
 
-    /// <summary>A set's report in the partition the request reads, as JSON, Markdown, HTML or JUnit XML.</summary>
+    /// <summary>
+    /// A set's report in the partition the request reads, as JSON, Markdown or JUnit XML, for a pull request, a wiki or a CI
+    /// server. Its dashboard, the page to present, downloads from the GUI.
+    /// </summary>
     private static async Task<Results<FileContentHttpResult, ProblemHttpResult>> GetSetReportAsync(
         string set, string? partition, string? format, HttpRequest request, CatalogDbContext db, DeliveryDocumentLoader documents, ILedger ledger,
         IPartitionRegistry registry, TimeProvider time, CancellationToken ct)
     {
-        if (AssertionReport.FormatOf(format) is not { } chosen)
+        if (AssertionReport.FormatOf(format) is not { } chosen || chosen == ReportFormat.Html)
         {
-            return TypedResults.Problem(detail: $"format '{format}' is not one of json, md, html, junit.", statusCode: StatusCodes.Status400BadRequest, title: "Unknown report format");
+            return TypedResults.Problem(
+                detail: $"format '{format}' is not one of json, md, junit for a set; the set's dashboard downloads as a page from the Assertions page.",
+                statusCode: StatusCodes.Status400BadRequest, title: "Unknown report format");
         }
 
         var named = WorkbenchPartition.Named(partition, request);
@@ -514,15 +525,12 @@ public static class DeliveryAssertionEndpoints
             if (flow is null || bound is null)
             {
                 flows.Add(new DeliveryAssertionFlowDto(
-                    pipeline.Id, pipeline.RepoId, pipeline.Name, flow?.Description, flow?.Batch ?? pipeline.Batch, SetOf(entry), partition, false, flow is not null,
+                    pipeline.Id, pipeline.RepoId, pipeline.Name, flow?.Title, flow?.Description, flow?.Batch ?? pipeline.Batch, SetOf(entry), partition, false, flow is not null,
                     flow?.Served(registered) ?? [], FailRunOnText(flow?.FailRunOn ?? FailRunOn.Error), flow is null ? [] : Parameters(flow), problem, null, []));
                 continue;
             }
 
             var testPartition = await TestPartitionAsync(bound, ledger, ct).ConfigureAwait(false);
-            var history = (await ledger.AssertionHistoryAsync(bound.LedgerId, null, BoardHistory, withDetail: false, ct).ConfigureAwait(false))
-                .GroupBy(r => r.TestName, StringComparer.OrdinalIgnoreCase)
-                .ToDictionary(g => g.Key, g => g.Select(Point).ToList(), StringComparer.OrdinalIgnoreCase);
             // Each test's template as the flow reads it: from the template folders its repository's last sync recorded on the
             // flow's path, as its run reads them from the files.
             var folders = await SyncedTemplates.ReadAsync(ledger, repositories, pipeline.RepoId, ct).ConfigureAwait(false);
@@ -537,16 +545,16 @@ public static class DeliveryAssertionEndpoints
                 var result = ofFlow.TryGetValue(test.Name, out var hit) ? hit : null;
                 var fit = fits.TryGetValue(test.Name, out var f) ? f : TemplateFit.NotNeeded;
                 return new DeliveryAssertionTestDto(
-                    test.Name, test.Description, test.Kind, test.Tags, AssertionText.Of(test.Severity), test.Query, test.Ids.Count, test.Bulk is not null,
+                    test.Name, test.Title, test.Description, test.Kind, test.Tags, AssertionText.Of(test.Severity), test.Query, test.Ids.Count, test.Bulk is not null,
                     test.Read == AssertionRead.Index ? "index" : "storage", test.MaxRecords,
                     test.Assertions.Select((a, i) => Definition(i, a, test, now)).ToList(),
                     test.RunsIn(testPartition), test.Partitions, fit.Version, fit.Problems,
                     result is null ? null : new DeliveryAssertionLatestDto(
                         result.ResultId, result.AssertionRunId, result.Outcome, result.Severity, result.Matched, result.Evaluated, result.Sampled, result.Assertions,
                         result.FailedAssertions, result.DurationMs, result.Error, result.CompletedUtc, result.DefinitionHash),
-                    history.TryGetValue(test.Name, out var points) ? points : [],
                     result is not null && !string.Equals(result.DefinitionHash, test.DefinitionHash, StringComparison.Ordinal),
                     test.DefinitionHash,
+                    AssertionDimensions.Of(bound, test).Select(d => new DeliveryAssertionDimensionDto(d.Name, d.Value)).ToList(),
                     test.Disabled,
                     test.AsOf,
                     LastDay(test.AsOf, test.ValidUntil, test.ValidFor),
@@ -555,7 +563,7 @@ public static class DeliveryAssertionEndpoints
                     test.Template is not null);
             }).ToList();
             flows.Add(new DeliveryAssertionFlowDto(
-                pipeline.Id, pipeline.RepoId, pipeline.Name, bound.Description, bound.Batch, bound.Set, testPartition, true, true, bound.Served(registered),
+                pipeline.Id, pipeline.RepoId, pipeline.Name, bound.Title, bound.Description, bound.Batch, bound.Set, testPartition, true, true, bound.Served(registered),
                 FailRunOnText(bound.FailRunOn), Parameters(bound), null, lastRun is null ? null : ToDto(lastRun), tests));
         }
 

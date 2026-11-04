@@ -34,10 +34,19 @@ public sealed record AssertionFlowDefinition
     public string? Batch { get; init; }
 
     /// <summary>
-    /// The set the flow's tests are grouped under, on the board and in a set's report (osdu/docs/reference/flow/assertion-sets.md):
+    /// The set the flow's tests are grouped under, on the dashboard and in a set's report (osdu/docs/reference/flow/assertion-sets.md):
     /// its <c>set</c>, else its <see cref="Batch"/>; null when it names neither.
     /// </summary>
     public string? Set { get; init; }
+
+    /// <summary>What people read the flow as (<c>title</c>); null when it names none, and its name is shown.</summary>
+    public string? Title { get; init; }
+
+    /// <summary>
+    /// What the flow's assertions are about (<c>dimensions</c>), in the order the document writes them: every test of the flow
+    /// takes them, and the dashboard maps and groups the assertions by them.
+    /// </summary>
+    public IReadOnlyList<AssertionDimension> Dimensions { get; init; } = [];
 
     /// <summary>
     /// The flow's operation code (<c>telemetry.operation</c>), which its runs' correlation id says what ran with
@@ -424,6 +433,18 @@ public sealed record AssertionTest
 
     public string? Description { get; init; }
 
+    /// <summary>
+    /// What people read the test as (<c>title</c>); null when it names none, and its name is shown. Like
+    /// <see cref="Dimensions"/> it says how the test is shown, never what it checks, so it stays out of the definition hash: a
+    /// new title is no new version of the test.
+    /// </summary>
+    [JsonIgnore]
+    public string? Title { get; init; }
+
+    /// <summary>The flow's dimensions with the test's own over them, in order: the flow's first, then those only the test names.</summary>
+    [JsonIgnore]
+    public IReadOnlyList<AssertionDimension> Dimensions { get; init; } = [];
+
     /// <summary>Labels a run selects tests by, and the board groups them by.</summary>
     public IReadOnlyList<string> Tags { get; init; } = [];
 
@@ -536,6 +557,9 @@ public sealed record AssertionTest
 
 /// <summary>One field the search sorts by.</summary>
 public sealed record AssertionSort(string Field, bool Descending);
+
+/// <summary>One dimension of an assertion: what it is about along one axis, such as <c>Country: Norway</c>.</summary>
+public sealed record AssertionDimension(string Name, string Value);
 
 /// <summary>What a test reads of each record's bulk data, from the Wellbore DDMS collection its kind is served under.</summary>
 public sealed record AssertionBulk
