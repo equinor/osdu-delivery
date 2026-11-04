@@ -22,6 +22,7 @@ keywords:
   - parameter values
   - right-click menu
   - zoom to a search
+  - canvas toolbar
 related:
   - delivery-flow-mapping
   - delivery-flow-mapping-lookups
@@ -40,6 +41,7 @@ sourceRefs:
   - osdu/gui/src/features/delivery/overview/MappingOverview.tsx
   - osdu/gui/src/features/delivery/overview/OverviewCanvas.ts
   - osdu/gui/src/features/delivery/overview/OverviewInspector.tsx
+  - osdu/gui/src/features/delivery/overview/OverviewRail.tsx
   - osdu/gui/src/features/delivery/overview/OverviewRendered.tsx
   - osdu/gui/src/features/delivery/overview/OverviewRows.tsx
   - osdu/gui/src/features/delivery/overview/outlineLayout.ts
@@ -54,7 +56,8 @@ A mapping page opens on **Overview**, which draws what the [mapping](../flow/map
 happens to each value on its way, and the record it fills. It is read from the document alone, so a mapping no flow renders
 with yet is drawn all the same, and nothing is rendered, read or sent unless a reader asks to follow a record through it.
 
-Its first line says what the mapping does in a sentence:
+Beside the tabs and the search, one sentence says what the mapping does, and goes under them when the window is too narrow
+for both:
 
 ```text
 Each row of silver.WellLog becomes one WellLog record, with one item of Curves per row of silver.WellLogCurve.
@@ -87,6 +90,18 @@ engine makes it from the key ([the OSDU id](../flow/mapping.md#the-osdu-id)).
 The record's heading says how many properties of the [template](templates.md) nothing writes, and goes to **Properties**
 for them.
 
+## The toolbar
+
+The toolbar runs down the canvas's left side. Each glyph says what it does when pointed at, and one that switches something
+on stays lit while it is on.
+
+| Glyph | What it does |
+| --- | --- |
+| Rows | **Show a record**: follows a staged row through the mapping ([below](#working-with-it)). |
+| Document | **YAML**: the mapping as written, beside the canvas. |
+| Copy, function, database search, pin, link | Lights the properties filled one way: **copied** (a column, written as it is), **changed** (a column or an expression, changed on its way), **looked up** (in the partition's cache, or by a search of OSDU), **fixed** (a literal or a parameter, the same on every record) or **linked** (read from another record). Pointing at one says how many of the mapping's properties it lights, such as `7 of 40 looked up`; a way no property is filled has no glyph. A second click puts the light out, and so does a search. |
+| At its foot | **Open all** or **Fold**, zoom in, zoom out, and **Fit to the window**. |
+
 ## Working with it
 
 | To | Do |
@@ -99,11 +114,11 @@ for them.
 | Look at a table's rows | **Preview the first 100 rows** on a table, one of its columns or a line from it (**Preview 100 cached records** for a cache table, **Preview 100 records in OSDU** for a search). The panel of a table or a column has the same button. The rows open under the canvas ([below](#looking-at-a-tables-rows)). |
 | See the parameters' values | **Preview the values** on the parameters, or one of them ([below](#the-parameters-values)). |
 | Read the record as it renders | **Preview the rendered record** on the record's heading ([below](#the-rendered-record)). |
-| Find a property or a column | Type in **Property or column**, which opens what holds the matches and lights them. Once the typing stops, the canvas zooms to them, close enough to read: the properties found with the columns they read, up to 140% and never under 100%, each property found and each column named by the search shaded. Where the columns are too far from their properties to fit at 100%, the properties alone are framed, from the first. Clearing the search takes the view back to where it was, unless you moved it since. |
-| See every property filled one way | Click **copied**, **changed**, **looked up**, **fixed** or **linked**, each with its count. |
-| Read the document beside the canvas | **YAML** opens the mapping as written, each line tied to the canvas: pointing at a line lights the property it writes, and a click picks it. |
-| Follow a real row through the mapping | **Show a record** previews a staged row of the flow picked in the toolbar and shows each column's value and each property's, a repeated property's from its first item. The sentence over the canvas gives way to the record, with the flow's scope beside it, and the arrows step through the rows. Beside the row, **staged** says no run has taken it into the ledger yet, or the status of its record says where it stands. A `$coalesce`'s alternatives say which gave the value. Nothing is sent. |
-| Move around | Drag to pan, scroll to move up and down, and hold Ctrl and scroll to zoom. The corner of the canvas holds zoom, fit, and **Open all**. |
+| Find a property or a column | Type in **Property or column**, which opens what holds the matches, lights them and counts them beside the field (`14 of 40 found`). Once the typing stops, the canvas zooms to them, close enough to read: the properties found with the columns they read, up to 140% and never under 100%, each property found and each column named by the search shaded. Where the columns are too far from their properties to fit at 100%, the properties alone are framed, from the first. Clearing the search takes the view back to where it was, unless you moved it since. |
+| See every property filled one way | Click its glyph on [the toolbar](#the-toolbar). |
+| Read the document beside the canvas | **YAML** on the toolbar opens the mapping as written, each line tied to the canvas: pointing at a line lights the property it writes, and a click picks it. |
+| Follow a real row through the mapping | **Show a record** on the toolbar previews a staged row of the flow rendering with the mapping (picked beside the record when several do) and shows each column's value and each property's, a repeated property's from its first item. The sentence beside the search gives way to the record, with the flow's scope beside it, and the arrows step through the rows. Beside the row, **staged** says no run has taken it into the ledger yet, or the status of its record says where it stands. A `$coalesce`'s alternatives say which gave the value. Nothing is sent. |
+| Move around | Drag to pan, scroll to move up and down, and hold Ctrl and scroll to zoom. The foot of the toolbar holds **Open all**, zoom and fit. |
 
 After a [dry run](dry-run.md), the properties it found broken carry a warning, on the section holding them while that is
 closed.

@@ -111,10 +111,11 @@ function MappingWorkspace({ detail }: { detail: DeliveryMappingDetail }) {
               <TabsTrigger value="coverage" className="text-[13px]" data-testid="delivery-mapping-tab-coverage">Properties</TabsTrigger>
             </TabsList>
             {/*
-              The overview reads the document, so the toolbar is its own there, and which rows are read waits for a record to be
-              shown. Staged records pages through the scope's rows itself. The dry run, and how many rows it reads, are Properties'.
+              The overview reads the document, so the row is its own there, and which rows are read waits for a record to be shown:
+              its search and its sentence take their places in this row, so the sentence goes under the tabs only when the row runs
+              out. Staged records pages through the scope's rows itself. The dry run, and how many rows it reads, are Properties'.
             */}
-            {tab === "overview" && <div ref={setTools} className="flex min-w-0 flex-[1_1_20rem] items-center gap-2" data-testid="mapping-overview-tools" />}
+            {tab === "overview" && <div ref={setTools} className="contents" data-testid="mapping-overview-tools" />}
             {tab === "staged" && session.flows.length > 0 && <ValueCheckScope session={session} />}
             {tab === "coverage" && (
               <>

@@ -2111,7 +2111,8 @@
         "rendered record",
         "parameter values",
         "right-click menu",
-        "zoom to a search"
+        "zoom to a search",
+        "canvas toolbar"
       ],
       "related": [
         "delivery-flow-mapping",
@@ -2132,6 +2133,7 @@
         "osdu/gui/src/features/delivery/overview/MappingOverview.tsx",
         "osdu/gui/src/features/delivery/overview/OverviewCanvas.ts",
         "osdu/gui/src/features/delivery/overview/OverviewInspector.tsx",
+        "osdu/gui/src/features/delivery/overview/OverviewRail.tsx",
         "osdu/gui/src/features/delivery/overview/OverviewRendered.tsx",
         "osdu/gui/src/features/delivery/overview/OverviewRows.tsx",
         "osdu/gui/src/features/delivery/overview/outlineLayout.ts",

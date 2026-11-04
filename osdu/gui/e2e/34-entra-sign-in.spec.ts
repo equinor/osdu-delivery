@@ -194,6 +194,29 @@ test.describe("Sign in with Microsoft", () => {
     await expect(page).toHaveURL(`${E2E.guiBaseUrl}/login`);
     await expect(page.getByTestId("login-entra")).toBeEnabled();
   });
+
+  test("signs in at the first click when an abandoned sign-in is still marked in progress in the tab", async ({ page, request }) => {
+    const admin = await adminSession(request);
+    const entra = await fakeEntra(page, admin, "code");
+    // The popup sign-in of the GUI before this one marked itself in progress in the tab's session storage and kept its
+    // request in memory, so a page load while its popup was open (a reload, a dev server restart) left the mark alone.
+    // Seeded once: the tab's later loads keep whatever the sign-in itself writes there.
+    await page.addInitScript((clientId) => {
+      if (window.sessionStorage.getItem("e2e.abandoned-sign-in") === null) {
+        window.sessionStorage.setItem("e2e.abandoned-sign-in", "seeded");
+        window.sessionStorage.setItem("msal.interaction.status", JSON.stringify({ clientId, type: "signin" }));
+      }
+    }, CLIENT_ID);
+
+    await page.goto("/runs");
+    await expect(page.getByTestId("login-card")).toBeVisible({ timeout: FIRST_PAGE_MS });
+    await page.getByTestId("login-username").fill(ACCOUNT);
+    await page.getByTestId("login-entra").click();
+
+    await expect(page.getByTestId("page-runs")).toBeVisible({ timeout: FIRST_PAGE_MS });
+    expect(entra.authorize().searchParams.get("login_hint")).toBe(ACCOUNT);
+    expect(entra.unexpected).toEqual([]);
+  });
 });
 
 // Every sign-in goes on from the login page the same way, so the password sign-in is checked beside Microsoft's.

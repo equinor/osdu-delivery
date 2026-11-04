@@ -64,6 +64,13 @@ curl -fsSL https://raw.githubusercontent.com/TahirRiaz/osdu-delivery/main/bootst
 From a checkout, `dev.bat demo` or `./dev.sh demo` does the same. It needs a SQL Server, or Docker Desktop running to
 start one ([the local demo](osdu/docs/reference/guides/local-demo.md)).
 
+## Onboarding
+
+<a href="ONBOARDING.md"><img src="osdu/media/onboarding-paths.svg" width="100%" alt="Onboarding, two paths in: Configure, to use OSDU Delivery and build pipelines in YAML, and Extend, to build on it and maintain the framework in C#, lined up stage for stage"></a>
+
+**[Two paths in](ONBOARDING.md)**, side by side: configure pipelines with OSDU Delivery, or extend the framework
+itself. Every video in order, with the pages behind each and a task at every step.
+
 ## Technical deep dive
 
 <table>
@@ -100,8 +107,8 @@ ingestion and Wellbore DDMS paths. Every write path is tested against OSDU's own
 
 ## Contributing
 
-[CONTRIBUTING.md](CONTRIBUTING.md) sets up a development machine and runs the tests, and
-[osdu/README.md](osdu/README.md) maps the module's code. OSDU Delivery is built on
+The [onboarding](ONBOARDING.md)'s Extend path is the way in. [CONTRIBUTING.md](CONTRIBUTING.md) sets up a development
+machine and runs the tests, and [osdu/README.md](osdu/README.md) maps the module's code. OSDU Delivery is built on
 [SQLFlow](https://github.com/TahirRiaz/SQLFlow), kept in [sqlflow/](sqlflow/), which is why its command line is
 `sqlflow`.
 

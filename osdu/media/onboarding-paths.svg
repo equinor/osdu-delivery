@@ -1,0 +1,178 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1280 640" width="1280" height="640" role="img" aria-labelledby="title desc">
+  <title id="title">OSDU Delivery onboarding: two paths in</title>
+  <desc id="desc">One start station, then two lines lined up stage by stage. Configure, to use OSDU Delivery and build pipelines in YAML: every route into OSDU, your own estate, write a mapping, when the source changes, where is my record, build with the assistant, deliver to dev, test and prod. Extend, to build on it and maintain the framework: the codebase walkthrough, your development machine, one row into the ledger, will it send, one worker then six, the extension ladder, land a change.</desc>
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#0d1624"/>
+      <stop offset="1" stop-color="#15243b"/>
+    </linearGradient>
+    <radialGradient id="glow" cx="0.5" cy="0.5" r="0.5">
+      <stop offset="0" stop-color="#ffffff" stop-opacity="0.22"/>
+      <stop offset="1" stop-color="#ffffff" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="warmth" cx="0.5" cy="0.5" r="0.5">
+      <stop offset="0" stop-color="#f2b56b" stop-opacity="0.10"/>
+      <stop offset="1" stop-color="#f2b56b" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="cool" cx="0.5" cy="0.5" r="0.5">
+      <stop offset="0" stop-color="#6fb0ff" stop-opacity="0.11"/>
+      <stop offset="1" stop-color="#6fb0ff" stop-opacity="0"/>
+    </radialGradient>
+    <pattern id="dots" width="24" height="24" patternUnits="userSpaceOnUse">
+      <circle cx="2" cy="2" r="1.1" fill="#9db0c6" fill-opacity="0.11"/>
+    </pattern>
+    <clipPath id="card">
+      <rect width="1280" height="640" rx="28"/>
+    </clipPath>
+  </defs>
+  <style>
+    text { font-family: "Segoe UI", -apple-system, BlinkMacSystemFont, "Helvetica Neue", Arial, sans-serif; }
+    .kick { font-size: 15px; font-weight: 700; letter-spacing: 3px; fill: #6fb0ff; }
+    .title { font-size: 56px; font-weight: 800; fill: #ffffff; letter-spacing: -0.5px; }
+    .sub { font-size: 21px; fill: #a9bbd0; }
+    .num { font-size: 14px; font-weight: 700; letter-spacing: 1.5px; }
+    .lbl { font-size: 17px; font-weight: 600; fill: #e8eef6; }
+    .pname { font-size: 15px; font-weight: 800; letter-spacing: 3px; }
+    .phead { font-size: 22px; font-weight: 800; fill: #ffffff; }
+    .psub { font-size: 15px; fill: #a9bbd0; }
+    .stage { font-size: 13px; font-weight: 700; letter-spacing: 2.5px; fill: #7f93ab; }
+    .start { font-size: 13px; font-weight: 800; letter-spacing: 2.5px; fill: #ffffff; }
+    .startsub { font-size: 15px; fill: #a9bbd0; }
+    .cta { font-size: 18px; font-weight: 700; fill: #0d1624; }
+    .legend { font-size: 15px; fill: #a9bbd0; }
+    .flow { stroke-dasharray: 2 22; animation: flow 1.4s linear infinite; }
+    @keyframes flow { to { stroke-dashoffset: -24; } }
+    .pulse { transform-box: fill-box; transform-origin: center; animation: pulse 2.6s ease-out infinite; }
+    @keyframes pulse { from { transform: scale(1); opacity: 0.55; } to { transform: scale(1.85); opacity: 0; } }
+    @media (prefers-reduced-motion: reduce) {
+      .flow, .pulse { animation: none; }
+      .pulse { opacity: 0; }
+    }
+  </style>
+
+  <g clip-path="url(#card)">
+    <rect width="1280" height="640" fill="url(#bg)"/>
+    <rect width="1280" height="640" fill="url(#dots)"/>
+    <ellipse cx="760" cy="290" rx="560" ry="150" fill="url(#warmth)"/>
+    <ellipse cx="760" cy="500" rx="560" ry="150" fill="url(#cool)"/>
+  </g>
+  <rect x="0.75" y="0.75" width="1278.5" height="638.5" rx="27.5" fill="none" stroke="#2a3b52" stroke-width="1.5"/>
+
+  <!-- Heading -->
+  <text class="kick" x="64" y="82">OSDU DELIVERY · ONBOARDING</text>
+  <text class="title" x="62" y="146">Two paths in.</text>
+  <text class="sub" x="64" y="184">Configure pipelines with it, or extend the framework itself: ten videos, lined up step for step.</text>
+
+  <!-- Call to action and legend -->
+  <rect x="1004" y="58" width="212" height="50" rx="25" fill="#f2b56b"/>
+  <text class="cta" x="1110" y="89" text-anchor="middle">Open the guide →</text>
+  <g transform="translate(1040 150)">
+    <circle r="9" fill="#f2b56b"/>
+    <path d="M-2.8 -4.4 L5 0 L-2.8 4.4 Z" fill="#0d1624"/>
+    <text class="legend" x="16" y="5">video</text>
+  </g>
+  <g transform="translate(1124 150)">
+    <circle r="8" fill="#0d1624" stroke="#f2b56b" stroke-width="3"/>
+    <circle r="2.6" fill="#f2b56b"/>
+    <text class="legend" x="16" y="5">hands-on</text>
+  </g>
+
+  <!-- Stage guides: the two lines are lined up, stage for stage -->
+  <g stroke="#3a4d66" stroke-width="1.5" stroke-dasharray="3 6">
+    <path d="M330 322 V378 M330 412 V468"/>
+    <path d="M470 322 V378 M470 412 V468"/>
+    <path d="M610 322 V378 M610 412 V468"/>
+    <path d="M750 322 V378 M750 412 V468"/>
+    <path d="M890 322 V378 M890 412 V468"/>
+    <path d="M1030 322 V378 M1030 412 V468"/>
+    <path d="M1170 322 V378 M1170 412 V468"/>
+  </g>
+  <g class="stage" text-anchor="middle">
+    <text x="330" y="400">ORIENT</text>
+    <text x="470" y="400">SET UP</text>
+    <text x="610" y="400">BUILD</text>
+    <text x="750" y="400">CHANGE</text>
+    <text x="890" y="400">RUN</text>
+    <text x="1030" y="400">GROW</text>
+    <text x="1170" y="400">SHIP</text>
+  </g>
+
+  <!-- The two lines: a soft track, the line, and what flows along it -->
+  <g fill="none" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M140 395 C215 395 220 300 300 300 L1170 300" stroke="#f2b56b" stroke-opacity="0.16" stroke-width="20"/>
+    <path d="M140 395 C215 395 220 490 300 490 L1170 490" stroke="#6fb0ff" stroke-opacity="0.16" stroke-width="20"/>
+    <path d="M140 395 C215 395 220 300 300 300 L1170 300" stroke="#f2b56b" stroke-width="8"/>
+    <path d="M140 395 C215 395 220 490 300 490 L1170 490" stroke="#6fb0ff" stroke-width="8"/>
+    <path class="flow" d="M140 395 C215 395 220 300 300 300 L1170 300" stroke="#fff6e8" stroke-opacity="0.75" stroke-width="3"/>
+    <path class="flow" d="M140 395 C215 395 220 490 300 490 L1170 490" stroke="#eef6ff" stroke-opacity="0.75" stroke-width="3"/>
+  </g>
+
+  <!-- Path names -->
+  <text class="pname" x="64" y="236" fill="#f2b56b">CONFIGURE</text>
+  <text class="phead" x="64" y="264">Use it</text>
+  <text class="psub" x="64" y="286">pipelines in YAML</text>
+  <text class="pname" x="64" y="526" fill="#6fb0ff">EXTEND</text>
+  <text class="phead" x="64" y="554">Build on it</text>
+  <text class="psub" x="64" y="576">the framework in C#</text>
+
+  <!-- Start station -->
+  <circle cx="140" cy="395" r="58" fill="url(#glow)"/>
+  <circle class="pulse" cx="140" cy="395" r="30" fill="none" stroke="#ffffff" stroke-width="2"/>
+  <circle cx="140" cy="395" r="30" fill="#ffffff"/>
+  <path d="M131 382 L154 395 L131 408 Z" fill="#0d1624"/>
+  <text class="start" x="140" y="346" text-anchor="middle">START HERE</text>
+  <text class="startsub" x="140" y="448" text-anchor="middle">Why it exists</text>
+  <text class="startsub" x="140" y="468" text-anchor="middle">How it works</text>
+
+  <!-- Configure stations -->
+  <g>
+    <g transform="translate(330 300)"><circle r="15" fill="#f2b56b" stroke="#0d1624" stroke-width="4"/><path d="M-3.6 -5.6 L6.4 0 L-3.6 5.6 Z" fill="#0d1624"/></g>
+    <g transform="translate(470 300)"><circle r="12" fill="#0d1624" stroke="#f2b56b" stroke-width="4"/><circle r="3.5" fill="#f2b56b"/></g>
+    <g transform="translate(610 300)"><circle r="15" fill="#f2b56b" stroke="#0d1624" stroke-width="4"/><path d="M-3.6 -5.6 L6.4 0 L-3.6 5.6 Z" fill="#0d1624"/></g>
+    <g transform="translate(750 300)"><circle r="15" fill="#f2b56b" stroke="#0d1624" stroke-width="4"/><path d="M-3.6 -5.6 L6.4 0 L-3.6 5.6 Z" fill="#0d1624"/></g>
+    <g transform="translate(890 300)"><circle r="15" fill="#f2b56b" stroke="#0d1624" stroke-width="4"/><path d="M-3.6 -5.6 L6.4 0 L-3.6 5.6 Z" fill="#0d1624"/></g>
+    <g transform="translate(1030 300)"><circle r="15" fill="#f2b56b" stroke="#0d1624" stroke-width="4"/><path d="M-3.6 -5.6 L6.4 0 L-3.6 5.6 Z" fill="#0d1624"/></g>
+    <g transform="translate(1170 300)"><circle r="18" fill="#0d1624" stroke="#f2b56b" stroke-width="5"/><circle r="7" fill="#f2b56b"/></g>
+  </g>
+  <g text-anchor="middle">
+    <g class="num" fill="#f2b56b">
+      <text x="330" y="228">01</text><text x="470" y="228">02</text><text x="610" y="228">03</text><text x="750" y="228">04</text>
+      <text x="890" y="228">05</text><text x="1030" y="228">06</text><text x="1170" y="228">07</text>
+    </g>
+    <g class="lbl">
+      <text x="330" y="252">Every route</text><text x="330" y="272">into OSDU</text>
+      <text x="470" y="252">Your own</text><text x="470" y="272">estate</text>
+      <text x="610" y="252">Write a</text><text x="610" y="272">mapping</text>
+      <text x="750" y="252">When the</text><text x="750" y="272">source changes</text>
+      <text x="890" y="252">Where is</text><text x="890" y="272">my record?</text>
+      <text x="1030" y="252">Build with</text><text x="1030" y="272">the assistant</text>
+      <text x="1170" y="252">Deliver to</text><text x="1170" y="272">dev, test, prod</text>
+    </g>
+  </g>
+
+  <!-- Extend stations -->
+  <g>
+    <g transform="translate(330 490)"><circle r="15" fill="#6fb0ff" stroke="#0d1624" stroke-width="4"/><path d="M-3.6 -5.6 L6.4 0 L-3.6 5.6 Z" fill="#0d1624"/></g>
+    <g transform="translate(470 490)"><circle r="12" fill="#0d1624" stroke="#6fb0ff" stroke-width="4"/><circle r="3.5" fill="#6fb0ff"/></g>
+    <g transform="translate(610 490)"><circle r="12" fill="#0d1624" stroke="#6fb0ff" stroke-width="4"/><circle r="3.5" fill="#6fb0ff"/></g>
+    <g transform="translate(750 490)"><circle r="15" fill="#6fb0ff" stroke="#0d1624" stroke-width="4"/><path d="M-3.6 -5.6 L6.4 0 L-3.6 5.6 Z" fill="#0d1624"/></g>
+    <g transform="translate(890 490)"><circle r="15" fill="#6fb0ff" stroke="#0d1624" stroke-width="4"/><path d="M-3.6 -5.6 L6.4 0 L-3.6 5.6 Z" fill="#0d1624"/></g>
+    <g transform="translate(1030 490)"><circle r="12" fill="#0d1624" stroke="#6fb0ff" stroke-width="4"/><circle r="3.5" fill="#6fb0ff"/></g>
+    <g transform="translate(1170 490)"><circle r="18" fill="#0d1624" stroke="#6fb0ff" stroke-width="5"/><circle r="7" fill="#6fb0ff"/></g>
+  </g>
+  <g text-anchor="middle">
+    <g class="num" fill="#6fb0ff">
+      <text x="330" y="534">01</text><text x="470" y="534">02</text><text x="610" y="534">03</text><text x="750" y="534">04</text>
+      <text x="890" y="534">05</text><text x="1030" y="534">06</text><text x="1170" y="534">07</text>
+    </g>
+    <g class="lbl">
+      <text x="330" y="558">Codebase</text><text x="330" y="578">walkthrough</text>
+      <text x="470" y="558">Your dev</text><text x="470" y="578">machine</text>
+      <text x="610" y="558">One row into</text><text x="610" y="578">the ledger</text>
+      <text x="750" y="558">Will it</text><text x="750" y="578">send?</text>
+      <text x="890" y="558">One worker,</text><text x="890" y="578">then six</text>
+      <text x="1030" y="558">The extension</text><text x="1030" y="578">ladder</text>
+      <text x="1170" y="558">Land a</text><text x="1170" y="578">change</text>
+    </g>
+  </g>
+</svg>

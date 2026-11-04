@@ -2,8 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } fro
 import { createPortal } from "react-dom";
 import { useQuery } from "@tanstack/react-query";
 import {
-  ChevronLeft, ChevronRight, ChevronsDownUp, ChevronsUpDown, Copy, FileCode, FileText, Loader2, Maximize, Minus, OctagonAlert, PanelRight, Plus, Rows3, SlidersHorizontal, Table2,
-  TriangleAlert,
+  ChevronLeft, ChevronRight, ChevronsDownUp, ChevronsUpDown, Copy, FileCode, FileText, Loader2, Maximize, OctagonAlert, PanelRight, SlidersHorizontal, Table2, TriangleAlert,
 } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -24,6 +23,7 @@ import { flowScope, type ValueCheckSession } from "../useValueCheck";
 import { formatCount } from "../valueCheck";
 import { OverviewCanvas, type OverviewHandlers, type OverviewMenuTarget, type OverviewPart, type OverviewTip } from "./OverviewCanvas";
 import { INSPECTOR_WIDTH, OverviewInspector } from "./OverviewInspector";
+import { OverviewRail } from "./OverviewRail";
 import { OverviewDocument, OverviewParameters } from "./OverviewRendered";
 import { OverviewRows } from "./OverviewRows";
 import { OverviewYaml } from "./OverviewYaml";
@@ -114,14 +114,6 @@ function OverviewMenu({ menu, named, items, onClose }: {
 /** What a canvas showing no record is given, one map for every render so nothing is drawn again for a new empty one. */
 const NO_VALUES: ReadonlyMap<string, string> = new Map();
 
-const HOWS: { how: MappingOutlineHow; label: string; count: keyof ReturnType<typeof countsOf>; meaning: string }[] = [
-  { how: "copied", label: "copied", count: "copied", meaning: "A column, written as it is." },
-  { how: "changed", label: "changed", count: "changed", meaning: "A column or an expression, changed on its way." },
-  { how: "lookedUp", label: "looked up", count: "lookedUp", meaning: "Found in the partition's cache, or by a search of OSDU." },
-  { how: "fixed", label: "fixed", count: "fixed", meaning: "The same on every record: a literal, or a parameter of the flow." },
-  { how: "linked", label: "linked", count: "linked", meaning: "Read from another record: the parent, a child, or an enrichment." },
-];
-
 /** The name of a kind's entity: `WellLog` of `osdu:wks:work-product-component--WellLog:1.4.0`. */
 function entityOf(kind: string): { entity: string; version: string } {
   const parts = kind.split(":");
@@ -129,20 +121,37 @@ function entityOf(kind: string): { entity: string; version: string } {
   return { entity: type.slice(type.lastIndexOf("-") + 1), version: parts[3] ?? "" };
 }
 
-/** The one line saying what the mapping does: the rows it reads, the record it makes, and what repeats. */
-function Lead({ outline, table, repeats }: { outline: MappingOutline; table: string | null; repeats: { name: string; table: string | null }[] }) {
+/** A piece of the sentence: plain words, a name, or a table's name. */
+type LeadPart = { text: string; as?: "name" | "table" };
+
+/** The one sentence saying what the mapping does, in pieces: the rows it reads, the record it makes, and what repeats. */
+function leadOf(outline: MappingOutline, table: string | null, repeats: { name: string; table: string | null }[]): LeadPart[] {
   const { entity } = entityOf(outline.kind);
   if (outline.enrichment) {
-    return <>Adds to each <span className="font-medium">{entity}</span> record another mapping renders.</>;
+    return [{ text: "Adds to each " }, { text: entity, as: "name" }, { text: " record another mapping renders." }];
   }
 
+  const tableOf = (name: string | null, otherwise: string): LeadPart => (name === null ? { text: otherwise } : { text: name, as: "table" });
+  return [
+    { text: "Each row of " },
+    tableOf(table, "the record table"),
+    { text: " becomes one " },
+    { text: entity, as: "name" },
+    { text: " record" },
+    ...repeats.flatMap((repeat): LeadPart[] => [{ text: ", with one item of " }, { text: repeat.name, as: "name" }, { text: " per row of " }, tableOf(repeat.table, "its child table")]),
+    { text: "." },
+  ];
+}
+
+/** The sentence, cut short when the row is too narrow for it, with the whole of it on hover. */
+function Lead({ parts }: { parts: LeadPart[] }) {
   return (
-    <>
-      Each row of {table === null ? "the record table" : <span className="font-mono font-medium">{table}</span>} becomes one <span className="font-medium">{entity}</span> record
-      {repeats.map((repeat) => (
-        <span key={repeat.name}>, with one item of <span className="font-medium">{repeat.name}</span> per row of {repeat.table === null ? "its child table" : <span className="font-mono font-medium">{repeat.table}</span>}</span>
-      ))}.
-    </>
+    <span className="min-w-0 truncate" title={parts.map((part) => part.text).join("")}>
+      {/* The pieces are fixed by their place in the sentence, so their place is their key. */}
+      {parts.map((part, index) => (part.as === undefined
+        ? <span key={index}>{part.text}</span>
+        : <span key={index} className={cn("font-medium", part.as === "table" && "font-mono")}>{part.text}</span>))}
+    </span>
   );
 }
 
@@ -562,70 +571,44 @@ function OverviewBody({ detail, outline, unfilled, issues, session, tools, onPro
         </p>
       ))}
 
+      {/* The page's heading row takes the search and the sentence, so the canvas starts right under it. */}
       {tools !== null && createPortal(
         <>
-          <SearchInput value={search} onChange={onSearch} placeholder="Property or column" label="Find a property or a column" className="w-52" testId="mapping-overview-search" />
-          <div className="ml-auto flex items-center gap-1">
-            <Button
-              size="sm"
-              variant={record.on ? "secondary" : "outline"}
-              aria-pressed={record.on}
-              disabled={flow === null}
-              title={flow === null ? record.blocked ?? undefined : "Follow one staged record through the mapping. Nothing is sent."}
-              onClick={record.toggle}
-              data-testid="mapping-overview-show-record"
-            >
-              <Rows3 />
-              Show a record
-            </Button>
-            <Button size="sm" variant={showYaml ? "secondary" : "outline"} aria-pressed={showYaml} onClick={() => setShowYaml((current) => !current)} data-testid="mapping-overview-toggle-yaml">
-              <FileCode />
-              YAML
-            </Button>
+          <SearchInput value={search} onChange={onSearch} placeholder="Property or column" label="Find a property or a column" className="sm:w-60" testId="mapping-overview-search" />
+          {found !== null && (
+            <span className="shrink-0 text-[12px] text-muted-foreground" data-testid="mapping-overview-found">
+              <span className="font-mono tabular-nums">{formatCount(found)}</span> of <span className="font-mono tabular-nums">{formatCount(counts.properties)}</span> found
+            </span>
+          )}
+          <div className="flex min-w-0 flex-[1_1_26rem] items-center text-[13px]">
+            {record.on
+              ? <RecordLine record={record} session={session} />
+              : (
+                <p className="flex min-w-0 items-center gap-1" data-testid="mapping-overview-lead">
+                  <Lead parts={leadOf(outline, main?.subtitle === null || main === undefined ? null : main.title, repeats)} />
+                  <ExplainMark title="How to read this" text={ABOUT} testId="mapping-overview-about" />
+                </p>
+              )}
           </div>
         </>,
         tools,
       )}
-
-      <div className="flex shrink-0 flex-wrap items-center gap-x-6 gap-y-1 text-[13px]">
-        {record.on
-          ? <RecordLine record={record} session={session} />
-          : (
-            <p className="flex min-w-0 items-center gap-1" data-testid="mapping-overview-lead">
-              <span className="min-w-0 truncate"><Lead outline={outline} table={main?.subtitle === null || main === undefined ? null : main.title} repeats={repeats} /></span>
-              <ExplainMark title="How to read this" text={ABOUT} testId="mapping-overview-about" />
-            </p>
-          )}
-        <div className="ml-auto flex shrink-0 flex-wrap items-center gap-x-3 text-[12px] text-muted-foreground" role="group" aria-label="Light the properties filled one way" data-testid="mapping-overview-hows">
-          <span data-testid="mapping-overview-properties">
-            {found === null
-              ? <><span className="font-mono tabular-nums">{formatCount(counts.properties)}</span> properties</>
-              : <><span className="font-mono tabular-nums">{formatCount(found)}</span> of <span className="font-mono tabular-nums">{formatCount(counts.properties)}</span> found</>}
-          </span>
-          {HOWS.filter((item) => counts[item.count] > 0 || how === item.how).map((item) => (
-            <button
-              key={item.how}
-              type="button"
-              aria-pressed={how === item.how}
-              title={item.meaning}
-              onClick={() => onHow(item.how)}
-              className={cn(
-                "rounded-sm outline-none transition-colors hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/50",
-                how === item.how && "text-foreground underline decoration-primary decoration-2 underline-offset-4",
-              )}
-              data-testid={`mapping-overview-how-${item.how}`}
-            >
-              <span className="font-mono tabular-nums">{formatCount(counts[item.count])}</span>
-              {` ${item.label}`}
-            </button>
-          ))}
-        </div>
-      </div>
       {record.problem !== null && <ProblemView error={record.problem} testId="mapping-overview-record-error" />}
 
-      <Card className="min-h-0 flex-1 gap-0 overflow-hidden rounded-lg p-0">
+      <Card className="min-h-0 flex-1 flex-row gap-0 overflow-hidden rounded-lg p-0">
+        <OverviewRail
+          counts={counts}
+          how={how}
+          onHow={onHow}
+          record={{ on: record.on, blocked: flow === null ? record.blocked : null, onToggle: record.toggle }}
+          yaml={{ on: showYaml, onToggle: () => setShowYaml((current) => !current) }}
+          allOpen={allOpen}
+          onOpenAll={() => setOpen(allOpen ? defaultOpen(outline) : everyFolding(outline))}
+          onZoom={(factor) => canvas.current?.zoomBy(factor)}
+          onFit={fitView}
+        />
         {/* The canvas keeps its place in the tree whether or not the YAML is open: D3 owns what is inside its svg. */}
-        <ResizablePanelGroup orientation="horizontal" className="min-h-0 flex-1" defaultLayout={showYaml ? layout.defaultLayout : undefined} onLayoutChanged={showYaml ? layout.onLayoutChanged : undefined}>
+        <ResizablePanelGroup orientation="horizontal" className="min-h-0 min-w-0 flex-1" defaultLayout={showYaml ? layout.defaultLayout : undefined} onLayoutChanged={showYaml ? layout.onLayoutChanged : undefined}>
           <ResizablePanel id="overview-canvas" minSize="40" className="flex min-h-0 min-w-0 flex-col">
             {/* The same for what is shown under it: the canvas's panel stays first, whether or not anything is. */}
             <ResizablePanelGroup
@@ -649,28 +632,6 @@ function OverviewBody({ detail, outline, unfilled, issues, session, tools, onPro
                     onClose={() => setPicked(null)}
                   />
                   {tip !== null && <CanvasTip tip={tip} />}
-                  <div
-                    className="absolute bottom-3 flex items-center gap-0.5 rounded-md border border-border bg-card p-0.5 shadow-xs transition-[right] duration-200 ease-out motion-reduce:transition-none"
-                    // Kept beside the details, which slide in over the canvas's right edge.
-                    style={{ right: picked === null ? 16 : `calc(min(${INSPECTOR_WIDTH}px, 85%) + 16px)` }}
-                    role="group"
-                    aria-label="The view"
-                  >
-                    <Button
-                      variant="ghost"
-                      size="icon-xs"
-                      aria-label={allOpen ? "Fold" : "Open all"}
-                      title={allOpen ? "Fold" : "Open all"}
-                      onClick={() => setOpen(allOpen ? defaultOpen(outline) : everyFolding(outline))}
-                      data-testid="mapping-overview-open-all"
-                    >
-                      {allOpen ? <ChevronsDownUp /> : <ChevronsUpDown />}
-                    </Button>
-                    <span className="mx-0.5 h-4 w-px bg-border" aria-hidden />
-                    <Button variant="ghost" size="icon-xs" aria-label="Zoom out" title="Zoom out" onClick={() => canvas.current?.zoomBy(0.8)} data-testid="mapping-overview-zoom-out"><Minus /></Button>
-                    <Button variant="ghost" size="icon-xs" aria-label="Zoom in" title="Zoom in" onClick={() => canvas.current?.zoomBy(1.25)} data-testid="mapping-overview-zoom-in"><Plus /></Button>
-                    <Button variant="ghost" size="icon-xs" aria-label="Fit to the window" title="Fit to the window" onClick={() => canvas.current?.fit(true)} data-testid="mapping-overview-fit"><Maximize /></Button>
-                  </div>
                 </div>
               </ResizablePanel>
               {lookingAt && (
