@@ -16,6 +16,9 @@ keywords:
   - "types[].kind"
   - "types[].dictionary"
   - "types[].dimension"
+  - "types[].fetchRecords"
+  - "types[].attributes"
+  - parent record properties
   - onchange
   - retentiondays
   - cache retention
@@ -25,6 +28,8 @@ keywords:
   - refresh one type
 yamlPath: "(root, flowType: cache)"
 related:
+  - delivery-flow-cache-records
+  - delivery-flow-cache-attributes
   - delivery-concept-search-paging
   - delivery-concept-partition-cache
   - delivery-guide-lookup-table-cache
@@ -200,7 +205,10 @@ fail with `types[<n>] names more than one origin; a type has one: ...`.
 | `entityType` | OSDU | The entity type the records hold. Derived from the kind; needed only when the kind names none. Refused on a lookup table. |
 | `name` | all | The name a mapping reads the type by. Defaults: the part of the entity type after `--` for an OSDU type (`UnitOfMeasure`), the table's own name for a table (`UnitAlias`), the dictionary's or the dimension's name. Unique within each partition the flow fills. |
 | `query` | OSDU | A Lucene query narrowing the records kept, `*` when left out; `{name}` tokens are the flow's parameters. Refused on a lookup table, which holds every row. |
-| `fields` | OSDU, table, dimension | OSDU: the paths of each record to keep, bare (`data.Code`, kept as `Code`) or `{ path: ..., as: ... }`; required. Table: the columns kept beside the key, bare or `{ column: ..., as: ... }`; required. Dimension: the attributes of the dimension each row carries. A dictionary takes none. |
+| `fields` | OSDU, table, dimension | OSDU: the paths of each record to keep, bare (`data.Code`, kept as `Code`) or `{ path: ..., as: ... }`; required unless the type reads `attributes`. Table: the columns kept beside the key, bare or `{ column: ..., as: ... }`; required. Dimension: the attributes of the dimension each row carries. A dictionary takes none. |
+| `fetchRecords` | OSDU | `true` reads each record the search finds whole from the storage service and keeps the paths of the record as storage holds it, so a path the search index does not hold (a property of `data.ExtensionProperties`) is kept. `false` when left out. See [records read whole](cache-records.md). |
+| `attributes` | OSDU | Facts of other records attached to each cached record under a name, read exactly as a dimension's attributes are: a path, a list of up to three paths each but the last reading the references the next records are found by (`WellName: [data.WellID, data.FacilityName]`), or settings with `keep`, `many`, `decode`, `maxReferences` and `trim`. See [cache attributes](cache-attributes.md). |
+| `lookupKinds` | OSDU | The one kind each entity type's records are looked up in when an attribute reads through a reference to one, as a dimension's `lookupKinds`. Only beside `attributes`. |
 | `table` | table | The ingestion table, as a three-part name `[database].[schema].[table]` (`OsduData.silver.UnitAlias`). |
 | `key` | table | The column each row is keyed by, which a mapping matches on. Required for a table, refused on any other origin. |
 | `dictionary` | dictionary | The name of a dictionary document, `dictionaries/<name>.yaml` in the nearest `dictionaries/` folder above the flow. |
@@ -210,85 +218,15 @@ fail with `types[<n>] names more than one origin; a type has one: ...`.
 
 ## The four origins
 
-### OSDU records (`kind`)
+Each type names one origin; [Cache type origins](cache-origins.md) says how each is captured, what it keeps and what it
+refuses.
 
-A refresh searches the kind through the search service's cursor (`POST /api/search/v2/query_with_cursor`), or with
-`source.paging: createTime` through `POST /api/search/v2/query` in the order the records were created, and keeps,
-for every record, its id and the declared paths. A path crosses arrays, so `data.NameAliases.AliasName` keeps the set of
-aliases a record holds; whatever a path yields (a scalar, a set, an object) is kept as it is. A path is stored without
-its `data.` root, so a mapping reads `data.Code` as `Code`. Two paths kept under one name, or a path kept as `id`, are
-refused. A type is read whole or the refresh fails: a sweep that fails part way or comes back short is read once more
-(through the cursor from the start, or in `createTime` order from where it stopped, reading again only what came back
-short), and when that fails too nothing is written and the cache keeps the version it had.
-
-The capture warns rather than fails when a search matches no record (`the search matched no record of kind ... Check
-the kind and the query.`) or when no record carries a path (`no item carried '<path>' ... Check the path against the
-kind`). Keep closed vocabularies here; business data that a mapping finds one record of per row (the wellbore a log
-belongs to) can be cached too, or searched for as each record needs it ([lookups](mapping-lookups.md)).
-
-Which pipelines bring a type up to date before or after they run is the pipelines' to say, not the cache flow's: a
-delivery flow names the types in its `cache` block ([cache](delivery.md#cache)).
-
-### Ingestion tables (`table`)
-
-A table type holds the rows of a table SQLFlow's own flows load, usually the keyed silver table an `ing` flow writes.
-It is kept as the lookup table `lookup--<name>`, keyed by `key`, with the `fields` columns beside the key. A refresh
-reads the table over `source.connection`:
-
-- **Every row the ingestion flow has not marked deleted.** When the table has `DeletedDate_DW`, rows where it is set are
-  left out, so a row the ing flow's deleted-row detection tags leaves the cache at the next refresh.
-- **Each key trimmed, unique, at most 256 characters,** not empty and without control characters. A key that breaks a
-  rule, or two rows whose keys are the same once trimmed, refuses the whole capture, naming the first five of each: `Cache flow
-  '<flow>': table <table> has rows type <name> could not be keyed by <key>, so nothing was captured: ...`. Keys compare
-  exactly, so `GAPI` and `gapi` are two rows.
-- **At most 100,000 rows.** A larger table fails (`... holds more than 100000 rows for type <name>, and a lookup table
-  holds at most that many: every row is loaded with the cache version a render reads. ...`): join a table that large into
-  the ingestion tables the delivery flow reads instead.
-- **Every value as text,** as the delivery reader gives it, so a value read from the cache and the same value read from a
-  dataset are the same text. A NULL column is not kept, and reads as no value.
-- **The key column must be comparable:** a text or number column of bounded length. A missing column fails naming the
-  columns the table has; a missing table fails with `the table <table>, which type <name> reads, was not found on the
-  source database, or the identity this node connects with cannot see it. Check the ingestion flow that loads it has run,
-  and that the node's login is granted SELECT on it.`
-
-Neither the key nor a field may be called `id` in any casing, and the key is not listed among the fields. A table type
-takes no `entityType` or `query`. Only one cache flow of a partition may declare a given lookup table.
-
-### Dictionary documents (`dictionary`)
-
-A dictionary type holds the entries of a [dictionary document](dictionary.md): a small lookup table reviewed in the
-repository. It names only the dictionary (and optionally `name`); the document names its key and fields, so `kind`,
-`entityType`, `query`, `fields` and `key` are refused. The file is found in the nearest `dictionaries/` folder walking up
-from the flow's folder, and read at the run's commit: every cache flow runs from a checkout of its repository, since a
-refresh also reads the [repository document](repository.md) above it. `sqlflow validate` on the flow finds and reads
-the file the same way, and refuses a flow whose dictionary is missing or does not load
-(`<file>: type 'SamplingDomain': Dictionary 'sampling-domain' was not found under '../dictionaries'. Expected sampling-domain.yaml or sampling-domain.yml.`).
-The repository sync reads it too, and leaves a type whose dictionary is missing or invalid out of the cache with a
-warning naming the file.
-
-### Dimension values (`dimension`, `dimensionFlow`)
-
-A dimension type holds a dimension's values as its last completed build in the partition left them: one row per value,
-keyed by `value`, with `keys` (every raw key the value stands for), `records` and `filter` beside it, plus each attribute
-`fields` names. It takes no `entityType`, `query` or `key`.
-
-```yaml
-flowType: cache
-name: welldb-dimensions-00-cache
-batch: welldb
-partitions: [dev]
-
-source: {}
-
-types:
-  - dimension: Field
-    dimensionFlow: welldb-welllog-05-dimensions
-    fields: [Country]
-```
-
-A refresh before the dimension's first completed build fails, naming the build to run; so does a field the dimension
-does not read. A dimension over 100,000 values or 500,000 keys refuses the capture. A mapping turns a raw key into its
-value with `replace: $cache.Field`, `match: keys` and `field: value` ([modifiers](mapping-modifiers.md)).
+| Origin | The type names | It holds |
+| --- | --- | --- |
+| OSDU records | `kind` | Every record the search matches, the declared paths of each, its `attributes` read through the records it references ([cache attributes](cache-attributes.md)), whole from storage with [`fetchRecords`](cache-records.md). |
+| Ingestion table | `table`, `key` | The rows of a table an ingestion flow loads, keyed by a column. |
+| Dictionary | `dictionary` | The entries of a dictionary document in the repository. |
+| Dimension | `dimension`, `dimensionFlow` | A dimension's values as its last build in the partition left them. |
 
 ## Which partitions a flow fills
 
@@ -399,6 +337,8 @@ serves the registry and a delivery flow that hard-codes `data-partition-id: dev`
 | `types[<n>]: Cached type '<name>' lists its key '<key>' among its fields; the key is kept under its own name already.` | The key repeated in `fields`. |
 | `types[<n>]: Cached type '<name>' is keyed by '<key>'; a lookup row's key is its id, so ...` | A key called `id`. |
 | `types[<n>] holds dictionary <name>, which takes no '<setting>': ...` | `fields`, `key`, `kind`, `entityType` or `query` on a dictionary type. |
+| `types[<n>] holds table <table>, which takes no 'fetchRecords': ...` | `fetchRecords` on a table, dictionary or dimension type, which holds no OSDU record to read whole. |
+| `types[<n>] holds table <table>, which takes no 'attributes': ...` | `attributes` or `lookupKinds` on a table, dictionary or dimension type. |
 | `types declares ... more than once ...; a mapping reads a type by its name, ...` | Two types with one name for the same partition. |
 | `types[<n>].query uses '{<token>}', which is not declared under parameters.` | A query token without a parameter. |
 | `source.connection is required: the flow declares a type read from an ingestion table.` | A table type without `source.connection`. |

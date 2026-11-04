@@ -1192,6 +1192,18 @@ internal sealed class CachedTypeYaml
     // A path ("data.Code") or a mapping of path and as ({ path: data.NameAlias.AliasName, as: Alias }).
     public List<object>? Fields { get; set; }
 
+    /// <summary>For an OSDU type: read each record the search finds whole from storage, so a path the index does not hold is kept.</summary>
+    public bool? FetchRecords { get; set; }
+
+    /// <summary>
+    /// For an OSDU type: values read as a dimension's attributes are, by name, from the cached record and through the records
+    /// its references name: a path, a list of paths, or settings, exactly as a dimension's <c>attributes</c> are written.
+    /// </summary>
+    public Dictionary<string, object?>? Attributes { get; set; }
+
+    /// <summary>For an OSDU type with attributes: the one kind each entity type's records are looked up in, as a dimension's <c>lookupKinds</c>.</summary>
+    public List<string>? LookupKinds { get; set; }
+
     /// <summary>The dictionary document the type holds, in place of a kind: a lookup table kept in the repository.</summary>
     public string? Dictionary { get; set; }
 

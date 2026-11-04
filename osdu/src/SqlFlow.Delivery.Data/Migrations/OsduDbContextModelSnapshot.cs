@@ -517,6 +517,9 @@ namespace SqlFlow.Delivery.Data.Migrations
                         .HasMaxLength(200)
                         .HasColumnType("nvarchar(200)");
 
+                    b.Property<bool>("FetchRecords")
+                        .HasColumnType("bit");
+
                     b.Property<string>("FieldsJson")
                         .IsRequired()
                         .HasColumnType("nvarchar(max)");

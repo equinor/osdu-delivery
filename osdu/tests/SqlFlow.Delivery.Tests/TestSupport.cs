@@ -405,17 +405,25 @@ public sealed class FakeOsduProtocols(HttpMessageHandler handler) : IProtocolFac
     }
 }
 
-/// <summary>A scripted HTTP handler: matches requests by method and path, records bodies, returns canned responses.</summary>
+/// <summary>
+/// A scripted HTTP handler: matches requests by method and path, records bodies, returns canned responses. Requests may arrive
+/// side by side (a reader with several reads in flight), so the record of calls and the hit counts are kept under a lock.
+/// </summary>
 public sealed class FakeHttpHandler : HttpMessageHandler
 {
     public sealed record Request(HttpMethod Method, Uri Uri, string? Body, string? ContentType, IReadOnlyDictionary<string, string> Headers);
 
-    private readonly List<(Func<HttpRequestMessage, bool> Match, Func<int, HttpResponseMessage> Respond)> _rules = [];
+    private readonly List<(Func<HttpRequestMessage, bool> Match, Func<int, string?, HttpResponseMessage> Respond)> _rules = [];
     private readonly Dictionary<string, int> _hits = new(StringComparer.Ordinal);
+    private readonly Lock _gate = new();
 
     public List<Request> Calls { get; } = [];
 
     public FakeHttpHandler On(HttpMethod method, string pathSuffix, Func<int, HttpResponseMessage> respond)
+        => On(method, pathSuffix, (hit, _) => respond(hit));
+
+    /// <summary>A rule answering from the request's body as well as how often the path was asked: a read that names what it reads.</summary>
+    public FakeHttpHandler On(HttpMethod method, string pathSuffix, Func<int, string?, HttpResponseMessage> respond)
     {
         _rules.Add((r => r.Method == method && r.RequestUri!.AbsolutePath.EndsWith(pathSuffix, StringComparison.Ordinal), respond));
         return this;
@@ -427,7 +435,7 @@ public sealed class FakeHttpHandler : HttpMessageHandler
     /// <summary>A rule over the whole request, for URLs the test cannot know in advance (a run id the protocol chose).</summary>
     public FakeHttpHandler OnMatch(Func<HttpRequestMessage, bool> match, Func<int, HttpResponseMessage> respond)
     {
-        _rules.Add((match, respond));
+        _rules.Add((match, (hit, _) => respond(hit)));
         return this;
     }
 
@@ -452,15 +460,18 @@ public sealed class FakeHttpHandler : HttpMessageHandler
         }
 
         var headers = request.Headers.ToDictionary(h => h.Key, h => string.Join(",", h.Value), StringComparer.OrdinalIgnoreCase);
-        Calls.Add(new Request(request.Method, request.RequestUri!, body, request.Content?.Headers.ContentType?.MediaType, headers));
-        foreach (var (match, respond) in _rules)
+        lock (_gate)
         {
-            if (match(request))
+            Calls.Add(new Request(request.Method, request.RequestUri!, body, request.Content?.Headers.ContentType?.MediaType, headers));
+            foreach (var (match, respond) in _rules)
             {
-                var key = request.Method + " " + request.RequestUri!.AbsolutePath;
-                var hit = _hits.GetValueOrDefault(key);
-                _hits[key] = hit + 1;
-                return respond(hit);
+                if (match(request))
+                {
+                    var key = request.Method + " " + request.RequestUri!.AbsolutePath;
+                    var hit = _hits.GetValueOrDefault(key);
+                    _hits[key] = hit + 1;
+                    return respond(hit, body);
+                }
             }
         }
 

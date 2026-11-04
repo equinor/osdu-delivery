@@ -591,6 +591,8 @@ export interface DeliveryCacheTypeSource {
   sourceObject: string | null;
   keyField: string | null;
   dictionaryPath: string | null;
+  /** For an OSDU type: this flow reads each record its search finds whole from storage (types[].fetchRecords). */
+  fetchRecords: boolean;
 }
 
 /**
@@ -609,6 +611,11 @@ export interface DeliveryCacheType {
   origin: DeliveryCacheOrigin;
   /** For a lookup table (a table or a dictionary), the name each row's key is kept under; null for OSDU records. */
   key: string | null;
+  /**
+   * For an OSDU type: every capture reads its records whole from storage, so paths the search index does not hold are kept;
+   * set when any declaring flow asks for that.
+   */
+  fetchRecords: boolean;
 }
 
 /** A schedule that refreshes a cache flow: its cadence, or that it fires behind other schedules. */

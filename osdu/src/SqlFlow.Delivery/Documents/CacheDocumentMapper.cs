@@ -146,6 +146,26 @@ internal static class CacheMapper
             }
 
             var builtFor = MapTypePartitions(type.Partitions, partitions, followsRegistry, where, source);
+            if (LookupOrigin(type) is { } lookup)
+            {
+                // A lookup table holds rows of a table, a dictionary or a dimension, never an OSDU record: none storage keeps
+                // to read whole, and no reference of one to read an attribute through.
+                if (type.FetchRecords is not null)
+                {
+                    throw new FlowValidationException(
+                        $"{source}: {where} holds {lookup}, which takes no 'fetchRecords': it reads each record a search finds whole from OSDU's storage service, and only a type searched on OSDU, by its kind, has such records. Remove it.");
+                }
+
+                foreach (var (setting, value) in new (string, object?)[] { ("attributes", type.Attributes), ("lookupKinds", type.LookupKinds) })
+                {
+                    if (value is not null)
+                    {
+                        throw new FlowValidationException(
+                            $"{source}: {where} holds {lookup}, which takes no '{setting}': attributes are read from OSDU records and through the records they reference, and only a type searched on OSDU, by its kind, has such records. Remove it.");
+                    }
+                }
+            }
+
             if (!string.IsNullOrWhiteSpace(type.Dimension) || !string.IsNullOrWhiteSpace(type.DimensionFlow))
             {
                 types.Add(Validated(DimensionType(type, defaultMode, where, source) with { Partitions = builtFor }, where, source));
@@ -191,6 +211,9 @@ internal static class CacheMapper
                 }
             }
 
+            // A type of attributes alone lists no paths of its own; one with neither is refused by the field list.
+            var attributes = MapAttributes(type, where, source);
+            var paths = type.Fields is null && attributes.Count > 0 ? [] : MapFields(type.Fields, $"{where}.fields", source);
             var spec = new ReferenceTypeSpec
             {
                 Name = string.IsNullOrWhiteSpace(type.Name) ? ShortNameOf(entityType) : type.Name!.Trim(),
@@ -198,7 +221,8 @@ internal static class CacheMapper
                 Kind = kind,
                 Query = query,
                 OnChange = FlowMapper.ParseEnum(type.OnChange, defaultMode, $"{where}.onChange", source),
-                Fields = MapFields(type.Fields, $"{where}.fields", source),
+                Fields = [.. paths, .. attributes],
+                FetchRecords = type.FetchRecords ?? false,
                 Partitions = builtFor,
             };
 
@@ -207,6 +231,48 @@ internal static class CacheMapper
 
         CheckTypeNames(types, partitions, followsRegistry, source);
         return types;
+    }
+
+    /// <summary>
+    /// A type's attributes (osdu/docs/reference/flow/cache-attributes.md): the dimension's, written and read exactly as a
+    /// dimension's <c>attributes</c> are (<see cref="DimensionMapper.MapAttributes"/>), with the dimension's
+    /// <c>lookupKinds</c>, each kept under its name beside the type's paths. The key of a cached type is each record's own
+    /// id, so an attribute that collects the values of the records holding a key would collect the record's own values,
+    /// which a path of the record keeps already: a collected attribute is refused, naming that path.
+    /// </summary>
+    private static List<ReferenceFieldSpec> MapAttributes(CachedTypeYaml type, string where, string source)
+    {
+        var attributes = DimensionMapper.MapAttributes(type.Attributes, where, source, AttributeHolder.CacheType);
+        if (attributes.FirstOrDefault(a => a.IsCollected) is { } collected)
+        {
+            throw new FlowValidationException(
+                $"{source}: {where}: attributes.{collected.Name} collects {collected.Collect}, and a cached type is keyed by each record's own id, so it would collect the record's own values; keep the path among fields instead (fields: [{{ path: {collected.Collect}, as: {collected.Name} }}]).");
+        }
+
+        var lookupKinds = DimensionMapper.MapLookupKinds(type.LookupKinds, where, source);
+        if (lookupKinds.Count > 0 && attributes.Count == 0)
+        {
+            throw new FlowValidationException(
+                $"{source}: {where}: lookupKinds names the kind each entity type's records are looked up in when an attribute reads through a reference, and the type reads no attribute. Remove it, or read an attribute under attributes.");
+        }
+
+        return [.. attributes.Select(attribute => new ReferenceFieldSpec(attribute, lookupKinds))];
+    }
+
+    /// <summary>The lookup table a type holds, as a message names it, or null for a type searched on OSDU.</summary>
+    private static string? LookupOrigin(CachedTypeYaml type)
+    {
+        if (!string.IsNullOrWhiteSpace(type.Dimension) || !string.IsNullOrWhiteSpace(type.DimensionFlow))
+        {
+            return $"dimension {type.Dimension?.Trim()}";
+        }
+
+        if (!string.IsNullOrWhiteSpace(type.Dictionary))
+        {
+            return $"dictionary {type.Dictionary.Trim()}";
+        }
+
+        return string.IsNullOrWhiteSpace(type.Table) ? null : $"table {type.Table.Trim()}";
     }
 
     /// <summary>

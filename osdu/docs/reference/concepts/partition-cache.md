@@ -210,6 +210,11 @@ needs without copying another project's file. The cache holds the union of what 
   the first to commit and merges onto the version it wrote. After five minutes of waiting it gives up, keeps nothing of
   its capture, and says to run the refresh again. Refreshes of different partitions never wait on each other.
 - **onChange is the strictest.** A type's changes wait for approval when any flow declaring it says `onChange: approve`.
+- **Attributes are fields.** A type's [attributes](../flow/cache-attributes.md) widen and merge as its paths do, and two
+  flows declaring one attribute must read it with the same steps and settings.
+- **Reading whole records is shared too.** When any flow declaring a type says `fetchRecords: true`, every capture of the
+  type reads each record whole from storage, a pipeline's cache step included, so no capture drops a value only storage
+  holds ([records read whole](../flow/cache-records.md)).
 
 When a flow stops declaring a type, the sync deletes that flow's hold on the type's records, so a later capture by
 another flow lets go of the records only the first one kept.
@@ -218,9 +223,9 @@ another flow lets go of the records only the first one kept.
 
 1. Resolves the partition and reads every synced declaration of it; a conflict with another flow stops here.
 2. Captures each declared type from its origin: OSDU types through the search service (every path the partition keeps
-   for the type), table types from the ingestion database, dictionaries from the repository tree, dimension types from
-   the dimension's last build. A type that cannot be read whole fails the refresh before anything is written. A run
-   that names `types` captures those alone.
+   for the type, or each record read whole from storage for a type with `fetchRecords`), table types from the ingestion
+   database, dictionaries from the repository tree, dimension types from the dimension's last build. A type that cannot
+   be read whole fails the refresh before anything is written. A run that names `types` captures those alone.
 3. Asks OSDU's storage service about the records of each OSDU type that a delivery holds and the search did not find
    ([below](#pipelines-bring-the-cache-up-to-date)), and reads the partition's system properties, when it reached OSDU
    ([System properties](#system-properties)).

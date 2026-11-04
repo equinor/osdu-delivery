@@ -639,6 +639,10 @@ const QUESTIONS: &[(&str, &[&str])] = &[
     ("update the cache during a schedule after a delivery", &["delivery-concept-partition-cache", "delivery-wiki-0017-pipelines-update-the-cache"]),
     ("update the cache before running a pipeline", &["delivery-concept-partition-cache", "delivery-flow-delivery"]),
     ("refresh only one type of a cache flow", &["delivery-flow-cache"]),
+    ("cache extension properties the search does not return", &["delivery-flow-cache-records"]),
+    ("read the full record into the cache, not only what search returns", &["delivery-flow-cache-records"]),
+    ("attach properties of the parent record to each cached record", &["delivery-flow-cache-attributes"]),
+    ("dimension attributes in a cache flow, read through a reference", &["delivery-flow-cache-attributes"]),
     ("which table holds what in the osdu schema", &["delivery-concept-database"]),
     ("which database table holds a record's attempts", &["delivery-concept-database", "delivery-concept-ledger"]),
 ];

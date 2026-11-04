@@ -348,7 +348,7 @@ public sealed class DimensionLabeler
 
     private static readonly OsduField Id = OsduField.Keyword("id");
 
-    private readonly OsduSearch _search;
+    private readonly ILabelRecords _records;
     private readonly int _concurrency;
     private readonly SemaphoreSlim _searches;
     private readonly BoundedCache<(string Path, string Id), Projection?> _reached = new(CacheCapacity);
@@ -361,9 +361,19 @@ public sealed class DimensionLabeler
     /// search, each on its own.
     /// </param>
     public DimensionLabeler(OsduSearch search, int concurrency = 1)
+        : this(new SearchLabelRecords(search), concurrency)
     {
-        ArgumentNullException.ThrowIfNull(search);
-        _search = search;
+    }
+
+    /// <param name="records">
+    /// Where the records the steps reach are read: the search index (<see cref="SearchLabelRecords"/>), as a dimension reads
+    /// them, or another reader of records by id, such as a cache type's that reads its records whole from storage.
+    /// </param>
+    /// <param name="concurrency">The most reads asked at once, whatever passes read side by side.</param>
+    public DimensionLabeler(ILabelRecords records, int concurrency = 1)
+    {
+        ArgumentNullException.ThrowIfNull(records);
+        _records = records;
         _concurrency = Math.Max(1, concurrency);
         _searches = new SemaphoreSlim(_concurrency, _concurrency);
     }
@@ -931,7 +941,7 @@ public sealed class DimensionLabeler
     }
 
     /// <summary>
-    /// The records of <paramref name="kind"/> among <paramref name="ids"/>, each holding <paramref name="fields"/>: one search,
+    /// The records of <paramref name="kind"/> among <paramref name="ids"/>, each holding <paramref name="fields"/>: one read,
     /// asked once one of the labeler's places is free, so every pass reading at once shares them.
     /// </summary>
     private async Task<IReadOnlyList<JsonObject>> FindAsync(string kind, string[] ids, List<string> fields, CancellationToken ct)
@@ -939,9 +949,7 @@ public sealed class DimensionLabeler
         await _searches.WaitAsync(ct).ConfigureAwait(false);
         try
         {
-            var (_, hits) = await _search.FirstAsync(
-                new OsduSearchQuery { Kind = kind, Query = OsduQuery.AnyOf(Id, ids).Text, ReturnedFields = fields }, OsduSearch.MaxPage, ct).ConfigureAwait(false);
-            return hits;
+            return await _records.FindAsync(kind, ids, fields, ct).ConfigureAwait(false);
         }
         finally
         {
@@ -1051,5 +1059,47 @@ public sealed class DimensionLabeler
             .Select(step => DimensionPath.Parse(step).Path
                 ?? throw new DeliveryException($"'{step}' is not a path a label or an attribute can be read through: {DimensionPath.Parse(step).Problem}."))
             .ToList();
+    }
+}
+
+/// <summary>
+/// Where a <see cref="DimensionLabeler"/> reads the records its steps reach and its filters look up, by id: the search index,
+/// as a dimension reads them (<see cref="SearchLabelRecords"/>), or a reader of whole records, as a cache type that reads its
+/// records whole from storage does.
+/// </summary>
+public interface ILabelRecords
+{
+    /// <summary>
+    /// The records among <paramref name="ids"/> (at most <see cref="DimensionLabeler.IdsPerQuery"/>, each without a version)
+    /// that are of <paramref name="kind"/>, each holding at least <paramref name="fields"/>, <c>id</c> first. A record not held,
+    /// or not of the kind, is not returned.
+    /// </summary>
+    Task<IReadOnlyList<JsonObject>> FindAsync(string kind, IReadOnlyList<string> ids, IReadOnlyList<string> fields, CancellationToken ct);
+}
+
+/// <summary>
+/// Reads records by id through the search service's offset search (openapi search v2, POST /query): the ids asked
+/// for in one query matching each exactly, in the kind given, returning the fields given. What a dimension reads.
+/// </summary>
+public sealed class SearchLabelRecords : ILabelRecords
+{
+    private static readonly OsduField IdField = OsduField.Keyword("id");
+
+    private readonly OsduSearch _search;
+
+    public SearchLabelRecords(OsduSearch search)
+    {
+        ArgumentNullException.ThrowIfNull(search);
+        _search = search;
+    }
+
+    public async Task<IReadOnlyList<JsonObject>> FindAsync(string kind, IReadOnlyList<string> ids, IReadOnlyList<string> fields, CancellationToken ct)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(kind);
+        ArgumentNullException.ThrowIfNull(ids);
+        ArgumentNullException.ThrowIfNull(fields);
+        var (_, hits) = await _search.FirstAsync(
+            new OsduSearchQuery { Kind = kind, Query = OsduQuery.AnyOf(IdField, ids).Text, ReturnedFields = [.. fields] }, OsduSearch.MaxPage, ct).ConfigureAwait(false);
+        return hits;
     }
 }

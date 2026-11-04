@@ -17,6 +17,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **A cache type attaches its parent records' properties to each cached record, as a dimension reads them.** A cache
+  flow's OSDU type takes a dimension's `attributes` and `lookupKinds`, written and read exactly as a dimension's: paths
+  through references (`WellName: [data.WellID, data.FacilityName]`), filters, `keep`, `many`, `decode`, `maxReferences` and
+  `trim`. Each is kept on the cached record under its name, so a mapping finds and reads it as any cached field, and with
+  `fetchRecords` the records a step reaches are read whole from storage ([cache attributes](osdu/docs/reference/flow/cache-attributes.md)).
+
+- **A cache type caches any part of an OSDU record.** With `fetchRecords: true` on a cache flow's OSDU type, each record
+  the search finds is read whole from the storage service, 100 ids a request, so a path the search index does not hold
+  (a property of `data.ExtensionProperties`, `meta`) is cached like any other. Every capture of a type that any flow of the
+  partition reads whole does so too, a pipeline's `cache.before` step included, and the Cache page says where a type's
+  values are read from ([records read whole](osdu/docs/reference/flow/cache-records.md)).
+
 - **Assertions compare OSDU with what the staged data holds now.** An assertion flow declares `queries`, each naming the
   database it runs against (`connection`, a reference) beside its one read-only `sql`, and any value a comparison takes may
   be a query's answer, named (`count: { query: staged-wellbores }`) or written in place. Known values read one row per row a

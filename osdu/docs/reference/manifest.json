@@ -3458,6 +3458,9 @@
         "types[].kind",
         "types[].dictionary",
         "types[].dimension",
+        "types[].fetchRecords",
+        "types[].attributes",
+        "parent record properties",
         "onchange",
         "retentiondays",
         "cache retention",
@@ -3468,6 +3471,8 @@
       ],
       "yamlPath": "(root, flowType: cache)",
       "related": [
+        "delivery-flow-cache-records",
+        "delivery-flow-cache-attributes",
         "delivery-concept-search-paging",
         "delivery-concept-partition-cache",
         "delivery-guide-lookup-table-cache",
@@ -3501,6 +3506,133 @@
         "osdu/src/SqlFlow.Delivery/Source/IngestionConnection.cs",
         "osdu/src/SqlFlow.Delivery/Catalog/DeliveryCatalogSync.cs",
         "osdu/docs/census/keys.cache.json"
+      ]
+    },
+    {
+      "id": "delivery-flow-cache-attributes",
+      "corpus": "reference",
+      "path": "flow/cache-attributes.md",
+      "title": "Cache attributes (types[].attributes): parent record properties attached to each cached record, read as a dimension reads them",
+      "type": "flow-reference",
+      "summary": "Attach a parent record's properties to each cached record: a dimension's attributes on a cache type, steps through references, filters, keep and many.",
+      "keywords": [
+        "types[].attributes",
+        "types[].lookupKinds",
+        "cache attributes",
+        "parent record",
+        "parent document",
+        "nested record",
+        "through a reference",
+        "follow a reference",
+        "attach properties",
+        "build a dataset",
+        "dimension attributes in the cache",
+        "keep id",
+        "many join",
+        "maxReferences"
+      ],
+      "yamlPath": "types[].attributes",
+      "related": [
+        "delivery-flow-cache",
+        "delivery-flow-dimension-attributes",
+        "delivery-flow-cache-records",
+        "delivery-concept-partition-cache",
+        "delivery-flow-mapping-lookups",
+        "delivery-table-cache-definition"
+      ],
+      "sourceRefs": [
+        "osdu/src/SqlFlow.Delivery/Documents/CacheDocumentMapper.cs",
+        "osdu/src/SqlFlow.Delivery/Documents/DimensionDocumentMapper.cs",
+        "osdu/src/SqlFlow.Delivery/Snapshots/ReferenceCaptureSpec.cs",
+        "osdu/src/SqlFlow.Delivery/Snapshots/CacheDeclaration.cs",
+        "osdu/src/SqlFlow.Delivery/Engine/Snapshots/CacheAttributeReader.cs",
+        "osdu/src/SqlFlow.Delivery/Engine/Snapshots/SnapshotBuilder.cs",
+        "osdu/src/SqlFlow.Delivery/Engine/Snapshots/CacheKeeper.cs",
+        "osdu/src/SqlFlow.Delivery/Engine/Dimensions/DimensionLabeler.cs",
+        "osdu/src/SqlFlow.Delivery/Model/DimensionPath.cs",
+        "osdu/src/SqlFlow.Delivery/Catalog/OsduCacheStore.cs"
+      ]
+    },
+    {
+      "id": "delivery-flow-cache-origins",
+      "corpus": "reference",
+      "path": "flow/cache-origins.md",
+      "title": "Cache type origins: OSDU kinds, ingestion tables, dictionaries and dimensions, how each is captured",
+      "type": "flow-reference",
+      "summary": "What each origin of a cache type captures and keeps: OSDU records by kind, an ingestion table's rows, a dictionary's entries, a dimension's values.",
+      "keywords": [
+        "cache type origin",
+        "kind type",
+        "table type",
+        "dictionary type",
+        "dimension type",
+        "DeletedDate_DW",
+        "100000 rows",
+        "key column",
+        "no item carried",
+        "search matched no record"
+      ],
+      "yamlPath": "types[]",
+      "related": [
+        "delivery-flow-cache",
+        "delivery-flow-cache-records",
+        "delivery-flow-cache-attributes",
+        "delivery-flow-dictionary",
+        "delivery-flow-dimension",
+        "delivery-guide-lookup-table-cache",
+        "delivery-guide-reference-data-cache"
+      ],
+      "sourceRefs": [
+        "osdu/src/SqlFlow.Delivery/Documents/CacheDocumentMapper.cs",
+        "osdu/src/SqlFlow.Delivery/Snapshots/ReferenceCaptureSpec.cs",
+        "osdu/src/SqlFlow.Delivery/Engine/Snapshots/SnapshotBuilder.cs",
+        "osdu/src/SqlFlow.Delivery/Engine/Snapshots/TableCapture.cs",
+        "osdu/src/SqlFlow.Delivery/Engine/Snapshots/DimensionCapture.cs",
+        "osdu/src/SqlFlow.Delivery/Documents/DictionaryCatalog.cs"
+      ]
+    },
+    {
+      "id": "delivery-flow-cache-records",
+      "corpus": "reference",
+      "path": "flow/cache-records.md",
+      "title": "Whole records in a cache type (types[].fetchRecords): data.ExtensionProperties and what else the search index leaves out",
+      "type": "flow-reference",
+      "summary": "Keep data.ExtensionProperties, or any part of an OSDU record the search index does not hold, by reading each record whole out of storage.",
+      "keywords": [
+        "fetchRecords",
+        "types[].fetchRecords",
+        "extension properties",
+        "ExtensionProperties",
+        "data.ExtensionProperties",
+        "whole record",
+        "full record",
+        "storage read",
+        "storage query records",
+        "not in the search index",
+        "not indexed",
+        "no item carried",
+        "cache meta",
+        "open object"
+      ],
+      "yamlPath": "types[].fetchRecords",
+      "related": [
+        "delivery-flow-cache",
+        "delivery-concept-partition-cache",
+        "delivery-guide-reference-data-cache",
+        "delivery-flow-mapping-lookups",
+        "delivery-flow-retrieval",
+        "delivery-table-cache-definition"
+      ],
+      "sourceRefs": [
+        "osdu/src/SqlFlow.Delivery/Engine/Snapshots/SnapshotBuilder.cs",
+        "osdu/src/SqlFlow.Delivery/Engine/Snapshots/CacheRefresh.cs",
+        "osdu/src/SqlFlow.Delivery/Engine/Snapshots/CacheKeeper.cs",
+        "osdu/src/SqlFlow.Delivery/Engine/Search/OsduSearch.cs",
+        "osdu/src/SqlFlow.Delivery/Snapshots/CacheDeclaration.cs",
+        "osdu/src/SqlFlow.Delivery/Snapshots/ReferenceCaptureSpec.cs",
+        "osdu/src/SqlFlow.Delivery/Documents/CacheDocumentMapper.cs",
+        "osdu/specs/core/storage/openapi.yaml",
+        "osdu/specs/core/INTEGRATION.md"
       ]
     },
     {
@@ -7484,7 +7616,8 @@
         "lookup table",
         "dictionary",
         "retentionDays",
-        "onChange"
+        "onChange",
+        "fetchRecords"
       ],
       "related": [
         "delivery-concept-database",

@@ -215,6 +215,106 @@ public sealed class CacheStepsStoreTests : IDisposable
     }
 
     [Fact]
+    public async Task The_before_step_reads_a_type_whole_when_any_flow_declaring_it_does()
+    {
+        // One flow keeps the code, which the index holds; another keeps a property of the units' extension properties, which
+        // only storage holds, and reads them whole. The step searching the first flow's query reads them whole too, or the
+        // capture would take the legacy name out of every unit it found.
+        var caches = _db.Caches();
+        var units = new ReferenceTypeSpec
+        {
+            Name = "UnitOfMeasure",
+            EntityType = "reference-data--UnitOfMeasure",
+            Kind = "osdu:wks:reference-data--UnitOfMeasure:*",
+            Fields = [new ReferenceFieldSpec("data.Code")],
+        };
+        await _db.DeclareCacheAsync(Scope, "reference-cache", units);
+        await _db.DeclareCacheAsync(Scope, "legacy-cache", units with
+        {
+            Fields = [new ReferenceFieldSpec("data.Code"), new ReferenceFieldSpec("data.ExtensionProperties.Legacy.Name", "LegacyName")],
+            FetchRecords = true,
+        });
+
+        using var platform = new FakeOsduPlatform();
+        foreach (var (code, legacy) in new[] { ("m", "METRE"), ("ft", "FEET") })
+        {
+            platform.Put(FakeOsduPlatform.Record(
+                "dev:reference-data--UnitOfMeasure:" + code, UnitKind,
+                new JsonObject { ["Code"] = code, ["ExtensionProperties"] = new JsonObject { ["Legacy"] = new JsonObject { ["Name"] = legacy } } }));
+        }
+
+        // The fake index answers with the ids alone: whatever the step caches beyond them, it read from storage.
+        platform.Search = (kind, _) => kind.Contains("reference-data--UnitOfMeasure", StringComparison.Ordinal)
+            ? ["dev:reference-data--UnitOfMeasure:m", "dev:reference-data--UnitOfMeasure:ft"]
+            : [];
+        var declaration = await caches.DeclarationAsync(Scope);
+        var step = declaration.Step("UnitOfMeasure")!;
+        Assert.True(step.FetchRecords);
+        Assert.Equal([("legacy-cache", true), ("reference-cache", false)], step.Declarations.Select(d => (d.FlowName, d.FetchRecords)));
+        var keeper = new CacheKeeper(Samples.Engine(_db.Ledger(_clock), _clock, cache: caches), NullLogger.Instance);
+
+        var before = await keeper.BeforeAsync(
+            Scope, [step], "welldb-wells", token => Connect(platform, token), OsduRecordProtocol.DefaultVerifyBatchPath, Guid.NewGuid(), "tests", CancellationToken.None);
+
+        Assert.True(before.Written);
+        var metre = (await caches.LoadAsync(Scope, before.Version!))!.Type("UnitOfMeasure")!.ById("dev:reference-data--UnitOfMeasure:m")!;
+        Assert.Equal(("m", "METRE"), (metre.Fields["Code"].Text, metre.Fields["LegacyName"].Text));
+
+        // Each declaring flow's search, each followed by one storage read of the two units it found.
+        var reads = platform.Calls.Where(c => c.Uri.AbsolutePath.EndsWith("/query/records", StringComparison.Ordinal)).ToList();
+        Assert.Equal(2, reads.Count);
+        Assert.All(reads, read => Assert.Equal(2, JsonNode.Parse(read.Body!)!["records"]!.AsArray().Count));
+    }
+
+    [Fact]
+    public async Task The_before_step_reads_a_type_s_attributes_through_the_records_its_references_name()
+    {
+        // A wellbore attribute reads its well's extension property, which only storage holds: the step, as a refresh would,
+        // reads the wellbores whole and their wells by id.
+        var caches = _db.Caches();
+        await _db.DeclareCacheAsync(Scope, "wellbore-cache", new ReferenceTypeSpec
+        {
+            Name = "Wellbore",
+            EntityType = "master-data--Wellbore",
+            Kind = "osdu:wks:master-data--Wellbore:*",
+            FetchRecords = true,
+            Fields =
+            [
+                new ReferenceFieldSpec("data.FacilityName"),
+                new ReferenceFieldSpec(new Model.DimensionAttributeSpec("Region", ["data.WellID", "data.ExtensionProperties.WellDb.Region"])),
+            ],
+        });
+
+        using var platform = new FakeOsduPlatform();
+        const string WellboreKind = "osdu:wks:master-data--Wellbore:1.0.0";
+        platform.Put(FakeOsduPlatform.Record("dev:master-data--Wellbore:A", WellboreKind, new JsonObject { ["FacilityName"] = "WB A", ["WellID"] = "dev:master-data--Well:W1:" }));
+        platform.Put(FakeOsduPlatform.Record("dev:master-data--Wellbore:B", WellboreKind, new JsonObject { ["FacilityName"] = "WB B", ["WellID"] = "dev:master-data--Well:W1:" }));
+        platform.Put(FakeOsduPlatform.Record(
+            "dev:master-data--Well:W1", "osdu:wks:master-data--Well:1.0.0",
+            new JsonObject { ["FacilityName"] = "Well 1", ["ExtensionProperties"] = new JsonObject { ["WellDb"] = new JsonObject { ["Region"] = "North" } } }));
+        platform.Search = (kind, _) => kind.Contains("master-data--Wellbore", StringComparison.Ordinal)
+            ? ["dev:master-data--Wellbore:A", "dev:master-data--Wellbore:B"]
+            : [];
+        var declaration = await caches.DeclarationAsync(Scope);
+        var step = declaration.Step("Wellbore")!;
+        Assert.True(step.Fields[1].IsAttribute);
+        var keeper = new CacheKeeper(Samples.Engine(_db.Ledger(_clock), _clock, cache: caches), NullLogger.Instance);
+
+        var before = await keeper.BeforeAsync(
+            Scope, [step], "welldb-logs", token => Connect(platform, token), OsduRecordProtocol.DefaultVerifyBatchPath, Guid.NewGuid(), "tests", CancellationToken.None);
+
+        var cached = (await caches.LoadAsync(Scope, before.Version!))!.Type("Wellbore")!;
+        Assert.Equal(
+            [("WB A", "North"), ("WB B", "North")],
+            cached.Items.OrderBy(i => i.Id, StringComparer.Ordinal).Select(i => (i.Fields["FacilityName"].Text, i.Fields["Region"].Text)));
+
+        // The wellbores whole, then their one well once, from storage.
+        var reads = platform.Calls.Where(c => c.Uri.AbsolutePath.EndsWith("/query/records", StringComparison.Ordinal))
+            .Select(c => JsonNode.Parse(c.Body!)!["records"]!.AsArray().Count).ToList();
+        Assert.Equal([2, 1], reads);
+    }
+
+    [Fact]
     public async Task A_before_step_on_a_type_only_its_cache_flow_s_parameters_can_search_is_refused()
     {
         var caches = _db.Caches();

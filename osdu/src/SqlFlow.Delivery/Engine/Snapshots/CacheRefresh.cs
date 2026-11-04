@@ -25,8 +25,11 @@ public sealed class CacheRefresher
     /// <summary>The offset search a plan counts with (openapi search v2, POST /query with trackTotalCount).</summary>
     private const string QueryPath = "/api/search/v2/query";
 
-    /// <summary>The storage service's batch read a refresh asks about records the search index did not answer (openapi storage v2, POST /query/records).</summary>
-    private const string StoragePath = Protocols.OsduRecordProtocol.DefaultVerifyBatchPath;
+    /// <summary>
+    /// The storage service's batch read (openapi storage v2, POST /query/records): what a refresh reads a type's records whole
+    /// through, and asks about records the search index did not answer.
+    /// </summary>
+    private const string StoragePath = SnapshotBuilder.DefaultStoragePath;
 
     private readonly EngineContext _context;
     private readonly ILogger _logger;
@@ -152,7 +155,7 @@ public sealed class CacheRefresher
             using var osdu = await ConnectAsync(flow, ct).ConfigureAwait(false);
             foreach (var type in searched)
             {
-                captured.Add(await builder.CaptureTypeAsync(osdu, type, ct).ConfigureAwait(false));
+                captured.Add(await builder.CaptureTypeAsync(osdu, type, StoragePath, ct).ConfigureAwait(false));
             }
 
             gone = await GoneAsync(store, scope, new StorageRecords(osdu.Client, StoragePath), captured, _logger, ct).ConfigureAwait(false);
@@ -210,7 +213,8 @@ public sealed class CacheRefresher
             var fields = typeSpec.IsLookup ? type.FieldNames.ToList() : typeSpec.Fields.Select(f => f.Name).ToList();
             types.Add(new CachedTypeOutcome(
                 type.Name, type.EntityType, CacheOrigins.Text(typeSpec.Origin), typeSpec.Describe(), typeSpec.Kind, type.Items.Count,
-                fields, ModeText(mode), impact.ChangedItems, impact.Changes, impact.AffectedRecords, CacheTypeChanges.Text(change), type.ContentHash()));
+                fields, ModeText(mode), impact.ChangedItems, impact.Changes, impact.AffectedRecords, CacheTypeChanges.Text(change), type.ContentHash(),
+                typeSpec.FetchRecords));
         }
 
         var outcome = new CacheRefreshOutcome(
@@ -315,8 +319,14 @@ public sealed class CacheRefresher
             var total = page["totalCount"] is JsonValue count && count.TryGetValue<long>(out var value)
                 ? value
                 : throw new DeliveryException($"{QueryPath} did not report totalCount for kind {type.Kind}.");
-            _logger.LogInformation("plan {Type}: {Total} record(s) of kind {Kind} match the query {Query}", type.Name, total, type.Kind, type.Query);
-            types.Add(new CachePlanType(type.Name, CacheOrigins.Text(type.Origin), type.Describe(), type.Kind, type.Query, type.Fields.Select(f => f.Name).ToList(), total));
+            // A type read whole makes one storage read a hundred records besides the search, which the plan says before it is run.
+            var storageReads = type.FetchRecords ? (total + StorageRecords.Batch - 1) / StorageRecords.Batch : 0;
+            _logger.LogInformation(
+                "plan {Type}: {Total} record(s) of kind {Kind} match the query {Query}{Whole}",
+                type.Name, total, type.Kind, type.Query, type.FetchRecords ? $", each read whole from storage in {storageReads} request(s)" : string.Empty);
+            types.Add(new CachePlanType(
+                type.Name, CacheOrigins.Text(type.Origin), type.Describe(), type.Kind, type.Query, type.Fields.Select(f => f.Name).ToList(), total,
+                type.FetchRecords, storageReads));
         }
 
         var readings = await SystemPropertyCapture.ReadAsync(osdu, scope, _logger, ct).ConfigureAwait(false);
@@ -393,16 +403,23 @@ public sealed record CacheRefreshOutcome(
 
 /// <summary>
 /// One cached type as the refresh left it, with what its changes did to the delivered estate: its origin (osdu, table,
-/// dictionary or dimension), where its records came from as a person reads it, for an OSDU type the kind searched, its content hash, and
-/// by that hash how the version the refresh left holds it against the version before: <paramref name="Change"/> is added,
-/// changed or unchanged. Only a type that was added or changed is analysed for what it reaches.
+/// dictionary or dimension), where its records came from as a person reads it, for an OSDU type the kind searched and whether
+/// its records were read whole from storage (<paramref name="FetchRecords"/>), its content hash, and by that hash how the
+/// version the refresh left holds it against the version before: <paramref name="Change"/> is added, changed or unchanged.
+/// Only a type that was added or changed is analysed for what it reaches.
 /// </summary>
 public sealed record CachedTypeOutcome(
     string Name, string EntityType, string Origin, string Source, string? Kind, int Items, IReadOnlyList<string> Fields, string OnChange,
-    int ChangedItems, int Changes, long AffectedRecords, string Change, string Hash);
+    int ChangedItems, int Changes, long AffectedRecords, string Change, string Hash, bool FetchRecords = false);
 
-/// <summary>One declared type as a plan counts it; <paramref name="Kind"/> and <paramref name="Query"/> are an OSDU type's search.</summary>
-public sealed record CachePlanType(string Name, string Origin, string Source, string? Kind, string Query, IReadOnlyList<string> Fields, long Records);
+/// <summary>
+/// One declared type as a plan counts it; <paramref name="Kind"/> and <paramref name="Query"/> are an OSDU type's search, and
+/// for one that reads its records whole (<paramref name="FetchRecords"/>), <paramref name="StorageReads"/> is how many storage
+/// requests a refresh makes to read them.
+/// </summary>
+public sealed record CachePlanType(
+    string Name, string Origin, string Source, string? Kind, string Query, IReadOnlyList<string> Fields, long Records, bool FetchRecords = false,
+    long StorageReads = 0);
 
 /// <summary>
 /// The <c>result</c> of a plan run on a cache flow: what each type's search matches, the version the partition's cache

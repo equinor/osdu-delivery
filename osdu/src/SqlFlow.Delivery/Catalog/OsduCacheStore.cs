@@ -198,7 +198,11 @@ public sealed class OsduCacheStore : ICacheStore
         var rows = await db.DeliveryCacheDefinitions.AsNoTracking()
             .Where(d => d.Scope == scope)
             .OrderBy(d => d.FlowName).ThenBy(d => d.Name).ThenBy(d => d.RepoId)
-            .Select(d => new { d.FlowName, d.Name, d.EntityType, d.Kind, d.Query, d.FieldsJson, d.OnChange, d.Origin, d.KeyField, d.RetentionDays, d.Connection, d.SourceObject })
+            .Select(d => new
+            {
+                d.FlowName, d.Name, d.EntityType, d.Kind, d.Query, d.FieldsJson, d.OnChange, d.Origin, d.KeyField, d.RetentionDays, d.Connection, d.SourceObject,
+                d.FetchRecords,
+            })
             .ToListAsync(ct).ConfigureAwait(false);
 
         // A flow is named once per catalog; the sync warns when two repositories declare the same one, and the first row wins here.
@@ -219,7 +223,8 @@ public sealed class OsduCacheStore : ICacheStore
                 row.KeyField,
                 row.RetentionDays,
                 row.Connection,
-                row.SourceObject));
+                row.SourceObject,
+                row.FetchRecords));
         }
 
         return new CacheDeclaration(scope, declarations);
@@ -762,7 +767,10 @@ public sealed class OsduCacheStore : ICacheStore
         return fields.ToJsonString();
     }
 
-    /// <summary>A declaration's fields as the sync stores them: <c>[{ "path": "data.Code", "as": "Code" }]</c>.</summary>
+    /// <summary>
+    /// A declaration's fields as the sync stores them (<see cref="ReferenceFieldSpec.ToJson"/>): <c>[{ "path": "data.Code",
+    /// "as": "Code" }]</c>, an attribute with its steps and settings beside.
+    /// </summary>
     public static IReadOnlyList<ReferenceFieldSpec> ParseFields(string json, string flowName, string typeName)
     {
         try
@@ -770,13 +778,10 @@ public sealed class OsduCacheStore : ICacheStore
             var fields = new List<ReferenceFieldSpec>();
             foreach (var field in (JsonNode.Parse(string.IsNullOrWhiteSpace(json) ? "[]" : json) as JsonArray ?? []).OfType<JsonObject>())
             {
-                if (field["path"] is not JsonValue path || !path.TryGetValue<string>(out var text) || string.IsNullOrWhiteSpace(text))
+                if (ReferenceFieldSpec.FromJson(field) is { } read)
                 {
-                    continue;
+                    fields.Add(read);
                 }
-
-                var name = field["as"] is JsonValue alias && alias.TryGetValue<string>(out var given) && !string.IsNullOrWhiteSpace(given) ? given : null;
-                fields.Add(new ReferenceFieldSpec(text, name));
             }
 
             return fields;
@@ -785,6 +790,11 @@ public sealed class OsduCacheStore : ICacheStore
         {
             throw new DeliveryException(
                 $"The catalog's declaration of {typeName} by cache flow '{flowName}' holds fields that are not valid JSON ({ex.Message}); sync the repository again.", ex);
+        }
+        catch (FormatException ex)
+        {
+            throw new DeliveryException(
+                $"The catalog's declaration of {typeName} by cache flow '{flowName}' holds a field this host cannot read ({ex.Message}); sync the repository again.", ex);
         }
     }
 

@@ -18,7 +18,8 @@ namespace SqlFlow.ControlPlane.Tests;
 /// <summary>
 /// The partition cache's retention as the control plane serves it (osdu/docs/reference/concepts/partition-cache.md,
 /// Retention): a pruned version stays listed with when it was pruned and its counts, its records and a comparison with it
-/// answer 410 Gone, and the cache listing says the retention each cache flow declares and the one the partition keeps.
+/// answer 410 Gone, and the cache listing says the retention each cache flow declares and the one the partition keeps, and
+/// where each type's values are read from.
 /// </summary>
 [Trait("Category", "Integration")]
 [Collection(SqlServerSuite.Name)]
@@ -64,6 +65,7 @@ public sealed class DeliveryCacheRetentionApiTests
                     Kind = "osdu:wks:reference-data--UnitOfMeasure:1.0.0",
                     Query = "*",
                     FieldsJson = "[{\"path\":\"data.Name\",\"as\":\"Name\"}]",
+                    FetchRecords = true,
                     RetentionDays = 2,
                     FirstSeenUtc = Start.UtcDateTime,
                     LastSeenUtc = Start.UtcDateTime,
@@ -124,10 +126,14 @@ public sealed class DeliveryCacheRetentionApiTests
             var compared = await JsonAsync(client, token, $"/api/v1/delivery/cache/diff?scope={scope}&from={labels[2]}");
             Assert.Equal(1, compared.GetProperty("changed").GetInt64());
 
-            // The cache listing says the retention the flow declares and the one the partition keeps.
+            // The cache listing says the retention the flow declares and the one the partition keeps, and that the type's
+            // records are read whole from storage, by the type and by the flow asking for it.
             var cache = Assert.Single((await JsonAsync(client, token, "/api/v1/delivery/caches")).EnumerateArray(), c => c.GetProperty("scope").GetString() == scope);
             Assert.Equal(2, cache.GetProperty("retentionDays").GetInt32());
             Assert.Equal(2, Assert.Single(cache.GetProperty("flows").EnumerateArray()).GetProperty("retentionDays").GetInt32());
+            var type = Assert.Single(cache.GetProperty("types").EnumerateArray());
+            Assert.True(type.GetProperty("fetchRecords").GetBoolean());
+            Assert.True(Assert.Single(type.GetProperty("sources").EnumerateArray()).GetProperty("fetchRecords").GetBoolean());
         }
         finally
         {

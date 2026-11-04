@@ -1,6 +1,7 @@
 using System.Text.Json.Nodes;
 using Microsoft.Extensions.Logging;
 using SqlFlow.Delivery.Documents;
+using SqlFlow.Delivery.Engine.Dimensions;
 using SqlFlow.Delivery.Engine.Protocols;
 using SqlFlow.Delivery.Engine.Search;
 using SqlFlow.Delivery.Hosting;
@@ -93,6 +94,12 @@ public sealed class CacheKeeper
     /// <summary>The records one rollout batch marks.</summary>
     private const int RolloutBatch = 5_000;
 
+    /// <summary>The offset search an attribute's steps read records by id through, for a type read from the index (openapi search v2, POST /query).</summary>
+    private const string AttributeQueryPath = "/api/search/v2/query";
+
+    /// <summary>The cursor search the reader is built over, which reading records by id does not page through (openapi search v2, POST /query_with_cursor).</summary>
+    private const string AttributeSearchPath = "/api/search/v2/query_with_cursor";
+
     /// <summary>The newest approved changes of the partition a step looks through for its own.</summary>
     private const int TagsRead = 1_000;
 
@@ -109,8 +116,9 @@ public sealed class CacheKeeper
 
     /// <summary>
     /// Brings <paramref name="types"/> of <paramref name="scope"/>'s cache up to date from OSDU before a run renders: each
-    /// declaring cache flow's kind and query are searched with every path the partition keeps for the type, and the capture is
-    /// merged as that flow's own, exactly as a refresh of the flow narrowed to these types would merge it. A record a delivery
+    /// declaring cache flow's kind and query are searched with every path the partition keeps for the type, its records read
+    /// whole from storage when a flow declaring it reads them so, and the capture is merged as that flow's own, exactly as a
+    /// refresh of the flow narrowed to these types would merge it. A record a delivery
     /// holds that the search did not find stays while OSDU's storage service still holds it. The step is the run's to
     /// complete: anything that keeps a type from being read whole fails it, and the run with it, before anything is sent.
     /// </summary>
@@ -216,6 +224,8 @@ public sealed class CacheKeeper
             var captured = new List<ReferenceType>();
             foreach (var (_, type, declared) in flow)
             {
+                // Read whole when any flow of the partition reads the type so, as its refresh would: a capture of the index alone
+                // would drop the values only storage holds from every record it found.
                 captured.Add(await builder.CaptureTypeAsync(
                     osdu,
                     new ReferenceTypeSpec
@@ -226,7 +236,9 @@ public sealed class CacheKeeper
                         Query = declared.Query,
                         Fields = type.Fields,
                         OnChange = declared.OnChange,
+                        FetchRecords = type.FetchRecords,
                     },
+                    storagePath,
                     ct).ConfigureAwait(false));
             }
 
@@ -316,7 +328,8 @@ public sealed class CacheKeeper
 
         // A cached record is kept under its id without a version, as the search index answers it.
         var ids = changed.Select(id => TargetId.WithoutVersion(id).TrimEnd(':')).Distinct(StringComparer.Ordinal).ToList();
-        var storage = new StorageRecords(await client(ct).ConfigureAwait(false), storagePath);
+        var osdu = await client(ct).ConfigureAwait(false);
+        var storage = new StorageRecords(osdu, storagePath);
         var records = new List<JsonObject>(ids.Count);
         var missing = new HashSet<string>(StringComparer.Ordinal);
         foreach (var batch in ids.Chunk(StorageRecords.Batch))
@@ -333,18 +346,37 @@ public sealed class CacheKeeper
         }
 
         var pool = new StringPool();
-        var captured = types
-            .Select(type => new ReferenceType(
+        var captured = new List<ReferenceType>(types.Count);
+        foreach (var type in types)
+        {
+            // An attribute is read as a refresh reads it, through the records the landed ones reference: from the index, or
+            // whole from storage for a type read whole, so what the step puts in reads the same as what a refresh would.
+            var taken = records.Where(record => Takes(type, record)).ToList();
+            var attributes = type.Fields.Where(f => f.IsAttribute).ToList();
+            IReadOnlyDictionary<string, List<KeyValuePair<string, ReferenceValue>>>? attached = null;
+            if (attributes.Count > 0 && taken.Count > 0)
+            {
+                ILabelRecords source = type.FetchRecords
+                    ? new StorageLabelRecords(storage)
+                    : new SearchLabelRecords(new OsduSearch(osdu, AttributeQueryPath, AttributeSearchPath, _logger));
+                var reader = new CacheAttributeReader(source, SnapshotBuilder.StorageReadsAtOnce);
+                attached = await reader.ReadAsync(taken, attributes, fields => fields.All(SnapshotBuilder.StorageHolds), pool, ct).ConfigureAwait(false);
+                foreach (var note in reader.Notes())
+                {
+                    _logger.LogWarning("{Type}, after the run: {Note}", type.TypeName, note);
+                }
+            }
+
+            captured.Add(new ReferenceType(
                 type.TypeName,
                 type.EntityType,
-                records
-                    .Where(record => Takes(type, record))
-                    .Select(record => SnapshotBuilder.Project(record, type.Fields, pool))
+                taken
+                    .Select(record => SnapshotBuilder.Project(record, type.Fields, pool, attached))
                     .OfType<ReferenceItem>()
                     .GroupBy(item => item.Id, StringComparer.Ordinal)
                     .Select(group => group.First())
-                    .OrderBy(item => item.Id, StringComparer.Ordinal)))
-            .ToList();
+                    .OrderBy(item => item.Id, StringComparer.Ordinal)));
+        }
 
         var declaration = await store.DeclarationAsync(scope, ct).ConfigureAwait(false);
         var holder = CacheHolders.Delivery(ledgerName);

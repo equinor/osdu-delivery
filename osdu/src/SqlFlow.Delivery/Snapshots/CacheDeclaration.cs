@@ -4,8 +4,8 @@ namespace SqlFlow.Delivery.Snapshots;
 
 /// <summary>
 /// One cached type as one cache flow declares it, the way the catalog holds it after the repository sync: where its records
-/// come from, for an OSDU type the kind and query it is searched with, for a lookup table the name its key is kept under, and
-/// the retention the flow declares for the partition's cache.
+/// come from, for an OSDU type the kind and query it is searched with and whether its records are read whole from storage,
+/// for a lookup table the name its key is kept under, and the retention the flow declares for the partition's cache.
 /// </summary>
 public sealed record CacheTypeDeclaration(
     string FlowName,
@@ -19,7 +19,8 @@ public sealed record CacheTypeDeclaration(
     string? Key = null,
     int RetentionDays = CacheRetention.DefaultDays,
     string? Connection = null,
-    string? SourceObject = null)
+    string? SourceObject = null,
+    bool FetchRecords = false)
 {
     /// <summary>True for a table or a dictionary, whose rows are not OSDU records.</summary>
     public bool IsLookup => Origin != CacheOrigin.Osdu;
@@ -34,6 +35,12 @@ public sealed record CacheStepType(string TypeName, string EntityType, IReadOnly
 {
     /// <summary>True when the type's records are OSDU records, which a step reads from OSDU; false for a lookup table.</summary>
     public bool IsOsdu => Declarations.All(d => !d.IsLookup);
+
+    /// <summary>
+    /// True when some flow declaring the type reads its records whole from storage (<see cref="CacheDeclaration.FetchesRecords"/>):
+    /// a step searching it reads every record it finds back from storage too, or it would drop the values only storage holds.
+    /// </summary>
+    public bool FetchRecords => IsOsdu && Declarations.Any(d => d.FetchRecords);
 
     /// <summary>
     /// True for a lookup table its cache flow reads from an ingestion table whose connection reference and name the catalog
@@ -139,6 +146,13 @@ public sealed class CacheDeclaration
     }
 
     /// <summary>
+    /// Whether a type's records are read whole from storage: when any flow declaring it says so (<c>fetchRecords</c>). A captured
+    /// record replaces the cached one whole, so a flow that read only the index would drop the values another flow reads from
+    /// storage for the same record; every capture of the type reads it the same way.
+    /// </summary>
+    public bool FetchesRecords(string typeName) => Of(typeName).Any(d => !d.IsLookup && d.FetchRecords);
+
+    /// <summary>
     /// What makes <paramref name="type"/>, as <paramref name="flowName"/> declares it, disagree with another flow's declaration
     /// of the same type in the partition: a different entity type, or a name cached from a different path. Merged, either
     /// would hold two meanings under one name. A lookup table, from a table or a dictionary, is declared by one flow only:
@@ -165,8 +179,7 @@ public sealed class CacheDeclaration
 
             foreach (var field in type.Fields)
             {
-                if (other.Fields.FirstOrDefault(f => f.Name.Equals(field.Name, StringComparison.OrdinalIgnoreCase)) is { } theirs
-                    && !string.Equals(ReferenceField.Normalize(theirs.Path), ReferenceField.Normalize(field.Path), StringComparison.OrdinalIgnoreCase))
+                if (other.Fields.FirstOrDefault(f => f.Name.Equals(field.Name, StringComparison.OrdinalIgnoreCase)) is { } theirs && !SameDefinition(theirs, field))
                 {
                     problems.Add($"{type.Name}.{field.Name} is cached from {theirs.Path} by cache flow '{other.FlowName}' and from {field.Path} by '{flowName}'");
                 }
@@ -195,8 +208,9 @@ public sealed class CacheDeclaration
     }
 
     /// <summary>
-    /// A flow's type widened to every path the partition keeps for it, so its capture fills them all. A lookup table is
-    /// declared by one flow only, so it keeps what that flow declares.
+    /// A flow's type widened to every path the partition keeps for it, so its capture fills them all, and read whole from storage
+    /// when any flow of the partition reads it so (<see cref="FetchesRecords"/>). A lookup table is declared by one flow only,
+    /// so it keeps what that flow declares.
     /// </summary>
     public ReferenceTypeSpec Widen(ReferenceTypeSpec type)
     {
@@ -209,8 +223,17 @@ public sealed class CacheDeclaration
         var fields = type.Fields.ToList();
         var names = fields.Select(f => f.Name).ToHashSet(StringComparer.OrdinalIgnoreCase);
         fields.AddRange(FieldsOf(type.Name).Where(field => names.Add(field.Name)));
-        return type with { Fields = fields };
+        return type with { Fields = fields, FetchRecords = type.FetchRecords || FetchesRecords(type.Name) };
     }
+
+    /// <summary>
+    /// Whether two declarations of one name read it alike: two paths of the record that name one place, or two attributes read
+    /// with the same steps and every setting the same; a path and an attribute never.
+    /// </summary>
+    private static bool SameDefinition(ReferenceFieldSpec theirs, ReferenceFieldSpec ours)
+        => theirs.IsAttribute == ours.IsAttribute && (theirs.IsAttribute
+            ? string.Equals(theirs.Path, ours.Path, StringComparison.Ordinal)
+            : string.Equals(ReferenceField.Normalize(theirs.Path), ReferenceField.Normalize(ours.Path), StringComparison.OrdinalIgnoreCase));
 
     private static string Describe(CacheTypeDeclaration declaration) => declaration.Origin switch
     {

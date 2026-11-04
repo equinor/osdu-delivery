@@ -290,6 +290,72 @@ public sealed class CacheCatalogSyncTests : IDisposable
     }
 
     [Fact]
+    public async Task A_type_that_reads_its_records_whole_says_so_in_the_catalog_and_a_change_to_it_is_read_again()
+    {
+        var whole = CacheFlow.Replace("    onChange: auto", "    onChange: auto\n    fetchRecords: true", StringComparison.Ordinal);
+        Assert.NotEqual(CacheFlow, whole);
+        Write("cache/welldb-osdu-00-reference-cache.yaml", whole);
+        var repoId = Guid.NewGuid();
+        Assert.Empty(await SyncAsync(repoId));
+
+        await using (var db = _catalog.CreateDbContext())
+        {
+            var rows = await db.DeliveryCacheDefinitions.Where(c => c.RepoId == repoId).OrderBy(c => c.Name).ToListAsync();
+            Assert.Equal([("UnitOfMeasure", false), ("Wellbore", true)], rows.Select(r => (r.Name, r.FetchRecords)));
+
+            // A refresh and a cache step read it from the partition's declaration.
+            var declaration = await OsduCacheStore.DeclarationAsync(db, "dev");
+            Assert.True(declaration.FetchesRecords("Wellbore"));
+            Assert.False(declaration.FetchesRecords("UnitOfMeasure"));
+        }
+
+        // Taken out again, the next sync reads the type from the index once more.
+        Write("cache/welldb-osdu-00-reference-cache.yaml", CacheFlow);
+        var (_, result) = await SyncWithResultAsync(repoId);
+        Assert.Equal(1, result.Updated);
+        await using (var db = _catalog.CreateDbContext())
+        {
+            Assert.False((await db.DeliveryCacheDefinitions.SingleAsync(c => c.RepoId == repoId && c.Name == "Wellbore")).FetchRecords);
+        }
+    }
+
+    [Fact]
+    public async Task A_type_s_attributes_reach_the_catalog_with_every_setting_and_a_refresh_reads_them_back()
+    {
+        Write("cache/attributes-cache.yaml", Flow("attributes-cache", """
+              - kind: osdu:wks:master-data--Wellbore:1.0.0
+                fields: [data.FacilityName]
+                attributes:
+                  WellName: [data.WellID, data.FacilityName]
+                  FieldID: { path: 'data.GeoContexts[GeoTypeID$=:Field:].FieldID', keep: id }
+                lookupKinds: [osdu:wks:master-data--Well:1.0.0]
+            """));
+        var repoId = Guid.NewGuid();
+        Assert.Empty(await SyncAsync(repoId));
+
+        await using var db = _catalog.CreateDbContext();
+        var row = await db.DeliveryCacheDefinitions.SingleAsync(c => c.RepoId == repoId);
+        using (var fields = JsonDocument.Parse(row.FieldsJson))
+        {
+            var listed = fields.RootElement.EnumerateArray().ToList();
+            Assert.Equal(["FacilityName", "WellName", "FieldID"], listed.Select(f => f.GetProperty("as").GetString()));
+            Assert.False(listed[0].TryGetProperty("attribute", out _));
+            Assert.Equal(["data.WellID", "data.FacilityName"], listed[1].GetProperty("attribute").GetProperty("steps").EnumerateArray().Select(s => s.GetString()));
+            Assert.Equal("id", listed[2].GetProperty("attribute").GetProperty("keep").GetString());
+        }
+
+        // What a refresh and a cache step read: the attributes as the flow declares them.
+        var declared = (await OsduCacheStore.DeclarationAsync(db, "dev")).FieldsOf("Wellbore");
+        Assert.Equal([false, true, true], declared.Select(f => f.IsAttribute));
+        Assert.Equal(Model.DimensionValueKeep.Id, declared[2].Attribute!.Keep);
+        Assert.Equal("osdu:wks:master-data--Well:1.0.0", declared[1].LookupKinds["master-data--Well"]);
+
+        // A second sync of the same document changes nothing.
+        var (_, again) = await SyncWithResultAsync(repoId);
+        Assert.Equal(0, again.Updated);
+    }
+
+    [Fact]
     public async Task Snapshot_files_left_in_a_repository_are_nothing_to_the_sync()
     {
         Write("cache/welldb-osdu-00-reference-cache.yaml", CacheFlow);

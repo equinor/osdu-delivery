@@ -25,7 +25,8 @@ public sealed record SearchCacheType(string Name, string Origin, string? Kind, I
         var name = ReferenceField.Normalize(field);
         if (Fields.FirstOrDefault(f => string.Equals(f.Name, name, StringComparison.OrdinalIgnoreCase)) is { } captured)
         {
-            return captured.Path;
+            // An attribute is read through the records the cached record references, so no path of the record holds it.
+            return captured.IsAttribute ? null : captured.Path;
         }
 
         if (ReferenceField.IsId(field))
@@ -35,7 +36,7 @@ public sealed record SearchCacheType(string Name, string Origin, string? Kind, I
 
         // A field captured whole holds the paths inside it (a wellbore's GeoContexts holds GeoContexts.FieldID).
         var whole = Fields
-            .Where(f => name.StartsWith(f.Name + ".", StringComparison.OrdinalIgnoreCase))
+            .Where(f => !f.IsAttribute && name.StartsWith(f.Name + ".", StringComparison.OrdinalIgnoreCase))
             .OrderByDescending(f => f.Name.Length)
             .FirstOrDefault();
         return whole is null ? null : whole.Path + name[whole.Name.Length..];

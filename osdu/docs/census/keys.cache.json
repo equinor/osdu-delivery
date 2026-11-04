@@ -6,7 +6,7 @@
   "includeEnvelope": true,
   "generatedFrom": "osdu/docs/reference/flow/cache.md and osdu/src/SqlFlow.Delivery/Documents/YamlModels.cs",
   "naming": "The loader deserializes with YamlDotNet's CamelCaseNamingConvention and refuses any key it does not know.",
-  "keyCount": 83,
+  "keyCount": 94,
   "keys": [
     {
       "path": "batch",
@@ -454,6 +454,77 @@
       "description": "One cached type. Another cache flow of the same partition may declare the same OSDU type, and the cache then holds one type under that name; a lookup table (a table or dictionary type) is declared by one cache flow of a partition."
     },
     {
+      "path": "types[].attributes",
+      "type": "map",
+      "required": false,
+      "description": "Further facts of each cached record, each under a name, read exactly as a dimension's attributes are, the record's own id the key: a path, or a list of paths, read from the cached record and through the records its references name (`attributes: { WellName: [data.WellID, data.FacilityName], FieldID: { path: 'data.GeoContexts[GeoTypeID$=:Field:].FieldID', keep: id } }`). Each is kept beside the type's `fields` under its name, so a mapping reads it as any cached field (`$cache: Wellbore.WellName`, `$findBy: WellName = well_name`). At most 64; a name is a letter, then letters, digits and underscores, at most 64, unique ignoring case among the attributes and the fields, and not `id`. A value is at most 256 characters, as a dimension keeps it. The records a step reaches are read by id through the search, as a dimension reads them, or whole from storage when the type says `fetchRecords: true`. `collect` is refused: each cached record is its own key, so its own values are `fields`. With attributes, `fields` may be left out.",
+      "appliesWhen": "OSDU origin only: a type with `kind`, searched on OSDU. Refused on a table, dictionary or dimension type."
+    },
+    {
+      "path": "types[].attributes.<name>",
+      "type": "list",
+      "required": false,
+      "description": "One attribute, as a dimension's is written. A path of the cached record, or a list of paths, each but the last reading the references the next records are found by, at most 3; every reference is followed, and the first record reached that holds a value at the last path gives the attribute's value. A segment holding objects can filter them: `[Property=text]`, `[Property*=text]` (containing it, ignoring case), `[Property$=text]` (ending with it, ignoring case), and `[Property->path=text]`, which compares what the record each reference names holds at the path. Or settings: `{ path: ..., keep: id }`, with `many`, `decode`, `maxReferences` and `trim` beside `path`.",
+      "freeForm": true
+    },
+    {
+      "path": "types[].attributes.<name>.path",
+      "type": "list",
+      "required": false,
+      "description": "The path, or list of paths, the attribute is read through, exactly as the bare form gives them: `FieldID: { path: 'data.GeoContexts[GeoTypeID$=:Field:].FieldID', keep: id }`. Write it to give the attribute a `keep`, a `many`, a `decode`, a `maxReferences` or a `trim`."
+    },
+    {
+      "path": "types[].attributes.<name>.keep",
+      "type": "string",
+      "required": false,
+      "allowed": [
+        "value",
+        "key",
+        "id",
+        "reference"
+      ],
+      "default": "value",
+      "description": "How each value is kept, as a dimension keeps it. `value` (the default) shows a record reference as the code its id ends with, its escapes decoded (`dev:master-data--Field:F-1:` is `F-1`). `key` keeps the text exactly as the record holds it, a reference with its trailing colon. `id` keeps a reference as the id of the record it names, its version or the latest's trailing colon taken off (`dev:master-data--Field:F-1`), the id that record is cached under. `reference` keeps a reference with only the latest's trailing colon taken off, a version it names kept. A value longer than 256 characters is cut under `value` and left out under `key`, `id` and `reference`."
+    },
+    {
+      "path": "types[].attributes.<name>.many",
+      "type": "string",
+      "required": false,
+      "allowed": [
+        "first",
+        "join",
+        "all",
+        "max"
+      ],
+      "default": "first",
+      "description": "How the values the last step reaches are kept, over every record it reaches: `first` (the default), the first record's that holds one; `join`, every value, each once, in the order reached, joined by `; `; `all`, every one as often as it is held, joined the same way; `max`, the greatest by Unicode code point."
+    },
+    {
+      "path": "types[].attributes.<name>.decode",
+      "type": "string",
+      "required": false,
+      "allowed": [
+        "none",
+        "url"
+      ],
+      "default": "none",
+      "description": "What each value is decoded from before it is kept: `none` (the default), or `url`, its percent-escapes decoded (`g%2Fcm3` is `g/cm3`). Only with `keep: value`."
+    },
+    {
+      "path": "types[].attributes.<name>.maxReferences",
+      "type": "integer",
+      "required": false,
+      "default": "20",
+      "description": "How many records each step but the last follows for one cached record, from 1 to 1000; a record naming more follows the first that many, and the refresh's log counts the records bounded so."
+    },
+    {
+      "path": "types[].attributes.<name>.trim",
+      "type": "boolean",
+      "required": false,
+      "default": "true",
+      "description": "Whether each value loses the white space at its ends: `true` (the default), or `false` to keep it as the record holds it. Only with `keep: value`."
+    },
+    {
       "path": "types[].dictionary",
       "type": "string",
       "required": false,
@@ -482,11 +553,19 @@
       "appliesWhen": "OSDU origin only: a type with `kind`, searched on OSDU. Refused on a table or dictionary type."
     },
     {
+      "path": "types[].fetchRecords",
+      "type": "boolean",
+      "required": false,
+      "description": "Read each record the search finds whole from the storage service (`POST /api/storage/v2/query/records`, 100 ids a request), and keep the declared paths of the record as storage holds it. The search index holds only what the kind's schema describes, so a path it leaves open (a property of `data.ExtensionProperties`, an object the schema does not break into properties, `meta`) needs it; a path under a property only the index adds (`namespace`, `type`, `authority`, `source`, `index`) is still read from the search hit. Values are as written, not normalised to SI units and WGS 84 as the index holds them. When any cache flow of the partition declares the type with it, every capture of the type reads it so.",
+      "default": "false",
+      "appliesWhen": "OSDU origin only: a type with `kind`, searched on OSDU. Refused on a table, dictionary or dimension type."
+    },
+    {
       "path": "types[].fields",
       "type": "list",
       "required": false,
       "description": "What the cache keeps of each record. For an OSDU type: the paths to keep. For a table type: the columns to keep beside the key. A path that yields nothing on every record is reported at capture. For a dimension type: the attributes of the dimension each row carries, by name (`fields: [Country, Field]`), each one the dimension reads.",
-      "appliesWhen": "Required for an OSDU type (`kind`) and a table type (`table`); optional for a dimension type (`dimension`), naming the attributes it carries; refused for a dictionary type (`dictionary`)."
+      "appliesWhen": "Required for a table type (`table`), and for an OSDU type (`kind`) unless it reads `attributes`; optional for a dimension type (`dimension`), naming the attributes it carries; refused for a dictionary type (`dictionary`)."
     },
     {
       "path": "types[].fields[]",
@@ -530,6 +609,19 @@
       "required": false,
       "description": "The OSDU kind searched, `authority:source:entityType:version` with wildcards per segment (`osdu:wks:reference-data--UnitOfMeasure:*`). A refresh sweeps every record the search matches through the search cursor.",
       "appliesWhen": "OSDU origin only: a type with `kind`, searched on OSDU. Not combined with `table` or `dictionary`; it makes `source.endpoint` required."
+    },
+    {
+      "path": "types[].lookupKinds",
+      "type": "list",
+      "required": false,
+      "description": "The kind the records of an entity type are looked up in when an attribute reads through a reference to one, one kind per entity type, its entity type written out (`lookupKinds: [osdu:wks:master-data--Well:1.0.0]`), as a dimension's `lookupKinds`. An entity type none names is looked up in every kind of it, `*:*:<entityType>:*`. Only beside `attributes`.",
+      "appliesWhen": "OSDU origin only: a type with `kind`, searched on OSDU. Refused on a table, dictionary or dimension type."
+    },
+    {
+      "path": "types[].lookupKinds[]",
+      "type": "string",
+      "required": false,
+      "description": "One kind: authority:source:entityType:version, the entity type written out, any other segment a wildcard if need be."
     },
     {
       "path": "types[].name",

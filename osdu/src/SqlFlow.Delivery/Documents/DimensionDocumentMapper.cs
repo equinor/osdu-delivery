@@ -331,9 +331,10 @@ internal static class DimensionMapper
     /// <summary>
     /// The kinds a dimension's labels and attributes look the records of an entity type up in (<c>lookupKinds:
     /// [osdu:wks:master-data--Basin:1.2.0]</c>), by entity type: each a kind whose entity type is written out, any other
-    /// segment a wildcard if need be, and one an entity type.
+    /// segment a wildcard if need be, and one an entity type. A cache type's attributes are read the same way, so its
+    /// <c>lookupKinds</c> are read here too.
     /// </summary>
-    private static IReadOnlyDictionary<string, string> MapLookupKinds(List<string>? declared, string where, string source)
+    internal static IReadOnlyDictionary<string, string> MapLookupKinds(List<string>? declared, string where, string source)
     {
         var kinds = new Dictionary<string, string>(StringComparer.Ordinal);
         if (declared is null)
@@ -433,19 +434,23 @@ internal static class DimensionMapper
     /// <summary>
     /// The attributes of a dimension's keys, each by its name and read as a label is (<see cref="MapLabel"/>): at most
     /// <see cref="DimensionSpec.MaxAttributes"/>, each named by a letter, then letters, digits and underscores, unique
-    /// ignoring case, and none a name a cached dimension's rows hold already.
+    /// ignoring case, and none a name <paramref name="holder"/>'s rows hold already. A cache type's attributes are the
+    /// dimension's, read the same way (osdu/docs/reference/flow/cache-attributes.md), so the cache flow's mapper reads them
+    /// here, naming itself as their holder.
     /// </summary>
-    private static IReadOnlyList<DimensionAttributeSpec> MapAttributes(Dictionary<string, object?>? declared, string where, string source)
+    internal static IReadOnlyList<DimensionAttributeSpec> MapAttributes(
+        Dictionary<string, object?>? declared, string where, string source, AttributeHolder? holder = null)
     {
         if (declared is null || declared.Count == 0)
         {
             return [];
         }
 
+        var owner = holder ?? AttributeHolder.Dimension;
         if (declared.Count > DimensionSpec.MaxAttributes)
         {
             throw new FlowValidationException(
-                $"{source}: {where}: attributes names {declared.Count}; a dimension reads at most {DimensionSpec.MaxAttributes}, a search per attribute step for every key.");
+                $"{source}: {where}: attributes names {declared.Count}; {owner.Name} reads at most {DimensionSpec.MaxAttributes}, a search per attribute step for every key.");
         }
 
         var attributes = new List<DimensionAttributeSpec>(declared.Count);
@@ -458,10 +463,10 @@ internal static class DimensionMapper
                     $"{source}: {where}: attributes.{name} is not an attribute name: a letter, then letters, digits and underscores, at most {DimensionAttributeSpec.MaxNameLength}.");
             }
 
-            if (DimensionAttributeSpec.Reserved.Contains(trimmed))
+            if (owner.Reserved.Contains(trimmed))
             {
                 throw new FlowValidationException(
-                    $"{source}: {where}: attributes.{trimmed} takes a name a dimension's rows hold already ({string.Join(", ", DimensionAttributeSpec.Reserved.Order(StringComparer.Ordinal))}); name it after what it holds.");
+                    $"{source}: {where}: attributes.{trimmed} takes a name {owner.Rows} already ({string.Join(", ", owner.Reserved.Order(StringComparer.Ordinal))}); name it after what it holds.");
             }
 
             if (attributes.Any(a => string.Equals(a.Name, trimmed, StringComparison.OrdinalIgnoreCase)))
@@ -869,7 +874,7 @@ internal static class DimensionMapper
             null => [],
             string one => [one],
             IEnumerable<object?> many => many.Select((step, i) => step as string
-                ?? throw new FlowValidationException($"{source}: {where}: {what}[{i}] is not a path; each step of a {Kind(what)} is a path, such as data.FacilityName.")).ToList(),
+                ?? throw new FlowValidationException($"{source}: {where}: {what}[{i}] is not a path; each step of {Kind(what)} is a path, such as data.FacilityName.")).ToList(),
             _ => throw new FlowValidationException(
                 $"{source}: {where}: {what} is a path ({what}: data.FacilityName) or a list of paths ({what}: [data.GeoContexts.FieldID, data.FieldName]); it is neither."),
         };
@@ -877,7 +882,7 @@ internal static class DimensionMapper
         if (steps.Count > DimensionSpec.MaxLabelSteps)
         {
             throw new FlowValidationException(
-                $"{source}: {where}: {what} reads through {steps.Count} records; a {Kind(what)} reads through at most {DimensionSpec.MaxLabelSteps}, a search per step for every key.");
+                $"{source}: {where}: {what} reads through {steps.Count} records; {Kind(what)} reads through at most {DimensionSpec.MaxLabelSteps}, a search per step for every key.");
         }
 
         var trimmed = new List<string>(steps.Count);
@@ -1116,8 +1121,8 @@ internal static class DimensionMapper
 
     private static string? Optional(string? value) => string.IsNullOrWhiteSpace(value) ? null : value.Trim();
 
-    /// <summary>What a list of steps is read for, as a message names it: a label, or an attribute.</summary>
-    private static string Kind(string what) => what == "label" ? "label" : "attribute";
+    /// <summary>What a list of steps is read for, with its article, as a message names it: a label, or an attribute.</summary>
+    private static string Kind(string what) => what == "label" ? "a label" : "an attribute";
 
     /// <summary>
     /// The hash of what a dimension declares. A label, a value for unlabelled keys and attributes it does not declare are
@@ -1202,4 +1207,22 @@ internal static class DimensionMapper
             item.Remove(property);
         }
     }
+}
+
+/// <summary>
+/// What holds the attributes <see cref="DimensionMapper.MapAttributes"/> reads, as its messages name it, and the names its
+/// rows hold already, which an attribute cannot take: a dimension, whose table and cached rows hold their own columns, or a
+/// cache type, whose records hold their id.
+/// </summary>
+/// <param name="Name">The holder as a message names it (<c>a dimension</c>).</param>
+/// <param name="Rows">What its rows hold, as a message says it (<c>a dimension's rows hold</c>).</param>
+/// <param name="Reserved">The names its rows hold already, ignoring case.</param>
+internal sealed record AttributeHolder(string Name, string Rows, IReadOnlySet<string> Reserved)
+{
+    /// <summary>A dimension: its table's and its cached rows' own columns are taken.</summary>
+    public static AttributeHolder Dimension { get; } = new("a dimension", "a dimension's rows hold", DimensionAttributeSpec.Reserved);
+
+    /// <summary>A cache type of OSDU records: each record is kept under its id.</summary>
+    public static AttributeHolder CacheType { get; } = new(
+        "a cache type", "a cached record holds", new HashSet<string>(["id"], StringComparer.OrdinalIgnoreCase));
 }

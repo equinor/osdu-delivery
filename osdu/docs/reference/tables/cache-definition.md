@@ -12,6 +12,7 @@ keywords:
   - dictionary
   - retentionDays
   - onChange
+  - fetchRecords
 related:
   - delivery-concept-database
   - delivery-concept-partition-cache
@@ -28,7 +29,8 @@ sourceRefs:
 # osdu.CacheDefinition: each cached type a cache flow declares, copied from the repository by the sync
 
 A cached OSDU type as one [cache flow](../flow/cache.md) declares it: which records it captures into its partition's
-cache and which paths of each it keeps. The cache flow's YAML in the repository is the only place what is cached is
+cache, which paths of each it keeps, and whether it reads them whole from storage ([records read
+whole](../flow/cache-records.md)). The cache flow's YAML in the repository is the only place what is cached is
 defined; the sync copies the declaration here, so a refresh knows every path the partition keeps
 ([The partition cache](../concepts/partition-cache.md)). A type the repository no longer declares is deleted, and its
 members ([`osdu.CacheMember`](cache-member.md)) are released. Not a ledger table: it has no `PartitionId`; `Scope` names
@@ -54,7 +56,8 @@ the partition.
 | `EntityType` | `nvarchar(200)` | no | The OSDU entity type (`reference-data--UnitOfMeasure`), or `lookup--<Name>` for a table, dictionary or dimension type. |
 | `Kind` | `nvarchar(400)` | yes | For an OSDU type: the search kind the capture sweeps. |
 | `Query` | `nvarchar(4000)` | yes | For an OSDU type: the search query narrowing the capture. |
-| `FieldsJson` | `nvarchar(max)` | no | What the cache keeps of each record, as JSON (`[{ "path": "data.Code", "as": "Code" }]`); the path a column for a table type, and for a dictionary type the fields its document names. |
+| `FetchRecords` | `bit` | no | Set when the flow reads each record its search finds whole from the storage service (`types[].fetchRecords`), so a path the search index does not hold is kept. Every capture of the type in the partition reads it so when any flow declaring it does. |
+| `FieldsJson` | `nvarchar(max)` | no | What the cache keeps of each record, as JSON (`[{ "path": "data.Code", "as": "Code" }]`); the path a column for a table type, and for a dictionary type the fields its document names. An [attribute](../flow/cache-attributes.md) is an entry whose `path` is its definition, with its steps and settings under `attribute` and the kinds it looks records up in under `lookupKinds`. |
 | `OnChange` | `nvarchar(16)` | no | `approve` or `auto`: what a changed cached value of this type does to the records already built from it. |
 | `RetentionDays` | `int` | no | Default `7`. How many days the partition's cache keeps the records of a version after a newer one replaced it, as the flow declares it (`retentionDays`). The partition keeps the longest any of its cache flows asks for. |
 | `FirstSeenUtc` | `datetime2` | no | When a sync first found it. |

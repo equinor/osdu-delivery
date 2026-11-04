@@ -224,27 +224,27 @@ public sealed record DeliveryMappingDto(
 /// <summary>A mapping document with its text.</summary>
 public sealed record DeliveryMappingDetailDto(DeliveryMappingDto Mapping, string Yaml);
 
-/// <summary>One cache flow's declaration of a type: the kind it searches, its query, and what a change does in its declaration.</summary>
 /// <summary>
 /// One cache flow's declaration of a type: where it takes the records from (<c>Origin</c>: osdu, table or dictionary), for an
-/// OSDU type the kind and query it searches, for a table type the connection reference and table it reads and the key column,
-/// and for a dictionary type the document's file and the name of its key.
+/// OSDU type the kind and query it searches and whether it reads each record whole from storage (<c>FetchRecords</c>), for a
+/// table type the connection reference and table it reads and the key column, and for a dictionary type the document's file
+/// and the name of its key.
 /// </summary>
 public sealed record DeliveryCacheTypeSourceDto(
     string Flow, string Origin, string? Kind, string? Query, string OnChange, string? Connection = null, string? SourceObject = null, string? KeyField = null,
-    string? DictionaryPath = null);
+    string? DictionaryPath = null, bool FetchRecords = false);
 
 /// <summary>One path the cache keeps for a type: the path, the name it is cached under, and the cache flows that declare it.</summary>
 public sealed record DeliveryCacheFieldDto(string Path, string As, IReadOnlyList<string> Flows);
 
 /// <summary>
 /// A type of a partition's cache: the union of what its cache flows declare (each flow's kind and query, and every path any of
-/// them keeps), what a change does (it waits for approval when any flow asks for that), and how many records the current
-/// version holds.
+/// them keeps), what a change does (it waits for approval when any flow asks for that), whether its records are read whole
+/// from storage (when any flow asks for that), and how many records the current version holds.
 /// </summary>
 public sealed record DeliveryCacheTypeDto(
     string Name, string EntityType, IReadOnlyList<DeliveryCacheTypeSourceDto> Sources, IReadOnlyList<DeliveryCacheFieldDto> Fields, string OnChange, long Items,
-    string Origin = CacheOrigins.OsduText, string? Key = null);
+    string Origin = CacheOrigins.OsduText, string? Key = null, bool FetchRecords = false);
 
 /// <summary>A schedule that refreshes a cache flow: its cadence, or that it fires behind other schedules.</summary>
 public sealed record DeliveryCacheScheduleDto(Guid Id, string Name, string? Cron, int? IntervalSeconds, bool Chained);
@@ -1694,12 +1694,14 @@ public static class DeliveryEndpoints
 
                         var first = ordered[0];
                         var onChange = ordered.Any(d => d.OnChange.Equals("approve", StringComparison.OrdinalIgnoreCase)) ? "approve" : "auto";
+                        // Every capture of the type reads its records whole when any flow declaring it asks for that.
                         return new DeliveryCacheTypeDto(
                             first.Name, first.EntityType,
                             ordered.Select(d => new DeliveryCacheTypeSourceDto(
-                                d.FlowName, d.Origin, d.Kind, d.Query, d.OnChange, d.Connection, d.SourceObject, d.KeyField, d.DictionaryPath)).ToList(),
+                                d.FlowName, d.Origin, d.Kind, d.Query, d.OnChange, d.Connection, d.SourceObject, d.KeyField, d.DictionaryPath, d.FetchRecords)).ToList(),
                             fields.Select(f => new DeliveryCacheFieldDto(f.Path, f.As, f.Flows)).ToList(),
-                            onChange, held.GetValueOrDefault(first.Name), first.Origin, keys.GetValueOrDefault(first.Name) ?? first.KeyField);
+                            onChange, held.GetValueOrDefault(first.Name), first.Origin, keys.GetValueOrDefault(first.Name) ?? first.KeyField,
+                            ordered.Any(d => d.FetchRecords));
                     })
                     .OrderBy(t => t.Name, StringComparer.Ordinal)
                     .ToList();

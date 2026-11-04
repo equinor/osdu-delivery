@@ -219,6 +219,8 @@ export interface CachedTypeSummary {
   fields: DeliveryCacheField[];
   /** approve or auto: what a changed value does to the records built from it. */
   onChange: string;
+  /** For an OSDU type: its records are read whole from storage, not from the search index's projection. */
+  fetchRecords: boolean;
 }
 
 /** The types a partition's cache holds, sorted the way the type picker lists them: by family, then by name. */
@@ -234,6 +236,7 @@ export function summarizeTypes(cache: DeliveryCache | null): CachedTypeSummary[]
       items: type.items,
       fields: type.fields,
       onChange: type.onChange,
+      fetchRecords: type.fetchRecords,
     }))
     .sort((a, b) => compareFamilies(a.family, b.family) || a.name.localeCompare(b.name));
 }

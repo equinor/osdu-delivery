@@ -1,3 +1,4 @@
+using System.Text.Json.Nodes;
 using SqlFlow.Core;
 using SqlFlow.Delivery.Model;
 
@@ -78,6 +79,14 @@ public sealed record ReferenceTypeSpec
 
     /// <summary>For an OSDU type: the search query narrowing the capture (default *).</summary>
     public string Query { get; init; } = "*";
+
+    /// <summary>
+    /// For an OSDU type: read each record the search finds back whole from the storage service, and keep the declared paths of
+    /// the record as storage holds it rather than of the projection the index returns (osdu/docs/reference/flow/cache-records.md).
+    /// The index holds only what the kind's schema describes, so a path the schema leaves open, such as a property of
+    /// <c>data.ExtensionProperties</c>, is read this way.
+    /// </summary>
+    public bool FetchRecords { get; init; }
 
     /// <summary>
     /// What a change to this type's cached values does to the records built from them: update on the next run (the default)
@@ -174,12 +183,33 @@ public sealed record ReferenceTypeSpec
         }
     }
 
+    /// <summary>
+    /// A lookup table holds rows, not OSDU records: there is no record of it in storage to read whole, and no reference of a
+    /// record to read an attribute through.
+    /// </summary>
+    private void RefuseFetchRecords()
+    {
+        if (FetchRecords)
+        {
+            throw new FlowValidationException(
+                $"Cached type '{Name}' comes from {Describe()}, which takes no 'fetchRecords': only a type searched on OSDU, by its kind, has records storage holds to read whole.");
+        }
+
+        if (Fields.FirstOrDefault(f => f.IsAttribute) is { } attribute)
+        {
+            throw new FlowValidationException(
+                $"Cached type '{Name}' comes from {Describe()}, which takes no attribute ({attribute.Name}): only a type searched on OSDU, by its kind, has records an attribute is read through.");
+        }
+    }
+
     private void ValidateTable()
     {
         if (string.IsNullOrWhiteSpace(Table))
         {
             throw new FlowValidationException($"Cached type '{Name}' needs the ingestion table it reads.");
         }
+
+        RefuseFetchRecords();
 
         if (string.IsNullOrWhiteSpace(Key))
         {
@@ -206,6 +236,7 @@ public sealed record ReferenceTypeSpec
             throw new FlowValidationException($"Cached type '{Name}' needs the name of the dictionary it holds.");
         }
 
+        RefuseFetchRecords();
         Refuse(Kind, "kind");
         Refuse(Table, "table");
         Refuse(Dimension, "dimension");
@@ -238,6 +269,7 @@ public sealed record ReferenceTypeSpec
             throw new FlowValidationException($"Cached type '{Name}' needs the dimension it holds and the dimension flow that declares it.");
         }
 
+        RefuseFetchRecords();
         Refuse(Kind, "kind");
         Refuse(Table, "table");
         Refuse(Dictionary, "dictionary");
@@ -307,12 +339,19 @@ public sealed record ReferenceTypeSpec
 }
 
 /// <summary>
-/// One path to cache, and the name the cache stores it under. Written either as the bare path (<c>data.Code</c>, stored as
-/// <c>Code</c>) or as a path with an explicit name (<c>{ path: data.NameAlias.AliasName, as: Alias }</c>). A path crosses
-/// arrays implicitly, so a path through an array of objects yields the set of values found along it.
+/// One value to cache, and the name the cache stores it under. A path of the record is written either bare
+/// (<c>data.Code</c>, stored as <c>Code</c>) or with an explicit name (<c>{ path: data.NameAlias.AliasName, as: Alias }</c>);
+/// it crosses arrays implicitly, so a path through an array of objects yields the set of values found along it, and whatever
+/// it yields is kept as it is. An attribute (<c>types[].attributes</c>, osdu/docs/reference/flow/cache-attributes.md) is
+/// read exactly as a dimension's attribute is (<see cref="DimensionAttributeSpec"/>): from the cached record, through the
+/// records its steps' references name, each step's objects filtered, the value kept, chosen and decoded as the attribute
+/// says; its <see cref="Path"/> is its definition, as messages and the Cache page show it.
 /// </summary>
 public sealed record ReferenceFieldSpec
 {
+    /// <summary>What an attribute's definition text starts with, which no path of a record does.</summary>
+    private const string AttributeOpen = "{ path: ";
+
     public ReferenceFieldSpec(string path, string? name = null)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(path);
@@ -320,11 +359,183 @@ public sealed record ReferenceFieldSpec
         Name = string.IsNullOrWhiteSpace(name) ? ReferenceField.Normalize(Path) : name.Trim();
     }
 
-    /// <summary>The path into the OSDU record, from its root (<c>data.Code</c>, <c>legal.legaltags</c>).</summary>
+    /// <summary>An attribute read as a dimension's is, the records of an entity type its steps reach looked up in <paramref name="lookupKinds"/>.</summary>
+    public ReferenceFieldSpec(DimensionAttributeSpec attribute, IReadOnlyDictionary<string, string>? lookupKinds = null)
+    {
+        ArgumentNullException.ThrowIfNull(attribute);
+        if (attribute.IsCollected || attribute.Steps.Count == 0)
+        {
+            throw new ArgumentException($"Attribute {attribute.Name} is collected; a cached type's attribute is read through steps.", nameof(attribute));
+        }
+
+        Attribute = attribute;
+        LookupKinds = lookupKinds is null
+            ? new Dictionary<string, string>(StringComparer.Ordinal)
+            : new Dictionary<string, string>(lookupKinds, StringComparer.Ordinal);
+        Name = attribute.Name;
+        Path = Definition(attribute, LookupKinds);
+    }
+
+    /// <summary>
+    /// The path into the OSDU record, from its root (<c>data.Code</c>, <c>legal.legaltags</c>); for an attribute, its
+    /// definition (<c>{ path: [data.WellID, data.FacilityName], keep: id }</c>), every setting it is read with.
+    /// </summary>
     public string Path { get; }
 
     /// <summary>The name the value is cached under, and the name a mapping matches or selects by.</summary>
     public string Name { get; }
+
+    /// <summary>For an attribute: how it is read, as a dimension's attribute is; null for a path of the record.</summary>
+    public DimensionAttributeSpec? Attribute { get; }
+
+    /// <summary>For an attribute: the kind the records of each entity type its steps reach are looked up in, by entity type.</summary>
+    public IReadOnlyDictionary<string, string> LookupKinds { get; } = new Dictionary<string, string>(StringComparer.Ordinal);
+
+    /// <summary>True for an attribute, read through the dimension's labeler rather than as a path of the record.</summary>
+    public bool IsAttribute => Attribute is not null;
+
+    /// <summary>The lookup kinds as one text, so attributes read with the same ones are read together.</summary>
+    public string LookupSignature => string.Join(',', LookupKinds.OrderBy(k => k.Key, StringComparer.Ordinal).Select(k => k.Value));
+
+    /// <summary>Two fields are one when they cache one name from one definition: the path, or every setting of an attribute.</summary>
+    public bool Equals(ReferenceFieldSpec? other)
+        => other is not null && string.Equals(Path, other.Path, StringComparison.Ordinal) && string.Equals(Name, other.Name, StringComparison.Ordinal)
+           && IsAttribute == other.IsAttribute;
+
+    public override int GetHashCode() => HashCode.Combine(Path, Name, IsAttribute);
+
+    /// <summary>
+    /// The field as the catalog keeps it: <c>{ "path": ..., "as": ... }</c>, and for an attribute its steps and settings under
+    /// <c>attribute</c> and the kinds it looks records up in under <c>lookupKinds</c>.
+    /// </summary>
+    public JsonObject ToJson()
+    {
+        var json = new JsonObject { ["path"] = Path, ["as"] = Name };
+        if (Attribute is { } attribute)
+        {
+            json["attribute"] = new JsonObject
+            {
+                ["steps"] = new JsonArray(attribute.Steps.Select(s => (JsonNode?)JsonValue.Create(s)).ToArray()),
+                ["keep"] = Text(attribute.Keep),
+                ["many"] = Text(attribute.Many),
+                ["decode"] = Text(attribute.Decode),
+                ["maxReferences"] = attribute.MaxReferences,
+                ["trim"] = attribute.Trim,
+            };
+            if (LookupKinds.Count > 0)
+            {
+                json["lookupKinds"] = new JsonArray(LookupKinds.OrderBy(k => k.Key, StringComparer.Ordinal).Select(k => (JsonNode?)JsonValue.Create(k.Value)).ToArray());
+            }
+        }
+
+        return json;
+    }
+
+    /// <summary>A field as <see cref="ToJson"/> writes it; null for an entry holding no path, which names no field.</summary>
+    /// <exception cref="FormatException">An attribute's settings are not ones <see cref="ToJson"/> writes.</exception>
+    public static ReferenceFieldSpec? FromJson(JsonObject json)
+    {
+        ArgumentNullException.ThrowIfNull(json);
+        if (json["path"] is not JsonValue path || !path.TryGetValue<string>(out var text) || string.IsNullOrWhiteSpace(text))
+        {
+            return null;
+        }
+
+        var name = json["as"] is JsonValue alias && alias.TryGetValue<string>(out var given) && !string.IsNullOrWhiteSpace(given) ? given : null;
+        if (json["attribute"] is not JsonObject attribute)
+        {
+            return new ReferenceFieldSpec(text, name);
+        }
+
+        if (name is null)
+        {
+            throw new FormatException($"Attribute '{text}' names no 'as'.");
+        }
+
+        var steps = (attribute["steps"] as JsonArray ?? []).Select(s => s is JsonValue v && v.TryGetValue<string>(out var step) ? step : null).ToList();
+        if (steps.Count == 0 || steps.Any(string.IsNullOrWhiteSpace))
+        {
+            throw new FormatException($"Attribute {name} holds no steps.");
+        }
+
+        var kinds = new Dictionary<string, string>(StringComparer.Ordinal);
+        foreach (var kind in (json["lookupKinds"] as JsonArray ?? []).OfType<JsonValue>().Select(k => k.TryGetValue<string>(out var s) ? s : null).OfType<string>())
+        {
+            kinds[kind.Split(':') is { Length: 4 } parts ? parts[2] : throw new FormatException($"Attribute {name} looks records up in '{kind}', which is no kind.")] = kind;
+        }
+
+        return new ReferenceFieldSpec(
+            new DimensionAttributeSpec(
+                name, steps!, null,
+                Parse<DimensionValueKeep>(attribute["keep"], DimensionValueKeep.Value, name),
+                Parse<DimensionValueMany>(attribute["many"], DimensionValueMany.First, name),
+                Parse<DimensionValueDecode>(attribute["decode"], DimensionValueDecode.None, name),
+                attribute["maxReferences"] is JsonValue max && max.TryGetValue<int>(out var most) ? most : DimensionAttributeSpec.DefaultMaxReferences,
+                attribute["trim"] is not JsonValue trim || !trim.TryGetValue<bool>(out var trims) || trims),
+            kinds);
+    }
+
+    /// <summary>True when <paramref name="path"/> is an attribute's definition, as <see cref="Path"/> gives it, not a path of a record.</summary>
+    public static bool IsDefinition(string path) => path.StartsWith(AttributeOpen, StringComparison.Ordinal);
+
+    /// <summary>
+    /// An attribute's definition as one line: its steps, and each setting it is read with that is not the default, in the
+    /// order a document writes them, so two flows declaring one attribute alike give one text.
+    /// </summary>
+    private static string Definition(DimensionAttributeSpec attribute, IReadOnlyDictionary<string, string> lookupKinds)
+    {
+        var parts = new List<string> { attribute.Steps.Count == 1 ? attribute.Steps[0] : $"[{string.Join(", ", attribute.Steps)}]" };
+        if (attribute.Keep != DimensionValueKeep.Value)
+        {
+            parts.Add($"keep: {Text(attribute.Keep)}");
+        }
+
+        if (attribute.Many != DimensionValueMany.First)
+        {
+            parts.Add($"many: {Text(attribute.Many)}");
+        }
+
+        if (attribute.Decode != DimensionValueDecode.None)
+        {
+            parts.Add($"decode: {Text(attribute.Decode)}");
+        }
+
+        if (attribute.MaxReferences != DimensionAttributeSpec.DefaultMaxReferences)
+        {
+            parts.Add(string.Create(System.Globalization.CultureInfo.InvariantCulture, $"maxReferences: {attribute.MaxReferences}"));
+        }
+
+        if (!attribute.Trim)
+        {
+            parts.Add("trim: false");
+        }
+
+        if (lookupKinds.Count > 0)
+        {
+            parts.Add($"lookupKinds: [{string.Join(", ", lookupKinds.OrderBy(k => k.Key, StringComparer.Ordinal).Select(k => k.Value))}]");
+        }
+
+        return AttributeOpen + string.Join(", ", parts) + " }";
+    }
+
+    /// <summary>A setting as a document writes it: the enum's name, its first letter lower-cased.</summary>
+    private static string Text<T>(T value) where T : struct, Enum
+    {
+        var name = value.ToString();
+        return char.ToLowerInvariant(name[0]) + name[1..];
+    }
+
+    private static T Parse<T>(JsonNode? node, T fallback, string name) where T : struct, Enum
+    {
+        if (node is not JsonValue value || !value.TryGetValue<string>(out var text))
+        {
+            return fallback;
+        }
+
+        return Enum.TryParse<T>(text, ignoreCase: true, out var parsed) && Enum.IsDefined(parsed)
+            ? parsed
+            : throw new FormatException($"Attribute {name} holds '{text}', which is no {typeof(T).Name}.");
+    }
 }
 
 /// <summary>

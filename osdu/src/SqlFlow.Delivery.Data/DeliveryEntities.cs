@@ -2169,6 +2169,13 @@ public sealed class DeliveryCacheDefinition
     public string? Query { get; set; }
 
     /// <summary>
+    /// For an OSDU type: set when the flow reads each record its search finds whole from the storage service
+    /// (<c>types[].fetchRecords</c>), so a path the search index does not hold is kept. Every capture of the type in the
+    /// partition reads it so when any flow declaring it does.
+    /// </summary>
+    public bool FetchRecords { get; set; }
+
+    /// <summary>
     /// What the cache keeps of each record as JSON: <c>[{ "path": "data.Code", "as": "Code" }]</c>, the path a column for a
     /// table type, and for a dictionary type the fields its document names.
     /// </summary>

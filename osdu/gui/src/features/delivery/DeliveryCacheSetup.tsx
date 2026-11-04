@@ -133,6 +133,33 @@ function ChangeRule({ onChange }: { onChange: string }) {
     : <span className="text-[12.5px]">goes out on each record's next delivery</span>;
 }
 
+/**
+ * Where an OSDU type's values are read: the projection the search index returns, or each record whole from storage, which
+ * every capture of the type does when any flow declaring it asks for that (types[].fetchRecords).
+ */
+function ValuesReadFrom({ type, onNode }: { type: CachedTypeSummary; onNode: (node: SetupNode) => void }) {
+  if (!type.fetchRecords) {
+    return (
+      <span className="text-[12.5px]">
+        the search index, which holds what the kind's schema describes
+      </span>
+    );
+  }
+
+  const asking = type.sources.filter((source) => source.fetchRecords).map((source) => source.flow);
+  return (
+    <span className="flex flex-col gap-0.5">
+      <span className="text-[12.5px]">each record whole, from storage: every path a record holds, such as one under data.ExtensionProperties</span>
+      {type.sources.length > 1 && (
+        <span className="flex flex-wrap items-baseline gap-x-1.5 text-[11.5px] text-muted-foreground">
+          <span>asked by</span>
+          {asking.map((flow) => <NodeLink key={flow} label={flow} onClick={() => onNode(`flow:${flow}`)} />)}
+        </span>
+      )}
+    </span>
+  );
+}
+
 /** Where a flow captures from: the OSDU endpoint it searches, the ingestion connection it reads, or its repository. */
 function CapturedFrom({ flow }: { flow: DeliveryCacheFlow }) {
   if (flow.endpoint === null && flow.connection === null) {
@@ -541,6 +568,11 @@ function TypeDetail({ type, onNode, onOpen }: {
               ))}
             </span>
           </Fact>
+          {type.origin === "osdu" && (
+            <Fact label="Values read from" testId="delivery-cache-type-read">
+              <ValuesReadFrom type={type} onNode={onNode} />
+            </Fact>
+          )}
           {type.key !== null && (
             <Fact label="Kept under">
               <span className="font-mono text-[12.5px]" data-testid="delivery-cache-type-key">{type.key}</span>
