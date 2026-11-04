@@ -17,6 +17,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Assertions compare OSDU with what the staged data holds now.** An assertion flow declares `queries`, each naming the
+  database it runs against (`connection`, a reference) beside its one read-only `sql`, and any value a comparison takes may
+  be a query's answer, named (`count: { query: staged-wellbores }`) or written in place. Known values read one row per row a
+  query answers, their values its columns. Tokens are bound as values, and the run reads each query once, through SQLFlow's
+  read-only guard, in a transaction that is always rolled back
+  ([proof values from staged data](osdu/docs/reference/flow/staged-proof-values.md)).
+
+- **A delivered assertion accounts for every staged row.** With `staged: true` it starts from the rows the delivery flow
+  stages, read through its own connection, and each is in OSDU, held back by the ledger with its reason (held, failed,
+  waiting, queued, removed, reverted), or not in OSDU with nothing to explain it (never planned, delivered and not found).
+  `explained` weighs the rows the ledger explains, and `values` binds the flow's scope
+  ([staged accounting](osdu/docs/reference/flow/staged-accounting.md)).
+
 - **Known values hold each log's curve data to what its source files state.** A row's `curves` gives, curve by curve, the
   values a source states: a curve's value at a depth (`GR: { at: { 1500.1524: 74.2 } }`, matched exactly as written), and
   its `count`, `missing`, `min`, `max`, `sum`, `avg`, `first` and `last` depth and `step`. The run reads only those curves of
@@ -456,6 +469,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   curve `MD` among its curves ([Assertions](osdu/docs/reference/flow/assertion.md#assertions)).
 
 ### Changed
+- **The activity bar opens the pages worked in most, in one click.** Its icons are the Assistant, Repos, Mappings,
+  Schedules, Delivery, the Explorer and Assertions, under a menu button that shows and hides the side bar; they were an
+  icon per menu group, which only unfolded that group in the side bar. A shortcut is lit while its page is shown and
+  selects its entry in the side bar's menu, and every other page is in the side bar
+  ([the activity bar](osdu/docs/reference/concepts/menu.md#the-activity-bar)).
 - **A record's Render sets what it renders to now on the left and what OSDU holds on the right**, under headings that name
   each side (**Rendered now**, **In OSDU** with the version read) in the foreground rather than in small grey type. Every
   comparison's Explain and Copy name its sides by those headings ([a record's page](osdu/docs/reference/concepts/gui-ledger.md#a-records-page)).

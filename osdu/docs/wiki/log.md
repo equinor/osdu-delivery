@@ -639,3 +639,12 @@ for "this attribute failed because X value is missing in this cache", a list of 
 values, what to do, and a built-in proof query they can run to find the records themselves.
 
 Added decision 0044 and the reference page `delivery-concept-value-proof`.
+
+## [2026-11-04] ingest | The activity bar opens the pages worked in most
+
+Source: the human's words that the activity bar's icons pointed to sections of the menu, which was pointless; that it
+should link straight to the pages they use most (the Assistant, Delivery, Repos, Schedules, Mappings, the Explorer and the
+Assertions) in a logical order, because reaching them took several clicks many times a day; and that the page a click
+opens should be selected in the menu's tree.
+
+Added decision 0045; amended decision 0034; updated the reference page `delivery-concept-menu`.

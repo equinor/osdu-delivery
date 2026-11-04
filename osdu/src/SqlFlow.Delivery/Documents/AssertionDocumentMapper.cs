@@ -5,6 +5,7 @@ using System.Text.Json.Nodes;
 using System.Text.Json.Serialization;
 using System.Text.RegularExpressions;
 using SqlFlow.Core;
+using SqlFlow.Core.Runs;
 using SqlFlow.Delivery.Engine.Search;
 using SqlFlow.Delivery.Json;
 using SqlFlow.Delivery.Model;
@@ -91,6 +92,7 @@ internal static partial class AssertionMapper
 
         var defaults = MapDefaults(y.Defaults, source);
         var dimensions = MapDimensions(y.Dimensions, "dimensions", source);
+        var queries = MapQueries(y.Queries, parameters, source);
         var flow = new AssertionFlowDefinition
         {
             SourcePath = source == "<inline>" ? null : source,
@@ -102,6 +104,7 @@ internal static partial class AssertionMapper
             Dimensions = dimensions,
             TelemetryOperation = FlowMapper.MapTelemetry(y.Telemetry, AssertionFlowDefinition.FlowTypeName, source),
             Parameters = parameters,
+            Queries = queries,
             Source = new AssertionSource
             {
                 Endpoint = FlowMapper.Require(src.Endpoint, "source.endpoint", source),
@@ -118,7 +121,7 @@ internal static partial class AssertionMapper
             FollowsRegistry = followsRegistry,
             Defaults = defaults,
             FailRunOn = FlowMapper.ParseEnum(y.FailRunOn, FailRunOn.Error, "failRunOn", source),
-            Tests = MapTests(y.Tests, parameters, partitions, followsRegistry, defaults, dimensions, source),
+            Tests = MapTests(y.Tests, parameters, queries, partitions, followsRegistry, defaults, dimensions, source),
             Reliability = FlowMapper.MapReliability(y.Reliability, "an assertion flow", takesRecordsAtOnce: true, source),
             Parallelism = FlowMapper.MapRunParallelism(y.Parallelism, "the tests evaluated at once, and the requests one test has in flight", source),
         };
@@ -294,9 +297,55 @@ internal static partial class AssertionMapper
         }
     }
 
+    /// <summary>
+    /// The flow's queries (osdu/docs/reference/flow/staged-proof-values.md): each named as a test is, the database it runs
+    /// against as a reference, and one read-only SELECT whose tokens are the flow's parameters or {partition}.
+    /// </summary>
+    private static IReadOnlyDictionary<string, StagedQuery> MapQueries(
+        Dictionary<string, AssertionQueryYaml?>? declared, IReadOnlyDictionary<string, FlowParameter> parameters, string source)
+    {
+        var queries = new Dictionary<string, StagedQuery>(StringComparer.Ordinal);
+        if (declared is null)
+        {
+            return queries;
+        }
+
+        if (declared.Count > StagedQuery.MaxQueries)
+        {
+            throw new FlowValidationException(string.Create(CultureInfo.InvariantCulture,
+                $"{source}: queries names {declared.Count} queries; a flow names at most {StagedQuery.MaxQueries}. Split its tests over several flows."));
+        }
+
+        foreach (var (written, y) in declared)
+        {
+            var name = written?.Trim() ?? string.Empty;
+            var at = $"queries.{name}";
+            if (!SelectableNames.IsName(name))
+            {
+                throw new FlowValidationException($"{source}: queries names '{written}', which is not a query name: {SelectableNames.Rule}.");
+            }
+
+            if (queries.Keys.Any(k => string.Equals(k, name, StringComparison.OrdinalIgnoreCase)))
+            {
+                throw new FlowValidationException($"{source}: queries names '{name}' twice, ignoring case; a test names each query by its name, so each needs its own.");
+            }
+
+            if (y is null)
+            {
+                throw new FlowValidationException($"{source}: {at} is empty; give it connection, the database it runs against, and sql, its one SELECT.");
+            }
+
+            var query = ConditionReader.Query(y.Connection, y.Sql, y.TimeoutSeconds, name, at, source);
+            Engine.Assertions.StagedSql.Check(query.Sql, parameters, $"{source}: {at}.sql");
+            queries[name] = query;
+        }
+
+        return queries;
+    }
+
     private static IReadOnlyList<AssertionTest> MapTests(
-        List<AssertionTestYaml>? declared, IReadOnlyDictionary<string, FlowParameter> parameters, IReadOnlyList<string> partitions, bool followsRegistry,
-        AssertionDefaults defaults, IReadOnlyList<AssertionDimension> dimensions, string source)
+        List<AssertionTestYaml>? declared, IReadOnlyDictionary<string, FlowParameter> parameters, IReadOnlyDictionary<string, StagedQuery> queries,
+        IReadOnlyList<string> partitions, bool followsRegistry, AssertionDefaults defaults, IReadOnlyList<AssertionDimension> dimensions, string source)
     {
         if (declared is null || declared.Count == 0)
         {
@@ -311,7 +360,7 @@ internal static partial class AssertionMapper
         var tests = new List<AssertionTest>(declared.Count);
         for (var i = 0; i < declared.Count; i++)
         {
-            var test = MapTest(declared[i], i, parameters, partitions, followsRegistry, defaults, dimensions, source);
+            var test = MapTest(declared[i], i, parameters, queries, partitions, followsRegistry, defaults, dimensions, source);
             if (tests.Any(t => string.Equals(t.Name, test.Name, StringComparison.OrdinalIgnoreCase)))
             {
                 throw new FlowValidationException($"{source}: tests[{i}] is named '{test.Name}', as an earlier test is; a run and a report name each test by its name, so each needs its own.");
@@ -324,8 +373,8 @@ internal static partial class AssertionMapper
     }
 
     private static AssertionTest MapTest(
-        AssertionTestYaml? t, int index, IReadOnlyDictionary<string, FlowParameter> parameters, IReadOnlyList<string> partitions, bool followsRegistry,
-        AssertionDefaults defaults, IReadOnlyList<AssertionDimension> flowDimensions, string source)
+        AssertionTestYaml? t, int index, IReadOnlyDictionary<string, FlowParameter> parameters, IReadOnlyDictionary<string, StagedQuery> queries,
+        IReadOnlyList<string> partitions, bool followsRegistry, AssertionDefaults defaults, IReadOnlyList<AssertionDimension> flowDimensions, string source)
     {
         var at = string.Create(CultureInfo.InvariantCulture, $"tests[{index}]");
         if (t is null)
@@ -398,8 +447,10 @@ internal static partial class AssertionMapper
 
         var severity = FlowMapper.ParseEnum(t.Severity, AssertionSeverity.Error, at + ".severity", source);
         var bulk = MapBulk(t.Bulk, kind, where, source);
-        var context = new TestContext(where, source, kind, severity, ids.Count > 0, read, sort.Count > 0, bulk is not null, Optional(t.AsOf));
-        var assertions = MapAssertions(t.Assert, context);
+        var context = new TestContext(where, source, kind, severity, ids.Count > 0, read, sort.Count > 0, bulk is not null, Optional(t.AsOf), parameters, queries);
+        var assertions = MapAssertions(t.Assert, context)
+            .Select((a, i) => AssertionOperands.Map(a, v => QueryOf(v, string.Create(CultureInfo.InvariantCulture, $"{where}: assert[{i}]"), context)))
+            .ToList();
         var test = new AssertionTest
         {
             Name = name,
@@ -770,8 +821,35 @@ internal static partial class AssertionMapper
         Only(point, ["latitude", "longitude"], at, source);
     }
 
+    // Columns is true while known values read from a query are read: their values name the query's columns.
     private sealed record TestContext(
-        string Where, string Source, string Kind, AssertionSeverity Severity, bool ByIds, AssertionRead Read, bool Sorted, bool Bulk, string? AsOf);
+        string Where, string Source, string Kind, AssertionSeverity Severity, bool ByIds, AssertionRead Read, bool Sorted, bool Bulk, string? AsOf,
+        IReadOnlyDictionary<string, FlowParameter> Parameters, IReadOnlyDictionary<string, StagedQuery> Queries, bool Columns = false);
+
+    /// <summary>
+    /// A value an assertion compares with, its query read in: a query named by the flow's <c>queries</c> as the flow declares it
+    /// (refused when it declares none of that name), and one written in place checked as one is (one read-only SELECT, its
+    /// tokens the flow's parameters or {partition}). Any other value as it is.
+    /// </summary>
+    private static ExpectedValue QueryOf(ExpectedValue value, string at, TestContext test)
+    {
+        if (value.Kind != ExpectedValueKind.Query || value.Query is not { } query)
+        {
+            return value;
+        }
+
+        if (query.Name is { } name)
+        {
+            return test.Queries.TryGetValue(name, out var declared)
+                ? ExpectedValue.OfQuery(declared)
+                : throw new FlowValidationException(test.Queries.Count == 0
+                    ? $"{test.Source}: {at} names the query '{name}', and the flow declares no queries; declare it under queries, with its connection and sql."
+                    : $"{test.Source}: {at} names the query '{name}', which the flow does not declare under queries; it declares {string.Join(", ", test.Queries.Keys.Order(StringComparer.Ordinal))}.");
+        }
+
+        Engine.Assertions.StagedSql.Check(query.Sql, test.Parameters, $"{test.Source}: {at}: the query's sql");
+        return value;
+    }
 
     private static IReadOnlyList<TestAssertion> MapAssertions(List<AssertionItemYaml>? declared, TestContext test)
     {
@@ -1088,7 +1166,7 @@ internal static partial class AssertionMapper
 
     private static DeliveredAssertion MapDelivered(AssertionItemYaml y, string at, TestContext test)
     {
-        OnlyKeys(y, "delivered", ["delivered", "interface", "exact"], at, test);
+        OnlyKeys(y, "delivered", ["delivered", "interface", "exact", "staged", "explained", "values"], at, test);
         var flow = y.Delivered!.Trim();
         if (flow.Length == 0 || flow.Length > FlowDefinition.MaxLedgerNameLength || flow.Any(char.IsControl))
         {
@@ -1101,13 +1179,90 @@ internal static partial class AssertionMapper
             throw new FlowValidationException($"{test.Source}: {at}.interface '{named}' is not an interface name: a letter followed by letters, digits, '_' and '-'.");
         }
 
+        var staged = y.Staged ?? false;
+        if (!staged && (y.Explained is not null || y.Values is not null))
+        {
+            throw new FlowValidationException(
+                $"{test.Source}: {at} takes explained and values only with staged: true, which reads the rows {flow} stages; its ledger's delivered records are read under no values and explain nothing.");
+        }
+
+        var explained = y.Explained is null ? (AssertionSeverity?)null : FlowMapper.ParseEnum<AssertionSeverity>(y.Explained.Trim(), at + ".explained", test.Source);
         return new DeliveredAssertion
         {
             Flow = flow,
             Interface = named,
             Exact = y.Exact ?? false,
-            Label = $"delivered by {flow}{(named is null ? string.Empty : "/" + named)}",
+            Staged = staged,
+            Explained = explained,
+            Values = staged ? DeliveryValues(y.Values, at, test) : null,
+            Label = staged
+                ? $"every row {flow}{(named is null ? string.Empty : "/" + named)} stages accounted for"
+                : $"delivered by {flow}{(named is null ? string.Empty : "/" + named)}",
         };
+    }
+
+    /// <summary>
+    /// A staged delivered assertion's <c>values</c>: the delivery flow's parameter values its rows are read under, each a literal,
+    /// a <c>{name}</c> token of this flow's parameters, or a list of them for a parameter its record scope reads several values
+    /// of, written as a removal writes them (osdu/docs/reference/flow/removal.md). Null when it names none.
+    /// </summary>
+    private static SortedDictionary<string, string>? DeliveryValues(object? declared, string at, TestContext test)
+    {
+        if (declared is null)
+        {
+            return null;
+        }
+
+        if (declared is not IDictionary map)
+        {
+            throw new FlowValidationException(
+                $"{test.Source}: {at}.values maps the delivery flow's parameters to the values its rows are read under ({{ logSource: COMPOSITE }}).");
+        }
+
+        var values = new SortedDictionary<string, string>(StringComparer.Ordinal);
+        foreach (System.Collections.DictionaryEntry entry in map)
+        {
+            var name = Convert.ToString(entry.Key, CultureInfo.InvariantCulture)?.Trim() ?? string.Empty;
+            if (name.Length == 0)
+            {
+                throw new FlowValidationException($"{test.Source}: {at}.values names a parameter with an empty name.");
+            }
+
+            if (string.Equals(name, PartitionNames.RunValue, StringComparison.Ordinal))
+            {
+                throw new FlowValidationException(
+                    $"{test.Source}: {at}.values.{PartitionNames.RunValue} is set; the partition is the run's, never a value of the delivery flow. Remove it.");
+            }
+
+            IReadOnlyList<string?> items = entry.Value switch
+            {
+                null => [],
+                IList list => list.Cast<object?>().Select(i => i is null or IDictionary or IList ? null : Convert.ToString(i, CultureInfo.InvariantCulture)).ToList(),
+                IDictionary => [null],
+                var scalar => [Convert.ToString(scalar, CultureInfo.InvariantCulture)],
+            };
+            if (items.Count == 0 || items.Any(string.IsNullOrWhiteSpace))
+            {
+                throw new FlowValidationException(
+                    $"{test.Source}: {at}.values.{name} has no value; give the delivery flow's parameter a value, or a list of values for a parameter its record scope reads several of, or remove it.");
+            }
+
+            foreach (var item in items)
+            {
+                foreach (var token in FlowMapper.Tokens(item!))
+                {
+                    if (token != PartitionNames.RunValue && !test.Parameters.ContainsKey(token))
+                    {
+                        throw new FlowValidationException(
+                            $"{test.Source}: {at}.values.{name} uses '{{{token}}}', which is neither {{{PartitionNames.RunValue}}} nor declared under parameters.");
+                    }
+                }
+            }
+
+            values[name] = entry.Value is IList ? RunValueList.Of(items.Select(i => i!)) : items[0]!;
+        }
+
+        return values;
     }
 
     private static ColumnsAssertion MapColumns(AssertionItemYaml y, string at, TestContext test)
@@ -1323,6 +1478,17 @@ internal static partial class AssertionMapper
 
         var known = y.KnownValues!;
         var block = at + ".knownValues";
+        var staged = KnownQuery(known, block, test);
+        if (staged is not null)
+        {
+            // Every value the known values compare with names a column of the rows the query answers.
+            test = test with { Columns = true };
+        }
+        else if (known.MaxRows is not null)
+        {
+            throw new FlowValidationException($"{test.Source}: {block}.maxRows bounds the rows a query answers, and the known values read no query; take it out, or give them query or sql.");
+        }
+
         var tolerance = ConditionReader.Tolerance(known.Tolerance, block, test.Source);
         var band = ConditionReader.Band(known.WarnWithin, block, test.Source);
         var ignoreCase = known.IgnoreCase ?? false;
@@ -1400,13 +1566,66 @@ internal static partial class AssertionMapper
         }
 
         var notFound = known.NotFound is null ? (AssertionSeverity?)null : FlowMapper.ParseEnum<AssertionSeverity>(known.NotFound.Trim(), block + ".notFound", test.Source);
+        int? maxRows = null;
+        if (known.MaxRows is { } bound)
+        {
+            maxRows = bound is >= 1 and <= KnownValuesAssertion.MaxQueryRows
+                ? bound
+                : throw new FlowValidationException(string.Create(CultureInfo.InvariantCulture,
+                    $"{test.Source}: {block}.maxRows is the most rows the query may answer: 1 to {KnownValuesAssertion.MaxQueryRows}."));
+        }
+
         return new KnownValuesAssertion
         {
             Rows = rows,
             NotFound = notFound,
             CurveIndex = curveIndex,
-            Label = string.Create(CultureInfo.InvariantCulture, $"known values of {rows.Count} row(s)"),
+            Query = staged,
+            MaxRows = maxRows,
+            Label = staged is null
+                ? string.Create(CultureInfo.InvariantCulture, $"known values of {rows.Count} row(s)")
+                : $"known values of each row of {staged}",
         };
+    }
+
+    /// <summary>
+    /// The query known values read their rows from (osdu/docs/reference/flow/staged-proof-values.md, Known values from a query):
+    /// one the flow declares, by its name (<c>query</c>), or one written here (<c>connection</c> and <c>sql</c>); null for rows
+    /// the document writes. A query's rows are the rows, so the known values write no rows of their own.
+    /// </summary>
+    private static StagedQuery? KnownQuery(AssertionKnownValuesYaml known, string block, TestContext test)
+    {
+        var inline = known.Connection is not null || known.Sql is not null || known.TimeoutSeconds is not null;
+        if (known.Query is null && !inline)
+        {
+            return null;
+        }
+
+        if (known.Query is not null && inline)
+        {
+            throw new FlowValidationException(
+                $"{test.Source}: {block} names the query {known.Query} the flow declares, and writes connection, sql or timeoutSeconds as well; name a query, or write one here, not both.");
+        }
+
+        if (known.Rows is { Count: > 0 })
+        {
+            throw new FlowValidationException(
+                $"{test.Source}: {block} reads its rows from a query, and lists rows as well; each row the query answers is a row, so give locateBy, check and curves the columns they read instead.");
+        }
+
+        if (known.Query is { } named)
+        {
+            var name = named.Trim();
+            return test.Queries.TryGetValue(name, out var declared)
+                ? declared
+                : throw new FlowValidationException(test.Queries.Count == 0
+                    ? $"{test.Source}: {block}.query names '{name}', and the flow declares no queries; declare it under queries, with its connection and sql."
+                    : $"{test.Source}: {block}.query names '{name}', which the flow does not declare under queries; it declares {string.Join(", ", test.Queries.Keys.Order(StringComparer.Ordinal))}.");
+        }
+
+        var query = ConditionReader.Query(known.Connection, known.Sql, known.TimeoutSeconds, null, block, test.Source);
+        Engine.Assertions.StagedSql.Check(query.Sql, test.Parameters, $"{test.Source}: {block}.sql");
+        return query;
     }
 
     /// <summary>
@@ -1509,6 +1728,9 @@ internal static partial class AssertionMapper
                 throw new FlowValidationException($"{test.Source}: {at} has no value; {Shape}.");
             case IList:
                 throw new FlowValidationException($"{test.Source}: {at} is a list; {Shape}.");
+            case IDictionary map when ConditionReader.IsQuery(map):
+                operators.Add(("equals", raw));
+                break;
             case IDictionary map:
                 foreach (System.Collections.DictionaryEntry entry in map)
                 {
@@ -1554,7 +1776,7 @@ internal static partial class AssertionMapper
         var dated = measure is CurveMeasure.Min or CurveMeasure.Max or CurveMeasure.First or CurveMeasure.Last;
 
         // A value at a key is the curve's own value, of whatever type the curve holds; every other measure is a number.
-        foreach (var operand in measure == CurveMeasure.At ? [] : condition.Operands)
+        foreach (var operand in measure == CurveMeasure.At ? [] : condition.Operands.Where(o => !o.Pending))
         {
             var isDate = operand.Kind == ExpectedValueKind.Text && Engine.Assertions.RecordValues.TryInstant(operand.Text, out _);
             if (operand.Kind != ExpectedValueKind.Number && !(dated && isDate))
@@ -1755,11 +1977,16 @@ internal static partial class AssertionMapper
                     throw new FlowValidationException($"{test.Source}: {pathAt} gives no value; write it, or a mapping with equals.");
                 }
 
-                value = ConditionReader.Scalar(equals, pathAt, test.Source);
+                value = test.Columns ? ConditionReader.Column(equals, pathAt, test.Source) : ConditionReader.Scalar(equals, pathAt, test.Source);
             }
             else
             {
-                value = ConditionReader.Scalar(raw, pathAt, test.Source);
+                value = test.Columns ? ConditionReader.Column(raw, pathAt, test.Source) : ConditionReader.Scalar(raw, pathAt, test.Source);
+            }
+
+            if (value.Kind == ExpectedValueKind.Query)
+            {
+                throw new FlowValidationException($"{test.Source}: {pathAt} locates the row by a value its record holds, written here or named as a column of the known values' query, not by the value of another query.");
             }
 
             if (value.Kind == ExpectedValueKind.Null)
@@ -1787,7 +2014,7 @@ internal static partial class AssertionMapper
         {
             var pathAt = $"{at}.{written}";
             var column = ReadKnownPath(written, pathAt, test);
-            if (raw is not IDictionary map)
+            if (raw is not IDictionary map || ConditionReader.IsQuery(map))
             {
                 var condition = raw is null
                     ? new ValueCondition { Operator = ValueOperator.Exists, Flag = false }
@@ -1864,7 +2091,7 @@ internal static partial class AssertionMapper
             if (function is { } taken)
             {
                 var dated = taken is AggregateFunction.Min or AggregateFunction.Max;
-                if (condition2.Operands.Any(o => o.Kind != ExpectedValueKind.Number && !(dated && o.Kind == ExpectedValueKind.Text && Engine.Assertions.RecordValues.TryInstant(o.Text, out _))))
+                if (condition2.Operands.Any(o => !o.Pending && o.Kind != ExpectedValueKind.Number && !(dated && o.Kind == ExpectedValueKind.Text && Engine.Assertions.RecordValues.TryInstant(o.Text, out _))))
                 {
                     throw new FlowValidationException(
                         $"{test.Source}: {pathAt} compares {AssertionText.Of(taken)}({column.Path}), which is a number{(dated ? " or a date" : string.Empty)}; give a number{(dated ? " or an ISO 8601 date" : string.Empty)}.");
@@ -1918,17 +2145,17 @@ internal static partial class AssertionMapper
     private static ValueCondition Proof(
         IReadOnlyList<(string Key, object Operand)> operators, bool? ignoreCase, object? tolerance, double? sharedTolerance, bool sharedIgnoreCase, string at, TestContext test)
     {
-        var condition = ConditionReader.Read(operators, ignoreCase, tolerance, ResolvesRefused, at, test.Source);
+        var condition = ConditionReader.Read(operators, ignoreCase, tolerance, ResolvesRefused, at, test.Source, test.Columns);
         var takesTolerance = tolerance is null && sharedTolerance is not null
             && condition.Operator is ValueOperator.EqualTo or ValueOperator.NotEqualTo or ValueOperator.In or ValueOperator.NotIn or ValueOperator.Between
                 or ValueOperator.AtLeast or ValueOperator.AtMost or ValueOperator.GreaterThan or ValueOperator.LessThan
-            && condition.Operands.Any(o => o.Kind == ExpectedValueKind.Number);
+            && condition.Operands.Any(o => o.Kind == ExpectedValueKind.Number || o.Pending);
         var takesIgnoreCase = ignoreCase is null && sharedIgnoreCase
             && condition.Operator is ValueOperator.EqualTo or ValueOperator.NotEqualTo or ValueOperator.In or ValueOperator.NotIn or ValueOperator.Matches
                 or ValueOperator.NotMatches or ValueOperator.StartsWith or ValueOperator.EndsWith or ValueOperator.Contains or ValueOperator.NotContains
-            && condition.Operands.Any(o => o.Kind == ExpectedValueKind.Text);
+            && condition.Operands.Any(o => o.Kind == ExpectedValueKind.Text || o.Pending);
         return takesTolerance || takesIgnoreCase
-            ? ConditionReader.Read(operators, takesIgnoreCase ? true : ignoreCase, takesTolerance ? sharedTolerance : tolerance, ResolvesRefused, at, test.Source)
+            ? ConditionReader.Read(operators, takesIgnoreCase ? true : ignoreCase, takesTolerance ? sharedTolerance : tolerance, ResolvesRefused, at, test.Source, test.Columns)
             : condition;
     }
 
@@ -2221,11 +2448,13 @@ internal static partial class AssertionMapper
 
         var condition = MapCondition(y, isColumn, at, test);
         var quantifier = MapQuantifier(y.For, at, test.Source);
-        var anyValue = (y.Values?.Trim().ToLowerInvariant()) switch
+        var anyValue = y.Values switch
         {
-            null or "all" => false,
-            "any" => true,
-            _ => throw new FlowValidationException($"{test.Source}: {at}.values '{y.Values}' is not all or any."),
+            null => false,
+            string word when word.Trim().Equals("all", StringComparison.OrdinalIgnoreCase) => false,
+            string word when word.Trim().Equals("any", StringComparison.OrdinalIgnoreCase) => true,
+            string word => throw new FlowValidationException($"{test.Source}: {at}.values '{word}' is not all or any."),
+            _ => throw new FlowValidationException($"{test.Source}: {at}.values is all or any, a word rather than a list or a mapping."),
         };
         if (condition.Operator == ValueOperator.Resolves && (y.For is not null || y.Values is not null))
         {

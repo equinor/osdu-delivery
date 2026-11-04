@@ -431,8 +431,11 @@ export const osduDeliveryModule: GuiModule = {
   // repositories: the flows, what a delivered record is built from, and the sources they read. Explore is the data the
   // flows read and write and how it connects. Admin is who and what may act, and Settings is the person's own. A group of
   // more than one sort of page lists each sort under a section. The mapping builder is reached from Mappings, which owns
-  // its path.
+  // its path. The activity bar opens the pages worked in most in one click, in the order the data goes (decision 0045):
+  // the assistant, then what is delivered and when (the repositories, their mappings, the schedules), then what was
+  // delivered, what OSDU holds and whether it is right. The rest is a click on its menu button away.
   menu: {
+    shortcuts: ["/chat", "/repos", "/delivery/documents", "/schedules", "/delivery", "/delivery/explorer", "/delivery/assertions"],
     groups: [
       {
         id: "operate",

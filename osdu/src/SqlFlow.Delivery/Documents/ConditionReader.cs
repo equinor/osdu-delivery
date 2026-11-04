@@ -56,10 +56,16 @@ internal static partial class ConditionReader
     /// </param>
     /// <param name="at">Where the condition is written, for messages.</param>
     /// <param name="source">The file, for messages.</param>
+    /// <param name="columns">
+    /// True for known values read from a query, whose values compared with name the query's columns
+    /// (osdu/docs/reference/flow/staged-proof-values.md, Known values from a query).
+    /// </param>
     public static ValueCondition Read(
-        IReadOnlyList<(string Key, object Operand)> operators, bool? ignoreCase, object? tolerance, string? resolvesRefused, string at, string source)
+        IReadOnlyList<(string Key, object Operand)> operators, bool? ignoreCase, object? tolerance, string? resolvesRefused, string at, string source,
+        bool columns = false)
     {
         ArgumentNullException.ThrowIfNull(operators);
+        ExpectedValue Value(object? raw, string where) => columns ? Column(raw, where, source) : Operand(raw, where, source);
         if (operators.Count != 1)
         {
             var offered = resolvesRefused is null ? Operators : Operators.Where(o => o != "resolves");
@@ -80,7 +86,7 @@ internal static partial class ConditionReader
         switch (op)
         {
             case ValueOperator.EqualTo or ValueOperator.NotEqualTo or ValueOperator.Contains or ValueOperator.NotContains:
-                condition = condition with { Operands = [Scalar(operand, where, source)] };
+                condition = condition with { Operands = [Value(operand, where)] };
                 break;
             case ValueOperator.In or ValueOperator.NotIn:
                 var listed = operand as IList ?? throw new FlowValidationException($"{source}: {where} lists the values allowed.");
@@ -89,10 +95,10 @@ internal static partial class ConditionReader
                     throw new FlowValidationException($"{source}: {where} lists between 1 and {MaxListed} values.");
                 }
 
-                condition = condition with { Operands = listed.Cast<object?>().Select(v => Scalar(v, where, source)).ToList() };
+                condition = condition with { Operands = listed.Cast<object?>().Select(v => columns ? Column(v, where, source) : Scalar(v, where, source)).ToList() };
                 break;
             case ValueOperator.AtLeast or ValueOperator.AtMost or ValueOperator.GreaterThan or ValueOperator.LessThan:
-                condition = condition with { Operands = [Ordered(Scalar(operand, where, source), where, source)] };
+                condition = condition with { Operands = [Ordered(Value(operand, where), where, source)] };
                 break;
             case ValueOperator.Between:
                 var bounds = operand as IList;
@@ -101,8 +107,8 @@ internal static partial class ConditionReader
                     throw new FlowValidationException($"{source}: {where} lists two values, the lower bound and the upper, such as [0, 100].");
                 }
 
-                var low = Ordered(Scalar(bounds[0], where, source), where, source);
-                var high = Ordered(Scalar(bounds[1], where, source), where, source);
+                var low = Ordered(Value(bounds[0], where), where, source);
+                var high = Ordered(Value(bounds[1], where), where, source);
                 CheckBounds(low, high, where, source);
                 condition = condition with { Operands = [low, high] };
                 break;
@@ -198,7 +204,8 @@ internal static partial class ConditionReader
     /// </summary>
     public static Comparison CountComparison(object declared, string at, string source)
     {
-        if (declared is IDictionary map)
+        // A count written as a query's value ({ query: staged-wellbores }) equals it, as a count written as a number does.
+        if (declared is IDictionary map && !IsQuery(map))
         {
             var terms = new List<ComparisonTerm>();
             foreach (System.Collections.DictionaryEntry entry in map)
@@ -233,7 +240,13 @@ internal static partial class ConditionReader
     {
         ExpectedValue Value(object? raw)
         {
-            var value = Scalar(raw, at, source);
+            var value = Operand(raw, at, source);
+            if (value.Pending)
+            {
+                // A query's value is checked to be one the comparison takes once a run has it.
+                return value;
+            }
+
             if (numbersOnly && value.Kind != ExpectedValueKind.Number)
             {
                 throw new FlowValidationException($"{source}: {at} compares a number, and '{value.Text}' is not one.");
@@ -365,7 +378,7 @@ internal static partial class ConditionReader
         }
 
         var numbers = new List<double>(operands.Count);
-        foreach (var operand in operands)
+        foreach (var operand in operands.Where(o => !o.Pending))
         {
             if (NumberIn(operand) is not { } number)
             {
@@ -391,6 +404,12 @@ internal static partial class ConditionReader
         if (!Widened.Contains(AssertionText.Of(condition.Operator), StringComparer.Ordinal) || condition.Operands.Count == 0)
         {
             return false;
+        }
+
+        // A value a run answers (a query's, or a column of its rows) may be any number, so the band may widen it.
+        if (condition.Operands.Any(o => o.Pending))
+        {
+            return true;
         }
 
         var numbers = condition.Operands.Select(NumberIn).ToList();
@@ -423,6 +442,117 @@ internal static partial class ConditionReader
         decimal m => Number(m.ToString(CultureInfo.InvariantCulture), at, source),
         IDictionary or IList => throw new FlowValidationException($"{source}: {at} takes a single value (text, a number or true/false), not a mapping or a list."),
         _ => throw new FlowValidationException($"{source}: {at} holds a value that is not text, a number or true/false."),
+    };
+
+    /// <summary>The keys a query written where a value is compared with takes.</summary>
+    public static readonly IReadOnlyList<string> QueryKeys = ["query", "connection", "sql", "timeoutSeconds"];
+
+    /// <summary>Whether a mapping is a query's value (<c>{ query: name }</c>, or <c>{ connection: ..., sql: ... }</c>) rather than a condition.</summary>
+    public static bool IsQuery(IDictionary map)
+    {
+        ArgumentNullException.ThrowIfNull(map);
+        var keys = map.Keys.Cast<object?>().Select(k => Convert.ToString(k, CultureInfo.InvariantCulture)?.Trim() ?? string.Empty).ToList();
+        return keys.Count > 0 && (keys.Contains("query") || keys.Contains("sql")) && keys.All(k => QueryKeys.Contains(k, StringComparer.Ordinal));
+    }
+
+    /// <summary>
+    /// A value a comparison or a condition compares with (osdu/docs/reference/flow/staged-proof-values.md): a scalar, as
+    /// <see cref="Scalar"/> reads it, or the value a query answers, named (<c>{ query: staged-wellbores }</c>, a query the flow
+    /// declares under <c>queries</c>) or written in place (<c>{ connection: ${env:OSDU_DATA_DB}, sql: SELECT COUNT(*) FROM ... }</c>).
+    /// A named query is read into the value once the document's queries are read; a run answers it before anything is judged.
+    /// </summary>
+    public static ExpectedValue Operand(object? raw, string at, string source)
+    {
+        if (raw is not IDictionary map)
+        {
+            return Scalar(raw, at, source);
+        }
+
+        var keys = new Dictionary<string, object?>(StringComparer.Ordinal);
+        foreach (System.Collections.DictionaryEntry entry in map)
+        {
+            keys[Convert.ToString(entry.Key, CultureInfo.InvariantCulture)?.Trim() ?? string.Empty] = entry.Value;
+        }
+
+        var stray = keys.Keys.Where(k => !QueryKeys.Contains(k, StringComparer.Ordinal)).ToList();
+        if (stray.Count > 0 || keys.Count == 0)
+        {
+            throw new FlowValidationException(
+                $"{source}: {at} takes a single value, or the value of a query: {{ query: <name> }} names one the flow declares under queries, and {{ connection: <reference>, sql: <SELECT> }} writes one here"
+                + (stray.Count > 0 ? $"; {string.Join(", ", stray)} is neither." : "."));
+        }
+
+        if (keys.TryGetValue("query", out var named))
+        {
+            if (keys.Count > 1)
+            {
+                throw new FlowValidationException(
+                    $"{source}: {at} names the query {Convert.ToString(named, CultureInfo.InvariantCulture)} the flow declares, which says where it runs and what it asks; connection, sql and timeoutSeconds go with it under queries.");
+            }
+
+            var name = named as string;
+            if (string.IsNullOrWhiteSpace(name))
+            {
+                throw new FlowValidationException($"{source}: {at}.query names a query the flow declares under queries.");
+            }
+
+            // Its connection and statement are the flow's: the document reads them into it once it has read its queries.
+            return ExpectedValue.OfQuery(new StagedQuery { Name = name.Trim(), Connection = string.Empty, Sql = string.Empty });
+        }
+
+        return ExpectedValue.OfQuery(Query(keys.GetValueOrDefault("connection"), keys.GetValueOrDefault("sql"), keys.GetValueOrDefault("timeoutSeconds"), null, at, source));
+    }
+
+    /// <summary>
+    /// A query as a document writes it, under the flow's queries or in place: the database it runs against (a reference, never a
+    /// literal secret), its statement, and how long it may run. The statement is checked to be one read-only SELECT, and its
+    /// tokens to be the flow's parameters, by the document once it knows them.
+    /// </summary>
+    public static StagedQuery Query(object? connection, object? sql, object? timeout, string? name, string at, string source)
+    {
+        if (connection is not string declared || string.IsNullOrWhiteSpace(declared))
+        {
+            throw new FlowValidationException(
+                $"{source}: {at}.connection names the database the query runs against, as a reference such as ${{env:OSDU_DATA_DB}} or ${{keyvault:vault/secret}}.");
+        }
+
+        Source.IngestionConnection.CheckDeclared(declared.Trim(), source, at + ".connection");
+        if (sql is not string statement || string.IsNullOrWhiteSpace(statement))
+        {
+            throw new FlowValidationException($"{source}: {at}.sql is the query's one SELECT, such as SELECT COUNT(*) FROM silver.Wellbore.");
+        }
+
+        var seconds = StagedQuery.DefaultTimeoutSeconds;
+        if (timeout is not null)
+        {
+            var parsed = timeout switch
+            {
+                int or long or short or byte => Convert.ToInt64(timeout, CultureInfo.InvariantCulture),
+                string text when long.TryParse(text, NumberStyles.Integer, CultureInfo.InvariantCulture, out var n) => n,
+                _ => -1L,
+            };
+            if (parsed is < 1 or > StagedQuery.MaxTimeoutSeconds)
+            {
+                throw new FlowValidationException(string.Create(CultureInfo.InvariantCulture,
+                    $"{source}: {at}.timeoutSeconds is how long the query may run: a whole number of seconds, 1 to {StagedQuery.MaxTimeoutSeconds}."));
+            }
+
+            seconds = (int)parsed;
+        }
+
+        return new StagedQuery { Name = name, Connection = declared.Trim(), Sql = statement.Trim(), TimeoutSeconds = seconds };
+    }
+
+    /// <summary>
+    /// A value of known values read from a query (osdu/docs/reference/flow/staged-proof-values.md, Known values from a query): the
+    /// name of a column of the rows it answers, which each row's value takes the place of, or the value of another query.
+    /// </summary>
+    public static ExpectedValue Column(object? raw, string at, string source) => raw switch
+    {
+        IDictionary => Operand(raw, at, source),
+        string name when !string.IsNullOrWhiteSpace(name) => ExpectedValue.OfColumn(name.Trim()),
+        _ => throw new FlowValidationException(
+            $"{source}: {at} names a column of the rows the known values' query answers, and {Convert.ToString(raw, CultureInfo.InvariantCulture) ?? "nothing"} is not a column name; write a value that is the same in every row into the query (SELECT 'welldb' AS source_system)."),
     };
 
     /// <summary>A path into an OSDU record: dotted names from a root property, arrays crossed implicitly or with [*] and [n].</summary>
@@ -522,7 +652,7 @@ internal static partial class ConditionReader
             throw new FlowValidationException($"{source}: {at}.tolerance applies to comparisons of numbers, not to {AssertionText.Of(condition.Operator)}.");
         }
 
-        if (condition.Tolerance is not null && condition.Operands.All(o => o.Kind != ExpectedValueKind.Number))
+        if (condition.Tolerance is not null && condition.Operands.All(o => o.Kind != ExpectedValueKind.Number && !o.Pending))
         {
             throw new FlowValidationException($"{source}: {at}.tolerance applies to comparisons of numbers, and the value compared with is not a number.");
         }
@@ -530,6 +660,12 @@ internal static partial class ConditionReader
 
     private static void CheckBounds(ExpectedValue low, ExpectedValue high, string at, string source)
     {
+        if (low.Pending || high.Pending)
+        {
+            // A bound a run answers is checked against the other once the run has it.
+            return;
+        }
+
         if (low.Kind != high.Kind)
         {
             throw new FlowValidationException($"{source}: {at} bounds a range with a {Describe(low)} and a {Describe(high)}; both bounds are numbers, or both dates.");
@@ -560,7 +696,7 @@ internal static partial class ConditionReader
 
     /// <summary>An operand an ordering compares with: a number, or text (an ISO 8601 date compares as an instant).</summary>
     private static ExpectedValue Ordered(ExpectedValue value, string at, string source)
-        => value.Kind is ExpectedValueKind.Number or ExpectedValueKind.Text
+        => value.Kind is ExpectedValueKind.Number or ExpectedValueKind.Text || value.Pending
             ? value
             : throw new FlowValidationException($"{source}: {at} orders numbers, dates and text, and '{value.Text}' is none of them.");
 

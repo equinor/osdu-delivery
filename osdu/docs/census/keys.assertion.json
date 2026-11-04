@@ -4,9 +4,9 @@
   "flowType": "assertion",
   "strictKeys": true,
   "includeEnvelope": true,
-  "generatedFrom": "osdu/docs/reference/flow/assertion.md and osdu/src/SqlFlow.Delivery/Documents/YamlModels.cs",
+  "generatedFrom": "osdu/docs/reference/flow/assertion.md, osdu/docs/reference/flow/staged-proof-values.md, osdu/docs/reference/flow/staged-accounting.md and osdu/src/SqlFlow.Delivery/Documents/YamlModels.cs",
   "naming": "The loader deserializes with YamlDotNet's CamelCaseNamingConvention and refuses any key it does not know.",
-  "keyCount": 302,
+  "keyCount": 315,
   "keys": [
     {
       "path": "batch",
@@ -152,6 +152,37 @@
       "required": false,
       "description": "When true, a run that supplies no value, for a parameter without a default, fails with \"parameter 'name' is required\". A scheduled fire supplies only the schedule's `values`, so give it one there.",
       "default": "false"
+    },
+    {
+      "path": "queries",
+      "type": "map",
+      "required": false,
+      "description": "Optional: the queries the tests compare with by name (`{ query: <name> }`), each the database it runs against and its one SELECT. A run asks each once, whichever tests name it, and binds its `{name}` and `{partition}` tokens as values, never as text. At most 100."
+    },
+    {
+      "path": "queries.<name>",
+      "type": "object",
+      "required": false,
+      "description": "One query; `<name>` is what a test names it by: a letter or digit followed by letters, digits, '.', '_' and '-', at most 100 characters, unique ignoring case."
+    },
+    {
+      "path": "queries.<name>.connection",
+      "type": "string",
+      "required": true,
+      "description": "Where the query runs: the database, as a `${env:NAME}` or `${keyvault:vault/secret}` reference, or a SQL Server connection string whose password is such a reference. Resolved on the node that runs the flow; a literal password is refused."
+    },
+    {
+      "path": "queries.<name>.sql",
+      "type": "string",
+      "required": true,
+      "description": "What the query asks: one SELECT (a WITH ... SELECT included), parsed when the flow is read; anything that writes, calls a procedure or reaches another server is refused, and the run reads it in a transaction that is always rolled back. `{name}` tokens of the flow's parameters and `{partition}` are bound as values, so write them outside quotes: `WHERE source_system = {system}`."
+    },
+    {
+      "path": "queries.<name>.timeoutSeconds",
+      "type": "integer",
+      "required": false,
+      "description": "How long the query may run, in seconds, 1 to 3600. A query that runs longer fails the assertions comparing with it, which say so.",
+      "default": "300"
     },
     {
       "path": "partitions",
@@ -592,14 +623,14 @@
       "path": "tests[].assert[].atLeast",
       "type": "object",
       "required": false,
-      "description": "This value or more: a number, or a date and time.",
+      "description": "This value or more: a number, or a date and time. Or the value of a query, asked when the run judges the test: `{ query: <name> }` names one the flow declares under `queries`, and `{ connection: <reference>, sql: <SELECT> }` writes one here; the query answers one row of one column.",
       "freeForm": true
     },
     {
       "path": "tests[].assert[].atMost",
       "type": "object",
       "required": false,
-      "description": "This value or less.",
+      "description": "This value or less. Or the value of a query, asked when the run judges the test: `{ query: <name> }` names one the flow declares under `queries`, and `{ connection: <reference>, sql: <SELECT> }` writes one here; the query answers one row of one column.",
       "freeForm": true
     },
     {
@@ -612,7 +643,7 @@
       "path": "tests[].assert[].between[]",
       "type": "object",
       "required": false,
-      "description": "One value: text, a number, or true or false.",
+      "description": "One value: text, a number, or true or false. Or the value of a query, asked when the run judges the test: `{ query: <name> }` names one the flow declares under `queries`, and `{ connection: <reference>, sql: <SELECT> }` writes one here; the query answers one row of one column.",
       "freeForm": true
     },
     {
@@ -681,14 +712,14 @@
       "path": "tests[].assert[].contains",
       "type": "object",
       "required": false,
-      "description": "A list holding this value, or text holding this text.",
+      "description": "A list holding this value, or text holding this text. Or the value of a query, asked when the run judges the test: `{ query: <name> }` names one the flow declares under `queries`, and `{ connection: <reference>, sql: <SELECT> }` writes one here; the query answers one row of one column.",
       "freeForm": true
     },
     {
       "path": "tests[].assert[].count",
       "type": "object",
       "required": false,
-      "description": "How many records the test matches (the index's exact count, or the ids storage holds): a whole number (equals), or a mapping of `equals`, `notEquals`, `atLeast`, `atMost`, `greaterThan`, `lessThan` and `between`, every one of which has to hold.",
+      "description": "How many records the test matches (the index's exact count, or the ids storage holds): a whole number (equals), or a mapping of `equals`, `notEquals`, `atLeast`, `atMost`, `greaterThan`, `lessThan` and `between`, every one of which has to hold. Or the value of a query, asked when the run judges the test: `{ query: <name> }` names one the flow declares under `queries`, and `{ connection: <reference>, sql: <SELECT> }` writes one here; the query answers one row of one column.",
       "freeForm": true
     },
     {
@@ -737,7 +768,7 @@
       "path": "tests[].assert[].delivered",
       "type": "string",
       "required": false,
-      "description": "A delivery flow: every record its ledger holds as delivered in the partition is among the records the test matches. What a delivery says it sent is so held to what OSDU holds."
+      "description": "A delivery flow: every record its ledger holds as delivered in the partition is among the records the test matches, so what a delivery says it sent is held to what OSDU holds. With `staged: true`, every row the flow stages is accounted for instead: it is in OSDU, or the ledger says why not."
     },
     {
       "path": "tests[].assert[].description",
@@ -761,7 +792,7 @@
       "path": "tests[].assert[].equals",
       "type": "object",
       "required": false,
-      "description": "Equal to this value: a number as a number (within `tolerance`), text as text (and as an instant when both are ISO 8601 dates), true or false. Text holding a number equals the number.",
+      "description": "Equal to this value: a number as a number (within `tolerance`), text as text (and as an instant when both are ISO 8601 dates), true or false. Text holding a number equals the number. Or the value of a query, asked when the run judges the test: `{ query: <name> }` names one the flow declares under `queries`, and `{ connection: <reference>, sql: <SELECT> }` writes one here; the query answers one row of one column.",
       "freeForm": true
     },
     {
@@ -771,6 +802,26 @@
       "description": "With delivered: the test matches no record the ledger does not hold either.",
       "default": "false",
       "appliesWhen": "With delivered."
+    },
+    {
+      "path": "tests[].assert[].staged",
+      "type": "boolean",
+      "required": false,
+      "description": "With delivered: start from the rows the delivery flow stages (its record table, read through its own connection, as its delivery reads it) rather than from its ledger's delivered records. Each row is in OSDU, held back by the ledger with its reason (held, failed, waiting, queued, removed, reverted), or not in OSDU with nothing to explain it (never planned, delivered and not found, a blank key). A row the table marks deleted is not expected. With exact, a record no staged row accounts for fails it too.",
+      "default": "false",
+      "appliesWhen": "With delivered."
+    },
+    {
+      "path": "tests[].assert[].explained",
+      "type": "enum(error|warning|info)",
+      "required": false,
+      "description": "The severity of a staged row the ledger holds back and says why: held, failed, waiting for another record, queued, removed or reverted. Left out, the assertion's own, so such a row fails it as an unexplained one does.",
+      "enumValues": [
+        "error",
+        "warning",
+        "info"
+      ],
+      "appliesWhen": "With delivered and staged: true."
     },
     {
       "path": "tests[].assert[].exists",
@@ -795,7 +846,7 @@
       "path": "tests[].assert[].greaterThan",
       "type": "object",
       "required": false,
-      "description": "More than this value.",
+      "description": "More than this value. Or the value of a query, asked when the run judges the test: `{ query: <name> }` names one the flow declares under `queries`, and `{ connection: <reference>, sql: <SELECT> }` writes one here; the query answers one row of one column.",
       "freeForm": true
     },
     {
@@ -808,7 +859,7 @@
       "path": "tests[].assert[].groupCount",
       "type": "object",
       "required": false,
-      "description": "How many groups there are: a whole number (equals), or a mapping of `equals`, `notEquals`, `atLeast`, `atMost`, `greaterThan`, `lessThan` and `between`, every one of which has to hold.",
+      "description": "How many groups there are: a whole number (equals), or a mapping of `equals`, `notEquals`, `atLeast`, `atMost`, `greaterThan`, `lessThan` and `between`, every one of which has to hold. Or the value of a query, asked when the run judges the test: `{ query: <name> }` names one the flow declares under `queries`, and `{ connection: <reference>, sql: <SELECT> }` writes one here; the query answers one row of one column.",
       "freeForm": true
     },
     {
@@ -1004,7 +1055,7 @@
       "path": "tests[].assert[].lessThan",
       "type": "object",
       "required": false,
-      "description": "Less than this value.",
+      "description": "Less than this value. Or the value of a query, asked when the run judges the test: `{ query: <name> }` names one the flow declares under `queries`, and `{ connection: <reference>, sql: <SELECT> }` writes one here; the query answers one row of one column.",
       "freeForm": true
     },
     {
@@ -1048,14 +1099,14 @@
       "path": "tests[].assert[].notContains",
       "type": "object",
       "required": false,
-      "description": "A list not holding this value, or text not holding this text.",
+      "description": "A list not holding this value, or text not holding this text. Or the value of a query, asked when the run judges the test: `{ query: <name> }` names one the flow declares under `queries`, and `{ connection: <reference>, sql: <SELECT> }` writes one here; the query answers one row of one column.",
       "freeForm": true
     },
     {
       "path": "tests[].assert[].notEquals",
       "type": "object",
       "required": false,
-      "description": "Not equal to this value.",
+      "description": "Not equal to this value. Or the value of a query, asked when the run judges the test: `{ query: <name> }` names one the flow declares under `queries`, and `{ connection: <reference>, sql: <SELECT> }` writes one here; the query answers one row of one column.",
       "freeForm": true
     },
     {
@@ -1144,7 +1195,7 @@
       "path": "tests[].assert[].knownValues.locateBy",
       "type": "map",
       "required": false,
-      "description": "The full paths and values a row is located by, as path: value or path: { equals, ignoreCase, tolerance }. A path is a path in the OSDU record (data.Name); a quoted list of paths reads through a reference, as a dimension label does ('[data.WellboreID, data.FacilityName]'), and an entry group--Entity[reference] reaches the records naming one ('[work-product-component--WellLog[data.WellboreID], data.Name]'). Every row takes these, beside its own."
+      "description": "The full paths and values a row is located by, as path: value or path: { equals, ignoreCase, tolerance }. A path is a path in the OSDU record (data.Name); a quoted list of paths reads through a reference, as a dimension label does ('[data.WellboreID, data.FacilityName]'), and an entry group--Entity[reference] reaches the records naming one ('[work-product-component--WellLog[data.WellboreID], data.Name]'). Every row takes these, beside its own. Read from a query, each value names a column of its rows."
     },
     {
       "path": "tests[].assert[].knownValues.locateBy.<name>",
@@ -1157,7 +1208,7 @@
       "path": "tests[].assert[].knownValues.check",
       "type": "map",
       "required": false,
-      "description": "The proof values a row holds its record to, as path: value, path: ~ (no value) or path: { <comparison>: <operand>, tolerance, warnWithin, ignoreCase, values, aggregate, except, disabled }. Every row takes these, beside its own."
+      "description": "The proof values a row holds its record to, as path: value, path: ~ (no value) or path: { <comparison>: <operand>, tolerance, warnWithin, ignoreCase, values, aggregate, except, disabled }. Every row takes these, beside its own. Read from a query, each value compared with names a column of its rows."
     },
     {
       "path": "tests[].assert[].knownValues.check.<name>",
@@ -1264,7 +1315,7 @@
       "path": "tests[].assert[].knownValues.rows",
       "type": "list",
       "required": false,
-      "description": "The rows, 1 to 1000, each with its own locateBy and check. Left out, the shared locateBy and check are the one row."
+      "description": "The rows, 1 to 1000, each with its own locateBy and check. Left out, the shared locateBy and check are the one row. Known values read from a query (query, or connection and sql) list none: each row it answers is one."
     },
     {
       "path": "tests[].assert[].knownValues.rows[]",
@@ -1424,6 +1475,42 @@
       ]
     },
     {
+      "path": "tests[].assert[].knownValues.query",
+      "type": "string",
+      "required": false,
+      "description": "Reads the rows from the query the flow declares under this name: one row of known values for each row it answers. Every value locateBy, check and curves compare with then names a column of those rows (`data.FacilityName: wellbore_name`), and the known values list no rows of their own."
+    },
+    {
+      "path": "tests[].assert[].knownValues.connection",
+      "type": "string",
+      "required": false,
+      "description": "With sql, in place of query: the database the rows are read from, as a `${env:NAME}` or `${keyvault:vault/secret}` reference.",
+      "appliesWhen": "With sql."
+    },
+    {
+      "path": "tests[].assert[].knownValues.sql",
+      "type": "string",
+      "required": false,
+      "description": "With connection, in place of query: the one SELECT the rows are read from, written here. Each row it answers is a row of known values, its values the columns locateBy, check and curves name.",
+      "appliesWhen": "With connection."
+    },
+    {
+      "path": "tests[].assert[].knownValues.timeoutSeconds",
+      "type": "integer",
+      "required": false,
+      "description": "How long the query written here may run, in seconds, 1 to 3600.",
+      "default": "300",
+      "appliesWhen": "With connection and sql."
+    },
+    {
+      "path": "tests[].assert[].knownValues.maxRows",
+      "type": "integer",
+      "required": false,
+      "description": "The most rows the query may answer, 1 to 1,000,000. A query answering more judges none, and says so.",
+      "default": "100000",
+      "appliesWhen": "With query, or connection and sql."
+    },
+    {
       "path": "tests[].assert[].resolves",
       "type": "object",
       "required": false,
@@ -1434,7 +1521,7 @@
       "path": "tests[].assert[].rowCount",
       "type": "object",
       "required": false,
-      "description": "How many rows each record's bulk data holds: a whole number (equals), or a mapping of `equals`, `notEquals`, `atLeast`, `atMost`, `greaterThan`, `lessThan` and `between`, every one of which has to hold.",
+      "description": "How many rows each record's bulk data holds: a whole number (equals), or a mapping of `equals`, `notEquals`, `atLeast`, `atMost`, `greaterThan`, `lessThan` and `between`, every one of which has to hold. Or the value of a query, asked when the run judges the test: `{ query: <name> }` names one the flow declares under `queries`, and `{ connection: <reference>, sql: <SELECT> }` writes one here; the query answers one row of one column.",
       "freeForm": true
     },
     {
@@ -1578,14 +1665,22 @@
     },
     {
       "path": "tests[].assert[].values",
-      "type": "enum(all|any)",
+      "type": "enum(all|any) or map",
       "required": false,
-      "description": "For a path yielding several values in one record: `all` holds the record when every value meets the condition, `any` when one does.",
+      "description": "For a field: a path yielding several values in one record, `all` holds the record when every value meets the condition, `any` when one does. For a staged delivered assertion: the values of the delivery flow's parameters its rows are read under, as a removal names them (`{ logSource: COMPOSITE }`), each a literal, a `{name}` token of this flow's parameters, or a list for a parameter its record scope reads several values of; never `partition`, which is the run's.",
       "default": "all",
       "enumValues": [
         "all",
         "any"
-      ]
+      ],
+      "freeForm": true
+    },
+    {
+      "path": "tests[].assert[].values.<name>",
+      "type": "string",
+      "required": false,
+      "description": "One parameter of the delivery flow, by its name, and the value (or list of values) its staged rows are read under.",
+      "appliesWhen": "With delivered and staged: true."
     },
     {
       "path": "tests[].assert[].where",

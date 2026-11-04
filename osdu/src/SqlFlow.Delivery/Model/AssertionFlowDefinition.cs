@@ -57,6 +57,12 @@ public sealed record AssertionFlowDefinition
     /// <summary>Parameters the tests may use as <c>{name}</c> tokens in their queries, ids and expected text.</summary>
     public IReadOnlyDictionary<string, FlowParameter> Parameters { get; init; } = new Dictionary<string, FlowParameter>(StringComparer.Ordinal);
 
+    /// <summary>
+    /// The queries the tests compare with by name (<c>queries</c>, osdu/docs/reference/flow/staged-proof-values.md): each the
+    /// database it runs against and its one SELECT. A run asks each once, whichever tests name it.
+    /// </summary>
+    public IReadOnlyDictionary<string, StagedQuery> Queries { get; init; } = new Dictionary<string, StagedQuery>(StringComparer.Ordinal);
+
     /// <summary>The OSDU platform the tests read, and where its services are served.</summary>
     public required AssertionSource Source { get; init; }
 
@@ -818,6 +824,28 @@ public sealed record KnownValuesAssertion : TestAssertion
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public string? CurveIndex { get; init; }
 
+    /// <summary>
+    /// The query whose rows are the rows (osdu/docs/reference/flow/staged-proof-values.md, Known values from a query): one row
+    /// of known values per row it answers, its values the columns the one row <see cref="Rows"/> holds names. Null for rows the
+    /// document writes. Left out of the definition when null, so known values the document writes keep the definition hash they had.
+    /// </summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public StagedQuery? Query { get; init; }
+
+    /// <summary>The most rows <see cref="Query"/> may answer (<c>maxRows</c>); null for the default, or for rows the document writes.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public int? MaxRows { get; init; }
+
+    /// <summary>Whether <see cref="Rows"/> are the rows a run read from <see cref="Query"/>, rather than the one row naming its columns.</summary>
+    [JsonIgnore]
+    public bool Answered { get; init; }
+
+    /// <summary>The most rows a query answers for known values unless they say otherwise.</summary>
+    public const int DefaultQueryRows = 100_000;
+
+    /// <summary>The ceiling on the rows a query answers for known values.</summary>
+    public const int MaxQueryRows = 1_000_000;
+
     public override string Type => "knownValues";
 
     public override string Expected
@@ -825,9 +853,15 @@ public sealed record KnownValuesAssertion : TestAssertion
         get
         {
             var rows = Rows.Where(r => r.Disabled is null).ToList();
-            var curves = rows.Sum(r => r.CurveChecks.Count(c => c.Disabled is null));
+            var each = Query is not { } query
+                ? string.Create(CultureInfo.InvariantCulture, $"each of {rows.Count} row(s)")
+                : Answered
+                    ? string.Create(CultureInfo.InvariantCulture, $"each of the {rows.Count} row(s) {query} answered")
+                    : $"each row {query} answers";
+            var values = Query is not null && !Answered ? rows.Take(1).ToList() : rows;
+            var curves = values.Sum(r => r.CurveChecks.Count(c => c.Disabled is null));
             return string.Create(CultureInfo.InvariantCulture,
-                    $"each of {rows.Count} row(s) finds one record and holds its {rows.Sum(r => r.Checks.Count(c => c.Disabled is null))} proof value(s)")
+                    $"{each} finds one record and holds its {values.Sum(r => r.Checks.Count(c => c.Disabled is null))} proof value(s)")
                 + (curves > 0 ? string.Create(CultureInfo.InvariantCulture, $" and {curves} curve proof value(s)") : string.Empty)
                 + (NotFound is { } severity && severity != Severity ? $"; a row not found counts as {AssertionText.Of(severity)}" : string.Empty);
         }
@@ -851,6 +885,13 @@ public sealed record KnownRow(IReadOnlyList<KnownLocate> Locate, IReadOnlyList<K
     /// <summary>The row's curve proof values, none when it has none.</summary>
     [JsonIgnore]
     public IReadOnlyList<CurveCheck> CurveChecks => Curves ?? [];
+
+    /// <summary>
+    /// Why a row a query answered locates no record before anything is searched (it holds no value where it is located by),
+    /// which its verdict, not found, quotes; null for a row that is located.
+    /// </summary>
+    [JsonIgnore]
+    public string? Unlocated { get; init; }
 
     /// <summary>The row as reports name it: the values it is located by.</summary>
     public string Label => string.Join(" / ", Locate.Select(l => l.Value.Text));
@@ -1202,7 +1243,9 @@ public sealed record LegalAssertion : TestAssertion
 
 /// <summary>
 /// Every record a delivery flow's ledger holds as delivered in the partition is among the records the test matches; with
-/// <see cref="Exact"/>, the test matches no record the ledger does not hold either.
+/// <see cref="Exact"/>, the test matches no record the ledger does not hold either. With <see cref="Staged"/>, it starts from
+/// the rows the delivery flow stages instead (osdu/docs/reference/flow/staged-accounting.md): every row its delivery reads is
+/// among the records the test matches, or the ledger says why it is not.
 /// </summary>
 public sealed record DeliveredAssertion : TestAssertion
 {
@@ -1214,11 +1257,41 @@ public sealed record DeliveredAssertion : TestAssertion
 
     public bool Exact { get; init; }
 
+    /// <summary>
+    /// Whether the assertion accounts for every row the delivery flow's record table holds in its scope, as its delivery reads
+    /// them, rather than for the records its ledger holds as delivered (<c>staged: true</c>). Left out of the definition when
+    /// false, so a delivered assertion that does not say it keeps the definition hash it had.
+    /// </summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
+    public bool Staged { get; init; }
+
+    /// <summary>
+    /// The severity of a staged row the ledger holds back and says why (<c>explained</c>): held, failed, waiting for another
+    /// record, queued and not sent yet, or taken out by a removal or a reversal. Null takes the assertion's own, so such a row
+    /// fails it as an unexplained one does.
+    /// </summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public AssertionSeverity? Explained { get; init; }
+
+    /// <summary>
+    /// The values of the delivery flow's parameters its staged rows are read under (<c>values</c>), each a literal or a
+    /// <c>{name}</c> token of this flow's parameters, in name order: they bind its record scope, as a removal's do. Null when the
+    /// assertion names none.
+    /// </summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public IReadOnlyDictionary<string, string>? Values { get; init; }
+
     public override string Type => "delivered";
 
-    public override string Expected => Exact
-        ? $"exactly the records {Flow}{(Interface is null ? string.Empty : "/" + Interface)} delivered"
-        : $"every record {Flow}{(Interface is null ? string.Empty : "/" + Interface)} delivered";
+    public override string Expected => (Staged, Exact) switch
+    {
+        (true, true) => $"every row {Named} stages is a record the test matches, or its ledger says why not, and the test matches no record those rows do not account for",
+        (true, false) => $"every row {Named} stages is a record the test matches, or its ledger says why not",
+        (false, true) => $"exactly the records {Named} delivered",
+        _ => $"every record {Named} delivered",
+    } + (Staged && Explained is { } explained && explained != Severity ? $"; a row its ledger explains counts as {AssertionText.Of(explained)}" : string.Empty);
+
+    private string Named => Flow + (Interface is null ? string.Empty : "/" + Interface);
 }
 
 /// <summary>How many rows each record's bulk data holds.</summary>
@@ -1418,18 +1491,36 @@ public sealed record ValueCondition
     }
 }
 
-/// <summary>A value an assertion expects, as the document writes it: text, a number, a boolean, or null.</summary>
+/// <summary>
+/// A value an assertion expects, as the document writes it: text, a number, a boolean, or null; or, until a run answers it,
+/// the value a query answers (<see cref="ExpectedValueKind.Query"/>) or a column of the rows a query answers
+/// (<see cref="ExpectedValueKind.Column"/>), which the run replaces with what the database holds before anything is judged.
+/// </summary>
 public sealed record ExpectedValue
 {
-    private ExpectedValue(ExpectedValueKind kind, string text, double? number, bool? boolean)
+    private ExpectedValue(ExpectedValueKind kind, string text, double? number, bool? boolean, StagedQuery? query = null, string? origin = null)
     {
         Kind = kind;
         Text = text;
         Number = number;
         Boolean = boolean;
+        Query = query;
+        Origin = origin;
     }
 
     public ExpectedValueKind Kind { get; }
+
+    /// <summary>The query whose value this is, for a <see cref="ExpectedValueKind.Query"/>; null for any other.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public StagedQuery? Query { get; }
+
+    /// <summary>Where a value a run answered came from (<c>query staged-wellbores</c>), which reports quote beside it; null for a value the document wrote.</summary>
+    [JsonIgnore]
+    public string? Origin { get; }
+
+    /// <summary>Whether the value waits for a run to answer it: a query's value, or a column of a query's rows.</summary>
+    [JsonIgnore]
+    public bool Pending => Kind is ExpectedValueKind.Query or ExpectedValueKind.Column;
 
     /// <summary>The value as text: the text itself, a number in invariant form, true or false, or null.</summary>
     public string Text { get; }
@@ -1466,6 +1557,27 @@ public sealed record ExpectedValue
 
     public static ExpectedValue OfBoolean(bool value) => new(ExpectedValueKind.Boolean, value ? "true" : "false", null, value);
 
+    /// <summary>The value <paramref name="query"/> answers: one row of one column, which a run asks for before it judges.</summary>
+    public static ExpectedValue OfQuery(StagedQuery query)
+    {
+        ArgumentNullException.ThrowIfNull(query);
+        return new(ExpectedValueKind.Query, query.ToString(), null, null, query);
+    }
+
+    /// <summary>The value a column holds in each row of the rows a query answers, as known values read from a query name it.</summary>
+    public static ExpectedValue OfColumn(string column)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(column);
+        return new(ExpectedValueKind.Column, column, null, null);
+    }
+
+    /// <summary>This value, answered by a run, with where it came from (<c>query staged-wellbores</c>), which its text is quoted with.</summary>
+    public ExpectedValue From(string origin)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(origin);
+        return new(Kind, Text, Number, Boolean, null, origin);
+    }
+
     /// <summary>This value with <paramref name="substitute"/> applied to its text, when it is text.</summary>
     public ExpectedValue WithText(Func<string, string> substitute)
     {
@@ -1473,7 +1585,12 @@ public sealed record ExpectedValue
         return Kind == ExpectedValueKind.Text ? OfText(substitute(Text)) : this;
     }
 
-    public override string ToString() => Kind == ExpectedValueKind.Text ? "\"" + Text + "\"" : Text;
+    public override string ToString() => Kind switch
+    {
+        ExpectedValueKind.Text => "\"" + Text + "\"",
+        ExpectedValueKind.Column => "column " + Text,
+        _ => Text,
+    } + (Origin is null ? string.Empty : " (" + Origin + ")");
 }
 
 public enum ExpectedValueKind
@@ -1482,6 +1599,45 @@ public enum ExpectedValueKind
     Number,
     Boolean,
     Null,
+
+    /// <summary>The value a query answers, asked when a run binds the test.</summary>
+    Query,
+
+    /// <summary>A column of the rows a query answers, read row by row as known values read from a query take them.</summary>
+    Column,
+}
+
+/// <summary>
+/// A query of a database an assertion compares OSDU with (osdu/docs/reference/flow/staged-proof-values.md): the database it runs
+/// against, as a reference to a connection, its one SELECT with <c>{parameter}</c> and <c>{partition}</c> tokens bound as
+/// values, and how long it may run. Declared under the flow's <c>queries</c> and named (<c>{ query: staged-wellbores }</c>), or
+/// written where it is compared with (<c>{ connection: ..., sql: ... }</c>).
+/// </summary>
+public sealed record StagedQuery
+{
+    /// <summary>How long a query runs unless it says otherwise, in seconds.</summary>
+    public const int DefaultTimeoutSeconds = 300;
+
+    /// <summary>The longest a query may run, in seconds.</summary>
+    public const int MaxTimeoutSeconds = 3600;
+
+    /// <summary>The most queries a flow names.</summary>
+    public const int MaxQueries = 100;
+
+    /// <summary>The name the flow declares it under; null for a query written inline.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? Name { get; init; }
+
+    /// <summary>The database it runs against: a <c>${env:NAME}</c> or <c>${keyvault:vault/secret}</c> reference, or a SQL Server connection string whose password is one.</summary>
+    public required string Connection { get; init; }
+
+    /// <summary>The one SELECT, as written, its tokens not yet bound.</summary>
+    public required string Sql { get; init; }
+
+    public int TimeoutSeconds { get; init; } = DefaultTimeoutSeconds;
+
+    /// <summary>The query as reports name it: <c>query staged-wellbores</c>, or <c>an inline query</c>.</summary>
+    public override string ToString() => Name is null ? "an inline query" : "query " + Name;
 }
 
 /// <summary>

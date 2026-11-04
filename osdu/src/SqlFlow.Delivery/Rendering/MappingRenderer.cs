@@ -572,10 +572,10 @@ public sealed class MappingRenderer
     {
         if (_mapping.Dataset.IdFrom == MappingIdSource.DeliveryKey)
         {
-            return TargetId.Compose(_context.DataPartition, _mapping.EntityType, key);
+            return _mapping.RecordIdOf(_context.DataPartition, key, keyValues);
         }
 
-        if (TargetId.ComposeFromKey(_context.DataPartition, _mapping.EntityType, keyValues, out var problem) is not { } id)
+        if (_mapping.RecordIdOf(_context.DataPartition, key, keyValues, out var problem) is not { } id)
         {
             holds.Add($"id: the mapping makes the OSDU id from the key (dataset.idFrom: key), and {sourceKey} gives none: {problem}");
             return null;

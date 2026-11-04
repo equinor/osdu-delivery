@@ -20,6 +20,8 @@ keywords:
 related:
   - delivery-flow-assertion
   - delivery-flow-known-values
+  - delivery-flow-staged-proof-values
+  - delivery-flow-staged-accounting
   - delivery-cli-assertions
   - delivery-flow-mapping-assertions
   - delivery-flow-delivery
@@ -318,6 +320,49 @@ A number the sheet states as of a day can drift as more data lands. `warnWithin:
 proof value lets it miss by that much as a warning, so the test is `warned` (amber on the board) rather than failed, and
 the result says by how much it missed ([A warning band](../flow/assertion.md#a-warning-band)).
 
+### Values the staged data holds now
+
+A value written in a test goes stale as the estate grows. A test can compare OSDU with what the staged tables hold
+instead: a query, which names the database it runs against beside its SQL, answers when the run judges the test. Declare
+it under `queries`, and compare with it wherever a value goes:
+
+```yaml
+queries:
+  staged-logs:
+    connection: ${env:OSDU_DATA_DB}
+    sql: |
+      SELECT COUNT(*) FROM OsduData.silver.WellLog
+      WHERE DeletedDate_DW IS NULL AND log_source = {logSource}
+
+tests:
+  - name: log-count
+    kind: osdu:wks:work-product-component--WellLog:1.4.0
+    query: 'data.Source:"{system}"'
+    assert:
+      - count: { query: staged-logs }
+        warnWithin: 1%
+```
+
+The result quotes the number the query answered beside the count (`equals 1204 (query staged-logs)`), so a report says
+what OSDU was compared with. Known values can read one row per staged row the same way, each value naming a column
+(`check: { data.Name: log_name }`). The query only reads: it is one `SELECT`, its `{name}` tokens are bound as values,
+and it runs in a transaction that is always rolled back. See
+[proof values from staged data](../flow/staged-proof-values.md).
+
+To ask whether every staged row is in OSDU at all, and why the ones that are not are missing, let the delivery flow's
+ledger account for them. `staged: true` starts from the rows the delivery flow stages, read through its own connection,
+and names for each row OSDU does not hold what the ledger recorded: held, and why; failed, and the error; never planned:
+
+```yaml
+      - delivered: welldb-welllog-03-delivery
+        staged: true
+        values: { logSource: COMPOSITE }
+        explained: warning
+```
+
+With `explained: warning`, a row the ledger explains warns, and a row nothing explains fails the test. See
+[staged accounting](../flow/staged-accounting.md).
+
 ## 6. Check the curve data in the Wellbore DDMS
 
 A test with a `bulk` block reads each record's bulk data from the Wellbore DDMS (under `source.ddmsRoot`, by default
@@ -457,6 +502,8 @@ warned passes with its warnings in its output. See [sqlflow assertions](../cli/a
 ## See also
 
 - [Assertion flow](../flow/assertion.md): every key, subject, condition and outcome.
+- [Proof values from staged data](../flow/staged-proof-values.md): OSDU compared with what a query of the staged tables answers.
+- [Staged accounting](../flow/staged-accounting.md): every staged row in OSDU, or the ledger's reason it is not.
 - [Mapping assertions](../flow/mapping-assertions.md): rules a mapping states and a delivery judges before it sends.
 - [sqlflow assertions](../cli/assertions.md): the reports from a terminal or a CI job.
 - [Running OSDU flows](../cli/run.md): operations, values and payloads.

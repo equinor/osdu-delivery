@@ -213,6 +213,22 @@ public sealed record MappingDefinition
 
     public string EntityType => Identity.TargetId.EntityTypeFromKind(Kind);
 
+    /// <summary>
+    /// The OSDU id a record of the row keyed <paramref name="key"/> is delivered under in <paramref name="partition"/>: made from
+    /// the delivery key, as every mapping's is unless it says otherwise, or under <c>dataset.idFrom: key</c> from the key's own
+    /// values; null when those values make no id, with why in <paramref name="problem"/>.
+    /// </summary>
+    public string? RecordIdOf(string partition, Identity.DeliveryKey key, IReadOnlyList<string?> keyValues, out string? problem)
+    {
+        problem = null;
+        return Dataset.IdFrom == MappingIdSource.DeliveryKey
+            ? Identity.TargetId.Compose(partition, EntityType, key)
+            : Identity.TargetId.ComposeFromKey(partition, EntityType, keyValues, out problem);
+    }
+
+    /// <summary>The OSDU id a record of the row keyed <paramref name="key"/> is delivered under, or null when its key makes none.</summary>
+    public string? RecordIdOf(string partition, Identity.DeliveryKey key, IReadOnlyList<string?> keyValues) => RecordIdOf(partition, key, keyValues, out _);
+
     /// <summary>The child datasets the mapping's repeaters read, in the order they are first named.</summary>
     public IReadOnlyList<string> ChildDatasets => Entries
         .Where(e => e.IsRepeater)

@@ -96,7 +96,7 @@ public static class TestEvaluator
         var bulkEvaluators = evaluators.OfType<BulkEvaluator>().ToList();
         var recordEvaluators = evaluators.Where(e => e is not BulkEvaluator && e.Need > RecordNeed.None).ToList();
         var need = evaluators.Count == 0 ? RecordNeed.None : evaluators.Max(e => e.Need);
-        var notes = new List<string>();
+        var notes = new List<string>(scope.Answers);
         long? matched = null;
         long read = 0;
         var sampled = false;
@@ -191,6 +191,10 @@ public static class TestEvaluator
             else if (AssertionActivity.Stale(assertion, test, scope.Now) is { } why)
             {
                 outcomes.Add(AssertionOutcome.NeedsNewProofValues(position, assertion, why, assertion.AsOf ?? test.AsOf));
+            }
+            else if (scope.Unanswered.TryGetValue(position, out var unanswered))
+            {
+                outcomes.Add(AssertionOutcome.Errored(position, assertion, unanswered));
             }
         }
 

@@ -283,6 +283,9 @@ public sealed class AssertionRunner
         var legal = new LegalTagValidator(client, flow.Source.LegalPath + "/legaltags:validate", _context.Time);
         var bulk = new WellboreBulk(client, flow.Source.DdmsRoot);
         var concurrency = Math.Max(1, flow.Parallelism.RecordsAtOnce);
+        var values = Values(partition);
+        var queries = new StagedQueries(_context.Secrets, values, flow.Name);
+        var deliveries = new EngineStagedDeliveries(_context, flow, values, partition);
         await Parallel.ForEachAsync(
             runnable,
             new ParallelOptions { MaxDegreeOfParallelism = concurrency, CancellationToken = ct },
@@ -304,9 +307,17 @@ public sealed class AssertionRunner
                     return;
                 }
 
+                // The queries the test compares with are answered first, so it is judged against what the database holds now; an
+                // assertion whose query cannot be answered is not judged, and says why.
+                var answers = StagedBinding.Asks(test)
+                    ? await StagedBinding.AnswerAsync(test, queries, _context.Time.GetUtcNow(), token).ConfigureAwait(false)
+                    : new StagedAnswers(test, new Dictionary<int, string>(), []);
                 var scope = new TestScope
                 {
-                    Test = test,
+                    Test = answers.Test,
+                    Unanswered = answers.Unanswered,
+                    Answers = answers.Notes,
+                    Deliveries = deliveries,
                     Template = fits[test.Name].Template,
                     Referenced = fits[test.Name].Referenced,
                     Now = _context.Time.GetUtcNow(),

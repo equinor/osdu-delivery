@@ -61,6 +61,18 @@ public sealed class TestScope
     /// <summary>The module's ledger, which the delivered assertion reads; null on a host without the module database.</summary>
     public ILedger? Ledger { get; init; }
 
+    /// <summary>Opens the rows a delivery flow stages, which a staged delivered assertion accounts for; null on a host that opens none.</summary>
+    public IStagedDeliveries? Deliveries { get; init; }
+
+    /// <summary>
+    /// Why each assertion that compares with a query was not judged, by its index in the test: its query failed, or answered
+    /// what it cannot compare with (osdu/docs/reference/flow/staged-proof-values.md).
+    /// </summary>
+    public IReadOnlyDictionary<int, string> Unanswered { get; init; } = new Dictionary<int, string>();
+
+    /// <summary>What each query the test compares with answered, which its result notes first.</summary>
+    public IReadOnlyList<string> Answers { get; init; } = [];
+
     /// <summary>The partition the run tests, as its data-partition-id.</summary>
     public required string Partition { get; init; }
 
@@ -167,12 +179,13 @@ public abstract class Evaluator
             MappingRulesAssertion rules => new MappingRulesEvaluator(index, rules, examples),
             IndexedAssertion indexed => new IndexedEvaluator(index, indexed, examples),
             LegalAssertion legal => new LegalEvaluator(index, legal, examples),
+            DeliveredAssertion { Staged: true } staged => new StagedAccountingEvaluator(index, staged, examples, scope.Test, string.Create(CultureInfo.InvariantCulture, $"{scope.Test.Name}: assert[{index}]")),
             DeliveredAssertion delivered => new DeliveredEvaluator(index, delivered, examples, scope.Test),
             RowCountAssertion rows => new RowCountEvaluator(index, rows, examples),
             ColumnsAssertion columns => new ColumnsEvaluator(index, columns, examples),
             MonotonicAssertion monotonic => new MonotonicEvaluator(index, monotonic, examples),
             _ => throw new InvalidOperationException($"No evaluator for a '{assertion.Type}' assertion."),
-        }).Where(e => AssertionActivity.Disabled(e.Assertion) is null && AssertionActivity.Stale(e.Assertion, scope.Test, scope.Now) is null).ToList();
+        }).Where(e => AssertionActivity.Disabled(e.Assertion) is null && AssertionActivity.Stale(e.Assertion, scope.Test, scope.Now) is null && !scope.Unanswered.ContainsKey(e.Index)).ToList();
     }
 
     /// <summary>Whether a record (or row) meets every one of an assertion's where conditions: one of its values meets each.</summary>

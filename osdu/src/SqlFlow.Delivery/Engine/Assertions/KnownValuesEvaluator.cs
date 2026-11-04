@@ -31,6 +31,9 @@ internal sealed class KnownValuesEvaluator(int index, KnownValuesAssertion asser
     /// </summary>
     public const int MaxFoundPerSearch = 1000;
 
+    /// <summary>More rows located alike than this are found by reading every record the test's query matches once, rather than by a search per batch.</summary>
+    public const int WholeReadRows = 1000;
+
     /// <summary>The most proof values a reason names, and the paths an outcome names as differing most.</summary>
     private const int Named = 8;
 
@@ -64,10 +67,11 @@ internal sealed class KnownValuesEvaluator(int index, KnownValuesAssertion asser
 
         var shapes = KnownValuesShape.Of(assertion, template, scope.Referenced, Assertion.Label, new List<string>());
         var rows = enabled.Select(r => (r.Row, Shape: shapes[r.Index])).ToList();
-        await FindAsync(scope, rows, ct).ConfigureAwait(false);
-        await ReachAsync(scope, rows.Select(r => r.Shape).ToList(), ct).ConfigureAwait(false);
+        var locatable = rows.Where(r => r.Row.Unlocated is null).ToList();
+        await FindAsync(scope, locatable, ct).ConfigureAwait(false);
+        await ReachAsync(scope, locatable.Select(r => r.Shape).ToList(), ct).ConfigureAwait(false);
         var all = _order.Select(id => new Match(id, _records[id], null, 0)).ToList();
-        var located = rows.Select(r => Locate(r.Row, r.Shape, all)).ToList();
+        var located = rows.Select(r => r.Row.Unlocated is { } why ? new Located([], why, null) : Locate(r.Row, r.Shape, all)).ToList();
         await MeasureCurvesAsync(scope, rows, located, ct).ConfigureAwait(false);
         return Judge(rows, located);
     }
@@ -137,6 +141,14 @@ internal sealed class KnownValuesEvaluator(int index, KnownValuesAssertion asser
         foreach (var group in alike)
         {
             var members = group.ToList();
+            if (members.Count > WholeReadRows)
+            {
+                // So many rows located alike (the rows a query answered, usually) are found sooner by reading every record the
+                // test's query matches once, a page at a time, than by a search for each batch of them.
+                await ReadRecordsAsync(scope, rows, scope.Query.Query, ct).ConfigureAwait(false);
+                return;
+            }
+
             var paths = members[0].Shape.LocateBy.Where(c => !c.ReadsItem).ToList();
             for (var start = 0; start < members.Count; start += RowsPerSearch)
             {

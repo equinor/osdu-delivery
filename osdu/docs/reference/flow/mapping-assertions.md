@@ -446,7 +446,7 @@ saving it as one leaves out those it held.
 ## Errors when the mapping is read
 
 Each message starts with the file and the place, such as `mappings/WellLog@1.4.0.yaml: record.data.SamplingInterval`.
-The conditions are refused with the assertion flows' own messages ([validation errors](assertion.md#validation-errors)).
+The conditions are refused with the assertion flows' own messages ([assertion flow load errors](assertion-errors.md)).
 
 | Mistake | Message |
 | --- | --- |

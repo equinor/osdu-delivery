@@ -1299,6 +1299,9 @@ internal sealed class AssertionYaml
 
     public Dictionary<string, FlowParameterYaml>? Parameters { get; set; }
 
+    /// <summary>The queries the tests compare with by name: each the database it runs against and its one SELECT.</summary>
+    public Dictionary<string, AssertionQueryYaml?>? Queries { get; set; }
+
     public AssertionSourceYaml? Source { get; set; }
 
     /// <summary>The partitions the flow tests, each by its data-partition-id.</summary>
@@ -1313,6 +1316,16 @@ internal sealed class AssertionYaml
     public FlowReliabilityYaml? Reliability { get; set; }
 
     public RunParallelismYaml? Parallelism { get; set; }
+}
+
+/// <summary>A query a test compares with: the database it runs against (a reference), its one SELECT, and how long it may run.</summary>
+internal sealed class AssertionQueryYaml
+{
+    public string? Connection { get; set; }
+
+    public string? Sql { get; set; }
+
+    public int? TimeoutSeconds { get; set; }
 }
 
 internal sealed class AssertionSourceYaml
@@ -1540,6 +1553,12 @@ internal sealed class AssertionItemYaml : AssertionConditionYaml
 
     public bool? Exact { get; set; }
 
+    // Whether a delivered assertion starts from the rows its delivery flow stages, rather than from its ledger's delivered records.
+    public bool? Staged { get; set; }
+
+    // The severity of a staged row the delivery flow's ledger holds back and says why.
+    public string? Explained { get; set; }
+
     public object? RowCount { get; set; }
 
     public AssertionColumnsYaml? Columns { get; set; }
@@ -1548,7 +1567,8 @@ internal sealed class AssertionItemYaml : AssertionConditionYaml
 
     public string? For { get; set; }
 
-    public string? Values { get; set; }
+    // A field assertion's quantifier over a record's values (all or any); a delivered assertion's delivery flow parameter values.
+    public object? Values { get; set; }
 
     public bool? Optional { get; set; }
 
@@ -1591,6 +1611,18 @@ internal sealed class AssertionKnownValuesYaml
 
     // The curve the rows of each record's bulk data are indexed by, where the record names none at data.ReferenceCurveID.
     public string? CurveIndex { get; set; }
+
+    // The query whose rows are the rows, by the name the flow declares it under; or written here, with connection and sql.
+    public string? Query { get; set; }
+
+    public string? Connection { get; set; }
+
+    public string? Sql { get; set; }
+
+    public int? TimeoutSeconds { get; set; }
+
+    // The most rows the query may answer.
+    public int? MaxRows { get; set; }
 }
 
 /// <summary>

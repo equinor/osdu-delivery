@@ -28,6 +28,7 @@ keywords:
 yamlPath: "(flowType: assertion) tests[].assert[].knownValues"
 related:
   - delivery-flow-curve-proof-values
+  - delivery-flow-staged-proof-values
   - delivery-flow-assertion
   - delivery-guide-data-quality-tests
   - delivery-flow-dimension
@@ -90,6 +91,7 @@ each a full path and the value, or the condition, the record has to hold there. 
 | `notFound` | The severity of a row whose record is not found: `error`, `warning` or `info`. Left out, the assertion's own, so such a row fails it. |
 | `curves` | The proof values of the record's bulk data in the Wellbore DDMS, curve by curve: a curve's value at a depth (`GR: { at: { 1500.1524: 74.2 } }`) and its measures (`count`, `min`, `max`, `first`, ...), every row taking the assertion's and adding its own. The test needs a `bulk` block. See [Curve proof values](curve-proof-values.md). |
 | `curveIndex` | The curve the bulk data's rows are indexed by: the key of `at`, and where `first` and `last` are read. Left out, the record's `data.ReferenceCurveID`. |
+| `query`, or `connection` and `sql` | The rows come from a query of the staged data instead: one row for each row it answers, and every value `locateBy`, `check` and `curves` compare with names a column of it (`data.FacilityName: wellbore_name`). `maxRows` bounds the rows it may answer (100,000 unless it says, at most 1,000,000). See [known values from a query](staged-proof-values.md#known-values-from-a-query). |
 
 A row is located by 1 to 8 paths and checks at most 60 proof values. No two rows are located alike, and a row is not
 located and checked by the same path.

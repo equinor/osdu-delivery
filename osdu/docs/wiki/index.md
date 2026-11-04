@@ -245,6 +245,9 @@ other packages adopt the same contract.
 - [0039: the VS Code extension is a client of the MCP server, and one browser sign-in serves it and the command line](decisions/0039-vscode-extension-is-an-mcp-client.md) -
   why the extension reads through the server's tools, why a missing tool was filled in the server, why Microsoft sign-in
   reaches a client through a GUI page, and why the extension, the server and `sqlflow` share one credential file.
+- [0045: the activity bar opens the pages worked in most, in one click](decisions/0045-activity-bar-shortcuts.md): why
+  the activity bar is a menu button and seven shortcuts rather than an icon per menu group, why they follow the data's
+  order, and why a shortcut selects its entry in the menu but leaves the side bar as the person left it.
 - [0044: a finding says why in parts the render noted, and proves it with queries the control plane writes](decisions/0044-findings-say-why-and-prove-it.md):
   why a value check's finding is explained from what the render noted rather than read back from its sentence, why the
   words are written once on the server, and why its proof is statements the control plane writes and runs as copied.

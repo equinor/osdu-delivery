@@ -2148,12 +2148,16 @@
       "path": "concepts/menu.md",
       "title": "The menu: where each page of OSDU Delivery sits in the side bar, the activity bar and the command palette",
       "type": "concept",
-      "summary": "The workbench's menu as OSDU Delivery lays it out: its groups and sections, every page under them, what each group is for, and how the menu folds.",
+      "summary": "OSDU Delivery's menu: its groups and sections, every page under them, what each group is for, the activity bar's shortcuts, and how the menu folds.",
       "keywords": [
         "menu",
         "side bar",
         "sidebar",
         "activity bar",
+        "shortcuts",
+        "menu button",
+        "quick links",
+        "jump to a page",
         "navigation",
         "command palette",
         "where is a page",
@@ -2180,6 +2184,7 @@
         "sqlflow/gui/src/layout/nav.ts",
         "sqlflow/gui/src/layout/workbench/SideBar.tsx",
         "sqlflow/gui/src/layout/workbench/ActivityBar.tsx",
+        "sqlflow/gui/src/layout/AppShell.tsx",
         "sqlflow/gui/src/layout/workbench/CommandPalette.tsx"
       ]
     },
@@ -3301,6 +3306,9 @@
       "yamlPath": "(root, flowType: assertion)",
       "related": [
         "delivery-flow-assertion-sets",
+        "delivery-flow-assertion-errors",
+        "delivery-flow-staged-proof-values",
+        "delivery-flow-staged-accounting",
         "delivery-concept-search-paging",
         "delivery-guide-data-quality-tests",
         "delivery-cli-assertions",
@@ -3343,6 +3351,35 @@
         "osdu/specs/core/search/openapi.yaml",
         "osdu/specs/core/storage/openapi.yaml",
         "osdu/specs/core/legal/openapi.yaml"
+      ]
+    },
+    {
+      "id": "delivery-flow-assertion-errors",
+      "corpus": "reference",
+      "path": "flow/assertion-errors.md",
+      "title": "Assertion flow load errors: what sqlflow validate refuses in a flowType: assertion document, and each message",
+      "type": "flow-reference",
+      "summary": "Each message the loader refuses an assertion flow with when it is read, and its cause: tests, assertions, bulk data, conditions and dates.",
+      "keywords": [
+        "assertion flow validation errors",
+        "what validate refuses in an assertion flow",
+        "names no subject",
+        "does not take",
+        "undeclared token",
+        "bulk block required",
+        "assertion flow load errors"
+      ],
+      "yamlPath": "(root, flowType: assertion)",
+      "related": [
+        "delivery-flow-assertion",
+        "delivery-flow-known-values",
+        "delivery-flow-staged-proof-values",
+        "delivery-flow-staged-accounting"
+      ],
+      "sourceRefs": [
+        "osdu/src/SqlFlow.Delivery/Documents/AssertionDocumentMapper.cs",
+        "osdu/src/SqlFlow.Delivery/Documents/ConditionReader.cs",
+        "osdu/src/SqlFlow.Delivery/Documents/YamlModels.cs"
       ]
     },
     {
@@ -4942,6 +4979,7 @@
       "yamlPath": "(flowType: assertion) tests[].assert[].knownValues",
       "related": [
         "delivery-flow-curve-proof-values",
+        "delivery-flow-staged-proof-values",
         "delivery-flow-assertion",
         "delivery-guide-data-quality-tests",
         "delivery-flow-dimension",
@@ -5962,6 +6000,98 @@
       ]
     },
     {
+      "id": "delivery-flow-staged-accounting",
+      "corpus": "reference",
+      "path": "flow/staged-accounting.md",
+      "title": "Staged accounting (delivered, staged: true): every staged row in OSDU, or the ledger's reason it is not",
+      "type": "flow-reference",
+      "summary": "A delivered assertion that starts from the rows a delivery flow stages: each is in OSDU, held back by the ledger with its reason, or unexplained.",
+      "keywords": [
+        "staged accounting",
+        "staged",
+        "explained",
+        "delivered",
+        "are all records uploaded",
+        "every staged row delivered",
+        "compare the staged data with osdu",
+        "database versus osdu",
+        "held records",
+        "failed records",
+        "never planned",
+        "delivered and not found",
+        "why a record is not in osdu",
+        "ledger reason",
+        "record table",
+        "values"
+      ],
+      "yamlPath": "(flowType: assertion) tests[].assert[].delivered with staged, explained, values, exact, interface",
+      "related": [
+        "delivery-flow-assertion",
+        "delivery-flow-staged-proof-values",
+        "delivery-concept-ledger",
+        "delivery-flow-removal"
+      ],
+      "sourceRefs": [
+        "osdu/src/SqlFlow.Delivery/Documents/AssertionDocumentMapper.cs",
+        "osdu/src/SqlFlow.Delivery/Model/AssertionFlowDefinition.cs",
+        "osdu/src/SqlFlow.Delivery/Engine/Assertions/StagedAccounting.cs",
+        "osdu/src/SqlFlow.Delivery/Engine/Assertions/StagedDeliveries.cs",
+        "osdu/src/SqlFlow.Delivery/Engine/DeliveryFlowDocuments.cs",
+        "osdu/src/SqlFlow.Delivery/Model/MappingDefinition.cs"
+      ]
+    },
+    {
+      "id": "delivery-flow-staged-proof-values",
+      "corpus": "reference",
+      "path": "flow/staged-proof-values.md",
+      "title": "Staged proof values: OSDU compared with what a query of the staged tables answers",
+      "type": "flow-reference",
+      "summary": "An assertion compares OSDU with a query's answer: a count, a value, or one row of known values per staged row, asked when the run judges.",
+      "keywords": [
+        "staged proof values",
+        "proof values a query answers",
+        "compare osdu with a database",
+        "database versus osdu",
+        "staged data",
+        "staged tables",
+        "ingestion tables",
+        "queries",
+        "query",
+        "sql",
+        "connection",
+        "inline query",
+        "named query",
+        "known values of a query's rows",
+        "dynamic proof values",
+        "expected value a query answers",
+        "count equals a query",
+        "are all records uploaded",
+        "read-only query",
+        "timeoutSeconds",
+        "maxRows"
+      ],
+      "yamlPath": "(flowType: assertion) queries, tests[].assert[].<comparison>: { query } or { connection, sql }, tests[].assert[].knownValues.query, knownValues.connection, knownValues.sql, knownValues.maxRows",
+      "related": [
+        "delivery-flow-assertion",
+        "delivery-flow-known-values",
+        "delivery-flow-staged-accounting",
+        "delivery-guide-data-quality-tests"
+      ],
+      "sourceRefs": [
+        "osdu/src/SqlFlow.Delivery/Documents/AssertionDocumentMapper.cs",
+        "osdu/src/SqlFlow.Delivery/Documents/ConditionReader.cs",
+        "osdu/src/SqlFlow.Delivery/Documents/YamlModels.cs",
+        "osdu/src/SqlFlow.Delivery/Model/AssertionFlowDefinition.cs",
+        "osdu/src/SqlFlow.Delivery/Model/AssertionOperands.cs",
+        "osdu/src/SqlFlow.Delivery/Engine/Assertions/StagedSql.cs",
+        "osdu/src/SqlFlow.Delivery/Engine/Assertions/StagedQueries.cs",
+        "osdu/src/SqlFlow.Delivery/Engine/Assertions/StagedBinding.cs",
+        "osdu/src/SqlFlow.Delivery/Engine/Assertions/AssertionRunner.cs",
+        "sqlflow/src/SqlFlow.SqlServer/Query/SqlServerQueryRunner.cs",
+        "sqlflow/src/SqlFlow.SqlServer/Query/ReadOnlyQueryGuard.cs"
+      ]
+    },
+    {
       "id": "delivery-guide-bulk-data",
       "corpus": "reference",
       "path": "guides/bulk-data.md",
@@ -6036,6 +6166,8 @@
       "related": [
         "delivery-flow-assertion",
         "delivery-flow-known-values",
+        "delivery-flow-staged-proof-values",
+        "delivery-flow-staged-accounting",
         "delivery-cli-assertions",
         "delivery-flow-mapping-assertions",
         "delivery-flow-delivery",
@@ -10155,7 +10287,9 @@
         "subscribers",
         "osdu group"
       ],
-      "related": [],
+      "related": [
+        "delivery-wiki-0045-activity-bar-shortcuts"
+      ],
       "sourceRefs": [
         "osdu/gui/src/module.tsx",
         "osdu/gui/e2e/02-navigation.spec.ts",
@@ -10470,6 +10604,35 @@
         "osdu/src/SqlFlow.Delivery/Catalog/CacheProofSql.cs",
         "osdu/src/SqlFlow.Delivery/Source/IngestionSql.cs",
         "osdu/gui/src/features/delivery/FindingExplanation.tsx"
+      ]
+    },
+    {
+      "id": "delivery-wiki-0045-activity-bar-shortcuts",
+      "corpus": "wiki",
+      "path": "decisions/0045-activity-bar-shortcuts.md",
+      "title": "Decision 0045: the activity bar opens the pages worked in most, in one click",
+      "type": "decision",
+      "summary": "Why the activity bar is a menu button and seven page shortcuts rather than an icon per menu group, and why a shortcut leaves the side bar as it was.",
+      "keywords": [
+        "activity bar",
+        "shortcuts",
+        "menu button",
+        "side bar",
+        "quick links",
+        "navigation"
+      ],
+      "related": [
+        "delivery-wiki-0034-one-menu-by-task"
+      ],
+      "sourceRefs": [
+        "osdu/gui/src/module.tsx",
+        "osdu/gui/e2e/02-navigation.spec.ts",
+        "sqlflow/gui/src/layout/menuLayout.ts",
+        "sqlflow/gui/src/layout/nav.ts",
+        "sqlflow/gui/src/layout/AppShell.tsx",
+        "sqlflow/gui/src/layout/workbench/ActivityBar.tsx",
+        "sqlflow/gui/src/layout/workbench/SideBar.tsx",
+        "sqlflow/gui/unit/menuLayout.test.ts"
       ]
     },
     {

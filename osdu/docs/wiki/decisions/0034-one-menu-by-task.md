@@ -18,15 +18,18 @@ sourceRefs:
   - sqlflow/gui/src/layout/nav.ts
   - sqlflow/gui/src/modules/registry.ts
   - sqlflow/gui/unit/menuLayout.test.ts
+related:
+  - delivery-wiki-0045-activity-bar-shortcuts
 referenceRefs:
   - delivery-concept-menu
   - delivery-concept-gui
-updated: 2026-10-27
+updated: 2026-11-04
 ---
 # 0034: The module lays out the whole menu, SQLFlow's pages and its own, by what a person does there
 
-Status: accepted. Documented in [the menu](../../reference/concepts/menu.md) and, for the extension point, in SQLFlow's
-`gui/DESIGN.md` (the side bar) and `GuiModule.menu`.
+Status: accepted, amended by [0045](0045-activity-bar-shortcuts.md): the groups are the side bar's, and the activity bar
+holds a menu button and shortcuts to the pages worked in most. Documented in [the menu](../../reference/concepts/menu.md)
+and, for the extension point, in SQLFlow's `gui/DESIGN.md` (the side bar) and `GuiModule.menu`.
 
 ## Context
 
