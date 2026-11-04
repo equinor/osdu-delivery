@@ -14,7 +14,8 @@ namespace SqlFlow.Delivery.Engine.Assertions;
 /// own rather than every record the test's query matches: a search per batch of rows located alike, the test's query
 /// narrowed by the rows' values, where a path through other records narrows by the records its values find there; then the
 /// records the paths reach from the records found, the ones they name and the ones naming them. Every row is judged against
-/// every record read, so a record two batches find is read once.
+/// every record read, so a record two batches find is read once. A row with curve proof values has the bulk data of the
+/// record it finds measured before it is judged (osdu/docs/reference/flow/curve-proof-values.md), each record once.
 /// </summary>
 internal sealed class KnownValuesEvaluator(int index, KnownValuesAssertion assertion, int examples) : Evaluator(index, assertion, examples)
 {
@@ -42,6 +43,7 @@ internal sealed class KnownValuesEvaluator(int index, KnownValuesAssertion asser
     private readonly Dictionary<(string Type, string Reference), Dictionary<string, List<JsonNode>>> _children = [];
     private readonly Dictionary<(string Path, string Value), long> _found = [];
     private readonly Dictionary<(string Id, string Path), IReadOnlyList<JsonNode>> _read = [];
+    private readonly Dictionary<string, CurveReading> _curves = new(StringComparer.Ordinal);
     private long _notStored;
     private long _throughOthers;
     private int _searches;
@@ -61,10 +63,67 @@ internal sealed class KnownValuesEvaluator(int index, KnownValuesAssertion asser
         }
 
         var shapes = KnownValuesShape.Of(assertion, template, scope.Referenced, Assertion.Label, new List<string>());
-        await FindAsync(scope, enabled.Select(r => (r.Row, shapes[r.Index])).ToList(), ct).ConfigureAwait(false);
-        await ReachAsync(scope, enabled.Select(r => shapes[r.Index]).ToList(), ct).ConfigureAwait(false);
-        return Judge(enabled.Select(r => (r.Row, shapes[r.Index])).ToList());
+        var rows = enabled.Select(r => (r.Row, Shape: shapes[r.Index])).ToList();
+        await FindAsync(scope, rows, ct).ConfigureAwait(false);
+        await ReachAsync(scope, rows.Select(r => r.Shape).ToList(), ct).ConfigureAwait(false);
+        var all = _order.Select(id => new Match(id, _records[id], null, 0)).ToList();
+        var located = rows.Select(r => Locate(r.Row, r.Shape, all)).ToList();
+        await MeasureCurvesAsync(scope, rows, located, ct).ConfigureAwait(false);
+        return Judge(rows, located);
     }
+
+    // --- Measuring the curves ----------------------------------------------------------------------------------------------
+
+    /// <summary>
+    /// Reads the bulk data of each record a row with curve proof values finds once (osdu/docs/reference/flow/known-values.md,
+    /// Curve proof values), for every curve the rows finding it name, the records at once as the flow's concurrency allows. A
+    /// row finding no record, or more than one, measures nothing: it fails on that alone.
+    /// </summary>
+    private async Task MeasureCurvesAsync(
+        TestScope scope, IReadOnlyList<(KnownRow Row, KnownValuesShape Shape)> rows, IReadOnlyList<Located> located, CancellationToken ct)
+    {
+        var wanted = new Dictionary<string, (JsonNode Record, List<CurveCheck> Checks)>(StringComparer.Ordinal);
+        for (var i = 0; i < rows.Count; i++)
+        {
+            var checks = rows[i].Row.CurveChecks.Where(c => c.Disabled is null).ToList();
+            if (checks.Count == 0 || located[i].Found.Count != 1)
+            {
+                continue;
+            }
+
+            var match = located[i].Found[0];
+            if (wanted.TryGetValue(match.Id, out var already))
+            {
+                already.Checks.AddRange(checks);
+            }
+            else
+            {
+                wanted[match.Id] = (match.Record, checks);
+            }
+        }
+
+        if (wanted.Count == 0)
+        {
+            return;
+        }
+
+        var gate = new Lock();
+        await Parallel.ForEachAsync(
+            wanted,
+            new ParallelOptions { MaxDegreeOfParallelism = Math.Max(1, scope.Concurrency), CancellationToken = ct },
+            async (entry, token) =>
+            {
+                var reading = await KnownCurves.MeasureAsync(scope, entry.Key, entry.Value.Record, entry.Value.Checks, assertion.CurveIndex, token).ConfigureAwait(false);
+                lock (gate)
+                {
+                    _curves[entry.Key] = reading;
+                }
+            }).ConfigureAwait(false);
+    }
+
+    /// <summary>Whether the rows read the curve their records name as the one their bulk data is indexed by, which a search then returns.</summary>
+    private bool ReadsReferenceCurve(IReadOnlyList<(KnownRow Row, KnownValuesShape Shape)> rows)
+        => assertion.CurveIndex is null && rows.Any(r => r.Row.CurveChecks.Any(c => c.Disabled is null && CurveProofValues.ReadsIndex(c.Measure)));
 
     // --- Finding the records ---------------------------------------------------------------------------------------------
 
@@ -338,7 +397,9 @@ internal sealed class KnownValuesEvaluator(int index, KnownValuesAssertion asser
             ? ["id", "kind"]
             : rows.SelectMany(r => r.Shape.LocateBy.Concat(r.Shape.Check))
                 .Select(c => c.Steps[0].Step.Via == KnownStepVia.Record ? GroupEvaluator.SearchField(c.Steps[0].Step.Field!) : "id")
-                .Append("id").Append("kind").Distinct(StringComparer.Ordinal).ToList();
+                .Append("id").Append("kind")
+                .Concat(ReadsReferenceCurve(rows) ? [CurveProofValues.ReferenceCurvePath] : [])
+                .Distinct(StringComparer.Ordinal).ToList();
         _searches++;
         var search = scope.Query with { Query = query, Sort = [], ReturnedFields = fields };
         await foreach (var page in scope.Search.PagesAsync(search, Math.Min(OsduSearch.MaxPage, test.MaxRecords), ct).ConfigureAwait(false))
@@ -646,17 +707,17 @@ internal sealed class KnownValuesEvaluator(int index, KnownValuesAssertion asser
     private static ValueCondition Comparing(KnownColumn column)
         => new() { Operator = ValueOperator.EqualTo, Tolerance = column.Tolerance, IgnoreCase = column.IgnoreCase };
 
-    private AssertionOutcome Judge(IReadOnlyList<(KnownRow Row, KnownValuesShape Shape)> rows)
+    private AssertionOutcome Judge(IReadOnlyList<(KnownRow Row, KnownValuesShape Shape)> rows, IReadOnlyList<Located> located)
     {
-        var all = _order.Select(id => new Match(id, _records[id], null, 0)).ToList();
         var counts = new Dictionary<Verdict, long> { [Verdict.Holds] = 0, [Verdict.WithinBand] = 0, [Verdict.Differs] = 0, [Verdict.NotFound] = 0, [Verdict.FoundMoreThanOnce] = 0 };
         var differing = new Dictionary<string, long>(StringComparer.Ordinal);
         var failures = new List<AssertionExample>();
         long proofValues = 0;
-        foreach (var (row, shape) in rows)
+        for (var i = 0; i < rows.Count; i++)
         {
-            proofValues += row.Checks.Count(c => c.Disabled is null);
-            var (verdict, id, reason) = JudgeRow(row, shape, all, differing);
+            var (row, shape) = rows[i];
+            proofValues += row.Checks.Count(c => c.Disabled is null) + row.CurveChecks.Count(c => c.Disabled is null);
+            var (verdict, id, reason) = JudgeRow(row, shape, located[i], differing);
             counts[verdict]++;
             if (verdict != Verdict.Holds && failures.Count < Examples)
             {
@@ -683,15 +744,16 @@ internal sealed class KnownValuesEvaluator(int index, KnownValuesAssertion asser
             heaviest = bandSeverity;
         }
 
-        var banded = rows.Any(r => r.Row.Checks.Any(c => c.Column.WarnWithin is not null));
+        var banded = rows.Any(r => r.Row.Checks.Any(c => c.Column.WarnWithin is not null) || r.Row.CurveChecks.Any(c => c.WarnWithin is not null));
 
         var disabledRows = assertion.Rows.Count - judged;
-        var disabledValues = rows.Sum(r => r.Row.Checks.Count(c => c.Disabled is not null));
+        var disabledValues = rows.Sum(r => r.Row.Checks.Count(c => c.Disabled is not null) + r.Row.CurveChecks.Count(c => c.Disabled is not null));
         var mostDiffering = differing.OrderByDescending(d => d.Value).ThenBy(d => d.Key, StringComparer.Ordinal).Take(Named)
             .Select(d => string.Create(CultureInfo.InvariantCulture, $"{d.Key} ({d.Value})")).ToList();
         var actual = string.Create(CultureInfo.InvariantCulture,
                 $"{judged} row(s) with {proofValues} proof value(s): {holding} hold their values, {(banded ? $"{withinBand} within the warning band, " : string.Empty)}{counts[Verdict.Differs]} differ, {notFound} not found, {counts[Verdict.FoundMoreThanOnce]} found more than once; {_records.Count} record(s) read in {_searches} search(es)")
             + (_throughOthers > 0 ? string.Create(CultureInfo.InvariantCulture, $", {_throughOthers} reached through others") : string.Empty)
+            + (_curves.Count > 0 ? string.Create(CultureInfo.InvariantCulture, $"; the curves of {_curves.Count} record(s) measured") : string.Empty)
             + (_notStored > 0 ? string.Create(CultureInfo.InvariantCulture, $"; {_notStored} record(s) the index lists are not in storage, and were left out") : string.Empty)
             + (disabledRows > 0 || disabledValues > 0 ? string.Create(CultureInfo.InvariantCulture, $"; disabled: {disabledRows} row(s), {disabledValues} proof value(s)") : string.Empty)
             + (mostDiffering.Count > 0 ? "; differing most in " + string.Join(", ", mostDiffering) : string.Empty);
@@ -706,57 +768,17 @@ internal sealed class KnownValuesEvaluator(int index, KnownValuesAssertion asser
         return heaviest is { } severity ? outcome with { Severity = AssertionText.Of(severity) } : outcome;
     }
 
-    private (Verdict Verdict, string? Id, string Reason) JudgeRow(KnownRow row, KnownValuesShape shape, IReadOnlyList<Match> all, Dictionary<string, long> differing)
+    /// <summary>The records (or items) a row's values find, or why they find none and the record that came closest, when one did.</summary>
+    private readonly record struct Located(IReadOnlyList<Match> Found, string? NotFound, string? NotFoundId);
+
+    private (Verdict Verdict, string? Id, string Reason) JudgeRow(KnownRow row, KnownValuesShape shape, Located located, Dictionary<string, long> differing)
     {
-        // The records, narrowed path by path: the first path no record holds its value at is the one the row is not found by.
-        IReadOnlyList<Match> found = all;
-        var by = new List<string>();
-        for (var k = 0; k < row.Locate.Count; k++)
+        if (located.NotFound is { } notFound)
         {
-            var path = shape.LocateBy[k];
-            if (path.ReadsItem)
-            {
-                continue;
-            }
-
-            var expected = row.Locate[k].Value;
-            var condition = Comparing(path.Column);
-            var next = found.Where(m => Values(m, path).Any(v => ValueComparer.Equal(v, expected, condition, out _))).ToList();
-            if (next.Count == 0)
-            {
-                return (Verdict.NotFound, null, NotFoundBy(path, expected, found.Count, by));
-            }
-
-            found = next;
-            by.Add($"{path.Column.Path} {expected}");
+            return (Verdict.NotFound, located.NotFoundId, notFound);
         }
 
-        if (shape.Items is { } items)
-        {
-            found = found.SelectMany(m => Items(m.Record, items).Select(item => m with { Item = item.Node, Position = item.Position })).ToList();
-            for (var k = 0; k < row.Locate.Count; k++)
-            {
-                var path = shape.LocateBy[k];
-                if (!path.ReadsItem)
-                {
-                    continue;
-                }
-
-                var expected = row.Locate[k].Value;
-                var condition = Comparing(path.Column);
-                var next = found.Where(m => Values(m, path).Any(v => ValueComparer.Equal(v, expected, condition, out _))).ToList();
-                if (next.Count == 0)
-                {
-                    var records = found.Select(m => m.Id).Distinct(StringComparer.Ordinal).ToList();
-                    return (Verdict.NotFound, records.Count == 1 ? records[0] : null, string.Create(CultureInfo.InvariantCulture,
-                        $"not found: {Counted(records.Count, "record")} with {string.Join(" and ", by)} hold no item of {items} with {path.Column.Path} {expected}"));
-                }
-
-                found = next;
-                by.Add($"{path.Column.Path} {expected}");
-            }
-        }
-
+        var found = located.Found;
         if (found.Count > 1)
         {
             var named = found.Take(NamedMatches).Select(m =>
@@ -786,6 +808,65 @@ internal sealed class KnownValuesEvaluator(int index, KnownValuesAssertion asser
     }
 
     /// <summary>
+    /// The records a row's values find among <paramref name="all"/> read, narrowed path by path, then the items of a list a
+    /// row located inside one finds; or why it finds none, at the first path no record holds its value at.
+    /// </summary>
+    private Located Locate(KnownRow row, KnownValuesShape shape, IReadOnlyList<Match> all)
+    {
+        // The records, narrowed path by path: the first path no record holds its value at is the one the row is not found by.
+        IReadOnlyList<Match> found = all;
+        var by = new List<string>();
+        for (var k = 0; k < row.Locate.Count; k++)
+        {
+            var path = shape.LocateBy[k];
+            if (path.ReadsItem)
+            {
+                continue;
+            }
+
+            var expected = row.Locate[k].Value;
+            var condition = Comparing(path.Column);
+            var next = found.Where(m => Values(m, path).Any(v => ValueComparer.Equal(v, expected, condition, out _))).ToList();
+            if (next.Count == 0)
+            {
+                return new Located([], NotFoundBy(path, expected, found.Count, by), null);
+            }
+
+            found = next;
+            by.Add($"{path.Column.Path} {expected}");
+        }
+
+        if (shape.Items is { } items)
+        {
+            found = found.SelectMany(m => Items(m.Record, items).Select(item => m with { Item = item.Node, Position = item.Position })).ToList();
+            for (var k = 0; k < row.Locate.Count; k++)
+            {
+                var path = shape.LocateBy[k];
+                if (!path.ReadsItem)
+                {
+                    continue;
+                }
+
+                var expected = row.Locate[k].Value;
+                var condition = Comparing(path.Column);
+                var next = found.Where(m => Values(m, path).Any(v => ValueComparer.Equal(v, expected, condition, out _))).ToList();
+                if (next.Count == 0)
+                {
+                    var records = found.Select(m => m.Id).Distinct(StringComparer.Ordinal).ToList();
+                    return new Located([], string.Create(CultureInfo.InvariantCulture,
+                        $"not found: {Counted(records.Count, "record")} with {string.Join(" and ", by)} hold no item of {items} with {path.Column.Path} {expected}"),
+                        records.Count == 1 ? records[0] : null);
+                }
+
+                found = next;
+                by.Add($"{path.Column.Path} {expected}");
+            }
+        }
+
+        return new Located(found, null, null);
+    }
+
+    /// <summary>
     /// The proof values of a row a match does not hold, each with what it holds instead and whether it misses only within
     /// its warning band; disabled ones are not checked.
     /// </summary>
@@ -806,6 +887,13 @@ internal sealed class KnownValuesEvaluator(int index, KnownValuesAssertion asser
             {
                 differences.Add((check.Column.Label, why.Why, why.WithinBand));
             }
+        }
+
+        // The curve proof values, where the record's bulk data was measured: it is for a row finding one record, and a row
+        // finding several names their record proof values alone, failing on being found more than once.
+        if (row.CurveChecks.Count > 0 && _curves.TryGetValue(match.Id, out var reading))
+        {
+            differences.AddRange(KnownCurves.Differences(row.CurveChecks, reading));
         }
 
         return differences;

@@ -810,21 +810,116 @@ public sealed record KnownValuesAssertion : TestAssertion
     /// <summary>The severity of a row whose record is not found; null takes the assertion's own, so such a row fails it.</summary>
     public AssertionSeverity? NotFound { get; init; }
 
+    /// <summary>
+    /// The curve the rows of each record's bulk data are indexed by, which a curve's first and last values are read at
+    /// (<c>curveIndex</c>); null reads it from the record's <see cref="CurveProofValues.ReferenceCurvePath"/>. Left out of the
+    /// definition when null, so known values without curve proof values keep the definition hash they had.
+    /// </summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? CurveIndex { get; init; }
+
     public override string Type => "knownValues";
 
-    public override string Expected => string.Create(CultureInfo.InvariantCulture,
-        $"each of {Rows.Count(r => r.Disabled is null)} row(s) finds one record and holds its {Rows.Where(r => r.Disabled is null).Sum(r => r.Checks.Count(c => c.Disabled is null))} proof value(s)")
-        + (NotFound is { } severity && severity != Severity ? $"; a row not found counts as {AssertionText.Of(severity)}" : string.Empty);
+    public override string Expected
+    {
+        get
+        {
+            var rows = Rows.Where(r => r.Disabled is null).ToList();
+            var curves = rows.Sum(r => r.CurveChecks.Count(c => c.Disabled is null));
+            return string.Create(CultureInfo.InvariantCulture,
+                    $"each of {rows.Count} row(s) finds one record and holds its {rows.Sum(r => r.Checks.Count(c => c.Disabled is null))} proof value(s)")
+                + (curves > 0 ? string.Create(CultureInfo.InvariantCulture, $" and {curves} curve proof value(s)") : string.Empty)
+                + (NotFound is { } severity && severity != Severity ? $"; a row not found counts as {AssertionText.Of(severity)}" : string.Empty);
+        }
+    }
 }
 
 /// <summary>
 /// One row of known values: the full paths and values its record is located by, the proof values it holds the record to,
-/// and why the row is disabled, when it is: a disabled row stays in the flow, reported, and is neither located nor checked.
+/// the proof values it holds the record's bulk data to (<see cref="Curves"/>), and why the row is disabled, when it is: a
+/// disabled row stays in the flow, reported, and is neither located nor checked.
 /// </summary>
 public sealed record KnownRow(IReadOnlyList<KnownLocate> Locate, IReadOnlyList<KnownCheck> Checks, string? Disabled = null)
 {
+    /// <summary>
+    /// The proof values of the record's bulk data, curve by curve (osdu/docs/reference/flow/known-values.md, Curve proof
+    /// values), or null for none. Left out of the definition when null, so a row without them keeps the definition hash it had.
+    /// </summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public IReadOnlyList<CurveCheck>? Curves { get; init; }
+
+    /// <summary>The row's curve proof values, none when it has none.</summary>
+    [JsonIgnore]
+    public IReadOnlyList<CurveCheck> CurveChecks => Curves ?? [];
+
     /// <summary>The row as reports name it: the values it is located by.</summary>
     public string Label => string.Join(" / ", Locate.Select(l => l.Value.Text));
+}
+
+/// <summary>
+/// A proof value of a curve of a record's bulk data (osdu/docs/reference/flow/curve-proof-values.md): what is measured of
+/// the curve (<see cref="Measure"/>), or the row whose value is checked (<see cref="Key"/>), the condition it meets, how far
+/// a number may miss it and only warn, and why it is disabled, when it is.
+/// </summary>
+public sealed record CurveCheck(string Curve, CurveMeasure Measure, ValueCondition Condition, WarningBand? WarnWithin = null, string? Disabled = null)
+{
+    /// <summary>
+    /// For <see cref="CurveMeasure.At"/>: the key of the row whose value of the curve is checked, a value of the curve the rows
+    /// are indexed by (a depth, a time). Left out of the definition when null.
+    /// </summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public ExpectedValue? Key { get; init; }
+
+    /// <summary>What a report calls it: the curve and the measure, such as <c>GR max</c>, or the key, such as <c>GR at 1500.1524</c>.</summary>
+    public string Label => Measure == CurveMeasure.At && Key is { } key
+        ? Curve + " at " + key.Text
+        : Curve + " " + AssertionText.Of(Measure);
+}
+
+/// <summary>What a curve proof value measures of a curve of a record's bulk data.</summary>
+public enum CurveMeasure
+{
+    /// <summary>The rows the curve has a value in.</summary>
+    Count,
+
+    /// <summary>The rows the curve has no value in.</summary>
+    Missing,
+
+    Min,
+    Max,
+    Sum,
+    Avg,
+
+    /// <summary>The index of the first row the curve has a value in: where the curve starts, such as its top depth.</summary>
+    First,
+
+    /// <summary>The index of the last row the curve has a value in: where the curve ends, such as its base depth.</summary>
+    Last,
+
+    /// <summary>The differences between the curve's values row after row: each of them meets the condition.</summary>
+    Step,
+
+    /// <summary>The curve's value in the row whose index holds a key: the value a source states at a depth.</summary>
+    At,
+}
+
+/// <summary>The words and limits of curve proof values (osdu/docs/reference/flow/curve-proof-values.md).</summary>
+public static class CurveProofValues
+{
+    /// <summary>The record path a log names the curve its rows are indexed by at, when the assertion names none.</summary>
+    public const string ReferenceCurvePath = "data.ReferenceCurveID";
+
+    /// <summary>The most curves one row holds proof values for.</summary>
+    public const int MaxCurves = 100;
+
+    /// <summary>The most keys one curve of one row checks its value at.</summary>
+    public const int MaxKeys = 1000;
+
+    /// <summary>The measures, as documents write them.</summary>
+    public static IReadOnlyList<string> Names { get; } = Enum.GetValues<CurveMeasure>().Select(AssertionText.Of).ToList();
+
+    /// <summary>The measures read at the curve the rows are indexed by.</summary>
+    public static bool ReadsIndex(CurveMeasure measure) => measure is CurveMeasure.First or CurveMeasure.Last or CurveMeasure.At;
 }
 
 /// <summary>A full path and the value the record a row is located by holds there.</summary>
@@ -1521,6 +1616,20 @@ public static class AssertionText
         JsonValueType.Mapping => "object",
         JsonValueType.Array => "array",
         _ => "null",
+    };
+
+    public static string Of(CurveMeasure measure) => measure switch
+    {
+        CurveMeasure.Count => "count",
+        CurveMeasure.Missing => "missing",
+        CurveMeasure.Min => "min",
+        CurveMeasure.Max => "max",
+        CurveMeasure.Sum => "sum",
+        CurveMeasure.Avg => "avg",
+        CurveMeasure.First => "first",
+        CurveMeasure.Last => "last",
+        CurveMeasure.Step => "step",
+        _ => "at",
     };
 
     public static string Of(AggregateFunction function) => function switch

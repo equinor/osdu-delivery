@@ -103,10 +103,15 @@ public sealed class EditorCensusTests
         var missing = expected.Where(p => !documented.Contains(p)).ToList();
         Assert.True(missing.Count == 0, $"{file} leaves out keys the loader accepts: {string.Join(", ", missing)}");
 
-        // What the author writes below a free-form value is either free, or documented key by key.
+        // What the author writes below a free-form value is either free, or documented key by key: a census entry left free
+        // is free in the loader too, itself or below a value the loader takes whole (a curve's measures, documented key by
+        // key so the editor knows them, each free below), which the loader then checks itself.
         foreach (var key in Keys(census).Where(k => k["freeForm"]?.GetValue<bool>() ?? false))
         {
-            Assert.Contains(key["path"]!.GetValue<string>(), accepted.FreeForm);
+            var path = key["path"]!.GetValue<string>();
+            Assert.True(
+                accepted.FreeForm.Contains(path) || UnderFreeForm(path, accepted),
+                $"{file} leaves {path} free, and the loader reads it key by key.");
         }
     }
 

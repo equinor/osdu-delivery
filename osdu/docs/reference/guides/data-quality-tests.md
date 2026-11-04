@@ -307,7 +307,7 @@ full path and its value:
             - locateBy: { data.Curves.CurveID: DT }
               check:
                 data.Curves.CurveUnit: "{partition}:reference-data--UnitOfMeasure:us%2Fft:"
-                data.Curves.TopDepth: { equals: 1023.0612, tolerance: 0.00005 }
+                data.Curves.TopDepth: { equals: 1250.4, tolerance: 0.00005 }
 ```
 
 Each row of the sheet becomes a row of proof values, and the result says, row by row, which hold, which differ and in
@@ -347,6 +347,30 @@ small `maxRecords` keeps the test to a sample of the logs, since a partition's c
 `maxRows` bounds the rows read of one log. List in
 `bulk.columns` every column the assertions name, or leave `columns` out to read exactly those; a list that leaves one out
 is refused when the flow loads.
+
+To prove each log's curves hold what its source files state, give the rows of a sheet's known values the values the
+source gives, curve by curve: a curve's value at a depth (`at`), and its measures. The same row finds the log and checks
+its record:
+
+```yaml
+      - knownValues:
+          tolerance: 0.0001
+          locateBy: { '[data.WellboreID, data.FacilityName]': A/1-F-11 }
+          rows:
+            - locateBy: { data.Name: COMPOSITE }
+              curves:
+                GR:
+                  at: { 1500.1524: 74.2, 1600.02: 80.15 }
+                  count: 5000
+                  max: 150.2
+                MD: { count: 5120, first: 1000, last: 1780.1356, step: 0.1524 }
+```
+
+`GR: { at: { 1500.1524: 74.2 } }` reads "GR at 1500.1524 is 74.2": the row whose depth is 1500.1524 holds 74.2 in GR,
+the depth matched exactly as written; where no row holds it, the result names the depths either side. The tolerance lets
+a curve the DDMS keeps as 32-bit floats (74.2 reads back as 74.19999694824219) compare as the source states it. Every row of each
+log's curve data is read, only the curves named, so `bulk.maxRows` has to hold the longest log; the result keeps the
+measures and the values checked, never the rest of the curve. See [Curve proof values](../flow/curve-proof-values.md).
 
 ## 7. Run the tests after every delivery
 

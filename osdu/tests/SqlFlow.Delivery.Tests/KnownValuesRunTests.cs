@@ -57,11 +57,11 @@ public sealed class KnownValuesRunTests : IDisposable
         _platform.Add("dev:master-data--Wellbore:wb2", Wellbore, new JsonObject { ["FacilityName"] = "A/1-F-11 A", ["WellID"] = "dev:master-data--Well:W1:" });
         _platform.Add("dev:master-data--Wellbore:wb3", Wellbore, new JsonObject { ["FacilityName"] = "A/1-F-12", ["WellID"] = "dev:master-data--Well:W2:" })
             ["createTime"] = "2026-09-05T10:00:00.000Z";
-        Log("comp", "dev:master-data--Wellbore:wb1:", "COMPOSITE", "NORTH", 205.1304, Curve("DT", "us%2Fft", 1023.0612), Curve("GR", "API", 205.1304));
-        Log("cpi", "dev:master-data--Wellbore:wb1:1700000000000000", "INTERPRETATION", "NORTH", 1881.8352, Curve("PHIT", "v%2Fv", 1891.7412));
-        Log("south", "dev:master-data--Wellbore:wb1:", "COMPOSITE", "SOUTH", 205.1304, Curve("RD", "ohm.m", 216.2556));
-        Log("twin1", "dev:master-data--Wellbore:wb3:", "COMPOSITE", "NORTH", 138.0744);
-        Log("twin2", "dev:master-data--Wellbore:wb3:", "COMPOSITE", "NORTH", 138.0744);
+        Log("comp", "dev:master-data--Wellbore:wb1:", "COMPOSITE", "NORTH", 204.6, Curve("DT", "us%2Fft", 1021.5), Curve("GR", "API", 204.6));
+        Log("cpi", "dev:master-data--Wellbore:wb1:1700000000000000", "INTERPRETATION", "NORTH", 1880.5, Curve("PHIT", "v%2Fv", 1890.9));
+        Log("south", "dev:master-data--Wellbore:wb1:", "COMPOSITE", "SOUTH", 204.6, Curve("RD", "ohm.m", 216.8));
+        Log("twin1", "dev:master-data--Wellbore:wb3:", "COMPOSITE", "NORTH", 137.5);
+        Log("twin2", "dev:master-data--Wellbore:wb3:", "COMPOSITE", "NORTH", 137.5);
         Log("sidetrack", "dev:master-data--Wellbore:wb2:", "COMPOSITE", "NORTH", 300);
     }
 
@@ -85,12 +85,12 @@ public sealed class KnownValuesRunTests : IDisposable
                     tags.SourceProject: NORTH
                     data.Name: COMPOSITE
                   check:
-                    data.SamplingStart: { equals: 205.13, tolerance: 0.001 }
+                    data.SamplingStart: { equals: 204.6, tolerance: 0.001 }
                   rows:
                     - locateBy: { data.Curves.CurveID: DT }
                       check:
                         data.Curves.CurveUnit: "{partition}:reference-data--UnitOfMeasure:us%2Fft:"
-                        data.Curves.TopDepth: 1023.0612
+                        data.Curves.TopDepth: 1021.5
                         data.LogSource: { equals: CONTRACTOR, disabled: the log source is renamed next release }
                     - locateBy: { data.Curves.CurveID: GR }
                       check:
@@ -185,7 +185,7 @@ public sealed class KnownValuesRunTests : IDisposable
                     - locateBy: { data.Curves.CurveID: DT }
                       check: { data.Curves.TopDepth: 1000 }
                     - locateBy: { data.Curves.CurveID: GR }
-                      check: { data.Curves.TopDepth: 205.1304 }
+                      check: { data.Curves.TopDepth: 204.6 }
           - name: beyond-band
             kind: {{WellLog}}
             assert:
@@ -307,8 +307,8 @@ public sealed class KnownValuesRunTests : IDisposable
         Assert.Equal("2 row(s) differ only within the warning band (warning).", known.Message);
         var dt = Assert.Single(known.Examples, e => e.Value == "A/1-F-11 / NORTH / COMPOSITE / DT");
         Assert.StartsWith("differs within the warning band in 2 proof value(s) of item 1 of data.Curves: ", dt.Reason, StringComparison.Ordinal);
-        Assert.Contains("data.SamplingStart is 205.1304, expected it equals 200; 5.1304 above 200 (2.57%), within the warning band of 5%, so it warns", dt.Reason, StringComparison.Ordinal);
-        Assert.Contains("data.Curves.TopDepth is 1023.0612, expected it equals 1000; 23.0612 above 1000 (2.31%), within the warning band of 5%", dt.Reason, StringComparison.Ordinal);
+        Assert.Contains("data.SamplingStart is 204.6, expected it equals 200; 4.6 above 200 (2.3%), within the warning band of 5%, so it warns", dt.Reason, StringComparison.Ordinal);
+        Assert.Contains("data.Curves.TopDepth is 1021.5, expected it equals 1000; 21.5 above 1000 (2.15%), within the warning band of 5%", dt.Reason, StringComparison.Ordinal);
 
         // Beyond the band, or beside a proof value that differs outright, a row and a count fail as ever.
         var far = results["beyond-band"];

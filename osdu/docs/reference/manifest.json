@@ -3467,6 +3467,51 @@
       ]
     },
     {
+      "id": "delivery-flow-curve-proof-values",
+      "corpus": "reference",
+      "path": "flow/curve-proof-values.md",
+      "title": "Curve proof values: a log's curve data held to what its source files state",
+      "type": "flow-reference",
+      "summary": "Known values check each log's curve data in the Wellbore DDMS: a curve's value at a depth, its samples, values, first and last depth, step.",
+      "keywords": [
+        "curve proof values",
+        "curves",
+        "at",
+        "curveIndex",
+        "value of a curve at a depth",
+        "check value x on curve y at key z",
+        "curve value at a key",
+        "validate curve data",
+        "validate curve files",
+        "well log bulk data",
+        "wellbore ddms bulk data",
+        "curve count",
+        "curve min max",
+        "curve average",
+        "top and base depth of a curve",
+        "first and last value of a curve",
+        "depth step",
+        "missing values of a curve",
+        "compare curves with the source files",
+        "reference curve"
+      ],
+      "yamlPath": "(flowType: assertion) tests[].assert[].knownValues.curves, knownValues.rows[].curves, knownValues.curveIndex",
+      "related": [
+        "delivery-flow-known-values",
+        "delivery-flow-assertion",
+        "delivery-guide-data-quality-tests"
+      ],
+      "sourceRefs": [
+        "osdu/src/SqlFlow.Delivery/Documents/AssertionDocumentMapper.cs",
+        "osdu/src/SqlFlow.Delivery/Documents/YamlModels.cs",
+        "osdu/src/SqlFlow.Delivery/Model/AssertionFlowDefinition.cs",
+        "osdu/src/SqlFlow.Delivery/Engine/Assertions/KnownCurves.cs",
+        "osdu/src/SqlFlow.Delivery/Engine/Assertions/CurveKeys.cs",
+        "osdu/src/SqlFlow.Delivery/Engine/Assertions/KnownValuesEvaluator.cs",
+        "osdu/src/SqlFlow.Delivery/Engine/Assertions/WellboreBulk.cs"
+      ]
+    },
+    {
       "id": "delivery-flow-ddms",
       "corpus": "reference",
       "path": "flow/ddms.md",
@@ -4889,10 +4934,14 @@
         "qc sheet",
         "find a well log by its wellbore name",
         "check curve values of a well log",
-        "locate a record by a value of its parent"
+        "locate a record by a value of its parent",
+        "curve proof values",
+        "curves",
+        "curveIndex"
       ],
       "yamlPath": "(flowType: assertion) tests[].assert[].knownValues",
       "related": [
+        "delivery-flow-curve-proof-values",
         "delivery-flow-assertion",
         "delivery-guide-data-quality-tests",
         "delivery-flow-dimension",

@@ -55,7 +55,7 @@ public sealed class KnownValuesDocumentTests
                   - locateBy: { data.Curves.CurveID: DT }
                     check:
                       data.Curves.CurveUnit: "{partition}:reference-data--UnitOfMeasure:us%2Fft:"
-                      data.Curves.TopDepth: { equals: 1023.0612, tolerance: 0.0005 }
+                      data.Curves.TopDepth: { equals: 1250.4, tolerance: 0.0005 }
                       data.Curves.BaseDepth: { between: [2079, 2080] }
                       data.LogSource: { equals: OPERATOR, disabled: "the source's log source is not delivered yet" }
                   - locateBy: { data.Curves.CurveID: GR }
@@ -147,7 +147,7 @@ public sealed class KnownValuesDocumentTests
         var known = Known("""
             - knownValues:
                 locateBy: { '[data.WellboreID, data.FacilityName]': A/1-F-11, data.Name: COMPOSITE }
-                check: { data.SamplingStart: 205.13, data.IsRegular: true, data.CompanyID: ~ }
+                check: { data.SamplingStart: 204.6, data.IsRegular: true, data.CompanyID: ~ }
             """);
         var row = Assert.Single(known.Rows);
         Assert.Equal(2, row.Locate.Count);

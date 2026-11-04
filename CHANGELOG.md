@@ -17,6 +17,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Known values hold each log's curve data to what its source files state.** A row's `curves` gives, curve by curve, the
+  values a source states: a curve's value at a depth (`GR: { at: { 1500.1524: 74.2 } }`, matched exactly as written), and
+  its `count`, `missing`, `min`, `max`, `sum`, `avg`, `first` and `last` depth and `step`. The run reads only those curves of
+  the log from the Wellbore DDMS and judges them with the record's proof values in one verdict per row, and the editor
+  completes and checks each measure ([curve proof values](osdu/docs/reference/flow/curve-proof-values.md)).
+
 - **One assertion dashboard, grouped by set and by dimensions.** An assertion flow names its `set` (else it is in its
   `batch`'s), a `title`, and `dimensions` such as `Area: South`, which its tests take and add to, beside the `Set`, `Type` and
   `Check` every assertion has. The Assertions page and an assertion flow's Assertions tab are one dashboard: a verdict that

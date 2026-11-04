@@ -66,27 +66,10 @@ start one ([the local demo](osdu/docs/reference/guides/local-demo.md)).
 
 ## Onboarding
 
-<a href="ONBOARDING.md"><img src="osdu/media/onboarding-paths.svg" width="100%" alt="Onboarding, two paths in: Configure, to use OSDU Delivery and build pipelines in YAML, and Extend, to build on it and maintain the framework in C#, lined up stage for stage"></a>
+<a href="ONBOARDING.md"><img src="osdu/media/onboarding-videos.svg" width="100%" alt="Onboarding: learn OSDU Delivery in ten videos, each tagged for data engineers, for extending the framework, or both"></a>
 
-**[Two paths in](ONBOARDING.md)**, side by side: configure pipelines with OSDU Delivery, or extend the framework
-itself. Every video in order, with the pages behind each and a task at every step.
-
-## Technical deep dive
-
-<table>
-<tr>
-<td width="50%" valign="top">
-<h3>How to write a mapping</h3>
-<a href="https://www.youtube.com/watch?v=k8XU0Boqh4w"><img src="https://img.youtube.com/vi/k8XU0Boqh4w/maxresdefault.jpg" width="100%" alt="Map curated data to OSDU with YAML"></a>
-<br><strong><a href="https://www.youtube.com/watch?v=k8XU0Boqh4w">Map curated data to OSDU with YAML</a></strong> (17:30). A hands-on tutorial.
-</td>
-<td width="50%" valign="top">
-<h3>How the code is organized</h3>
-<a href="https://www.youtube.com/watch?v=QnOzD6ycfV8"><img src="https://img.youtube.com/vi/QnOzD6ycfV8/maxresdefault.jpg" width="100%" alt="Codebase walkthrough"></a>
-<br><strong><a href="https://www.youtube.com/watch?v=QnOzD6ycfV8">Codebase walkthrough</a></strong> (12:58). For developers.
-</td>
-</tr>
-</table>
+**[Ten videos](ONBOARDING.md)** in the order to watch them, each with a short description and tagged for data
+engineers, for extending the framework, or both.
 
 ## Learn more
 
@@ -107,10 +90,10 @@ ingestion and Wellbore DDMS paths. Every write path is tested against OSDU's own
 
 ## Contributing
 
-The [onboarding](ONBOARDING.md)'s Extend path is the way in. [CONTRIBUTING.md](CONTRIBUTING.md) sets up a development
-machine and runs the tests, and [osdu/README.md](osdu/README.md) maps the module's code. OSDU Delivery is built on
-[SQLFlow](https://github.com/TahirRiaz/SQLFlow), kept in [sqlflow/](sqlflow/), which is why its command line is
-`sqlflow`.
+The [onboarding](ONBOARDING.md) videos tagged extending are the way in. [CONTRIBUTING.md](CONTRIBUTING.md) sets up a
+development machine and runs the tests, and [osdu/README.md](osdu/README.md) maps the module's code. OSDU Delivery is
+built on [SQLFlow](https://github.com/TahirRiaz/SQLFlow), kept in [sqlflow/](sqlflow/), which is why its command line
+is `sqlflow`.
 
 ## License and contact
 

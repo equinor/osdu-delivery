@@ -511,6 +511,10 @@ refused when the flow loads. The example's `log-curves` test, given a fifth asse
 <file>: tests[2] 'log-curves': bulk.columns lists the only columns the test reads, and leaves out 'GR' (assert[4]); add it to bulk.columns, or leave bulk.columns out to read exactly the columns the assertions name.
 ```
 
+Known values hold each log's curve data to what its source files state, curve by curve and measure by measure (how many
+samples, the range of values, the depth each curve starts and ends at, the step), beside the proof values of its record:
+[Curve proof values](curve-proof-values.md).
+
 Other DDMSs, and the files behind dataset records, are not read by a test; their storage records are tested like any
 other record.
 

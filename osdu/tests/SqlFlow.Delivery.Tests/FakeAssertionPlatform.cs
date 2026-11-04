@@ -42,6 +42,9 @@ internal sealed partial class FakeAssertionPlatform : HttpMessageHandler
     /// <summary>The bulk data the DDMS holds for a record: its columns and rows.</summary>
     public Dictionary<string, (string[] Columns, List<object?[]> Rows)> Bulk { get; } = new(StringComparer.Ordinal);
 
+    /// <summary>The rows a record's bulk data is described as holding, where that differs from the rows its pages answer.</summary>
+    public Dictionary<string, int> DescribedRows { get; } = new(StringComparer.Ordinal);
+
     /// <summary>The most hits one page returns, whatever the request asks for.</summary>
     public int PageCap { get; set; } = 1000;
 
@@ -216,7 +219,11 @@ internal sealed partial class FakeAssertionPlatform : HttpMessageHandler
 
         if (query["describe"] == "true")
         {
-            return Ok(new JsonObject { ["columns"] = new JsonArray(bulk.Columns.Select(c => (JsonNode?)JsonValue.Create(c)).ToArray()), ["numberOfRows"] = bulk.Rows.Count });
+            return Ok(new JsonObject
+            {
+                ["columns"] = new JsonArray(bulk.Columns.Select(c => (JsonNode?)JsonValue.Create(c)).ToArray()),
+                ["numberOfRows"] = DescribedRows.TryGetValue(id, out var described) ? described : bulk.Rows.Count,
+            });
         }
 
         var columns = query["curves"] is { Length: > 0 } curves ? curves.Split(',') : bulk.Columns;

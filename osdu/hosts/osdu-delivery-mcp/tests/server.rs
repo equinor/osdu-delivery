@@ -539,7 +539,7 @@ tests:
                 data.Curves.CurveID: DT
               check:
                 data.Curves.CurveUnit: "{partition}:reference-data--UnitOfMeasure:us%2Fft:"
-                data.Curves.TopDepth: { equals: 1023.0612, tolerance: 0.00005 }
+                data.Curves.TopDepth: { equals: 1250.4, tolerance: 0.00005 }
                 '[data.WellboreID, work-product-component--WellLog[data.WellboreID], data.Name]': { in: [COMPOSITE, PRESSURE], values: any }
                 data.CompanyID: ~
                 data.LogSource: { equals: OPERATOR, disabled: the log source is renamed next release }

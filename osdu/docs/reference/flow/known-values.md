@@ -22,8 +22,12 @@ keywords:
   - find a well log by its wellbore name
   - check curve values of a well log
   - locate a record by a value of its parent
+  - curve proof values
+  - curves
+  - curveIndex
 yamlPath: "(flowType: assertion) tests[].assert[].knownValues"
 related:
+  - delivery-flow-curve-proof-values
   - delivery-flow-assertion
   - delivery-guide-data-quality-tests
   - delivery-flow-dimension
@@ -46,7 +50,7 @@ sourceRefs:
 # Known values (knownValues): proof values of records found by what they hold
 
 A `knownValues` assertion holds records to values a source states about them without naming them by id: a QC sheet
-that says the COMPOSITE log of wellbore A/1-F-11 has a DT curve in `us/ft` from 1023.0612 m. Each row finds its record
+that says the COMPOSITE log of wellbore A/1-F-11 has a DT curve in `us/ft` from 1250.4 m. Each row finds its record
 by full paths and the values the record holds there (`locateBy`), then holds that record to its proof values (`check`),
 each a full path and the value, or the condition, the record has to hold there. Every path is a path in the OSDU record
 ([Full paths](#full-paths)).
@@ -67,7 +71,7 @@ each a full path and the value, or the condition, the record has to hold there. 
             - locateBy: { data.Curves.CurveID: DT }
               check:
                 data.Curves.CurveUnit: "{partition}:reference-data--UnitOfMeasure:us%2Fft:"
-                data.Curves.TopDepth: { equals: 1023.0612, tolerance: 0.00005 }
+                data.Curves.TopDepth: { equals: 1250.4, tolerance: 0.00005 }
                 data.LogSource: { equals: OPERATOR, disabled: the log source is renamed next release }
             - locateBy: { data.Curves.CurveID: GR }
               check:
@@ -84,6 +88,8 @@ each a full path and the value, or the condition, the record has to hold there. 
 | `tolerance`, `ignoreCase` | What a proof value takes when it says nothing itself: the tolerance where it compares a number, ignoreCase where it compares text. |
 | `warnWithin` | The [warning band](assertion.md#a-warning-band) every proof value comparing a number takes when it gives none: a distance (`5`) or a percentage (`10%`). |
 | `notFound` | The severity of a row whose record is not found: `error`, `warning` or `info`. Left out, the assertion's own, so such a row fails it. |
+| `curves` | The proof values of the record's bulk data in the Wellbore DDMS, curve by curve: a curve's value at a depth (`GR: { at: { 1500.1524: 74.2 } }`) and its measures (`count`, `min`, `max`, `first`, ...), every row taking the assertion's and adding its own. The test needs a `bulk` block. See [Curve proof values](curve-proof-values.md). |
+| `curveIndex` | The curve the bulk data's rows are indexed by: the key of `at`, and where `first` and `last` are read. Left out, the record's `data.ReferenceCurveID`. |
 
 A row is located by 1 to 8 paths and checks at most 60 proof values. No two rows are located alike, and a row is not
 located and checked by the same path.
@@ -129,7 +135,7 @@ most, and also by a value of the record, so it says which record the item is in.
 | `path: ~` | The path reads no value. |
 | `path: { <comparison>: <operand> }` | Every value the path reads meets the condition: `equals`, `notEquals`, `in`, `notIn`, `atLeast`, `atMost`, `greaterThan`, `lessThan`, `between`, `matches`, `notMatches`, `startsWith`, `endsWith`, `contains`, `notContains`, `exists`, `empty`, `type` or `length`, as a [field condition](assertion.md#conditions) takes them, with `tolerance` and `ignoreCase`. |
 | `path: { ..., values: any }` | One value the path reads meets it. |
-| `path: { equals: 1023.0612, warnWithin: 1% }` | As `equals`; a value off by no more than 1% of it differs only within the [warning band](assertion.md#a-warning-band). |
+| `path: { equals: 1250.4, warnWithin: 1% }` | As `equals`; a value off by no more than 1% of it differs only within the [warning band](assertion.md#a-warning-band). |
 | `path: { aggregate: count, except: [MD], equals: 20 }` | The aggregate (`min`, `max`, `sum`, `avg`, `count`, `distinct`) of the values the path reads, `except` the values listed, compares true: the curves of a log, the logs of a wellbore. |
 | `path: { ..., disabled: <why> }` | Not checked; the result counts it as disabled. |
 
@@ -141,7 +147,7 @@ through a reference: `(data.WellboreID holds no reference)`, or `(data.WellboreI
 | Verdict | When | Its example in the result |
 | --- | --- | --- |
 | holds | One record (or item) holds the row's values, and it holds every proof value. | none |
-| within the warning band | One record holds them, and every proof value it misses, it misses by no more than its `warnWithin`. | `differs within the warning band in 1 proof value(s): data.SamplingStart is 205.1304, expected it equals 200; 5.1304 above 200 (2.57%), within the warning band of 5%, so it warns` |
+| within the warning band | One record holds them, and every proof value it misses, it misses by no more than its `warnWithin`. | `differs within the warning band in 1 proof value(s): data.SamplingStart is 204.6, expected it equals 200; 4.6 above 200 (2.3%), within the warning band of 5%, so it warns` |
 | differs | One record holds them, and some proof values do not hold. | `differs in 2 proof value(s) of item 2 of data.Curves: data.Curves.CurveUnit is "dev:reference-data--UnitOfMeasure:API:", expected it equals "dev:reference-data--UnitOfMeasure:gAPI:"; ...` |
 | not found | No record holds them, at the first path the records run out. | `not found: no master-data--Wellbore record holds data.FacilityName "B/2-X-7"`, `not found: of the 2 records found with ..., none has data.Name "PRESSURE"`, `not found: 1 record with ... hold no item of data.Curves with data.Curves.CurveID "BS"` |
 | found more than once | Several records (or items) hold them. | `found 2 times: <id> holds its values; <id> differs in data.SamplingStart` |
@@ -187,6 +193,7 @@ a property cannot hold leave the test `errored`, each said once:
 
 ## See also
 
+- [Curve proof values](curve-proof-values.md): a row holding its log's curve data to what the source files state.
 - [Assertion flow](assertion.md): the tests known values are part of, and how a test is disabled and its proof values dated.
 - [Testing what OSDU holds](../guides/data-quality-tests.md#values-a-sheet-states-about-records-it-does-not-name): a sheet's rows as known values.
 - [Mapping lookups](mapping-lookups.md#how-each-line-is-asked): how a value is compared exactly in a search.

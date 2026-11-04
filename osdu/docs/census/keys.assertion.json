@@ -6,7 +6,7 @@
   "includeEnvelope": true,
   "generatedFrom": "osdu/docs/reference/flow/assertion.md and osdu/src/SqlFlow.Delivery/Documents/YamlModels.cs",
   "naming": "The loader deserializes with YamlDotNet's CamelCaseNamingConvention and refuses any key it does not know.",
-  "keyCount": 275,
+  "keyCount": 302,
   "keys": [
     {
       "path": "batch",
@@ -1167,6 +1167,100 @@
       "freeForm": true
     },
     {
+      "path": "tests[].assert[].knownValues.curves",
+      "type": "map",
+      "required": false,
+      "description": "The proof values of each record's bulk data, curve by curve, as <curve>: { <measure>: <proof value> }: the measures are count, missing, min, max, sum, avg, first, last, step and at (the value at a key of the index curve), each the number it equals or a comparison (equals, notEquals, atLeast, atMost, greaterThan, lessThan, between) with tolerance, warnWithin and disabled. The test needs a bulk block. Every row takes them, and adds its own."
+    },
+    {
+      "path": "tests[].assert[].knownValues.curves.<name>",
+      "type": "object",
+      "required": false,
+      "description": "The measures of the curve `<name>` (as the DDMS names it), each mapped to its proof value: count, missing, min, max, sum, avg, first, last, step, and at (the curve's value at keys of the index curve)."
+    },
+    {
+      "path": "tests[].assert[].knownValues.curves.<name>.count",
+      "type": "integer",
+      "required": false,
+      "description": "The rows the curve has a value in. A number it equals, or a comparison: { equals | notEquals | atLeast | atMost | greaterThan | lessThan | between: [low, high], tolerance, warnWithin, disabled }.",
+      "freeForm": true
+    },
+    {
+      "path": "tests[].assert[].knownValues.curves.<name>.missing",
+      "type": "integer",
+      "required": false,
+      "description": "The rows the curve has no value in (null, NaN or infinite). A number it equals, or a comparison: { equals | notEquals | atLeast | atMost | greaterThan | lessThan | between: [low, high], tolerance, warnWithin, disabled }.",
+      "freeForm": true
+    },
+    {
+      "path": "tests[].assert[].knownValues.curves.<name>.min",
+      "type": "number",
+      "required": false,
+      "description": "The curve's smallest value; for a curve of ISO 8601 dates, its earliest. A number it equals, or a comparison: { equals | notEquals | atLeast | atMost | greaterThan | lessThan | between: [low, high], tolerance, warnWithin, disabled }.",
+      "freeForm": true
+    },
+    {
+      "path": "tests[].assert[].knownValues.curves.<name>.max",
+      "type": "number",
+      "required": false,
+      "description": "The curve's largest value; for a curve of ISO 8601 dates, its latest. A number it equals, or a comparison: { equals | notEquals | atLeast | atMost | greaterThan | lessThan | between: [low, high], tolerance, warnWithin, disabled }.",
+      "freeForm": true
+    },
+    {
+      "path": "tests[].assert[].knownValues.curves.<name>.sum",
+      "type": "number",
+      "required": false,
+      "description": "The sum of the curve's numbers. A number it equals, or a comparison: { equals | notEquals | atLeast | atMost | greaterThan | lessThan | between: [low, high], tolerance, warnWithin, disabled }.",
+      "freeForm": true
+    },
+    {
+      "path": "tests[].assert[].knownValues.curves.<name>.avg",
+      "type": "number",
+      "required": false,
+      "description": "The mean of the curve's numbers. A number it equals, or a comparison: { equals | notEquals | atLeast | atMost | greaterThan | lessThan | between: [low, high], tolerance, warnWithin, disabled }.",
+      "freeForm": true
+    },
+    {
+      "path": "tests[].assert[].knownValues.curves.<name>.first",
+      "type": "number",
+      "required": false,
+      "description": "The index (depth or time) at the first row the curve has a value in: where it starts, such as its top depth. A number it equals, or a comparison: { equals | notEquals | atLeast | atMost | greaterThan | lessThan | between: [low, high], tolerance, warnWithin, disabled }.",
+      "freeForm": true
+    },
+    {
+      "path": "tests[].assert[].knownValues.curves.<name>.last",
+      "type": "number",
+      "required": false,
+      "description": "The index (depth or time) at the last row the curve has a value in: where it ends, such as its base depth. A number it equals, or a comparison: { equals | notEquals | atLeast | atMost | greaterThan | lessThan | between: [low, high], tolerance, warnWithin, disabled }.",
+      "freeForm": true
+    },
+    {
+      "path": "tests[].assert[].knownValues.curves.<name>.step",
+      "type": "number",
+      "required": false,
+      "description": "Every difference between the curve's numbers row after row, taken as they are written, so depths 0.1524 apart are 0.1524 apart. Takes no notEquals. A number it equals, or a comparison: { equals | notEquals | atLeast | atMost | greaterThan | lessThan | between: [low, high], tolerance, warnWithin, disabled }.",
+      "freeForm": true
+    },
+    {
+      "path": "tests[].assert[].knownValues.curves.<name>.at",
+      "type": "map",
+      "required": false,
+      "description": "The curve's value at keys of the index curve: <key>: <proof value>, such as { 1500.1524: 74.2 }. A key is a depth, or an ISO 8601 time, matched exactly as written; at most 1000 a curve."
+    },
+    {
+      "path": "tests[].assert[].knownValues.curves.<name>.at.<name>",
+      "type": "object",
+      "required": false,
+      "description": "The curve's value in the row whose index holds the key `<name>` (a depth, or a time): a value it equals, or a comparison { equals | notEquals | atLeast | atMost | greaterThan | lessThan | between, tolerance, warnWithin, disabled }.",
+      "freeForm": true
+    },
+    {
+      "path": "tests[].assert[].knownValues.curveIndex",
+      "type": "string",
+      "required": false,
+      "description": "The curve the rows of each record's bulk data are indexed by, which a curve's first, last and at values are read at. Left out, the curve the record names at data.ReferenceCurveID."
+    },
+    {
       "path": "tests[].assert[].knownValues.rows",
       "type": "list",
       "required": false,
@@ -1202,6 +1296,94 @@
       "type": "object",
       "required": false,
       "description": "A proof value at the path `<name>`.",
+      "freeForm": true
+    },
+    {
+      "path": "tests[].assert[].knownValues.rows[].curves",
+      "type": "map",
+      "required": false,
+      "description": "The proof values of each record's bulk data, curve by curve, as <curve>: { <measure>: <proof value> }: the measures are count, missing, min, max, sum, avg, first, last, step and at (the value at a key of the index curve), each the number it equals or a comparison (equals, notEquals, atLeast, atMost, greaterThan, lessThan, between) with tolerance, warnWithin and disabled. The test needs a bulk block. Added to the ones the assertion lists for every row."
+    },
+    {
+      "path": "tests[].assert[].knownValues.rows[].curves.<name>",
+      "type": "object",
+      "required": false,
+      "description": "The measures of the curve `<name>` (as the DDMS names it), each mapped to its proof value: count, missing, min, max, sum, avg, first, last, step, and at (the curve's value at keys of the index curve)."
+    },
+    {
+      "path": "tests[].assert[].knownValues.rows[].curves.<name>.count",
+      "type": "integer",
+      "required": false,
+      "description": "The rows the curve has a value in. A number it equals, or a comparison: { equals | notEquals | atLeast | atMost | greaterThan | lessThan | between: [low, high], tolerance, warnWithin, disabled }.",
+      "freeForm": true
+    },
+    {
+      "path": "tests[].assert[].knownValues.rows[].curves.<name>.missing",
+      "type": "integer",
+      "required": false,
+      "description": "The rows the curve has no value in (null, NaN or infinite). A number it equals, or a comparison: { equals | notEquals | atLeast | atMost | greaterThan | lessThan | between: [low, high], tolerance, warnWithin, disabled }.",
+      "freeForm": true
+    },
+    {
+      "path": "tests[].assert[].knownValues.rows[].curves.<name>.min",
+      "type": "number",
+      "required": false,
+      "description": "The curve's smallest value; for a curve of ISO 8601 dates, its earliest. A number it equals, or a comparison: { equals | notEquals | atLeast | atMost | greaterThan | lessThan | between: [low, high], tolerance, warnWithin, disabled }.",
+      "freeForm": true
+    },
+    {
+      "path": "tests[].assert[].knownValues.rows[].curves.<name>.max",
+      "type": "number",
+      "required": false,
+      "description": "The curve's largest value; for a curve of ISO 8601 dates, its latest. A number it equals, or a comparison: { equals | notEquals | atLeast | atMost | greaterThan | lessThan | between: [low, high], tolerance, warnWithin, disabled }.",
+      "freeForm": true
+    },
+    {
+      "path": "tests[].assert[].knownValues.rows[].curves.<name>.sum",
+      "type": "number",
+      "required": false,
+      "description": "The sum of the curve's numbers. A number it equals, or a comparison: { equals | notEquals | atLeast | atMost | greaterThan | lessThan | between: [low, high], tolerance, warnWithin, disabled }.",
+      "freeForm": true
+    },
+    {
+      "path": "tests[].assert[].knownValues.rows[].curves.<name>.avg",
+      "type": "number",
+      "required": false,
+      "description": "The mean of the curve's numbers. A number it equals, or a comparison: { equals | notEquals | atLeast | atMost | greaterThan | lessThan | between: [low, high], tolerance, warnWithin, disabled }.",
+      "freeForm": true
+    },
+    {
+      "path": "tests[].assert[].knownValues.rows[].curves.<name>.first",
+      "type": "number",
+      "required": false,
+      "description": "The index (depth or time) at the first row the curve has a value in: where it starts, such as its top depth. A number it equals, or a comparison: { equals | notEquals | atLeast | atMost | greaterThan | lessThan | between: [low, high], tolerance, warnWithin, disabled }.",
+      "freeForm": true
+    },
+    {
+      "path": "tests[].assert[].knownValues.rows[].curves.<name>.last",
+      "type": "number",
+      "required": false,
+      "description": "The index (depth or time) at the last row the curve has a value in: where it ends, such as its base depth. A number it equals, or a comparison: { equals | notEquals | atLeast | atMost | greaterThan | lessThan | between: [low, high], tolerance, warnWithin, disabled }.",
+      "freeForm": true
+    },
+    {
+      "path": "tests[].assert[].knownValues.rows[].curves.<name>.step",
+      "type": "number",
+      "required": false,
+      "description": "Every difference between the curve's numbers row after row, taken as they are written, so depths 0.1524 apart are 0.1524 apart. Takes no notEquals. A number it equals, or a comparison: { equals | notEquals | atLeast | atMost | greaterThan | lessThan | between: [low, high], tolerance, warnWithin, disabled }.",
+      "freeForm": true
+    },
+    {
+      "path": "tests[].assert[].knownValues.rows[].curves.<name>.at",
+      "type": "map",
+      "required": false,
+      "description": "The curve's value at keys of the index curve: <key>: <proof value>, such as { 1500.1524: 74.2 }. A key is a depth, or an ISO 8601 time, matched exactly as written; at most 1000 a curve."
+    },
+    {
+      "path": "tests[].assert[].knownValues.rows[].curves.<name>.at.<name>",
+      "type": "object",
+      "required": false,
+      "description": "The curve's value in the row whose index holds the key `<name>` (a depth, or a time): a value it equals, or a comparison { equals | notEquals | atLeast | atMost | greaterThan | lessThan | between, tolerance, warnWithin, disabled }.",
       "freeForm": true
     },
     {
@@ -1606,13 +1788,13 @@
       "path": "tests[].bulk",
       "type": "object",
       "required": false,
-      "description": "Read each record's bulk data from the Wellbore DDMS, for rowCount, columns, column and monotonic assertions. The kind must be one the DDMS keeps bulk data for (a WellLog, a WellboreTrajectory, a PPFGDataset, a WellPressureTestRawMeasurement)."
+      "description": "Read each record's bulk data from the Wellbore DDMS, for rowCount, columns, column and monotonic assertions and curve proof values. The kind must be one the DDMS keeps bulk data for (a WellLog, a WellboreTrajectory, a PPFGDataset, a WellPressureTestRawMeasurement)."
     },
     {
       "path": "tests[].bulk.columns",
       "type": "list",
       "required": false,
-      "description": "The columns (curves) read; left out, those the assertions name; listed, they must include every column the assertions name (a list that leaves one out is refused when the flow loads)."
+      "description": "The columns (curves) read; left out, those the assertions name; listed, they must include every column the assertions and curve proof values name (a list that leaves one out is refused when the flow loads)."
     },
     {
       "path": "tests[].bulk.columns[]",

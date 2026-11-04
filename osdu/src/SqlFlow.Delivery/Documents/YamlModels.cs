@@ -1585,14 +1585,25 @@ internal sealed class AssertionKnownValuesYaml
     public bool? IgnoreCase { get; set; }
 
     public string? NotFound { get; set; }
+
+    // The proof values every row holds its record's bulk data to: each curve, mapped to its measures and the proof value of each.
+    public Dictionary<string, object?>? Curves { get; set; }
+
+    // The curve the rows of each record's bulk data are indexed by, where the record names none at data.ReferenceCurveID.
+    public string? CurveIndex { get; set; }
 }
 
-/// <summary>One row of known values: the full paths and values it is located by and checked in, and why it is disabled, when it is.</summary>
+/// <summary>
+/// One row of known values: the full paths and values it is located by and checked in, the proof values of its record's
+/// bulk data, and why it is disabled, when it is.
+/// </summary>
 internal sealed class AssertionKnownRowYaml
 {
     public Dictionary<string, object?>? LocateBy { get; set; }
 
     public Dictionary<string, object?>? Check { get; set; }
+
+    public Dictionary<string, object?>? Curves { get; set; }
 
     public string? Disabled { get; set; }
 }
