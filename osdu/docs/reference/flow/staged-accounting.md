@@ -20,17 +20,27 @@ keywords:
   - ledger reason
   - record table
   - values
+  - sql of the staged rows
+  - source sql of an assertion
+  - show the rows in sql
+  - gaps between staged data and osdu
+  - query the missing rows in ssms
 yamlPath: "(flowType: assertion) tests[].assert[].delivered with staged, explained, values, exact, interface"
 related:
   - delivery-flow-assertion
   - delivery-flow-staged-proof-values
   - delivery-concept-ledger
   - delivery-flow-removal
+  - delivery-concept-gui-build
 sourceRefs:
   - osdu/src/SqlFlow.Delivery/Documents/AssertionDocumentMapper.cs
   - osdu/src/SqlFlow.Delivery/Model/AssertionFlowDefinition.cs
   - osdu/src/SqlFlow.Delivery/Engine/Assertions/StagedAccounting.cs
   - osdu/src/SqlFlow.Delivery/Engine/Assertions/StagedDeliveries.cs
+  - osdu/src/SqlFlow.Delivery/Engine/Assertions/TestResult.cs
+  - osdu/src/SqlFlow.Delivery/Source/SourceQuery.cs
+  - osdu/src/SqlFlow.Delivery.ControlPlane/Api/DeliveryAssertionEndpoints.cs
+  - osdu/gui/src/features/delivery/assertions/AssertionSourceSql.tsx
   - osdu/src/SqlFlow.Delivery/Engine/DeliveryFlowDocuments.cs
   - osdu/src/SqlFlow.Delivery/Model/MappingDefinition.cs
 ---
@@ -122,6 +132,40 @@ The checked count is the rows expected (staged, not marked deleted); the value i
 the unexplained rows first, then the records no staged row accounts for, then the rows held back, each by its OSDU id (or
 its key) and its label, up to the flow's `examples`. The reasons the ledger gave are grouped by state and problem, the five
 most common named with how many rows share each.
+
+## The rows in the source
+
+A check that accounts for staged rows names the rows it lists by their keys, and keeps where it read them, so the GUI shows
+them as the T-SQL that reads them from the delivery flow's own tables, to copy into SSMS: what the source holds of each row
+that is not in OSDU, before the mapping renders it. The control plane writes it with the writer of a mapping's source query
+([the Mappings page](../concepts/gui-build.md#mappings)), from what the run kept:
+
+- **The delivery flow** of that name in the repository the assertion flow is synced from, bound to the partition the run
+  tested and to the interface it read.
+- **The scope**: the values the run read the rows under, `values` and then the flow's defaults.
+- **The rows**: **Rows listed**, the rows the check lists by their keys (the unexplained rows, then those held back, up to
+  the flow's `examples`, as many as a request carries), or **Every staged row** of the scope.
+
+Each statement selects each row's key, every column the mapping reads and the file and row the row was landed from, leaving
+out the rows marked deleted; a child table is left joined, so a row with no child rows still shows, and each child table
+beyond one has a statement of its own. Nothing is run and no row is read: the script is for the reader to run.
+
+| Where | How |
+| --- | --- |
+| The dashboard | An open assertion's check shows **Show the rows in SQL** under its failing records, which opens the query over the page. A downloaded dashboard has none: it cannot ask the control plane. |
+| A run's report | An opened check shows **Show the rows in SQL**, and the query in place. |
+| The API | `POST /api/v1/delivery/assertion-runs/{assertionRunId}/source-sql` with `test`, `assertion` (the check's position in its test, from 0), `rows` (`listed`, the default, or `all`) and for every row `maxRows` (0, the default, for all of them). It answers as a mapping's source query does ([the routes](../concepts/api-flow-kinds.md#assertions-dimensions-and-inventories)). |
+
+A record the test's query finds that no staged row accounts for (`exact`) has no row, so no key: it is not among the rows
+listed. Only this assertion has a query of its rows: the others read OSDU, and bulk data and curve proof values are read
+from the Wellbore DDMS, whose data no staged table holds. A result recorded before a run kept its rows' keys offers no
+query; run the test again.
+
+| Answer | When |
+| --- | --- |
+| 404 | The run, the test or the check is not there, or the delivery flow is not an active flow of the repository: `Delivery flow '<flow>', whose rows the check read, is not an active flow of the repository '<assertion flow>' is synced from; sync the repository, then ask again.` |
+| 409 | The check read no staged rows (`'<check>' reads no delivery flow's staged rows, so there are none to query; ...`), it lists none by its key and `listed` is asked, or the delivery flow no longer takes the values the run read it under (`The rows '<check>' read cannot be queried in '<flow>' as it is now: ...`). |
+| 400 | No test or check is named, `rows` is neither `listed` nor `all`, or `maxRows` is below 0. |
 
 ## Refused
 

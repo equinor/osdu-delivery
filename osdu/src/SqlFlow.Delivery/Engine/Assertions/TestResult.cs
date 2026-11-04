@@ -8,7 +8,22 @@ namespace SqlFlow.Delivery.Engine.Assertions;
 /// <param name="Id">The record's OSDU id, or for a value a test found without one (a group, a legal tag), what it is.</param>
 /// <param name="Value">What the record held there, clipped to <see cref="TestResults.MaxQuoted"/> characters.</param>
 /// <param name="Reason">Why it fails the assertion.</param>
-public sealed record AssertionExample(string? Id, string? Value, string Reason);
+/// <param name="Key">
+/// For a row of a delivery flow's staged data, its key parts in the flow's key order: what a query of the rows the assertion
+/// read narrows to (<see cref="AssertionOutcome.Staged"/>). Null for an example that is not a staged row, and for a row with a
+/// blank key column, which no key names.
+/// </param>
+public sealed record AssertionExample(string? Id, string? Value, string Reason, IReadOnlyList<string>? Key = null);
+
+/// <summary>
+/// The staged rows an assertion read (osdu/docs/reference/flow/staged-accounting.md, The rows in the source): the delivery
+/// flow, its interface, and the values of its parameters the rows were read under, so the T-SQL that shows them in the flow's
+/// own tables is written from what the run read.
+/// </summary>
+/// <param name="Flow">The delivery flow, by name.</param>
+/// <param name="Interface">The interface of that flow, for a source with interfaces.</param>
+/// <param name="Values">The flow's parameter values the rows were read under: the assertion's, then the flow's defaults.</param>
+public sealed record StagedScope(string Flow, string? Interface, IReadOnlyDictionary<string, string> Values);
 
 /// <summary>How one assertion of a test came out: what it expected, what it found, and the records that failed it.</summary>
 public sealed record AssertionOutcome
@@ -51,6 +66,9 @@ public sealed record AssertionOutcome
 
     /// <summary>True when the examples were cut back so the result stays within what a result keeps.</summary>
     public bool ExamplesTrimmed { get; init; }
+
+    /// <summary>The staged rows the assertion read, for a staged delivered assertion; null for an assertion that reads OSDU alone.</summary>
+    public StagedScope? Staged { get; init; }
 
     public static AssertionOutcome Skipped(int index, Model.TestAssertion assertion, string why) => new()
     {

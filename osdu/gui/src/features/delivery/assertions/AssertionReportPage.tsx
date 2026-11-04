@@ -209,7 +209,7 @@ export default function AssertionReportPage() {
         : (
           <Card className="gap-0 divide-y overflow-hidden rounded-lg p-0" data-testid="assertion-report-results">
             {shownResults.map((result) => (
-              <ResultRow key={result.test} result={result} initiallyOpen={result.outcome === "failed" || result.outcome === "errored"} />
+              <ResultRow key={result.test} result={result} assertionRunId={run.assertionRunId} initiallyOpen={result.outcome === "failed" || result.outcome === "errored"} />
             ))}
           </Card>
         )}

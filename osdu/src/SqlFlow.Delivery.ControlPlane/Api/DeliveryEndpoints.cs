@@ -680,6 +680,9 @@ public static class DeliveryEndpoints
         delivery.MapPost("/flows/{pipelineId:guid}/preview", PreviewAsync).WithName("PreviewDeliveryFlowRecord");
         delivery.MapPost("/flows/{pipelineId:guid}/scope-values", ScopeValuesAsync).WithName("ListDeliveryFlowScopeValues");
         DeliveryValueCheckEndpoints.MapWrites(delivery);
+
+        // The staged rows a check of an assertion run read, as the T-SQL a mapping's source query is written as.
+        DeliveryAssertionEndpoints.MapWrites(delivery);
         DeliveryIssueEndpoints.MapWrites(delivery);
 
         // What reversing a run or a submission would reach, and the reverse run that puts OSDU back as it was before it.

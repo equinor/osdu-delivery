@@ -11,6 +11,8 @@ import { ValueCheckScope } from "../ValueCheckBar";
 import { flowScope, type ValueCheckSession } from "../useValueCheck";
 import { formatCount } from "../valueCheck";
 import type { OverviewPart } from "./OverviewCanvas";
+import { PartLineageButton } from "./OverviewLineage";
+import type { PartTarget } from "./partTargets";
 import type { OutlineCard } from "./outlineModel.ts";
 import { PREVIEW_ROWS, previewColumns, recordColumnsOf, rowsOfRecord, rowsSourceOf, type RowsSource } from "./tableRows.ts";
 
@@ -130,7 +132,7 @@ function Said({ source, card, read, partition }: { source: RowsSource; card: Out
  * table on the canvas lists them, then the rest muted. Pointing at a column's heading lights its lines on the canvas, a click
  * opens the field's details, and the rows of the record shown, when one is, are marked. Nothing is sent or stored.
  */
-export function OverviewRows({ card, focus, session, partition, tables, shownKey, onPoint, onPick, onClose }: {
+export function OverviewRows({ card, focus, session, partition, tables, shownKey, lineage, onPoint, onPick, onClose }: {
   card: OutlineCard;
   /** The field the preview was asked for from, whose column is brought into view and marked. */
   focus: string | null;
@@ -139,6 +141,8 @@ export function OverviewRows({ card, focus, session, partition, tables, shownKey
   tables: readonly DeliverySourceTable[] | null;
   /** The key of the record the canvas shows, part by part; null when none is shown. */
   shownKey: string[] | null;
+  /** The table's node in lineage. */
+  lineage: readonly PartTarget[];
   onPoint: (part: OverviewPart | null) => void;
   onPick: (part: OverviewPart) => void;
   onClose: () => void;
@@ -180,6 +184,7 @@ export function OverviewRows({ card, focus, session, partition, tables, shownKey
         {loading && <Loader2 className="size-3.5 animate-spin text-muted-foreground" aria-label="Reading the rows" />}
         <span className="ml-auto flex items-center gap-2">
           {source.from === "table" && <ValueCheckScope session={session} />}
+          <PartLineageButton targets={lineage} named={card.title} />
           <Button variant="ghost" size="icon-xs" aria-label="Close the rows" title="Close" onClick={onClose} data-testid="mapping-overview-rows-close"><X /></Button>
         </span>
       </header>

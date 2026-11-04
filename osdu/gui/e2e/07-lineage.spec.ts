@@ -172,6 +172,50 @@ test.describe.serial("lineage", () => {
     await expect(graph.getByText("LogCurveFamily", { exact: true }).first()).toBeVisible({ timeout: 30_000 });
   });
 
+  test("a mapping's overview opens what it reads in lineage, from a part's menu and from its panel", async ({ adminPage }) => {
+    await adminPage.goto("/delivery/documents");
+    const row = adminPage.getByTestId("delivery-mappings-table").getByTestId("table-row").filter({ hasText: WELL_LOG_MAPPING }).first();
+    await row.click();
+    const overview = adminPage.getByTestId("mapping-overview");
+
+    // The record table is named once the flow's tables are read, which is when the canvas knows the node it is.
+    const table = overview.getByTestId("mapping-overview-card-dataset");
+    await expect(table.locator("text.title")).toHaveText("silver.WellLog", { timeout: 30_000 });
+
+    // A right click on it offers Open in lineage, holding the picker for the node the flow reads, in the repository whose
+    // ingestion flow populates it; the graph opens on it with that flow.
+    await table.locator("g.head").click({ button: "right" });
+    await adminPage.getByTestId("mapping-overview-menu-lineage").click();
+    await expect(adminPage.getByTestId("lineage-jump-menu")).toContainText("silver.WellLog");
+    const populated = adminPage.getByTestId("lineage-jump-option").filter({ hasText: "populates" });
+    await expect(populated).toHaveCount(1, { timeout: 30_000 });
+    await populated.click();
+    const graph = adminPage.getByTestId("page-lineage-graph");
+    await expect(graph).toBeVisible();
+    await expect(graph.getByText("welldb-welllog-02-header-ing", { exact: true }).first()).toBeVisible({ timeout: 30_000 });
+    await expect(graph.getByText(DELIVERY_FLOW, { exact: true }).first()).toBeVisible();
+
+    // A cache table's panel carries the jump: the partition's cache type, which the cache flows write.
+    await adminPage.goBack();
+    await overview.locator('[data-testid="mapping-overview-card-cache.UnitOfMeasure"] g.head').click();
+    const inspector = overview.getByTestId("mapping-overview-inspector");
+    await inspector.getByTestId("mapping-overview-inspector-lineage").getByTestId("search-open-graph").click();
+    await expect(adminPage.getByTestId("lineage-jump-menu")).toContainText("UnitOfMeasure");
+    await expect(adminPage.getByTestId("lineage-jump-option")).toContainText(`${PARTITION}.cache`, { timeout: 30_000 });
+    // Escape closes the picker first, and leaves the panel it was opened from.
+    await adminPage.keyboard.press("Escape");
+    await expect(adminPage.getByTestId("lineage-jump-menu")).toHaveCount(0);
+    await expect(inspector.getByTestId("mapping-overview-inspector-close")).toBeVisible();
+
+    // The curves come from several nodes, each a picker of its own: the child table the section repeats, and the cache.
+    await overview.getByTestId("mapping-overview-row-data.Curves").click({ button: "right" });
+    await adminPage.getByTestId("mapping-overview-menu-lineage").click();
+    await expect(adminPage.getByTestId("mapping-overview-menu-lineage-cache.UnitOfMeasure")).toBeVisible();
+    await adminPage.getByTestId("mapping-overview-menu-lineage-dataset.curves").click();
+    await expect(adminPage.getByTestId("lineage-jump-menu")).toContainText("silver.WellLogCurve");
+    await expect(adminPage.getByTestId("lineage-jump-option").filter({ hasText: "populates" })).toHaveCount(1, { timeout: 30_000 });
+  });
+
   test("the catalog tree groups datasets by system, partition and group", async ({ adminPage }) => {
     await adminPage.goto("/catalog");
     const tree = adminPage.getByRole("tree", { name: "Catalog tree" });

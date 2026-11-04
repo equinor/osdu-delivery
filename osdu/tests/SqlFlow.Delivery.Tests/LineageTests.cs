@@ -212,6 +212,23 @@ public sealed class LineageTests : IDisposable
     }
 
     [Fact]
+    public void A_tables_object_key_is_the_node_a_delivery_flows_read_lands_on_which_its_ingestion_flow_writes()
+    {
+        // The mapping overview opens a source table's node in lineage by this key, however the flow quotes the table's name
+        // (osdu/docs/reference/concepts/mapping-overview.md, Opening a part in lineage).
+        var record = Describe("flows/welldb-welllog-03-header-delivery.yaml").Objects[0];
+        var key = DeliveryLineage.ObjectKey(record.ConnectionReference, $"{record.Database}.{record.Schema}.{record.Name}");
+        Assert.Equal(key, DeliveryLineage.ObjectKey(record.ConnectionReference, $"[{record.Database}].[{record.Schema}].[{record.Name}]"));
+
+        var (_, report) = Scan();
+        Assert.Contains(report.Edges, e => e.Flow == "welldb-welllog-03-header-delivery" && e.Relation == LineageRelation.Reads && e.ObjectKey == key);
+        Assert.Contains(report.Edges, e => e.Flow == "welldb-welllog-02-header-ing" && e.Relation != LineageRelation.Reads && e.ObjectKey == key);
+
+        // A literal connection string is identified by a hash, so what it carries never reaches the key.
+        Assert.DoesNotContain("secret", DeliveryLineage.ObjectKey("Server=db;Password=secret", "OsduData.silver.WellLog"), StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
     public void A_delivery_flow_reads_its_tables_payload_files_and_mapping_and_writes_its_mappings_type()
     {
         var lineage = Describe("flows/welldb-welllog-03-header-delivery.yaml");

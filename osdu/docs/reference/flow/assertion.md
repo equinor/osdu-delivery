@@ -737,7 +737,8 @@ Where to read it:
   what they need, which downloads as one page to present ([the dashboard](assertion-sets.md#the-dashboard)). An assertion
   flow's pipeline has an **Assertions** tab (the same dashboard of its assertions), a **History** tab (its assertions
   against its runs) and a **Reports** tab (its runs); a report page runs the
-  assertions not passing again. A report page shows "The run stopped" only for a run that
+  assertions not passing again. A check that accounts for staged rows shows them in SQL, on the dashboard and in a
+  report ([the rows in the source](staged-accounting.md#the-rows-in-the-source)). A report page shows "The run stopped" only for a run that
   stopped (cancelled, or errored with fewer results than tests); a run whose tests errored shows its reason instead.
 - The CLI: [sqlflow assertions](../cli/assertions.md) `list`, `status` and `report`.
 - The API, every route a `GET` under `/api/v1/delivery`: `/assertions` (the board of every flow),
@@ -745,7 +746,9 @@ Where to read it:
   `/flows/{pipelineId}/assertion-matrix` (tests against runs), `/flows/{pipelineId}/assertions/{test}/history`,
   `/assertion-runs/{id}` (a run with every result), `/assertion-runs/{id}/report?format=json|md|html|junit`,
   `/assertion-results?ids=` (results whole, by the ids the board gives) and a set's `/assertion-sets/{set}/report`. A read is
-  in the partition `?partition=` names, else the `X-Osdu-Partition` header's, else the one a run would test.
+  in the partition `?partition=` names, else the `X-Osdu-Partition` header's, else the one a run would test. The SQL of
+  the staged rows a check read is a `POST` to `/assertion-runs/{id}/source-sql`
+  ([the rows in the source](staged-accounting.md#the-rows-in-the-source)).
 
 A report renders as JSON, Markdown, self-contained HTML or JUnit XML (a suite per kind, a case per test: failed is a
 failure, errored an error, skipped skipped, warned passes with its warnings in its output). Each check reads once in a

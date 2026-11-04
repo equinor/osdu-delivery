@@ -69,6 +69,50 @@ export function checkReading(outcome: CheckFacts): CheckReading {
   return { expected: expected.trim(), qualifiers, found, why };
 }
 
+/** What a check keeps of the staged rows it read: the parts of a check's outcome (DeliveryAssertionOutcome) a query of them reads. */
+export interface StagedFacts {
+  index?: number;
+  label: string;
+  failing?: number | null;
+  examples?: readonly { key?: readonly string[] | null }[];
+  staged?: { flow: string; interface?: string | null; values: Record<string, string> } | null;
+}
+
+/** The staged rows a check read, as a query of them names them: the check, where the rows are, and how many it lists. */
+export interface StagedRows {
+  index: number;
+  label: string;
+  flow: string;
+  interface: string | null;
+  values: Record<string, string>;
+  /** How many rows it lists by their keys: what a query of the rows it lists narrows to. */
+  listed: number;
+  /** How many rows did not hold, of which it lists the first; null when it does not say. */
+  failing: number | null;
+}
+
+/** The staged rows a check read, or null for a check that reads OSDU alone (every check but a staged delivered one). */
+export function stagedRowsOf(check: StagedFacts): StagedRows | null {
+  if (check.staged === null || check.staged === undefined || check.index === undefined) {
+    return null;
+  }
+
+  return {
+    index: check.index,
+    label: check.label,
+    flow: check.staged.flow,
+    interface: check.staged.interface ?? null,
+    values: check.staged.values,
+    listed: (check.examples ?? []).filter((example) => (example.key ?? []).length > 0).length,
+    failing: check.failing ?? null,
+  };
+}
+
+/** The values a scope was read under, as a line names them: `logSource = COMPOSITE, project = NORTH`. */
+export function scopeText(values: Record<string, string>): string {
+  return Object.entries(values).map(([name, value]) => `${name} = ${value}`).join(", ");
+}
+
 /**
  * The start the names of a set's flows share, up to a hyphen (`welldb-welllog-assertion-`), which a list of them can leave
  * out so the part that tells them apart shows; empty for one flow, or when the names share none.

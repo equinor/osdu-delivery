@@ -68,13 +68,14 @@ internal sealed class StagedAccountingEvaluator(int index, DeliveredAssertion as
 
             if (tally.Rows + batch.Count > test.MaxRecords)
             {
+                // The rows were read, if not accounted for, so where they are is kept: a query of the scope shows them.
                 return AssertionOutcome.Errored(Index, Assertion, string.Create(CultureInfo.InvariantCulture,
-                    $"{staged.Flow.Label} stages more than {test.MaxRecords} rows in the scope read, more than this test reads; raise maxRecords (at most {AssertionDefaults.MaxRecordsCeiling}), or read a narrower scope with values."));
+                    $"{staged.Flow.Label} stages more than {test.MaxRecords} rows in the scope read, more than this test reads; raise maxRecords (at most {AssertionDefaults.MaxRecordsCeiling}), or read a narrower scope with values.")) with { Staged = staged.Scope };
             }
         }
 
         await tally.AddAsync(ledger, batch, _found, ct).ConfigureAwait(false);
-        return Judge(tally);
+        return Judge(tally) with { Staged = staged.Scope };
     }
 
     private AssertionOutcome Judge(Tally tally)
@@ -200,11 +201,13 @@ internal sealed class StagedAccountingEvaluator(int index, DeliveredAssertion as
                     Accounted.Add(id);
                 }
 
+                // Each example names its row's key, which a query of the rows in the flow's own tables narrows to.
+                var rowKey = row.Key.Values;
                 if (record is null)
                 {
                     NeverPlanned++;
                     Note(UnexplainedExamples, new AssertionExample(id ?? shown, TestResults.Quote(shown),
-                        $"is staged, and the ledger of {Label} holds no record of it: no run has planned it"));
+                        $"is staged, and the ledger of {Label} holds no record of it: no run has planned it", rowKey));
                     continue;
                 }
 
@@ -215,7 +218,7 @@ internal sealed class StagedAccountingEvaluator(int index, DeliveredAssertion as
                         string.Create(CultureInfo.InvariantCulture, $"is delivered by {Label} as {id ?? "no id"}")
                         + (record.TargetVersion is { } version ? string.Create(CultureInfo.InvariantCulture, $" (version {version})") : string.Empty)
                         + (record.LastDeliveredUtc is { } when ? string.Create(CultureInfo.InvariantCulture, $" on {when:yyyy-MM-dd HH:mm}Z") : string.Empty)
-                        + ", and the test's query does not find it" + Where(record)));
+                        + ", and the test's query does not find it" + Where(record), rowKey));
                     continue;
                 }
 
@@ -223,7 +226,7 @@ internal sealed class StagedAccountingEvaluator(int index, DeliveredAssertion as
                 var why = Why(record);
                 var reason = (record.Status, record.ProblemHash);
                 Reasons[reason] = Reasons.TryGetValue(reason, out var known) ? (known.Text, known.Count + 1) : (why.Length > 120 ? why[..120] + "..." : why, 1);
-                Note(ExplainedExamples, new AssertionExample(id ?? shown, TestResults.Quote(shown), why + Where(record)));
+                Note(ExplainedExamples, new AssertionExample(id ?? shown, TestResults.Quote(shown), why + Where(record), rowKey));
             }
         }
 

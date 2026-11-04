@@ -3,7 +3,7 @@
 // board the control plane serves, with no import of the workbench, so the dashboard the GUI shows and the one its download
 // carries are computed by the same code, and the unit tests run it as it is.
 
-import { checkReading, type CheckFacts } from "../assertionReading.ts";
+import { checkReading, type CheckFacts, type StagedFacts } from "../assertionReading.ts";
 
 // What the model reads of the control plane's answers, by shape: the board (DeliveryAssertionBoard) and a test's result
 // whole (DeliveryTestResult) fit these as they are.
@@ -66,11 +66,11 @@ export interface Board {
   flows: BoardFlow[];
 }
 
-/** A check's outcome in a result. */
-export interface CheckOutcome extends CheckFacts {
+/** A check's outcome in a result, with what it keeps of the staged rows it read, when it read any. */
+export interface CheckOutcome extends CheckFacts, StagedFacts {
   label: string;
   severity: string;
-  examples?: { id?: string | null; value?: string | null; reason: string }[];
+  examples?: { id?: string | null; value?: string | null; reason: string; key?: string[] | null }[];
   examplesTrimmed?: boolean;
 }
 

@@ -10,7 +10,12 @@ namespace SqlFlow.Delivery.Engine.Assertions;
 /// <param name="Flow">The delivery flow, bound to the run's partition and the assertion's interface.</param>
 /// <param name="Mapping">The mapping the flow renders with: the source system its delivery keys are derived under and how its OSDU ids are made.</param>
 /// <param name="Source">The flow's record table, read under the assertion's values, as its delivery reads it.</param>
-public sealed record StagedDelivery(FlowDefinition Flow, MappingDefinition Mapping, IIngestionSource Source);
+/// <param name="Values">The flow's parameter values the record table is read under: the assertion's, tokens filled, then the flow's defaults.</param>
+public sealed record StagedDelivery(FlowDefinition Flow, MappingDefinition Mapping, IIngestionSource Source, IReadOnlyDictionary<string, string> Values)
+{
+    /// <summary>Where the rows were read, as a result keeps it.</summary>
+    public StagedScope Scope => new(Flow.Name, Flow.Interface, Values);
+}
 
 /// <summary>Opens the rows a staged delivered assertion accounts for (osdu/docs/reference/flow/staged-accounting.md).</summary>
 public interface IStagedDeliveries
@@ -88,7 +93,7 @@ public sealed class EngineStagedDeliveries : IStagedDeliveries
             throw new DeliveryException($"{at}: the mapping {delivery.Render.Mapping} delivery flow '{delivery.Label}' renders with cannot be read, so the delivery keys of its rows are unknown: {ex.Message}", ex);
         }
 
-        return new StagedDelivery(delivery, mapping, _context.Sources.Open(delivery, values, _context.Loggers));
+        return new StagedDelivery(delivery, mapping, _context.Sources.Open(delivery, values, _context.Loggers), values);
     }
 
     /// <summary>The delivery flow's parameter values the rows are read under: the assertion's, tokens filled, then the flow's defaults.</summary>

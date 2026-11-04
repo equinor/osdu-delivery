@@ -218,7 +218,7 @@ public sealed class StagedAccountingRunTests : IDisposable
         await DeliverEverythingAsync();
         var lost = await IdOfAsync(1);
         _platform.Records.RemoveAll(r => r["id"]!.GetValue<string>() == lost);
-        StageNew("NEW-LOG-1");
+        var added = StageNew("NEW-LOG-1");
         _tables.Records.Last(r => (string)r.Row["log_id"]! != "NEW-LOG-1").DeletedUtc = _clock.GetUtcNow().UtcDateTime;
 
         var staged = Staged(await RunAsync(Flow()));
@@ -232,6 +232,15 @@ public sealed class StagedAccountingRunTests : IDisposable
         Assert.Contains("and the test's query does not find it", notFound.Reason, StringComparison.Ordinal);
         var neverPlanned = Assert.Single(staged.Examples, e => e.Reason.Contains("no run has planned it", StringComparison.Ordinal));
         Assert.Contains("NEW-LOG-1", neverPlanned.Value, StringComparison.Ordinal);
+
+        // The result keeps where the rows were read and each listed row's key, which a query of them in the flow's tables
+        // narrows to: the key in the flow's key order (source_project, log_id), the values the scope was read under.
+        Assert.Equal([(string)added.Row["source_project"]!, "NEW-LOG-1"], neverPlanned.Key);
+        Assert.Equal([Logs[1].SourceProject, Logs[1].LogId], notFound.Key);
+        var scope = Assert.IsType<StagedScope>(staged.Staged);
+        Assert.Equal(DeliveryFlowName, scope.Flow);
+        Assert.Null(scope.Interface);
+        Assert.Equal(SampleWellLogs.LogSource, scope.Values["logSource"]);
     }
 
     [Fact]
@@ -245,6 +254,7 @@ public sealed class StagedAccountingRunTests : IDisposable
         Assert.Equal(TestOutcomes.Failed, failed.Outcome);
         var example = Assert.Single(failed.Examples);
         Assert.Equal($"is held by {DeliveryFlowName}: {HoldReason} (row {held.RowNumber} of {SampleEstate.FileName})", example.Reason);
+        Assert.Equal([(string)held.Row["source_project"]!, "HELD-LOG-1"], example.Key);
         Assert.Contains("1 held back by the ledger, 0 not in OSDU with nothing to explain it", failed.Actual, StringComparison.Ordinal);
         Assert.Contains($"held back most for is held by {DeliveryFlowName}: {HoldReason} (1)", failed.Actual, StringComparison.Ordinal);
 
@@ -269,6 +279,9 @@ public sealed class StagedAccountingRunTests : IDisposable
         var stray = Assert.Single(exact.Examples);
         Assert.Equal("dev:work-product-component--WellLog:not-staged", stray.Id);
         Assert.Equal($"is found by the test's query, and no row {DeliveryFlowName} stages accounts for it", stray.Reason);
+
+        // A record no staged row accounts for has no row, so no key to query the source by.
+        Assert.Null(stray.Key);
     }
 
     [Fact]

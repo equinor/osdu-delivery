@@ -42,12 +42,14 @@ public sealed record DeliveryMappingFlowDto(
 public sealed record DeliverySourceColumnDto(string Name, string? DataType, bool Nullable);
 
 /// <summary>
-/// A table a flow reads: the record table, or the child dataset <c>Dataset</c> names, its name, how a child row joins its record
-/// (child column to record column), and the columns the catalog holds of it, without SQLFlow's system columns; none when the
-/// catalog has not described it.
+/// A table a flow reads: the record table, or the child dataset <c>Dataset</c> names, its name, its node in lineage
+/// (<c>ObjectKey</c>, where the flow's read of it lands and the ingestion flow writing it writes), how a child row joins its
+/// record (child column to record column), and the columns the catalog holds of it, without SQLFlow's system columns; none
+/// when the catalog has not described it.
 /// </summary>
 public sealed record DeliverySourceTableDto(
-    string? Dataset, string Table, IReadOnlyList<string> Key, IReadOnlyDictionary<string, string>? Join, IReadOnlyList<DeliverySourceColumnDto> Columns);
+    string? Dataset, string Table, string ObjectKey, IReadOnlyList<string> Key, IReadOnlyDictionary<string, string>? Join,
+    IReadOnlyList<DeliverySourceColumnDto> Columns);
 
 /// <summary>
 /// A value check of a flow's rows: the variables to check (template paths; none for every entry of the mapping), the flow
@@ -196,8 +198,8 @@ public static class DeliveryValueCheckEndpoints
     }
 
     /// <summary>
-    /// The tables an interface reads, record table first: what its flow declares, with the columns the catalog holds of each. A
-    /// table the catalog has not described lists no columns. No table is read.
+    /// The tables an interface reads, record table first: what its flow declares, each with its node in lineage and the columns
+    /// the catalog holds of it. A table the catalog has not described lists no columns. No table is read.
     /// </summary>
     private static async Task<Results<Ok<IReadOnlyList<DeliverySourceTableDto>>, ProblemHttpResult>> ListSourceTablesAsync(
         Guid pipelineId, [FromQuery(Name = "interface")] string? interfaceName, [FromQuery] string? partition, CatalogDbContext db,
@@ -210,15 +212,18 @@ public static class DeliveryValueCheckEndpoints
         }
 
         var source = flow.Flow.Source;
+        var recordKey = DeliveryLineage.ObjectKey(source.Connection, source.Record.Object);
         var tables = new List<DeliverySourceTableDto>
         {
-            new(null, source.Record.Object, source.Record.Key, null, await CatalogColumnsAsync(db, source.Record.Object, source.SystemColumns, ct).ConfigureAwait(false)),
+            new(null, source.Record.Object, recordKey, source.Record.Key, null,
+                await CatalogColumnsAsync(db, source.Record.Object, recordKey, source.SystemColumns, ct).ConfigureAwait(false)),
         };
 
         foreach (var (name, dataset) in source.Datasets)
         {
-            var columns = await CatalogColumnsAsync(db, dataset.Object, source.SystemColumns, ct).ConfigureAwait(false);
-            tables.Add(new DeliverySourceTableDto(name, dataset.Object, [.. dataset.Join.Keys], dataset.Join, columns));
+            var key = DeliveryLineage.ObjectKey(source.Connection, dataset.Object);
+            var columns = await CatalogColumnsAsync(db, dataset.Object, key, source.SystemColumns, ct).ConfigureAwait(false);
+            tables.Add(new DeliverySourceTableDto(name, dataset.Object, key, [.. dataset.Join.Keys], dataset.Join, columns));
         }
 
         return TypedResults.Ok<IReadOnlyList<DeliverySourceTableDto>>(tables);
@@ -226,10 +231,11 @@ public static class DeliveryValueCheckEndpoints
 
     /// <summary>
     /// The columns the catalog holds of a table, in their order. One table can be catalogued once per connection it was reached
-    /// through, so the columns are the first such object's.
+    /// through, so the columns are those of the object the flow's read lands on (<paramref name="objectKey"/>), and failing that
+    /// those of the first such object the catalog describes.
     /// </summary>
     private static async Task<IReadOnlyList<DeliverySourceColumnDto>> CatalogColumnsAsync(
-        CatalogDbContext db, string table, FlowSystemColumns system, CancellationToken ct)
+        CatalogDbContext db, string table, string objectKey, FlowSystemColumns system, CancellationToken ct)
     {
         var name = SourceObjectName.Parse(table);
         var keys = await db.Objects.AsNoTracking()
@@ -241,15 +247,26 @@ public static class DeliveryValueCheckEndpoints
             return [];
         }
 
-        var rows = await db.ObjectColumns.AsNoTracking()
+        var described = await db.ObjectColumns.AsNoTracking()
             .Where(c => keys.Contains(c.ObjectKey))
-            .OrderBy(c => c.ObjectKey).ThenBy(c => c.Ordinal).ThenBy(c => c.Name)
+            .Select(c => c.ObjectKey)
+            .Distinct()
+            .ToListAsync(ct).ConfigureAwait(false);
+        if (described.Count == 0)
+        {
+            return [];
+        }
+
+        var chosen = described.Find(key => string.Equals(key, objectKey, StringComparison.OrdinalIgnoreCase)) ?? described.Min(StringComparer.Ordinal)!;
+        var rows = await db.ObjectColumns.AsNoTracking()
+            .Where(c => c.ObjectKey == chosen)
+            .OrderBy(c => c.Ordinal).ThenBy(c => c.Name)
             .Take(MaxSourceColumns)
-            .Select(c => new { c.ObjectKey, c.Name, c.DataType, c.Nullable })
+            .Select(c => new { c.Name, c.DataType, c.Nullable })
             .ToListAsync(ct).ConfigureAwait(false);
         var hidden = system.Names();
         return rows
-            .Where(c => c.ObjectKey == rows[0].ObjectKey && !hidden.Contains(c.Name))
+            .Where(c => !hidden.Contains(c.Name))
             .Select(c => new DeliverySourceColumnDto(c.Name, c.DataType, c.Nullable))
             .ToList();
     }
@@ -490,6 +507,39 @@ public static class DeliveryValueCheckEndpoints
         }
 
         return null;
+    }
+
+    /// <summary>
+    /// The keys among <paramref name="keys"/> a query of a flow's rows can be narrowed to (<see cref="SourceSqlArguments"/>):
+    /// each with the flow's <paramref name="parts"/> key parts, each once, in the order given, as many as one task's argument
+    /// carries, each as the JSON array of its parts.
+    /// </summary>
+    internal static IReadOnlyList<string> FittingKeys(IEnumerable<IReadOnlyList<string>> keys, int parts)
+    {
+        ArgumentNullException.ThrowIfNull(keys);
+        var fitting = new List<string>();
+        var seen = new HashSet<string>(StringComparer.Ordinal);
+
+        // The argument is the array of every key: its brackets, then each key and the comma before every one but the first.
+        var length = 2;
+        foreach (var key in keys.Where(k => k.Count == parts))
+        {
+            var json = JsonSerializer.Serialize(key, PlainJson);
+            if (!seen.Add(json))
+            {
+                continue;
+            }
+
+            length += json.Length + (fitting.Count > 0 ? 1 : 0);
+            if (length > ComputeTaskPayload.MaxArgumentLength)
+            {
+                break;
+            }
+
+            fitting.Add(json);
+        }
+
+        return fitting;
     }
 
     /// <summary>The parts of a key, or null for text that is not a key.</summary>

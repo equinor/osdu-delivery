@@ -40,6 +40,7 @@
     "src/features/delivery/assertions/dashboard/dashboardModel.ts",
     "src/api/mappingOutline.ts",
     "src/features/delivery/overview/outlineModel.ts",
+    "src/features/delivery/overview/outlineLineage.ts",
     "src/features/delivery/overview/outlineLayout.ts",
     "src/features/delivery/overview/tableRows.ts",
     "src/features/delivery/overview/recordMarkdown.ts",

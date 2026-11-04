@@ -26,8 +26,8 @@ function card(source: Partial<MappingOutlineSource> & Pick<MappingOutlineSource,
   };
 }
 
-const RECORD: DeliverySourceTable = { dataset: null, table: "[OsduData].[silver].[WellLog]", key: ["log_id", "source"], join: null, columns: [] };
-const CURVES: DeliverySourceTable = { dataset: "curves", table: "[OsduData].[silver].[Curve]", key: ["curve_log", "curve_source"], join: { curve_log: "log_id", curve_source: "source" }, columns: [] };
+const RECORD: DeliverySourceTable = { dataset: null, table: "[OsduData].[silver].[WellLog]", objectKey: "${env:osdu_data_db}|osdudata|silver|welllog", key: ["log_id", "source"], join: null, columns: [] };
+const CURVES: DeliverySourceTable = { dataset: "curves", table: "[OsduData].[silver].[Curve]", objectKey: "${env:osdu_data_db}|osdudata|silver|curve", key: ["curve_log", "curve_source"], join: { curve_log: "log_id", curve_source: "source" }, columns: [] };
 
 describe("which tables hold rows to look at", () => {
   it("reads a flow's tables in its scope, the cache's types by name, and a search's kind in OSDU", () => {

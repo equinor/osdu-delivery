@@ -45,11 +45,11 @@ opens to be selected in the menu's tree.
 
 A menu layout may name shortcuts (`MenuLayout.shortcuts`, the paths of entries it lists). When it does, the activity bar
 is a menu button, which shows or hides the side bar, and then an icon per shortcut in the layout's order, each with its
-entry's own icon and its label as the tooltip. OSDU Delivery names seven, in the order the data goes:
-
-1. **Assistant**, which answers about all of it.
-2. **Repos**, **Mappings** and **Schedules**: what is delivered, how a record is built, and when it runs.
-3. **Delivery**, **Explorer** and **Assertions**: what was delivered, what OSDU holds, and whether it is right.
+entry's own icon and its label as the tooltip. OSDU Delivery names seven, in the order the owner asked for: **Assistant**,
+**Delivery**, **Repos**, **Schedules**, **Explorer**, **Mappings** and **Assertions**. The bar first followed the data's
+path instead (the assistant; then Repos, Mappings and Schedules, what is delivered and when; then Delivery, Explorer and
+Assertions, what was delivered, what OSDU holds and whether it is right). The owner then asked for the order above, with
+the delivery overview second and the mappings after the Explorer.
 
 A shortcut opens its page in one click and is lit while that page, or one reached from it (a mapping's page, the
 builder), is shown. With the side bar shown, the shortcut's entry is selected in the tree, its group and section unfold
@@ -64,8 +64,9 @@ as 0034 laid them out.
 - **Open the side bar on every shortcut**, so the selection is always seen. A shortcut is one click to the page; opening
   the side bar takes width from the page every time, and every jump would overwrite the person's choice of showing it or
   not. The selection is there whenever they open it.
-- **Keep the order of the request** (Assistant, Delivery, Repos, Schedules, Mappings, Explorer, Assertions). The owner
-  asked for a logical order; the data's path from definition to check is one a person can predict without learning it.
+- **Keep the data's path as the order.** It was the first order shipped, because a person can predict it without
+  learning it. The bar holds the pages the owner reaches most, and they named the order to reach them in.
+- **Drop Assertions from the bar.** The owner considered it and kept it, last.
 - **Shortcuts each person picks.** Nothing asked for it, it needs a store for each person's list, and the seven pages
   cover the work the owner described.
 - **The Settings gear at the bottom.** Access tokens and notifications are in the account menu, and in the side bar's

@@ -21,6 +21,8 @@ keywords:
   - rendered record
   - parameter values
   - right-click menu
+  - open in lineage
+  - where a table is populated from
   - zoom to a search
   - canvas toolbar
 related:
@@ -31,23 +33,29 @@ related:
   - delivery-concept-gui
   - delivery-concept-api
   - delivery-concept-dry-run
+  - delivery-concept-lineage
 sourceRefs:
   - osdu/src/SqlFlow.Delivery/Documents/MappingOutline.cs
   - osdu/src/SqlFlow.Delivery.ControlPlane/Api/DeliveryTemplateEndpoints.cs
   - osdu/src/SqlFlow.Delivery.ControlPlane/Api/DeliveryValueCheckEndpoints.cs
+  - osdu/src/SqlFlow.Delivery/Documents/DeliveryLineage.cs
   - osdu/src/SqlFlow.Delivery/Engine/Operations/TableRowsOperation.cs
   - osdu/src/SqlFlow.Delivery/Engine/Preview/RecordPreviewer.cs
   - osdu/src/SqlFlow.Delivery/Source/SqlServerIngestionSource.cs
   - osdu/gui/src/features/delivery/overview/MappingOverview.tsx
   - osdu/gui/src/features/delivery/overview/OverviewCanvas.ts
   - osdu/gui/src/features/delivery/overview/OverviewInspector.tsx
+  - osdu/gui/src/features/delivery/overview/OverviewLineage.tsx
   - osdu/gui/src/features/delivery/overview/OverviewRail.tsx
   - osdu/gui/src/features/delivery/overview/OverviewRendered.tsx
   - osdu/gui/src/features/delivery/overview/OverviewRows.tsx
   - osdu/gui/src/features/delivery/overview/outlineLayout.ts
+  - osdu/gui/src/features/delivery/overview/outlineLineage.ts
   - osdu/gui/src/features/delivery/overview/outlineModel.ts
+  - osdu/gui/src/features/delivery/overview/partTargets.ts
   - osdu/gui/src/features/delivery/overview/recordMarkdown.ts
   - osdu/gui/src/features/delivery/overview/tableRows.ts
+  - osdu/gui/src/features/delivery/lineageTargets.ts
 ---
 
 # A mapping's overview: what a mapping does, on one canvas, from its tables to the record
@@ -111,6 +119,7 @@ on stays lit while it is on.
 | Trace something | Point at it. Pointing at a property lights what enters it and the tables on its way, pointing at a column lights everywhere it goes, and pointing at a table lights everything that reads it, from the columns looked up in it to the properties they fill. A line counts as what it comes from, a line off the shelf as its table, and is lit down to the last row lit on it. |
 | See how a property is filled | Click it. A panel slides in from the right with the way its value takes ([below](#the-way-a-value-is-filled)), its alternatives, its rules and the lines of the document that write it. A column or a table, or a line from one, lists what it reaches. Escape or a click on the canvas closes it. |
 | Do something with a part | Right-click it, or press the menu key or Shift+F10 on it. Every part has a menu, named for what it is on ([below](#the-menus)). |
+| See where a part is populated from | **Open in lineage** on its menu, or the lineage button on its panel, opens the [lineage graph](lineage.md) on its node: a table's, its cache type's, the kind it searches, or for a property each node its value comes from ([below](#opening-a-part-in-lineage)). |
 | Look at a table's rows | **Preview the first 100 rows** on a table, one of its columns or a line from it (**Preview 100 cached records** for a cache table, **Preview 100 records in OSDU** for a search). The panel of a table or a column has the same button. The rows open under the canvas ([below](#looking-at-a-tables-rows)). |
 | See the parameters' values | **Preview the values** on the parameters, or one of them ([below](#the-parameters-values)). |
 | Read the record as it renders | **Preview the rendered record** on the record's heading ([below](#the-rendered-record)). |
@@ -145,13 +154,37 @@ when no step changed it first.
 
 | Right-click | The menu offers |
 | --- | --- |
-| A table, one of its columns, or a line from it | A look at what it holds (its rows, or the parameters' values), its **Details**, and a copy of its name: a flow's table by the name the flow gives it. |
-| Another record a mapping reads (a parent, a child) | Its **Details** and a copy of its name. |
-| A property, or a dot on its line | Its **Details**, **Show in the YAML**, which opens the document at the lines that write it, and a copy of its path. |
-| The record's heading | **Preview the rendered record**, the YAML, and a copy of the kind. |
-| The canvas | **Fit to the window**, **Open all** or **Fold**, and the YAML. |
+| A table, one of its columns, or a line from it | A look at what it holds (its rows, or the parameters' values), its **Details**, **Open in lineage**, and a copy of its name: a flow's table by the name the flow gives it. |
+| Another record a mapping reads (a parent, a child) | Its **Details**, **Open in lineage** when its kind is known, and a copy of its name. |
+| A property, or a dot on its line | Its **Details**, **Show in the YAML**, which opens the document at the lines that write it, **Open in lineage** for what its value comes from, and a copy of its path. |
+| The record's heading | **Preview the rendered record**, the YAML, **Open in lineage** for the kind, and a copy of the kind. |
+| The canvas | **Fit to the window**, **Open all** or **Fold**, the YAML, and **Open in lineage** for the mapping. |
 
 Escape closes a menu first, then the details, then what is shown under the canvas.
+
+## Opening a part in lineage
+
+**Open in lineage** on a part's menu opens a picker that names what is about to open and where it stands in the
+[lineage graph](lineage.md); choosing it opens the graph on that node, with what populates it to its left. The panel of a
+part, and the panel of a table's rows, of the parameters' values or of the rendered record, carries the same as a button in
+its heading. Each part opens the node it is, or the one it belongs to:
+
+| Part | Opens |
+| --- | --- |
+| The record table, a child table | The table's node as the flow picked reads it, over the flow's own connection: the node the `ing` flow loading the table writes. Until a flow is picked the canvas does not know the table, and offers none. |
+| A column, or a line from one | Its table's node: lineage holds no node of a column. |
+| A cache table | The cache type in the workbench's partition, which its cache flows write. |
+| A search | The kind it searches, as the mapping writes it. A kind with wildcards is a node of its own, which the mapping reads. |
+| A parent, a child record | Its kind: a child's as the mapping names it, a parent's as the template's link names it, so a mapping read without its template offers none for its parent. |
+| The records an enrichment registers | The enrichment's mapping, a mapping node of its own. |
+| The parameters | The flow picked, in its repository's graph. |
+| A property, or a section | Each node its value comes from: the tables its lines read, the tables it is looked up in and the child table it repeats, and for a section everything it holds. With more than one, the menu and the panel list them, each opening its own picker. A literal comes from no node, and offers none. |
+| The record's heading | The OSDU type the mapping fills, which the flows delivering it write. |
+| The canvas | The mapping's node, between what it reads of the cache and the flows rendering with it. |
+
+A node is looked for in the partition the workbench works in, and in every partition when that one has none of it. The
+record an enrichment adds to opens nothing: its kind is the other mapping's. When no synced flow reads or writes a node,
+the picker says so.
 
 ## The parameters' values
 
@@ -201,6 +234,8 @@ node of the language has its place, those a builder draft cannot hold (`$lookup`
 - A document that does not load answers with the issue and no outline, and the tab shows the issue.
 - A template that cannot be read costs the outline its types and no more, and an issue says so.
 
-`GET /api/v1/delivery/flows/{pipelineId}/source-tables` gives the tables of the flow picked: their names, how a child table
-joins its record, and what the catalog holds of their columns, without SQLFlow's system columns. A table the catalog has
-not described lists no columns, and the canvas shows what the mapping reads of it. No table is read.
+`GET /api/v1/delivery/flows/{pipelineId}/source-tables` gives the tables of the flow picked: their names, their nodes in
+lineage (`objectKey`, where the flow's read lands), how a child table joins its record, and what the catalog holds of their
+columns through the flow's own connection (or, when it holds none there, through another), without SQLFlow's system
+columns. A table the catalog has not described lists no columns, and the canvas shows what the mapping reads of it. No
+table is read.

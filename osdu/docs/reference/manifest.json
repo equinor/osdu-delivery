@@ -2111,6 +2111,8 @@
         "rendered record",
         "parameter values",
         "right-click menu",
+        "open in lineage",
+        "where a table is populated from",
         "zoom to a search",
         "canvas toolbar"
       ],
@@ -2121,25 +2123,31 @@
         "delivery-flow-mapping-values",
         "delivery-concept-gui",
         "delivery-concept-api",
-        "delivery-concept-dry-run"
+        "delivery-concept-dry-run",
+        "delivery-concept-lineage"
       ],
       "sourceRefs": [
         "osdu/src/SqlFlow.Delivery/Documents/MappingOutline.cs",
         "osdu/src/SqlFlow.Delivery.ControlPlane/Api/DeliveryTemplateEndpoints.cs",
         "osdu/src/SqlFlow.Delivery.ControlPlane/Api/DeliveryValueCheckEndpoints.cs",
+        "osdu/src/SqlFlow.Delivery/Documents/DeliveryLineage.cs",
         "osdu/src/SqlFlow.Delivery/Engine/Operations/TableRowsOperation.cs",
         "osdu/src/SqlFlow.Delivery/Engine/Preview/RecordPreviewer.cs",
         "osdu/src/SqlFlow.Delivery/Source/SqlServerIngestionSource.cs",
         "osdu/gui/src/features/delivery/overview/MappingOverview.tsx",
         "osdu/gui/src/features/delivery/overview/OverviewCanvas.ts",
         "osdu/gui/src/features/delivery/overview/OverviewInspector.tsx",
+        "osdu/gui/src/features/delivery/overview/OverviewLineage.tsx",
         "osdu/gui/src/features/delivery/overview/OverviewRail.tsx",
         "osdu/gui/src/features/delivery/overview/OverviewRendered.tsx",
         "osdu/gui/src/features/delivery/overview/OverviewRows.tsx",
         "osdu/gui/src/features/delivery/overview/outlineLayout.ts",
+        "osdu/gui/src/features/delivery/overview/outlineLineage.ts",
         "osdu/gui/src/features/delivery/overview/outlineModel.ts",
+        "osdu/gui/src/features/delivery/overview/partTargets.ts",
         "osdu/gui/src/features/delivery/overview/recordMarkdown.ts",
-        "osdu/gui/src/features/delivery/overview/tableRows.ts"
+        "osdu/gui/src/features/delivery/overview/tableRows.ts",
+        "osdu/gui/src/features/delivery/lineageTargets.ts"
       ]
     },
     {
@@ -6154,20 +6162,30 @@
         "why a record is not in osdu",
         "ledger reason",
         "record table",
-        "values"
+        "values",
+        "sql of the staged rows",
+        "source sql of an assertion",
+        "show the rows in sql",
+        "gaps between staged data and osdu",
+        "query the missing rows in ssms"
       ],
       "yamlPath": "(flowType: assertion) tests[].assert[].delivered with staged, explained, values, exact, interface",
       "related": [
         "delivery-flow-assertion",
         "delivery-flow-staged-proof-values",
         "delivery-concept-ledger",
-        "delivery-flow-removal"
+        "delivery-flow-removal",
+        "delivery-concept-gui-build"
       ],
       "sourceRefs": [
         "osdu/src/SqlFlow.Delivery/Documents/AssertionDocumentMapper.cs",
         "osdu/src/SqlFlow.Delivery/Model/AssertionFlowDefinition.cs",
         "osdu/src/SqlFlow.Delivery/Engine/Assertions/StagedAccounting.cs",
         "osdu/src/SqlFlow.Delivery/Engine/Assertions/StagedDeliveries.cs",
+        "osdu/src/SqlFlow.Delivery/Engine/Assertions/TestResult.cs",
+        "osdu/src/SqlFlow.Delivery/Source/SourceQuery.cs",
+        "osdu/src/SqlFlow.Delivery.ControlPlane/Api/DeliveryAssertionEndpoints.cs",
+        "osdu/gui/src/features/delivery/assertions/AssertionSourceSql.tsx",
         "osdu/src/SqlFlow.Delivery/Engine/DeliveryFlowDocuments.cs",
         "osdu/src/SqlFlow.Delivery/Model/MappingDefinition.cs"
       ]

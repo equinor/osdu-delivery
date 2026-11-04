@@ -7,14 +7,17 @@ import {
   DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { isApiError } from "@/api/client";
+import { useAuth } from "@/auth/AuthContext";
 import type { DeliveryAssertionFlow } from "../../../api/delivery";
+import { StagedRowsSqlDialog } from "./AssertionSourceSql";
 import { downloadSetReport, readResults, type SetReportFormat } from "./assertionFormat";
+import { stagedRowsOf } from "./assertionReading";
 import type { DashView } from "./dashboard/AssertionDashboard";
-import type { DashData, DashTest } from "./dashboard/dashboardModel";
+import type { CheckOutcome, DashData, DashTest } from "./dashboard/dashboardModel";
 import { downloadDashboard } from "./dashboard/exportDashboard";
 
-// What the workbench adds to the assertion dashboard: the downloads, and an assertion's run, report and flow. A downloaded
-// dashboard has none of them.
+// What the workbench adds to the assertion dashboard: the downloads, an assertion's run, report and flow, and the SQL of the
+// staged rows a check read. A downloaded dashboard has none of them.
 
 function failure(error: unknown): string {
   return isApiError(error) ? error.detail ?? error.title : error instanceof Error ? error.message : String(error);
@@ -84,6 +87,29 @@ export function DashboardDownloads({ data, view }: { data: DashData; view: DashV
         )}
       </DropdownMenuContent>
     </DropdownMenu>
+  );
+}
+
+/**
+ * An open check's action in the workbench, under its failing records: the staged rows it read, as T-SQL over its delivery
+ * flow's tables, for a staged delivered assertion. A check that reads OSDU alone has none, and nor does a download, which
+ * cannot ask the control plane to write it; writing it reads the flow's tables, so it is offered to those who may operate.
+ */
+export function DashboardCheckActions({ test, check }: { test: DashTest; check: CheckOutcome }) {
+  const [open, setOpen] = useState(false);
+  const { hasScope } = useAuth();
+  const rows = stagedRowsOf(check);
+  if (rows === null || test.reportId === null || !hasScope("operate")) {
+    return null;
+  }
+
+  return (
+    <>
+      <button type="button" className="adb-link" onClick={() => setOpen(true)} data-testid="dashboard-check-sql">
+        Show the rows in SQL
+      </button>
+      {open && <StagedRowsSqlDialog source={{ assertionRunId: test.reportId, test: test.name }} rows={rows} onClose={() => setOpen(false)} />}
+    </>
   );
 }
 

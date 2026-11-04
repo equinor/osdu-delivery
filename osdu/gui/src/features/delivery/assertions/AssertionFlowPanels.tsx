@@ -17,7 +17,7 @@ import { useActivePartition } from "../activePartition";
 import { ProblemView } from "../TemplateSheet";
 import { AssertionRunStatusBadge, OutcomeBar, OutcomeSquare } from "./AssertionBadges";
 import { AssertionRunDialog, ReportDownloads, type AssertionLaunch } from "./AssertionRunDialog";
-import { DashboardDownloads, DashboardTestActions } from "./DashboardHostActions";
+import { DashboardCheckActions, DashboardDownloads, DashboardTestActions } from "./DashboardHostActions";
 import { counted, duration, kindEntity, readResults, runStatusVisual, selectionText } from "./assertionFormat";
 import { AssertionDashboard } from "./dashboard/AssertionDashboard";
 import { fromBoard } from "./dashboard/dashboardModel";
@@ -73,6 +73,7 @@ export function AssertionTestsPanel({ pipelineId }: { pipelineId: string }) {
           </>
         )}
         testActions={(test) => <DashboardTestActions test={test} flow={flow} onRun={(_, which) => run([which.name])} />}
+        checkActions={(test, check) => <DashboardCheckActions test={test} check={check} />}
         empty={<p className="px-3 py-6 text-center text-[12.5px] text-muted-foreground" data-testid="board-flow-none">The flow declares no assertion that checks this partition.</p>}
       />
       <AssertionRunDialog launch={launch} onClose={() => setLaunch(null)} />

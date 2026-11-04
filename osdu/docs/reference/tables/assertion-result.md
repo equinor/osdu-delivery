@@ -54,7 +54,7 @@ of each of its tests superseded it ([What the osdu schema stores](../concepts/st
 | `DefinitionHash` | `nvarchar(32)` | no | The hash of the test's definition when it ran, so a result says whether the test has changed since. |
 | `DurationMs` | `bigint` | no | How long the test took, in milliseconds. |
 | `Error` | `nvarchar(4000)` | yes | Why the test errored, redacted. |
-| `Detail` | `nvarchar(max)` | no | The whole result as JSON: every assertion, what it expected and found, and its failing examples, up to 1,000,000 characters. |
+| `Detail` | `nvarchar(max)` | no | The whole result as JSON: every assertion, what it expected and found, and its failing examples, up to 1,000,000 characters. A staged delivered assertion also keeps where it read its rows (the delivery flow, its interface and its values) and each listed row's key, which [the rows in the source](../flow/staged-accounting.md#the-rows-in-the-source) are queried by. |
 | `StartedUtc` | `datetime2` | no | When the test started. |
 | `CompletedUtc` | `datetime2` | no | When it finished. |
 

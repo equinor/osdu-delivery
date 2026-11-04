@@ -286,6 +286,19 @@ public class MappingOutlineTests
     }
 
     [Fact]
+    public void A_parent_read_names_the_parents_kind_as_the_template_links_it_and_none_without_the_template()
+    {
+        // The overview opens the parent's node in lineage by its kind, which only the template's link to the parent tells.
+        var mapping = LinkedTemplates.Mapping("""
+            Nested: { $parent: data.Nested }
+            """);
+
+        var linked = Source(MappingOutline.Of(mapping, LinkedTemplates.Custom()), "parent");
+        Assert.Equal((MappingOutlineSourceKind.Parent, LinkedTemplates.ParentKind), (linked.Kind, linked.Detail));
+        Assert.Null(Source(MappingOutline.Of(mapping), "parent").Detail);
+    }
+
+    [Fact]
     public void A_mapping_read_with_no_template_is_laid_out_without_types()
     {
         var outline = MappingOutline.Of(TestSchema.Mapping());

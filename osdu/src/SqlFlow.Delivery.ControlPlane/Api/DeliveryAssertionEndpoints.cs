@@ -1,14 +1,18 @@
+using System.Globalization;
+using System.Security.Claims;
 using System.Text;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Http.HttpResults;
 using Microsoft.AspNetCore.Routing;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging;
 using SqlFlow.Catalog;
 using SqlFlow.Core;
 using SqlFlow.Delivery.Documents;
 using SqlFlow.Delivery.Engine;
 using SqlFlow.Delivery.Engine.Assertions;
+using SqlFlow.Delivery.Engine.Operations;
 using SqlFlow.Delivery.Identity;
 using SqlFlow.Delivery.Ledger;
 using SqlFlow.Delivery.Model;
@@ -99,6 +103,14 @@ public sealed record DeliveryAssertionMatrixDto(IReadOnlyList<DeliveryAssertionR
 public sealed record DeliveryAssertionTestHistoryDto(string Test, IReadOnlyList<TestResult> Results);
 
 /// <summary>
+/// The T-SQL of the staged rows one check of a run read (osdu/docs/reference/flow/staged-accounting.md, The rows in the
+/// source): the test, the check (its position in the test, from 0), which rows (<c>listed</c>, the rows the check lists by
+/// their keys, the default; or <c>all</c>, every row of the scope it read), and for every row the most rows a statement
+/// returns (0, the default, for all of them).
+/// </summary>
+public sealed record DeliveryAssertionSourceSqlRequest(string? Test, int? Assertion, string? Rows, long? MaxRows);
+
+/// <summary>
 /// The report of assertion flows (osdu/docs/reference/flow/assertion.md, The report): the dashboard's data across every
 /// assertion flow, of one set and of one flow, tests' latest results whole by id, a flow's runs, a run with every result, the
 /// matrix of tests against runs, one test's trend, the report of a run as JSON, Markdown, HTML or JUnit XML, and a set's as
@@ -125,6 +137,131 @@ public static class DeliveryAssertionEndpoints
         delivery.MapGet("/assertion-runs/{assertionRunId:long}/report", GetReportAsync).WithName("GetDeliveryAssertionReport");
         delivery.MapGet("/assertion-results", GetResultsAsync).WithName("GetDeliveryAssertionResults");
         delivery.MapGet("/assertion-sets/{set}/report", GetSetReportAsync).WithName("GetDeliveryAssertionSetReport");
+    }
+
+    public static void MapWrites(RouteGroupBuilder delivery)
+    {
+        ArgumentNullException.ThrowIfNull(delivery);
+        delivery.MapPost("/assertion-runs/{assertionRunId:long}/source-sql", SourceSqlAsync).WithName("WriteDeliveryAssertionSourceSql");
+    }
+
+    /// <summary>
+    /// The staged rows a check of a run read, as T-SQL over its delivery flow's own tables: what the source holds of the rows it
+    /// listed, or of every row of the scope it read. The rows are the ones the result names, read under the values the run read
+    /// them under, and the script is written by the same writer as a mapping's source query (<see cref="SourceSqlOperation"/>),
+    /// in this process: no row is read and nothing is run. The delivery flow is the one of that name in the repository the
+    /// assertion flow is synced from, bound to the partition the run tested.
+    /// </summary>
+    private static async Task<Results<ContentHttpResult, ProblemHttpResult>> SourceSqlAsync(
+        long assertionRunId, DeliveryAssertionSourceSqlRequest? request, CatalogDbContext db, DeliveryDocumentLoader documents, IPartitionRegistry partitions,
+        ILedger ledger, DeliveryConfigStore config, DirectOperations direct, ILoggerFactory loggers, ClaimsPrincipal user, CancellationToken ct)
+    {
+        if (request?.Test?.Trim() is not { Length: > 0 } test || request.Assertion is not { } index)
+        {
+            return DeliveryEndpoints.Invalid("A query of a check's rows names its test (test) and the check (assertion: its position in the test, from 0).");
+        }
+
+        bool? listed = request.Rows?.Trim() switch
+        {
+            null or "" or "listed" => true,
+            "all" => false,
+            _ => null,
+        };
+        if (listed is null)
+        {
+            return DeliveryEndpoints.Invalid($"rows is listed (the rows the check lists) or all (every row of the scope it read), not '{request.Rows}'.");
+        }
+
+        if (request.MaxRows is < 0)
+        {
+            return DeliveryEndpoints.Invalid($"A query returns a number of rows, or 0 for all of them; {request.MaxRows.Value.ToString(CultureInfo.InvariantCulture)} is neither.");
+        }
+
+        var run = await ledger.GetAssertionRunAsync(assertionRunId, ct).ConfigureAwait(false);
+        if (run is null)
+        {
+            return TypedResults.Problem(detail: $"No assertion run {assertionRunId}.", statusCode: StatusCodes.Status404NotFound, title: "Not found");
+        }
+
+        var kept = (await ledger.ListAssertionResultsAsync(assertionRunId, ct).ConfigureAwait(false))
+            .FirstOrDefault(r => string.Equals(r.TestName, test, StringComparison.OrdinalIgnoreCase));
+        var check = TestResults.Deserialize(kept?.Detail)?.Assertions.FirstOrDefault(a => a.Index == index);
+        if (check is null)
+        {
+            return TypedResults.Problem(
+                detail: kept is null
+                    ? $"Assertion run {assertionRunId} of '{run.FlowName}' holds no result of a test '{test}'."
+                    : $"The result of '{kept.TestName}' in assertion run {assertionRunId} has no check {index.ToString(CultureInfo.InvariantCulture)}.",
+                statusCode: StatusCodes.Status404NotFound, title: "Not found");
+        }
+
+        if (check.Staged is not { } staged)
+        {
+            return TypedResults.Problem(
+                detail: $"'{check.Label}' reads no delivery flow's staged rows, so there are none to query; a delivered assertion with staged: true reads them.",
+                statusCode: StatusCodes.Status409Conflict, title: "No staged rows");
+        }
+
+        var (flow, problem) = await StagedFlowAsync(db, documents, partitions, run, staged, ct).ConfigureAwait(false);
+        if (flow is null)
+        {
+            return problem!;
+        }
+
+        IReadOnlyList<string> keys = listed.Value
+            ? DeliveryValueCheckEndpoints.FittingKeys(check.Examples.Select(e => e.Key).OfType<IReadOnlyList<string>>(), flow.Flow.Source.Record.Key.Count)
+            : [];
+        if (listed.Value && keys.Count == 0)
+        {
+            return TypedResults.Problem(
+                detail: $"'{check.Label}' lists no staged row by its key in the record table of '{flow.Flow.Label}' as it is now; ask for every row of the scope it read (rows: all).",
+                statusCode: StatusCodes.Status409Conflict, title: "No rows listed");
+        }
+
+        var arguments = new Dictionary<string, string>(StringComparer.Ordinal);
+        var sql = new DeliverySourceSqlRequest(null, staged.Values, listed.Value ? null : request.MaxRows ?? 0, keys);
+        if (DeliveryValueCheckEndpoints.SourceSqlArguments(flow.Flow, sql, arguments) is { } refused)
+        {
+            // The request was well formed: the delivery flow changed since the run read its rows under these values.
+            return TypedResults.Problem(
+                detail: $"The rows '{check.Label}' read cannot be queried in '{flow.Flow.Label}' as it is now: {refused}",
+                statusCode: StatusCodes.Status409Conflict, title: "Delivery flow changed");
+        }
+
+        return await DirectOperationRunner.RunAsync(db, config, direct, flow, SourceSqlOperation.OperationName, arguments, user, loggers, ct).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// The delivery flow whose rows a check read: the active delivery flow of that name in the repository the run's assertion
+    /// flow is synced from, bound to the partition the run tested and the interface it read. Null with the problem to answer with.
+    /// </summary>
+    private static async Task<(DeliveryEndpoints.FlowContext? Flow, ProblemHttpResult? Problem)> StagedFlowAsync(
+        CatalogDbContext db, DeliveryDocumentLoader documents, IPartitionRegistry partitions, AssertionRunState run, StagedScope staged, CancellationToken ct)
+    {
+        var repoId = await db.Pipelines.AsNoTracking()
+            .Where(p => p.Kind == AssertionFlowDefinition.FlowTypeName && p.Name == run.FlowName)
+            .OrderByDescending(p => p.Active)
+            .Select(p => (Guid?)p.RepoId)
+            .FirstOrDefaultAsync(ct).ConfigureAwait(false);
+        if (repoId is null)
+        {
+            return (null, TypedResults.Problem(
+                detail: $"The catalog holds no assertion flow '{run.FlowName}', so the delivery flow '{staged.Flow}' beside it cannot be found; sync the repository that declares it.",
+                statusCode: StatusCodes.Status404NotFound, title: "Not found"));
+        }
+
+        var pipelineId = await db.Pipelines.AsNoTracking()
+            .Where(p => p.RepoId == repoId && p.Kind == FlowDefinition.FlowTypeName && p.Active && p.Name == staged.Flow)
+            .Select(p => (Guid?)p.Id)
+            .FirstOrDefaultAsync(ct).ConfigureAwait(false);
+        if (pipelineId is null)
+        {
+            return (null, TypedResults.Problem(
+                detail: $"Delivery flow '{staged.Flow}', whose rows the check read, is not an active flow of the repository '{run.FlowName}' is synced from; sync the repository, then ask again.",
+                statusCode: StatusCodes.Status404NotFound, title: "Not found"));
+        }
+
+        return await DeliveryEndpoints.ResolveAsync(db, documents, partitions, pipelineId.Value, staged.Interface, run.Partition, ct).ConfigureAwait(false);
     }
 
     /// <summary>

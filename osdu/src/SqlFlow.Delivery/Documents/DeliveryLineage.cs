@@ -6,6 +6,7 @@ using SqlFlow.Delivery.Model;
 using SqlFlow.Delivery.Ordering;
 using SqlFlow.Delivery.Protocols;
 using SqlFlow.Delivery.Templates;
+using SqlFlow.Lineage.Collection;
 using SqlFlow.Yaml;
 
 namespace SqlFlow.Delivery.Documents;
@@ -50,6 +51,23 @@ public static class DeliveryLineage
         }
 
         return objects;
+    }
+
+    /// <summary>
+    /// The lineage node a read of <paramref name="table"/> on the server <paramref name="connection"/> names lands on, which
+    /// is also the catalog object of that key: the key SQLFlow's scan gives a declared read (<see cref="DeclaredObjects"/>),
+    /// so an ingestion flow writing the table through the same reference writes the same node.
+    /// </summary>
+    public static string ObjectKey(string connection, string table)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(connection);
+        ArgumentException.ThrowIfNullOrWhiteSpace(table);
+        var read = DeclaredDataObject.Reads(connection, table);
+        return NodeKey.For(
+            ServerIdentity.From(read.ConnectionReference),
+            string.IsNullOrWhiteSpace(read.Database) ? null : read.Database.Trim(),
+            string.IsNullOrWhiteSpace(read.Schema) ? null : read.Schema.Trim(),
+            read.Name.Trim());
     }
 
     /// <summary>

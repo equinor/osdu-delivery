@@ -55,8 +55,9 @@ A module may lay out the whole menu (`GuiModule.menu`): its groups in order, eac
 it and its sections, every entry named by its path. SQLFlow's build lays out nothing and keeps its own groups. OSDU
 Delivery's layout groups every page by the question a person brings to it, so a group's name predicts each entry in it:
 
-- **Operate**: the day's work (Home, Assistant, Runs, Timeline), and under **Health** whether data keeps arriving, how
-  the flows perform, the workers, and the database's storage.
+- **Operate**: the day's work (Home, Assistant, Runs, Nodes, Timeline), and under **Health** whether data keeps arriving,
+  how the flows perform, and the database's storage. Nodes, the workers, was first under Health; the menu starts folded,
+  and folded under Health the owner could not find it under Operate, so it sits beside Runs, whose work it executes.
 - **Ledger**: what was delivered, flow by flow and record by record, removals, who did what, and the ledgers left behind.
 - **OSDU**: what OSDU holds read live, the Explorer's search terms beside it, the checks of it, the dimensions built from
   it, and the partitions.

@@ -648,3 +648,12 @@ Assertions) in a logical order, because reaching them took several clicks many t
 opens should be selected in the menu's tree.
 
 Added decision 0045; amended decision 0034; updated the reference page `delivery-concept-menu`.
+
+## [2026-11-04] ingest | The activity bar follows the owner's order, and Nodes sits under Operate
+
+Source: the human's words that the Nodes entry could no longer be seen under Operate, and that the activity bar's order
+should be the Assistant, Delivery, Repos, Schedules, the Explorer and Mappings; they first asked to remove Assertions,
+then to keep it.
+
+Amended decision 0045 (the order, and why the data's path was replaced) and decision 0034 (Nodes beside Runs rather than
+under the folded Health section); updated the reference page `delivery-concept-menu`.

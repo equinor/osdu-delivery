@@ -21,8 +21,12 @@ function NoQuery({ title, description }: { title: string; description: string })
   return <EmptyState icon={<DatabaseSearch />} title={title} description={description} data-testid="variable-sql-none" />;
 }
 
-/** What the attribute reads and the script that shows it, or why it reads nothing. */
-function SourceQueryView({ answer }: { answer: DeliverySourceSql }) {
+/**
+ * What the attribute reads and the script that shows it, or why it reads nothing. An assertion's staged rows are shown by it
+ * too, every attribute of their mapping at once, where the list of every column it reads would only stand before the script:
+ * `columns` false leaves it out.
+ */
+export function SourceQueryView({ answer, columns = true }: { answer: DeliverySourceSql; columns?: boolean }) {
   return (
     <>
       {answer.missing.length > 0 && (
@@ -31,7 +35,7 @@ function SourceQueryView({ answer }: { answer: DeliverySourceSql }) {
           <span>{`The tables do not hold ${answer.missing.join(", ")}, so the query leaves it out, and a delivery of this mapping would not find it either.`}</span>
         </p>
       )}
-      {answer.reads.length > 0 && (
+      {columns && answer.reads.length > 0 && (
         <ul className="flex flex-col gap-0.5 text-[12px]" data-testid="variable-sql-reads">
           {answer.reads.map((read) => (
             <li key={read.column} className="flex min-w-0 items-baseline gap-2">

@@ -61,8 +61,8 @@ const OUTLINE: MappingOutline = {
 };
 
 const TABLES: DeliverySourceTable[] = [
-  { dataset: null, table: "OsduData.silver.WellLog", key: ["log_id"], join: null, columns: ["log_id", "elev", "log_name", "unused"].map((name) => ({ name, dataType: "nvarchar(50)", nullable: true })) },
-  { dataset: "curves", table: "OsduData.silver.WellLogCurve", key: ["log_id"], join: { log_id: "log_id" }, columns: [] },
+  { dataset: null, table: "OsduData.silver.WellLog", objectKey: "${env:osdu_data_db}|osdudata|silver|welllog", key: ["log_id"], join: null, columns: ["log_id", "elev", "log_name", "unused"].map((name) => ({ name, dataType: "nvarchar(50)", nullable: true })) },
+  { dataset: "curves", table: "OsduData.silver.WellLogCurve", objectKey: "${env:osdu_data_db}|osdudata|silver|welllogcurve", key: ["log_id"], join: { log_id: "log_id" }, columns: [] },
 ];
 
 describe("what opens", () => {

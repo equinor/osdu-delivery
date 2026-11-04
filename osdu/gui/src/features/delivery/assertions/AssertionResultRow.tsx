@@ -10,9 +10,10 @@ import { STANDING_TEXT, checkCounts, checksVerdict, counted, duration } from "./
 
 /**
  * One test's result on one line (where it stands, its verdict, what it matched, how long it took), opening in place on
- * what it read as it ran and the checks that ask for a look.
+ * what it read as it ran and the checks that ask for a look. `assertionRunId` is the run it is kept under, which a check that
+ * read staged rows names to show them in SQL.
  */
-export function ResultRow({ result, initiallyOpen }: { result: DeliveryTestResult; initiallyOpen: boolean }) {
+export function ResultRow({ result, initiallyOpen, assertionRunId }: { result: DeliveryTestResult; initiallyOpen: boolean; assertionRunId?: number }) {
   const [open, setOpen] = useState(initiallyOpen);
   const verdict = result.outcome === "skipped"
     ? { text: result.error ?? "skipped: it does not run in this partition", standing: "skipped" as const }
@@ -60,7 +61,13 @@ export function ResultRow({ result, initiallyOpen }: { result: DeliveryTestResul
           {(result.notes ?? []).length > 0 && (
             <ul className="list-disc pl-5 text-[12.5px] text-muted-foreground">{(result.notes ?? []).map((note) => <li key={note}>{note}</li>)}</ul>
           )}
-          {(result.assertions ?? []).length > 0 && <CheckList outcomes={result.assertions ?? []} testId={`report-checks-${result.test}`} />}
+          {(result.assertions ?? []).length > 0 && (
+            <CheckList
+              outcomes={result.assertions ?? []}
+              source={assertionRunId === undefined ? undefined : { assertionRunId, test: result.test }}
+              testId={`report-checks-${result.test}`}
+            />
+          )}
           <details className="text-[12px] text-muted-foreground" data-testid="report-result-read">
             <summary className="w-fit cursor-pointer hover:text-foreground">How it was checked</summary>
             <p className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1">

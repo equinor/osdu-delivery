@@ -1,10 +1,12 @@
 import { Fragment, type ReactNode } from "react";
-import { Check, Database, KeyRound, Search, ShieldCheck, SlidersHorizontal, Table2, X } from "lucide-react";
+import { Check, KeyRound, ShieldCheck, SlidersHorizontal, Table2, X } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import type { MappingOutline, MappingOutlineFlow, MappingOutlineNode } from "../../../api/delivery";
 import type { OverviewPart } from "./OverviewCanvas";
+import { PartLineageButton, SourceGlyph } from "./OverviewLineage";
+import type { PartTarget } from "./partTargets";
 import { cardsOf, fieldId, nodeAt, readersOf, wayOf, type OutlineCard, type WayStage } from "./outlineModel.ts";
 import { cardPreviewLabel } from "./tableRows.ts";
 
@@ -20,20 +22,6 @@ function Section({ title, children }: { title: string; children: ReactNode }) {
 
 function sourceName(cards: readonly OutlineCard[], id: string): string {
   return cards.find((card) => card.id === id)?.title ?? id;
-}
-
-/** The mark of a source: a table, the flow's parameters, the cache or a search. */
-function sourceGlyph(cards: readonly OutlineCard[], id: string): ReactNode {
-  switch (cards.find((card) => card.id === id)?.source.kind) {
-    case "parameters":
-      return <SlidersHorizontal className="size-3.5" aria-hidden />;
-    case "cache":
-      return <Database className="size-3.5" aria-hidden />;
-    case "search":
-      return <Search className="size-3.5" aria-hidden />;
-    default:
-      return <Table2 className="size-3.5" aria-hidden />;
-  }
 }
 
 /** A value of the record shown, under what holds it. */
@@ -151,7 +139,7 @@ function Way({ flow, node, cards, value, values, onPick }: {
                 <ul className="flex min-w-0 flex-col gap-1">
                   {stage.reads.map((read) => (
                     <li key={fieldId(read.source, read.field)} className="flex min-w-0 items-start gap-1.5">
-                      <span className="mt-0.5 shrink-0 text-muted-foreground">{sourceGlyph(cards, read.source)}</span>
+                      <span className="mt-0.5 shrink-0 text-muted-foreground"><SourceGlyph kind={cards.find((card) => card.id === read.source)?.source.kind} /></span>
                       <span className="min-w-0 flex-1">
                         <span className="flex min-w-0 items-baseline gap-2">
                           <FieldButton source={read.source} field={read.field} cards={cards} onPick={onPick} />
@@ -389,15 +377,17 @@ export const INSPECTOR_WIDTH = 380;
 
 /**
  * What was picked on the canvas, sliding in from the right without taking the canvas over: the way a value goes to a property, a
- * field and what it reaches, or a table and what is read of it.
+ * field and what it reaches, or a table and what is read of it, with the jump to where it stands in lineage.
  */
-export function OverviewInspector({ part, outline, tables, cached, yaml, values, onPick, onPreview, onClose }: {
+export function OverviewInspector({ part, outline, tables, cached, yaml, values, lineage, onPick, onPreview, onClose }: {
   part: OverviewPart | null;
   outline: MappingOutline;
   tables: Parameters<typeof cardsOf>[2];
   cached: Parameters<typeof cardsOf>[3];
   yaml: string;
   values: ReadonlyMap<string, string>;
+  /** What the part picked opens in lineage: its table's node, or the nodes a property's value comes from. */
+  lineage: readonly PartTarget[];
   onPick: (part: OverviewPart) => void;
   /** Shows the rows of the table picked, or of the table holding the field picked. */
   onPreview: (part: OverviewPart) => void;
@@ -437,6 +427,11 @@ export function OverviewInspector({ part, outline, tables, cached, yaml, values,
                 </span>
               )}
             </div>
+            {lineage.length > 0 && (
+              <span className="flex shrink-0" data-testid="mapping-overview-inspector-lineage">
+                <PartLineageButton targets={lineage} named={node !== null ? node.name : title} />
+              </span>
+            )}
             {preview !== null && (
               <Button variant="ghost" size="icon-xs" aria-label={preview} title={preview} onClick={() => onPreview(part)} data-testid="mapping-overview-inspector-preview">
                 {card?.source.kind === "parameters" ? <SlidersHorizontal /> : <Table2 />}

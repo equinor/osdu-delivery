@@ -12,7 +12,7 @@ import { useActivePartition } from "../activePartition";
 import { ProblemView } from "../TemplateSheet";
 import { AssertionRunDialog, type AssertionLaunch } from "./AssertionRunDialog";
 import { AssertionSetRunDialog, type AssertionSetLaunch } from "./AssertionSetRunDialog";
-import { DashboardDownloads, DashboardTestActions } from "./DashboardHostActions";
+import { DashboardCheckActions, DashboardDownloads, DashboardTestActions } from "./DashboardHostActions";
 import { readResults } from "./assertionFormat";
 import { AssertionDashboard } from "./dashboard/AssertionDashboard";
 import { fromBoard } from "./dashboard/dashboardModel";
@@ -96,6 +96,7 @@ export default function DeliveryAssertionsPage() {
             showFlow
           />
         )}
+        checkActions={(test, check) => <DashboardCheckActions test={test} check={check} />}
         empty={(
           <EmptyState
             icon={<ListChecks />}

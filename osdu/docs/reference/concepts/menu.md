@@ -54,10 +54,10 @@ SQLFlow's.
 | Operate | | Home | `/` |
 | | | Assistant | `/chat` |
 | | | Runs | `/runs` |
+| | | Nodes | `/nodes` |
 | | | Timeline | `/schedules/timeline` |
 | | Health | Data streams | `/datastreams` |
 | | | Insights | `/insights` |
-| | | Nodes | `/nodes` |
 | | | Maintenance | `/settings/maintenance` |
 | Ledger | | Delivery | `/delivery` |
 | | | Records | `/delivery/records` |
@@ -94,9 +94,9 @@ SQLFlow's.
 
 ## What each group is for
 
-- **Operate**: the day's work. Home, the assistant, every run, and when each schedule's flows ran. **Health** is whether
-  data keeps arriving (Data streams), how the flows perform (Insights), the workers that run them (Nodes), and the room
-  the database takes (Maintenance).
+- **Operate**: the day's work. Home, the assistant, every run, the workers that run them (Nodes), and when each
+  schedule's flows ran. **Health** is whether data keeps arriving (Data streams), how the flows perform (Insights), and
+  the room the database takes (Maintenance).
 - **Ledger**: what was delivered, flow by flow (Delivery) and record by record (Records), the removals that write to it,
   who did what (Audit trail), and the ledgers whose flow is gone.
 - **OSDU**: what OSDU holds, read live (Explorer, which also searches by the source columns of Search terms), the checks
@@ -118,18 +118,17 @@ scheduled under **Build**, **Flows**; a flow's own page is reached through **Pip
 
 The activity bar, the narrow bar down the workbench's left edge, is a menu button and seven shortcuts
 ([decision 0045](../../wiki/decisions/0045-activity-bar-shortcuts.md)). The menu button shows the side bar, with the page
-shown selected in its menu and unfolded into view, or hides it. Each shortcut opens its page in one click, in the order the
-data goes: the assistant, then what is delivered and when, then what was delivered, what OSDU holds and whether it is
-right.
+shown selected in its menu and unfolded into view, or hides it. Each shortcut opens its page in one click, from the top: the
+assistant, the delivery overview, the repositories and their schedules, the Explorer, the mappings and the assertions.
 
 | Shortcut | Page | Listed under |
 | --- | --- | --- |
 | Assistant | `/chat` | Operate |
-| Repos | `/repos` | Build, Flows |
-| Mappings | `/delivery/documents` | Build, Delivery |
-| Schedules | `/schedules` | Build, Flows |
 | Delivery | `/delivery` | Ledger |
+| Repos | `/repos` | Build, Flows |
+| Schedules | `/schedules` | Build, Flows |
 | Explorer | `/delivery/explorer` | OSDU |
+| Mappings | `/delivery/documents` | Build, Delivery |
 | Assertions | `/delivery/assertions` | OSDU |
 
 A shortcut is lit while its page is shown, or a page reached from it (a mapping's page and the mapping builder light

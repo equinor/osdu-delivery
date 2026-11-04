@@ -3285,6 +3285,15 @@ export interface DeliveryAssertionExample {
   id?: string | null;
   value?: string | null;
   reason: string;
+  /** For a row of a delivery flow's staged data, its key parts in the flow's key order; absent for anything else. */
+  key?: string[] | null;
+}
+
+/** The staged rows an assertion read: the delivery flow, its interface, and the parameter values its scope was read under. */
+export interface DeliveryStagedScope {
+  flow: string;
+  interface?: string | null;
+  values: Record<string, string>;
 }
 
 /** How one assertion of a test came out in one run. */
@@ -3304,7 +3313,12 @@ export interface DeliveryAssertionOutcome {
   value?: number | null;
   examples?: DeliveryAssertionExample[];
   examplesTrimmed?: boolean;
+  /** The staged rows it read, for a staged delivered assertion; absent for one that reads OSDU alone. */
+  staged?: DeliveryStagedScope | null;
 }
+
+/** Which of the staged rows a check read a query shows: the ones it lists by their keys, or every row of its scope. */
+export type AssertionSourceRows = "listed" | "all";
 
 /** One test's whole result in one run: what it read, and every assertion. */
 export interface DeliveryTestResult {
@@ -4277,6 +4291,12 @@ export const deliveryApi = {
   /** Tests' results whole, by the ids the board gave them (at most 100 a read). */
   assertionResults: (resultIds: readonly number[]) =>
     get<DeliveryAssertionResult[]>("/api/v1/delivery/assertion-results", { ids: resultIds.join(",") }),
+  /**
+   * The staged rows one check of a run read, as T-SQL over its delivery flow's tables: the rows it lists, or every row of its
+   * scope. Written by the control plane from what the result kept; no row is read, and nothing is run.
+   */
+  assertionSourceSql: (assertionRunId: number, request: { test: string; assertion: number; rows: AssertionSourceRows }) =>
+    post<DeliverySourceSql>(`/api/v1/delivery/assertion-runs/${assertionRunId}/source-sql`, request),
   /** An assertion set's report as the text of the format asked for: Markdown, JSON or JUnit XML. */
   assertionSetReport: (set: string, format: Exclude<AssertionReportFormat, "html">) =>
     getText(`/api/v1/delivery/assertion-sets/${encodeURIComponent(set)}/report?format=${format}`),

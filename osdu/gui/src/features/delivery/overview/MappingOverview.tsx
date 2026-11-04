@@ -11,23 +11,28 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel,
 import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from "@/components/ui/resizable";
 import { Skeleton } from "@/components/ui/skeleton";
 import { ExplainMark } from "@/components/ExplainTip";
+import { repoApi } from "@/api/endpoints";
 import { SearchInput } from "@/components/SearchInput";
 import { usePersistentLayout } from "@/layout/workbench/usePersistentLayout";
 import { cn } from "@/lib/utils";
 import { deliveryApi, type DeliveryMappingDetail, type MappingDraftIssue, type MappingOutline, type MappingOutlineHow } from "../../../api/delivery";
 import { useActivePartition } from "../activePartition";
 import { LedgerStanding } from "../LedgerStanding";
+import { mappingLineageTarget, osduTypeLineageTarget } from "../lineageTargets";
 import { ProblemView } from "../TemplateSheet";
 import { ValueCheckScope } from "../ValueCheckBar";
 import { flowScope, type ValueCheckSession } from "../useValueCheck";
 import { formatCount } from "../valueCheck";
 import { OverviewCanvas, type OverviewHandlers, type OverviewMenuTarget, type OverviewPart, type OverviewTip } from "./OverviewCanvas";
 import { INSPECTOR_WIDTH, OverviewInspector } from "./OverviewInspector";
+import { PartLineageEntry } from "./OverviewLineage";
+import { partTargets, type LineagePlace, type PartTarget } from "./partTargets";
 import { OverviewRail } from "./OverviewRail";
 import { OverviewDocument, OverviewParameters } from "./OverviewRendered";
 import { OverviewRows } from "./OverviewRows";
 import { OverviewYaml } from "./OverviewYaml";
 import { layoutOf } from "./outlineLayout.ts";
+import { lineageOfPart, type LineageScope } from "./outlineLineage.ts";
 import {
   cardsOf, countsOf, defaultOpen, everyFolding, foundOf, lightOfCard, lightOfField, lightOfRows, marksFor, nodeAt, nodeAtLine, opensTo, pathsOfHow, pathsOfSearch, rowShowing,
   rowsOf, type OutlineLight,
@@ -73,6 +78,9 @@ interface MenuItem {
   act: () => void;
 }
 
+/** What a menu holds: its items, and where what it is on stands in lineage. */
+type MenuEntry = MenuItem | { id: "lineage"; targets: PartTarget[] };
+
 /** Copies a name for a reader, and says whether the browser let it. */
 function copyName(text: string, what: string): void {
   navigator.clipboard.writeText(text).then(
@@ -88,7 +96,7 @@ function copyName(text: string, what: string): void {
 function OverviewMenu({ menu, named, items, onClose }: {
   menu: { x: number; y: number } | null;
   named: string;
-  items: MenuItem[];
+  items: MenuEntry[];
   onClose: () => void;
 }) {
   return (
@@ -100,12 +108,14 @@ function OverviewMenu({ menu, named, items, onClose }: {
       <DropdownMenuContent align="start" className="w-64" data-testid="mapping-overview-menu">
         <DropdownMenuLabel className="truncate font-mono text-[12px] font-normal text-muted-foreground" title={named}>{named}</DropdownMenuLabel>
         <DropdownMenuSeparator />
-        {items.map((item) => (
-          <DropdownMenuItem key={item.id} onSelect={item.act} data-testid={`mapping-overview-menu-${item.id}`}>
-            {item.glyph}
-            {item.label}
-          </DropdownMenuItem>
-        ))}
+        {items.map((item) => ("targets" in item
+          ? <PartLineageEntry key={item.id} targets={item.targets} onClose={onClose} />
+          : (
+            <DropdownMenuItem key={item.id} onSelect={item.act} data-testid={`mapping-overview-menu-${item.id}`}>
+              {item.glyph}
+              {item.label}
+            </DropdownMenuItem>
+          )))}
       </DropdownMenuContent>
     </DropdownMenu>
   );
@@ -227,6 +237,13 @@ function OverviewBody({ detail, outline, unfilled, issues, session, tools, onPro
   });
   const caches = useQuery({ queryKey: ["delivery", "mapping-builder", "caches"], queryFn: deliveryApi.builderCaches, retry: false });
   const cached = useMemo(() => caches.data?.find((candidate) => candidate.scope === partition)?.types ?? null, [caches.data, partition]);
+  // The flow's node in lineage is listed under its repository's name: only the flow's parameters open it.
+  const repo = useQuery({
+    queryKey: ["repos", "detail", mapping.repoId],
+    queryFn: () => repoApi.getById(mapping.repoId),
+    enabled: flow !== null,
+    retry: false,
+  });
 
   const record = useRecordValues(outline, session);
   const rows = useMemo(() => rowsOf(outline, open), [outline, open]);
@@ -297,6 +314,25 @@ function OverviewBody({ detail, outline, unfilled, issues, session, tools, onPro
   }, []);
 
   const { entity, version } = entityOf(outline.kind);
+
+  // Where each part stands in lineage: a table's node, a column's table's, the nodes a property's value comes from, the record's
+  // kind on its heading, and the mapping on the canvas itself.
+  const repoName = repo.data?.name ?? null;
+  const place = useMemo<LineagePlace>(() => ({ partition, flow, repo: { id: mapping.repoId, name: repoName }, cached }), [partition, flow, mapping.repoId, repoName, cached]);
+  const lineageScope = useMemo<LineageScope>(() => ({ tables: tables.data ?? null, flow: flow !== null }), [tables.data, flow]);
+  const lineageOf = useCallback((target: OverviewMenuTarget): PartTarget[] => {
+    if (target.type === "canvas") {
+      return [{ id: "mapping", title: mapping.reference, mark: "mapping", target: mappingLineageTarget(mapping, partition) }];
+    }
+
+    if (target.type === "record") {
+      const title = `${entity} ${version}`;
+      return [{ id: "record", title, mark: "type", target: osduTypeLineageTarget(outline.kind, partition, title) }];
+    }
+
+    return partTargets(lineageOfPart(target, outline, cards, lineageScope), place);
+  }, [mapping, partition, entity, version, outline, cards, lineageScope, place]);
+
   useEffect(() => {
     canvas.current?.render(placed, {
       title: `${entity} ${version}`,
@@ -405,7 +441,8 @@ function OverviewBody({ detail, outline, unfilled, issues, session, tools, onPro
 
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
-      if (event.key !== "Escape" || menuOpen.current) {
+      // A menu or a picker of the panels (a lineage jump's) takes the key for itself, and marks it so as it closes.
+      if (event.key !== "Escape" || menuOpen.current || event.defaultPrevented) {
         return;
       }
 
@@ -495,13 +532,14 @@ function OverviewBody({ detail, outline, unfilled, issues, session, tools, onPro
   const lookingAt = lookingCard !== null || (looking?.what === "parameters" && parametersCard !== null) || looking?.what === "document";
   const recordKey = record.on ? record.line?.keyJson ?? null : null;
 
-  /** What the menu on `target` names it by, and what it offers there. */
-  function menuFor(target: OverviewMenuTarget | null): { named: string; items: MenuItem[] } {
+  /** What the menu on `target` names it by, and what it offers there, where it stands in lineage among it. */
+  function menuFor(target: OverviewMenuTarget | null): { named: string; items: MenuEntry[] } {
     const yaml: MenuItem = { id: "yaml", label: showYaml ? "Hide the YAML" : "Show the YAML", glyph: <FileCode />, act: () => setShowYaml((current) => !current) };
     if (target === null) {
       return { named: "", items: [] };
     }
 
+    const lineage: MenuEntry = { id: "lineage", targets: lineageOf(target) };
     if (target.type === "canvas") {
       return {
         named: mapping.reference,
@@ -509,6 +547,7 @@ function OverviewBody({ detail, outline, unfilled, issues, session, tools, onPro
           { id: "fit", label: "Fit to the window", glyph: <Maximize />, act: fitView },
           { id: "open-all", label: allOpen ? "Fold" : "Open all", glyph: allOpen ? <ChevronsDownUp /> : <ChevronsUpDown />, act: () => setOpen(allOpen ? defaultOpen(outline) : everyFolding(outline)) },
           yaml,
+          lineage,
         ],
       };
     }
@@ -519,6 +558,7 @@ function OverviewBody({ detail, outline, unfilled, issues, session, tools, onPro
         items: [
           { id: "document", label: "Preview the rendered record", glyph: <FileText />, act: () => setLooking({ what: "document" }) },
           yaml,
+          lineage,
           { id: "copy", label: "Copy the kind", glyph: <Copy />, act: () => copyName(outline.kind, "the kind") },
         ],
       };
@@ -531,6 +571,7 @@ function OverviewBody({ detail, outline, unfilled, issues, session, tools, onPro
         items: [
           { id: "details", label: "Details", glyph: <PanelRight />, act: () => pickShown(target) },
           { id: "yaml-line", label: "Show in the YAML", glyph: <FileCode />, act: () => { setShowYaml(true); pickShown(target); } },
+          lineage,
           { id: "copy", label: "Copy the path", glyph: <Copy />, act: () => copyName(path, "the path") },
         ],
       };
@@ -545,6 +586,7 @@ function OverviewBody({ detail, outline, unfilled, issues, session, tools, onPro
       items: [
         ...(label === null ? [] : [{ id: "preview", label, glyph: card?.source.kind === "parameters" ? <SlidersHorizontal /> : <Table2 />, act: () => lookAt(target) }]),
         { id: "details", label: "Details", glyph: <PanelRight />, act: () => pickShown(target) },
+        lineage,
         target.type === "field"
           ? { id: "copy", label: "Copy the name", glyph: <Copy />, act: () => copyName(target.field, "the name") }
           : { id: "copy", label: table === undefined ? "Copy the name" : "Copy the table's name", glyph: <Copy />, act: () => copyName(table?.table ?? named, "the name") },
@@ -627,6 +669,7 @@ function OverviewBody({ detail, outline, unfilled, issues, session, tools, onPro
                     cached={cached}
                     yaml={yaml}
                     values={record.on ? record.values : NO_VALUES}
+                    lineage={picked === null ? [] : lineageOf(picked)}
                     onPick={pickShown}
                     onPreview={lookAt}
                     onClose={() => setPicked(null)}
@@ -647,6 +690,7 @@ function OverviewBody({ detail, outline, unfilled, issues, session, tools, onPro
                         partition={partition}
                         tables={tables.data ?? null}
                         shownKey={record.on ? keyParts(record.line?.keyJson) : null}
+                        lineage={lineageOf({ type: "card", source: lookingCard.id })}
                         onPoint={pointFromBelow}
                         onPick={pickShown}
                         onClose={() => setLooking(null)}
@@ -658,13 +702,20 @@ function OverviewBody({ detail, outline, unfilled, issues, session, tools, onPro
                         focus={looking.field}
                         session={session}
                         recordKey={recordKey}
+                        lineage={lineageOf({ type: "card", source: parametersCard.id })}
                         onPoint={pointFromBelow}
                         onPick={pickShown}
                         onClose={() => setLooking(null)}
                       />
                     )}
                     {looking?.what === "document" && (
-                      <OverviewDocument title={`${recordEntity} ${recordVersion}`} session={session} recordKey={recordKey} onClose={() => setLooking(null)} />
+                      <OverviewDocument
+                        title={`${recordEntity} ${recordVersion}`}
+                        session={session}
+                        recordKey={recordKey}
+                        lineage={lineageOf({ type: "record" })}
+                        onClose={() => setLooking(null)}
+                      />
                     )}
                   </ResizablePanel>
                 </>

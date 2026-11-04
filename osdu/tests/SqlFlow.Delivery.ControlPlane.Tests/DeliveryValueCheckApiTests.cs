@@ -39,7 +39,9 @@ public sealed class DeliveryValueCheckApiTests
         await SampleEstate.MigrateModuleAsync(cs);
 
         var suffix = Guid.NewGuid().ToString("N")[..10];
-        var catalogued = "cp-values-table-" + suffix;
+        // The table's node as the flow's read of it lands there: its connection reference and its name, case-folded.
+        var catalogued = "${env:osdu_data_db}|osdudata|silver|wellbore" + suffix;
+        var elsewhere = "#cp-values-elsewhere-" + suffix;
         var flowName = "api-values-" + suffix;
         var retiredName = "api-values-retired-" + suffix;
         var repoId = FlowIdentity.FromName("repo/cp-values-" + suffix);
@@ -96,12 +98,16 @@ public sealed class DeliveryValueCheckApiTests
                 LastSeenUtc = now,
             });
 
-            // The columns the catalog holds of one table the flow reads; the other it has not described.
-            db.Objects.Add(new CatalogObject { Key = catalogued, ServerRef = "test", Database = "OsduData", Schema = "silver", Name = "Wellbore" + suffix, Kind = "Table" });
+            // The columns the catalog holds of one table the flow reads, reached through the flow's connection and through
+            // another, which comes first in key order; the other table it has not described.
+            db.Objects.Add(new CatalogObject { Key = catalogued, ServerRef = "${env:osdu_data_db}", Database = "OsduData", Schema = "silver", Name = "Wellbore" + suffix, Kind = "Table" });
+            db.Objects.Add(new CatalogObject { Key = elsewhere, ServerRef = "${env:other_db}", Database = "OsduData", Schema = "silver", Name = "Wellbore" + suffix, Kind = "Table" });
             db.ObjectColumns.AddRange(
                 new CatalogObjectColumn { ObjectKey = catalogued, Ordinal = 1, Name = "facility_name", DataType = "nvarchar(100)", Nullable = false, Tier = "Derived" },
                 new CatalogObjectColumn { ObjectKey = catalogued, Ordinal = 2, Name = "UpdatedDate_DW", DataType = "datetime2", Nullable = true, Tier = "Derived" },
-                new CatalogObjectColumn { ObjectKey = catalogued, Ordinal = 3, Name = "spud_date", DataType = "date", Nullable = true, Tier = "Derived" });
+                new CatalogObjectColumn { ObjectKey = catalogued, Ordinal = 3, Name = "spud_date", DataType = "date", Nullable = true, Tier = "Derived" },
+                new CatalogObjectColumn { ObjectKey = elsewhere, Ordinal = 1, Name = "facility_name", DataType = "nvarchar(100)", Nullable = false, Tier = "Derived" },
+                new CatalogObjectColumn { ObjectKey = elsewhere, Ordinal = 2, Name = "legacy_name", DataType = "nvarchar(100)", Nullable = true, Tier = "Derived" });
             await db.SaveChangesAsync();
         }
 
@@ -163,7 +169,8 @@ public sealed class DeliveryValueCheckApiTests
                 Assert.Equal(HttpStatusCode.NotFound, unknown.StatusCode);
             }
 
-            // The tables an interface reads, with what the catalog holds of them, without the columns that are SQLFlow's own.
+            // The tables an interface reads, each with its node in lineage and what the catalog holds of it through the flow's
+            // own connection, without the columns that are SQLFlow's own.
             using (var tables = await SendAsync(client, token, HttpMethod.Get, $"/api/v1/delivery/flows/{pipelineId:D}/source-tables?interface=wellbores"))
             {
                 var text = await tables.Content.ReadAsStringAsync();
@@ -171,6 +178,7 @@ public sealed class DeliveryValueCheckApiTests
                 var record = Assert.Single(JsonDocument.Parse(text).RootElement.EnumerateArray().ToList());
                 Assert.Equal(JsonValueKind.Null, record.GetProperty("dataset").ValueKind);
                 Assert.Equal("OsduData.silver.Wellbore" + suffix, record.GetProperty("table").GetString());
+                Assert.Equal(catalogued, record.GetProperty("objectKey").GetString());
                 Assert.Equal("facility_name", Assert.Single(record.GetProperty("key").EnumerateArray().ToList()).GetString());
                 Assert.Equal(
                     ["facility_name", "spud_date"],
@@ -184,6 +192,7 @@ public sealed class DeliveryValueCheckApiTests
                 Assert.True(tables.StatusCode == HttpStatusCode.OK, text);
                 var record = JsonDocument.Parse(text).RootElement.EnumerateArray().First();
                 Assert.Equal("OsduData.silver.WellLog", record.GetProperty("table").GetString());
+                Assert.Equal("${env:osdu_data_db}|osdudata|silver|welllog", record.GetProperty("objectKey").GetString());
             }
 
             // The flow's parameters say which column of the record table each scopes by, so a page offers that column's
@@ -371,8 +380,8 @@ public sealed class DeliveryValueCheckApiTests
             await using (var db = CatalogDatabase.Create(cs))
             {
                 await db.ComputeTasks.Where(t => t.SourceRef == flowName).ExecuteDeleteAsync();
-                await db.ObjectColumns.Where(c => c.ObjectKey == catalogued).ExecuteDeleteAsync();
-                await db.Objects.Where(o => o.Key == catalogued).ExecuteDeleteAsync();
+                await db.ObjectColumns.Where(c => c.ObjectKey == catalogued || c.ObjectKey == elsewhere).ExecuteDeleteAsync();
+                await db.Objects.Where(o => o.Key == catalogued || o.Key == elsewhere).ExecuteDeleteAsync();
                 await db.Pipelines.Where(p => p.RepoId == repoId).ExecuteDeleteAsync();
                 await db.Repos.Where(r => r.Id == repoId).ExecuteDeleteAsync();
             }

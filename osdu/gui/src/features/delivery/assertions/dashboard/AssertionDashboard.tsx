@@ -6,7 +6,8 @@ import {
 import { parseUtc } from "@/lib/time";
 import {
   GROUPS, STANDING_MEANINGS, STANDING_WORDS, axisValues, along, checksOf, defaultAxes, dimensionsOf, findingOf, groupOf, inScope, matches,
-  passRate, setsOf, square, tally, verdictOf, type AxisValue, type DashCheck, type DashData, type DashTest, type GroupId, type ResultFacts, type Standing,
+  passRate, setsOf, square, tally, verdictOf, type AxisValue, type CheckOutcome, type DashCheck, type DashData, type DashTest, type GroupId, type ResultFacts,
+  type Standing,
 } from "./dashboardModel";
 import "./dashboard.css";
 
@@ -81,6 +82,8 @@ export interface AssertionDashboardProps {
   actions?: (view: DashView) => ReactNode;
   /** The host's actions on an open assertion: run it again, open its flow. */
   testActions?: (test: DashTest) => ReactNode;
+  /** The host's actions on one check of an open assertion, as its result recorded it: the T-SQL of the staged rows it read. */
+  checkActions?: (test: DashTest, check: CheckOutcome) => ReactNode;
   /** True in a downloaded file: a theme switch, and a note of when it was downloaded. */
   standalone?: boolean;
   /** What shows when there is no assertion at all. */
@@ -119,7 +122,7 @@ function useResults(initial: Record<string, ResultFacts> | undefined, load: Asse
  * includes them, and then say why each is disabled.
  */
 export function AssertionDashboard(props: AssertionDashboardProps) {
-  const { data, title, onSet, showSets = false, actions, testActions, standalone = false } = props;
+  const { data, title, onSet, showSets = false, actions, testActions, checkActions, standalone = false } = props;
   const [ownSet, setOwnSet] = useState(props.set);
   const set = onSet === undefined ? ownSet : props.set;
   const pickSet = onSet ?? setOwnSet;
@@ -412,6 +415,7 @@ export function AssertionDashboard(props: AssertionDashboardProps) {
                           open={open === test.key}
                           onToggle={() => setOpen((was) => (was === test.key ? null : test.key))}
                           actions={testActions}
+                          checkActions={checkActions}
                         />
                       ))}
                       {g.tests.length > limit && (
@@ -567,7 +571,7 @@ function HeatMap({ tests, rowDim, rows, colDim, cols, picked, onPick }: {
 }
 
 /** One assertion: where it stands and what it found in one line, opening on its checks. */
-function TestRow({ test, result, failure, loading, open, onToggle, actions }: {
+function TestRow({ test, result, failure, loading, open, onToggle, actions, checkActions }: {
   test: DashTest;
   result: ResultFacts | undefined;
   failure: string | undefined;
@@ -575,6 +579,7 @@ function TestRow({ test, result, failure, loading, open, onToggle, actions }: {
   open: boolean;
   onToggle: () => void;
   actions: ((test: DashTest) => ReactNode) | undefined;
+  checkActions: ((test: DashTest, check: CheckOutcome) => ReactNode) | undefined;
 }) {
   const others = test.dimensions.filter((d) => d.name !== "Set" && d.name !== "Check" && d.name !== "Type");
   const finding = findingOf(test, result);
@@ -590,7 +595,7 @@ function TestRow({ test, result, failure, loading, open, onToggle, actions }: {
         <span className="adb-row-when">{test.checkedUtc === null ? STANDING_WORDS[test.standing] : when(test.checkedUtc)}</span>
         {open ? <ChevronDown size={14} aria-hidden /> : <ChevronRight size={14} aria-hidden />}
       </button>
-      {open && <TestDetail test={test} result={result} failure={failure} loading={loading} actions={actions} />}
+      {open && <TestDetail test={test} result={result} failure={failure} loading={loading} actions={actions} checkActions={checkActions} />}
     </li>
   );
 }
@@ -614,12 +619,13 @@ const RESULT_STANDING: Record<DashCheck["result"], Standing> = {
 };
 
 /** An open assertion: why it stands where it does, each check with what it expected and found, and the failing records. */
-function TestDetail({ test, result, failure, loading, actions }: {
+function TestDetail({ test, result, failure, loading, actions, checkActions }: {
   test: DashTest;
   result: ResultFacts | undefined;
   failure: string | undefined;
   loading: boolean;
   actions: ((test: DashTest) => ReactNode) | undefined;
+  checkActions: ((test: DashTest, check: CheckOutcome) => ReactNode) | undefined;
 }) {
   const [examplesOf, setExamplesOf] = useState<string | null>(null);
   const checks = result === undefined ? null : checksOf(result);
@@ -641,7 +647,7 @@ function TestDetail({ test, result, failure, loading, actions }: {
             <tr><th>Check</th><th>Result</th><th>Expected</th><th>Found</th><th>Why</th></tr>
           </thead>
           <tbody>
-            {checks.map((check) => (
+            {checks.map((check, at) => (
               <Fragment key={check.label}>
                 <tr className={check.result === "passed" ? undefined : "adb-check-bad"}>
                   <td className="adb-check-label">{check.label}</td>
@@ -658,6 +664,7 @@ function TestDetail({ test, result, failure, loading, actions }: {
                         {examplesOf === check.label ? "Hide the records" : `Show ${plural(check.examples.length, "failing record")}${check.examplesTrimmed ? ", the first of more" : ""}`}
                       </button>
                     )}
+                    {checkActions !== undefined && result?.assertions?.[at] !== undefined && checkActions(test, result.assertions[at])}
                   </td>
                 </tr>
                 {examplesOf === check.label && (

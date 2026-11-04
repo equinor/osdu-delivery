@@ -108,6 +108,8 @@ export interface DeliverySourceTable {
   /** The child dataset it is read as; null for the record table. */
   dataset: string | null;
   table: string;
+  /** Its node in lineage: where the flow's read of it lands, and what the ingestion flow writing it writes. */
+  objectKey: string;
   key: string[];
   /** How a child row joins its record: child column to record column. */
   join: Record<string, string> | null;

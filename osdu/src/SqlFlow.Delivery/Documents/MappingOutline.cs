@@ -97,7 +97,10 @@ public sealed record MappingOutlineField(string Name, bool Key, bool Display, bo
 /// <param name="Id">The name the outline's reads and lookups use for it (<c>dataset</c>, <c>dataset.curves</c>, <c>cache.UnitOfMeasure</c>).</param>
 /// <param name="Kind">One of <see cref="MappingOutlineSourceKind"/>.</param>
 /// <param name="Name">What the document calls it.</param>
-/// <param name="Detail">The kind searched, or what the document says of it.</param>
+/// <param name="Detail">
+/// The kind searched, the kind of the parent or child record read (a parent's as the template links it, so none without the
+/// template), or what the document says of it.
+/// </param>
 /// <param name="Fields">What the mapping reads of it, in the order the document first does.</param>
 public sealed record MappingOutlineSource(string Id, string Kind, string Name, string? Detail, IReadOnlyList<MappingOutlineField> Fields);
 
@@ -681,7 +684,8 @@ public sealed record MappingOutline(
                     steps.Add(new MappingOutlineStep("expr", "expr", "Computes the value from the row.", expression.Text, []));
                     break;
                 case MappingSourceKind.Parent:
-                    reads.Add(Other(MappingOutlineSourceKind.Parent, "parent", "Parent record", null, source.ParentPath!));
+                    // The parent's kind is the template's link to it, which a mapping read without its template cannot tell.
+                    reads.Add(Other(MappingOutlineSourceKind.Parent, "parent", "Parent record", _schema?.Parent?.Kind, source.ParentPath!));
                     break;
                 case MappingSourceKind.Child:
                     reads.Add(Other(MappingOutlineSourceKind.ChildRecord, $"child.{source.ChildKind}", ChildName(source.ChildKind!), source.ChildKind, "id"));

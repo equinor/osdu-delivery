@@ -151,7 +151,9 @@ assertion flow's **Assertions** tab is the same dashboard of its own assertions.
    **Not yet checked** and **Passing** closed with their reasons gathered, 10 rows at a time. A row says in a line or two
    what it found (its first check that does not hold, with what it expected and found); one opens at a time, on each check
    read once (what it expected and what qualifies that, what it found, why), the records that fail it, its dimensions,
-   and **Run again**, its report and its flow.
+   and **Run again**, its report and its flow. A check that accounts for a delivery flow's staged rows also offers
+   **Show the rows in SQL** under its failing records: the T-SQL that reads them from the flow's own tables
+   ([the rows in the source](staged-accounting.md#the-rows-in-the-source)).
 
 Disabled assertions are left out of all of it until **Include disabled** is switched on; then they are counted, mapped and
 listed in a **Disabled** group, each with the reason its document gives. **Present** shows the dashboard full screen.
@@ -164,7 +166,8 @@ verdict with its problem, since its assertions cannot be shown.
 HTML file, `{set}-{partition}-assertion-dashboard.html` (`all-sets-{partition}-...` for every set). It is the same
 dashboard, built from the same sources into one script with the data and every assertion's latest result inside, so it
 opens offline, in a board meeting or from an email, with the sets, the map, the filters and each assertion's checks, in a
-light or a dark theme. It reads nothing from the control plane once saved.
+light or a dark theme. It reads nothing from the control plane once saved, so it shows no SQL of staged rows, which the
+control plane writes when asked.
 
 ## A set's report
 

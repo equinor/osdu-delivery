@@ -12,6 +12,8 @@ import { ProblemView } from "../TemplateSheet";
 import { ValueCheckScope } from "../ValueCheckBar";
 import { flowScope, type ValueCheckSession } from "../useValueCheck";
 import type { OverviewPart } from "./OverviewCanvas";
+import { PartLineageButton } from "./OverviewLineage";
+import type { PartTarget } from "./partTargets";
 import type { OutlineCard } from "./outlineModel.ts";
 import { recordMarkdown, recordSections, type RecordSection } from "./recordMarkdown.ts";
 
@@ -76,11 +78,13 @@ function Unshown({ blocked, error, reason, testId }: { blocked: string | null | 
  * the canvas lists them, then any other the mapping declares. They are read from one record's render, so they are the values
  * that reach a record, every reference resolved. Pointing at one lights its lines, and a click opens its details.
  */
-export function OverviewParameters({ card, focus, session, recordKey, onPoint, onPick, onClose }: {
+export function OverviewParameters({ card, focus, session, recordKey, lineage, onPoint, onPick, onClose }: {
   card: OutlineCard;
   focus: string | null;
   session: ValueCheckSession;
   recordKey: string | null;
+  /** The flow supplying the values, in lineage. */
+  lineage: readonly PartTarget[];
   onPoint: (part: OverviewPart | null) => void;
   onPick: (part: OverviewPart) => void;
   onClose: () => void;
@@ -108,6 +112,7 @@ export function OverviewParameters({ card, focus, session, recordKey, onPoint, o
         testId="mapping-overview-parameters"
       >
         <ValueCheckScope session={session} />
+        <PartLineageButton targets={lineage} named={card.title} />
       </Heading>
       <Unshown blocked={blocked} error={preview.error} reason={preview.data !== undefined && given === null ? preview.data.reason ?? "The record did not render, so its parameters were not read." : null} testId="mapping-overview-parameters" />
       {rows.length > 0 && (
@@ -213,11 +218,13 @@ function Outline({ sections, active, onGo }: { sections: RecordSection[]; active
  * One staged record as the mapping renders it, under the canvas: as a Markdown document a person reads, or as the JSON a
  * delivery would send, either copied whole. A record the render holds says why above it. Nothing is sent.
  */
-export function OverviewDocument({ title, session, recordKey, onClose }: {
+export function OverviewDocument({ title, session, recordKey, lineage, onClose }: {
   /** The record's kind as the canvas heads it. */
   title: string;
   session: ValueCheckSession;
   recordKey: string | null;
+  /** The record's kind, in lineage. */
+  lineage: readonly PartTarget[];
   onClose: () => void;
 }) {
   const [shown, setShown] = useState<"markdown" | "json">("markdown");
@@ -272,6 +279,7 @@ export function OverviewDocument({ title, session, recordKey, onClose }: {
           </>
         )}
         <ValueCheckScope session={session} />
+        <PartLineageButton targets={lineage} named={title} />
       </Heading>
       <Unshown
         blocked={blocked}

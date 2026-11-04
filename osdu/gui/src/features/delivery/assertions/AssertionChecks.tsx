@@ -1,11 +1,14 @@
 import { useState } from "react";
-import { ArrowLeft, ChevronRight } from "lucide-react";
+import { ArrowLeft, ChevronRight, DatabaseSearch } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { CopyButton } from "@/components/CopyButton";
+import { useAuth } from "@/auth/AuthContext";
 import { cn } from "@/lib/utils";
 import type { DeliveryAssertionOutcome } from "../../../api/delivery";
 import { SeverityChip, TestOutcomeIcon } from "./AssertionBadges";
+import { StagedRowsSql, type CheckSource } from "./AssertionSourceSql";
+import { stagedRowsOf, type StagedRows } from "./assertionReading";
 import { STANDING_TEXT, assertionStanding, checkReading, counted, needsLook } from "./assertionFormat";
 
 /** Which checks a list shows: the ones that ask for a look, or every one. */
@@ -140,12 +143,35 @@ function Examples({ outcome }: { outcome: DeliveryAssertionOutcome }) {
 }
 
 /**
- * Everything one check found now, each fact once: what it expected (and what qualifies that), what it found, why it came out
- * as it did when that adds to the two, and the records that failed it.
+ * The staged rows a check read, in SQL, written once the reader asks for it: a check opens on what it found. Writing it reads
+ * the delivery flow's tables, so it is offered to those who may operate.
  */
-export function CheckDetail({ outcome, onBack }: { outcome: DeliveryAssertionOutcome; onBack?: () => void }) {
+function StagedRowsSection({ source, rows }: { source: CheckSource; rows: StagedRows }) {
+  const [shown, setShown] = useState(false);
+  const { hasScope } = useAuth();
+  if (!hasScope("operate")) {
+    return null;
+  }
+
+  return shown
+    ? <StagedRowsSql source={source} rows={rows} />
+    : (
+      <Button variant="outline" size="xs" className="w-fit" onClick={() => setShown(true)} data-testid="check-detail-sql">
+        <DatabaseSearch />
+        Show the rows in SQL
+      </Button>
+    );
+}
+
+/**
+ * Everything one check found now, each fact once: what it expected (and what qualifies that), what it found, why it came out
+ * as it did when that adds to the two, and the records that failed it. Given where its result is kept (`source`), a check
+ * that read a delivery flow's staged rows offers them in SQL.
+ */
+export function CheckDetail({ outcome, onBack, source }: { outcome: DeliveryAssertionOutcome; onBack?: () => void; source?: CheckSource }) {
   const standing = assertionStanding(outcome);
   const reading = checkReading(outcome);
+  const staged = source === undefined ? null : stagedRowsOf(outcome);
   return (
     <div className="flex flex-col gap-3" data-testid="check-detail">
       {onBack !== undefined && (
@@ -176,6 +202,7 @@ export function CheckDetail({ outcome, onBack }: { outcome: DeliveryAssertionOut
       </dl>
       {reading.why !== null && <p className="text-[12.5px]" data-testid="assertion-message">{reading.why}</p>}
       <Examples outcome={outcome} />
+      {source !== undefined && staged !== null && <StagedRowsSection source={source} rows={staged} />}
     </div>
   );
 }
@@ -184,10 +211,12 @@ export function CheckDetail({ outcome, onBack }: { outcome: DeliveryAssertionOut
  * A test's checks as one list, opening on the ones that ask for a look (every one, when all hold), the rest a click away.
  * In a sheet a check opens on its own (`onOpen`); in a report it opens in place, under its line.
  */
-export function CheckList({ outcomes, onOpen, testId = "check-list" }: {
+export function CheckList({ outcomes, onOpen, source, testId = "check-list" }: {
   outcomes: readonly DeliveryAssertionOutcome[];
   /** Opens one check on its own; without it a check opens in place. */
   onOpen?: (index: number) => void;
+  /** Where the checks' result is kept, which a check that read staged rows names to show them in SQL. */
+  source?: CheckSource;
   testId?: string;
 }) {
   const looking = outcomes.filter(needsLook);
@@ -241,7 +270,7 @@ export function CheckList({ outcomes, onOpen, testId = "check-list" }: {
               onClick={() => (onOpen === undefined ? toggle(outcome.index) : onOpen(outcome.index))}
             />
             {onOpen === undefined && open.has(outcome.index) && (
-              <div className="border-t bg-muted/20 px-3 py-3"><CheckDetail outcome={outcome} /></div>
+              <div className="border-t bg-muted/20 px-3 py-3"><CheckDetail outcome={outcome} source={source} /></div>
             )}
           </div>
         ))}

@@ -1,9 +1,10 @@
 // How a check and a set's flows read on the Assertions pages (osdu/docs/reference/flow/assertion-sets.md): each fact of a
-// check once (what it expected, what qualifies that, what it found, and why), and the start a set's flow names share.
+// check once (what it expected, what qualifies that, what it found, and why), the start a set's flow names share, and the
+// staged rows a check read, which a query of them names (osdu/docs/reference/flow/staged-accounting.md).
 
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { checkReading, sharedPrefix } from "../src/features/delivery/assertions/assertionReading.ts";
+import { checkReading, scopeText, sharedPrefix, stagedRowsOf } from "../src/features/delivery/assertions/assertionReading.ts";
 
 describe("checkReading", () => {
   it("reads a count that warns as its comparison, its qualifiers, the number found and by how much it missed", () => {
@@ -59,5 +60,47 @@ describe("sharedPrefix", () => {
     assert.equal(sharedPrefix(["welldb-welllog-assertion-well-a"]), "");
     assert.equal(sharedPrefix(["welldb-logs", "archive-logs"]), "");
     assert.equal(sharedPrefix(["welldb-", "welldb-logs"]), "");
+  });
+});
+
+describe("stagedRowsOf", () => {
+  it("names the rows a staged check read: the check, its flow and scope, the rows it lists by their keys and how many failed", () => {
+    const rows = stagedRowsOf({
+      index: 2,
+      label: "every staged log is in OSDU",
+      failing: 345,
+      examples: [{ key: ["NORTH", "7"] }, { key: ["NORTH", "8"] }, { key: null }, {}],
+      staged: { flow: "welldb-welllog-03-delivery", interface: "welllogs", values: { logSource: "COMPOSITE" } },
+    });
+
+    assert.deepEqual(rows, {
+      index: 2,
+      label: "every staged log is in OSDU",
+      flow: "welldb-welllog-03-delivery",
+      interface: "welllogs",
+      values: { logSource: "COMPOSITE" },
+      listed: 2,
+      failing: 345,
+    });
+  });
+
+  it("is null for a check that reads OSDU alone, and for one whose result names no position", () => {
+    assert.equal(stagedRowsOf({ index: 0, label: "count", staged: null }), null);
+    assert.equal(stagedRowsOf({ index: 0, label: "count" }), null);
+    assert.equal(stagedRowsOf({ label: "staged", staged: { flow: "f", values: {} } }), null);
+  });
+
+  it("lists no row when the check names none by its key, and takes no interface for a flow without them", () => {
+    const rows = stagedRowsOf({ index: 0, label: "staged", examples: [{ key: [] }], staged: { flow: "f", values: {} } });
+    assert.equal(rows?.listed, 0);
+    assert.equal(rows?.interface, null);
+    assert.equal(rows?.failing, null);
+  });
+});
+
+describe("scopeText", () => {
+  it("names each value the scope was read under, in order, and nothing for a scope with none", () => {
+    assert.equal(scopeText({ logSource: "COMPOSITE", project: "NORTH" }), "logSource = COMPOSITE, project = NORTH");
+    assert.equal(scopeText({}), "");
   });
 });

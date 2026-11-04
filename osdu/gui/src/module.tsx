@@ -425,24 +425,25 @@ export const osduDeliveryModule: GuiModule = {
     { path: "/delivery/search-terms", component: SearchTermsPage },
   ],
   // The whole menu, SQLFlow's pages and this product's side by side, grouped by what a person does there rather than by
-  // who added the page (decision 0034). Operate is the day's work: asking, the runs, and the health of what runs them.
+  // who added the page (decision 0034). Operate is the day's work: asking, the runs and the workers running them, and the
+  // health of what runs; Nodes is listed beside Runs rather than under the folded Health section, where it went unseen.
   // Ledger is what was delivered, flow by flow and record by record, and who did what. OSDU is what OSDU holds, read
   // live, the checks of it, and its partitions. Build is what is delivered, how and from where, all of it kept in the
   // repositories: the flows, what a delivered record is built from, and the sources they read. Explore is the data the
   // flows read and write and how it connects. Admin is who and what may act, and Settings is the person's own. A group of
   // more than one sort of page lists each sort under a section. The mapping builder is reached from Mappings, which owns
-  // its path. The activity bar opens the pages worked in most in one click, in the order the data goes (decision 0045):
-  // the assistant, then what is delivered and when (the repositories, their mappings, the schedules), then what was
-  // delivered, what OSDU holds and whether it is right. The rest is a click on its menu button away.
+  // its path. The activity bar opens the pages worked in most in one click, in the order the owner asked for (decision
+  // 0045): the assistant, the delivery overview, the repositories and their schedules, the Explorer, the mappings and
+  // the assertions. The rest is a click on its menu button away.
   menu: {
-    shortcuts: ["/chat", "/repos", "/delivery/documents", "/schedules", "/delivery", "/delivery/explorer", "/delivery/assertions"],
+    shortcuts: ["/chat", "/delivery", "/repos", "/schedules", "/delivery/explorer", "/delivery/documents", "/delivery/assertions"],
     groups: [
       {
         id: "operate",
         label: "Operate",
         icon: Activity,
-        entries: ["/", "/chat", "/runs", "/schedules/timeline"],
-        sections: [{ id: "health", label: "Health", entries: ["/datastreams", "/insights", "/nodes", "/settings/maintenance"] }],
+        entries: ["/", "/chat", "/runs", "/nodes", "/schedules/timeline"],
+        sections: [{ id: "health", label: "Health", entries: ["/datastreams", "/insights", "/settings/maintenance"] }],
       },
       {
         id: "ledger",

@@ -25,8 +25,8 @@ const MENU: MenuGroup[] = [
   {
     id: "operate",
     label: "Operate",
-    entries: ["nav-dashboard", "nav-chat", "nav-runs", "nav-schedule-timeline"],
-    sections: [{ id: "health", label: "Health", entries: ["nav-datastreams", "nav-insights", "nav-nodes", "nav-settings-maintenance"] }],
+    entries: ["nav-dashboard", "nav-chat", "nav-runs", "nav-nodes", "nav-schedule-timeline"],
+    sections: [{ id: "health", label: "Health", entries: ["nav-datastreams", "nav-insights", "nav-settings-maintenance"] }],
   },
   {
     id: "ledger",
@@ -68,11 +68,11 @@ const OPERATE = MENU.find((group) => group.id === "operate") as MenuGroup;
 /** The activity bar's shortcuts, in its order: the entry each opens, its page, and where the menu lists it. */
 const SHORTCUTS = [
   { entry: "nav-chat", path: "/chat", group: "operate", section: null },
-  { entry: "nav-repos", path: "/repos", group: "build", section: "flows" },
-  { entry: "nav-delivery-documents", path: "/delivery/documents", group: "build", section: "delivery" },
-  { entry: "nav-schedules", path: "/schedules", group: "build", section: "flows" },
   { entry: "nav-delivery", path: "/delivery", group: "ledger", section: null },
+  { entry: "nav-repos", path: "/repos", group: "build", section: "flows" },
+  { entry: "nav-schedules", path: "/schedules", group: "build", section: "flows" },
   { entry: "nav-delivery-explorer", path: "/delivery/explorer", group: "osdu", section: null },
+  { entry: "nav-delivery-documents", path: "/delivery/documents", group: "build", section: "delivery" },
   { entry: "nav-delivery-assertions", path: "/delivery/assertions", group: "osdu", section: null },
 ];
 
