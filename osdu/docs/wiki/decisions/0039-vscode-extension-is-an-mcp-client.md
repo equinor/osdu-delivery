@@ -31,6 +31,8 @@ referenceRefs:
   - delivery-guide-vscode
   - delivery-guide-mcp
   - delivery-concept-authentication-and-identity
+related:
+  - delivery-wiki-0046-eu-ai-act
 ---
 # 0039: The VS Code extension is a client of the MCP server, and one browser sign-in serves it and the command line
 

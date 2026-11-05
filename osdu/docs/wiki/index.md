@@ -108,8 +108,8 @@ manifest build ([osdu/docs/reference/README.md](../reference/README.md#maintenan
 The design left these decisions open, and the implementation had to choose for each of them to ship working
 code. Each record carries its status so the owning teams can confirm or overturn it, and the code isolates each
 choice so overturning it is a contained change. A record is proposed or accepted (0022, 0026 and every record from 0029
-on are accepted); 0002 also needs confirmation that the data partition accepts client-supplied ids for the kinds in
-scope. Not decided here, and still open: storage
+on are accepted; 0046's reading of the law awaits counsel's confirmation); 0002 also needs confirmation that the data
+partition accepts client-supplied ids for the kinds in scope. Not decided here, and still open: storage
 access grants, Change Data Feed, library ownership between osdu-client and osdu-csharp-client, and whether the
 other packages adopt the same contract.
 
@@ -245,6 +245,10 @@ other packages adopt the same contract.
 - [0039: the VS Code extension is a client of the MCP server, and one browser sign-in serves it and the command line](decisions/0039-vscode-extension-is-an-mcp-client.md) -
   why the extension reads through the server's tools, why a missing tool was filled in the server, why Microsoft sign-in
   reaches a client through a GUI page, and why the extension, the server and `sqlflow` share one credential file.
+- [0046: under the EU AI Act the assistant is not high-risk, says a model writes its answers, and marks what it wrote](decisions/0046-eu-ai-act.md):
+  why the assistant's features are limited-risk AI systems, which Annex III uses would change that, how the chat and the
+  Slack bot meet Article 50, why only a person records a verdict, why Explain stays off record content, and why an
+  estate sets the retention and the model's region.
 - [0045: the activity bar opens the pages worked in most, in one click](decisions/0045-activity-bar-shortcuts.md): why
   the activity bar is a menu button and seven shortcuts rather than an icon per menu group, why they follow the order the
   owner asked for, and why a shortcut selects its entry in the menu but leaves the side bar as the person left it.

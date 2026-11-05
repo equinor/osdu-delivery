@@ -479,6 +479,17 @@ variable "ai_foundry_model_capacity" {
   }
 }
 
+variable "ai_foundry_model_sku_name" {
+  description = "Deployment type of the chat and transcription models, which decides where a prompt is processed: GlobalStandard (the default) in any Azure region the model is deployed in; DataZoneStandard within the data zone of the account's region (the EU or the US); Standard in the account's own region. An estate whose prompts must stay in the EU sets DataZoneStandard or Standard. Changing it on an estate replaces its model deployments."
+  type        = string
+  default     = "GlobalStandard"
+
+  validation {
+    condition     = contains(["GlobalStandard", "DataZoneStandard", "Standard"], var.ai_foundry_model_sku_name)
+    error_message = "ai_foundry_model_sku_name must be GlobalStandard, DataZoneStandard or Standard."
+  }
+}
+
 variable "ai_foundry_transcription_model_name" {
   description = "Optional audio-transcription model deployed beside the chat model (e.g. gpt-4o-mini-transcribe), enabling the GUI chat assistant's server-side voice input. Empty deploys none."
   type        = string

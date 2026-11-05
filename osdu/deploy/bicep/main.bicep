@@ -440,6 +440,10 @@ param aiFoundryModelVersion string = ''
 @minValue(1)
 param aiFoundryModelCapacity int = 30
 
+@description('Deployment type of the chat and transcription models, which decides where a prompt is processed: GlobalStandard (the default) in any Azure region the model is deployed in; DataZoneStandard within the data zone of the account\'s region (the EU or the US); Standard in the account\'s own region. An estate whose prompts must stay in the EU sets DataZoneStandard or Standard. Changing it on an estate replaces its model deployments.')
+@allowed(['GlobalStandard', 'DataZoneStandard', 'Standard'])
+param aiFoundryModelSkuName string = 'GlobalStandard'
+
 @description('Optional audio-transcription model deployed beside the chat model (e.g. gpt-4o-mini-transcribe), enabling the GUI chat assistant\'s server-side voice input. Empty deploys none; the mic then falls back to the browser\'s built-in speech recognition.')
 param aiFoundryTranscriptionModelName string = ''
 
@@ -1385,6 +1389,7 @@ module aiFoundry 'ai-foundry.bicep' = if (aiFoundryEnabled) {
     modelName: aiFoundryModelName
     modelVersion: aiFoundryModelVersion
     modelCapacity: aiFoundryModelCapacity
+    modelSkuName: aiFoundryModelSkuName
     transcriptionModelName: aiFoundryTranscriptionModelName
     transcriptionModelVersion: aiFoundryTranscriptionModelVersion
     userPrincipalIds: [

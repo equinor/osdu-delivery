@@ -13,7 +13,7 @@ import { isApiError } from "@/api/client";
 import {
   deliveryApi, type DeliveryCacheChange, type DeliveryCacheDiffItem, type DeliveryCacheHistoryEntry, type DeliveryCacheHistoryType,
 } from "../../api/delivery";
-import { CodeView } from "@/components/CodeView";
+import { RecordContentView } from "./RecordContentView";
 import { CorrelationError } from "@/components/CorrelationError";
 import { DataTable, type Column } from "@/components/DataTable";
 import { EmptyState } from "@/components/EmptyState";
@@ -184,7 +184,7 @@ function Side({ title, version, values, testId }: {
             <EmptyState title="This version does not hold the record" />
           </Card>
         )
-        : <CodeView value={JSON.stringify(values, null, 2)} language="json" height={420} />}
+        : <RecordContentView value={JSON.stringify(values, null, 2)} language="json" height={420} />}
     </div>
   );
 }

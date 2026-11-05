@@ -1,7 +1,7 @@
 import { Database, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
-import { CodeView } from "@/components/CodeView";
+import { RecordContentView } from "./RecordContentView";
 import { CopyButton } from "@/components/CopyButton";
 import { RelativeTime } from "@/components/RelativeTime";
 import { TruncatedText } from "@/components/TruncatedText";
@@ -161,7 +161,7 @@ export function RecordSourceTab({ record, keyColumns, canRead, reading, onRead, 
           </Button>
         </div>
         {answer?.error !== undefined && <ProblemView error={answer.error} testId="record-source-error" />}
-        {answer?.rows && <CodeView value={JSON.stringify(answer.rows, null, 2)} language="json" height={360} data-testid="record-source-task-json" />}
+        {answer?.rows && <RecordContentView value={JSON.stringify(answer.rows, null, 2)} language="json" height={360} data-testid="record-source-task-json" />}
       </Card>
     </div>
   );

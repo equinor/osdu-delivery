@@ -657,3 +657,21 @@ then to keep it.
 
 Amended decision 0045 (the order, and why the data's path was replaced) and decision 0034 (Nodes beside Runs rather than
 under the folded Health section); updated the reference page `delivery-concept-menu`.
+
+## [2026-11-05] ingest | The assistant under the EU AI Act
+
+Source: the human's words asking whether OSDU Delivery is compatible with the EU AI Act, that the AI part probably needs
+additions, and that the result belongs in the documentation; an inventory of every place the code calls a language model;
+and the state of the law on the day (Regulation (EU) 2024/1689 as amended by the Digital Omnibus on AI, Regulation (EU)
+2026/1744, and the final Code of Practice on AI-generated content).
+
+Added decision 0046 (proposed) and the reference page `delivery-concept-ai-features`.
+
+## [2026-11-05] ingest | The assistant made compatible with the EU AI Act
+
+Source: the human's words asking to bridge the gaps decision 0046 found and make the product compatible, with a page
+about its compatibility; the code of the disclosure and marks, the confirm endpoint's refusal, the retention areas,
+`RecordContentView` and the model's deployment type, and their tests.
+
+Accepted decision 0046 and rewrote it for what was built; added the reference page `delivery-concept-eu-ai-act`; updated
+`delivery-concept-ai-features` and `delivery-guide-mcp`.

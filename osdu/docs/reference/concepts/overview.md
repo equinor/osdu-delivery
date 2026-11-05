@@ -157,7 +157,7 @@ deliveries that write it ([lineage](lineage.md)):
 | The GUI, a flow's pipeline page | Tabs per kind: Delivery, Records, Issues, Deletions, Submissions and Preview for a delivery flow, set among the page's Runs, Schedules and YAML by what each is about; Retrievals, Cache versions, Assertions with History and Reports, Dimensions, Inventories, Removals, Downloads for the others. Each kind adds its own fields to the trigger dialog. |
 | The `sqlflow` command line | SQLFlow's verbs plus the OSDU verbs: `check` and `preview` before a run, `records` after one, `template`, `cache`, `partition` and `config` to set an estate up ([CLI pages](../cli/run.md)). |
 | The API | Everything under `/api/v1/delivery`, on the control plane's authenticated routes ([API](api.md)). |
-| An AI assistant | `osdu-delivery-mcp`: SQLFlow's MCP server with the delivery tools added. It answers from metadata (states, ids, counts, history, definitions), never from record content or source rows, and a `!` question from the data an approved AI context opens, with a read-only query ([MCP server](../guides/mcp.md)). |
+| An AI assistant | `osdu-delivery-mcp`: SQLFlow's MCP server with the delivery tools added. It answers from metadata (states, ids, counts, history, definitions), never from record content or source rows, and a `!` question from the data an approved AI context opens, with a read-only query ([MCP server](../guides/mcp.md); every feature that calls a model: [AI in OSDU Delivery](ai-features.md); the EU AI Act: [compatibility](eu-ai-act.md)). |
 
 ## What it does not do
 

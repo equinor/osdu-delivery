@@ -5,7 +5,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
-import { CodeView } from "@/components/CodeView";
+import { RecordContentView } from "./RecordContentView";
 import { DiffView } from "@/components/DiffView";
 import { ExplainMark } from "@/components/ExplainTip";
 import { TruncatedText } from "@/components/TruncatedText";
@@ -304,7 +304,7 @@ function RenderResult({ results }: { results: RenderResults }) {
           )}
           {/* A value the platform gives when the record is sent reads as what it stands for, in place. */}
           {shown === "document" && (
-            <CodeView value={JSON.stringify(envelopeFirst(rendered), null, 2)} language="json" height={520} data-testid="record-render-document" />
+            <RecordContentView value={JSON.stringify(envelopeFirst(rendered), null, 2)} language="json" height={520} data-testid="record-render-document" />
           )}
         </div>
       )}

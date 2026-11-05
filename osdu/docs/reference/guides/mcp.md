@@ -34,6 +34,8 @@ related:
   - delivery-guide-deployment
   - delivery-cli-run
   - delivery-guide-vscode
+  - delivery-concept-ai-features
+  - delivery-concept-eu-ai-act
 sourceRefs:
   - osdu/hosts/osdu-delivery-mcp/Cargo.toml
   - osdu/hosts/osdu-delivery-mcp/build.rs
@@ -305,7 +307,11 @@ does: schema whole in estate mode, and a `!` question answered from the data in 
 answer saved on request. The six operator actions (`DeliveryAssistantAccess.ActionTools`), `trigger_run` and every
 other tool that starts work are refused to a chat run by the control plane, and the assistant says where a person does
 it. The same fence holds any call this server marks as the assistant's, such as the Slack bot's. A deployment that sets
-`ControlPlane:Assistant:Mcp:AllowedTools` narrows the tools a run may call.
+`ControlPlane:Assistant:Mcp:AllowedTools` narrows the tools a run may call. Explain, on a code view, sends what the view
+shows as the question, and is off on every view of record content (a record's Source and Render tabs, a preview, a cache
+item), so the GUI keeps to the same rule as this server ([AI in OSDU Delivery](../concepts/ai-features.md#what-a-model-is-sent)).
+The chat says under its composer that an AI language model writes its answers, and marks each answer with the model
+that wrote it ([EU AI Act compatibility](../concepts/eu-ai-act.md)).
 
 ## Where it lives
 
@@ -327,3 +333,5 @@ The tests run against a control plane of their own, so they need no database, no
 - [SQLFlow: the Slack assistant](../../../../sqlflow/docs/reference/guides/slack-assistant.md)
 - [The delivery API](../concepts/api.md)
 - [Authentication and identity](../concepts/authentication-and-identity.md)
+- [AI in OSDU Delivery](../concepts/ai-features.md): every feature that calls a model, what it is sent and keeps
+- [EU AI Act compatibility](../concepts/eu-ai-act.md)

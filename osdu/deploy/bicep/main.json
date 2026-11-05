@@ -6,7 +6,7 @@
     "_generator": {
       "name": "bicep",
       "version": "0.44.1.10279",
-      "templateHash": "5139863171710567463"
+      "templateHash": "15875810710813848169"
     }
   },
   "definitions": {
@@ -926,6 +926,18 @@
       "minValue": 1,
       "metadata": {
         "description": "Capacity for the model deployment, in thousands of tokens per minute."
+      }
+    },
+    "aiFoundryModelSkuName": {
+      "type": "string",
+      "defaultValue": "GlobalStandard",
+      "allowedValues": [
+        "GlobalStandard",
+        "DataZoneStandard",
+        "Standard"
+      ],
+      "metadata": {
+        "description": "Deployment type of the chat and transcription models, which decides where a prompt is processed: GlobalStandard (the default) in any Azure region the model is deployed in; DataZoneStandard within the data zone of the account's region (the EU or the US); Standard in the account's own region. An estate whose prompts must stay in the EU sets DataZoneStandard or Standard. Changing it on an estate replaces its model deployments."
       }
     },
     "aiFoundryTranscriptionModelName": {
@@ -3215,6 +3227,9 @@
           },
           "modelCapacity": {
             "value": "[parameters('aiFoundryModelCapacity')]"
+          },
+          "modelSkuName": {
+            "value": "[parameters('aiFoundryModelSkuName')]"
           },
           "transcriptionModelName": {
             "value": "[parameters('aiFoundryTranscriptionModelName')]"

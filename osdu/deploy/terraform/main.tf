@@ -834,6 +834,7 @@ module "ai_foundry" {
   model_name                  = var.ai_foundry_model_name
   model_version               = var.ai_foundry_model_version
   model_capacity              = var.ai_foundry_model_capacity
+  model_sku_name              = var.ai_foundry_model_sku_name
   transcription_model_name    = var.ai_foundry_transcription_model_name
   transcription_model_version = var.ai_foundry_transcription_model_version
   user_principal_ids          = [module.control_plane.identity_principal_id, module.worker.identity_principal_id]

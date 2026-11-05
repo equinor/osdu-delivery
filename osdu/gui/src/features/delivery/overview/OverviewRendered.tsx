@@ -4,7 +4,7 @@ import Markdown, { type Components } from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { FileText, Loader2, SlidersHorizontal, TriangleAlert, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { CodeView } from "@/components/CodeView";
+import { RecordContentView } from "../RecordContentView";
 import { CopyButton } from "@/components/CopyButton";
 import { cn } from "@/lib/utils";
 import { deliveryApi } from "../../../api/delivery";
@@ -303,7 +303,7 @@ export function OverviewDocument({ title, session, recordKey, lineage, onClose }
       )}
       {rendered !== null && shown === "json" && (
         <div className="flex min-h-0 flex-1 flex-col p-2" data-testid="mapping-overview-document-json">
-          <CodeView value={json} language="json" fill readOnly />
+          <RecordContentView value={json} language="json" fill readOnly />
         </div>
       )}
     </section>

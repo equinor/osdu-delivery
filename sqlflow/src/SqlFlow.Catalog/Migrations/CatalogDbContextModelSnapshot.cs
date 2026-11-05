@@ -225,6 +225,8 @@ namespace SqlFlow.Catalog.Migrations
 
                     b.HasKey("Id");
 
+                    b.HasIndex("UpdatedUtc");
+
                     b.HasIndex("UserId", "UpdatedUtc");
 
                     b.ToTable("ChatConversation", "catalog");
@@ -250,6 +252,14 @@ namespace SqlFlow.Catalog.Migrations
 
                     b.Property<string>("ImagesJson")
                         .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("Model")
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)");
+
+                    b.Property<string>("ModelProvider")
+                        .HasMaxLength(32)
+                        .HasColumnType("nvarchar(32)");
 
                     b.Property<int>("Ordinal")
                         .HasColumnType("int");
@@ -3095,6 +3105,10 @@ namespace SqlFlow.Catalog.Migrations
                         .HasColumnType("bigint");
 
                     SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<long>("Id"));
+
+                    b.Property<string>("Model")
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)");
 
                     b.Property<int>("Ordinal")
                         .HasColumnType("int");

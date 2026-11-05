@@ -10,7 +10,7 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
-import { CodeView } from "@/components/CodeView";
+import { RecordContentView } from "./RecordContentView";
 import { DataTable, type Column } from "@/components/DataTable";
 import { ExplainMark, ExplainTip } from "@/components/ExplainTip";
 import { IdChip } from "@/components/IdChip";
@@ -364,7 +364,7 @@ function Step({ step }: { step: DeliveryPreviewStep }) {
       </p>
       {open && step.body && (
         <div className="pl-7 pt-1">
-          <CodeView value={JSON.stringify(step.body, null, 2)} language="json" height={260} data-testid="preview-step-body" />
+          <RecordContentView value={JSON.stringify(step.body, null, 2)} language="json" height={260} data-testid="preview-step-body" />
         </div>
       )}
     </li>
@@ -629,7 +629,7 @@ function DocumentPane({ document, form, onForm, fill }: { document: DeliveryPrev
     return document.omitted
       ? <Alert data-testid="preview-document-omitted"><Info /><AlertDescription>{document.omitted}</AlertDescription></Alert>
       : code !== null && (
-        <CodeView
+        <RecordContentView
           value={code}
           language="json"
           fill
@@ -649,7 +649,7 @@ function DocumentPane({ document, form, onForm, fill }: { document: DeliveryPrev
         ? <Alert data-testid="preview-document-omitted"><Info /><AlertDescription>{document.omitted}</AlertDescription></Alert>
         : code !== null && (
           <div ref={fitted} className="flex min-h-0 flex-col">
-            <CodeView value={code} language="json" fill data-testid="preview-document" />
+            <RecordContentView value={code} language="json" fill data-testid="preview-document" />
           </div>
         )}
     </div>
@@ -774,7 +774,7 @@ function SourcePane({ preview }: { preview: DeliveryRecordPreview }) {
       </FactGrid>
       {source.omitted && <Alert><Info /><AlertDescription>{source.omitted}</AlertDescription></Alert>}
       <Section title="The record row" testId="preview-source-row-section">
-        <CodeView value={JSON.stringify(source.row, null, 2)} language="json" height={240} data-testid="preview-source-row" />
+        <RecordContentView value={JSON.stringify(source.row, null, 2)} language="json" height={240} data-testid="preview-source-row" />
       </Section>
       {datasets.map(([name, rows]) => (
         <Section
@@ -782,7 +782,7 @@ function SourcePane({ preview }: { preview: DeliveryRecordPreview }) {
           title={`${name}: ${rows.truncated ? `the first ${rows.rows.length} of ${rows.total.toLocaleString()} rows` : `${rows.total.toLocaleString()} ${rows.total === 1 ? "row" : "rows"}`}`}
           testId="preview-source-dataset-section"
         >
-          <CodeView value={JSON.stringify(rows.rows, null, 2)} language="json" height={200} data-testid="preview-source-dataset" />
+          <RecordContentView value={JSON.stringify(rows.rows, null, 2)} language="json" height={200} data-testid="preview-source-dataset" />
         </Section>
       ))}
     </div>

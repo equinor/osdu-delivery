@@ -11,7 +11,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { isApiError } from "@/api/client";
 import { deliveryApi, type DeliveryCacheTypeSource, type DeliveryCacheVersion, type DeliveryCachedItem } from "../../api/delivery";
-import { CodeView } from "@/components/CodeView";
+import { RecordContentView } from "./RecordContentView";
 import { CopyButton } from "@/components/CopyButton";
 import { CorrelationError } from "@/components/CorrelationError";
 import { DataTable } from "@/components/DataTable";
@@ -844,7 +844,7 @@ export function DeliveryCacheRecords({ scope, types, type, onType, versions, onC
                 <RecordMappingReference item={item} names={detailNames} />
                 <section className="flex flex-col gap-2">
                   <h3 className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground">As captured</h3>
-                  <CodeView value={JSON.stringify(item.fields, null, 2)} language="json" height={360} data-testid="delivery-cache-item-json" />
+                  <RecordContentView value={JSON.stringify(item.fields, null, 2)} language="json" height={360} data-testid="delivery-cache-item-json" />
                 </section>
               </div>
             </>
